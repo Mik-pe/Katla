@@ -3,6 +3,7 @@ use gl;
 use glutin::{ContextBuilder, EventsLoop, WindowBuilder};
 use std::ffi::CStr;
 use std::time::{Duration, Instant};
+
 static VS_SHADER_SRC: &'static [u8] = b"
 #version 450
 
@@ -151,22 +152,35 @@ fn main() {
         let _upload_context = unsafe { upload_context.make_current() }.unwrap();
         //TODO: Implement texture upload and sync channel
         let mut current_green = 0u8;
+        let mut should_exit = false;
+        let mut uploaded_textures = vec![];
         loop {
-            let message = receiver.recv().unwrap();
-            match message {
-                Message::Upload => unsafe {
-                    // let start = Instant::now();
-                    let mut tex = 0u32;
-                    gl::CreateTextures(gl::TEXTURE_2D, 1, &mut tex);
-                    let num_mipmaps = 10;
-                    gl::TextureStorage2D(tex, num_mipmaps, gl::RGBA8, 1024, 1024);
+            for message in receiver.try_iter() {
+                match message {
+                    Message::Upload => unsafe {
+                        let mut tex = 0u32;
+                        gl::CreateTextures(gl::TEXTURE_2D, 1, &mut tex);
+                        uploaded_textures.push(tex);
+                        if uploaded_textures.len() == 5 {
+                            break;
+                        }
+                    },
+                    Message::Exit => {
+                        should_exit = true;
+                    }
+                }
+            }
+            for tex in &uploaded_textures {
+                let num_mipmaps = 10;
+                unsafe {
+                    gl::TextureStorage2D(*tex, num_mipmaps, gl::RGBA8, 1024, 1024);
                     let mut img: image::RgbaImage = image::ImageBuffer::new(1024, 1024);
                     for pixel in img.pixels_mut() {
                         *pixel = image::Rgba([255, current_green, 255, 255]);
                     }
                     current_green = current_green.wrapping_add(10);
                     gl::TextureSubImage2D(
-                        tex,
+                        *tex,
                         0, // level
                         0, // xoffset
                         0, // yoffset
@@ -176,19 +190,26 @@ fn main() {
                         gl::UNSIGNED_BYTE,
                         img.into_raw().as_ptr() as *const _,
                     );
-                    gl::GenerateTextureMipmap(tex);
+                    gl::GenerateTextureMipmap(*tex);
+                }
+                // let end = start.elapsed().as_micros() as f64 / 1000.0;
+            }
+            if uploaded_textures.len() > 0 {
+                println!("Uploaded {} textures this time", uploaded_textures.len());
+                unsafe {
                     //This glFinish ensures all previously recorded calls are realized by the server
                     //which takes around 2 frames
                     gl::Finish();
-                    // let end = start.elapsed().as_micros() as f64 / 1000.0;
-                    // println!("Upload thread created texture ID {}, took {} ms", tex, end);
-                    tex_sender
-                        .send(TextureUploaded::Acknowledgement(tex))
-                        .expect("Could not send Texture Ack");
-                },
-                Message::Exit => {
-                    break;
                 }
+            }
+            for tex in &uploaded_textures {
+                tex_sender
+                    .send(TextureUploaded::Acknowledgement(*tex))
+                    .expect("Could not send Texture Ack");
+            }
+            uploaded_textures.clear();
+            if should_exit {
+                break;
             }
         }
         println!("Exiting upload thread!");
