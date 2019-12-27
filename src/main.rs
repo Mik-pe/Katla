@@ -153,6 +153,7 @@ fn main() {
         //TODO: Implement texture upload and sync channel
         let mut current_green = 0u8;
         let mut should_exit = false;
+        let max_textures_per_flush = 50;
         let mut uploaded_textures = vec![];
         loop {
             for message in receiver.try_iter() {
@@ -161,7 +162,7 @@ fn main() {
                         let mut tex = 0u32;
                         gl::CreateTextures(gl::TEXTURE_2D, 1, &mut tex);
                         uploaded_textures.push(tex);
-                        if uploaded_textures.len() == 5 {
+                        if uploaded_textures.len() == max_textures_per_flush {
                             break;
                         }
                     },
@@ -198,7 +199,6 @@ fn main() {
                 println!("Uploaded {} textures this time", uploaded_textures.len());
                 unsafe {
                     //This glFinish ensures all previously recorded calls are realized by the server
-                    //which takes around 2 frames
                     gl::Finish();
                 }
             }
@@ -217,9 +217,6 @@ fn main() {
 
     let mut tex_list = vec![];
     let mut running = true;
-    let mut r = 0.3;
-    let mut g = 0.5;
-    let mut b = 0.3;
     let mut highest_frametime = 0.0;
     let vs_shader = make_shader(gl::VERTEX_SHADER, VS_SHADER_SRC);
     let fs_shader = make_shader(gl::FRAGMENT_SHADER, FS_SHADER_SRC);
@@ -246,34 +243,6 @@ fn main() {
                                     .send(Message::Upload)
                                     .expect("Could not send Upload message");
                             }
-                            glutin::VirtualKeyCode::B => {
-                                let mut tex = 0u32;
-                                unsafe {
-                                    glchk!(gl::CreateTextures(gl::TEXTURE_2D, 1, &mut tex););
-                                    let num_mipmaps = 10;
-                                    gl::TextureStorage2D(tex, num_mipmaps, gl::RGBA8, 1024, 1024);
-                                    let img: image::RgbaImage = image::ImageBuffer::new(1024, 1024);
-                                    let mut img: image::RgbaImage =
-                                        image::ImageBuffer::new(1024, 1024);
-                                    for pixel in img.pixels_mut() {
-                                        *pixel = image::Rgba([255, 128, 255, 255]);
-                                    }
-                                    gl::TextureSubImage2D(
-                                        tex,
-                                        0, // level
-                                        0, // xoffset
-                                        0, // yoffset
-                                        1024,
-                                        1024,
-                                        gl::RGBA,
-                                        gl::UNSIGNED_BYTE,
-                                        img.as_ptr() as *const _,
-                                    );
-                                    gl::GenerateTextureMipmap(tex);
-                                }
-                                println!("Creating texture from main thread, got ID {}", tex);
-                                tex_list.push(tex);
-                            }
                             _ => {}
                         },
                         None => {}
@@ -282,24 +251,20 @@ fn main() {
                 }
             }
         });
-        let tex_result = tex_receiver.try_recv();
-        match tex_result {
-            Ok(TextureUploaded::Acknowledgement(result)) => {
-                tex_list.push(result);
-                unsafe {
-                    gl::BindTextureUnit(0, result);
+        for tex_result in tex_receiver.try_iter() {
+            match tex_result {
+                TextureUploaded::Acknowledgement(result) => {
+                    tex_list.push(result);
+                    unsafe {
+                        gl::BindTextureUnit(0, result);
+                    }
                 }
-                // println!("Received texture, now got {} textures", tex_list.len());
+                _ => {}
             }
-            _ => {}
         }
         unsafe {
             gl::UseProgram(program);
-            // Clear the screen to black
-            gl::ClearColor(r, g, b, 1.0);
-            // r = (r + 0.01) % 1.0;
-            // g = (g + 0.01) % 1.0;
-            // b = (b + 0.01) % 1.0;
+            gl::ClearColor(0.3, 0.5, 0.3, 1.0);
             gl::Clear(gl::COLOR_BUFFER_BIT);
             glchk!(gl::DrawArrays(gl::TRIANGLES, 0, 3););
         }
@@ -308,6 +273,9 @@ fn main() {
             .set_title(format!("Got {} textures", tex_list.len()).as_str());
         gl_window.swap_buffers().unwrap();
         let end = start.elapsed().as_micros() as f64 / 1000.0;
+        if end > 20.0 {
+            println!("Long CPU frametime: {} ms", end);
+        }
         highest_frametime = f64::max(highest_frametime, end);
     }
     sender
