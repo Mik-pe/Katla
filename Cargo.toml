@@ -7,7 +7,7 @@ build = "build.rs"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-gl = "0.6.0"
+ext_gl = {package = "gl", version="0.6.0"}
 glutin = "0.21.0"
 image = "0.22.3"
 
