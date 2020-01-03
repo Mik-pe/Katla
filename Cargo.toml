@@ -3,13 +3,10 @@ name = "rust_shared_ctx"
 version = "0.1.0"
 authors = ["Mik-pe <mikael.pettersson201@gmail.com>"]
 edition = "2018"
-build = "build.rs"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-ext_gl = {package = "gl", version="0.6.0"}
+gl = "0.6.0"
 glutin = "0.21.0"
 image = "0.22.3"
-
-[build-dependencies]
-gl_generator = "0.5.0"
+gltf = "0.14"

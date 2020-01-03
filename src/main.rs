@@ -1,9 +1,8 @@
-mod gl;
+use gl;
 mod rendering;
 
 use glutin::{ContextBuilder, EventsLoop, WindowBuilder};
-use std::ffi::CStr;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 enum Message {
     Upload,
@@ -46,6 +45,7 @@ fn main() {
         let mut uploaded_textures = vec![];
         loop {
             let start = Instant::now();
+
             for message in receiver.try_iter() {
                 match message {
                     Message::Upload => unsafe {
@@ -61,6 +61,7 @@ fn main() {
                     }
                 }
             }
+
             for tex in &uploaded_textures {
                 let num_mipmaps = 10;
                 unsafe {
@@ -81,9 +82,14 @@ fn main() {
                         gl::UNSIGNED_BYTE,
                         img.into_raw().as_ptr() as *const _,
                     );
+                    // let mipmap_start = Instant::now();
                     gl::GenerateTextureMipmap(*tex);
+                    gl::Flush();
+                    // let mipmap_end = mipmap_start.elapsed().as_micros() as f64 / 1000.0;
+                    // println!("Mipmap generation took {}ms", mipmap_end);
                 }
             }
+
             if uploaded_textures.len() > 0 {
                 println!("Uploaded {} textures this time", uploaded_textures.len());
                 unsafe {
