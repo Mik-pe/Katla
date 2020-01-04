@@ -1,6 +1,7 @@
-use gl;
 mod rendering;
 
+use gl;
+use gltf;
 use glutin::{ContextBuilder, EventsLoop, WindowBuilder};
 use std::time::Instant;
 
@@ -37,6 +38,19 @@ fn main() {
             glutin::dpi::PhysicalSize::new(1024.0, 1024.0),
         )
         .unwrap();
+
+    let (document, buffers, images) = gltf::import("resources/Box.glb").unwrap();
+
+    let mut my_mesh = rendering::Mesh::new();
+    for buffer_desc in document.buffers() {
+        println!(
+            "Buffer id {} has bytelen: {}",
+            buffer_desc.index(),
+            buffer_desc.length()
+        );
+        println!("Buffer index: {}", buffers[0].len());
+        my_mesh.add_vertices(buffers[0].to_vec(), vec![0, 1, 2])
+    }
     let upload_thread = std::thread::spawn(move || {
         let _upload_context = unsafe { upload_context.make_current() }.unwrap();
         let mut current_green = 0u8;
@@ -167,7 +181,8 @@ fn main() {
             gl::UseProgram(program);
             gl::ClearColor(0.3, 0.5, 0.3, 1.0);
             gl::Clear(gl::COLOR_BUFFER_BIT);
-            glchk!(gl::DrawArrays(gl::TRIANGLES, 0, 3););
+            my_mesh.draw();
+            // glchk!(gl::DrawArrays(gl::TRIANGLES, 0, 3););
         }
         gl_window
             .window()

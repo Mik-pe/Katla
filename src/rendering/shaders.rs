@@ -3,27 +3,30 @@ use std::ffi::CStr;
 
 static VS_SHADER_SRC: &'static [u8] = b"
 #version 450
+layout(location=0) in vec3 vert_pos;
 
 out vec2 tex_coords;
+
 void main()
 {
     tex_coords = vec2(0.0, 0.0);
-    if(gl_VertexID == 0){
-        tex_coords = vec2(0.0, 0.0);
-        gl_Position = vec4(-0.5, -0.5, 0.0, 1.0);
-    }
-    else if(gl_VertexID == 1){
-        tex_coords = vec2(0.5, 1.0);
-        gl_Position = vec4(0.0, 0.0, 0.0, 1.0);
-    }
-    else if(gl_VertexID == 2){
-        tex_coords = vec2(1.0, 0.0);
-        gl_Position = vec4(0.5, -0.5, 0.0, 1.0);
-    }else{
-        gl_Position = vec4(0.0, 0.0, 0.0, 1.0);
-    }
+    gl_Position = vec4(vert_pos, 1.0);
 }\0";
 
+// if(gl_VertexID == 0){
+//     tex_coords = vec2(0.0, 0.0);
+//     gl_Position = vec4(-0.5, -0.5, 0.0, 1.0);
+// }
+// else if(gl_VertexID == 1){
+//     tex_coords = vec2(0.5, 1.0);
+//     gl_Position = vec4(0.0, 0.0, 0.0, 1.0);
+// }
+// else if(gl_VertexID == 2){
+//     tex_coords = vec2(1.0, 0.0);
+//     gl_Position = vec4(0.5, -0.5, 0.0, 1.0);
+// }else{
+//     gl_Position = vec4(0.0, 0.0, 0.0, 1.0);
+// }
 static FS_SHADER_SRC: &'static [u8] = b"
 #version 450
 layout(binding=0) uniform sampler2D tex_sampler;
