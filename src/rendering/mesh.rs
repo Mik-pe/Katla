@@ -40,8 +40,9 @@ impl Mesh {
         };
         self.num_triangles = (indices.len() / (ind_len * 3)) as u32;
 
-        let ind_len_aligned = indices.len() * ind_len;
-        let total_buffer_size = vert_len_aligned + ind_len_aligned;
+        let ind_len_aligned = indices.len();
+        let total_buffer_size = vertices.len() + indices.len();
+        println!("Allocating a total buffer of size: {}", total_buffer_size);
         unsafe {
             gl::CreateBuffers(1, &mut self.buffer);
             gl::NamedBufferStorage(
@@ -50,12 +51,20 @@ impl Mesh {
                 std::ptr::null(),
                 gl::DYNAMIC_STORAGE_BIT,
             );
-
+            println!(
+                "Indices: {} triangles, uploading {} bytes at offset: 0",
+                self.num_triangles, ind_len_aligned
+            );
             gl::NamedBufferSubData(
                 self.buffer,
                 0,
-                ind_len_aligned as isize,
+                indices.len() as isize,
                 indices.as_ptr() as *const _,
+            );
+            println!(
+                "Vertices: uploading {} bytes at offset: {}",
+                vertices.len(),
+                ind_len_aligned
             );
             gl::NamedBufferSubData(
                 self.buffer,
@@ -65,15 +74,18 @@ impl Mesh {
             );
 
             gl::CreateVertexArrays(1, &mut self.vao);
-            gl::VertexArrayVertexBuffer(self.vao, 0, self.buffer, ind_len_aligned as isize, 4);
+            gl::VertexArrayVertexBuffer(self.vao, 0, self.buffer, ind_len_aligned as isize, 24);
             gl::VertexArrayElementBuffer(self.vao, self.buffer);
 
             //TODO: Read these from GLTF spec?
             gl::EnableVertexArrayAttrib(self.vao, 0);
+            gl::EnableVertexArrayAttrib(self.vao, 1);
 
             gl::VertexArrayAttribFormat(self.vao, 0, 3, gl::FLOAT, gl::FALSE, 0);
+            gl::VertexArrayAttribFormat(self.vao, 1, 3, gl::FLOAT, gl::FALSE, 12);
 
             gl::VertexArrayAttribBinding(self.vao, 0, 0);
+            gl::VertexArrayAttribBinding(self.vao, 1, 0);
         }
     }
 
@@ -102,29 +114,51 @@ impl Mesh {
                     } else {
                         panic!("Cannot parse this node");
                     }
-                    let ind_stride = indices.view().stride();
-                    println!("Want an index buffer of stride: {}", acc_size);
+                    println!(
+                        "Want an index buffer of stride: {}, with offset: {}, total bytelen: {}",
+                        acc_size, ind_offset, ind_size
+                    );
                     let buf_index = indices.view().buffer().index();
                     let ind_buf = &buffers[buf_index];
                     index_arr = &ind_buf[ind_offset..ind_offset + ind_size];
                 }
-                let mut start_index = 0;
-                let mut end_index = 0;
+                let mut start_index;
+                let mut end_index;
 
                 //TODO: upload all primitives, but only use the ones we can...
                 for attribute in primitive.attributes() {
                     //Striding needs to be acknowledged
-                    println!("Got stride {:?}", attribute.1.view().stride());
-                    if attribute.0 == gltf::json::mesh::Semantic::Positions {
-                        let accessor = attribute.1;
-                        let acc_view = accessor.view();
-                        let buf_index = acc_view.buffer().index();
-                        start_index = acc_view.offset();
-                        end_index = start_index + acc_view.length();
-                        let pos_buf = &buffers[buf_index];
-                        pos_arr = &pos_buf[start_index..end_index];
+                    let accessor = attribute.1;
+                    let acc_view = accessor.view();
+                    let buf_index = acc_view.buffer().index();
+                    match attribute.0 {
+                        gltf::json::mesh::Semantic::Positions => {
+                            //TODO: This accessor for Box.glb should return a byte_offset of 288B!
+                            println!(
+                                "Positions got offset: {} and acc_view {:?}",
+                                acc_view.offset(),
+                                acc_view,
+                            );
+                            start_index = acc_view.offset();
+                            end_index = start_index + acc_view.length();
+                            let pos_buf = &buffers[buf_index];
+                            pos_arr = &pos_buf[start_index..end_index];
+                        }
+                        gltf::json::mesh::Semantic::Normals => {
+                            start_index = acc_view.offset();
+                            end_index = start_index + acc_view.length();
+                            println!(
+                                "Normals got offset: {} and length {}, start_idx {} and end_idx {}",
+                                acc_view.offset(),
+                                acc_view.length(),
+                                start_index,
+                                end_index
+                            );
+                            let pos_buf = &buffers[buf_index];
+                            pos_arr = &pos_buf[start_index..end_index];
+                        }
+                        _ => {}
                     }
-                    println!("Got an attribute {:?}!", attribute.0);
                 }
             }
             self.add_vertices(pos_arr, index_arr);

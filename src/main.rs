@@ -23,6 +23,8 @@ fn main() {
     let window = WindowBuilder::new();
     let gl_context = ContextBuilder::new()
         .with_vsync(true)
+        .with_gl_profile(glutin::GlProfile::Core)
+        .with_gl(glutin::GlRequest::Specific(glutin::Api::OpenGl, (4, 6)))
         .build_windowed(window, &events_loop)
         .unwrap();
 
@@ -169,7 +171,7 @@ fn main() {
             }
         }
         unsafe {
-            gl::UseProgram(program);
+            glchk!(gl::UseProgram(program););
             gl::ClearColor(0.3, 0.5, 0.3, 1.0);
             gl::Clear(gl::COLOR_BUFFER_BIT);
             my_mesh.draw();
