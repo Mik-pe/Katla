@@ -39,18 +39,9 @@ fn main() {
         )
         .unwrap();
 
-    let (document, buffers, images) = gltf::import("resources/Box.glb").unwrap();
-
     let mut my_mesh = rendering::Mesh::new();
-    for buffer_desc in document.buffers() {
-        println!(
-            "Buffer id {} has bytelen: {}",
-            buffer_desc.index(),
-            buffer_desc.length()
-        );
-        println!("Buffer index: {}", buffers[0].len());
-        my_mesh.add_vertices(buffers[0].to_vec(), vec![0, 1, 2])
-    }
+    my_mesh.read_gltf("resources/Box.glb");
+
     let upload_thread = std::thread::spawn(move || {
         let _upload_context = unsafe { upload_context.make_current() }.unwrap();
         let mut current_green = 0u8;
