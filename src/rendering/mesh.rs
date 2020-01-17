@@ -131,17 +131,17 @@ impl Mesh {
                     let acc_view = accessor.view();
                     let acc_total_size = accessor.size() * accessor.count();
                     let buf_index = acc_view.buffer().index();
+                    start_index = accessor.offset();
+                    end_index = start_index + acc_total_size;
                     match attribute.0 {
                         gltf::json::mesh::Semantic::Positions => {
                             //TODO: This accessor for Box.glb should return a byte_offset of 288B!
-                            start_index = acc_view.offset();
-                            end_index = start_index + acc_total_size;
+                            println!("Positions goes from: {} to {}", start_index, end_index);
                             let pos_buf = &buffers[buf_index];
                             pos_arr = &pos_buf[start_index..end_index];
                         }
                         gltf::json::mesh::Semantic::Normals => {
-                            start_index = acc_view.offset();
-                            end_index = start_index + acc_total_size;
+                            println!("Normals goes from: {} to {}", start_index, end_index);
                             let pos_buf = &buffers[buf_index];
                             normal_arr = &pos_buf[start_index..end_index];
                         }
@@ -202,7 +202,7 @@ impl Mesh {
                 IndexType::UnsignedByte => {
                     gl::DrawElements(
                         gl::TRIANGLES,
-                        self.num_triangles as i32,
+                        (self.num_triangles * 3) as i32,
                         gl::UNSIGNED_BYTE,
                         std::ptr::null(),
                     );
@@ -210,7 +210,7 @@ impl Mesh {
                 IndexType::UnsignedShort => {
                     gl::DrawElements(
                         gl::TRIANGLES,
-                        (self.num_triangles * 2) as i32,
+                        (self.num_triangles * 3) as i32,
                         gl::UNSIGNED_SHORT,
                         std::ptr::null(),
                     );
@@ -218,7 +218,7 @@ impl Mesh {
                 IndexType::UnsignedInt => {
                     gl::DrawElements(
                         gl::TRIANGLES,
-                        (self.num_triangles * 4) as i32,
+                        (self.num_triangles * 3) as i32,
                         gl::UNSIGNED_INT,
                         std::ptr::null(),
                     );

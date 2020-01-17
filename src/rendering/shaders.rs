@@ -26,7 +26,7 @@ out vec2 tex_coords;
 void main()
 {
     tex_coords = vec2(vert_normal.x, 0.0);
-    gl_Position = vec4(vert_pos, 1.0) + vec4(0.0, 0.0, 10.0, 0.0);
+    gl_Position = vec4(vert_pos, 1.0) + vec4(0.0, 0.0, -0.5, 0.0);
 }\0";
 
 static FS_SHADER_SRC: &'static [u8] = b"
