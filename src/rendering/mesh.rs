@@ -98,9 +98,8 @@ impl Mesh {
             println!("Found mesh {:?} in node!", mesh.name());
             let mut index_arr: &[u8] = &[0u8];
             let mut pos_arr: &[u8] = &[0u8];
-            let mut pos_vec = Vec::<u8>::new();
+            let mut normal_arr: &[u8] = &[0u8];
             for primitive in mesh.primitives() {
-                println!("Iterating primitive!!");
                 if let Some(indices) = primitive.indices() {
                     let ind_offset = indices.view().offset();
                     let ind_size = indices.view().length();
@@ -130,38 +129,34 @@ impl Mesh {
                     //Striding needs to be acknowledged
                     let accessor = attribute.1;
                     let acc_view = accessor.view();
+                    let acc_total_size = accessor.size() * accessor.count();
                     let buf_index = acc_view.buffer().index();
                     match attribute.0 {
                         gltf::json::mesh::Semantic::Positions => {
                             //TODO: This accessor for Box.glb should return a byte_offset of 288B!
-                            println!(
-                                "Positions got offset: {} and acc_view {:?}",
-                                acc_view.offset(),
-                                acc_view,
-                            );
                             start_index = acc_view.offset();
-                            end_index = start_index + acc_view.length();
+                            end_index = start_index + acc_total_size;
                             let pos_buf = &buffers[buf_index];
                             pos_arr = &pos_buf[start_index..end_index];
                         }
                         gltf::json::mesh::Semantic::Normals => {
                             start_index = acc_view.offset();
-                            end_index = start_index + acc_view.length();
-                            println!(
-                                "Normals got offset: {} and length {}, start_idx {} and end_idx {}",
-                                acc_view.offset(),
-                                acc_view.length(),
-                                start_index,
-                                end_index
-                            );
+                            end_index = start_index + acc_total_size;
                             let pos_buf = &buffers[buf_index];
-                            pos_arr = &pos_buf[start_index..end_index];
+                            normal_arr = &pos_buf[start_index..end_index];
                         }
                         _ => {}
                     }
                 }
             }
-            self.add_vertices(pos_arr, index_arr);
+            let vert_vec = pos_arr
+                .chunks(12)
+                .zip(normal_arr.chunks(12))
+                .flat_map(|(a, b)| a.into_iter().chain(b))
+                .copied()
+                .collect::<Vec<u8>>();
+
+            self.add_vertices(&vert_vec[..], index_arr);
         }
     }
 

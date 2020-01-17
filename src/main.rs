@@ -1,7 +1,6 @@
 mod rendering;
 
 use gl;
-use gltf;
 use glutin::{ContextBuilder, EventsLoop, WindowBuilder};
 use std::time::Instant;
 
