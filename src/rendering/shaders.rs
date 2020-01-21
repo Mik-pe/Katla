@@ -1,23 +1,13 @@
 use crate::gl;
+use std::collections::HashMap;
 use std::ffi::CStr;
-
-// if(gl_VertexID == 0){
-//     tex_coords = vec2(0.0, 0.0);
-//     gl_Position = vec4(-0.5, -0.5, 0.0, 1.0);
-// }
-// else if(gl_VertexID == 1){
-//     tex_coords = vec2(0.5, 1.0);
-//     gl_Position = vec4(0.0, 0.0, 0.0, 1.0);
-// }
-// else if(gl_VertexID == 2){
-//     tex_coords = vec2(1.0, 0.0);
-//     gl_Position = vec4(0.5, -0.5, 0.0, 1.0);
-// }else{
-//     gl_Position = vec4(0.0, 0.0, 0.0, 1.0);
-// }
+use std::str::FromStr;
 
 static VS_SHADER_SRC: &'static [u8] = b"
 #version 450
+
+uniform mat4 u_projMatrix;
+
 layout(location=0) in vec3 vert_pos;
 layout(location=1) in vec3 vert_normal;
 
@@ -26,7 +16,7 @@ out vec2 tex_coords;
 void main()
 {
     tex_coords = vec2(vert_normal.x, 0.0);
-    gl_Position = vec4(vert_pos, 1.0) + vec4(0.0, 0.0, -0.5, 0.0);
+    gl_Position = u_projMatrix * vec4(vert_pos, 1.0);
 }\0";
 
 static FS_SHADER_SRC: &'static [u8] = b"
@@ -41,9 +31,72 @@ void main()
 {
     vec4 color = texture(tex_sampler, tex_coords);
     out_col = vec4(color.rgb, 1.0);
-    // out_col = vec4(tex_coords.r,tex_coords.g, 0.0, 1.0);
 }\0";
 
+pub struct Program {
+    program_name: u32,
+    uniforms: HashMap<String, i32>,
+}
+
+impl Program {
+    pub fn new() -> Self {
+        let program = create_shader_program();
+        let mut max_name_len = 0i32;
+        let mut uniform_count = 0i32;
+        let mut uniform_type = 0u32;
+        let mut length = 0i32;
+        let mut count = 0i32;
+        let mut uniform_map = std::collections::HashMap::<String, i32>::new();
+        unsafe {
+            gl::GetProgramiv(program, gl::ACTIVE_UNIFORMS, &mut uniform_count);
+            gl::GetProgramiv(program, gl::ACTIVE_UNIFORM_MAX_LENGTH, &mut max_name_len);
+            println!("Got max name len: {}", max_name_len);
+            let mut uniform_name: Vec<i8> = vec![];
+            uniform_name.resize(max_name_len as usize, 0);
+            for i in 0..uniform_count as u32 {
+                gl::GetActiveUniform(
+                    program,
+                    i,
+                    max_name_len,
+                    &mut length,
+                    &mut count,
+                    &mut uniform_type,
+                    uniform_name.as_mut_ptr(),
+                );
+                let location = gl::GetUniformLocation(program, uniform_name.as_ptr());
+
+                let uniform_str =
+                    String::from_str(CStr::from_ptr(uniform_name.as_ptr()).to_str().unwrap())
+                        .unwrap();
+
+                uniform_map.insert(uniform_str, location);
+            }
+            dbg!(&uniform_map);
+        }
+        Self {
+            program_name: program,
+            uniforms: uniform_map,
+        }
+    }
+
+    pub unsafe fn bind(&self) {
+        gl::UseProgram(self.program_name);
+    }
+
+    pub unsafe fn uniform_mat(&self, uniform_str: &String, matrix: &mikpe_math::Mat4) {
+        if let Some(uniform_location) = self.uniforms.get(uniform_str) {
+            gl::ProgramUniformMatrix4fv(
+                self.program_name,
+                *uniform_location,
+                1,
+                0,
+                &matrix[0][0] as *const _,
+            );
+        } else {
+            println!("Could not find uniform {}!", uniform_str);
+        }
+    }
+}
 fn make_shader(shader_type: gl::types::GLenum, shader_src: &[u8]) -> u32 {
     unsafe {
         let shader_id = gl::CreateShader(shader_type);
@@ -92,5 +145,6 @@ fn link_program(vs_shader: u32, fs_shader: u32) -> u32 {
 pub fn create_shader_program() -> u32 {
     let vs_shader = make_shader(gl::VERTEX_SHADER, VS_SHADER_SRC);
     let fs_shader = make_shader(gl::FRAGMENT_SHADER, FS_SHADER_SRC);
-    link_program(vs_shader, fs_shader)
+    let program = link_program(vs_shader, fs_shader);
+    program
 }

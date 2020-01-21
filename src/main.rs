@@ -2,6 +2,7 @@ mod rendering;
 
 use gl;
 use glutin::{ContextBuilder, EventsLoop, WindowBuilder};
+use std::ffi::{CStr, CString};
 use std::time::Instant;
 
 enum Message {
@@ -18,6 +19,7 @@ fn main() {
     let (sender, receiver) = std::sync::mpsc::channel();
     let (tex_sender, tex_receiver) = std::sync::mpsc::channel();
 
+    let projection_matrix = mikpe_math::Mat4::create_ortho(-5.0, 5.0, -5.0, 5.0, 0.1, 1000.0);
     let mut events_loop = EventsLoop::new();
     let window = WindowBuilder::new();
     let gl_context = ContextBuilder::new()
@@ -41,7 +43,7 @@ fn main() {
         .unwrap();
 
     let mut my_mesh = rendering::Mesh::new();
-    my_mesh.read_gltf("resources/Box.glb");
+    my_mesh.read_gltf("resources/models/Box.glb");
 
     let upload_thread = std::thread::spawn(move || {
         let _upload_context = unsafe { upload_context.make_current() }.unwrap();
@@ -121,7 +123,8 @@ fn main() {
     let mut tex_list = vec![];
     let mut running = true;
     let mut highest_frametime = 0.0;
-    let program = rendering::create_shader_program();
+    let program = rendering::Program::new();
+    // gl::GetUniformLocation(program, )
     while running {
         let start = Instant::now();
         events_loop.poll_events(|event| {
@@ -170,7 +173,8 @@ fn main() {
             }
         }
         unsafe {
-            glchk!(gl::UseProgram(program););
+            program.uniform_mat(&"u_projMatrix".to_owned(), &projection_matrix);
+            program.bind();
             gl::ClearColor(0.3, 0.5, 0.3, 1.0);
             gl::Clear(gl::COLOR_BUFFER_BIT);
             my_mesh.draw();

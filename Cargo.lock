@@ -559,6 +559,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "mikpe_math"
+version = "0.1.0"
+
+[[package]]
 name = "nix"
 version = "0.14.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -781,6 +785,7 @@ dependencies = [
  "gltf 0.14.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "glutin 0.21.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "image 0.22.3 (registry+https://github.com/rust-lang/crates.io-index)",
+ "mikpe_math 0.1.0",
 ]
 
 [[package]]

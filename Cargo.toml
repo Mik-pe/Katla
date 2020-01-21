@@ -10,3 +10,4 @@ gl = "0.6.0"
 glutin = "0.21.0"
 image = "0.22.3"
 gltf = "0.14"
+mikpe_math = {path="../mikpe_math"}

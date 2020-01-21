@@ -1,5 +1,6 @@
 use crate::gl;
 use gltf;
+use mikpe_math;
 use std::path::Path;
 
 enum IndexType {
@@ -14,7 +15,7 @@ pub struct Mesh {
     num_triangles: u32,
     index_type: IndexType,
     textures: [u32; 4],
-    model_matrix: [f32; 16],
+    model_matrix: mikpe_math::Mat4,
 }
 
 impl Mesh {
@@ -25,9 +26,7 @@ impl Mesh {
             num_triangles: 0,
             index_type: IndexType::UnsignedShort,
             textures: [0, 0, 0, 0],
-            model_matrix: [
-                1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
-            ],
+            model_matrix: mikpe_math::Mat4::new(),
         }
     }
 
