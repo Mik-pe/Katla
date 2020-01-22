@@ -19,9 +19,9 @@ fn main() {
     let (sender, receiver) = std::sync::mpsc::channel();
     let (tex_sender, tex_receiver) = std::sync::mpsc::channel();
 
-    let projection_matrix = mikpe_math::Mat4::create_ortho(-5.0, 5.0, -5.0, 5.0, 0.1, 1000.0);
+    let mut projection_matrix = mikpe_math::Mat4::create_proj(60.0, 1.0, 0.5, 1000.0);
     let mut events_loop = EventsLoop::new();
-    let window = WindowBuilder::new();
+    let window = WindowBuilder::new().with_dimensions(glutin::dpi::LogicalSize::new(512.0, 512.0));
     let gl_context = ContextBuilder::new()
         .with_vsync(true)
         .with_gl_profile(glutin::GlProfile::Core)
@@ -124,6 +124,7 @@ fn main() {
     let mut running = true;
     let mut highest_frametime = 0.0;
     let program = rendering::Program::new();
+    let mut angle = 60.0;
     // gl::GetUniformLocation(program, )
     while running {
         let start = Instant::now();
@@ -143,6 +144,14 @@ fn main() {
                                 Some(keycode) => match keycode {
                                     glutin::VirtualKeyCode::Escape => {
                                         running = false;
+                                    }
+                                    glutin::VirtualKeyCode::N => {
+                                        angle += 5.0;
+                                        projection_matrix = mikpe_math::Mat4::create_proj(angle, 1.0, 0.5, 1000.0);
+                                    }
+                                    glutin::VirtualKeyCode::M => {
+                                        angle -= 5.0;
+                                        projection_matrix = mikpe_math::Mat4::create_proj(angle, 1.0, 0.5, 1000.0);
                                     }
                                     glutin::VirtualKeyCode::Space => {
                                         for _ in 0..10 {
@@ -177,6 +186,8 @@ fn main() {
             program.bind();
             gl::ClearColor(0.3, 0.5, 0.3, 1.0);
             gl::Clear(gl::COLOR_BUFFER_BIT);
+            my_mesh.rotate_z(0.01);
+            my_mesh.update_model_matrix(&program);
             my_mesh.draw();
             // glchk!(gl::DrawArrays(gl::TRIANGLES, 0, 3););
         }

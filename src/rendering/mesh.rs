@@ -26,7 +26,7 @@ impl Mesh {
             num_triangles: 0,
             index_type: IndexType::UnsignedShort,
             textures: [0, 0, 0, 0],
-            model_matrix: mikpe_math::Mat4::new(),
+            model_matrix: mikpe_math::Mat4::from_translation([0.0, 0.0, -5.0]),
         }
     }
 
@@ -192,6 +192,16 @@ impl Mesh {
             );
             println!("Buffer index: {}", buffers[0].len());
         }
+    }
+    
+    pub fn rotate_z(&mut self, angle : f32){
+        let rot_mat = mikpe_math::Mat4::from_rotaxis(&angle, [0.0, 0.0, 1.0]);
+        self.model_matrix = self.model_matrix.mul(&rot_mat);
+    }
+    
+
+    pub unsafe fn update_model_matrix(&self, program : &crate::rendering::Program) {
+        program.uniform_mat(&"u_modelMatrix".to_owned(), &self.model_matrix);
     }
 
     pub fn draw(&self) {
