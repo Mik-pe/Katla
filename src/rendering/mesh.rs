@@ -195,7 +195,8 @@ impl Mesh {
     }
     
     pub fn rotate_z(&mut self, angle : f32){
-        let rot_mat = mikpe_math::Mat4::from_rotaxis(&angle, [0.0, 0.0, 1.0]);
+        let rot_mat = mikpe_math::Mat4::from_rotaxis(&angle, [0.0, 0.75, 1.0]);
+        // let rot_mat_x = mikpe_math::Mat4::from_rotaxis(&angle, [0.0, 0.0, 1.0]);
         self.model_matrix = self.model_matrix.mul(&rot_mat);
     }
     

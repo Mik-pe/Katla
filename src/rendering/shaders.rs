@@ -1,38 +1,10 @@
 use crate::gl;
 use std::collections::HashMap;
-use std::ffi::CStr;
+use std::ffi::{CStr, CString};
 use std::str::FromStr;
 
-static VS_SHADER_SRC: &'static [u8] = b"
-#version 450
-
-uniform mat4 u_projMatrix;
-uniform mat4 u_modelMatrix;
-
-layout(location=0) in vec3 vert_pos;
-layout(location=1) in vec3 vert_normal;
-
-out vec2 tex_coords;
-
-void main()
-{
-    tex_coords = vec2(vert_normal.x, 0.0);
-    gl_Position = u_projMatrix * u_modelMatrix * vec4(vert_pos, 1.0);
-}\0";
-
-static FS_SHADER_SRC: &'static [u8] = b"
-#version 450
-layout(binding=0) uniform sampler2D tex_sampler;
-
-in vec2 tex_coords;
-
-out vec4 out_col;
-
-void main()
-{
-    vec4 color = texture(tex_sampler, tex_coords);
-    out_col = vec4(color.rgb, 1.0);
-}\0";
+static VS_SHADER_SRC : &'static [u8] = include_bytes!("../../resources/shaders/model.vert");
+static FS_SHADER_SRC : &'static [u8] = include_bytes!("../../resources/shaders/model.frag");
 
 pub struct Program {
     program_name: u32,
@@ -98,16 +70,16 @@ impl Program {
         }
     }
 }
-fn make_shader(shader_type: gl::types::GLenum, shader_src: &[u8]) -> u32 {
+fn make_shader(shader_type: gl::types::GLenum, shader_src: &CString) -> u32 {
     unsafe {
         let shader_id = gl::CreateShader(shader_type);
         //src to CStr
-        let src_cstr = CStr::from_bytes_with_nul(shader_src).unwrap();
-        let shader_len = src_cstr.to_bytes().len() as i32;
+        // let src_cstr = shader_src;//CStr::from_bytes_with_nul(shader_src).unwrap();
+        let shader_len = shader_src.to_bytes().len() as i32;
         gl::ShaderSource(
             shader_id,
             1,
-            &src_cstr.as_ptr() as *const *const _,
+            &shader_src.as_ptr() as *const *const _,
             &shader_len as *const _,
         );
         gl::CompileShader(shader_id);
@@ -144,8 +116,10 @@ fn link_program(vs_shader: u32, fs_shader: u32) -> u32 {
 }
 
 pub fn create_shader_program() -> u32 {
-    let vs_shader = make_shader(gl::VERTEX_SHADER, VS_SHADER_SRC);
-    let fs_shader = make_shader(gl::FRAGMENT_SHADER, FS_SHADER_SRC);
+    let vs_cstring = CString::new(VS_SHADER_SRC).unwrap();
+    let fs_cstring = CString::new(FS_SHADER_SRC).unwrap();
+    let vs_shader = make_shader(gl::VERTEX_SHADER, &vs_cstring);
+    let fs_shader = make_shader(gl::FRAGMENT_SHADER, &fs_cstring);
     let program = link_program(vs_shader, fs_shader);
     program
 }
