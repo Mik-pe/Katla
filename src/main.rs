@@ -2,7 +2,6 @@ mod rendering;
 
 use gl;
 use glutin::{ContextBuilder, EventsLoop, WindowBuilder};
-use std::ffi::{CStr, CString};
 use std::time::Instant;
 
 enum Message {
@@ -42,8 +41,15 @@ fn main() {
         )
         .unwrap();
 
-    let mut my_mesh = rendering::Mesh::new();
-    my_mesh.read_gltf("resources/models/Box.glb");
+    let mut meshes = vec![];
+    for x in -5..6 {
+        for y in -5..6 {
+            let mut my_mesh = rendering::Mesh::new();
+            my_mesh.read_gltf("resources/models/Box.glb");
+            my_mesh.set_pos(mikpe_math::Vec3::new(x as f32, y as f32, -5.0));
+            meshes.push(my_mesh);
+        }
+    }
 
     let upload_thread = std::thread::spawn(move || {
         let _upload_context = unsafe { upload_context.make_current() }.unwrap();
@@ -125,7 +131,9 @@ fn main() {
     let mut highest_frametime = 0.0;
     let program = rendering::Program::new();
     let mut angle = 60.0;
-    // gl::GetUniformLocation(program, )
+    unsafe {
+        gl::Enable(gl::DEPTH_TEST);
+    }
     while running {
         let start = Instant::now();
         events_loop.poll_events(|event| {
@@ -147,11 +155,13 @@ fn main() {
                                     }
                                     glutin::VirtualKeyCode::N => {
                                         angle += 5.0;
-                                        projection_matrix = mikpe_math::Mat4::create_proj(angle, 1.0, 0.5, 1000.0);
+                                        projection_matrix =
+                                            mikpe_math::Mat4::create_proj(angle, 1.0, 0.5, 1000.0);
                                     }
                                     glutin::VirtualKeyCode::M => {
                                         angle -= 5.0;
-                                        projection_matrix = mikpe_math::Mat4::create_proj(angle, 1.0, 0.5, 1000.0);
+                                        projection_matrix =
+                                            mikpe_math::Mat4::create_proj(angle, 1.0, 0.5, 1000.0);
                                     }
                                     glutin::VirtualKeyCode::Space => {
                                         for _ in 0..10 {
@@ -185,11 +195,12 @@ fn main() {
             program.uniform_mat(&"u_projMatrix".to_owned(), &projection_matrix);
             program.bind();
             gl::ClearColor(0.3, 0.5, 0.3, 1.0);
-            gl::Clear(gl::COLOR_BUFFER_BIT);
-            my_mesh.rotate_z(0.01);
-            my_mesh.update_model_matrix(&program);
-            my_mesh.draw();
-            // glchk!(gl::DrawArrays(gl::TRIANGLES, 0, 3););
+            gl::Clear(gl::COLOR_BUFFER_BIT | gl::DEPTH_BUFFER_BIT);
+            for mesh in &mut meshes {
+                mesh.rotate_z(0.01);
+                mesh.update_model_matrix(&program);
+                mesh.draw();
+            }
         }
         gl_window
             .window()

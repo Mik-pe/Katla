@@ -31,7 +31,6 @@ impl Mesh {
     }
 
     pub fn add_vertices(&mut self, vertices: &[u8], indices: &[u8]) {
-        let vert_len_aligned = vertices.len() + vertices.len() % 4;
         let ind_len = match self.index_type {
             IndexType::UnsignedByte => 1,
             IndexType::UnsignedShort => 2,
@@ -193,15 +192,18 @@ impl Mesh {
             println!("Buffer index: {}", buffers[0].len());
         }
     }
-    
-    pub fn rotate_z(&mut self, angle : f32){
+
+    pub fn set_pos(&mut self, pos: mikpe_math::Vec3) {
+        self.model_matrix = mikpe_math::Mat4::from_translation(pos.0);
+    }
+
+    pub fn rotate_z(&mut self, angle: f32) {
         let rot_mat = mikpe_math::Mat4::from_rotaxis(&angle, [0.0, 0.75, 1.0]);
         // let rot_mat_x = mikpe_math::Mat4::from_rotaxis(&angle, [0.0, 0.0, 1.0]);
         self.model_matrix = self.model_matrix.mul(&rot_mat);
     }
-    
 
-    pub unsafe fn update_model_matrix(&self, program : &crate::rendering::Program) {
+    pub unsafe fn update_model_matrix(&self, program: &crate::rendering::Program) {
         program.uniform_mat(&"u_modelMatrix".to_owned(), &self.model_matrix);
     }
 
