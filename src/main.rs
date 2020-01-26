@@ -42,14 +42,18 @@ fn main() {
         .unwrap();
 
     let mut meshes = vec![];
-    for x in -5..6 {
-        for y in -5..6 {
-            let mut my_mesh = rendering::Mesh::new();
-            my_mesh.read_gltf("resources/models/Box.glb");
-            my_mesh.set_pos(mikpe_math::Vec3::new(x as f32, y as f32, -5.0));
-            meshes.push(my_mesh);
-        }
-    }
+    let mut my_mesh = rendering::Mesh::new();
+    my_mesh.read_gltf("resources/models/Box.glb");
+    my_mesh.set_pos(mikpe_math::Vec3::new(0.0, 0.0, -5.0));
+    meshes.push(my_mesh);
+    // for x in -5..6 {
+    //     for y in -5..6 {
+    //         let mut my_mesh = rendering::Mesh::new();
+    //         my_mesh.read_gltf("resources/models/Box.glb");
+    //         my_mesh.set_pos(mikpe_math::Vec3::new(x as f32, y as f32, -5.0));
+    //         meshes.push(my_mesh);
+    //     }
+    // }
 
     let upload_thread = std::thread::spawn(move || {
         let _upload_context = unsafe { upload_context.make_current() }.unwrap();

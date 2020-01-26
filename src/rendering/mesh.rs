@@ -92,6 +92,7 @@ impl Mesh {
         if let Some(nodename) = node.name() {
             println!("Got node: {}", nodename);
         }
+        let mut vert_vec: Vec<u8> = Vec::new();
         if let Some(mesh) = node.mesh() {
             println!("Found mesh {:?} in node!", mesh.name());
             let mut index_arr: &[u8] = &[0u8];
@@ -121,7 +122,7 @@ impl Mesh {
                 }
                 let mut start_index;
                 let mut end_index;
-
+                let mut current_stride = 0;
                 //TODO: upload all primitives, but only use the ones we can...
                 for attribute in primitive.attributes() {
                     //Striding needs to be acknowledged
@@ -131,29 +132,22 @@ impl Mesh {
                     let buf_index = acc_view.buffer().index();
                     start_index = accessor.offset();
                     end_index = start_index + acc_total_size;
-                    match attribute.0 {
-                        gltf::json::mesh::Semantic::Positions => {
-                            //TODO: This accessor for Box.glb should return a byte_offset of 288B!
-                            println!("Positions goes from: {} to {}", start_index, end_index);
-                            let pos_buf = &buffers[buf_index];
-                            pos_arr = &pos_buf[start_index..end_index];
-                        }
-                        gltf::json::mesh::Semantic::Normals => {
-                            println!("Normals goes from: {} to {}", start_index, end_index);
-                            let pos_buf = &buffers[buf_index];
-                            normal_arr = &pos_buf[start_index..end_index];
-                        }
-                        _ => {}
+                    let attr_buf = &buffers[buf_index];
+                    let attr_arr = &attr_buf[start_index..end_index];
+
+                    if current_stride == 0 {
+                        vert_vec = attr_arr.to_vec();
+                    } else {
+                        vert_vec = vert_vec
+                            .chunks(current_stride)
+                            .zip(attr_arr.chunks(12))
+                            .flat_map(|(a, b)| a.into_iter().chain(b))
+                            .copied()
+                            .collect::<Vec<u8>>();
                     }
+                    current_stride += 12;
                 }
             }
-            let vert_vec = pos_arr
-                .chunks(12)
-                .zip(normal_arr.chunks(12))
-                .flat_map(|(a, b)| a.into_iter().chain(b))
-                .copied()
-                .collect::<Vec<u8>>();
-
             self.add_vertices(&vert_vec[..], index_arr);
         }
     }
