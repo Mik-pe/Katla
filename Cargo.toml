@@ -9,5 +9,5 @@ edition = "2018"
 gl = "0.6.0"
 glutin = "0.21.0"
 image = "0.22.3"
-gltf = "0.14"
+gltf = "0.15"
 mikpe_math = {git = "https://github.com/Mik-pe/mikpe_math.git"}

@@ -98,8 +98,9 @@ impl Mesh {
             let mut index_arr: &[u8] = &[0u8];
             for primitive in mesh.primitives() {
                 if let Some(indices) = primitive.indices() {
-                    let ind_offset = indices.view().offset();
-                    let ind_size = indices.view().length();
+                    let ind_view = indices.view().unwrap();
+                    let ind_offset = ind_view.offset();
+                    let ind_size = ind_view.length();
                     let acc_size = indices.size();
                     if acc_size == 1 {
                         self.index_type = IndexType::UnsignedByte;
@@ -114,7 +115,7 @@ impl Mesh {
                         "Want an index buffer of stride: {}, with offset: {}, total bytelen: {}",
                         acc_size, ind_offset, ind_size
                     );
-                    let buf_index = indices.view().buffer().index();
+                    let buf_index = ind_view.buffer().index();
                     let ind_buf = &buffers[buf_index];
                     index_arr = &ind_buf[ind_offset..ind_offset + ind_size];
                 }
@@ -125,10 +126,15 @@ impl Mesh {
                 for attribute in primitive.attributes() {
                     //Striding needs to be acknowledged
                     let accessor = attribute.1;
-                    let acc_view = accessor.view();
+                    let acc_view = accessor.view().unwrap();
                     let acc_total_size = accessor.size() * accessor.count();
                     let acc_stride = accessor.size();
                     let buf_index = acc_view.buffer().index();
+                    println!(
+                        "striding?: {:?}, length: {}",
+                        acc_view.stride(),
+                        acc_view.length()
+                    );
                     start_index = accessor.offset();
                     end_index = start_index + acc_total_size;
                     let attr_buf = &buffers[buf_index];
