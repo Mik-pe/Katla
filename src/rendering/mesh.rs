@@ -96,8 +96,6 @@ impl Mesh {
         if let Some(mesh) = node.mesh() {
             println!("Found mesh {:?} in node!", mesh.name());
             let mut index_arr: &[u8] = &[0u8];
-            let mut pos_arr: &[u8] = &[0u8];
-            let mut normal_arr: &[u8] = &[0u8];
             for primitive in mesh.primitives() {
                 if let Some(indices) = primitive.indices() {
                     let ind_offset = indices.view().offset();
@@ -129,6 +127,7 @@ impl Mesh {
                     let accessor = attribute.1;
                     let acc_view = accessor.view();
                     let acc_total_size = accessor.size() * accessor.count();
+                    let acc_stride = accessor.size();
                     let buf_index = acc_view.buffer().index();
                     start_index = accessor.offset();
                     end_index = start_index + acc_total_size;
@@ -136,16 +135,17 @@ impl Mesh {
                     let attr_arr = &attr_buf[start_index..end_index];
 
                     if current_stride == 0 {
+                        //TODO: This does not work with interleaved data!
                         vert_vec = attr_arr.to_vec();
                     } else {
                         vert_vec = vert_vec
                             .chunks(current_stride)
-                            .zip(attr_arr.chunks(12))
+                            .zip(attr_arr.chunks(acc_stride))
                             .flat_map(|(a, b)| a.into_iter().chain(b))
                             .copied()
                             .collect::<Vec<u8>>();
                     }
-                    current_stride += 12;
+                    current_stride += acc_stride;
                 }
             }
             self.add_vertices(&vert_vec[..], index_arr);
