@@ -122,7 +122,7 @@ impl Mesh {
                 let mut start_index;
                 let mut end_index;
                 let mut current_stride = 0;
-                //TODO: upload all primitives, but only use the ones we can...
+                //TODO: Upload entire buffer and sample from it as the accessor tells us:
                 for attribute in primitive.attributes() {
                     //Striding needs to be acknowledged
                     let accessor = attribute.1;
@@ -191,6 +191,7 @@ impl Mesh {
             );
             println!("Buffer index: {}", buffers[0].len());
         }
+        println!("Got gltf: {:#?}", document);
     }
 
     pub fn set_pos(&mut self, pos: mikpe_math::Vec3) {
