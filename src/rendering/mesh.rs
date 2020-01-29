@@ -15,6 +15,7 @@ pub struct Mesh {
     num_triangles: u32,
     index_type: IndexType,
     textures: [u32; 4],
+    pos: mikpe_math::Vec3,
     model_matrix: mikpe_math::Mat4,
 }
 
@@ -26,7 +27,8 @@ impl Mesh {
             num_triangles: 0,
             index_type: IndexType::UnsignedShort,
             textures: [0, 0, 0, 0],
-            model_matrix: mikpe_math::Mat4::from_translation([0.0, 0.0, -5.0]),
+            pos: mikpe_math::Vec3::new(0.0, 0.0, 0.0),
+            model_matrix: mikpe_math::Mat4::new(),
         }
     }
 
@@ -191,16 +193,16 @@ impl Mesh {
             );
             println!("Buffer index: {}", buffers[0].len());
         }
-        println!("Got gltf: {:#?}", document);
     }
 
     pub fn set_pos(&mut self, pos: mikpe_math::Vec3) {
-        self.model_matrix = mikpe_math::Mat4::from_translation(pos.0);
+        self.pos = pos;
     }
 
     pub fn rotate_z(&mut self, angle: f32) {
-        let rot_mat = mikpe_math::Mat4::from_rotaxis(&angle, [0.0, 0.75, 1.0]);
-        // let rot_mat_x = mikpe_math::Mat4::from_rotaxis(&angle, [0.0, 0.0, 1.0]);
+        self.model_matrix = mikpe_math::Mat4::from_translation(self.pos.0);
+        let rotaxis = mikpe_math::Vec3::new(0.1, 0.75, 1.0);
+        let rot_mat = mikpe_math::Mat4::from_rotaxis(&angle, rotaxis.normalize().0);
         self.model_matrix = self.model_matrix.mul(&rot_mat);
     }
 

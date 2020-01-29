@@ -135,6 +135,7 @@ fn main() {
     let mut highest_frametime = 0.0;
     let program = rendering::Program::new();
     let mut angle = 60.0;
+    let mut rotangle = 0.0;
     unsafe {
         gl::Enable(gl::DEPTH_TEST);
     }
@@ -174,6 +175,12 @@ fn main() {
                                                 .expect("Could not send Upload message");
                                         }
                                     }
+                                    glutin::VirtualKeyCode::Right => {
+                                        rotangle += 0.1;
+                                    }
+                                    glutin::VirtualKeyCode::Left => {
+                                        rotangle -= 0.1;
+                                    }
                                     _ => {}
                                 },
                                 None => {}
@@ -201,7 +208,7 @@ fn main() {
             gl::ClearColor(0.3, 0.5, 0.3, 1.0);
             gl::Clear(gl::COLOR_BUFFER_BIT | gl::DEPTH_BUFFER_BIT);
             for mesh in &mut meshes {
-                mesh.rotate_z(0.01);
+                mesh.rotate_z(rotangle);
                 mesh.update_model_matrix(&program);
                 mesh.draw();
             }
