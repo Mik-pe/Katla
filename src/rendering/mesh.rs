@@ -32,7 +32,12 @@ impl Mesh {
         }
     }
 
-    pub fn add_vertices(&mut self, vertices: &[u8], indices: &[u8]) {
+    pub fn add_vertices(
+        &mut self,
+        vertices: &[u8],
+        indices: &[u8],
+        bindings: Vec<(i32, gltf::mesh::Semantic)>,
+    ) {
         let ind_len = match self.index_type {
             IndexType::UnsignedByte => 1,
             IndexType::UnsignedShort => 2,
@@ -78,14 +83,26 @@ impl Mesh {
             gl::VertexArrayElementBuffer(self.vao, self.buffer);
 
             //TODO: Read these from GLTF spec?
-            gl::EnableVertexArrayAttrib(self.vao, 0);
-            gl::EnableVertexArrayAttrib(self.vao, 1);
-
-            gl::VertexArrayAttribFormat(self.vao, 0, 3, gl::FLOAT, gl::FALSE, 0);
-            gl::VertexArrayAttribFormat(self.vao, 1, 3, gl::FLOAT, gl::FALSE, 12);
-
-            gl::VertexArrayAttribBinding(self.vao, 0, 0);
-            gl::VertexArrayAttribBinding(self.vao, 1, 0);
+            //TODO: Fix bindings based on GLTF spec and fix these to shader:
+            let mut current_stride = 0;
+            for attr in bindings {
+                match attr.1 {
+                    gltf::Semantic::Positions | gltf::Semantic::Normals => {
+                        gl::EnableVertexArrayAttrib(self.vao, attr.0 as u32);
+                        gl::VertexArrayAttribFormat(
+                            self.vao,
+                            attr.0 as u32,
+                            3,
+                            gl::FLOAT,
+                            gl::FALSE,
+                            current_stride,
+                        );
+                        gl::VertexArrayAttribBinding(self.vao, attr.0 as u32, 0);
+                    }
+                    _ => {}
+                }
+                current_stride += 12;
+            }
         }
     }
 
@@ -98,6 +115,7 @@ impl Mesh {
         if let Some(mesh) = node.mesh() {
             println!("Found mesh {:?} in node!", mesh.name());
             let mut index_arr: &[u8] = &[0u8];
+            let mut attr_binding_vec = vec![];
             for primitive in mesh.primitives() {
                 if let Some(indices) = primitive.indices() {
                     let ind_view = indices.view().unwrap();
@@ -124,14 +142,17 @@ impl Mesh {
                 let mut start_index;
                 let mut end_index;
                 let mut current_stride = 0;
+                let mut attribute_binding = 0;
                 //TODO: Upload entire buffer and sample from it as the accessor tells us:
                 for attribute in primitive.attributes() {
                     //Striding needs to be acknowledged
+                    let semantic = attribute.0;
                     let accessor = attribute.1;
                     let acc_view = accessor.view().unwrap();
                     let acc_total_size = accessor.size() * accessor.count();
                     let acc_stride = accessor.size();
                     let buf_index = acc_view.buffer().index();
+
                     println!(
                         "striding?: {:?}, length: {}",
                         acc_view.stride(),
@@ -154,9 +175,11 @@ impl Mesh {
                             .collect::<Vec<u8>>();
                     }
                     current_stride += acc_stride;
+                    attr_binding_vec.push((attribute_binding, semantic));
+                    attribute_binding += 1;
                 }
             }
-            self.add_vertices(&vert_vec[..], index_arr);
+            self.add_vertices(&vert_vec[..], index_arr, attr_binding_vec);
         }
     }
 

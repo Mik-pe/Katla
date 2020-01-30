@@ -3,8 +3,8 @@ use std::collections::HashMap;
 use std::ffi::{CStr, CString};
 use std::str::FromStr;
 
-static VS_SHADER_SRC : &'static [u8] = include_bytes!("../../resources/shaders/model.vert");
-static FS_SHADER_SRC : &'static [u8] = include_bytes!("../../resources/shaders/model.frag");
+static VS_SHADER_SRC: &'static [u8] = include_bytes!("../../resources/shaders/model.vert");
+static FS_SHADER_SRC: &'static [u8] = include_bytes!("../../resources/shaders/model.frag");
 
 pub struct Program {
     program_name: u32,
@@ -21,6 +21,7 @@ impl Program {
         let mut count = 0i32;
         let mut uniform_map = std::collections::HashMap::<String, i32>::new();
         unsafe {
+            gl::UseProgram(program);
             gl::GetProgramiv(program, gl::ACTIVE_UNIFORMS, &mut uniform_count);
             gl::GetProgramiv(program, gl::ACTIVE_UNIFORM_MAX_LENGTH, &mut max_name_len);
             println!("Got max name len: {}", max_name_len);
