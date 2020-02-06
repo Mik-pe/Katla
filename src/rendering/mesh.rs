@@ -148,15 +148,18 @@ impl Mesh {
                     //Striding needs to be acknowledged
                     let semantic = attribute.0;
                     let accessor = attribute.1;
-                    let acc_view = accessor.view().unwrap();
+                    let buffer_view = accessor.view().unwrap();
                     let acc_total_size = accessor.size() * accessor.count();
                     let acc_stride = accessor.size();
-                    let buf_index = acc_view.buffer().index();
+                    let buf_index = buffer_view.buffer().index();
+                    //TODO: Buffer view here has stride difference according to
+                    //https://github.com/KhronosGroup/glTF-Tutorials/blob/master/gltfTutorial/gltfTutorial_005_BuffersBufferViewsAccessors.md
+                    //Should use this to determine interleaving of the data!
 
                     println!(
                         "striding?: {:?}, length: {}",
-                        acc_view.stride(),
-                        acc_view.length()
+                        buffer_view.stride(),
+                        buffer_view.length()
                     );
                     start_index = accessor.offset();
                     end_index = start_index + acc_total_size;
