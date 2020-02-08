@@ -64,6 +64,7 @@ pub struct Mesh {
     textures: [u32; 4],
     pos: mikpe_math::Vec3,
     model_matrix: mikpe_math::Mat4,
+    vert_attr_offset: isize,
 }
 
 impl Mesh {
@@ -76,10 +77,105 @@ impl Mesh {
             textures: [0, 0, 0, 0],
             pos: mikpe_math::Vec3::new(0.0, 0.0, 0.0),
             model_matrix: mikpe_math::Mat4::new(),
+            vert_attr_offset: 0,
         }
     }
 
-    pub fn add_vertices(&mut self, vertices: &[u8], indices: &[u8]) {
+    pub fn read_gltf<P>(&mut self, path: P)
+    where
+        P: AsRef<Path>,
+    {
+        let (document, buffers, _images) = gltf::import(path).unwrap();
+        let mut used_nodes = vec![];
+        for scene in document.scenes() {
+            // parse_scene();
+            for node in scene.nodes() {
+                println!("Scene #{} uses node #{}", scene.index(), node.index());
+                used_nodes.push(node.index());
+                for child in node.children() {
+                    used_nodes.push(child.index());
+                }
+            }
+        }
+        for node in document.nodes() {
+            if used_nodes.contains(&node.index()) {
+                self.parse_node(&node, &buffers);
+            }
+        }
+        for buffer_desc in document.buffers() {
+            println!(
+                "Buffer id {} has bytelen: {}",
+                buffer_desc.index(),
+                buffer_desc.length()
+            );
+            println!("Buffer index: {}", buffers[0].len());
+        }
+    }
+
+    pub fn set_pos(&mut self, pos: mikpe_math::Vec3) {
+        self.pos = pos;
+    }
+
+    pub fn rotate_z(&mut self, angle: f32) {
+        self.model_matrix = mikpe_math::Mat4::from_translation(self.pos.0);
+        let rotaxis = mikpe_math::Vec3::new(0.1, 0.75, 1.0);
+        let rot_mat = mikpe_math::Mat4::from_rotaxis(&angle, rotaxis.normalize().0);
+        self.model_matrix = self.model_matrix.mul(&rot_mat);
+    }
+
+    pub unsafe fn update_model_matrix(&self, program: &crate::rendering::Program) {
+        program.uniform_mat(&"u_modelMatrix".to_owned(), &self.model_matrix);
+    }
+
+    pub fn draw(&self) {
+        unsafe {
+            gl::BindVertexArray(self.vao);
+            match self.index_type {
+                IndexType::UnsignedByte => {
+                    gl::DrawElements(
+                        gl::TRIANGLES,
+                        (self.num_triangles * 3) as i32,
+                        gl::UNSIGNED_BYTE,
+                        std::ptr::null(),
+                    );
+                }
+                IndexType::UnsignedShort => {
+                    gl::DrawElements(
+                        gl::TRIANGLES,
+                        (self.num_triangles * 3) as i32,
+                        gl::UNSIGNED_SHORT,
+                        std::ptr::null(),
+                    );
+                }
+                IndexType::UnsignedInt => {
+                    gl::DrawElements(
+                        gl::TRIANGLES,
+                        (self.num_triangles * 3) as i32,
+                        gl::UNSIGNED_INT,
+                        std::ptr::null(),
+                    );
+                }
+            }
+        }
+    }
+
+    //This function is expected to be called after vertex data has been uploaded
+    //Thus this entire function is marked unsafe
+    pub unsafe fn setup_vao(&mut self) {
+        gl::CreateVertexArrays(1, &mut self.vao);
+        gl::VertexArrayVertexBuffer(self.vao, 0, self.buffer, self.vert_attr_offset, 24);
+        gl::VertexArrayElementBuffer(self.vao, self.buffer);
+
+        //TODO: These can be fetched from semantics:
+        gl::EnableVertexArrayAttrib(self.vao, 0);
+        gl::VertexArrayAttribFormat(self.vao, 0, 3, gl::FLOAT, gl::FALSE, 0);
+        gl::VertexArrayAttribBinding(self.vao, 0, 0);
+        gl::EnableVertexArrayAttrib(self.vao, 1);
+        gl::VertexArrayAttribFormat(self.vao, 1, 3, gl::FLOAT, gl::FALSE, 0);
+        gl::VertexArrayAttribBinding(self.vao, 1, 0);
+    }
+
+    fn upload_vertex_data(&mut self, vertices: &[u8], indices: &[u8]) {
         let ind_len = match self.index_type {
             IndexType::UnsignedByte => 1,
             IndexType::UnsignedShort => 2,
@@ -87,9 +183,8 @@ impl Mesh {
         };
         self.num_triangles = (indices.len() / (ind_len * 3)) as u32;
 
-        let ind_len_aligned = indices.len();
+        self.vert_attr_offset = indices.len() as isize;
         let total_buffer_size = vertices.len() + indices.len();
-        println!("Allocating a total buffer of size: {}", total_buffer_size);
         unsafe {
             gl::CreateBuffers(1, &mut self.buffer);
             gl::NamedBufferStorage(
@@ -98,40 +193,18 @@ impl Mesh {
                 std::ptr::null(),
                 gl::DYNAMIC_STORAGE_BIT,
             );
-            println!(
-                "Indices: {} triangles, uploading {} bytes at offset: 0",
-                self.num_triangles, ind_len_aligned
-            );
             gl::NamedBufferSubData(
                 self.buffer,
                 0,
                 indices.len() as isize,
                 indices.as_ptr() as *const _,
             );
-            println!(
-                "Vertices: uploading {} bytes at offset: {}",
-                vertices.len(),
-                ind_len_aligned
-            );
             gl::NamedBufferSubData(
                 self.buffer,
-                ind_len_aligned as isize,
+                self.vert_attr_offset,
                 vertices.len() as isize,
                 vertices.as_ptr() as *const _,
             );
-
-            gl::CreateVertexArrays(1, &mut self.vao);
-            gl::VertexArrayVertexBuffer(self.vao, 0, self.buffer, ind_len_aligned as isize, 24);
-            gl::VertexArrayElementBuffer(self.vao, self.buffer);
-
-            //TODO: Read these from GLTF spec?
-            //TODO: Fix bindings based on GLTF spec and fix these to shader:
-            gl::EnableVertexArrayAttrib(self.vao, 0);
-            gl::VertexArrayAttribFormat(self.vao, 0, 3, gl::FLOAT, gl::FALSE, 0);
-            gl::VertexArrayAttribBinding(self.vao, 0, 0);
-            gl::EnableVertexArrayAttrib(self.vao, 1);
-            gl::VertexArrayAttribFormat(self.vao, 1, 3, gl::FLOAT, gl::FALSE, 0);
-            gl::VertexArrayAttribBinding(self.vao, 1, 0);
         }
     }
 
@@ -145,7 +218,6 @@ impl Mesh {
             println!("Found mesh {:?} in node!", mesh.name());
             let mut index_arr: &[u8] = &[0u8];
             let mut mesh_bufferview_vec: Vec<MeshBufferView> = vec![];
-            // let mut attr_binding_vec = vec![];
             for primitive in mesh.primitives() {
                 if let Some(indices) = primitive.indices() {
                     let ind_view = indices.view().unwrap();
@@ -225,89 +297,11 @@ impl Mesh {
                 }
                 current_stride += bufferview.stride;
             }
-            self.add_vertices(&vert_vec[..], index_arr);
+            self.upload_vertex_data(&vert_vec[..], index_arr);
         }
     }
 
     fn parse_scene() {
         unimplemented!("Cannot yet parse the scene")
-    }
-
-    pub fn read_gltf<P>(&mut self, path: P)
-    where
-        P: AsRef<Path>,
-    {
-        let (document, buffers, _images) = gltf::import(path).unwrap();
-        let mut used_nodes = vec![];
-        for scene in document.scenes() {
-            // parse_scene();
-            for node in scene.nodes() {
-                println!("Scene #{} uses node #{}", scene.index(), node.index());
-                used_nodes.push(node.index());
-                for child in node.children() {
-                    used_nodes.push(child.index());
-                }
-            }
-        }
-        for node in document.nodes() {
-            if used_nodes.contains(&node.index()) {
-                self.parse_node(&node, &buffers);
-            }
-        }
-        for buffer_desc in document.buffers() {
-            println!(
-                "Buffer id {} has bytelen: {}",
-                buffer_desc.index(),
-                buffer_desc.length()
-            );
-            println!("Buffer index: {}", buffers[0].len());
-        }
-    }
-
-    pub fn set_pos(&mut self, pos: mikpe_math::Vec3) {
-        self.pos = pos;
-    }
-
-    pub fn rotate_z(&mut self, angle: f32) {
-        self.model_matrix = mikpe_math::Mat4::from_translation(self.pos.0);
-        let rotaxis = mikpe_math::Vec3::new(0.1, 0.75, 1.0);
-        let rot_mat = mikpe_math::Mat4::from_rotaxis(&angle, rotaxis.normalize().0);
-        self.model_matrix = self.model_matrix.mul(&rot_mat);
-    }
-
-    pub unsafe fn update_model_matrix(&self, program: &crate::rendering::Program) {
-        program.uniform_mat(&"u_modelMatrix".to_owned(), &self.model_matrix);
-    }
-
-    pub fn draw(&self) {
-        unsafe {
-            gl::BindVertexArray(self.vao);
-            match self.index_type {
-                IndexType::UnsignedByte => {
-                    gl::DrawElements(
-                        gl::TRIANGLES,
-                        (self.num_triangles * 3) as i32,
-                        gl::UNSIGNED_BYTE,
-                        std::ptr::null(),
-                    );
-                }
-                IndexType::UnsignedShort => {
-                    gl::DrawElements(
-                        gl::TRIANGLES,
-                        (self.num_triangles * 3) as i32,
-                        gl::UNSIGNED_SHORT,
-                        std::ptr::null(),
-                    );
-                }
-                IndexType::UnsignedInt => {
-                    gl::DrawElements(
-                        gl::TRIANGLES,
-                        (self.num_triangles * 3) as i32,
-                        gl::UNSIGNED_INT,
-                        std::ptr::null(),
-                    );
-                }
-            }
-        }
     }
 }

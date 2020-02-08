@@ -1,7 +1,9 @@
 mod rendering;
+mod util;
 
 use gl;
 use glutin::{ContextBuilder, EventsLoop, WindowBuilder};
+use std::collections::VecDeque;
 use std::time::Instant;
 
 enum Message {
@@ -135,10 +137,10 @@ fn main() {
 
     let mut tex_list = vec![];
     let mut running = true;
-    let mut highest_frametime = 0.0;
     let program = rendering::Program::new();
     let mut angle = 60.0;
     let mut rotangle = 0.0;
+    let mut timer = util::Timer::new(300);
     unsafe {
         gl::Enable(gl::DEPTH_TEST);
     }
@@ -207,14 +209,13 @@ fn main() {
                         gl::BindTextureUnit(0, result);
                     }
                 }
-                UploadFinished::Mesh(mesh) => {
-                    meshes.push(mesh);
+                UploadFinished::Mesh(mut mesh) => {
                     let x_offset = meshes.len() as f32;
-                    meshes.last_mut().unwrap().set_pos(mikpe_math::Vec3::new(
-                        -5.0 + x_offset,
-                        0.0,
-                        -5.0,
-                    ));
+                    mesh.set_pos(mikpe_math::Vec3::new(-5.0 + x_offset, 0.0, -5.0));
+                    unsafe {
+                        mesh.setup_vao();
+                    }
+                    meshes.push(mesh);
                 }
                 _ => {}
             }
@@ -230,15 +231,22 @@ fn main() {
                 mesh.draw();
             }
         }
-        gl_window
-            .window()
-            .set_title(format!("Got {} textures", tex_list.len()).as_str());
         gl_window.swap_buffers().unwrap();
         let end = start.elapsed().as_micros() as f64 / 1000.0;
         if end > 20.0 {
             println!("Long CPU frametime: {} ms", end);
         }
-        highest_frametime = f64::max(highest_frametime, end);
+        timer.add_timestamp(end);
+        gl_window.window().set_title(
+            format!(
+                "Got {} textures, mean frametime: {:.3} (max {:.3}, min {:.3})",
+                tex_list.len(),
+                timer.current_mean(),
+                timer.current_max(),
+                timer.current_min(),
+            )
+            .as_str(),
+        );
     }
     sender
         .send(Message::Exit)
