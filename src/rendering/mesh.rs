@@ -1,12 +1,59 @@
 use crate::gl;
 use gltf;
 use mikpe_math;
+use std::cmp::{Ordering, PartialOrd};
 use std::path::Path;
 
 enum IndexType {
     UnsignedByte,
     UnsignedShort,
     UnsignedInt,
+}
+
+struct MeshBufferView {
+    stride: usize,
+    semantic: gltf::mesh::Semantic,
+    data: Vec<u8>,
+}
+
+impl MeshBufferView {
+    fn new(stride: usize, semantic: gltf::mesh::Semantic, data: Vec<u8>) -> Self {
+        Self {
+            stride,
+            semantic,
+            data,
+        }
+    }
+}
+
+impl PartialOrd for MeshBufferView {
+    fn partial_cmp(&self, other: &MeshBufferView) -> Option<Ordering> {
+        let sorted_key = |semantic: &gltf::mesh::Semantic| -> i32 {
+            match semantic {
+                gltf::mesh::Semantic::Positions => 0,
+                gltf::mesh::Semantic::Normals => 1,
+                _ => 2,
+            }
+        };
+        let sort_a = sorted_key(&self.semantic);
+        let sort_b = sorted_key(&other.semantic);
+        sort_a.partial_cmp(&sort_b)
+    }
+}
+
+impl PartialEq for MeshBufferView {
+    fn eq(&self, other: &MeshBufferView) -> bool {
+        let sorted_key = |semantic: &gltf::mesh::Semantic| -> i32 {
+            match semantic {
+                gltf::mesh::Semantic::Positions => 0,
+                gltf::mesh::Semantic::Normals => 1,
+                _ => 2,
+            }
+        };
+        let sort_a = sorted_key(&self.semantic);
+        let sort_b = sorted_key(&other.semantic);
+        sort_a.eq(&sort_b)
+    }
 }
 
 pub struct Mesh {
@@ -32,12 +79,7 @@ impl Mesh {
         }
     }
 
-    pub fn add_vertices(
-        &mut self,
-        vertices: &[u8],
-        indices: &[u8],
-        bindings: Vec<(i32, gltf::mesh::Semantic)>,
-    ) {
+    pub fn add_vertices(&mut self, vertices: &[u8], indices: &[u8]) {
         let ind_len = match self.index_type {
             IndexType::UnsignedByte => 1,
             IndexType::UnsignedShort => 2,
@@ -84,25 +126,12 @@ impl Mesh {
 
             //TODO: Read these from GLTF spec?
             //TODO: Fix bindings based on GLTF spec and fix these to shader:
-            let mut current_stride = 0;
-            for attr in bindings {
-                match attr.1 {
-                    gltf::Semantic::Positions | gltf::Semantic::Normals => {
-                        gl::EnableVertexArrayAttrib(self.vao, attr.0 as u32);
-                        gl::VertexArrayAttribFormat(
-                            self.vao,
-                            attr.0 as u32,
-                            3,
-                            gl::FLOAT,
-                            gl::FALSE,
-                            current_stride,
-                        );
-                        gl::VertexArrayAttribBinding(self.vao, attr.0 as u32, 0);
-                    }
-                    _ => {}
-                }
-                current_stride += 12;
-            }
+            gl::EnableVertexArrayAttrib(self.vao, 0);
+            gl::VertexArrayAttribFormat(self.vao, 0, 3, gl::FLOAT, gl::FALSE, 0);
+            gl::VertexArrayAttribBinding(self.vao, 0, 0);
+            gl::EnableVertexArrayAttrib(self.vao, 1);
+            gl::VertexArrayAttribFormat(self.vao, 1, 3, gl::FLOAT, gl::FALSE, 0);
+            gl::VertexArrayAttribBinding(self.vao, 1, 0);
         }
     }
 
@@ -115,7 +144,8 @@ impl Mesh {
         if let Some(mesh) = node.mesh() {
             println!("Found mesh {:?} in node!", mesh.name());
             let mut index_arr: &[u8] = &[0u8];
-            let mut attr_binding_vec = vec![];
+            let mut mesh_bufferview_vec: Vec<MeshBufferView> = vec![];
+            // let mut attr_binding_vec = vec![];
             for primitive in mesh.primitives() {
                 if let Some(indices) = primitive.indices() {
                     let ind_view = indices.view().unwrap();
@@ -139,11 +169,10 @@ impl Mesh {
                     let ind_buf = &buffers[buf_index];
                     index_arr = &ind_buf[ind_offset..ind_offset + ind_size];
                 }
-                let mut start_index;
-                let mut end_index;
-                let mut current_stride = 0;
-                let mut attribute_binding = 0;
+                let mut start_index: usize;
+                let mut end_index: usize;
                 //TODO: Upload entire buffer and sample from it as the accessor tells us:
+                let num_attributes = primitive.attributes().len();
                 for attribute in primitive.attributes() {
                     //Striding needs to be acknowledged
                     let semantic = attribute.0;
@@ -152,37 +181,51 @@ impl Mesh {
                     let acc_total_size = accessor.size() * accessor.count();
                     let acc_stride = accessor.size();
                     let buf_index = buffer_view.buffer().index();
-                    //TODO: Buffer view here has stride difference according to
-                    //https://github.com/KhronosGroup/glTF-Tutorials/blob/master/gltfTutorial/gltfTutorial_005_BuffersBufferViewsAccessors.md
-                    //Should use this to determine interleaving of the data!
-
-                    println!(
-                        "striding?: {:?}, length: {}",
-                        buffer_view.stride(),
-                        buffer_view.length()
-                    );
-                    start_index = accessor.offset();
-                    end_index = start_index + acc_total_size;
+                    start_index = accessor.offset() + buffer_view.offset();
+                    let buf_stride = buffer_view.stride();
+                    let mut interleaving_step = num_attributes;
+                    if buf_stride.is_none() || buf_stride.unwrap() == acc_stride {
+                        interleaving_step = 1;
+                        end_index = acc_total_size;
+                    } else {
+                        end_index = buffer_view.length();
+                    }
+                    end_index += start_index;
                     let attr_buf = &buffers[buf_index];
                     let attr_arr = &attr_buf[start_index..end_index];
 
-                    if current_stride == 0 {
-                        //TODO: This does not work with interleaved data!
-                        vert_vec = attr_arr.to_vec();
-                    } else {
-                        vert_vec = vert_vec
-                            .chunks(current_stride)
-                            .zip(attr_arr.chunks(acc_stride))
-                            .flat_map(|(a, b)| a.into_iter().chain(b))
-                            .copied()
-                            .collect::<Vec<u8>>();
-                    }
-                    current_stride += acc_stride;
-                    attr_binding_vec.push((attribute_binding, semantic));
-                    attribute_binding += 1;
+                    let noninterleaved_arr = attr_arr
+                        .to_vec()
+                        .chunks(acc_stride)
+                        .step_by(interleaving_step)
+                        .flatten()
+                        .copied()
+                        .collect::<Vec<u8>>();
+
+                    mesh_bufferview_vec.push(MeshBufferView::new(
+                        acc_stride,
+                        semantic,
+                        noninterleaved_arr,
+                    ));
                 }
             }
-            self.add_vertices(&vert_vec[..], index_arr, attr_binding_vec);
+            mesh_bufferview_vec.sort_by(|a, b| a.partial_cmp(b).unwrap());
+            let mut current_stride = 0;
+            for bufferview in mesh_bufferview_vec {
+                if current_stride == 0 {
+                    //TODO: This does not work with interleaved data!
+                    vert_vec = bufferview.data;
+                } else {
+                    vert_vec = vert_vec
+                        .chunks(current_stride)
+                        .zip(bufferview.data[..].chunks(bufferview.stride))
+                        .flat_map(|(a, b)| a.into_iter().chain(b))
+                        .copied()
+                        .collect::<Vec<u8>>();
+                }
+                current_stride += bufferview.stride;
+            }
+            self.add_vertices(&vert_vec[..], index_arr);
         }
     }
 
