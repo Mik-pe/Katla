@@ -3,7 +3,6 @@ mod util;
 
 use gl;
 use glutin::{ContextBuilder, EventsLoop, WindowBuilder};
-use std::collections::VecDeque;
 use std::time::Instant;
 
 enum Message {
@@ -13,7 +12,6 @@ enum Message {
 }
 
 enum UploadFinished {
-    Request(u32),
     Acknowledgement(u32),
     Mesh(rendering::Mesh),
 }
@@ -217,7 +215,6 @@ fn main() {
                     }
                     meshes.push(mesh);
                 }
-                _ => {}
             }
         }
         unsafe {

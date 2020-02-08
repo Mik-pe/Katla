@@ -61,7 +61,6 @@ pub struct Mesh {
     vao: u32,
     num_triangles: u32,
     index_type: IndexType,
-    textures: [u32; 4],
     pos: mikpe_math::Vec3,
     model_matrix: mikpe_math::Mat4,
     vert_attr_offset: isize,
@@ -74,7 +73,6 @@ impl Mesh {
             vao: 0,
             num_triangles: 0,
             index_type: IndexType::UnsignedShort,
-            textures: [0, 0, 0, 0],
             pos: mikpe_math::Vec3::new(0.0, 0.0, 0.0),
             model_matrix: mikpe_math::Mat4::new(),
             vert_attr_offset: 0,
@@ -299,9 +297,5 @@ impl Mesh {
             }
             self.upload_vertex_data(&vert_vec[..], index_arr);
         }
-    }
-
-    fn parse_scene() {
-        unimplemented!("Cannot yet parse the scene")
     }
 }
