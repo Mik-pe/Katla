@@ -181,7 +181,6 @@ impl Mesh {
                     let acc_total_size = accessor.size() * accessor.count();
                     let acc_stride = accessor.size();
                     let buf_index = buffer_view.buffer().index();
-                    start_index = accessor.offset() + buffer_view.offset();
                     let buf_stride = buffer_view.stride();
                     let mut interleaving_step = num_attributes;
                     if buf_stride.is_none() || buf_stride.unwrap() == acc_stride {
@@ -190,6 +189,7 @@ impl Mesh {
                     } else {
                         end_index = buffer_view.length();
                     }
+                    start_index = accessor.offset() + buffer_view.offset();
                     end_index += start_index;
                     let attr_buf = &buffers[buf_index];
                     let attr_arr = &attr_buf[start_index..end_index];

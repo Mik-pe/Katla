@@ -45,7 +45,6 @@ impl Program {
 
                 uniform_map.insert(uniform_str, location);
             }
-            dbg!(&uniform_map);
         }
         Self {
             program_name: program,
@@ -71,11 +70,10 @@ impl Program {
         }
     }
 }
+
 fn make_shader(shader_type: gl::types::GLenum, shader_src: &CString) -> u32 {
     unsafe {
         let shader_id = gl::CreateShader(shader_type);
-        //src to CStr
-        // let src_cstr = shader_src;//CStr::from_bytes_with_nul(shader_src).unwrap();
         let shader_len = shader_src.to_bytes().len() as i32;
         gl::ShaderSource(
             shader_id,

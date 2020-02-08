@@ -5,13 +5,15 @@ use glutin::{ContextBuilder, EventsLoop, WindowBuilder};
 use std::time::Instant;
 
 enum Message {
-    Upload,
+    UploadMesh,
+    UploadTexture,
     Exit,
 }
 
-enum TextureUploaded {
+enum UploadFinished {
     Request(u32),
     Acknowledgement(u32),
+    Mesh(rendering::Mesh),
 }
 
 fn main() {
@@ -42,31 +44,20 @@ fn main() {
         .unwrap();
 
     let mut meshes = vec![];
-    let mut my_mesh = rendering::Mesh::new();
-    my_mesh.read_gltf("resources/models/Box.glb");
-    my_mesh.set_pos(mikpe_math::Vec3::new(0.0, 0.0, -5.0));
-    meshes.push(my_mesh);
-    // for x in -5..6 {
-    //     for y in -5..6 {
-    //         let mut my_mesh = rendering::Mesh::new();
-    //         my_mesh.read_gltf("resources/models/Box.glb");
-    //         my_mesh.set_pos(mikpe_math::Vec3::new(x as f32, y as f32, -5.0));
-    //         meshes.push(my_mesh);
-    //     }
-    // }
 
     let upload_thread = std::thread::spawn(move || {
         let _upload_context = unsafe { upload_context.make_current() }.unwrap();
         let mut current_green = 0u8;
         let mut should_exit = false;
         let max_textures_per_flush = 50;
-        let mut uploaded_textures = vec![];
         loop {
+            let mut uploaded_textures = vec![];
+            let mut uploaded_meshes = vec![];
             let start = Instant::now();
 
             for message in receiver.try_iter() {
                 match message {
-                    Message::Upload => unsafe {
+                    Message::UploadTexture => unsafe {
                         let mut tex = 0u32;
                         gl::CreateTextures(gl::TEXTURE_2D, 1, &mut tex);
                         uploaded_textures.push(tex);
@@ -74,12 +65,16 @@ fn main() {
                             break;
                         }
                     },
+                    Message::UploadMesh => {
+                        let mesh = rendering::Mesh::new();
+                        uploaded_meshes.push(mesh);
+                    }
                     Message::Exit => {
                         should_exit = true;
                     }
                 }
             }
-
+            let did_upload = uploaded_meshes.len() > 0 || uploaded_textures.len() > 0;
             for tex in &uploaded_textures {
                 let num_mipmaps = 10;
                 unsafe {
@@ -107,8 +102,11 @@ fn main() {
                     // println!("Mipmap generation took {}ms", mipmap_end);
                 }
             }
+            for mesh in &mut uploaded_meshes {
+                mesh.read_gltf("resources/models/BoxInterleaved.glb");
+            }
 
-            if uploaded_textures.len() > 0 {
+            if did_upload {
                 println!("Uploaded {} textures this time", uploaded_textures.len());
                 unsafe {
                     //This glFinish ensures all previously recorded calls are realized by the server
@@ -117,12 +115,17 @@ fn main() {
                     println!("Generation + upload took {}ms", end);
                 }
             }
-            for tex in &uploaded_textures {
+            for tex in uploaded_textures {
                 tex_sender
-                    .send(TextureUploaded::Acknowledgement(*tex))
+                    .send(UploadFinished::Acknowledgement(tex))
                     .expect("Could not send Texture Ack");
             }
-            uploaded_textures.clear();
+            for mesh in uploaded_meshes {
+                tex_sender
+                    .send(UploadFinished::Mesh(mesh))
+                    .expect("Could not send mesh upload finished");
+            }
+
             if should_exit {
                 break;
             }
@@ -171,9 +174,14 @@ fn main() {
                                     glutin::VirtualKeyCode::Space => {
                                         for _ in 0..10 {
                                             sender
-                                                .send(Message::Upload)
+                                                .send(Message::UploadTexture)
                                                 .expect("Could not send Upload message");
                                         }
+                                    }
+                                    glutin::VirtualKeyCode::B => {
+                                        sender
+                                            .send(Message::UploadMesh)
+                                            .expect("Could not send UploadMesh message");
                                     }
                                     glutin::VirtualKeyCode::Right => {
                                         rotangle += 0.1;
@@ -193,11 +201,20 @@ fn main() {
         });
         for tex_result in tex_receiver.try_iter() {
             match tex_result {
-                TextureUploaded::Acknowledgement(result) => {
+                UploadFinished::Acknowledgement(result) => {
                     tex_list.push(result);
                     unsafe {
                         gl::BindTextureUnit(0, result);
                     }
+                }
+                UploadFinished::Mesh(mesh) => {
+                    meshes.push(mesh);
+                    let x_offset = meshes.len() as f32;
+                    meshes.last_mut().unwrap().set_pos(mikpe_math::Vec3::new(
+                        -5.0 + x_offset,
+                        0.0,
+                        -5.0,
+                    ));
                 }
                 _ => {}
             }
