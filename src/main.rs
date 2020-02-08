@@ -252,8 +252,4 @@ fn main() {
         .send(Message::Exit)
         .expect("Could not send Exit message!");
     upload_thread.join().expect("Could not join threads!");
-    println!(
-        "All threads joined and finished, highest time was {}",
-        highest_frametime
-    );
 }
