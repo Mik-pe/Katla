@@ -1,6 +1,7 @@
 #version 450
 
 uniform mat4 u_projMatrix;
+uniform mat4 u_viewMatrix;
 uniform mat4 u_modelMatrix;
 
 layout(location=0) in vec3 vert_pos;
@@ -12,5 +13,5 @@ void main()
 {
     tex_coords = vec2(vert_normal.x, 0.0);
     vs_normal = mat3(u_modelMatrix)*vert_normal;
-    gl_Position = u_projMatrix * u_modelMatrix * vec4(vert_pos, 1.0);
+    gl_Position = u_projMatrix * u_viewMatrix * u_modelMatrix * vec4(vert_pos, 1.0);
 }

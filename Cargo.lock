@@ -557,7 +557,7 @@ dependencies = [
 [[package]]
 name = "mikpe_math"
 version = "0.1.0"
-source = "git+https://github.com/Mik-pe/mikpe_math.git#f419124d37484cbd6d321c80dde989baf8b31b9c"
+source = "git+https://github.com/Mik-pe/mikpe_math.git#fb186cd31c57f85160703bb3254602541ab07b15"
 
 [[package]]
 name = "nix"
@@ -778,6 +778,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 name = "rust_shared_ctx"
 version = "0.1.0"
 dependencies = [
+ "bitflags 1.2.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "gl 0.6.5 (registry+https://github.com/rust-lang/crates.io-index)",
  "gltf 0.15.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "glutin 0.21.2 (registry+https://github.com/rust-lang/crates.io-index)",

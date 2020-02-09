@@ -1,9 +1,21 @@
 mod rendering;
 mod util;
 
+use bitflags::bitflags;
 use gl;
 use glutin::{ContextBuilder, EventsLoop, WindowBuilder};
+use mikpe_math::{Mat4, Vec3};
 use std::time::Instant;
+
+bitflags! {
+    struct Movement: u32{
+        const STILL = 0b0000_0000;
+        const FORWARD = 0b0000_0001;
+        const BACKWARDS = 0b0000_0010;
+        const LEFT = 0b0000_0100;
+        const RIGHT = 0b0000_1000;
+    }
+}
 
 enum Message {
     UploadMesh,
@@ -20,7 +32,9 @@ fn main() {
     let (sender, receiver) = std::sync::mpsc::channel();
     let (tex_sender, tex_receiver) = std::sync::mpsc::channel();
 
-    let mut projection_matrix = mikpe_math::Mat4::create_proj(60.0, 1.0, 0.5, 1000.0);
+    let mut projection_matrix = Mat4::create_proj(60.0, 1.0, 0.5, 1000.0);
+    let mut camera_pos = Vec3::new(0.0, 0.0, -5.0);
+    let mut view_matrix;
     let mut events_loop = EventsLoop::new();
     let window = WindowBuilder::new().with_dimensions(glutin::dpi::LogicalSize::new(512.0, 512.0));
     let gl_context = ContextBuilder::new()
@@ -139,6 +153,8 @@ fn main() {
     let mut angle = 60.0;
     let mut rotangle = 0.0;
     let mut timer = util::Timer::new(300);
+    let mut movement_vec;
+    let mut current_movement = Movement::STILL;
     unsafe {
         gl::Enable(gl::DEPTH_TEST);
     }
@@ -161,15 +177,27 @@ fn main() {
                                     glutin::VirtualKeyCode::Escape => {
                                         running = false;
                                     }
+                                    glutin::VirtualKeyCode::W => {
+                                        current_movement |= Movement::FORWARD;
+                                    }
+                                    glutin::VirtualKeyCode::S => {
+                                        current_movement |= Movement::BACKWARDS;
+                                    }
+                                    glutin::VirtualKeyCode::A => {
+                                        current_movement |= Movement::LEFT;
+                                    }
+                                    glutin::VirtualKeyCode::D => {
+                                        current_movement |= Movement::RIGHT;
+                                    }
                                     glutin::VirtualKeyCode::N => {
                                         angle += 5.0;
                                         projection_matrix =
-                                            mikpe_math::Mat4::create_proj(angle, 1.0, 0.5, 1000.0);
+                                            Mat4::create_proj(angle, 1.0, 0.5, 1000.0);
                                     }
                                     glutin::VirtualKeyCode::M => {
                                         angle -= 5.0;
                                         projection_matrix =
-                                            mikpe_math::Mat4::create_proj(angle, 1.0, 0.5, 1000.0);
+                                            Mat4::create_proj(angle, 1.0, 0.5, 1000.0);
                                     }
                                     glutin::VirtualKeyCode::Space => {
                                         for _ in 0..10 {
@@ -194,11 +222,47 @@ fn main() {
                                 None => {}
                             };
                         }
+                        if input.state == glutin::ElementState::Released {
+                            match input.virtual_keycode {
+                                Some(keycode) => match keycode {
+                                    glutin::VirtualKeyCode::W => {
+                                        current_movement -= Movement::FORWARD;
+                                    }
+                                    glutin::VirtualKeyCode::S => {
+                                        current_movement -= Movement::BACKWARDS;
+                                    }
+                                    glutin::VirtualKeyCode::A => {
+                                        current_movement -= Movement::LEFT;
+                                    }
+                                    glutin::VirtualKeyCode::D => {
+                                        current_movement -= Movement::RIGHT;
+                                    }
+                                    _ => {}
+                                },
+                                None => {}
+                            }
+                        }
                     }
                     _ => {}
                 }
             }
         });
+        movement_vec = Vec3::new(0.0, 0.0, 0.0);
+        if current_movement.contains(Movement::FORWARD) {
+            movement_vec[2] -= 1.0;
+        }
+        if current_movement.contains(Movement::BACKWARDS) {
+            movement_vec[2] += 1.0;
+        }
+        if current_movement.contains(Movement::LEFT) {
+            movement_vec[0] -= 1.0;
+        }
+        if current_movement.contains(Movement::RIGHT) {
+            movement_vec[0] += 1.0;
+        }
+        movement_vec = movement_vec.normalize();
+        camera_pos = camera_pos + movement_vec;
+
         for tex_result in tex_receiver.try_iter() {
             match tex_result {
                 UploadFinished::Acknowledgement(result) => {
@@ -217,8 +281,15 @@ fn main() {
                 }
             }
         }
+        view_matrix = Mat4::create_lookat(
+            camera_pos.clone(),
+            Vec3::new(0.0, 0.0, 0.0),
+            Vec3::new(0.0, 1.0, 0.0),
+        )
+        .inverse();
         unsafe {
             program.uniform_mat(&"u_projMatrix".to_owned(), &projection_matrix);
+            program.uniform_mat(&"u_viewMatrix".to_owned(), &view_matrix);
             program.bind();
             gl::ClearColor(0.3, 0.5, 0.3, 1.0);
             gl::Clear(gl::COLOR_BUFFER_BIT | gl::DEPTH_BUFFER_BIT);
