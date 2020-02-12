@@ -8,12 +8,13 @@ use mikpe_math::{Mat4, Vec3};
 use std::time::Instant;
 
 bitflags! {
-    struct Movement: u32{
-        const STILL = 0b0000_0000;
-        const FORWARD = 0b0000_0001;
+    struct Movement: u32
+    {
+        const STILL     = 0b0000_0000;
+        const FORWARD   = 0b0000_0001;
         const BACKWARDS = 0b0000_0010;
-        const LEFT = 0b0000_0100;
-        const RIGHT = 0b0000_1000;
+        const LEFT      = 0b0000_0100;
+        const RIGHT     = 0b0000_1000;
     }
 }
 
