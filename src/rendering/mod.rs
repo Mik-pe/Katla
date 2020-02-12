@@ -1,8 +1,10 @@
 pub mod mesh;
 pub mod shaders;
+pub mod shared_resources;
 
 pub use mesh::*;
 pub use shaders::*;
+pub use shared_resources::*;
 
 #[macro_export]
 macro_rules! glchk {

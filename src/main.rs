@@ -59,6 +59,11 @@ fn main() {
         .unwrap();
 
     let mut meshes = vec![];
+    //TODO: Return a tuple of sender, receiver and the uploader?
+    //TODO: Fix a way so one can register an upload-function for an enum?
+    //TODO: Spawn the thread inside of the uploader and provide a join function? Do we want to join-on-drop?
+
+    // let resource_uploader = rendering::ResourceUploader::new(receiver);
 
     let upload_thread = std::thread::spawn(move || {
         let _upload_context = unsafe { upload_context.make_current() }.unwrap();
