@@ -26,7 +26,7 @@ enum Message {
 
 enum UploadFinished {
     Acknowledgement(u32),
-    Mesh(rendering::Mesh),
+    Mesh(Box<dyn FnOnce() -> rendering::Mesh + Send>),
 }
 
 fn main() {
@@ -142,7 +142,9 @@ fn main() {
             }
             for mesh in uploaded_meshes {
                 tex_sender
-                    .send(UploadFinished::Mesh(mesh))
+                    .send(UploadFinished::Mesh(Box::new(move || unsafe {
+                        mesh.setup_vao()
+                    })))
                     .expect("Could not send mesh upload finished");
             }
 
@@ -277,12 +279,10 @@ fn main() {
                         gl::BindTextureUnit(0, result);
                     }
                 }
-                UploadFinished::Mesh(mut mesh) => {
+                UploadFinished::Mesh(mesh_fn) => {
+                    let mut mesh = mesh_fn();
                     let x_offset = meshes.len() as f32;
                     mesh.set_pos(mikpe_math::Vec3::new(-5.0 + x_offset, 0.0, -5.0));
-                    unsafe {
-                        mesh.setup_vao();
-                    }
                     meshes.push(mesh);
                 }
             }

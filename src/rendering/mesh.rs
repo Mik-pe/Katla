@@ -159,7 +159,8 @@ impl Mesh {
 
     //This function is expected to be called after vertex data has been uploaded
     //Thus this entire function is marked unsafe
-    pub unsafe fn setup_vao(&mut self) {
+    //TODO: add this to some resource-holder class:
+    pub unsafe fn setup_vao(mut self) -> Self {
         gl::CreateVertexArrays(1, &mut self.vao);
         gl::VertexArrayVertexBuffer(self.vao, 0, self.buffer, self.vert_attr_offset, 24);
         gl::VertexArrayElementBuffer(self.vao, self.buffer);
@@ -171,6 +172,7 @@ impl Mesh {
         gl::EnableVertexArrayAttrib(self.vao, 1);
         gl::VertexArrayAttribFormat(self.vao, 1, 3, gl::FLOAT, gl::FALSE, 0);
         gl::VertexArrayAttribBinding(self.vao, 1, 0);
+        self
     }
 
     fn upload_vertex_data(&mut self, vertices: &[u8], indices: &[u8]) {
