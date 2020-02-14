@@ -1,4 +1,5 @@
 use crate::gl;
+use crate::rendering::drawable::Drawable;
 use gltf;
 use mikpe_math;
 use std::cmp::{Ordering, PartialOrd};
@@ -125,56 +126,6 @@ impl Mesh {
         program.uniform_mat(&"u_modelMatrix".to_owned(), &self.model_matrix);
     }
 
-    pub fn draw(&self) {
-        unsafe {
-            gl::BindVertexArray(self.vao);
-            match self.index_type {
-                IndexType::UnsignedByte => {
-                    gl::DrawElements(
-                        gl::TRIANGLES,
-                        (self.num_triangles * 3) as i32,
-                        gl::UNSIGNED_BYTE,
-                        std::ptr::null(),
-                    );
-                }
-                IndexType::UnsignedShort => {
-                    gl::DrawElements(
-                        gl::TRIANGLES,
-                        (self.num_triangles * 3) as i32,
-                        gl::UNSIGNED_SHORT,
-                        std::ptr::null(),
-                    );
-                }
-                IndexType::UnsignedInt => {
-                    gl::DrawElements(
-                        gl::TRIANGLES,
-                        (self.num_triangles * 3) as i32,
-                        gl::UNSIGNED_INT,
-                        std::ptr::null(),
-                    );
-                }
-            }
-        }
-    }
-
-    //This function is expected to be called after vertex data has been uploaded
-    //Thus this entire function is marked unsafe
-    //TODO: add this to some resource-holder class:
-    pub unsafe fn setup_vao(mut self) -> Self {
-        gl::CreateVertexArrays(1, &mut self.vao);
-        gl::VertexArrayVertexBuffer(self.vao, 0, self.buffer, self.vert_attr_offset, 24);
-        gl::VertexArrayElementBuffer(self.vao, self.buffer);
-
-        //TODO: These can be fetched from semantics:
-        gl::EnableVertexArrayAttrib(self.vao, 0);
-        gl::VertexArrayAttribFormat(self.vao, 0, 3, gl::FLOAT, gl::FALSE, 0);
-        gl::VertexArrayAttribBinding(self.vao, 0, 0);
-        gl::EnableVertexArrayAttrib(self.vao, 1);
-        gl::VertexArrayAttribFormat(self.vao, 1, 3, gl::FLOAT, gl::FALSE, 0);
-        gl::VertexArrayAttribBinding(self.vao, 1, 0);
-        self
-    }
-
     fn upload_vertex_data(&mut self, vertices: &[u8], indices: &[u8]) {
         let ind_len = match self.index_type {
             IndexType::UnsignedByte => 1,
@@ -299,5 +250,54 @@ impl Mesh {
             }
             self.upload_vertex_data(&vert_vec[..], index_arr);
         }
+    }
+}
+
+impl Drawable for Mesh {
+    fn draw(&self) {
+        unsafe {
+            gl::BindVertexArray(self.vao);
+            match self.index_type {
+                IndexType::UnsignedByte => {
+                    gl::DrawElements(
+                        gl::TRIANGLES,
+                        (self.num_triangles * 3) as i32,
+                        gl::UNSIGNED_BYTE,
+                        std::ptr::null(),
+                    );
+                }
+                IndexType::UnsignedShort => {
+                    gl::DrawElements(
+                        gl::TRIANGLES,
+                        (self.num_triangles * 3) as i32,
+                        gl::UNSIGNED_SHORT,
+                        std::ptr::null(),
+                    );
+                }
+                IndexType::UnsignedInt => {
+                    gl::DrawElements(
+                        gl::TRIANGLES,
+                        (self.num_triangles * 3) as i32,
+                        gl::UNSIGNED_INT,
+                        std::ptr::null(),
+                    );
+                }
+            }
+        }
+    }
+
+    unsafe fn rebind_gl(mut self) -> Self {
+        gl::CreateVertexArrays(1, &mut self.vao);
+        gl::VertexArrayVertexBuffer(self.vao, 0, self.buffer, self.vert_attr_offset, 24);
+        gl::VertexArrayElementBuffer(self.vao, self.buffer);
+
+        //TODO: These can be fetched from semantics:
+        gl::EnableVertexArrayAttrib(self.vao, 0);
+        gl::VertexArrayAttribFormat(self.vao, 0, 3, gl::FLOAT, gl::FALSE, 0);
+        gl::VertexArrayAttribBinding(self.vao, 0, 0);
+        gl::EnableVertexArrayAttrib(self.vao, 1);
+        gl::VertexArrayAttribFormat(self.vao, 1, 3, gl::FLOAT, gl::FALSE, 0);
+        gl::VertexArrayAttribBinding(self.vao, 1, 0);
+        self
     }
 }

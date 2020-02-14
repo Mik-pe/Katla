@@ -5,6 +5,7 @@ use bitflags::bitflags;
 use gl;
 use glutin::{ContextBuilder, EventsLoop, WindowBuilder};
 use mikpe_math::{Mat4, Vec3};
+use rendering::drawable::Drawable;
 use std::time::Instant;
 
 bitflags! {
@@ -28,7 +29,8 @@ enum UploadFinished {
     Acknowledgement(u32),
     Mesh(Box<dyn FnOnce() -> rendering::Mesh + Send>),
 }
-
+const GPU_MEM_INFO_TOTAL_AVAILABLE_MEM_NVX: gl::types::GLenum = 0x9048;
+const GPU_MEM_INFO_CURRENT_AVAILABLE_MEM_NVX: gl::types::GLenum = 0x9049;
 fn main() {
     let (sender, receiver) = std::sync::mpsc::channel();
     let (tex_sender, tex_receiver) = std::sync::mpsc::channel();
@@ -39,14 +41,13 @@ fn main() {
     let mut events_loop = EventsLoop::new();
     let window = WindowBuilder::new().with_dimensions(glutin::dpi::LogicalSize::new(512.0, 512.0));
     let gl_context = ContextBuilder::new()
-        .with_vsync(true)
+        .with_vsync(false)
         .with_gl_profile(glutin::GlProfile::Core)
         .with_gl(glutin::GlRequest::Specific(glutin::Api::OpenGl, (4, 6)))
         .build_windowed(window, &events_loop)
         .unwrap();
 
     let gl_window = unsafe { gl_context.make_current() }.unwrap();
-
     gl::load_with(|symbol| gl_window.get_proc_address(symbol) as *const _);
 
     let upload_events_loop = EventsLoop::new();
@@ -57,7 +58,14 @@ fn main() {
             glutin::dpi::PhysicalSize::new(1024.0, 1024.0),
         )
         .unwrap();
-
+    let mut total_mem_kb = 0;
+    let mut current_mem_kb = 0;
+    unsafe {
+        gl::GetIntegerv(GPU_MEM_INFO_TOTAL_AVAILABLE_MEM_NVX, &mut total_mem_kb);
+        gl::GetIntegerv(GPU_MEM_INFO_CURRENT_AVAILABLE_MEM_NVX, &mut current_mem_kb);
+        println!("Got {}MB total mem", total_mem_kb / 1024);
+        println!("Got {}MB current mem", current_mem_kb / 1024);
+    };
     let mut meshes = vec![];
     //TODO: Return a tuple of sender, receiver and the uploader?
     //TODO: Fix a way so one can register an upload-function for an enum?
@@ -143,7 +151,7 @@ fn main() {
             for mesh in uploaded_meshes {
                 tex_sender
                     .send(UploadFinished::Mesh(Box::new(move || unsafe {
-                        mesh.setup_vao()
+                        mesh.rebind_gl()
                     })))
                     .expect("Could not send mesh upload finished");
             }
