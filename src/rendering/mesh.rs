@@ -63,6 +63,7 @@ pub struct Mesh {
     num_triangles: u32,
     index_type: IndexType,
     pos: mikpe_math::Vec3,
+    scale: f32,
     model_matrix: mikpe_math::Mat4,
     vert_attr_offset: isize,
 }
@@ -75,6 +76,7 @@ impl Mesh {
             num_triangles: 0,
             index_type: IndexType::UnsignedShort,
             pos: mikpe_math::Vec3::new(0.0, 0.0, 0.0),
+            scale: 1.0,
             model_matrix: mikpe_math::Mat4::new(),
             vert_attr_offset: 0,
         }
@@ -117,9 +119,19 @@ impl Mesh {
 
     pub fn rotate_z(&mut self, angle: f32) {
         self.model_matrix = mikpe_math::Mat4::from_translation(self.pos.0);
-        let rotaxis = mikpe_math::Vec3::new(0.1, 0.75, 1.0);
+        let rotaxis = mikpe_math::Vec3::new(0.0, 1.0, 0.0);
         let rot_mat = mikpe_math::Mat4::from_rotaxis(&angle, rotaxis.normalize().0);
-        self.model_matrix = self.model_matrix.mul(&rot_mat);
+        let scale_mat = mikpe_math::Mat4([
+            mikpe_math::Vec4([self.scale, 0.0, 0.0, 0.0]),
+            mikpe_math::Vec4([0.0, self.scale, 0.0, 0.0]),
+            mikpe_math::Vec4([0.0, 0.0, self.scale, 0.0]),
+            mikpe_math::Vec4([0.0, 0.0, 0.0, 1.0]),
+        ]);
+        self.model_matrix = self.model_matrix.mul(&rot_mat).mul(&scale_mat);
+    }
+
+    pub fn set_scale(&mut self, scale: f32) {
+        self.scale = scale;
     }
 
     pub unsafe fn update_model_matrix(&self, program: &crate::rendering::Program) {
@@ -199,6 +211,13 @@ impl Mesh {
                 for attribute in primitive.attributes() {
                     //Striding needs to be acknowledged
                     let semantic = attribute.0;
+                    match semantic {
+                        gltf::mesh::Semantic::Positions => {}
+                        gltf::mesh::Semantic::Normals => {}
+                        _ => {
+                            continue;
+                        }
+                    }
                     let accessor = attribute.1;
                     let buffer_view = accessor.view().unwrap();
                     let acc_total_size = accessor.size() * accessor.count();

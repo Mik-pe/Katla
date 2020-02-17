@@ -36,12 +36,12 @@ fn main() {
     let (tex_sender, tex_receiver) = std::sync::mpsc::channel();
 
     let mut projection_matrix = Mat4::create_proj(60.0, 1.0, 0.5, 1000.0);
-    let mut camera_pos = Vec3::new(0.0, 0.0, -5.0);
+    let mut camera_pos = Vec3::new(0.0, 0.0, 0.0);
     let mut view_matrix;
     let mut events_loop = EventsLoop::new();
     let window = WindowBuilder::new().with_dimensions(glutin::dpi::LogicalSize::new(512.0, 512.0));
     let gl_context = ContextBuilder::new()
-        .with_vsync(false)
+        .with_vsync(true)
         .with_gl_profile(glutin::GlProfile::Core)
         .with_gl(glutin::GlRequest::Specific(glutin::Api::OpenGl, (4, 6)))
         .build_windowed(window, &events_loop)
@@ -55,7 +55,7 @@ fn main() {
         .with_shared_lists(&gl_window)
         .build_headless(
             &upload_events_loop,
-            glutin::dpi::PhysicalSize::new(1024.0, 1024.0),
+            glutin::dpi::PhysicalSize::new(1920.0, 1080.0),
         )
         .unwrap();
     let mut total_mem_kb = 0;
@@ -66,7 +66,12 @@ fn main() {
         println!("Got {}MB total mem", total_mem_kb / 1024);
         println!("Got {}MB current mem", current_mem_kb / 1024);
     };
-    let mut meshes = vec![];
+    let mut meshes: Vec<rendering::Mesh> = vec![];
+    let mut plane_mesh = rendering::Mesh::new();
+    plane_mesh.set_pos(Vec3::new(0.0, -2.0, 0.0));
+    plane_mesh.read_gltf("resources/models/Regular_plane.glb");
+    plane_mesh = unsafe { plane_mesh.rebind_gl() };
+    meshes.push(plane_mesh);
     //TODO: Return a tuple of sender, receiver and the uploader?
     //TODO: Fix a way so one can register an upload-function for an enum?
     //TODO: Spawn the thread inside of the uploader and provide a join function? Do we want to join-on-drop?
@@ -131,7 +136,8 @@ fn main() {
                 }
             }
             for mesh in &mut uploaded_meshes {
-                mesh.read_gltf("resources/models/BoxInterleaved.glb");
+                mesh.read_gltf("resources/models/FoxBlender.glb");
+                mesh.set_scale(0.1);
             }
 
             if did_upload {
@@ -171,6 +177,8 @@ fn main() {
     let mut timer = util::Timer::new(300);
     let mut movement_vec;
     let mut current_movement = Movement::STILL;
+    let mut current_pos = mikpe_math::Vec3::new(10.0, 0.0, 0.0);
+    let mut current_rot = 0.0;
     unsafe {
         gl::Enable(gl::DEPTH_TEST);
     }
@@ -297,7 +305,7 @@ fn main() {
         }
         view_matrix = Mat4::create_lookat(
             camera_pos.clone(),
-            Vec3::new(0.0, 0.0, 0.0),
+            camera_pos.clone() + Vec3::new(0.0, 0.0, -1.0),
             Vec3::new(0.0, 1.0, 0.0),
         )
         .inverse();
@@ -308,11 +316,13 @@ fn main() {
             gl::ClearColor(0.3, 0.5, 0.3, 1.0);
             gl::Clear(gl::COLOR_BUFFER_BIT | gl::DEPTH_BUFFER_BIT);
             for mesh in &mut meshes {
+                // mesh.set_pos(current_pos.clone());
                 mesh.rotate_z(rotangle);
                 mesh.update_model_matrix(&program);
                 mesh.draw();
             }
         }
+
         gl_window.swap_buffers().unwrap();
         let end = start.elapsed().as_micros() as f64 / 1000.0;
         if end > 20.0 {
