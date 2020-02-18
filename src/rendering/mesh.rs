@@ -9,6 +9,7 @@ enum IndexType {
     UnsignedByte,
     UnsignedShort,
     UnsignedInt,
+    Array,
 }
 
 struct MeshBufferView {
@@ -143,8 +144,11 @@ impl Mesh {
             IndexType::UnsignedByte => 1,
             IndexType::UnsignedShort => 2,
             IndexType::UnsignedInt => 4,
+            IndexType::Array => 0,
         };
-        self.num_triangles = (indices.len() / (ind_len * 3)) as u32;
+        if ind_len != 0 {
+            self.num_triangles = (indices.len() / (ind_len * 3)) as u32;
+        }
 
         self.vert_attr_offset = indices.len() as isize;
         let total_buffer_size = vertices.len() + indices.len();
@@ -156,12 +160,14 @@ impl Mesh {
                 std::ptr::null(),
                 gl::DYNAMIC_STORAGE_BIT,
             );
-            gl::NamedBufferSubData(
-                self.buffer,
-                0,
-                indices.len() as isize,
-                indices.as_ptr() as *const _,
-            );
+            if !indices.is_empty() {
+                gl::NamedBufferSubData(
+                    self.buffer,
+                    0,
+                    indices.len() as isize,
+                    indices.as_ptr() as *const _,
+                );
+            }
             gl::NamedBufferSubData(
                 self.buffer,
                 self.vert_attr_offset,
@@ -179,33 +185,13 @@ impl Mesh {
         let mut vert_vec: Vec<u8> = Vec::new();
         if let Some(mesh) = node.mesh() {
             println!("Found mesh {:?} in node!", mesh.name());
-            let mut index_arr: &[u8] = &[0u8];
+            let dummy_index_arr = [];
+            let mut index_arr: &[u8] = &dummy_index_arr;
             let mut mesh_bufferview_vec: Vec<MeshBufferView> = vec![];
             for primitive in mesh.primitives() {
-                if let Some(indices) = primitive.indices() {
-                    let ind_view = indices.view().unwrap();
-                    let ind_offset = ind_view.offset();
-                    let ind_size = ind_view.length();
-                    let acc_size = indices.size();
-                    if acc_size == 1 {
-                        self.index_type = IndexType::UnsignedByte;
-                    } else if acc_size == 2 {
-                        self.index_type = IndexType::UnsignedShort;
-                    } else if acc_size == 4 {
-                        self.index_type = IndexType::UnsignedInt;
-                    } else {
-                        panic!("Cannot parse this node");
-                    }
-                    println!(
-                        "Want an index buffer of stride: {}, with offset: {}, total bytelen: {}",
-                        acc_size, ind_offset, ind_size
-                    );
-                    let buf_index = ind_view.buffer().index();
-                    let ind_buf = &buffers[buf_index];
-                    index_arr = &ind_buf[ind_offset..ind_offset + ind_size];
-                }
                 let mut start_index: usize;
                 let mut end_index: usize;
+                let mut num_vertices = 0;
                 //TODO: Upload entire buffer and sample from it as the accessor tells us:
                 let num_attributes = primitive.attributes().len();
                 for attribute in primitive.attributes() {
@@ -221,6 +207,7 @@ impl Mesh {
                     let accessor = attribute.1;
                     let buffer_view = accessor.view().unwrap();
                     let acc_total_size = accessor.size() * accessor.count();
+                    num_vertices = accessor.count();
                     let acc_stride = accessor.size();
                     let buf_index = buffer_view.buffer().index();
                     let buf_stride = buffer_view.stride();
@@ -249,6 +236,32 @@ impl Mesh {
                         semantic,
                         noninterleaved_arr,
                     ));
+                }
+
+                if let Some(indices) = primitive.indices() {
+                    let ind_view = indices.view().unwrap();
+                    let ind_offset = ind_view.offset();
+                    let ind_size = ind_view.length();
+                    let acc_size = indices.size();
+                    if acc_size == 1 {
+                        self.index_type = IndexType::UnsignedByte;
+                    } else if acc_size == 2 {
+                        self.index_type = IndexType::UnsignedShort;
+                    } else if acc_size == 4 {
+                        self.index_type = IndexType::UnsignedInt;
+                    } else {
+                        panic!("Cannot parse this node");
+                    }
+                    println!(
+                        "Want an index buffer of stride: {}, with offset: {}, total bytelen: {}",
+                        acc_size, ind_offset, ind_size
+                    );
+                    let buf_index = ind_view.buffer().index();
+                    let ind_buf = &buffers[buf_index];
+                    index_arr = &ind_buf[ind_offset..ind_offset + ind_size];
+                } else {
+                    self.index_type = IndexType::Array;
+                    self.num_triangles = (num_vertices) as u32;
                 }
             }
             mesh_bufferview_vec.sort_by(|a, b| a.partial_cmp(b).unwrap());
@@ -300,6 +313,9 @@ impl Drawable for Mesh {
                         gl::UNSIGNED_INT,
                         std::ptr::null(),
                     );
+                }
+                IndexType::Array => {
+                    gl::DrawArrays(gl::TRIANGLES, 0, (self.num_triangles * 3) as i32);
                 }
             }
         }

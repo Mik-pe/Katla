@@ -16,6 +16,8 @@ bitflags! {
         const BACKWARDS = 0b0000_0010;
         const LEFT      = 0b0000_0100;
         const RIGHT     = 0b0000_1000;
+        const UP        = 0b0001_0000;
+        const DOWN      = 0b0010_0000;
     }
 }
 
@@ -136,7 +138,7 @@ fn main() {
                 }
             }
             for mesh in &mut uploaded_meshes {
-                mesh.read_gltf("resources/models/FoxBlender.glb");
+                mesh.read_gltf("resources/models/Fox.glb");
                 mesh.set_scale(0.1);
             }
 
@@ -213,6 +215,12 @@ fn main() {
                                     glutin::VirtualKeyCode::D => {
                                         current_movement |= Movement::RIGHT;
                                     }
+                                    glutin::VirtualKeyCode::Q => {
+                                        current_movement |= Movement::DOWN;
+                                    }
+                                    glutin::VirtualKeyCode::E => {
+                                        current_movement |= Movement::UP;
+                                    }
                                     glutin::VirtualKeyCode::N => {
                                         angle += 5.0;
                                         projection_matrix =
@@ -261,6 +269,12 @@ fn main() {
                                     glutin::VirtualKeyCode::D => {
                                         current_movement -= Movement::RIGHT;
                                     }
+                                    glutin::VirtualKeyCode::Q => {
+                                        current_movement -= Movement::DOWN;
+                                    }
+                                    glutin::VirtualKeyCode::E => {
+                                        current_movement -= Movement::UP;
+                                    }
                                     _ => {}
                                 },
                                 None => {}
@@ -277,6 +291,12 @@ fn main() {
         }
         if current_movement.contains(Movement::BACKWARDS) {
             movement_vec[2] += 1.0;
+        }
+        if current_movement.contains(Movement::DOWN) {
+            movement_vec[1] -= 1.0;
+        }
+        if current_movement.contains(Movement::UP) {
+            movement_vec[1] += 1.0;
         }
         if current_movement.contains(Movement::LEFT) {
             movement_vec[0] -= 1.0;
