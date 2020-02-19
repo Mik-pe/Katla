@@ -92,7 +92,7 @@ impl Mesh {
         for scene in document.scenes() {
             // parse_scene();
             for node in scene.nodes() {
-                println!("Scene #{} uses node #{}", scene.index(), node.index());
+                // println!("Scene #{} uses node #{}", scene.index(), node.index());
                 used_nodes.push(node.index());
                 for child in node.children() {
                     used_nodes.push(child.index());
@@ -105,17 +105,18 @@ impl Mesh {
             }
         }
         for buffer_desc in document.buffers() {
-            println!(
-                "Buffer id {} has bytelen: {}",
-                buffer_desc.index(),
-                buffer_desc.length()
-            );
-            println!("Buffer index: {}", buffers[0].len());
+            // println!(
+            //     "Buffer id {} has bytelen: {}",
+            //     buffer_desc.index(),
+            //     buffer_desc.length()
+            // );
+            // println!("Buffer index: {}", buffers[0].len());
         }
     }
 
     pub fn set_pos(&mut self, pos: mikpe_math::Vec3) {
         self.pos = pos;
+        self.model_matrix = mikpe_math::Mat4::from_translation(self.pos.0);
     }
 
     pub fn rotate_z(&mut self, angle: f32) {
@@ -180,11 +181,11 @@ impl Mesh {
     fn parse_node(&mut self, node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>) {
         // node.json.
         if let Some(nodename) = node.name() {
-            println!("Got node: {}", nodename);
+            // println!("Got node: {}", nodename);
         }
         let mut vert_vec: Vec<u8> = Vec::new();
         if let Some(mesh) = node.mesh() {
-            println!("Found mesh {:?} in node!", mesh.name());
+            // println!("Found mesh {:?} in node!", mesh.name());
             let dummy_index_arr = [];
             let mut index_arr: &[u8] = &dummy_index_arr;
             let mut mesh_bufferview_vec: Vec<MeshBufferView> = vec![];
@@ -252,10 +253,10 @@ impl Mesh {
                     } else {
                         panic!("Cannot parse this node");
                     }
-                    println!(
-                        "Want an index buffer of stride: {}, with offset: {}, total bytelen: {}",
-                        acc_size, ind_offset, ind_size
-                    );
+                    // println!(
+                    //     "Want an index buffer of stride: {}, with offset: {}, total bytelen: {}",
+                    //     acc_size, ind_offset, ind_size
+                    // );
                     let buf_index = ind_view.buffer().index();
                     let ind_buf = &buffers[buf_index];
                     index_arr = &ind_buf[ind_offset..ind_offset + ind_size];

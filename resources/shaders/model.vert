@@ -12,6 +12,6 @@ out vec3 vs_normal;
 void main()
 {
     tex_coords = vec2(vert_normal.x, 0.0);
-    vs_normal = mat3(u_modelMatrix)*vert_normal;
+    vs_normal = vert_normal;
     gl_Position = u_projMatrix * u_viewMatrix * u_modelMatrix * vec4(vert_pos, 1.0);
 }

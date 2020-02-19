@@ -55,14 +55,15 @@ fn main() {
     let upload_events_loop = EventsLoop::new();
     let upload_context = ContextBuilder::new()
         .with_shared_lists(&gl_window)
+        .with_vsync(true)
         .build_headless(
             &upload_events_loop,
-            glutin::dpi::PhysicalSize::new(1920.0, 1080.0),
+            glutin::dpi::PhysicalSize::new(0.0, 0.0),
         )
         .unwrap();
-    let mut total_mem_kb = 0;
-    let mut current_mem_kb = 0;
     unsafe {
+        let mut total_mem_kb = 0;
+        let mut current_mem_kb = 0;
         gl::GetIntegerv(GPU_MEM_INFO_TOTAL_AVAILABLE_MEM_NVX, &mut total_mem_kb);
         gl::GetIntegerv(GPU_MEM_INFO_CURRENT_AVAILABLE_MEM_NVX, &mut current_mem_kb);
         println!("Got {}MB total mem", total_mem_kb / 1024);
@@ -73,7 +74,6 @@ fn main() {
     plane_mesh.set_pos(Vec3::new(0.0, -2.0, 0.0));
     plane_mesh.read_gltf("resources/models/Regular_plane.glb");
     plane_mesh = unsafe { plane_mesh.rebind_gl() };
-    meshes.push(plane_mesh);
     //TODO: Return a tuple of sender, receiver and the uploader?
     //TODO: Fix a way so one can register an upload-function for an enum?
     //TODO: Spawn the thread inside of the uploader and provide a join function? Do we want to join-on-drop?
@@ -85,7 +85,9 @@ fn main() {
         let mut current_green = 0u8;
         let mut should_exit = false;
         let max_textures_per_flush = 50;
+        let max_meshes_per_flush = 10;
         loop {
+            let mut uploads = vec![];
             let mut uploaded_textures = vec![];
             let mut uploaded_meshes = vec![];
             let start = Instant::now();
@@ -103,24 +105,27 @@ fn main() {
                     Message::UploadMesh => {
                         let mesh = rendering::Mesh::new();
                         uploaded_meshes.push(mesh);
+                        if uploaded_meshes.len() == max_meshes_per_flush {
+                            break;
+                        }
                     }
                     Message::Exit => {
                         should_exit = true;
                     }
                 }
             }
-            let did_upload = uploaded_meshes.len() > 0 || uploaded_textures.len() > 0;
-            for tex in &uploaded_textures {
+
+            for tex in uploaded_textures {
                 let num_mipmaps = 10;
                 unsafe {
-                    gl::TextureStorage2D(*tex, num_mipmaps, gl::RGBA8, 1024, 1024);
+                    gl::TextureStorage2D(tex, num_mipmaps, gl::RGBA8, 1024, 1024);
                     let mut img: image::RgbaImage = image::ImageBuffer::new(1024, 1024);
                     for pixel in img.pixels_mut() {
                         *pixel = image::Rgba([255, current_green, 255, 255]);
                     }
                     current_green = current_green.wrapping_add(10);
                     gl::TextureSubImage2D(
-                        *tex,
+                        tex,
                         0, // level
                         0, // xoffset
                         0, // yoffset
@@ -130,20 +135,23 @@ fn main() {
                         gl::UNSIGNED_BYTE,
                         img.into_raw().as_ptr() as *const _,
                     );
-                    // let mipmap_start = Instant::now();
-                    gl::GenerateTextureMipmap(*tex);
+                    gl::GenerateTextureMipmap(tex);
                     gl::Flush();
-                    // let mipmap_end = mipmap_start.elapsed().as_micros() as f64 / 1000.0;
-                    // println!("Mipmap generation took {}ms", mipmap_end);
                 }
+                uploads.push(UploadFinished::Acknowledgement(tex));
             }
-            for mesh in &mut uploaded_meshes {
+            for mut mesh in uploaded_meshes {
                 mesh.read_gltf("resources/models/Fox.glb");
                 mesh.set_scale(0.1);
+                unsafe {
+                    gl::Flush();
+                };
+                uploads.push(UploadFinished::Mesh(Box::new(move || unsafe {
+                    mesh.rebind_gl()
+                })));
             }
 
-            if did_upload {
-                println!("Uploaded {} textures this time", uploaded_textures.len());
+            if !uploads.is_empty() {
                 unsafe {
                     //This glFinish ensures all previously recorded calls are realized by the server
                     gl::Finish();
@@ -151,17 +159,11 @@ fn main() {
                     println!("Generation + upload took {}ms", end);
                 }
             }
-            for tex in uploaded_textures {
+
+            for upload in uploads {
                 tex_sender
-                    .send(UploadFinished::Acknowledgement(tex))
-                    .expect("Could not send Texture Ack");
-            }
-            for mesh in uploaded_meshes {
-                tex_sender
-                    .send(UploadFinished::Mesh(Box::new(move || unsafe {
-                        mesh.rebind_gl()
-                    })))
-                    .expect("Could not send mesh upload finished");
+                    .send(upload)
+                    .expect("Could not send upload finished");
             }
 
             if should_exit {
@@ -179,8 +181,6 @@ fn main() {
     let mut timer = util::Timer::new(300);
     let mut movement_vec;
     let mut current_movement = Movement::STILL;
-    let mut current_pos = mikpe_math::Vec3::new(10.0, 0.0, 0.0);
-    let mut current_rot = 0.0;
     unsafe {
         gl::Enable(gl::DEPTH_TEST);
     }
@@ -318,7 +318,7 @@ fn main() {
                 UploadFinished::Mesh(mesh_fn) => {
                     let mut mesh = mesh_fn();
                     let x_offset = meshes.len() as f32;
-                    mesh.set_pos(mikpe_math::Vec3::new(-5.0 + x_offset, 0.0, -5.0));
+                    mesh.set_pos(mikpe_math::Vec3::new(-5.0 + 5.0 * x_offset, 0.0, -5.0));
                     meshes.push(mesh);
                 }
             }
@@ -335,6 +335,8 @@ fn main() {
             program.bind();
             gl::ClearColor(0.3, 0.5, 0.3, 1.0);
             gl::Clear(gl::COLOR_BUFFER_BIT | gl::DEPTH_BUFFER_BIT);
+            plane_mesh.update_model_matrix(&program);
+            plane_mesh.draw();
             for mesh in &mut meshes {
                 // mesh.set_pos(current_pos.clone());
                 mesh.rotate_z(rotangle);
@@ -344,6 +346,11 @@ fn main() {
         }
 
         gl_window.swap_buffers().unwrap();
+        unsafe {
+            //Ensure explicit CPU<->GPU synchronization happens
+            //as to always sync cpu time to vsync
+            gl::Finish();
+        }
         let end = start.elapsed().as_micros() as f64 / 1000.0;
         if end > 20.0 {
             println!("Long CPU frametime: {} ms", end);
