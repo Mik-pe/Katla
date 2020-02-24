@@ -67,6 +67,7 @@ pub struct Mesh {
     scale: f32,
     model_matrix: mikpe_math::Mat4,
     vert_attr_offset: isize,
+    semantics: Vec<gltf::Semantic>,
 }
 
 impl Mesh {
@@ -80,6 +81,7 @@ impl Mesh {
             scale: 1.0,
             model_matrix: mikpe_math::Mat4::new(),
             vert_attr_offset: 0,
+            semantics: Vec::new(),
         }
     }
 
@@ -199,8 +201,12 @@ impl Mesh {
                     //Striding needs to be acknowledged
                     let semantic = attribute.0;
                     match semantic {
-                        gltf::mesh::Semantic::Positions => {}
-                        gltf::mesh::Semantic::Normals => {}
+                        gltf::mesh::Semantic::Positions => {
+                            self.semantics.push(gltf::Semantic::Positions)
+                        }
+                        gltf::mesh::Semantic::Normals => {
+                            self.semantics.push(gltf::Semantic::Normals)
+                        }
                         _ => {
                             continue;
                         }
@@ -262,7 +268,7 @@ impl Mesh {
                     index_arr = &ind_buf[ind_offset..ind_offset + ind_size];
                 } else {
                     self.index_type = IndexType::Array;
-                    self.num_triangles = (num_vertices) as u32;
+                    self.num_triangles = num_vertices as u32;
                 }
             }
             mesh_bufferview_vec.sort_by(|a, b| a.partial_cmp(b).unwrap());
@@ -316,7 +322,7 @@ impl Drawable for Mesh {
                     );
                 }
                 IndexType::Array => {
-                    gl::DrawArrays(gl::TRIANGLES, 0, (self.num_triangles * 3) as i32);
+                    gl::DrawArrays(gl::TRIANGLES, 0, (self.num_triangles) as i32);
                 }
             }
         }
@@ -324,16 +330,23 @@ impl Drawable for Mesh {
 
     unsafe fn rebind_gl(mut self) -> Self {
         gl::CreateVertexArrays(1, &mut self.vao);
-        gl::VertexArrayVertexBuffer(self.vao, 0, self.buffer, self.vert_attr_offset, 24);
         gl::VertexArrayElementBuffer(self.vao, self.buffer);
 
         //TODO: These can be fetched from semantics:
-        gl::EnableVertexArrayAttrib(self.vao, 0);
-        gl::VertexArrayAttribFormat(self.vao, 0, 3, gl::FLOAT, gl::FALSE, 0);
-        gl::VertexArrayAttribBinding(self.vao, 0, 0);
-        gl::EnableVertexArrayAttrib(self.vao, 1);
-        gl::VertexArrayAttribFormat(self.vao, 1, 3, gl::FLOAT, gl::FALSE, 0);
-        gl::VertexArrayAttribBinding(self.vao, 1, 0);
+        let mut stride = 0;
+        if self.semantics.contains(&gltf::Semantic::Positions) {
+            gl::EnableVertexArrayAttrib(self.vao, 0);
+            gl::VertexArrayAttribFormat(self.vao, 0, 3, gl::FLOAT, gl::FALSE, 0);
+            gl::VertexArrayAttribBinding(self.vao, 0, 0);
+            stride += 12;
+        }
+        if self.semantics.contains(&gltf::Semantic::Normals) {
+            gl::EnableVertexArrayAttrib(self.vao, 1);
+            gl::VertexArrayAttribFormat(self.vao, 1, 3, gl::FLOAT, gl::FALSE, 0);
+            gl::VertexArrayAttribBinding(self.vao, 1, 0);
+            stride += 12;
+        }
+        gl::VertexArrayVertexBuffer(self.vao, 0, self.buffer, self.vert_attr_offset, stride);
         self
     }
 }

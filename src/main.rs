@@ -338,7 +338,6 @@ fn main() {
             plane_mesh.update_model_matrix(&program);
             plane_mesh.draw();
             for mesh in &mut meshes {
-                // mesh.set_pos(current_pos.clone());
                 mesh.rotate_z(rotangle);
                 mesh.update_model_matrix(&program);
                 mesh.draw();
