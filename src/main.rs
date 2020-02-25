@@ -41,13 +41,16 @@ fn main() {
     let mut camera_pos = Vec3::new(0.0, 0.0, 0.0);
     let mut view_matrix;
     let mut events_loop = EventsLoop::new();
-    let window = WindowBuilder::new().with_dimensions(glutin::dpi::LogicalSize::new(512.0, 512.0));
+    let mut win_x = 512.0;
+    let mut win_y = 512.0;
+    let window = WindowBuilder::new().with_dimensions(glutin::dpi::LogicalSize::new(win_x, win_y));
     let gl_context = ContextBuilder::new()
         .with_vsync(true)
         .with_gl_profile(glutin::GlProfile::Core)
         .with_gl(glutin::GlRequest::Specific(glutin::Api::OpenGl, (4, 6)))
         .build_windowed(window, &events_loop)
         .unwrap();
+    let mut current_dpi_scale = gl_context.window().get_current_monitor().get_hidpi_factor();
 
     let gl_window = unsafe { gl_context.make_current() }.unwrap();
     gl::load_with(|symbol| gl_window.get_proc_address(symbol) as *const _);
@@ -190,6 +193,15 @@ fn main() {
             use glutin::{Event, WindowEvent};
             if let Event::WindowEvent { event, .. } = event {
                 match event {
+                    WindowEvent::HiDpiFactorChanged(new_dpi) => {
+                        current_dpi_scale = new_dpi;
+                    }
+                    WindowEvent::Resized(logical_size) => {
+                        win_x = logical_size.width;
+                        win_y = logical_size.height;
+                        projection_matrix =
+                            Mat4::create_proj(60.0, (win_x / win_y) as f32, 0.1, 1000.0);
+                    }
                     WindowEvent::CloseRequested => {
                         running = false;
                     }
@@ -223,13 +235,21 @@ fn main() {
                                     }
                                     glutin::VirtualKeyCode::N => {
                                         angle += 5.0;
-                                        projection_matrix =
-                                            Mat4::create_proj(angle, 1.0, 0.5, 1000.0);
+                                        projection_matrix = Mat4::create_proj(
+                                            60.0,
+                                            (win_x / win_y) as f32,
+                                            0.1,
+                                            1000.0,
+                                        );
                                     }
                                     glutin::VirtualKeyCode::M => {
                                         angle -= 5.0;
-                                        projection_matrix =
-                                            Mat4::create_proj(angle, 1.0, 0.5, 1000.0);
+                                        projection_matrix = Mat4::create_proj(
+                                            60.0,
+                                            (win_x / win_y) as f32,
+                                            0.1,
+                                            1000.0,
+                                        );
                                     }
                                     glutin::VirtualKeyCode::Space => {
                                         for _ in 0..10 {
@@ -330,6 +350,18 @@ fn main() {
         )
         .inverse();
         unsafe {
+            gl::Viewport(
+                0,
+                0,
+                (current_dpi_scale * win_x) as i32,
+                (current_dpi_scale * win_y) as i32,
+            );
+            gl::Scissor(
+                0,
+                0,
+                (current_dpi_scale * win_x) as i32,
+                (current_dpi_scale * win_y) as i32,
+            );
             program.uniform_mat(&"u_projMatrix".to_owned(), &projection_matrix);
             program.uniform_mat(&"u_viewMatrix".to_owned(), &view_matrix);
             program.bind();

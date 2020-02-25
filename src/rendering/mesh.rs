@@ -106,14 +106,6 @@ impl Mesh {
                 self.parse_node(&node, &buffers);
             }
         }
-        for buffer_desc in document.buffers() {
-            // println!(
-            //     "Buffer id {} has bytelen: {}",
-            //     buffer_desc.index(),
-            //     buffer_desc.length()
-            // );
-            // println!("Buffer index: {}", buffers[0].len());
-        }
     }
 
     pub fn set_pos(&mut self, pos: mikpe_math::Vec3) {
@@ -181,10 +173,6 @@ impl Mesh {
     }
 
     fn parse_node(&mut self, node: &gltf::Node, buffers: &Vec<gltf::buffer::Data>) {
-        // node.json.
-        if let Some(nodename) = node.name() {
-            // println!("Got node: {}", nodename);
-        }
         let mut vert_vec: Vec<u8> = Vec::new();
         if let Some(mesh) = node.mesh() {
             // println!("Found mesh {:?} in node!", mesh.name());
@@ -259,10 +247,6 @@ impl Mesh {
                     } else {
                         panic!("Cannot parse this node");
                     }
-                    // println!(
-                    //     "Want an index buffer of stride: {}, with offset: {}, total bytelen: {}",
-                    //     acc_size, ind_offset, ind_size
-                    // );
                     let buf_index = ind_view.buffer().index();
                     let ind_buf = &buffers[buf_index];
                     index_arr = &ind_buf[ind_offset..ind_offset + ind_size];
