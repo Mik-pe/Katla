@@ -3,7 +3,13 @@ mod util;
 
 use bitflags::bitflags;
 use gl;
-use glutin::{ContextBuilder, EventsLoop, WindowBuilder};
+use glutin::{
+    event_loop::{ControlFlow, EventLoop},
+    window::WindowBuilder,
+    ContextBuilder,
+};
+use imgui::Context;
+use imgui_winit_support::{HiDpiMode, WinitPlatform};
 use mikpe_math::{Mat4, Vec3};
 use rendering::drawable::Drawable;
 use std::time::Instant;
@@ -39,30 +45,27 @@ fn main() {
 
     let mut projection_matrix = Mat4::create_proj(60.0, 1.0, 0.5, 1000.0);
     let mut camera_pos = Vec3::new(0.0, 0.0, 0.0);
-    let mut view_matrix;
-    let mut events_loop = EventsLoop::new();
-    let mut win_x = 512.0;
-    let mut win_y = 512.0;
-    let window = WindowBuilder::new().with_dimensions(glutin::dpi::LogicalSize::new(win_x, win_y));
+    let mut events_loop = EventLoop::new();
+    let mut win_x = 512.0f64;
+    let mut win_y = 512.0f64;
+    let window = WindowBuilder::new().with_inner_size(glutin::dpi::LogicalSize::new(win_x, win_y));
     let gl_context = ContextBuilder::new()
         .with_vsync(true)
         .with_gl_profile(glutin::GlProfile::Core)
         .with_gl(glutin::GlRequest::Specific(glutin::Api::OpenGl, (4, 6)))
         .build_windowed(window, &events_loop)
         .unwrap();
-    let mut current_dpi_scale = gl_context.window().get_current_monitor().get_hidpi_factor();
+    // gl_context.window().
+    let mut current_dpi_scale = gl_context.window().current_monitor().scale_factor();
 
     let gl_window = unsafe { gl_context.make_current() }.unwrap();
     gl::load_with(|symbol| gl_window.get_proc_address(symbol) as *const _);
 
-    let upload_events_loop = EventsLoop::new();
+    let upload_events_loop = EventLoop::new();
     let upload_context = ContextBuilder::new()
         .with_shared_lists(&gl_window)
         .with_vsync(true)
-        .build_headless(
-            &upload_events_loop,
-            glutin::dpi::PhysicalSize::new(0.0, 0.0),
-        )
+        .build_headless(&upload_events_loop, glutin::dpi::PhysicalSize::new(0, 0))
         .unwrap();
     unsafe {
         let mut total_mem_kb = 0;
@@ -176,230 +179,260 @@ fn main() {
         println!("Exiting upload thread!");
     });
 
-    let mut tex_list = vec![];
-    let mut running = true;
-    let program = rendering::Program::new();
-    let mut angle = 60.0;
-    let mut rotangle = 0.0;
-    let mut timer = util::Timer::new(300);
-    let mut movement_vec;
-    let mut current_movement = Movement::STILL;
+    let mut imgui = Context::create();
+    let font_atlas = imgui.fonts().build_rgba32_texture();
+    //TODO: upload font_atlas.data to GPU as texture and use it in imgui!
+
+    let mut platform = WinitPlatform::init(&mut imgui); // step 1
+    platform.attach_window(imgui.io_mut(), gl_window.window(), HiDpiMode::Default); // step 2
+
     unsafe {
         gl::Enable(gl::DEPTH_TEST);
     }
-    while running {
-        let start = Instant::now();
-        events_loop.poll_events(|event| {
-            use glutin::{Event, WindowEvent};
-            if let Event::WindowEvent { event, .. } = event {
-                match event {
-                    WindowEvent::HiDpiFactorChanged(new_dpi) => {
-                        current_dpi_scale = new_dpi;
-                    }
-                    WindowEvent::Resized(logical_size) => {
-                        win_x = logical_size.width;
-                        win_y = logical_size.height;
-                        projection_matrix =
-                            Mat4::create_proj(60.0, (win_x / win_y) as f32, 0.1, 1000.0);
-                    }
-                    WindowEvent::CloseRequested => {
-                        running = false;
-                    }
-                    WindowEvent::KeyboardInput {
-                        device_id: _,
-                        input,
-                    } => {
-                        if input.state == glutin::ElementState::Pressed {
-                            match input.virtual_keycode {
-                                Some(keycode) => match keycode {
-                                    glutin::VirtualKeyCode::Escape => {
-                                        running = false;
-                                    }
-                                    glutin::VirtualKeyCode::W => {
-                                        current_movement |= Movement::FORWARD;
-                                    }
-                                    glutin::VirtualKeyCode::S => {
-                                        current_movement |= Movement::BACKWARDS;
-                                    }
-                                    glutin::VirtualKeyCode::A => {
-                                        current_movement |= Movement::LEFT;
-                                    }
-                                    glutin::VirtualKeyCode::D => {
-                                        current_movement |= Movement::RIGHT;
-                                    }
-                                    glutin::VirtualKeyCode::Q => {
-                                        current_movement |= Movement::DOWN;
-                                    }
-                                    glutin::VirtualKeyCode::E => {
-                                        current_movement |= Movement::UP;
-                                    }
-                                    glutin::VirtualKeyCode::N => {
-                                        angle += 5.0;
-                                        projection_matrix = Mat4::create_proj(
-                                            60.0,
-                                            (win_x / win_y) as f32,
-                                            0.1,
-                                            1000.0,
-                                        );
-                                    }
-                                    glutin::VirtualKeyCode::M => {
-                                        angle -= 5.0;
-                                        projection_matrix = Mat4::create_proj(
-                                            60.0,
-                                            (win_x / win_y) as f32,
-                                            0.1,
-                                            1000.0,
-                                        );
-                                    }
-                                    glutin::VirtualKeyCode::Space => {
-                                        for _ in 0..10 {
-                                            sender
-                                                .send(Message::UploadTexture)
-                                                .expect("Could not send Upload message");
-                                        }
-                                    }
-                                    glutin::VirtualKeyCode::B => {
+
+    let mut start = Instant::now();
+    let mut angle = 60.0;
+    let mut tex_list = vec![];
+    let mut movement_vec = mikpe_math::Vec3::new(0.0, 0.0, 0.0);
+    let mut timer = util::Timer::new(300);
+    let mut rotangle = 0.0;
+    let mut current_movement = Movement::STILL;
+    let program = rendering::Program::new();
+    events_loop.run(move |event, _, control_flow| {
+        use glutin::event::{ElementState, Event, VirtualKeyCode, WindowEvent};
+        match event {
+            Event::MainEventsCleared => {
+                // other application-specific logic
+                platform
+                    .prepare_frame(imgui.io_mut(), &gl_window.window()) // step 4
+                    .expect("Failed to prepare frame");
+                gl_window.window().request_redraw();
+            }
+            Event::WindowEvent { event, .. } => match event {
+                WindowEvent::ScaleFactorChanged {
+                    scale_factor,
+                    new_inner_size: _,
+                } => {
+                    current_dpi_scale = scale_factor;
+                }
+
+                WindowEvent::Resized(logical_size) => {
+                    win_x = logical_size.width as f64;
+                    win_y = logical_size.height as f64;
+                    projection_matrix =
+                        Mat4::create_proj(60.0, (win_x / win_y) as f32, 0.1, 1000.0);
+                }
+                WindowEvent::CloseRequested => *control_flow = ControlFlow::Exit,
+                WindowEvent::KeyboardInput {
+                    device_id: _,
+                    input,
+                    is_synthetic: _,
+                } => {
+                    if input.state == ElementState::Pressed {
+                        match input.virtual_keycode {
+                            Some(keycode) => match keycode {
+                                VirtualKeyCode::Escape => {
+                                    *control_flow = ControlFlow::Exit;
+                                }
+                                VirtualKeyCode::W => {
+                                    current_movement |= Movement::FORWARD;
+                                }
+                                VirtualKeyCode::S => {
+                                    current_movement |= Movement::BACKWARDS;
+                                }
+                                VirtualKeyCode::A => {
+                                    current_movement |= Movement::LEFT;
+                                }
+                                VirtualKeyCode::D => {
+                                    current_movement |= Movement::RIGHT;
+                                }
+                                VirtualKeyCode::Q => {
+                                    current_movement |= Movement::DOWN;
+                                }
+                                VirtualKeyCode::E => {
+                                    current_movement |= Movement::UP;
+                                }
+                                VirtualKeyCode::N => {
+                                    angle += 5.0;
+                                    projection_matrix = Mat4::create_proj(
+                                        60.0,
+                                        (win_x / win_y) as f32,
+                                        0.1,
+                                        1000.0,
+                                    );
+                                }
+                                VirtualKeyCode::M => {
+                                    angle -= 5.0;
+                                    projection_matrix = Mat4::create_proj(
+                                        60.0,
+                                        (win_x / win_y) as f32,
+                                        0.1,
+                                        1000.0,
+                                    );
+                                }
+                                VirtualKeyCode::Space => {
+                                    for _ in 0..10 {
                                         sender
-                                            .send(Message::UploadMesh)
-                                            .expect("Could not send UploadMesh message");
+                                            .send(Message::UploadTexture)
+                                            .expect("Could not send Upload message");
                                     }
-                                    glutin::VirtualKeyCode::Right => {
-                                        rotangle += 0.1;
-                                    }
-                                    glutin::VirtualKeyCode::Left => {
-                                        rotangle -= 0.1;
-                                    }
-                                    _ => {}
-                                },
-                                None => {}
-                            };
+                                }
+                                VirtualKeyCode::B => {
+                                    sender
+                                        .send(Message::UploadMesh)
+                                        .expect("Could not send UploadMesh message");
+                                }
+                                VirtualKeyCode::Right => {
+                                    rotangle += 0.1;
+                                }
+                                VirtualKeyCode::Left => {
+                                    rotangle -= 0.1;
+                                }
+                                _ => {}
+                            },
+                            None => {}
+                        };
+                    }
+                    if input.state == ElementState::Released {
+                        match input.virtual_keycode {
+                            Some(keycode) => match keycode {
+                                VirtualKeyCode::W => {
+                                    current_movement -= Movement::FORWARD;
+                                }
+                                VirtualKeyCode::S => {
+                                    current_movement -= Movement::BACKWARDS;
+                                }
+                                VirtualKeyCode::A => {
+                                    current_movement -= Movement::LEFT;
+                                }
+                                VirtualKeyCode::D => {
+                                    current_movement -= Movement::RIGHT;
+                                }
+                                VirtualKeyCode::Q => {
+                                    current_movement -= Movement::DOWN;
+                                }
+                                VirtualKeyCode::E => {
+                                    current_movement -= Movement::UP;
+                                }
+                                _ => {}
+                            },
+                            None => {}
                         }
-                        if input.state == glutin::ElementState::Released {
-                            match input.virtual_keycode {
-                                Some(keycode) => match keycode {
-                                    glutin::VirtualKeyCode::W => {
-                                        current_movement -= Movement::FORWARD;
-                                    }
-                                    glutin::VirtualKeyCode::S => {
-                                        current_movement -= Movement::BACKWARDS;
-                                    }
-                                    glutin::VirtualKeyCode::A => {
-                                        current_movement -= Movement::LEFT;
-                                    }
-                                    glutin::VirtualKeyCode::D => {
-                                        current_movement -= Movement::RIGHT;
-                                    }
-                                    glutin::VirtualKeyCode::Q => {
-                                        current_movement -= Movement::DOWN;
-                                    }
-                                    glutin::VirtualKeyCode::E => {
-                                        current_movement -= Movement::UP;
-                                    }
-                                    _ => {}
-                                },
-                                None => {}
+                    }
+                }
+                _ => {}
+            },
+            Event::RedrawRequested(_) => {
+                let ui = imgui.frame();
+
+                movement_vec = Vec3::new(0.0, 0.0, 0.0);
+                if current_movement.contains(Movement::FORWARD) {
+                    movement_vec[2] -= 1.0;
+                }
+                if current_movement.contains(Movement::BACKWARDS) {
+                    movement_vec[2] += 1.0;
+                }
+                if current_movement.contains(Movement::DOWN) {
+                    movement_vec[1] -= 1.0;
+                }
+                if current_movement.contains(Movement::UP) {
+                    movement_vec[1] += 1.0;
+                }
+                if current_movement.contains(Movement::LEFT) {
+                    movement_vec[0] -= 1.0;
+                }
+                if current_movement.contains(Movement::RIGHT) {
+                    movement_vec[0] += 1.0;
+                }
+                movement_vec = movement_vec.normalize();
+                camera_pos = camera_pos + movement_vec;
+
+                for tex_result in tex_receiver.try_iter() {
+                    match tex_result {
+                        UploadFinished::Acknowledgement(result) => {
+                            tex_list.push(result);
+                            unsafe {
+                                gl::BindTextureUnit(0, result);
                             }
                         }
-                    }
-                    _ => {}
-                }
-            }
-        });
-        movement_vec = Vec3::new(0.0, 0.0, 0.0);
-        if current_movement.contains(Movement::FORWARD) {
-            movement_vec[2] -= 1.0;
-        }
-        if current_movement.contains(Movement::BACKWARDS) {
-            movement_vec[2] += 1.0;
-        }
-        if current_movement.contains(Movement::DOWN) {
-            movement_vec[1] -= 1.0;
-        }
-        if current_movement.contains(Movement::UP) {
-            movement_vec[1] += 1.0;
-        }
-        if current_movement.contains(Movement::LEFT) {
-            movement_vec[0] -= 1.0;
-        }
-        if current_movement.contains(Movement::RIGHT) {
-            movement_vec[0] += 1.0;
-        }
-        movement_vec = movement_vec.normalize();
-        camera_pos = camera_pos + movement_vec;
-
-        for tex_result in tex_receiver.try_iter() {
-            match tex_result {
-                UploadFinished::Acknowledgement(result) => {
-                    tex_list.push(result);
-                    unsafe {
-                        gl::BindTextureUnit(0, result);
+                        UploadFinished::Mesh(mesh_fn) => {
+                            let mut mesh = mesh_fn();
+                            let x_offset = meshes.len() as f32;
+                            mesh.set_pos(mikpe_math::Vec3::new(-5.0 + 5.0 * x_offset, 0.0, -5.0));
+                            meshes.push(mesh);
+                        }
                     }
                 }
-                UploadFinished::Mesh(mesh_fn) => {
-                    let mut mesh = mesh_fn();
-                    let x_offset = meshes.len() as f32;
-                    mesh.set_pos(mikpe_math::Vec3::new(-5.0 + 5.0 * x_offset, 0.0, -5.0));
-                    meshes.push(mesh);
+                let view_matrix = Mat4::create_lookat(
+                    camera_pos.clone(),
+                    camera_pos.clone() + Vec3::new(0.0, 0.0, -1.0),
+                    Vec3::new(0.0, 1.0, 0.0),
+                )
+                .inverse();
+                unsafe {
+                    gl::Viewport(
+                        0,
+                        0,
+                        (current_dpi_scale * win_x) as i32,
+                        (current_dpi_scale * win_y) as i32,
+                    );
+                    gl::Scissor(
+                        0,
+                        0,
+                        (current_dpi_scale * win_x) as i32,
+                        (current_dpi_scale * win_y) as i32,
+                    );
+                    program.uniform_mat(&"u_projMatrix".to_owned(), &projection_matrix);
+                    program.uniform_mat(&"u_viewMatrix".to_owned(), &view_matrix);
+                    program.bind();
+                    gl::ClearColor(0.3, 0.5, 0.3, 1.0);
+                    gl::Clear(gl::COLOR_BUFFER_BIT | gl::DEPTH_BUFFER_BIT);
+                    plane_mesh.update_model_matrix(&program);
+                    plane_mesh.draw();
+                    for mesh in &mut meshes {
+                        mesh.rotate_z(rotangle);
+                        mesh.update_model_matrix(&program);
+                        mesh.draw();
+                    }
                 }
+
+                gl_window.swap_buffers().unwrap();
+                unsafe {
+                    //Ensure explicit CPU<->GPU synchronization happens
+                    //as to always sync cpu time to vsync
+                    gl::Finish();
+                }
+                let end = start.elapsed().as_micros() as f64 / 1000.0;
+                start = Instant::now();
+                if end > 20.0 {
+                    println!("Long CPU frametime: {} ms", end);
+                }
+                timer.add_timestamp(end);
+                gl_window.window().set_title(
+                    format!(
+                        "Got {} textures, mean frametime: {:.3} (max {:.3}, min {:.3})",
+                        tex_list.len(),
+                        timer.current_mean(),
+                        timer.current_max(),
+                        timer.current_min(),
+                    )
+                    .as_str(),
+                );
             }
-        }
-        view_matrix = Mat4::create_lookat(
-            camera_pos.clone(),
-            camera_pos.clone() + Vec3::new(0.0, 0.0, -1.0),
-            Vec3::new(0.0, 1.0, 0.0),
-        )
-        .inverse();
-        unsafe {
-            gl::Viewport(
-                0,
-                0,
-                (current_dpi_scale * win_x) as i32,
-                (current_dpi_scale * win_y) as i32,
-            );
-            gl::Scissor(
-                0,
-                0,
-                (current_dpi_scale * win_x) as i32,
-                (current_dpi_scale * win_y) as i32,
-            );
-            program.uniform_mat(&"u_projMatrix".to_owned(), &projection_matrix);
-            program.uniform_mat(&"u_viewMatrix".to_owned(), &view_matrix);
-            program.bind();
-            gl::ClearColor(0.3, 0.5, 0.3, 1.0);
-            gl::Clear(gl::COLOR_BUFFER_BIT | gl::DEPTH_BUFFER_BIT);
-            plane_mesh.update_model_matrix(&program);
-            plane_mesh.draw();
-            for mesh in &mut meshes {
-                mesh.rotate_z(rotangle);
-                mesh.update_model_matrix(&program);
-                mesh.draw();
+            Event::LoopDestroyed => {
+                sender
+                    .send(Message::Exit)
+                    .expect("Could not send Exit message!");
+                return;
+            }
+            event => {
+                platform.handle_event(imgui.io_mut(), &gl_window.window(), &event);
             }
         }
 
-        gl_window.swap_buffers().unwrap();
-        unsafe {
-            //Ensure explicit CPU<->GPU synchronization happens
-            //as to always sync cpu time to vsync
-            gl::Finish();
-        }
-        let end = start.elapsed().as_micros() as f64 / 1000.0;
-        if end > 20.0 {
-            println!("Long CPU frametime: {} ms", end);
-        }
-        timer.add_timestamp(end);
-        gl_window.window().set_title(
-            format!(
-                "Got {} textures, mean frametime: {:.3} (max {:.3}, min {:.3})",
-                tex_list.len(),
-                timer.current_mean(),
-                timer.current_max(),
-                timer.current_min(),
-            )
-            .as_str(),
-        );
-    }
-    sender
-        .send(Message::Exit)
-        .expect("Could not send Exit message!");
+        // if let Event::WindowEvent { event, .. } = event {
+        //     match event
+        // };
+    });
     upload_thread.join().expect("Could not join threads!");
 }

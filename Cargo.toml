@@ -7,8 +7,10 @@ edition = "2018"
 
 [dependencies]
 gl = "0.14.0"
-glutin = "0.21.0"
+glutin = "0.23.0"
 image = "0.22.3"
+imgui = "^0.3.0"
+imgui-winit-support = "^0.3.0"
 gltf = "0.15"
 bitflags = "^1.2.1"
 mikpe_math = {git = "https://github.com/Mik-pe/mikpe_math.git"}
