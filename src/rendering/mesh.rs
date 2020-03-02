@@ -185,9 +185,8 @@ impl Mesh {
                 let mut num_vertices = 0;
                 //TODO: Upload entire buffer and sample from it as the accessor tells us:
                 let num_attributes = primitive.attributes().len();
-                for attribute in primitive.attributes() {
+                for (semantic, accessor) in primitive.attributes() {
                     //Striding needs to be acknowledged
-                    let semantic = attribute.0;
                     match semantic {
                         gltf::mesh::Semantic::Positions => {
                             self.semantics.push(gltf::Semantic::Positions)
@@ -199,7 +198,6 @@ impl Mesh {
                             continue;
                         }
                     }
-                    let accessor = attribute.1;
                     let buffer_view = accessor.view().unwrap();
                     let acc_total_size = accessor.size() * accessor.count();
                     num_vertices = accessor.count();
