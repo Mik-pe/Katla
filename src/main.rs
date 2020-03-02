@@ -180,8 +180,33 @@ fn main() {
     });
 
     let mut imgui = Context::create();
-    let font_atlas = imgui.fonts().build_rgba32_texture();
-    //TODO: upload font_atlas.data to GPU as texture and use it in imgui!
+    let imgui_font_texid = unsafe {
+        let mut fonts = imgui.fonts();
+        let font_atlas = fonts.build_alpha8_texture();
+        let mut tex = 0;
+        gl::CreateTextures(gl::TEXTURE_2D, 1, &mut tex);
+
+        gl::TextureStorage2D(
+            tex,
+            1,
+            gl::R8,
+            font_atlas.width as i32,
+            font_atlas.height as i32,
+        );
+
+        gl::TextureSubImage2D(
+            tex,
+            0, // level
+            0, // xoffset
+            0, // yoffset
+            font_atlas.width as i32,
+            font_atlas.height as i32,
+            gl::RED,
+            gl::UNSIGNED_BYTE,
+            font_atlas.data.as_ptr() as *const _,
+        );
+        tex
+    };
 
     let mut platform = WinitPlatform::init(&mut imgui); // step 1
     platform.attach_window(imgui.io_mut(), gl_window.window(), HiDpiMode::Default); // step 2
@@ -352,7 +377,7 @@ fn main() {
                         UploadFinished::Acknowledgement(result) => {
                             tex_list.push(result);
                             unsafe {
-                                gl::BindTextureUnit(0, result);
+                                gl::BindTextureUnit(0, imgui_font_texid);
                             }
                         }
                         UploadFinished::Mesh(mesh_fn) => {
