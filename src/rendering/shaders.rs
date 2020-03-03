@@ -2,18 +2,14 @@ use crate::gl;
 use std::collections::HashMap;
 use std::ffi::{CStr, CString};
 use std::str::FromStr;
-
-static VS_SHADER_SRC: &'static [u8] = include_bytes!("../../resources/shaders/model.vert");
-static FS_SHADER_SRC: &'static [u8] = include_bytes!("../../resources/shaders/model.frag");
-
 pub struct Program {
     program_name: u32,
     uniforms: HashMap<String, i32>,
 }
 
 impl Program {
-    pub fn new() -> Self {
-        let program = create_shader_program();
+    pub fn new(vs_shader_src: &[u8], fs_shader_src: &[u8]) -> Self {
+        let program = create_shader_program(vs_shader_src, fs_shader_src);
         let mut max_name_len = 0i32;
         let mut uniform_count = 0i32;
         let mut uniform_type = 0u32;
@@ -114,9 +110,9 @@ fn link_program(vs_shader: u32, fs_shader: u32) -> u32 {
     }
 }
 
-pub fn create_shader_program() -> u32 {
-    let vs_cstring = CString::new(VS_SHADER_SRC).unwrap();
-    let fs_cstring = CString::new(FS_SHADER_SRC).unwrap();
+pub fn create_shader_program(vs_shader_src: &[u8], fs_shader_src: &[u8]) -> u32 {
+    let vs_cstring = CString::new(vs_shader_src).unwrap();
+    let fs_cstring = CString::new(fs_shader_src).unwrap();
     let vs_shader = make_shader(gl::VERTEX_SHADER, &vs_cstring);
     let fs_shader = make_shader(gl::FRAGMENT_SHADER, &fs_cstring);
     let program = link_program(vs_shader, fs_shader);

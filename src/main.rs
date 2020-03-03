@@ -8,7 +8,7 @@ use glutin::{
     window::WindowBuilder,
     ContextBuilder,
 };
-use imgui::Context;
+use imgui::{im_str, Condition, Context};
 use imgui_winit_support::{HiDpiMode, WinitPlatform};
 use mikpe_math::{Mat4, Vec3};
 use rendering::drawable::Drawable;
@@ -205,6 +205,7 @@ fn main() {
             gl::UNSIGNED_BYTE,
             font_atlas.data.as_ptr() as *const _,
         );
+        fonts.tex_id = (tex as usize).into();
         tex
     };
 
@@ -215,17 +216,29 @@ fn main() {
         gl::Enable(gl::DEPTH_TEST);
     }
 
-    let mut start = Instant::now();
+    let mut last_frame = Instant::now();
     let mut angle = 60.0;
     let mut tex_list = vec![];
     let mut movement_vec = mikpe_math::Vec3::new(0.0, 0.0, 0.0);
     let mut timer = util::Timer::new(300);
     let mut rotangle = 0.0;
     let mut current_movement = Movement::STILL;
-    let program = rendering::Program::new();
+    let model_program = rendering::Program::new(
+        include_bytes!("../resources/shaders/model.vert"),
+        include_bytes!("../resources/shaders/model.frag"),
+    );
+    let gui_program = rendering::Program::new(
+        include_bytes!("../resources/shaders/gui.vert"),
+        include_bytes!("../resources/shaders/gui.frag"),
+    );
     events_loop.run(move |event, _, control_flow| {
         use glutin::event::{ElementState, Event, VirtualKeyCode, WindowEvent};
+        platform.handle_event(imgui.io_mut(), &gl_window.window(), &event);
         match event {
+            Event::NewEvents(_) => {
+                // other application-specific logic
+                last_frame = imgui.io_mut().update_delta_time(last_frame);
+            }
             Event::MainEventsCleared => {
                 // other application-specific logic
                 platform
@@ -349,6 +362,18 @@ fn main() {
             },
             Event::RedrawRequested(_) => {
                 let ui = imgui.frame();
+                imgui::Window::new(im_str!("Hello world"))
+                    .size([300.0, 100.0], Condition::FirstUseEver)
+                    .build(&ui, || {
+                        ui.text(im_str!("Hello world!"));
+                        ui.text(im_str!("This...is...imgui-rs!"));
+                        ui.separator();
+                        let mouse_pos = ui.io().mouse_pos;
+                        ui.text(format!(
+                            "Mouse Position: ({:.1},{:.1})",
+                            mouse_pos[0], mouse_pos[1]
+                        ));
+                    });
 
                 movement_vec = Vec3::new(0.0, 0.0, 0.0);
                 if current_movement.contains(Movement::FORWARD) {
@@ -407,19 +432,129 @@ fn main() {
                         (current_dpi_scale * win_x) as i32,
                         (current_dpi_scale * win_y) as i32,
                     );
-                    program.uniform_mat(&"u_projMatrix".to_owned(), &projection_matrix);
-                    program.uniform_mat(&"u_viewMatrix".to_owned(), &view_matrix);
-                    program.bind();
+                    model_program.uniform_mat(&"u_projMatrix".to_owned(), &projection_matrix);
+                    model_program.uniform_mat(&"u_viewMatrix".to_owned(), &view_matrix);
+                    model_program.bind();
                     gl::ClearColor(0.3, 0.5, 0.3, 1.0);
                     gl::Clear(gl::COLOR_BUFFER_BIT | gl::DEPTH_BUFFER_BIT);
-                    plane_mesh.update_model_matrix(&program);
+                    plane_mesh.update_model_matrix(&model_program);
                     plane_mesh.draw();
                     for mesh in &mut meshes {
                         mesh.rotate_z(rotangle);
-                        mesh.update_model_matrix(&program);
+                        mesh.update_model_matrix(&model_program);
                         mesh.draw();
                     }
                 }
+
+                //----IMGUI DRAW---//
+                platform.prepare_render(&ui, &gl_window.window());
+                let draw_data = ui.render();
+
+                for draw_list in draw_data.draw_lists() {
+                    let vtx_buffer = draw_list.vtx_buffer();
+                    let idx_buffer = draw_list.idx_buffer();
+                    let vtx_buf_stride = std::mem::size_of::<imgui::sys::ImDrawVert>();
+                    let idx_buf_stride = std::mem::size_of::<imgui::sys::ImDrawIdx>();
+                    let idx_buf_size =
+                        idx_buf_stride * idx_buffer.len() % 16 + idx_buf_stride * idx_buffer.len();
+                    let vtx_buf_size = vtx_buf_stride * vtx_buffer.len();
+                    let mut vbo = 0;
+                    let mut vao = 0;
+                    let total_buf_size = idx_buf_size + vtx_buf_size;
+
+                    //TODO: Draw the imgui stuff:
+                    unsafe {
+                        gl::Enable(gl::BLEND);
+                        gl::BlendEquation(gl::FUNC_ADD);
+                        gl::BlendFunc(gl::SRC_ALPHA, gl::ONE_MINUS_SRC_ALPHA);
+                        gl::Disable(gl::CULL_FACE);
+                        gl::Disable(gl::DEPTH_TEST);
+                        gl::Enable(gl::SCISSOR_TEST);
+
+                        gl::CreateBuffers(1, &mut vbo);
+                        gl::NamedBufferStorage(
+                            vbo,
+                            (total_buf_size) as isize,
+                            std::ptr::null(),
+                            gl::DYNAMIC_STORAGE_BIT,
+                        );
+                        gl::NamedBufferSubData(
+                            vbo,
+                            0,
+                            idx_buf_size as isize,
+                            idx_buffer.as_ptr() as *const _,
+                        );
+                        gl::NamedBufferSubData(
+                            vbo,
+                            idx_buf_size as isize,
+                            vtx_buf_size as isize,
+                            vtx_buffer.as_ptr() as *const _,
+                        );
+
+                        //VAO SETUP:
+                        gl::CreateVertexArrays(1, &mut vao);
+                        gl::VertexArrayElementBuffer(vao, vbo);
+                        let gui_proj = mikpe_math::Mat4([
+                            mikpe_math::Vec4([2.0 / win_x as f32, 0.0, 0.0, 0.0]),
+                            mikpe_math::Vec4([0.0, 2.0 / -win_y as f32, 0.0, 0.0]),
+                            mikpe_math::Vec4([0.0, 0.0, -1.0, 0.0]),
+                            mikpe_math::Vec4([-1.0, 1.0, 0.0, 1.0]),
+                        ]);
+                        // let gui_proj = mikpe_math::Mat4::create_ortho(
+                        //     (current_dpi_scale * win_y) as f32,
+                        //     (-current_dpi_scale * win_y) as f32,
+                        //     (-current_dpi_scale * win_x) as f32,
+                        //     (current_dpi_scale * win_x) as f32,
+                        //     0.01,
+                        //     1000.0,
+                        // );
+                        gui_program.uniform_mat(&"u_projMatrix".to_owned(), &gui_proj);
+                        gui_program.bind();
+
+                        //TODO: These can be fetched from semantics:
+                        let mut stride = 0;
+
+                        gl::EnableVertexArrayAttrib(vao, 0);
+                        gl::VertexArrayAttribFormat(vao, 0, 2, gl::FLOAT, gl::FALSE, 0);
+                        gl::VertexArrayAttribBinding(vao, 0, 0);
+                        stride += 8;
+                        gl::EnableVertexArrayAttrib(vao, 1);
+                        gl::VertexArrayAttribFormat(vao, 1, 2, gl::FLOAT, gl::FALSE, stride);
+                        gl::VertexArrayAttribBinding(vao, 1, 0);
+                        stride += 8;
+                        gl::EnableVertexArrayAttrib(vao, 2);
+                        gl::VertexArrayAttribFormat(vao, 2, 4, gl::UNSIGNED_BYTE, gl::TRUE, stride);
+                        gl::VertexArrayAttribBinding(vao, 2, 0);
+                        stride += 4;
+
+                        gl::VertexArrayVertexBuffer(
+                            vao,
+                            0,
+                            vbo,
+                            idx_buf_size as isize,
+                            stride as i32,
+                        );
+                        glchk!(gl::BindVertexArray(vao););
+
+                        for cmd_list in draw_list.commands() {
+                            match cmd_list {
+                                imgui::DrawCmd::Elements { count, cmd_params } => {
+                                    gl::BindTextureUnit(0, cmd_params.texture_id.id() as _);
+
+                                    gl::DrawElements(
+                                        gl::TRIANGLES,
+                                        count as i32,
+                                        gl::UNSIGNED_SHORT,
+                                        cmd_params.idx_offset as *const _,
+                                    );
+                                    // break;
+                                }
+                                _ => {}
+                            }
+                        }
+                    }
+                }
+                //----IMGUI DRAW---//
 
                 gl_window.swap_buffers().unwrap();
                 unsafe {
@@ -427,8 +562,7 @@ fn main() {
                     //as to always sync cpu time to vsync
                     gl::Finish();
                 }
-                let end = start.elapsed().as_micros() as f64 / 1000.0;
-                start = Instant::now();
+                let end = last_frame.elapsed().as_micros() as f64 / 1000.0;
                 if end > 20.0 {
                     println!("Long CPU frametime: {} ms", end);
                 }
