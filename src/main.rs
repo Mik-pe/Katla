@@ -545,7 +545,7 @@ fn main() {
                                         gl::TRIANGLES,
                                         count as i32,
                                         gl::UNSIGNED_SHORT,
-                                        cmd_params.idx_offset as *const _,
+                                        (cmd_params.idx_offset * idx_buf_stride) as *const _,
                                     );
                                     // break;
                                 }
