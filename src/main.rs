@@ -46,7 +46,7 @@ fn main() {
 
     let mut projection_matrix = Mat4::create_proj(60.0, 1.0, 0.5, 1000.0);
     let mut camera_pos = Vec3::new(0.0, 0.0, 0.0);
-    let mut events_loop = EventLoop::new();
+    let event_loop = EventLoop::new();
     let mut win_x = 512.0f64;
     let mut win_y = 512.0f64;
     let window = WindowBuilder::new().with_inner_size(glutin::dpi::LogicalSize::new(win_x, win_y));
@@ -54,7 +54,7 @@ fn main() {
         .with_vsync(true)
         .with_gl_profile(glutin::GlProfile::Core)
         .with_gl(glutin::GlRequest::Specific(glutin::Api::OpenGl, (4, 6)))
-        .build_windowed(window, &events_loop)
+        .build_windowed(window, &event_loop)
         .unwrap();
     // gl_context.window().
     let mut current_dpi_scale = gl_context.window().current_monitor().scale_factor();
@@ -210,8 +210,8 @@ fn main() {
         tex
     };
 
-    let mut platform = WinitPlatform::init(&mut imgui); // step 1
-    platform.attach_window(imgui.io_mut(), gl_window.window(), HiDpiMode::Default); // step 2
+    let mut platform = WinitPlatform::init(&mut imgui);
+    platform.attach_window(imgui.io_mut(), gl_window.window(), HiDpiMode::Default);
 
     unsafe {
         gl::Enable(gl::DEPTH_TEST);
@@ -229,7 +229,7 @@ fn main() {
         include_bytes!("../resources/shaders/model.frag"),
     );
     let mut gui = gui::Gui::new();
-    events_loop.run(move |event, _, control_flow| {
+    event_loop.run(move |event, _, control_flow| {
         use glutin::event::{ElementState, Event, VirtualKeyCode, WindowEvent};
         platform.handle_event(imgui.io_mut(), &gl_window.window(), &event);
         match event {
@@ -240,7 +240,7 @@ fn main() {
             Event::MainEventsCleared => {
                 // other application-specific logic
                 platform
-                    .prepare_frame(imgui.io_mut(), &gl_window.window()) // step 4
+                    .prepare_frame(imgui.io_mut(), &gl_window.window())
                     .expect("Failed to prepare frame");
                 gl_window.window().request_redraw();
             }
@@ -477,14 +477,8 @@ fn main() {
                     .expect("Could not send Exit message!");
                 return;
             }
-            event => {
-                platform.handle_event(imgui.io_mut(), &gl_window.window(), &event);
-            }
+            _ => {}
         }
-
-        // if let Event::WindowEvent { event, .. } = event {
-        //     match event
-        // };
     });
     upload_thread.join().expect("Could not join threads!");
 }
