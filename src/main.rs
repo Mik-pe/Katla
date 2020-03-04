@@ -1,3 +1,4 @@
+mod gui;
 mod rendering;
 mod util;
 
@@ -227,10 +228,7 @@ fn main() {
         include_bytes!("../resources/shaders/model.vert"),
         include_bytes!("../resources/shaders/model.frag"),
     );
-    let gui_program = rendering::Program::new(
-        include_bytes!("../resources/shaders/gui.vert"),
-        include_bytes!("../resources/shaders/gui.frag"),
-    );
+    let mut gui = gui::Gui::new();
     events_loop.run(move |event, _, control_flow| {
         use glutin::event::{ElementState, Event, VirtualKeyCode, WindowEvent};
         platform.handle_event(imgui.io_mut(), &gl_window.window(), &event);
@@ -448,112 +446,7 @@ fn main() {
 
                 //----IMGUI DRAW---//
                 platform.prepare_render(&ui, &gl_window.window());
-                let draw_data = ui.render();
-
-                for draw_list in draw_data.draw_lists() {
-                    let vtx_buffer = draw_list.vtx_buffer();
-                    let idx_buffer = draw_list.idx_buffer();
-                    let vtx_buf_stride = std::mem::size_of::<imgui::sys::ImDrawVert>();
-                    let idx_buf_stride = std::mem::size_of::<imgui::sys::ImDrawIdx>();
-                    let idx_buf_size =
-                        idx_buf_stride * idx_buffer.len() % 16 + idx_buf_stride * idx_buffer.len();
-                    let vtx_buf_size = vtx_buf_stride * vtx_buffer.len();
-                    let mut vbo = 0;
-                    let mut vao = 0;
-                    let total_buf_size = idx_buf_size + vtx_buf_size;
-
-                    //TODO: Draw the imgui stuff:
-                    unsafe {
-                        gl::Enable(gl::BLEND);
-                        gl::BlendEquation(gl::FUNC_ADD);
-                        gl::BlendFunc(gl::SRC_ALPHA, gl::ONE_MINUS_SRC_ALPHA);
-                        gl::Disable(gl::CULL_FACE);
-                        gl::Disable(gl::DEPTH_TEST);
-                        gl::Enable(gl::SCISSOR_TEST);
-
-                        gl::CreateBuffers(1, &mut vbo);
-                        gl::NamedBufferStorage(
-                            vbo,
-                            (total_buf_size) as isize,
-                            std::ptr::null(),
-                            gl::DYNAMIC_STORAGE_BIT,
-                        );
-                        gl::NamedBufferSubData(
-                            vbo,
-                            0,
-                            idx_buf_size as isize,
-                            idx_buffer.as_ptr() as *const _,
-                        );
-                        gl::NamedBufferSubData(
-                            vbo,
-                            idx_buf_size as isize,
-                            vtx_buf_size as isize,
-                            vtx_buffer.as_ptr() as *const _,
-                        );
-
-                        //VAO SETUP:
-                        gl::CreateVertexArrays(1, &mut vao);
-                        gl::VertexArrayElementBuffer(vao, vbo);
-                        let gui_proj = mikpe_math::Mat4([
-                            mikpe_math::Vec4([2.0 / win_x as f32, 0.0, 0.0, 0.0]),
-                            mikpe_math::Vec4([0.0, 2.0 / -win_y as f32, 0.0, 0.0]),
-                            mikpe_math::Vec4([0.0, 0.0, -1.0, 0.0]),
-                            mikpe_math::Vec4([-1.0, 1.0, 0.0, 1.0]),
-                        ]);
-                        // let gui_proj = mikpe_math::Mat4::create_ortho(
-                        //     (current_dpi_scale * win_y) as f32,
-                        //     (-current_dpi_scale * win_y) as f32,
-                        //     (-current_dpi_scale * win_x) as f32,
-                        //     (current_dpi_scale * win_x) as f32,
-                        //     0.01,
-                        //     1000.0,
-                        // );
-                        gui_program.uniform_mat(&"u_projMatrix".to_owned(), &gui_proj);
-                        gui_program.bind();
-
-                        //TODO: These can be fetched from semantics:
-                        let mut stride = 0;
-
-                        gl::EnableVertexArrayAttrib(vao, 0);
-                        gl::VertexArrayAttribFormat(vao, 0, 2, gl::FLOAT, gl::FALSE, 0);
-                        gl::VertexArrayAttribBinding(vao, 0, 0);
-                        stride += 8;
-                        gl::EnableVertexArrayAttrib(vao, 1);
-                        gl::VertexArrayAttribFormat(vao, 1, 2, gl::FLOAT, gl::FALSE, stride);
-                        gl::VertexArrayAttribBinding(vao, 1, 0);
-                        stride += 8;
-                        gl::EnableVertexArrayAttrib(vao, 2);
-                        gl::VertexArrayAttribFormat(vao, 2, 4, gl::UNSIGNED_BYTE, gl::TRUE, stride);
-                        gl::VertexArrayAttribBinding(vao, 2, 0);
-                        stride += 4;
-
-                        gl::VertexArrayVertexBuffer(
-                            vao,
-                            0,
-                            vbo,
-                            idx_buf_size as isize,
-                            stride as i32,
-                        );
-                        glchk!(gl::BindVertexArray(vao););
-
-                        for cmd_list in draw_list.commands() {
-                            match cmd_list {
-                                imgui::DrawCmd::Elements { count, cmd_params } => {
-                                    gl::BindTextureUnit(0, cmd_params.texture_id.id() as _);
-
-                                    gl::DrawElements(
-                                        gl::TRIANGLES,
-                                        count as i32,
-                                        gl::UNSIGNED_SHORT,
-                                        (cmd_params.idx_offset * idx_buf_stride) as *const _,
-                                    );
-                                    // break;
-                                }
-                                _ => {}
-                            }
-                        }
-                    }
-                }
+                unsafe { gui.render_gui(ui) };
                 //----IMGUI DRAW---//
 
                 gl_window.swap_buffers().unwrap();
