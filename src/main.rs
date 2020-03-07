@@ -114,20 +114,11 @@ fn main() {
                         }
                     },
                     Message::UploadMesh => {
-                        for y in 0..10 {
-                            for x_offset in 0..10 {
-                                let mut mesh = rendering::Mesh::new();
-                                mesh.set_pos(mikpe_math::Vec3::new(
-                                    -5.0 + 5.0 * x_offset as f32,
-                                    -5.0 + 5.0 * y as f32,
-                                    -5.0,
-                                ));
-                                uploaded_meshes.push(mesh);
-                            }
+                        let mesh = rendering::Mesh::new();
+                        uploaded_meshes.push(mesh);
+                        if uploaded_meshes.len() == max_meshes_per_flush {
+                            break;
                         }
-                        // if uploaded_meshes.len() == max_meshes_per_flush {
-                        //     break;
-                        // }
                     }
                     Message::Exit => {
                         should_exit = true;
@@ -161,8 +152,8 @@ fn main() {
                 uploads.push(UploadFinished::Acknowledgement(tex));
             }
             for mut mesh in uploaded_meshes {
-                mesh.read_gltf("resources/models/Avocado.glb");
-                mesh.set_scale(100.1);
+                mesh.read_gltf("resources/models/Fox.glb");
+                mesh.set_scale(0.1);
                 unsafe {
                     gl::Flush();
                 };
@@ -415,6 +406,8 @@ fn main() {
                         }
                         UploadFinished::Mesh(mesh_fn) => {
                             let mut mesh = mesh_fn();
+                            let x_offset = meshes.len() as f32;
+                            mesh.set_pos(mikpe_math::Vec3::new(-5.0 + 5.0 * x_offset, 0.0, -5.0));
                             meshes.push(mesh);
                         }
                     }
