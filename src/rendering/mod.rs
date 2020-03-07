@@ -2,11 +2,13 @@ pub mod drawable;
 pub mod mesh;
 pub mod shaders;
 pub mod shared_resources;
+pub mod texture;
 
 pub use drawable::Drawable;
 pub use mesh::*;
 pub use shaders::*;
 pub use shared_resources::*;
+pub use texture::*;
 
 #[macro_export]
 macro_rules! glchk {

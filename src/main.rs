@@ -35,7 +35,7 @@ enum Message {
 }
 
 enum UploadFinished {
-    Acknowledgement(u32),
+    Acknowledgement(rendering::Texture),
     Mesh(Box<dyn FnOnce() -> rendering::Mesh + Send>),
 }
 const GPU_MEM_INFO_TOTAL_AVAILABLE_MEM_NVX: gl::types::GLenum = 0x9048;
@@ -107,17 +107,27 @@ fn main() {
                     Message::UploadTexture => unsafe {
                         let mut tex = 0u32;
                         gl::CreateTextures(gl::TEXTURE_2D, 1, &mut tex);
+                        let tex = rendering::Texture::new(rendering::TextureUsage::ALBEDO);
                         uploaded_textures.push(tex);
                         if uploaded_textures.len() == max_textures_per_flush {
                             break;
                         }
                     },
                     Message::UploadMesh => {
-                        let mesh = rendering::Mesh::new();
-                        uploaded_meshes.push(mesh);
-                        if uploaded_meshes.len() == max_meshes_per_flush {
-                            break;
+                        for y in 0..10 {
+                            for x_offset in 0..10 {
+                                let mut mesh = rendering::Mesh::new();
+                                mesh.set_pos(mikpe_math::Vec3::new(
+                                    -5.0 + 5.0 * x_offset as f32,
+                                    -5.0 + 5.0 * y as f32,
+                                    -5.0,
+                                ));
+                                uploaded_meshes.push(mesh);
+                            }
                         }
+                        // if uploaded_meshes.len() == max_meshes_per_flush {
+                        //     break;
+                        // }
                     }
                     Message::Exit => {
                         should_exit = true;
@@ -125,10 +135,9 @@ fn main() {
                 }
             }
 
-            for tex in uploaded_textures {
+            for mut tex in uploaded_textures {
                 let num_mipmaps = 10;
                 unsafe {
-                    gl::TextureStorage2D(tex, num_mipmaps, gl::RGBA8, 1024, 1024);
                     let mut img: image::RgbaImage = image::ImageBuffer::new(1024, 1024);
                     let pixel_step = 1024 / 255;
                     let mut pixel_it = 0;
@@ -146,25 +155,14 @@ fn main() {
                         }
                         pixel_it += 1;
                     }
-                    gl::TextureSubImage2D(
-                        tex,
-                        0, // level
-                        0, // xoffset
-                        0, // yoffset
-                        1024,
-                        1024,
-                        gl::RGBA,
-                        gl::UNSIGNED_BYTE,
-                        img.into_raw().as_ptr() as *const _,
-                    );
-                    gl::GenerateTextureMipmap(tex);
+                    tex.set_data(img);
                     gl::Flush();
                 }
                 uploads.push(UploadFinished::Acknowledgement(tex));
             }
             for mut mesh in uploaded_meshes {
-                mesh.read_gltf("resources/models/Fox.glb");
-                mesh.set_scale(0.1);
+                mesh.read_gltf("resources/models/Avocado.glb");
+                mesh.set_scale(100.1);
                 unsafe {
                     gl::Flush();
                 };
@@ -199,6 +197,7 @@ fn main() {
     let imgui_font_texid = unsafe {
         let mut fonts = imgui.fonts();
         let font_atlas = fonts.build_alpha8_texture();
+
         let mut tex = 0;
         gl::CreateTextures(gl::TEXTURE_2D, 1, &mut tex);
 
@@ -227,10 +226,6 @@ fn main() {
 
     let mut platform = WinitPlatform::init(&mut imgui);
     platform.attach_window(imgui.io_mut(), gl_window.window(), HiDpiMode::Default);
-
-    unsafe {
-        gl::Enable(gl::DEPTH_TEST);
-    }
 
     let mut last_frame = Instant::now();
     let mut angle = 60.0;
@@ -415,13 +410,11 @@ fn main() {
                         UploadFinished::Acknowledgement(result) => {
                             tex_list.push(result);
                             unsafe {
-                                gl::BindTextureUnit(0, imgui_font_texid);
+                                tex_list.last().unwrap().bind();
                             }
                         }
                         UploadFinished::Mesh(mesh_fn) => {
                             let mut mesh = mesh_fn();
-                            let x_offset = meshes.len() as f32;
-                            mesh.set_pos(mikpe_math::Vec3::new(-5.0 + 5.0 * x_offset, 0.0, -5.0));
                             meshes.push(mesh);
                         }
                     }
@@ -433,7 +426,9 @@ fn main() {
                 )
                 .inverse();
                 unsafe {
+                    gl::Enable(gl::DEPTH_TEST);
                     gl::Disable(gl::SCISSOR_TEST);
+
                     gl::Viewport(0, 0, win_x as i32, win_y as i32);
                     model_program.uniform_mat(&"u_projMatrix".to_owned(), &projection_matrix);
                     model_program.uniform_mat(&"u_viewMatrix".to_owned(), &view_matrix);

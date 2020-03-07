@@ -4,8 +4,8 @@ use gl;
 pub struct Gui {
     gui_program: Program,
     vao: u32,
-    vbo: u32,
     vertex_stride: u32,
+    idx_stride: usize,
 }
 
 impl Gui {
@@ -15,12 +15,11 @@ impl Gui {
             include_bytes!("../resources/shaders/gui.frag"),
         );
         let mut vao = 0;
-        let mut vbo = 0;
         let mut vertex_stride = 0;
+        let idx_stride = std::mem::size_of::<imgui::sys::ImDrawIdx>();
         unsafe {
             gl::CreateVertexArrays(1, &mut vao);
 
-            gl::CreateBuffers(1, &mut vbo);
             gl::EnableVertexArrayAttrib(vao, 0);
             gl::VertexArrayAttribFormat(vao, 0, 2, gl::FLOAT, gl::FALSE, 0);
             gl::VertexArrayAttribBinding(vao, 0, 0);
@@ -33,13 +32,12 @@ impl Gui {
             gl::VertexArrayAttribFormat(vao, 2, 4, gl::UNSIGNED_BYTE, gl::TRUE, vertex_stride);
             gl::VertexArrayAttribBinding(vao, 2, 0);
             vertex_stride += 4;
-            gl::VertexArrayElementBuffer(vao, vbo);
         }
         Self {
             gui_program,
             vao,
-            vbo,
             vertex_stride,
+            idx_stride,
         }
     }
 
@@ -67,8 +65,7 @@ impl Gui {
             let vtx_buffer = draw_list.vtx_buffer();
             let idx_buffer = draw_list.idx_buffer();
             let vtx_buf_stride = std::mem::size_of::<imgui::sys::ImDrawVert>();
-            let idx_buf_stride = std::mem::size_of::<imgui::sys::ImDrawIdx>();
-            let idx_len = (idx_buf_stride * idx_buffer.len()) as isize;
+            let idx_len = (self.idx_stride * idx_buffer.len()) as isize;
             let vtx_len = (vtx_buf_stride * vtx_buffer.len()) as isize;
             let aligned_idx_len = Self::align_length(idx_len, alignment as isize);
             let aligned_vtx_len = Self::align_length(vtx_len, alignment as isize);
@@ -132,7 +129,7 @@ impl Gui {
                             (fb_scale[1] * cmd_params.clip_rect[3] - cmd_params.clip_rect[1])
                                 as i32,
                         );
-                        let offset = (cmd_params.idx_offset * idx_buf_stride) as usize;
+                        let offset = (cmd_params.idx_offset * self.idx_stride) as usize;
 
                         gl::DrawElements(
                             gl::TRIANGLES,

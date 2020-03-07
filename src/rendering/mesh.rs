@@ -1,5 +1,7 @@
 use crate::gl;
 use crate::rendering::drawable::Drawable;
+use crate::rendering::{Texture, TextureUsage};
+
 use gltf;
 use mikpe_math;
 use std::cmp::{Ordering, PartialOrd};
@@ -69,6 +71,7 @@ pub struct Mesh {
     model_matrix: mikpe_math::Mat4,
     vert_attr_offset: isize,
     semantics: Vec<gltf::Semantic>,
+    albedo_tex: Texture,
 }
 
 impl Mesh {
@@ -83,6 +86,23 @@ impl Mesh {
             model_matrix: mikpe_math::Mat4::new(),
             vert_attr_offset: 0,
             semantics: Vec::new(),
+            albedo_tex: Texture::new(TextureUsage::ALBEDO),
+        }
+    }
+
+    fn parse_img_src(&mut self, src: gltf::image::Source, images: &Vec<gltf::image::Data>) {
+        match src {
+            gltf::image::Source::Uri { uri, mime_type } => {}
+            gltf::image::Source::View {
+                view,
+                mime_type: _mime_type,
+            } => {
+                let buffer_idx = view.buffer().index();
+                let buffer = &images[buffer_idx];
+                unsafe {
+                    self.albedo_tex.set_data_gltf(buffer);
+                }
+            }
         }
     }
 
@@ -90,7 +110,7 @@ impl Mesh {
     where
         P: AsRef<Path>,
     {
-        let (document, buffers, _images) = gltf::import(path).unwrap();
+        let (document, buffers, images) = gltf::import(path).unwrap();
         let mut used_nodes = vec![];
         for scene in document.scenes() {
             // parse_scene();
@@ -100,6 +120,9 @@ impl Mesh {
                 for child in node.children() {
                     used_nodes.push(child.index());
                 }
+            }
+            for image in document.images() {
+                self.parse_img_src(image.source(), &images);
             }
         }
         for node in document.nodes() {
@@ -281,6 +304,7 @@ impl Mesh {
 impl Drawable for Mesh {
     fn draw(&self) {
         unsafe {
+            self.albedo_tex.bind();
             gl::BindVertexArray(self.vao);
             match self.index_type {
                 IndexType::UnsignedByte => {
@@ -319,26 +343,32 @@ impl Drawable for Mesh {
         gl::VertexArrayElementBuffer(self.vao, self.buffer);
 
         //TODO: These can be fetched from semantics:
-        let mut stride = 0;
+        let mut stride = 0u32;
         if self.semantics.contains(&gltf::Semantic::Positions) {
             gl::EnableVertexArrayAttrib(self.vao, 0);
-            gl::VertexArrayAttribFormat(self.vao, 0, 3, gl::FLOAT, gl::FALSE, 0);
+            gl::VertexArrayAttribFormat(self.vao, 0, 3, gl::FLOAT, gl::FALSE, stride);
             gl::VertexArrayAttribBinding(self.vao, 0, 0);
             stride += 12;
         }
         if self.semantics.contains(&gltf::Semantic::Normals) {
             gl::EnableVertexArrayAttrib(self.vao, 1);
-            gl::VertexArrayAttribFormat(self.vao, 1, 3, gl::FLOAT, gl::FALSE, 0);
+            gl::VertexArrayAttribFormat(self.vao, 1, 3, gl::FLOAT, gl::FALSE, stride);
             gl::VertexArrayAttribBinding(self.vao, 1, 0);
             stride += 12;
         }
         if self.semantics.contains(&gltf::Semantic::TexCoords(0)) {
             gl::EnableVertexArrayAttrib(self.vao, 2);
-            gl::VertexArrayAttribFormat(self.vao, 2, 2, gl::FLOAT, gl::FALSE, 0);
+            gl::VertexArrayAttribFormat(self.vao, 2, 2, gl::FLOAT, gl::FALSE, stride);
             gl::VertexArrayAttribBinding(self.vao, 2, 0);
             stride += 8;
         }
-        gl::VertexArrayVertexBuffer(self.vao, 0, self.buffer, self.vert_attr_offset, stride);
+        gl::VertexArrayVertexBuffer(
+            self.vao,
+            0,
+            self.buffer,
+            self.vert_attr_offset,
+            stride as i32,
+        );
         self
     }
 }
