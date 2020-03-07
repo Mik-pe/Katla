@@ -4,7 +4,7 @@ use image::RgbaImage;
 pub enum TextureUsage {
     ALBEDO,
     NORMAL,
-    ROUGHNESS,
+    METALLIC_ROUGHNESS,
     EMISSION,
 }
 
@@ -79,10 +79,18 @@ impl Texture {
         let texture_unit = match self.usage {
             TextureUsage::ALBEDO => 0,
             TextureUsage::NORMAL => 1,
-            TextureUsage::ROUGHNESS => 2,
+            TextureUsage::METALLIC_ROUGHNESS => 2,
             TextureUsage::EMISSION => 3,
         };
 
         gl::BindTextureUnit(texture_unit, self.id);
+    }
+}
+
+impl Drop for Texture {
+    fn drop(&mut self) {
+        unsafe {
+            gl::DeleteTextures(1, &self.id as *const _);
+        }
     }
 }

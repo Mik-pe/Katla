@@ -1,5 +1,6 @@
 use crate::gl;
 use crate::rendering::drawable::Drawable;
+use crate::rendering::Material;
 use crate::rendering::{Texture, TextureUsage};
 
 use gltf;
@@ -71,7 +72,7 @@ pub struct Mesh {
     model_matrix: mikpe_math::Mat4,
     vert_attr_offset: isize,
     semantics: Vec<gltf::Semantic>,
-    albedo_tex: Texture,
+    material: Option<Material>,
 }
 
 impl Mesh {
@@ -86,25 +87,25 @@ impl Mesh {
             model_matrix: mikpe_math::Mat4::new(),
             vert_attr_offset: 0,
             semantics: Vec::new(),
-            albedo_tex: Texture::new(TextureUsage::ALBEDO),
+            material: None,
         }
     }
 
-    fn parse_img_src(&mut self, src: gltf::image::Source, images: &Vec<gltf::image::Data>) {
-        match src {
-            gltf::image::Source::Uri { uri, mime_type } => {}
-            gltf::image::Source::View {
-                view,
-                mime_type: _mime_type,
-            } => {
-                let buffer_idx = view.buffer().index();
-                let buffer = &images[buffer_idx];
-                unsafe {
-                    self.albedo_tex.set_data_gltf(buffer);
-                }
-            }
-        }
-    }
+    // fn parse_img_src(&mut self, src: gltf::image::Source, images: &Vec<gltf::image::Data>) {
+    //     match src {
+    //         gltf::image::Source::Uri { uri, mime_type } => {}
+    //         gltf::image::Source::View {
+    //             view,
+    //             mime_type: _mime_type,
+    //         } => {
+    //             let buffer_idx = view.buffer().index();
+    //             let buffer = &images[buffer_idx];
+    //             unsafe {
+    //                 self.albedo_tex.set_data_gltf(buffer);
+    //             }
+    //         }
+    //     }
+    // }
 
     pub fn read_gltf<P>(&mut self, path: P)
     where
@@ -113,23 +114,29 @@ impl Mesh {
         let (document, buffers, images) = gltf::import(path).unwrap();
         let mut used_nodes = vec![];
         for scene in document.scenes() {
-            // parse_scene();
             for node in scene.nodes() {
-                // println!("Scene #{} uses node #{}", scene.index(), node.index());
                 used_nodes.push(node.index());
                 for child in node.children() {
                     used_nodes.push(child.index());
                 }
             }
-            for image in document.images() {
-                self.parse_img_src(image.source(), &images);
-            }
         }
+        // let mut parsed_mats = vec![];
+        for material in document.materials() {
+            if self.material.is_none() {
+                self.material = Some(Material::new(material, &images));
+            }
+            // parsed_mats.push(Material::new(material, &images));
+        }
+
         for node in document.nodes() {
             if used_nodes.contains(&node.index()) {
                 self.parse_node(&node, &buffers);
             }
         }
+        // for image in document.images() {
+        //     self.parse_img_src(image.source(), &images);
+        // }
     }
 
     pub fn set_pos(&mut self, pos: mikpe_math::Vec3) {
@@ -304,7 +311,9 @@ impl Mesh {
 impl Drawable for Mesh {
     fn draw(&self) {
         unsafe {
-            self.albedo_tex.bind();
+            if let Some(mat) = &self.material {
+                mat.bind();
+            }
             gl::BindVertexArray(self.vao);
             match self.index_type {
                 IndexType::UnsignedByte => {

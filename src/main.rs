@@ -152,8 +152,8 @@ fn main() {
                 uploads.push(UploadFinished::Acknowledgement(tex));
             }
             for mut mesh in uploaded_meshes {
-                mesh.read_gltf("resources/models/Fox.glb");
-                mesh.set_scale(0.1);
+                mesh.read_gltf("resources/models/Avocado.glb");
+                mesh.set_scale(100.1);
                 unsafe {
                     gl::Flush();
                 };
@@ -185,7 +185,7 @@ fn main() {
     });
 
     let mut imgui = Context::create();
-    let imgui_font_texid = unsafe {
+    unsafe {
         let mut fonts = imgui.fonts();
         let font_atlas = fonts.build_alpha8_texture();
 
@@ -212,7 +212,6 @@ fn main() {
             font_atlas.data.as_ptr() as *const _,
         );
         fonts.tex_id = (tex as usize).into();
-        tex
     };
 
     let mut platform = WinitPlatform::init(&mut imgui);
