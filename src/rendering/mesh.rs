@@ -34,7 +34,8 @@ impl PartialOrd for MeshBufferView {
             match semantic {
                 gltf::mesh::Semantic::Positions => 0,
                 gltf::mesh::Semantic::Normals => 1,
-                _ => 2,
+                gltf::mesh::Semantic::TexCoords(index) => 2 + *index as i32,
+                _ => 13,
             }
         };
         let sort_a = sorted_key(&self.semantic);
@@ -194,6 +195,9 @@ impl Mesh {
                         gltf::mesh::Semantic::Normals => {
                             self.semantics.push(gltf::Semantic::Normals)
                         }
+                        gltf::mesh::Semantic::TexCoords(index) => {
+                            self.semantics.push(gltf::Semantic::TexCoords(index))
+                        }
                         _ => {
                             continue;
                         }
@@ -327,6 +331,12 @@ impl Drawable for Mesh {
             gl::VertexArrayAttribFormat(self.vao, 1, 3, gl::FLOAT, gl::FALSE, 0);
             gl::VertexArrayAttribBinding(self.vao, 1, 0);
             stride += 12;
+        }
+        if self.semantics.contains(&gltf::Semantic::TexCoords(0)) {
+            gl::EnableVertexArrayAttrib(self.vao, 2);
+            gl::VertexArrayAttribFormat(self.vao, 2, 2, gl::FLOAT, gl::FALSE, 0);
+            gl::VertexArrayAttribBinding(self.vao, 2, 0);
+            stride += 8;
         }
         gl::VertexArrayVertexBuffer(self.vao, 0, self.buffer, self.vert_attr_offset, stride);
         self

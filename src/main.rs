@@ -56,8 +56,9 @@ fn main() {
         .with_gl(glutin::GlRequest::Specific(glutin::Api::OpenGl, (4, 6)))
         .build_windowed(window, &event_loop)
         .unwrap();
-    // gl_context.window().
     let mut current_dpi_scale = gl_context.window().current_monitor().scale_factor();
+    win_x = win_x * current_dpi_scale;
+    win_y = win_y * current_dpi_scale;
 
     let gl_window = unsafe { gl_context.make_current() }.unwrap();
     gl::load_with(|symbol| gl_window.get_proc_address(symbol) as *const _);
@@ -89,7 +90,9 @@ fn main() {
 
     let upload_thread = std::thread::spawn(move || {
         let _upload_context = unsafe { upload_context.make_current() }.unwrap();
+        let mut current_red = 0u8;
         let mut current_green = 0u8;
+        let mut current_blue = 0u8;
         let mut should_exit = false;
         let max_textures_per_flush = 50;
         let max_meshes_per_flush = 10;
@@ -127,10 +130,22 @@ fn main() {
                 unsafe {
                     gl::TextureStorage2D(tex, num_mipmaps, gl::RGBA8, 1024, 1024);
                     let mut img: image::RgbaImage = image::ImageBuffer::new(1024, 1024);
+                    let pixel_step = 1024 / 255;
+                    let mut pixel_it = 0;
                     for pixel in img.pixels_mut() {
-                        *pixel = image::Rgba([255, current_green, 255, 255]);
+                        *pixel = image::Rgba([current_red, current_green, current_blue, 255]);
+
+                        if pixel_it % pixel_step == 0 {
+                            current_red = current_red.wrapping_add(1);
+                            if current_red == 0 {
+                                current_green = current_green.wrapping_add(1);
+                                if current_green == 0 {
+                                    current_blue = current_blue.wrapping_add(1);
+                                }
+                            }
+                        }
+                        pixel_it += 1;
                     }
-                    current_green = current_green.wrapping_add(10);
                     gl::TextureSubImage2D(
                         tex,
                         0, // level
@@ -418,18 +433,8 @@ fn main() {
                 )
                 .inverse();
                 unsafe {
-                    gl::Viewport(
-                        0,
-                        0,
-                        (current_dpi_scale * win_x) as i32,
-                        (current_dpi_scale * win_y) as i32,
-                    );
-                    gl::Scissor(
-                        0,
-                        0,
-                        (current_dpi_scale * win_x) as i32,
-                        (current_dpi_scale * win_y) as i32,
-                    );
+                    gl::Disable(gl::SCISSOR_TEST);
+                    gl::Viewport(0, 0, win_x as i32, win_y as i32);
                     model_program.uniform_mat(&"u_projMatrix".to_owned(), &projection_matrix);
                     model_program.uniform_mat(&"u_viewMatrix".to_owned(), &view_matrix);
                     model_program.bind();

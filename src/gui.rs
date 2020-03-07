@@ -55,8 +55,9 @@ impl Gui {
 
     pub unsafe fn render_gui(&mut self, ui: imgui::Ui) {
         let display_size = ui.io().display_size;
-        let _fb_width = display_size[0] * ui.io().display_framebuffer_scale[0];
-        let fb_height = display_size[1] * ui.io().display_framebuffer_scale[1];
+        let fb_scale = ui.io().display_framebuffer_scale;
+        let _fb_width = display_size[0] * fb_scale[0];
+        let fb_height = display_size[1] * fb_scale[1];
         let draw_data = ui.render();
 
         for draw_list in draw_data.draw_lists() {
@@ -124,10 +125,12 @@ impl Gui {
                     imgui::DrawCmd::Elements { count, cmd_params } => {
                         gl::BindTextureUnit(0, cmd_params.texture_id.id() as _);
                         gl::Scissor(
-                            cmd_params.clip_rect[0] as i32,
-                            (fb_height - cmd_params.clip_rect[3]) as i32,
-                            (cmd_params.clip_rect[2] - cmd_params.clip_rect[0]) as i32,
-                            (cmd_params.clip_rect[3] - cmd_params.clip_rect[1]) as i32,
+                            (fb_scale[0] * cmd_params.clip_rect[0]) as i32,
+                            (fb_height - fb_scale[1] * cmd_params.clip_rect[3]) as i32,
+                            (fb_scale[0] * cmd_params.clip_rect[2] - cmd_params.clip_rect[0])
+                                as i32,
+                            (fb_scale[1] * cmd_params.clip_rect[3] - cmd_params.clip_rect[1])
+                                as i32,
                         );
                         let offset = (cmd_params.idx_offset * idx_buf_stride) as usize;
 
