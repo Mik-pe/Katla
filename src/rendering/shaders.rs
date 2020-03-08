@@ -52,6 +52,28 @@ impl Program {
         gl::UseProgram(self.program_name);
     }
 
+    pub unsafe fn uniform_u32(&self, uniform_str: &str, value: u32) {
+        if let Some(uniform_location) = self.uniforms.get(uniform_str) {
+            gl::ProgramUniform1ui(self.program_name, *uniform_location, value);
+        } else {
+            println!("Could not find uniform {}!", uniform_str);
+        }
+    }
+
+    pub unsafe fn uniform_vec3(&self, uniform_str: &str, value: mikpe_math::Vec3) {
+        if let Some(uniform_location) = self.uniforms.get(uniform_str) {
+            gl::ProgramUniform3f(
+                self.program_name,
+                *uniform_location,
+                value[0],
+                value[1],
+                value[2],
+            );
+        } else {
+            println!("Could not find uniform {}!", uniform_str);
+        }
+    }
+
     pub unsafe fn uniform_mat(&self, uniform_str: &String, matrix: &mikpe_math::Mat4) {
         if let Some(uniform_location) = self.uniforms.get(uniform_str) {
             gl::ProgramUniformMatrix4fv(

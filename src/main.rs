@@ -228,9 +228,15 @@ fn main() {
         include_bytes!("../resources/shaders/model.vert"),
         include_bytes!("../resources/shaders/model.frag"),
     );
+    let mut tex_vis = 0u32;
     let mut gui = gui::Gui::new();
+    let mut mouse_moving = false;
+    let mut last_mouse_pos = glutin::dpi::PhysicalPosition::new(0.0, 0.0);
+    let mut view_yaw = 0.0;
+    let mut view_pitch = 0.0;
+    let mut view_rot = Mat4::new();
     event_loop.run(move |event, _, control_flow| {
-        use glutin::event::{ElementState, Event, VirtualKeyCode, WindowEvent};
+        use glutin::event::{ElementState, Event, MouseButton, VirtualKeyCode, WindowEvent};
         platform.handle_event(imgui.io_mut(), &gl_window.window(), &event);
         match event {
             Event::NewEvents(_) => {
@@ -259,6 +265,38 @@ fn main() {
                         Mat4::create_proj(60.0, (win_x / win_y) as f32, 0.1, 1000.0);
                 }
                 WindowEvent::CloseRequested => *control_flow = ControlFlow::Exit,
+                WindowEvent::MouseInput {
+                    device_id: _,
+                    state,
+                    button,
+                    modifiers: _,
+                } => {
+                    if button == MouseButton::Right && state == ElementState::Pressed {
+                        mouse_moving = true;
+                    } else if button == MouseButton::Right && state == ElementState::Released {
+                        mouse_moving = false;
+                    }
+                }
+                WindowEvent::CursorMoved {
+                    device_id: _,
+                    position,
+                    modifiers: _,
+                } => {
+                    if mouse_moving {
+                        let delta_x = position.x - last_mouse_pos.x;
+                        let delta_y = position.y - last_mouse_pos.y;
+                        view_yaw -= 0.01 * delta_x;
+                        view_pitch -= 0.01 * delta_y;
+                        view_rot =
+                            Mat4::from_rotaxis(&(view_yaw as f32), Vec3::new(0.0, 1.0, 0.0).0).mul(
+                                &Mat4::from_rotaxis(
+                                    &(view_pitch as f32),
+                                    Vec3::new(1.0, 0.0, 0.0).0,
+                                ),
+                            );
+                    }
+                    last_mouse_pos = position;
+                }
                 WindowEvent::KeyboardInput {
                     device_id: _,
                     input,
@@ -324,6 +362,14 @@ fn main() {
                                 VirtualKeyCode::Left => {
                                     rotangle -= 0.1;
                                 }
+                                VirtualKeyCode::Up => {
+                                    tex_vis += 1;
+                                }
+                                VirtualKeyCode::Down => {
+                                    if let Some(res) = tex_vis.checked_sub(1) {
+                                        tex_vis = res;
+                                    }
+                                }
                                 _ => {}
                             },
                             None => {}
@@ -365,6 +411,7 @@ fn main() {
                     .build(&ui, || {
                         ui.text(im_str!("Hello world!"));
                         ui.text(im_str!("This...is...imgui-rs!"));
+                        ui.text(format!("Current render mode: {}", tex_vis));
                         ui.separator();
                         let mouse_pos = ui.io().mouse_pos;
                         ui.text(format!(
@@ -392,8 +439,8 @@ fn main() {
                 if current_movement.contains(Movement::RIGHT) {
                     movement_vec[0] += 1.0;
                 }
-                movement_vec = movement_vec.normalize();
-                camera_pos = camera_pos + movement_vec;
+                movement_vec = mikpe_math::mat4_mul_vec3(&view_rot, &movement_vec.normalize());
+                camera_pos = camera_pos + movement_vec.mul(0.1);
 
                 for tex_result in tex_receiver.try_iter() {
                     match tex_result {
@@ -413,8 +460,9 @@ fn main() {
                 }
                 let view_matrix = Mat4::create_lookat(
                     camera_pos.clone(),
-                    camera_pos.clone() + Vec3::new(0.0, 0.0, -1.0),
-                    Vec3::new(0.0, 1.0, 0.0),
+                    camera_pos.clone()
+                        + mikpe_math::mat4_mul_vec3(&view_rot, &Vec3::new(0.0, 0.0, -1.0)),
+                    mikpe_math::mat4_mul_vec3(&view_rot, &Vec3::new(0.0, 1.0, 0.0)),
                 )
                 .inverse();
                 unsafe {
@@ -428,6 +476,8 @@ fn main() {
                     gl::ClearColor(0.3, 0.5, 0.3, 1.0);
                     gl::Clear(gl::COLOR_BUFFER_BIT | gl::DEPTH_BUFFER_BIT);
                     plane_mesh.update_model_matrix(&model_program);
+                    model_program.uniform_u32("u_texVis", tex_vis);
+                    model_program.uniform_vec3("u_camPos", camera_pos.clone());
                     plane_mesh.draw();
                     for mesh in &mut meshes {
                         mesh.rotate_z(rotangle);

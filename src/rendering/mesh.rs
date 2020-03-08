@@ -37,8 +37,9 @@ impl PartialOrd for MeshBufferView {
             match semantic {
                 gltf::mesh::Semantic::Positions => 0,
                 gltf::mesh::Semantic::Normals => 1,
-                gltf::mesh::Semantic::TexCoords(index) => 2 + *index as i32,
-                _ => 13,
+                gltf::mesh::Semantic::Tangents => 2,
+                gltf::mesh::Semantic::TexCoords(index) => 3 + *index as i32,
+                _ => 14,
             }
         };
         let sort_a = sorted_key(&self.semantic);
@@ -53,7 +54,8 @@ impl PartialEq for MeshBufferView {
             match semantic {
                 gltf::mesh::Semantic::Positions => 0,
                 gltf::mesh::Semantic::Normals => 1,
-                _ => 2,
+                gltf::mesh::Semantic::Tangents => 2,
+                _ => 3,
             }
         };
         let sort_a = sorted_key(&self.semantic);
@@ -225,6 +227,9 @@ impl Mesh {
                         gltf::mesh::Semantic::Normals => {
                             self.semantics.push(gltf::Semantic::Normals)
                         }
+                        gltf::mesh::Semantic::Tangents => {
+                            self.semantics.push(gltf::Semantic::Tangents)
+                        }
                         gltf::mesh::Semantic::TexCoords(index) => {
                             self.semantics.push(gltf::Semantic::TexCoords(index))
                         }
@@ -365,10 +370,16 @@ impl Drawable for Mesh {
             gl::VertexArrayAttribBinding(self.vao, 1, 0);
             stride += 12;
         }
-        if self.semantics.contains(&gltf::Semantic::TexCoords(0)) {
+        if self.semantics.contains(&gltf::Semantic::Tangents) {
             gl::EnableVertexArrayAttrib(self.vao, 2);
-            gl::VertexArrayAttribFormat(self.vao, 2, 2, gl::FLOAT, gl::FALSE, stride);
+            gl::VertexArrayAttribFormat(self.vao, 2, 4, gl::FLOAT, gl::FALSE, stride);
             gl::VertexArrayAttribBinding(self.vao, 2, 0);
+            stride += 16;
+        }
+        if self.semantics.contains(&gltf::Semantic::TexCoords(0)) {
+            gl::EnableVertexArrayAttrib(self.vao, 3);
+            gl::VertexArrayAttribFormat(self.vao, 3, 2, gl::FLOAT, gl::FALSE, stride);
+            gl::VertexArrayAttribBinding(self.vao, 3, 0);
             stride += 8;
         }
         gl::VertexArrayVertexBuffer(
