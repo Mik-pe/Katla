@@ -74,7 +74,7 @@ impl Program {
         }
     }
 
-    pub unsafe fn uniform_mat(&self, uniform_str: &String, matrix: &mikpe_math::Mat4) {
+    pub unsafe fn uniform_mat(&self, uniform_str: &str, matrix: &mikpe_math::Mat4) {
         if let Some(uniform_location) = self.uniforms.get(uniform_str) {
             gl::ProgramUniformMatrix4fv(
                 self.program_name,

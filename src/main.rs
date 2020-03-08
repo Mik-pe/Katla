@@ -470,8 +470,8 @@ fn main() {
                     gl::Disable(gl::SCISSOR_TEST);
 
                     gl::Viewport(0, 0, win_x as i32, win_y as i32);
-                    model_program.uniform_mat(&"u_projMatrix".to_owned(), &projection_matrix);
-                    model_program.uniform_mat(&"u_viewMatrix".to_owned(), &view_matrix);
+                    model_program.uniform_mat("u_projMatrix", &projection_matrix);
+                    model_program.uniform_mat("u_viewMatrix", &view_matrix);
                     model_program.bind();
                     gl::ClearColor(0.3, 0.5, 0.3, 1.0);
                     gl::Clear(gl::COLOR_BUFFER_BIT | gl::DEPTH_BUFFER_BIT);

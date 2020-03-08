@@ -164,7 +164,7 @@ impl Mesh {
     }
 
     pub unsafe fn update_model_matrix(&self, program: &crate::rendering::Program) {
-        program.uniform_mat(&"u_modelMatrix".to_owned(), &self.model_matrix);
+        program.uniform_mat("u_modelMatrix", &self.model_matrix);
     }
 
     fn upload_vertex_data(&mut self, vertices: &[u8], indices: &[u8]) {

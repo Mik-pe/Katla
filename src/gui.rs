@@ -103,8 +103,7 @@ impl Gui {
                 mikpe_math::Vec4([0.0, 0.0, -1.0, 0.0]),
                 mikpe_math::Vec4([-1.0, 1.0, 0.0, 1.0]),
             ]);
-            self.gui_program
-                .uniform_mat(&"u_projMatrix".to_owned(), &gui_proj);
+            self.gui_program.uniform_mat("u_projMatrix", &gui_proj);
             self.gui_program.bind();
 
             gl::VertexArrayVertexBuffer(
