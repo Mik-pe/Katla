@@ -53,7 +53,7 @@ impl Texture {
         self.res_x = img.width as i32;
         self.res_y = img.height as i32;
         let max_side = u32::max(img.width, img.height);
-        let num_mipmaps = 32 - max_side.next_power_of_two().leading_zeros();
+        let num_mipmaps = max_side.next_power_of_two().trailing_zeros() + 1;
         let (gl_enum, internal_format) = match img.format {
             gltf::image::Format::R8 => (gl::RED, gl::R8),
             gltf::image::Format::R8G8 => (gl::RG, gl::RG8),
