@@ -29,7 +29,7 @@ bitflags! {
 }
 
 enum Message {
-    UploadMesh,
+    UploadMesh(String),
     UploadTexture,
     Exit,
 }
@@ -82,6 +82,11 @@ fn main() {
     plane_mesh.set_pos(Vec3::new(0.0, -2.0, 0.0));
     plane_mesh.read_gltf("resources/models/Regular_plane.glb");
     plane_mesh = unsafe { plane_mesh.rebind_gl() };
+
+    let mut box_mesh = rendering::Mesh::new();
+    box_mesh.read_gltf("resources/models/Box.glb");
+    box_mesh = unsafe { box_mesh.rebind_gl() };
+    let mut light_pos = Vec3::new(0.0, 200.0, 10.0);
     //TODO: Return a tuple of sender, receiver and the uploader?
     //TODO: Fix a way so one can register an upload-function for an enum?
     //TODO: Spawn the thread inside of the uploader and provide a join function? Do we want to join-on-drop?
@@ -113,8 +118,9 @@ fn main() {
                             break;
                         }
                     },
-                    Message::UploadMesh => {
-                        let mesh = rendering::Mesh::new();
+                    Message::UploadMesh(path) => {
+                        let mut mesh = rendering::Mesh::new();
+                        mesh.read_gltf(path);
                         uploaded_meshes.push(mesh);
                         if uploaded_meshes.len() == max_meshes_per_flush {
                             break;
@@ -152,8 +158,7 @@ fn main() {
                 uploads.push(UploadFinished::Acknowledgement(tex));
             }
             for mut mesh in uploaded_meshes {
-                mesh.read_gltf("resources/models/Avocado.glb");
-                mesh.set_scale(100.1);
+                mesh.set_scale(0.1);
                 unsafe {
                     gl::Flush();
                 };
@@ -235,9 +240,11 @@ fn main() {
     let mut view_yaw = 0.0;
     let mut view_pitch = 0.0;
     let mut view_rot = Mat4::new();
+    let mut total_time = 0.0;
     event_loop.run(move |event, _, control_flow| {
         use glutin::event::{ElementState, Event, MouseButton, VirtualKeyCode, WindowEvent};
         platform.handle_event(imgui.io_mut(), &gl_window.window(), &event);
+        total_time += imgui.io().delta_time;
         match event {
             Event::NewEvents(_) => {
                 // other application-specific logic
@@ -257,7 +264,6 @@ fn main() {
                 } => {
                     current_dpi_scale = scale_factor;
                 }
-
                 WindowEvent::Resized(logical_size) => {
                     win_x = logical_size.width as f64;
                     win_y = logical_size.height as f64;
@@ -351,11 +357,6 @@ fn main() {
                                             .expect("Could not send Upload message");
                                     }
                                 }
-                                VirtualKeyCode::B => {
-                                    sender
-                                        .send(Message::UploadMesh)
-                                        .expect("Could not send UploadMesh message");
-                                }
                                 VirtualKeyCode::Right => {
                                     rotangle += 0.1;
                                 }
@@ -412,6 +413,23 @@ fn main() {
                         ui.text(im_str!("Hello world!"));
                         ui.text(im_str!("This...is...imgui-rs!"));
                         ui.text(format!("Current render mode: {}", tex_vis));
+                        ui.text(format!(
+                            "Got {} textures, mean frametime: {:.3} (max {:.3}, min {:.3})",
+                            tex_list.len(),
+                            timer.current_mean(),
+                            timer.current_max(),
+                            timer.current_min(),
+                        ));
+                        if ui.button(im_str!("Load Tiger"), [0.0, 0.0]) {
+                            sender
+                                .send(Message::UploadMesh("resources/models/Tiger.glb".to_owned()))
+                                .expect("Could not send UploadMesh message");
+                        }
+                        if ui.button(im_str!("Load Fox"), [0.0, 0.0]) {
+                            sender
+                                .send(Message::UploadMesh("resources/models/Fox.glb".to_owned()))
+                                .expect("Could not send UploadMesh message");
+                        }
                         ui.separator();
                         let mouse_pos = ui.io().mouse_pos;
                         ui.text(format!(
@@ -453,7 +471,7 @@ fn main() {
                         UploadFinished::Mesh(mesh_fn) => {
                             let mut mesh = mesh_fn();
                             let x_offset = meshes.len() as f32;
-                            mesh.set_pos(mikpe_math::Vec3::new(-5.0 + 5.0 * x_offset, 0.0, -5.0));
+                            mesh.set_pos(mikpe_math::Vec3::new(5.0 * x_offset, 0.0, 0.0));
                             meshes.push(mesh);
                         }
                     }
@@ -472,6 +490,7 @@ fn main() {
                     gl::Viewport(0, 0, win_x as i32, win_y as i32);
                     model_program.uniform_mat("u_projMatrix", &projection_matrix);
                     model_program.uniform_mat("u_viewMatrix", &view_matrix);
+                    model_program.uniform_vec3("u_lightpos", light_pos.clone());
                     model_program.bind();
                     gl::ClearColor(0.3, 0.5, 0.3, 1.0);
                     gl::Clear(gl::COLOR_BUFFER_BIT | gl::DEPTH_BUFFER_BIT);
@@ -479,6 +498,14 @@ fn main() {
                     model_program.uniform_u32("u_texVis", tex_vis);
                     model_program.uniform_vec3("u_camPos", camera_pos.clone());
                     plane_mesh.draw();
+                    light_pos = Vec3::new(
+                        0.0,
+                        f32::sin(total_time * 0.1) * 30.0,
+                        f32::cos(total_time * 0.1) * 30.0,
+                    );
+                    box_mesh.set_pos(light_pos.clone());
+                    box_mesh.update_model_matrix(&model_program);
+                    box_mesh.draw();
                     for mesh in &mut meshes {
                         mesh.rotate_z(rotangle);
                         mesh.update_model_matrix(&model_program);
@@ -502,16 +529,6 @@ fn main() {
                     println!("Long CPU frametime: {} ms", end);
                 }
                 timer.add_timestamp(end);
-                gl_window.window().set_title(
-                    format!(
-                        "Got {} textures, mean frametime: {:.3} (max {:.3}, min {:.3})",
-                        tex_list.len(),
-                        timer.current_mean(),
-                        timer.current_max(),
-                        timer.current_min(),
-                    )
-                    .as_str(),
-                );
             }
             Event::LoopDestroyed => {
                 sender

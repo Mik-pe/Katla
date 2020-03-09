@@ -52,6 +52,8 @@ impl Texture {
         gl::CreateTextures(gl::TEXTURE_2D, 1, &mut self.id);
         self.res_x = img.width as i32;
         self.res_y = img.height as i32;
+        let max_side = u32::max(img.width, img.height);
+        let num_mipmaps = 32 - max_side.next_power_of_two().leading_zeros();
         let (gl_enum, internal_format) = match img.format {
             gltf::image::Format::R8 => (gl::RED, gl::R8),
             gltf::image::Format::R8G8 => (gl::RG, gl::RG8),
@@ -60,7 +62,13 @@ impl Texture {
             gltf::image::Format::B8G8R8 => (gl::BGR, gl::RGB8),
             gltf::image::Format::B8G8R8A8 => (gl::BGRA, gl::RGBA8),
         };
-        gl::TextureStorage2D(self.id, 1, internal_format, self.res_x, self.res_y);
+        gl::TextureStorage2D(
+            self.id,
+            num_mipmaps as i32,
+            internal_format,
+            self.res_x,
+            self.res_y,
+        );
 
         gl::TextureSubImage2D(
             self.id,
@@ -73,6 +81,7 @@ impl Texture {
             gl::UNSIGNED_BYTE,
             img.pixels.as_ptr() as *const _,
         );
+        gl::GenerateTextureMipmap(self.id);
     }
 
     pub unsafe fn bind(&self) {
@@ -84,6 +93,17 @@ impl Texture {
         };
 
         gl::BindTextureUnit(texture_unit, self.id);
+    }
+
+    pub unsafe fn unbind(&self) {
+        let texture_unit = match self.usage {
+            TextureUsage::ALBEDO => 0,
+            TextureUsage::NORMAL => 1,
+            TextureUsage::METALLIC_ROUGHNESS => 2,
+            TextureUsage::EMISSION => 3,
+        };
+
+        gl::BindTextureUnit(texture_unit, 0);
     }
 }
 

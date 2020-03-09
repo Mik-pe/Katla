@@ -18,6 +18,18 @@ impl Material {
             }
             albedo = Some(tex);
         }
+        if albedo.is_none() {
+            //For now lets cheat some
+            if let Some(spec_gloss) = mat.pbr_specular_glossiness() {
+                if let Some(base_color_tex) = spec_gloss.diffuse_texture() {
+                    let mut tex = Texture::new(TextureUsage::ALBEDO);
+                    unsafe {
+                        tex.set_data_gltf(&images[base_color_tex.texture().index()]);
+                    }
+                    albedo = Some(tex);
+                }
+            }
+        }
         if let Some(met_rough_tex) = mat.pbr_metallic_roughness().metallic_roughness_texture() {
             let mut tex = Texture::new(TextureUsage::METALLIC_ROUGHNESS);
             unsafe {
@@ -54,6 +66,24 @@ impl Material {
         if let Some(tex) = &self.normal {
             unsafe {
                 tex.bind();
+            }
+        }
+    }
+
+    pub fn unbind(&self) {
+        if let Some(tex) = &self.albedo {
+            unsafe {
+                tex.unbind();
+            }
+        }
+        if let Some(tex) = &self.met_rough {
+            unsafe {
+                tex.unbind();
+            }
+        }
+        if let Some(tex) = &self.normal {
+            unsafe {
+                tex.unbind();
             }
         }
     }

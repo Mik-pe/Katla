@@ -349,6 +349,9 @@ impl Drawable for Mesh {
                     gl::DrawArrays(gl::TRIANGLES, 0, (self.num_triangles) as i32);
                 }
             }
+            if let Some(mat) = &self.material {
+                mat.unbind();
+            }
         }
     }
 
