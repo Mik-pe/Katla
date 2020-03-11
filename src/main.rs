@@ -1,3 +1,4 @@
+mod cameracontroller;
 mod gui;
 mod rendering;
 mod util;
@@ -241,6 +242,7 @@ fn main() {
     let mut view_pitch = 0.0;
     let mut view_rot = Mat4::new();
     let mut total_time = 0.0;
+    let mut camera = cameracontroller::Camera::new();
     event_loop.run(move |event, _, control_flow| {
         use glutin::event::{ElementState, Event, MouseButton, VirtualKeyCode, WindowEvent};
         platform.handle_event(imgui.io_mut(), &gl_window.window(), &event);
@@ -257,154 +259,156 @@ fn main() {
                     .expect("Failed to prepare frame");
                 gl_window.window().request_redraw();
             }
-            Event::WindowEvent { event, .. } => match event {
-                WindowEvent::ScaleFactorChanged {
-                    scale_factor,
-                    new_inner_size: _,
-                } => {
-                    current_dpi_scale = scale_factor;
-                }
-                WindowEvent::Resized(logical_size) => {
-                    win_x = logical_size.width as f64;
-                    win_y = logical_size.height as f64;
-                    projection_matrix =
-                        Mat4::create_proj(60.0, (win_x / win_y) as f32, 0.1, 1000.0);
-                }
-                WindowEvent::CloseRequested => *control_flow = ControlFlow::Exit,
-                WindowEvent::MouseInput {
-                    device_id: _,
-                    state,
-                    button,
-                    modifiers: _,
-                } => {
-                    if button == MouseButton::Right && state == ElementState::Pressed {
-                        mouse_moving = true;
-                    } else if button == MouseButton::Right && state == ElementState::Released {
-                        mouse_moving = false;
+            Event::WindowEvent { event, .. } => {
+                camera.update(&event);
+                match event {
+                    WindowEvent::ScaleFactorChanged {
+                        scale_factor,
+                        new_inner_size: _,
+                    } => {
+                        current_dpi_scale = scale_factor;
                     }
-                }
-                WindowEvent::CursorMoved {
-                    device_id: _,
-                    position,
-                    modifiers: _,
-                } => {
-                    if mouse_moving {
-                        let delta_x = position.x - last_mouse_pos.x;
-                        let delta_y = position.y - last_mouse_pos.y;
-                        view_yaw -= 0.01 * delta_x;
-                        view_pitch -= 0.01 * delta_y;
-                        view_rot =
-                            Mat4::from_rotaxis(&(view_yaw as f32), Vec3::new(0.0, 1.0, 0.0).0).mul(
-                                &Mat4::from_rotaxis(
-                                    &(view_pitch as f32),
-                                    Vec3::new(1.0, 0.0, 0.0).0,
-                                ),
-                            );
+                    WindowEvent::Resized(logical_size) => {
+                        win_x = logical_size.width as f64;
+                        win_y = logical_size.height as f64;
+                        projection_matrix =
+                            Mat4::create_proj(60.0, (win_x / win_y) as f32, 0.1, 1000.0);
                     }
-                    last_mouse_pos = position;
-                }
-                WindowEvent::KeyboardInput {
-                    device_id: _,
-                    input,
-                    is_synthetic: _,
-                } => {
-                    if input.state == ElementState::Pressed {
-                        match input.virtual_keycode {
-                            Some(keycode) => match keycode {
-                                VirtualKeyCode::Escape => {
-                                    *control_flow = ControlFlow::Exit;
-                                }
-                                VirtualKeyCode::W => {
-                                    current_movement |= Movement::FORWARD;
-                                }
-                                VirtualKeyCode::S => {
-                                    current_movement |= Movement::BACKWARDS;
-                                }
-                                VirtualKeyCode::A => {
-                                    current_movement |= Movement::LEFT;
-                                }
-                                VirtualKeyCode::D => {
-                                    current_movement |= Movement::RIGHT;
-                                }
-                                VirtualKeyCode::Q => {
-                                    current_movement |= Movement::DOWN;
-                                }
-                                VirtualKeyCode::E => {
-                                    current_movement |= Movement::UP;
-                                }
-                                VirtualKeyCode::N => {
-                                    angle += 5.0;
-                                    projection_matrix = Mat4::create_proj(
-                                        60.0,
-                                        (win_x / win_y) as f32,
-                                        0.1,
-                                        1000.0,
-                                    );
-                                }
-                                VirtualKeyCode::M => {
-                                    angle -= 5.0;
-                                    projection_matrix = Mat4::create_proj(
-                                        60.0,
-                                        (win_x / win_y) as f32,
-                                        0.1,
-                                        1000.0,
-                                    );
-                                }
-                                VirtualKeyCode::Space => {
-                                    for _ in 0..10 {
-                                        sender
-                                            .send(Message::UploadTexture)
-                                            .expect("Could not send Upload message");
-                                    }
-                                }
-                                VirtualKeyCode::Right => {
-                                    rotangle += 0.1;
-                                }
-                                VirtualKeyCode::Left => {
-                                    rotangle -= 0.1;
-                                }
-                                VirtualKeyCode::Up => {
-                                    tex_vis += 1;
-                                }
-                                VirtualKeyCode::Down => {
-                                    if let Some(res) = tex_vis.checked_sub(1) {
-                                        tex_vis = res;
-                                    }
-                                }
-                                _ => {}
-                            },
-                            None => {}
-                        };
-                    }
-                    if input.state == ElementState::Released {
-                        match input.virtual_keycode {
-                            Some(keycode) => match keycode {
-                                VirtualKeyCode::W => {
-                                    current_movement -= Movement::FORWARD;
-                                }
-                                VirtualKeyCode::S => {
-                                    current_movement -= Movement::BACKWARDS;
-                                }
-                                VirtualKeyCode::A => {
-                                    current_movement -= Movement::LEFT;
-                                }
-                                VirtualKeyCode::D => {
-                                    current_movement -= Movement::RIGHT;
-                                }
-                                VirtualKeyCode::Q => {
-                                    current_movement -= Movement::DOWN;
-                                }
-                                VirtualKeyCode::E => {
-                                    current_movement -= Movement::UP;
-                                }
-                                _ => {}
-                            },
-                            None => {}
+                    WindowEvent::CloseRequested => *control_flow = ControlFlow::Exit,
+                    WindowEvent::MouseInput {
+                        device_id: _,
+                        state,
+                        button,
+                        modifiers: _,
+                    } => {
+                        if button == MouseButton::Right && state == ElementState::Pressed {
+                            mouse_moving = true;
+                        } else if button == MouseButton::Right && state == ElementState::Released {
+                            mouse_moving = false;
                         }
                     }
+                    WindowEvent::CursorMoved {
+                        device_id: _,
+                        position,
+                        modifiers: _,
+                    } => {
+                        if mouse_moving {
+                            let delta_x = position.x - last_mouse_pos.x;
+                            let delta_y = position.y - last_mouse_pos.y;
+                            view_yaw -= 0.01 * delta_x;
+                            view_pitch -= 0.01 * delta_y;
+                            view_rot =
+                                Mat4::from_rotaxis(&(view_yaw as f32), Vec3::new(0.0, 1.0, 0.0).0)
+                                    .mul(&Mat4::from_rotaxis(
+                                        &(view_pitch as f32),
+                                        Vec3::new(1.0, 0.0, 0.0).0,
+                                    ));
+                        }
+                        last_mouse_pos = position;
+                    }
+                    WindowEvent::KeyboardInput {
+                        device_id: _,
+                        input,
+                        is_synthetic: _,
+                    } => {
+                        if input.state == ElementState::Pressed {
+                            match input.virtual_keycode {
+                                Some(keycode) => match keycode {
+                                    VirtualKeyCode::Escape => {
+                                        *control_flow = ControlFlow::Exit;
+                                    }
+                                    VirtualKeyCode::W => {
+                                        current_movement |= Movement::FORWARD;
+                                    }
+                                    VirtualKeyCode::S => {
+                                        current_movement |= Movement::BACKWARDS;
+                                    }
+                                    VirtualKeyCode::A => {
+                                        current_movement |= Movement::LEFT;
+                                    }
+                                    VirtualKeyCode::D => {
+                                        current_movement |= Movement::RIGHT;
+                                    }
+                                    VirtualKeyCode::Q => {
+                                        current_movement |= Movement::DOWN;
+                                    }
+                                    VirtualKeyCode::E => {
+                                        current_movement |= Movement::UP;
+                                    }
+                                    VirtualKeyCode::N => {
+                                        angle += 5.0;
+                                        projection_matrix = Mat4::create_proj(
+                                            60.0,
+                                            (win_x / win_y) as f32,
+                                            0.1,
+                                            1000.0,
+                                        );
+                                    }
+                                    VirtualKeyCode::M => {
+                                        angle -= 5.0;
+                                        projection_matrix = Mat4::create_proj(
+                                            60.0,
+                                            (win_x / win_y) as f32,
+                                            0.1,
+                                            1000.0,
+                                        );
+                                    }
+                                    VirtualKeyCode::Space => {
+                                        for _ in 0..10 {
+                                            sender
+                                                .send(Message::UploadTexture)
+                                                .expect("Could not send Upload message");
+                                        }
+                                    }
+                                    VirtualKeyCode::Right => {
+                                        rotangle += 0.1;
+                                    }
+                                    VirtualKeyCode::Left => {
+                                        rotangle -= 0.1;
+                                    }
+                                    VirtualKeyCode::Up => {
+                                        tex_vis += 1;
+                                    }
+                                    VirtualKeyCode::Down => {
+                                        if let Some(res) = tex_vis.checked_sub(1) {
+                                            tex_vis = res;
+                                        }
+                                    }
+                                    _ => {}
+                                },
+                                None => {}
+                            };
+                        }
+                        if input.state == ElementState::Released {
+                            match input.virtual_keycode {
+                                Some(keycode) => match keycode {
+                                    VirtualKeyCode::W => {
+                                        current_movement -= Movement::FORWARD;
+                                    }
+                                    VirtualKeyCode::S => {
+                                        current_movement -= Movement::BACKWARDS;
+                                    }
+                                    VirtualKeyCode::A => {
+                                        current_movement -= Movement::LEFT;
+                                    }
+                                    VirtualKeyCode::D => {
+                                        current_movement -= Movement::RIGHT;
+                                    }
+                                    VirtualKeyCode::Q => {
+                                        current_movement -= Movement::DOWN;
+                                    }
+                                    VirtualKeyCode::E => {
+                                        current_movement -= Movement::UP;
+                                    }
+                                    _ => {}
+                                },
+                                None => {}
+                            }
+                        }
+                    }
+                    _ => {}
                 }
-                _ => {}
-            },
+            }
             Event::RedrawRequested(_) => {
                 let ui = imgui.frame();
                 imgui::Window::new(im_str!("Hello world"))
