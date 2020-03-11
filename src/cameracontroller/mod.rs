@@ -18,10 +18,11 @@ pub struct Camera {
     //TODO: Make a quat out of this
     pos: Vec3,
     velocity: Vec3,
-    yaw: f32,
-    pitch: f32,
+    yaw: f64,
+    pitch: f64,
     looking: bool,
     current_movement: Movement,
+    last_mouse_pos: glutin::dpi::PhysicalPosition<f64>,
 }
 
 impl Camera {
@@ -33,29 +34,144 @@ impl Camera {
             pitch: 0.0,
             looking: false,
             current_movement: Movement::STILL,
+            last_mouse_pos: glutin::dpi::PhysicalPosition::new(0.0, 0.0),
         }
     }
-    pub fn update(&mut self, event: &WindowEvent) {
-        match event {
+    pub fn handle_event(&mut self, event: &WindowEvent) {
+        match *event {
             WindowEvent::MouseInput {
                 device_id: _,
                 state,
                 button,
                 modifiers: _,
             } => {
-                if *button == MouseButton::Right && *state == ElementState::Pressed {
+                if button == MouseButton::Right && state == ElementState::Pressed {
                     self.looking = true;
-                } else if *button == MouseButton::Right && *state == ElementState::Released {
+                } else if button == MouseButton::Right && state == ElementState::Released {
                     self.looking = false;
+                }
+            }
+            WindowEvent::CursorMoved {
+                device_id: _,
+                position,
+                modifiers: _,
+            } => {
+                if self.looking {
+                    let delta_x = position.x - self.last_mouse_pos.x;
+                    let delta_y = position.y - self.last_mouse_pos.y;
+                    self.yaw -= 0.01 * delta_x;
+                    self.pitch -= 0.01 * delta_y;
+                    self.pitch = self
+                        .pitch
+                        .max(-std::f64::consts::FRAC_PI_2)
+                        .min(std::f64::consts::FRAC_PI_2);
+                }
+                self.last_mouse_pos = position;
+            }
+            WindowEvent::KeyboardInput {
+                device_id: _,
+                input,
+                is_synthetic: _,
+            } => {
+                if input.state == ElementState::Pressed {
+                    match input.virtual_keycode {
+                        Some(keycode) => match keycode {
+                            VirtualKeyCode::W => {
+                                self.current_movement |= Movement::FORWARD;
+                            }
+                            VirtualKeyCode::S => {
+                                self.current_movement |= Movement::BACKWARDS;
+                            }
+                            VirtualKeyCode::A => {
+                                self.current_movement |= Movement::LEFT;
+                            }
+                            VirtualKeyCode::D => {
+                                self.current_movement |= Movement::RIGHT;
+                            }
+                            VirtualKeyCode::Q => {
+                                self.current_movement |= Movement::DOWN;
+                            }
+                            VirtualKeyCode::E => {
+                                self.current_movement |= Movement::UP;
+                            }
+                            _ => {}
+                        },
+                        None => {}
+                    }
+                }
+                if input.state == ElementState::Released {
+                    match input.virtual_keycode {
+                        Some(keycode) => match keycode {
+                            VirtualKeyCode::W => {
+                                self.current_movement -= Movement::FORWARD;
+                            }
+                            VirtualKeyCode::S => {
+                                self.current_movement -= Movement::BACKWARDS;
+                            }
+                            VirtualKeyCode::A => {
+                                self.current_movement -= Movement::LEFT;
+                            }
+                            VirtualKeyCode::D => {
+                                self.current_movement -= Movement::RIGHT;
+                            }
+                            VirtualKeyCode::Q => {
+                                self.current_movement -= Movement::DOWN;
+                            }
+                            VirtualKeyCode::E => {
+                                self.current_movement -= Movement::UP;
+                            }
+                            _ => {}
+                        },
+                        None => {}
+                    }
                 }
             }
             _ => {}
         }
     }
 
-    pub fn getViewMatrix(&self) {
-        let view_rot = Mat4::from_rotaxis(&(self.yaw as f32), Vec3::new(0.0, 1.0, 0.0).0).mul(
-            &Mat4::from_rotaxis(&(self.pitch as f32), Vec3::new(1.0, 0.0, 0.0).0),
-        );
+    pub fn update(&mut self, _dt: f32) {
+        self.velocity = Vec3::new(0.0, 0.0, 0.0);
+        if self.current_movement.contains(Movement::FORWARD) {
+            self.velocity[2] -= 1.0;
+        }
+        if self.current_movement.contains(Movement::BACKWARDS) {
+            self.velocity[2] += 1.0;
+        }
+        if self.current_movement.contains(Movement::DOWN) {
+            self.velocity[1] -= 1.0;
+        }
+        if self.current_movement.contains(Movement::UP) {
+            self.velocity[1] += 1.0;
+        }
+        if self.current_movement.contains(Movement::LEFT) {
+            self.velocity[0] -= 1.0;
+        }
+        if self.current_movement.contains(Movement::RIGHT) {
+            self.velocity[0] += 1.0;
+        }
+        self.velocity =
+            mikpe_math::mat4_mul_vec3(&self.get_view_rotation(), &self.velocity.normalize());
+        self.pos = self.pos + self.velocity.mul(0.1);
+    }
+
+    fn get_view_rotation(&self) -> Mat4 {
+        Mat4::from_rotaxis(&(self.yaw as f32), Vec3::new(0.0, 1.0, 0.0).0).mul(&Mat4::from_rotaxis(
+            &(self.pitch as f32),
+            Vec3::new(1.0, 0.0, 0.0).0,
+        ))
+    }
+
+    pub fn get_cam_pos(&self) -> Vec3 {
+        self.pos.clone()
+    }
+
+    pub fn get_view_mat(&self) -> Mat4 {
+        let view_rot = self.get_view_rotation();
+        Mat4::create_lookat(
+            self.pos.clone(),
+            self.pos.clone() + mikpe_math::mat4_mul_vec3(&view_rot, &Vec3::new(0.0, 0.0, -1.0)),
+            mikpe_math::mat4_mul_vec3(&view_rot, &Vec3::new(0.0, 1.0, 0.0)),
+        )
     }
 }

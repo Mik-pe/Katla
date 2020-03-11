@@ -15,20 +15,6 @@ use imgui_winit_support::{HiDpiMode, WinitPlatform};
 use mikpe_math::{Mat4, Vec3};
 use rendering::drawable::Drawable;
 use std::time::Instant;
-
-bitflags! {
-    struct Movement: u32
-    {
-        const STILL     = 0b0000_0000;
-        const FORWARD   = 0b0000_0001;
-        const BACKWARDS = 0b0000_0010;
-        const LEFT      = 0b0000_0100;
-        const RIGHT     = 0b0000_1000;
-        const UP        = 0b0001_0000;
-        const DOWN      = 0b0010_0000;
-    }
-}
-
 enum Message {
     UploadMesh(String),
     UploadTexture,
@@ -46,7 +32,6 @@ fn main() {
     let (tex_sender, tex_receiver) = std::sync::mpsc::channel();
 
     let mut projection_matrix = Mat4::create_proj(60.0, 1.0, 0.5, 1000.0);
-    let mut camera_pos = Vec3::new(0.0, 0.0, 0.0);
     let event_loop = EventLoop::new();
     let mut win_x = 512.0f64;
     let mut win_y = 512.0f64;
@@ -226,21 +211,14 @@ fn main() {
     let mut last_frame = Instant::now();
     let mut angle = 60.0;
     let mut tex_list = vec![];
-    let mut movement_vec = mikpe_math::Vec3::new(0.0, 0.0, 0.0);
     let mut timer = util::Timer::new(300);
     let mut rotangle = 0.0;
-    let mut current_movement = Movement::STILL;
     let model_program = rendering::Program::new(
         include_bytes!("../resources/shaders/model.vert"),
         include_bytes!("../resources/shaders/model.frag"),
     );
     let mut tex_vis = 0u32;
     let mut gui = gui::Gui::new();
-    let mut mouse_moving = false;
-    let mut last_mouse_pos = glutin::dpi::PhysicalPosition::new(0.0, 0.0);
-    let mut view_yaw = 0.0;
-    let mut view_pitch = 0.0;
-    let mut view_rot = Mat4::new();
     let mut total_time = 0.0;
     let mut camera = cameracontroller::Camera::new();
     event_loop.run(move |event, _, control_flow| {
@@ -251,6 +229,7 @@ fn main() {
             Event::NewEvents(_) => {
                 // other application-specific logic
                 last_frame = imgui.io_mut().update_delta_time(last_frame);
+                camera.update(imgui.io().delta_time);
             }
             Event::MainEventsCleared => {
                 // other application-specific logic
@@ -260,7 +239,7 @@ fn main() {
                 gl_window.window().request_redraw();
             }
             Event::WindowEvent { event, .. } => {
-                camera.update(&event);
+                camera.handle_event(&event);
                 match event {
                     WindowEvent::ScaleFactorChanged {
                         scale_factor,
@@ -275,37 +254,6 @@ fn main() {
                             Mat4::create_proj(60.0, (win_x / win_y) as f32, 0.1, 1000.0);
                     }
                     WindowEvent::CloseRequested => *control_flow = ControlFlow::Exit,
-                    WindowEvent::MouseInput {
-                        device_id: _,
-                        state,
-                        button,
-                        modifiers: _,
-                    } => {
-                        if button == MouseButton::Right && state == ElementState::Pressed {
-                            mouse_moving = true;
-                        } else if button == MouseButton::Right && state == ElementState::Released {
-                            mouse_moving = false;
-                        }
-                    }
-                    WindowEvent::CursorMoved {
-                        device_id: _,
-                        position,
-                        modifiers: _,
-                    } => {
-                        if mouse_moving {
-                            let delta_x = position.x - last_mouse_pos.x;
-                            let delta_y = position.y - last_mouse_pos.y;
-                            view_yaw -= 0.01 * delta_x;
-                            view_pitch -= 0.01 * delta_y;
-                            view_rot =
-                                Mat4::from_rotaxis(&(view_yaw as f32), Vec3::new(0.0, 1.0, 0.0).0)
-                                    .mul(&Mat4::from_rotaxis(
-                                        &(view_pitch as f32),
-                                        Vec3::new(1.0, 0.0, 0.0).0,
-                                    ));
-                        }
-                        last_mouse_pos = position;
-                    }
                     WindowEvent::KeyboardInput {
                         device_id: _,
                         input,
@@ -316,24 +264,6 @@ fn main() {
                                 Some(keycode) => match keycode {
                                     VirtualKeyCode::Escape => {
                                         *control_flow = ControlFlow::Exit;
-                                    }
-                                    VirtualKeyCode::W => {
-                                        current_movement |= Movement::FORWARD;
-                                    }
-                                    VirtualKeyCode::S => {
-                                        current_movement |= Movement::BACKWARDS;
-                                    }
-                                    VirtualKeyCode::A => {
-                                        current_movement |= Movement::LEFT;
-                                    }
-                                    VirtualKeyCode::D => {
-                                        current_movement |= Movement::RIGHT;
-                                    }
-                                    VirtualKeyCode::Q => {
-                                        current_movement |= Movement::DOWN;
-                                    }
-                                    VirtualKeyCode::E => {
-                                        current_movement |= Movement::UP;
                                     }
                                     VirtualKeyCode::N => {
                                         angle += 5.0;
@@ -379,32 +309,6 @@ fn main() {
                                 None => {}
                             };
                         }
-                        if input.state == ElementState::Released {
-                            match input.virtual_keycode {
-                                Some(keycode) => match keycode {
-                                    VirtualKeyCode::W => {
-                                        current_movement -= Movement::FORWARD;
-                                    }
-                                    VirtualKeyCode::S => {
-                                        current_movement -= Movement::BACKWARDS;
-                                    }
-                                    VirtualKeyCode::A => {
-                                        current_movement -= Movement::LEFT;
-                                    }
-                                    VirtualKeyCode::D => {
-                                        current_movement -= Movement::RIGHT;
-                                    }
-                                    VirtualKeyCode::Q => {
-                                        current_movement -= Movement::DOWN;
-                                    }
-                                    VirtualKeyCode::E => {
-                                        current_movement -= Movement::UP;
-                                    }
-                                    _ => {}
-                                },
-                                None => {}
-                            }
-                        }
                     }
                     _ => {}
                 }
@@ -442,28 +346,6 @@ fn main() {
                         ));
                     });
 
-                movement_vec = Vec3::new(0.0, 0.0, 0.0);
-                if current_movement.contains(Movement::FORWARD) {
-                    movement_vec[2] -= 1.0;
-                }
-                if current_movement.contains(Movement::BACKWARDS) {
-                    movement_vec[2] += 1.0;
-                }
-                if current_movement.contains(Movement::DOWN) {
-                    movement_vec[1] -= 1.0;
-                }
-                if current_movement.contains(Movement::UP) {
-                    movement_vec[1] += 1.0;
-                }
-                if current_movement.contains(Movement::LEFT) {
-                    movement_vec[0] -= 1.0;
-                }
-                if current_movement.contains(Movement::RIGHT) {
-                    movement_vec[0] += 1.0;
-                }
-                movement_vec = mikpe_math::mat4_mul_vec3(&view_rot, &movement_vec.normalize());
-                camera_pos = camera_pos + movement_vec.mul(0.1);
-
                 for tex_result in tex_receiver.try_iter() {
                     match tex_result {
                         UploadFinished::Acknowledgement(result) => {
@@ -480,13 +362,7 @@ fn main() {
                         }
                     }
                 }
-                let view_matrix = Mat4::create_lookat(
-                    camera_pos.clone(),
-                    camera_pos.clone()
-                        + mikpe_math::mat4_mul_vec3(&view_rot, &Vec3::new(0.0, 0.0, -1.0)),
-                    mikpe_math::mat4_mul_vec3(&view_rot, &Vec3::new(0.0, 1.0, 0.0)),
-                )
-                .inverse();
+                let view_matrix = camera.get_view_mat().inverse();
                 unsafe {
                     gl::Enable(gl::DEPTH_TEST);
                     gl::Disable(gl::SCISSOR_TEST);
@@ -500,7 +376,7 @@ fn main() {
                     gl::Clear(gl::COLOR_BUFFER_BIT | gl::DEPTH_BUFFER_BIT);
                     plane_mesh.update_model_matrix(&model_program);
                     model_program.uniform_u32("u_texVis", tex_vis);
-                    model_program.uniform_vec3("u_camPos", camera_pos.clone());
+                    model_program.uniform_vec3("u_camPos", camera.get_cam_pos());
                     plane_mesh.draw();
                     light_pos = Vec3::new(
                         0.0,
