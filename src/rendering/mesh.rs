@@ -2,6 +2,7 @@ use crate::gl;
 use crate::rendering::drawable::Drawable;
 use crate::rendering::Material;
 use crate::rendering::{Texture, TextureUsage};
+use crate::util::CachedGLTFModel;
 
 use gltf;
 use mikpe_math;
@@ -93,27 +94,24 @@ impl Mesh {
         }
     }
 
-    // fn parse_img_src(&mut self, src: gltf::image::Source, images: &Vec<gltf::image::Data>) {
-    //     match src {
-    //         gltf::image::Source::Uri { uri, mime_type } => {}
-    //         gltf::image::Source::View {
-    //             view,
-    //             mime_type: _mime_type,
-    //         } => {
-    //             let buffer_idx = view.buffer().index();
-    //             let buffer = &images[buffer_idx];
-    //             unsafe {
-    //                 self.albedo_tex.set_data_gltf(buffer);
-    //             }
-    //         }
-    //     }
-    // }
-
     pub fn read_gltf<P>(&mut self, path: P)
     where
         P: AsRef<Path>,
     {
         let (document, buffers, images) = gltf::import(path).unwrap();
+        self.parse_gltf(document, buffers, images);
+    }
+
+    pub fn init_from_cache(&mut self, model: CachedGLTFModel) {
+        self.parse_gltf(model.document, model.buffers, model.images);
+    }
+
+    pub fn parse_gltf(
+        &mut self,
+        document: gltf::Document,
+        buffers: Vec<gltf::buffer::Data>,
+        images: Vec<gltf::image::Data>,
+    ) {
         let mut used_nodes = vec![];
         for scene in document.scenes() {
             for node in scene.nodes() {
@@ -136,9 +134,6 @@ impl Mesh {
                 self.parse_node(&node, &buffers);
             }
         }
-        // for image in document.images() {
-        //     self.parse_img_src(image.source(), &images);
-        // }
     }
 
     pub fn set_pos(&mut self, pos: mikpe_math::Vec3) {

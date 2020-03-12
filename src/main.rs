@@ -14,6 +14,7 @@ use imgui::{im_str, Condition, Context};
 use imgui_winit_support::{HiDpiMode, WinitPlatform};
 use mikpe_math::{Mat4, Vec3};
 use rendering::drawable::Drawable;
+use std::path::PathBuf;
 use std::time::Instant;
 enum Message {
     UploadMesh(String),
@@ -63,10 +64,13 @@ fn main() {
         println!("Got {}MB total mem", total_mem_kb / 1024);
         println!("Got {}MB current mem", current_mem_kb / 1024);
     };
+    let mut model_cache = util::ModelCache::new();
     let mut meshes: Vec<rendering::Mesh> = vec![];
     let mut plane_mesh = rendering::Mesh::new();
     plane_mesh.set_pos(Vec3::new(0.0, -2.0, 0.0));
-    plane_mesh.read_gltf("resources/models/Regular_plane.glb");
+    plane_mesh.init_from_cache(
+        model_cache.read_gltf(PathBuf::from("resources/models/Regular_plane.glb")),
+    );
     plane_mesh = unsafe { plane_mesh.rebind_gl() };
 
     let mut box_mesh = rendering::Mesh::new();
@@ -106,7 +110,7 @@ fn main() {
                     },
                     Message::UploadMesh(path) => {
                         let mut mesh = rendering::Mesh::new();
-                        mesh.read_gltf(path);
+                        mesh.init_from_cache(model_cache.read_gltf(PathBuf::from(path)));
                         uploaded_meshes.push(mesh);
                         if uploaded_meshes.len() == max_meshes_per_flush {
                             break;
@@ -332,6 +336,15 @@ fn main() {
                             sender
                                 .send(Message::UploadMesh("resources/models/Tiger.glb".to_owned()))
                                 .expect("Could not send UploadMesh message");
+                        }
+                        if ui.button(im_str!("Load 10 Tigers"), [0.0, 0.0]) {
+                            for _ in 0..10 {
+                                sender
+                                    .send(Message::UploadMesh(
+                                        "resources/models/Tiger.glb".to_owned(),
+                                    ))
+                                    .expect("Could not send UploadMesh message");
+                            }
                         }
                         if ui.button(im_str!("Load Fox"), [0.0, 0.0]) {
                             sender
