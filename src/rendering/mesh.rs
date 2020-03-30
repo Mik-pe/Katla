@@ -8,7 +8,6 @@ use gltf;
 use mikpe_math;
 use std::cmp::{Ordering, PartialOrd};
 use std::path::Path;
-
 enum IndexType {
     UnsignedByte,
     UnsignedShort,
@@ -177,26 +176,37 @@ impl Mesh {
         let total_buffer_size = vertices.len() + indices.len();
         unsafe {
             gl::CreateBuffers(1, &mut self.buffer);
+
             gl::NamedBufferStorage(
                 self.buffer,
                 total_buffer_size as isize,
                 std::ptr::null(),
-                gl::DYNAMIC_STORAGE_BIT,
+                gl::MAP_WRITE_BIT,
             );
             if !indices.is_empty() {
-                gl::NamedBufferSubData(
+                let buf = gl::MapNamedBufferRange(
                     self.buffer,
                     0,
                     indices.len() as isize,
-                    indices.as_ptr() as *const _,
+                    gl::MAP_WRITE_BIT | gl::MAP_FLUSH_EXPLICIT_BIT,
                 );
+                if !buf.is_null() {
+                    std::ptr::copy(indices.as_ptr(), buf as *mut _, indices.len());
+                    gl::FlushMappedNamedBufferRange(self.buffer, 0, indices.len() as isize);
+                    gl::UnmapNamedBuffer(self.buffer);
+                }
             }
-            gl::NamedBufferSubData(
+            let buf = gl::MapNamedBufferRange(
                 self.buffer,
                 self.vert_attr_offset,
                 vertices.len() as isize,
-                vertices.as_ptr() as *const _,
+                gl::MAP_WRITE_BIT | gl::MAP_FLUSH_EXPLICIT_BIT,
             );
+            if !buf.is_null() {
+                std::ptr::copy(vertices.as_ptr(), buf as *mut _, vertices.len());
+                gl::FlushMappedNamedBufferRange(self.buffer, 0, vertices.len() as isize);
+                gl::UnmapNamedBuffer(self.buffer);
+            }
         }
     }
 
