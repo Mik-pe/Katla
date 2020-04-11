@@ -317,6 +317,14 @@ impl Mesh {
         }
     }
 }
+impl Drop for Mesh {
+    fn drop(&mut self) {
+        unsafe {
+            println!("Deleted mesh!");
+            gl::DeleteBuffers(1, &self.buffer);
+        }
+    }
+}
 
 impl Drawable for Mesh {
     fn draw(&self) {

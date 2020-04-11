@@ -63,6 +63,14 @@ impl Texture {
             gltf::image::Format::B8G8R8 => (gl::BGR, gl::RGB8, 3),
             gltf::image::Format::B8G8R8A8 => (gl::BGRA, gl::RGBA8, 4),
         };
+        gl::TextureStorage2D(
+            self.id,
+            num_mipmaps as i32,
+            internal_format,
+            self.res_x,
+            self.res_y,
+        );
+
         let total_buffer_size = stride * self.res_x * self.res_y;
         let mut buffer = 0;
         gl::CreateBuffers(1, &mut buffer);
@@ -85,13 +93,6 @@ impl Texture {
             gl::UnmapNamedBuffer(buffer);
         }
         gl::TextureBuffer(self.id, gl_enum, buffer);
-        gl::TextureStorage2D(
-            self.id,
-            num_mipmaps as i32,
-            internal_format,
-            self.res_x,
-            self.res_y,
-        );
         gl::BindBuffer(gl::PIXEL_UNPACK_BUFFER, buffer);
         gl::TextureSubImage2D(
             self.id,
@@ -104,6 +105,8 @@ impl Texture {
             gl::UNSIGNED_BYTE,
             std::ptr::null() as *const _,
         );
+        gl::BindBuffer(gl::PIXEL_UNPACK_BUFFER, 0);
+        gl::DeleteBuffers(1, &buffer);
         gl::GenerateTextureMipmap(self.id);
     }
 
@@ -132,7 +135,8 @@ impl Texture {
 impl Drop for Texture {
     fn drop(&mut self) {
         unsafe {
-            gl::DeleteTextures(1, &self.id as *const _);
+            println!("Deleted texture!");
+            gl::DeleteTextures(1, &self.id);
         }
     }
 }

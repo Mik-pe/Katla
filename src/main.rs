@@ -18,7 +18,6 @@ use std::path::PathBuf;
 use std::time::Instant;
 enum Message {
     UploadMesh(String),
-    UploadTexture,
     Exit,
 }
 
@@ -30,7 +29,7 @@ const GPU_MEM_INFO_TOTAL_AVAILABLE_MEM_NVX: gl::types::GLenum = 0x9048;
 const GPU_MEM_INFO_CURRENT_AVAILABLE_MEM_NVX: gl::types::GLenum = 0x9049;
 fn main() {
     let (sender, receiver) = std::sync::mpsc::channel();
-    let (tex_sender, tex_receiver) = std::sync::mpsc::channel();
+    let (upload_sender, upload_recv) = std::sync::mpsc::channel();
 
     let mut projection_matrix = Mat4::create_proj(60.0, 1.0, 0.5, 1000.0);
     let event_loop = EventLoop::new();
@@ -85,29 +84,15 @@ fn main() {
 
     let upload_thread = std::thread::spawn(move || {
         let _upload_context = unsafe { upload_context.make_current() }.unwrap();
-        let mut current_red = 0u8;
-        let mut current_green = 0u8;
-        let mut current_blue = 0u8;
         let mut should_exit = false;
-        let max_textures_per_flush = 50;
         let max_meshes_per_flush = 10;
         loop {
             let mut uploads = vec![];
-            let mut uploaded_textures = vec![];
             let mut uploaded_meshes = vec![];
             let start = Instant::now();
 
             for message in receiver.try_iter() {
                 match message {
-                    Message::UploadTexture => unsafe {
-                        let mut tex = 0u32;
-                        gl::CreateTextures(gl::TEXTURE_2D, 1, &mut tex);
-                        let tex = rendering::Texture::new(rendering::TextureUsage::ALBEDO);
-                        uploaded_textures.push(tex);
-                        if uploaded_textures.len() == max_textures_per_flush {
-                            break;
-                        }
-                    },
                     Message::UploadMesh(path) => {
                         let mut mesh = rendering::Mesh::new();
                         mesh.init_from_cache(model_cache.read_gltf(PathBuf::from(path)));
@@ -121,37 +106,16 @@ fn main() {
                     }
                 }
             }
-
-            for mut tex in uploaded_textures {
-                let num_mipmaps = 10;
-                unsafe {
-                    let mut img: image::RgbaImage = image::ImageBuffer::new(1024, 1024);
-                    let pixel_step = 1024 / 255;
-                    let mut pixel_it = 0;
-                    for pixel in img.pixels_mut() {
-                        *pixel = image::Rgba([current_red, current_green, current_blue, 255]);
-
-                        if pixel_it % pixel_step == 0 {
-                            current_red = current_red.wrapping_add(1);
-                            if current_red == 0 {
-                                current_green = current_green.wrapping_add(1);
-                                if current_green == 0 {
-                                    current_blue = current_blue.wrapping_add(1);
-                                }
-                            }
-                        }
-                        pixel_it += 1;
-                    }
-                    tex.set_data(img);
+            let mut sync = std::ptr::null_mut() as *const _;
+            if !uploaded_meshes.is_empty() {
+                sync = unsafe {
                     gl::Flush();
-                }
-                uploads.push(UploadFinished::Acknowledgement(tex));
+                    gl::FenceSync(gl::SYNC_GPU_COMMANDS_COMPLETE, 0)
+                };
             }
             for mut mesh in uploaded_meshes {
                 mesh.set_scale(0.1);
-                unsafe {
-                    gl::Flush();
-                };
+                println!("Uploaded mesh!");
                 uploads.push(UploadFinished::Mesh(Box::new(move || unsafe {
                     mesh.rebind_gl()
                 })));
@@ -160,14 +124,14 @@ fn main() {
             if !uploads.is_empty() {
                 unsafe {
                     //This glFinish ensures all previously recorded calls are realized by the server
-                    gl::Finish();
+                    gl::Flush();
+                    gl::WaitSync(sync, 0, gl::TIMEOUT_IGNORED);
                     let end = start.elapsed().as_micros() as f64 / 1000.0;
                     println!("Generation + upload took {}ms", end);
                 }
             }
-
             for upload in uploads {
-                tex_sender
+                upload_sender
                     .send(upload)
                     .expect("Could not send upload finished");
             }
@@ -287,13 +251,6 @@ fn main() {
                                             1000.0,
                                         );
                                     }
-                                    VirtualKeyCode::Space => {
-                                        for _ in 0..10 {
-                                            sender
-                                                .send(Message::UploadTexture)
-                                                .expect("Could not send Upload message");
-                                        }
-                                    }
                                     VirtualKeyCode::Right => {
                                         rotangle += 0.1;
                                     }
@@ -359,7 +316,7 @@ fn main() {
                         ));
                     });
 
-                for tex_result in tex_receiver.try_iter() {
+                for tex_result in upload_recv.try_iter() {
                     match tex_result {
                         UploadFinished::Acknowledgement(result) => {
                             tex_list.push(result);
