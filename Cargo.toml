@@ -13,6 +13,7 @@ imgui = "^0.3.0"
 imgui-winit-support = "^0.3.0"
 bitflags = "^1.2.1"
 mikpe_math = {git = "https://github.com/Mik-pe/mikpe_math.git"}
+vulkano = "^0.18.0"
 
 [dependencies.gltf]
 features = ["KHR_materials_pbrSpecularGlossiness"]

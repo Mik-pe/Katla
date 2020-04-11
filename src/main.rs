@@ -2,6 +2,7 @@ mod cameracontroller;
 mod gui;
 mod rendering;
 mod util;
+mod vulkanostuff;
 
 use bitflags::bitflags;
 use gl;
@@ -31,6 +32,7 @@ fn main() {
     let (sender, receiver) = std::sync::mpsc::channel();
     let (upload_sender, upload_recv) = std::sync::mpsc::channel();
 
+    let vulkan_ctx = vulkanostuff::VulkanoCtx::init();
     let mut projection_matrix = Mat4::create_proj(60.0, 1.0, 0.5, 1000.0);
     let event_loop = EventLoop::new();
     let mut win_x = 512.0f64;
