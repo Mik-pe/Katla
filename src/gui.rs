@@ -6,6 +6,7 @@ pub struct Gui {
     vao: u32,
     vertex_stride: u32,
     idx_stride: usize,
+    offset_alignment: i32,
 }
 
 impl Gui {
@@ -17,7 +18,10 @@ impl Gui {
         let mut vao = 0;
         let mut vertex_stride = 0;
         let idx_stride = std::mem::size_of::<imgui::sys::ImDrawIdx>();
+        let mut offset_alignment = 0;
         unsafe {
+            gl::GetIntegerv(gl::UNIFORM_BUFFER_OFFSET_ALIGNMENT, &mut offset_alignment);
+
             gl::CreateVertexArrays(1, &mut vao);
 
             gl::EnableVertexArrayAttrib(vao, 0);
@@ -38,6 +42,7 @@ impl Gui {
             vao,
             vertex_stride,
             idx_stride,
+            offset_alignment,
         }
     }
 
@@ -59,16 +64,13 @@ impl Gui {
         let draw_data = ui.render();
 
         for draw_list in draw_data.draw_lists() {
-            let mut alignment = gl::NONE as i32;
-            gl::GetIntegerv(gl::UNIFORM_BUFFER_OFFSET_ALIGNMENT, &mut alignment);
-
             let vtx_buffer = draw_list.vtx_buffer();
             let idx_buffer = draw_list.idx_buffer();
             let vtx_buf_stride = std::mem::size_of::<imgui::sys::ImDrawVert>();
             let idx_len = (self.idx_stride * idx_buffer.len()) as isize;
             let vtx_len = (vtx_buf_stride * vtx_buffer.len()) as isize;
-            let aligned_idx_len = Self::align_length(idx_len, alignment as isize);
-            let aligned_vtx_len = Self::align_length(vtx_len, alignment as isize);
+            let aligned_idx_len = Self::align_length(idx_len, self.offset_alignment as isize);
+            let aligned_vtx_len = Self::align_length(vtx_len, self.offset_alignment as isize);
             let total_buf_size = aligned_idx_len + aligned_vtx_len;
 
             //TODO: Fetch previous state and reset it afterwards

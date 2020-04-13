@@ -322,6 +322,9 @@ impl Drop for Mesh {
         unsafe {
             println!("Deleted mesh!");
             gl::DeleteBuffers(1, &self.buffer);
+            if self.vao != 0 {
+                gl::DeleteVertexArrays(1, &self.vao);
+            }
         }
     }
 }
