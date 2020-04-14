@@ -22,29 +22,42 @@ enum UploadFinished {
 }
 fn main() {
     let event_loop = EventLoop::new();
+    let mut camera = cameracontroller::Camera::new();
     let mut vulkan_ctx = vulkanostuff::VulkanoCtx::init(&event_loop);
 
+    //Delta time, in seconds
+    let mut delta_time = 0.0;
+    let mut last_frame = Instant::now();
     event_loop.run(move |event, _, control_flow| {
         use winit::event::{Event, VirtualKeyCode, WindowEvent};
 
         vulkan_ctx.handle_event(&event);
         match event {
-            Event::WindowEvent { event, .. } => match event {
-                WindowEvent::CloseRequested => {
-                    *control_flow = winit::event_loop::ControlFlow::Exit;
-                }
-                WindowEvent::KeyboardInput { input, .. } => {
-                    if let Some(keycode) = input.virtual_keycode {
-                        match keycode {
-                            VirtualKeyCode::Escape => {
-                                *control_flow = winit::event_loop::ControlFlow::Exit;
+            Event::NewEvents(_) => {
+                delta_time = last_frame.elapsed().as_micros() as f32 / 1_000_000.0;
+                camera.update(delta_time);
+                last_frame = Instant::now();
+            }
+            Event::WindowEvent { event, .. } => {
+                camera.handle_event(&event);
+                match event {
+                    WindowEvent::CloseRequested => {
+                        *control_flow = winit::event_loop::ControlFlow::Exit;
+                    }
+                    WindowEvent::KeyboardInput { input, .. } => {
+                        if let Some(keycode) = input.virtual_keycode {
+                            match keycode {
+                                VirtualKeyCode::Escape => {
+                                    *control_flow = winit::event_loop::ControlFlow::Exit;
+                                }
+                                _ => {}
                             }
-                            _ => {}
                         }
                     }
+                    _ => *control_flow = winit::event_loop::ControlFlow::Poll,
                 }
-                _ => *control_flow = winit::event_loop::ControlFlow::Poll,
-            },
+            }
+            Event::RedrawRequested { .. } => {}
             _ => {}
         }
     });

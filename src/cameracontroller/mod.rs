@@ -1,6 +1,7 @@
 use bitflags::bitflags;
-use glutin::event::{ElementState, Event, MouseButton, VirtualKeyCode, WindowEvent};
 use mikpe_math::{Mat4, Vec3};
+use winit::dpi::PhysicalPosition;
+use winit::event::{ElementState, MouseButton, VirtualKeyCode, WindowEvent};
 
 bitflags! {
     struct Movement: u32
@@ -22,7 +23,7 @@ pub struct Camera {
     pitch: f64,
     looking: bool,
     current_movement: Movement,
-    last_mouse_pos: glutin::dpi::PhysicalPosition<f64>,
+    last_mouse_pos: PhysicalPosition<f64>,
 }
 
 impl Camera {
@@ -34,7 +35,7 @@ impl Camera {
             pitch: 0.0,
             looking: false,
             current_movement: Movement::STILL,
-            last_mouse_pos: glutin::dpi::PhysicalPosition::new(0.0, 0.0),
+            last_mouse_pos: PhysicalPosition::new(0.0, 0.0),
         }
     }
     pub fn handle_event(&mut self, event: &WindowEvent) {
@@ -43,7 +44,7 @@ impl Camera {
                 device_id: _,
                 state,
                 button,
-                modifiers: _,
+                ..
             } => {
                 if button == MouseButton::Right && state == ElementState::Pressed {
                     self.looking = true;
@@ -54,7 +55,7 @@ impl Camera {
             WindowEvent::CursorMoved {
                 device_id: _,
                 position,
-                modifiers: _,
+                ..
             } => {
                 if self.looking {
                     let delta_x = position.x - self.last_mouse_pos.x;
