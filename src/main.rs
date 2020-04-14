@@ -4,19 +4,13 @@ mod rendering;
 mod util;
 mod vulkanostuff;
 
-use bitflags::bitflags;
-use gl;
-use glutin::{
-    event_loop::{ControlFlow, EventLoop},
-    window::WindowBuilder,
-    ContextBuilder,
-};
 use imgui::{im_str, Condition, Context};
 use imgui_winit_support::{HiDpiMode, WinitPlatform};
 use mikpe_math::{Mat4, Vec3};
 use rendering::drawable::Drawable;
 use std::path::PathBuf;
 use std::time::Instant;
+use winit::event_loop::EventLoop;
 enum Message {
     UploadMesh(String),
     Exit,
@@ -26,13 +20,34 @@ enum UploadFinished {
     Acknowledgement(rendering::Texture),
     Mesh(Box<dyn FnOnce() -> rendering::Mesh + Send>),
 }
-const GPU_MEM_INFO_TOTAL_AVAILABLE_MEM_NVX: gl::types::GLenum = 0x9048;
-const GPU_MEM_INFO_CURRENT_AVAILABLE_MEM_NVX: gl::types::GLenum = 0x9049;
 fn main() {
+    let event_loop = EventLoop::new();
+    let mut vulkan_ctx = vulkanostuff::VulkanoCtx::init(&event_loop);
 
-    let vulkan_ctx = vulkanostuff::VulkanoCtx::init();
+    event_loop.run(move |event, _, control_flow| {
+        use winit::event::{Event, VirtualKeyCode, WindowEvent};
 
-
+        vulkan_ctx.handle_event(&event);
+        match event {
+            Event::WindowEvent { event, .. } => match event {
+                WindowEvent::CloseRequested => {
+                    *control_flow = winit::event_loop::ControlFlow::Exit;
+                }
+                WindowEvent::KeyboardInput { input, .. } => {
+                    if let Some(keycode) = input.virtual_keycode {
+                        match keycode {
+                            VirtualKeyCode::Escape => {
+                                *control_flow = winit::event_loop::ControlFlow::Exit;
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+                _ => *control_flow = winit::event_loop::ControlFlow::Poll,
+            },
+            _ => {}
+        }
+    });
     // let (sender, receiver) = std::sync::mpsc::channel();
     // let (upload_sender, upload_recv) = std::sync::mpsc::channel();
     // let mut projection_matrix = Mat4::create_proj(60.0, 1.0, 0.5, 1000.0);

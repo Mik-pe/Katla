@@ -1,4 +1,4 @@
-use crate::gl;
+use gl;
 use image::RgbaImage;
 
 pub enum TextureUsage {

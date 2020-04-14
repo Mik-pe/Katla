@@ -1,4 +1,4 @@
-use crate::gl;
+use gl;
 use std::collections::HashMap;
 use std::ffi::{CStr, CString};
 use std::str::FromStr;

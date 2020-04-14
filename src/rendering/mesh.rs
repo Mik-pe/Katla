@@ -1,8 +1,8 @@
-use crate::gl;
 use crate::rendering::drawable::Drawable;
 use crate::rendering::Material;
 use crate::rendering::{Texture, TextureUsage};
 use crate::util::CachedGLTFModel;
+use gl;
 
 use gltf;
 use mikpe_math;
