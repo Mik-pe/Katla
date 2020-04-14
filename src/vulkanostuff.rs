@@ -20,12 +20,8 @@ use winit::event_loop::EventLoop;
 use winit::window::{Window, WindowBuilder};
 
 use crate::rendering::pipeline as my_pipeline;
+use crate::rendering::vertextypes;
 
-#[derive(Default, Debug, Clone)]
-struct Vertex {
-    position: [f32; 2],
-}
-vulkano::impl_vertex!(Vertex, position);
 pub struct VulkanoCtx {
     id: i32,
     instance: Arc<Instance>,
@@ -78,7 +74,6 @@ impl VulkanoCtx {
 
         let (mut swapchain, images) = {
             let caps = surface.capabilities(physical).unwrap();
-            let usage = caps.supported_usage_flags;
 
             let alpha = caps.supported_composite_alpha.iter().next().unwrap();
             let format = caps.supported_formats[0].0;
@@ -93,6 +88,7 @@ impl VulkanoCtx {
                 1,
                 caps.supported_usage_flags,
                 &queue,
+                // Vulkan uses upper-left as 0,0 of the framebuffer, keep this in mind!
                 SurfaceTransform::Identity,
                 alpha,
                 PresentMode::Fifo,
@@ -109,14 +105,17 @@ impl VulkanoCtx {
                 BufferUsage::all(),
                 false,
                 [
-                    Vertex {
-                        position: [-0.5, -0.25],
+                    vertextypes::VertexPos2Color {
+                        position: [-0.5, 0.5],
+                        color: [1.0, 0.0, 0.0],
                     },
-                    Vertex {
-                        position: [0.0, 0.5],
+                    vertextypes::VertexPos2Color {
+                        position: [0.0, -0.5],
+                        color: [0.0, 1.0, 0.0],
                     },
-                    Vertex {
-                        position: [0.25, -0.1],
+                    vertextypes::VertexPos2Color {
+                        position: [0.5, 0.5],
+                        color: [0.0, 0.0, 1.0],
                     },
                 ]
                 .iter()
@@ -156,7 +155,7 @@ impl VulkanoCtx {
             .unwrap(),
         );
 
-        let pipeline = my_pipeline::create_pipeline_with_shaders::<Vertex>(
+        let pipeline = my_pipeline::create_pipeline_with_shaders::<vertextypes::VertexPos2Color>(
             std::path::PathBuf::new(),
             device.clone(),
             render_pass.clone(),
