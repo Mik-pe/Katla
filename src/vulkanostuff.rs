@@ -1,14 +1,11 @@
 use std::sync::Arc;
 use vulkano::buffer::{BufferUsage, CpuAccessibleBuffer};
 use vulkano::command_buffer::{AutoCommandBufferBuilder, DynamicState};
-use vulkano::descriptor::PipelineLayoutAbstract;
 use vulkano::device::{Device, DeviceExtensions, Features, Queue};
 use vulkano::framebuffer::{Framebuffer, FramebufferAbstract, RenderPassAbstract, Subpass};
 use vulkano::image::SwapchainImage;
 use vulkano::instance::{Instance, InstanceExtensions, PhysicalDevice};
-use vulkano::pipeline::vertex::SingleBufferDefinition;
 use vulkano::pipeline::viewport::Viewport;
-use vulkano::pipeline::GraphicsPipeline;
 use vulkano::swapchain;
 use vulkano::swapchain::{
     AcquireError, ColorSpace, FullscreenExclusive, PresentMode, Surface, SurfaceTransform,
@@ -19,7 +16,7 @@ use vulkano::sync::{FlushError, GpuFuture};
 use vulkano_win::VkSurfaceBuild;
 
 use winit::event::Event;
-use winit::event_loop::{ControlFlow, EventLoop};
+use winit::event_loop::EventLoop;
 use winit::window::{Window, WindowBuilder};
 
 use crate::rendering::pipeline as my_pipeline;
@@ -86,7 +83,7 @@ impl VulkanoCtx {
             .build_vk_surface(&event_loop, instance.clone())
             .unwrap();
 
-        let (mut swapchain, images) = {
+        let (swapchain, images) = {
             let caps = surface.capabilities(physical).unwrap();
 
             let alpha = caps.supported_composite_alpha.iter().next().unwrap();
@@ -179,6 +176,8 @@ impl VulkanoCtx {
         }
     }
 
+    // TODO: Make designated functions for drawing, updating stuff, etc.
+    // rather than sending the winit event here
     pub fn handle_event(&mut self, event: &Event<()>) -> () {
         let vertex_buffer = {
             CpuAccessibleBuffer::from_iter(
@@ -205,7 +204,7 @@ impl VulkanoCtx {
             .unwrap()
         };
 
-        use winit::event::{VirtualKeyCode, WindowEvent};
+        use winit::event::WindowEvent;
 
         match event {
             Event::WindowEvent { event, .. } => match event {
