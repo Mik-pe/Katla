@@ -1,9 +1,12 @@
 use std::sync::Arc;
-use vulkano::buffer::{BufferUsage, CpuAccessibleBuffer};
+use vulkano::buffer::{BufferUsage, CpuAccessibleBuffer, CpuBufferPool};
 use vulkano::command_buffer::{AutoCommandBufferBuilder, DynamicState};
+use vulkano::descriptor::descriptor_set::PersistentDescriptorSet;
+use vulkano::descriptor::pipeline_layout::PipelineLayoutAbstract;
 use vulkano::device::{Device, DeviceExtensions, Features, Queue};
+use vulkano::format::Format;
 use vulkano::framebuffer::{Framebuffer, FramebufferAbstract, RenderPassAbstract, Subpass};
-use vulkano::image::SwapchainImage;
+use vulkano::image::{AttachmentImage, SwapchainImage};
 use vulkano::instance::{Instance, InstanceExtensions, PhysicalDevice};
 use vulkano::pipeline::viewport::Viewport;
 use vulkano::swapchain;
@@ -25,9 +28,9 @@ use crate::rendering::vertextypes;
 pub struct VulkanoCtx {
     instance: Arc<Instance>,
     device: Arc<Device>,
-    surface: Arc<Surface<Window>>,
+    pub surface: Arc<Surface<Window>>,
     render_pass: Arc<dyn RenderPassAbstract + Send + Sync>,
-    renderpipeline: my_pipeline::RenderPipeline<vertextypes::VertexPos2Color>,
+    renderpipeline: my_pipeline::RenderPipeline<vertextypes::VertexNormal>,
     swapchain: Arc<Swapchain<Window>>,
     command_queue: Arc<Queue>,
     internal_state: InternalState,
@@ -37,12 +40,13 @@ struct InternalState {
     pub recreate_swapchain: bool,
     pub previous_frame_end: Option<Box<dyn GpuFuture>>,
     pub framebuffers: Vec<Arc<dyn FramebufferAbstract + Send + Sync>>,
+    pub uniform_buffer: CpuBufferPool<my_pipeline::vs::ty::Data>,
+    pub angle: f32,
     dynamic_state: DynamicState,
 }
 
 impl VulkanoCtx {
     pub fn init(event_loop: &EventLoop<()>) -> Self {
-        // We now create a buffer that will store the shape of our triangle.
         let instance = {
             let extensions = vulkano_win::required_extensions();
             Instance::new(None, &extensions, None).expect("failed to create Vulkan instance")
@@ -50,6 +54,11 @@ impl VulkanoCtx {
         let physical = PhysicalDevice::enumerate(&instance)
             .next()
             .expect("no device available");
+        println!(
+            "Using device: {} (type: {:?})",
+            physical.name(),
+            physical.ty()
+        );
         for family in physical.queue_families() {
             println!(
                 "Found a queue family with {:?} queue(s)",
@@ -57,7 +66,6 @@ impl VulkanoCtx {
             );
         }
 
-        println!("Physical device: {:?}", physical.name());
         let queue_family = physical
             .queue_families()
             .find(|&q| q.supports_graphics())
@@ -109,6 +117,7 @@ impl VulkanoCtx {
             )
             .expect("failed to create swapchain")
         };
+
         let render_pass = Arc::new(
             vulkano::single_pass_renderpass!(
                 device.clone(),
@@ -128,17 +137,25 @@ impl VulkanoCtx {
                         format: swapchain.format(),
                         // TODO:
                         samples: 1,
+                    },
+                    depth: {
+                        load: Clear,
+                        store: DontCare,
+                        format: Format::D16Unorm,
+                        samples: 1,
                     }
                 },
                 pass: {
                     // We use the attachment named `color` as the one and only color attachment.
                     color: [color],
-                    // No depth-stencil attachment is indicated with empty brackets.
-                    depth_stencil: {}
+                    depth_stencil: {depth}
                 }
             )
             .unwrap(),
         );
+
+        let uniform_buffer =
+            CpuBufferPool::<my_pipeline::vs::ty::Data>::new(device.clone(), BufferUsage::all());
 
         let renderpipeline = my_pipeline::RenderPipeline::new_with_shaders(
             std::path::PathBuf::new(),
@@ -158,9 +175,12 @@ impl VulkanoCtx {
             previous_frame_end: Some(Box::new(sync::now(device.clone())) as Box<dyn GpuFuture>),
             framebuffers: window_size_dependent_setup(
                 &images,
+                device.clone(),
                 render_pass.clone(),
                 &mut dynamic_state,
             ),
+            uniform_buffer,
+            angle: 0.0,
             dynamic_state,
         };
 
@@ -178,24 +198,30 @@ impl VulkanoCtx {
 
     // TODO: Make designated functions for drawing, updating stuff, etc.
     // rather than sending the winit event here
-    pub fn handle_event(&mut self, event: &Event<()>) -> () {
+    pub fn handle_event(
+        &mut self,
+        event: &Event<()>,
+        delta_time: f32,
+        projection: &mikpe_math::Mat4,
+        view: &mikpe_math::Mat4,
+    ) -> () {
         let vertex_buffer = {
             CpuAccessibleBuffer::from_iter(
                 self.device.clone(),
                 BufferUsage::all(),
                 false,
                 [
-                    vertextypes::VertexPos2Color {
-                        position: [-0.5, 0.5],
-                        color: [1.0, 0.0, 0.0],
+                    vertextypes::VertexNormal {
+                        position: [-0.5, 0.5, 0.0],
+                        normal: [1.0, 0.0, 0.0],
                     },
-                    vertextypes::VertexPos2Color {
-                        position: [0.0, -0.5],
-                        color: [0.0, 1.0, 0.0],
+                    vertextypes::VertexNormal {
+                        position: [0.0, -0.5, 0.0],
+                        normal: [0.0, 1.0, 0.0],
                     },
-                    vertextypes::VertexPos2Color {
-                        position: [0.5, 0.5],
-                        color: [0.0, 0.0, 1.0],
+                    vertextypes::VertexNormal {
+                        position: [0.5, 0.5, 0.0],
+                        normal: [0.0, 0.0, 1.0],
                     },
                 ]
                 .iter()
@@ -223,6 +249,7 @@ impl VulkanoCtx {
                     .as_mut()
                     .unwrap()
                     .cleanup_finished();
+                self.internal_state.angle += delta_time;
 
                 // Whenever the window resizes we need to recreate everything dependent on the window size.
                 // In this example that includes the swapchain, the framebuffers and the dynamic state viewport.
@@ -239,15 +266,45 @@ impl VulkanoCtx {
                         };
 
                     self.swapchain = new_swapchain;
-                    // Because framebuffers contains an Arc on the old swapchain, we need to
-                    // recreate framebuffers as well.
                     self.internal_state.framebuffers = window_size_dependent_setup(
                         &new_images,
+                        self.device.clone(),
                         self.render_pass.clone(),
                         &mut self.internal_state.dynamic_state,
                     );
                     self.internal_state.recreate_swapchain = false;
                 }
+
+                let uniform_buffer_subbuffer = {
+                    use mikpe_math::Mat4;
+
+                    let world = Mat4::from_rotaxis(&self.internal_state.angle, [0.0, 1.0, 0.0]);
+
+                    let uniform_data = my_pipeline::vs::ty::Data {
+                        world: world.into(),
+                        view: view.clone().into(),
+                        proj: projection.clone().into(),
+                    };
+
+                    self.internal_state
+                        .uniform_buffer
+                        .next(uniform_data)
+                        .unwrap()
+                };
+
+                let layout = self
+                    .renderpipeline
+                    .pipeline
+                    .descriptor_set_layout(0)
+                    .unwrap();
+
+                let set = Arc::new(
+                    PersistentDescriptorSet::start(layout.clone())
+                        .add_buffer(uniform_buffer_subbuffer)
+                        .unwrap()
+                        .build()
+                        .unwrap(),
+                );
 
                 // Before we can draw on the output, we have to *acquire* an image from the swapchain. If
                 // no image is available (which happens if you submit draw commands too quickly), then the
@@ -266,15 +323,11 @@ impl VulkanoCtx {
                         Err(e) => panic!("Failed to acquire next image: {:?}", e),
                     };
 
-                // acquire_next_image can be successful, but suboptimal. This means that the swapchain image
-                // will still work, but it may not display correctly. With some drivers this can be when
-                // the window resizes, but it may not cause the swapchain to become out of date.
                 if suboptimal {
                     self.internal_state.recreate_swapchain = true;
                 }
 
-                // Specify the color to clear the framebuffer with i.e. blue
-                let clear_values = vec![[0.3, 0.5, 0.3, 1.0].into()];
+                let clear_values = vec![[0.3, 0.5, 0.3, 1.0].into(), 1f32.into()];
 
                 // In order to draw, we have to build a *command buffer*. The command buffer object holds
                 // the list of commands that are going to be executed.
@@ -303,25 +356,17 @@ impl VulkanoCtx {
                     clear_values,
                 )
                 .unwrap()
-                // We are now inside the first subpass of the render pass. We add a draw command.
-                //
-                // The last two parameters contain the list of resources to pass to the shaders.
-                // Since we used an `EmptyPipeline` object, the objects have to be `()`.
                 .draw(
                     self.renderpipeline.pipeline.clone(),
                     &self.internal_state.dynamic_state,
                     vertex_buffer.clone(),
-                    (),
+                    set.clone(),
                     (),
                 )
                 .unwrap()
-                // We leave the render pass by calling `draw_end`. Note that if we had multiple
-                // subpasses we could have called `next_inline` (or `next_secondary`) to jump to the
-                // next subpass.
                 .end_render_pass()
                 .unwrap()
-                // Finish building the command buffer by calling `build`.
-                .build()
+                .build() // Finish building the command buffer by calling `build`.
                 .unwrap();
 
                 let future = self
@@ -332,12 +377,6 @@ impl VulkanoCtx {
                     .join(acquire_future)
                     .then_execute(self.command_queue.clone(), command_buffer)
                     .unwrap()
-                    // The color output is now expected to contain our triangle. But in order to show it on
-                    // the screen, we have to *present* the image by calling `present`.
-                    //
-                    // This function does not actually present the image immediately. Instead it submits a
-                    // present command at the end of the queue. This means that it will only be presented once
-                    // the GPU has finished executing the command buffer that draws the triangle.
                     .then_swapchain_present(
                         self.command_queue.clone(),
                         self.swapchain.clone(),
@@ -368,10 +407,13 @@ impl VulkanoCtx {
 
 fn window_size_dependent_setup(
     images: &[Arc<SwapchainImage<Window>>],
+    device: Arc<Device>,
     render_pass: Arc<dyn RenderPassAbstract + Send + Sync>,
     dynamic_state: &mut DynamicState,
 ) -> Vec<Arc<dyn FramebufferAbstract + Send + Sync>> {
     let dimensions = images[0].dimensions();
+    let depth_buffer =
+        AttachmentImage::transient(device.clone(), dimensions, Format::D16Unorm).unwrap();
 
     let viewport = Viewport {
         origin: [0.0, 0.0],
@@ -386,6 +428,8 @@ fn window_size_dependent_setup(
             Arc::new(
                 Framebuffer::start(render_pass.clone())
                     .add(image.clone())
+                    .unwrap()
+                    .add(depth_buffer.clone())
                     .unwrap()
                     .build()
                     .unwrap(),

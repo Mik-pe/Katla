@@ -62,6 +62,10 @@ impl Texture {
             gltf::image::Format::R8G8B8A8 => (gl::RGBA, gl::RGBA8, 4),
             gltf::image::Format::B8G8R8 => (gl::BGR, gl::RGB8, 3),
             gltf::image::Format::B8G8R8A8 => (gl::BGRA, gl::RGBA8, 4),
+            gltf::image::Format::R16 => (gl::RED, gl::R16, 2),
+            gltf::image::Format::R16G16 => (gl::RG, gl::RG16, 4),
+            gltf::image::Format::R16G16B16 => (gl::RGB, gl::RGB16, 6),
+            gltf::image::Format::R16G16B16A16 => (gl::RGBA, gl::RGBA16, 8),
         };
         gl::TextureStorage2D(
             self.id,

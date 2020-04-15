@@ -1,6 +1,6 @@
 #[derive(Default, Debug, Clone)]
 pub struct VertexPosition {
-    position: [f32; 3],
+    pub position: [f32; 3],
 }
 vulkano::impl_vertex!(VertexPosition, position);
 
@@ -13,8 +13,8 @@ vulkano::impl_vertex!(VertexPos2Color, position, color);
 
 #[derive(Default, Debug, Clone)]
 pub struct VertexNormal {
-    position: [f32; 3],
-    normal: [f32; 3],
+    pub position: [f32; 3],
+    pub normal: [f32; 3],
 }
 vulkano::impl_vertex!(VertexNormal, position, normal);
 

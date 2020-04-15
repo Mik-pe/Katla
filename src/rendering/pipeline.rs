@@ -7,35 +7,17 @@ use vulkano::pipeline::vertex::SingleBufferDefinition;
 use vulkano::pipeline::vertex::Vertex;
 use vulkano::pipeline::GraphicsPipeline;
 
-mod vs {
+pub mod vs {
     vulkano_shaders::shader! {
         ty: "vertex",
-        src: "
-            #version 450
-            layout(location = 0) in vec2 position;
-            layout(location = 1) in vec3 color;
-
-            layout(location = 0) out vec3 vs_color;
-            void main() {
-                gl_Position = vec4(position, 0.0, 1.0);
-                vs_color = color;
-            }
-        "
+        path: "resources/shaders/model.vert"
     }
 }
 
 mod fs {
     vulkano_shaders::shader! {
         ty: "fragment",
-        src: "
-            #version 450
-            layout(location = 0) in vec3 color;
-
-            layout(location = 0) out vec4 f_color;
-            void main() {
-                f_color = vec4(color, 1.0);
-            }
-        "
+        path: "resources/shaders/model.frag"
     }
 }
 
@@ -69,6 +51,7 @@ impl<V> RenderPipeline<V> {
                 .triangle_list()
                 .viewports_dynamic_scissors_irrelevant(1)
                 .fragment_shader(fs.main_entry_point(), ())
+                .depth_stencil_simple_depth()
                 .render_pass(Subpass::from(render_pass, 0).unwrap())
                 .build(device.clone())
                 .unwrap(),

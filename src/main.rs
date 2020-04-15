@@ -24,6 +24,10 @@ fn main() {
     let event_loop = EventLoop::new();
     let mut camera = cameracontroller::Camera::new();
     let mut vulkan_ctx = vulkanostuff::VulkanoCtx::init(&event_loop);
+    let size = vulkan_ctx.surface.window().inner_size();
+    let mut win_x: f64 = size.width.into();
+    let mut win_y: f64 = size.height.into();
+    let mut projection_matrix = Mat4::create_proj(60.0, (win_x / win_y) as f32, 0.01, 1000.0);
 
     //Delta time, in seconds
     let mut delta_time = 0.0;
@@ -31,7 +35,12 @@ fn main() {
     event_loop.run(move |event, _, control_flow| {
         use winit::event::{Event, VirtualKeyCode, WindowEvent};
 
-        vulkan_ctx.handle_event(&event);
+        vulkan_ctx.handle_event(
+            &event,
+            delta_time,
+            &projection_matrix,
+            &camera.get_view_mat(),
+        );
         match event {
             Event::NewEvents(_) => {
                 delta_time = last_frame.elapsed().as_micros() as f32 / 1_000_000.0;
@@ -41,6 +50,12 @@ fn main() {
             Event::WindowEvent { event, .. } => {
                 camera.handle_event(&event);
                 match event {
+                    WindowEvent::Resized(logical_size) => {
+                        win_x = logical_size.width as f64;
+                        win_y = logical_size.height as f64;
+                        projection_matrix =
+                            Mat4::create_proj(60.0, (win_x / win_y) as f32, 0.1, 1000.0);
+                    }
                     WindowEvent::CloseRequested => {
                         *control_flow = winit::event_loop::ControlFlow::Exit;
                     }
