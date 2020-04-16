@@ -3,23 +3,22 @@ mod gui;
 mod rendering;
 mod util;
 mod vulkanostuff;
+use mikpe_math::Mat4;
 
-use imgui::{im_str, Condition, Context};
-use imgui_winit_support::{HiDpiMode, WinitPlatform};
-use mikpe_math::{Mat4, Vec3};
-use rendering::drawable::Drawable;
-use std::path::PathBuf;
 use std::time::Instant;
 use winit::event_loop::EventLoop;
-enum Message {
-    UploadMesh(String),
-    Exit,
-}
 
-enum UploadFinished {
-    Acknowledgement(rendering::Texture),
-    Mesh(Box<dyn FnOnce() -> rendering::Mesh + Send>),
-}
+// use imgui::{im_str, Condition, Context};
+// use imgui_winit_support::{HiDpiMode, WinitPlatform};
+// enum Message {
+//     UploadMesh(String),
+//     Exit,
+// }
+
+// enum UploadFinished {
+//     Acknowledgement(rendering::Texture),
+//     Mesh(Box<dyn FnOnce() -> rendering::Mesh + Send>),
+// }
 fn main() {
     let event_loop = EventLoop::new();
     let mut camera = cameracontroller::Camera::new();

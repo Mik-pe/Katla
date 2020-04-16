@@ -1,11 +1,9 @@
 use std::path::PathBuf;
 use std::sync::Arc;
-use vulkano::descriptor::PipelineLayoutAbstract;
 use vulkano::device::Device;
 use vulkano::framebuffer::{RenderPassAbstract, Subpass};
-use vulkano::pipeline::vertex::SingleBufferDefinition;
 use vulkano::pipeline::vertex::Vertex;
-use vulkano::pipeline::GraphicsPipeline;
+use vulkano::pipeline::{GraphicsPipeline, GraphicsPipelineAbstract};
 
 pub mod vs {
     vulkano_shaders::shader! {
@@ -21,32 +19,23 @@ mod fs {
     }
 }
 
-pub struct RenderPipeline<V> {
-    pub pipeline: Arc<
-        GraphicsPipeline<
-            SingleBufferDefinition<V>,
-            Box<dyn PipelineLayoutAbstract + Send + Sync>,
-            Arc<dyn RenderPassAbstract + Send + Sync>,
-        >,
-    >,
+pub struct RenderPipeline {
+    pub pipeline: Arc<dyn GraphicsPipelineAbstract + Send + Sync>,
 }
 
-impl<V> RenderPipeline<V> {
+impl RenderPipeline {
     //Call with e.g. SingleBufferDefinition::new() as V
-    pub fn new_with_shaders(
+    pub fn new_with_shaders<V: Vertex + Send + Sync + Clone + 'static>(
         vs_path: PathBuf,
         device: Arc<Device>,
         render_pass: Arc<dyn RenderPassAbstract + Send + Sync>,
-    ) -> Self
-    where
-        V: Vertex,
-    {
+    ) -> Self {
         let vs = vs::Shader::load(device.clone()).unwrap();
         let fs = fs::Shader::load(device.clone()).unwrap();
 
         let pipeline = Arc::new(
             GraphicsPipeline::start()
-                .vertex_input(SingleBufferDefinition::<V>::new())
+                .vertex_input_single_buffer::<V>()
                 .vertex_shader(vs.main_entry_point(), ())
                 .triangle_list()
                 .viewports_dynamic_scissors_irrelevant(1)
@@ -56,6 +45,6 @@ impl<V> RenderPipeline<V> {
                 .build(device.clone())
                 .unwrap(),
         );
-        Self { pipeline }
+        RenderPipeline { pipeline }
     }
 }

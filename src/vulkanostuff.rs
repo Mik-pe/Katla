@@ -18,7 +18,7 @@ use vulkano::sync;
 use vulkano::sync::{FlushError, GpuFuture};
 use vulkano_win::VkSurfaceBuild;
 
-use winit::event::Event;
+use winit::event::{Event, WindowEvent};
 use winit::event_loop::EventLoop;
 use winit::window::{Window, WindowBuilder};
 
@@ -30,7 +30,7 @@ pub struct VulkanoCtx {
     device: Arc<Device>,
     pub surface: Arc<Surface<Window>>,
     render_pass: Arc<dyn RenderPassAbstract + Send + Sync>,
-    renderpipeline: my_pipeline::RenderPipeline<vertextypes::VertexNormal>,
+    renderpipeline: my_pipeline::RenderPipeline,
     swapchain: Arc<Swapchain<Window>>,
     command_queue: Arc<Queue>,
     internal_state: InternalState,
@@ -157,11 +157,12 @@ impl VulkanoCtx {
         let uniform_buffer =
             CpuBufferPool::<my_pipeline::vs::ty::Data>::new(device.clone(), BufferUsage::all());
 
-        let renderpipeline = my_pipeline::RenderPipeline::new_with_shaders(
-            std::path::PathBuf::new(),
-            device.clone(),
-            render_pass.clone(),
-        );
+        let renderpipeline =
+            my_pipeline::RenderPipeline::new_with_shaders::<vertextypes::VertexNormal>(
+                std::path::PathBuf::new(),
+                device.clone(),
+                render_pass.clone(),
+            );
         let mut dynamic_state = DynamicState {
             line_width: None,
             viewports: None,
@@ -229,8 +230,6 @@ impl VulkanoCtx {
             )
             .unwrap()
         };
-
-        use winit::event::WindowEvent;
 
         match event {
             Event::WindowEvent { event, .. } => match event {
@@ -359,7 +358,7 @@ impl VulkanoCtx {
                 .draw(
                     self.renderpipeline.pipeline.clone(),
                     &self.internal_state.dynamic_state,
-                    vertex_buffer.clone(),
+                    vec![vertex_buffer.clone()],
                     set.clone(),
                     (),
                 )
