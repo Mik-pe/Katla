@@ -29,7 +29,7 @@ pub struct Camera {
 impl Camera {
     pub fn new() -> Self {
         Self {
-            pos: Vec3::new(0.0, 0.0, 0.0),
+            pos: Vec3::new(0.0, 0.0, -1.0),
             velocity: Vec3::new(0.0, 0.0, 0.0),
             yaw: 0.0,
             pitch: 0.0,
@@ -134,10 +134,10 @@ impl Camera {
     pub fn update(&mut self, _dt: f32) {
         self.velocity = Vec3::new(0.0, 0.0, 0.0);
         if self.current_movement.contains(Movement::FORWARD) {
-            self.velocity[2] -= 1.0;
+            self.velocity[2] += 1.0;
         }
         if self.current_movement.contains(Movement::BACKWARDS) {
-            self.velocity[2] += 1.0;
+            self.velocity[2] -= 1.0;
         }
         if self.current_movement.contains(Movement::DOWN) {
             self.velocity[1] -= 1.0;
@@ -156,11 +156,11 @@ impl Camera {
         self.pos = self.pos + self.velocity.mul(0.1);
     }
 
+    // Note to self:
+    // This is valid since we are doing some assumptions w.r.t. rotation of the surfacetransformation
     fn get_view_rotation(&self) -> Mat4 {
-        Mat4::from_rotaxis(&(self.yaw as f32), Vec3::new(0.0, 1.0, 0.0).0).mul(&Mat4::from_rotaxis(
-            &(self.pitch as f32),
-            Vec3::new(1.0, 0.0, 0.0).0,
-        ))
+        Mat4::from_rotaxis(&(self.yaw as f32), [0.0, -1.0, 0.0])
+            .mul(&Mat4::from_rotaxis(&(self.pitch as f32), [-1.0, 0.0, 0.0]))
     }
 
     pub fn get_cam_pos(&self) -> Vec3 {
@@ -171,8 +171,8 @@ impl Camera {
         let view_rot = self.get_view_rotation();
         Mat4::create_lookat(
             self.pos.clone(),
-            self.pos.clone() + mikpe_math::mat4_mul_vec3(&view_rot, &Vec3::new(0.0, 0.0, -1.0)),
-            mikpe_math::mat4_mul_vec3(&view_rot, &Vec3::new(0.0, 1.0, 0.0)),
+            self.pos.clone() + mikpe_math::mat4_mul_vec3(&view_rot, &Vec3::new(0.0, 0.0, 1.0)),
+            mikpe_math::mat4_mul_vec3(&view_rot, &Vec3::new(0.0, -1.0, 0.0)),
         )
     }
 }

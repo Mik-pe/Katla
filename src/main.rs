@@ -39,7 +39,7 @@ fn main() {
             &event,
             delta_time,
             &projection_matrix,
-            &camera.get_view_mat(),
+            &camera.get_view_mat().inverse(),
         );
         match event {
             Event::NewEvents(_) => {
