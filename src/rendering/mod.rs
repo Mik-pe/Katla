@@ -1,6 +1,7 @@
 pub mod drawable;
 pub mod material;
 pub mod mesh;
+pub mod meshbuffer;
 pub mod pipeline;
 pub mod shaders;
 pub mod shared_resources;
@@ -10,6 +11,7 @@ pub mod vertextypes;
 pub use drawable::Drawable;
 pub use material::*;
 pub use mesh::*;
+pub use meshbuffer::*;
 pub use pipeline::*;
 pub use shaders::*;
 pub use shared_resources::*;

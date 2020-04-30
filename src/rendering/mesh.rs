@@ -15,6 +15,27 @@ enum IndexType {
     Array,
 }
 
+struct Vertex {
+    position: [f32; 4],
+}
+struct VertexNormal {
+    position: [f32; 4],
+    normal: [f32; 3],
+}
+
+struct VertexNormalTex {
+    position: [f32; 4],
+    normal: [f32; 3],
+    uv: [f32; 2],
+}
+
+struct VertexNormalTangentTex {
+    position: [f32; 4],
+    normal: [f32; 3],
+    tangent: [f32; 4],
+    uv: [f32; 2],
+}
+
 struct MeshBufferView {
     stride: usize,
     semantic: gltf::mesh::Semantic,

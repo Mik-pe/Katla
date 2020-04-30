@@ -24,6 +24,7 @@ use winit::window::{Window, WindowBuilder};
 
 use crate::rendering::pipeline as my_pipeline;
 use crate::rendering::vertextypes;
+use crate::rendering::MeshBuffer;
 
 pub struct VulkanoCtx {
     instance: Arc<Instance>,
@@ -206,30 +207,23 @@ impl VulkanoCtx {
         projection: &mikpe_math::Mat4,
         view: &mikpe_math::Mat4,
     ) -> () {
-        let vertex_buffer = {
-            CpuAccessibleBuffer::from_iter(
-                self.device.clone(),
-                BufferUsage::all(),
-                false,
-                [
-                    vertextypes::VertexNormal {
-                        position: [-0.5, -0.5, 0.0],
-                        normal: [1.0, 0.0, 0.0],
-                    },
-                    vertextypes::VertexNormal {
-                        position: [0.0, 0.5, 0.0],
-                        normal: [0.0, 1.0, 0.0],
-                    },
-                    vertextypes::VertexNormal {
-                        position: [0.5, -0.5, 0.0],
-                        normal: [0.0, 0.0, 1.0],
-                    },
-                ]
-                .iter()
-                .cloned(),
-            )
-            .unwrap()
-        };
+        let mesh_buffer = MeshBuffer::new(
+            self.device.clone(),
+            vec![
+                vertextypes::VertexNormal {
+                    position: [-0.5, -0.5, 0.0],
+                    normal: [1.0, 0.0, 0.0],
+                },
+                vertextypes::VertexNormal {
+                    position: [0.0, 0.5, 0.0],
+                    normal: [0.0, 1.0, 0.0],
+                },
+                vertextypes::VertexNormal {
+                    position: [0.5, -0.5, 0.0],
+                    normal: [0.0, 0.0, 1.0],
+                },
+            ],
+        );
 
         match event {
             Event::WindowEvent { event, .. } => match event {
@@ -358,7 +352,7 @@ impl VulkanoCtx {
                 .draw(
                     self.renderpipeline.pipeline.clone(),
                     &self.internal_state.dynamic_state,
-                    vec![vertex_buffer.clone()],
+                    vec![mesh_buffer.vertex_buffer.clone()],
                     set.clone(),
                     (),
                 )
