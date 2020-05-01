@@ -28,7 +28,7 @@ use crate::rendering::MeshBuffer;
 
 pub struct VulkanoCtx {
     instance: Arc<Instance>,
-    device: Arc<Device>,
+    pub device: Arc<Device>,
     pub surface: Arc<Surface<Window>>,
     render_pass: Arc<dyn RenderPassAbstract + Send + Sync>,
     renderpipeline: my_pipeline::RenderPipeline,
@@ -206,25 +206,8 @@ impl VulkanoCtx {
         delta_time: f32,
         projection: &mikpe_math::Mat4,
         view: &mikpe_math::Mat4,
+        meshbuffers: &Vec<MeshBuffer<vertextypes::VertexNormal>>,
     ) -> () {
-        let mesh_buffer = MeshBuffer::new(
-            self.device.clone(),
-            vec![
-                vertextypes::VertexNormal {
-                    position: [-0.5, -0.5, 0.0],
-                    normal: [1.0, 0.0, 0.0],
-                },
-                vertextypes::VertexNormal {
-                    position: [0.0, 0.5, 0.0],
-                    normal: [0.0, 1.0, 0.0],
-                },
-                vertextypes::VertexNormal {
-                    position: [0.5, -0.5, 0.0],
-                    normal: [0.0, 0.0, 1.0],
-                },
-            ],
-        );
-
         match event {
             Event::WindowEvent { event, .. } => match event {
                 WindowEvent::Resized(_) => {
@@ -331,7 +314,7 @@ impl VulkanoCtx {
                 //
                 // Note that we have to pass a queue family when we create the command buffer. The command
                 // buffer will only be executable on that given queue family.
-                let command_buffer = AutoCommandBufferBuilder::primary_one_time_submit(
+                let mut cmd_buffer_builder = AutoCommandBufferBuilder::primary_one_time_submit(
                     self.device.clone(),
                     self.command_queue.family(),
                 )
@@ -348,19 +331,23 @@ impl VulkanoCtx {
                     false,
                     clear_values,
                 )
-                .unwrap()
-                .draw(
-                    self.renderpipeline.pipeline.clone(),
-                    &self.internal_state.dynamic_state,
-                    vec![mesh_buffer.vertex_buffer.clone()],
-                    set.clone(),
-                    (),
-                )
-                .unwrap()
-                .end_render_pass()
-                .unwrap()
-                .build() // Finish building the command buffer by calling `build`.
                 .unwrap();
+                for meshbuffer in meshbuffers {
+                    cmd_buffer_builder = cmd_buffer_builder
+                        .draw(
+                            self.renderpipeline.pipeline.clone(),
+                            &self.internal_state.dynamic_state,
+                            vec![meshbuffer.vertex_buffer.clone()],
+                            set.clone(),
+                            (),
+                        )
+                        .unwrap();
+                }
+                let command_buffer = cmd_buffer_builder
+                    .end_render_pass()
+                    .unwrap()
+                    .build() // Finish building the command buffer by calling `build`.
+                    .unwrap();
 
                 let future = self
                     .internal_state

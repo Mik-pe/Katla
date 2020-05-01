@@ -4,6 +4,7 @@ mod rendering;
 mod util;
 mod vulkanostuff;
 use mikpe_math::Mat4;
+use rendering::{vertextypes, MeshBuffer};
 
 use std::time::Instant;
 use winit::event_loop::EventLoop;
@@ -27,18 +28,53 @@ fn main() {
     let mut win_x: f64 = size.width.into();
     let mut win_y: f64 = size.height.into();
     let mut projection_matrix = Mat4::create_proj(60.0, (win_x / win_y) as f32, 0.01, 1000.0);
+    let mut mesh_buffer = vec![MeshBuffer::new(
+        vulkan_ctx.device.clone(),
+        vec![
+            vertextypes::VertexNormal {
+                position: [-0.5, -0.5, 0.0],
+                normal: [1.0, 0.0, 0.0],
+            },
+            vertextypes::VertexNormal {
+                position: [0.0, 0.5, 0.0],
+                normal: [0.0, 1.0, 0.0],
+            },
+            vertextypes::VertexNormal {
+                position: [0.5, -0.5, 0.0],
+                normal: [0.0, 0.0, 1.0],
+            },
+        ],
+    )];
+
+    mesh_buffer.push(MeshBuffer::new(
+        vulkan_ctx.device.clone(),
+        vec![
+            vertextypes::VertexNormal {
+                position: [-0.5, -0.5, 5.0],
+                normal: [1.0, 0.0, 0.0],
+            },
+            vertextypes::VertexNormal {
+                position: [0.0, 0.5, 5.0],
+                normal: [0.0, 1.0, 0.0],
+            },
+            vertextypes::VertexNormal {
+                position: [0.5, -0.5, 5.0],
+                normal: [0.0, 0.0, 1.0],
+            },
+        ],
+    ));
 
     //Delta time, in seconds
     let mut delta_time = 0.0;
     let mut last_frame = Instant::now();
     event_loop.run(move |event, _, control_flow| {
         use winit::event::{Event, VirtualKeyCode, WindowEvent};
-
         vulkan_ctx.handle_event(
             &event,
             delta_time,
             &projection_matrix,
             &camera.get_view_mat().inverse(),
+            &mesh_buffer,
         );
         match event {
             Event::NewEvents(_) => {
