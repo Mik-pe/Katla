@@ -1,5 +1,5 @@
 use std::sync::Arc;
-use vulkano::buffer::{BufferUsage, CpuAccessibleBuffer, CpuBufferPool};
+use vulkano::buffer::{BufferUsage, CpuBufferPool};
 use vulkano::command_buffer::{AutoCommandBufferBuilder, DynamicState};
 use vulkano::descriptor::descriptor_set::PersistentDescriptorSet;
 use vulkano::descriptor::pipeline_layout::PipelineLayoutAbstract;
@@ -24,7 +24,7 @@ use winit::window::{Window, WindowBuilder};
 
 use crate::rendering::pipeline as my_pipeline;
 use crate::rendering::vertextypes;
-use crate::rendering::MeshBuffer;
+use crate::rendering::MeshData;
 
 pub struct VulkanoCtx {
     instance: Arc<Instance>,
@@ -206,7 +206,7 @@ impl VulkanoCtx {
         delta_time: f32,
         projection: &mikpe_math::Mat4,
         view: &mikpe_math::Mat4,
-        meshbuffers: &Vec<MeshBuffer<vertextypes::VertexNormal>>,
+        meshbuffers: &Vec<Box<dyn MeshData>>,
     ) -> () {
         match event {
             Event::WindowEvent { event, .. } => match event {
@@ -333,15 +333,12 @@ impl VulkanoCtx {
                 )
                 .unwrap();
                 for meshbuffer in meshbuffers {
-                    cmd_buffer_builder = cmd_buffer_builder
-                        .draw(
-                            self.renderpipeline.pipeline.clone(),
-                            &self.internal_state.dynamic_state,
-                            vec![meshbuffer.vertex_buffer.clone()],
-                            set.clone(),
-                            (),
-                        )
-                        .unwrap();
+                    cmd_buffer_builder = meshbuffer.draw_data(
+                        cmd_buffer_builder,
+                        set.clone(),
+                        &self.internal_state.dynamic_state,
+                        self.renderpipeline.pipeline.clone(),
+                    );
                 }
                 let command_buffer = cmd_buffer_builder
                     .end_render_pass()

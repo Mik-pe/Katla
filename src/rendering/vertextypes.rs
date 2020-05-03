@@ -34,11 +34,3 @@ pub struct VertexPBR {
     tex_coord0: [f32; 2],
 }
 vulkano::impl_vertex!(VertexPBR, position, normal, tangent, tex_coord0);
-
-pub enum VertexType {
-    VertexPosition(VertexPosition),
-    VertexPos2Color(VertexPos2Color),
-    VertexNormal(VertexNormal),
-    VertexNormalTangent(VertexNormalTangent),
-    VertexPBR(VertexPBR),
-}

@@ -4,7 +4,7 @@ mod rendering;
 mod util;
 mod vulkanostuff;
 use mikpe_math::Mat4;
-use rendering::{vertextypes, MeshBuffer};
+use rendering::{vertextypes, MeshBuffer, MeshData};
 
 use std::time::Instant;
 use winit::event_loop::EventLoop;
@@ -20,6 +20,7 @@ use winit::event_loop::EventLoop;
 //     Acknowledgement(rendering::Texture),
 //     Mesh(Box<dyn FnOnce() -> rendering::Mesh + Send>),
 // }
+
 fn main() {
     let event_loop = EventLoop::new();
     let mut camera = cameracontroller::Camera::new();
@@ -28,41 +29,42 @@ fn main() {
     let mut win_x: f64 = size.width.into();
     let mut win_y: f64 = size.height.into();
     let mut projection_matrix = Mat4::create_proj(60.0, (win_x / win_y) as f32, 0.01, 1000.0);
-    let mut mesh_buffer = vec![MeshBuffer::new(
-        vulkan_ctx.device.clone(),
-        vec![
-            vertextypes::VertexNormal {
-                position: [-0.5, -0.5, 0.0],
-                normal: [1.0, 0.0, 0.0],
-            },
-            vertextypes::VertexNormal {
-                position: [0.0, 0.5, 0.0],
-                normal: [0.0, 1.0, 0.0],
-            },
-            vertextypes::VertexNormal {
-                position: [0.5, -0.5, 0.0],
-                normal: [0.0, 0.0, 1.0],
-            },
-        ],
-    )];
+    let vert_data = vec![
+        vertextypes::VertexNormal {
+            position: [-0.5, -0.5, 0.0],
+            normal: [1.0, 0.0, 0.0],
+        },
+        vertextypes::VertexNormal {
+            position: [0.0, 0.5, 0.0],
+            normal: [0.0, 1.0, 0.0],
+        },
+        vertextypes::VertexNormal {
+            position: [0.5, -0.5, 0.0],
+            normal: [0.0, 0.0, 1.0],
+        },
+    ];
+    let pos_data = vec![
+        vertextypes::VertexPosition {
+            position: [-0.5, -0.5, 0.0],
+        },
+        vertextypes::VertexPosition {
+            position: [0.0, 0.5, 0.0],
+        },
+        vertextypes::VertexPosition {
+            position: [0.5, -0.5, 0.0],
+        },
+    ];
 
-    mesh_buffer.push(MeshBuffer::new(
+    let mut mesh_data: Vec<Box<dyn MeshData>> = vec![];
+
+    mesh_data.push(Box::new(MeshBuffer::new(
         vulkan_ctx.device.clone(),
-        vec![
-            vertextypes::VertexNormal {
-                position: [-0.5, -0.5, 5.0],
-                normal: [1.0, 0.0, 0.0],
-            },
-            vertextypes::VertexNormal {
-                position: [0.0, 0.5, 5.0],
-                normal: [0.0, 1.0, 0.0],
-            },
-            vertextypes::VertexNormal {
-                position: [0.5, -0.5, 5.0],
-                normal: [0.0, 0.0, 1.0],
-            },
-        ],
-    ));
+        vert_data.clone(),
+    )));
+    mesh_data.push(Box::new(MeshBuffer::new(
+        vulkan_ctx.device.clone(),
+        pos_data.clone(),
+    )));
 
     //Delta time, in seconds
     let mut delta_time = 0.0;
@@ -74,7 +76,7 @@ fn main() {
             delta_time,
             &projection_matrix,
             &camera.get_view_mat().inverse(),
-            &mesh_buffer,
+            &mesh_data,
         );
         match event {
             Event::NewEvents(_) => {
