@@ -4,7 +4,7 @@ mod rendering;
 mod util;
 mod vulkanstuff;
 use mikpe_math::Mat4;
-use rendering::{vertextypes, MeshBuffer, MeshData};
+use rendering::vertextypes;
 
 use std::ffi::CString;
 use std::time::Instant;
@@ -33,7 +33,7 @@ fn main() {
     let mut win_x: f64 = size.width.into();
     let mut win_y: f64 = size.height.into();
     let mut projection_matrix = Mat4::create_proj(60.0, (win_x / win_y) as f32, 0.01, 1000.0);
-    let vert_data = vec![
+    let _vert_data = vec![
         vertextypes::VertexNormal {
             position: [-0.5, -0.5, 0.0],
             normal: [1.0, 0.0, 0.0],
@@ -47,7 +47,7 @@ fn main() {
             normal: [0.0, 0.0, 1.0],
         },
     ];
-    let pos_data = vec![
+    let _pos_data = vec![
         vertextypes::VertexPosition {
             position: [-0.5, -0.5, 0.0],
         },
@@ -59,7 +59,7 @@ fn main() {
         },
     ];
 
-    let mut mesh_data: Vec<Box<dyn MeshData>> = vec![];
+    // let mut mesh_data: Vec<Box<dyn MeshData>> = vec![];
 
     // mesh_data.push(Box::new(MeshBuffer::new(
     //     vulkan_ctx.device.clone(),
@@ -84,7 +84,6 @@ fn main() {
             delta_time,
             &projection_matrix,
             &camera.get_view_mat().inverse(),
-            &mesh_data,
         );
         match event {
             Event::NewEvents(_) => {
@@ -97,10 +96,10 @@ fn main() {
                 camera.handle_event(&event);
                 match event {
                     WindowEvent::Resized(logical_size) => {
-                        // win_x = logical_size.width as f64;
-                        // win_y = logical_size.height as f64;
-                        // projection_matrix =
-                        //     Mat4::create_proj(60.0, (win_x / win_y) as f32, 0.1, 1000.0);
+                        win_x = logical_size.width as f64;
+                        win_y = logical_size.height as f64;
+                        projection_matrix =
+                            Mat4::create_proj(60.0, (win_x / win_y) as f32, 0.1, 1000.0);
                     }
                     WindowEvent::CloseRequested => {
                         *control_flow = ControlFlow::Exit;

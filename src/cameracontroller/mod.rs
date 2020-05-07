@@ -163,9 +163,9 @@ impl Camera {
             .mul(&Mat4::from_rotaxis(&(self.pitch as f32), [-1.0, 0.0, 0.0]))
     }
 
-    pub fn get_cam_pos(&self) -> Vec3 {
-        self.pos.clone()
-    }
+    // pub fn get_cam_pos(&self) -> Vec3 {
+    //     self.pos.clone()
+    // }
 
     pub fn get_view_mat(&self) -> Mat4 {
         let view_rot = self.get_view_rotation();

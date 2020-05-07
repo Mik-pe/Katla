@@ -6,23 +6,18 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-gl = "0.14.0"
-glutin = "0.23.0"
-image = "0.22.3"
-imgui = "^0.3.0"
-imgui-winit-support = "^0.3.0"
 bitflags = "^1.2.1"
 mikpe_math = {git = "https://github.com/Mik-pe/mikpe_math.git"}
-vulkano = "^0.18.0"
-vulkano-win = "^0.18.0"
-vulkano-shaders = "^0.18.0"
 winit = "^0.22.0"
 erupt = "^0.6.0"
 libloading = "0.6"
 lazy_static = "1.4.0"
+# image = "0.22.3"
+# imgui = "^0.3.0"
+# imgui-winit-support = "^0.3.0"
 
 
 
-[dependencies.gltf]
-features = ["KHR_materials_pbrSpecularGlossiness"]
-version = "0.15"
+#[dependencies.gltf]
+#features = ["KHR_materials_pbrSpecularGlossiness"]
+#version = "0.15"

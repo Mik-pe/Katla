@@ -1,7 +1,7 @@
 use std::{
     ffi::{c_void, CStr, CString},
     os::raw::c_char,
-    sync::{Arc, Mutex},
+    sync::Mutex,
 };
 
 use erupt::{
@@ -13,15 +13,12 @@ use erupt::{
 };
 use lazy_static::lazy_static;
 
-use winit::event::{
-    DeviceEvent, ElementState, Event, KeyboardInput, StartCause, VirtualKeyCode, WindowEvent,
-};
-use winit::event_loop::{ControlFlow, EventLoop};
+use winit::event::Event;
+use winit::event_loop::EventLoop;
 use winit::window::{Window, WindowBuilder};
 
-use crate::rendering::pipeline as my_pipeline;
-use crate::rendering::vertextypes;
-use crate::rendering::MeshData;
+// use crate::rendering::pipeline as my_pipeline;
+// use crate::rendering::vertextypes;
 
 use swapdata::*;
 mod swapdata;
@@ -501,10 +498,9 @@ impl VulkanCtx {
     pub fn handle_event(
         &mut self,
         event: &Event<()>,
-        delta_time: f32,
-        projection: &mikpe_math::Mat4,
-        view: &mikpe_math::Mat4,
-        meshbuffers: &Vec<Box<dyn MeshData>>,
+        _delta_time: f32,
+        _projection: &mikpe_math::Mat4,
+        _view: &mikpe_math::Mat4,
     ) {
         match event {
             Event::MainEventsCleared => {
