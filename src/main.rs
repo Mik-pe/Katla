@@ -2,10 +2,11 @@ mod cameracontroller;
 mod gui;
 mod rendering;
 mod util;
-mod vulkanostuff;
+mod vulkanstuff;
 use mikpe_math::Mat4;
 use rendering::{vertextypes, MeshBuffer, MeshData};
 
+use std::ffi::CString;
 use std::time::Instant;
 use winit::event_loop::EventLoop;
 
@@ -24,8 +25,11 @@ use winit::event_loop::EventLoop;
 fn main() {
     let event_loop = EventLoop::new();
     let mut camera = cameracontroller::Camera::new();
-    let mut vulkan_ctx = vulkanostuff::VulkanoCtx::init(&event_loop);
-    let size = vulkan_ctx.surface.window().inner_size();
+    let app_name = CString::new("Mikpe Renderer").unwrap();
+    let engine_name = CString::new("MikpEngine").unwrap();
+    let mut vulkan_ctx = vulkanstuff::VulkanCtx::init(&event_loop, true, app_name, engine_name);
+
+    let size = vulkan_ctx.window.inner_size();
     let mut win_x: f64 = size.width.into();
     let mut win_y: f64 = size.height.into();
     let mut projection_matrix = Mat4::create_proj(60.0, (win_x / win_y) as f32, 0.01, 1000.0);
@@ -57,20 +61,24 @@ fn main() {
 
     let mut mesh_data: Vec<Box<dyn MeshData>> = vec![];
 
-    mesh_data.push(Box::new(MeshBuffer::new(
-        vulkan_ctx.device.clone(),
-        vert_data.clone(),
-    )));
-    mesh_data.push(Box::new(MeshBuffer::new(
-        vulkan_ctx.device.clone(),
-        pos_data.clone(),
-    )));
+    // mesh_data.push(Box::new(MeshBuffer::new(
+    //     vulkan_ctx.device.clone(),
+    //     vulkan_ctx.render_pass.clone(),
+    //     vert_data.clone(),
+    // )));
+    // mesh_data.push(Box::new(MeshBuffer::new(
+    //     vulkan_ctx.device.clone(),
+    //     vulkan_ctx.render_pass.clone(),
+    //     pos_data.clone(),
+    // )));
 
     //Delta time, in seconds
     let mut delta_time = 0.0;
     let mut last_frame = Instant::now();
     event_loop.run(move |event, _, control_flow| {
         use winit::event::{Event, VirtualKeyCode, WindowEvent};
+        use winit::event_loop::ControlFlow;
+
         vulkan_ctx.handle_event(
             &event,
             delta_time,
@@ -83,33 +91,38 @@ fn main() {
                 delta_time = last_frame.elapsed().as_micros() as f32 / 1_000_000.0;
                 camera.update(delta_time);
                 last_frame = Instant::now();
+                *control_flow = ControlFlow::Poll;
             }
             Event::WindowEvent { event, .. } => {
                 camera.handle_event(&event);
                 match event {
                     WindowEvent::Resized(logical_size) => {
-                        win_x = logical_size.width as f64;
-                        win_y = logical_size.height as f64;
-                        projection_matrix =
-                            Mat4::create_proj(60.0, (win_x / win_y) as f32, 0.1, 1000.0);
+                        // win_x = logical_size.width as f64;
+                        // win_y = logical_size.height as f64;
+                        // projection_matrix =
+                        //     Mat4::create_proj(60.0, (win_x / win_y) as f32, 0.1, 1000.0);
                     }
                     WindowEvent::CloseRequested => {
-                        *control_flow = winit::event_loop::ControlFlow::Exit;
+                        *control_flow = ControlFlow::Exit;
                     }
                     WindowEvent::KeyboardInput { input, .. } => {
                         if let Some(keycode) = input.virtual_keycode {
                             match keycode {
                                 VirtualKeyCode::Escape => {
-                                    *control_flow = winit::event_loop::ControlFlow::Exit;
+                                    *control_flow = ControlFlow::Exit;
                                 }
                                 _ => {}
                             }
                         }
                     }
-                    _ => *control_flow = winit::event_loop::ControlFlow::Poll,
+                    _ => (),
                 }
             }
             Event::RedrawRequested { .. } => {}
+            Event::LoopDestroyed => {
+                println!("Loop destroyed!");
+                vulkan_ctx.destroy();
+            }
             _ => {}
         }
     });

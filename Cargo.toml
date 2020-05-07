@@ -17,6 +17,11 @@ vulkano = "^0.18.0"
 vulkano-win = "^0.18.0"
 vulkano-shaders = "^0.18.0"
 winit = "^0.22.0"
+erupt = "^0.6.0"
+libloading = "0.6"
+lazy_static = "1.4.0"
+
+
 
 [dependencies.gltf]
 features = ["KHR_materials_pbrSpecularGlossiness"]

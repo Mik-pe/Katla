@@ -8,7 +8,7 @@ use vulkano::pipeline::{GraphicsPipeline, GraphicsPipelineAbstract};
 pub mod vs {
     vulkano_shaders::shader! {
         ty: "vertex",
-        path: "resources/shaders/model.vert"
+        path: "resources/shaders/model_norm.vert"
     }
 }
 
