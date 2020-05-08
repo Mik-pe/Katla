@@ -20,8 +20,19 @@ void main()
     // vs_TBN = mat3(vs_tangent, vs_bitangent, vs_normal);
     // vs_TBN = mat3(1.0);
     // vs_pos = (uniforms.world * vec4(position, 1.0)).xyz;
-
+    if(gl_VertexIndex == 0){
+        gl_Position = vec4(0.0, -0.5, 1.0, 1.0);
+        vs_pos = vec3(1.0, 0.0, 0.0);
+    }
+    if(gl_VertexIndex == 1){
+        gl_Position = vec4(0.5, 0.5, 1.0, 1.0);
+        vs_pos = vec3(0.0, 1.0, 0.0);
+    }
+    if(gl_VertexIndex == 2){
+        gl_Position = vec4(-0.5, 0.5, 1.0, 1.0);
+        vs_pos = vec3(0.0, 0.0, 1.0);
+    }
     tex_coords = vec2(0.0, 0.0);
-    vs_pos = position;
-    gl_Position = uniforms.proj * uniforms.view * uniforms.world * vec4(position, 1.0);
+    // vs_pos = position;
+    // gl_Position = uniforms.proj * uniforms.view * uniforms.world * vec4(position, 1.0);
 }

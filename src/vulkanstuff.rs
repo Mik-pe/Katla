@@ -1,3 +1,8 @@
+use pipeline::*;
+use swapdata::*;
+mod pipeline;
+mod swapdata;
+
 use std::{
     ffi::{c_void, CStr, CString},
     os::raw::c_char,
@@ -16,12 +21,6 @@ use lazy_static::lazy_static;
 use winit::event::Event;
 use winit::event_loop::EventLoop;
 use winit::window::{Window, WindowBuilder};
-
-// use crate::rendering::pipeline as my_pipeline;
-// use crate::rendering::vertextypes;
-
-use swapdata::*;
-mod swapdata;
 
 lazy_static! {
     static ref CORE_LOADER: Mutex<CoreLoader<libloading::Library>> = {
@@ -43,6 +42,7 @@ pub struct VulkanCtx {
     command_buffers: Vec<CommandBuffer>,
     render_pass: RenderPass,
     queue: Queue,
+    pipeline: RenderPipeline,
     swap_data: SwapData,
 }
 
@@ -55,7 +55,6 @@ unsafe extern "system" fn debug_callback(
     p_callback_data: *const DebugUtilsMessengerCallbackDataEXT,
     _p_user_data: *mut c_void,
 ) -> Bool32 {
-    println!("VALIDATION ERROR:");
     println!(
         "{}",
         CStr::from_ptr((*p_callback_data).p_message).to_string_lossy()
@@ -330,6 +329,7 @@ impl VulkanCtx {
 
             unsafe { device.create_render_pass(&create_info, None, None) }.unwrap()
         };
+        let pipeline = RenderPipeline::new(&device, render_pass, surface_caps);
 
         // https://vulkan-tutorial.com/Drawing_a_triangle/Presentation/Swap_chain
         let swapchain = {
@@ -434,8 +434,22 @@ impl VulkanCtx {
 
             unsafe {
                 device.cmd_begin_render_pass(command_buffer, &begin_info, SubpassContents::INLINE);
-                // device.cmd_bind_pipeline(command_buffer, PipelineBindPoint::GRAPHICS, pipeline);
-                // device.cmd_draw(command_buffer, 3, 1, 0, 0);
+                device.cmd_bind_pipeline(
+                    command_buffer,
+                    PipelineBindPoint::GRAPHICS,
+                    pipeline.pipeline,
+                );
+                device.cmd_bind_descriptor_sets(
+                    command_buffer,
+                    PipelineBindPoint::GRAPHICS,
+                    pipeline.pipeline_layout,
+                    0,
+                    &[pipeline.desc_set],
+                    &[],
+                );
+
+                //TODO: Add buffer data to draw!
+                device.cmd_draw(command_buffer, 3, 1, 0, 0);
                 device.cmd_end_render_pass(command_buffer);
 
                 device.end_command_buffer(command_buffer).unwrap();
@@ -456,6 +470,7 @@ impl VulkanCtx {
             command_buffers,
             render_pass,
             queue,
+            pipeline,
             swap_data,
         };
         ctx
@@ -472,6 +487,7 @@ impl VulkanCtx {
                 self.device.destroy_framebuffer(framebuffer, None);
             }
 
+            self.pipeline.destroy(&self.device);
             self.device.destroy_render_pass(self.render_pass, None);
 
             for &image_view in &self.swapchain_image_views {
