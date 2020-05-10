@@ -5,12 +5,11 @@ pub struct VertexPosition {
     pub position: [f32; 3],
 }
 impl VertexPosition {
-    pub fn get_binding_desc(binding: u32) -> VertexInputBindingDescription {
-        VertexInputBindingDescription {
-            binding,
-            stride: std::mem::size_of::<Self>() as u32,
-            input_rate: VertexInputRate::VERTEX,
-        }
+    pub fn get_binding_desc<'a>(binding: u32) -> VertexInputBindingDescriptionBuilder<'a> {
+        VertexInputBindingDescriptionBuilder::new()
+            .binding(binding)
+            .stride(std::mem::size_of::<Self>() as u32)
+            .input_rate(VertexInputRate::VERTEX)
     }
 
     pub fn get_attribute_desc<'a>(binding: u32) -> Vec<VertexInputAttributeDescriptionBuilder<'a>> {

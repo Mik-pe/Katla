@@ -82,13 +82,13 @@ impl RenderPipeline {
         let pipeline_layout =
             unsafe { device.create_pipeline_layout(&create_info, None, None) }.unwrap();
 
-        // https://vulkan-tutorial.com/Drawing_a_triangle/Graphics_pipeline_basics/Fixed_functions
-        let vertex_binding_desc = VertexPosition::get_binding_desc(0);
+        let vertex_binding_desc = vec![VertexPosition::get_binding_desc(0)];
         let vertex_attrib_descs = VertexPosition::get_attribute_desc(0);
         let vertex_input = PipelineVertexInputStateCreateInfoBuilder::new()
-            .vertex_binding_descriptions(&vertex_binding_desc)
+            .vertex_binding_descriptions(vertex_binding_desc.as_slice())
             .vertex_attribute_descriptions(vertex_attrib_descs.as_slice());
 
+        // https://vulkan-tutorial.com/Drawing_a_triangle/Graphics_pipeline_basics/Fixed_functions
         let input_assembly = PipelineInputAssemblyStateCreateInfoBuilder::new()
             .topology(PrimitiveTopology::TRIANGLE_LIST)
             .primitive_restart_enable(false);
@@ -148,6 +148,7 @@ impl RenderPipeline {
             device.create_graphics_pipelines(PipelineCache::null(), &[create_info], None)
         }
         .unwrap()[0];
+
         RenderPipeline {
             pipeline,
             pipeline_layout,

@@ -12,7 +12,10 @@ use std::{
 use erupt::{
     cstr,
     extensions::{ext_debug_utils::*, khr_surface::*, khr_swapchain::*},
-    utils::surface,
+    utils::{
+        allocator::{Allocator, AllocatorCreateInfo, MemoryTypeFinder},
+        surface,
+    },
     vk1_0::*,
     CoreLoader, DeviceLoader, InstanceLoader,
 };
@@ -31,7 +34,9 @@ lazy_static! {
 }
 pub struct VulkanCtx {
     instance: InstanceLoader,
+    pub allocator: Allocator,
     pub device: DeviceLoader,
+    pub physical_device: PhysicalDevice,
     pub surface: SurfaceKHR,
     pub window: Window,
     messenger: DebugUtilsMessengerEXT,
@@ -171,7 +176,7 @@ impl VulkanCtx {
 
         let surface = unsafe { surface::create_surface(&mut instance, &window, None) }.unwrap();
 
-        let (mut device, queue_family, format, present_mode, surface_caps) = {
+        let (mut device, queue_family, format, present_mode, surface_caps, physical_device) = {
             let device_extensions = vec![KHR_SWAPCHAIN_EXTENSION_NAME];
             let mut device_layers = vec![];
             if with_validation_layers {
@@ -289,13 +294,21 @@ impl VulkanCtx {
                 )
             }
             .unwrap();
-            (device, queue_family, format, present_mode, surface_caps)
+            (
+                device,
+                queue_family,
+                format,
+                present_mode,
+                surface_caps,
+                physical_device,
+            )
         };
         device.load_vk1_0().unwrap();
         device.load_khr_swapchain().unwrap();
 
         let queue = unsafe { device.get_device_queue(queue_family, 0, None) };
-
+        let allocator =
+            Allocator::new(&instance, physical_device, AllocatorCreateInfo::default()).unwrap();
         // https://vulkan-tutorial.com/Drawing_a_triangle/Graphics_pipeline_basics/Render_passes
         let render_pass = {
             let attachments = vec![AttachmentDescriptionBuilder::new()
@@ -459,7 +472,9 @@ impl VulkanCtx {
 
         let ctx = Self {
             instance,
+            allocator,
             device,
+            physical_device,
             surface,
             window,
             messenger,

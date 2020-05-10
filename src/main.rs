@@ -5,6 +5,7 @@ mod util;
 mod vulkanstuff;
 use mikpe_math::Mat4;
 use rendering::vertextypes;
+use rendering::VertexBuffer;
 
 use std::ffi::CString;
 use std::time::Instant;
@@ -47,7 +48,7 @@ fn main() {
             normal: [0.0, 0.0, 1.0],
         },
     ];
-    let _pos_data = vec![
+    let pos_data = vec![
         vertextypes::VertexPosition {
             position: [-0.5, -0.5, 0.0],
         },
@@ -59,19 +60,21 @@ fn main() {
         },
     ];
 
-    // let mut mesh_data: Vec<Box<dyn MeshData>> = vec![];
-
-    // mesh_data.push(Box::new(MeshBuffer::new(
-    //     vulkan_ctx.device.clone(),
-    //     vulkan_ctx.render_pass.clone(),
-    //     vert_data.clone(),
-    // )));
-    // mesh_data.push(Box::new(MeshBuffer::new(
-    //     vulkan_ctx.device.clone(),
-    //     vulkan_ctx.render_pass.clone(),
-    //     pos_data.clone(),
-    // )));
-
+    let mut vertex_buffer = {
+        let data_slice = unsafe {
+            std::slice::from_raw_parts(
+                pos_data.as_ptr() as *const u8,
+                pos_data.len() * std::mem::size_of::<vertextypes::VertexPosition>(),
+            )
+        };
+        let mut vertex_buffer = VertexBuffer::new(
+            &vulkan_ctx.device,
+            &mut vulkan_ctx.allocator,
+            data_slice.len() as u64,
+        );
+        vertex_buffer.upload_data(&vulkan_ctx.device, data_slice);
+        Some(vertex_buffer)
+    };
     //Delta time, in seconds
     let mut delta_time = 0.0;
     let mut last_frame = Instant::now();
@@ -120,6 +123,10 @@ fn main() {
             Event::RedrawRequested { .. } => {}
             Event::LoopDestroyed => {
                 println!("Loop destroyed!");
+                vertex_buffer
+                    .take()
+                    .unwrap()
+                    .destroy(&vulkan_ctx.device, &mut vulkan_ctx.allocator);
                 vulkan_ctx.destroy();
             }
             _ => {}
