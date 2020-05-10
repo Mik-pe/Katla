@@ -1,9 +1,4 @@
-// use std::path::PathBuf;
-// use std::sync::Arc;
-// use vulkano::device::Device;
-// use vulkano::framebuffer::{RenderPassAbstract, Subpass};
-// use vulkano::pipeline::vertex::Vertex;
-// use vulkano::pipeline::{GraphicsPipeline, GraphicsPipelineAbstract};
+use crate::rendering::vertextypes::*;
 use erupt::{extensions::khr_surface::*, utils, vk1_0::*, DeviceLoader};
 use std::ffi::CString;
 
@@ -88,7 +83,11 @@ impl RenderPipeline {
             unsafe { device.create_pipeline_layout(&create_info, None, None) }.unwrap();
 
         // https://vulkan-tutorial.com/Drawing_a_triangle/Graphics_pipeline_basics/Fixed_functions
-        let vertex_input = PipelineVertexInputStateCreateInfoBuilder::new();
+        let vertex_binding_desc = VertexPosition::get_binding_desc(0);
+        let vertex_attrib_descs = VertexPosition::get_attribute_desc(0);
+        let vertex_input = PipelineVertexInputStateCreateInfoBuilder::new()
+            .vertex_binding_descriptions(&vertex_binding_desc)
+            .vertex_attribute_descriptions(vertex_attrib_descs.as_slice());
 
         let input_assembly = PipelineInputAssemblyStateCreateInfoBuilder::new()
             .topology(PrimitiveTopology::TRIANGLE_LIST)

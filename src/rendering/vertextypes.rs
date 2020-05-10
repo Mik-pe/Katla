@@ -1,6 +1,25 @@
+use erupt::vk1_0::*;
+
 #[derive(Default, Debug, Clone)]
 pub struct VertexPosition {
     pub position: [f32; 3],
+}
+impl VertexPosition {
+    pub fn get_binding_desc(binding: u32) -> VertexInputBindingDescription {
+        VertexInputBindingDescription {
+            binding,
+            stride: std::mem::size_of::<Self>() as u32,
+            input_rate: VertexInputRate::VERTEX,
+        }
+    }
+
+    pub fn get_attribute_desc<'a>(binding: u32) -> Vec<VertexInputAttributeDescriptionBuilder<'a>> {
+        vec![VertexInputAttributeDescriptionBuilder::new()
+            .binding(binding)
+            .location(0)
+            .format(Format::R32G32B32_SFLOAT)
+            .offset(0)]
+    }
 }
 // vulkano::impl_vertex!(VertexPosition, position);
 
