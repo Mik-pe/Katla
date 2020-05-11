@@ -3,6 +3,8 @@ use erupt::{
     vk1_0::*,
     DeviceLoader,
 };
+use std::ops::{Bound, RangeBounds};
+
 pub struct VertexBuffer {
     pub buffer: Allocation<Buffer>,
     buf_size: DeviceSize,
@@ -34,10 +36,12 @@ impl VertexBuffer {
                 data_size
             );
         }
-        let mut map = self.buffer.map(&device, ..data_size).unwrap();
+        //This is a bit awkward.. Probably something finicky within erupt
+        let range = ..self.buffer.region().start + data_size;
+
+        let mut map = self.buffer.map(&device, range).unwrap();
         map.import(data);
         map.unmap(&device).unwrap();
-        println!("Uploaded data of size {}", data_size);
     }
 
     pub fn destroy(self, device: &DeviceLoader, allocator: &mut Allocator) {

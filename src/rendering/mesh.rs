@@ -1,3 +1,41 @@
+use crate::rendering::vertextypes::*;
+use crate::rendering::VertexBuffer;
+
+use erupt::{utils::allocator::Allocator, DeviceLoader};
+
+pub struct Mesh {
+    pub vertex_buffer: Option<VertexBuffer>,
+}
+
+impl Mesh {
+    pub fn new_from_data(
+        device: &DeviceLoader,
+        allocator: &mut Allocator,
+        vertex_data: Vec<VertexPosition>,
+    ) -> Self {
+        let data_slice = unsafe {
+            std::slice::from_raw_parts(
+                vertex_data.as_ptr() as *const u8,
+                vertex_data.len() * std::mem::size_of::<VertexPosition>(),
+            )
+        };
+        let mut vertex_buffer = VertexBuffer::new(device, allocator, data_slice.len() as u64);
+        vertex_buffer.upload_data(device, data_slice);
+
+        Self {
+            vertex_buffer: Some(vertex_buffer),
+        }
+    }
+
+    pub fn destroy(&mut self, device: &DeviceLoader, allocator: &mut Allocator) {
+        if self.vertex_buffer.is_some() {
+            println!("Destroying buffer!");
+            let buffer = self.vertex_buffer.take().unwrap();
+            buffer.destroy(device, allocator);
+        }
+    }
+}
+
 // use crate::rendering::drawable::Drawable;
 // use crate::rendering::Material;
 // use crate::rendering::{Texture, TextureUsage};

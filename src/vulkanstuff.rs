@@ -4,6 +4,7 @@ mod pipeline;
 mod swapdata;
 
 use crate::rendering::vertextypes::VertexPosition;
+use crate::rendering::Mesh;
 use crate::rendering::VertexBuffer;
 
 use std::{
@@ -16,7 +17,7 @@ use erupt::{
     cstr,
     extensions::{ext_debug_utils::*, khr_surface::*, khr_swapchain::*},
     utils::{
-        allocator::{Allocator, AllocatorCreateInfo, MemoryTypeFinder},
+        allocator::{Allocator, AllocatorCreateInfo},
         surface,
     },
     vk1_0::*,
@@ -41,6 +42,7 @@ pub struct VulkanCtx {
     pub device: DeviceLoader,
     pub physical_device: PhysicalDevice,
     pub surface: SurfaceKHR,
+    surface_caps: SurfaceCapabilitiesKHR,
     pub window: Window,
     messenger: DebugUtilsMessengerEXT,
     swapchain: SwapchainKHR,
@@ -52,7 +54,7 @@ pub struct VulkanCtx {
     queue: Queue,
     pipeline: RenderPipeline,
     swap_data: SwapData,
-    vertex_buffer: VertexBuffer,
+    // vertex_buffer: VertexBuffer,
 }
 
 const LAYER_KHRONOS_VALIDATION: *const c_char = cstr!("VK_LAYER_KHRONOS_validation");
@@ -96,30 +98,6 @@ fn check_validation_support() -> bool {
 }
 
 impl VulkanCtx {
-    fn create_vertex_buffer(device: &DeviceLoader, allocator: &mut Allocator) -> VertexBuffer {
-        let pos_data = vec![
-            VertexPosition {
-                position: [0.0, -0.5, 1.0],
-            },
-            VertexPosition {
-                position: [0.5, 0.5, 1.0],
-            },
-            VertexPosition {
-                position: [-0.5, 0.5, 1.0],
-            },
-        ];
-
-        let data_slice = unsafe {
-            std::slice::from_raw_parts(
-                pos_data.as_ptr() as *const u8,
-                pos_data.len() * std::mem::size_of::<VertexPosition>(),
-            )
-        };
-        let mut vertex_buffer = VertexBuffer::new(device, allocator, data_slice.len() as u64);
-        vertex_buffer.upload_data(device, data_slice);
-        vertex_buffer
-    }
-
     fn create_instance(
         with_validation_layers: bool,
         app_name: &CStr,
@@ -335,7 +313,7 @@ impl VulkanCtx {
         device.load_khr_swapchain().unwrap();
 
         let queue = unsafe { device.get_device_queue(queue_family, 0, None) };
-        let mut allocator =
+        let allocator =
             Allocator::new(&instance, physical_device, AllocatorCreateInfo::default()).unwrap();
         // https://vulkan-tutorial.com/Drawing_a_triangle/Graphics_pipeline_basics/Render_passes
         let render_pass = {
@@ -441,10 +419,10 @@ impl VulkanCtx {
             })
             .collect();
 
-        let vertex_buffer = VulkanCtx::create_vertex_buffer(&device, &mut allocator);
-
         // https://vulkan-tutorial.com/Drawing_a_triangle/Drawing/Command_buffers
-        let create_info = CommandPoolCreateInfoBuilder::new().queue_family_index(queue_family);
+        let create_info = CommandPoolCreateInfoBuilder::new()
+            .queue_family_index(queue_family)
+            .flags(CommandPoolCreateFlags::RESET_COMMAND_BUFFER);
         let command_pool = unsafe { device.create_command_pool(&create_info, None, None) }.unwrap();
 
         let command_buffers = {
@@ -455,55 +433,6 @@ impl VulkanCtx {
             unsafe { device.allocate_command_buffers(&allocate_info) }.unwrap()
         };
 
-        for (&command_buffer, &framebuffer) in
-            command_buffers.iter().zip(swapchain_framebuffers.iter())
-        {
-            let begin_info = CommandBufferBeginInfoBuilder::new();
-            unsafe { device.begin_command_buffer(command_buffer, &begin_info) }.unwrap();
-
-            let clear_values = vec![ClearValue {
-                color: ClearColorValue {
-                    float32: [0.3, 0.5, 0.3, 1.0],
-                },
-            }];
-            let begin_info = RenderPassBeginInfoBuilder::new()
-                .render_pass(render_pass)
-                .framebuffer(framebuffer)
-                .render_area(Rect2D {
-                    offset: Offset2D { x: 0, y: 0 },
-                    extent: surface_caps.current_extent,
-                })
-                .clear_values(&clear_values);
-
-            unsafe {
-                device.cmd_begin_render_pass(command_buffer, &begin_info, SubpassContents::INLINE);
-                device.cmd_bind_pipeline(
-                    command_buffer,
-                    PipelineBindPoint::GRAPHICS,
-                    pipeline.pipeline,
-                );
-                device.cmd_bind_descriptor_sets(
-                    command_buffer,
-                    PipelineBindPoint::GRAPHICS,
-                    pipeline.pipeline_layout,
-                    0,
-                    &[pipeline.desc_set],
-                    &[],
-                );
-
-                device.cmd_bind_vertex_buffers(
-                    command_buffer,
-                    0,
-                    &[*vertex_buffer.buffer.object()],
-                    &[0],
-                );
-                //TODO: Add buffer data to draw!
-                device.cmd_draw(command_buffer, 3, 1, 0, 0);
-                device.cmd_end_render_pass(command_buffer);
-
-                device.end_command_buffer(command_buffer).unwrap();
-            }
-        }
         let swap_data = SwapData::new(&device, &swapchain_images, FRAMES_IN_FLIGHT);
 
         let ctx = Self {
@@ -512,6 +441,7 @@ impl VulkanCtx {
             device,
             physical_device,
             surface,
+            surface_caps,
             window,
             messenger,
             swapchain,
@@ -523,17 +453,18 @@ impl VulkanCtx {
             queue,
             pipeline,
             swap_data,
-            vertex_buffer,
+            // vertex_buffer,
         };
         ctx
     }
 
-    pub fn destroy(mut self) {
+    pub fn destroy(&mut self, mesh_data: Vec<&mut Mesh>) {
         unsafe {
-            self.vertex_buffer
-                .destroy(&self.device, &mut self.allocator);
             self.device.device_wait_idle().unwrap();
             self.swap_data.destroy(&self.device);
+            for mesh in mesh_data {
+                mesh.destroy(&self.device, &mut self.allocator);
+            }
 
             self.device.destroy_command_pool(self.command_pool, None);
 
@@ -568,6 +499,7 @@ impl VulkanCtx {
     pub fn handle_event(
         &mut self,
         event: &Event<()>,
+        mesh: &Mesh,
         _delta_time: f32,
         _projection: &mikpe_math::Mat4,
         _view: &mikpe_math::Mat4,
@@ -581,6 +513,66 @@ impl VulkanCtx {
 
                 let wait_semaphores = vec![available_sem];
                 let command_buffers = vec![self.command_buffers[image_index as usize]];
+                let swapchain_framebuffers =
+                    vec![self.swapchain_framebuffers[image_index as usize]];
+                for (&command_buffer, &framebuffer) in
+                    command_buffers.iter().zip(swapchain_framebuffers.iter())
+                {
+                    let begin_info = CommandBufferBeginInfoBuilder::new();
+                    unsafe {
+                        self.device
+                            .begin_command_buffer(command_buffer, &begin_info)
+                    }
+                    .unwrap();
+
+                    let clear_values = vec![ClearValue {
+                        color: ClearColorValue {
+                            float32: [0.3, 0.5, 0.3, 1.0],
+                        },
+                    }];
+                    let begin_info = RenderPassBeginInfoBuilder::new()
+                        .render_pass(self.render_pass)
+                        .framebuffer(framebuffer)
+                        .render_area(Rect2D {
+                            offset: Offset2D { x: 0, y: 0 },
+                            extent: self.surface_caps.current_extent,
+                        })
+                        .clear_values(&clear_values);
+
+                    unsafe {
+                        self.device.cmd_begin_render_pass(
+                            command_buffer,
+                            &begin_info,
+                            SubpassContents::INLINE,
+                        );
+                        self.device.cmd_bind_pipeline(
+                            command_buffer,
+                            PipelineBindPoint::GRAPHICS,
+                            self.pipeline.pipeline,
+                        );
+                        self.device.cmd_bind_descriptor_sets(
+                            command_buffer,
+                            PipelineBindPoint::GRAPHICS,
+                            self.pipeline.pipeline_layout,
+                            0,
+                            &[self.pipeline.desc_set],
+                            &[],
+                        );
+                        if let Some(vertex_buffer) = &mesh.vertex_buffer {
+                            self.device.cmd_bind_vertex_buffers(
+                                command_buffer,
+                                0,
+                                &[*vertex_buffer.buffer.object()],
+                                &[0],
+                            );
+                        }
+                        //TODO: Add buffer data to draw!
+                        self.device.cmd_draw(command_buffer, 3, 1, 0, 0);
+                        self.device.cmd_end_render_pass(command_buffer);
+
+                        self.device.end_command_buffer(command_buffer).unwrap();
+                    }
+                }
                 let signal_semaphores = vec![finished_sem];
                 let submit_info = SubmitInfoBuilder::new()
                     .wait_semaphores(&wait_semaphores)

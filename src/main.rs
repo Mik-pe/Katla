@@ -5,9 +5,10 @@ mod util;
 mod vulkanstuff;
 use mikpe_math::Mat4;
 use rendering::vertextypes;
-use rendering::VertexBuffer;
+use rendering::Mesh;
 
 use std::ffi::CString;
+use std::sync::Arc;
 use std::time::Instant;
 use winit::event_loop::EventLoop;
 
@@ -48,42 +49,40 @@ fn main() {
             normal: [0.0, 0.0, 1.0],
         },
     ];
-    // let pos_data = vec![
-    //     vertextypes::VertexPosition {
-    //         position: [-0.5, -0.5, 0.0],
-    //     },
-    //     vertextypes::VertexPosition {
-    //         position: [0.0, 0.5, 0.0],
-    //     },
-    //     vertextypes::VertexPosition {
-    //         position: [0.5, -0.5, 0.0],
-    //     },
-    // ];
+    let pos_data = vec![
+        vertextypes::VertexPosition {
+            position: [0.0, -0.5, 1.0],
+        },
+        vertextypes::VertexPosition {
+            position: [0.5, 0.5, 1.0],
+        },
+        vertextypes::VertexPosition {
+            position: [-0.5, 0.5, 1.0],
+        },
+    ];
 
-    // let mut vertex_buffer = {
-    //     let data_slice = unsafe {
-    //         std::slice::from_raw_parts(
-    //             pos_data.as_ptr() as *const u8,
-    //             pos_data.len() * std::mem::size_of::<vertextypes::VertexPosition>(),
-    //         )
-    //     };
-    //     let mut vertex_buffer = VertexBuffer::new(
-    //         &vulkan_ctx.device,
-    //         &mut vulkan_ctx.allocator,
-    //         data_slice.len() as u64,
-    //     );
-    //     vertex_buffer.upload_data(&vulkan_ctx.device, data_slice);
-    //     vec![vertex_buffer]
-    // };
+    let mut mesh = Mesh::new_from_data(&vulkan_ctx.device, &mut vulkan_ctx.allocator, pos_data);
+    let pos_data = vec![
+        vertextypes::VertexPosition {
+            position: [0.0, -0.5, 1.0],
+        },
+        vertextypes::VertexPosition {
+            position: [0.5, 0.5, 1.0],
+        },
+        vertextypes::VertexPosition {
+            position: [-0.5, 0.5, 1.0],
+        },
+    ];
+
     //Delta time, in seconds
     let mut delta_time = 0.0;
     let mut last_frame = Instant::now();
     event_loop.run(move |event, _, control_flow| {
         use winit::event::{Event, VirtualKeyCode, WindowEvent};
         use winit::event_loop::ControlFlow;
-
         vulkan_ctx.handle_event(
             &event,
+            &mesh,
             delta_time,
             &projection_matrix,
             &camera.get_view_mat().inverse(),
@@ -123,11 +122,11 @@ fn main() {
             Event::RedrawRequested { .. } => {}
             Event::LoopDestroyed => {
                 println!("Loop destroyed!");
+                vulkan_ctx.destroy(vec![&mut mesh]);
             }
             _ => {}
         }
     });
-    vulkan_ctx.destroy();
     // let (sender, receiver) = std::sync::mpsc::channel();
     // let (upload_sender, upload_recv) = std::sync::mpsc::channel();
     // let mut projection_matrix = Mat4::create_proj(60.0, 1.0, 0.5, 1000.0);
