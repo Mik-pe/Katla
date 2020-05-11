@@ -3,6 +3,9 @@ use swapdata::*;
 mod pipeline;
 mod swapdata;
 
+use crate::rendering::vertextypes::VertexPosition;
+use crate::rendering::VertexBuffer;
+
 use std::{
     ffi::{c_void, CStr, CString},
     os::raw::c_char,
@@ -49,6 +52,7 @@ pub struct VulkanCtx {
     queue: Queue,
     pipeline: RenderPipeline,
     swap_data: SwapData,
+    vertex_buffer: VertexBuffer,
 }
 
 const LAYER_KHRONOS_VALIDATION: *const c_char = cstr!("VK_LAYER_KHRONOS_validation");
@@ -92,6 +96,30 @@ fn check_validation_support() -> bool {
 }
 
 impl VulkanCtx {
+    fn create_vertex_buffer(device: &DeviceLoader, allocator: &mut Allocator) -> VertexBuffer {
+        let pos_data = vec![
+            VertexPosition {
+                position: [0.0, -0.5, 1.0],
+            },
+            VertexPosition {
+                position: [0.5, 0.5, 1.0],
+            },
+            VertexPosition {
+                position: [-0.5, 0.5, 1.0],
+            },
+        ];
+
+        let data_slice = unsafe {
+            std::slice::from_raw_parts(
+                pos_data.as_ptr() as *const u8,
+                pos_data.len() * std::mem::size_of::<VertexPosition>(),
+            )
+        };
+        let mut vertex_buffer = VertexBuffer::new(device, allocator, data_slice.len() as u64);
+        vertex_buffer.upload_data(device, data_slice);
+        vertex_buffer
+    }
+
     fn create_instance(
         with_validation_layers: bool,
         app_name: &CStr,
@@ -307,7 +335,7 @@ impl VulkanCtx {
         device.load_khr_swapchain().unwrap();
 
         let queue = unsafe { device.get_device_queue(queue_family, 0, None) };
-        let allocator =
+        let mut allocator =
             Allocator::new(&instance, physical_device, AllocatorCreateInfo::default()).unwrap();
         // https://vulkan-tutorial.com/Drawing_a_triangle/Graphics_pipeline_basics/Render_passes
         let render_pass = {
@@ -413,6 +441,8 @@ impl VulkanCtx {
             })
             .collect();
 
+        let vertex_buffer = VulkanCtx::create_vertex_buffer(&device, &mut allocator);
+
         // https://vulkan-tutorial.com/Drawing_a_triangle/Drawing/Command_buffers
         let create_info = CommandPoolCreateInfoBuilder::new().queue_family_index(queue_family);
         let command_pool = unsafe { device.create_command_pool(&create_info, None, None) }.unwrap();
@@ -461,6 +491,12 @@ impl VulkanCtx {
                     &[],
                 );
 
+                device.cmd_bind_vertex_buffers(
+                    command_buffer,
+                    0,
+                    &[*vertex_buffer.buffer.object()],
+                    &[0],
+                );
                 //TODO: Add buffer data to draw!
                 device.cmd_draw(command_buffer, 3, 1, 0, 0);
                 device.cmd_end_render_pass(command_buffer);
@@ -487,12 +523,15 @@ impl VulkanCtx {
             queue,
             pipeline,
             swap_data,
+            vertex_buffer,
         };
         ctx
     }
 
-    pub fn destroy(&mut self) {
+    pub fn destroy(mut self) {
         unsafe {
+            self.vertex_buffer
+                .destroy(&self.device, &mut self.allocator);
             self.device.device_wait_idle().unwrap();
             self.swap_data.destroy(&self.device);
 

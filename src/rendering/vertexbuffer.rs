@@ -4,7 +4,7 @@ use erupt::{
     DeviceLoader,
 };
 pub struct VertexBuffer {
-    buffer: Allocation<Buffer>,
+    pub buffer: Allocation<Buffer>,
     buf_size: DeviceSize,
 }
 
@@ -27,19 +27,17 @@ impl VertexBuffer {
     }
 
     pub fn upload_data(&mut self, device: &DeviceLoader, data: &[u8]) {
-        if self.buf_size < data.len() as _ {
+        let data_size = std::mem::size_of_val(data) as DeviceSize;
+        if self.buf_size < data_size {
             panic!(
                 "Too little memory allocated for buffer of size {}",
-                data.len()
+                data_size
             );
         }
-        let mut map = self
-            .buffer
-            .map(&device, ..(data.len() as DeviceSize))
-            .unwrap();
+        let mut map = self.buffer.map(&device, ..data_size).unwrap();
         map.import(data);
         map.unmap(&device).unwrap();
-        println!("Uploaded data of size {}", data.len());
+        println!("Uploaded data of size {}", data_size);
     }
 
     pub fn destroy(self, device: &DeviceLoader, allocator: &mut Allocator) {

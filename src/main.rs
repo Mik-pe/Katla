@@ -48,33 +48,33 @@ fn main() {
             normal: [0.0, 0.0, 1.0],
         },
     ];
-    let pos_data = vec![
-        vertextypes::VertexPosition {
-            position: [-0.5, -0.5, 0.0],
-        },
-        vertextypes::VertexPosition {
-            position: [0.0, 0.5, 0.0],
-        },
-        vertextypes::VertexPosition {
-            position: [0.5, -0.5, 0.0],
-        },
-    ];
+    // let pos_data = vec![
+    //     vertextypes::VertexPosition {
+    //         position: [-0.5, -0.5, 0.0],
+    //     },
+    //     vertextypes::VertexPosition {
+    //         position: [0.0, 0.5, 0.0],
+    //     },
+    //     vertextypes::VertexPosition {
+    //         position: [0.5, -0.5, 0.0],
+    //     },
+    // ];
 
-    let mut vertex_buffer = {
-        let data_slice = unsafe {
-            std::slice::from_raw_parts(
-                pos_data.as_ptr() as *const u8,
-                pos_data.len() * std::mem::size_of::<vertextypes::VertexPosition>(),
-            )
-        };
-        let mut vertex_buffer = VertexBuffer::new(
-            &vulkan_ctx.device,
-            &mut vulkan_ctx.allocator,
-            data_slice.len() as u64,
-        );
-        vertex_buffer.upload_data(&vulkan_ctx.device, data_slice);
-        Some(vertex_buffer)
-    };
+    // let mut vertex_buffer = {
+    //     let data_slice = unsafe {
+    //         std::slice::from_raw_parts(
+    //             pos_data.as_ptr() as *const u8,
+    //             pos_data.len() * std::mem::size_of::<vertextypes::VertexPosition>(),
+    //         )
+    //     };
+    //     let mut vertex_buffer = VertexBuffer::new(
+    //         &vulkan_ctx.device,
+    //         &mut vulkan_ctx.allocator,
+    //         data_slice.len() as u64,
+    //     );
+    //     vertex_buffer.upload_data(&vulkan_ctx.device, data_slice);
+    //     vec![vertex_buffer]
+    // };
     //Delta time, in seconds
     let mut delta_time = 0.0;
     let mut last_frame = Instant::now();
@@ -123,15 +123,11 @@ fn main() {
             Event::RedrawRequested { .. } => {}
             Event::LoopDestroyed => {
                 println!("Loop destroyed!");
-                vertex_buffer
-                    .take()
-                    .unwrap()
-                    .destroy(&vulkan_ctx.device, &mut vulkan_ctx.allocator);
-                vulkan_ctx.destroy();
             }
             _ => {}
         }
     });
+    vulkan_ctx.destroy();
     // let (sender, receiver) = std::sync::mpsc::channel();
     // let (upload_sender, upload_recv) = std::sync::mpsc::channel();
     // let mut projection_matrix = Mat4::create_proj(60.0, 1.0, 0.5, 1000.0);
