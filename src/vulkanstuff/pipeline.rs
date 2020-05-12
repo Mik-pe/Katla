@@ -52,7 +52,7 @@ impl UniformDescriptor {
                     &[WriteDescriptorSetBuilder::new()
                         .dst_set(self.desc_set)
                         .dst_binding(0)
-                        .descriptor_type(DescriptorType::STORAGE_BUFFER)
+                        .descriptor_type(DescriptorType::UNIFORM_BUFFER)
                         .buffer_info(&[DescriptorBufferInfoBuilder::new()
                             .buffer(*buffer.buffer.object())
                             .offset(buffer.buffer.region().start)
@@ -82,7 +82,7 @@ impl RenderPipeline {
 
         let create_info = BufferCreateInfoBuilder::new()
             .sharing_mode(SharingMode::EXCLUSIVE)
-            .usage(BufferUsageFlags::STORAGE_BUFFER)
+            .usage(BufferUsageFlags::UNIFORM_BUFFER)
             .size(data_size);
 
         let buffer = allocator
