@@ -1,26 +1,98 @@
 use crate::rendering::vertextypes::*;
-use erupt::{extensions::khr_surface::*, utils, vk1_0::*, DeviceLoader};
+use erupt::{
+    extensions::khr_surface::*,
+    utils,
+    utils::allocator::{Allocation, Allocator, MemoryTypeFinder},
+    vk1_0::*,
+    DeviceLoader,
+};
+
 use std::ffi::CString;
+const SHADER_VERT: &[u8] = include_bytes!("../../resources/shaders/model_pos.vert.spv");
+const SHADER_FRAG: &[u8] = include_bytes!("../../resources/shaders/model.frag.spv");
 
 pub struct RenderPipeline {
     pub pipeline: Pipeline,
     pub pipeline_layout: PipelineLayout,
-    pub desc_set: DescriptorSet,
-    pub desc_layout: DescriptorSetLayout,
-    pub desc_pool: DescriptorPool,
+    pub uniform_desc: UniformDescriptor,
     vert_module: ShaderModule,
     frag_module: ShaderModule,
 }
 
-const SHADER_VERT: &[u8] = include_bytes!("../../resources/shaders/model_pos.vert.spv");
-const SHADER_FRAG: &[u8] = include_bytes!("../../resources/shaders/model.frag.spv");
+pub struct UniformBuffer {
+    buffer: Allocation<Buffer>,
+    buf_size: DeviceSize,
+}
+pub struct UniformDescriptor {
+    pub desc_set: DescriptorSet,
+    pub desc_layout: DescriptorSetLayout,
+    pub desc_pool: DescriptorPool,
+    pub uniform_buffer: Option<UniformBuffer>,
+}
+
+impl UniformDescriptor {
+    pub fn update_buffer(&mut self, device: &DeviceLoader, data: &[u8]) {
+        if let Some(buffer) = &self.uniform_buffer {
+            let data_size = std::mem::size_of_val(data) as DeviceSize;
+            if buffer.buf_size < data_size {
+                panic!(
+                    "Too little memory allocated for buffer of size {}",
+                    data_size
+                );
+            }
+            //This is a bit awkward.. Probably something finicky within erupt
+            let range = ..buffer.buffer.region().start + data_size;
+
+            let mut map = buffer.buffer.map(&device, range).unwrap();
+            map.import(data);
+            map.unmap(&device).unwrap();
+
+            unsafe {
+                device.update_descriptor_sets(
+                    &[WriteDescriptorSetBuilder::new()
+                        .dst_set(self.desc_set)
+                        .dst_binding(0)
+                        .descriptor_type(DescriptorType::STORAGE_BUFFER)
+                        .buffer_info(&[DescriptorBufferInfoBuilder::new()
+                            .buffer(*buffer.buffer.object())
+                            .offset(buffer.buffer.region().start)
+                            .range(data_size)])],
+                    &[],
+                )
+            };
+        }
+    }
+
+    pub fn destroy(&mut self, device: &DeviceLoader) {
+        unsafe {
+            device.destroy_descriptor_set_layout(self.desc_layout, None);
+            device.destroy_descriptor_pool(self.desc_pool, None);
+        }
+    }
+}
 
 impl RenderPipeline {
     //Call with e.g. SingleBufferDefinition::new() as V
 
     fn create_descriptor_sets(
         device: &DeviceLoader,
-    ) -> (DescriptorSet, DescriptorSetLayout, DescriptorPool) {
+        allocator: &mut Allocator,
+    ) -> UniformDescriptor {
+        let data_size = 4 * 16 * 3 as DeviceSize;
+
+        let create_info = BufferCreateInfoBuilder::new()
+            .sharing_mode(SharingMode::EXCLUSIVE)
+            .usage(BufferUsageFlags::STORAGE_BUFFER)
+            .size(data_size);
+
+        let buffer = allocator
+            .allocate(
+                &device,
+                unsafe { device.create_buffer(&create_info, None, None) }.unwrap(),
+                MemoryTypeFinder::dynamic(),
+            )
+            .unwrap();
+
         let desc_pool_sizes = &[DescriptorPoolSizeBuilder::new()
             .descriptor_count(1)
             ._type(DescriptorType::UNIFORM_BUFFER)];
@@ -45,11 +117,22 @@ impl RenderPipeline {
             .descriptor_pool(desc_pool)
             .set_layouts(desc_layouts);
         let desc_set = unsafe { device.allocate_descriptor_sets(&desc_info) }.unwrap()[0];
-        (desc_set, desc_layout, desc_pool)
+        let uniform_buffer = UniformBuffer {
+            buffer: buffer,
+            buf_size: data_size,
+        };
+
+        UniformDescriptor {
+            desc_set,
+            desc_layout,
+            desc_pool,
+            uniform_buffer: Some(uniform_buffer),
+        }
     }
 
     pub fn new(
         device: &DeviceLoader,
+        allocator: &mut Allocator,
         render_pass: RenderPass,
         surface_caps: SurfaceCapabilitiesKHR,
     ) -> Self {
@@ -74,8 +157,8 @@ impl RenderPipeline {
                 .name(&entry_point),
         ];
         //TODO: Descrpitor sets!
-        let (desc_set, desc_layout, desc_pool) = RenderPipeline::create_descriptor_sets(device);
-        let pipeline_layout_desc_layouts = &[desc_layout];
+        let uniform_desc = RenderPipeline::create_descriptor_sets(device, allocator);
+        let pipeline_layout_desc_layouts = &[uniform_desc.desc_layout];
 
         let create_info =
             PipelineLayoutCreateInfoBuilder::new().set_layouts(pipeline_layout_desc_layouts);
@@ -152,9 +235,7 @@ impl RenderPipeline {
         RenderPipeline {
             pipeline,
             pipeline_layout,
-            desc_set,
-            desc_layout,
-            desc_pool,
+            uniform_desc,
             vert_module: shader_vert,
             frag_module: shader_frag,
         }
@@ -165,8 +246,7 @@ impl RenderPipeline {
             device.destroy_pipeline(self.pipeline, None);
             device.destroy_shader_module(self.vert_module, None);
             device.destroy_shader_module(self.frag_module, None);
-            device.destroy_descriptor_set_layout(self.desc_layout, None);
-            device.destroy_descriptor_pool(self.desc_pool, None);
+            self.uniform_desc.destroy(device);
             device.destroy_pipeline_layout(self.pipeline_layout, None);
         }
     }

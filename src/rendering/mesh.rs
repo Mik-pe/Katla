@@ -1,22 +1,23 @@
 use crate::rendering::vertextypes::*;
 use crate::rendering::VertexBuffer;
 
-use erupt::{utils::allocator::Allocator, DeviceLoader};
+use erupt::{utils::allocator::Allocator, vk1_0::*, DeviceLoader};
 
 pub struct Mesh {
     pub vertex_buffer: Option<VertexBuffer>,
+    pub num_verts: u32,
 }
 
 impl Mesh {
-    pub fn new_from_data(
+    pub fn new_from_data<T>(
         device: &DeviceLoader,
         allocator: &mut Allocator,
-        vertex_data: Vec<VertexPosition>,
+        vertex_data: Vec<T>,
     ) -> Self {
         let data_slice = unsafe {
             std::slice::from_raw_parts(
                 vertex_data.as_ptr() as *const u8,
-                vertex_data.len() * std::mem::size_of::<VertexPosition>(),
+                vertex_data.len() * std::mem::size_of::<T>(),
             )
         };
         let mut vertex_buffer = VertexBuffer::new(device, allocator, data_slice.len() as u64);
@@ -24,6 +25,21 @@ impl Mesh {
 
         Self {
             vertex_buffer: Some(vertex_buffer),
+            num_verts: vertex_data.len() as u32,
+        }
+    }
+
+    pub fn add_draw_cmd(&self, device: &DeviceLoader, command_buffer: CommandBuffer) {
+        if let Some(vertex_buffer) = &self.vertex_buffer {
+            unsafe {
+                device.cmd_bind_vertex_buffers(
+                    command_buffer,
+                    0,
+                    &[*vertex_buffer.buffer.object()],
+                    &[0],
+                );
+                device.cmd_draw(command_buffer, 3, 1, 0, 0);
+            }
         }
     }
 
@@ -35,12 +51,7 @@ impl Mesh {
         }
     }
 }
-
-// use crate::rendering::drawable::Drawable;
-// use crate::rendering::Material;
-// use crate::rendering::{Texture, TextureUsage};
 // use crate::util::CachedGLTFModel;
-// // use gl;
 
 // use gltf;
 // use mikpe_math;

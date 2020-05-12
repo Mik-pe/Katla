@@ -30,7 +30,7 @@ void main()
         vs_pos = vec3(0.0, 0.0, 1.0);
     }
     tex_coords = vec2(0.0, 0.0);
-    gl_Position = vec4(position, 1.0);
+    gl_Position = uniforms.world * vec4(position, 1.0);
     // vs_pos = position;
     // gl_Position = uniforms.proj * uniforms.view * uniforms.world * vec4(position, 1.0);
 }

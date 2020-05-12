@@ -3,7 +3,6 @@ use erupt::{
     vk1_0::*,
     DeviceLoader,
 };
-use std::ops::{Bound, RangeBounds};
 
 pub struct VertexBuffer {
     pub buffer: Allocation<Buffer>,

@@ -52,7 +52,7 @@ pub struct VulkanCtx {
     command_buffers: Vec<CommandBuffer>,
     render_pass: RenderPass,
     queue: Queue,
-    pipeline: RenderPipeline,
+    pub pipeline: RenderPipeline,
     swap_data: SwapData,
     // vertex_buffer: VertexBuffer,
 }
@@ -310,10 +310,12 @@ impl VulkanCtx {
             )
         };
         device.load_vk1_0().unwrap();
-        device.load_khr_swapchain().unwrap();
+        device
+            .load_khr_swapchain()
+            .expect("Couldn't load swapchain!");
 
         let queue = unsafe { device.get_device_queue(queue_family, 0, None) };
-        let allocator =
+        let mut allocator =
             Allocator::new(&instance, physical_device, AllocatorCreateInfo::default()).unwrap();
         // https://vulkan-tutorial.com/Drawing_a_triangle/Graphics_pipeline_basics/Render_passes
         let render_pass = {
@@ -348,7 +350,7 @@ impl VulkanCtx {
 
             unsafe { device.create_render_pass(&create_info, None, None) }.unwrap()
         };
-        let pipeline = RenderPipeline::new(&device, render_pass, surface_caps);
+        let pipeline = RenderPipeline::new(&device, &mut allocator, render_pass, surface_caps);
 
         // https://vulkan-tutorial.com/Drawing_a_triangle/Presentation/Swap_chain
         let swapchain = {
@@ -453,7 +455,6 @@ impl VulkanCtx {
             queue,
             pipeline,
             swap_data,
-            // vertex_buffer,
         };
         ctx
     }
@@ -555,19 +556,10 @@ impl VulkanCtx {
                             PipelineBindPoint::GRAPHICS,
                             self.pipeline.pipeline_layout,
                             0,
-                            &[self.pipeline.desc_set],
+                            &[self.pipeline.uniform_desc.desc_set],
                             &[],
                         );
-                        if let Some(vertex_buffer) = &mesh.vertex_buffer {
-                            self.device.cmd_bind_vertex_buffers(
-                                command_buffer,
-                                0,
-                                &[*vertex_buffer.buffer.object()],
-                                &[0],
-                            );
-                        }
-                        //TODO: Add buffer data to draw!
-                        self.device.cmd_draw(command_buffer, 3, 1, 0, 0);
+                        mesh.add_draw_cmd(&self.device, command_buffer);
                         self.device.cmd_end_render_pass(command_buffer);
 
                         self.device.end_command_buffer(command_buffer).unwrap();
