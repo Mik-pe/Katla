@@ -18,10 +18,11 @@ use erupt::{
     extensions::{ext_debug_utils::*, khr_surface::*, khr_swapchain::*},
     utils::{
         allocator::{Allocator, AllocatorCreateInfo},
+        loading::DefaultCoreLoader,
         surface,
     },
     vk1_0::*,
-    CoreLoader, DeviceLoader, InstanceLoader,
+    DeviceLoader, InstanceLoader,
 };
 use lazy_static::lazy_static;
 
@@ -30,8 +31,8 @@ use winit::event_loop::EventLoop;
 use winit::window::{Window, WindowBuilder};
 
 lazy_static! {
-    static ref CORE_LOADER: Mutex<CoreLoader<libloading::Library>> = {
-        let core = Mutex::new(CoreLoader::new().unwrap());
+    static ref CORE_LOADER: Mutex<DefaultCoreLoader> = {
+        let core = Mutex::new(DefaultCoreLoader::new().unwrap());
         core.lock().unwrap().load_vk1_0().unwrap();
         core
     };
