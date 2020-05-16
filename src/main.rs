@@ -50,28 +50,28 @@ fn main() {
     ];
     let pos_data = vec![
         vertextypes::VertexPosition {
-            position: [0.0, -0.5, 1.0],
+            position: [0.5, 0.5, 0.0],
         },
         vertextypes::VertexPosition {
-            position: [0.5, 0.5, 1.0],
+            position: [0.0, -0.5, 0.0],
         },
         vertextypes::VertexPosition {
-            position: [-0.5, 0.5, 1.0],
+            position: [-0.5, 0.5, 0.0],
         },
     ];
     let mut mesh = Mesh::new_from_data(&vulkan_ctx.device, &mut vulkan_ctx.allocator, pos_data);
-    let mat = [
-        mikpe_math::Mat4::new(),
-        mikpe_math::Mat4::new(),
-        mikpe_math::Mat4::new(),
-    ];
-    let data_slice = unsafe {
-        std::slice::from_raw_parts(mat.as_ptr() as *const u8, std::mem::size_of_val(&mat))
-    };
-    vulkan_ctx
-        .pipeline
-        .uniform_desc
-        .update_buffer(&vulkan_ctx.device, &data_slice);
+    // let mat = [
+    //     mikpe_math::Mat4::new(),
+    //     camera.get_view_mat().inverse().clone(),
+    //     projection_matrix.clone(),
+    // ];
+    // let data_slice = unsafe {
+    //     std::slice::from_raw_parts(mat.as_ptr() as *const u8, std::mem::size_of_val(&mat))
+    // };
+    // vulkan_ctx
+    //     .pipeline
+    //     .uniform_desc
+    //     .update_buffer(&vulkan_ctx.device, &data_slice);
 
     //Delta time, in seconds
     let mut delta_time = 0.0;

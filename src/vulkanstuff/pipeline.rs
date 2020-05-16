@@ -14,7 +14,8 @@ const SHADER_FRAG: &[u8] = include_bytes!("../../resources/shaders/model.frag.sp
 pub struct RenderPipeline {
     pub pipeline: Pipeline,
     pub pipeline_layout: PipelineLayout,
-    pub uniform_desc: UniformDescriptor,
+    pub uniform_descs: Vec<UniformDescriptor>,
+    pub desc_layout: DescriptorSetLayout,
     vert_module: ShaderModule,
     frag_module: ShaderModule,
 }
@@ -25,7 +26,6 @@ pub struct UniformBuffer {
 }
 pub struct UniformDescriptor {
     pub desc_set: DescriptorSet,
-    pub desc_layout: DescriptorSetLayout,
     pub desc_pool: DescriptorPool,
     pub uniform_buffer: Option<UniformBuffer>,
 }
@@ -40,7 +40,7 @@ impl UniformDescriptor {
                     data_size
                 );
             }
-            //This is a bit awkward.. Probably something finicky within erupt
+            //This is a bit awkward.. Something finicky within erupt?
             let range = ..buffer.buffer.region().start + data_size;
 
             let mut map = buffer.buffer.map(&device, range).unwrap();
@@ -55,7 +55,7 @@ impl UniformDescriptor {
                         .descriptor_type(DescriptorType::UNIFORM_BUFFER)
                         .buffer_info(&[DescriptorBufferInfoBuilder::new()
                             .buffer(*buffer.buffer.object())
-                            .offset(buffer.buffer.region().start)
+                            .offset(0)
                             .range(data_size)])],
                     &[],
                 )
@@ -63,9 +63,12 @@ impl UniformDescriptor {
         }
     }
 
-    pub fn destroy(&mut self, device: &DeviceLoader) {
+    pub fn destroy(&mut self, device: &DeviceLoader, allocator: &mut Allocator) {
         unsafe {
-            device.destroy_descriptor_set_layout(self.desc_layout, None);
+            if self.uniform_buffer.is_some() {
+                let buffer = self.uniform_buffer.take().unwrap();
+                allocator.free(device, buffer.buffer);
+            }
             device.destroy_descriptor_pool(self.desc_pool, None);
         }
     }
@@ -77,6 +80,7 @@ impl RenderPipeline {
     fn create_descriptor_sets(
         device: &DeviceLoader,
         allocator: &mut Allocator,
+        desc_layout: &DescriptorSetLayout,
     ) -> UniformDescriptor {
         let data_size = 4 * 16 * 3 as DeviceSize;
 
@@ -92,6 +96,10 @@ impl RenderPipeline {
                 MemoryTypeFinder::dynamic(),
             )
             .unwrap();
+        let uniform_buffer = Some(UniformBuffer {
+            buffer: buffer,
+            buf_size: data_size,
+        });
 
         let desc_pool_sizes = &[DescriptorPoolSizeBuilder::new()
             .descriptor_count(1)
@@ -102,31 +110,16 @@ impl RenderPipeline {
         let desc_pool =
             unsafe { device.create_descriptor_pool(&desc_pool_info, None, None) }.unwrap();
 
-        let desc_layout_bindings = &[DescriptorSetLayoutBindingBuilder::new()
-            .binding(0)
-            .descriptor_count(1)
-            .descriptor_type(DescriptorType::UNIFORM_BUFFER)
-            .stage_flags(ShaderStageFlags::VERTEX | ShaderStageFlags::FRAGMENT)];
-        let desc_layout_info =
-            DescriptorSetLayoutCreateInfoBuilder::new().bindings(desc_layout_bindings);
-        let desc_layout =
-            unsafe { device.create_descriptor_set_layout(&desc_layout_info, None, None) }.unwrap();
-
-        let desc_layouts = &[desc_layout];
+        let desc_layouts = &[desc_layout.clone()];
         let desc_info = DescriptorSetAllocateInfoBuilder::new()
             .descriptor_pool(desc_pool)
             .set_layouts(desc_layouts);
         let desc_set = unsafe { device.allocate_descriptor_sets(&desc_info) }.unwrap()[0];
-        let uniform_buffer = UniformBuffer {
-            buffer: buffer,
-            buf_size: data_size,
-        };
 
         UniformDescriptor {
             desc_set,
-            desc_layout,
             desc_pool,
-            uniform_buffer: Some(uniform_buffer),
+            uniform_buffer,
         }
     }
 
@@ -135,6 +128,7 @@ impl RenderPipeline {
         allocator: &mut Allocator,
         render_pass: RenderPass,
         surface_caps: SurfaceCapabilitiesKHR,
+        num_images: usize,
     ) -> Self {
         let entry_point = CString::new("main").unwrap();
 
@@ -156,9 +150,24 @@ impl RenderPipeline {
                 .module(shader_frag)
                 .name(&entry_point),
         ];
-        //TODO: Descrpitor sets!
-        let uniform_desc = RenderPipeline::create_descriptor_sets(device, allocator);
-        let pipeline_layout_desc_layouts = &[uniform_desc.desc_layout];
+        //TODO: Descrpitor sets
+        let desc_layout_bindings = &[DescriptorSetLayoutBindingBuilder::new()
+            .binding(0)
+            .descriptor_count(1)
+            .descriptor_type(DescriptorType::UNIFORM_BUFFER)
+            .stage_flags(ShaderStageFlags::VERTEX | ShaderStageFlags::FRAGMENT)];
+        let desc_layout_info =
+            DescriptorSetLayoutCreateInfoBuilder::new().bindings(desc_layout_bindings);
+        let desc_layout =
+            unsafe { device.create_descriptor_set_layout(&desc_layout_info, None, None) }.unwrap();
+
+        let mut uniform_descs = vec![];
+        for _ in 0..num_images {
+            let uniform_desc =
+                RenderPipeline::create_descriptor_sets(device, allocator, &desc_layout);
+            uniform_descs.push(uniform_desc);
+        }
+        let pipeline_layout_desc_layouts = &[desc_layout];
 
         let create_info =
             PipelineLayoutCreateInfoBuilder::new().set_layouts(pipeline_layout_desc_layouts);
@@ -235,18 +244,22 @@ impl RenderPipeline {
         RenderPipeline {
             pipeline,
             pipeline_layout,
-            uniform_desc,
+            desc_layout,
+            uniform_descs,
             vert_module: shader_vert,
             frag_module: shader_frag,
         }
     }
 
-    pub fn destroy(&mut self, device: &DeviceLoader) {
+    pub fn destroy(&mut self, device: &DeviceLoader, allocator: &mut Allocator) {
         unsafe {
             device.destroy_pipeline(self.pipeline, None);
             device.destroy_shader_module(self.vert_module, None);
             device.destroy_shader_module(self.frag_module, None);
-            self.uniform_desc.destroy(device);
+            for desc in &mut self.uniform_descs {
+                desc.destroy(device, allocator);
+            }
+            device.destroy_descriptor_set_layout(self.desc_layout, None);
             device.destroy_pipeline_layout(self.pipeline_layout, None);
         }
     }
