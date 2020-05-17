@@ -1,4 +1,4 @@
-use pipeline::*;
+pub use pipeline::RenderPipeline;
 use swapdata::*;
 mod pipeline;
 mod swapdata;
@@ -41,17 +41,16 @@ pub struct VulkanCtx {
     pub device: DeviceLoader,
     pub physical_device: PhysicalDevice,
     pub surface: SurfaceKHR,
-    surface_caps: SurfaceCapabilitiesKHR,
+    pub surface_caps: SurfaceCapabilitiesKHR,
     pub window: Window,
     messenger: DebugUtilsMessengerEXT,
     swapchain: SwapchainKHR,
     swapchain_framebuffers: Vec<Framebuffer>,
-    swapchain_image_views: Vec<ImageView>,
+    pub swapchain_image_views: Vec<ImageView>,
     command_pool: CommandPool,
     command_buffers: Vec<CommandBuffer>,
-    render_pass: RenderPass,
+    pub render_pass: RenderPass,
     queue: Queue,
-    pub pipeline: RenderPipeline,
     swap_data: SwapData,
 }
 
@@ -313,7 +312,7 @@ impl VulkanCtx {
             .expect("Couldn't load swapchain!");
 
         let queue = unsafe { device.get_device_queue(queue_family, 0, None) };
-        let mut allocator =
+        let allocator =
             Allocator::new(&instance, physical_device, AllocatorCreateInfo::default()).unwrap();
         // https://vulkan-tutorial.com/Drawing_a_triangle/Graphics_pipeline_basics/Render_passes
         let render_pass = {
@@ -375,14 +374,6 @@ impl VulkanCtx {
             swapchain
         };
         let swapchain_images = unsafe { device.get_swapchain_images_khr(swapchain, None) }.unwrap();
-
-        let pipeline = RenderPipeline::new(
-            &device,
-            &mut allocator,
-            render_pass,
-            surface_caps,
-            swapchain_images.len(),
-        );
 
         // https://vulkan-tutorial.com/Drawing_a_triangle/Presentation/Image_views
         let swapchain_image_views: Vec<_> = swapchain_images
@@ -458,13 +449,12 @@ impl VulkanCtx {
             command_buffers,
             render_pass,
             queue,
-            pipeline,
             swap_data,
         };
         ctx
     }
 
-    pub fn destroy(&mut self, mesh_data: Vec<&mut Mesh>) {
+    pub fn destroy(&mut self, mesh_data: &mut [Mesh]) {
         unsafe {
             self.device.device_wait_idle().unwrap();
             self.swap_data.destroy(&self.device);
@@ -478,7 +468,6 @@ impl VulkanCtx {
                 self.device.destroy_framebuffer(framebuffer, None);
             }
 
-            self.pipeline.destroy(&self.device, &mut self.allocator);
             self.device.destroy_render_pass(self.render_pass, None);
 
             for &image_view in &self.swapchain_image_views {
@@ -505,9 +494,9 @@ impl VulkanCtx {
     pub fn handle_event(
         &mut self,
         event: &Event<()>,
-        mesh: &Mesh,
+        meshes: &mut [Mesh],
         _delta_time: f32,
-        projection: &mikpe_math::Mat4,
+        proj: &mikpe_math::Mat4,
         view: &mikpe_math::Mat4,
     ) {
         match event {
@@ -521,16 +510,13 @@ impl VulkanCtx {
                 let command_buffers = vec![self.command_buffers[image_index as usize]];
                 let swapchain_framebuffers =
                     vec![self.swapchain_framebuffers[image_index as usize]];
-                {
-                    let mat = [mikpe_math::Mat4::new(), view.clone(), projection.clone()];
-                    let data_slice = unsafe {
-                        std::slice::from_raw_parts(
-                            mat.as_ptr() as *const u8,
-                            std::mem::size_of_val(&mat),
-                        )
-                    };
-                    self.pipeline.uniform_descs[image_index as usize]
-                        .update_buffer(&self.device, &data_slice);
+                for mesh in meshes.iter_mut() {
+                    mesh.upload_pipeline_data(
+                        &self.device,
+                        image_index as usize,
+                        view.clone(),
+                        proj.clone(),
+                    );
                 }
                 for (&command_buffer, &framebuffer) in
                     command_buffers.iter().zip(swapchain_framebuffers.iter())
@@ -562,20 +548,22 @@ impl VulkanCtx {
                             &begin_info,
                             SubpassContents::INLINE,
                         );
-                        self.device.cmd_bind_pipeline(
-                            command_buffer,
-                            PipelineBindPoint::GRAPHICS,
-                            self.pipeline.pipeline,
-                        );
-                        self.device.cmd_bind_descriptor_sets(
-                            command_buffer,
-                            PipelineBindPoint::GRAPHICS,
-                            self.pipeline.pipeline_layout,
-                            0,
-                            &[self.pipeline.uniform_descs[image_index as usize].desc_set],
-                            &[],
-                        );
-                        mesh.add_draw_cmd(&self.device, command_buffer);
+                        // self.device.cmd_bind_pipeline(
+                        //     command_buffer,
+                        //     PipelineBindPoint::GRAPHICS,
+                        //     self.pipeline.pipeline,
+                        // );
+                        // self.device.cmd_bind_descriptor_sets(
+                        //     command_buffer,
+                        //     PipelineBindPoint::GRAPHICS,
+                        //     self.pipeline.pipeline_layout,
+                        //     0,
+                        //     &[self.pipeline.uniform_descs[image_index as usize].desc_set],
+                        //     &[],
+                        // );
+                        for mesh in meshes.iter() {
+                            mesh.add_draw_cmd(&self.device, command_buffer, image_index as usize);
+                        }
                         self.device.cmd_end_render_pass(command_buffer);
 
                         self.device.end_command_buffer(command_buffer).unwrap();

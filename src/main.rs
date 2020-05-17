@@ -3,7 +3,7 @@ mod gui;
 mod rendering;
 mod util;
 mod vulkanstuff;
-use mikpe_math::Mat4;
+use mikpe_math::{Mat4, Vec3};
 use rendering::vertextypes;
 use rendering::Mesh;
 
@@ -59,20 +59,11 @@ fn main() {
             position: [-0.5, 0.5, 0.0],
         },
     ];
-    let mut mesh = Mesh::new_from_data(&vulkan_ctx.device, &mut vulkan_ctx.allocator, pos_data);
-    // let mat = [
-    //     mikpe_math::Mat4::new(),
-    //     camera.get_view_mat().inverse().clone(),
-    //     projection_matrix.clone(),
-    // ];
-    // let data_slice = unsafe {
-    //     std::slice::from_raw_parts(mat.as_ptr() as *const u8, std::mem::size_of_val(&mat))
-    // };
-    // vulkan_ctx
-    //     .pipeline
-    //     .uniform_desc
-    //     .update_buffer(&vulkan_ctx.device, &data_slice);
 
+    let mut meshes = vec![
+        Mesh::new_from_data(&mut vulkan_ctx, pos_data.clone(), Vec3::new(0.0, 1.0, 0.0)),
+        Mesh::new_from_data(&mut vulkan_ctx, pos_data, Vec3::new(0.0, -1.0, 0.0)),
+    ];
     //Delta time, in seconds
     let mut delta_time = 0.0;
     let mut last_frame = Instant::now();
@@ -81,7 +72,7 @@ fn main() {
         use winit::event_loop::ControlFlow;
         vulkan_ctx.handle_event(
             &event,
-            &mesh,
+            meshes.as_mut_slice(),
             delta_time,
             &projection_matrix,
             &camera.get_view_mat().inverse(),
@@ -121,7 +112,7 @@ fn main() {
             Event::RedrawRequested { .. } => {}
             Event::LoopDestroyed => {
                 println!("Loop destroyed!");
-                vulkan_ctx.destroy(vec![&mut mesh]);
+                vulkan_ctx.destroy(meshes.as_mut_slice());
             }
             _ => {}
         }

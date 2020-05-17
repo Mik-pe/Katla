@@ -1,19 +1,26 @@
-use crate::rendering::vertextypes::*;
 use crate::rendering::VertexBuffer;
+use crate::vulkanstuff::RenderPipeline;
+use crate::vulkanstuff::VulkanCtx;
 
 use erupt::{utils::allocator::Allocator, vk1_0::*, DeviceLoader};
+use mikpe_math::{Mat4, Vec3};
 
+//TODO: Decouple pipeline from the "Mesh" struct
 pub struct Mesh {
     pub vertex_buffer: Option<VertexBuffer>,
+    pub renderpipeline: RenderPipeline,
     pub num_verts: u32,
+    pub position: Vec3,
 }
 
 impl Mesh {
-    pub fn new_from_data<T>(
-        device: &DeviceLoader,
-        allocator: &mut Allocator,
-        vertex_data: Vec<T>,
-    ) -> Self {
+    pub fn new_from_data<T>(ctx: &mut VulkanCtx, vertex_data: Vec<T>, position: Vec3) -> Self {
+        let device = &ctx.device;
+        let mut allocator = &mut ctx.allocator;
+        let render_pass = ctx.render_pass;
+        let surface_caps = ctx.surface_caps;
+        let num_images = ctx.swapchain_image_views.len();
+
         let data_slice = unsafe {
             std::slice::from_raw_parts(
                 vertex_data.as_ptr() as *const u8,
@@ -23,15 +30,43 @@ impl Mesh {
         let mut vertex_buffer = VertexBuffer::new(device, allocator, data_slice.len() as u64);
         vertex_buffer.upload_data(device, data_slice);
 
+        let renderpipeline = RenderPipeline::new(
+            &device,
+            &mut allocator,
+            render_pass,
+            surface_caps,
+            num_images,
+        );
+
         Self {
             vertex_buffer: Some(vertex_buffer),
+            renderpipeline,
             num_verts: vertex_data.len() as u32,
+            position,
         }
     }
 
-    pub fn add_draw_cmd(&self, device: &DeviceLoader, command_buffer: CommandBuffer) {
+    pub fn add_draw_cmd(
+        &self,
+        device: &DeviceLoader,
+        command_buffer: CommandBuffer,
+        image_index: usize,
+    ) {
         if let Some(vertex_buffer) = &self.vertex_buffer {
             unsafe {
+                device.cmd_bind_pipeline(
+                    command_buffer,
+                    PipelineBindPoint::GRAPHICS,
+                    self.renderpipeline.pipeline,
+                );
+                device.cmd_bind_descriptor_sets(
+                    command_buffer,
+                    PipelineBindPoint::GRAPHICS,
+                    self.renderpipeline.pipeline_layout,
+                    0,
+                    &[self.renderpipeline.uniform_descs[image_index as usize].desc_set],
+                    &[],
+                );
                 device.cmd_bind_vertex_buffers(
                     command_buffer,
                     0,
@@ -43,7 +78,26 @@ impl Mesh {
         }
     }
 
+    pub fn upload_pipeline_data(
+        &mut self,
+        device: &DeviceLoader,
+        image_index: usize,
+        view: Mat4,
+        proj: Mat4,
+    ) {
+        let mat = [
+            Mat4::from_translation([self.position[0], self.position[1], self.position[2]]),
+            view.clone(),
+            proj.clone(),
+        ];
+        let data_slice = unsafe {
+            std::slice::from_raw_parts(mat.as_ptr() as *const u8, std::mem::size_of_val(&mat))
+        };
+        self.renderpipeline.uniform_descs[image_index as usize].update_buffer(device, data_slice);
+    }
+
     pub fn destroy(&mut self, device: &DeviceLoader, allocator: &mut Allocator) {
+        self.renderpipeline.destroy(device, allocator);
         if self.vertex_buffer.is_some() {
             println!("Destroying buffer!");
             let buffer = self.vertex_buffer.take().unwrap();
