@@ -1,26 +1,19 @@
+use context::VulkanCtx;
 pub use pipeline::RenderPipeline;
 use swapdata::*;
+mod context;
 mod pipeline;
 mod swapdata;
 
 use crate::rendering::Mesh;
 
-use std::{
-    ffi::{c_void, CStr, CString},
-    os::raw::c_char,
-    sync::Mutex,
-};
+use std::{ffi::CString, sync::Mutex};
 
 use erupt::{
-    cstr,
-    extensions::{ext_debug_utils::*, khr_surface::*, khr_swapchain::*},
-    utils::{
-        allocator::{Allocator, AllocatorCreateInfo},
-        loading::DefaultCoreLoader,
-        surface,
-    },
+    extensions::{khr_surface::*, khr_swapchain::*},
+    utils::{allocator::Allocator, loading::DefaultCoreLoader},
     vk1_0::*,
-    DeviceLoader, InstanceLoader,
+    DeviceLoader,
 };
 use lazy_static::lazy_static;
 
@@ -35,112 +28,18 @@ lazy_static! {
         core
     };
 }
-pub struct VulkanCtx {
-    instance: InstanceLoader,
-    pub allocator: Allocator,
-    pub device: DeviceLoader,
-    pub physical_device: PhysicalDevice,
-    pub surface: SurfaceKHR,
-    pub surface_caps: SurfaceCapabilitiesKHR,
+
+pub struct VulkanRenderer {
     pub window: Window,
-    messenger: DebugUtilsMessengerEXT,
-    swapchain: SwapchainKHR,
-    swapchain_framebuffers: Vec<Framebuffer>,
-    pub swapchain_image_views: Vec<ImageView>,
-    command_pool: CommandPool,
-    command_buffers: Vec<CommandBuffer>,
+    pub context: VulkanCtx,
     pub render_pass: RenderPass,
-    queue: Queue,
+    pub swapchain_framebuffers: Vec<Framebuffer>,
     swap_data: SwapData,
 }
 
-const LAYER_KHRONOS_VALIDATION: *const c_char = cstr!("VK_LAYER_KHRONOS_validation");
 const FRAMES_IN_FLIGHT: usize = 2;
 
-unsafe extern "system" fn debug_callback(
-    _message_severity: DebugUtilsMessageSeverityFlagBitsEXT,
-    _message_types: DebugUtilsMessageTypeFlagsEXT,
-    p_callback_data: *const DebugUtilsMessengerCallbackDataEXT,
-    _p_user_data: *mut c_void,
-) -> Bool32 {
-    println!(
-        "{}",
-        CStr::from_ptr((*p_callback_data).p_message).to_string_lossy()
-    );
-
-    FALSE
-}
-
-fn check_validation_support() -> bool {
-    let mut layer_count = 0u32;
-    let commands = Vk10CoreCommands::load(&CORE_LOADER.lock().unwrap()).unwrap();
-    unsafe {
-        (commands.enumerate_instance_layer_properties)(&mut layer_count, 0 as _);
-        let mut available_layers: Vec<LayerProperties> = Vec::new();
-        available_layers.resize(layer_count as usize, LayerProperties::default());
-        (commands.enumerate_instance_layer_properties)(
-            &mut layer_count,
-            available_layers.as_mut_ptr(),
-        );
-        let validation_name = std::ffi::CStr::from_ptr(LAYER_KHRONOS_VALIDATION as _);
-        for layer in available_layers {
-            let layer_name = std::ffi::CStr::from_ptr(layer.layer_name.as_ptr() as _);
-            if layer_name == validation_name {
-                return true;
-            }
-        }
-    }
-
-    return false;
-}
-
-impl VulkanCtx {
-    fn create_instance(
-        with_validation_layers: bool,
-        app_name: &CStr,
-        engine_name: &CStr,
-        window: &Window,
-    ) -> InstanceLoader {
-        if with_validation_layers && !check_validation_support() {
-            panic!("Validation layers requested, but unavailable!");
-        }
-
-        let api_version = CORE_LOADER.lock().unwrap().instance_version();
-        println!(
-            "Mikpe erupt test: - Vulkan {}.{}.{}",
-            erupt::version_major(api_version),
-            erupt::version_minor(api_version),
-            erupt::version_patch(api_version)
-        );
-        let mut instance_extensions = surface::enumerate_required_extensions(window).unwrap();
-        let mut instance_layers = vec![];
-        if with_validation_layers {
-            instance_extensions.push(EXT_DEBUG_UTILS_EXTENSION_NAME);
-            instance_layers.push(LAYER_KHRONOS_VALIDATION);
-        }
-        let app_info = ApplicationInfoBuilder::new()
-            .application_name(app_name)
-            .application_version(erupt::make_version(1, 0, 0))
-            .engine_name(engine_name)
-            .engine_version(erupt::make_version(1, 0, 0))
-            .api_version(erupt::make_version(1, 0, 0));
-
-        let create_info = InstanceCreateInfoBuilder::new()
-            .application_info(&app_info)
-            .enabled_extension_names(&instance_extensions)
-            .enabled_layer_names(&instance_layers);
-        let instance = unsafe {
-            CORE_LOADER
-                .lock()
-                .unwrap()
-                .create_instance(&create_info, None, None)
-        }
-        .unwrap();
-        let mut instance = InstanceLoader::new(&CORE_LOADER.lock().unwrap(), instance).unwrap();
-        instance.load_vk1_0().unwrap();
-        instance
-    }
-
+impl VulkanRenderer {
     pub fn init(
         event_loop: &EventLoop<()>,
         with_validation_layers: bool,
@@ -152,172 +51,12 @@ impl VulkanCtx {
             .with_resizable(true)
             .build(event_loop)
             .unwrap();
+        let context = VulkanCtx::init(&window, with_validation_layers, app_name, engine_name);
 
-        let mut instance =
-            Self::create_instance(with_validation_layers, &app_name, &engine_name, &window);
-
-        let messenger = if with_validation_layers {
-            instance.load_ext_debug_utils().unwrap();
-
-            let create_info = DebugUtilsMessengerCreateInfoEXTBuilder::new()
-                .message_severity(
-                    DebugUtilsMessageSeverityFlagsEXT::VERBOSE_EXT
-                        | DebugUtilsMessageSeverityFlagsEXT::WARNING_EXT
-                        | DebugUtilsMessageSeverityFlagsEXT::ERROR_EXT,
-                )
-                .message_type(
-                    DebugUtilsMessageTypeFlagsEXT::GENERAL_EXT
-                        | DebugUtilsMessageTypeFlagsEXT::VALIDATION_EXT
-                        | DebugUtilsMessageTypeFlagsEXT::PERFORMANCE_EXT,
-                )
-                .pfn_user_callback(Some(debug_callback));
-
-            unsafe { instance.create_debug_utils_messenger_ext(&create_info, None, None) }.unwrap()
-        } else {
-            Default::default()
-        };
-
-        let surface = unsafe { surface::create_surface(&mut instance, &window, None) }.unwrap();
-
-        let (mut device, queue_family, format, present_mode, surface_caps, physical_device) = {
-            let device_extensions = vec![KHR_SWAPCHAIN_EXTENSION_NAME];
-            let mut device_layers = vec![];
-            if with_validation_layers {
-                device_layers.push(LAYER_KHRONOS_VALIDATION);
-            }
-            // https://vulkan-tutorial.com/Drawing_a_triangle/Setup/Physical_devices_and_queue_families
-            let (physical_device, queue_family, format, present_mode, properties) =
-                unsafe { instance.enumerate_physical_devices(None) }
-                    .unwrap()
-                    .into_iter()
-                    .filter_map(|physical_device| unsafe {
-                        let queue_family = match instance
-                            .get_physical_device_queue_family_properties(physical_device, None)
-                            .into_iter()
-                            .enumerate()
-                            .position(|(i, properties)| {
-                                properties.queue_flags.contains(QueueFlags::GRAPHICS)
-                                    && instance
-                                        .get_physical_device_surface_support_khr(
-                                            physical_device,
-                                            i as u32,
-                                            surface,
-                                            None,
-                                        )
-                                        .unwrap()
-                                        == true
-                            }) {
-                            Some(queue_family) => queue_family as u32,
-                            None => return None,
-                        };
-
-                        let formats = instance
-                            .get_physical_device_surface_formats_khr(physical_device, surface, None)
-                            .unwrap();
-                        let format = match formats
-                            .iter()
-                            .find(|surface_format| {
-                                surface_format.format == Format::B8G8R8A8_SRGB
-                                    && surface_format.color_space
-                                        == ColorSpaceKHR::SRGB_NONLINEAR_KHR
-                            })
-                            .and_then(|_| formats.get(0))
-                        {
-                            Some(surface_format) => surface_format.clone(),
-                            None => return None,
-                        };
-
-                        let present_mode = instance
-                            .get_physical_device_surface_present_modes_khr(
-                                physical_device,
-                                surface,
-                                None,
-                            )
-                            .unwrap()
-                            .into_iter()
-                            .find(|present_mode| present_mode == &PresentModeKHR::MAILBOX_KHR)
-                            .unwrap_or(PresentModeKHR::FIFO_KHR);
-
-                        let supported_extensions = instance
-                            .enumerate_device_extension_properties(physical_device, None, None)
-                            .unwrap();
-                        if !device_extensions.iter().all(|device_extension| {
-                            let device_extension = CStr::from_ptr(*device_extension);
-
-                            supported_extensions.iter().any(|properties| {
-                                CStr::from_ptr(properties.extension_name.as_ptr())
-                                    == device_extension
-                            })
-                        }) {
-                            return None;
-                        }
-
-                        let properties =
-                            instance.get_physical_device_properties(physical_device, None);
-                        Some((
-                            physical_device,
-                            queue_family,
-                            format,
-                            present_mode,
-                            properties,
-                        ))
-                    })
-                    .max_by_key(|(_, _, _, _, properties)| match properties.device_type {
-                        PhysicalDeviceType::DISCRETE_GPU => 2,
-                        PhysicalDeviceType::INTEGRATED_GPU => 1,
-                        _ => 0,
-                    })
-                    .expect("No suitable physical device found");
-
-            println!("Using physical device: {:?}", unsafe {
-                CStr::from_ptr(properties.device_name.as_ptr())
-            });
-            // https://vulkan-tutorial.com/Drawing_a_triangle/Setup/Logical_device_and_queues
-            let queue_create_info = vec![DeviceQueueCreateInfoBuilder::new()
-                .queue_family_index(queue_family)
-                .queue_priorities(&[1.0])];
-            let features = PhysicalDeviceFeaturesBuilder::new();
-
-            let create_info = DeviceCreateInfoBuilder::new()
-                .queue_create_infos(&queue_create_info)
-                .enabled_features(&features)
-                .enabled_extension_names(&device_extensions)
-                .enabled_layer_names(&device_layers);
-            let device = DeviceLoader::new(
-                &instance,
-                unsafe { instance.create_device(physical_device, &create_info, None, None) }
-                    .unwrap(),
-            )
-            .unwrap();
-            let surface_caps = unsafe {
-                instance.get_physical_device_surface_capabilities_khr(
-                    physical_device,
-                    surface,
-                    None,
-                )
-            }
-            .unwrap();
-            (
-                device,
-                queue_family,
-                format,
-                present_mode,
-                surface_caps,
-                physical_device,
-            )
-        };
-        device.load_vk1_0().unwrap();
-        device
-            .load_khr_swapchain()
-            .expect("Couldn't load swapchain!");
-
-        let queue = unsafe { device.get_device_queue(queue_family, 0, None) };
-        let allocator =
-            Allocator::new(&instance, physical_device, AllocatorCreateInfo::default()).unwrap();
         // https://vulkan-tutorial.com/Drawing_a_triangle/Graphics_pipeline_basics/Render_passes
         let render_pass = {
             let attachments = vec![AttachmentDescriptionBuilder::new()
-                .format(format.format)
+                .format(context.surface_format.format)
                 .samples(SampleCountFlagBits::_1)
                 .load_op(AttachmentLoadOp::CLEAR)
                 .store_op(AttachmentStoreOp::STORE)
@@ -345,150 +84,68 @@ impl VulkanCtx {
                 .subpasses(&subpasses)
                 .dependencies(&dependencies);
 
-            unsafe { device.create_render_pass(&create_info, None, None) }.unwrap()
+            unsafe { context.device.create_render_pass(&create_info, None, None) }.unwrap()
         };
 
-        // https://vulkan-tutorial.com/Drawing_a_triangle/Presentation/Swap_chain
-        let swapchain = {
-            let mut image_count = surface_caps.min_image_count + 1;
-            if surface_caps.max_image_count > 0 && image_count > surface_caps.max_image_count {
-                image_count = surface_caps.max_image_count;
-            }
-
-            let create_info = SwapchainCreateInfoKHRBuilder::new()
-                .surface(surface)
-                .min_image_count(image_count)
-                .image_format(format.format)
-                .image_color_space(format.color_space)
-                .image_extent(surface_caps.current_extent)
-                .image_array_layers(1)
-                .image_usage(ImageUsageFlags::COLOR_ATTACHMENT)
-                .image_sharing_mode(SharingMode::EXCLUSIVE)
-                .pre_transform(surface_caps.current_transform)
-                .composite_alpha(CompositeAlphaFlagBitsKHR::OPAQUE_KHR)
-                .present_mode(present_mode)
-                .clipped(true)
-                .old_swapchain(SwapchainKHR::null());
-            let swapchain =
-                unsafe { device.create_swapchain_khr(&create_info, None, None) }.unwrap();
-            swapchain
-        };
-        let swapchain_images = unsafe { device.get_swapchain_images_khr(swapchain, None) }.unwrap();
-
-        // https://vulkan-tutorial.com/Drawing_a_triangle/Presentation/Image_views
-        let swapchain_image_views: Vec<_> = swapchain_images
-            .iter()
-            .map(|swapchain_image| {
-                let create_info = ImageViewCreateInfoBuilder::new()
-                    .image(*swapchain_image)
-                    .view_type(ImageViewType::_2D)
-                    .format(format.format)
-                    .components(ComponentMapping {
-                        r: ComponentSwizzle::IDENTITY,
-                        g: ComponentSwizzle::IDENTITY,
-                        b: ComponentSwizzle::IDENTITY,
-                        a: ComponentSwizzle::IDENTITY,
-                    })
-                    .subresource_range(unsafe {
-                        ImageSubresourceRangeBuilder::new()
-                            .aspect_mask(ImageAspectFlags::COLOR)
-                            .base_mip_level(0)
-                            .level_count(1)
-                            .base_array_layer(0)
-                            .layer_count(1)
-                            .discard()
-                    });
-                unsafe { device.create_image_view(&create_info, None, None) }.unwrap()
-            })
-            .collect();
-        // https://vulkan-tutorial.com/Drawing_a_triangle/Drawing/Framebuffers
-        let swapchain_framebuffers: Vec<_> = swapchain_image_views
+        let swapchain_framebuffers: Vec<_> = context
+            .swapchain_image_views
             .iter()
             .map(|image_view| {
                 let attachments = vec![*image_view];
                 let create_info = FramebufferCreateInfoBuilder::new()
                     .render_pass(render_pass)
                     .attachments(&attachments)
-                    .width(surface_caps.current_extent.width)
-                    .height(surface_caps.current_extent.height)
+                    .width(context.surface_caps.current_extent.width)
+                    .height(context.surface_caps.current_extent.height)
                     .layers(1);
 
-                unsafe { device.create_framebuffer(&create_info, None, None) }.unwrap()
+                unsafe { context.device.create_framebuffer(&create_info, None, None) }.unwrap()
             })
             .collect();
 
-        // https://vulkan-tutorial.com/Drawing_a_triangle/Drawing/Command_buffers
-        let create_info = CommandPoolCreateInfoBuilder::new()
-            .queue_family_index(queue_family)
-            .flags(CommandPoolCreateFlags::RESET_COMMAND_BUFFER);
-        let command_pool = unsafe { device.create_command_pool(&create_info, None, None) }.unwrap();
+        let swap_data = SwapData::new(&context.device, &context.swapchain_images, FRAMES_IN_FLIGHT);
 
-        let command_buffers = {
-            let allocate_info = CommandBufferAllocateInfoBuilder::new()
-                .command_pool(command_pool)
-                .level(CommandBufferLevel::PRIMARY)
-                .command_buffer_count(swapchain_framebuffers.len() as _);
-            unsafe { device.allocate_command_buffers(&allocate_info) }.unwrap()
-        };
-
-        let swap_data = SwapData::new(&device, &swapchain_images, FRAMES_IN_FLIGHT);
-
-        let ctx = Self {
-            instance,
-            allocator,
-            device,
-            physical_device,
-            surface,
-            surface_caps,
+        let renderer = Self {
             window,
-            messenger,
-            swapchain,
-            swapchain_framebuffers,
-            swapchain_image_views,
-            command_pool,
-            command_buffers,
+            context,
             render_pass,
-            queue,
+            swapchain_framebuffers,
             swap_data,
         };
-        ctx
+        renderer
     }
 
     pub fn destroy(&mut self, mesh_data: &mut [Mesh]) {
         unsafe {
-            self.device.device_wait_idle().unwrap();
-            self.swap_data.destroy(&self.device);
+            self.context.pre_destroy();
+            self.swap_data.destroy(&self.context.device);
             for mesh in mesh_data {
-                mesh.destroy(&self.device, &mut self.allocator);
+                mesh.destroy(&self.context.device, &mut self.context.allocator);
             }
 
-            self.device.destroy_command_pool(self.command_pool, None);
-
+            self.context
+                .device
+                .destroy_render_pass(self.render_pass, None);
             for &framebuffer in &self.swapchain_framebuffers {
-                self.device.destroy_framebuffer(framebuffer, None);
+                self.context.device.destroy_framebuffer(framebuffer, None);
             }
 
-            self.device.destroy_render_pass(self.render_pass, None);
-
-            for &image_view in &self.swapchain_image_views {
-                self.device.destroy_image_view(image_view, None);
-            }
-
-            self.device.destroy_swapchain_khr(self.swapchain, None);
-
-            self.device.destroy_device(None);
-            self.instance.destroy_surface_khr(self.surface, None);
-
-            if !self.messenger.is_null() {
-                self.instance
-                    .destroy_debug_utils_messenger_ext(self.messenger, None);
-            }
-
-            self.instance.destroy_instance(None);
+            self.context.destroy();
         }
         println!("Clean shutdown!");
     }
 
+    pub fn device_and_allocator(&mut self) -> (&DeviceLoader, &mut Allocator) {
+        (&self.context.device, &mut self.context.allocator)
+    }
+
+    pub fn surface_caps(&self) -> SurfaceCapabilitiesKHR {
+        self.context.surface_caps
+    }
+
+    pub fn num_images(&self) -> usize {
+        self.context.swapchain_image_views.len()
+    }
     // TODO: Make designated functions for drawing, updating stuff, etc.
     // rather than sending the winit event here
     pub fn handle_event(
@@ -501,18 +158,19 @@ impl VulkanCtx {
     ) {
         match event {
             Event::MainEventsCleared => {
-                self.swap_data.wait_for_fence(&self.device);
+                self.swap_data.wait_for_fence(&self.context.device);
 
-                let (available_sem, finished_sem, in_flight_fence, image_index) =
-                    self.swap_data.swap_images(&self.device, self.swapchain);
+                let (available_sem, finished_sem, in_flight_fence, image_index) = self
+                    .swap_data
+                    .swap_images(&self.context.device, self.context.swapchain);
 
                 let wait_semaphores = vec![available_sem];
-                let command_buffers = vec![self.command_buffers[image_index as usize]];
+                let command_buffers = vec![self.context.command_buffers[image_index as usize]];
                 let swapchain_framebuffers =
                     vec![self.swapchain_framebuffers[image_index as usize]];
                 for mesh in meshes.iter_mut() {
                     mesh.upload_pipeline_data(
-                        &self.device,
+                        &self.context.device,
                         image_index as usize,
                         view.clone(),
                         proj.clone(),
@@ -523,7 +181,8 @@ impl VulkanCtx {
                 {
                     let begin_info = CommandBufferBeginInfoBuilder::new();
                     unsafe {
-                        self.device
+                        self.context
+                            .device
                             .begin_command_buffer(command_buffer, &begin_info)
                     }
                     .unwrap();
@@ -538,35 +197,29 @@ impl VulkanCtx {
                         .framebuffer(framebuffer)
                         .render_area(Rect2D {
                             offset: Offset2D { x: 0, y: 0 },
-                            extent: self.surface_caps.current_extent,
+                            extent: self.context.surface_caps.current_extent,
                         })
                         .clear_values(&clear_values);
 
                     unsafe {
-                        self.device.cmd_begin_render_pass(
+                        self.context.device.cmd_begin_render_pass(
                             command_buffer,
                             &begin_info,
                             SubpassContents::INLINE,
                         );
-                        // self.device.cmd_bind_pipeline(
-                        //     command_buffer,
-                        //     PipelineBindPoint::GRAPHICS,
-                        //     self.pipeline.pipeline,
-                        // );
-                        // self.device.cmd_bind_descriptor_sets(
-                        //     command_buffer,
-                        //     PipelineBindPoint::GRAPHICS,
-                        //     self.pipeline.pipeline_layout,
-                        //     0,
-                        //     &[self.pipeline.uniform_descs[image_index as usize].desc_set],
-                        //     &[],
-                        // );
                         for mesh in meshes.iter() {
-                            mesh.add_draw_cmd(&self.device, command_buffer, image_index as usize);
+                            mesh.add_draw_cmd(
+                                &self.context.device,
+                                command_buffer,
+                                image_index as usize,
+                            );
                         }
-                        self.device.cmd_end_render_pass(command_buffer);
+                        self.context.device.cmd_end_render_pass(command_buffer);
 
-                        self.device.end_command_buffer(command_buffer).unwrap();
+                        self.context
+                            .device
+                            .end_command_buffer(command_buffer)
+                            .unwrap();
                     }
                 }
                 let signal_semaphores = vec![finished_sem];
@@ -577,25 +230,35 @@ impl VulkanCtx {
                     .signal_semaphores(&signal_semaphores);
                 unsafe {
                     let in_flight_fence = in_flight_fence;
-                    self.device.reset_fences(&[in_flight_fence]).unwrap();
-                    self.device
-                        .queue_submit(self.queue, &[submit_info], in_flight_fence)
+                    self.context
+                        .device
+                        .reset_fences(&[in_flight_fence])
+                        .unwrap();
+                    self.context
+                        .device
+                        .queue_submit(self.context.queue, &[submit_info], in_flight_fence)
                         .unwrap()
                 }
 
-                let swapchains = vec![self.swapchain];
+                let swapchains = vec![self.context.swapchain];
                 let image_indices = vec![image_index];
                 let present_info = PresentInfoKHRBuilder::new()
                     .wait_semaphores(&signal_semaphores)
                     .swapchains(&swapchains)
                     .image_indices(&image_indices);
 
-                unsafe { self.device.queue_present_khr(self.queue, &present_info) }.unwrap();
+                unsafe {
+                    self.context
+                        .device
+                        .queue_present_khr(self.context.queue, &present_info)
+                }
+                .unwrap();
 
                 self.swap_data.step_frame();
             }
             _ => {}
         }
+
         /*
         match event {
             Event::WindowEvent { event, .. } => match event {

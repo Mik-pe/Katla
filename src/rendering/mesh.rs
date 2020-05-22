@@ -1,6 +1,6 @@
 use crate::rendering::VertexBuffer;
 use crate::vulkanstuff::RenderPipeline;
-use crate::vulkanstuff::VulkanCtx;
+use crate::vulkanstuff::VulkanRenderer;
 
 use erupt::{utils::allocator::Allocator, vk1_0::*, DeviceLoader};
 use mikpe_math::{Mat4, Vec3};
@@ -14,13 +14,15 @@ pub struct Mesh {
 }
 
 impl Mesh {
-    pub fn new_from_data<T>(ctx: &mut VulkanCtx, vertex_data: Vec<T>, position: Vec3) -> Self {
-        let device = &ctx.device;
-        let mut allocator = &mut ctx.allocator;
-        let render_pass = ctx.render_pass;
-        let surface_caps = ctx.surface_caps;
-        let num_images = ctx.swapchain_image_views.len();
-
+    pub fn new_from_data<T>(
+        renderer: &mut VulkanRenderer,
+        vertex_data: Vec<T>,
+        position: Vec3,
+    ) -> Self {
+        let render_pass = renderer.render_pass;
+        let surface_caps = renderer.surface_caps();
+        let num_images = renderer.num_images();
+        let (device, mut allocator) = renderer.device_and_allocator();
         let data_slice = unsafe {
             std::slice::from_raw_parts(
                 vertex_data.as_ptr() as *const u8,

@@ -11,24 +11,13 @@ use std::ffi::CString;
 use std::time::Instant;
 use winit::event_loop::EventLoop;
 
-// use imgui::{im_str, Condition, Context};
-// use imgui_winit_support::{HiDpiMode, WinitPlatform};
-// enum Message {
-//     UploadMesh(String),
-//     Exit,
-// }
-
-// enum UploadFinished {
-//     Acknowledgement(rendering::Texture),
-//     Mesh(Box<dyn FnOnce() -> rendering::Mesh + Send>),
-// }
-
 fn main() {
     let event_loop = EventLoop::new();
     let mut camera = cameracontroller::Camera::new();
     let app_name = CString::new("Mikpe Renderer").unwrap();
     let engine_name = CString::new("MikpEngine").unwrap();
-    let mut vulkan_ctx = vulkanstuff::VulkanCtx::init(&event_loop, true, app_name, engine_name);
+    let mut vulkan_ctx =
+        vulkanstuff::VulkanRenderer::init(&event_loop, true, app_name, engine_name);
 
     let size = vulkan_ctx.window.inner_size();
     let mut win_x: f64 = size.width.into();
