@@ -5,7 +5,6 @@ pub mod meshbuffer;
 pub mod shaders;
 pub mod shared_resources;
 pub mod texture;
-pub mod vertexbuffer;
 pub mod vertextypes;
 
 pub use drawable::Drawable;
@@ -15,5 +14,4 @@ pub use meshbuffer::*;
 pub use shaders::*;
 pub use shared_resources::*;
 pub use texture::*;
-pub use vertexbuffer::*;
 pub use vertextypes::*;

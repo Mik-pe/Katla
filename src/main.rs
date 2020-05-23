@@ -7,8 +7,7 @@ use mikpe_math::{Mat4, Vec3};
 use rendering::vertextypes;
 use rendering::Mesh;
 
-use std::ffi::CString;
-use std::time::Instant;
+use std::{ffi::CString, path::PathBuf, time::Instant};
 use winit::event_loop::EventLoop;
 
 fn main() {
@@ -18,25 +17,12 @@ fn main() {
     let engine_name = CString::new("MikpEngine").unwrap();
     let mut vulkan_ctx =
         vulkanstuff::VulkanRenderer::init(&event_loop, true, app_name, engine_name);
+    let mut model_cache = util::ModelCache::new();
 
     let size = vulkan_ctx.window.inner_size();
     let mut win_x: f64 = size.width.into();
     let mut win_y: f64 = size.height.into();
     let mut projection_matrix = Mat4::create_proj(60.0, (win_x / win_y) as f32, 0.01, 1000.0);
-    let _vert_data = vec![
-        vertextypes::VertexNormal {
-            position: [-0.5, -0.5, 0.0],
-            normal: [1.0, 0.0, 0.0],
-        },
-        vertextypes::VertexNormal {
-            position: [0.0, 0.5, 0.0],
-            normal: [0.0, 1.0, 0.0],
-        },
-        vertextypes::VertexNormal {
-            position: [0.5, -0.5, 0.0],
-            normal: [0.0, 0.0, 1.0],
-        },
-    ];
     let pos_data = vec![
         vertextypes::VertexPosition {
             position: [0.5, 0.5, 0.0],
@@ -48,10 +34,27 @@ fn main() {
             position: [-0.5, 0.5, 0.0],
         },
     ];
-
+    let index_data = vec![0, 1, 2, 2, 1, 0];
+    let some_mesh = Mesh::new_from_cache(
+        model_cache.read_gltf(PathBuf::from("resources/models/Fox.glb")),
+        &mut vulkan_ctx,
+        Vec3::new(0.0, 0.0, 0.0),
+    );
+    // panic!("Oops");
     let mut meshes = vec![
-        Mesh::new_from_data(&mut vulkan_ctx, pos_data.clone(), Vec3::new(0.0, 1.0, 0.0)),
-        Mesh::new_from_data(&mut vulkan_ctx, pos_data, Vec3::new(0.0, -1.0, 0.0)),
+        Mesh::new_from_data(
+            &mut vulkan_ctx,
+            pos_data.clone(),
+            index_data.clone(),
+            Vec3::new(0.0, 1.0, 0.0),
+        ),
+        Mesh::new_from_data(
+            &mut vulkan_ctx,
+            pos_data,
+            index_data,
+            Vec3::new(0.0, -1.0, 0.0),
+        ),
+        some_mesh,
     ];
     //Delta time, in seconds
     let mut delta_time = 0.0;

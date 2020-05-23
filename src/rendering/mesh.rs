@@ -1,37 +1,299 @@
-use crate::rendering::VertexBuffer;
+use crate::util::CachedGLTFModel;
 use crate::vulkanstuff::RenderPipeline;
 use crate::vulkanstuff::VulkanRenderer;
+use crate::vulkanstuff::{BufferObject, IndexBuffer, VertexBuffer};
 
 use erupt::{utils::allocator::Allocator, vk1_0::*, DeviceLoader};
 use mikpe_math::{Mat4, Vec3};
+use std::cmp::Ordering;
 
-//TODO: Decouple pipeline from the "Mesh" struct
+//TODO: Use vertextypes for this:
+struct MeshBufferView {
+    stride: usize,
+    semantic: gltf::mesh::Semantic,
+    data: Vec<u8>,
+}
+
+impl MeshBufferView {
+    fn new(stride: usize, semantic: gltf::mesh::Semantic, data: Vec<u8>) -> Self {
+        Self {
+            stride,
+            semantic,
+            data,
+        }
+    }
+}
+
+impl PartialOrd for MeshBufferView {
+    fn partial_cmp(&self, other: &MeshBufferView) -> Option<Ordering> {
+        let sorted_key = |semantic: &gltf::mesh::Semantic| -> i32 {
+            match semantic {
+                gltf::mesh::Semantic::Positions => 0,
+                gltf::mesh::Semantic::Normals => 1,
+                gltf::mesh::Semantic::Tangents => 2,
+                gltf::mesh::Semantic::TexCoords(index) => 3 + *index as i32,
+                _ => 14,
+            }
+        };
+        let sort_a = sorted_key(&self.semantic);
+        let sort_b = sorted_key(&other.semantic);
+        sort_a.partial_cmp(&sort_b)
+    }
+}
+
+impl PartialEq for MeshBufferView {
+    fn eq(&self, other: &MeshBufferView) -> bool {
+        let sorted_key = |semantic: &gltf::mesh::Semantic| -> i32 {
+            match semantic {
+                gltf::mesh::Semantic::Positions => 0,
+                gltf::mesh::Semantic::Normals => 1,
+                gltf::mesh::Semantic::Tangents => 2,
+                _ => 3,
+            }
+        };
+        let sort_a = sorted_key(&self.semantic);
+        let sort_b = sorted_key(&other.semantic);
+        sort_a.eq(&sort_b)
+    }
+}
+
+//TODO: Decouple pipeline from the "Mesh" struct,
+//Ideally a Mesh would only contain the vertex data and a reference to a pipeline,
+//either on its own or through a Model struct
 pub struct Mesh {
-    pub vertex_buffer: Option<VertexBuffer>,
+    pub vertex_buffer: Option<BufferObject>,
+    pub index_buffer: Option<BufferObject>,
     pub renderpipeline: RenderPipeline,
     pub num_verts: u32,
     pub position: Vec3,
 }
 
 impl Mesh {
-    pub fn new_from_data<T>(
+    fn parse_node(
+        &mut self,
+        node: &gltf::Node,
         renderer: &mut VulkanRenderer,
-        vertex_data: Vec<T>,
+        buffers: &Vec<gltf::buffer::Data>,
+    ) {
+        let mut vert_vec: Vec<u8> = Vec::new();
+        if let Some(mesh) = node.mesh() {
+            // println!("Found mesh {:?} in node!", mesh.name());
+            let mut index_vec: Vec<u32> = vec![];
+            let mut mesh_bufferview_vec: Vec<MeshBufferView> = vec![];
+            for primitive in mesh.primitives() {
+                let mut start_index: usize;
+                let mut end_index: usize;
+                let mut num_vertices = 0;
+                //TODO: Upload entire buffer and sample from it as the accessor tells us:
+                let num_attributes = primitive.attributes().len();
+                for (semantic, accessor) in primitive.attributes() {
+                    //Striding needs to be acknowledged
+                    match semantic {
+                        gltf::mesh::Semantic::Positions => {}
+                        _ => {
+                            continue;
+                        }
+                    }
+                    let buffer_view = accessor.view().unwrap();
+                    let acc_total_size = accessor.size() * accessor.count();
+                    num_vertices = accessor.count();
+                    let acc_stride = accessor.size();
+                    let buf_index = buffer_view.buffer().index();
+                    let buf_stride = buffer_view.stride();
+                    let mut interleaving_step = num_attributes;
+                    if buf_stride.is_none() || buf_stride.unwrap() == acc_stride {
+                        interleaving_step = 1;
+                        end_index = acc_total_size;
+                    } else {
+                        end_index = buffer_view.length();
+                    }
+                    start_index = accessor.offset() + buffer_view.offset();
+                    end_index += start_index;
+                    let attr_buf = &buffers[buf_index];
+                    let attr_arr = &attr_buf[start_index..end_index];
+
+                    let noninterleaved_arr = attr_arr
+                        .to_vec()
+                        .chunks(acc_stride)
+                        .step_by(interleaving_step)
+                        .flatten()
+                        .copied()
+                        .collect::<Vec<u8>>();
+
+                    mesh_bufferview_vec.push(MeshBufferView::new(
+                        acc_stride,
+                        semantic,
+                        noninterleaved_arr,
+                    ));
+                }
+
+                if let Some(indices) = primitive.indices() {
+                    let ind_view = indices.view().unwrap();
+                    let ind_offset = ind_view.offset();
+                    let ind_size = ind_view.length();
+                    let acc_size = indices.size();
+                    if acc_size == 1 {
+                        println!("IndexType: UnsignedByte");
+                    } else if acc_size == 2 {
+                        println!("IndexType: UnsignedShort");
+                    } else if acc_size == 4 {
+                        println!("IndexType: UnsignedInt");
+                    } else {
+                        panic!("Cannot parse this node");
+                    }
+                    let buf_index = ind_view.buffer().index();
+                    let ind_buf = &buffers[buf_index];
+                    let ind_slice = ind_buf[ind_offset..ind_offset + ind_size].to_vec();
+                    for chunk in ind_slice.chunks(acc_size) {
+                        // println!("First byte is : {:?}!", chunk[0]);
+                        // println!("Second byte is : {:?}!", chunk[1]);
+                        index_vec.push((chunk[1] as u32) << 8 | chunk[0] as u32);
+                    }
+                    println!("Foobar!");
+                } else {
+                    // self.index_type = IndexType::Array;
+                    // self.num_triangles = num_vertices as u32;
+                }
+                self.num_verts = num_vertices as u32;
+            }
+            mesh_bufferview_vec.sort_by(|a, b| a.partial_cmp(b).unwrap());
+            let mut current_stride = 0;
+            for bufferview in mesh_bufferview_vec {
+                if current_stride == 0 {
+                    //TODO: This does not work with interleaved data!
+                    vert_vec = bufferview.data;
+                } else {
+                    vert_vec = vert_vec
+                        .chunks(current_stride)
+                        .zip(bufferview.data[..].chunks(bufferview.stride))
+                        .flat_map(|(a, b)| a.into_iter().chain(b))
+                        .copied()
+                        .collect::<Vec<u8>>();
+                }
+                current_stride += bufferview.stride;
+            }
+            self.vertex_buffer = Self::create_vertex_buffer(renderer, vert_vec);
+            self.index_buffer = Self::create_index_buffer(renderer, index_vec);
+        }
+    }
+
+    pub fn new_from_cache(
+        model: CachedGLTFModel,
+        renderer: &mut VulkanRenderer,
         position: Vec3,
     ) -> Self {
         let render_pass = renderer.render_pass;
         let surface_caps = renderer.surface_caps();
         let num_images = renderer.num_images();
         let (device, mut allocator) = renderer.device_and_allocator();
-        let data_slice = unsafe {
-            std::slice::from_raw_parts(
-                vertex_data.as_ptr() as *const u8,
-                vertex_data.len() * std::mem::size_of::<T>(),
-            )
-        };
-        let mut vertex_buffer = VertexBuffer::new(device, allocator, data_slice.len() as u64);
-        vertex_buffer.upload_data(device, data_slice);
+        let renderpipeline = RenderPipeline::new(
+            &device,
+            &mut allocator,
+            render_pass,
+            surface_caps,
+            num_images,
+        );
 
+        let mut mesh = Self {
+            vertex_buffer: None,
+            index_buffer: None,
+            renderpipeline,
+            num_verts: 0,
+            position,
+        };
+        mesh.parse_gltf(renderer, model.document, model.buffers, model.images);
+        mesh
+    }
+
+    pub fn parse_gltf(
+        &mut self,
+        renderer: &mut VulkanRenderer,
+        document: gltf::Document,
+        buffers: Vec<gltf::buffer::Data>,
+        _images: Vec<gltf::image::Data>,
+    ) {
+        let mut used_nodes = vec![];
+        for scene in document.scenes() {
+            for node in scene.nodes() {
+                used_nodes.push(node.index());
+                for child in node.children() {
+                    used_nodes.push(child.index());
+                }
+            }
+        }
+        // let mut parsed_mats = vec![];
+
+        for node in document.nodes() {
+            if used_nodes.contains(&node.index()) {
+                self.parse_node(&node, renderer, &buffers);
+            }
+        }
+    }
+
+    fn create_index_buffer<DataType>(
+        renderer: &mut VulkanRenderer,
+        data: Vec<DataType>,
+    ) -> Option<BufferObject> {
+        if data.is_empty() {
+            None
+        } else {
+            let (device, allocator) = renderer.device_and_allocator();
+            let data_slice = unsafe {
+                std::slice::from_raw_parts(
+                    data.as_ptr() as *const u8,
+                    data.len() * std::mem::size_of::<DataType>(),
+                )
+            };
+            let mut index_buffer: BufferObject = IndexBuffer::new(
+                device,
+                allocator,
+                data_slice.len() as u64,
+                data.len() as u32,
+            );
+            index_buffer.upload_data(device, data_slice);
+            Some(index_buffer)
+        }
+    }
+
+    fn create_vertex_buffer<DataType>(
+        renderer: &mut VulkanRenderer,
+        data: Vec<DataType>,
+    ) -> Option<BufferObject> {
+        if data.is_empty() {
+            None
+        } else {
+            let (device, allocator) = renderer.device_and_allocator();
+            let data_slice = unsafe {
+                std::slice::from_raw_parts(
+                    data.as_ptr() as *const u8,
+                    data.len() * std::mem::size_of::<DataType>(),
+                )
+            };
+            let mut vertex_buffer: BufferObject = VertexBuffer::new(
+                device,
+                allocator,
+                data_slice.len() as u64,
+                data.len() as u32,
+            );
+            vertex_buffer.upload_data(device, data_slice);
+            Some(vertex_buffer)
+        }
+    }
+
+    pub fn new_from_data<VertexType, IndexType>(
+        renderer: &mut VulkanRenderer,
+        vertex_data: Vec<VertexType>,
+        index_data: Vec<IndexType>,
+        position: Vec3,
+    ) -> Self {
+        let num_verts = vertex_data.len() as u32;
+        let vertex_buffer = Self::create_vertex_buffer(renderer, vertex_data);
+        let index_buffer = Self::create_index_buffer(renderer, index_data);
+
+        let render_pass = renderer.render_pass;
+        let surface_caps = renderer.surface_caps();
+        let num_images = renderer.num_images();
+        let (device, mut allocator) = renderer.device_and_allocator();
         let renderpipeline = RenderPipeline::new(
             &device,
             &mut allocator,
@@ -41,9 +303,10 @@ impl Mesh {
         );
 
         Self {
-            vertex_buffer: Some(vertex_buffer),
+            vertex_buffer,
+            index_buffer,
             renderpipeline,
-            num_verts: vertex_data.len() as u32,
+            num_verts,
             position,
         }
     }
@@ -54,28 +317,46 @@ impl Mesh {
         command_buffer: CommandBuffer,
         image_index: usize,
     ) {
-        if let Some(vertex_buffer) = &self.vertex_buffer {
-            unsafe {
-                device.cmd_bind_pipeline(
+        unsafe {
+            device.cmd_bind_pipeline(
+                command_buffer,
+                PipelineBindPoint::GRAPHICS,
+                self.renderpipeline.pipeline,
+            );
+            device.cmd_bind_descriptor_sets(
+                command_buffer,
+                PipelineBindPoint::GRAPHICS,
+                self.renderpipeline.pipeline_layout,
+                0,
+                &[self.renderpipeline.uniform_descs[image_index as usize].desc_set],
+                &[],
+            );
+            if let Some(index_buffer) = &self.index_buffer {
+                device.cmd_bind_index_buffer(
                     command_buffer,
-                    PipelineBindPoint::GRAPHICS,
-                    self.renderpipeline.pipeline,
-                );
-                device.cmd_bind_descriptor_sets(
-                    command_buffer,
-                    PipelineBindPoint::GRAPHICS,
-                    self.renderpipeline.pipeline_layout,
+                    *index_buffer.buffer.object(),
                     0,
-                    &[self.renderpipeline.uniform_descs[image_index as usize].desc_set],
-                    &[],
+                    IndexType::UINT32,
                 );
-                device.cmd_bind_vertex_buffers(
-                    command_buffer,
-                    0,
-                    &[*vertex_buffer.buffer.object()],
-                    &[0],
-                );
-                device.cmd_draw(command_buffer, 3, 1, 0, 0);
+                if let Some(vertex_buffer) = &self.vertex_buffer {
+                    device.cmd_bind_vertex_buffers(
+                        command_buffer,
+                        0,
+                        &[*vertex_buffer.buffer.object()],
+                        &[0],
+                    );
+                    device.cmd_draw_indexed(command_buffer, index_buffer.count, 1, 0, 0, 0);
+                }
+            } else {
+                if let Some(vertex_buffer) = &self.vertex_buffer {
+                    device.cmd_bind_vertex_buffers(
+                        command_buffer,
+                        0,
+                        &[*vertex_buffer.buffer.object()],
+                        &[0],
+                    );
+                    device.cmd_draw(command_buffer, vertex_buffer.count, 1, 0, 0);
+                }
             }
         }
     }
@@ -101,8 +382,13 @@ impl Mesh {
     pub fn destroy(&mut self, device: &DeviceLoader, allocator: &mut Allocator) {
         self.renderpipeline.destroy(device, allocator);
         if self.vertex_buffer.is_some() {
-            println!("Destroying buffer!");
+            println!("Destroying vertex buffer!");
             let buffer = self.vertex_buffer.take().unwrap();
+            buffer.destroy(device, allocator);
+        }
+        if self.index_buffer.is_some() {
+            println!("Destroying index buffer!");
+            let buffer = self.index_buffer.take().unwrap();
             buffer.destroy(device, allocator);
         }
     }
