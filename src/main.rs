@@ -34,9 +34,9 @@ fn main() {
             position: [-0.5, 0.5, 0.0],
         },
     ];
-    let index_data = vec![0, 1, 2, 2, 1, 0];
+    let index_data: Vec<u32> = vec![0, 1, 2, 2, 1, 0];
     let some_mesh = Mesh::new_from_cache(
-        model_cache.read_gltf(PathBuf::from("resources/models/Fox.glb")),
+        model_cache.read_gltf(PathBuf::from("resources/models/Avocado.glb")),
         &mut vulkan_ctx,
         Vec3::new(0.0, 0.0, 0.0),
     );

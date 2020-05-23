@@ -1,7 +1,7 @@
 use crate::util::CachedGLTFModel;
 use crate::vulkanstuff::RenderPipeline;
 use crate::vulkanstuff::VulkanRenderer;
-use crate::vulkanstuff::{BufferObject, IndexBuffer, VertexBuffer};
+use crate::vulkanstuff::{IndexBuffer, VertexBuffer};
 
 use erupt::{utils::allocator::Allocator, vk1_0::*, DeviceLoader};
 use mikpe_math::{Mat4, Vec3};
@@ -61,8 +61,8 @@ impl PartialEq for MeshBufferView {
 //Ideally a Mesh would only contain the vertex data and a reference to a pipeline,
 //either on its own or through a Model struct
 pub struct Mesh {
-    pub vertex_buffer: Option<BufferObject>,
-    pub index_buffer: Option<BufferObject>,
+    pub vertex_buffer: Option<VertexBuffer>,
+    pub index_buffer: Option<IndexBuffer>,
     pub renderpipeline: RenderPipeline,
     pub num_verts: u32,
     pub position: Vec3,
@@ -78,8 +78,9 @@ impl Mesh {
         let mut vert_vec: Vec<u8> = Vec::new();
         if let Some(mesh) = node.mesh() {
             // println!("Found mesh {:?} in node!", mesh.name());
-            let mut index_vec: Vec<u32> = vec![];
+            let mut index_vec: Vec<u8> = vec![];
             let mut mesh_bufferview_vec: Vec<MeshBufferView> = vec![];
+            let mut index_type = IndexType::UINT32;
             for primitive in mesh.primitives() {
                 let mut start_index: usize;
                 let mut end_index: usize;
@@ -133,23 +134,20 @@ impl Mesh {
                     let ind_size = ind_view.length();
                     let acc_size = indices.size();
                     if acc_size == 1 {
-                        println!("IndexType: UnsignedByte");
+                        println!("Got u8 ind");
+                        index_type = IndexType::UINT8_EXT;
                     } else if acc_size == 2 {
-                        println!("IndexType: UnsignedShort");
+                        println!("Got u16 ind");
+                        index_type = IndexType::UINT16;
                     } else if acc_size == 4 {
-                        println!("IndexType: UnsignedInt");
+                        println!("Got u32 ind");
+                        index_type = IndexType::UINT32;
                     } else {
                         panic!("Cannot parse this node");
                     }
                     let buf_index = ind_view.buffer().index();
                     let ind_buf = &buffers[buf_index];
-                    let ind_slice = ind_buf[ind_offset..ind_offset + ind_size].to_vec();
-                    for chunk in ind_slice.chunks(acc_size) {
-                        // println!("First byte is : {:?}!", chunk[0]);
-                        // println!("Second byte is : {:?}!", chunk[1]);
-                        index_vec.push((chunk[1] as u32) << 8 | chunk[0] as u32);
-                    }
-                    println!("Foobar!");
+                    index_vec = ind_buf[ind_offset..ind_offset + ind_size].to_vec();
                 } else {
                     // self.index_type = IndexType::Array;
                     // self.num_triangles = num_vertices as u32;
@@ -173,7 +171,7 @@ impl Mesh {
                 current_stride += bufferview.stride;
             }
             self.vertex_buffer = Self::create_vertex_buffer(renderer, vert_vec);
-            self.index_buffer = Self::create_index_buffer(renderer, index_vec);
+            self.index_buffer = Self::create_index_buffer(renderer, index_vec, index_type);
         }
     }
 
@@ -233,7 +231,8 @@ impl Mesh {
     fn create_index_buffer<DataType>(
         renderer: &mut VulkanRenderer,
         data: Vec<DataType>,
-    ) -> Option<BufferObject> {
+        index_type: IndexType,
+    ) -> Option<IndexBuffer> {
         if data.is_empty() {
             None
         } else {
@@ -244,11 +243,18 @@ impl Mesh {
                     data.len() * std::mem::size_of::<DataType>(),
                 )
             };
-            let mut index_buffer: BufferObject = IndexBuffer::new(
+            let count = match index_type {
+                IndexType::UINT8_EXT => data.len() as u32,
+                IndexType::UINT16 => (data.len() as u32) / 2,
+                IndexType::UINT32 => (data.len() as u32) / 4,
+                _ => 0 as u32,
+            };
+            let mut index_buffer = IndexBuffer::new(
                 device,
                 allocator,
                 data_slice.len() as u64,
-                data.len() as u32,
+                index_type,
+                count,
             );
             index_buffer.upload_data(device, data_slice);
             Some(index_buffer)
@@ -258,7 +264,7 @@ impl Mesh {
     fn create_vertex_buffer<DataType>(
         renderer: &mut VulkanRenderer,
         data: Vec<DataType>,
-    ) -> Option<BufferObject> {
+    ) -> Option<VertexBuffer> {
         if data.is_empty() {
             None
         } else {
@@ -269,7 +275,7 @@ impl Mesh {
                     data.len() * std::mem::size_of::<DataType>(),
                 )
             };
-            let mut vertex_buffer: BufferObject = VertexBuffer::new(
+            let mut vertex_buffer = VertexBuffer::new(
                 device,
                 allocator,
                 data_slice.len() as u64,
@@ -280,15 +286,16 @@ impl Mesh {
         }
     }
 
-    pub fn new_from_data<VertexType, IndexType>(
+    pub fn new_from_data<VType, IType>(
         renderer: &mut VulkanRenderer,
-        vertex_data: Vec<VertexType>,
-        index_data: Vec<IndexType>,
+        vertex_data: Vec<VType>,
+        index_data: Vec<IType>,
         position: Vec3,
     ) -> Self {
         let num_verts = vertex_data.len() as u32;
         let vertex_buffer = Self::create_vertex_buffer(renderer, vertex_data);
-        let index_buffer = Self::create_index_buffer(renderer, index_data);
+        // let index_type = IndexType::UINT32;
+        let index_buffer = Self::create_index_buffer(renderer, index_data, IndexType::UINT32);
 
         let render_pass = renderer.render_pass;
         let surface_caps = renderer.surface_caps();
@@ -334,28 +341,28 @@ impl Mesh {
             if let Some(index_buffer) = &self.index_buffer {
                 device.cmd_bind_index_buffer(
                     command_buffer,
-                    *index_buffer.buffer.object(),
+                    *index_buffer.object(),
                     0,
-                    IndexType::UINT32,
+                    index_buffer.index_type,
                 );
                 if let Some(vertex_buffer) = &self.vertex_buffer {
                     device.cmd_bind_vertex_buffers(
                         command_buffer,
                         0,
-                        &[*vertex_buffer.buffer.object()],
+                        &[*vertex_buffer.object()],
                         &[0],
                     );
-                    device.cmd_draw_indexed(command_buffer, index_buffer.count, 1, 0, 0, 0);
+                    device.cmd_draw_indexed(command_buffer, index_buffer.count(), 1, 0, 0, 0);
                 }
             } else {
                 if let Some(vertex_buffer) = &self.vertex_buffer {
                     device.cmd_bind_vertex_buffers(
                         command_buffer,
                         0,
-                        &[*vertex_buffer.buffer.object()],
+                        &[*vertex_buffer.object()],
                         &[0],
                     );
-                    device.cmd_draw(command_buffer, vertex_buffer.count, 1, 0, 0);
+                    device.cmd_draw(command_buffer, vertex_buffer.count(), 1, 0, 0);
                 }
             }
         }
