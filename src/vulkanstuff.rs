@@ -1,9 +1,11 @@
 use context::VulkanCtx;
 pub use pipeline::RenderPipeline;
 use swapdata::*;
+pub use vertexbuffer::*;
 mod context;
 mod pipeline;
 mod swapdata;
+mod vertexbuffer;
 
 use crate::rendering::Mesh;
 
