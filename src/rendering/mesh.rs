@@ -1,61 +1,12 @@
 use crate::util::CachedGLTFModel;
+use crate::vertextypes::*;
 use crate::vulkanstuff::RenderPipeline;
 use crate::vulkanstuff::VulkanRenderer;
 use crate::vulkanstuff::{IndexBuffer, VertexBuffer};
 
+use byteorder::{ByteOrder, LittleEndian};
 use erupt::{utils::allocator::Allocator, vk1_0::*, DeviceLoader};
 use mikpe_math::{Mat4, Vec3};
-use std::cmp::Ordering;
-
-//TODO: Use vertextypes for this:
-struct MeshBufferView {
-    stride: usize,
-    semantic: gltf::mesh::Semantic,
-    data: Vec<u8>,
-}
-
-impl MeshBufferView {
-    fn new(stride: usize, semantic: gltf::mesh::Semantic, data: Vec<u8>) -> Self {
-        Self {
-            stride,
-            semantic,
-            data,
-        }
-    }
-}
-
-impl PartialOrd for MeshBufferView {
-    fn partial_cmp(&self, other: &MeshBufferView) -> Option<Ordering> {
-        let sorted_key = |semantic: &gltf::mesh::Semantic| -> i32 {
-            match semantic {
-                gltf::mesh::Semantic::Positions => 0,
-                gltf::mesh::Semantic::Normals => 1,
-                gltf::mesh::Semantic::Tangents => 2,
-                gltf::mesh::Semantic::TexCoords(index) => 3 + *index as i32,
-                _ => 14,
-            }
-        };
-        let sort_a = sorted_key(&self.semantic);
-        let sort_b = sorted_key(&other.semantic);
-        sort_a.partial_cmp(&sort_b)
-    }
-}
-
-impl PartialEq for MeshBufferView {
-    fn eq(&self, other: &MeshBufferView) -> bool {
-        let sorted_key = |semantic: &gltf::mesh::Semantic| -> i32 {
-            match semantic {
-                gltf::mesh::Semantic::Positions => 0,
-                gltf::mesh::Semantic::Normals => 1,
-                gltf::mesh::Semantic::Tangents => 2,
-                _ => 3,
-            }
-        };
-        let sort_a = sorted_key(&self.semantic);
-        let sort_b = sorted_key(&other.semantic);
-        sort_a.eq(&sort_b)
-    }
-}
 
 //TODO: Decouple pipeline from the "Mesh" struct,
 //Ideally a Mesh would only contain the vertex data and a reference to a pipeline,
@@ -69,17 +20,19 @@ pub struct Mesh {
 }
 
 impl Mesh {
+    //TODO: Move node parsing to CachedGLTFModel so it can return vectors as-is
     fn parse_node(
         &mut self,
         node: &gltf::Node,
         renderer: &mut VulkanRenderer,
         buffers: &Vec<gltf::buffer::Data>,
     ) {
-        let mut vert_vec: Vec<u8> = Vec::new();
+        let mut positions: Vec<[f32; 3]> = vec![];
+        let normals: Vec<[f32; 3]> = vec![];
+        let mut _tex_coords: Vec<[f32; 2]> = vec![];
         if let Some(mesh) = node.mesh() {
             // println!("Found mesh {:?} in node!", mesh.name());
             let mut index_vec: Vec<u8> = vec![];
-            let mut mesh_bufferview_vec: Vec<MeshBufferView> = vec![];
             let mut index_type = IndexType::UINT32;
             for primitive in mesh.primitives() {
                 let mut start_index: usize;
@@ -87,14 +40,8 @@ impl Mesh {
                 let mut num_vertices = 0;
                 //TODO: Upload entire buffer and sample from it as the accessor tells us:
                 let num_attributes = primitive.attributes().len();
+
                 for (semantic, accessor) in primitive.attributes() {
-                    //Striding needs to be acknowledged
-                    match semantic {
-                        gltf::mesh::Semantic::Positions => {}
-                        _ => {
-                            continue;
-                        }
-                    }
                     let buffer_view = accessor.view().unwrap();
                     let acc_total_size = accessor.size() * accessor.count();
                     num_vertices = accessor.count();
@@ -111,21 +58,36 @@ impl Mesh {
                     start_index = accessor.offset() + buffer_view.offset();
                     end_index += start_index;
                     let attr_buf = &buffers[buf_index];
-                    let attr_arr = &attr_buf[start_index..end_index];
-
-                    let noninterleaved_arr = attr_arr
-                        .to_vec()
-                        .chunks(acc_stride)
-                        .step_by(interleaving_step)
-                        .flatten()
-                        .copied()
-                        .collect::<Vec<u8>>();
-
-                    mesh_bufferview_vec.push(MeshBufferView::new(
-                        acc_stride,
-                        semantic,
-                        noninterleaved_arr,
-                    ));
+                    let attr_arr = (&attr_buf[start_index..end_index]).to_vec();
+                    let iter = attr_arr.chunks(acc_stride).step_by(interleaving_step);
+                    //Striding needs to be acknowledged
+                    match semantic {
+                        gltf::mesh::Semantic::Positions => {
+                            positions = iter
+                                .map(|bytes| {
+                                    [
+                                        LittleEndian::read_f32(&bytes[0..4]),
+                                        LittleEndian::read_f32(&bytes[4..8]),
+                                        LittleEndian::read_f32(&bytes[8..12]),
+                                    ]
+                                })
+                                .collect::<Vec<[f32; 3]>>();
+                        }
+                        gltf::mesh::Semantic::Normals => {
+                            // normals = iter
+                            //     .map(|bytes| {
+                            //         [
+                            //             LittleEndian::read_f32(&bytes[0..4]),
+                            //             LittleEndian::read_f32(&bytes[4..8]),
+                            //             LittleEndian::read_f32(&bytes[8..12]),
+                            //         ]
+                            //     })
+                            //     .collect::<Vec<[f32; 3]>>();
+                        }
+                        _ => {
+                            continue;
+                        }
+                    }
                 }
 
                 if let Some(indices) = primitive.indices() {
@@ -134,13 +96,10 @@ impl Mesh {
                     let ind_size = ind_view.length();
                     let acc_size = indices.size();
                     if acc_size == 1 {
-                        println!("Got u8 ind");
                         index_type = IndexType::UINT8_EXT;
                     } else if acc_size == 2 {
-                        println!("Got u16 ind");
                         index_type = IndexType::UINT16;
                     } else if acc_size == 4 {
-                        println!("Got u32 ind");
                         index_type = IndexType::UINT32;
                     } else {
                         panic!("Cannot parse this node");
@@ -148,29 +107,26 @@ impl Mesh {
                     let buf_index = ind_view.buffer().index();
                     let ind_buf = &buffers[buf_index];
                     index_vec = ind_buf[ind_offset..ind_offset + ind_size].to_vec();
-                } else {
-                    // self.index_type = IndexType::Array;
-                    // self.num_triangles = num_vertices as u32;
                 }
                 self.num_verts = num_vertices as u32;
             }
-            mesh_bufferview_vec.sort_by(|a, b| a.partial_cmp(b).unwrap());
-            let mut current_stride = 0;
-            for bufferview in mesh_bufferview_vec {
-                if current_stride == 0 {
-                    //TODO: This does not work with interleaved data!
-                    vert_vec = bufferview.data;
-                } else {
-                    vert_vec = vert_vec
-                        .chunks(current_stride)
-                        .zip(bufferview.data[..].chunks(bufferview.stride))
-                        .flat_map(|(a, b)| a.into_iter().chain(b))
-                        .copied()
-                        .collect::<Vec<u8>>();
-                }
-                current_stride += bufferview.stride;
+            let has_pos = !positions.is_empty();
+            let has_norm = !normals.is_empty();
+            if has_pos && has_norm {
+                let vertnormalvec = positions
+                    .into_iter()
+                    .zip(normals.into_iter())
+                    .map(|(position, normal)| VertexNormal { position, normal })
+                    .collect::<Vec<VertexNormal>>();
+                self.vertex_buffer = Self::create_vertex_buffer(renderer, vertnormalvec);
+            } else if has_pos {
+                let vertvec = positions
+                    .into_iter()
+                    .map(|position| VertexPosition { position })
+                    .collect::<Vec<VertexPosition>>();
+                self.vertex_buffer = Self::create_vertex_buffer(renderer, vertvec);
             }
-            self.vertex_buffer = Self::create_vertex_buffer(renderer, vert_vec);
+
             self.index_buffer = Self::create_index_buffer(renderer, index_vec, index_type);
         }
     }
@@ -244,9 +200,9 @@ impl Mesh {
                 )
             };
             let count = match index_type {
-                IndexType::UINT8_EXT => data.len() as u32,
-                IndexType::UINT16 => (data.len() as u32) / 2,
-                IndexType::UINT32 => (data.len() as u32) / 4,
+                IndexType::UINT8_EXT => data_slice.len() as u32,
+                IndexType::UINT16 => (data_slice.len() as u32) / 2,
+                IndexType::UINT32 => (data_slice.len() as u32) / 4,
                 _ => 0 as u32,
             };
             let mut index_buffer = IndexBuffer::new(

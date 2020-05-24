@@ -49,6 +49,8 @@ use erupt::vk1_0::*;
 //         }
 //     };
 // }
+
+#[repr(C)]
 #[derive(Default, Debug, Clone)]
 pub struct VertexPosition {
     pub position: [f32; 3],
@@ -73,6 +75,7 @@ impl VertexPosition {
 }
 // vulkano::impl_vertex!(VertexPosition, position);
 
+#[repr(C)]
 #[derive(Default, Debug, Clone)]
 pub struct VertexPos2Color {
     pub position: [f32; 2],
@@ -82,6 +85,7 @@ pub struct VertexPos2Color {
 
 // vulkano::impl_vertex!(VertexPos2Color, position, color);
 
+#[repr(C)]
 #[derive(Default, Debug, Clone)]
 pub struct VertexNormal {
     pub position: [f32; 3],
@@ -89,6 +93,7 @@ pub struct VertexNormal {
 }
 // vulkano::impl_vertex!(VertexNormal, position, normal);
 
+#[repr(C)]
 #[derive(Default, Debug, Clone)]
 pub struct VertexNormalTangent {
     position: [f32; 3],
@@ -97,6 +102,7 @@ pub struct VertexNormalTangent {
 }
 // vulkano::impl_vertex!(VertexNormalTangent, position, normal, tangent);
 
+#[repr(C)]
 #[derive(Default, Debug, Clone)]
 pub struct VertexPBR {
     position: [f32; 3],
