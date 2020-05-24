@@ -96,18 +96,18 @@ pub struct VertexNormal {
 #[repr(C)]
 #[derive(Default, Debug, Clone)]
 pub struct VertexNormalTangent {
-    position: [f32; 3],
-    normal: [f32; 3],
-    tangent: [f32; 4],
+    pub position: [f32; 3],
+    pub normal: [f32; 3],
+    pub tangent: [f32; 4],
 }
 // vulkano::impl_vertex!(VertexNormalTangent, position, normal, tangent);
 
 #[repr(C)]
 #[derive(Default, Debug, Clone)]
 pub struct VertexPBR {
-    position: [f32; 3],
-    normal: [f32; 3],
-    tangent: [f32; 4],
-    tex_coord0: [f32; 2],
+    pub position: [f32; 3],
+    pub normal: [f32; 3],
+    pub tangent: [f32; 4],
+    pub tex_coord0: [f32; 2],
 }
 // vulkano::impl_vertex!(VertexPBR, position, normal, tangent, tex_coord0);
