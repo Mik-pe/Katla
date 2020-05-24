@@ -8,7 +8,9 @@ Will develop in my own pace. Will be testing out lots of layers both as a way to
 
 # Current TODO:s
 
-- Multiple Vertex attributes
+- Move vertextype assignment to the cached model module
 - Multiple Shaders based on vert attribs
-- Texture upload/usage
+- Add depth buffer
+- Texture upload
+- Texture usage
 - Threaded upload
