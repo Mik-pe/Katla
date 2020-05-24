@@ -4,15 +4,18 @@ use erupt::{
     DeviceLoader,
 };
 
+#[derive(Debug)]
 struct BufferObject {
     buffer: Allocation<Buffer>,
     buf_size: DeviceSize,
     count: u32,
 }
 
+#[derive(Debug)]
 pub struct VertexBuffer {
     buffer: BufferObject,
 }
+#[derive(Debug)]
 pub struct IndexBuffer {
     buffer: BufferObject,
     pub index_type: IndexType,

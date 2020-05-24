@@ -1,12 +1,12 @@
 use crate::util::CachedGLTFModel;
-use crate::vertextypes::*;
+
 use crate::vulkanstuff::RenderPipeline;
 use crate::vulkanstuff::VulkanRenderer;
 use crate::vulkanstuff::{IndexBuffer, VertexBuffer};
 
-use byteorder::{ByteOrder, LittleEndian};
 use erupt::{utils::allocator::Allocator, vk1_0::*, DeviceLoader};
 use mikpe_math::{Mat4, Vec3};
+use std::rc::Rc;
 
 //TODO: Decouple pipeline from the "Mesh" struct,
 //Ideally a Mesh would only contain the vertex data and a reference to a pipeline,
@@ -20,119 +20,8 @@ pub struct Mesh {
 }
 
 impl Mesh {
-    //TODO: Move node parsing to CachedGLTFModel so it can return vectors as-is
-    fn parse_node(
-        &mut self,
-        node: &gltf::Node,
-        renderer: &mut VulkanRenderer,
-        buffers: &Vec<gltf::buffer::Data>,
-    ) {
-        let mut positions: Vec<[f32; 3]> = vec![];
-        let normals: Vec<[f32; 3]> = vec![];
-        let mut _tex_coords: Vec<[f32; 2]> = vec![];
-        if let Some(mesh) = node.mesh() {
-            // println!("Found mesh {:?} in node!", mesh.name());
-            let mut index_vec: Vec<u8> = vec![];
-            let mut index_type = IndexType::UINT32;
-            for primitive in mesh.primitives() {
-                let mut start_index: usize;
-                let mut end_index: usize;
-                let mut num_vertices = 0;
-                //TODO: Upload entire buffer and sample from it as the accessor tells us:
-                let num_attributes = primitive.attributes().len();
-
-                for (semantic, accessor) in primitive.attributes() {
-                    let buffer_view = accessor.view().unwrap();
-                    let acc_total_size = accessor.size() * accessor.count();
-                    num_vertices = accessor.count();
-                    let acc_stride = accessor.size();
-                    let buf_index = buffer_view.buffer().index();
-                    let buf_stride = buffer_view.stride();
-                    let mut interleaving_step = num_attributes;
-                    if buf_stride.is_none() || buf_stride.unwrap() == acc_stride {
-                        interleaving_step = 1;
-                        end_index = acc_total_size;
-                    } else {
-                        end_index = buffer_view.length();
-                    }
-                    start_index = accessor.offset() + buffer_view.offset();
-                    end_index += start_index;
-                    let attr_buf = &buffers[buf_index];
-                    let attr_arr = (&attr_buf[start_index..end_index]).to_vec();
-                    let iter = attr_arr.chunks(acc_stride).step_by(interleaving_step);
-                    //Striding needs to be acknowledged
-                    match semantic {
-                        gltf::mesh::Semantic::Positions => {
-                            positions = iter
-                                .map(|bytes| {
-                                    [
-                                        LittleEndian::read_f32(&bytes[0..4]),
-                                        LittleEndian::read_f32(&bytes[4..8]),
-                                        LittleEndian::read_f32(&bytes[8..12]),
-                                    ]
-                                })
-                                .collect::<Vec<[f32; 3]>>();
-                        }
-                        gltf::mesh::Semantic::Normals => {
-                            // normals = iter
-                            //     .map(|bytes| {
-                            //         [
-                            //             LittleEndian::read_f32(&bytes[0..4]),
-                            //             LittleEndian::read_f32(&bytes[4..8]),
-                            //             LittleEndian::read_f32(&bytes[8..12]),
-                            //         ]
-                            //     })
-                            //     .collect::<Vec<[f32; 3]>>();
-                        }
-                        _ => {
-                            continue;
-                        }
-                    }
-                }
-
-                if let Some(indices) = primitive.indices() {
-                    let ind_view = indices.view().unwrap();
-                    let ind_offset = ind_view.offset();
-                    let ind_size = ind_view.length();
-                    let acc_size = indices.size();
-                    if acc_size == 1 {
-                        index_type = IndexType::UINT8_EXT;
-                    } else if acc_size == 2 {
-                        index_type = IndexType::UINT16;
-                    } else if acc_size == 4 {
-                        index_type = IndexType::UINT32;
-                    } else {
-                        panic!("Cannot parse this node");
-                    }
-                    let buf_index = ind_view.buffer().index();
-                    let ind_buf = &buffers[buf_index];
-                    index_vec = ind_buf[ind_offset..ind_offset + ind_size].to_vec();
-                }
-                self.num_verts = num_vertices as u32;
-            }
-            let has_pos = !positions.is_empty();
-            let has_norm = !normals.is_empty();
-            if has_pos && has_norm {
-                let vertnormalvec = positions
-                    .into_iter()
-                    .zip(normals.into_iter())
-                    .map(|(position, normal)| VertexNormal { position, normal })
-                    .collect::<Vec<VertexNormal>>();
-                self.vertex_buffer = Self::create_vertex_buffer(renderer, vertnormalvec);
-            } else if has_pos {
-                let vertvec = positions
-                    .into_iter()
-                    .map(|position| VertexPosition { position })
-                    .collect::<Vec<VertexPosition>>();
-                self.vertex_buffer = Self::create_vertex_buffer(renderer, vertvec);
-            }
-
-            self.index_buffer = Self::create_index_buffer(renderer, index_vec, index_type);
-        }
-    }
-
     pub fn new_from_cache(
-        model: CachedGLTFModel,
+        model: Rc<CachedGLTFModel>,
         renderer: &mut VulkanRenderer,
         position: Vec3,
     ) -> Self {
@@ -155,33 +44,18 @@ impl Mesh {
             num_verts: 0,
             position,
         };
-        mesh.parse_gltf(renderer, model.document, model.buffers, model.images);
+        mesh.vertex_buffer = Self::create_vertex_buffer(renderer, model.vertpos());
+        let index_type = match model.index_stride {
+            1 => IndexType::UINT8_EXT,
+            2 => IndexType::UINT16,
+            4 => IndexType::UINT32,
+            _ => IndexType::NONE_KHR,
+        };
+        mesh.index_buffer = Self::create_index_buffer(renderer, model.index_data(), index_type);
+
+        println!("index buffer has: {:?}", mesh.index_buffer);
+        println!("vertex buffer has: {:?}", mesh.vertex_buffer);
         mesh
-    }
-
-    pub fn parse_gltf(
-        &mut self,
-        renderer: &mut VulkanRenderer,
-        document: gltf::Document,
-        buffers: Vec<gltf::buffer::Data>,
-        _images: Vec<gltf::image::Data>,
-    ) {
-        let mut used_nodes = vec![];
-        for scene in document.scenes() {
-            for node in scene.nodes() {
-                used_nodes.push(node.index());
-                for child in node.children() {
-                    used_nodes.push(child.index());
-                }
-            }
-        }
-        // let mut parsed_mats = vec![];
-
-        for node in document.nodes() {
-            if used_nodes.contains(&node.index()) {
-                self.parse_node(&node, renderer, &buffers);
-            }
-        }
     }
 
     fn create_index_buffer<DataType>(
