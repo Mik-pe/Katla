@@ -1,3 +1,4 @@
+use crate::rendering::vertextypes::*;
 use crate::util::CachedGLTFModel;
 
 use crate::vulkanstuff::RenderPipeline;
@@ -35,6 +36,7 @@ impl Mesh {
             render_pass,
             surface_caps,
             num_images,
+            &VertexNormal::default(),
         );
 
         let mut mesh = Self {
@@ -44,7 +46,7 @@ impl Mesh {
             num_verts: 0,
             position,
         };
-        mesh.vertex_buffer = Self::create_vertex_buffer(renderer, model.vertpos());
+        mesh.vertex_buffer = Self::create_vertex_buffer(renderer, model.vertposnorm());
         let index_type = match model.index_stride {
             1 => IndexType::UINT8_EXT,
             2 => IndexType::UINT16,
@@ -116,7 +118,7 @@ impl Mesh {
         }
     }
 
-    pub fn new_from_data<VType, IType>(
+    pub fn new_from_data<VType: VertexBinding + Default, IType>(
         renderer: &mut VulkanRenderer,
         vertex_data: Vec<VType>,
         index_data: Vec<IType>,
@@ -137,6 +139,7 @@ impl Mesh {
             render_pass,
             surface_caps,
             num_images,
+            &VType::default(),
         );
 
         Self {

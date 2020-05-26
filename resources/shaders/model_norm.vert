@@ -25,7 +25,7 @@ void main()
     // vs_pos = (uniforms.world * vec4(position, 1.0)).xyz;
 
     tex_coords = vec2(0.0, 0.0);
-    vs_pos = position;
+    vs_pos = normal;
     gl_Position = uniforms.proj * uniforms.view * uniforms.world * vec4(position, 1.0);
     // gl_Position = uniforms.proj * uniforms.view * uniforms.world * vec4(position, 1.0);
 }
