@@ -36,24 +36,24 @@ fn main() {
     ];
     let index_data: Vec<u32> = vec![0, 1, 2, 2, 1, 0];
     let some_mesh = Mesh::new_from_cache(
-        model_cache.read_gltf(PathBuf::from("resources/models/Fox.glb")),
+        model_cache.read_gltf(PathBuf::from("resources/models/Tiger.glb")),
         &mut vulkan_ctx,
         Vec3::new(0.0, 0.0, 0.0),
     );
     // panic!("Oops");
     let mut meshes = vec![
-        Mesh::new_from_data(
-            &mut vulkan_ctx,
-            pos_data.clone(),
-            index_data.clone(),
-            Vec3::new(0.0, 1.0, 0.0),
-        ),
-        Mesh::new_from_data(
-            &mut vulkan_ctx,
-            pos_data,
-            index_data,
-            Vec3::new(0.0, -1.0, 0.0),
-        ),
+        // Mesh::new_from_data(
+        //     &mut vulkan_ctx,
+        //     pos_data.clone(),
+        //     index_data.clone(),
+        //     Vec3::new(0.0, 1.0, 0.0),
+        // ),
+        // Mesh::new_from_data(
+        //     &mut vulkan_ctx,
+        //     pos_data,
+        //     index_data,
+        //     Vec3::new(0.0, -1.0, 0.0),
+        // ),
         some_mesh,
     ];
     //Delta time, in seconds

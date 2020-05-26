@@ -8,7 +8,7 @@ use erupt::{
 };
 
 use std::ffi::CString;
-const SHADER_VERT: &[u8] = include_bytes!("../../resources/shaders/model_pos.vert.spv");
+const SHADER_VERT: &[u8] = include_bytes!("../../resources/shaders/model_norm.vert.spv");
 const SHADER_FRAG: &[u8] = include_bytes!("../../resources/shaders/model.frag.spv");
 
 pub struct RenderPipeline {
@@ -129,6 +129,7 @@ impl RenderPipeline {
         render_pass: RenderPass,
         surface_caps: SurfaceCapabilitiesKHR,
         num_images: usize,
+        vertex_binding: &dyn VertexBinding,
     ) -> Self {
         let entry_point = CString::new("main").unwrap();
 
@@ -174,8 +175,8 @@ impl RenderPipeline {
         let pipeline_layout =
             unsafe { device.create_pipeline_layout(&create_info, None, None) }.unwrap();
 
-        let vertex_binding_desc = vec![VertexPosition::get_binding_desc(0)];
-        let vertex_attrib_descs = VertexPosition::get_attribute_desc(0);
+        let vertex_binding_desc = vec![vertex_binding.get_binding_desc(0)];
+        let vertex_attrib_descs = vertex_binding.get_attribute_desc(0);
         let vertex_input = PipelineVertexInputStateCreateInfoBuilder::new()
             .vertex_binding_descriptions(vertex_binding_desc.as_slice())
             .vertex_attribute_descriptions(vertex_attrib_descs.as_slice());

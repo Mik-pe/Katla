@@ -25,7 +25,7 @@ pub struct CachedGLTFModel {
 impl CachedGLTFModel {
     fn parse_node(&self, node: &gltf::Node) -> (Vec<VertexPBR>, Vec<u8>, u8) {
         let mut positions: Vec<[f32; 3]> = vec![];
-        let normals: Vec<[f32; 3]> = vec![];
+        let mut normals: Vec<[f32; 3]> = vec![];
         let mut _tex_coords: Vec<[f32; 2]> = vec![];
         let mut index_stride = 0u8;
         let mut index_data = vec![];
@@ -69,15 +69,15 @@ impl CachedGLTFModel {
                                 .collect::<Vec<[f32; 3]>>();
                         }
                         gltf::mesh::Semantic::Normals => {
-                            // normals = iter
-                            //     .map(|bytes| {
-                            //         [
-                            //             LittleEndian::read_f32(&bytes[0..4]),
-                            //             LittleEndian::read_f32(&bytes[4..8]),
-                            //             LittleEndian::read_f32(&bytes[8..12]),
-                            //         ]
-                            //     })
-                            //     .collect::<Vec<[f32; 3]>>();
+                            normals = iter
+                                .map(|bytes| {
+                                    [
+                                        LittleEndian::read_f32(&bytes[0..4]),
+                                        LittleEndian::read_f32(&bytes[4..8]),
+                                        LittleEndian::read_f32(&bytes[8..12]),
+                                    ]
+                                })
+                                .collect::<Vec<[f32; 3]>>();
                         }
                         _ => {
                             continue;
@@ -172,6 +172,16 @@ impl CachedGLTFModel {
                 position: x.position,
             })
             .collect::<Vec<VertexPosition>>()
+    }
+
+    pub fn vertposnorm(&self) -> Vec<VertexNormal> {
+        self.vertex_data
+            .iter()
+            .map(|x| VertexNormal {
+                position: x.position,
+                normal: x.normal,
+            })
+            .collect::<Vec<VertexNormal>>()
     }
 
     pub fn index_data(&self) -> Vec<u8> {
