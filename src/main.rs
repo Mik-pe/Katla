@@ -24,14 +24,17 @@ fn main() {
     let mut win_y: f64 = size.height.into();
     let mut projection_matrix = Mat4::create_proj(60.0, (win_x / win_y) as f32, 0.01, 1000.0);
     let pos_data = vec![
-        vertextypes::VertexPosition {
+        vertextypes::VertexNormal {
             position: [0.5, 0.5, 0.0],
+            normal: [1.0, 0.0, 0.0],
         },
-        vertextypes::VertexPosition {
+        vertextypes::VertexNormal {
             position: [0.0, -0.5, 0.0],
+            normal: [0.0, 1.0, 0.0],
         },
-        vertextypes::VertexPosition {
+        vertextypes::VertexNormal {
             position: [-0.5, 0.5, 0.0],
+            normal: [0.0, 0.0, 1.0],
         },
     ];
     let index_data: Vec<u32> = vec![0, 1, 2, 2, 1, 0];
@@ -42,18 +45,18 @@ fn main() {
     );
     // panic!("Oops");
     let mut meshes = vec![
-        // Mesh::new_from_data(
-        //     &mut vulkan_ctx,
-        //     pos_data.clone(),
-        //     index_data.clone(),
-        //     Vec3::new(0.0, 1.0, 0.0),
-        // ),
-        // Mesh::new_from_data(
-        //     &mut vulkan_ctx,
-        //     pos_data,
-        //     index_data,
-        //     Vec3::new(0.0, -1.0, 0.0),
-        // ),
+        Mesh::new_from_data(
+            &mut vulkan_ctx,
+            pos_data.clone(),
+            index_data.clone(),
+            Vec3::new(0.0, 1.0, 0.0),
+        ),
+        Mesh::new_from_data(
+            &mut vulkan_ctx,
+            pos_data,
+            index_data,
+            Vec3::new(0.0, -1.0, 0.0),
+        ),
         some_mesh,
     ];
     //Delta time, in seconds

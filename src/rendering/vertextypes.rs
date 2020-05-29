@@ -50,11 +50,8 @@ use erupt::vk1_0::*;
 //     };
 // }
 pub trait VertexBinding {
-    fn get_binding_desc<'a>(&self, binding: u32) -> VertexInputBindingDescriptionBuilder<'a>;
-    fn get_attribute_desc<'a>(
-        &self,
-        binding: u32,
-    ) -> Vec<VertexInputAttributeDescriptionBuilder<'a>>;
+    fn get_binding_desc<'a>(binding: u32) -> VertexInputBindingDescriptionBuilder<'a>;
+    fn get_attribute_desc<'a>(binding: u32) -> Vec<VertexInputAttributeDescriptionBuilder<'a>>;
 }
 
 #[repr(C)]
@@ -65,17 +62,14 @@ pub struct VertexPosition {
 // descriptors!(VertexPosition, position);
 
 impl VertexBinding for VertexPosition {
-    fn get_binding_desc<'a>(&self, binding: u32) -> VertexInputBindingDescriptionBuilder<'a> {
+    fn get_binding_desc<'a>(binding: u32) -> VertexInputBindingDescriptionBuilder<'a> {
         VertexInputBindingDescriptionBuilder::new()
             .binding(binding)
             .stride(std::mem::size_of::<Self>() as u32)
             .input_rate(VertexInputRate::VERTEX)
     }
 
-    fn get_attribute_desc<'a>(
-        &self,
-        binding: u32,
-    ) -> Vec<VertexInputAttributeDescriptionBuilder<'a>> {
+    fn get_attribute_desc<'a>(binding: u32) -> Vec<VertexInputAttributeDescriptionBuilder<'a>> {
         vec![VertexInputAttributeDescriptionBuilder::new()
             .binding(binding)
             .location(0)
@@ -101,17 +95,14 @@ pub struct VertexNormal {
     pub normal: [f32; 3],
 }
 impl VertexBinding for VertexNormal {
-    fn get_binding_desc<'a>(&self, binding: u32) -> VertexInputBindingDescriptionBuilder<'a> {
+    fn get_binding_desc<'a>(binding: u32) -> VertexInputBindingDescriptionBuilder<'a> {
         VertexInputBindingDescriptionBuilder::new()
             .binding(binding)
             .stride(std::mem::size_of::<Self>() as u32)
             .input_rate(VertexInputRate::VERTEX)
     }
 
-    fn get_attribute_desc<'a>(
-        &self,
-        binding: u32,
-    ) -> Vec<VertexInputAttributeDescriptionBuilder<'a>> {
+    fn get_attribute_desc<'a>(binding: u32) -> Vec<VertexInputAttributeDescriptionBuilder<'a>> {
         vec![
             VertexInputAttributeDescriptionBuilder::new()
                 .binding(binding)

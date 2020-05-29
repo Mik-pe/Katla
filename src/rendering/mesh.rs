@@ -30,13 +30,12 @@ impl Mesh {
         let surface_caps = renderer.surface_caps();
         let num_images = renderer.num_images();
         let (device, mut allocator) = renderer.device_and_allocator();
-        let renderpipeline = RenderPipeline::new(
+        let renderpipeline = RenderPipeline::new::<VertexNormal>(
             &device,
             &mut allocator,
             render_pass,
             surface_caps,
             num_images,
-            &VertexNormal::default(),
         );
 
         let mut mesh = Self {
@@ -133,13 +132,12 @@ impl Mesh {
         let surface_caps = renderer.surface_caps();
         let num_images = renderer.num_images();
         let (device, mut allocator) = renderer.device_and_allocator();
-        let renderpipeline = RenderPipeline::new(
+        let renderpipeline = RenderPipeline::new::<VType>(
             &device,
             &mut allocator,
             render_pass,
             surface_caps,
             num_images,
-            &VType::default(),
         );
 
         Self {
