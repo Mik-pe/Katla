@@ -119,6 +119,28 @@ impl VulkanCtx {
         instance
     }
 
+    pub fn find_depth_format(&self, candidates: Vec<Format>) -> Format {
+        let mut depth_format = None;
+        for candidate in candidates {
+            unsafe {
+                let format_props = self.instance.get_physical_device_format_properties(
+                    self.physical_device,
+                    candidate,
+                    None,
+                );
+                if (format_props.optimal_tiling_features
+                    & FormatFeatureFlags::DEPTH_STENCIL_ATTACHMENT)
+                    == FormatFeatureFlags::DEPTH_STENCIL_ATTACHMENT
+                {
+                    depth_format = Some(candidate);
+                    break;
+                }
+            }
+        }
+        dbg!(depth_format);
+        depth_format.expect("No acceptable depth formats found!")
+    }
+
     pub fn init(
         window: &Window,
         with_validation_layers: bool,

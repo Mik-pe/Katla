@@ -53,9 +53,6 @@ impl Mesh {
             _ => IndexType::NONE_KHR,
         };
         mesh.index_buffer = Self::create_index_buffer(renderer, model.index_data(), index_type);
-
-        println!("index buffer has: {:?}", mesh.index_buffer);
-        println!("vertex buffer has: {:?}", mesh.vertex_buffer);
         mesh
     }
 

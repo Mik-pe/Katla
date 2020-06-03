@@ -12,7 +12,7 @@ mikpe_math = {git = "https://github.com/Mik-pe/mikpe_math.git"}
 winit = "^0.22.0"
 erupt = "^0.7.0"
 lazy_static = "1.4.0"
-# image = "0.22.3"
+image = "0.22.3"
 # imgui = "^0.3.0"
 # imgui-winit-support = "^0.3.0"
 

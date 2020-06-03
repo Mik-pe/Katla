@@ -1,10 +1,12 @@
 use context::VulkanCtx;
 pub use pipeline::RenderPipeline;
 use swapdata::*;
+pub use texture::*;
 pub use vertexbuffer::*;
 mod context;
 mod pipeline;
 mod swapdata;
+mod texture;
 mod vertexbuffer;
 
 use crate::rendering::Mesh;
@@ -54,9 +56,17 @@ impl VulkanRenderer {
             .build(event_loop)
             .unwrap();
         let context = VulkanCtx::init(&window, with_validation_layers, app_name, engine_name);
+        //TODO: This should be configurable and put elsewhere?
 
         // https://vulkan-tutorial.com/Drawing_a_triangle/Graphics_pipeline_basics/Render_passes
         let render_pass = {
+            let candidate_formats = vec![
+                Format::D32_SFLOAT,
+                Format::D32_SFLOAT_S8_UINT,
+                Format::D24_UNORM_S8_UINT,
+            ];
+            let depth_format = context.find_depth_format(candidate_formats);
+
             let attachments = vec![AttachmentDescriptionBuilder::new()
                 .format(context.surface_format.format)
                 .samples(SampleCountFlagBits::_1)
