@@ -101,7 +101,7 @@ impl VulkanCtx {
             .application_version(erupt::make_version(1, 0, 0))
             .engine_name(engine_name)
             .engine_version(erupt::make_version(1, 0, 0))
-            .api_version(erupt::make_version(1, 0, 0));
+            .api_version(erupt::make_version(1, 1, 0));
 
         let create_info = InstanceCreateInfoBuilder::new()
             .application_info(&app_info)
@@ -116,6 +116,7 @@ impl VulkanCtx {
         .unwrap();
         let mut instance = InstanceLoader::new(&CORE_LOADER.lock().unwrap(), instance).unwrap();
         instance.load_vk1_0().unwrap();
+        instance.load_vk1_1().unwrap();
         instance
     }
 
@@ -301,6 +302,7 @@ impl VulkanCtx {
             )
         };
         device.load_vk1_0().unwrap();
+        device.load_vk1_1().unwrap();
         device
             .load_khr_swapchain()
             .expect("Couldn't load swapchain!");

@@ -29,6 +29,7 @@ lazy_static! {
     static ref CORE_LOADER: Mutex<DefaultCoreLoader> = {
         let core = Mutex::new(DefaultCoreLoader::new().unwrap());
         core.lock().unwrap().load_vk1_0().unwrap();
+        core.lock().unwrap().load_vk1_1().unwrap();
         core
     };
 }
