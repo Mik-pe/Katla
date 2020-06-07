@@ -6,6 +6,7 @@ mod vulkanstuff;
 use mikpe_math::{Mat4, Vec3};
 use rendering::vertextypes;
 use rendering::Mesh;
+use vulkanstuff::Texture;
 
 use std::{ffi::CString, path::PathBuf, time::Instant};
 use winit::event_loop::EventLoop;
@@ -20,14 +21,7 @@ fn main() {
         .unwrap()
         .to_rgba();
     let (img_width, img_height) = img.dimensions();
-    let tex_image = vulkanstuff::Texture::create_image(
-        &mut vulkan_ctx.context,
-        img_width,
-        img_height,
-        erupt::vk1_0::Format::R8G8B8A8_SRGB,
-        img.into_raw().as_slice(),
-    );
-    dbg!(tex_image.channels);
+    let mut textures = vec![];
 
     let mut model_cache = util::ModelCache::new();
 
@@ -50,6 +44,8 @@ fn main() {
     //Delta time, in seconds
     let mut delta_time = 0.0;
     let mut last_frame = Instant::now();
+    let mut timer = util::Timer::new(100);
+    let mut frame_number = 0;
     event_loop.run(move |event, _, control_flow| {
         use winit::event::{Event, VirtualKeyCode, WindowEvent};
         use winit::event_loop::ControlFlow;
@@ -62,6 +58,18 @@ fn main() {
         );
         match event {
             Event::NewEvents(_) => {
+                frame_number += 1;
+                let end = last_frame.elapsed().as_micros() as f64 / 1000.0;
+                timer.add_timestamp(end);
+                if frame_number % 100 == 0 {
+                    println!(
+                        "CPU time mean: {:.2}, min/max : {:.2}/{:.2}",
+                        timer.current_mean(),
+                        timer.current_min(),
+                        timer.current_max()
+                    );
+                }
+
                 delta_time = last_frame.elapsed().as_micros() as f32 / 1_000_000.0;
                 camera.update(delta_time);
                 last_frame = Instant::now();
@@ -79,22 +87,42 @@ fn main() {
                     WindowEvent::CloseRequested => {
                         *control_flow = ControlFlow::Exit;
                     }
-                    WindowEvent::KeyboardInput { input, .. } => {
-                        if let Some(keycode) = input.virtual_keycode {
-                            match keycode {
-                                VirtualKeyCode::Escape => {
-                                    *control_flow = ControlFlow::Exit;
+                    WindowEvent::KeyboardInput { input, .. } => match input.state {
+                        winit::event::ElementState::Pressed => {
+                            if let Some(keycode) = input.virtual_keycode {
+                                match keycode {
+                                    VirtualKeyCode::Escape => {
+                                        *control_flow = ControlFlow::Exit;
+                                    }
+                                    VirtualKeyCode::L => {
+                                        for _ in 0..100 {
+                                            textures.push(Texture::create_image(
+                                                &mut vulkan_ctx.context,
+                                                img_width,
+                                                img_height,
+                                                erupt::vk1_0::Format::R8G8B8A8_SRGB,
+                                                img.clone().into_raw().as_slice(),
+                                            ));
+                                        }
+                                    }
+                                    _ => {}
                                 }
-                                _ => {}
                             }
                         }
-                    }
+                        _ => {}
+                    },
                     _ => (),
                 }
             }
             Event::RedrawRequested { .. } => {}
             Event::LoopDestroyed => {
                 println!("Loop destroyed!");
+                let mut tex_removal = vec![];
+                std::mem::swap(&mut textures, &mut tex_removal);
+                for texture in tex_removal {
+                    texture.destroy(&mut vulkan_ctx.context);
+                }
+                // vulkan_ctx.destroy(mesh_data)
                 vulkan_ctx.destroy(meshes.as_mut_slice());
             }
             _ => {}
