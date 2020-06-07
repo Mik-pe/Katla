@@ -29,7 +29,7 @@ pub struct VulkanCtx {
     pub swapchain_image_views: Vec<ImageView>,
     pub swapchain: SwapchainKHR,
     pub swapchain_images: Vec<Image>,
-    command_pool: CommandPool,
+    pub command_pool: CommandPool,
     pub command_buffers: Vec<CommandBuffer>,
     pub queue: Queue,
     messenger: DebugUtilsMessengerEXT,
@@ -118,6 +118,37 @@ impl VulkanCtx {
         instance.load_vk1_0().unwrap();
         instance.load_vk1_1().unwrap();
         instance
+    }
+
+    pub fn begin_single_time_commands(&self) -> CommandBuffer {
+        let create_info = CommandBufferAllocateInfoBuilder::new()
+            .level(CommandBufferLevel::PRIMARY)
+            .command_pool(self.command_pool)
+            .command_buffer_count(1);
+        unsafe {
+            let command_buffer: CommandBuffer =
+                self.device.allocate_command_buffers(&create_info).unwrap()[0];
+            let begin_info = CommandBufferBeginInfoBuilder::new()
+                .flags(CommandBufferUsageFlags::ONE_TIME_SUBMIT);
+            self.device
+                .begin_command_buffer(command_buffer, &begin_info)
+                .unwrap();
+            command_buffer
+        }
+    }
+
+    pub fn end_single_time_commands(&self, command_buffer: CommandBuffer) {
+        unsafe {
+            let command_buffers = vec![command_buffer];
+            self.device.end_command_buffer(command_buffer).unwrap();
+            let submit_info = SubmitInfoBuilder::new().command_buffers(&command_buffers);
+            self.device
+                .queue_submit(self.queue, &vec![submit_info], Fence::null())
+                .unwrap();
+            self.device.queue_wait_idle(self.queue).unwrap();
+            self.device
+                .free_command_buffers(self.command_pool, &command_buffers);
+        }
     }
 
     pub fn find_depth_format(&self, candidates: Vec<Format>) -> Format {
