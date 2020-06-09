@@ -53,10 +53,10 @@ fn check_validation_support() -> bool {
     let mut layer_count = 0u32;
     let commands = Vk10CoreCommands::load(&CORE_LOADER.lock().unwrap()).unwrap();
     unsafe {
-        (commands.enumerate_instance_layer_properties)(&mut layer_count, 0 as _);
+        commands.enumerate_instance_layer_properties.unwrap()(&mut layer_count, 0 as _);
         let mut available_layers: Vec<LayerProperties> = Vec::new();
         available_layers.resize(layer_count as usize, LayerProperties::default());
-        (commands.enumerate_instance_layer_properties)(
+        commands.enumerate_instance_layer_properties.unwrap()(
             &mut layer_count,
             available_layers.as_mut_ptr(),
         );
