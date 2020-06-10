@@ -8,7 +8,7 @@ use erupt::{
 };
 
 use std::ffi::CString;
-const SHADER_VERT: &[u8] = include_bytes!("../../resources/shaders/model_norm.vert.spv");
+const SHADER_VERT: &[u8] = include_bytes!("../../resources/shaders/model_pbr.vert.spv");
 const SHADER_FRAG: &[u8] = include_bytes!("../../resources/shaders/model.frag.spv");
 
 pub struct RenderPipeline {

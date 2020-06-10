@@ -136,4 +136,37 @@ pub struct VertexPBR {
     pub tangent: [f32; 4],
     pub tex_coord0: [f32; 2],
 }
+impl VertexBinding for VertexPBR {
+    fn get_binding_desc<'a>(binding: u32) -> VertexInputBindingDescriptionBuilder<'a> {
+        VertexInputBindingDescriptionBuilder::new()
+            .binding(binding)
+            .stride(std::mem::size_of::<Self>() as u32)
+            .input_rate(VertexInputRate::VERTEX)
+    }
+
+    fn get_attribute_desc<'a>(binding: u32) -> Vec<VertexInputAttributeDescriptionBuilder<'a>> {
+        vec![
+            VertexInputAttributeDescriptionBuilder::new()
+                .binding(binding)
+                .location(0)
+                .format(Format::R32G32B32_SFLOAT)
+                .offset(0),
+            VertexInputAttributeDescriptionBuilder::new()
+                .binding(binding)
+                .location(1)
+                .format(Format::R32G32B32_SFLOAT)
+                .offset(12),
+            VertexInputAttributeDescriptionBuilder::new()
+                .binding(binding)
+                .location(2)
+                .format(Format::R32G32B32A32_SFLOAT)
+                .offset(24),
+            VertexInputAttributeDescriptionBuilder::new()
+                .binding(binding)
+                .location(3)
+                .format(Format::R32G32_SFLOAT)
+                .offset(40),
+        ]
+    }
+}
 // vulkano::impl_vertex!(VertexPBR, position, normal, tangent, tex_coord0);

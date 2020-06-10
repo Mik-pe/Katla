@@ -30,12 +30,12 @@ fn main() {
     let mut win_y: f64 = size.height.into();
     let mut projection_matrix = Mat4::create_proj(60.0, (win_x / win_y) as f32, 0.01, 1000.0);
     let some_mesh = Mesh::new_from_cache(
-        model_cache.read_gltf(PathBuf::from("resources/models/Box.glb")),
+        model_cache.read_gltf(PathBuf::from("resources/models/Fox.glb")),
         &mut vulkan_ctx,
         Vec3::new(0.0, 0.0, 0.0),
     );
     let box_mesh = Mesh::new_from_cache(
-        model_cache.read_gltf(PathBuf::from("resources/models/Box.glb")),
+        model_cache.read_gltf(PathBuf::from("resources/models/Avocado.glb")),
         &mut vulkan_ctx,
         Vec3::new(0.0, 0.0, 0.0),
     );

@@ -120,6 +120,29 @@ impl VulkanCtx {
         instance
     }
 
+    pub fn create_image_view(device: &DeviceLoader, image: Image, format: Format) -> ImageView {
+        let create_info = ImageViewCreateInfoBuilder::new()
+            .image(image)
+            .view_type(ImageViewType::_2D)
+            .format(format)
+            .components(ComponentMapping {
+                r: ComponentSwizzle::IDENTITY,
+                g: ComponentSwizzle::IDENTITY,
+                b: ComponentSwizzle::IDENTITY,
+                a: ComponentSwizzle::IDENTITY,
+            })
+            .subresource_range(unsafe {
+                ImageSubresourceRangeBuilder::new()
+                    .aspect_mask(ImageAspectFlags::COLOR)
+                    .base_mip_level(0)
+                    .level_count(1)
+                    .base_array_layer(0)
+                    .layer_count(1)
+                    .discard()
+            });
+        unsafe { device.create_image_view(&create_info, None, None) }.unwrap()
+    }
+
     pub fn begin_single_time_commands(&self) -> CommandBuffer {
         let create_info = CommandBufferAllocateInfoBuilder::new()
             .level(CommandBufferLevel::PRIMARY)
@@ -302,7 +325,7 @@ impl VulkanCtx {
             let queue_create_info = vec![DeviceQueueCreateInfoBuilder::new()
                 .queue_family_index(queue_family)
                 .queue_priorities(&[1.0])];
-            let features = PhysicalDeviceFeaturesBuilder::new();
+            let features = PhysicalDeviceFeaturesBuilder::new().sampler_anisotropy(true);
 
             let create_info = DeviceCreateInfoBuilder::new()
                 .queue_create_infos(&queue_create_info)
@@ -373,26 +396,7 @@ impl VulkanCtx {
         let swapchain_image_views: Vec<_> = swapchain_images
             .iter()
             .map(|swapchain_image| {
-                let create_info = ImageViewCreateInfoBuilder::new()
-                    .image(*swapchain_image)
-                    .view_type(ImageViewType::_2D)
-                    .format(format.format)
-                    .components(ComponentMapping {
-                        r: ComponentSwizzle::IDENTITY,
-                        g: ComponentSwizzle::IDENTITY,
-                        b: ComponentSwizzle::IDENTITY,
-                        a: ComponentSwizzle::IDENTITY,
-                    })
-                    .subresource_range(unsafe {
-                        ImageSubresourceRangeBuilder::new()
-                            .aspect_mask(ImageAspectFlags::COLOR)
-                            .base_mip_level(0)
-                            .level_count(1)
-                            .base_array_layer(0)
-                            .layer_count(1)
-                            .discard()
-                    });
-                unsafe { device.create_image_view(&create_info, None, None) }.unwrap()
+                Self::create_image_view(&device, *swapchain_image, format.format)
             })
             .collect();
         // https://vulkan-tutorial.com/Drawing_a_triangle/Drawing/Framebuffers
