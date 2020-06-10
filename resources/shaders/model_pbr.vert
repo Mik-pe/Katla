@@ -1,8 +1,8 @@
 #version 450
 layout(location=0) in vec3 position;
 layout(location=1) in vec3 normal;
-// layout(location=2) in vec4 vert_tangent;
-// layout(location=3) in vec2 vert_texcoord0;
+layout(location=2) in vec4 vert_tangent;
+layout(location=3) in vec2 vert_texcoord0;
 
 layout(set = 0, binding = 0) uniform Data {
     mat4 world;
@@ -25,9 +25,8 @@ void main()
     // vs_TBN = mat3(1.0);
     // vs_pos = (uniforms.world * vec4(position, 1.0)).xyz;
 
-    tex_coords = vec2(0.0, 0.0);
-    vs_pos = normal;
+    vs_pos = vs_pos;
     vs_norm = normal * 0.5 + 0.5;
+    tex_coords = vert_texcoord0;
     gl_Position = uniforms.proj * uniforms.view * uniforms.world * vec4(position, 1.0);
-    // gl_Position = uniforms.proj * uniforms.view * uniforms.world * vec4(position, 1.0);
 }

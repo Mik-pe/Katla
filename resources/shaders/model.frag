@@ -16,13 +16,14 @@ const float spec_strength = 0.5;
 
 layout(location=0) in vec3 vs_pos;
 layout(location=1) in vec2 tex_coords;
+layout(location=2) in vec3 vs_norm;
 // layout(location=2) in mat3 vs_TBN;
 
 layout(location=0) out vec4 out_col;
 
 void main()
 {
-    out_col = vec4(vs_pos, 1.0);
+    out_col = vec4(vs_norm, 1.0);
 
     // vec3 ambient_color = 0.1 * light_color;
 

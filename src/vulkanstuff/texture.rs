@@ -8,6 +8,8 @@ pub struct Texture {
     pub height: u32,
     pub channels: u32,
     image_memory: Allocation<Image>,
+    image_view: ImageView,
+    image_sampler: Sampler,
 }
 
 impl Texture {
@@ -124,6 +126,26 @@ impl Texture {
         context.end_single_time_commands(command_buffer);
     }
 
+    fn create_texture_sampler(context: &VulkanCtx) -> Sampler {
+        let create_info = SamplerCreateInfoBuilder::new()
+            .anisotropy_enable(true)
+            .max_anisotropy(16.0)
+            .border_color(BorderColor::INT_OPAQUE_BLACK)
+            .unnormalized_coordinates(false)
+            .compare_enable(false)
+            .compare_op(CompareOp::ALWAYS)
+            .mipmap_mode(SamplerMipmapMode::LINEAR)
+            .mip_lod_bias(0.0)
+            .min_lod(0.0)
+            .max_lod(0.0);
+        unsafe {
+            context
+                .device
+                .create_sampler(&create_info, None, None)
+                .unwrap()
+        }
+    }
+
     pub fn create_image(
         context: &mut VulkanCtx,
         width: u32,
@@ -158,17 +180,14 @@ impl Texture {
                 .allocator
                 .allocate(&context.device, image_object, MemoryTypeFinder::gpu_only())
                 .unwrap();
-            //TODO: This might want o use a VkBuffer instead of VkImage:
 
             let total_size = pixel_data.len() as u64;
             let range = ..image_memory.region().start + total_size;
 
             let staging_buffer = Self::create_staging_buffer(context, total_size);
-            println!("Managed to create staging buffer!");
             let mut map = staging_buffer.map(&context.device, range).unwrap();
             map.import(pixel_data);
             map.unmap(&context.device).unwrap();
-            println!("Managed to copy staging buffer!");
 
             Self::transition_image_layout(
                 context,
@@ -176,7 +195,6 @@ impl Texture {
                 ImageLayout::UNDEFINED,
                 ImageLayout::TRANSFER_DST_OPTIMAL,
             );
-            println!("Managed first transition!");
             Self::copy_buffer_to_image(
                 context,
                 *staging_buffer.object(),
@@ -184,21 +202,24 @@ impl Texture {
                 ImageLayout::TRANSFER_DST_OPTIMAL,
                 extent,
             );
-            println!("Managed copy to image buffer!");
             Self::transition_image_layout(
                 context,
                 image_object,
                 ImageLayout::TRANSFER_DST_OPTIMAL,
                 ImageLayout::SHADER_READ_ONLY_OPTIMAL,
             );
-            println!("Managed last transition!");
 
             context.allocator.free(&context.device, staging_buffer);
+
+            let image_view = VulkanCtx::create_image_view(&context.device, image_object, format);
+            let image_sampler = Self::create_texture_sampler(context);
             Self {
                 width,
                 height,
                 channels: 4,
                 image_memory,
+                image_view,
+                image_sampler,
             }
         }
     }
@@ -208,6 +229,10 @@ impl Texture {
     }
 
     pub fn destroy(self, context: &mut VulkanCtx) {
+        unsafe {
+            context.device.destroy_sampler(self.image_sampler, None);
+            context.device.destroy_image_view(self.image_view, None);
+        }
         context.allocator.free(&context.device, self.image_memory);
     }
 }

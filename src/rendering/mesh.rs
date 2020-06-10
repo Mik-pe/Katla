@@ -3,7 +3,7 @@ use crate::util::CachedGLTFModel;
 
 use crate::vulkanstuff::RenderPipeline;
 use crate::vulkanstuff::VulkanRenderer;
-use crate::vulkanstuff::{IndexBuffer, VertexBuffer};
+use crate::vulkanstuff::{IndexBuffer, Texture, VertexBuffer};
 
 use erupt::{utils::allocator::Allocator, vk1_0::*, DeviceLoader};
 use mikpe_math::{Mat4, Vec3};
@@ -15,6 +15,7 @@ use std::rc::Rc;
 pub struct Mesh {
     pub vertex_buffer: Option<VertexBuffer>,
     pub index_buffer: Option<IndexBuffer>,
+    pub texture: Option<Texture>,
     pub renderpipeline: RenderPipeline,
     pub num_verts: u32,
     pub position: Vec3,
@@ -30,7 +31,7 @@ impl Mesh {
         let surface_caps = renderer.surface_caps();
         let num_images = renderer.num_images();
         let (device, mut allocator) = renderer.device_and_allocator();
-        let renderpipeline = RenderPipeline::new::<VertexNormal>(
+        let renderpipeline = RenderPipeline::new::<VertexPBR>(
             &device,
             &mut allocator,
             render_pass,
@@ -41,11 +42,12 @@ impl Mesh {
         let mut mesh = Self {
             vertex_buffer: None,
             index_buffer: None,
+            texture: None,
             renderpipeline,
             num_verts: 0,
             position,
         };
-        mesh.vertex_buffer = Self::create_vertex_buffer(renderer, model.vertposnorm());
+        mesh.vertex_buffer = Self::create_vertex_buffer(renderer, model.vertpbr());
         let index_type = match model.index_stride {
             1 => IndexType::UINT8_EXT,
             2 => IndexType::UINT16,
@@ -140,6 +142,7 @@ impl Mesh {
         Self {
             vertex_buffer,
             index_buffer,
+            texture: None,
             renderpipeline,
             num_verts,
             position,

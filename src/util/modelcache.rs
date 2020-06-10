@@ -5,6 +5,7 @@ use byteorder::{ByteOrder, LittleEndian};
 use gltf::buffer::Data as BufferData;
 use gltf::image::Data as ImageData;
 use gltf::Document;
+use itertools::izip;
 
 use std::collections::HashMap;
 use std::{
@@ -26,7 +27,7 @@ impl CachedGLTFModel {
     fn parse_node(&self, node: &gltf::Node) -> (Vec<VertexPBR>, Vec<u8>, u8) {
         let mut positions: Vec<[f32; 3]> = vec![];
         let mut normals: Vec<[f32; 3]> = vec![];
-        let mut _tex_coords: Vec<[f32; 2]> = vec![];
+        let mut tex_coords: Vec<[f32; 2]> = vec![];
         let mut index_stride = 0u8;
         let mut index_data = vec![];
         let mut vertex_data = vec![];
@@ -79,6 +80,16 @@ impl CachedGLTFModel {
                                 })
                                 .collect::<Vec<[f32; 3]>>();
                         }
+                        gltf::mesh::Semantic::TexCoords(0) => {
+                            tex_coords = iter
+                                .map(|bytes| {
+                                    [
+                                        LittleEndian::read_f32(&bytes[0..4]),
+                                        LittleEndian::read_f32(&bytes[4..8]),
+                                    ]
+                                })
+                                .collect::<Vec<[f32; 2]>>();
+                        }
                         _ => {
                             continue;
                         }
@@ -98,7 +109,18 @@ impl CachedGLTFModel {
             }
             let has_pos = !positions.is_empty();
             let has_norm = !normals.is_empty();
-            if has_pos && has_norm {
+            let has_tex_coords = !tex_coords.is_empty();
+
+            if has_pos && has_norm && has_tex_coords {
+                vertex_data = izip!(positions, normals, tex_coords)
+                    .map(|(position, normal, tex_coord)| VertexPBR {
+                        position,
+                        normal,
+                        tangent: [0.0, 0.0, 0.0, 0.0],
+                        tex_coord0: tex_coord,
+                    })
+                    .collect::<Vec<VertexPBR>>();
+            } else if has_pos && has_norm {
                 vertex_data = positions
                     .into_iter()
                     .zip(normals.into_iter())
@@ -110,13 +132,18 @@ impl CachedGLTFModel {
                     })
                     .collect::<Vec<VertexPBR>>();
             } else if has_pos {
+                //TODO: Auto-gen normals smoothly with triangle-data:
                 vertex_data = positions
                     .into_iter()
-                    .map(|position| VertexPBR {
-                        position,
-                        normal: [0.0, 0.0, 0.0],
-                        tangent: [0.0, 0.0, 0.0, 0.0],
-                        tex_coord0: [0.0, 0.0],
+                    .map(|position| {
+                        let vert0 = mikpe_math::Vec3(position);
+                        let norm0 = vert0.normalize();
+                        VertexPBR {
+                            position,
+                            normal: norm0.0,
+                            tangent: [0.0, 0.0, 0.0, 0.0],
+                            tex_coord0: [0.0, 0.0],
+                        }
                     })
                     .collect::<Vec<VertexPBR>>();
             }
@@ -182,6 +209,10 @@ impl CachedGLTFModel {
                 normal: x.normal,
             })
             .collect::<Vec<VertexNormal>>()
+    }
+
+    pub fn vertpbr(&self) -> Vec<VertexPBR> {
+        self.vertex_data.clone()
     }
 
     pub fn index_data(&self) -> Vec<u8> {
