@@ -1,8 +1,8 @@
 use crate::rendering::vertextypes::*;
 use crate::util::CachedGLTFModel;
 
-use crate::vulkanstuff::RenderPipeline;
 use crate::vulkanstuff::VulkanRenderer;
+use crate::vulkanstuff::{ImageInfo, RenderPipeline};
 use crate::vulkanstuff::{IndexBuffer, Texture, VertexBuffer};
 
 use erupt::{utils::allocator::Allocator, vk1_0::*, DeviceLoader};
@@ -31,18 +31,51 @@ impl Mesh {
         let surface_caps = renderer.surface_caps();
         let num_images = renderer.num_images();
         let (device, mut allocator) = renderer.device_and_allocator();
-        let renderpipeline = RenderPipeline::new::<VertexPBR>(
+        let mut renderpipeline = RenderPipeline::new::<VertexPBR>(
             &device,
             &mut allocator,
             render_pass,
             surface_caps,
             num_images,
         );
+        let mut texture = None;
+        if !model.images.is_empty() {
+            let image = &model.images[0];
+            if image.format == gltf::image::Format::R8G8B8 {
+                let mut pad_vec = Vec::new();
+                pad_vec.resize((image.width * image.height) as usize, 0u8);
+                let pixels = &image.pixels;
+
+                let pixel_chunks = pixels.chunks(3);
+
+                let mut new_pixels = Vec::with_capacity(pixels.len() + pad_vec.len());
+                for (pixel, pad) in pixel_chunks.zip(pad_vec) {
+                    new_pixels.push(pixel[0]);
+                    new_pixels.push(pixel[1]);
+                    new_pixels.push(pixel[2]);
+                    new_pixels.push(pad);
+                }
+                let tex = Texture::create_image(
+                    &mut renderer.context,
+                    image.width,
+                    image.height,
+                    Format::R8G8B8A8_SRGB,
+                    new_pixels.as_slice(),
+                );
+                for descr in &mut renderpipeline.uniform_descs {
+                    descr.image_info = Some(ImageInfo {
+                        image_view: tex.image_view,
+                        sampler: tex.image_sampler,
+                    });
+                }
+                texture = Some(tex);
+            }
+        }
 
         let mut mesh = Self {
             vertex_buffer: None,
             index_buffer: None,
-            texture: None,
+            texture,
             renderpipeline,
             num_verts: 0,
             position,
