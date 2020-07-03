@@ -8,8 +8,8 @@ pub struct Texture {
     pub height: u32,
     pub channels: u32,
     image_memory: Allocation<Image>,
-    image_view: ImageView,
-    image_sampler: Sampler,
+    pub image_view: ImageView,
+    pub image_sampler: Sampler,
 }
 
 impl Texture {
@@ -182,6 +182,9 @@ impl Texture {
                 .unwrap();
 
             let total_size = pixel_data.len() as u64;
+            println!("Total size of image is: {}", total_size);
+            println!("width X height is: {}", width * height);
+            println!("Three channels bytes: {}", width * height * 3);
             let range = ..image_memory.region().start + total_size;
 
             let staging_buffer = Self::create_staging_buffer(context, total_size);

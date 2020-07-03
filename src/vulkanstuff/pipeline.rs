@@ -24,10 +24,17 @@ pub struct UniformBuffer {
     buffer: Allocation<Buffer>,
     buf_size: DeviceSize,
 }
+
+pub struct ImageInfo {
+    pub image_view: ImageView,
+    pub sampler: Sampler,
+}
+
 pub struct UniformDescriptor {
     pub desc_set: DescriptorSet,
     pub desc_pool: DescriptorPool,
     pub uniform_buffer: Option<UniformBuffer>,
+    pub image_info: Option<ImageInfo>,
 }
 
 impl UniformDescriptor {
@@ -46,20 +53,35 @@ impl UniformDescriptor {
             let mut map = buffer.buffer.map(&device, range).unwrap();
             map.import(data);
             map.unmap(&device).unwrap();
-
-            unsafe {
-                device.update_descriptor_sets(
-                    &[WriteDescriptorSetBuilder::new()
+            let buf_info = [DescriptorBufferInfoBuilder::new()
+                .buffer(*buffer.buffer.object())
+                .offset(0)
+                .range(data_size)];
+            let mut desc_writes = vec![];
+            desc_writes.push(
+                WriteDescriptorSetBuilder::new()
+                    .dst_set(self.desc_set)
+                    .dst_binding(0)
+                    .descriptor_type(DescriptorType::UNIFORM_BUFFER)
+                    .buffer_info(&buf_info),
+            );
+            let mut image_infos = vec![];
+            if let Some(image_info) = &self.image_info {
+                image_infos.push(
+                    DescriptorImageInfoBuilder::new()
+                        .image_layout(ImageLayout::SHADER_READ_ONLY_OPTIMAL)
+                        .image_view(image_info.image_view)
+                        .sampler(image_info.sampler),
+                );
+                desc_writes.push(
+                    WriteDescriptorSetBuilder::new()
                         .dst_set(self.desc_set)
-                        .dst_binding(0)
-                        .descriptor_type(DescriptorType::UNIFORM_BUFFER)
-                        .buffer_info(&[DescriptorBufferInfoBuilder::new()
-                            .buffer(*buffer.buffer.object())
-                            .offset(0)
-                            .range(data_size)])],
-                    &[],
-                )
-            };
+                        .dst_binding(1)
+                        .descriptor_type(DescriptorType::COMBINED_IMAGE_SAMPLER)
+                        .image_info(image_infos.as_slice()),
+                );
+            }
+            unsafe { device.update_descriptor_sets(desc_writes.as_slice(), &[]) };
         }
     }
 
@@ -75,8 +97,6 @@ impl UniformDescriptor {
 }
 
 impl RenderPipeline {
-    //Call with e.g. SingleBufferDefinition::new() as V
-
     fn create_descriptor_sets(
         device: &DeviceLoader,
         allocator: &mut Allocator,
@@ -101,9 +121,14 @@ impl RenderPipeline {
             buf_size: data_size,
         });
 
-        let desc_pool_sizes = &[DescriptorPoolSizeBuilder::new()
-            .descriptor_count(1)
-            ._type(DescriptorType::UNIFORM_BUFFER)];
+        let desc_pool_sizes = &[
+            DescriptorPoolSizeBuilder::new()
+                .descriptor_count(1)
+                ._type(DescriptorType::UNIFORM_BUFFER),
+            DescriptorPoolSizeBuilder::new()
+                .descriptor_count(1)
+                ._type(DescriptorType::COMBINED_IMAGE_SAMPLER),
+        ];
         let desc_pool_info = DescriptorPoolCreateInfoBuilder::new()
             .pool_sizes(desc_pool_sizes)
             .max_sets(1);
@@ -116,10 +141,14 @@ impl RenderPipeline {
             .set_layouts(desc_layouts);
         let desc_set = unsafe { device.allocate_descriptor_sets(&desc_info) }.unwrap()[0];
 
+        let image_info = None;
+        // DescriptorImageInfoBuilder::new().image_layout(ImageLayout::SHADER_READ_ONLY_OPTIMAL).image_view();
+
         UniformDescriptor {
             desc_set,
             desc_pool,
             uniform_buffer,
+            image_info,
         }
     }
 
@@ -128,7 +157,7 @@ impl RenderPipeline {
         allocator: &mut Allocator,
         render_pass: RenderPass,
         surface_caps: SurfaceCapabilitiesKHR,
-        num_images: usize,
+        num_buffered_frames: usize,
     ) -> Self {
         let entry_point = CString::new("main").unwrap();
 
@@ -151,18 +180,25 @@ impl RenderPipeline {
                 .name(&entry_point),
         ];
         //TODO: Descrpitor sets
-        let desc_layout_bindings = &[DescriptorSetLayoutBindingBuilder::new()
-            .binding(0)
-            .descriptor_count(1)
-            .descriptor_type(DescriptorType::UNIFORM_BUFFER)
-            .stage_flags(ShaderStageFlags::VERTEX | ShaderStageFlags::FRAGMENT)];
+        let desc_layout_bindings = &[
+            DescriptorSetLayoutBindingBuilder::new()
+                .binding(0)
+                .descriptor_count(1)
+                .descriptor_type(DescriptorType::UNIFORM_BUFFER)
+                .stage_flags(ShaderStageFlags::VERTEX | ShaderStageFlags::FRAGMENT),
+            DescriptorSetLayoutBindingBuilder::new()
+                .binding(1)
+                .descriptor_count(1)
+                .descriptor_type(DescriptorType::COMBINED_IMAGE_SAMPLER)
+                .stage_flags(ShaderStageFlags::FRAGMENT),
+        ];
         let desc_layout_info =
             DescriptorSetLayoutCreateInfoBuilder::new().bindings(desc_layout_bindings);
         let desc_layout =
             unsafe { device.create_descriptor_set_layout(&desc_layout_info, None, None) }.unwrap();
 
         let mut uniform_descs = vec![];
-        for _ in 0..num_images {
+        for _ in 0..num_buffered_frames {
             let uniform_desc =
                 RenderPipeline::create_descriptor_sets(device, allocator, &desc_layout);
             uniform_descs.push(uniform_desc);

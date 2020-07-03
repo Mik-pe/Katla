@@ -1,5 +1,5 @@
 use context::VulkanCtx;
-pub use pipeline::RenderPipeline;
+pub use pipeline::{ImageInfo, RenderPipeline};
 use swapdata::*;
 pub use texture::*;
 pub use vertexbuffer::*;
