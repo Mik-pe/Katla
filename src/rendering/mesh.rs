@@ -41,6 +41,7 @@ impl Mesh {
         let mut texture = None;
         if !model.images.is_empty() {
             let image = &model.images[0];
+            println!("Image format: {:?}", image.format);
             if image.format == gltf::image::Format::R8G8B8 {
                 let mut pad_vec = Vec::new();
                 pad_vec.resize((image.width * image.height) as usize, 0u8);
