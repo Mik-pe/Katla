@@ -131,6 +131,17 @@ impl CachedGLTFModel {
                         tex_coord0: [0.0, 0.0],
                     })
                     .collect::<Vec<VertexPBR>>();
+            } else if has_pos && has_tex_coords {
+                vertex_data = positions
+                    .into_iter()
+                    .zip(tex_coords.into_iter())
+                    .map(|(position, tex_coord0)| VertexPBR {
+                        position,
+                        normal: [0.0, 0.0, 0.0],
+                        tangent: [0.0, 0.0, 0.0, 0.0],
+                        tex_coord0,
+                    })
+                    .collect::<Vec<VertexPBR>>();
             } else if has_pos {
                 //TODO: Auto-gen normals smoothly with triangle-data:
                 vertex_data = positions

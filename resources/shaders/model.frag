@@ -1,6 +1,6 @@
 #version 450
 
-// layout(binding=0) uniform sampler2D albedo_sampler;
+layout(binding=1) uniform sampler2D albedo_sampler;
 // layout(binding=1) uniform sampler2D normal_sampler;
 // layout(binding=2) uniform sampler2D roughness_sampler;
 // layout(binding=3) uniform sampler2D emissive_sampler;
@@ -23,7 +23,8 @@ layout(location=0) out vec4 out_col;
 
 void main()
 {
-    out_col = vec4(vs_norm, 1.0);
+    vec4 color = texture(albedo_sampler, tex_coords);
+    out_col = vec4(color.rgb, 1.0);
 
     // vec3 ambient_color = 0.1 * light_color;
 
