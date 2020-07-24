@@ -14,7 +14,7 @@ const SHADER_FRAG: &[u8] = include_bytes!("../../resources/shaders/model.frag.sp
 pub struct RenderPipeline {
     pub pipeline: Pipeline,
     pub pipeline_layout: PipelineLayout,
-    pub uniform_descs: Vec<UniformDescriptor>,
+    pub uniform: UniformHandle,
     pub desc_layout: DescriptorSetLayout,
     vert_module: ShaderModule,
     frag_module: ShaderModule,
@@ -25,9 +25,16 @@ pub struct UniformBuffer {
     buf_size: DeviceSize,
 }
 
+#[derive(Clone, Copy)]
 pub struct ImageInfo {
     pub image_view: ImageView,
     pub sampler: Sampler,
+}
+
+pub struct UniformHandle {
+    next_bind_index: usize,
+    next_update_index: usize,
+    descriptors: Vec<UniformDescriptor>,
 }
 
 pub struct UniformDescriptor {
@@ -35,6 +42,104 @@ pub struct UniformDescriptor {
     pub desc_pool: DescriptorPool,
     pub uniform_buffer: Option<UniformBuffer>,
     pub image_info: Option<ImageInfo>,
+}
+
+impl UniformHandle {
+    pub fn new(
+        num_buffered_frames: usize,
+        device: &DeviceLoader,
+        allocator: &mut Allocator,
+        desc_layout: &DescriptorSetLayout,
+    ) -> Self {
+        let mut uniform_descs = vec![];
+        for _ in 0..num_buffered_frames {
+            let uniform_desc = Self::create_descriptor_sets(device, allocator, &desc_layout);
+            uniform_descs.push(uniform_desc);
+        }
+
+        Self {
+            next_bind_index: 0,
+            next_update_index: 0,
+            descriptors: uniform_descs,
+        }
+    }
+
+    pub fn add_image_info(&mut self, image_info: ImageInfo) {
+        for descr in &mut self.descriptors {
+            descr.image_info = Some(image_info);
+        }
+    }
+
+    pub fn update_buffer(&mut self, device: &DeviceLoader, data: &[u8]) {
+        self.descriptors[self.next_update_index].update_buffer(device, data);
+        self.next_update_index = (self.next_update_index + 1) % self.descriptors.len();
+        self.next_bind_index = (self.next_bind_index + 1) % self.descriptors.len();
+    }
+
+    pub fn next_descriptor(&self) -> &UniformDescriptor {
+        let out_descr = &self.descriptors[self.next_bind_index];
+        out_descr
+    }
+
+    pub fn destroy(&mut self, device: &DeviceLoader, allocator: &mut Allocator) {
+        for desc in &mut self.descriptors {
+            desc.destroy(device, allocator);
+        }
+    }
+
+    fn create_descriptor_sets(
+        device: &DeviceLoader,
+        allocator: &mut Allocator,
+        desc_layout: &DescriptorSetLayout,
+    ) -> UniformDescriptor {
+        let data_size = 4 * 16 * 3 as DeviceSize;
+
+        let create_info = BufferCreateInfoBuilder::new()
+            .sharing_mode(SharingMode::EXCLUSIVE)
+            .usage(BufferUsageFlags::UNIFORM_BUFFER)
+            .size(data_size);
+
+        let buffer = allocator
+            .allocate(
+                &device,
+                unsafe { device.create_buffer(&create_info, None, None) }.unwrap(),
+                MemoryTypeFinder::dynamic(),
+            )
+            .unwrap();
+        let uniform_buffer = Some(UniformBuffer {
+            buffer: buffer,
+            buf_size: data_size,
+        });
+
+        let desc_pool_sizes = &[
+            DescriptorPoolSizeBuilder::new()
+                .descriptor_count(1)
+                ._type(DescriptorType::UNIFORM_BUFFER),
+            DescriptorPoolSizeBuilder::new()
+                .descriptor_count(1)
+                ._type(DescriptorType::COMBINED_IMAGE_SAMPLER),
+        ];
+        let desc_pool_info = DescriptorPoolCreateInfoBuilder::new()
+            .pool_sizes(desc_pool_sizes)
+            .max_sets(1);
+        let desc_pool =
+            unsafe { device.create_descriptor_pool(&desc_pool_info, None, None) }.unwrap();
+
+        let desc_layouts = &[desc_layout.clone()];
+        let desc_info = DescriptorSetAllocateInfoBuilder::new()
+            .descriptor_pool(desc_pool)
+            .set_layouts(desc_layouts);
+        let desc_set = unsafe { device.allocate_descriptor_sets(&desc_info) }.unwrap()[0];
+
+        let image_info = None;
+
+        UniformDescriptor {
+            desc_set,
+            desc_pool,
+            uniform_buffer,
+            image_info,
+        }
+    }
 }
 
 impl UniformDescriptor {
@@ -97,61 +202,6 @@ impl UniformDescriptor {
 }
 
 impl RenderPipeline {
-    fn create_descriptor_sets(
-        device: &DeviceLoader,
-        allocator: &mut Allocator,
-        desc_layout: &DescriptorSetLayout,
-    ) -> UniformDescriptor {
-        let data_size = 4 * 16 * 3 as DeviceSize;
-
-        let create_info = BufferCreateInfoBuilder::new()
-            .sharing_mode(SharingMode::EXCLUSIVE)
-            .usage(BufferUsageFlags::UNIFORM_BUFFER)
-            .size(data_size);
-
-        let buffer = allocator
-            .allocate(
-                &device,
-                unsafe { device.create_buffer(&create_info, None, None) }.unwrap(),
-                MemoryTypeFinder::dynamic(),
-            )
-            .unwrap();
-        let uniform_buffer = Some(UniformBuffer {
-            buffer: buffer,
-            buf_size: data_size,
-        });
-
-        let desc_pool_sizes = &[
-            DescriptorPoolSizeBuilder::new()
-                .descriptor_count(1)
-                ._type(DescriptorType::UNIFORM_BUFFER),
-            DescriptorPoolSizeBuilder::new()
-                .descriptor_count(1)
-                ._type(DescriptorType::COMBINED_IMAGE_SAMPLER),
-        ];
-        let desc_pool_info = DescriptorPoolCreateInfoBuilder::new()
-            .pool_sizes(desc_pool_sizes)
-            .max_sets(1);
-        let desc_pool =
-            unsafe { device.create_descriptor_pool(&desc_pool_info, None, None) }.unwrap();
-
-        let desc_layouts = &[desc_layout.clone()];
-        let desc_info = DescriptorSetAllocateInfoBuilder::new()
-            .descriptor_pool(desc_pool)
-            .set_layouts(desc_layouts);
-        let desc_set = unsafe { device.allocate_descriptor_sets(&desc_info) }.unwrap()[0];
-
-        let image_info = None;
-        // DescriptorImageInfoBuilder::new().image_layout(ImageLayout::SHADER_READ_ONLY_OPTIMAL).image_view();
-
-        UniformDescriptor {
-            desc_set,
-            desc_pool,
-            uniform_buffer,
-            image_info,
-        }
-    }
-
     pub fn new<BindingType: VertexBinding>(
         device: &DeviceLoader,
         allocator: &mut Allocator,
@@ -197,12 +247,8 @@ impl RenderPipeline {
         let desc_layout =
             unsafe { device.create_descriptor_set_layout(&desc_layout_info, None, None) }.unwrap();
 
-        let mut uniform_descs = vec![];
-        for _ in 0..num_buffered_frames {
-            let uniform_desc =
-                RenderPipeline::create_descriptor_sets(device, allocator, &desc_layout);
-            uniform_descs.push(uniform_desc);
-        }
+        let uniform = UniformHandle::new(num_buffered_frames, device, allocator, &desc_layout);
+
         let pipeline_layout_desc_layouts = &[desc_layout];
 
         let create_info =
@@ -281,7 +327,7 @@ impl RenderPipeline {
             pipeline,
             pipeline_layout,
             desc_layout,
-            uniform_descs,
+            uniform,
             vert_module: shader_vert,
             frag_module: shader_frag,
         }
@@ -292,9 +338,7 @@ impl RenderPipeline {
             device.destroy_pipeline(self.pipeline, None);
             device.destroy_shader_module(self.vert_module, None);
             device.destroy_shader_module(self.frag_module, None);
-            for desc in &mut self.uniform_descs {
-                desc.destroy(device, allocator);
-            }
+            self.uniform.destroy(device, allocator);
             device.destroy_descriptor_set_layout(self.desc_layout, None);
             device.destroy_pipeline_layout(self.pipeline_layout, None);
         }

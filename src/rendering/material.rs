@@ -1,90 +1,109 @@
-// use crate::rendering::{Texture, TextureUsage};
+use crate::rendering::vertextypes::*;
+use crate::util::CachedGLTFModel;
+use crate::vulkanstuff::Texture;
+use crate::vulkanstuff::VulkanRenderer;
+use crate::vulkanstuff::{ImageInfo, RenderPipeline};
 
-// pub struct Material {
-//     albedo: Option<Texture>,
-//     met_rough: Option<Texture>,
-//     normal: Option<Texture>,
-// }
+use mikpe_math::Mat4;
 
-// impl Material {
-//     pub fn new(mat: gltf::material::Material, images: &Vec<gltf::image::Data>) -> Self {
-//         let mut albedo = None;
-//         let mut met_rough = None;
-//         let mut normal = None;
-//         if let Some(base_color_tex) = mat.pbr_metallic_roughness().base_color_texture() {
-//             let mut tex = Texture::new(TextureUsage::ALBEDO);
-//             unsafe {
-//                 tex.set_data_gltf(&images[base_color_tex.texture().index()]);
-//             }
-//             albedo = Some(tex);
-//         }
-//         if albedo.is_none() {
-//             //For now lets cheat some
-//             if let Some(spec_gloss) = mat.pbr_specular_glossiness() {
-//                 if let Some(base_color_tex) = spec_gloss.diffuse_texture() {
-//                     let mut tex = Texture::new(TextureUsage::ALBEDO);
-//                     unsafe {
-//                         tex.set_data_gltf(&images[base_color_tex.texture().index()]);
-//                     }
-//                     albedo = Some(tex);
-//                 }
-//             }
-//         }
-//         if let Some(met_rough_tex) = mat.pbr_metallic_roughness().metallic_roughness_texture() {
-//             let mut tex = Texture::new(TextureUsage::METALLIC_ROUGHNESS);
-//             unsafe {
-//                 tex.set_data_gltf(&images[met_rough_tex.texture().index()]);
-//             }
-//             met_rough = Some(tex);
-//         }
-//         if let Some(normal_tex) = mat.normal_texture() {
-//             let mut tex = Texture::new(TextureUsage::NORMAL);
-//             unsafe {
-//                 tex.set_data_gltf(&images[normal_tex.texture().index()]);
-//             }
-//             normal = Some(tex);
-//         }
+use erupt::{utils::allocator::Allocator, vk1_0::*, DeviceLoader};
 
-//         Self {
-//             albedo,
-//             met_rough,
-//             normal,
-//         }
-//     }
+use std::rc::Rc;
 
-// pub fn bind(&self) {
-//     if let Some(tex) = &self.albedo {
-//         unsafe {
-//             tex.bind();
-//         }
-//     }
-//     if let Some(tex) = &self.met_rough {
-//         unsafe {
-//             tex.bind();
-//         }
-//     }
-//     if let Some(tex) = &self.normal {
-//         unsafe {
-//             tex.bind();
-//         }
-//     }
-// }
+pub struct Material {
+    pub renderpipeline: RenderPipeline,
+    pub texture: Option<Texture>,
+}
 
-// pub fn unbind(&self) {
-//     if let Some(tex) = &self.albedo {
-//         unsafe {
-//             tex.unbind();
-//         }
-//     }
-//     if let Some(tex) = &self.met_rough {
-//         unsafe {
-//             tex.unbind();
-//         }
-//     }
-//     if let Some(tex) = &self.normal {
-//         unsafe {
-//             tex.unbind();
-//         }
-//     }
-// }
-// }
+impl Material {
+    pub fn new(model: Rc<CachedGLTFModel>, renderer: &mut VulkanRenderer) -> Self {
+        let render_pass = renderer.render_pass;
+        let surface_caps = renderer.surface_caps();
+        let num_images = renderer.num_images();
+        let (device, mut allocator) = renderer.device_and_allocator();
+        let mut renderpipeline = RenderPipeline::new::<VertexPBR>(
+            &device,
+            &mut allocator,
+            render_pass,
+            surface_caps,
+            num_images,
+        );
+        let mut texture = None;
+        if !model.images.is_empty() {
+            let image = &model.images[0];
+            println!("Image format: {:?}", image.format);
+            if image.format == gltf::image::Format::R8G8B8 {
+                let mut pad_vec = Vec::new();
+                pad_vec.resize((image.width * image.height) as usize, 0u8);
+                let pixels = &image.pixels;
+
+                let pixel_chunks = pixels.chunks(3);
+
+                let mut new_pixels = Vec::with_capacity(pixels.len() + pad_vec.len());
+                for (pixel, pad) in pixel_chunks.zip(pad_vec) {
+                    new_pixels.push(pixel[0]);
+                    new_pixels.push(pixel[1]);
+                    new_pixels.push(pixel[2]);
+                    new_pixels.push(pad);
+                }
+                let tex = Texture::create_image(
+                    &mut renderer.context,
+                    image.width,
+                    image.height,
+                    Format::R8G8B8A8_SRGB,
+                    new_pixels.as_slice(),
+                );
+                renderpipeline.uniform.add_image_info(ImageInfo {
+                    image_view: tex.image_view,
+                    sampler: tex.image_sampler,
+                });
+                texture = Some(tex);
+            }
+        }
+        Self {
+            renderpipeline,
+            texture,
+        }
+    }
+
+    pub fn destroy(&mut self, device: &DeviceLoader, allocator: &mut Allocator) {
+        self.renderpipeline.destroy(device, allocator);
+    }
+
+    //TODO: Can we in any way fix so that these bindings happen in a better way?
+    //Maybe decouple the actual data of the uniform to the drawcall-creation and
+    //let the material stop caring about the image_index
+    pub fn bind(&self, device: &DeviceLoader, command_buffer: CommandBuffer) {
+        unsafe {
+            device.cmd_bind_pipeline(
+                command_buffer,
+                PipelineBindPoint::GRAPHICS,
+                self.renderpipeline.pipeline,
+            );
+            device.cmd_bind_descriptor_sets(
+                command_buffer,
+                PipelineBindPoint::GRAPHICS,
+                self.renderpipeline.pipeline_layout,
+                0,
+                &[self.renderpipeline.uniform.next_descriptor().desc_set],
+                &[],
+            );
+        }
+    }
+
+    pub fn upload_pipeline_data(
+        &mut self,
+        device: &DeviceLoader,
+        view: Mat4,
+        proj: Mat4,
+        model: Mat4,
+    ) {
+        let mat = [model, view, proj];
+        let data_slice = unsafe {
+            std::slice::from_raw_parts(mat.as_ptr() as *const u8, std::mem::size_of_val(&mat))
+        };
+        self.renderpipeline
+            .uniform
+            .update_buffer(device, data_slice);
+    }
+}
