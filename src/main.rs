@@ -31,21 +31,21 @@ fn main() {
     let mut model_cache = util::ModelCache::new();
 
     let size = vulkan_ctx.window.inner_size();
-    let mut win_x: f64 = size.width.into();
-    let mut win_y: f64 = size.height.into();
+    let win_x: f64 = size.width.into();
+    let win_y: f64 = size.height.into();
     let mut projection_matrix = Mat4::create_proj(60.0, (win_x / win_y) as f32, 0.01, 1000.0);
-    let some_mesh = Rc::new(Mesh::new_from_cache(
+    let some_mesh = Mesh::new_from_cache(
         model_cache.read_gltf(PathBuf::from("resources/models/FoxFixed.glb")),
         &mut vulkan_ctx,
         Vec3::new(0.0, 0.0, 0.0),
-    ));
-    let box_mesh = Rc::new(Mesh::new_from_cache(
-        model_cache.read_gltf(PathBuf::from("resources/models/Avocado.glb")),
+    );
+    let box_mesh = Mesh::new_from_cache(
+        model_cache.read_gltf(PathBuf::from("resources/models/Tiger.glb")),
         &mut vulkan_ctx,
         Vec3::new(0.0, 0.0, 0.0),
-    ));
+    );
 
-    let mut meshes = vec![box_mesh, some_mesh];
+    // let mut meshes = vec![box_mesh, some_mesh];
     //Delta time, in seconds
     let mut delta_time = 0.0;
     let mut last_frame = Instant::now();
@@ -53,21 +53,13 @@ fn main() {
     let mut frame_number = 0;
 
     let mut scene = Scene::new();
-    scene.add_object(SceneObject::new(meshes[0].clone()));
-    scene.add_object(SceneObject::new(meshes[1].clone()));
+    scene.add_object(SceneObject::new(Box::new(box_mesh)));
+    scene.add_object(SceneObject::new(Box::new(some_mesh)));
 
     event_loop.run(move |event, _, control_flow| {
         use winit::event::{Event, VirtualKeyCode, WindowEvent};
         use winit::event_loop::ControlFlow;
-        scene.update();
-        scene.render();
-        vulkan_ctx.handle_event(
-            &event,
-            vec![].as_mut_slice(),
-            delta_time,
-            &projection_matrix,
-            &camera.get_view_mat().inverse(),
-        );
+
         match event {
             Event::NewEvents(_) => {
                 frame_number += 1;
@@ -91,8 +83,8 @@ fn main() {
                 camera.handle_event(&event);
                 match event {
                     WindowEvent::Resized(logical_size) => {
-                        win_x = logical_size.width as f64;
-                        win_y = logical_size.height as f64;
+                        let win_x = logical_size.width as f64;
+                        let win_y = logical_size.height as f64;
                         projection_matrix =
                             Mat4::create_proj(60.0, (win_x / win_y) as f32, 0.1, 1000.0);
                     }
@@ -125,6 +117,16 @@ fn main() {
                     },
                     _ => (),
                 }
+            }
+            Event::MainEventsCleared => {
+                vulkan_ctx.swap_frames();
+
+                scene.update(&vulkan_ctx.context.device);
+
+                //TODO: Actually render in the scene.render()
+                let command_buffer = vulkan_ctx.get_commandbuffer_opaque_pass();
+                scene.render(&vulkan_ctx.context.device, command_buffer);
+                vulkan_ctx.submit_frame(vec![command_buffer]);
             }
             Event::RedrawRequested { .. } => {}
             Event::LoopDestroyed => {

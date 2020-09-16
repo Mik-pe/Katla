@@ -150,7 +150,7 @@ impl Mesh {
             if let Some(index_buffer) = &self.index_buffer {
                 device.cmd_bind_index_buffer(
                     command_buffer,
-                    *index_buffer.object(),
+                    index_buffer.object().clone(),
                     0,
                     index_buffer.index_type,
                 );
@@ -158,7 +158,7 @@ impl Mesh {
                     device.cmd_bind_vertex_buffers(
                         command_buffer,
                         0,
-                        &[*vertex_buffer.object()],
+                        &[vertex_buffer.object().clone()],
                         &[0],
                     );
                     device.cmd_draw_indexed(command_buffer, index_buffer.count(), 1, 0, 0, 0);
@@ -168,7 +168,7 @@ impl Mesh {
                     device.cmd_bind_vertex_buffers(
                         command_buffer,
                         0,
-                        &[*vertex_buffer.object()],
+                        &[vertex_buffer.object().clone()],
                         &[0],
                     );
                     device.cmd_draw(command_buffer, vertex_buffer.count(), 1, 0, 0);
@@ -205,7 +205,43 @@ impl Mesh {
 }
 
 impl Drawable for Mesh {
-    fn draw(&self) {
-        println!("Should draw mesh!");
+    fn update(&mut self, device: &DeviceLoader, view: &Mat4, proj: &Mat4) {
+        let model = Mat4::from_translation(self.position.0);
+        self.material
+            .upload_pipeline_data(device, view.clone(), proj.clone(), model);
+    }
+
+    fn draw(&self, device: &DeviceLoader, command_buffer: CommandBuffer) {
+        unsafe {
+            self.material.bind(device, command_buffer);
+
+            if let Some(index_buffer) = &self.index_buffer {
+                device.cmd_bind_index_buffer(
+                    command_buffer,
+                    index_buffer.object().clone(),
+                    0,
+                    index_buffer.index_type,
+                );
+                if let Some(vertex_buffer) = &self.vertex_buffer {
+                    device.cmd_bind_vertex_buffers(
+                        command_buffer,
+                        0,
+                        &[vertex_buffer.object().clone()],
+                        &[0],
+                    );
+                    device.cmd_draw_indexed(command_buffer, index_buffer.count(), 1, 0, 0, 0);
+                }
+            } else {
+                if let Some(vertex_buffer) = &self.vertex_buffer {
+                    device.cmd_bind_vertex_buffers(
+                        command_buffer,
+                        0,
+                        &[vertex_buffer.object().clone()],
+                        &[0],
+                    );
+                    device.cmd_draw(command_buffer, vertex_buffer.count(), 1, 0, 0);
+                }
+            }
+        }
     }
 }
