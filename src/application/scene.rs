@@ -40,12 +40,11 @@ impl Scene {
         }
     }
 
-    pub fn update(&mut self, device: &DeviceLoader) {
-        let proj = Mat4::create_proj(60.0, 1.0f32 / 1.0f32, 0.1, 1000.0);
+    pub fn update(&mut self, device: &DeviceLoader, proj: &Mat4) {
         let lookat = Mat4::create_lookat(
             self.player.position,
             Vec3::new(0.0, 0.0, 1.0),
-            Vec3::new(0.0, 1.0, 0.0),
+            Vec3::new(0.0, -1.0, 0.0),
         );
         let view = lookat.inverse();
         for object in &mut self.scene_objects {
@@ -61,9 +60,6 @@ impl Scene {
     pub fn render(&self, device: &DeviceLoader, command_buffer: CommandBuffer) {
         for object in &self.scene_objects {
             object.drawable.draw(device, command_buffer);
-        }
-        unsafe {
-            device.end_command_buffer(command_buffer).unwrap();
         }
     }
 }

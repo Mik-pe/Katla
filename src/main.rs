@@ -6,12 +6,12 @@ mod util;
 mod vulkanstuff;
 
 use application::{Scene, SceneObject};
+use erupt::vk1_0::Vk10DeviceLoaderExt;
 use mikpe_math::{Mat4, Vec3};
 use rendering::vertextypes;
 use rendering::Mesh;
 use vulkanstuff::Texture;
 
-use std::rc::Rc;
 use std::{ffi::CString, path::PathBuf, time::Instant};
 use winit::event_loop::EventLoop;
 
@@ -37,12 +37,12 @@ fn main() {
     let some_mesh = Mesh::new_from_cache(
         model_cache.read_gltf(PathBuf::from("resources/models/FoxFixed.glb")),
         &mut vulkan_ctx,
-        Vec3::new(0.0, 0.0, 0.0),
+        Vec3::new(-1.0, 0.0, 0.0),
     );
     let box_mesh = Mesh::new_from_cache(
         model_cache.read_gltf(PathBuf::from("resources/models/Tiger.glb")),
         &mut vulkan_ctx,
-        Vec3::new(0.0, 0.0, 0.0),
+        Vec3::new(10.0, 0.0, 0.0),
     );
 
     // let mut meshes = vec![box_mesh, some_mesh];
@@ -54,7 +54,7 @@ fn main() {
 
     let mut scene = Scene::new();
     scene.add_object(SceneObject::new(Box::new(box_mesh)));
-    scene.add_object(SceneObject::new(Box::new(some_mesh)));
+    // scene.add_object(SceneObject::new(Box::new(some_mesh)));
 
     event_loop.run(move |event, _, control_flow| {
         use winit::event::{Event, VirtualKeyCode, WindowEvent};
@@ -121,11 +121,20 @@ fn main() {
             Event::MainEventsCleared => {
                 vulkan_ctx.swap_frames();
 
-                scene.update(&vulkan_ctx.context.device);
-
-                //TODO: Actually render in the scene.render()
+                scene.update(&vulkan_ctx.context.device, &projection_matrix);
                 let command_buffer = vulkan_ctx.get_commandbuffer_opaque_pass();
                 scene.render(&vulkan_ctx.context.device, command_buffer);
+                unsafe {
+                    vulkan_ctx
+                        .context
+                        .device
+                        .cmd_end_render_pass(command_buffer);
+                    vulkan_ctx
+                        .context
+                        .device
+                        .end_command_buffer(command_buffer)
+                        .unwrap();
+                }
                 vulkan_ctx.submit_frame(vec![command_buffer]);
             }
             Event::RedrawRequested { .. } => {}

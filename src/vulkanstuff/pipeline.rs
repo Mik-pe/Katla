@@ -72,11 +72,13 @@ impl UniformHandle {
 
     pub fn update_buffer(&mut self, device: &DeviceLoader, data: &[u8]) {
         self.descriptors[self.next_update_index].update_buffer(device, data);
+        self.next_bind_index = self.next_update_index;
         self.next_update_index = (self.next_update_index + 1) % self.descriptors.len();
-        self.next_bind_index = (self.next_bind_index + 1) % self.descriptors.len();
     }
 
     pub fn next_descriptor(&self) -> &UniformDescriptor {
+        // println!("Next update index is: {}", self.next_update_index);
+        // println!("Next bind index is: {}", self.next_bind_index);
         let out_descr = &self.descriptors[self.next_bind_index];
         out_descr
     }
@@ -185,8 +187,12 @@ impl UniformDescriptor {
                         .descriptor_type(DescriptorType::COMBINED_IMAGE_SAMPLER)
                         .image_info(image_infos.as_slice()),
                 );
+            } else {
+                println!("No descriptor image to update!!!");
             }
             unsafe { device.update_descriptor_sets(desc_writes.as_slice(), &[]) };
+        } else {
+            println!("No descriptor buffer to update!!!");
         }
     }
 
