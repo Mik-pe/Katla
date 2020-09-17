@@ -182,14 +182,16 @@ impl VulkanRenderer {
     }
 
     pub fn get_commandbuffer_opaque_pass(&mut self) -> CommandBuffer {
-        let framebuffer = {
+        let (framebuffer, command_buffer) = {
             if let Some(frame_data) = &self.current_framedata {
-                self.swapchain_framebuffers[frame_data.image_index as usize]
+                (
+                    self.swapchain_framebuffers[frame_data.image_index as usize],
+                    self.context.command_buffers[frame_data.image_index as usize],
+                )
             } else {
                 panic!("No available frame index!");
             }
         };
-        let command_buffer = self.context.begin_single_time_commands();
         let begin_info = CommandBufferBeginInfoBuilder::new();
         unsafe {
             self.context

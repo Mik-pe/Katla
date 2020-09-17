@@ -32,32 +32,53 @@ impl Material {
         if !model.images.is_empty() {
             let image = &model.images[0];
             println!("Image format: {:?}", image.format);
-            if image.format == gltf::image::Format::R8G8B8 {
-                let mut pad_vec = Vec::new();
-                pad_vec.resize((image.width * image.height) as usize, 0u8);
-                let pixels = &image.pixels;
+            //TODO: Support more image formats:
+            match image.format {
+                gltf::image::Format::R8G8B8 => {
+                    let mut pad_vec = Vec::new();
+                    pad_vec.resize((image.width * image.height) as usize, 0u8);
+                    let pixels = &image.pixels;
 
-                let pixel_chunks = pixels.chunks(3);
+                    let pixel_chunks = pixels.chunks(3);
 
-                let mut new_pixels = Vec::with_capacity(pixels.len() + pad_vec.len());
-                for (pixel, pad) in pixel_chunks.zip(pad_vec) {
-                    new_pixels.push(pixel[0]);
-                    new_pixels.push(pixel[1]);
-                    new_pixels.push(pixel[2]);
-                    new_pixels.push(pad);
+                    let mut new_pixels = Vec::with_capacity(pixels.len() + pad_vec.len());
+                    for (pixel, pad) in pixel_chunks.zip(pad_vec) {
+                        new_pixels.push(pixel[0]);
+                        new_pixels.push(pixel[1]);
+                        new_pixels.push(pixel[2]);
+                        new_pixels.push(pad);
+                    }
+                    let tex = Texture::create_image(
+                        &mut renderer.context,
+                        image.width,
+                        image.height,
+                        Format::R8G8B8A8_SRGB,
+                        new_pixels.as_slice(),
+                    );
+                    renderpipeline.uniform.add_image_info(ImageInfo {
+                        image_view: tex.image_view,
+                        sampler: tex.image_sampler,
+                    });
+                    texture = Some(tex);
                 }
-                let tex = Texture::create_image(
-                    &mut renderer.context,
-                    image.width,
-                    image.height,
-                    Format::R8G8B8A8_SRGB,
-                    new_pixels.as_slice(),
-                );
-                renderpipeline.uniform.add_image_info(ImageInfo {
-                    image_view: tex.image_view,
-                    sampler: tex.image_sampler,
-                });
-                texture = Some(tex);
+                gltf::image::Format::R8G8B8A8 => {
+                    let pixels = &image.pixels;
+
+                    let tex = Texture::create_image(
+                        &mut renderer.context,
+                        image.width,
+                        image.height,
+                        Format::R8G8B8A8_SRGB,
+                        pixels.as_slice(),
+                    );
+                    renderpipeline.uniform.add_image_info(ImageInfo {
+                        image_view: tex.image_view,
+                        sampler: tex.image_sampler,
+                    });
+
+                    texture = Some(tex);
+                }
+                _ => {}
             }
         }
         Self {
