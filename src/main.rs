@@ -34,18 +34,17 @@ fn main() {
     let win_x: f64 = size.width.into();
     let win_y: f64 = size.height.into();
     let mut projection_matrix = Mat4::create_proj(60.0, (win_x / win_y) as f32, 0.01, 1000.0);
-    let some_mesh = Mesh::new_from_cache(
+    let fox = Mesh::new_from_cache(
         model_cache.read_gltf(PathBuf::from("resources/models/FoxFixed.glb")),
         &mut vulkan_ctx,
         Vec3::new(-1.0, 0.0, 0.0),
     );
-    let box_mesh = Mesh::new_from_cache(
+    let tiger = Mesh::new_from_cache(
         model_cache.read_gltf(PathBuf::from("resources/models/Tiger.glb")),
         &mut vulkan_ctx,
         Vec3::new(10.0, 0.0, 0.0),
     );
 
-    // let mut meshes = vec![box_mesh, some_mesh];
     //Delta time, in seconds
     let mut delta_time = 0.0;
     let mut last_frame = Instant::now();
@@ -53,8 +52,8 @@ fn main() {
     let mut frame_number = 0;
 
     let mut scene = Scene::new();
-    scene.add_object(SceneObject::new(Box::new(box_mesh)));
-    // scene.add_object(SceneObject::new(Box::new(some_mesh)));
+    scene.add_object(SceneObject::new(Box::new(tiger)));
+    // scene.add_object(SceneObject::new(Box::new(fox)));
 
     event_loop.run(move |event, _, control_flow| {
         use winit::event::{Event, VirtualKeyCode, WindowEvent};
@@ -121,7 +120,7 @@ fn main() {
             Event::MainEventsCleared => {
                 vulkan_ctx.swap_frames();
 
-                scene.update(&vulkan_ctx.context.device, &projection_matrix);
+                scene.update(&vulkan_ctx.context.device, &projection_matrix, &camera.get_view_mat());
                 let command_buffer = vulkan_ctx.get_commandbuffer_opaque_pass();
                 scene.render(&vulkan_ctx.context.device, command_buffer);
                 unsafe {

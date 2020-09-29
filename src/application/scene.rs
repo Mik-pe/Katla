@@ -1,5 +1,5 @@
 use crate::rendering::Drawable;
-use erupt::{vk1_0::CommandBuffer, vk1_0::Vk10DeviceLoaderExt, DeviceLoader};
+use erupt::{vk1_0::CommandBuffer, DeviceLoader};
 use mikpe_math::{Mat4, Vec3};
 use std::rc::Rc;
 
@@ -40,13 +40,7 @@ impl Scene {
         }
     }
 
-    pub fn update(&mut self, device: &DeviceLoader, proj: &Mat4) {
-        let lookat = Mat4::create_lookat(
-            self.player.position,
-            Vec3::new(0.0, 0.0, 1.0),
-            Vec3::new(0.0, -1.0, 0.0),
-        );
-        let view = lookat.inverse();
+    pub fn update(&mut self, device: &DeviceLoader, proj: &Mat4, view: &Mat4) {
         for object in &mut self.scene_objects {
             let draw_mut = &mut object.drawable;
             draw_mut.update(device, &view, &proj);
