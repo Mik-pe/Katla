@@ -60,7 +60,7 @@ impl Camera {
                 if self.looking {
                     let delta_x = position.x - self.last_mouse_pos.x;
                     let delta_y = position.y - self.last_mouse_pos.y;
-                    self.yaw -= 0.01 * delta_x;
+                    self.yaw += 0.01 * delta_x;
                     self.pitch -= 0.01 * delta_y;
                     self.pitch = self
                         .pitch
@@ -146,10 +146,10 @@ impl Camera {
             self.velocity[1] += 1.0;
         }
         if self.current_movement.contains(Movement::LEFT) {
-            self.velocity[0] -= 1.0;
+            self.velocity[0] += 1.0;
         }
         if self.current_movement.contains(Movement::RIGHT) {
-            self.velocity[0] += 1.0;
+            self.velocity[0] -= 1.0;
         }
         self.velocity =
             mikpe_math::mat4_mul_vec3(&self.get_view_rotation(), &self.velocity.normalize());
@@ -159,8 +159,9 @@ impl Camera {
     // Note to self:
     // This is valid since we are doing some assumptions w.r.t. rotation of the surfacetransformation
     fn get_view_rotation(&self) -> Mat4 {
-        Mat4::from_rotaxis(&(self.yaw as f32), [0.0, -1.0, 0.0])
-            .mul(&Mat4::from_rotaxis(&(self.pitch as f32), [-1.0, 0.0, 0.0]))
+        let yaw = Mat4::from_rotaxis(&(self.yaw as f32), [0.0, 1.0, 0.0]);
+        let pitch = Mat4::from_rotaxis(&(self.pitch as f32), [1.0, 0.0, 0.0]);
+        pitch.mul(&yaw)
     }
 
     // pub fn get_cam_pos(&self) -> Vec3 {
