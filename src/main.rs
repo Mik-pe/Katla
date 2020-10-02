@@ -34,11 +34,11 @@ fn main() {
     let win_x: f64 = size.width.into();
     let win_y: f64 = size.height.into();
     let mut projection_matrix = Mat4::create_proj(60.0, (win_x / win_y) as f32, 0.01, 1000.0);
-    let fox = Mesh::new_from_cache(
-        model_cache.read_gltf(PathBuf::from("resources/models/FoxFixed.glb")),
-        &mut vulkan_ctx,
-        Vec3::new(-1.0, 0.0, 0.0),
-    );
+    // let fox = Mesh::new_from_cache(
+    //     model_cache.read_gltf(PathBuf::from("resources/models/FoxFixed.glb")),
+    //     &mut vulkan_ctx,
+    //     Vec3::new(-1.0, 0.0, 0.0),
+    // );
     let tiger = Mesh::new_from_cache(
         model_cache.read_gltf(PathBuf::from("resources/models/Tiger.glb")),
         &mut vulkan_ctx,
@@ -50,6 +50,7 @@ fn main() {
     let mut last_frame = Instant::now();
     let mut timer = util::Timer::new(100);
     let mut frame_number = 0;
+    let mut recreate_swapchain = false;
 
     let mut scene = Scene::new();
     scene.add_object(SceneObject::new(Box::new(tiger)));
@@ -86,6 +87,7 @@ fn main() {
                         let win_y = logical_size.height as f64;
                         projection_matrix =
                             Mat4::create_proj(60.0, (win_x / win_y) as f32, 0.1, 1000.0);
+                        vulkan_ctx.recreate_swapchain();
                     }
                     WindowEvent::CloseRequested => {
                         *control_flow = ControlFlow::Exit;
@@ -120,7 +122,11 @@ fn main() {
             Event::MainEventsCleared => {
                 vulkan_ctx.swap_frames();
 
-                scene.update(&vulkan_ctx.context.device, &projection_matrix, &camera.get_view_mat());
+                scene.update(
+                    &vulkan_ctx.context.device,
+                    &projection_matrix,
+                    &camera.get_view_mat().inverse(),
+                );
                 let command_buffer = vulkan_ctx.get_commandbuffer_opaque_pass();
                 scene.render(&vulkan_ctx.context.device, command_buffer);
                 unsafe {

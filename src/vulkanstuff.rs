@@ -75,7 +75,7 @@ impl VulkanRenderer {
             let depth_format = context.find_depth_format(candidate_formats);
 
             let attachments = vec![AttachmentDescriptionBuilder::new()
-                .format(context.surface_format.format)
+                .format(context.current_surface_format.format)
                 .samples(SampleCountFlagBits::_1)
                 .load_op(AttachmentLoadOp::CLEAR)
                 .store_op(AttachmentStoreOp::STORE)
@@ -114,8 +114,8 @@ impl VulkanRenderer {
                 let create_info = FramebufferCreateInfoBuilder::new()
                     .render_pass(render_pass)
                     .attachments(&attachments)
-                    .width(context.surface_caps.current_extent.width)
-                    .height(context.surface_caps.current_extent.height)
+                    .width(context.current_extent.width)
+                    .height(context.current_extent.height)
                     .layers(1);
 
                 unsafe { context.device.create_framebuffer(&create_info, None, None) }.unwrap()
@@ -155,12 +155,44 @@ impl VulkanRenderer {
         println!("Clean shutdown!");
     }
 
+    pub fn recreate_swapchain(&mut self) {
+        unsafe {
+            self.context.device.device_wait_idle().unwrap();
+        }
+        self.context.recreate_swapchain();
+        // Whenever the window resizes we need to recreate everything dependent on the window size.
+        // In this example that includes the swapchain, the framebuffers and the dynamic state viewport.
+        // if self.internal_state.recreate_swapchain {
+
+        // Get the new dimensions of the window.
+        // let dimensions: [u32; 2] = self.surface.window().inner_size().into();
+        // let (new_swapchain, new_images) = match self.swapchain.recreate_with_dimensions(dimensions)
+        // {
+        //     Ok(r) => r,
+        //     // This error tends to happen when the user is manually resizing the window.
+        //     // Simply restarting the loop is the easiest way to fix this issue.
+        //     Err(SwapchainCreationError::UnsupportedDimensions) => return,
+        //     Err(e) => panic!("Failed to recreate swapchain: {:?}", e),
+        // };
+
+        // self.swapchain = new_swapchain;
+        // self.internal_state.framebuffers = window_size_dependent_setup(
+        //     &new_images,
+        //     self.device.clone(),
+        //     self.render_pass.clone(),
+        //     &mut self.internal_state.dynamic_state,
+        // );
+
+        // self.internal_state.recreate_swapchain = false;
+        // }
+    }
+
     pub fn device_and_allocator(&mut self) -> (&DeviceLoader, &mut Allocator) {
         (&self.context.device, &mut self.context.allocator)
     }
 
-    pub fn surface_caps(&self) -> SurfaceCapabilitiesKHR {
-        self.context.surface_caps
+    pub fn current_extent(&self) -> Extent2D {
+        self.context.current_extent
     }
 
     pub fn num_images(&self) -> usize {
@@ -210,7 +242,7 @@ impl VulkanRenderer {
             .framebuffer(framebuffer)
             .render_area(Rect2D {
                 offset: Offset2D { x: 0, y: 0 },
-                extent: self.context.surface_caps.current_extent,
+                extent: self.context.current_extent,
             })
             .clear_values(&clear_values);
 
