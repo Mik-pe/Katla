@@ -18,14 +18,14 @@ pub struct Material {
 impl Material {
     pub fn new(model: Rc<CachedGLTFModel>, renderer: &mut VulkanRenderer) -> Self {
         let render_pass = renderer.render_pass;
-        let surface_caps = renderer.surface_caps();
+        let current_extent = renderer.current_extent();
         let num_images = renderer.num_images();
         let (device, mut allocator) = renderer.device_and_allocator();
         let mut renderpipeline = RenderPipeline::new::<VertexPBR>(
             &device,
             &mut allocator,
             render_pass,
-            surface_caps,
+            current_extent,
             num_images,
         );
         let mut texture = None;

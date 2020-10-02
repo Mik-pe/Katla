@@ -212,7 +212,7 @@ impl RenderPipeline {
         device: &DeviceLoader,
         allocator: &mut Allocator,
         render_pass: RenderPass,
-        surface_caps: SurfaceCapabilitiesKHR,
+        current_extent: Extent2D,
         num_buffered_frames: usize,
     ) -> Self {
         let entry_point = CString::new("main").unwrap();
@@ -276,13 +276,13 @@ impl RenderPipeline {
         let viewports = vec![ViewportBuilder::new()
             .x(0.0)
             .y(0.0)
-            .width(surface_caps.current_extent.width as f32)
-            .height(surface_caps.current_extent.height as f32)
+            .width(current_extent.width as f32)
+            .height(current_extent.height as f32)
             .min_depth(0.0)
             .max_depth(1.0)];
         let scissors = vec![Rect2DBuilder::new()
             .offset(Offset2D { x: 0, y: 0 })
-            .extent(surface_caps.current_extent)];
+            .extent(current_extent)];
         let viewport_state = PipelineViewportStateCreateInfoBuilder::new()
             .viewports(&viewports)
             .scissors(&scissors);
