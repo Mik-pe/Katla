@@ -60,12 +60,14 @@ impl Camera {
                 if self.looking {
                     let delta_x = position.x - self.last_mouse_pos.x;
                     let delta_y = position.y - self.last_mouse_pos.y;
+
+                    //Since -y is up for now, this is valid:
                     self.yaw += 0.01 * delta_x;
                     self.pitch -= 0.01 * delta_y;
                     self.pitch = self
                         .pitch
-                        .max(-std::f64::consts::FRAC_PI_2)
-                        .min(std::f64::consts::FRAC_PI_2);
+                        .max(-std::f64::consts::FRAC_PI_2 + 0.01)
+                        .min(std::f64::consts::FRAC_PI_2 - 0.01);
                 }
                 self.last_mouse_pos = position;
             }
@@ -133,6 +135,7 @@ impl Camera {
 
     pub fn update(&mut self, _dt: f32) {
         self.velocity = Vec3::new(0.0, 0.0, 0.0);
+        let mut up_velocity = 0.0f32;
         if self.current_movement.contains(Movement::FORWARD) {
             self.velocity[2] += 1.0;
         }
@@ -140,28 +143,28 @@ impl Camera {
             self.velocity[2] -= 1.0;
         }
         if self.current_movement.contains(Movement::DOWN) {
-            self.velocity[1] -= 1.0;
+            up_velocity -= 1.0;
         }
         if self.current_movement.contains(Movement::UP) {
-            self.velocity[1] += 1.0;
+            up_velocity += 1.0;
         }
         if self.current_movement.contains(Movement::LEFT) {
-            self.velocity[0] += 1.0;
+            self.velocity[0] -= 1.0;
         }
         if self.current_movement.contains(Movement::RIGHT) {
-            self.velocity[0] -= 1.0;
+            self.velocity[0] += 1.0;
         }
         self.velocity =
             mikpe_math::mat4_mul_vec3(&self.get_view_rotation(), &self.velocity.normalize());
-        self.pos = self.pos + self.velocity.mul(0.1);
+        self.pos = self.pos + self.velocity.mul(0.1) + Vec3::new(0.0, up_velocity * 0.1, 0.0);
     }
 
     // Note to self:
     // This is valid since we are doing some assumptions w.r.t. rotation of the surfacetransformation
     fn get_view_rotation(&self) -> Mat4 {
         let yaw = Mat4::from_rotaxis(&(self.yaw as f32), [0.0, 1.0, 0.0]);
-        let pitch = Mat4::from_rotaxis(&(self.pitch as f32), [1.0, 0.0, 0.0]);
-        pitch.mul(&yaw)
+        let pitch = Mat4::from_rotaxis(&(self.pitch as f32), [-1.0, 0.0, 0.0]);
+        yaw.mul(&pitch)
     }
 
     // pub fn get_cam_pos(&self) -> Vec3 {
@@ -169,11 +172,13 @@ impl Camera {
     // }
 
     pub fn get_view_mat(&self) -> Mat4 {
-        let view_rot = self.get_view_rotation();
+        let fwd = Vec3::new(0.0, 0.0, 1.0);
+        let to = mikpe_math::mat4_mul_vec3(&self.get_view_rotation(), &fwd);
+
         Mat4::create_lookat(
             self.pos.clone(),
-            self.pos.clone() + mikpe_math::mat4_mul_vec3(&view_rot, &Vec3::new(0.0, 0.0, 1.0)),
-            mikpe_math::mat4_mul_vec3(&view_rot, &Vec3::new(0.0, -1.0, 0.0)),
+            self.pos.clone() + to,
+            Vec3::new(0.0, -1.0, 0.0),
         )
     }
 }
