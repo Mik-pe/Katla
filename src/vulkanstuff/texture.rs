@@ -214,7 +214,12 @@ impl Texture {
 
             context.allocator.free(&context.device, staging_buffer);
 
-            let image_view = VulkanCtx::create_image_view(&context.device, image_object, format);
+            let image_view = VulkanCtx::create_image_view(
+                &context.device,
+                image_object,
+                format,
+                ImageAspectFlags::COLOR,
+            );
             let image_sampler = Self::create_texture_sampler(context);
             Self {
                 width,
