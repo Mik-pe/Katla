@@ -15,7 +15,7 @@ use std::{ffi::CString, sync::Mutex};
 
 use erupt::{
     extensions::{khr_surface::*, khr_swapchain::*},
-    utils::{allocator::Allocator, loading::DefaultCoreLoader},
+    utils::{allocator::Allocator, allocator::MemoryTypeFinder, loading::DefaultCoreLoader},
     vk1_0::*,
     DeviceLoader,
 };
@@ -62,17 +62,45 @@ impl VulkanRenderer {
             .with_resizable(true)
             .build(event_loop)
             .unwrap();
-        let context = VulkanCtx::init(&window, with_validation_layers, app_name, engine_name);
+        let mut context = VulkanCtx::init(&window, with_validation_layers, app_name, engine_name);
         //TODO: This should be configurable and put elsewhere?
 
         // https://vulkan-tutorial.com/Drawing_a_triangle/Graphics_pipeline_basics/Render_passes
         let render_pass = {
-            let candidate_formats = vec![
-                Format::D32_SFLOAT,
-                Format::D32_SFLOAT_S8_UINT,
-                Format::D24_UNORM_S8_UINT,
-            ];
-            let depth_format = context.find_depth_format(candidate_formats);
+            let depth_format = context.find_depth_format();
+            let extent = Extent3D {
+                width: context.current_extent.width,
+                height: context.current_extent.height,
+                depth: 1,
+            };
+            let create_info = ImageCreateInfoBuilder::new()
+                .image_type(ImageType::_2D)
+                .mip_levels(1)
+                .array_layers(1)
+                .format(depth_format)
+                .extent(extent)
+                .tiling(ImageTiling::OPTIMAL)
+                .samples(SampleCountFlagBits::_1)
+                .usage(ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT);
+            //TODO: Make use of the depth image
+            //https://vulkan-tutorial.com/Depth_buffering
+            let _depth_image_view = unsafe {
+                let depth_image = context
+                    .device
+                    .create_image(&create_info, None, None)
+                    .unwrap();
+
+                let _image_memory = context
+                    .allocator
+                    .allocate(&context.device, depth_image, MemoryTypeFinder::gpu_only())
+                    .unwrap();
+                VulkanCtx::create_image_view(
+                    &context.device,
+                    depth_image,
+                    depth_format,
+                    ImageAspectFlags::DEPTH,
+                )
+            };
 
             let attachments = vec![AttachmentDescriptionBuilder::new()
                 .format(context.current_surface_format.format)

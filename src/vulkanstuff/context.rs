@@ -69,6 +69,17 @@ impl SwapChainSupportDetails {
         }
     }
 
+    pub fn choose_present_mode(&self) -> PresentModeKHR {
+        self.present_modes
+            .iter()
+            .find(|format| match **format {
+                PresentModeKHR::MAILBOX_KHR => true,
+                _ => false,
+            })
+            .cloned()
+            .unwrap_or(PresentModeKHR::FIFO_KHR)
+    }
+
     pub fn choose_surface_format(&self) -> Option<SurfaceFormatKHR> {
         if self.surface_formats.is_empty() {
             None
@@ -169,7 +180,12 @@ impl VulkanCtx {
         instance
     }
 
-    pub fn create_image_view(device: &DeviceLoader, image: Image, format: Format) -> ImageView {
+    pub fn create_image_view(
+        device: &DeviceLoader,
+        image: Image,
+        format: Format,
+        aspect_mask: ImageAspectFlags,
+    ) -> ImageView {
         let create_info = ImageViewCreateInfoBuilder::new()
             .image(image)
             .view_type(ImageViewType::_2D)
@@ -182,7 +198,7 @@ impl VulkanCtx {
             })
             .subresource_range(unsafe {
                 ImageSubresourceRangeBuilder::new()
-                    .aspect_mask(ImageAspectFlags::COLOR)
+                    .aspect_mask(aspect_mask)
                     .base_mip_level(0)
                     .level_count(1)
                     .base_array_layer(0)
@@ -223,26 +239,49 @@ impl VulkanCtx {
         }
     }
 
-    pub fn find_depth_format(&self, candidates: Vec<Format>) -> Format {
-        let mut depth_format = None;
+    //https://vulkan-tutorial.com/Depth_buffering
+    pub fn find_supported_format(
+        &self,
+        candidates: Vec<Format>,
+        tiling: ImageTiling,
+        features: FormatFeatureFlags,
+    ) -> Format {
+        let mut format = None;
         for candidate in candidates {
-            unsafe {
-                let format_props = self.instance.get_physical_device_format_properties(
+            let format_props = unsafe {
+                self.instance.get_physical_device_format_properties(
                     self.physical_device,
                     candidate,
                     None,
-                );
-                if (format_props.optimal_tiling_features
-                    & FormatFeatureFlags::DEPTH_STENCIL_ATTACHMENT)
-                    == FormatFeatureFlags::DEPTH_STENCIL_ATTACHMENT
-                {
-                    depth_format = Some(candidate);
-                    break;
-                }
+                )
+            };
+
+            if tiling == ImageTiling::LINEAR
+                && (format_props.linear_tiling_features & features) == features
+            {
+                format = Some(candidate);
+                break;
+            } else if tiling == ImageTiling::OPTIMAL
+                && (format_props.optimal_tiling_features & features) == features
+            {
+                format = Some(candidate);
+                break;
             }
         }
-        dbg!(depth_format);
-        depth_format.expect("No acceptable depth formats found!")
+
+        dbg!(format);
+        format.expect("No acceptable format found!")
+    }
+
+    pub fn find_depth_format(&self) -> Format {
+        let candidates = vec![
+            Format::D32_SFLOAT_S8_UINT,
+            Format::D32_SFLOAT,
+            Format::D24_UNORM_S8_UINT,
+        ];
+        let tiling = ImageTiling::OPTIMAL;
+        let features = FormatFeatureFlags::DEPTH_STENCIL_ATTACHMENT;
+        self.find_supported_format(candidates, tiling, features)
     }
 
     pub fn init(
@@ -253,27 +292,7 @@ impl VulkanCtx {
     ) -> Self {
         let mut instance =
             Self::create_instance(with_validation_layers, &app_name, &engine_name, window);
-
-        let _messenger = if with_validation_layers {
-            instance.load_ext_debug_utils().unwrap();
-
-            let create_info = DebugUtilsMessengerCreateInfoEXTBuilder::new()
-                .message_severity(
-                    DebugUtilsMessageSeverityFlagsEXT::VERBOSE_EXT
-                        | DebugUtilsMessageSeverityFlagsEXT::WARNING_EXT
-                        | DebugUtilsMessageSeverityFlagsEXT::ERROR_EXT,
-                )
-                .message_type(
-                    DebugUtilsMessageTypeFlagsEXT::GENERAL_EXT
-                        | DebugUtilsMessageTypeFlagsEXT::VALIDATION_EXT
-                        | DebugUtilsMessageTypeFlagsEXT::PERFORMANCE_EXT,
-                )
-                .pfn_user_callback(Some(debug_callback));
-
-            unsafe { instance.create_debug_utils_messenger_ext(&create_info, None, None) }.unwrap()
-        } else {
-            Default::default()
-        };
+        let _messenger = create_debug_messenger(&mut instance, with_validation_layers);
 
         let surface = unsafe { surface::create_surface(&mut instance, window, None) }.unwrap();
 
@@ -284,38 +303,12 @@ impl VulkanCtx {
 
         let graphics_queue = queue_family_indices.graphics_idx.unwrap();
 
-        let mut device = {
-            let device_extensions = vec![KHR_SWAPCHAIN_EXTENSION_NAME];
-            let mut device_layers = vec![];
-            if with_validation_layers {
-                device_layers.push(LAYER_KHRONOS_VALIDATION);
-            }
-
-            // https://vulkan-tutorial.com/Drawing_a_triangle/Setup/Logical_device_and_queues
-            let queue_create_info = vec![DeviceQueueCreateInfoBuilder::new()
-                .queue_family_index(graphics_queue)
-                .queue_priorities(&[1.0])];
-            let features = PhysicalDeviceFeaturesBuilder::new().sampler_anisotropy(true);
-
-            let create_info = DeviceCreateInfoBuilder::new()
-                .enabled_extension_names(&device_extensions)
-                .enabled_layer_names(&device_layers)
-                .queue_create_infos(&queue_create_info)
-                .enabled_features(&features);
-
-            let device = DeviceLoader::new(
-                &instance,
-                unsafe { instance.create_device(physical_device, &create_info, None, None) }
-                    .unwrap(),
-            )
-            .unwrap();
-            device
-        };
-        device.load_vk1_0().unwrap();
-        device.load_vk1_1().unwrap();
-        device
-            .load_khr_swapchain()
-            .expect("Couldn't load swapchain!");
+        let device = create_device(
+            &instance,
+            physical_device,
+            graphics_queue,
+            with_validation_layers,
+        );
 
         let queue = unsafe { device.get_device_queue(graphics_queue, 0, None) };
         let allocator =
@@ -324,16 +317,10 @@ impl VulkanCtx {
         let surface_info = unsafe {
             SwapChainSupportDetails::query_swapchain_support(&instance, physical_device, surface)
         };
+
         let current_surface_format = surface_info.choose_surface_format().unwrap();
 
-        let present_mode = surface_info
-            .present_modes
-            .into_iter()
-            .find(|format| match *format {
-                PresentModeKHR::MAILBOX_KHR => true,
-                _ => false,
-            })
-            .unwrap_or(PresentModeKHR::FIFO_KHR);
+        let present_mode = surface_info.choose_present_mode();
 
         // https://vulkan-tutorial.com/Drawing_a_triangle/Presentation/Swap_chain
         let current_extent = surface_info.surface_caps.current_extent;
@@ -350,7 +337,12 @@ impl VulkanCtx {
         let swapchain_image_views: Vec<_> = swapchain_images
             .iter()
             .map(|swapchain_image| {
-                Self::create_image_view(&device, *swapchain_image, current_surface_format.format)
+                Self::create_image_view(
+                    &device,
+                    *swapchain_image,
+                    current_surface_format.format,
+                    ImageAspectFlags::COLOR,
+                )
             })
             .collect();
         // https://vulkan-tutorial.com/Drawing_a_triangle/Drawing/Framebuffers
@@ -472,9 +464,9 @@ unsafe fn pick_physical_device(
 ) -> Option<PhysicalDevice> {
     let physical_devices = unsafe { instance.enumerate_physical_devices(None) }.unwrap();
 
-    let physical_device = physical_devices
-        .into_iter()
-        .max_by_key(|physical_device| is_device_suitable(instance, *physical_device, surface));
+    let physical_device = physical_devices.into_iter().max_by_key(|physical_device| {
+        is_physical_device_suitable(instance, *physical_device, surface)
+    });
     if let Some(device) = physical_device {
         let properties = instance.get_physical_device_properties(device, None);
         println!("Picking physical device: {:?}", unsafe {
@@ -484,7 +476,7 @@ unsafe fn pick_physical_device(
     physical_device
 }
 
-unsafe fn is_device_suitable(
+unsafe fn is_physical_device_suitable(
     instance: &InstanceLoader,
     physical_device: PhysicalDevice,
     surface: SurfaceKHR,
@@ -510,6 +502,42 @@ unsafe fn is_device_suitable(
     score
 }
 
+fn create_device(
+    instance: &InstanceLoader,
+    physical_device: PhysicalDevice,
+    graphics_queue: u32,
+    with_validation_layers: bool,
+) -> DeviceLoader {
+    let device_extensions = vec![KHR_SWAPCHAIN_EXTENSION_NAME];
+    let mut device_layers = vec![];
+    if with_validation_layers {
+        device_layers.push(LAYER_KHRONOS_VALIDATION);
+    }
+
+    // https://vulkan-tutorial.com/Drawing_a_triangle/Setup/Logical_device_and_queues
+    let queue_create_info = vec![DeviceQueueCreateInfoBuilder::new()
+        .queue_family_index(graphics_queue)
+        .queue_priorities(&[1.0])];
+    let features = PhysicalDeviceFeaturesBuilder::new().sampler_anisotropy(true);
+
+    let create_info = DeviceCreateInfoBuilder::new()
+        .enabled_extension_names(&device_extensions)
+        .enabled_layer_names(&device_layers)
+        .queue_create_infos(&queue_create_info)
+        .enabled_features(&features);
+
+    let mut device = DeviceLoader::new(
+        &instance,
+        unsafe { instance.create_device(physical_device, &create_info, None, None) }.unwrap(),
+    )
+    .unwrap();
+    device.load_vk1_0().unwrap();
+    device.load_vk1_1().unwrap();
+    device
+        .load_khr_swapchain()
+        .expect("Couldn't load swapchain!");
+    device
+}
 fn create_swapchain(
     device: &DeviceLoader,
     surface: SurfaceKHR,
@@ -544,6 +572,32 @@ fn create_swapchain(
         .old_swapchain(SwapchainKHR::null());
     let swapchain = unsafe { device.create_swapchain_khr(&create_info, None, None) }.unwrap();
     swapchain
+}
+
+fn create_debug_messenger(
+    instance: &mut InstanceLoader,
+    with_validation_layers: bool,
+) -> DebugUtilsMessengerEXT {
+    if with_validation_layers {
+        instance.load_ext_debug_utils().unwrap();
+
+        let create_info = DebugUtilsMessengerCreateInfoEXTBuilder::new()
+            .message_severity(
+                DebugUtilsMessageSeverityFlagsEXT::VERBOSE_EXT
+                    | DebugUtilsMessageSeverityFlagsEXT::WARNING_EXT
+                    | DebugUtilsMessageSeverityFlagsEXT::ERROR_EXT,
+            )
+            .message_type(
+                DebugUtilsMessageTypeFlagsEXT::GENERAL_EXT
+                    | DebugUtilsMessageTypeFlagsEXT::VALIDATION_EXT
+                    | DebugUtilsMessageTypeFlagsEXT::PERFORMANCE_EXT,
+            )
+            .pfn_user_callback(Some(debug_callback));
+
+        unsafe { instance.create_debug_utils_messenger_ext(&create_info, None, None) }.unwrap()
+    } else {
+        Default::default()
+    }
 }
 
 unsafe extern "system" fn debug_callback(
