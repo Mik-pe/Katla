@@ -1,6 +1,5 @@
 use crate::rendering::vertextypes::*;
 use erupt::{
-    extensions::khr_surface::*,
     utils,
     utils::allocator::{Allocation, Allocator, MemoryTypeFinder},
     vk1_0::*,

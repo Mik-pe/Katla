@@ -1,10 +1,8 @@
-use crate::rendering::vertextypes::*;
 use crate::rendering::{Drawable, Material};
 use crate::util::CachedGLTFModel;
 
 use crate::vulkanstuff::VulkanRenderer;
-use crate::vulkanstuff::{ImageInfo, RenderPipeline};
-use crate::vulkanstuff::{IndexBuffer, Texture, VertexBuffer};
+use crate::vulkanstuff::{IndexBuffer, VertexBuffer};
 
 use erupt::{utils::allocator::Allocator, vk1_0::*, DeviceLoader};
 use mikpe_math::{Mat4, Vec3};
@@ -132,57 +130,6 @@ impl Mesh {
     //         position,
     //     }
     // }
-
-    pub fn add_draw_cmd(
-        &self,
-        device: &DeviceLoader,
-        command_buffer: CommandBuffer,
-        image_index: usize,
-    ) {
-        unsafe {
-            self.material.bind(device, command_buffer);
-
-            if let Some(index_buffer) = &self.index_buffer {
-                device.cmd_bind_index_buffer(
-                    command_buffer,
-                    index_buffer.object().clone(),
-                    0,
-                    index_buffer.index_type,
-                );
-                if let Some(vertex_buffer) = &self.vertex_buffer {
-                    device.cmd_bind_vertex_buffers(
-                        command_buffer,
-                        0,
-                        &[vertex_buffer.object().clone()],
-                        &[0],
-                    );
-                    device.cmd_draw_indexed(command_buffer, index_buffer.count(), 1, 0, 0, 0);
-                }
-            } else {
-                if let Some(vertex_buffer) = &self.vertex_buffer {
-                    device.cmd_bind_vertex_buffers(
-                        command_buffer,
-                        0,
-                        &[vertex_buffer.object().clone()],
-                        &[0],
-                    );
-                    device.cmd_draw(command_buffer, vertex_buffer.count(), 1, 0, 0);
-                }
-            }
-        }
-    }
-
-    pub fn upload_pipeline_data(
-        &mut self,
-        device: &DeviceLoader,
-        image_index: usize,
-        view: Mat4,
-        proj: Mat4,
-    ) {
-        let model = Mat4::from_translation(self.position.0);
-        self.material
-            .upload_pipeline_data(device, view, proj, model);
-    }
 
     pub fn destroy(&mut self, device: &DeviceLoader, allocator: &mut Allocator) {
         self.material.destroy(device, allocator);

@@ -4,7 +4,7 @@ use erupt::{
     cstr,
     extensions::{ext_debug_utils::*, khr_surface::*, khr_swapchain::*},
     utils::{
-        allocator::{Allocator, AllocatorCreateInfo, MemoryTypeFinder},
+        allocator::{Allocation, Allocator, AllocatorCreateInfo, MemoryTypeFinder},
         surface,
     },
     vk1_0::*,
@@ -30,6 +30,31 @@ struct QueueFamilyIndices {
     pub graphics_idx: Option<u32>,
 }
 
+pub struct RenderTexture {
+    pub extent: Extent2D,
+    pub image_view: ImageView,
+    pub format: Format,
+    image_memory: Option<Allocation<Image>>,
+    context: Rc<VulkanContext>,
+}
+
+impl Drop for RenderTexture {
+    fn drop(&mut self) {
+        println!("Destroying depth image");
+        unsafe {
+            self.context
+                .device
+                .destroy_image_view(self.image_view, None);
+        }
+        let image_memory = self.image_memory.take();
+
+        self.context
+            .allocator
+            .borrow_mut()
+            .free(&self.context.device, image_memory.unwrap());
+    }
+}
+
 pub struct VulkanContext {
     pub instance: InstanceLoader,
     pub device: DeviceLoader,
@@ -47,7 +72,7 @@ pub struct VulkanFrameCtx {
     pub swapchain_image_views: Vec<ImageView>,
     pub swapchain: SwapchainKHR,
     pub swapchain_images: Vec<Image>,
-    pub depth_image_view: ImageView,
+    pub depth_render_texture: RenderTexture,
     pub command_buffers: Vec<CommandBuffer>,
 }
 
@@ -84,10 +109,9 @@ impl SwapChainSupportDetails {
         physical_device: PhysicalDevice,
         surface: SurfaceKHR,
     ) -> SwapChainSupportDetails {
-        let surface_caps = unsafe {
-            instance.get_physical_device_surface_capabilities_khr(physical_device, surface, None)
-        }
-        .unwrap();
+        let surface_caps = instance
+            .get_physical_device_surface_capabilities_khr(physical_device, surface, None)
+            .unwrap();
         let surface_formats = instance
             .get_physical_device_surface_formats_khr(physical_device, surface, None)
             .unwrap();
@@ -238,7 +262,7 @@ impl VulkanContext {
         }
     }
 
-    pub unsafe fn query_swapchain_support(&self) -> SwapChainSupportDetails {
+    unsafe fn query_swapchain_support(&self) -> SwapChainSupportDetails {
         SwapChainSupportDetails::query_swapchain_support(
             &self.instance,
             self.physical_device,
@@ -375,25 +399,15 @@ impl VulkanFrameCtx {
     }
 
     pub fn init(context: &Rc<VulkanContext>) -> Self {
-        let surface_info = unsafe { context.query_swapchain_support() };
+        let swapchain_info = unsafe { context.query_swapchain_support() };
 
-        let current_surface_format = surface_info.choose_surface_format().unwrap();
+        let current_extent = swapchain_info.surface_caps.current_extent;
+        let (swapchain, current_surface_format) =
+            create_swapchain(&context.device, context.surface, &swapchain_info, None);
 
-        let present_mode = surface_info.choose_present_mode();
-
-        // https://vulkan-tutorial.com/Drawing_a_triangle/Presentation/Swap_chain
-        let current_extent = surface_info.surface_caps.current_extent;
-        let swapchain = create_swapchain(
-            &context.device,
-            context.surface,
-            surface_info.surface_caps,
-            current_surface_format,
-            present_mode,
-        );
         let swapchain_images =
             unsafe { context.device.get_swapchain_images_khr(swapchain, None) }.unwrap();
 
-        // https://vulkan-tutorial.com/Drawing_a_triangle/Presentation/Image_views
         let swapchain_image_views: Vec<_> = swapchain_images
             .iter()
             .map(|swapchain_image| {
@@ -405,8 +419,7 @@ impl VulkanFrameCtx {
                 )
             })
             .collect();
-        let depth_image_view =
-            create_depth_image_view(context, surface_info.surface_caps.current_extent);
+        let depth_render_texture = create_depth_render_texture(context.clone(), current_extent);
 
         let command_buffers = {
             let allocate_info = CommandBufferAllocateInfoBuilder::new()
@@ -423,61 +436,46 @@ impl VulkanFrameCtx {
             swapchain,
             swapchain_image_views,
             swapchain_images,
-            depth_image_view,
+            depth_render_texture,
             command_buffers,
         };
         ctx
     }
 
     pub fn recreate_swapchain(&mut self) {
-        // self.surface_caps = unsafe {
-        //     self.instance.get_physical_device_surface_capabilities_khr(
-        //         self.physical_device,
-        //         self.surface,
-        //         None,
-        //     )
-        // }
-        // .unwrap();
+        let swapchain_info = unsafe { self.context.query_swapchain_support() };
 
-        // println!(
-        //     "Got extent: {}x{}",
-        //     self.surface_caps.current_extent.width, self.surface_caps.current_extent.height,
-        // );
+        let current_extent = swapchain_info.surface_caps.current_extent;
+        let (swapchain, current_surface_format) = create_swapchain(
+            &self.context.device,
+            self.context.surface,
+            &swapchain_info,
+            Some(self.swapchain),
+        );
+        self.swapchain = swapchain;
+        self.current_surface_format = current_surface_format;
 
-        // let mut image_count = self.surface_caps.min_image_count + 1;
-        // if self.surface_caps.max_image_count > 0 && image_count > self.surface_caps.max_image_count
-        // {
-        //     image_count = self.surface_caps.max_image_count;
-        // }
+        self.swapchain_images = unsafe {
+            self.context
+                .device
+                .get_swapchain_images_khr(self.swapchain, None)
+        }
+        .unwrap();
 
-        // let create_info = SwapchainCreateInfoKHRBuilder::new()
-        //     .surface(self.surface)
-        //     .min_image_count(image_count)
-        //     .image_format(self.surface_format.format)
-        //     .image_color_space(self.surface_format.color_space)
-        //     .image_extent(self.surface_caps.current_extent)
-        //     .image_array_layers(1)
-        //     .image_usage(ImageUsageFlags::COLOR_ATTACHMENT)
-        //     .image_sharing_mode(SharingMode::EXCLUSIVE)
-        //     .pre_transform(self.surface_caps.current_transform)
-        //     .composite_alpha(CompositeAlphaFlagBitsKHR::OPAQUE_KHR)
-        //     .present_mode(PresentModeKHR::FIFO_KHR)
-        //     .clipped(true)
-        //     .old_swapchain(self.swapchain);
-
-        // self.swapchain =
-        //     unsafe { self.device.create_swapchain_khr(&create_info, None, None) }.unwrap();
-
-        // self.swapchain_images =
-        //     unsafe { self.device.get_swapchain_images_khr(self.swapchain, None) }.unwrap();
-
-        // self.swapchain_image_views = self
-        //     .swapchain_images
-        //     .iter()
-        //     .map(|swapchain_image| {
-        //         Self::create_image_view(&self.device, *swapchain_image, self.surface_format.format)
-        //     })
-        //     .collect();
+        self.swapchain_image_views = self
+            .swapchain_images
+            .iter()
+            .map(|swapchain_image| {
+                Self::create_image_view(
+                    &self.context.device,
+                    *swapchain_image,
+                    self.current_surface_format.format,
+                    ImageAspectFlags::COLOR,
+                )
+            })
+            .collect();
+        self.depth_render_texture =
+            create_depth_render_texture(self.context.clone(), current_extent);
     }
 
     pub fn destroy(&mut self) {
@@ -538,9 +536,9 @@ unsafe fn is_physical_device_suitable(
     score
 }
 
-fn create_depth_image_view(context: &VulkanContext, extent: Extent2D) -> ImageView {
+fn create_depth_render_texture(context: Rc<VulkanContext>, extent: Extent2D) -> RenderTexture {
     let depth_format = context.find_depth_format();
-    let extent = Extent3D {
+    let extent_3d = Extent3D {
         width: extent.width,
         height: extent.height,
         depth: 1,
@@ -550,31 +548,39 @@ fn create_depth_image_view(context: &VulkanContext, extent: Extent2D) -> ImageVi
         .mip_levels(1)
         .array_layers(1)
         .format(depth_format)
-        .extent(extent)
+        .extent(extent_3d)
         .tiling(ImageTiling::OPTIMAL)
         .samples(SampleCountFlagBits::_1)
         .usage(ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT);
-    //TODO: Make use of the depth image
+
     //https://vulkan-tutorial.com/Depth_buffering
-    let depth_image_view = unsafe {
-        let depth_image = context
+    let depth_image = unsafe {
+        context
             .device
             .create_image(&create_info, None, None)
-            .unwrap();
+            .unwrap()
+    };
 
-        let _image_memory = context
+    let image_memory = Some(
+        context
             .allocator
             .borrow_mut()
             .allocate(&context.device, depth_image, MemoryTypeFinder::gpu_only())
-            .unwrap();
-        VulkanFrameCtx::create_image_view(
-            &context.device,
-            depth_image,
-            depth_format,
-            ImageAspectFlags::DEPTH,
-        )
-    };
-    depth_image_view
+            .unwrap(),
+    );
+    let image_view = VulkanFrameCtx::create_image_view(
+        &context.device,
+        depth_image,
+        depth_format,
+        ImageAspectFlags::DEPTH,
+    );
+    RenderTexture {
+        extent,
+        image_view,
+        image_memory,
+        format: depth_format,
+        context,
+    }
 }
 
 fn create_device(
@@ -613,30 +619,33 @@ fn create_device(
         .expect("Couldn't load swapchain!");
     device
 }
+
 fn create_swapchain(
     device: &DeviceLoader,
     surface: SurfaceKHR,
-    surface_caps: SurfaceCapabilitiesKHR,
-    format: SurfaceFormatKHR,
-    present_mode: PresentModeKHR,
-) -> SwapchainKHR {
-    // let swaphchain_support = SwapChainSupportDetails::query_swapchain_support(device);
+    swapchain_info: &SwapChainSupportDetails,
+    old_swapchain: Option<SwapchainKHR>,
+) -> (SwapchainKHR, SurfaceFormatKHR) {
+    let surface_caps = &swapchain_info.surface_caps;
+    let format = swapchain_info.choose_surface_format().unwrap();
 
-    // VkSurfaceFormatKHR surfaceFormat = chooseSwapSurfaceFormat(swapChainSupport.formats);
-    // VkPresentModeKHR presentMode = chooseSwapPresentMode(swapChainSupport.presentModes);
-    // VkExtent2D extent = chooseSwapExtent(swapChainSupport.capabilities);
+    let present_mode = swapchain_info.choose_present_mode();
+
+    let current_extent = surface_caps.current_extent;
+    println!("Swapchain extent: {:?}", current_extent);
 
     let mut image_count = surface_caps.min_image_count + 1;
+
     if surface_caps.max_image_count > 0 && image_count > surface_caps.max_image_count {
         image_count = surface_caps.max_image_count;
     }
-
+    let old_swapchain = old_swapchain.unwrap_or(SwapchainKHR::null());
     let create_info = SwapchainCreateInfoKHRBuilder::new()
         .surface(surface)
         .min_image_count(image_count)
         .image_format(format.format)
         .image_color_space(format.color_space)
-        .image_extent(surface_caps.current_extent)
+        .image_extent(current_extent)
         .image_array_layers(1)
         .image_usage(ImageUsageFlags::COLOR_ATTACHMENT)
         .image_sharing_mode(SharingMode::EXCLUSIVE)
@@ -644,9 +653,9 @@ fn create_swapchain(
         .composite_alpha(CompositeAlphaFlagBitsKHR::OPAQUE_KHR)
         .present_mode(present_mode)
         .clipped(true)
-        .old_swapchain(SwapchainKHR::null());
+        .old_swapchain(old_swapchain);
     let swapchain = unsafe { device.create_swapchain_khr(&create_info, None, None) }.unwrap();
-    swapchain
+    (swapchain, format)
 }
 
 fn create_debug_messenger(

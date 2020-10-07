@@ -70,98 +70,14 @@ impl VulkanRenderer {
             engine_name,
         ));
         let frame_context = VulkanFrameCtx::init(&context);
-        //TODO: This should be configurable and put elsewhere?
 
-        // https://vulkan-tutorial.com/Drawing_a_triangle/Graphics_pipeline_basics/Render_passes
-        let render_pass = {
-            // let depth_format = context.find_depth_format();
-            // let extent = Extent3D {
-            //     width: context.current_extent.width,
-            //     height: context.current_extent.height,
-            //     depth: 1,
-            // };
-            // let create_info = ImageCreateInfoBuilder::new()
-            //     .image_type(ImageType::_2D)
-            //     .mip_levels(1)
-            //     .array_layers(1)
-            //     .format(depth_format)
-            //     .extent(extent)
-            //     .tiling(ImageTiling::OPTIMAL)
-            //     .samples(SampleCountFlagBits::_1)
-            //     .usage(ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT);
-            // //TODO: Make use of the depth image
-            // //https://vulkan-tutorial.com/Depth_buffering
-            // let _depth_image_view = unsafe {
-            //     let depth_image = context
-            //         .device
-            //         .create_image(&create_info, None, None)
-            //         .unwrap();
-
-            //     let _image_memory = context
-            //         .allocator
-            //         .allocate(&context.device, depth_image, MemoryTypeFinder::gpu_only())
-            //         .unwrap();
-            //     VulkanCtx::create_image_view(
-            //         &context.device,
-            //         depth_image,
-            //         depth_format,
-            //         ImageAspectFlags::DEPTH,
-            //     )
-            // };
-
-            let color_attachment = AttachmentDescriptionBuilder::new()
-                .format(frame_context.current_surface_format.format)
-                .samples(SampleCountFlagBits::_1)
-                .load_op(AttachmentLoadOp::CLEAR)
-                .store_op(AttachmentStoreOp::STORE)
-                .stencil_load_op(AttachmentLoadOp::DONT_CARE)
-                .stencil_store_op(AttachmentStoreOp::DONT_CARE)
-                .initial_layout(ImageLayout::UNDEFINED)
-                .final_layout(ImageLayout::PRESENT_SRC_KHR);
-
-            let depth_attachment = AttachmentDescriptionBuilder::new()
-                .format(context.find_depth_format())
-                .samples(SampleCountFlagBits::_1)
-                .load_op(AttachmentLoadOp::CLEAR)
-                .store_op(AttachmentStoreOp::DONT_CARE)
-                .stencil_load_op(AttachmentLoadOp::DONT_CARE)
-                .stencil_store_op(AttachmentStoreOp::DONT_CARE)
-                .initial_layout(ImageLayout::UNDEFINED)
-                .final_layout(ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
-
-            let attachments = vec![color_attachment, depth_attachment];
-
-            let color_attachment_refs = vec![AttachmentReferenceBuilder::new()
-                .attachment(0)
-                .layout(ImageLayout::COLOR_ATTACHMENT_OPTIMAL)];
-            let depth_attachment_ref = AttachmentReferenceBuilder::new()
-                .attachment(1)
-                .layout(ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
-            let subpasses = vec![SubpassDescriptionBuilder::new()
-                .pipeline_bind_point(PipelineBindPoint::GRAPHICS)
-                .color_attachments(&color_attachment_refs)
-                .depth_stencil_attachment(&depth_attachment_ref)];
-            let dependencies = vec![SubpassDependencyBuilder::new()
-                .src_subpass(SUBPASS_EXTERNAL)
-                .dst_subpass(0)
-                .src_stage_mask(PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT)
-                .src_access_mask(AccessFlags::empty())
-                .dst_stage_mask(PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT)
-                .dst_access_mask(AccessFlags::COLOR_ATTACHMENT_WRITE)];
-
-            let create_info = RenderPassCreateInfoBuilder::new()
-                .attachments(&attachments)
-                .subpasses(&subpasses)
-                .dependencies(&dependencies);
-
-            unsafe { context.device.create_render_pass(&create_info, None, None) }.unwrap()
-        };
+        let render_pass = Self::create_render_pass(&context, &frame_context);
 
         let swapchain_framebuffers: Vec<_> = frame_context
             .swapchain_image_views
             .iter()
             .map(|image_view| {
-                let attachments = vec![*image_view, frame_context.depth_image_view];
+                let attachments = vec![*image_view, frame_context.depth_render_texture.image_view];
                 let create_info = FramebufferCreateInfoBuilder::new()
                     .render_pass(render_pass)
                     .attachments(&attachments)
@@ -191,6 +107,55 @@ impl VulkanRenderer {
         renderer
     }
 
+    fn create_render_pass(context: &VulkanContext, frame_context: &VulkanFrameCtx) -> RenderPass {
+        let color_attachment = AttachmentDescriptionBuilder::new()
+            .format(frame_context.current_surface_format.format)
+            .samples(SampleCountFlagBits::_1)
+            .load_op(AttachmentLoadOp::CLEAR)
+            .store_op(AttachmentStoreOp::STORE)
+            .stencil_load_op(AttachmentLoadOp::DONT_CARE)
+            .stencil_store_op(AttachmentStoreOp::DONT_CARE)
+            .initial_layout(ImageLayout::UNDEFINED)
+            .final_layout(ImageLayout::PRESENT_SRC_KHR);
+
+        let depth_attachment = AttachmentDescriptionBuilder::new()
+            .format(frame_context.depth_render_texture.format)
+            .samples(SampleCountFlagBits::_1)
+            .load_op(AttachmentLoadOp::CLEAR)
+            .store_op(AttachmentStoreOp::DONT_CARE)
+            .stencil_load_op(AttachmentLoadOp::DONT_CARE)
+            .stencil_store_op(AttachmentStoreOp::DONT_CARE)
+            .initial_layout(ImageLayout::UNDEFINED)
+            .final_layout(ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
+
+        let attachments = vec![color_attachment, depth_attachment];
+
+        let color_attachment_refs = vec![AttachmentReferenceBuilder::new()
+            .attachment(0)
+            .layout(ImageLayout::COLOR_ATTACHMENT_OPTIMAL)];
+        let depth_attachment_ref = AttachmentReferenceBuilder::new()
+            .attachment(1)
+            .layout(ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
+        let subpasses = vec![SubpassDescriptionBuilder::new()
+            .pipeline_bind_point(PipelineBindPoint::GRAPHICS)
+            .color_attachments(&color_attachment_refs)
+            .depth_stencil_attachment(&depth_attachment_ref)];
+        let dependencies = vec![SubpassDependencyBuilder::new()
+            .src_subpass(SUBPASS_EXTERNAL)
+            .dst_subpass(0)
+            .src_stage_mask(PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT)
+            .src_access_mask(AccessFlags::empty())
+            .dst_stage_mask(PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT)
+            .dst_access_mask(AccessFlags::COLOR_ATTACHMENT_WRITE)];
+
+        let create_info = RenderPassCreateInfoBuilder::new()
+            .attachments(&attachments)
+            .subpasses(&subpasses)
+            .dependencies(&dependencies);
+
+        unsafe { context.device.create_render_pass(&create_info, None, None) }.unwrap()
+    }
+
     // fn create_framebuffers(context: &VulkanCtx) -> Vec<Framebuffer> {
     //     context
     //         .swapchain_image_views
@@ -209,16 +174,16 @@ impl VulkanRenderer {
     //         .collect()
     // }
 
-    pub fn destroy(&mut self, mesh_data: &mut [Mesh]) {
+    pub fn destroy(&mut self) {
         unsafe {
             self.context.pre_destroy();
             self.swap_data.destroy(&self.context.device);
-            for mesh in mesh_data {
-                mesh.destroy(
-                    &self.context.device,
-                    &mut self.context.allocator.borrow_mut(),
-                );
-            }
+            // for mesh in mesh_data {
+            //     mesh.destroy(
+            //         &self.context.device,
+            //         &mut self.context.allocator.borrow_mut(),
+            //     );
+            // }
 
             self.context
                 .device
@@ -237,6 +202,32 @@ impl VulkanRenderer {
             self.context.device.device_wait_idle().unwrap();
         }
         self.frame_context.recreate_swapchain();
+        self.render_pass = Self::create_render_pass(&self.context, &self.frame_context);
+
+        self.swapchain_framebuffers = self
+            .frame_context
+            .swapchain_image_views
+            .iter()
+            .map(|image_view| {
+                let attachments = vec![
+                    *image_view,
+                    self.frame_context.depth_render_texture.image_view,
+                ];
+                let create_info = FramebufferCreateInfoBuilder::new()
+                    .render_pass(self.render_pass)
+                    .attachments(&attachments)
+                    .width(self.frame_context.current_extent.width)
+                    .height(self.frame_context.current_extent.height)
+                    .layers(1);
+
+                unsafe {
+                    self.context
+                        .device
+                        .create_framebuffer(&create_info, None, None)
+                }
+                .unwrap()
+            })
+            .collect();
         // Whenever the window resizes we need to recreate everything dependent on the window size.
         // In this example that includes the swapchain, the framebuffers and the dynamic state viewport.
         // if self.internal_state.recreate_swapchain {
