@@ -34,11 +34,11 @@ fn main() {
     let win_x: f64 = size.width.into();
     let win_y: f64 = size.height.into();
     let mut projection_matrix = Mat4::create_proj(60.0, (win_x / win_y) as f32, 0.01, 1000.0);
-    // let fox = Mesh::new_from_cache(
-    //     model_cache.read_gltf(PathBuf::from("resources/models/FoxFixed.glb")),
-    //     &mut vulkan_ctx,
-    //     Vec3::new(-1.0, 0.0, 0.0),
-    // );
+    let fox = Mesh::new_from_cache(
+        model_cache.read_gltf(PathBuf::from("resources/models/FoxFixed.glb")),
+        &mut vulkan_ctx,
+        Vec3::new(-1.0, 0.0, 0.0),
+    );
     let tiger = Mesh::new_from_cache(
         model_cache.read_gltf(PathBuf::from("resources/models/Tiger.glb")),
         &mut vulkan_ctx,
@@ -50,10 +50,9 @@ fn main() {
     let mut last_frame = Instant::now();
     let mut timer = util::Timer::new(100);
     let mut frame_number = 0;
-    let mut recreate_swapchain = false;
 
     let mut scene = Scene::new();
-    scene.add_object(SceneObject::new(Box::new(tiger)));
+    // scene.add_object(SceneObject::new(Box::new(tiger)));
     // scene.add_object(SceneObject::new(Box::new(fox)));
 
     event_loop.run(move |event, _, control_flow| {
@@ -150,6 +149,7 @@ fn main() {
                 for texture in tex_removal {
                     texture.destroy(&vulkan_ctx.context);
                 }
+                vulkan_ctx.destroy();
                 // vulkan_ctx.destroy(mesh_data)
                 // vulkan_ctx.destroy(meshes.as_mut_slice());
             }

@@ -9,6 +9,5 @@ Will develop in my own pace. Will be testing out lots of layers both as a way to
 # Current TODO:s
 
 - Swapchain recreation
-- Add depth buffer
 - Multiple Shaders based on vert attribs
 - Threaded upload
