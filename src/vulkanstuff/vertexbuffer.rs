@@ -4,6 +4,8 @@ use erupt::{
     DeviceLoader,
 };
 
+use super::context::VulkanContext;
+
 #[derive(Debug)]
 struct BufferObject {
     buffer: Allocation<Buffer>,
@@ -45,8 +47,7 @@ impl BufferObject {
 
 impl IndexBuffer {
     pub fn new(
-        device: &DeviceLoader,
-        allocator: &mut Allocator,
+        context: &VulkanContext,
         buf_size: DeviceSize,
         index_type: IndexType,
         count: u32,
@@ -56,8 +57,10 @@ impl IndexBuffer {
                 .sharing_mode(SharingMode::EXCLUSIVE)
                 .usage(BufferUsageFlags::INDEX_BUFFER)
                 .size(buf_size);
-
-            let buffer = allocator
+            let device = &context.device;
+            let buffer = context
+                .allocator
+                .borrow_mut()
                 .allocate(
                     device,
                     unsafe { device.create_buffer(&create_info, None, None).unwrap() },
@@ -92,19 +95,16 @@ impl IndexBuffer {
 }
 
 impl VertexBuffer {
-    pub fn new(
-        device: &DeviceLoader,
-        allocator: &mut Allocator,
-        buf_size: DeviceSize,
-        count: u32,
-    ) -> Self {
+    pub fn new(context: &VulkanContext, buf_size: DeviceSize, count: u32) -> Self {
         let buffer = {
             let create_info = BufferCreateInfoBuilder::new()
                 .sharing_mode(SharingMode::EXCLUSIVE)
                 .usage(BufferUsageFlags::VERTEX_BUFFER)
                 .size(buf_size);
-
-            let buffer = allocator
+            let device = &context.device;
+            let buffer = context
+                .allocator
+                .borrow_mut()
                 .allocate(
                     device,
                     unsafe { device.create_buffer(&create_info, None, None).unwrap() },

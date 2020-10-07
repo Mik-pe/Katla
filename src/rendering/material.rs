@@ -20,10 +20,8 @@ impl Material {
         let render_pass = renderer.render_pass;
         let current_extent = renderer.current_extent();
         let num_images = renderer.num_images();
-        let (device, mut allocator) = renderer.device_and_allocator();
         let mut renderpipeline = RenderPipeline::new::<VertexPBR>(
-            &device,
-            &mut allocator,
+            &renderer.context,
             render_pass,
             current_extent,
             num_images,
