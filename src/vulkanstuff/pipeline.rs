@@ -8,6 +8,8 @@ use erupt::{
 };
 
 use std::ffi::CString;
+
+use super::context::VulkanContext;
 const SHADER_VERT: &[u8] = include_bytes!("../../resources/shaders/model_pbr.vert.spv");
 const SHADER_FRAG: &[u8] = include_bytes!("../../resources/shaders/model.frag.spv");
 
@@ -47,13 +49,12 @@ pub struct UniformDescriptor {
 impl UniformHandle {
     pub fn new(
         num_buffered_frames: usize,
-        device: &DeviceLoader,
-        allocator: &mut Allocator,
+        context: &VulkanContext,
         desc_layout: &DescriptorSetLayout,
     ) -> Self {
         let mut uniform_descs = vec![];
         for _ in 0..num_buffered_frames {
-            let uniform_desc = Self::create_descriptor_sets(device, allocator, &desc_layout);
+            let uniform_desc = Self::create_descriptor_sets(context, &desc_layout);
             uniform_descs.push(uniform_desc);
         }
 
@@ -90,8 +91,7 @@ impl UniformHandle {
     }
 
     fn create_descriptor_sets(
-        device: &DeviceLoader,
-        allocator: &mut Allocator,
+        context: &VulkanContext,
         desc_layout: &DescriptorSetLayout,
     ) -> UniformDescriptor {
         let data_size = 4 * 16 * 3 as DeviceSize;
@@ -101,10 +101,12 @@ impl UniformHandle {
             .usage(BufferUsageFlags::UNIFORM_BUFFER)
             .size(data_size);
 
-        let buffer = allocator
+        let buffer = context
+            .allocator
+            .borrow_mut()
             .allocate(
-                &device,
-                unsafe { device.create_buffer(&create_info, None, None) }.unwrap(),
+                &context.device,
+                unsafe { context.device.create_buffer(&create_info, None, None) }.unwrap(),
                 MemoryTypeFinder::dynamic(),
             )
             .unwrap();
@@ -124,14 +126,18 @@ impl UniformHandle {
         let desc_pool_info = DescriptorPoolCreateInfoBuilder::new()
             .pool_sizes(desc_pool_sizes)
             .max_sets(1);
-        let desc_pool =
-            unsafe { device.create_descriptor_pool(&desc_pool_info, None, None) }.unwrap();
+        let desc_pool = unsafe {
+            context
+                .device
+                .create_descriptor_pool(&desc_pool_info, None, None)
+        }
+        .unwrap();
 
         let desc_layouts = &[desc_layout.clone()];
         let desc_info = DescriptorSetAllocateInfoBuilder::new()
             .descriptor_pool(desc_pool)
             .set_layouts(desc_layouts);
-        let desc_set = unsafe { device.allocate_descriptor_sets(&desc_info) }.unwrap()[0];
+        let desc_set = unsafe { context.device.allocate_descriptor_sets(&desc_info) }.unwrap()[0];
 
         let image_info = None;
 
@@ -209,8 +215,7 @@ impl UniformDescriptor {
 
 impl RenderPipeline {
     pub fn new<BindingType: VertexBinding>(
-        device: &DeviceLoader,
-        allocator: &mut Allocator,
+        context: &VulkanContext,
         render_pass: RenderPass,
         current_extent: Extent2D,
         num_buffered_frames: usize,
@@ -219,11 +224,21 @@ impl RenderPipeline {
 
         let vert_decoded = utils::decode_spv(SHADER_VERT).unwrap();
         let create_info = ShaderModuleCreateInfoBuilder::new().code(&vert_decoded);
-        let shader_vert = unsafe { device.create_shader_module(&create_info, None, None) }.unwrap();
+        let shader_vert = unsafe {
+            context
+                .device
+                .create_shader_module(&create_info, None, None)
+        }
+        .unwrap();
 
         let frag_decoded = utils::decode_spv(SHADER_FRAG).unwrap();
         let create_info = ShaderModuleCreateInfoBuilder::new().code(&frag_decoded);
-        let shader_frag = unsafe { device.create_shader_module(&create_info, None, None) }.unwrap();
+        let shader_frag = unsafe {
+            context
+                .device
+                .create_shader_module(&create_info, None, None)
+        }
+        .unwrap();
 
         let shader_stages = vec![
             PipelineShaderStageCreateInfoBuilder::new()
@@ -250,17 +265,25 @@ impl RenderPipeline {
         ];
         let desc_layout_info =
             DescriptorSetLayoutCreateInfoBuilder::new().bindings(desc_layout_bindings);
-        let desc_layout =
-            unsafe { device.create_descriptor_set_layout(&desc_layout_info, None, None) }.unwrap();
+        let desc_layout = unsafe {
+            context
+                .device
+                .create_descriptor_set_layout(&desc_layout_info, None, None)
+        }
+        .unwrap();
 
-        let uniform = UniformHandle::new(num_buffered_frames, device, allocator, &desc_layout);
+        let uniform = UniformHandle::new(num_buffered_frames, context, &desc_layout);
 
         let pipeline_layout_desc_layouts = &[desc_layout];
 
         let create_info =
             PipelineLayoutCreateInfoBuilder::new().set_layouts(pipeline_layout_desc_layouts);
-        let pipeline_layout =
-            unsafe { device.create_pipeline_layout(&create_info, None, None) }.unwrap();
+        let pipeline_layout = unsafe {
+            context
+                .device
+                .create_pipeline_layout(&create_info, None, None)
+        }
+        .unwrap();
 
         let vertex_binding_desc = vec![BindingType::get_binding_desc(0)];
         let vertex_attrib_descs = BindingType::get_attribute_desc(0);
@@ -293,8 +316,7 @@ impl RenderPipeline {
             .polygon_mode(PolygonMode::FILL)
             .line_width(1.0)
             .cull_mode(CullModeFlags::BACK)
-            .front_face(FrontFace::CLOCKWISE)
-            .depth_clamp_enable(false);
+            .front_face(FrontFace::CLOCKWISE);
 
         let multisampling = PipelineMultisampleStateCreateInfoBuilder::new()
             .sample_shading_enable(false)
@@ -312,11 +334,21 @@ impl RenderPipeline {
             .logic_op_enable(false)
             .attachments(&color_blend_attachments);
 
+        let depth_stencil_state = PipelineDepthStencilStateCreateInfoBuilder::new()
+            .depth_test_enable(true)
+            .depth_write_enable(true)
+            .depth_compare_op(CompareOp::LESS)
+            .depth_bounds_test_enable(false)
+            .min_depth_bounds(0.0)
+            .max_depth_bounds(1.0)
+            .stencil_test_enable(false);
+
         let create_info = GraphicsPipelineCreateInfoBuilder::new()
             .stages(&shader_stages)
             .vertex_input_state(&vertex_input)
             .input_assembly_state(&input_assembly)
             .viewport_state(&viewport_state)
+            .depth_stencil_state(&depth_stencil_state)
             .rasterization_state(&rasterizer)
             .multisample_state(&multisampling)
             .color_blend_state(&color_blending)
@@ -325,7 +357,9 @@ impl RenderPipeline {
             .subpass(0);
 
         let pipeline = unsafe {
-            device.create_graphics_pipelines(PipelineCache::null(), &[create_info], None)
+            context
+                .device
+                .create_graphics_pipelines(PipelineCache::null(), &[create_info], None)
         }
         .unwrap()[0];
 

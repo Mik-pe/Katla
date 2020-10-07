@@ -1,4 +1,4 @@
-use context::VulkanCtx;
+use context::{VulkanContext, VulkanFrameCtx};
 pub use pipeline::{ImageInfo, RenderPipeline};
 use swapdata::*;
 pub use texture::*;
@@ -11,11 +11,11 @@ mod vertexbuffer;
 
 use crate::rendering::Mesh;
 
-use std::{ffi::CString, sync::Mutex};
+use std::{ffi::CString, rc::Rc, sync::Mutex};
 
 use erupt::{
-    extensions::{khr_surface::*, khr_swapchain::*},
-    utils::{allocator::Allocator, allocator::MemoryTypeFinder, loading::DefaultCoreLoader},
+    extensions::khr_swapchain::*,
+    utils::{allocator::Allocator, loading::DefaultCoreLoader},
     vk1_0::*,
     DeviceLoader,
 };
@@ -35,7 +35,8 @@ lazy_static! {
 
 pub struct VulkanRenderer {
     pub window: Window,
-    pub context: VulkanCtx,
+    pub context: Rc<VulkanContext>,
+    pub frame_context: VulkanFrameCtx,
     pub render_pass: RenderPass,
     pub swapchain_framebuffers: Vec<Framebuffer>,
     swap_data: SwapData,
@@ -62,62 +63,84 @@ impl VulkanRenderer {
             .with_resizable(true)
             .build(event_loop)
             .unwrap();
-        let mut context = VulkanCtx::init(&window, with_validation_layers, app_name, engine_name);
+        let context = Rc::new(VulkanContext::init(
+            &window,
+            with_validation_layers,
+            app_name,
+            engine_name,
+        ));
+        let frame_context = VulkanFrameCtx::init(&context);
         //TODO: This should be configurable and put elsewhere?
 
         // https://vulkan-tutorial.com/Drawing_a_triangle/Graphics_pipeline_basics/Render_passes
         let render_pass = {
-            let depth_format = context.find_depth_format();
-            let extent = Extent3D {
-                width: context.current_extent.width,
-                height: context.current_extent.height,
-                depth: 1,
-            };
-            let create_info = ImageCreateInfoBuilder::new()
-                .image_type(ImageType::_2D)
-                .mip_levels(1)
-                .array_layers(1)
-                .format(depth_format)
-                .extent(extent)
-                .tiling(ImageTiling::OPTIMAL)
-                .samples(SampleCountFlagBits::_1)
-                .usage(ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT);
-            //TODO: Make use of the depth image
-            //https://vulkan-tutorial.com/Depth_buffering
-            let _depth_image_view = unsafe {
-                let depth_image = context
-                    .device
-                    .create_image(&create_info, None, None)
-                    .unwrap();
+            // let depth_format = context.find_depth_format();
+            // let extent = Extent3D {
+            //     width: context.current_extent.width,
+            //     height: context.current_extent.height,
+            //     depth: 1,
+            // };
+            // let create_info = ImageCreateInfoBuilder::new()
+            //     .image_type(ImageType::_2D)
+            //     .mip_levels(1)
+            //     .array_layers(1)
+            //     .format(depth_format)
+            //     .extent(extent)
+            //     .tiling(ImageTiling::OPTIMAL)
+            //     .samples(SampleCountFlagBits::_1)
+            //     .usage(ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT);
+            // //TODO: Make use of the depth image
+            // //https://vulkan-tutorial.com/Depth_buffering
+            // let _depth_image_view = unsafe {
+            //     let depth_image = context
+            //         .device
+            //         .create_image(&create_info, None, None)
+            //         .unwrap();
 
-                let _image_memory = context
-                    .allocator
-                    .allocate(&context.device, depth_image, MemoryTypeFinder::gpu_only())
-                    .unwrap();
-                VulkanCtx::create_image_view(
-                    &context.device,
-                    depth_image,
-                    depth_format,
-                    ImageAspectFlags::DEPTH,
-                )
-            };
+            //     let _image_memory = context
+            //         .allocator
+            //         .allocate(&context.device, depth_image, MemoryTypeFinder::gpu_only())
+            //         .unwrap();
+            //     VulkanCtx::create_image_view(
+            //         &context.device,
+            //         depth_image,
+            //         depth_format,
+            //         ImageAspectFlags::DEPTH,
+            //     )
+            // };
 
-            let attachments = vec![AttachmentDescriptionBuilder::new()
-                .format(context.current_surface_format.format)
+            let color_attachment = AttachmentDescriptionBuilder::new()
+                .format(frame_context.current_surface_format.format)
                 .samples(SampleCountFlagBits::_1)
                 .load_op(AttachmentLoadOp::CLEAR)
                 .store_op(AttachmentStoreOp::STORE)
                 .stencil_load_op(AttachmentLoadOp::DONT_CARE)
                 .stencil_store_op(AttachmentStoreOp::DONT_CARE)
                 .initial_layout(ImageLayout::UNDEFINED)
-                .final_layout(ImageLayout::PRESENT_SRC_KHR)];
+                .final_layout(ImageLayout::PRESENT_SRC_KHR);
+
+            let depth_attachment = AttachmentDescriptionBuilder::new()
+                .format(context.find_depth_format())
+                .samples(SampleCountFlagBits::_1)
+                .load_op(AttachmentLoadOp::CLEAR)
+                .store_op(AttachmentStoreOp::DONT_CARE)
+                .stencil_load_op(AttachmentLoadOp::DONT_CARE)
+                .stencil_store_op(AttachmentStoreOp::DONT_CARE)
+                .initial_layout(ImageLayout::UNDEFINED)
+                .final_layout(ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
+
+            let attachments = vec![color_attachment, depth_attachment];
 
             let color_attachment_refs = vec![AttachmentReferenceBuilder::new()
                 .attachment(0)
                 .layout(ImageLayout::COLOR_ATTACHMENT_OPTIMAL)];
+            let depth_attachment_ref = AttachmentReferenceBuilder::new()
+                .attachment(1)
+                .layout(ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
             let subpasses = vec![SubpassDescriptionBuilder::new()
                 .pipeline_bind_point(PipelineBindPoint::GRAPHICS)
-                .color_attachments(&color_attachment_refs)];
+                .color_attachments(&color_attachment_refs)
+                .depth_stencil_attachment(&depth_attachment_ref)];
             let dependencies = vec![SubpassDependencyBuilder::new()
                 .src_subpass(SUBPASS_EXTERNAL)
                 .dst_subpass(0)
@@ -134,27 +157,32 @@ impl VulkanRenderer {
             unsafe { context.device.create_render_pass(&create_info, None, None) }.unwrap()
         };
 
-        let swapchain_framebuffers: Vec<_> = context
+        let swapchain_framebuffers: Vec<_> = frame_context
             .swapchain_image_views
             .iter()
             .map(|image_view| {
-                let attachments = vec![*image_view];
+                let attachments = vec![*image_view, frame_context.depth_image_view];
                 let create_info = FramebufferCreateInfoBuilder::new()
                     .render_pass(render_pass)
                     .attachments(&attachments)
-                    .width(context.current_extent.width)
-                    .height(context.current_extent.height)
+                    .width(frame_context.current_extent.width)
+                    .height(frame_context.current_extent.height)
                     .layers(1);
 
                 unsafe { context.device.create_framebuffer(&create_info, None, None) }.unwrap()
             })
             .collect();
 
-        let swap_data = SwapData::new(&context.device, &context.swapchain_images, FRAMES_IN_FLIGHT);
+        let swap_data = SwapData::new(
+            &context.device,
+            &frame_context.swapchain_images,
+            FRAMES_IN_FLIGHT,
+        );
 
         let renderer = Self {
             window,
             context,
+            frame_context,
             render_pass,
             swapchain_framebuffers,
             swap_data,
@@ -163,12 +191,33 @@ impl VulkanRenderer {
         renderer
     }
 
+    // fn create_framebuffers(context: &VulkanCtx) -> Vec<Framebuffer> {
+    //     context
+    //         .swapchain_image_views
+    //         .iter()
+    //         .map(|image_view| {
+    //             let attachments = vec![*image_view];
+    //             let create_info = FramebufferCreateInfoBuilder::new()
+    //                 .render_pass(render_pass)
+    //                 .attachments(&attachments)
+    //                 .width(context.current_extent.width)
+    //                 .height(context.current_extent.height)
+    //                 .layers(1);
+
+    //             unsafe { context.device.create_framebuffer(&create_info, None, None) }.unwrap()
+    //         })
+    //         .collect()
+    // }
+
     pub fn destroy(&mut self, mesh_data: &mut [Mesh]) {
         unsafe {
             self.context.pre_destroy();
             self.swap_data.destroy(&self.context.device);
             for mesh in mesh_data {
-                mesh.destroy(&self.context.device, &mut self.context.allocator);
+                mesh.destroy(
+                    &self.context.device,
+                    &mut self.context.allocator.borrow_mut(),
+                );
             }
 
             self.context
@@ -178,7 +227,7 @@ impl VulkanRenderer {
                 self.context.device.destroy_framebuffer(framebuffer, None);
             }
 
-            self.context.destroy();
+            self.frame_context.destroy();
         }
         println!("Clean shutdown!");
     }
@@ -187,7 +236,7 @@ impl VulkanRenderer {
         unsafe {
             self.context.device.device_wait_idle().unwrap();
         }
-        self.context.recreate_swapchain();
+        self.frame_context.recreate_swapchain();
         // Whenever the window resizes we need to recreate everything dependent on the window size.
         // In this example that includes the swapchain, the framebuffers and the dynamic state viewport.
         // if self.internal_state.recreate_swapchain {
@@ -215,16 +264,12 @@ impl VulkanRenderer {
         // }
     }
 
-    pub fn device_and_allocator(&mut self) -> (&DeviceLoader, &mut Allocator) {
-        (&self.context.device, &mut self.context.allocator)
-    }
-
     pub fn current_extent(&self) -> Extent2D {
-        self.context.current_extent
+        self.frame_context.current_extent
     }
 
     pub fn num_images(&self) -> usize {
-        self.context.swapchain_image_views.len()
+        self.frame_context.swapchain_image_views.len()
     }
 
     pub fn swap_frames(&mut self) {
@@ -232,7 +277,7 @@ impl VulkanRenderer {
 
         let (available_sem, finished_sem, in_flight_fence, image_index) = self
             .swap_data
-            .swap_images(&self.context.device, self.context.swapchain);
+            .swap_images(&self.context.device, self.frame_context.swapchain);
         self.current_framedata = Some(FrameData {
             available_sem,
             finished_sem,
@@ -246,7 +291,7 @@ impl VulkanRenderer {
             if let Some(frame_data) = &self.current_framedata {
                 (
                     self.swapchain_framebuffers[frame_data.image_index as usize],
-                    self.context.command_buffers[frame_data.image_index as usize],
+                    self.frame_context.command_buffers[frame_data.image_index as usize],
                 )
             } else {
                 panic!("No available frame index!");
@@ -260,17 +305,25 @@ impl VulkanRenderer {
         }
         .unwrap();
 
-        let clear_values = vec![ClearValue {
-            color: ClearColorValue {
-                float32: [0.3, 0.5, 0.3, 1.0],
+        let clear_values = vec![
+            ClearValue {
+                color: ClearColorValue {
+                    float32: [0.3, 0.5, 0.3, 1.0],
+                },
             },
-        }];
+            ClearValue {
+                depth_stencil: ClearDepthStencilValue {
+                    depth: 1.0,
+                    stencil: 0,
+                },
+            },
+        ];
         let begin_info = RenderPassBeginInfoBuilder::new()
             .render_pass(self.render_pass)
             .framebuffer(framebuffer)
             .render_area(Rect2D {
                 offset: Offset2D { x: 0, y: 0 },
-                extent: self.context.current_extent,
+                extent: self.frame_context.current_extent,
             })
             .clear_values(&clear_values);
 
@@ -303,11 +356,11 @@ impl VulkanRenderer {
                 .unwrap();
             self.context
                 .device
-                .queue_submit(self.context.queue, &[submit_info], in_flight_fence)
+                .queue_submit(self.context.graphics_queue, &[submit_info], in_flight_fence)
                 .unwrap()
         }
 
-        let swapchains = vec![self.context.swapchain];
+        let swapchains = vec![self.frame_context.swapchain];
         let image_indices = vec![frame_data.image_index];
         let present_info = PresentInfoKHRBuilder::new()
             .wait_semaphores(&signal_semaphores)
@@ -317,7 +370,7 @@ impl VulkanRenderer {
         unsafe {
             self.context
                 .device
-                .queue_present_khr(self.context.queue, &present_info)
+                .queue_present_khr(self.context.graphics_queue, &present_info)
         }
         .unwrap();
 

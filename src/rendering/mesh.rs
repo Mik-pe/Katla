@@ -54,7 +54,6 @@ impl Mesh {
         if data.is_empty() {
             None
         } else {
-            let (device, allocator) = renderer.device_and_allocator();
             let data_slice = unsafe {
                 std::slice::from_raw_parts(
                     data.as_ptr() as *const u8,
@@ -68,13 +67,12 @@ impl Mesh {
                 _ => 0 as u32,
             };
             let mut index_buffer = IndexBuffer::new(
-                device,
-                allocator,
+                &renderer.context,
                 data_slice.len() as u64,
                 index_type,
                 count,
             );
-            index_buffer.upload_data(device, data_slice);
+            index_buffer.upload_data(&renderer.context.device, data_slice);
             Some(index_buffer)
         }
     }
@@ -86,7 +84,6 @@ impl Mesh {
         if data.is_empty() {
             None
         } else {
-            let (device, allocator) = renderer.device_and_allocator();
             let data_slice = unsafe {
                 std::slice::from_raw_parts(
                     data.as_ptr() as *const u8,
@@ -94,12 +91,11 @@ impl Mesh {
                 )
             };
             let mut vertex_buffer = VertexBuffer::new(
-                device,
-                allocator,
+                &renderer.context,
                 data_slice.len() as u64,
                 data.len() as u32,
             );
-            vertex_buffer.upload_data(device, data_slice);
+            vertex_buffer.upload_data(&renderer.context.device, data_slice);
             Some(vertex_buffer)
         }
     }
@@ -118,7 +114,6 @@ impl Mesh {
     //     let render_pass = renderer.render_pass;
     //     let surface_caps = renderer.surface_caps();
     //     let num_images = renderer.num_images();
-    //     let (device, mut allocator) = renderer.device_and_allocator();
 
     //     let renderpipeline = RenderPipeline::new::<VType>(
     //         &device,

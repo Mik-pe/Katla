@@ -65,14 +65,14 @@ fn main() {
                 frame_number += 1;
                 let end = last_frame.elapsed().as_micros() as f64 / 1000.0;
                 timer.add_timestamp(end);
-                if frame_number % 100 == 0 {
-                    println!(
-                        "CPU time mean: {:.2}, min/max : {:.2}/{:.2}",
-                        timer.current_mean(),
-                        timer.current_min(),
-                        timer.current_max()
-                    );
-                }
+                // if frame_number % 100 == 0 {
+                //     println!(
+                //         "CPU time mean: {:.2}, min/max : {:.2}/{:.2}",
+                //         timer.current_mean(),
+                //         timer.current_min(),
+                //         timer.current_max()
+                //     );
+                // }
 
                 delta_time = last_frame.elapsed().as_micros() as f32 / 1_000_000.0;
                 camera.update(delta_time);
@@ -148,7 +148,7 @@ fn main() {
                 let mut tex_removal = vec![];
                 std::mem::swap(&mut textures, &mut tex_removal);
                 for texture in tex_removal {
-                    texture.destroy(&mut vulkan_ctx.context);
+                    texture.destroy(&vulkan_ctx.context);
                 }
                 // vulkan_ctx.destroy(mesh_data)
                 // vulkan_ctx.destroy(meshes.as_mut_slice());

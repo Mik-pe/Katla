@@ -1,4 +1,4 @@
-use super::VulkanCtx;
+use super::{VulkanContext, VulkanFrameCtx};
 use erupt::{
     utils::allocator::{Allocation, MemoryTypeFinder},
     vk1_0::*,
@@ -13,7 +13,7 @@ pub struct Texture {
 }
 
 impl Texture {
-    fn create_staging_buffer(context: &mut VulkanCtx, size: DeviceSize) -> Allocation<Buffer> {
+    fn create_staging_buffer(context: &VulkanContext, size: DeviceSize) -> Allocation<Buffer> {
         let create_info = BufferCreateInfoBuilder::new()
             .sharing_mode(SharingMode::EXCLUSIVE)
             .usage(BufferUsageFlags::TRANSFER_SRC)
@@ -21,6 +21,7 @@ impl Texture {
 
         let buffer = context
             .allocator
+            .borrow_mut()
             .allocate(
                 &context.device,
                 unsafe {
@@ -37,7 +38,7 @@ impl Texture {
     }
 
     fn transition_image_layout(
-        context: &VulkanCtx,
+        context: &VulkanContext,
         image: Image,
         old_layout: ImageLayout,
         new_layout: ImageLayout,
@@ -98,7 +99,7 @@ impl Texture {
     }
 
     fn copy_buffer_to_image(
-        context: &VulkanCtx,
+        context: &VulkanContext,
         src_buffer: Buffer,
         dst_image: Image,
         dst_image_layout: ImageLayout,
@@ -126,7 +127,7 @@ impl Texture {
         context.end_single_time_commands(command_buffer);
     }
 
-    fn create_texture_sampler(context: &VulkanCtx) -> Sampler {
+    fn create_texture_sampler(context: &VulkanContext) -> Sampler {
         let create_info = SamplerCreateInfoBuilder::new()
             .anisotropy_enable(true)
             .max_anisotropy(16.0)
@@ -147,7 +148,7 @@ impl Texture {
     }
 
     pub fn create_image(
-        context: &mut VulkanCtx,
+        context: &VulkanContext,
         width: u32,
         height: u32,
         format: Format,
@@ -178,6 +179,7 @@ impl Texture {
                 .unwrap();
             let image_memory = context
                 .allocator
+                .borrow_mut()
                 .allocate(&context.device, image_object, MemoryTypeFinder::gpu_only())
                 .unwrap();
 
@@ -212,9 +214,12 @@ impl Texture {
                 ImageLayout::SHADER_READ_ONLY_OPTIMAL,
             );
 
-            context.allocator.free(&context.device, staging_buffer);
+            context
+                .allocator
+                .borrow_mut()
+                .free(&context.device, staging_buffer);
 
-            let image_view = VulkanCtx::create_image_view(
+            let image_view = VulkanFrameCtx::create_image_view(
                 &context.device,
                 image_object,
                 format,
@@ -236,11 +241,14 @@ impl Texture {
         self.width * self.height * self.channels
     }
 
-    pub fn destroy(self, context: &mut VulkanCtx) {
+    pub fn destroy(self, context: &VulkanContext) {
         unsafe {
             context.device.destroy_sampler(self.image_sampler, None);
             context.device.destroy_image_view(self.image_view, None);
         }
-        context.allocator.free(&context.device, self.image_memory);
+        context
+            .allocator
+            .borrow_mut()
+            .free(&context.device, self.image_memory);
     }
 }
