@@ -202,6 +202,16 @@ impl VulkanRenderer {
             self.context.device.device_wait_idle().unwrap();
         }
         self.frame_context.recreate_swapchain();
+        //Destroy the previous state:
+        unsafe {
+            self.context
+                .device
+                .destroy_render_pass(self.render_pass, None);
+            for &framebuffer in &self.swapchain_framebuffers {
+                self.context.device.destroy_framebuffer(framebuffer, None);
+            }
+        }
+
         self.render_pass = Self::create_render_pass(&self.context, &self.frame_context);
 
         self.swapchain_framebuffers = self

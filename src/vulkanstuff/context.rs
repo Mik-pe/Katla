@@ -37,9 +37,8 @@ pub struct RenderTexture {
     image_memory: Option<Allocation<Image>>,
     context: Rc<VulkanContext>,
 }
-
-impl Drop for RenderTexture {
-    fn drop(&mut self) {
+impl RenderTexture {
+    fn destroy(&mut self) {
         println!("Destroying depth image");
         unsafe {
             self.context
@@ -54,6 +53,12 @@ impl Drop for RenderTexture {
             .free(&self.context.device, image_memory.unwrap());
     }
 }
+
+// impl Drop for RenderTexture {
+//     fn drop(&mut self) {
+//         self.destroy();
+//     }
+// }
 
 pub struct VulkanContext {
     pub instance: InstanceLoader,
@@ -445,13 +450,14 @@ impl VulkanFrameCtx {
     pub fn recreate_swapchain(&mut self) {
         let swapchain_info = unsafe { self.context.query_swapchain_support() };
 
-        let current_extent = swapchain_info.surface_caps.current_extent;
         let (swapchain, current_surface_format) = create_swapchain(
             &self.context.device,
             self.context.surface,
             &swapchain_info,
             Some(self.swapchain),
         );
+        self.destroy();
+        self.current_extent = swapchain_info.surface_caps.current_extent;
         self.swapchain = swapchain;
         self.current_surface_format = current_surface_format;
 
@@ -475,7 +481,7 @@ impl VulkanFrameCtx {
             })
             .collect();
         self.depth_render_texture =
-            create_depth_render_texture(self.context.clone(), current_extent);
+            create_depth_render_texture(self.context.clone(), self.current_extent);
     }
 
     pub fn destroy(&mut self) {
@@ -486,6 +492,7 @@ impl VulkanFrameCtx {
             self.context
                 .device
                 .destroy_swapchain_khr(self.swapchain, None);
+            self.depth_render_texture.destroy();
         }
     }
 }
