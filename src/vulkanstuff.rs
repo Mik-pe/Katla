@@ -9,16 +9,9 @@ mod swapdata;
 mod texture;
 mod vertexbuffer;
 
-use crate::rendering::Mesh;
-
 use std::{ffi::CString, rc::Rc, sync::Mutex};
 
-use erupt::{
-    extensions::khr_swapchain::*,
-    utils::{allocator::Allocator, loading::DefaultCoreLoader},
-    vk1_0::*,
-    DeviceLoader,
-};
+use erupt::{extensions::khr_swapchain::*, utils::loading::DefaultCoreLoader, vk1_0::*};
 use lazy_static::lazy_static;
 
 use winit::event_loop::EventLoop;
@@ -61,6 +54,7 @@ impl VulkanRenderer {
         let window = WindowBuilder::new()
             .with_title("Erupt_Test_Mikpe")
             .with_resizable(true)
+            .with_maximized(false)
             .build(event_loop)
             .unwrap();
         let context = Rc::new(VulkanContext::init(
@@ -178,13 +172,6 @@ impl VulkanRenderer {
         unsafe {
             self.context.pre_destroy();
             self.swap_data.destroy(&self.context.device);
-            // for mesh in mesh_data {
-            //     mesh.destroy(
-            //         &self.context.device,
-            //         &mut self.context.allocator.borrow_mut(),
-            //     );
-            // }
-
             self.context
                 .device
                 .destroy_render_pass(self.render_pass, None);

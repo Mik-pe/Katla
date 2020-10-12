@@ -321,7 +321,15 @@ impl VulkanContext {
         let physical_device = unsafe { pick_physical_device(&instance, surface) }.unwrap();
 
         let allocator = RefCell::new(
-            Allocator::new(&instance, physical_device, AllocatorCreateInfo::default()).unwrap(),
+            //For high-dpi displays we need this to be larger, let's start with 64 MiB
+            Allocator::new(
+                &instance,
+                physical_device,
+                AllocatorCreateInfo {
+                    block_size: 64 * 1024u64.pow(2),
+                },
+            )
+            .unwrap(),
         );
 
         let queue_indices =
