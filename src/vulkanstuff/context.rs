@@ -39,7 +39,6 @@ pub struct RenderTexture {
 }
 impl RenderTexture {
     fn destroy(&mut self) {
-        println!("Destroying depth image");
         unsafe {
             self.context
                 .device
@@ -246,7 +245,6 @@ impl VulkanContext {
             }
         }
 
-        dbg!(format);
         format.expect("No acceptable format found!")
     }
 
@@ -647,7 +645,6 @@ fn create_swapchain(
     let present_mode = swapchain_info.choose_present_mode();
 
     let current_extent = surface_caps.current_extent;
-    println!("Swapchain extent: {:?}", current_extent);
 
     let mut image_count = surface_caps.min_image_count + 1;
 
