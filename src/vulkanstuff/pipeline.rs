@@ -295,19 +295,9 @@ impl RenderPipeline {
             .topology(PrimitiveTopology::TRIANGLE_LIST)
             .primitive_restart_enable(false);
 
-        let viewports = vec![ViewportBuilder::new()
-            .x(0.0)
-            .y(0.0)
-            .width(current_extent.width as f32)
-            .height(current_extent.height as f32)
-            .min_depth(0.0)
-            .max_depth(1.0)];
-        let scissors = vec![Rect2DBuilder::new()
-            .offset(Offset2D { x: 0, y: 0 })
-            .extent(current_extent)];
         let viewport_state = PipelineViewportStateCreateInfoBuilder::new()
-            .viewports(&viewports)
-            .scissors(&scissors);
+            .viewport_count(1)
+            .scissor_count(1);
 
         let rasterizer = PipelineRasterizationStateCreateInfoBuilder::new()
             .depth_clamp_enable(false)
@@ -341,6 +331,8 @@ impl RenderPipeline {
             .min_depth_bounds(0.0)
             .max_depth_bounds(1.0)
             .stencil_test_enable(false);
+        let dynamic_state = PipelineDynamicStateCreateInfoBuilder::new()
+            .dynamic_states(&[DynamicState::VIEWPORT, DynamicState::SCISSOR]);
 
         let create_info = GraphicsPipelineCreateInfoBuilder::new()
             .stages(&shader_stages)
@@ -351,6 +343,7 @@ impl RenderPipeline {
             .rasterization_state(&rasterizer)
             .multisample_state(&multisampling)
             .color_blend_state(&color_blending)
+            .dynamic_state(&dynamic_state)
             .layout(pipeline_layout)
             .render_pass(render_pass)
             .subpass(0);
