@@ -39,11 +39,11 @@ fn main() {
     //     &mut vulkan_ctx,
     //     Vec3::new(-1.0, 0.0, 0.0),
     // );
-    // let tiger = Mesh::new_from_cache(
-    //     model_cache.read_gltf(PathBuf::from("resources/models/Tiger.glb")),
-    //     &mut vulkan_ctx,
-    //     Vec3::new(10.0, 0.0, 0.0),
-    // );
+    let tiger = Mesh::new_from_cache(
+        model_cache.read_gltf(PathBuf::from("resources/models/Tiger.glb")),
+        &mut vulkan_ctx,
+        Vec3::new(10.0, 0.0, 0.0),
+    );
 
     //Delta time, in seconds
     let mut delta_time = 0.0;
@@ -52,7 +52,7 @@ fn main() {
     let mut frame_number = 0;
 
     let mut scene = Scene::new();
-    // scene.add_object(SceneObject::new(Box::new(tiger)));
+    scene.add_object(SceneObject::new(Box::new(tiger)));
     // scene.add_object(SceneObject::new(Box::new(fox)));
 
     event_loop.run(move |event, _, control_flow| {

@@ -321,6 +321,22 @@ impl VulkanRenderer {
                 &begin_info,
                 SubpassContents::INLINE,
             );
+            self.context.device.cmd_set_scissor(
+                command_buffer,
+                0,
+                &[Rect2DBuilder::new().extent(self.frame_context.current_extent)],
+            );
+            self.context.device.cmd_set_viewport(
+                command_buffer,
+                0,
+                &[ViewportBuilder::new()
+                    .height(self.frame_context.current_extent.height as f32)
+                    .width(self.frame_context.current_extent.width as f32)
+                    .x(0.0)
+                    .y(0.0)
+                    .min_depth(0.0)
+                    .max_depth(1.0)],
+            )
         }
         command_buffer
     }
