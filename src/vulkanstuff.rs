@@ -14,8 +14,8 @@ use std::{ffi::CString, rc::Rc, sync::Mutex};
 use erupt::{extensions::khr_swapchain::*, utils::loading::DefaultCoreLoader, vk1_0::*};
 use lazy_static::lazy_static;
 
-use winit::event_loop::EventLoop;
 use winit::window::{Window, WindowBuilder};
+use winit::{dpi::LogicalSize, event_loop::EventLoop};
 
 lazy_static! {
     static ref CORE_LOADER: Mutex<DefaultCoreLoader> = {
@@ -54,6 +54,10 @@ impl VulkanRenderer {
         let window = WindowBuilder::new()
             .with_title("Erupt_Test_Mikpe")
             .with_resizable(true)
+            .with_min_inner_size(LogicalSize {
+                width: 1.0,
+                height: 1.0,
+            })
             .with_maximized(false)
             .build(event_loop)
             .unwrap();
