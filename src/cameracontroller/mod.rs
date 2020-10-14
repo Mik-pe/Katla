@@ -1,7 +1,7 @@
 use bitflags::bitflags;
 use mikpe_math::{Mat4, Vec3};
-use winit::dpi::PhysicalPosition;
-use winit::event::{ElementState, MouseButton, VirtualKeyCode, WindowEvent};
+use winit::event::{DeviceEvent, ElementState, MouseButton, VirtualKeyCode, WindowEvent};
+use winit::{dpi::PhysicalPosition, event::Event};
 
 bitflags! {
     struct Movement: u32
@@ -38,125 +38,130 @@ impl Camera {
             last_mouse_pos: PhysicalPosition::new(0.0, 0.0),
         }
     }
-    pub fn handle_event(&mut self, event: &WindowEvent) {
-        match *event {
-            WindowEvent::MouseInput {
-                device_id: _,
-                state,
-                button,
-                ..
-            } => {
-                if button == MouseButton::Right && state == ElementState::Pressed {
-                    self.looking = true;
-                } else if button == MouseButton::Right && state == ElementState::Released {
-                    self.looking = false;
-                }
-            }
-            WindowEvent::CursorMoved {
-                device_id: _,
-                position,
-                ..
-            } => {
-                if self.looking {
-                    let delta_x = position.x - self.last_mouse_pos.x;
-                    let delta_y = position.y - self.last_mouse_pos.y;
-
-                    //Since -y is up for now, this is valid:
-                    self.yaw += 0.01 * delta_x;
-                    self.pitch -= 0.01 * delta_y;
-                    self.pitch = self
-                        .pitch
-                        .max(-std::f64::consts::FRAC_PI_2 + 0.01)
-                        .min(std::f64::consts::FRAC_PI_2 - 0.01);
-                }
-                self.last_mouse_pos = position;
-            }
-            WindowEvent::KeyboardInput {
-                device_id: _,
-                input,
-                is_synthetic: _,
-            } => {
-                if input.state == ElementState::Pressed {
-                    match input.virtual_keycode {
-                        Some(keycode) => match keycode {
-                            VirtualKeyCode::W => {
-                                self.current_movement |= Movement::FORWARD;
-                            }
-                            VirtualKeyCode::S => {
-                                self.current_movement |= Movement::BACKWARDS;
-                            }
-                            VirtualKeyCode::A => {
-                                self.current_movement |= Movement::LEFT;
-                            }
-                            VirtualKeyCode::D => {
-                                self.current_movement |= Movement::RIGHT;
-                            }
-                            VirtualKeyCode::Q => {
-                                self.current_movement |= Movement::DOWN;
-                            }
-                            VirtualKeyCode::E => {
-                                self.current_movement |= Movement::UP;
-                            }
-                            _ => {}
-                        },
-                        None => {}
+    pub fn handle_event(&mut self, event: &Event<()>) {
+        match event {
+            Event::WindowEvent { window_id, event } => match event {
+                WindowEvent::MouseInput {
+                    device_id: _,
+                    state,
+                    button,
+                    ..
+                } => {
+                    if button == &MouseButton::Right && state == &ElementState::Pressed {
+                        self.looking = true;
+                    } else if button == &MouseButton::Right && state == &ElementState::Released {
+                        self.looking = false;
                     }
                 }
-                if input.state == ElementState::Released {
-                    match input.virtual_keycode {
-                        Some(keycode) => match keycode {
-                            VirtualKeyCode::W => {
-                                self.current_movement -= Movement::FORWARD;
-                            }
-                            VirtualKeyCode::S => {
-                                self.current_movement -= Movement::BACKWARDS;
-                            }
-                            VirtualKeyCode::A => {
-                                self.current_movement -= Movement::LEFT;
-                            }
-                            VirtualKeyCode::D => {
-                                self.current_movement -= Movement::RIGHT;
-                            }
-                            VirtualKeyCode::Q => {
-                                self.current_movement -= Movement::DOWN;
-                            }
-                            VirtualKeyCode::E => {
-                                self.current_movement -= Movement::UP;
-                            }
-                            _ => {}
-                        },
-                        None => {}
+                WindowEvent::CursorMoved {
+                    device_id: _,
+                    position,
+                    ..
+                } => {
+                    self.last_mouse_pos = *position;
+                }
+                WindowEvent::KeyboardInput {
+                    device_id: _,
+                    input,
+                    is_synthetic: _,
+                } => {
+                    if input.state == ElementState::Pressed {
+                        match input.virtual_keycode {
+                            Some(keycode) => match keycode {
+                                VirtualKeyCode::W => {
+                                    self.current_movement |= Movement::FORWARD;
+                                }
+                                VirtualKeyCode::S => {
+                                    self.current_movement |= Movement::BACKWARDS;
+                                }
+                                VirtualKeyCode::A => {
+                                    self.current_movement |= Movement::LEFT;
+                                }
+                                VirtualKeyCode::D => {
+                                    self.current_movement |= Movement::RIGHT;
+                                }
+                                VirtualKeyCode::Q => {
+                                    self.current_movement |= Movement::DOWN;
+                                }
+                                VirtualKeyCode::E => {
+                                    self.current_movement |= Movement::UP;
+                                }
+                                _ => {}
+                            },
+                            None => {}
+                        }
+                    }
+                    if input.state == ElementState::Released {
+                        match input.virtual_keycode {
+                            Some(keycode) => match keycode {
+                                VirtualKeyCode::W => {
+                                    self.current_movement -= Movement::FORWARD;
+                                }
+                                VirtualKeyCode::S => {
+                                    self.current_movement -= Movement::BACKWARDS;
+                                }
+                                VirtualKeyCode::A => {
+                                    self.current_movement -= Movement::LEFT;
+                                }
+                                VirtualKeyCode::D => {
+                                    self.current_movement -= Movement::RIGHT;
+                                }
+                                VirtualKeyCode::Q => {
+                                    self.current_movement -= Movement::DOWN;
+                                }
+                                VirtualKeyCode::E => {
+                                    self.current_movement -= Movement::UP;
+                                }
+                                _ => {}
+                            },
+                            None => {}
+                        }
                     }
                 }
-            }
+                _ => {}
+            },
+            Event::DeviceEvent { device_id, event } => match event {
+                DeviceEvent::MouseMotion { delta } => {
+                    if self.looking {
+                        //Since -y is up for now, this is valid:
+                        self.yaw += 0.01 * delta.0;
+                        self.pitch -= 0.01 * delta.1;
+                        self.pitch = self
+                            .pitch
+                            .max(-std::f64::consts::FRAC_PI_2 + 0.01)
+                            .min(std::f64::consts::FRAC_PI_2 - 0.01);
+                    }
+                }
+                _ => {}
+            },
             _ => {}
         }
     }
 
     pub fn update(&mut self, _dt: f32) {
-        self.velocity = Vec3::new(0.0, 0.0, 0.0);
-        let mut up_velocity = 0.0f32;
+        // let mut up_velocity = 0.0f32;
+        let mut velocity = Vec3::new(0.0, 0.0, 0.0);
         if self.current_movement.contains(Movement::FORWARD) {
-            self.velocity[2] += 1.0;
+            velocity[2] += 1.0;
         }
         if self.current_movement.contains(Movement::BACKWARDS) {
-            self.velocity[2] -= 1.0;
+            velocity[2] -= 1.0;
         }
         if self.current_movement.contains(Movement::DOWN) {
-            up_velocity -= 1.0;
+            velocity[1] -= 1.0;
         }
         if self.current_movement.contains(Movement::UP) {
-            up_velocity += 1.0;
+            velocity[1] += 1.0;
         }
         if self.current_movement.contains(Movement::LEFT) {
-            self.velocity[0] -= 1.0;
+            velocity[0] -= 1.0;
         }
         if self.current_movement.contains(Movement::RIGHT) {
-            self.velocity[0] += 1.0;
+            velocity[0] += 1.0;
         }
-        self.velocity =
-            mikpe_math::mat4_mul_vec3(&self.get_view_rotation(), &self.velocity.normalize());
-        self.pos = self.pos + self.velocity.mul(0.1) + Vec3::new(0.0, up_velocity * 0.1, 0.0);
+        self.velocity = self.velocity.mul(0.9)
+            + mikpe_math::mat4_mul_vec3(&self.get_view_rotation(), &velocity).mul(0.1);
+        self.pos = self.pos + self.velocity;
     }
 
     // Note to self:
