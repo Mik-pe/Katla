@@ -59,6 +59,7 @@ fn main() {
         use winit::event::{Event, VirtualKeyCode, WindowEvent};
         use winit::event_loop::ControlFlow;
 
+        camera.handle_event(&event);
         match event {
             Event::NewEvents(_) => {
                 frame_number += 1;
@@ -78,46 +79,43 @@ fn main() {
                 last_frame = Instant::now();
                 *control_flow = ControlFlow::Poll;
             }
-            Event::WindowEvent { event, .. } => {
-                camera.handle_event(&event);
-                match event {
-                    WindowEvent::Resized(logical_size) => {
-                        let win_x = logical_size.width as f64;
-                        let win_y = logical_size.height as f64;
-                        projection_matrix =
-                            Mat4::create_proj(60.0, (win_x / win_y) as f32, 0.1, 1000.0);
-                        vulkan_ctx.recreate_swapchain();
-                    }
-                    WindowEvent::CloseRequested => {
-                        *control_flow = ControlFlow::Exit;
-                    }
-                    WindowEvent::KeyboardInput { input, .. } => match input.state {
-                        winit::event::ElementState::Pressed => {
-                            if let Some(keycode) = input.virtual_keycode {
-                                match keycode {
-                                    VirtualKeyCode::Escape => {
-                                        *control_flow = ControlFlow::Exit;
-                                    }
-                                    VirtualKeyCode::L => {
-                                        for _ in 0..100 {
-                                            textures.push(Texture::create_image(
-                                                &mut vulkan_ctx.context,
-                                                img_width,
-                                                img_height,
-                                                erupt::vk1_0::Format::R8G8B8A8_SRGB,
-                                                img.clone().into_raw().as_slice(),
-                                            ));
-                                        }
-                                    }
-                                    _ => {}
+            Event::WindowEvent { event, .. } => match event {
+                WindowEvent::Resized(logical_size) => {
+                    let win_x = logical_size.width as f64;
+                    let win_y = logical_size.height as f64;
+                    projection_matrix =
+                        Mat4::create_proj(60.0, (win_x / win_y) as f32, 0.1, 1000.0);
+                    vulkan_ctx.recreate_swapchain();
+                }
+                WindowEvent::CloseRequested => {
+                    *control_flow = ControlFlow::Exit;
+                }
+                WindowEvent::KeyboardInput { input, .. } => match input.state {
+                    winit::event::ElementState::Pressed => {
+                        if let Some(keycode) = input.virtual_keycode {
+                            match keycode {
+                                VirtualKeyCode::Escape => {
+                                    *control_flow = ControlFlow::Exit;
                                 }
+                                VirtualKeyCode::L => {
+                                    for _ in 0..100 {
+                                        textures.push(Texture::create_image(
+                                            &mut vulkan_ctx.context,
+                                            img_width,
+                                            img_height,
+                                            erupt::vk1_0::Format::R8G8B8A8_SRGB,
+                                            img.clone().into_raw().as_slice(),
+                                        ));
+                                    }
+                                }
+                                _ => {}
                             }
                         }
-                        _ => {}
-                    },
-                    _ => (),
-                }
-            }
+                    }
+                    _ => {}
+                },
+                _ => (),
+            },
             Event::MainEventsCleared => {
                 vulkan_ctx.swap_frames();
 
