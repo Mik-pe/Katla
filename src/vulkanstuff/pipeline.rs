@@ -207,7 +207,7 @@ impl UniformDescriptor {
                 let buffer = self.uniform_buffer.take().unwrap();
                 allocator.free(device, buffer.buffer);
             }
-            device.destroy_descriptor_pool(self.desc_pool, None);
+            device.destroy_descriptor_pool(Some(self.desc_pool), None);
         }
     }
 }
@@ -216,7 +216,6 @@ impl RenderPipeline {
     pub fn new<BindingType: VertexBinding>(
         context: &VulkanContext,
         render_pass: RenderPass,
-        current_extent: Extent2D,
         num_buffered_frames: usize,
     ) -> Self {
         let entry_point = CString::new("main").unwrap();
@@ -351,7 +350,7 @@ impl RenderPipeline {
         let pipeline = unsafe {
             context
                 .device
-                .create_graphics_pipelines(PipelineCache::null(), &[create_info], None)
+                .create_graphics_pipelines(None, &[create_info], None)
         }
         .unwrap()[0];
 
@@ -367,12 +366,12 @@ impl RenderPipeline {
 
     pub fn destroy(&mut self, device: &DeviceLoader, allocator: &mut Allocator) {
         unsafe {
-            device.destroy_pipeline(self.pipeline, None);
-            device.destroy_shader_module(self.vert_module, None);
-            device.destroy_shader_module(self.frag_module, None);
+            device.destroy_pipeline(Some(self.pipeline), None);
+            device.destroy_shader_module(Some(self.vert_module), None);
+            device.destroy_shader_module(Some(self.frag_module), None);
             self.uniform.destroy(device, allocator);
-            device.destroy_descriptor_set_layout(self.desc_layout, None);
-            device.destroy_pipeline_layout(self.pipeline_layout, None);
+            device.destroy_descriptor_set_layout(Some(self.desc_layout), None);
+            device.destroy_pipeline_layout(Some(self.pipeline_layout), None);
         }
     }
 }

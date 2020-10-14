@@ -19,6 +19,7 @@ pub struct Camera {
     //TODO: Make a quat out of this
     pos: Vec3,
     velocity: Vec3,
+    speed: f32,
     yaw: f64,
     pitch: f64,
     looking: bool,
@@ -31,6 +32,7 @@ impl Camera {
         Self {
             pos: Vec3::new(0.0, 0.0, -1.0),
             velocity: Vec3::new(0.0, 0.0, 0.0),
+            speed: 100.0,
             yaw: 0.0,
             pitch: 0.0,
             looking: false,
@@ -124,8 +126,8 @@ impl Camera {
                 DeviceEvent::MouseMotion { delta } => {
                     if self.looking {
                         //Since -y is up for now, this is valid:
-                        self.yaw += 0.01 * delta.0;
-                        self.pitch -= 0.01 * delta.1;
+                        self.yaw += 0.005 * delta.0;
+                        self.pitch -= 0.005 * delta.1;
                         self.pitch = self
                             .pitch
                             .max(-std::f64::consts::FRAC_PI_2 + 0.01)
@@ -138,7 +140,12 @@ impl Camera {
         }
     }
 
-    pub fn update(&mut self, _dt: f32) {
+    fn lerp_vec3(old_velocity: Vec3, to_velocity: Vec3, ratio: f32) -> Vec3 {
+        let new_velocity = old_velocity + (to_velocity - old_velocity).mul(ratio);
+        new_velocity
+    }
+
+    pub fn update(&mut self, dt: f32) {
         // let mut up_velocity = 0.0f32;
         let mut velocity = Vec3::new(0.0, 0.0, 0.0);
         if self.current_movement.contains(Movement::FORWARD) {
@@ -159,9 +166,11 @@ impl Camera {
         if self.current_movement.contains(Movement::RIGHT) {
             velocity[0] += 1.0;
         }
-        self.velocity = self.velocity.mul(0.9)
-            + mikpe_math::mat4_mul_vec3(&self.get_view_rotation(), &velocity).mul(0.1);
-        self.pos = self.pos + self.velocity;
+        velocity = mikpe_math::mat4_mul_vec3(&self.get_view_rotation(), &velocity).mul(self.speed);
+
+        self.velocity = Self::lerp_vec3(self.velocity, velocity, 10.0 * dt);
+
+        self.pos = self.pos + self.velocity.mul(dt);
     }
 
     // Note to self:

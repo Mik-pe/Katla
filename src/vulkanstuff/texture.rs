@@ -60,7 +60,7 @@ impl Texture {
                 .src_queue_family_index(QUEUE_FAMILY_IGNORED)
                 .dst_queue_family_index(QUEUE_FAMILY_IGNORED)
                 .image(image)
-                .subresource_range(subresource_range.discard());
+                .subresource_range(subresource_range.build());
 
             if old_layout == ImageLayout::UNDEFINED
                 && new_layout == ImageLayout::TRANSFER_DST_OPTIMAL
@@ -88,7 +88,7 @@ impl Texture {
                 command_buffer,
                 src_stage_mask,
                 dst_stage_mask,
-                DependencyFlags::from_bits(0).unwrap(),
+                Some(DependencyFlags::from_bits(0).unwrap()),
                 &vec![],
                 &vec![],
                 &vec![barrier_builder],
@@ -114,7 +114,7 @@ impl Texture {
         unsafe {
             let regions = vec![BufferImageCopyBuilder::new()
                 .image_extent(extent)
-                .image_subresource(subresources.discard())];
+                .image_subresource(subresources.build())];
             context.device.cmd_copy_buffer_to_image(
                 command_buffer,
                 src_buffer,
@@ -243,8 +243,12 @@ impl Texture {
 
     pub fn destroy(self, context: &VulkanContext) {
         unsafe {
-            context.device.destroy_sampler(self.image_sampler, None);
-            context.device.destroy_image_view(self.image_view, None);
+            context
+                .device
+                .destroy_sampler(Some(self.image_sampler), None);
+            context
+                .device
+                .destroy_image_view(Some(self.image_view), None);
         }
         context
             .allocator

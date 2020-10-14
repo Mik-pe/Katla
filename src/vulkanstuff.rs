@@ -11,17 +11,15 @@ mod vertexbuffer;
 
 use std::{ffi::CString, rc::Rc, sync::Mutex};
 
-use erupt::{extensions::khr_swapchain::*, utils::loading::DefaultCoreLoader, vk1_0::*};
+use erupt::{extensions::khr_swapchain::*, vk1_0::*, DefaultEntryLoader, EntryLoader};
 use lazy_static::lazy_static;
 
 use winit::window::{Window, WindowBuilder};
 use winit::{dpi::LogicalSize, event_loop::EventLoop};
 
 lazy_static! {
-    static ref CORE_LOADER: Mutex<DefaultCoreLoader> = {
-        let core = Mutex::new(DefaultCoreLoader::new().unwrap());
-        core.lock().unwrap().load_vk1_0().unwrap();
-        // core.lock().unwrap().load_vk1_1().unwrap();
+    static ref ENTRY_LOADER: Mutex<DefaultEntryLoader> = {
+        let core = Mutex::new(EntryLoader::new().unwrap());
         core
     };
 }
@@ -178,9 +176,11 @@ impl VulkanRenderer {
             self.swap_data.destroy(&self.context.device);
             self.context
                 .device
-                .destroy_render_pass(self.render_pass, None);
+                .destroy_render_pass(Some(self.render_pass), None);
             for &framebuffer in &self.swapchain_framebuffers {
-                self.context.device.destroy_framebuffer(framebuffer, None);
+                self.context
+                    .device
+                    .destroy_framebuffer(Some(framebuffer), None);
             }
 
             self.frame_context.destroy();
@@ -197,9 +197,11 @@ impl VulkanRenderer {
         unsafe {
             self.context
                 .device
-                .destroy_render_pass(self.render_pass, None);
+                .destroy_render_pass(Some(self.render_pass), None);
             for &framebuffer in &self.swapchain_framebuffers {
-                self.context.device.destroy_framebuffer(framebuffer, None);
+                self.context
+                    .device
+                    .destroy_framebuffer(Some(framebuffer), None);
             }
         }
 
@@ -364,7 +366,11 @@ impl VulkanRenderer {
                 .unwrap();
             self.context
                 .device
-                .queue_submit(self.context.graphics_queue, &[submit_info], in_flight_fence)
+                .queue_submit(
+                    self.context.graphics_queue,
+                    &[submit_info],
+                    Some(in_flight_fence),
+                )
                 .unwrap()
         }
 

@@ -378,9 +378,9 @@ checksum = "e78d4f1cc4ae33bbfc157ed5d5a5ef3bc29227303d595861deb238fcec4e9457"
 
 [[package]]
 name = "erupt"
-version = "0.10.0+145"
+version = "0.14.0+154"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "956f18431c001fbba4a761243f11fda5d4b015f84856f796c6c16c5985de64a5"
+checksum = "a0d232df97987d5a88f4a5de263fd002526c05a01fe089c40987e2a2263cab67"
 dependencies = [
  "bitflags",
  "libloading",
