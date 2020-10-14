@@ -62,8 +62,8 @@ impl SwapData {
             device.acquire_next_image_khr(
                 swapchain,
                 u64::MAX,
-                self.image_available_semaphores[self.frame],
-                Fence::null(),
+                Some(self.image_available_semaphores[self.frame]),
+                None,
                 None,
             )
         }
@@ -94,11 +94,11 @@ impl SwapData {
                 .iter()
                 .chain(self.render_finished_semaphores.iter())
             {
-                device.destroy_semaphore(semaphore, None);
+                device.destroy_semaphore(Some(semaphore), None);
             }
 
             for &fence in &self.in_flight_fences {
-                device.destroy_fence(fence, None);
+                device.destroy_fence(Some(fence), None);
             }
         }
     }

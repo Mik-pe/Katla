@@ -1,13 +1,18 @@
-use super::CORE_LOADER;
+use super::ENTRY_LOADER;
 
 use erupt::{
     cstr,
-    extensions::{ext_debug_utils::*, khr_surface::*, khr_swapchain::*},
+    extensions::{ext_debug_utils, khr_surface::*, khr_swapchain::*},
     utils::{
         allocator::{Allocation, Allocator, AllocatorCreateInfo, MemoryTypeFinder},
         surface,
     },
-    vk1_0::*,
+    vk1_0::{
+        self, ApplicationInfoBuilder, CommandBuffer, CommandBufferAllocateInfoBuilder,
+        CommandBufferBeginInfoBuilder, CommandBufferLevel, CommandPool, Extent2D, Format,
+        FormatFeatureFlags, Image, ImageTiling, ImageView, InstanceCreateInfoBuilder,
+        PhysicalDevice, Queue, QueueFlags,
+    },
     DeviceLoader, InstanceLoader,
 };
 use std::{
@@ -42,7 +47,7 @@ impl RenderTexture {
         unsafe {
             self.context
                 .device
-                .destroy_image_view(self.image_view, None);
+                .destroy_image_view(Some(self.image_view), None);
         }
         let image_memory = self.image_memory.take();
 
@@ -67,7 +72,7 @@ pub struct VulkanContext {
     pub surface: SurfaceKHR,
     pub command_pool: CommandPool,
     pub graphics_queue: Queue,
-    messenger: Option<DebugUtilsMessengerEXT>,
+    messenger: Option<ext_debug_utils::DebugUtilsMessengerEXT>,
 }
 pub struct VulkanFrameCtx {
     pub context: Rc<VulkanContext>,
@@ -178,40 +183,33 @@ impl VulkanContext {
             panic!("Validation layers requested, but unavailable!");
         }
 
-        let api_version = CORE_LOADER.lock().unwrap().instance_version();
+        let api_version = ENTRY_LOADER.lock().unwrap().instance_version();
         println!(
             "Mikpe erupt test: - Vulkan {}.{}.{}",
-            erupt::version_major(api_version),
-            erupt::version_minor(api_version),
-            erupt::version_patch(api_version)
+            vk1_0::version_major(api_version),
+            vk1_0::version_minor(api_version),
+            vk1_0::version_patch(api_version)
         );
         let mut instance_extensions = surface::enumerate_required_extensions(window).unwrap();
         let mut instance_layers = vec![];
         if with_validation_layers {
-            instance_extensions.push(EXT_DEBUG_UTILS_EXTENSION_NAME);
+            instance_extensions.push(ext_debug_utils::EXT_DEBUG_UTILS_EXTENSION_NAME);
             instance_layers.push(LAYER_KHRONOS_VALIDATION);
         }
         let app_info = ApplicationInfoBuilder::new()
             .application_name(app_name)
-            .application_version(erupt::make_version(1, 0, 0))
+            .application_version(vk1_0::make_version(1, 0, 0))
             .engine_name(engine_name)
-            .engine_version(erupt::make_version(1, 0, 0))
-            .api_version(erupt::make_version(1, 1, 0));
+            .engine_version(vk1_0::make_version(1, 0, 0))
+            .api_version(vk1_0::make_version(1, 1, 0));
 
         let create_info = InstanceCreateInfoBuilder::new()
             .application_info(&app_info)
             .enabled_extension_names(&instance_extensions)
             .enabled_layer_names(&instance_layers);
-        let instance = unsafe {
-            CORE_LOADER
-                .lock()
-                .unwrap()
-                .create_instance(&create_info, None, None)
-        }
-        .unwrap();
-        let mut instance = InstanceLoader::new(&CORE_LOADER.lock().unwrap(), instance).unwrap();
-        instance.load_vk1_0().unwrap();
-        instance.load_vk1_1().unwrap();
+
+        let mut instance =
+            InstanceLoader::new(&ENTRY_LOADER.lock().unwrap(), &create_info, None).unwrap();
         instance
     }
 
@@ -282,7 +280,7 @@ impl VulkanContext {
             let command_buffer: CommandBuffer =
                 self.device.allocate_command_buffers(&create_info).unwrap()[0];
             let begin_info = CommandBufferBeginInfoBuilder::new()
-                .flags(CommandBufferUsageFlags::ONE_TIME_SUBMIT);
+                .flags(vk1_0::CommandBufferUsageFlags::ONE_TIME_SUBMIT);
             self.device
                 .begin_command_buffer(command_buffer, &begin_info)
                 .unwrap();
@@ -294,9 +292,9 @@ impl VulkanContext {
         unsafe {
             let command_buffers = vec![command_buffer];
             self.device.end_command_buffer(command_buffer).unwrap();
-            let submit_info = SubmitInfoBuilder::new().command_buffers(&command_buffers);
+            let submit_info = vk1_0::SubmitInfoBuilder::new().command_buffers(&command_buffers);
             self.device
-                .queue_submit(self.graphics_queue, &vec![submit_info], Fence::null())
+                .queue_submit(self.graphics_queue, &vec![submit_info], None)
                 .unwrap();
             self.device.queue_wait_idle(self.graphics_queue).unwrap();
             self.device
@@ -344,9 +342,9 @@ impl VulkanContext {
 
         let graphics_queue = unsafe { device.get_device_queue(graphics_queue_idx, 0, None) };
 
-        let create_info = CommandPoolCreateInfoBuilder::new()
+        let create_info = vk1_0::CommandPoolCreateInfoBuilder::new()
             .queue_family_index(graphics_queue_idx)
-            .flags(CommandPoolCreateFlags::RESET_COMMAND_BUFFER);
+            .flags(vk1_0::CommandPoolCreateFlags::RESET_COMMAND_BUFFER);
         let command_pool = unsafe { device.create_command_pool(&create_info, None, None) }.unwrap();
 
         Self {
@@ -366,13 +364,14 @@ impl Drop for VulkanContext {
         unsafe {
             self.device.device_wait_idle().unwrap();
 
-            self.device.destroy_command_pool(self.command_pool, None);
+            self.device
+                .destroy_command_pool(Some(self.command_pool), None);
             self.device.destroy_device(None);
-            self.instance.destroy_surface_khr(self.surface, None);
+            self.instance.destroy_surface_khr(Some(self.surface), None);
 
             if self.messenger.is_some() {
                 self.instance
-                    .destroy_debug_utils_messenger_ext(self.messenger.unwrap(), None);
+                    .destroy_debug_utils_messenger_ext(self.messenger, None);
             }
 
             self.instance.destroy_instance(None);
@@ -385,27 +384,25 @@ impl VulkanFrameCtx {
         device: &DeviceLoader,
         image: Image,
         format: Format,
-        aspect_mask: ImageAspectFlags,
+        aspect_mask: vk1_0::ImageAspectFlags,
     ) -> ImageView {
-        let create_info = ImageViewCreateInfoBuilder::new()
+        let subresource_range = vk1_0::ImageSubresourceRangeBuilder::new()
+            .aspect_mask(aspect_mask)
+            .base_mip_level(0)
+            .level_count(1)
+            .base_array_layer(0)
+            .layer_count(1);
+        let create_info = vk1_0::ImageViewCreateInfoBuilder::new()
             .image(image)
-            .view_type(ImageViewType::_2D)
+            .view_type(vk1_0::ImageViewType::_2D)
             .format(format)
-            .components(ComponentMapping {
-                r: ComponentSwizzle::IDENTITY,
-                g: ComponentSwizzle::IDENTITY,
-                b: ComponentSwizzle::IDENTITY,
-                a: ComponentSwizzle::IDENTITY,
+            .components(vk1_0::ComponentMapping {
+                r: vk1_0::ComponentSwizzle::IDENTITY,
+                g: vk1_0::ComponentSwizzle::IDENTITY,
+                b: vk1_0::ComponentSwizzle::IDENTITY,
+                a: vk1_0::ComponentSwizzle::IDENTITY,
             })
-            .subresource_range(unsafe {
-                ImageSubresourceRangeBuilder::new()
-                    .aspect_mask(aspect_mask)
-                    .base_mip_level(0)
-                    .level_count(1)
-                    .base_array_layer(0)
-                    .layer_count(1)
-                    .discard()
-            });
+            .subresource_range(subresource_range.build());
         unsafe { device.create_image_view(&create_info, None, None) }.unwrap()
     }
 
@@ -426,7 +423,7 @@ impl VulkanFrameCtx {
                     &context.device,
                     *swapchain_image,
                     current_surface_format.format,
-                    ImageAspectFlags::COLOR,
+                    vk1_0::ImageAspectFlags::COLOR,
                 )
             })
             .collect();
@@ -482,7 +479,7 @@ impl VulkanFrameCtx {
                     &self.context.device,
                     *swapchain_image,
                     self.current_surface_format.format,
-                    ImageAspectFlags::COLOR,
+                    vk1_0::ImageAspectFlags::COLOR,
                 )
             })
             .collect();
@@ -493,11 +490,13 @@ impl VulkanFrameCtx {
     pub fn destroy(&mut self) {
         unsafe {
             for &image_view in &self.swapchain_image_views {
-                self.context.device.destroy_image_view(image_view, None);
+                self.context
+                    .device
+                    .destroy_image_view(Some(image_view), None);
             }
             self.context
                 .device
-                .destroy_swapchain_khr(self.swapchain, None);
+                .destroy_swapchain_khr(Some(self.swapchain), None);
             self.depth_render_texture.destroy();
         }
     }
@@ -531,9 +530,9 @@ unsafe fn is_physical_device_suitable(
     let mut score = 0;
 
     match properties.device_type {
-        PhysicalDeviceType::DISCRETE_GPU => score += 1000,
-        PhysicalDeviceType::INTEGRATED_GPU => score += 100,
-        PhysicalDeviceType::CPU => score += 10,
+        vk1_0::PhysicalDeviceType::DISCRETE_GPU => score += 1000,
+        vk1_0::PhysicalDeviceType::INTEGRATED_GPU => score += 100,
+        vk1_0::PhysicalDeviceType::CPU => score += 10,
         _ => {}
     }
 
@@ -551,20 +550,20 @@ unsafe fn is_physical_device_suitable(
 
 fn create_depth_render_texture(context: Rc<VulkanContext>, extent: Extent2D) -> RenderTexture {
     let depth_format = context.find_depth_format();
-    let extent_3d = Extent3D {
+    let extent_3d = vk1_0::Extent3D {
         width: extent.width,
         height: extent.height,
         depth: 1,
     };
-    let create_info = ImageCreateInfoBuilder::new()
-        .image_type(ImageType::_2D)
+    let create_info = vk1_0::ImageCreateInfoBuilder::new()
+        .image_type(vk1_0::ImageType::_2D)
         .mip_levels(1)
         .array_layers(1)
         .format(depth_format)
         .extent(extent_3d)
         .tiling(ImageTiling::OPTIMAL)
-        .samples(SampleCountFlagBits::_1)
-        .usage(ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT);
+        .samples(vk1_0::SampleCountFlagBits::_1)
+        .usage(vk1_0::ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT);
 
     //https://vulkan-tutorial.com/Depth_buffering
     let depth_image = unsafe {
@@ -585,7 +584,7 @@ fn create_depth_render_texture(context: Rc<VulkanContext>, extent: Extent2D) -> 
         &context.device,
         depth_image,
         depth_format,
-        ImageAspectFlags::DEPTH,
+        vk1_0::ImageAspectFlags::DEPTH,
     );
     RenderTexture {
         extent,
@@ -609,27 +608,19 @@ fn create_device(
     }
 
     // https://vulkan-tutorial.com/Drawing_a_triangle/Setup/Logical_device_and_queues
-    let queue_create_info = vec![DeviceQueueCreateInfoBuilder::new()
+    let queue_create_info = vec![vk1_0::DeviceQueueCreateInfoBuilder::new()
         .queue_family_index(graphics_queue)
         .queue_priorities(&[1.0])];
-    let features = PhysicalDeviceFeaturesBuilder::new().sampler_anisotropy(true);
+    let features = vk1_0::PhysicalDeviceFeaturesBuilder::new().sampler_anisotropy(true);
 
-    let create_info = DeviceCreateInfoBuilder::new()
+    let create_info = vk1_0::DeviceCreateInfoBuilder::new()
         .enabled_extension_names(&device_extensions)
         .enabled_layer_names(&device_layers)
         .queue_create_infos(&queue_create_info)
         .enabled_features(&features);
 
-    let mut device = DeviceLoader::new(
-        &instance,
-        unsafe { instance.create_device(physical_device, &create_info, None, None) }.unwrap(),
-    )
-    .unwrap();
-    device.load_vk1_0().unwrap();
-    device.load_vk1_1().unwrap();
-    device
-        .load_khr_swapchain()
-        .expect("Couldn't load swapchain!");
+    let mut device = DeviceLoader::new(&instance, physical_device, &create_info, None).unwrap();
+
     device
 }
 
@@ -659,8 +650,8 @@ fn create_swapchain(
         .image_color_space(format.color_space)
         .image_extent(current_extent)
         .image_array_layers(1)
-        .image_usage(ImageUsageFlags::COLOR_ATTACHMENT)
-        .image_sharing_mode(SharingMode::EXCLUSIVE)
+        .image_usage(vk1_0::ImageUsageFlags::COLOR_ATTACHMENT)
+        .image_sharing_mode(vk1_0::SharingMode::EXCLUSIVE)
         .pre_transform(surface_caps.current_transform)
         .composite_alpha(CompositeAlphaFlagBitsKHR::OPAQUE_KHR)
         .present_mode(present_mode)
@@ -673,20 +664,18 @@ fn create_swapchain(
 fn create_debug_messenger(
     instance: &mut InstanceLoader,
     with_validation_layers: bool,
-) -> Option<DebugUtilsMessengerEXT> {
+) -> Option<ext_debug_utils::DebugUtilsMessengerEXT> {
     if with_validation_layers {
-        instance.load_ext_debug_utils().unwrap();
-
-        let create_info = DebugUtilsMessengerCreateInfoEXTBuilder::new()
+        let create_info = ext_debug_utils::DebugUtilsMessengerCreateInfoEXTBuilder::new()
             .message_severity(
-                DebugUtilsMessageSeverityFlagsEXT::VERBOSE_EXT
-                    | DebugUtilsMessageSeverityFlagsEXT::WARNING_EXT
-                    | DebugUtilsMessageSeverityFlagsEXT::ERROR_EXT,
+                ext_debug_utils::DebugUtilsMessageSeverityFlagsEXT::VERBOSE_EXT
+                    | ext_debug_utils::DebugUtilsMessageSeverityFlagsEXT::WARNING_EXT
+                    | ext_debug_utils::DebugUtilsMessageSeverityFlagsEXT::ERROR_EXT,
             )
             .message_type(
-                DebugUtilsMessageTypeFlagsEXT::GENERAL_EXT
-                    | DebugUtilsMessageTypeFlagsEXT::VALIDATION_EXT
-                    | DebugUtilsMessageTypeFlagsEXT::PERFORMANCE_EXT,
+                ext_debug_utils::DebugUtilsMessageTypeFlagsEXT::GENERAL_EXT
+                    | ext_debug_utils::DebugUtilsMessageTypeFlagsEXT::VALIDATION_EXT
+                    | ext_debug_utils::DebugUtilsMessageTypeFlagsEXT::PERFORMANCE_EXT,
             )
             .pfn_user_callback(Some(debug_callback));
 
@@ -699,26 +688,26 @@ fn create_debug_messenger(
 }
 
 unsafe extern "system" fn debug_callback(
-    _message_severity: DebugUtilsMessageSeverityFlagBitsEXT,
-    _message_types: DebugUtilsMessageTypeFlagsEXT,
-    p_callback_data: *const DebugUtilsMessengerCallbackDataEXT,
+    _message_severity: ext_debug_utils::DebugUtilsMessageSeverityFlagBitsEXT,
+    _message_types: ext_debug_utils::DebugUtilsMessageTypeFlagsEXT,
+    p_callback_data: *const ext_debug_utils::DebugUtilsMessengerCallbackDataEXT,
     _p_user_data: *mut c_void,
-) -> Bool32 {
+) -> vk1_0::Bool32 {
     println!(
         "{}",
         CStr::from_ptr((*p_callback_data).p_message).to_string_lossy()
     );
 
-    FALSE
+    vk1_0::FALSE
 }
 
 fn check_validation_support() -> bool {
     let mut layer_count = 0u32;
-    let commands = Vk10CoreCommands::load(&CORE_LOADER.lock().unwrap()).unwrap();
+    let commands = &ENTRY_LOADER.lock().unwrap();
     unsafe {
         commands.enumerate_instance_layer_properties.unwrap()(&mut layer_count, 0 as _);
-        let mut available_layers: Vec<LayerProperties> = Vec::new();
-        available_layers.resize(layer_count as usize, LayerProperties::default());
+        let mut available_layers: Vec<vk1_0::LayerProperties> = Vec::new();
+        available_layers.resize(layer_count as usize, vk1_0::LayerProperties::default());
         commands.enumerate_instance_layer_properties.unwrap()(
             &mut layer_count,
             available_layers.as_mut_ptr(),

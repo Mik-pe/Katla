@@ -6,7 +6,6 @@ mod util;
 mod vulkanstuff;
 
 use application::{Scene, SceneObject};
-use erupt::vk1_0::Vk10DeviceLoaderExt;
 use mikpe_math::{Mat4, Vec3};
 use rendering::vertextypes;
 use rendering::Mesh;

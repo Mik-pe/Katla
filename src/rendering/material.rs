@@ -18,14 +18,9 @@ pub struct Material {
 impl Material {
     pub fn new(model: Rc<CachedGLTFModel>, renderer: &mut VulkanRenderer) -> Self {
         let render_pass = renderer.render_pass;
-        let current_extent = renderer.current_extent();
         let num_images = renderer.num_images();
-        let mut renderpipeline = RenderPipeline::new::<VertexPBR>(
-            &renderer.context,
-            render_pass,
-            current_extent,
-            num_images,
-        );
+        let mut renderpipeline =
+            RenderPipeline::new::<VertexPBR>(&renderer.context, render_pass, num_images);
         let mut texture = None;
         if !model.images.is_empty() {
             let image = &model.images[0];
