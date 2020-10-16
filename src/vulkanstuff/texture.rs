@@ -133,6 +133,8 @@ impl Texture {
             .max_anisotropy(16.0)
             .border_color(BorderColor::INT_OPAQUE_BLACK)
             .unnormalized_coordinates(false)
+            .min_filter(Filter::LINEAR)
+            .mag_filter(Filter::LINEAR)
             .compare_enable(false)
             .compare_op(CompareOp::ALWAYS)
             .mipmap_mode(SamplerMipmapMode::LINEAR)
