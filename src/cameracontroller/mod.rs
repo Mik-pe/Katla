@@ -1,48 +1,71 @@
-use bitflags::bitflags;
+use crate::inputcontroller::InputController;
 use mikpe_math::{Mat4, Vec3};
-use winit::event::{DeviceEvent, ElementState, MouseButton, VirtualKeyCode, WindowEvent};
+use std::{cell::RefCell, rc::Rc};
+use winit::event::{DeviceEvent, ElementState, MouseButton, WindowEvent};
 use winit::{dpi::PhysicalPosition, event::Event};
 
-bitflags! {
-    struct Movement: u32
-    {
-        const STILL     = 0b0000_0000;
-        const FORWARD   = 0b0000_0001;
-        const BACKWARDS = 0b0000_0010;
-        const LEFT      = 0b0000_0100;
-        const RIGHT     = 0b0000_1000;
-        const UP        = 0b0001_0000;
-        const DOWN      = 0b0010_0000;
-    }
-}
 pub struct Camera {
     //TODO: Make a quat out of this
     pos: Vec3,
-    velocity: Vec3,
+    velocity_dir: Vec3,
+    input_dir: Vec3,
     speed: f32,
     yaw: f64,
     pitch: f64,
     looking: bool,
-    current_movement: Movement,
     last_mouse_pos: PhysicalPosition<f64>,
 }
 
+//This is not very fun... should find some better way for this in the future.
+pub fn setup_camera_bindings(camera: Rc<RefCell<Camera>>, input_controller: &mut InputController) {
+    let cam = camera.clone();
+    input_controller.assign_axis_callback(
+        "SteerVert".into(),
+        Box::new(move |value| cam.borrow_mut().handle_steer_vert(value)),
+    );
+    let cam = camera.clone();
+    input_controller.assign_axis_callback(
+        "SteerHori".into(),
+        Box::new(move |value| cam.borrow_mut().handle_steer_horiz(value)),
+    );
+    input_controller.assign_axis_callback(
+        "SteerFwd".into(),
+        Box::new(move |value| camera.borrow_mut().handle_steer_fwd(value)),
+    );
+}
+
 impl Camera {
+    pub fn handle_steer_horiz(&mut self, value: f32) {
+        self.input_dir[0] = value;
+    }
+    pub fn handle_steer_vert(&mut self, value: f32) {
+        self.input_dir[1] = value;
+    }
+    pub fn handle_steer_fwd(&mut self, value: f32) {
+        self.input_dir[2] = value;
+    }
+
     pub fn new() -> Self {
-        Self {
+        let camera = Self {
             pos: Vec3::new(0.0, 0.0, -1.0),
-            velocity: Vec3::new(0.0, 0.0, 0.0),
+            velocity_dir: Vec3::new(0.0, 0.0, 0.0),
+            input_dir: Vec3::new(0.0, 0.0, 0.0),
             speed: 100.0,
             yaw: 0.0,
             pitch: 0.0,
             looking: false,
-            current_movement: Movement::STILL,
             last_mouse_pos: PhysicalPosition::new(0.0, 0.0),
-        }
+        };
+
+        camera
     }
+
     pub fn handle_event(&mut self, event: &Event<()>) {
         match event {
-            Event::WindowEvent { window_id, event } => match event {
+            Event::WindowEvent {
+                window_id: _,
+                event,
+            } => match event {
                 WindowEvent::MouseInput {
                     device_id: _,
                     state,
@@ -62,67 +85,12 @@ impl Camera {
                 } => {
                     self.last_mouse_pos = *position;
                 }
-                WindowEvent::KeyboardInput {
-                    device_id: _,
-                    input,
-                    is_synthetic: _,
-                } => {
-                    if input.state == ElementState::Pressed {
-                        match input.virtual_keycode {
-                            Some(keycode) => match keycode {
-                                VirtualKeyCode::W => {
-                                    self.current_movement |= Movement::FORWARD;
-                                }
-                                VirtualKeyCode::S => {
-                                    self.current_movement |= Movement::BACKWARDS;
-                                }
-                                VirtualKeyCode::A => {
-                                    self.current_movement |= Movement::LEFT;
-                                }
-                                VirtualKeyCode::D => {
-                                    self.current_movement |= Movement::RIGHT;
-                                }
-                                VirtualKeyCode::Q => {
-                                    self.current_movement |= Movement::DOWN;
-                                }
-                                VirtualKeyCode::E => {
-                                    self.current_movement |= Movement::UP;
-                                }
-                                _ => {}
-                            },
-                            None => {}
-                        }
-                    }
-                    if input.state == ElementState::Released {
-                        match input.virtual_keycode {
-                            Some(keycode) => match keycode {
-                                VirtualKeyCode::W => {
-                                    self.current_movement -= Movement::FORWARD;
-                                }
-                                VirtualKeyCode::S => {
-                                    self.current_movement -= Movement::BACKWARDS;
-                                }
-                                VirtualKeyCode::A => {
-                                    self.current_movement -= Movement::LEFT;
-                                }
-                                VirtualKeyCode::D => {
-                                    self.current_movement -= Movement::RIGHT;
-                                }
-                                VirtualKeyCode::Q => {
-                                    self.current_movement -= Movement::DOWN;
-                                }
-                                VirtualKeyCode::E => {
-                                    self.current_movement -= Movement::UP;
-                                }
-                                _ => {}
-                            },
-                            None => {}
-                        }
-                    }
-                }
                 _ => {}
             },
-            Event::DeviceEvent { device_id, event } => match event {
+            Event::DeviceEvent {
+                device_id: _,
+                event,
+            } => match event {
                 DeviceEvent::MouseMotion { delta } => {
                     if self.looking {
                         //Since -y is up for now, this is valid:
@@ -140,37 +108,17 @@ impl Camera {
         }
     }
 
-    fn lerp_vec3(old_velocity: Vec3, to_velocity: Vec3, ratio: f32) -> Vec3 {
-        let new_velocity = old_velocity + (to_velocity - old_velocity).mul(ratio);
-        new_velocity
+    fn lerp_vec3(old_velocity_dir: Vec3, to_velocity_dir: Vec3, ratio: f32) -> Vec3 {
+        let new_velocity_dir = old_velocity_dir + (to_velocity_dir - old_velocity_dir).mul(ratio);
+        new_velocity_dir
     }
 
     pub fn update(&mut self, dt: f32) {
-        // let mut up_velocity = 0.0f32;
-        let mut velocity = Vec3::new(0.0, 0.0, 0.0);
-        if self.current_movement.contains(Movement::FORWARD) {
-            velocity[2] += 1.0;
-        }
-        if self.current_movement.contains(Movement::BACKWARDS) {
-            velocity[2] -= 1.0;
-        }
-        if self.current_movement.contains(Movement::DOWN) {
-            velocity[1] -= 1.0;
-        }
-        if self.current_movement.contains(Movement::UP) {
-            velocity[1] += 1.0;
-        }
-        if self.current_movement.contains(Movement::LEFT) {
-            velocity[0] -= 1.0;
-        }
-        if self.current_movement.contains(Movement::RIGHT) {
-            velocity[0] += 1.0;
-        }
-        velocity = mikpe_math::mat4_mul_vec3(&self.get_view_rotation(), &velocity).mul(self.speed);
+        let velocity_dir = mikpe_math::mat4_mul_vec3(&self.get_view_rotation(), &self.input_dir);
 
-        self.velocity = Self::lerp_vec3(self.velocity, velocity, 10.0 * dt);
+        self.velocity_dir = Self::lerp_vec3(self.velocity_dir, velocity_dir, 10.0 * dt);
 
-        self.pos = self.pos + self.velocity.mul(dt);
+        self.pos = self.pos + self.velocity_dir.mul(self.speed * dt);
     }
 
     // Note to self:
