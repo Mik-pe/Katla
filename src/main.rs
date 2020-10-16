@@ -1,6 +1,7 @@
 mod application;
 mod cameracontroller;
 mod gui;
+mod inputcontroller;
 mod rendering;
 mod util;
 mod vulkanstuff;
@@ -11,16 +12,29 @@ use rendering::vertextypes;
 use rendering::Mesh;
 use vulkanstuff::Texture;
 
-use std::{ffi::CString, path::PathBuf, time::Instant};
-use winit::event_loop::EventLoop;
+use std::{cell::RefCell, ffi::CString, path::PathBuf, rc::Rc, time::Instant};
+use winit::{event::VirtualKeyCode, event_loop::EventLoop};
 
 fn main() {
     let event_loop = EventLoop::new();
-    let mut camera = cameracontroller::Camera::new();
     let app_name = CString::new("Mikpe Renderer").unwrap();
     let engine_name = CString::new("MikpEngine").unwrap();
     let mut vulkan_ctx =
         vulkanstuff::VulkanRenderer::init(&event_loop, true, app_name, engine_name);
+    let mut input_controller = inputcontroller::InputController::new();
+
+    input_controller.assign_axis_input(VirtualKeyCode::A, "SteerHori".into(), -1.0);
+    input_controller.assign_axis_input(VirtualKeyCode::D, "SteerHori".into(), 1.0);
+
+    input_controller.assign_axis_input(VirtualKeyCode::W, "SteerFwd".into(), 1.0);
+    input_controller.assign_axis_input(VirtualKeyCode::S, "SteerFwd".into(), -1.0);
+
+    input_controller.assign_axis_input(VirtualKeyCode::Q, "SteerVert".into(), -1.0);
+    input_controller.assign_axis_input(VirtualKeyCode::E, "SteerVert".into(), 1.0);
+
+    let camera = Rc::new(RefCell::new(cameracontroller::Camera::new()));
+    cameracontroller::setup_camera_bindings(camera.clone(), &mut input_controller);
+
     let img = image::open(PathBuf::from("resources/images/TestImage.png"))
         .unwrap()
         .to_rgba();
@@ -44,8 +58,6 @@ fn main() {
         Vec3::new(10.0, 0.0, 0.0),
     );
 
-    //Delta time, in seconds
-    let mut delta_time = 0.0;
     let mut last_frame = Instant::now();
     let mut timer = util::Timer::new(100);
     let mut frame_number = 0;
@@ -58,70 +70,66 @@ fn main() {
         use winit::event::{Event, VirtualKeyCode, WindowEvent};
         use winit::event_loop::ControlFlow;
 
-        camera.handle_event(&event);
+        camera.borrow_mut().handle_event(&event);
         match event {
-            Event::NewEvents(_) => {
-                frame_number += 1;
-                let end = last_frame.elapsed().as_micros() as f64 / 1000.0;
-                timer.add_timestamp(end);
-                // if frame_number % 100 == 0 {
-                //     println!(
-                //         "CPU time mean: {:.2}, min/max : {:.2}/{:.2}",
-                //         timer.current_mean(),
-                //         timer.current_min(),
-                //         timer.current_max()
-                //     );
-                // }
-
-                delta_time = last_frame.elapsed().as_micros() as f32 / 1_000_000.0;
-                camera.update(delta_time);
-                last_frame = Instant::now();
+            Event::NewEvents(winit::event::StartCause::Init) => {
                 *control_flow = ControlFlow::Poll;
             }
-            Event::WindowEvent { event, .. } => match event {
-                WindowEvent::Resized(logical_size) => {
-                    let win_x = logical_size.width as f64;
-                    let win_y = logical_size.height as f64;
-                    projection_matrix =
-                        Mat4::create_proj(60.0, (win_x / win_y) as f32, 0.1, 1000.0);
-                    vulkan_ctx.recreate_swapchain();
-                }
-                WindowEvent::CloseRequested => {
-                    *control_flow = ControlFlow::Exit;
-                }
-                WindowEvent::KeyboardInput { input, .. } => match input.state {
-                    winit::event::ElementState::Pressed => {
-                        if let Some(keycode) = input.virtual_keycode {
-                            match keycode {
-                                VirtualKeyCode::Escape => {
-                                    *control_flow = ControlFlow::Exit;
-                                }
-                                VirtualKeyCode::L => {
-                                    for _ in 0..100 {
-                                        textures.push(Texture::create_image(
-                                            &mut vulkan_ctx.context,
-                                            img_width,
-                                            img_height,
-                                            erupt::vk1_0::Format::R8G8B8A8_SRGB,
-                                            img.clone().into_raw().as_slice(),
-                                        ));
+            Event::WindowEvent { event, .. } => {
+                input_controller.handle_event(&event);
+                match event {
+                    WindowEvent::Resized(logical_size) => {
+                        let win_x = logical_size.width as f64;
+                        let win_y = logical_size.height as f64;
+                        projection_matrix =
+                            Mat4::create_proj(60.0, (win_x / win_y) as f32, 0.1, 1000.0);
+                        vulkan_ctx.recreate_swapchain();
+                    }
+                    WindowEvent::CloseRequested => {
+                        *control_flow = ControlFlow::Exit;
+                    }
+                    WindowEvent::KeyboardInput { input, .. } => match input.state {
+                        winit::event::ElementState::Pressed => {
+                            if let Some(keycode) = input.virtual_keycode {
+                                match keycode {
+                                    VirtualKeyCode::Escape => {
+                                        *control_flow = ControlFlow::Exit;
                                     }
+                                    VirtualKeyCode::L => {
+                                        for _ in 0..100 {
+                                            textures.push(Texture::create_image(
+                                                &mut vulkan_ctx.context,
+                                                img_width,
+                                                img_height,
+                                                erupt::vk1_0::Format::R8G8B8A8_SRGB,
+                                                img.clone().into_raw().as_slice(),
+                                            ));
+                                        }
+                                    }
+                                    _ => {}
                                 }
-                                _ => {}
                             }
                         }
-                    }
-                    _ => {}
-                },
-                _ => (),
-            },
+                        _ => {}
+                    },
+                    _ => (),
+                }
+            }
             Event::MainEventsCleared => {
                 vulkan_ctx.swap_frames();
 
+                frame_number += 1;
+                let end = last_frame.elapsed().as_micros() as f64 / 1000.0;
+                timer.add_timestamp(end);
+
+                let delta_time = last_frame.elapsed().as_micros() as f32 / 1_000_000.0;
+                camera.borrow_mut().update(delta_time);
+
+                last_frame = Instant::now();
                 scene.update(
                     &vulkan_ctx.context.device,
                     &projection_matrix,
-                    &camera.get_view_mat().inverse(),
+                    &camera.borrow().get_view_mat().inverse(),
                 );
                 let command_buffer = vulkan_ctx.get_commandbuffer_opaque_pass();
                 scene.render(&vulkan_ctx.context.device, command_buffer);
