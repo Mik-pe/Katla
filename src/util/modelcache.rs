@@ -6,6 +6,7 @@ use gltf::buffer::Data as BufferData;
 use gltf::image::Data as ImageData;
 use gltf::Document;
 use itertools::izip;
+use mikpe_math::{Sphere, Vec3};
 
 use std::collections::HashMap;
 use std::{
@@ -13,7 +14,7 @@ use std::{
     rc::Rc,
 };
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct CachedGLTFModel {
     pub document: Document,
     pub buffers: Vec<BufferData>,
@@ -21,16 +22,18 @@ pub struct CachedGLTFModel {
     pub vertex_data: Vec<VertexPBR>,
     pub index_data: Vec<u8>,
     pub index_stride: u8,
+    pub bounds: Sphere,
 }
 
 impl CachedGLTFModel {
-    fn parse_node(&self, node: &gltf::Node) -> (Vec<VertexPBR>, Vec<u8>, u8) {
+    fn parse_node(&self, node: &gltf::Node) -> (Vec<VertexPBR>, Vec<u8>, u8, Sphere) {
         let mut positions: Vec<[f32; 3]> = vec![];
         let mut normals: Vec<[f32; 3]> = vec![];
         let mut tex_coords: Vec<[f32; 2]> = vec![];
         let mut index_stride = 0u8;
         let mut index_data = vec![];
         let mut vertex_data = vec![];
+        let mut sphere = Sphere::new(Vec3::new(0.0, 0.0, 0.0), 0.0);
         if let Some(mesh) = node.mesh() {
             for primitive in mesh.primitives() {
                 let mut start_index: usize;
@@ -111,6 +114,10 @@ impl CachedGLTFModel {
             let has_norm = !normals.is_empty();
             let has_tex_coords = !tex_coords.is_empty();
 
+            if has_pos {
+                sphere = Sphere::create_from_verts(&positions);
+            }
+
             if has_pos && has_norm && has_tex_coords {
                 vertex_data = izip!(positions, normals, tex_coords)
                     .map(|(position, normal, tex_coord)| VertexPBR {
@@ -159,7 +166,7 @@ impl CachedGLTFModel {
                     .collect::<Vec<VertexPBR>>();
             }
         }
-        (vertex_data, index_data, index_stride)
+        (vertex_data, index_data, index_stride, sphere)
     }
 
     fn parse_gltf(&mut self) {
@@ -176,12 +183,17 @@ impl CachedGLTFModel {
 
         for node in self.document.nodes() {
             if used_nodes.contains(&node.index()) {
-                let (vertex_data, index_data, index_stride) = self.parse_node(&node);
+                let (vertex_data, index_data, index_stride, sphere) = self.parse_node(&node);
                 self.vertex_data.extend(vertex_data);
                 self.index_data.extend(index_data);
                 self.index_stride = index_stride;
+                self.bounds = sphere;
             }
         }
+        println!(
+            "Bound center: {:?}, Bound radius: {}",
+            self.bounds.center, self.bounds.radius
+        );
     }
 
     fn new<P>(path: P) -> Self
@@ -197,6 +209,7 @@ impl CachedGLTFModel {
             vertex_data: vec![],
             index_data: vec![],
             index_stride: 0,
+            bounds: Sphere::new(Vec3::new(0.0, 0.0, 0.0), 0.0),
         };
         model.parse_gltf();
         model

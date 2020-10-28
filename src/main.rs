@@ -19,8 +19,7 @@ fn main() {
     let event_loop = EventLoop::new();
     let app_name = CString::new("Mikpe Renderer").unwrap();
     let engine_name = CString::new("MikpEngine").unwrap();
-    let mut vulkan_ctx =
-        vulkanstuff::VulkanRenderer::init(&event_loop, true, app_name, engine_name);
+    let mut renderer = vulkanstuff::VulkanRenderer::init(&event_loop, true, app_name, engine_name);
     let mut input_controller = inputcontroller::InputController::new();
 
     input_controller.assign_axis_input(VirtualKeyCode::A, "SteerHori".into(), -1.0);
@@ -43,18 +42,18 @@ fn main() {
 
     let mut model_cache = util::ModelCache::new();
 
-    let size = vulkan_ctx.window.inner_size();
+    let size = renderer.window.inner_size();
     let win_x: f64 = size.width.into();
     let win_y: f64 = size.height.into();
     let mut projection_matrix = Mat4::create_proj(60.0, (win_x / win_y) as f32, 0.01, 1000.0);
     // let fox = Mesh::new_from_cache(
     //     model_cache.read_gltf(PathBuf::from("resources/models/FoxFixed.glb")),
-    //     &mut vulkan_ctx,
+    //     &mut renderer,
     //     Vec3::new(-1.0, 0.0, 0.0),
     // );
     let tiger = Mesh::new_from_cache(
         model_cache.read_gltf(PathBuf::from("resources/models/Tiger.glb")),
-        &mut vulkan_ctx,
+        &mut renderer,
         Vec3::new(10.0, 0.0, 0.0),
     );
 
@@ -67,7 +66,7 @@ fn main() {
     // scene.add_object(SceneObject::new(Box::new(fox)));
 
     event_loop.run(move |event, _, control_flow| {
-        use winit::event::{Event, VirtualKeyCode, WindowEvent};
+        use winit::event::{Event, WindowEvent};
         use winit::event_loop::ControlFlow;
 
         camera.borrow_mut().handle_event(&event);
@@ -83,7 +82,7 @@ fn main() {
                         let win_y = logical_size.height as f64;
                         projection_matrix =
                             Mat4::create_proj(60.0, (win_x / win_y) as f32, 0.1, 1000.0);
-                        vulkan_ctx.recreate_swapchain();
+                        renderer.recreate_swapchain();
                     }
                     WindowEvent::CloseRequested => {
                         *control_flow = ControlFlow::Exit;
@@ -98,7 +97,7 @@ fn main() {
                                     VirtualKeyCode::L => {
                                         for _ in 0..100 {
                                             textures.push(Texture::create_image(
-                                                &mut vulkan_ctx.context,
+                                                &mut renderer.context,
                                                 img_width,
                                                 img_height,
                                                 erupt::vk1_0::Format::R8G8B8A8_SRGB,
@@ -116,7 +115,7 @@ fn main() {
                 }
             }
             Event::MainEventsCleared => {
-                vulkan_ctx.swap_frames();
+                renderer.swap_frames();
 
                 frame_number += 1;
                 let end = last_frame.elapsed().as_micros() as f64 / 1000.0;
@@ -127,24 +126,21 @@ fn main() {
 
                 last_frame = Instant::now();
                 scene.update(
-                    &vulkan_ctx.context.device,
+                    &renderer.context.device,
                     &projection_matrix,
                     &camera.borrow().get_view_mat().inverse(),
                 );
-                let command_buffer = vulkan_ctx.get_commandbuffer_opaque_pass();
-                scene.render(&vulkan_ctx.context.device, command_buffer);
+                let command_buffer = renderer.get_commandbuffer_opaque_pass();
+                scene.render(&renderer.context.device, command_buffer);
                 unsafe {
-                    vulkan_ctx
-                        .context
-                        .device
-                        .cmd_end_render_pass(command_buffer);
-                    vulkan_ctx
+                    renderer.context.device.cmd_end_render_pass(command_buffer);
+                    renderer
                         .context
                         .device
                         .end_command_buffer(command_buffer)
                         .unwrap();
                 }
-                vulkan_ctx.submit_frame(vec![command_buffer]);
+                renderer.submit_frame(vec![command_buffer]);
             }
             Event::RedrawRequested { .. } => {}
             Event::LoopDestroyed => {
@@ -152,11 +148,11 @@ fn main() {
                 let mut tex_removal = vec![];
                 std::mem::swap(&mut textures, &mut tex_removal);
                 for texture in tex_removal {
-                    texture.destroy(&vulkan_ctx.context);
+                    texture.destroy(&renderer.context);
                 }
-                vulkan_ctx.destroy();
-                // vulkan_ctx.destroy(mesh_data)
-                // vulkan_ctx.destroy(meshes.as_mut_slice());
+                renderer.destroy();
+                // renderer.destroy(mesh_data)
+                // renderer.destroy(meshes.as_mut_slice());
             }
             _ => {}
         }

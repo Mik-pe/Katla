@@ -5,7 +5,7 @@ use crate::vulkanstuff::VulkanRenderer;
 use crate::vulkanstuff::{IndexBuffer, VertexBuffer};
 
 use erupt::{utils::allocator::Allocator, vk1_0::*, DeviceLoader};
-use mikpe_math::{Mat4, Vec3};
+use mikpe_math::{Mat4, Sphere, Vec3};
 use std::rc::Rc;
 
 //TODO: Decouple pipeline from the "Mesh" struct,
@@ -17,6 +17,7 @@ pub struct Mesh {
     pub material: Material,
     pub num_verts: u32,
     pub position: Vec3,
+    pub bounds: Sphere,
 }
 
 impl Mesh {
@@ -32,6 +33,7 @@ impl Mesh {
             material,
             num_verts: 0,
             position,
+            bounds: Sphere::new(Vec3::new(0.0, 0.0, 0.0), 0.0),
         };
         mesh.vertex_buffer = Self::create_vertex_buffer(renderer, model.vertpbr());
         let index_type = match model.index_stride {
