@@ -9,7 +9,7 @@ mod swapdata;
 mod texture;
 mod vertexbuffer;
 
-use std::{ffi::CString, rc::Rc, sync::Mutex};
+use std::{ffi::CString, rc::Rc, sync::Arc, sync::Mutex};
 
 use erupt::{extensions::khr_swapchain::*, vk1_0::*, DefaultEntryLoader, EntryLoader};
 use lazy_static::lazy_static;
@@ -26,7 +26,7 @@ lazy_static! {
 
 pub struct VulkanRenderer {
     pub window: Window,
-    pub context: Rc<VulkanContext>,
+    pub context: Arc<VulkanContext>,
     pub frame_context: VulkanFrameCtx,
     pub render_pass: RenderPass,
     pub swapchain_framebuffers: Vec<Framebuffer>,
@@ -59,7 +59,7 @@ impl VulkanRenderer {
             .with_maximized(false)
             .build(event_loop)
             .unwrap();
-        let context = Rc::new(VulkanContext::init(
+        let context = Arc::new(VulkanContext::init(
             &window,
             with_validation_layers,
             app_name,
@@ -187,11 +187,14 @@ impl VulkanRenderer {
         }
         println!("Clean shutdown!");
     }
-
-    pub fn recreate_swapchain(&mut self) {
+    pub fn wait_for_device(&self) {
         unsafe {
             self.context.device.device_wait_idle().unwrap();
         }
+    }
+
+    pub fn recreate_swapchain(&mut self) {
+        self.wait_for_device();
         self.frame_context.recreate_swapchain();
         //Destroy the previous state:
         unsafe {

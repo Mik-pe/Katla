@@ -700,7 +700,7 @@ dependencies = [
 [[package]]
 name = "mikpe_math"
 version = "0.1.0"
-source = "git+https://github.com/Mik-pe/mikpe_math.git#c4d8832f5c5166966a8889bead3186718c670bdb"
+source = "git+https://github.com/Mik-pe/mikpe_math.git#88e1ee769bf2434d93ac6712fcdb075924c7dcb9"
 
 [[package]]
 name = "miniz_oxide"

@@ -3,6 +3,8 @@ use super::ENTRY_LOADER;
 use erupt::{
     cstr,
     extensions::{ext_debug_utils, khr_surface::*, khr_swapchain::*},
+    utils::allocator::AllocationObject,
+    utils::VulkanResult,
     utils::{
         allocator::{Allocation, Allocator, AllocatorCreateInfo, MemoryTypeFinder},
         surface,
@@ -16,10 +18,9 @@ use erupt::{
     DeviceLoader, InstanceLoader,
 };
 use std::{
-    cell::RefCell,
     ffi::{c_void, CStr, CString},
     os::raw::c_char,
-    rc::Rc,
+    sync::{Arc, Mutex},
 };
 use winit::window::Window;
 
@@ -40,7 +41,7 @@ pub struct RenderTexture {
     pub image_view: ImageView,
     pub format: Format,
     image_memory: Option<Allocation<Image>>,
-    context: Rc<VulkanContext>,
+    context: Arc<VulkanContext>,
 }
 impl RenderTexture {
     fn destroy(&mut self) {
@@ -51,10 +52,7 @@ impl RenderTexture {
         }
         let image_memory = self.image_memory.take();
 
-        self.context
-            .allocator
-            .borrow_mut()
-            .free(&self.context.device, image_memory.unwrap());
+        self.context.free_object(image_memory.unwrap());
     }
 }
 
@@ -68,14 +66,14 @@ pub struct VulkanContext {
     pub instance: InstanceLoader,
     pub device: DeviceLoader,
     pub physical_device: PhysicalDevice,
-    pub allocator: RefCell<Allocator>,
+    pub allocator: Mutex<Allocator>,
     pub surface: SurfaceKHR,
     pub command_pool: CommandPool,
     pub graphics_queue: Queue,
     messenger: Option<ext_debug_utils::DebugUtilsMessengerEXT>,
 }
 pub struct VulkanFrameCtx {
-    pub context: Rc<VulkanContext>,
+    pub context: Arc<VulkanContext>,
     pub current_extent: Extent2D,
     pub current_surface_format: SurfaceFormatKHR,
     pub swapchain_image_views: Vec<ImageView>,
@@ -173,6 +171,27 @@ impl QueueFamilyIndices {
 }
 
 impl VulkanContext {
+    pub fn allocate_object<'a, T>(
+        &'a self,
+        object: T,
+        memory_type: MemoryTypeFinder,
+    ) -> VulkanResult<Allocation<T>>
+    where
+        T: AllocationObject + 'static,
+    {
+        self.allocator
+            .lock()
+            .unwrap()
+            .allocate(&self.device, object, memory_type)
+    }
+
+    pub fn free_object<T>(&self, object: Allocation<T>)
+    where
+        T: AllocationObject,
+    {
+        self.allocator.lock().unwrap().free(&self.device, object);
+    }
+
     fn create_instance(
         with_validation_layers: bool,
         app_name: &CStr,
@@ -316,7 +335,7 @@ impl VulkanContext {
 
         let physical_device = unsafe { pick_physical_device(&instance, surface) }.unwrap();
 
-        let allocator = RefCell::new(
+        let allocator = Mutex::new(
             //For high-dpi displays we need this to be larger, let's start with 64 MiB
             Allocator::new(
                 &instance,
@@ -406,7 +425,7 @@ impl VulkanFrameCtx {
         unsafe { device.create_image_view(&create_info, None, None) }.unwrap()
     }
 
-    pub fn init(context: &Rc<VulkanContext>) -> Self {
+    pub fn init(context: &Arc<VulkanContext>) -> Self {
         let swapchain_info = unsafe { context.query_swapchain_support() };
 
         let current_extent = swapchain_info.surface_caps.current_extent;
@@ -548,7 +567,7 @@ unsafe fn is_physical_device_suitable(
     score
 }
 
-fn create_depth_render_texture(context: Rc<VulkanContext>, extent: Extent2D) -> RenderTexture {
+fn create_depth_render_texture(context: Arc<VulkanContext>, extent: Extent2D) -> RenderTexture {
     let depth_format = context.find_depth_format();
     let extent_3d = vk1_0::Extent3D {
         width: extent.width,
@@ -575,9 +594,7 @@ fn create_depth_render_texture(context: Rc<VulkanContext>, extent: Extent2D) -> 
 
     let image_memory = Some(
         context
-            .allocator
-            .borrow_mut()
-            .allocate(&context.device, depth_image, MemoryTypeFinder::gpu_only())
+            .allocate_object(depth_image, MemoryTypeFinder::gpu_only())
             .unwrap(),
     );
     let image_view = VulkanFrameCtx::create_image_view(

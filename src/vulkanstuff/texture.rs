@@ -20,10 +20,7 @@ impl Texture {
             .size(size);
 
         let buffer = context
-            .allocator
-            .borrow_mut()
-            .allocate(
-                &context.device,
+            .allocate_object(
                 unsafe {
                     context
                         .device
@@ -180,15 +177,10 @@ impl Texture {
                 .create_image(&create_info, None, None)
                 .unwrap();
             let image_memory = context
-                .allocator
-                .borrow_mut()
-                .allocate(&context.device, image_object, MemoryTypeFinder::gpu_only())
+                .allocate_object(image_object, MemoryTypeFinder::gpu_only())
                 .unwrap();
 
             let total_size = pixel_data.len() as u64;
-            println!("Total size of image is: {}", total_size);
-            println!("width X height is: {}", width * height);
-            println!("Three channels bytes: {}", width * height * 3);
             let range = ..image_memory.region().start + total_size;
 
             let staging_buffer = Self::create_staging_buffer(context, total_size);
@@ -216,10 +208,7 @@ impl Texture {
                 ImageLayout::SHADER_READ_ONLY_OPTIMAL,
             );
 
-            context
-                .allocator
-                .borrow_mut()
-                .free(&context.device, staging_buffer);
+            context.free_object(staging_buffer);
 
             let image_view = VulkanFrameCtx::create_image_view(
                 &context.device,
@@ -252,9 +241,6 @@ impl Texture {
                 .device
                 .destroy_image_view(Some(self.image_view), None);
         }
-        context
-            .allocator
-            .borrow_mut()
-            .free(&context.device, self.image_memory);
+        context.free_object(self.image_memory);
     }
 }
