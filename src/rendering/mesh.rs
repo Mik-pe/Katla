@@ -27,13 +27,16 @@ impl Mesh {
         position: Vec3,
     ) -> Self {
         let material = Material::new(model.clone(), renderer);
+        let mut bound_sphere = model.bounds.clone();
+        bound_sphere.center = position;
+
         let mut mesh = Self {
             vertex_buffer: None,
             index_buffer: None,
             material,
             num_verts: 0,
             position,
-            bounds: Sphere::new(Vec3::new(0.0, 0.0, 0.0), 0.0),
+            bounds: bound_sphere,
         };
         mesh.vertex_buffer = Self::create_vertex_buffer(renderer, model.vertpbr());
         let index_type = match model.index_stride {
@@ -67,7 +70,7 @@ impl Mesh {
                 _ => 0 as u32,
             };
             let mut index_buffer = IndexBuffer::new(
-                &renderer.context,
+                renderer.context.clone(),
                 data_slice.len() as u64,
                 index_type,
                 count,
@@ -91,7 +94,7 @@ impl Mesh {
                 )
             };
             let mut vertex_buffer = VertexBuffer::new(
-                &renderer.context,
+                renderer.context.clone(),
                 data_slice.len() as u64,
                 data.len() as u32,
             );
@@ -100,51 +103,8 @@ impl Mesh {
         }
     }
 
-    // pub fn new_from_data<VType: VertexBinding + Default, IType>(
-    //     renderer: &mut VulkanRenderer,
-    //     vertex_data: Vec<VType>,
-    //     index_data: Vec<IType>,
-    //     position: Vec3,
-    // ) -> Self {
-    //     let num_verts = vertex_data.len() as u32;
-    //     let vertex_buffer = Self::create_vertex_buffer(renderer, vertex_data);
-    //     // let index_type = IndexType::UINT32;
-    //     let index_buffer = Self::create_index_buffer(renderer, index_data, IndexType::UINT32);
-
-    //     let render_pass = renderer.render_pass;
-    //     let surface_caps = renderer.surface_caps();
-    //     let num_images = renderer.num_images();
-
-    //     let renderpipeline = RenderPipeline::new::<VType>(
-    //         &device,
-    //         &mut allocator,
-    //         render_pass,
-    //         surface_caps,
-    //         num_images,
-    //     );
-
-    //     Self {
-    //         vertex_buffer,
-    //         index_buffer,
-    //         texture: None,
-    //         renderpipeline,
-    //         num_verts,
-    //         position,
-    //     }
-    // }
-
     pub fn destroy(&mut self, device: &DeviceLoader, allocator: &mut Allocator) {
         self.material.destroy(device, allocator);
-        if self.vertex_buffer.is_some() {
-            println!("Destroying vertex buffer!");
-            let buffer = self.vertex_buffer.take().unwrap();
-            buffer.destroy(device, allocator);
-        }
-        if self.index_buffer.is_some() {
-            println!("Destroying index buffer!");
-            let buffer = self.index_buffer.take().unwrap();
-            buffer.destroy(device, allocator);
-        }
     }
 }
 

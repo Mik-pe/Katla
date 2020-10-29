@@ -1,8 +1,8 @@
 use crate::inputcontroller::InputController;
-use mikpe_math::{Mat4, Vec3};
+use mikpe_math::{Mat4, Sphere, Vec3};
 use std::{cell::RefCell, rc::Rc};
+use winit::event::Event;
 use winit::event::{DeviceEvent, ElementState, MouseButton, WindowEvent};
-use winit::{dpi::PhysicalPosition, event::Event};
 
 pub struct Camera {
     //TODO: Make a quat out of this
@@ -13,7 +13,6 @@ pub struct Camera {
     yaw: f64,
     pitch: f64,
     looking: bool,
-    last_mouse_pos: PhysicalPosition<f64>,
 }
 
 //This is not very fun... should find some better way for this in the future.
@@ -54,7 +53,6 @@ impl Camera {
             yaw: 0.0,
             pitch: 0.0,
             looking: false,
-            last_mouse_pos: PhysicalPosition::new(0.0, 0.0),
         };
 
         camera
@@ -78,13 +76,6 @@ impl Camera {
                         self.looking = false;
                     }
                 }
-                WindowEvent::CursorMoved {
-                    device_id: _,
-                    position,
-                    ..
-                } => {
-                    self.last_mouse_pos = *position;
-                }
                 _ => {}
             },
             Event::DeviceEvent {
@@ -106,6 +97,12 @@ impl Camera {
             },
             _ => {}
         }
+    }
+
+    pub fn look_at_sphere(&mut self, sphere: &Sphere) {
+        self.pos = sphere.center - Vec3::new(0.0, 0.0, sphere.radius * 2.0);
+        self.yaw = 0.0;
+        self.pitch = 0.0;
     }
 
     fn lerp_vec3(old_velocity_dir: Vec3, to_velocity_dir: Vec3, ratio: f32) -> Vec3 {

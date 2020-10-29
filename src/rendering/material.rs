@@ -24,7 +24,6 @@ impl Material {
         let mut texture = None;
         if !model.images.is_empty() {
             let image = &model.images[0];
-            println!("Image format: {:?}", image.format);
             //TODO: Support more image formats:
             match image.format {
                 gltf::image::Format::R8G8B8 => {

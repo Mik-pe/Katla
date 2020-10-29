@@ -101,10 +101,7 @@ impl UniformHandle {
             .size(data_size);
 
         let buffer = context
-            .allocator
-            .borrow_mut()
-            .allocate(
-                &context.device,
+            .allocate_object(
                 unsafe { context.device.create_buffer(&create_info, None, None) }.unwrap(),
                 MemoryTypeFinder::dynamic(),
             )
