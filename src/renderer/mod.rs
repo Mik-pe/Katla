@@ -1,15 +1,17 @@
-use context::{VulkanContext, VulkanFrameCtx};
 pub use pipeline::{ImageInfo, RenderPipeline};
 use swapdata::*;
 pub use texture::*;
 pub use vertexbuffer::*;
-mod context;
-mod pipeline;
-mod swapdata;
-mod texture;
-mod vertexbuffer;
 
-use std::{ffi::CString, rc::Rc, sync::Arc, sync::Mutex};
+pub mod vulkan;
+
+use vulkan::context::{VulkanContext, VulkanFrameCtx};
+use vulkan::pipeline;
+use vulkan::swapdata;
+use vulkan::texture;
+use vulkan::vertexbuffer;
+
+use std::{ffi::CString, sync::Arc, sync::Mutex};
 
 use erupt::{extensions::khr_swapchain::*, vk1_0::*, DefaultEntryLoader, EntryLoader};
 use lazy_static::lazy_static;

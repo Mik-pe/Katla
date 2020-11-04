@@ -1,4 +1,4 @@
-use super::{VulkanContext, VulkanFrameCtx};
+use crate::renderer::{VulkanContext, VulkanFrameCtx};
 use erupt::{
     utils::allocator::{Allocation, MemoryTypeFinder},
     vk1_0::*,
@@ -40,7 +40,7 @@ impl Texture {
         old_layout: ImageLayout,
         new_layout: ImageLayout,
     ) {
-        let command_buffer = context.begin_single_time_commands();
+        let command_buffer = context.begin_transfer_commands();
         let subresource_range = ImageSubresourceRangeBuilder::new()
             .aspect_mask(ImageAspectFlags::COLOR)
             .base_mip_level(0)
@@ -91,7 +91,7 @@ impl Texture {
                 &vec![barrier_builder],
             );
 
-            context.end_single_time_commands(command_buffer);
+            context.end_transfer_commands(command_buffer);
         }
     }
 
@@ -102,7 +102,8 @@ impl Texture {
         dst_image_layout: ImageLayout,
         extent: Extent3D,
     ) {
-        let command_buffer = context.begin_single_time_commands();
+        //TODO: expose a transfer command buffer?
+        let command_buffer = context.begin_transfer_commands();
         let subresources = ImageSubresourceLayersBuilder::new()
             .aspect_mask(ImageAspectFlags::COLOR)
             .mip_level(0)
@@ -121,7 +122,7 @@ impl Texture {
             );
         }
 
-        context.end_single_time_commands(command_buffer);
+        context.end_transfer_commands(command_buffer);
     }
 
     fn create_texture_sampler(context: &VulkanContext) -> Sampler {
@@ -181,7 +182,7 @@ impl Texture {
                 .unwrap();
 
             let total_size = pixel_data.len() as u64;
-            let range = ..image_memory.region().start + total_size;
+            let range = image_memory.region().start..image_memory.region().end;
 
             let staging_buffer = Self::create_staging_buffer(context, total_size);
             let mut map = staging_buffer.map(&context.device, range).unwrap();
