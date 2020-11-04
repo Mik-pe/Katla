@@ -1,4 +1,4 @@
-use super::ENTRY_LOADER;
+use crate::renderer::ENTRY_LOADER;
 
 use erupt::{
     cstr,
@@ -34,6 +34,7 @@ struct SwapChainSupportDetails {
 
 struct QueueFamilyIndices {
     pub graphics_idx: Option<u32>,
+    pub transfer_idx: Option<u32>,
 }
 
 pub struct RenderTexture {
@@ -68,8 +69,10 @@ pub struct VulkanContext {
     pub physical_device: PhysicalDevice,
     pub allocator: Mutex<Allocator>,
     pub surface: SurfaceKHR,
-    pub command_pool: CommandPool,
+    pub graphics_command_pool: CommandPool,
     pub graphics_queue: Queue,
+    pub transfer_command_pool: CommandPool,
+    pub transfer_queue: Queue,
     messenger: Option<ext_debug_utils::DebugUtilsMessengerEXT>,
 }
 pub struct VulkanFrameCtx {
@@ -141,30 +144,53 @@ impl QueueFamilyIndices {
         surface: SurfaceKHR,
         physical_device: PhysicalDevice,
     ) -> Self {
-        let mut queue_family_indices = Self { graphics_idx: None };
+        let mut queue_family_indices = Self {
+            graphics_idx: None,
+            transfer_idx: None,
+        };
         unsafe {
             let family_props =
                 instance.get_physical_device_queue_family_properties(physical_device, None);
-            queue_family_indices.graphics_idx =
-                match family_props
-                    .into_iter()
-                    .enumerate()
-                    .position(|(i, properties)| {
-                        properties.queue_flags.contains(QueueFlags::GRAPHICS)
-                            && instance
-                                .get_physical_device_surface_support_khr(
-                                    physical_device,
-                                    i as u32,
-                                    surface,
-                                    None,
-                                )
-                                .unwrap()
-                                == true
-                    }) {
-                    Some(idx) => Some(idx as u32),
-                    None => None,
-                };
+            println!("Num family indices: {}", family_props.len());
+            for (idx, properties) in family_props.iter().enumerate() {
+                if properties.queue_flags.contains(QueueFlags::GRAPHICS)
+                    && instance
+                        .get_physical_device_surface_support_khr(
+                            physical_device,
+                            idx as u32,
+                            surface,
+                            None,
+                        )
+                        .unwrap()
+                {
+                    if queue_family_indices.graphics_idx.is_none() {
+                        queue_family_indices.graphics_idx = Some(idx as u32);
+                        continue;
+                    }
+                }
+
+                if properties.queue_flags.contains(QueueFlags::TRANSFER)
+                    && instance
+                        .get_physical_device_surface_support_khr(
+                            physical_device,
+                            idx as u32,
+                            surface,
+                            None,
+                        )
+                        .unwrap()
+                {
+                    if queue_family_indices.transfer_idx.is_none() {
+                        queue_family_indices.transfer_idx = Some(idx as u32);
+                        continue;
+                    }
+                }
+            }
         };
+        println!(
+            "Graphics idx {}, Transfer idx {}",
+            queue_family_indices.graphics_idx.unwrap(),
+            queue_family_indices.transfer_idx.unwrap()
+        );
 
         queue_family_indices
     }
@@ -227,7 +253,7 @@ impl VulkanContext {
             .enabled_extension_names(&instance_extensions)
             .enabled_layer_names(&instance_layers);
 
-        let mut instance =
+        let instance =
             InstanceLoader::new(&ENTRY_LOADER.lock().unwrap(), &create_info, None).unwrap();
         instance
     }
@@ -290,10 +316,11 @@ impl VulkanContext {
         )
     }
 
+    //TODO: Make a per-thread command pool and queue for upload purposes!
     pub fn begin_single_time_commands(&self) -> CommandBuffer {
         let create_info = CommandBufferAllocateInfoBuilder::new()
             .level(CommandBufferLevel::PRIMARY)
-            .command_pool(self.command_pool)
+            .command_pool(self.graphics_command_pool)
             .command_buffer_count(1);
         unsafe {
             let command_buffer: CommandBuffer =
@@ -312,12 +339,50 @@ impl VulkanContext {
             let command_buffers = vec![command_buffer];
             self.device.end_command_buffer(command_buffer).unwrap();
             let submit_info = vk1_0::SubmitInfoBuilder::new().command_buffers(&command_buffers);
+            //TODO: This cannot be used by multiple frames at once,
+            //ensure that we're either using another queue/commandpool, or
+            //that we are doing this in a locked manner
             self.device
                 .queue_submit(self.graphics_queue, &vec![submit_info], None)
                 .unwrap();
             self.device.queue_wait_idle(self.graphics_queue).unwrap();
             self.device
-                .free_command_buffers(self.command_pool, &command_buffers);
+                .free_command_buffers(self.graphics_command_pool, &command_buffers);
+        }
+    }
+
+    //FIXME: this might be the incorrect way of doing this...
+    pub fn begin_transfer_commands(&self) -> CommandBuffer {
+        let create_info = CommandBufferAllocateInfoBuilder::new()
+            .level(CommandBufferLevel::PRIMARY)
+            .command_pool(self.transfer_command_pool)
+            .command_buffer_count(1);
+        unsafe {
+            let command_buffer: CommandBuffer =
+                self.device.allocate_command_buffers(&create_info).unwrap()[0];
+            let begin_info = CommandBufferBeginInfoBuilder::new()
+                .flags(vk1_0::CommandBufferUsageFlags::ONE_TIME_SUBMIT);
+            self.device
+                .begin_command_buffer(command_buffer, &begin_info)
+                .unwrap();
+            command_buffer
+        }
+    }
+
+    pub fn end_transfer_commands(&self, command_buffer: CommandBuffer) {
+        unsafe {
+            let command_buffers = vec![command_buffer];
+            self.device.end_command_buffer(command_buffer).unwrap();
+            let submit_info = vk1_0::SubmitInfoBuilder::new().command_buffers(&command_buffers);
+            //TODO: This cannot be used by multiple frames at once,
+            //ensure that we're either using another queue/commandpool, or
+            //that we are doing this in a locked manner
+            self.device
+                .queue_submit(self.transfer_queue, &vec![submit_info], None)
+                .unwrap();
+            self.device.queue_wait_idle(self.transfer_queue).unwrap();
+            self.device
+                .free_command_buffers(self.transfer_command_pool, &command_buffers);
         }
     }
 
@@ -350,12 +415,21 @@ impl VulkanContext {
         let queue_indices =
             QueueFamilyIndices::find_queue_families(&instance, surface, physical_device);
 
+        let queue_create_infos = vec![
+            vk1_0::DeviceQueueCreateInfoBuilder::new()
+                .queue_family_index(queue_indices.graphics_idx.unwrap())
+                .queue_priorities(&[1.0]),
+            vk1_0::DeviceQueueCreateInfoBuilder::new()
+                .queue_family_index(queue_indices.transfer_idx.unwrap())
+                .queue_priorities(&[0.5]),
+        ];
         let graphics_queue_idx = queue_indices.graphics_idx.unwrap();
+        let transfer_queue_idx = queue_indices.transfer_idx.unwrap();
 
         let device = create_device(
             &instance,
             physical_device,
-            graphics_queue_idx,
+            queue_create_infos,
             with_validation_layers,
         );
 
@@ -364,7 +438,15 @@ impl VulkanContext {
         let create_info = vk1_0::CommandPoolCreateInfoBuilder::new()
             .queue_family_index(graphics_queue_idx)
             .flags(vk1_0::CommandPoolCreateFlags::RESET_COMMAND_BUFFER);
-        let command_pool = unsafe { device.create_command_pool(&create_info, None, None) }.unwrap();
+        let graphics_command_pool =
+            unsafe { device.create_command_pool(&create_info, None, None) }.unwrap();
+
+        let transfer_queue = unsafe { device.get_device_queue(transfer_queue_idx, 0, None) };
+        let create_info = vk1_0::CommandPoolCreateInfoBuilder::new()
+            .queue_family_index(transfer_queue_idx)
+            .flags(vk1_0::CommandPoolCreateFlags::RESET_COMMAND_BUFFER);
+        let transfer_command_pool =
+            unsafe { device.create_command_pool(&create_info, None, None) }.unwrap();
 
         Self {
             instance,
@@ -372,8 +454,10 @@ impl VulkanContext {
             physical_device,
             allocator,
             surface,
-            command_pool,
+            graphics_command_pool,
             graphics_queue,
+            transfer_command_pool,
+            transfer_queue,
             messenger,
         }
     }
@@ -384,7 +468,7 @@ impl Drop for VulkanContext {
             self.device.device_wait_idle().unwrap();
 
             self.device
-                .destroy_command_pool(Some(self.command_pool), None);
+                .destroy_command_pool(Some(self.graphics_command_pool), None);
             self.device.destroy_device(None);
             self.instance.destroy_surface_khr(Some(self.surface), None);
 
@@ -450,7 +534,7 @@ impl VulkanFrameCtx {
 
         let command_buffers = {
             let allocate_info = CommandBufferAllocateInfoBuilder::new()
-                .command_pool(context.command_pool)
+                .command_pool(context.graphics_command_pool)
                 .level(CommandBufferLevel::PRIMARY)
                 .command_buffer_count(swapchain_image_views.len() as _);
             unsafe { context.device.allocate_command_buffers(&allocate_info) }.unwrap()
@@ -615,7 +699,7 @@ fn create_depth_render_texture(context: Arc<VulkanContext>, extent: Extent2D) ->
 fn create_device(
     instance: &InstanceLoader,
     physical_device: PhysicalDevice,
-    graphics_queue: u32,
+    queue_create_infos: Vec<vk1_0::DeviceQueueCreateInfoBuilder>,
     with_validation_layers: bool,
 ) -> DeviceLoader {
     let device_extensions = vec![KHR_SWAPCHAIN_EXTENSION_NAME];
@@ -625,18 +709,15 @@ fn create_device(
     }
 
     // https://vulkan-tutorial.com/Drawing_a_triangle/Setup/Logical_device_and_queues
-    let queue_create_info = vec![vk1_0::DeviceQueueCreateInfoBuilder::new()
-        .queue_family_index(graphics_queue)
-        .queue_priorities(&[1.0])];
     let features = vk1_0::PhysicalDeviceFeaturesBuilder::new().sampler_anisotropy(true);
 
     let create_info = vk1_0::DeviceCreateInfoBuilder::new()
         .enabled_extension_names(&device_extensions)
         .enabled_layer_names(&device_layers)
-        .queue_create_infos(&queue_create_info)
+        .queue_create_infos(&queue_create_infos)
         .enabled_features(&features);
 
-    let mut device = DeviceLoader::new(&instance, physical_device, &create_info, None).unwrap();
+    let device = DeviceLoader::new(&instance, physical_device, &create_info, None).unwrap();
 
     device
 }

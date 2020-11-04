@@ -20,7 +20,6 @@ struct BufferObject {
 // that are in-flight
 impl Drop for BufferObject {
     fn drop(&mut self) {
-        let device = &self.context.device;
         if let Some(buffer) = self.buffer.take() {
             self.context.free_object(buffer);
         }

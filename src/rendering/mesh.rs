@@ -1,12 +1,12 @@
 use crate::rendering::{Drawable, Material};
 use crate::util::CachedGLTFModel;
 
-use crate::vulkanstuff::VulkanRenderer;
-use crate::vulkanstuff::{IndexBuffer, VertexBuffer};
+use crate::renderer::vulkan::VulkanContext;
+use crate::renderer::{IndexBuffer, VertexBuffer};
 
 use erupt::{utils::allocator::Allocator, vk1_0::*, DeviceLoader};
 use mikpe_math::{Mat4, Sphere, Vec3};
-use std::rc::Rc;
+use std::{rc::Rc, sync::Arc};
 
 //TODO: Decouple pipeline from the "Mesh" struct,
 //Ideally a Mesh would only contain the vertex data and a reference to a pipeline,
@@ -23,10 +23,13 @@ pub struct Mesh {
 impl Mesh {
     pub fn new_from_cache(
         model: Rc<CachedGLTFModel>,
-        renderer: &mut VulkanRenderer,
+        context: Arc<VulkanContext>,
+        render_pass: RenderPass,
+        num_images: usize,
         position: Vec3,
     ) -> Self {
-        let material = Material::new(model.clone(), renderer);
+        println!("Creating material");
+        let material = Material::new(model.clone(), context.clone(), render_pass, num_images);
         let mut bound_sphere = model.bounds.clone();
         bound_sphere.center = position;
 
@@ -38,19 +41,21 @@ impl Mesh {
             position,
             bounds: bound_sphere,
         };
-        mesh.vertex_buffer = Self::create_vertex_buffer(renderer, model.vertpbr());
+        println!("Creating vertex buffer");
+        mesh.vertex_buffer = Self::create_vertex_buffer(&context, model.vertpbr());
         let index_type = match model.index_stride {
             1 => IndexType::UINT8_EXT,
             2 => IndexType::UINT16,
             4 => IndexType::UINT32,
             _ => IndexType::NONE_KHR,
         };
-        mesh.index_buffer = Self::create_index_buffer(renderer, model.index_data(), index_type);
+        println!("Creating index buffer");
+        mesh.index_buffer = Self::create_index_buffer(&context, model.index_data(), index_type);
         mesh
     }
 
     fn create_index_buffer<DataType>(
-        renderer: &mut VulkanRenderer,
+        context: &Arc<VulkanContext>,
         data: Vec<DataType>,
         index_type: IndexType,
     ) -> Option<IndexBuffer> {
@@ -69,19 +74,15 @@ impl Mesh {
                 IndexType::UINT32 => (data_slice.len() as u32) / 4,
                 _ => 0 as u32,
             };
-            let mut index_buffer = IndexBuffer::new(
-                renderer.context.clone(),
-                data_slice.len() as u64,
-                index_type,
-                count,
-            );
-            index_buffer.upload_data(&renderer.context.device, data_slice);
+            let mut index_buffer =
+                IndexBuffer::new(context.clone(), data_slice.len() as u64, index_type, count);
+            index_buffer.upload_data(&context.device, data_slice);
             Some(index_buffer)
         }
     }
 
     fn create_vertex_buffer<DataType>(
-        renderer: &mut VulkanRenderer,
+        context: &Arc<VulkanContext>,
         data: Vec<DataType>,
     ) -> Option<VertexBuffer> {
         if data.is_empty() {
@@ -93,12 +94,9 @@ impl Mesh {
                     data.len() * std::mem::size_of::<DataType>(),
                 )
             };
-            let mut vertex_buffer = VertexBuffer::new(
-                renderer.context.clone(),
-                data_slice.len() as u64,
-                data.len() as u32,
-            );
-            vertex_buffer.upload_data(&renderer.context.device, data_slice);
+            let mut vertex_buffer =
+                VertexBuffer::new(context.clone(), data_slice.len() as u64, data.len() as u32);
+            vertex_buffer.upload_data(&context.device, data_slice);
             Some(vertex_buffer)
         }
     }

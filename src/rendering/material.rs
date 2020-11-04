@@ -1,14 +1,13 @@
-use crate::rendering::vertextypes::*;
+use crate::renderer::Texture;
+use crate::renderer::{ImageInfo, RenderPipeline};
 use crate::util::CachedGLTFModel;
-use crate::vulkanstuff::Texture;
-use crate::vulkanstuff::VulkanRenderer;
-use crate::vulkanstuff::{ImageInfo, RenderPipeline};
+use crate::{renderer::vulkan::VulkanContext, rendering::vertextypes::*};
 
 use mikpe_math::Mat4;
 
 use erupt::{utils::allocator::Allocator, vk1_0::*, DeviceLoader};
 
-use std::rc::Rc;
+use std::{rc::Rc, sync::Arc};
 
 pub struct Material {
     pub renderpipeline: RenderPipeline,
@@ -16,11 +15,14 @@ pub struct Material {
 }
 
 impl Material {
-    pub fn new(model: Rc<CachedGLTFModel>, renderer: &mut VulkanRenderer) -> Self {
-        let render_pass = renderer.render_pass;
-        let num_images = renderer.num_images();
+    pub fn new(
+        model: Rc<CachedGLTFModel>,
+        context: Arc<VulkanContext>,
+        render_pass: RenderPass,
+        num_images: usize,
+    ) -> Self {
         let mut renderpipeline =
-            RenderPipeline::new::<VertexPBR>(&renderer.context, render_pass, num_images);
+            RenderPipeline::new::<VertexPBR>(&context, render_pass, num_images);
         let mut texture = None;
         if !model.images.is_empty() {
             let image = &model.images[0];
@@ -41,7 +43,7 @@ impl Material {
                         new_pixels.push(pad);
                     }
                     let tex = Texture::create_image(
-                        &mut renderer.context,
+                        &context,
                         image.width,
                         image.height,
                         Format::R8G8B8A8_SRGB,
@@ -57,7 +59,7 @@ impl Material {
                     let pixels = &image.pixels;
 
                     let tex = Texture::create_image(
-                        &mut renderer.context,
+                        &context,
                         image.width,
                         image.height,
                         Format::R8G8B8A8_SRGB,

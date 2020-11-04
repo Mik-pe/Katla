@@ -1,7 +1,7 @@
 use crate::rendering::Drawable;
 use erupt::{vk1_0::CommandBuffer, DeviceLoader};
 use mikpe_math::{Mat4, Sphere, Vec3};
-use std::rc::Rc;
+use std::{path::PathBuf, rc::Rc};
 
 pub struct Player {
     pub position: Vec3,
@@ -40,6 +40,10 @@ impl Scene {
             player,
             scene_objects,
         }
+    }
+
+    pub fn add_model(&mut self, _model_path: PathBuf) {
+        todo!("Add a model to the scene, talk with the renderer?");
     }
 
     pub fn teardown(&mut self) {

@@ -2,15 +2,14 @@ mod application;
 mod cameracontroller;
 mod gui;
 mod inputcontroller;
+mod renderer;
 mod rendering;
 mod util;
-mod vulkanstuff;
 
 use application::{Scene, SceneObject};
 use mikpe_math::{Mat4, Vec3};
-use rendering::vertextypes;
-use rendering::Mesh;
-use vulkanstuff::Texture;
+use renderer::{Texture, VulkanRenderer};
+use rendering::{vertextypes, Mesh};
 
 use std::{
     cell::RefCell, ffi::CString, path::PathBuf, rc::Rc, sync::Arc, sync::Mutex, thread,
@@ -37,7 +36,7 @@ fn main() {
     let event_loop = EventLoop::new();
     let app_name = CString::new("Mikpe Renderer").unwrap();
     let engine_name = CString::new("MikpEngine").unwrap();
-    let mut renderer = Arc::new(Mutex::new(vulkanstuff::VulkanRenderer::init(
+    let renderer = Arc::new(Mutex::new(VulkanRenderer::init(
         &event_loop,
         true,
         app_name,
@@ -57,11 +56,9 @@ fn main() {
     let camera = Rc::new(RefCell::new(cameracontroller::Camera::new()));
     cameracontroller::setup_camera_bindings(camera.clone(), &mut input_controller);
 
-    let img = image::open(PathBuf::from("resources/images/TestImage.png"))
-        .unwrap()
-        .to_rgba();
-    let (img_width, img_height) = img.dimensions();
-    // let mut textures = vec![];
+    // let img = image::open(PathBuf::from("resources/images/TestImage.png"))
+    //     .unwrap()
+    //     .to_rgba();
 
     let size = renderer.lock().unwrap().window.inner_size();
     let win_x: f64 = size.width.into();
@@ -71,36 +68,43 @@ fn main() {
 
     let mut last_frame = Instant::now();
     let mut timer = util::Timer::new(100);
-    let mut frame_number = 0;
 
     let mut scene = Scene::new();
 
     let (tx, rx) = std::sync::mpsc::channel();
     let (finished_tx, finished_rx) = std::sync::mpsc::channel();
     let upload_renderer = renderer.clone();
-    let upload_thread = thread::spawn(move || {
+    let mut upload_thread = Some(thread::spawn(move || {
         let renderer = upload_renderer;
         let mut model_cache = util::ModelCache::new();
         {
-            let mut locked_renderer = renderer.lock().unwrap();
+            let context = renderer.lock().unwrap().context.clone();
+            let render_pass = renderer.lock().unwrap().render_pass;
+            let num_images = renderer.lock().unwrap().num_images();
             finished_tx
                 .send(FinishedUpload::Model(Mesh::new_from_cache(
                     model_cache.read_gltf(PathBuf::from("resources/models/Tiger.glb")),
-                    &mut locked_renderer,
+                    context.clone(),
+                    render_pass,
+                    num_images,
                     Vec3::new(-100.0, 0.0, 0.0),
                 )))
                 .unwrap();
             finished_tx
                 .send(FinishedUpload::Model(Mesh::new_from_cache(
                     model_cache.read_gltf(PathBuf::from("resources/models/FoxFixed.glb")),
-                    &mut locked_renderer,
+                    context.clone(),
+                    render_pass,
+                    num_images,
                     Vec3::new(-1.0, 0.0, 0.0),
                 )))
                 .unwrap();
             finished_tx
                 .send(FinishedUpload::Model(Mesh::new_from_cache(
                     model_cache.read_gltf(PathBuf::from("resources/models/Avocado.glb")),
-                    &mut locked_renderer,
+                    context.clone(),
+                    render_pass,
+                    num_images,
                     Vec3::new(-1.0, 0.0, 0.0),
                 )))
                 .unwrap();
@@ -111,11 +115,14 @@ fn main() {
             match message {
                 UploadMessage::Texture(_) => {}
                 UploadMessage::Model(path) => {
-                    //TODO: This lock might be held for a while, minimize this!
-                    let mut locked_renderer = renderer.lock().unwrap();
+                    let context = renderer.lock().unwrap().context.clone();
+                    let render_pass = renderer.lock().unwrap().render_pass;
+                    let num_images = renderer.lock().unwrap().num_images();
                     let mesh = Mesh::new_from_cache(
                         model_cache.read_gltf(path),
-                        &mut locked_renderer,
+                        context.clone(),
+                        render_pass,
+                        num_images,
                         Vec3::new(x_offset, 0.0, 0.0),
                     );
                     x_offset += 100.0;
@@ -126,10 +133,12 @@ fn main() {
                 }
             }
         }
-    });
+    }));
 
     event_loop.run(move |event, _, control_flow| {
         let renderer = renderer.clone();
+        let upload_thread = upload_thread.take();
+
         use winit::event::{Event, WindowEvent};
         use winit::event_loop::ControlFlow;
 
@@ -188,7 +197,6 @@ fn main() {
                 let mut locked_renderer = renderer.lock().unwrap();
                 locked_renderer.swap_frames();
 
-                frame_number += 1;
                 let end = last_frame.elapsed().as_micros() as f64 / 1000.0;
                 timer.add_timestamp(end);
 
@@ -219,7 +227,7 @@ fn main() {
             Event::RedrawRequested { .. } => {}
             Event::LoopDestroyed => {
                 tx.send(UploadMessage::Exit()).unwrap();
-                // upload_thread.join();
+                upload_thread.unwrap().join().unwrap();
                 let mut locked_renderer = renderer.lock().unwrap();
                 locked_renderer.wait_for_device();
                 scene.teardown();
@@ -234,6 +242,4 @@ fn main() {
             _ => {}
         }
     });
-    upload_thread.join().unwrap();
-    println!("All threads joined and everything is OK!");
 }
