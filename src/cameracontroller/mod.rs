@@ -4,9 +4,39 @@ use std::{cell::RefCell, rc::Rc};
 use winit::event::Event;
 use winit::event::{DeviceEvent, ElementState, MouseButton, WindowEvent};
 
+pub struct PerspectiveProjection {
+    fov: f32,
+    near_plane: f32,
+    far_plane: f32,
+    matrix: Mat4,
+}
+
+impl Default for PerspectiveProjection {
+    fn default() -> Self {
+        let fov = 60.0;
+        let near_plane = 0.001;
+        let far_plane = 10000.0;
+        let matrix = Mat4::create_proj(fov, 1.0, near_plane, far_plane);
+
+        Self {
+            fov,
+            near_plane,
+            far_plane,
+            matrix,
+        }
+    }
+}
+
+impl PerspectiveProjection {
+    pub fn recreate_matrix(&mut self, aspect_ratio: f32) {
+        self.matrix = Mat4::create_proj(self.fov, aspect_ratio, self.near_plane, self.far_plane);
+    }
+}
+
 pub struct Camera {
     //TODO: Make a quat out of this
     pos: Vec3,
+    projection: PerspectiveProjection,
     velocity_dir: Vec3,
     input_dir: Vec3,
     speed: f32,
@@ -47,6 +77,7 @@ impl Camera {
     pub fn new() -> Self {
         let camera = Self {
             pos: Vec3::new(0.0, 0.0, -1.0),
+            projection: PerspectiveProjection::default(),
             velocity_dir: Vec3::new(0.0, 0.0, 0.0),
             input_dir: Vec3::new(0.0, 0.0, 0.0),
             speed: 100.0,
@@ -99,6 +130,10 @@ impl Camera {
         }
     }
 
+    pub fn aspect_ratio_changed(&mut self, aspect_ratio: f32) {
+        self.projection.recreate_matrix(aspect_ratio);
+    }
+
     pub fn look_at_sphere(&mut self, sphere: &Sphere) {
         self.pos = sphere.center - Vec3::new(0.0, 0.0, sphere.radius * 2.0);
         self.yaw = 0.0;
@@ -129,6 +164,9 @@ impl Camera {
     // pub fn get_cam_pos(&self) -> Vec3 {
     //     self.pos.clone()
     // }
+    pub fn get_proj_mat(&self) -> &Mat4 {
+        &self.projection.matrix
+    }
 
     pub fn get_view_mat(&self) -> Mat4 {
         let fwd = Vec3::new(0.0, 0.0, 1.0);
@@ -139,5 +177,11 @@ impl Camera {
             self.pos.clone() + to,
             Vec3::new(0.0, -1.0, 0.0),
         )
+    }
+}
+
+impl Default for Camera {
+    fn default() -> Self {
+        Self::new()
     }
 }

@@ -1,7 +1,6 @@
 use crate::rendering::{Drawable, Material};
-use crate::util::CachedGLTFModel;
+use crate::{renderer::vulkan::VulkanContext, util::GLTFModel};
 
-use crate::renderer::vulkan::VulkanContext;
 use crate::renderer::{IndexBuffer, VertexBuffer};
 
 use erupt::{utils::allocator::Allocator, vk1_0::*, DeviceLoader};
@@ -22,7 +21,7 @@ pub struct Mesh {
 
 impl Mesh {
     pub fn new_from_cache(
-        model: Rc<CachedGLTFModel>,
+        model: Rc<GLTFModel>,
         context: Arc<VulkanContext>,
         render_pass: RenderPass,
         num_images: usize,
@@ -104,19 +103,9 @@ impl Mesh {
     pub fn destroy(&mut self, device: &DeviceLoader, allocator: &mut Allocator) {
         self.material.destroy(device, allocator);
     }
-}
 
-impl Drawable for Mesh {
-    fn update(&mut self, device: &DeviceLoader, view: &Mat4, proj: &Mat4) {
-        let model = Mat4::from_translation(self.position.0);
-        self.material
-            .upload_pipeline_data(device, view.clone(), proj.clone(), model);
-    }
-
-    fn draw(&self, device: &DeviceLoader, command_buffer: CommandBuffer) {
+    pub fn draw(&self, device: &DeviceLoader, command_buffer: CommandBuffer) {
         unsafe {
-            self.material.bind(device, command_buffer);
-
             if let Some(index_buffer) = &self.index_buffer {
                 device.cmd_bind_index_buffer(
                     command_buffer,
@@ -145,5 +134,19 @@ impl Drawable for Mesh {
                 }
             }
         }
+    }
+}
+
+impl Drawable for Mesh {
+    fn update(&mut self, device: &DeviceLoader, view: &Mat4, proj: &Mat4) {
+        let model = Mat4::from_translation(self.position.0);
+        self.material
+            .upload_pipeline_data(device, view.clone(), proj.clone(), model);
+    }
+
+    fn draw(&self, device: &DeviceLoader, command_buffer: CommandBuffer) {
+        self.material.bind(device, command_buffer);
+
+        self.draw(device, command_buffer);
     }
 }
