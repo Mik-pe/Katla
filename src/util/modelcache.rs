@@ -1,7 +1,5 @@
 use std::path::{Path, PathBuf};
 
-use crate::vertextypes::*;
-
 use byteorder::{ByteOrder, LittleEndian};
 
 use gltf::buffer::Data as BufferData;
@@ -9,6 +7,8 @@ use gltf::image::Data as ImageData;
 use gltf::Document;
 use itertools::izip;
 use mikpe_math::{Sphere, Vec3};
+
+use crate::rendering::{VertexNormal, VertexPBR, VertexPosition};
 
 #[derive(Clone)]
 pub struct GLTFModel {
