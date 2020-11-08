@@ -75,12 +75,6 @@ impl Application {
                                         VirtualKeyCode::Escape => {
                                             *control_flow = ControlFlow::Exit;
                                         }
-                                        // VirtualKeyCode::T => {
-                                        //     tx.send(UploadMessage::Model(PathBuf::from(
-                                        //         "resources/models/Tiger.glb",
-                                        //     )))
-                                        //     .unwrap();
-                                        // }
                                         _ => {}
                                     }
                                 }
