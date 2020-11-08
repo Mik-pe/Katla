@@ -1,3 +1,5 @@
+use std::path::{Path, PathBuf};
+
 use crate::vertextypes::*;
 
 use byteorder::{ByteOrder, LittleEndian};
@@ -8,14 +10,8 @@ use gltf::Document;
 use itertools::izip;
 use mikpe_math::{Sphere, Vec3};
 
-use std::collections::HashMap;
-use std::{
-    path::{Path, PathBuf},
-    rc::Rc,
-};
-
 #[derive(Clone)]
-pub struct CachedGLTFModel {
+pub struct GLTFModel {
     pub document: Document,
     pub buffers: Vec<BufferData>,
     pub images: Vec<ImageData>,
@@ -25,7 +21,7 @@ pub struct CachedGLTFModel {
     pub bounds: Sphere,
 }
 
-impl CachedGLTFModel {
+impl GLTFModel {
     fn parse_node(&self, node: &gltf::Node) -> (Vec<VertexPBR>, Vec<u8>, u8, Sphere) {
         let mut positions: Vec<[f32; 3]> = vec![];
         let mut normals: Vec<[f32; 3]> = vec![];
@@ -244,25 +240,8 @@ impl CachedGLTFModel {
     }
 }
 
-pub struct ModelCache {
-    models: HashMap<PathBuf, Rc<CachedGLTFModel>>,
-}
-
-impl ModelCache {
-    pub fn new() -> Self {
-        Self {
-            models: HashMap::new(),
-        }
-    }
-
-    pub fn read_gltf(&mut self, path: PathBuf) -> Rc<CachedGLTFModel> {
-        match self.models.get(&path) {
-            Some(model) => model.clone(),
-            None => {
-                let cached_model = Rc::new(CachedGLTFModel::new(path.as_path()));
-                self.models.insert(path, cached_model.clone());
-                cached_model
-            }
-        }
+impl From<PathBuf> for GLTFModel {
+    fn from(pathbuf: PathBuf) -> Self {
+        GLTFModel::new(pathbuf.as_path())
     }
 }

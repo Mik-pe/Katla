@@ -1,7 +1,8 @@
-use crate::renderer::Texture;
-use crate::renderer::{ImageInfo, RenderPipeline};
-use crate::util::CachedGLTFModel;
-use crate::{renderer::vulkan::VulkanContext, rendering::vertextypes::*};
+use crate::{
+    renderer::{vulkan::VulkanContext, ImageInfo, RenderPipeline, Texture},
+    rendering::vertextypes::*,
+    util::GLTFModel,
+};
 
 use mikpe_math::Mat4;
 
@@ -16,7 +17,7 @@ pub struct Material {
 
 impl Material {
     pub fn new(
-        model: Rc<CachedGLTFModel>,
+        model: Rc<GLTFModel>,
         context: Arc<VulkanContext>,
         render_pass: RenderPass,
         num_images: usize,

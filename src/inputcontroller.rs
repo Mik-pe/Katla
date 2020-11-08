@@ -37,6 +37,8 @@ impl AxisHandler {
         }
     }
 }
+
+#[derive(Default)]
 pub struct InputController {
     inputmap: HashMap<event::VirtualKeyCode, (String, f32)>,
     axis_key_map: HashMap<event::VirtualKeyCode, String>,

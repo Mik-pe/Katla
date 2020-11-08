@@ -24,13 +24,13 @@ impl Timer {
         let mut sum_timestamps = 0.0;
         self.current_max = std::f64::MIN;
         self.current_min = std::f64::MAX;
+        if self.all_timestamps.len() > self.max_num_timestamps {
+            self.all_timestamps.pop_front();
+        }
         for timestamp in &self.all_timestamps {
             sum_timestamps += timestamp;
             self.current_max = f64::max(self.current_max, *timestamp);
             self.current_min = f64::min(self.current_min, *timestamp);
-        }
-        if self.all_timestamps.len() > self.max_num_timestamps {
-            self.all_timestamps.pop_front();
         }
         self.current_mean = sum_timestamps / self.all_timestamps.len() as f64;
     }
