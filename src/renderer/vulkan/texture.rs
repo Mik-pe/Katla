@@ -1,22 +1,23 @@
 use crate::renderer::{VulkanContext, VulkanFrameCtx};
-use erupt::{
-    utils::allocator::{Allocation, MemoryTypeFinder},
-    vk1_0::*,
-};
+
+use ash::{version::DeviceV1_0, vk};
 pub struct Texture {
     pub width: u32,
     pub height: u32,
     pub channels: u32,
-    image_memory: Allocation<Image>,
-    pub image_view: ImageView,
-    pub image_sampler: Sampler,
+    // image_memory: Allocation<Image>,
+    pub image_view: vk::ImageView,
+    pub image_sampler: vk::Sampler,
 }
 
 impl Texture {
-    fn create_staging_buffer(context: &VulkanContext, size: DeviceSize) -> Allocation<Buffer> {
-        let create_info = BufferCreateInfoBuilder::new()
-            .sharing_mode(SharingMode::EXCLUSIVE)
-            .usage(BufferUsageFlags::TRANSFER_SRC)
+    fn create_staging_buffer(
+        context: &VulkanContext,
+        size: vk::DeviceSize,
+    ) -> Allocation<vk::Buffer> {
+        let create_info = vk::BufferCreateInfo::builder()
+            .sharing_mode(vk::SharingMode::EXCLUSIVE)
+            .usage(vk::BufferUsageFlags::TRANSFER_SRC)
             .size(size);
 
         let buffer = context
@@ -36,13 +37,13 @@ impl Texture {
 
     fn transition_image_layout(
         context: &VulkanContext,
-        image: Image,
-        old_layout: ImageLayout,
-        new_layout: ImageLayout,
+        image: vk::Image,
+        old_layout: vk::ImageLayout,
+        new_layout: vk::ImageLayout,
     ) {
         let command_buffer = context.begin_transfer_commands();
-        let subresource_range = ImageSubresourceRangeBuilder::new()
-            .aspect_mask(ImageAspectFlags::COLOR)
+        let subresource_range = vk::ImageSubresourceRange::builder()
+            .aspect_mask(vk::ImageAspectFlags::COLOR)
             .base_mip_level(0)
             .level_count(1)
             .base_array_layer(0)
@@ -51,32 +52,32 @@ impl Texture {
         unsafe {
             let src_stage_mask;
             let dst_stage_mask;
-            let mut barrier_builder = ImageMemoryBarrierBuilder::new()
+            let mut barrier_builder = vk::ImageMemoryBarrier::builder()
                 .old_layout(old_layout)
                 .new_layout(new_layout)
-                .src_queue_family_index(QUEUE_FAMILY_IGNORED)
-                .dst_queue_family_index(QUEUE_FAMILY_IGNORED)
+                .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+                .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
                 .image(image)
                 .subresource_range(subresource_range.build());
 
-            if old_layout == ImageLayout::UNDEFINED
-                && new_layout == ImageLayout::TRANSFER_DST_OPTIMAL
+            if old_layout == vk::ImageLayout::UNDEFINED
+                && new_layout == vk::ImageLayout::TRANSFER_DST_OPTIMAL
             {
                 barrier_builder = barrier_builder
-                    .src_access_mask(AccessFlags::from_bits(0).unwrap())
-                    .dst_access_mask(AccessFlags::TRANSFER_WRITE);
+                    .src_access_mask(vk::AccessFlags::empty())
+                    .dst_access_mask(vk::AccessFlags::TRANSFER_WRITE);
 
-                src_stage_mask = PipelineStageFlags::TOP_OF_PIPE;
-                dst_stage_mask = PipelineStageFlags::TRANSFER;
-            } else if old_layout == ImageLayout::TRANSFER_DST_OPTIMAL
-                && new_layout == ImageLayout::SHADER_READ_ONLY_OPTIMAL
+                src_stage_mask = vk::PipelineStageFlags::TOP_OF_PIPE;
+                dst_stage_mask = vk::PipelineStageFlags::TRANSFER;
+            } else if old_layout == vk::ImageLayout::TRANSFER_DST_OPTIMAL
+                && new_layout == vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL
             {
                 barrier_builder = barrier_builder
-                    .src_access_mask(AccessFlags::TRANSFER_WRITE)
-                    .dst_access_mask(AccessFlags::SHADER_READ);
+                    .src_access_mask(vk::AccessFlags::TRANSFER_WRITE)
+                    .dst_access_mask(vk::AccessFlags::SHADER_READ);
 
-                src_stage_mask = PipelineStageFlags::TRANSFER;
-                dst_stage_mask = PipelineStageFlags::FRAGMENT_SHADER;
+                src_stage_mask = vk::PipelineStageFlags::TRANSFER;
+                dst_stage_mask = vk::PipelineStageFlags::FRAGMENT_SHADER;
             } else {
                 panic!("unsupported layout transition!");
             }
@@ -85,10 +86,10 @@ impl Texture {
                 command_buffer,
                 src_stage_mask,
                 dst_stage_mask,
-                Some(DependencyFlags::from_bits(0).unwrap()),
-                &vec![],
-                &vec![],
-                &vec![barrier_builder],
+                vk::DependencyFlags::empty(),
+                &[],
+                &[],
+                &[barrier_builder.build()],
             );
 
             context.end_transfer_commands(command_buffer);
@@ -97,89 +98,81 @@ impl Texture {
 
     fn copy_buffer_to_image(
         context: &VulkanContext,
-        src_buffer: Buffer,
-        dst_image: Image,
-        dst_image_layout: ImageLayout,
-        extent: Extent3D,
+        src_buffer: vk::Buffer,
+        dst_image: vk::Image,
+        dst_image_layout: vk::ImageLayout,
+        extent: vk::Extent3D,
     ) {
         //TODO: expose a transfer command buffer?
         let command_buffer = context.begin_transfer_commands();
-        let subresources = ImageSubresourceLayersBuilder::new()
-            .aspect_mask(ImageAspectFlags::COLOR)
+        let subresources = vk::ImageSubresourceLayers::builder()
+            .aspect_mask(vk::ImageAspectFlags::COLOR)
             .mip_level(0)
             .base_array_layer(0)
             .layer_count(1);
         unsafe {
-            let regions = vec![BufferImageCopyBuilder::new()
+            let regions = vk::BufferImageCopy::builder()
                 .image_extent(extent)
-                .image_subresource(subresources.build())];
+                .image_subresource(subresources.build());
             context.device.cmd_copy_buffer_to_image(
                 command_buffer,
                 src_buffer,
                 dst_image,
                 dst_image_layout,
-                &regions,
+                &[regions.build()],
             );
         }
 
         context.end_transfer_commands(command_buffer);
     }
 
-    fn create_texture_sampler(context: &VulkanContext) -> Sampler {
-        let create_info = SamplerCreateInfoBuilder::new()
+    fn create_texture_sampler(context: &VulkanContext) -> vk::Sampler {
+        let create_info = vk::SamplerCreateInfo::builder()
             .anisotropy_enable(true)
             .max_anisotropy(16.0)
-            .border_color(BorderColor::INT_OPAQUE_BLACK)
+            .border_color(vk::BorderColor::INT_OPAQUE_BLACK)
             .unnormalized_coordinates(false)
-            .min_filter(Filter::LINEAR)
-            .mag_filter(Filter::LINEAR)
+            .min_filter(vk::Filter::LINEAR)
+            .mag_filter(vk::Filter::LINEAR)
             .compare_enable(false)
-            .compare_op(CompareOp::ALWAYS)
-            .mipmap_mode(SamplerMipmapMode::LINEAR)
+            .compare_op(vk::CompareOp::ALWAYS)
+            .mipmap_mode(vk::SamplerMipmapMode::LINEAR)
             .mip_lod_bias(0.0)
             .min_lod(0.0)
             .max_lod(0.0);
-        unsafe {
-            context
-                .device
-                .create_sampler(&create_info, None, None)
-                .unwrap()
-        }
+        unsafe { context.device.create_sampler(&create_info, None).unwrap() }
     }
 
     pub fn create_image(
         context: &VulkanContext,
         width: u32,
         height: u32,
-        format: Format,
+        format: vk::Format,
         pixel_data: &[u8],
     ) -> Self {
         unsafe {
-            let extent = Extent3D {
+            let extent = vk::Extent3D {
                 width,
                 height,
                 depth: 1,
             };
             //Create the image memory gpu_only:
-            let create_info = ImageCreateInfoBuilder::new()
+            let create_info = vk::ImageCreateInfo::builder()
                 .extent(extent)
-                .image_type(ImageType::_2D)
+                .image_type(vk::ImageType::TYPE_2D)
                 .mip_levels(1)
                 .array_layers(1)
                 .format(format)
-                .usage(ImageUsageFlags::TRANSFER_DST | ImageUsageFlags::SAMPLED)
-                .initial_layout(ImageLayout::UNDEFINED)
-                .tiling(ImageTiling::OPTIMAL)
-                .samples(SampleCountFlagBits::_1)
-                .sharing_mode(SharingMode::EXCLUSIVE);
+                .usage(vk::ImageUsageFlags::TRANSFER_DST | vk::ImageUsageFlags::SAMPLED)
+                .initial_layout(vk::ImageLayout::UNDEFINED)
+                .tiling(vk::ImageTiling::OPTIMAL)
+                .samples(vk::SampleCountFlags::TYPE_1)
+                .sharing_mode(vk::SharingMode::EXCLUSIVE);
 
-            let image_object = context
-                .device
-                .create_image(&create_info, None, None)
-                .unwrap();
-            let image_memory = context
-                .allocate_object(image_object, MemoryTypeFinder::gpu_only())
-                .unwrap();
+            let image_object = context.device.create_image(&create_info, None).unwrap();
+            // let image_memory = context
+            //     .allocate_object(image_object, MemoryTypeFinder::gpu_only())
+            //     .unwrap();
 
             let total_size = pixel_data.len() as u64;
             let range = image_memory.region().start..image_memory.region().end;
@@ -192,21 +185,21 @@ impl Texture {
             Self::transition_image_layout(
                 context,
                 image_object,
-                ImageLayout::UNDEFINED,
-                ImageLayout::TRANSFER_DST_OPTIMAL,
+                vk::ImageLayout::UNDEFINED,
+                vk::ImageLayout::TRANSFER_DST_OPTIMAL,
             );
             Self::copy_buffer_to_image(
                 context,
                 *staging_buffer.object(),
                 image_object,
-                ImageLayout::TRANSFER_DST_OPTIMAL,
+                vk::ImageLayout::TRANSFER_DST_OPTIMAL,
                 extent,
             );
             Self::transition_image_layout(
                 context,
                 image_object,
-                ImageLayout::TRANSFER_DST_OPTIMAL,
-                ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+                vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+                vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
             );
 
             context.free_object(staging_buffer);
@@ -215,7 +208,7 @@ impl Texture {
                 &context.device,
                 image_object,
                 format,
-                ImageAspectFlags::COLOR,
+                vk::ImageAspectFlags::COLOR,
             );
             let image_sampler = Self::create_texture_sampler(context);
             Self {
@@ -235,12 +228,8 @@ impl Texture {
 
     pub fn destroy(self, context: &VulkanContext) {
         unsafe {
-            context
-                .device
-                .destroy_sampler(Some(self.image_sampler), None);
-            context
-                .device
-                .destroy_image_view(Some(self.image_view), None);
+            context.device.destroy_sampler(self.image_sampler, None);
+            context.device.destroy_image_view(self.image_view, None);
         }
         context.free_object(self.image_memory);
     }

@@ -1,16 +1,11 @@
+use super::context::VulkanContext;
+use ash::{vk, Device};
+
 use std::sync::Arc;
 
-use erupt::{
-    utils::allocator::{Allocation, MemoryTypeFinder},
-    vk1_0::*,
-    DeviceLoader,
-};
-
-use super::context::VulkanContext;
-
 struct BufferObject {
-    buffer: Option<Allocation<Buffer>>,
-    buf_size: DeviceSize,
+    buffer: Option<Allocation<vk::Buffer>>,
+    buf_size: vk::DeviceSize,
     count: u32,
     context: Arc<VulkanContext>,
 }
@@ -32,12 +27,12 @@ pub struct VertexBuffer {
 
 pub struct IndexBuffer {
     buffer: BufferObject,
-    pub index_type: IndexType,
+    pub index_type: vk::IndexType,
 }
 
 impl BufferObject {
-    fn upload_data(&mut self, device: &DeviceLoader, data: &[u8]) {
-        let data_size = std::mem::size_of_val(data) as DeviceSize;
+    fn upload_data(&mut self, device: &Device, data: &[u8]) {
+        let data_size = std::mem::size_of_val(data) as vk::DeviceSize;
         if self.buf_size < data_size {
             panic!(
                 "Too little memory allocated for buffer of size {}",
@@ -61,14 +56,14 @@ impl BufferObject {
 impl IndexBuffer {
     pub fn new(
         context: Arc<VulkanContext>,
-        buf_size: DeviceSize,
-        index_type: IndexType,
+        buf_size: vk::DeviceSize,
+        index_type: vk::IndexType,
         count: u32,
     ) -> Self {
         let buffer = {
-            let create_info = BufferCreateInfoBuilder::new()
-                .sharing_mode(SharingMode::EXCLUSIVE)
-                .usage(BufferUsageFlags::INDEX_BUFFER)
+            let create_info = vk::BufferCreateInfo::builder()
+                .sharing_mode(vk::SharingMode::EXCLUSIVE)
+                .usage(vk::BufferUsageFlags::INDEX_BUFFER)
                 .size(buf_size);
             let device = &context.device;
             let buffer = context
@@ -88,11 +83,11 @@ impl IndexBuffer {
         Self { buffer, index_type }
     }
 
-    pub fn upload_data(&mut self, device: &DeviceLoader, data: &[u8]) {
+    pub fn upload_data(&mut self, device: &Device, data: &[u8]) {
         self.buffer.upload_data(device, data);
     }
 
-    pub fn object(&self) -> &Buffer {
+    pub fn object(&self) -> &vk::Buffer {
         self.buffer.buffer.as_ref().unwrap().object()
     }
 
@@ -102,11 +97,11 @@ impl IndexBuffer {
 }
 
 impl VertexBuffer {
-    pub fn new(context: Arc<VulkanContext>, buf_size: DeviceSize, count: u32) -> Self {
+    pub fn new(context: Arc<VulkanContext>, buf_size: vk::DeviceSize, count: u32) -> Self {
         let buffer = {
-            let create_info = BufferCreateInfoBuilder::new()
-                .sharing_mode(SharingMode::EXCLUSIVE)
-                .usage(BufferUsageFlags::VERTEX_BUFFER)
+            let create_info = vk::BufferCreateInfo::builder()
+                .sharing_mode(vk::SharingMode::EXCLUSIVE)
+                .usage(vk::BufferUsageFlags::VERTEX_BUFFER)
                 .size(buf_size);
             let device = &context.device;
             let buffer = context
@@ -126,7 +121,7 @@ impl VertexBuffer {
         Self { buffer }
     }
 
-    pub fn object(&self) -> &Buffer {
+    pub fn object(&self) -> &vk::Buffer {
         self.buffer.buffer.as_ref().unwrap().object()
     }
 
@@ -134,7 +129,7 @@ impl VertexBuffer {
         self.buffer.count
     }
 
-    pub fn upload_data(&mut self, device: &DeviceLoader, data: &[u8]) {
+    pub fn upload_data(&mut self, device: &Device, data: &[u8]) {
         self.buffer.upload_data(device, data);
     }
 }
