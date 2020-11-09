@@ -6,7 +6,7 @@ use crate::{
 
 use mikpe_math::Mat4;
 
-use erupt::{utils::allocator::Allocator, vk1_0::*, DeviceLoader};
+use ash::{version::DeviceV1_0, vk, Device};
 
 use std::{rc::Rc, sync::Arc};
 
@@ -19,7 +19,7 @@ impl Material {
     pub fn new(
         model: Rc<GLTFModel>,
         context: Arc<VulkanContext>,
-        render_pass: RenderPass,
+        render_pass: vk::RenderPass,
         num_images: usize,
     ) -> Self {
         let mut renderpipeline =
@@ -47,7 +47,7 @@ impl Material {
                         &context,
                         image.width,
                         image.height,
-                        Format::R8G8B8A8_SRGB,
+                        vk::Format::R8G8B8A8_SRGB,
                         new_pixels.as_slice(),
                     );
                     renderpipeline.uniform.add_image_info(ImageInfo {
@@ -63,7 +63,7 @@ impl Material {
                         &context,
                         image.width,
                         image.height,
-                        Format::R8G8B8A8_SRGB,
+                        vk::Format::R8G8B8A8_SRGB,
                         pixels.as_slice(),
                     );
                     renderpipeline.uniform.add_image_info(ImageInfo {
@@ -82,23 +82,23 @@ impl Material {
         }
     }
 
-    pub fn destroy(&mut self, device: &DeviceLoader, allocator: &mut Allocator) {
-        self.renderpipeline.destroy(device, allocator);
-    }
+    // pub fn destroy(&mut self, device: &Device, allocator: &mut Allocator) {
+    //     self.renderpipeline.destroy(device, allocator);
+    // }
 
     //TODO: Can we in any way fix so that these bindings happen in a better way?
     //Maybe decouple the actual data of the uniform to the drawcall-creation and
     //let the material stop caring about the image_index
-    pub fn bind(&self, device: &DeviceLoader, command_buffer: CommandBuffer) {
+    pub fn bind(&self, device: &Device, command_buffer: vk::CommandBuffer) {
         unsafe {
             device.cmd_bind_pipeline(
                 command_buffer,
-                PipelineBindPoint::GRAPHICS,
+                vk::PipelineBindPoint::GRAPHICS,
                 self.renderpipeline.pipeline,
             );
             device.cmd_bind_descriptor_sets(
                 command_buffer,
-                PipelineBindPoint::GRAPHICS,
+                vk::PipelineBindPoint::GRAPHICS,
                 self.renderpipeline.pipeline_layout,
                 0,
                 &[self.renderpipeline.uniform.next_descriptor().desc_set],
@@ -107,13 +107,7 @@ impl Material {
         }
     }
 
-    pub fn upload_pipeline_data(
-        &mut self,
-        device: &DeviceLoader,
-        view: Mat4,
-        proj: Mat4,
-        model: Mat4,
-    ) {
+    pub fn upload_pipeline_data(&mut self, device: &Device, view: Mat4, proj: Mat4, model: Mat4) {
         let mat = [model, view, proj];
         let data_slice = unsafe {
             std::slice::from_raw_parts(mat.as_ptr() as *const u8, std::mem::size_of_val(&mat))

@@ -3,7 +3,7 @@ pub mod scene;
 
 use std::{cell::RefCell, ffi::CString, path::PathBuf, rc::Rc, time::Instant};
 
-use erupt::{vk1_0::CommandBuffer, DeviceLoader};
+use ash::version::DeviceV1_0;
 use mikpe_math::{Mat4, Vec3};
 pub use model::*;
 pub use scene::*;

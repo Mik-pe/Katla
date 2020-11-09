@@ -1,5 +1,5 @@
 use crate::rendering::Drawable;
-use erupt::{vk1_0::CommandBuffer, DeviceLoader};
+use ash::{vk::CommandBuffer, Device};
 use mikpe_math::{Mat4, Sphere, Vec3};
 use std::{path::PathBuf, rc::Rc};
 
@@ -50,7 +50,7 @@ impl Scene {
         self.scene_objects.clear();
     }
 
-    pub fn update(&mut self, device: &DeviceLoader, proj: &Mat4, view: &Mat4) {
+    pub fn update(&mut self, device: &Device, proj: &Mat4, view: &Mat4) {
         for object in &mut self.scene_objects {
             let draw_mut = &mut object.drawable;
             draw_mut.update(device, &view, &proj);
@@ -61,7 +61,7 @@ impl Scene {
         self.scene_objects.push(scene_object);
     }
 
-    pub fn render(&self, device: &DeviceLoader, command_buffer: CommandBuffer) {
+    pub fn render(&self, device: &Device, command_buffer: CommandBuffer) {
         for object in &self.scene_objects {
             object.drawable.draw(device, command_buffer);
         }
