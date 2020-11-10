@@ -1,11 +1,13 @@
 use crate::renderer::{VulkanContext, VulkanFrameCtx};
 
 use ash::{version::DeviceV1_0, vk};
+use vk_mem::Allocation;
 pub struct Texture {
     pub width: u32,
     pub height: u32,
     pub channels: u32,
-    // image_memory: Allocation<Image>,
+    image_memory: Allocation,
+    image: vk::Image,
     pub image_view: vk::ImageView,
     pub image_sampler: vk::Sampler,
 }
@@ -14,25 +16,15 @@ impl Texture {
     fn create_staging_buffer(
         context: &VulkanContext,
         size: vk::DeviceSize,
-    ) -> Allocation<vk::Buffer> {
+    ) -> (vk::Buffer, Allocation) {
         let create_info = vk::BufferCreateInfo::builder()
             .sharing_mode(vk::SharingMode::EXCLUSIVE)
             .usage(vk::BufferUsageFlags::TRANSFER_SRC)
             .size(size);
+        let buffer = unsafe { context.device.create_buffer(&create_info, None).unwrap() };
+        let allocation = context.allocate_buffer(buffer, vk_mem::MemoryUsage::CpuToGpu);
 
-        let buffer = context
-            .allocate_object(
-                unsafe {
-                    context
-                        .device
-                        .create_buffer(&create_info, None, None)
-                        .unwrap()
-                },
-                MemoryTypeFinder::upload(),
-            )
-            .unwrap();
-
-        buffer
+        (buffer, allocation)
     }
 
     fn transition_image_layout(
@@ -169,18 +161,16 @@ impl Texture {
                 .samples(vk::SampleCountFlags::TYPE_1)
                 .sharing_mode(vk::SharingMode::EXCLUSIVE);
 
-            let image_object = context.device.create_image(&create_info, None).unwrap();
-            // let image_memory = context
-            //     .allocate_object(image_object, MemoryTypeFinder::gpu_only())
-            //     .unwrap();
+            let (image_object, image_memory) =
+                context.create_image(create_info.build(), vk_mem::MemoryUsage::GpuOnly);
 
             let total_size = pixel_data.len() as u64;
-            let range = image_memory.region().start..image_memory.region().end;
 
-            let staging_buffer = Self::create_staging_buffer(context, total_size);
-            let mut map = staging_buffer.map(&context.device, range).unwrap();
-            map.import(pixel_data);
-            map.unmap(&context.device).unwrap();
+            let (staging_buffer, staging_allocation) =
+                Self::create_staging_buffer(context, total_size);
+            let mut map = context.map_buffer(&staging_allocation);
+            std::ptr::copy_nonoverlapping(pixel_data.as_ptr(), map, total_size as usize);
+            context.unmap_buffer(&staging_allocation);
 
             Self::transition_image_layout(
                 context,
@@ -190,7 +180,7 @@ impl Texture {
             );
             Self::copy_buffer_to_image(
                 context,
-                *staging_buffer.object(),
+                staging_buffer,
                 image_object,
                 vk::ImageLayout::TRANSFER_DST_OPTIMAL,
                 extent,
@@ -202,7 +192,7 @@ impl Texture {
                 vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
             );
 
-            context.free_object(staging_buffer);
+            context.free_buffer(staging_buffer, staging_allocation);
 
             let image_view = VulkanFrameCtx::create_image_view(
                 &context.device,
@@ -216,6 +206,7 @@ impl Texture {
                 height,
                 channels: 4,
                 image_memory,
+                image: image_object,
                 image_view,
                 image_sampler,
             }
@@ -231,6 +222,6 @@ impl Texture {
             context.device.destroy_sampler(self.image_sampler, None);
             context.device.destroy_image_view(self.image_view, None);
         }
-        context.free_object(self.image_memory);
+        context.free_image(self.image, &self.image_memory);
     }
 }

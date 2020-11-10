@@ -1,22 +1,3 @@
-// use crate::renderer::ENTRY_LOADER;
-
-// use erupt::{
-//     cstr,
-//     extensions::{ext_debug_utils, khr_surface::*, khr_swapchain::*},
-//     utils::allocator::AllocationObject,
-//     utils::VulkanResult,
-//     utils::{
-//         allocator::{Allocation, Allocator, AllocatorCreateInfo, MemoryTypeFinder},
-//         surface,
-//     },
-//     vk::{
-//         self, ApplicationInfoBuilder, CommandBuffer, CommandBufferAllocateInfoBuilder,
-//         CommandBufferBeginInfoBuilder, CommandBufferLevel, CommandPool, Extent2D, Format,
-//         FormatFeatureFlags, Image, ImageTiling, ImageView, InstanceCreateInfoBuilder,
-//         PhysicalDevice, Queue, QueueFlags,
-//     },
-//     Device, Instance,
-// };
 use ash::{
     extensions::{
         ext::DebugUtils,
@@ -25,16 +6,15 @@ use ash::{
     version::{DeviceV1_0, EntryV1_0, InstanceV1_0},
     vk, Device, Entry, Instance,
 };
+use vk_mem::{Allocation, Allocator};
+
 use std::{
     ffi::{c_void, CStr, CString},
-    os::raw::c_char,
     sync::{Arc, Mutex},
 };
 use winit::window::Window;
 
-const LAYER_KHRONOS_VALIDATION: *const c_char = CString::new("VK_LAYER_KHRONOS_validation")
-    .unwrap()
-    .as_ptr();
+const LAYER_KHRONOS_VALIDATION: &str = concat!("VK_LAYER_KHRONOS_validation", "\0");
 
 struct SwapChainSupportDetails {
     pub surface_caps: vk::SurfaceCapabilitiesKHR,
@@ -51,36 +31,38 @@ pub struct RenderTexture {
     pub extent: vk::Extent2D,
     pub image_view: vk::ImageView,
     pub format: vk::Format,
-    // image_memory: Option<Allocation<vk::Image>>,
+    image: vk::Image,
+    image_memory: Option<Allocation>,
     context: Arc<VulkanContext>,
 }
 
-// impl RenderTexture {
-//     fn destroy(&mut self) {
-//         unsafe {
-//             self.context
-//                 .device
-//                 .destroy_image_view(Some(self.image_view), None);
-//         }
-//         let image_memory = self.image_memory.take();
+impl RenderTexture {
+    fn destroy(&mut self) {
+        unsafe {
+            self.context
+                .device
+                .destroy_image_view(self.image_view, None);
+        }
+        let image_memory = self.image_memory.take();
 
-//         self.context.free_object(image_memory.unwrap());
-//     }
-// }
+        self.context.free_image(self.image, &image_memory.unwrap());
+    }
+}
 
-// impl Drop for RenderTexture {
-//     fn drop(&mut self) {
-//         self.destroy();
-//     }
-// }
+impl Drop for RenderTexture {
+    fn drop(&mut self) {
+        self.destroy();
+    }
+}
 
 pub struct VulkanContext {
+    entry: Entry,
     pub instance: Instance,
     pub device: Device,
     pub surface_loader: Surface,
     pub swapchain_loader: Swapchain,
     pub physical_device: vk::PhysicalDevice,
-    // pub allocator: Mutex<Allocator>,
+    pub allocator: Mutex<Allocator>,
     pub surface: vk::SurfaceKHR,
     pub graphics_command_pool: vk::CommandPool,
     pub graphics_queue: vk::Queue,
@@ -139,7 +121,6 @@ impl SwapChainSupportDetails {
         let surface_formats = surface_loader
             .get_physical_device_surface_formats(physical_device, surface)
             .unwrap();
-
         let present_modes = surface_loader
             .get_physical_device_surface_present_modes(physical_device, surface)
             .unwrap();
@@ -202,26 +183,74 @@ impl QueueFamilyIndices {
 }
 
 impl VulkanContext {
-    // pub fn allocate_object<'a, T>(
-    //     &'a self,
-    //     object: T,
-    //     memory_type: MemoryTypeFinder,
-    // ) -> VulkanResult<Allocation<T>>
-    // where
-    //     T: AllocationObject + 'static,
-    // {
-    //     self.allocator
-    //         .lock()
-    //         .unwrap()
-    //         .allocate(&self.device, object, memory_type)
-    // }
+    pub fn allocate_buffer(
+        &self,
+        buffer: vk::Buffer,
+        usage: vk_mem::MemoryUsage,
+    ) -> vk_mem::Allocation {
+        let create_info = vk_mem::AllocationCreateInfo {
+            usage,
+            ..Default::default()
+        };
+        let (allocation, _) = self
+            .allocator
+            .lock()
+            .unwrap()
+            .allocate_memory_for_buffer(buffer, &create_info)
+            .unwrap();
+        allocation
+    }
 
-    // pub fn free_object<T>(&self, object: Allocation<T>)
-    // where
-    //     T: AllocationObject,
-    // {
-    //     self.allocator.lock().unwrap().free(&self.device, object);
-    // }
+    pub fn free_buffer(&self, buffer: vk::Buffer, allocation: vk_mem::Allocation) {
+        self.allocator
+            .lock()
+            .unwrap()
+            .destroy_buffer(buffer, &allocation)
+            .expect("Could not destroy buffer!");
+    }
+
+    //TODO: Enable mapping of part of buffers
+    pub fn map_buffer(&self, allocation: &vk_mem::Allocation) -> *mut u8 {
+        self.allocator
+            .lock()
+            .unwrap()
+            .map_memory(allocation)
+            .unwrap()
+    }
+
+    pub fn unmap_buffer(&self, allocation: &vk_mem::Allocation) {
+        self.allocator
+            .lock()
+            .unwrap()
+            .unmap_memory(allocation)
+            .expect("Could not unmap memory!");
+    }
+
+    pub fn create_image(
+        &self,
+        image_create_info: vk::ImageCreateInfo,
+        usage: vk_mem::MemoryUsage,
+    ) -> (vk::Image, vk_mem::Allocation) {
+        let allocation_info = vk_mem::AllocationCreateInfo {
+            usage,
+            ..Default::default()
+        };
+        let (image, allocation, _) = self
+            .allocator
+            .lock()
+            .unwrap()
+            .create_image(&image_create_info, &allocation_info)
+            .unwrap();
+
+        (image, allocation)
+    }
+
+    pub fn free_image(&self, image: vk::Image, allocation: &vk_mem::Allocation) {
+        self.allocator
+            .lock()
+            .unwrap()
+            .destroy_image(image, allocation);
+    }
 
     fn create_instance(
         with_validation_layers: bool,
@@ -249,7 +278,7 @@ impl VulkanContext {
         let mut instance_layers = vec![];
         if with_validation_layers {
             extension_names_raw.push(DebugUtils::name().as_ptr());
-            instance_layers.push(LAYER_KHRONOS_VALIDATION);
+            instance_layers.push(LAYER_KHRONOS_VALIDATION.as_ptr() as *const i8);
         }
         let app_info = vk::ApplicationInfo::builder()
             .application_name(app_name)
@@ -420,26 +449,13 @@ impl VulkanContext {
             &entry,
         );
         let debug_utils_loader = DebugUtils::new(&entry, &instance);
-        let debug_callback =
-            create_debug_messenger(&mut debug_utils_loader, with_validation_layers);
+        let debug_callback = create_debug_messenger(&debug_utils_loader, with_validation_layers);
         let surface_loader = Surface::new(&entry, &instance);
         let surface =
             unsafe { ash_window::create_surface(&entry, &mut instance, window, None) }.unwrap();
 
         let physical_device =
             unsafe { pick_physical_device(&instance, &surface_loader, surface) }.unwrap();
-
-        // let allocator = Mutex::new(
-        //     //For high-dpi displays we need this to be larger, let's start with 64 MiB
-        //     Allocator::new(
-        //         &instance,
-        //         physical_device,
-        //         AllocatorCreateInfo {
-        //             block_size: 64 * 1024u64.pow(2),
-        //         },
-        //     )
-        //     .unwrap(),
-        // );
 
         let queue_indices = QueueFamilyIndices::find_queue_families(
             &instance,
@@ -485,13 +501,24 @@ impl VulkanContext {
         let transfer_command_pool =
             unsafe { device.create_command_pool(&create_info, None) }.unwrap();
 
+        //TODO: Read up on the actual fields in this CreateInfo
+        let mut create_info = vk_mem::AllocatorCreateInfo {
+            physical_device,
+            device: device.clone(),
+            instance: instance.clone(),
+            ..Default::default()
+        };
+
+        let allocator = Mutex::new(vk_mem::Allocator::new(&create_info).unwrap());
+
         Self {
+            entry,
             instance,
             device,
             surface_loader,
             swapchain_loader,
             physical_device,
-            // allocator,
+            allocator,
             surface,
             graphics_command_pool,
             graphics_queue,
@@ -550,15 +577,18 @@ impl VulkanFrameCtx {
     }
 
     pub fn init(context: &Arc<VulkanContext>) -> Self {
+        println!("Init Vulkan Frame Context!");
         let swapchain_info = unsafe { context.query_swapchain_support() };
 
         let current_extent = swapchain_info.surface_caps.current_extent;
+        println!("Creating Swapchain!");
         let (swapchain, current_surface_format) = create_swapchain(
             &context.swapchain_loader,
             context.surface,
             &swapchain_info,
             None,
         );
+        println!("Swapchain created!");
 
         let swapchain_images =
             unsafe { context.swapchain_loader.get_swapchain_images(swapchain) }.unwrap();
@@ -574,6 +604,7 @@ impl VulkanFrameCtx {
                 )
             })
             .collect();
+        println!("Going to create depth_render_texture!");
         let depth_render_texture = create_depth_render_texture(context.clone(), current_extent);
 
         let command_buffers = {
@@ -713,13 +744,9 @@ fn create_depth_render_texture(context: Arc<VulkanContext>, extent: vk::Extent2D
         .usage(vk::ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT);
 
     //https://vulkan-tutorial.com/Depth_buffering
-    let depth_image = unsafe { context.device.create_image(&create_info, None).unwrap() };
+    let (depth_image, image_memory) =
+        context.create_image(create_info.build(), vk_mem::MemoryUsage::GpuOnly);
 
-    // let image_memory = Some(
-    //     context
-    //         .allocate_object(depth_image, MemoryTypeFinder::gpu_only())
-    //         .unwrap(),
-    // );
     let image_view = VulkanFrameCtx::create_image_view(
         &context.device,
         depth_image,
@@ -729,7 +756,8 @@ fn create_depth_render_texture(context: Arc<VulkanContext>, extent: vk::Extent2D
     RenderTexture {
         extent,
         image_view,
-        // image_memory,
+        image: depth_image,
+        image_memory: Some(image_memory),
         format: depth_format,
         context,
     }
@@ -744,7 +772,7 @@ fn create_device(
     let device_extensions = [Swapchain::name().as_ptr()];
     let mut device_layers = vec![];
     if with_validation_layers {
-        device_layers.push(LAYER_KHRONOS_VALIDATION);
+        device_layers.push(LAYER_KHRONOS_VALIDATION.as_ptr() as *const i8);
     }
 
     // https://vulkan-tutorial.com/Drawing_a_triangle/Setup/Logical_device_and_queues
@@ -760,6 +788,8 @@ fn create_device(
             .create_device(physical_device, &create_info, None)
             .unwrap()
     };
+
+    println!("Device created!");
 
     device
 }
@@ -802,7 +832,7 @@ fn create_swapchain(
 }
 
 fn create_debug_messenger(
-    debug_utils_loader: &mut DebugUtils,
+    debug_utils_loader: &DebugUtils,
     with_validation_layers: bool,
 ) -> Option<vk::DebugUtilsMessengerEXT> {
     if with_validation_layers {
@@ -842,10 +872,10 @@ unsafe extern "system" fn debug_callback(
 }
 
 fn check_validation_support(entry: &Entry) -> bool {
-    let mut layer_count = 0u32;
     unsafe {
         let available_layers = entry.enumerate_instance_layer_properties().unwrap();
-        let validation_name = std::ffi::CStr::from_ptr(LAYER_KHRONOS_VALIDATION as _);
+        let validation_name = CStr::from_ptr(LAYER_KHRONOS_VALIDATION.as_ptr() as *const i8);
+        println!("Validation name: {:?}", validation_name);
         for layer in available_layers {
             let layer_name = std::ffi::CStr::from_ptr(layer.layer_name.as_ptr() as _);
             if layer_name == validation_name {
