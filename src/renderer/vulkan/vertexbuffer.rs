@@ -1,10 +1,12 @@
 use super::context::VulkanContext;
-use ash::{vk, Device};
+use ash::{version::DeviceV1_0, vk, Device};
+use vk_mem::Allocation;
 
 use std::sync::Arc;
 
 struct BufferObject {
-    buffer: Option<Allocation<vk::Buffer>>,
+    allocation: Option<Allocation>,
+    buffer: vk::Buffer,
     buf_size: vk::DeviceSize,
     count: u32,
     context: Arc<VulkanContext>,
@@ -15,8 +17,8 @@ struct BufferObject {
 // that are in-flight
 impl Drop for BufferObject {
     fn drop(&mut self) {
-        if let Some(buffer) = self.buffer.take() {
-            self.context.free_object(buffer);
+        if let Some(allocation) = self.allocation.take() {
+            self.context.free_buffer(self.buffer, allocation);
         }
     }
 }
@@ -39,14 +41,13 @@ impl BufferObject {
                 data_size
             );
         }
-        match &self.buffer {
-            Some(buffer) => {
-                //This is a bit awkward.. Probably something finicky within erupt
-                let range = ..buffer.region().start + data_size;
-
-                let mut map = buffer.map(&device, range).unwrap();
-                map.import(data);
-                map.unmap(&device).unwrap();
+        match &self.allocation {
+            Some(allocation) => {
+                let mut mapped_ptr = self.context.map_buffer(allocation);
+                unsafe {
+                    std::ptr::copy_nonoverlapping(data.as_ptr(), mapped_ptr, data_size as usize);
+                }
+                self.context.unmap_buffer(allocation);
             }
             _ => {}
         }
@@ -66,15 +67,12 @@ impl IndexBuffer {
                 .usage(vk::BufferUsageFlags::INDEX_BUFFER)
                 .size(buf_size);
             let device = &context.device;
-            let buffer = context
-                .allocate_object(
-                    unsafe { device.create_buffer(&create_info, None, None).unwrap() },
-                    MemoryTypeFinder::dynamic(),
-                )
-                .unwrap();
+            let buffer = unsafe { device.create_buffer(&create_info, None).unwrap() };
+            let allocation = context.allocate_buffer(buffer, vk_mem::MemoryUsage::CpuToGpu);
 
             BufferObject {
-                buffer: Some(buffer),
+                allocation: Some(allocation),
+                buffer,
                 buf_size,
                 count,
                 context,
@@ -88,7 +86,7 @@ impl IndexBuffer {
     }
 
     pub fn object(&self) -> &vk::Buffer {
-        self.buffer.buffer.as_ref().unwrap().object()
+        &self.buffer.buffer
     }
 
     pub fn count(&self) -> u32 {
@@ -104,15 +102,12 @@ impl VertexBuffer {
                 .usage(vk::BufferUsageFlags::VERTEX_BUFFER)
                 .size(buf_size);
             let device = &context.device;
-            let buffer = context
-                .allocate_object(
-                    unsafe { device.create_buffer(&create_info, None, None).unwrap() },
-                    MemoryTypeFinder::dynamic(),
-                )
-                .unwrap();
+            let buffer = unsafe { device.create_buffer(&create_info, None).unwrap() };
+            let allocation = context.allocate_buffer(buffer, vk_mem::MemoryUsage::CpuToGpu);
 
             BufferObject {
-                buffer: Some(buffer),
+                allocation: Some(allocation),
+                buffer,
                 buf_size,
                 count,
                 context,
@@ -122,7 +117,7 @@ impl VertexBuffer {
     }
 
     pub fn object(&self) -> &vk::Buffer {
-        self.buffer.buffer.as_ref().unwrap().object()
+        &self.buffer.buffer
     }
 
     pub fn count(&self) -> u32 {

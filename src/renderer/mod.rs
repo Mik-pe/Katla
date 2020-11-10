@@ -59,9 +59,13 @@ impl VulkanRenderer {
             app_name,
             engine_name,
         ));
+        println!("Vulkan Context created!");
+
         let frame_context = VulkanFrameCtx::init(&context);
+        println!("Vulkan Frame Context created!");
 
         let render_pass = Self::create_render_pass(&context, &frame_context);
+        println!("Vulkan RenderPass created!");
 
         let swapchain_framebuffers: Vec<_> = frame_context
             .swapchain_image_views
@@ -94,6 +98,7 @@ impl VulkanRenderer {
             swap_data,
             current_framedata: None,
         };
+        println!("Vulkan Renderer created!");
         renderer
     }
 
