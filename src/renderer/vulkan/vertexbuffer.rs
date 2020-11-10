@@ -43,7 +43,7 @@ impl BufferObject {
         }
         match &self.allocation {
             Some(allocation) => {
-                let mut mapped_ptr = self.context.map_buffer(allocation);
+                let mapped_ptr = self.context.map_buffer(allocation);
                 unsafe {
                     std::ptr::copy_nonoverlapping(data.as_ptr(), mapped_ptr, data_size as usize);
                 }
@@ -66,9 +66,8 @@ impl IndexBuffer {
                 .sharing_mode(vk::SharingMode::EXCLUSIVE)
                 .usage(vk::BufferUsageFlags::INDEX_BUFFER)
                 .size(buf_size);
-            let device = &context.device;
-            let buffer = unsafe { device.create_buffer(&create_info, None).unwrap() };
-            let allocation = context.allocate_buffer(buffer, vk_mem::MemoryUsage::CpuToGpu);
+            let (buffer, allocation) =
+                context.allocate_buffer(&create_info, vk_mem::MemoryUsage::CpuToGpu);
 
             BufferObject {
                 allocation: Some(allocation),
@@ -101,9 +100,8 @@ impl VertexBuffer {
                 .sharing_mode(vk::SharingMode::EXCLUSIVE)
                 .usage(vk::BufferUsageFlags::VERTEX_BUFFER)
                 .size(buf_size);
-            let device = &context.device;
-            let buffer = unsafe { device.create_buffer(&create_info, None).unwrap() };
-            let allocation = context.allocate_buffer(buffer, vk_mem::MemoryUsage::CpuToGpu);
+            let (buffer, allocation) =
+                context.allocate_buffer(&create_info, vk_mem::MemoryUsage::CpuToGpu);
 
             BufferObject {
                 allocation: Some(allocation),

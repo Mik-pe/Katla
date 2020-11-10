@@ -185,20 +185,20 @@ impl QueueFamilyIndices {
 impl VulkanContext {
     pub fn allocate_buffer(
         &self,
-        buffer: vk::Buffer,
+        buffer_info: &vk::BufferCreateInfo,
         usage: vk_mem::MemoryUsage,
-    ) -> vk_mem::Allocation {
-        let create_info = vk_mem::AllocationCreateInfo {
+    ) -> (vk::Buffer, vk_mem::Allocation) {
+        let allocation_info = vk_mem::AllocationCreateInfo {
             usage,
             ..Default::default()
         };
-        let (allocation, _) = self
+        let (buffer, allocation, _) = self
             .allocator
             .lock()
             .unwrap()
-            .allocate_memory_for_buffer(buffer, &create_info)
+            .create_buffer(buffer_info, &allocation_info)
             .unwrap();
-        allocation
+        (buffer, allocation)
     }
 
     pub fn free_buffer(&self, buffer: vk::Buffer, allocation: vk_mem::Allocation) {
