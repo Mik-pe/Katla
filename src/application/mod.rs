@@ -37,15 +37,15 @@ impl Application {
         let mut input_controller = self.input_controller;
         let mut model_cache = FileCache::<GLTFModel>::new();
 
-        // let mesh = Mesh::new_from_cache(
-        //     model_cache.read(PathBuf::from("resources/models/Tiger.glb")),
-        //     renderer.context.clone(),
-        //     renderer.render_pass,
-        //     renderer.num_images(),
-        //     Vec3::new(-1.0, 0.0, 0.0),
-        // );
-        // let bounds = mesh.bounds.clone();
-        // scene.add_object(SceneObject::new(Box::new(mesh), bounds));
+        let mesh = Mesh::new_from_cache(
+            model_cache.read(PathBuf::from("resources/models/Tiger.glb")),
+            renderer.context.clone(),
+            renderer.render_pass,
+            renderer.num_images(),
+            Vec3::new(-1.0, 0.0, 0.0),
+        );
+        let bounds = mesh.bounds.clone();
+        scene.add_object(SceneObject::new(Box::new(mesh), bounds));
 
         event_loop.run(move |event, _, control_flow| {
             use winit::event::{Event, WindowEvent};

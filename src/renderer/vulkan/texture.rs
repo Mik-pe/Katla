@@ -21,10 +21,8 @@ impl Texture {
             .sharing_mode(vk::SharingMode::EXCLUSIVE)
             .usage(vk::BufferUsageFlags::TRANSFER_SRC)
             .size(size);
-        let buffer = unsafe { context.device.create_buffer(&create_info, None).unwrap() };
-        let allocation = context.allocate_buffer(buffer, vk_mem::MemoryUsage::CpuToGpu);
 
-        (buffer, allocation)
+        context.allocate_buffer(&create_info, vk_mem::MemoryUsage::CpuToGpu)
     }
 
     fn transition_image_layout(
