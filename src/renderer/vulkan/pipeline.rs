@@ -1,13 +1,15 @@
 use crate::rendering::vertextypes::*;
 use ash::{util::read_spv, version::DeviceV1_0, vk, Device};
+use vk_mem::Allocation;
 
-use std::{ffi::CString, io::Cursor};
+use std::{ffi::CString, io::Cursor, sync::Arc};
 
 use super::context::VulkanContext;
 const SHADER_VERT: &[u8] = include_bytes!("../../../resources/shaders/model_pbr.vert.spv");
 const SHADER_FRAG: &[u8] = include_bytes!("../../../resources/shaders/model.frag.spv");
 
 pub struct RenderPipeline {
+    context: Arc<VulkanContext>,
     pub pipeline: vk::Pipeline,
     pub pipeline_layout: vk::PipelineLayout,
     pub uniform: UniformHandle,
@@ -17,7 +19,8 @@ pub struct RenderPipeline {
 }
 
 pub struct UniformBuffer {
-    // buffer: Allocation<vk::Buffer>,
+    allocation: Allocation,
+    buffer: vk::Buffer,
     buf_size: vk::DeviceSize,
 }
 
@@ -65,9 +68,8 @@ impl UniformHandle {
         }
     }
 
-    pub fn update_buffer(&mut self, device: &Device, data: &[u8]) {
-        todo!("Update buffers");
-        // self.descriptors[self.next_update_index].update_buffer(device, data);
+    pub fn update_buffer(&mut self, context: &VulkanContext, data: &[u8]) {
+        self.descriptors[self.next_update_index].update_buffer(context, data);
 
         self.next_bind_index = self.next_update_index;
         self.next_update_index = (self.next_update_index + 1) % self.descriptors.len();
@@ -95,14 +97,11 @@ impl UniformHandle {
             .usage(vk::BufferUsageFlags::UNIFORM_BUFFER)
             .size(data_size);
 
-        // let buffer = context
-        //     .allocate_object(
-        //         unsafe { context.device.create_buffer(&create_info, None, None) }.unwrap(),
-        //         MemoryTypeFinder::dynamic(),
-        //     )
-        //     .unwrap();
+        let (buffer, allocation) =
+            context.allocate_buffer(&create_info, vk_mem::MemoryUsage::CpuToGpu);
         let uniform_buffer = Some(UniformBuffer {
-            // buffer: buffer,
+            allocation,
+            buffer,
             buf_size: data_size,
         });
 
@@ -141,56 +140,65 @@ impl UniformHandle {
 
 impl UniformDescriptor {
     //TODO: Uniform buffer updates:
-    // pub fn update_buffer(&mut self, device: &Device, data: &[u8]) {
-    //     if let Some(buffer) = &self.uniform_buffer {
-    //         let data_size = std::mem::size_of_val(data) as vk::DeviceSize;
-    //         if buffer.buf_size < data_size {
-    //             panic!(
-    //                 "Too little memory allocated for buffer of size {}",
-    //                 data_size
-    //             );
-    //         }
-    //         //This is a bit awkward.. Something finicky within erupt?
-    //         let range = ..buffer.buffer.region().start + data_size;
+    pub fn update_buffer(&mut self, context: &VulkanContext, data: &[u8]) {
+        if let Some(uniform_buffer) = &self.uniform_buffer {
+            let data_size = std::mem::size_of_val(data) as vk::DeviceSize;
+            if uniform_buffer.buf_size < data_size {
+                panic!(
+                    "Too little memory allocated for buffer of size {}",
+                    data_size
+                );
+            }
 
-    //         let mut map = buffer.buffer.map(&device, range).unwrap();
-    //         map.import(data);
-    //         map.unmap(&device).unwrap();
-    //         let buf_info = [vk::DescriptorBufferInfo::builder()
-    //             .buffer(*buffer.buffer.object())
-    //             .offset(0)
-    //             .range(data_size)];
-    //         let mut desc_writes = vec![];
-    //         desc_writes.push(
-    //             vk::WriteDescriptorSet::builder()
-    //                 .dst_set(self.desc_set)
-    //                 .dst_binding(0)
-    //                 .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
-    //                 .buffer_info(&buf_info),
-    //         );
-    //         let mut image_infos = vec![];
-    //         if let Some(image_info) = &self.image_info {
-    //             image_infos.push(
-    //                 vk::DescriptorImageInfo::builder()
-    //                     .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
-    //                     .image_view(image_info.image_view)
-    //                     .sampler(image_info.sampler),
-    //             );
-    //             desc_writes.push(
-    //                 vk::WriteDescriptorSet::builder()
-    //                     .dst_set(self.desc_set)
-    //                     .dst_binding(1)
-    //                     .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
-    //                     .image_info(image_infos.as_slice()),
-    //             );
-    //         } else {
-    //             println!("No descriptor image to update!!!");
-    //         }
-    //         unsafe { device.update_descriptor_sets(desc_writes.as_slice(), &[]) };
-    //     } else {
-    //         println!("No descriptor buffer to update!!!");
-    //     }
-    // }
+            let mapped_data = context.map_buffer(&uniform_buffer.allocation);
+            unsafe {
+                std::ptr::copy_nonoverlapping(data.as_ptr(), mapped_data, data_size as usize);
+            }
+            context.unmap_buffer(&uniform_buffer.allocation);
+
+            let buf_info = [vk::DescriptorBufferInfo::builder()
+                .buffer(uniform_buffer.buffer)
+                .offset(0)
+                .range(data_size)
+                .build()];
+            let mut desc_writes = vec![];
+            desc_writes.push(
+                vk::WriteDescriptorSet::builder()
+                    .dst_set(self.desc_set)
+                    .dst_binding(0)
+                    .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
+                    .buffer_info(&buf_info)
+                    .build(),
+            );
+            let mut image_infos = vec![];
+            if let Some(image_info) = &self.image_info {
+                image_infos.push(
+                    vk::DescriptorImageInfo::builder()
+                        .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
+                        .image_view(image_info.image_view)
+                        .sampler(image_info.sampler)
+                        .build(),
+                );
+                desc_writes.push(
+                    vk::WriteDescriptorSet::builder()
+                        .dst_set(self.desc_set)
+                        .dst_binding(1)
+                        .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+                        .image_info(image_infos.as_slice())
+                        .build(),
+                );
+            } else {
+                println!("No descriptor image to update!!!");
+            }
+            unsafe {
+                context
+                    .device
+                    .update_descriptor_sets(desc_writes.as_slice(), &[])
+            };
+        } else {
+            println!("No descriptor buffer to update!!!");
+        }
+    }
 
     // pub fn destroy(&mut self, device: &Device, allocator: &mut Allocator) {
     //     unsafe {
@@ -205,7 +213,7 @@ impl UniformDescriptor {
 
 impl RenderPipeline {
     pub fn new<BindingType: VertexBinding>(
-        context: &VulkanContext,
+        context: Arc<VulkanContext>,
         render_pass: vk::RenderPass,
         num_buffered_frames: usize,
     ) -> Self {
@@ -258,7 +266,7 @@ impl RenderPipeline {
         }
         .unwrap();
 
-        let uniform = UniformHandle::new(num_buffered_frames, context, &desc_layout);
+        let uniform = UniformHandle::new(num_buffered_frames, &context, &desc_layout);
 
         let pipeline_layout_desc_layouts = &[desc_layout];
 
@@ -343,6 +351,7 @@ impl RenderPipeline {
         .unwrap()[0];
 
         RenderPipeline {
+            context,
             pipeline,
             pipeline_layout,
             desc_layout,
@@ -350,6 +359,10 @@ impl RenderPipeline {
             vert_module: shader_vert,
             frag_module: shader_frag,
         }
+    }
+
+    pub fn update_buffer(&mut self, data: &[u8]) {
+        self.uniform.update_buffer(&self.context, data);
     }
 
     // pub fn destroy(&mut self, device: &Device, allocator: &mut Allocator) {

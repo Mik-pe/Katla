@@ -23,7 +23,7 @@ impl Material {
         num_images: usize,
     ) -> Self {
         let mut renderpipeline =
-            RenderPipeline::new::<VertexPBR>(&context, render_pass, num_images);
+            RenderPipeline::new::<VertexPBR>(context.clone(), render_pass, num_images);
         let mut texture = None;
         if !model.images.is_empty() {
             let image = &model.images[0];
@@ -112,8 +112,6 @@ impl Material {
         let data_slice = unsafe {
             std::slice::from_raw_parts(mat.as_ptr() as *const u8, std::mem::size_of_val(&mat))
         };
-        self.renderpipeline
-            .uniform
-            .update_buffer(device, data_slice);
+        self.renderpipeline.update_buffer(data_slice);
     }
 }

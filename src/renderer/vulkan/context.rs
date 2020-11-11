@@ -172,11 +172,6 @@ impl QueueFamilyIndices {
                 }
             }
         };
-        println!(
-            "Graphics idx {}, Transfer idx {}",
-            queue_family_indices.graphics_idx.unwrap(),
-            queue_family_indices.transfer_idx.unwrap()
-        );
 
         queue_family_indices
     }
@@ -469,13 +464,13 @@ impl VulkanContext {
                 .queue_family_index(queue_indices.graphics_idx.unwrap())
                 .queue_priorities(&[1.0])
                 .build(),
-            vk::DeviceQueueCreateInfo::builder()
-                .queue_family_index(queue_indices.transfer_idx.unwrap())
-                .queue_priorities(&[0.5])
-                .build(),
+            // vk::DeviceQueueCreateInfo::builder()
+            //     .queue_family_index(queue_indices.transfer_idx.unwrap())
+            //     .queue_priorities(&[0.5])
+            //     .build(),
         ];
         let graphics_queue_idx = queue_indices.graphics_idx.unwrap();
-        let transfer_queue_idx = queue_indices.transfer_idx.unwrap();
+        let transfer_queue_idx = 0; //queue_indices.transfer_idx.unwrap();
 
         let device = create_device(
             &instance,

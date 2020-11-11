@@ -44,7 +44,7 @@ impl VulkanRenderer {
         engine_name: CString,
     ) -> Self {
         let window = WindowBuilder::new()
-            .with_title("Erupt_Test_Mikpe")
+            .with_title("MikpEngine")
             .with_resizable(true)
             .with_min_inner_size(LogicalSize {
                 width: 1.0,
