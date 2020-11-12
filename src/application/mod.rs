@@ -4,7 +4,7 @@ pub mod scene;
 use std::{cell::RefCell, ffi::CString, path::PathBuf, rc::Rc, time::Instant};
 
 use ash::version::DeviceV1_0;
-use mikpe_math::{Mat4, Vec3};
+use mikpe_math::Vec3;
 pub use model::*;
 pub use scene::*;
 use winit::{event::VirtualKeyCode, event_loop::EventLoop};
@@ -13,9 +13,6 @@ use crate::{
     cameracontroller, cameracontroller::Camera, inputcontroller::InputController,
     renderer::VulkanRenderer, rendering::Mesh, util::FileCache, util::GLTFModel, util::Timer,
 };
-
-const FAR_PLANE: f32 = 10000.0;
-const NEAR_PLANE: f32 = 0.001;
 
 pub struct Application {
     renderer: VulkanRenderer,
@@ -26,7 +23,7 @@ pub struct Application {
 }
 
 impl Application {
-    pub fn run(mut self) -> ! {
+    pub fn run(self) -> ! {
         println!("Running application!");
         let mut last_frame = Instant::now();
         let mut timer = Timer::new(100);
@@ -36,17 +33,19 @@ impl Application {
         let mut scene = self.scene;
         let mut input_controller = self.input_controller;
         let mut model_cache = FileCache::<GLTFModel>::new();
-
+        let mut offset = 0.0;
         let mesh = Mesh::new_from_cache(
-            model_cache.read(PathBuf::from("resources/models/Tiger.glb")),
+            model_cache.read(PathBuf::from("resources/models/FoxFixed.glb")),
             renderer.context.clone(),
             renderer.render_pass,
             renderer.num_images(),
-            Vec3::new(-1.0, 0.0, 0.0),
+            Vec3::new(offset, 0.0, 0.0),
         );
+        offset -= 100.0;
         let bounds = mesh.bounds.clone();
         scene.add_object(SceneObject::new(Box::new(mesh), bounds));
 
+        let mut stage_upload = false;
         event_loop.run(move |event, _, control_flow| {
             use winit::event::{Event, WindowEvent};
             use winit::event_loop::ControlFlow;
@@ -76,6 +75,9 @@ impl Application {
                                     match keycode {
                                         VirtualKeyCode::Escape => {
                                             *control_flow = ControlFlow::Exit;
+                                        }
+                                        VirtualKeyCode::T => {
+                                            stage_upload = true;
                                         }
                                         _ => {}
                                     }
@@ -114,6 +116,23 @@ impl Application {
                             .unwrap();
                     }
                     renderer.submit_frame(vec![command_buffer]);
+                    if stage_upload {
+                        let start = Instant::now();
+                        let mesh = Mesh::new_from_cache(
+                            model_cache.read(PathBuf::from("resources/models/Tiger.glb")),
+                            renderer.context.clone(),
+                            renderer.render_pass,
+                            renderer.num_images(),
+                            Vec3::new(offset, 0.0, 0.0),
+                        );
+                        let millisecs = start.elapsed().as_micros() as f64 / 1000.0;
+
+                        println!("Mesh new took {} ms", millisecs);
+                        offset -= 100.0;
+                        let bounds = mesh.bounds.clone();
+                        scene.add_object(SceneObject::new(Box::new(mesh), bounds));
+                        stage_upload = false;
+                    }
                 }
                 Event::RedrawRequested { .. } => {}
                 Event::LoopDestroyed => {

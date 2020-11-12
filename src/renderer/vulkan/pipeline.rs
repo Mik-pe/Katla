@@ -80,11 +80,11 @@ impl UniformHandle {
         out_descr
     }
 
-    // pub fn destroy(&mut self, device: &Device, allocator: &mut Allocator) {
-    //     for desc in &mut self.descriptors {
-    //         desc.destroy(device, allocator);
-    //     }
-    // }
+    pub fn destroy(&mut self, context: &VulkanContext) {
+        for desc in &mut self.descriptors {
+            desc.destroy(context);
+        }
+    }
 
     fn create_descriptor_sets(
         context: &VulkanContext,
@@ -200,15 +200,15 @@ impl UniformDescriptor {
         }
     }
 
-    // pub fn destroy(&mut self, device: &Device, allocator: &mut Allocator) {
-    //     unsafe {
-    //         if self.uniform_buffer.is_some() {
-    //             let buffer = self.uniform_buffer.take().unwrap();
-    //             allocator.free(device, buffer.buffer);
-    //         }
-    //         device.destroy_descriptor_pool(Some(self.desc_pool), None);
-    //     }
-    // }
+    pub fn destroy(&mut self, context: &VulkanContext) {
+        if self.uniform_buffer.is_some() {
+            let buffer = self.uniform_buffer.take().unwrap();
+            context.free_buffer(buffer.buffer, buffer.allocation);
+        }
+        unsafe {
+            context.device.destroy_descriptor_pool(self.desc_pool, None);
+        }
+    }
 }
 
 impl RenderPipeline {
@@ -365,14 +365,22 @@ impl RenderPipeline {
         self.uniform.update_buffer(&self.context, data);
     }
 
-    // pub fn destroy(&mut self, device: &Device, allocator: &mut Allocator) {
-    //     unsafe {
-    //         device.destroy_pipeline(Some(self.pipeline), None);
-    //         device.destroy_shader_module(Some(self.vert_module), None);
-    //         device.destroy_shader_module(Some(self.frag_module), None);
-    //         self.uniform.destroy(device, allocator);
-    //         device.destroy_descriptor_set_layout(Some(self.desc_layout), None);
-    //         device.destroy_pipeline_layout(Some(self.pipeline_layout), None);
-    //     }
-    // }
+    pub fn destroy(&mut self) {
+        unsafe {
+            self.context.device.destroy_pipeline(self.pipeline, None);
+            self.context
+                .device
+                .destroy_shader_module(self.vert_module, None);
+            self.context
+                .device
+                .destroy_shader_module(self.frag_module, None);
+            self.uniform.destroy(&self.context);
+            self.context
+                .device
+                .destroy_descriptor_set_layout(self.desc_layout, None);
+            self.context
+                .device
+                .destroy_pipeline_layout(self.pipeline_layout, None);
+        }
+    }
 }

@@ -13,6 +13,7 @@ use std::{rc::Rc, sync::Arc};
 pub struct Material {
     pub renderpipeline: RenderPipeline,
     pub texture: Option<Texture>,
+    context: Arc<VulkanContext>,
 }
 
 impl Material {
@@ -78,13 +79,10 @@ impl Material {
         }
         Self {
             renderpipeline,
+            context,
             texture,
         }
     }
-
-    // pub fn destroy(&mut self, device: &Device, allocator: &mut Allocator) {
-    //     self.renderpipeline.destroy(device, allocator);
-    // }
 
     //TODO: Can we in any way fix so that these bindings happen in a better way?
     //Maybe decouple the actual data of the uniform to the drawcall-creation and
@@ -113,5 +111,14 @@ impl Material {
             std::slice::from_raw_parts(mat.as_ptr() as *const u8, std::mem::size_of_val(&mat))
         };
         self.renderpipeline.update_buffer(data_slice);
+    }
+}
+
+impl Drop for Material {
+    fn drop(&mut self) {
+        if let Some(texture) = self.texture.take() {
+            texture.destroy(&self.context);
+        }
+        self.renderpipeline.destroy();
     }
 }

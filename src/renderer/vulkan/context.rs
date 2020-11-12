@@ -62,7 +62,7 @@ pub struct VulkanContext {
     pub surface_loader: Surface,
     pub swapchain_loader: Swapchain,
     pub physical_device: vk::PhysicalDevice,
-    pub allocator: Mutex<Allocator>,
+    pub allocator: Allocator,
     pub surface: vk::SurfaceKHR,
     pub graphics_command_pool: vk::CommandPool,
     pub graphics_queue: vk::Queue,
@@ -189,8 +189,6 @@ impl VulkanContext {
         };
         let (buffer, allocation, _) = self
             .allocator
-            .lock()
-            .unwrap()
             .create_buffer(buffer_info, &allocation_info)
             .unwrap();
         (buffer, allocation)
@@ -198,25 +196,17 @@ impl VulkanContext {
 
     pub fn free_buffer(&self, buffer: vk::Buffer, allocation: vk_mem::Allocation) {
         self.allocator
-            .lock()
-            .unwrap()
             .destroy_buffer(buffer, &allocation)
             .expect("Could not destroy buffer!");
     }
 
     //TODO: Enable mapping of part of buffers
     pub fn map_buffer(&self, allocation: &vk_mem::Allocation) -> *mut u8 {
-        self.allocator
-            .lock()
-            .unwrap()
-            .map_memory(allocation)
-            .unwrap()
+        self.allocator.map_memory(allocation).unwrap()
     }
 
     pub fn unmap_buffer(&self, allocation: &vk_mem::Allocation) {
         self.allocator
-            .lock()
-            .unwrap()
             .unmap_memory(allocation)
             .expect("Could not unmap memory!");
     }
@@ -232,8 +222,6 @@ impl VulkanContext {
         };
         let (image, allocation, _) = self
             .allocator
-            .lock()
-            .unwrap()
             .create_image(&image_create_info, &allocation_info)
             .unwrap();
 
@@ -242,9 +230,8 @@ impl VulkanContext {
 
     pub fn free_image(&self, image: vk::Image, allocation: &vk_mem::Allocation) {
         self.allocator
-            .lock()
-            .unwrap()
-            .destroy_image(image, allocation);
+            .destroy_image(image, allocation)
+            .expect("Could not free image!");
     }
 
     fn create_instance(
@@ -257,14 +244,6 @@ impl VulkanContext {
         if with_validation_layers && !check_validation_support(entry) {
             panic!("Validation layers requested, but unavailable!");
         }
-
-        // let api_version = ENTRY_LOADER.lock().unwrap().instance_version();
-        // println!(
-        //     "Mikpe erupt test: - Vulkan {}.{}.{}",
-        //     vk::version_major(api_version),
-        //     vk::version_minor(api_version),
-        //     vk::version_patch(api_version)
-        // );
         let surface_extensions = ash_window::enumerate_required_extensions(window).unwrap();
         let mut extension_names_raw = surface_extensions
             .iter()
@@ -497,14 +476,14 @@ impl VulkanContext {
             unsafe { device.create_command_pool(&create_info, None) }.unwrap();
 
         //TODO: Read up on the actual fields in this CreateInfo
-        let mut create_info = vk_mem::AllocatorCreateInfo {
+        let create_info = vk_mem::AllocatorCreateInfo {
             physical_device,
             device: device.clone(),
             instance: instance.clone(),
             ..Default::default()
         };
 
-        let allocator = Mutex::new(vk_mem::Allocator::new(&create_info).unwrap());
+        let allocator = vk_mem::Allocator::new(&create_info).unwrap();
 
         Self {
             entry,
@@ -531,6 +510,9 @@ impl Drop for VulkanContext {
 
             self.device
                 .destroy_command_pool(self.graphics_command_pool, None);
+            self.device
+                .destroy_command_pool(self.transfer_command_pool, None);
+            self.allocator.destroy();
             self.device.destroy_device(None);
             self.surface_loader.destroy_surface(self.surface, None);
 
@@ -572,18 +554,15 @@ impl VulkanFrameCtx {
     }
 
     pub fn init(context: &Arc<VulkanContext>) -> Self {
-        println!("Init Vulkan Frame Context!");
         let swapchain_info = unsafe { context.query_swapchain_support() };
 
         let current_extent = swapchain_info.surface_caps.current_extent;
-        println!("Creating Swapchain!");
         let (swapchain, current_surface_format) = create_swapchain(
             &context.swapchain_loader,
             context.surface,
             &swapchain_info,
             None,
         );
-        println!("Swapchain created!");
 
         let swapchain_images =
             unsafe { context.swapchain_loader.get_swapchain_images(swapchain) }.unwrap();
@@ -599,7 +578,6 @@ impl VulkanFrameCtx {
                 )
             })
             .collect();
-        println!("Going to create depth_render_texture!");
         let depth_render_texture = create_depth_render_texture(context.clone(), current_extent);
 
         let command_buffers = {
@@ -783,8 +761,6 @@ fn create_device(
             .create_device(physical_device, &create_info, None)
             .unwrap()
     };
-
-    println!("Device created!");
 
     device
 }

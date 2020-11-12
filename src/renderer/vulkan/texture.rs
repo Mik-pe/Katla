@@ -1,3 +1,5 @@
+use std::time::Instant;
+
 use crate::renderer::{VulkanContext, VulkanFrameCtx};
 
 use ash::{version::DeviceV1_0, vk};
@@ -31,7 +33,7 @@ impl Texture {
         old_layout: vk::ImageLayout,
         new_layout: vk::ImageLayout,
     ) {
-        let command_buffer = context.begin_transfer_commands();
+        let command_buffer = context.begin_single_time_commands();
         let subresource_range = vk::ImageSubresourceRange::builder()
             .aspect_mask(vk::ImageAspectFlags::COLOR)
             .base_mip_level(0)
@@ -82,7 +84,7 @@ impl Texture {
                 &[barrier_builder.build()],
             );
 
-            context.end_transfer_commands(command_buffer);
+            context.end_single_time_commands(command_buffer);
         }
     }
 
@@ -94,7 +96,7 @@ impl Texture {
         extent: vk::Extent3D,
     ) {
         //TODO: expose a transfer command buffer?
-        let command_buffer = context.begin_transfer_commands();
+        let command_buffer = context.begin_single_time_commands();
         let subresources = vk::ImageSubresourceLayers::builder()
             .aspect_mask(vk::ImageAspectFlags::COLOR)
             .mip_level(0)
@@ -113,7 +115,7 @@ impl Texture {
             );
         }
 
-        context.end_transfer_commands(command_buffer);
+        context.end_single_time_commands(command_buffer);
     }
 
     fn create_texture_sampler(context: &VulkanContext) -> vk::Sampler {
@@ -140,35 +142,43 @@ impl Texture {
         format: vk::Format,
         pixel_data: &[u8],
     ) -> Self {
+        let total_start = Instant::now();
+        let extent = vk::Extent3D {
+            width,
+            height,
+            depth: 1,
+        };
+        //Create the image memory gpu_only:
+        let create_info = vk::ImageCreateInfo::builder()
+            .extent(extent)
+            .image_type(vk::ImageType::TYPE_2D)
+            .mip_levels(1)
+            .array_layers(1)
+            .format(format)
+            .usage(vk::ImageUsageFlags::TRANSFER_DST | vk::ImageUsageFlags::SAMPLED)
+            .initial_layout(vk::ImageLayout::UNDEFINED)
+            .tiling(vk::ImageTiling::OPTIMAL)
+            .samples(vk::SampleCountFlags::TYPE_1)
+            .sharing_mode(vk::SharingMode::EXCLUSIVE);
+
+        let (image_object, image_memory) =
+            context.create_image(create_info.build(), vk_mem::MemoryUsage::GpuOnly);
+        let ms_image = total_start.elapsed().as_micros() as f64 / 1000.0;
+
+        let total_size = pixel_data.len() as u64;
+
+        let (staging_buffer, staging_allocation) = Self::create_staging_buffer(context, total_size);
+        let ms_staging = total_start.elapsed().as_micros() as f64 / 1000.0;
+
+        let map = context.map_buffer(&staging_allocation);
+        let ms_map_buffer = total_start.elapsed().as_micros() as f64 / 1000.0;
+
         unsafe {
-            let extent = vk::Extent3D {
-                width,
-                height,
-                depth: 1,
-            };
-            //Create the image memory gpu_only:
-            let create_info = vk::ImageCreateInfo::builder()
-                .extent(extent)
-                .image_type(vk::ImageType::TYPE_2D)
-                .mip_levels(1)
-                .array_layers(1)
-                .format(format)
-                .usage(vk::ImageUsageFlags::TRANSFER_DST | vk::ImageUsageFlags::SAMPLED)
-                .initial_layout(vk::ImageLayout::UNDEFINED)
-                .tiling(vk::ImageTiling::OPTIMAL)
-                .samples(vk::SampleCountFlags::TYPE_1)
-                .sharing_mode(vk::SharingMode::EXCLUSIVE);
-
-            let (image_object, image_memory) =
-                context.create_image(create_info.build(), vk_mem::MemoryUsage::GpuOnly);
-
-            let total_size = pixel_data.len() as u64;
-
-            let (staging_buffer, staging_allocation) =
-                Self::create_staging_buffer(context, total_size);
-            let mut map = context.map_buffer(&staging_allocation);
             std::ptr::copy_nonoverlapping(pixel_data.as_ptr(), map, total_size as usize);
+            let ms_copy = total_start.elapsed().as_micros() as f64 / 1000.0;
+
             context.unmap_buffer(&staging_allocation);
+            let ms_unmap = total_start.elapsed().as_micros() as f64 / 1000.0;
 
             Self::transition_image_layout(
                 context,
@@ -176,6 +186,7 @@ impl Texture {
                 vk::ImageLayout::UNDEFINED,
                 vk::ImageLayout::TRANSFER_DST_OPTIMAL,
             );
+            let ms_trans_1 = total_start.elapsed().as_micros() as f64 / 1000.0;
             Self::copy_buffer_to_image(
                 context,
                 staging_buffer,
@@ -183,14 +194,17 @@ impl Texture {
                 vk::ImageLayout::TRANSFER_DST_OPTIMAL,
                 extent,
             );
+            let ms_copy_im = total_start.elapsed().as_micros() as f64 / 1000.0;
             Self::transition_image_layout(
                 context,
                 image_object,
                 vk::ImageLayout::TRANSFER_DST_OPTIMAL,
                 vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
             );
+            let ms_trans_2 = total_start.elapsed().as_micros() as f64 / 1000.0;
 
             context.free_buffer(staging_buffer, staging_allocation);
+            let ms_free = total_start.elapsed().as_micros() as f64 / 1000.0;
 
             let image_view = VulkanFrameCtx::create_image_view(
                 &context.device,
@@ -199,6 +213,55 @@ impl Texture {
                 vk::ImageAspectFlags::COLOR,
             );
             let image_sampler = Self::create_texture_sampler(context);
+            let ms_total = total_start.elapsed().as_micros() as f64 / 1000.0;
+            println!("Total time spent: {}ms", ms_total);
+
+            println!(
+                "image: \t{:.3}ms {:.2}%",
+                ms_image,
+                ms_image / ms_total * 100.0
+            );
+            println!(
+                "stage: \t{:.3}ms {:.2}% ",
+                ms_staging,
+                (ms_staging - ms_image) / ms_total * 100.0
+            );
+            println!(
+                "map: \t{:.3}ms {:.2}%",
+                ms_map_buffer,
+                (ms_map_buffer - ms_staging) / ms_total * 100.0
+            );
+            println!(
+                "copy: \t{:.3}ms {:.2}%",
+                ms_copy,
+                (ms_copy - ms_map_buffer) / ms_total * 100.0
+            );
+            println!(
+                "unmap: \t{:.3}ms {:.2}%",
+                ms_unmap,
+                (ms_unmap - ms_copy) / ms_total * 100.0
+            );
+            println!(
+                "trans: \t{:.3}ms {:.2}%",
+                ms_trans_1,
+                (ms_trans_1 - ms_unmap) / ms_total * 100.0
+            );
+            println!(
+                "copy: \t{:.3}ms {:.2}%",
+                ms_copy_im,
+                (ms_copy_im - ms_trans_1) / ms_total * 100.0
+            );
+            println!(
+                "trans: \t{:.3}ms {:.2}%",
+                ms_trans_2,
+                (ms_trans_2 - ms_copy_im) / ms_total * 100.0
+            );
+            println!(
+                "free: \t{:.3}ms {:.2}%",
+                ms_free,
+                (ms_free - ms_trans_2) / ms_total * 100.0
+            );
+
             Self {
                 width,
                 height,
