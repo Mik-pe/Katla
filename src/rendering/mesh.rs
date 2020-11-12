@@ -5,7 +5,7 @@ use crate::renderer::{IndexBuffer, VertexBuffer};
 
 use ash::{version::DeviceV1_0, vk, Device};
 use mikpe_math::{Mat4, Sphere, Vec3};
-use std::{rc::Rc, sync::Arc};
+use std::{rc::Rc, sync::Arc, time::Instant};
 
 //TODO: Decouple pipeline from the "Mesh" struct,
 //Ideally a Mesh would only contain the vertex data and a reference to a pipeline,
@@ -27,8 +27,10 @@ impl Mesh {
         num_images: usize,
         position: Vec3,
     ) -> Self {
-        println!("Creating material");
+        let start = Instant::now();
         let material = Material::new(model.clone(), context.clone(), render_pass, num_images);
+        let millisecs = start.elapsed().as_micros() as f64 / 1000.0;
+        println!("Material new took {} ms", millisecs);
         let mut bound_sphere = model.bounds.clone();
         bound_sphere.center = position;
 
@@ -40,16 +42,21 @@ impl Mesh {
             position,
             bounds: bound_sphere,
         };
-        println!("Creating vertex buffer");
+        let start = Instant::now();
         mesh.vertex_buffer = Self::create_vertex_buffer(&context, model.vertpbr());
+        let millisecs = start.elapsed().as_micros() as f64 / 1000.0;
+        println!("Vertex buffer new took {} ms", millisecs);
         let index_type = match model.index_stride {
             1 => vk::IndexType::UINT8_EXT,
             2 => vk::IndexType::UINT16,
             4 => vk::IndexType::UINT32,
             _ => vk::IndexType::NONE_KHR,
         };
-        println!("Creating index buffer");
+        let start = Instant::now();
         mesh.index_buffer = Self::create_index_buffer(&context, model.index_data(), index_type);
+        let millisecs = start.elapsed().as_micros() as f64 / 1000.0;
+        println!("Index buffernew took {} ms", millisecs);
+
         mesh
     }
 
