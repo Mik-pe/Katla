@@ -29,11 +29,11 @@ impl Texture {
 
     fn transition_image_layout(
         context: &VulkanContext,
+        command_buffer: vk::CommandBuffer,
         image: vk::Image,
         old_layout: vk::ImageLayout,
         new_layout: vk::ImageLayout,
     ) {
-        let command_buffer = context.begin_single_time_commands();
         let subresource_range = vk::ImageSubresourceRange::builder()
             .aspect_mask(vk::ImageAspectFlags::COLOR)
             .base_mip_level(0)
@@ -83,20 +83,18 @@ impl Texture {
                 &[],
                 &[barrier_builder.build()],
             );
-
-            context.end_single_time_commands(command_buffer);
         }
     }
 
     fn copy_buffer_to_image(
         context: &VulkanContext,
+        command_buffer: vk::CommandBuffer,
         src_buffer: vk::Buffer,
         dst_image: vk::Image,
         dst_image_layout: vk::ImageLayout,
         extent: vk::Extent3D,
     ) {
         //TODO: expose a transfer command buffer?
-        let command_buffer = context.begin_single_time_commands();
         let subresources = vk::ImageSubresourceLayers::builder()
             .aspect_mask(vk::ImageAspectFlags::COLOR)
             .mip_level(0)
@@ -114,8 +112,6 @@ impl Texture {
                 &[regions.build()],
             );
         }
-
-        context.end_single_time_commands(command_buffer);
     }
 
     fn create_texture_sampler(context: &VulkanContext) -> vk::Sampler {
@@ -180,8 +176,10 @@ impl Texture {
             context.unmap_buffer(&staging_allocation);
             let ms_unmap = total_start.elapsed().as_micros() as f64 / 1000.0;
 
+            let command_buffer = context.begin_single_time_commands();
             Self::transition_image_layout(
                 context,
+                command_buffer,
                 image_object,
                 vk::ImageLayout::UNDEFINED,
                 vk::ImageLayout::TRANSFER_DST_OPTIMAL,
@@ -189,6 +187,7 @@ impl Texture {
             let ms_trans_1 = total_start.elapsed().as_micros() as f64 / 1000.0;
             Self::copy_buffer_to_image(
                 context,
+                command_buffer,
                 staging_buffer,
                 image_object,
                 vk::ImageLayout::TRANSFER_DST_OPTIMAL,
@@ -197,10 +196,15 @@ impl Texture {
             let ms_copy_im = total_start.elapsed().as_micros() as f64 / 1000.0;
             Self::transition_image_layout(
                 context,
+                command_buffer,
                 image_object,
                 vk::ImageLayout::TRANSFER_DST_OPTIMAL,
                 vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
             );
+
+            //TODO: submitting this command buffer takes lots of time
+            //TODO: Fix better handling of these command buffers from the renderer
+            context.end_single_time_commands(command_buffer);
             let ms_trans_2 = total_start.elapsed().as_micros() as f64 / 1000.0;
 
             context.free_buffer(staging_buffer, staging_allocation);
