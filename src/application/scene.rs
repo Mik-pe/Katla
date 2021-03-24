@@ -1,7 +1,7 @@
 use crate::rendering::Drawable;
-use ash::{vk::CommandBuffer, Device};
+use ash::{version::DeviceV1_0, vk::CommandBuffer, Device};
 use mikpe_math::{Mat4, Sphere, Vec3};
-use std::{path::PathBuf, rc::Rc};
+use std::rc::Rc;
 
 pub struct Player {
     pub position: Vec3,
@@ -42,9 +42,9 @@ impl Scene {
         }
     }
 
-    pub fn add_model(&mut self, _model_path: PathBuf) {
-        todo!("Add a model to the scene, talk with the renderer?");
-    }
+    // pub fn add_model(&mut self, _model_path: PathBuf) {
+    //     todo!("Add a model to the scene, talk with the renderer?");
+    // }
 
     pub fn teardown(&mut self) {
         self.scene_objects.clear();
@@ -64,6 +64,11 @@ impl Scene {
     pub fn render(&self, device: &Device, command_buffer: CommandBuffer) {
         for object in &self.scene_objects {
             object.drawable.draw(device, command_buffer);
+        }
+
+        unsafe {
+            device.cmd_end_render_pass(command_buffer);
+            device.end_command_buffer(command_buffer).unwrap();
         }
     }
 }

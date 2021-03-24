@@ -24,7 +24,6 @@ pub struct Application {
 
 impl Application {
     pub fn run(self) -> ! {
-        println!("Running application!");
         let mut last_frame = Instant::now();
         let mut timer = Timer::new(100);
         let event_loop = self.event_loop;
@@ -35,7 +34,7 @@ impl Application {
         let mut model_cache = FileCache::<GLTFModel>::new();
         let mut offset = 0.0;
         let mesh = Mesh::new_from_cache(
-            model_cache.read(PathBuf::from("resources/models/FoxFixed.glb")),
+            model_cache.read(PathBuf::from("resources/models/Fox.glb")),
             renderer.context.clone(),
             renderer.render_pass,
             renderer.num_images(),
@@ -106,15 +105,6 @@ impl Application {
 
                     let command_buffer = renderer.get_commandbuffer_opaque_pass();
                     scene.render(&renderer.context.device, command_buffer);
-
-                    unsafe {
-                        renderer.context.device.cmd_end_render_pass(command_buffer);
-                        renderer
-                            .context
-                            .device
-                            .end_command_buffer(command_buffer)
-                            .unwrap();
-                    }
                     renderer.submit_frame(vec![command_buffer]);
                     if stage_upload {
                         let start = Instant::now();

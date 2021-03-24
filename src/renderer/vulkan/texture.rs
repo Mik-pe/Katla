@@ -278,10 +278,6 @@ impl Texture {
         }
     }
 
-    pub fn get_size(&self) -> u32 {
-        self.width * self.height * self.channels
-    }
-
     pub fn destroy(self, context: &VulkanContext) {
         unsafe {
             context.device.destroy_sampler(self.image_sampler, None);

@@ -1,5 +1,5 @@
 use crate::inputcontroller::InputController;
-use mikpe_math::{Mat4, Sphere, Vec3};
+use mikpe_math::{Mat4, Vec3};
 use std::{cell::RefCell, rc::Rc};
 use winit::event::Event;
 use winit::event::{DeviceEvent, ElementState, MouseButton, WindowEvent};
@@ -134,11 +134,11 @@ impl Camera {
         self.projection.recreate_matrix(aspect_ratio);
     }
 
-    pub fn look_at_sphere(&mut self, sphere: &Sphere) {
-        self.pos = sphere.center - Vec3::new(0.0, 0.0, sphere.radius * 2.0);
-        self.yaw = 0.0;
-        self.pitch = 0.0;
-    }
+    // pub fn look_at_sphere(&mut self, sphere: &Sphere) {
+    //     self.pos = sphere.center - Vec3::new(0.0, 0.0, sphere.radius * 2.0);
+    //     self.yaw = 0.0;
+    //     self.pitch = 0.0;
+    // }
 
     fn lerp_vec3(old_velocity_dir: Vec3, to_velocity_dir: Vec3, ratio: f32) -> Vec3 {
         let new_velocity_dir = old_velocity_dir + (to_velocity_dir - old_velocity_dir).mul(ratio);
