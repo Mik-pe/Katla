@@ -1,9 +1,10 @@
+use ash::version::{DeviceV1_0, EntryV1_0, InstanceV1_0};
+
 use ash::{
     extensions::{
         ext::DebugUtils,
         khr::{Surface, Swapchain},
     },
-    version::{DeviceV1_0, EntryV1_0, InstanceV1_0},
     vk, Device, Entry, Instance,
 };
 use vk_mem::{Allocation, Allocator};
@@ -414,8 +415,8 @@ impl VulkanContext {
         app_name: CString,
         engine_name: CString,
     ) -> Self {
-        let entry = Entry::new().unwrap();
-        let mut instance = Self::create_instance(
+        let entry = unsafe { Entry::new() }.unwrap();
+        let instance = Self::create_instance(
             with_validation_layers,
             &app_name,
             &engine_name,
@@ -426,7 +427,7 @@ impl VulkanContext {
         let debug_callback = create_debug_messenger(&debug_utils_loader, with_validation_layers);
         let surface_loader = Surface::new(&entry, &instance);
         let surface =
-            unsafe { ash_window::create_surface(&entry, &mut instance, window, None) }.unwrap();
+            unsafe { ash_window::create_surface(&entry, &instance, window, None) }.unwrap();
 
         let physical_device =
             unsafe { pick_physical_device(&instance, &surface_loader, surface) }.unwrap();
@@ -480,7 +481,11 @@ impl VulkanContext {
             physical_device,
             device: device.clone(),
             instance: instance.clone(),
-            ..Default::default()
+            //FIXME: Replace following with  ..Default::default() once vk_mem-rs bumps to 0.2.3
+            flags: vk_mem::AllocatorCreateFlags::NONE,
+            preferred_large_heap_block_size: 0,
+            frame_in_use_count: 0,
+            heap_size_limits: None,
         };
 
         let allocator = vk_mem::Allocator::new(&create_info).unwrap();
@@ -814,8 +819,7 @@ fn create_debug_messenger(
                     | vk::DebugUtilsMessageSeverityFlagsEXT::ERROR,
             )
             .message_type(
-                vk::DebugUtilsMessageTypeFlagsEXT::GENERAL
-                    | vk::DebugUtilsMessageTypeFlagsEXT::VALIDATION
+                vk::DebugUtilsMessageTypeFlagsEXT::VALIDATION
                     | vk::DebugUtilsMessageTypeFlagsEXT::PERFORMANCE,
             )
             .pfn_user_callback(Some(debug_callback));

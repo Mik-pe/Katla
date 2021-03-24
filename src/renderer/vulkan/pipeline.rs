@@ -1,12 +1,22 @@
 use crate::rendering::vertextypes::*;
-use ash::{util::read_spv, version::DeviceV1_0, vk, Device};
+use ash::{util::read_spv, version::DeviceV1_0, vk};
+use itertools::Update;
 use vk_mem::Allocation;
 
 use std::{ffi::CString, io::Cursor, sync::Arc};
 
 use super::context::VulkanContext;
+//TODO: A more flexible shader system
 const SHADER_VERT: &[u8] = include_bytes!("../../../resources/shaders/model_pbr.vert.spv");
 const SHADER_FRAG: &[u8] = include_bytes!("../../../resources/shaders/model.frag.spv");
+
+//TODO: Make these traits more usable and dynamic for a pipeline.
+pub trait UpdateOnce {
+    fn update_once(&self, set: vk::DescriptorSet, binding: u32) -> vk::WriteDescriptorSet;
+}
+pub trait UpdateAlways {
+    fn update_always(&self, set: vk::DescriptorSet, binding: u32) -> vk::WriteDescriptorSet;
+}
 
 pub struct RenderPipeline {
     context: Arc<VulkanContext>,
@@ -28,6 +38,7 @@ pub struct UniformBuffer {
 pub struct ImageInfo {
     pub image_view: vk::ImageView,
     pub sampler: vk::Sampler,
+    pub is_updated: bool,
 }
 
 pub struct UniformHandle {
@@ -41,6 +52,36 @@ pub struct UniformDescriptor {
     pub desc_pool: vk::DescriptorPool,
     pub uniform_buffer: Option<UniformBuffer>,
     pub image_info: Option<ImageInfo>,
+    pub static_descriptors: Vec<Box<dyn UpdateOnce>>,
+}
+
+impl ImageInfo {
+    pub fn new(image_view: vk::ImageView, sampler: vk::Sampler) -> Self {
+        Self {
+            image_view,
+            sampler,
+            is_updated: false,
+        }
+    }
+}
+
+impl UpdateOnce for ImageInfo {
+    fn update_once(&self, set: vk::DescriptorSet, binding: u32) -> vk::WriteDescriptorSet {
+        let mut image_infos = vec![];
+        image_infos.push(
+            vk::DescriptorImageInfo::builder()
+                .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
+                .image_view(self.image_view)
+                .sampler(self.sampler)
+                .build(),
+        );
+        vk::WriteDescriptorSet::builder()
+            .dst_set(set)
+            .dst_binding(binding)
+            .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+            .image_info(image_infos.as_slice())
+            .build()
+    }
 }
 
 impl UniformHandle {
@@ -65,6 +106,8 @@ impl UniformHandle {
     pub fn add_image_info(&mut self, image_info: ImageInfo) {
         for descr in &mut self.descriptors {
             descr.image_info = Some(image_info);
+            //TODO: Something like this maybe? -
+            // descr.static_descriptors.push(Box::new(image_info));
         }
     }
 
@@ -134,6 +177,7 @@ impl UniformHandle {
             desc_pool,
             uniform_buffer,
             image_info,
+            static_descriptors: vec![],
         }
     }
 }
@@ -170,26 +214,16 @@ impl UniformDescriptor {
                     .buffer_info(&buf_info)
                     .build(),
             );
-            let mut image_infos = vec![];
-            if let Some(image_info) = &self.image_info {
-                image_infos.push(
-                    vk::DescriptorImageInfo::builder()
-                        .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
-                        .image_view(image_info.image_view)
-                        .sampler(image_info.sampler)
-                        .build(),
-                );
-                desc_writes.push(
-                    vk::WriteDescriptorSet::builder()
-                        .dst_set(self.desc_set)
-                        .dst_binding(1)
-                        .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
-                        .image_info(image_infos.as_slice())
-                        .build(),
-                );
+            if let Some(image_info) = &mut self.image_info {
+                if !image_info.is_updated {
+                    let write_set = image_info.update_once(self.desc_set, 1);
+                    desc_writes.push(write_set);
+                    image_info.is_updated = true;
+                }
             } else {
                 println!("No descriptor image to update!!!");
             }
+
             unsafe {
                 context
                     .device
@@ -242,7 +276,7 @@ impl RenderPipeline {
                 .name(&entry_point)
                 .build(),
         ];
-        //TODO: Descrpitor sets
+        //TODO: Descripitor sets
         let desc_layout_bindings = &[
             vk::DescriptorSetLayoutBinding::builder()
                 .binding(0)

@@ -51,10 +51,9 @@ impl Material {
                         vk::Format::R8G8B8A8_SRGB,
                         new_pixels.as_slice(),
                     );
-                    renderpipeline.uniform.add_image_info(ImageInfo {
-                        image_view: tex.image_view,
-                        sampler: tex.image_sampler,
-                    });
+                    renderpipeline
+                        .uniform
+                        .add_image_info(ImageInfo::new(tex.image_view, tex.image_sampler));
                     texture = Some(tex);
                 }
                 gltf::image::Format::R8G8B8A8 => {
@@ -67,14 +66,15 @@ impl Material {
                         vk::Format::R8G8B8A8_SRGB,
                         pixels.as_slice(),
                     );
-                    renderpipeline.uniform.add_image_info(ImageInfo {
-                        image_view: tex.image_view,
-                        sampler: tex.image_sampler,
-                    });
+                    renderpipeline
+                        .uniform
+                        .add_image_info(ImageInfo::new(tex.image_view, tex.image_sampler));
 
                     texture = Some(tex);
                 }
-                _ => {}
+                _ => {
+                    println!("Unsupported texture format: {:?}", image.format);
+                }
             }
         }
         Self {

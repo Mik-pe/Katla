@@ -1,5 +1,4 @@
-use std::rc::Rc;
-use std::{cell::RefCell, collections::HashMap};
+use std::collections::HashMap;
 use winit::event::{self, ElementState, VirtualKeyCode};
 
 struct Modifier {
