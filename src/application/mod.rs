@@ -3,7 +3,6 @@ pub mod scene;
 
 use std::{cell::RefCell, ffi::CString, path::PathBuf, rc::Rc, time::Instant};
 
-use ash::version::DeviceV1_0;
 use mikpe_math::Vec3;
 pub use model::*;
 pub use scene::*;

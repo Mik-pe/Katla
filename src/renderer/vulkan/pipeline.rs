@@ -1,6 +1,5 @@
 use crate::rendering::vertextypes::*;
 use ash::{util::read_spv, version::DeviceV1_0, vk};
-use itertools::Update;
 use vk_mem::Allocation;
 
 use std::{ffi::CString, io::Cursor, sync::Arc};

@@ -4,7 +4,7 @@ use crate::{renderer::vulkan::VulkanContext, util::GLTFModel};
 use crate::renderer::{IndexBuffer, VertexBuffer};
 
 use ash::{version::DeviceV1_0, vk, Device};
-use mikpe_math::{Mat4, Sphere, Vec3};
+use mikpe_math::{Mat4, Quat, Sphere, Transform, Vec3};
 use std::{rc::Rc, sync::Arc, time::Instant};
 
 //TODO: Decouple pipeline from the "Mesh" struct,
@@ -15,7 +15,7 @@ pub struct Mesh {
     pub index_buffer: Option<IndexBuffer>,
     pub material: Material,
     pub num_verts: u32,
-    pub position: Vec3,
+    pub transform: Transform,
     pub bounds: Sphere,
 }
 
@@ -33,13 +33,13 @@ impl Mesh {
         println!("Material new took {} ms", millisecs);
         let mut bound_sphere = model.bounds.clone();
         bound_sphere.center = position;
-
+        let transform = Transform::new_from_position(position);
         let mut mesh = Self {
             vertex_buffer: None,
             index_buffer: None,
             material,
             num_verts: 0,
-            position,
+            transform,
             bounds: bound_sphere,
         };
         let start = Instant::now();
@@ -146,7 +146,7 @@ impl Mesh {
 
 impl Drawable for Mesh {
     fn update(&mut self, device: &Device, view: &Mat4, proj: &Mat4) {
-        let model = Mat4::from_translation(self.position.0);
+        let model = self.transform.make_mat4();
         self.material
             .upload_pipeline_data(device, view.clone(), proj.clone(), model);
     }
