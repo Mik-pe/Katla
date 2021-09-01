@@ -1,5 +1,5 @@
 use crate::rendering::Drawable;
-use ash::{version::DeviceV1_0, vk::CommandBuffer, Device};
+use ash::{vk::CommandBuffer, Device};
 use mikpe_math::{Mat4, Sphere, Vec3};
 use std::rc::Rc;
 

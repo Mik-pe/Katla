@@ -1,6 +1,6 @@
 use super::context::VulkanContext;
-use ash::{version::DeviceV1_0, vk, Device};
-use vk_mem::Allocation;
+use ash::{vk, Device};
+use gpu_allocator::vulkan::Allocation;
 
 use std::sync::Arc;
 
@@ -47,7 +47,6 @@ impl BufferObject {
                 unsafe {
                     std::ptr::copy_nonoverlapping(data.as_ptr(), mapped_ptr, data_size as usize);
                 }
-                self.context.unmap_buffer(allocation);
             }
             _ => {}
         }
@@ -67,7 +66,7 @@ impl IndexBuffer {
                 .usage(vk::BufferUsageFlags::INDEX_BUFFER)
                 .size(buf_size);
             let (buffer, allocation) =
-                context.allocate_buffer(&create_info, vk_mem::MemoryUsage::CpuToGpu);
+                context.allocate_buffer(&create_info, gpu_allocator::MemoryLocation::CpuToGpu);
 
             BufferObject {
                 allocation: Some(allocation),
@@ -101,7 +100,7 @@ impl VertexBuffer {
                 .usage(vk::BufferUsageFlags::VERTEX_BUFFER)
                 .size(buf_size);
             let (buffer, allocation) =
-                context.allocate_buffer(&create_info, vk_mem::MemoryUsage::CpuToGpu);
+                context.allocate_buffer(&create_info, gpu_allocator::MemoryLocation::CpuToGpu);
 
             BufferObject {
                 allocation: Some(allocation),

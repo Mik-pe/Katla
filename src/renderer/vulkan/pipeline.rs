@@ -1,6 +1,6 @@
 use crate::rendering::vertextypes::*;
-use ash::{util::read_spv, version::DeviceV1_0, vk};
-use vk_mem::Allocation;
+use ash::{util::read_spv, vk};
+use gpu_allocator::vulkan::Allocation;
 
 use std::{ffi::CString, io::Cursor, sync::Arc};
 
@@ -140,7 +140,7 @@ impl UniformHandle {
             .size(data_size);
 
         let (buffer, allocation) =
-            context.allocate_buffer(&create_info, vk_mem::MemoryUsage::CpuToGpu);
+            context.allocate_buffer(&create_info, gpu_allocator::MemoryLocation::CpuToGpu);
         let uniform_buffer = Some(UniformBuffer {
             allocation,
             buffer,
@@ -197,7 +197,6 @@ impl UniformDescriptor {
             unsafe {
                 std::ptr::copy_nonoverlapping(data.as_ptr(), mapped_data, data_size as usize);
             }
-            context.unmap_buffer(&uniform_buffer.allocation);
 
             let buf_info = [vk::DescriptorBufferInfo::builder()
                 .buffer(uniform_buffer.buffer)
