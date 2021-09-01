@@ -1,4 +1,4 @@
-use ash::{version::DeviceV1_0, vk};
+use ash::vk;
 
 pub use pipeline::{ImageInfo, RenderPipeline};
 use swapdata::*;

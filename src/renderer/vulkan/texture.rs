@@ -2,8 +2,8 @@ use std::time::Instant;
 
 use crate::renderer::{VulkanContext, VulkanFrameCtx};
 
-use ash::{version::DeviceV1_0, vk};
-use vk_mem::Allocation;
+use ash::vk;
+use gpu_allocator::vulkan::Allocation;
 pub struct Texture {
     pub width: u32,
     pub height: u32,
@@ -24,7 +24,7 @@ impl Texture {
             .usage(vk::BufferUsageFlags::TRANSFER_SRC)
             .size(size);
 
-        context.allocate_buffer(&create_info, vk_mem::MemoryUsage::CpuToGpu)
+        context.allocate_buffer(&create_info, gpu_allocator::MemoryLocation::CpuToGpu)
     }
 
     fn transition_image_layout(
@@ -158,7 +158,7 @@ impl Texture {
             .sharing_mode(vk::SharingMode::EXCLUSIVE);
 
         let (image_object, image_memory) =
-            context.create_image(create_info.build(), vk_mem::MemoryUsage::GpuOnly);
+            context.create_image(create_info.build(), gpu_allocator::MemoryLocation::GpuOnly);
         let ms_image = total_start.elapsed().as_micros() as f64 / 1000.0;
 
         let total_size = pixel_data.len() as u64;
@@ -173,7 +173,7 @@ impl Texture {
             std::ptr::copy_nonoverlapping(pixel_data.as_ptr(), map, total_size as usize);
             let ms_copy = total_start.elapsed().as_micros() as f64 / 1000.0;
 
-            context.unmap_buffer(&staging_allocation);
+            // context.unmap_buffer(&staging_allocation);
             let ms_unmap = total_start.elapsed().as_micros() as f64 / 1000.0;
 
             let command_buffer = context.begin_single_time_commands();
@@ -185,6 +185,7 @@ impl Texture {
                 vk::ImageLayout::TRANSFER_DST_OPTIMAL,
             );
             let ms_trans_1 = total_start.elapsed().as_micros() as f64 / 1000.0;
+
             Self::copy_buffer_to_image(
                 context,
                 command_buffer,
@@ -218,50 +219,54 @@ impl Texture {
             );
             let image_sampler = Self::create_texture_sampler(context);
             let ms_total = total_start.elapsed().as_micros() as f64 / 1000.0;
-            println!("Total time spent: {}ms", ms_total);
+            println!(
+                "[Create Image] Image size: {:.2}MiB",
+                total_size as f64 / (1024f64 * 1024f64)
+            );
+            println!("[Create Image] Total time spent: {}ms", ms_total);
 
             println!(
-                "image: \t{:.3}ms {:.2}%",
+                "image: \t\t\t\t{:.3}ms {:.2}%",
                 ms_image,
                 ms_image / ms_total * 100.0
             );
             println!(
-                "stage: \t{:.3}ms {:.2}% ",
+                "stage: \t\t\t\t{:.3}ms {:.2}% ",
                 ms_staging,
                 (ms_staging - ms_image) / ms_total * 100.0
             );
             println!(
-                "map: \t{:.3}ms {:.2}%",
+                "map: \t\t\t\t{:.3}ms {:.2}%",
                 ms_map_buffer,
                 (ms_map_buffer - ms_staging) / ms_total * 100.0
             );
             println!(
-                "copy: \t{:.3}ms {:.2}%",
+                "copy to map: \t\t\t{:.3}ms {:.2}%",
                 ms_copy,
                 (ms_copy - ms_map_buffer) / ms_total * 100.0
             );
             println!(
-                "unmap: \t{:.3}ms {:.2}%",
+                "unmap: \t\t\t\t{:.3}ms {:.2}%",
                 ms_unmap,
                 (ms_unmap - ms_copy) / ms_total * 100.0
             );
             println!(
-                "trans: \t{:.3}ms {:.2}%",
+                "transition image: \t\t{:.3}ms {:.2}%",
                 ms_trans_1,
                 (ms_trans_1 - ms_unmap) / ms_total * 100.0
             );
             println!(
-                "copy: \t{:.3}ms {:.2}%",
+                "copy buffer to image: \t\t{:.3}ms {:.2}%",
                 ms_copy_im,
                 (ms_copy_im - ms_trans_1) / ms_total * 100.0
             );
             println!(
-                "trans: \t{:.3}ms {:.2}%",
+                "transition + submit cmdbuf: \t{:.3}ms {:.2}%",
                 ms_trans_2,
                 (ms_trans_2 - ms_copy_im) / ms_total * 100.0
             );
             println!(
-                "free: \t{:.3}ms {:.2}%",
+                "free: \t\t\t\t{:.3}ms {:.2}%",
                 ms_free,
                 (ms_free - ms_trans_2) / ms_total * 100.0
             );
@@ -283,6 +288,6 @@ impl Texture {
             context.device.destroy_sampler(self.image_sampler, None);
             context.device.destroy_image_view(self.image_view, None);
         }
-        context.free_image(self.image, &self.image_memory);
+        context.free_image(self.image, self.image_memory);
     }
 }

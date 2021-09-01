@@ -1,5 +1,3 @@
-use ash::version::{DeviceV1_0, EntryV1_0, InstanceV1_0};
-
 use ash::{
     extensions::{
         ext::DebugUtils,
@@ -7,15 +5,22 @@ use ash::{
     },
     vk, Device, Entry, Instance,
 };
-use vk_mem::{Allocation, Allocator};
+use gpu_allocator::vulkan::{Allocation, Allocator};
+// use vk_mem::{Allocation, Allocator};
 
 use std::{
+    borrow::BorrowMut,
+    cell::RefCell,
     ffi::{c_void, CStr, CString},
+    os::raw::c_char,
     sync::{Arc, Mutex},
 };
 use winit::window::Window;
 
 const LAYER_KHRONOS_VALIDATION: &str = concat!("VK_LAYER_KHRONOS_validation", "\0");
+fn BUFFER_DEVICE_ADDRESS_EXT_NAME() -> &'static CStr {
+    CStr::from_bytes_with_nul(b"VK_KHR_buffer_device_address\0").expect("Wrong extension string")
+}
 
 struct SwapChainSupportDetails {
     pub surface_caps: vk::SurfaceCapabilitiesKHR,
@@ -46,7 +51,7 @@ impl RenderTexture {
         }
         let image_memory = self.image_memory.take();
 
-        self.context.free_image(self.image, &image_memory.unwrap());
+        self.context.free_image(self.image, image_memory.unwrap());
     }
 }
 
@@ -63,7 +68,7 @@ pub struct VulkanContext {
     pub surface_loader: Surface,
     pub swapchain_loader: Swapchain,
     pub physical_device: vk::PhysicalDevice,
-    pub allocator: Allocator,
+    pub allocator: RefCell<Allocator>,
     pub surface: vk::SurfaceKHR,
     pub graphics_command_pool: vk::CommandPool,
     pub graphics_queue: vk::Queue,
@@ -182,57 +187,71 @@ impl VulkanContext {
     pub fn allocate_buffer(
         &self,
         buffer_info: &vk::BufferCreateInfo,
-        usage: vk_mem::MemoryUsage,
-    ) -> (vk::Buffer, vk_mem::Allocation) {
-        let allocation_info = vk_mem::AllocationCreateInfo {
-            usage,
-            ..Default::default()
+        location: gpu_allocator::MemoryLocation,
+    ) -> (vk::Buffer, Allocation) {
+        let buffer = unsafe { self.device.create_buffer(&buffer_info, None) }.unwrap();
+        let requirements = unsafe { self.device.get_buffer_memory_requirements(buffer) };
+        //TODO: Find better names...
+        let allocation_info = gpu_allocator::vulkan::AllocationCreateDesc {
+            name: "Buffer Allocation",
+            requirements,
+            location,
+            linear: true,
         };
-        let (buffer, allocation, _) = self
-            .allocator
-            .create_buffer(buffer_info, &allocation_info)
-            .unwrap();
+
+        let mut allocator = self.allocator.borrow_mut();
+        let allocation = allocator.allocate(&allocation_info).unwrap();
+
+        unsafe {
+            self.device
+                .bind_buffer_memory(buffer, allocation.memory(), allocation.offset())
+                .unwrap()
+        };
         (buffer, allocation)
     }
 
-    pub fn free_buffer(&self, buffer: vk::Buffer, allocation: vk_mem::Allocation) {
-        self.allocator
-            .destroy_buffer(buffer, &allocation)
-            .expect("Could not destroy buffer!");
+    pub fn free_buffer(&self, buffer: vk::Buffer, allocation: Allocation) {
+        let mut allocator = self.allocator.borrow_mut();
+        allocator.free(allocation).unwrap();
+        unsafe { self.device.destroy_buffer(buffer, None) };
     }
 
     //TODO: Enable mapping of part of buffers
-    pub fn map_buffer(&self, allocation: &vk_mem::Allocation) -> *mut u8 {
-        self.allocator.map_memory(allocation).unwrap()
-    }
-
-    pub fn unmap_buffer(&self, allocation: &vk_mem::Allocation) {
-        self.allocator
-            .unmap_memory(allocation)
-            .expect("Could not unmap memory!");
+    pub fn map_buffer(&self, allocation: &Allocation) -> *mut u8 {
+        allocation.mapped_ptr().unwrap().cast().as_ptr()
     }
 
     pub fn create_image(
         &self,
         image_create_info: vk::ImageCreateInfo,
-        usage: vk_mem::MemoryUsage,
-    ) -> (vk::Image, vk_mem::Allocation) {
-        let allocation_info = vk_mem::AllocationCreateInfo {
-            usage,
-            ..Default::default()
+        location: gpu_allocator::MemoryLocation,
+    ) -> (vk::Image, Allocation) {
+        let image = unsafe { self.device.create_image(&image_create_info, None) }.unwrap();
+        let requirements = unsafe { self.device.get_image_memory_requirements(image) };
+        let allocation_info = gpu_allocator::vulkan::AllocationCreateDesc {
+            name: "Image Allocation",
+            requirements,
+            location,
+            linear: true,
         };
-        let (image, allocation, _) = self
-            .allocator
-            .create_image(&image_create_info, &allocation_info)
-            .unwrap();
 
+        let mut allocator = self.allocator.borrow_mut();
+        let allocation = allocator.allocate(&allocation_info).unwrap();
+
+        unsafe {
+            self.device
+                .bind_image_memory(image, allocation.memory(), allocation.offset())
+                .unwrap();
+        }
         (image, allocation)
     }
 
-    pub fn free_image(&self, image: vk::Image, allocation: &vk_mem::Allocation) {
-        self.allocator
-            .destroy_image(image, allocation)
-            .expect("Could not free image!");
+    pub fn free_image(&self, image: vk::Image, allocation: Allocation) {
+        let mut allocator = self.allocator.borrow_mut();
+        allocator.free(allocation).unwrap();
+        unsafe {
+            self.device.destroy_image(image, None);
+        }
     }
 
     fn create_instance(
@@ -260,8 +279,7 @@ impl VulkanContext {
             .application_version(0)
             .engine_name(engine_name)
             .engine_version(0)
-            .api_version(vk::make_version(1, 1, 0));
-
+            .api_version(vk::make_api_version(0, 1, 2, 0));
         let create_info = vk::InstanceCreateInfo::builder()
             .application_info(&app_info)
             .enabled_extension_names(&extension_names_raw)
@@ -477,18 +495,15 @@ impl VulkanContext {
             unsafe { device.create_command_pool(&create_info, None) }.unwrap();
 
         //TODO: Read up on the actual fields in this CreateInfo
-        let create_info = vk_mem::AllocatorCreateInfo {
-            physical_device,
-            device: device.clone(),
+        let create_info = gpu_allocator::vulkan::AllocatorCreateDesc {
             instance: instance.clone(),
-            //FIXME: Replace following with  ..Default::default() once vk_mem-rs bumps to 0.2.3
-            flags: vk_mem::AllocatorCreateFlags::NONE,
-            preferred_large_heap_block_size: 0,
-            frame_in_use_count: 0,
-            heap_size_limits: None,
+            device: device.clone(),
+            physical_device,
+            debug_settings: Default::default(),
+            buffer_device_address: true,
         };
 
-        let allocator = vk_mem::Allocator::new(&create_info).unwrap();
+        let allocator = RefCell::new(Allocator::new(&create_info).unwrap());
 
         Self {
             entry,
@@ -517,7 +532,7 @@ impl Drop for VulkanContext {
                 .destroy_command_pool(self.graphics_command_pool, None);
             self.device
                 .destroy_command_pool(self.transfer_command_pool, None);
-            self.allocator.destroy();
+            drop(self.allocator.borrow_mut());
             self.device.destroy_device(None);
             self.surface_loader.destroy_surface(self.surface, None);
 
@@ -723,7 +738,7 @@ fn create_depth_render_texture(context: Arc<VulkanContext>, extent: vk::Extent2D
 
     //https://vulkan-tutorial.com/Depth_buffering
     let (depth_image, image_memory) =
-        context.create_image(create_info.build(), vk_mem::MemoryUsage::GpuOnly);
+        context.create_image(create_info.build(), gpu_allocator::MemoryLocation::GpuOnly);
 
     let image_view = VulkanFrameCtx::create_image_view(
         &context.device,
@@ -747,20 +762,29 @@ fn create_device(
     queue_create_infos: Vec<vk::DeviceQueueCreateInfo>,
     with_validation_layers: bool,
 ) -> Device {
-    let device_extensions = [Swapchain::name().as_ptr()];
+    let device_extensions = [
+        Swapchain::name().as_ptr(),
+        BUFFER_DEVICE_ADDRESS_EXT_NAME().as_ptr(),
+    ];
     let mut device_layers = vec![];
     if with_validation_layers {
         device_layers.push(LAYER_KHRONOS_VALIDATION.as_ptr() as *const i8);
     }
 
     // https://vulkan-tutorial.com/Drawing_a_triangle/Setup/Logical_device_and_queues
-    let features = vk::PhysicalDeviceFeatures::builder().sampler_anisotropy(true);
+    let features = vk::PhysicalDeviceFeatures {
+        sampler_anisotropy: 1,
+        ..Default::default()
+    };
 
+    //TODO: Figure out how to enable extension features with ash? Or just disable this in the allocator, as it's not used anyways...
+    let mut ext_feature = vk::PhysicalDeviceBufferDeviceAddressFeatures::default();
     let create_info = vk::DeviceCreateInfo::builder()
         .enabled_extension_names(&device_extensions)
         .enabled_layer_names(&device_layers)
         .queue_create_infos(&queue_create_infos)
-        .enabled_features(&features);
+        .enabled_features(&features)
+        .push_next(&mut ext_feature);
     let device = unsafe {
         instance
             .create_device(physical_device, &create_info, None)

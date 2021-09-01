@@ -1,4 +1,4 @@
-use ash::{extensions::khr::Swapchain, version::DeviceV1_0, vk, Device};
+use ash::{extensions::khr::Swapchain, vk, Device};
 pub struct SwapData {
     frames_in_flight: usize,
     frame: usize,

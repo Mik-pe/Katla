@@ -6,7 +6,7 @@ use crate::{
 
 use mikpe_math::Mat4;
 
-use ash::{version::DeviceV1_0, vk, Device};
+use ash::{vk, Device};
 
 use std::{rc::Rc, sync::Arc};
 

@@ -3,7 +3,7 @@ use crate::{renderer::vulkan::VulkanContext, util::GLTFModel};
 
 use crate::renderer::{IndexBuffer, VertexBuffer};
 
-use ash::{version::DeviceV1_0, vk, Device};
+use ash::{vk, Device};
 use mikpe_math::{Mat4, Quat, Sphere, Transform, Vec3};
 use std::{rc::Rc, sync::Arc, time::Instant};
 
