@@ -3,6 +3,7 @@ pub mod scene;
 
 use std::{cell::RefCell, ffi::CString, path::PathBuf, rc::Rc, time::Instant};
 
+use env_logger::Env;
 use mikpe_math::Vec3;
 pub use model::*;
 pub use scene::*;
@@ -23,6 +24,7 @@ pub struct Application {
 
 impl Application {
     pub fn run(self) -> ! {
+        env_logger::Builder::from_env(Env::default().default_filter_or("debug")).init();
         let mut last_frame = Instant::now();
         let mut timer = Timer::new(100);
         let event_loop = self.event_loop;
@@ -32,7 +34,7 @@ impl Application {
         let mut input_controller = self.input_controller;
         let mut model_cache = FileCache::<GLTFModel>::new();
         let mut offset = 0.0;
-        let mesh = Mesh::new_from_cache(
+        let mesh = Mesh::new_from_model(
             model_cache.read(PathBuf::from("resources/models/Fox.glb")),
             renderer.context.clone(),
             renderer.render_pass,
@@ -107,7 +109,7 @@ impl Application {
                     renderer.submit_frame(vec![command_buffer]);
                     if stage_upload {
                         let start = Instant::now();
-                        let mesh = Mesh::new_from_cache(
+                        let mesh = Mesh::new_from_model(
                             model_cache.read(PathBuf::from("resources/models/Tiger.glb")),
                             renderer.context.clone(),
                             renderer.render_pass,

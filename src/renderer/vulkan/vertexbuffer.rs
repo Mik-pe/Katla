@@ -33,7 +33,7 @@ pub struct IndexBuffer {
 }
 
 impl BufferObject {
-    fn upload_data(&mut self, device: &Device, data: &[u8]) {
+    fn upload_data(&mut self, data: &[u8]) {
         let data_size = std::mem::size_of_val(data) as vk::DeviceSize;
         if self.buf_size < data_size {
             panic!(
@@ -79,8 +79,8 @@ impl IndexBuffer {
         Self { buffer, index_type }
     }
 
-    pub fn upload_data(&mut self, device: &Device, data: &[u8]) {
-        self.buffer.upload_data(device, data);
+    pub fn upload_data(&mut self, data: &[u8]) {
+        self.buffer.upload_data(data);
     }
 
     pub fn object(&self) -> &vk::Buffer {
@@ -121,7 +121,7 @@ impl VertexBuffer {
         self.buffer.count
     }
 
-    pub fn upload_data(&mut self, device: &Device, data: &[u8]) {
-        self.buffer.upload_data(device, data);
+    pub fn upload_data(&mut self, data: &[u8]) {
+        self.buffer.upload_data(data);
     }
 }

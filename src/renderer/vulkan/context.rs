@@ -5,22 +5,21 @@ use ash::{
     },
     vk, Device, Entry, Instance,
 };
-use gpu_allocator::vulkan::{Allocation, Allocator};
+use gpu_allocator::{
+    vulkan::{Allocation, Allocator, AllocatorCreateDesc},
+    AllocatorDebugSettings,
+};
 // use vk_mem::{Allocation, Allocator};
 
 use std::{
-    borrow::BorrowMut,
     cell::RefCell,
     ffi::{c_void, CStr, CString},
-    os::raw::c_char,
-    sync::{Arc, Mutex},
+    mem::ManuallyDrop,
+    sync::Arc,
 };
 use winit::window::Window;
 
 const LAYER_KHRONOS_VALIDATION: &str = concat!("VK_LAYER_KHRONOS_validation", "\0");
-fn BUFFER_DEVICE_ADDRESS_EXT_NAME() -> &'static CStr {
-    CStr::from_bytes_with_nul(b"VK_KHR_buffer_device_address\0").expect("Wrong extension string")
-}
 
 struct SwapChainSupportDetails {
     pub surface_caps: vk::SurfaceCapabilitiesKHR,
@@ -68,7 +67,7 @@ pub struct VulkanContext {
     pub surface_loader: Surface,
     pub swapchain_loader: Swapchain,
     pub physical_device: vk::PhysicalDevice,
-    pub allocator: RefCell<Allocator>,
+    pub allocator: ManuallyDrop<RefCell<Allocator>>,
     pub surface: vk::SurfaceKHR,
     pub graphics_command_pool: vk::CommandPool,
     pub graphics_queue: vk::Queue,
@@ -494,16 +493,19 @@ impl VulkanContext {
         let transfer_command_pool =
             unsafe { device.create_command_pool(&create_info, None) }.unwrap();
 
-        //TODO: Read up on the actual fields in this CreateInfo
-        let create_info = gpu_allocator::vulkan::AllocatorCreateDesc {
+        let debug_settings = AllocatorDebugSettings {
+            log_leaks_on_shutdown: true,
+            ..Default::default()
+        };
+        let create_info = AllocatorCreateDesc {
             instance: instance.clone(),
             device: device.clone(),
             physical_device,
-            debug_settings: Default::default(),
-            buffer_device_address: true,
+            debug_settings,
+            buffer_device_address: false,
         };
 
-        let allocator = RefCell::new(Allocator::new(&create_info).unwrap());
+        let allocator = ManuallyDrop::new(RefCell::new(Allocator::new(&create_info).unwrap()));
 
         Self {
             entry,
@@ -532,7 +534,7 @@ impl Drop for VulkanContext {
                 .destroy_command_pool(self.graphics_command_pool, None);
             self.device
                 .destroy_command_pool(self.transfer_command_pool, None);
-            drop(self.allocator.borrow_mut());
+            ManuallyDrop::drop(&mut self.allocator);
             self.device.destroy_device(None);
             self.surface_loader.destroy_surface(self.surface, None);
 
@@ -762,10 +764,7 @@ fn create_device(
     queue_create_infos: Vec<vk::DeviceQueueCreateInfo>,
     with_validation_layers: bool,
 ) -> Device {
-    let device_extensions = [
-        Swapchain::name().as_ptr(),
-        BUFFER_DEVICE_ADDRESS_EXT_NAME().as_ptr(),
-    ];
+    let device_extensions = [Swapchain::name().as_ptr()];
     let mut device_layers = vec![];
     if with_validation_layers {
         device_layers.push(LAYER_KHRONOS_VALIDATION.as_ptr() as *const i8);
@@ -777,14 +776,11 @@ fn create_device(
         ..Default::default()
     };
 
-    //TODO: Figure out how to enable extension features with ash? Or just disable this in the allocator, as it's not used anyways...
-    let mut ext_feature = vk::PhysicalDeviceBufferDeviceAddressFeatures::default();
     let create_info = vk::DeviceCreateInfo::builder()
         .enabled_extension_names(&device_extensions)
         .enabled_layer_names(&device_layers)
         .queue_create_infos(&queue_create_infos)
-        .enabled_features(&features)
-        .push_next(&mut ext_feature);
+        .enabled_features(&features);
     let device = unsafe {
         instance
             .create_device(physical_device, &create_info, None)
