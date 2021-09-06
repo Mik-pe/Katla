@@ -140,15 +140,10 @@ impl Camera {
     //     self.pitch = 0.0;
     // }
 
-    fn lerp_vec3(old_velocity_dir: Vec3, to_velocity_dir: Vec3, ratio: f32) -> Vec3 {
-        let new_velocity_dir = old_velocity_dir + (to_velocity_dir - old_velocity_dir).mul(ratio);
-        new_velocity_dir
-    }
-
     pub fn update(&mut self, dt: f32) {
         let velocity_dir = mikpe_math::mat4_mul_vec3(&self.get_view_rotation(), &self.input_dir);
 
-        self.velocity_dir = Self::lerp_vec3(self.velocity_dir, velocity_dir, 10.0 * dt);
+        self.velocity_dir = Vec3::lerp(self.velocity_dir, velocity_dir, 7.0 * dt);
 
         self.pos = self.pos + self.velocity_dir.mul(self.speed * dt);
     }

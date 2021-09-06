@@ -20,7 +20,7 @@ pub struct Mesh {
 }
 
 impl Mesh {
-    pub fn new_from_cache(
+    pub fn new_from_model(
         model: Rc<GLTFModel>,
         context: Arc<VulkanContext>,
         render_pass: vk::RenderPass,
@@ -82,7 +82,7 @@ impl Mesh {
             };
             let mut index_buffer =
                 IndexBuffer::new(context.clone(), data_slice.len() as u64, index_type, count);
-            index_buffer.upload_data(&context.device, data_slice);
+            index_buffer.upload_data(data_slice);
             Some(index_buffer)
         }
     }
@@ -102,7 +102,7 @@ impl Mesh {
             };
             let mut vertex_buffer =
                 VertexBuffer::new(context.clone(), data_slice.len() as u64, data.len() as u32);
-            vertex_buffer.upload_data(&context.device, data_slice);
+            vertex_buffer.upload_data(data_slice);
             Some(vertex_buffer)
         }
     }
