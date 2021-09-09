@@ -1,11 +1,19 @@
+pub mod commandbuffer;
+pub mod commandpool;
 pub mod context;
 pub mod pipeline;
+pub mod queue;
+pub mod swapchain;
 pub mod swapdata;
 pub mod texture;
 pub mod vertexbuffer;
 
+pub use commandbuffer::*;
+pub use commandpool::*;
 pub use context::*;
 pub use pipeline::*;
+pub use queue::*;
+pub use swapchain::*;
 pub use swapdata::*;
 pub use texture::*;
 pub use vertexbuffer::*;

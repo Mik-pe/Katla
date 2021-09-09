@@ -38,7 +38,7 @@ impl Application {
             model_cache.read(PathBuf::from("resources/models/Fox.glb")),
             renderer.context.clone(),
             renderer.render_pass,
-            renderer.num_images(),
+            renderer.num_images(), //TODO: (mikpe) - should not have to send this when creating a mesh... The context should be enough and "Mesh" should be a higher level abstraction
             Vec3::new(offset, 0.0, 0.0),
         );
         offset -= 100.0;
@@ -105,8 +105,8 @@ impl Application {
                     );
 
                     let command_buffer = renderer.get_commandbuffer_opaque_pass();
-                    scene.render(&renderer.context.device, command_buffer);
-                    renderer.submit_frame(vec![command_buffer]);
+                    scene.render(&command_buffer);
+                    renderer.submit_frame(vec![&command_buffer]);
                     if stage_upload {
                         let start = Instant::now();
                         let mesh = Mesh::new_from_model(
@@ -130,11 +130,6 @@ impl Application {
                     renderer.wait_for_device();
                     scene.teardown();
                     println!("Loop destroyed!");
-                    // let mut tex_removal = vec![];
-                    // std::mem::swap(&mut textures, &mut tex_removal);
-                    // for texture in tex_removal {
-                    //     texture.destroy(&renderer.context);
-                    // }
                     renderer.destroy();
                 }
                 _ => {}
@@ -180,7 +175,10 @@ impl ApplicationBuilder {
         let engine_name = CString::new("MikpEngine").unwrap();
         let renderer = VulkanRenderer::init(&event_loop, true, self.app_name, engine_name);
         let mut input_controller = self.input_controller;
-
+        let window_size = renderer.window.inner_size();
+        let win_x = window_size.width as f32;
+        let win_y = window_size.height as f32;
+        self.camera.borrow_mut().aspect_ratio_changed(win_x / win_y);
         cameracontroller::setup_camera_bindings(self.camera.clone(), &mut input_controller);
 
         Application {

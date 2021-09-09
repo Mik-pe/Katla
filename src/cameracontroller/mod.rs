@@ -4,6 +4,23 @@ use std::{cell::RefCell, rc::Rc};
 use winit::event::Event;
 use winit::event::{DeviceEvent, ElementState, MouseButton, WindowEvent};
 
+// enum InputBindings {
+//     SteerVert,
+//     SteerFwd,
+//     SteerHori,
+//     Custom(String),
+// }
+
+// impl InputBindings {
+//     pub fn test_parse(in_string: String) -> Option<Self> {
+//         use InputBindings::*;
+//         let mut out = None;
+//         if in_string == "steervert" {
+//             out = Some(SteerVert);
+//         }
+//         out
+//     }
+// }
 pub struct PerspectiveProjection {
     fov: f32,
     near_plane: f32,

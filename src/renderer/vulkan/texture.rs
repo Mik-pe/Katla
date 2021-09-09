@@ -179,7 +179,7 @@ impl Texture {
             let command_buffer = context.begin_single_time_commands();
             Self::transition_image_layout(
                 context,
-                command_buffer,
+                command_buffer.vk_command_buffer(),
                 image_object,
                 vk::ImageLayout::UNDEFINED,
                 vk::ImageLayout::TRANSFER_DST_OPTIMAL,
@@ -188,7 +188,7 @@ impl Texture {
 
             Self::copy_buffer_to_image(
                 context,
-                command_buffer,
+                command_buffer.vk_command_buffer(),
                 staging_buffer,
                 image_object,
                 vk::ImageLayout::TRANSFER_DST_OPTIMAL,
@@ -197,7 +197,7 @@ impl Texture {
             let ms_copy_im = total_start.elapsed().as_micros() as f64 / 1000.0;
             Self::transition_image_layout(
                 context,
-                command_buffer,
+                command_buffer.vk_command_buffer(),
                 image_object,
                 vk::ImageLayout::TRANSFER_DST_OPTIMAL,
                 vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
