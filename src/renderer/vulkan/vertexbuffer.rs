@@ -83,8 +83,8 @@ impl IndexBuffer {
         self.buffer.upload_data(data);
     }
 
-    pub fn object(&self) -> &vk::Buffer {
-        &self.buffer.buffer
+    pub fn object(&self) -> vk::Buffer {
+        self.buffer.buffer
     }
 
     pub fn count(&self) -> u32 {
@@ -113,8 +113,8 @@ impl VertexBuffer {
         Self { buffer }
     }
 
-    pub fn object(&self) -> &vk::Buffer {
-        &self.buffer.buffer
+    pub fn object(&self) -> vk::Buffer {
+        self.buffer.buffer
     }
 
     pub fn count(&self) -> u32 {

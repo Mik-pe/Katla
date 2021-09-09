@@ -1,7 +1,10 @@
-use ash::{vk::CommandBuffer, Device};
-use mikpe_math::{Mat4, Transform, Vec3};
+use ash::Device;
+use mikpe_math::{Mat4, Transform};
 
-use crate::rendering::{Drawable, Material, Mesh};
+use crate::{
+    renderer::vulkan::CommandBuffer,
+    rendering::{Drawable, Material, Mesh},
+};
 
 pub struct Model {
     pub mesh: Mesh,
@@ -20,8 +23,8 @@ impl Drawable for Model {
             .upload_pipeline_data(device, view.clone(), proj.clone(), model);
     }
 
-    fn draw(&self, device: &Device, command_buffer: CommandBuffer) {
-        self.material.bind(device, command_buffer);
-        self.mesh.draw(device, command_buffer);
+    fn draw(&self, command_buffer: &CommandBuffer) {
+        self.material.bind(command_buffer);
+        self.mesh.draw(command_buffer);
     }
 }

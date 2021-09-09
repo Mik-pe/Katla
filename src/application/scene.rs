@@ -1,5 +1,5 @@
-use crate::rendering::Drawable;
-use ash::{vk::CommandBuffer, Device};
+use crate::{renderer::vulkan::CommandBuffer, rendering::Drawable};
+use ash::Device;
 use mikpe_math::{Mat4, Sphere, Vec3};
 use std::rc::Rc;
 
@@ -52,8 +52,7 @@ impl Scene {
 
     pub fn update(&mut self, device: &Device, proj: &Mat4, view: &Mat4) {
         for object in &mut self.scene_objects {
-            let draw_mut = &mut object.drawable;
-            draw_mut.update(device, &view, &proj);
+            object.drawable.update(device, &view, &proj);
         }
     }
 
@@ -61,14 +60,11 @@ impl Scene {
         self.scene_objects.push(scene_object);
     }
 
-    pub fn render(&self, device: &Device, command_buffer: CommandBuffer) {
+    pub fn render(&self, command_buffer: &CommandBuffer) {
         for object in &self.scene_objects {
-            object.drawable.draw(device, command_buffer);
+            object.drawable.draw(command_buffer);
         }
-
-        unsafe {
-            device.cmd_end_render_pass(command_buffer);
-            device.end_command_buffer(command_buffer).unwrap();
-        }
+        command_buffer.end_render_pass();
+        command_buffer.end_command();
     }
 }

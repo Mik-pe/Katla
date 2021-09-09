@@ -1,7 +1,7 @@
 use crate::rendering::{Drawable, Material};
 use crate::{renderer::vulkan::VulkanContext, util::GLTFModel};
 
-use crate::renderer::{IndexBuffer, VertexBuffer};
+use crate::renderer::{self, IndexBuffer, VertexBuffer};
 
 use ash::{vk, Device};
 use mikpe_math::{Mat4, Quat, Sphere, Transform, Vec3};
@@ -111,34 +111,18 @@ impl Mesh {
     //     self.material.destroy(device, allocator);
     // }
 
-    pub fn draw(&self, device: &Device, command_buffer: vk::CommandBuffer) {
-        unsafe {
-            if let Some(index_buffer) = &self.index_buffer {
-                device.cmd_bind_index_buffer(
-                    command_buffer,
-                    index_buffer.object().clone(),
-                    0,
-                    index_buffer.index_type,
-                );
-                if let Some(vertex_buffer) = &self.vertex_buffer {
-                    device.cmd_bind_vertex_buffers(
-                        command_buffer,
-                        0,
-                        &[vertex_buffer.object().clone()],
-                        &[0],
-                    );
-                    device.cmd_draw_indexed(command_buffer, index_buffer.count(), 1, 0, 0, 0);
-                }
-            } else {
-                if let Some(vertex_buffer) = &self.vertex_buffer {
-                    device.cmd_bind_vertex_buffers(
-                        command_buffer,
-                        0,
-                        &[vertex_buffer.object().clone()],
-                        &[0],
-                    );
-                    device.cmd_draw(command_buffer, vertex_buffer.count(), 1, 0, 0);
-                }
+    pub fn draw(&self, command_buffer: &renderer::vulkan::CommandBuffer) {
+        if let Some(index_buffer) = &self.index_buffer {
+            command_buffer.bind_index_buffer(index_buffer.object(), 0, index_buffer.index_type);
+
+            if let Some(vertex_buffer) = &self.vertex_buffer {
+                command_buffer.bind_vertex_buffers(0, &[vertex_buffer.object()], &[0]);
+                command_buffer.draw_indexed(index_buffer.count(), 1, 0, 0, 0);
+            }
+        } else {
+            if let Some(vertex_buffer) = &self.vertex_buffer {
+                command_buffer.bind_vertex_buffers(0, &[vertex_buffer.object()], &[0]);
+                command_buffer.draw_array(vertex_buffer.count(), 1, 0, 0);
             }
         }
     }
@@ -151,9 +135,9 @@ impl Drawable for Mesh {
             .upload_pipeline_data(device, view.clone(), proj.clone(), model);
     }
 
-    fn draw(&self, device: &Device, command_buffer: vk::CommandBuffer) {
-        self.material.bind(device, command_buffer);
+    fn draw(&self, command_buffer: &crate::renderer::vulkan::CommandBuffer) {
+        self.material.bind(command_buffer);
 
-        self.draw(device, command_buffer);
+        self.draw(command_buffer);
     }
 }

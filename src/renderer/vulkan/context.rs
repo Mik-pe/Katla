@@ -9,8 +9,6 @@ use gpu_allocator::{
     vulkan::{Allocation, Allocator, AllocatorCreateDesc},
     AllocatorDebugSettings,
 };
-// use vk_mem::{Allocation, Allocator};
-
 use std::{
     cell::RefCell,
     ffi::{c_void, CStr, CString},
@@ -19,13 +17,9 @@ use std::{
 };
 use winit::window::Window;
 
-const LAYER_KHRONOS_VALIDATION: &str = concat!("VK_LAYER_KHRONOS_validation", "\0");
+use super::SwapchainInfo;
 
-struct SwapChainSupportDetails {
-    pub surface_caps: vk::SurfaceCapabilitiesKHR,
-    pub surface_formats: Vec<vk::SurfaceFormatKHR>,
-    pub present_modes: Vec<vk::PresentModeKHR>,
-}
+const LAYER_KHRONOS_VALIDATION: &str = concat!("VK_LAYER_KHRONOS_validation", "\0");
 
 struct QueueFamilyIndices {
     pub graphics_idx: Option<u32>,
@@ -65,12 +59,13 @@ pub struct VulkanContext {
     pub instance: Instance,
     pub device: Device,
     pub surface_loader: Surface,
-    pub swapchain_loader: Swapchain,
+    pub swapchain_loader: Arc<Swapchain>,
     pub physical_device: vk::PhysicalDevice,
     pub allocator: ManuallyDrop<RefCell<Allocator>>,
     pub surface: vk::SurfaceKHR,
-    pub graphics_command_pool: vk::CommandPool,
     pub graphics_queue: vk::Queue,
+    pub gfx_queue: super::Queue,
+    pub gfx_cmdpool: super::CommandPool,
     pub transfer_command_pool: vk::CommandPool,
     pub transfer_queue: vk::Queue,
     debug_utils_loader: DebugUtils,
@@ -78,64 +73,11 @@ pub struct VulkanContext {
 }
 pub struct VulkanFrameCtx {
     pub context: Arc<VulkanContext>,
-    pub current_extent: vk::Extent2D,
-    pub current_surface_format: vk::SurfaceFormatKHR,
     pub swapchain_image_views: Vec<vk::ImageView>,
-    pub swapchain: vk::SwapchainKHR,
+    pub swapchain: super::Swapchain,
     pub swapchain_images: Vec<vk::Image>,
     pub depth_render_texture: RenderTexture,
-    pub command_buffers: Vec<vk::CommandBuffer>,
-}
-
-impl SwapChainSupportDetails {
-    pub fn choose_present_mode(&self) -> vk::PresentModeKHR {
-        self.present_modes
-            .iter()
-            .find(|format| match **format {
-                vk::PresentModeKHR::MAILBOX => true,
-                _ => false,
-            })
-            .cloned()
-            .unwrap_or(vk::PresentModeKHR::FIFO)
-    }
-
-    pub fn choose_surface_format(&self) -> Option<vk::SurfaceFormatKHR> {
-        if self.surface_formats.is_empty() {
-            None
-        } else {
-            for surface_format in &self.surface_formats {
-                if surface_format.format == vk::Format::B8G8R8A8_SRGB
-                    && surface_format.color_space == vk::ColorSpaceKHR::SRGB_NONLINEAR
-                {
-                    return Some(*surface_format);
-                }
-            }
-
-            Some(self.surface_formats[0])
-        }
-    }
-
-    pub unsafe fn query_swapchain_support(
-        surface_loader: &Surface,
-        physical_device: vk::PhysicalDevice,
-        surface: vk::SurfaceKHR,
-    ) -> SwapChainSupportDetails {
-        let surface_caps = surface_loader
-            .get_physical_device_surface_capabilities(physical_device, surface)
-            .unwrap();
-        let surface_formats = surface_loader
-            .get_physical_device_surface_formats(physical_device, surface)
-            .unwrap();
-        let present_modes = surface_loader
-            .get_physical_device_surface_present_modes(physical_device, surface)
-            .unwrap();
-
-        SwapChainSupportDetails {
-            surface_caps,
-            surface_formats,
-            present_modes,
-        }
-    }
+    pub command_buffers: Vec<super::CommandBuffer>,
 }
 
 impl QueueFamilyIndices {
@@ -340,90 +282,23 @@ impl VulkanContext {
         }
     }
 
-    unsafe fn query_swapchain_support(&self) -> SwapChainSupportDetails {
-        SwapChainSupportDetails::query_swapchain_support(
-            &self.surface_loader,
-            self.physical_device,
-            self.surface,
-        )
-    }
-
     //TODO: Make a per-thread command pool and queue for upload purposes!
-    pub fn begin_single_time_commands(&self) -> vk::CommandBuffer {
-        let create_info = vk::CommandBufferAllocateInfo::builder()
-            .level(vk::CommandBufferLevel::PRIMARY)
-            .command_pool(self.graphics_command_pool)
-            .command_buffer_count(1);
-        unsafe {
-            let command_buffer: vk::CommandBuffer =
-                self.device.allocate_command_buffers(&create_info).unwrap()[0];
-            let begin_info = vk::CommandBufferBeginInfo::builder()
-                .flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT);
-            self.device
-                .begin_command_buffer(command_buffer, &begin_info)
-                .unwrap();
-            command_buffer
-        }
+    pub fn begin_single_time_commands(&self) -> super::CommandBuffer {
+        let command_buffer = super::CommandBuffer::new(&self.device, &self.gfx_cmdpool);
+        command_buffer.begin_single_time_command();
+        command_buffer
     }
 
-    pub fn end_single_time_commands(&self, command_buffer: vk::CommandBuffer) {
-        unsafe {
-            let command_buffers = vec![command_buffer];
-            self.device.end_command_buffer(command_buffer).unwrap();
-            let submit_info = vk::SubmitInfo::builder().command_buffers(&command_buffers);
-            //TODO: This cannot be used by multiple frames at once,
-            //ensure that we're either using another queue/commandpool, or
-            //that we are doing this in a locked manner
-            self.device
-                .queue_submit(
-                    self.graphics_queue,
-                    &[submit_info.build()],
-                    vk::Fence::null(),
-                )
-                .unwrap();
-            self.device.queue_wait_idle(self.graphics_queue).unwrap();
-            self.device
-                .free_command_buffers(self.graphics_command_pool, &command_buffers);
-        }
-    }
-
-    //FIXME: this might be the incorrect way of doing this...
-    pub fn begin_transfer_commands(&self) -> vk::CommandBuffer {
-        let create_info = vk::CommandBufferAllocateInfo::builder()
-            .level(vk::CommandBufferLevel::PRIMARY)
-            .command_pool(self.transfer_command_pool)
-            .command_buffer_count(1);
-        unsafe {
-            let command_buffer: vk::CommandBuffer =
-                self.device.allocate_command_buffers(&create_info).unwrap()[0];
-            let begin_info = vk::CommandBufferBeginInfo::builder()
-                .flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT);
-            self.device
-                .begin_command_buffer(command_buffer, &begin_info)
-                .unwrap();
-            command_buffer
-        }
-    }
-
-    pub fn end_transfer_commands(&self, command_buffer: vk::CommandBuffer) {
-        unsafe {
-            let command_buffers = vec![command_buffer];
-            self.device.end_command_buffer(command_buffer).unwrap();
-            let submit_info = vk::SubmitInfo::builder().command_buffers(&command_buffers);
-            //TODO: This cannot be used by multiple frames at once,
-            //ensure that we're either using another queue/commandpool, or
-            //that we are doing this in a locked manner
-            self.device
-                .queue_submit(
-                    self.transfer_queue,
-                    &[submit_info.build()],
-                    vk::Fence::null(),
-                )
-                .unwrap();
-            self.device.queue_wait_idle(self.transfer_queue).unwrap();
-            self.device
-                .free_command_buffers(self.transfer_command_pool, &command_buffers);
-        }
+    pub fn end_single_time_commands(&self, command_buffer: super::CommandBuffer) {
+        command_buffer.end_single_time_command();
+        let command_buffers = vec![&command_buffer];
+        //TODO: This cannot be used by multiple frames at once,
+        //ensure that we're either using another queue/commandpool, or
+        //that we are doing this in a locked manner
+        self.gfx_queue
+            .submit(&command_buffers, &[], &[], vk::Fence::null());
+        self.gfx_queue.wait_idle();
+        command_buffer.return_to_pool();
     }
 
     pub fn init(
@@ -476,15 +351,12 @@ impl VulkanContext {
             with_validation_layers,
         );
 
-        let swapchain_loader = Swapchain::new(&instance, &device);
+        let swapchain_loader = Arc::new(Swapchain::new(&instance, &device));
 
         let graphics_queue = unsafe { device.get_device_queue(graphics_queue_idx, 0) };
 
-        let create_info = vk::CommandPoolCreateInfo::builder()
-            .queue_family_index(graphics_queue_idx)
-            .flags(vk::CommandPoolCreateFlags::RESET_COMMAND_BUFFER);
-        let graphics_command_pool =
-            unsafe { device.create_command_pool(&create_info, None) }.unwrap();
+        let gfx_queue = super::Queue::new(device.clone(), graphics_queue_idx, 0);
+        let gfx_cmdpool = super::CommandPool::new(device.clone(), graphics_queue_idx);
 
         let transfer_queue = unsafe { device.get_device_queue(transfer_queue_idx, 0) };
         let create_info = vk::CommandPoolCreateInfo::builder()
@@ -516,8 +388,9 @@ impl VulkanContext {
             physical_device,
             allocator,
             surface,
-            graphics_command_pool,
             graphics_queue,
+            gfx_queue,
+            gfx_cmdpool,
             transfer_command_pool,
             transfer_queue,
             debug_utils_loader,
@@ -531,9 +404,8 @@ impl Drop for VulkanContext {
             self.device.device_wait_idle().unwrap();
 
             self.device
-                .destroy_command_pool(self.graphics_command_pool, None);
-            self.device
                 .destroy_command_pool(self.transfer_command_pool, None);
+            self.gfx_cmdpool.destroy();
             ManuallyDrop::drop(&mut self.allocator);
             self.device.destroy_device(None);
             self.surface_loader.destroy_surface(self.surface, None);
@@ -576,18 +448,15 @@ impl VulkanFrameCtx {
     }
 
     pub fn init(context: &Arc<VulkanContext>) -> Self {
-        let swapchain_info = unsafe { context.query_swapchain_support() };
-
-        let current_extent = swapchain_info.surface_caps.current_extent;
-        let (swapchain, current_surface_format) = create_swapchain(
-            &context.swapchain_loader,
+        let swapchain = super::Swapchain::create_swapchain(
+            context.swapchain_loader.clone(),
+            &context.surface_loader,
+            context.physical_device,
             context.surface,
-            &swapchain_info,
             None,
         );
 
-        let swapchain_images =
-            unsafe { context.swapchain_loader.get_swapchain_images(swapchain) }.unwrap();
+        let swapchain_images = swapchain.get_swapchain_images();
 
         let swapchain_image_views: Vec<_> = swapchain_images
             .iter()
@@ -595,25 +464,20 @@ impl VulkanFrameCtx {
                 Self::create_image_view(
                     &context.device,
                     *swapchain_image,
-                    current_surface_format.format,
+                    swapchain.format.format,
                     vk::ImageAspectFlags::COLOR,
                 )
             })
             .collect();
-        let depth_render_texture = create_depth_render_texture(context.clone(), current_extent);
+        let depth_render_texture =
+            create_depth_render_texture(context.clone(), swapchain.get_extent());
 
-        let command_buffers = {
-            let allocate_info = vk::CommandBufferAllocateInfo::builder()
-                .command_pool(context.graphics_command_pool)
-                .level(vk::CommandBufferLevel::PRIMARY)
-                .command_buffer_count(swapchain_image_views.len() as _);
-            unsafe { context.device.allocate_command_buffers(&allocate_info) }.unwrap()
-        };
+        let command_buffers = context
+            .gfx_cmdpool
+            .create_command_buffers(swapchain_image_views.len() as _);
 
         let ctx = Self {
             context: context.clone(),
-            current_extent,
-            current_surface_format,
             swapchain,
             swapchain_image_views,
             swapchain_images,
@@ -624,25 +488,17 @@ impl VulkanFrameCtx {
     }
 
     pub fn recreate_swapchain(&mut self) {
-        let swapchain_info = unsafe { self.context.query_swapchain_support() };
-
-        let (swapchain, current_surface_format) = create_swapchain(
-            &self.context.swapchain_loader,
+        let swapchain = super::Swapchain::create_swapchain(
+            self.context.swapchain_loader.clone(),
+            &self.context.surface_loader,
+            self.context.physical_device,
             self.context.surface,
-            &swapchain_info,
-            Some(self.swapchain),
+            Some(self.swapchain.swapchain),
         );
         self.destroy();
-        self.current_extent = swapchain_info.surface_caps.current_extent;
         self.swapchain = swapchain;
-        self.current_surface_format = current_surface_format;
 
-        self.swapchain_images = unsafe {
-            self.context
-                .swapchain_loader
-                .get_swapchain_images(self.swapchain)
-        }
-        .unwrap();
+        self.swapchain_images = self.swapchain.get_swapchain_images();
 
         self.swapchain_image_views = self
             .swapchain_images
@@ -651,13 +507,13 @@ impl VulkanFrameCtx {
                 Self::create_image_view(
                     &self.context.device,
                     *swapchain_image,
-                    self.current_surface_format.format,
+                    self.swapchain.format.format,
                     vk::ImageAspectFlags::COLOR,
                 )
             })
             .collect();
         self.depth_render_texture =
-            create_depth_render_texture(self.context.clone(), self.current_extent);
+            create_depth_render_texture(self.context.clone(), self.swapchain.get_extent());
     }
 
     pub fn destroy(&mut self) {
@@ -665,9 +521,7 @@ impl VulkanFrameCtx {
             for &image_view in &self.swapchain_image_views {
                 self.context.device.destroy_image_view(image_view, None);
             }
-            self.context
-                .swapchain_loader
-                .destroy_swapchain(self.swapchain, None);
+            self.swapchain.destroy();
             // self.depth_render_texture.destroy();
         }
     }
@@ -712,7 +566,7 @@ unsafe fn is_physical_device_suitable(
     score += properties.limits.max_image_dimension2_d;
 
     let swapchain_support =
-        SwapChainSupportDetails::query_swapchain_support(surface_loader, physical_device, surface);
+        SwapchainInfo::query_swapchain_support(surface_loader, physical_device, surface);
 
     if swapchain_support.surface_formats.is_empty() && swapchain_support.present_modes.is_empty() {
         score = 0;
@@ -788,43 +642,6 @@ fn create_device(
     };
 
     device
-}
-
-fn create_swapchain(
-    swapchain_loader: &Swapchain,
-    surface: vk::SurfaceKHR,
-    swapchain_info: &SwapChainSupportDetails,
-    old_swapchain: Option<vk::SwapchainKHR>,
-) -> (vk::SwapchainKHR, vk::SurfaceFormatKHR) {
-    let surface_caps = &swapchain_info.surface_caps;
-    let format = swapchain_info.choose_surface_format().unwrap();
-
-    let present_mode = swapchain_info.choose_present_mode();
-
-    let current_extent = surface_caps.current_extent;
-
-    let mut image_count = surface_caps.min_image_count + 1;
-
-    if surface_caps.max_image_count > 0 && image_count > surface_caps.max_image_count {
-        image_count = surface_caps.max_image_count;
-    }
-    let old_swapchain = old_swapchain.unwrap_or(vk::SwapchainKHR::null());
-    let create_info = vk::SwapchainCreateInfoKHR::builder()
-        .surface(surface)
-        .min_image_count(image_count)
-        .image_format(format.format)
-        .image_color_space(format.color_space)
-        .image_extent(current_extent)
-        .image_array_layers(1)
-        .image_usage(vk::ImageUsageFlags::COLOR_ATTACHMENT)
-        .image_sharing_mode(vk::SharingMode::EXCLUSIVE)
-        .pre_transform(surface_caps.current_transform)
-        .composite_alpha(vk::CompositeAlphaFlagsKHR::OPAQUE)
-        .present_mode(present_mode)
-        .clipped(true)
-        .old_swapchain(old_swapchain);
-    let swapchain = unsafe { swapchain_loader.create_swapchain(&create_info, None) }.unwrap();
-    (swapchain, format)
 }
 
 fn create_debug_messenger(

@@ -1,5 +1,8 @@
 use crate::{
-    renderer::{vulkan::VulkanContext, ImageInfo, RenderPipeline, Texture},
+    renderer::{
+        vulkan::{CommandBuffer, VulkanContext},
+        ImageInfo, RenderPipeline, Texture,
+    },
     rendering::vertextypes::*,
     util::GLTFModel,
 };
@@ -87,22 +90,17 @@ impl Material {
     //TODO: Can we in any way fix so that these bindings happen in a better way?
     //Maybe decouple the actual data of the uniform to the drawcall-creation and
     //let the material stop caring about the image_index
-    pub fn bind(&self, device: &Device, command_buffer: vk::CommandBuffer) {
-        unsafe {
-            device.cmd_bind_pipeline(
-                command_buffer,
-                vk::PipelineBindPoint::GRAPHICS,
-                self.renderpipeline.pipeline,
-            );
-            device.cmd_bind_descriptor_sets(
-                command_buffer,
-                vk::PipelineBindPoint::GRAPHICS,
-                self.renderpipeline.pipeline_layout,
-                0,
-                &[self.renderpipeline.uniform.next_descriptor().desc_set],
-                &[],
-            );
-        }
+    pub fn bind(&self, command_buffer: &CommandBuffer) {
+        command_buffer.bind_pipeline(
+            self.renderpipeline.pipeline,
+            vk::PipelineBindPoint::GRAPHICS,
+        );
+
+        command_buffer.bind_descriptor_sets(
+            vk::PipelineBindPoint::GRAPHICS,
+            self.renderpipeline.pipeline_layout,
+            &[self.renderpipeline.uniform.next_descriptor().desc_set],
+        );
     }
 
     pub fn upload_pipeline_data(&mut self, device: &Device, view: Mat4, proj: Mat4, model: Mat4) {
