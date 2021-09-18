@@ -6,7 +6,7 @@ use gltf::buffer::Data as BufferData;
 use gltf::image::Data as ImageData;
 use gltf::Document;
 use itertools::izip;
-use mikpe_math::{Sphere, Vec3};
+use katla_math::{Sphere, Vec3};
 
 use crate::rendering::{VertexNormal, VertexPBR, VertexPosition};
 
@@ -150,7 +150,7 @@ impl GLTFModel {
                 vertex_data = positions
                     .into_iter()
                     .map(|position| {
-                        let vert0 = mikpe_math::Vec3(position);
+                        let vert0 = katla_math::Vec3(position);
                         let norm0 = vert0.normalize();
                         VertexPBR {
                             position,

@@ -11,7 +11,7 @@ use winit::event::VirtualKeyCode;
 
 fn main() {
     let application = ApplicationBuilder::new()
-        .with_name("Mikpe Renderer")
+        .with_name("Katla")
         .validation_layer(true)
         //TODO: This seems to be typical to reside in configuration files:
         .with_axis_input(VirtualKeyCode::A, "SteerHori", -1.0)

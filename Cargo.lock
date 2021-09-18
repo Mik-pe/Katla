@@ -52,6 +52,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "approx"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3f2a05fd1bd10b2527e20a2cd32d8873d115b8b39fe219ee25f42a8aca6ba278"
+dependencies = [
+ "num-traits",
+]
+
+[[package]]
 name = "ash"
 version = "0.33.2+1.2.186"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -636,6 +645,30 @@ dependencies = [
 ]
 
 [[package]]
+name = "katla"
+version = "0.1.0"
+dependencies = [
+ "ash",
+ "ash-window",
+ "byteorder",
+ "env_logger",
+ "gltf",
+ "gpu-allocator",
+ "image",
+ "itertools",
+ "katla_math",
+ "winit",
+]
+
+[[package]]
+name = "katla_math"
+version = "0.1.0"
+dependencies = [
+ "approx",
+ "libc",
+]
+
+[[package]]
 name = "kernel32-sys"
 version = "0.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -739,11 +772,6 @@ checksum = "59accc507f1338036a0477ef61afdae33cde60840f4dfe481319ce3ad116ddf9"
 dependencies = [
  "autocfg",
 ]
-
-[[package]]
-name = "mikpe_math"
-version = "0.1.0"
-source = "git+https://github.com/Mik-pe/mikpe_math.git#14753cb563cb2148cee40db22748c7b6a5dfcfe3"
 
 [[package]]
 name = "minimal-lexical"
@@ -1157,22 +1185,6 @@ name = "regex-syntax"
 version = "0.6.25"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f497285884f3fcff424ffc933e56d7cbca511def0c9831a7f9b5f6153e3cc89b"
-
-[[package]]
-name = "rust_shared_ctx"
-version = "0.1.0"
-dependencies = [
- "ash",
- "ash-window",
- "byteorder",
- "env_logger",
- "gltf",
- "gpu-allocator",
- "image",
- "itertools",
- "mikpe_math",
- "winit",
-]
 
 [[package]]
 name = "rustc-demangle"

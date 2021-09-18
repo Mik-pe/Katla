@@ -1,5 +1,5 @@
 use ash::Device;
-use mikpe_math::{Mat4, Transform};
+use katla_math::{Mat4, Transform};
 
 use crate::{
     renderer::vulkan::CommandBuffer,

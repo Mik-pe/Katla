@@ -240,10 +240,12 @@ impl Texture {
                 ms_map_buffer,
                 (ms_map_buffer - ms_staging) / ms_total * 100.0
             );
+            let bytes_per_sec = total_size as f64 / (ms_copy / 1000.0);
             println!(
-                "copy to map: \t\t\t{:.3}ms {:.2}%",
+                "copy to map: \t\t\t{:.3}ms {:.2}% ({:.3} B/s)",
                 ms_copy,
-                (ms_copy - ms_map_buffer) / ms_total * 100.0
+                (ms_copy - ms_map_buffer) / ms_total * 100.0,
+                bytes_per_sec
             );
             println!(
                 "unmap: \t\t\t\t{:.3}ms {:.2}%",

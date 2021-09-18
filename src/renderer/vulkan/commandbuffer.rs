@@ -4,10 +4,9 @@ use super::CommandPool;
 
 #[derive(Clone)]
 pub struct CommandBuffer {
-    //TODO: pub for now...
-    pub device: Device,
-    pub command_pool: vk::CommandPool,
-    pub command_buffer: vk::CommandBuffer,
+    device: Device,
+    command_pool: vk::CommandPool,
+    command_buffer: vk::CommandBuffer,
 }
 
 impl CommandBuffer {

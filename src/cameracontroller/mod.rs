@@ -1,5 +1,5 @@
 use crate::inputcontroller::InputController;
-use mikpe_math::{Mat4, Vec3};
+use katla_math::{Mat4, Vec3};
 use std::{cell::RefCell, rc::Rc};
 use winit::event::Event;
 use winit::event::{DeviceEvent, ElementState, MouseButton, WindowEvent};
@@ -158,7 +158,7 @@ impl Camera {
     // }
 
     pub fn update(&mut self, dt: f32) {
-        let velocity_dir = mikpe_math::mat4_mul_vec3(&self.get_view_rotation(), &self.input_dir);
+        let velocity_dir = katla_math::mat4_mul_vec3(&self.get_view_rotation(), &self.input_dir);
 
         self.velocity_dir = Vec3::lerp(self.velocity_dir, velocity_dir, 7.0 * dt);
 
@@ -182,7 +182,7 @@ impl Camera {
 
     pub fn get_view_mat(&self) -> Mat4 {
         let fwd = Vec3::new(0.0, 0.0, 1.0);
-        let to = mikpe_math::mat4_mul_vec3(&self.get_view_rotation(), &fwd);
+        let to = katla_math::mat4_mul_vec3(&self.get_view_rotation(), &fwd);
 
         Mat4::create_lookat(
             self.pos.clone(),

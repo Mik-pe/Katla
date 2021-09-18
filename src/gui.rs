@@ -99,11 +99,11 @@
 //                 vtx_buffer.as_ptr() as *const _,
 //             );
 
-//             let gui_proj = mikpe_math::Mat4([
-//                 mikpe_math::Vec4([2.0 / display_size[0] as f32, 0.0, 0.0, 0.0]),
-//                 mikpe_math::Vec4([0.0, 2.0 / -display_size[1] as f32, 0.0, 0.0]),
-//                 mikpe_math::Vec4([0.0, 0.0, -1.0, 0.0]),
-//                 mikpe_math::Vec4([-1.0, 1.0, 0.0, 1.0]),
+//             let gui_proj = katla_math::Mat4([
+//                 katla_math::Vec4([2.0 / display_size[0] as f32, 0.0, 0.0, 0.0]),
+//                 katla_math::Vec4([0.0, 2.0 / -display_size[1] as f32, 0.0, 0.0]),
+//                 katla_math::Vec4([0.0, 0.0, -1.0, 0.0]),
+//                 katla_math::Vec4([-1.0, 1.0, 0.0, 1.0]),
 //             ]);
 //             self.gui_program.uniform_mat("u_projMatrix", &gui_proj);
 //             self.gui_program.bind();
