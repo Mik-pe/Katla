@@ -4,7 +4,7 @@ use crate::{renderer::vulkan::VulkanContext, util::GLTFModel};
 use crate::renderer::{self, IndexBuffer, VertexBuffer};
 
 use ash::{vk, Device};
-use mikpe_math::{Mat4, Quat, Sphere, Transform, Vec3};
+use katla_math::{Mat4, Quat, Sphere, Transform, Vec3};
 use std::{rc::Rc, sync::Arc, time::Instant};
 
 //TODO: Decouple pipeline from the "Mesh" struct,

@@ -7,7 +7,7 @@ use crate::{
     util::GLTFModel,
 };
 
-use mikpe_math::Mat4;
+use katla_math::Mat4;
 
 use ash::{vk, Device};
 

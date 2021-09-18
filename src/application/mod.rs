@@ -4,7 +4,7 @@ pub mod scene;
 use std::{cell::RefCell, ffi::CString, path::PathBuf, rc::Rc, time::Instant};
 
 use env_logger::Env;
-use mikpe_math::Vec3;
+use katla_math::Vec3;
 pub use model::*;
 pub use scene::*;
 use winit::{event::VirtualKeyCode, event_loop::EventLoop};
@@ -172,7 +172,7 @@ impl ApplicationBuilder {
 
     pub fn build(self) -> Application {
         let event_loop = EventLoop::new();
-        let engine_name = CString::new("MikpEngine").unwrap();
+        let engine_name = CString::new("Katla Engine").unwrap();
         let renderer = VulkanRenderer::init(&event_loop, true, self.app_name, engine_name);
         let mut input_controller = self.input_controller;
         let window_size = renderer.window.inner_size();
