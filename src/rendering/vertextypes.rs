@@ -1,9 +1,5 @@
 use ash::vk;
-
-pub trait VertexBinding {
-    fn get_binding_desc<'a>(binding: u32) -> vk::VertexInputBindingDescriptionBuilder<'a>;
-    fn get_attribute_desc(binding: u32) -> Vec<vk::VertexInputAttributeDescription>;
-}
+use katla_vulkan::vulkan::VertexBinding;
 
 #[repr(C)]
 #[derive(Default, Debug, Clone)]

@@ -1,15 +1,12 @@
-use crate::{
-    renderer::{
-        vulkan::{CommandBuffer, VulkanContext},
-        ImageInfo, RenderPipeline, Texture,
-    },
-    rendering::vertextypes::*,
-    util::GLTFModel,
-};
+use crate::{rendering::vertextypes::*, util::GLTFModel};
 
 use katla_math::Mat4;
 
 use ash::{vk, Device};
+use katla_vulkan::{
+    vulkan::{CommandBuffer, VulkanContext},
+    ImageInfo, RenderPipeline, Texture,
+};
 
 use std::{rc::Rc, sync::Arc};
 

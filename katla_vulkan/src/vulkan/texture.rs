@@ -1,9 +1,11 @@
-use std::time::Instant;
+use super::VulkanContext;
+use crate::vulkan::VulkanFrameCtx;
 
-use crate::renderer::{VulkanContext, VulkanFrameCtx};
+use std::time::Instant;
 
 use ash::vk;
 use gpu_allocator::vulkan::Allocation;
+
 pub struct Texture {
     pub width: u32,
     pub height: u32,

@@ -1,7 +1,6 @@
 mod application;
 mod cameracontroller;
 mod inputcontroller;
-mod renderer;
 mod rendering;
 mod util;
 

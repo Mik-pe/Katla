@@ -1,7 +1,8 @@
 use crate::rendering::{Drawable, Material};
-use crate::{renderer::vulkan::VulkanContext, util::GLTFModel};
+use crate::util::GLTFModel;
 
-use crate::renderer::{self, IndexBuffer, VertexBuffer};
+use katla_vulkan::vulkan::VulkanContext;
+use katla_vulkan::{self, IndexBuffer, VertexBuffer};
 
 use ash::{vk, Device};
 use katla_math::{Mat4, Quat, Sphere, Transform, Vec3};
@@ -111,7 +112,7 @@ impl Mesh {
     //     self.material.destroy(device, allocator);
     // }
 
-    pub fn draw(&self, command_buffer: &renderer::vulkan::CommandBuffer) {
+    pub fn draw(&self, command_buffer: &katla_vulkan::vulkan::CommandBuffer) {
         if let Some(index_buffer) = &self.index_buffer {
             command_buffer.bind_index_buffer(index_buffer.object(), 0, index_buffer.index_type);
 
@@ -135,7 +136,7 @@ impl Drawable for Mesh {
             .upload_pipeline_data(device, view.clone(), proj.clone(), model);
     }
 
-    fn draw(&self, command_buffer: &crate::renderer::vulkan::CommandBuffer) {
+    fn draw(&self, command_buffer: &katla_vulkan::vulkan::CommandBuffer) {
         self.material.bind(command_buffer);
 
         self.draw(command_buffer);

@@ -1,4 +1,3 @@
-use crate::rendering::vertextypes::*;
 use ash::{util::read_spv, vk};
 use gpu_allocator::vulkan::Allocation;
 
@@ -17,6 +16,10 @@ pub trait UpdateAlways {
     fn update_always(&self, set: vk::DescriptorSet, binding: u32) -> vk::WriteDescriptorSet;
 }
 
+pub trait VertexBinding {
+    fn get_binding_desc<'a>(binding: u32) -> vk::VertexInputBindingDescriptionBuilder<'a>;
+    fn get_attribute_desc(binding: u32) -> Vec<vk::VertexInputAttributeDescription>;
+}
 pub struct RenderPipeline {
     context: Arc<VulkanContext>,
     pub pipeline: vk::Pipeline,

@@ -1,10 +1,8 @@
 use ash::Device;
 use katla_math::{Mat4, Transform};
+use katla_vulkan::vulkan::CommandBuffer;
 
-use crate::{
-    renderer::vulkan::CommandBuffer,
-    rendering::{Drawable, Material, Mesh},
-};
+use crate::rendering::{Drawable, Material, Mesh};
 
 pub struct Model {
     pub mesh: Mesh,
