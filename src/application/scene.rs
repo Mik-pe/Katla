@@ -1,6 +1,7 @@
-use crate::{renderer::vulkan::CommandBuffer, rendering::Drawable};
+use crate::rendering::Drawable;
 use ash::Device;
 use katla_math::{Mat4, Sphere, Vec3};
+use katla_vulkan::vulkan::CommandBuffer;
 use std::rc::Rc;
 
 pub struct Player {

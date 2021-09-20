@@ -5,13 +5,14 @@ use std::{cell::RefCell, ffi::CString, path::PathBuf, rc::Rc, time::Instant};
 
 use env_logger::Env;
 use katla_math::Vec3;
+use katla_vulkan::VulkanRenderer;
 pub use model::*;
 pub use scene::*;
 use winit::{event::VirtualKeyCode, event_loop::EventLoop};
 
 use crate::{
-    cameracontroller, cameracontroller::Camera, inputcontroller::InputController,
-    renderer::VulkanRenderer, rendering::Mesh, util::FileCache, util::GLTFModel, util::Timer,
+    cameracontroller, cameracontroller::Camera, inputcontroller::InputController, rendering::Mesh,
+    util::FileCache, util::GLTFModel, util::Timer,
 };
 
 pub struct Application {

@@ -1,0 +1,11 @@
+[package]
+name = "katla_vulkan"
+version = "0.1.0"
+authors = ["Mik-pe <mikael.pettersson201@gmail.com>"]
+edition = "2018"
+
+[dependencies]
+winit = "0.24.0"
+ash = "^0.33.0"
+ash-window = "^0.7.0"
+gpu-allocator = "0.9.0"

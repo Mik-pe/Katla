@@ -649,14 +649,13 @@ name = "katla"
 version = "0.1.0"
 dependencies = [
  "ash",
- "ash-window",
  "byteorder",
  "env_logger",
  "gltf",
- "gpu-allocator",
  "image",
  "itertools",
  "katla_math",
+ "katla_vulkan",
  "winit",
 ]
 
@@ -666,6 +665,16 @@ version = "0.1.0"
 dependencies = [
  "approx",
  "libc",
+]
+
+[[package]]
+name = "katla_vulkan"
+version = "0.1.0"
+dependencies = [
+ "ash",
+ "ash-window",
+ "gpu-allocator",
+ "winit",
 ]
 
 [[package]]
