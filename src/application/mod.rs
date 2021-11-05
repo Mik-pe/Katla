@@ -38,12 +38,14 @@ impl Application {
         let mesh = Mesh::new_from_model(
             model_cache.read(PathBuf::from("resources/models/Fox.glb")),
             renderer.context.clone(),
-            renderer.render_pass,
-            renderer.num_images(), //TODO: (mikpe) - should not have to send this when creating a mesh... The context should be enough and "Mesh" should be a higher level abstraction
+            //TODO: (mikpe) - should not have to send these when creating a mesh... The scene should be enough and "Mesh" should be a higher level abstraction
+            &renderer.render_pass,
+            renderer.num_images(),
             Vec3::new(offset, 0.0, 0.0),
         );
         offset -= 100.0;
         let bounds = mesh.bounds.clone();
+        //TODO (mikpe): Should the scene be responsible for talking to the renderer?
         scene.add_object(SceneObject::new(Box::new(mesh), bounds));
 
         let mut stage_upload = false;
@@ -100,7 +102,6 @@ impl Application {
 
                     last_frame = Instant::now();
                     scene.update(
-                        &renderer.context.device,
                         &camera.borrow().get_proj_mat(),
                         &camera.borrow().get_view_mat().inverse(),
                     );
@@ -113,7 +114,7 @@ impl Application {
                         let mesh = Mesh::new_from_model(
                             model_cache.read(PathBuf::from("resources/models/Tiger.glb")),
                             renderer.context.clone(),
-                            renderer.render_pass,
+                            &renderer.render_pass,
                             renderer.num_images(),
                             Vec3::new(offset, 0.0, 0.0),
                         );
@@ -162,6 +163,7 @@ impl ApplicationBuilder {
         self.validation_layer_enabled = on;
         self
     }
+
     pub fn with_axis_input<S>(mut self, key_event: VirtualKeyCode, input: S, value: f32) -> Self
     where
         S: Into<String>,
@@ -181,13 +183,13 @@ impl ApplicationBuilder {
         let win_y = window_size.height as f32;
         self.camera.borrow_mut().aspect_ratio_changed(win_x / win_y);
         cameracontroller::setup_camera_bindings(self.camera.clone(), &mut input_controller);
-
+        let context = renderer.context.clone();
         Application {
             renderer,
             camera: self.camera,
             input_controller: input_controller,
             event_loop,
-            scene: Scene::new(),
+            scene: Scene::new(context),
         }
     }
 }

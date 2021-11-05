@@ -1,8 +1,7 @@
 use crate::rendering::Drawable;
-use ash::Device;
 use katla_math::{Mat4, Sphere, Vec3};
-use katla_vulkan::vulkan::CommandBuffer;
-use std::rc::Rc;
+use katla_vulkan::CommandBuffer;
+use std::{rc::Rc, sync::Arc};
 
 pub struct Player {
     pub position: Vec3,
@@ -17,6 +16,7 @@ pub struct SceneObject {
 pub struct Scene {
     pub player: Player,
     pub scene_objects: Vec<SceneObject>,
+    context: Arc<katla_vulkan::VulkanContext>,
 }
 
 impl SceneObject {
@@ -32,7 +32,7 @@ impl SceneObject {
 }
 
 impl Scene {
-    pub fn new() -> Self {
+    pub fn new(context: Arc<katla_vulkan::VulkanContext>) -> Self {
         let player = Player {
             position: Vec3::new(0.0, 0.0, 0.0),
         };
@@ -40,6 +40,7 @@ impl Scene {
         Self {
             player,
             scene_objects,
+            context,
         }
     }
 
@@ -51,9 +52,9 @@ impl Scene {
         self.scene_objects.clear();
     }
 
-    pub fn update(&mut self, device: &Device, proj: &Mat4, view: &Mat4) {
+    pub fn update(&mut self, proj: &Mat4, view: &Mat4) {
         for object in &mut self.scene_objects {
-            object.drawable.update(device, &view, &proj);
+            object.drawable.update(&view, &proj);
         }
     }
 

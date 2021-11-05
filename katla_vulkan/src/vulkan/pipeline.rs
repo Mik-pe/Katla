@@ -1,6 +1,7 @@
 use ash::{util::read_spv, vk};
 use gpu_allocator::vulkan::Allocation;
 
+use crate::vertexbinding::VertexBinding;
 use std::{ffi::CString, io::Cursor, sync::Arc};
 
 use super::context::VulkanContext;
@@ -16,10 +17,6 @@ pub trait UpdateAlways {
     fn update_always(&self, set: vk::DescriptorSet, binding: u32) -> vk::WriteDescriptorSet;
 }
 
-pub trait VertexBinding {
-    fn get_binding_desc<'a>(binding: u32) -> vk::VertexInputBindingDescriptionBuilder<'a>;
-    fn get_attribute_desc(binding: u32) -> Vec<vk::VertexInputAttributeDescription>;
-}
 pub struct RenderPipeline {
     context: Arc<VulkanContext>,
     pub pipeline: vk::Pipeline,
@@ -247,10 +244,11 @@ impl UniformDescriptor {
 }
 
 impl RenderPipeline {
-    pub fn new<BindingType: VertexBinding>(
+    pub fn new(
         context: Arc<VulkanContext>,
         render_pass: vk::RenderPass,
         num_buffered_frames: usize,
+        vertex_binding: VertexBinding,
     ) -> Self {
         let entry_point = CString::new("main").unwrap();
         let mut vertex_spv_file = Cursor::new(SHADER_VERT);
@@ -310,8 +308,8 @@ impl RenderPipeline {
         let pipeline_layout =
             unsafe { context.device.create_pipeline_layout(&create_info, None) }.unwrap();
 
-        let vertex_binding_desc = [BindingType::get_binding_desc(0).build()];
-        let vertex_attrib_descs = BindingType::get_attribute_desc(0);
+        let vertex_binding_desc = [vertex_binding.get_binding_desc(0)];
+        let vertex_attrib_descs = vertex_binding.get_attribute_desc(0);
         let vertex_input = vk::PipelineVertexInputStateCreateInfo::builder()
             .vertex_binding_descriptions(&vertex_binding_desc)
             .vertex_attribute_descriptions(vertex_attrib_descs.as_slice());

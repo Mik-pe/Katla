@@ -1,6 +1,6 @@
 use ash::Device;
 use katla_math::{Mat4, Transform};
-use katla_vulkan::vulkan::CommandBuffer;
+use katla_vulkan::CommandBuffer;
 
 use crate::rendering::{Drawable, Material, Mesh};
 
@@ -15,10 +15,10 @@ impl Model {
 }
 
 impl Drawable for Model {
-    fn update(&mut self, device: &Device, view: &Mat4, proj: &Mat4) {
+    fn update(&mut self, view: &Mat4, proj: &Mat4) {
         let model = self.transform.make_mat4();
         self.material
-            .upload_pipeline_data(device, view.clone(), proj.clone(), model);
+            .upload_pipeline_data(view.clone(), proj.clone(), model);
     }
 
     fn draw(&self, command_buffer: &CommandBuffer) {

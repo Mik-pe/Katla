@@ -1,17 +1,7 @@
 pub mod vulkan;
+pub use vulkan::*;
 
 use ash::vk;
-
-pub use pipeline::{ImageInfo, RenderPipeline};
-use swapdata::*;
-pub use texture::*;
-pub use vertexbuffer::*;
-
-use vulkan::context::{VulkanContext, VulkanFrameCtx};
-use vulkan::pipeline;
-use vulkan::swapdata;
-use vulkan::texture;
-use vulkan::vertexbuffer;
 
 use std::{ffi::CString, sync::Arc};
 
@@ -22,7 +12,7 @@ pub struct VulkanRenderer {
     pub window: Window,
     pub context: Arc<VulkanContext>,
     pub frame_context: VulkanFrameCtx,
-    pub render_pass: vk::RenderPass,
+    pub render_pass: RenderPass,
     pub swapchain_framebuffers: Vec<vk::Framebuffer>,
     swap_data: SwapData,
     current_framedata: Option<FrameData>,
@@ -62,7 +52,10 @@ impl VulkanRenderer {
 
         let frame_context = VulkanFrameCtx::init(&context);
 
-        let render_pass = Self::create_render_pass(&context, &frame_context);
+        let color_format = frame_context.swapchain.format.format;
+        let depth_format = frame_context.depth_render_texture.format;
+        let render_pass =
+            RenderPass::create_opaque(context.device.clone(), color_format, depth_format);
 
         let swapchain_framebuffers: Vec<_> = frame_context
             .swapchain_image_views
@@ -70,7 +63,7 @@ impl VulkanRenderer {
             .map(|image_view| {
                 let attachments = vec![*image_view, frame_context.depth_render_texture.image_view];
                 let create_info = vk::FramebufferCreateInfo::builder()
-                    .render_pass(render_pass)
+                    .render_pass(render_pass.get_vk_renderpass())
                     .attachments(&attachments)
                     .width(frame_context.swapchain.get_extent().width)
                     .height(frame_context.swapchain.get_extent().height)
@@ -98,61 +91,6 @@ impl VulkanRenderer {
         renderer
     }
 
-    fn create_render_pass(
-        context: &VulkanContext,
-        frame_context: &VulkanFrameCtx,
-    ) -> vk::RenderPass {
-        let color_attachment = vk::AttachmentDescription::builder()
-            .format(frame_context.swapchain.format.format)
-            .samples(vk::SampleCountFlags::TYPE_1)
-            .load_op(vk::AttachmentLoadOp::CLEAR)
-            .store_op(vk::AttachmentStoreOp::STORE)
-            .stencil_load_op(vk::AttachmentLoadOp::DONT_CARE)
-            .stencil_store_op(vk::AttachmentStoreOp::DONT_CARE)
-            .initial_layout(vk::ImageLayout::UNDEFINED)
-            .final_layout(vk::ImageLayout::PRESENT_SRC_KHR);
-
-        let depth_attachment = vk::AttachmentDescription::builder()
-            .format(frame_context.depth_render_texture.format)
-            .samples(vk::SampleCountFlags::TYPE_1)
-            .load_op(vk::AttachmentLoadOp::CLEAR)
-            .store_op(vk::AttachmentStoreOp::DONT_CARE)
-            .stencil_load_op(vk::AttachmentLoadOp::DONT_CARE)
-            .stencil_store_op(vk::AttachmentStoreOp::DONT_CARE)
-            .initial_layout(vk::ImageLayout::UNDEFINED)
-            .final_layout(vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
-
-        let attachments = [color_attachment.build(), depth_attachment.build()];
-
-        let color_attachment_refs = [vk::AttachmentReference::builder()
-            .attachment(0)
-            .layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
-            .build()];
-        let depth_attachment_ref = vk::AttachmentReference::builder()
-            .attachment(1)
-            .layout(vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
-        let subpasses = [vk::SubpassDescription::builder()
-            .pipeline_bind_point(vk::PipelineBindPoint::GRAPHICS)
-            .color_attachments(&color_attachment_refs)
-            .depth_stencil_attachment(&depth_attachment_ref)
-            .build()];
-        let dependencies = [vk::SubpassDependency::builder()
-            .src_subpass(vk::SUBPASS_EXTERNAL)
-            .dst_subpass(0)
-            .src_stage_mask(vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT)
-            .src_access_mask(vk::AccessFlags::empty())
-            .dst_stage_mask(vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT)
-            .dst_access_mask(vk::AccessFlags::COLOR_ATTACHMENT_WRITE)
-            .build()];
-
-        let create_info = vk::RenderPassCreateInfo::builder()
-            .attachments(&attachments)
-            .subpasses(&subpasses)
-            .dependencies(&dependencies);
-
-        unsafe { context.device.create_render_pass(&create_info, None) }.unwrap()
-    }
-
     // fn create_framebuffers(context: &VulkanCtx) -> Vec<Framebuffer> {
     //     context
     //         .swapchain_image_views
@@ -175,9 +113,7 @@ impl VulkanRenderer {
         unsafe {
             self.context.pre_destroy();
             self.swap_data.destroy(&self.context.device);
-            self.context
-                .device
-                .destroy_render_pass(self.render_pass, None);
+            self.render_pass.destroy();
             for &framebuffer in &self.swapchain_framebuffers {
                 self.context.device.destroy_framebuffer(framebuffer, None);
             }
@@ -197,15 +133,16 @@ impl VulkanRenderer {
         self.frame_context.recreate_swapchain();
         //Destroy the previous state:
         unsafe {
-            self.context
-                .device
-                .destroy_render_pass(self.render_pass, None);
+            self.render_pass.destroy();
             for &framebuffer in &self.swapchain_framebuffers {
                 self.context.device.destroy_framebuffer(framebuffer, None);
             }
         }
 
-        self.render_pass = Self::create_render_pass(&self.context, &self.frame_context);
+        let color_format = self.frame_context.swapchain.format.format;
+        let depth_format = self.frame_context.depth_render_texture.format;
+        self.render_pass =
+            RenderPass::create_opaque(self.context.device.clone(), color_format, depth_format);
 
         self.swapchain_framebuffers = self
             .frame_context
@@ -217,7 +154,7 @@ impl VulkanRenderer {
                     self.frame_context.depth_render_texture.image_view,
                 ];
                 let create_info = vk::FramebufferCreateInfo::builder()
-                    .render_pass(self.render_pass)
+                    .render_pass(self.render_pass.get_vk_renderpass())
                     .attachments(&attachments)
                     .width(self.frame_context.swapchain.get_extent().width)
                     .height(self.frame_context.swapchain.get_extent().height)
@@ -226,36 +163,7 @@ impl VulkanRenderer {
                 unsafe { self.context.device.create_framebuffer(&create_info, None) }.unwrap()
             })
             .collect();
-        // Whenever the window resizes we need to recreate everything dependent on the window size.
-        // In this example that includes the swapchain, the framebuffers and the dynamic state viewport.
-        // if self.internal_state.recreate_swapchain {
-
-        // Get the new dimensions of the window.
-        // let dimensions: [u32; 2] = self.surface.window().inner_size().into();
-        // let (new_swapchain, new_images) = match self.swapchain.recreate_with_dimensions(dimensions)
-        // {
-        //     Ok(r) => r,
-        //     // This error tends to happen when the user is manually resizing the window.
-        //     // Simply restarting the loop is the easiest way to fix this issue.
-        //     Err(SwapchainCreationError::UnsupportedDimensions) => return,
-        //     Err(e) => panic!("Failed to recreate swapchain: {:?}", e),
-        // };
-
-        // self.swapchain = new_swapchain;
-        // self.internal_state.framebuffers = window_size_dependent_setup(
-        //     &new_images,
-        //     self.device.clone(),
-        //     self.render_pass.clone(),
-        //     &mut self.internal_state.dynamic_state,
-        // );
-
-        // self.internal_state.recreate_swapchain = false;
-        // }
     }
-
-    // pub fn current_extent(&self) -> vk::Extent2D {
-    //     self.frame_context.current_extent
-    // }
 
     pub fn num_images(&self) -> usize {
         self.frame_context.swapchain_image_views.len()
@@ -278,7 +186,7 @@ impl VulkanRenderer {
         });
     }
 
-    pub fn get_commandbuffer_opaque_pass(&self) -> vulkan::CommandBuffer {
+    pub fn get_commandbuffer_opaque_pass(&self) -> CommandBuffer {
         let (framebuffer, command_buffer) = {
             if let Some(frame_data) = &self.current_framedata {
                 (
@@ -309,11 +217,16 @@ impl VulkanRenderer {
             offset: vk::Offset2D { x: 0, y: 0 },
             extent: current_extent,
         };
-        command_buffer.begin_render_pass(framebuffer, self.render_pass, render_area, &clear_values);
+        command_buffer.begin_render_pass(
+            framebuffer,
+            self.render_pass.get_vk_renderpass(),
+            render_area,
+            &clear_values,
+        );
         command_buffer
     }
 
-    pub fn submit_frame(&mut self, command_buffers: Vec<&vulkan::CommandBuffer>) {
+    pub fn submit_frame(&mut self, command_buffers: Vec<&CommandBuffer>) {
         let frame_data = self.current_framedata.take().unwrap();
 
         let wait_semaphores = vec![frame_data.available_sem];
