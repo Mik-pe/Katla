@@ -2,10 +2,9 @@ use crate::{rendering::vertextypes::*, util::GLTFModel};
 
 use katla_math::Mat4;
 
-use ash::{vk, Device};
+use ash::vk;
 use katla_vulkan::{
-    vulkan::{CommandBuffer, VulkanContext},
-    ImageInfo, RenderPipeline, Texture,
+    context::VulkanContext, CommandBuffer, ImageInfo, RenderPass, RenderPipeline, Texture,
 };
 
 use std::{rc::Rc, sync::Arc};
@@ -20,11 +19,16 @@ impl Material {
     pub fn new(
         model: Rc<GLTFModel>,
         context: Arc<VulkanContext>,
-        render_pass: vk::RenderPass,
+        render_pass: &RenderPass,
         num_images: usize,
     ) -> Self {
-        let mut renderpipeline =
-            RenderPipeline::new::<VertexPBR>(context.clone(), render_pass, num_images);
+        let vertex_binding = VertexPBR::get_vertex_binding();
+        let mut renderpipeline = RenderPipeline::new(
+            context.clone(),
+            render_pass.get_vk_renderpass(),
+            num_images,
+            vertex_binding,
+        );
         let mut texture = None;
         if !model.images.is_empty() {
             let image = &model.images[0];
@@ -100,7 +104,7 @@ impl Material {
         );
     }
 
-    pub fn upload_pipeline_data(&mut self, device: &Device, view: Mat4, proj: Mat4, model: Mat4) {
+    pub fn upload_pipeline_data(&mut self, view: Mat4, proj: Mat4, model: Mat4) {
         let mat = [model, view, proj];
         let data_slice = unsafe {
             std::slice::from_raw_parts(mat.as_ptr() as *const u8, std::mem::size_of_val(&mat))

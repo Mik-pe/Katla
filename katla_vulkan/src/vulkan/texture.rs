@@ -1,5 +1,5 @@
 use super::VulkanContext;
-use crate::vulkan::VulkanFrameCtx;
+use crate::VulkanFrameCtx;
 
 use std::time::Instant;
 

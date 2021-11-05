@@ -1,12 +1,12 @@
 use crate::rendering::{Drawable, Material};
 use crate::util::GLTFModel;
 
-use katla_vulkan::vulkan::VulkanContext;
-use katla_vulkan::{self, IndexBuffer, VertexBuffer};
+use katla_vulkan::context::VulkanContext;
+use katla_vulkan::{self, IndexBuffer, RenderPass, VertexBuffer};
 
-use ash::{vk, Device};
+use ash::vk;
 use katla_math::{Mat4, Quat, Sphere, Transform, Vec3};
-use std::{rc::Rc, sync::Arc, time::Instant};
+use std::{rc::Rc, sync::Arc};
 
 //TODO: Decouple pipeline from the "Mesh" struct,
 //Ideally a Mesh would only contain the vertex data and a reference to a pipeline,
@@ -24,14 +24,11 @@ impl Mesh {
     pub fn new_from_model(
         model: Rc<GLTFModel>,
         context: Arc<VulkanContext>,
-        render_pass: vk::RenderPass,
+        render_pass: &RenderPass,
         num_images: usize,
         position: Vec3,
     ) -> Self {
-        let start = Instant::now();
         let material = Material::new(model.clone(), context.clone(), render_pass, num_images);
-        let millisecs = start.elapsed().as_micros() as f64 / 1000.0;
-        println!("Material new took {} ms", millisecs);
         let mut bound_sphere = model.bounds.clone();
         bound_sphere.center = position;
         let transform = Transform::new_from_position(position);
@@ -43,20 +40,14 @@ impl Mesh {
             transform,
             bounds: bound_sphere,
         };
-        let start = Instant::now();
         mesh.vertex_buffer = Self::create_vertex_buffer(&context, model.vertpbr());
-        let millisecs = start.elapsed().as_micros() as f64 / 1000.0;
-        println!("Vertex buffer new took {} ms", millisecs);
         let index_type = match model.index_stride {
             1 => vk::IndexType::UINT8_EXT,
             2 => vk::IndexType::UINT16,
             4 => vk::IndexType::UINT32,
             _ => vk::IndexType::NONE_KHR,
         };
-        let start = Instant::now();
         mesh.index_buffer = Self::create_index_buffer(&context, model.index_data(), index_type);
-        let millisecs = start.elapsed().as_micros() as f64 / 1000.0;
-        println!("Index buffernew took {} ms", millisecs);
 
         mesh
     }
@@ -108,11 +99,7 @@ impl Mesh {
         }
     }
 
-    // pub fn destroy(&mut self, device: &Device, allocator: &mut Allocator) {
-    //     self.material.destroy(device, allocator);
-    // }
-
-    pub fn draw(&self, command_buffer: &katla_vulkan::vulkan::CommandBuffer) {
+    pub fn draw(&self, command_buffer: &katla_vulkan::CommandBuffer) {
         if let Some(index_buffer) = &self.index_buffer {
             command_buffer.bind_index_buffer(index_buffer.object(), 0, index_buffer.index_type);
 
@@ -130,13 +117,15 @@ impl Mesh {
 }
 
 impl Drawable for Mesh {
-    fn update(&mut self, device: &Device, view: &Mat4, proj: &Mat4) {
+    fn update(&mut self, view: &Mat4, proj: &Mat4) {
+        let quat = Quat::new_from_axis_angle(Vec3::new(0.0, 1.0, 0.0), 0.001);
+        self.transform.rotation = self.transform.rotation * quat;
         let model = self.transform.make_mat4();
         self.material
-            .upload_pipeline_data(device, view.clone(), proj.clone(), model);
+            .upload_pipeline_data(view.clone(), proj.clone(), model);
     }
 
-    fn draw(&self, command_buffer: &katla_vulkan::vulkan::CommandBuffer) {
+    fn draw(&self, command_buffer: &katla_vulkan::CommandBuffer) {
         self.material.bind(command_buffer);
 
         self.draw(command_buffer);
