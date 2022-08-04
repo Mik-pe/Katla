@@ -176,7 +176,12 @@ impl ApplicationBuilder {
     pub fn build(self) -> Application {
         let event_loop = EventLoop::new();
         let engine_name = CString::new("Katla Engine").unwrap();
-        let renderer = VulkanRenderer::init(&event_loop, true, self.app_name, engine_name);
+        let renderer = VulkanRenderer::init(
+            &event_loop,
+            self.validation_layer_enabled,
+            self.app_name,
+            engine_name,
+        );
         let mut input_controller = self.input_controller;
         let window_size = renderer.window.inner_size();
         let win_x = window_size.width as f32;
