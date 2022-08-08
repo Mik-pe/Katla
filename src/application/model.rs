@@ -1,4 +1,3 @@
-use ash::Device;
 use katla_math::{Mat4, Transform};
 use katla_vulkan::CommandBuffer;
 

@@ -2,9 +2,8 @@ use crate::rendering::{Drawable, Material};
 use crate::util::GLTFModel;
 
 use katla_vulkan::context::VulkanContext;
-use katla_vulkan::{self, IndexBuffer, RenderPass, VertexBuffer};
+use katla_vulkan::{self, IndexBuffer, IndexType, RenderPass, VertexBuffer};
 
-use ash::vk;
 use katla_math::{Mat4, Quat, Sphere, Transform, Vec3};
 use std::{rc::Rc, sync::Arc};
 
@@ -42,10 +41,10 @@ impl Mesh {
         };
         mesh.vertex_buffer = Self::create_vertex_buffer(&context, model.vertpbr());
         let index_type = match model.index_stride {
-            1 => vk::IndexType::UINT8_EXT,
-            2 => vk::IndexType::UINT16,
-            4 => vk::IndexType::UINT32,
-            _ => vk::IndexType::NONE_KHR,
+            1 => IndexType::UINT8_EXT,
+            2 => IndexType::UINT16,
+            4 => IndexType::UINT32,
+            _ => IndexType::NONE_KHR,
         };
         mesh.index_buffer = Self::create_index_buffer(&context, model.index_data(), index_type);
 
@@ -55,7 +54,7 @@ impl Mesh {
     fn create_index_buffer<DataType>(
         context: &Arc<VulkanContext>,
         data: Vec<DataType>,
-        index_type: vk::IndexType,
+        index_type: IndexType,
     ) -> Option<IndexBuffer> {
         if data.is_empty() {
             None
@@ -67,9 +66,9 @@ impl Mesh {
                 )
             };
             let count = match index_type {
-                vk::IndexType::UINT8_EXT => data_slice.len() as u32,
-                vk::IndexType::UINT16 => (data_slice.len() as u32) / 2,
-                vk::IndexType::UINT32 => (data_slice.len() as u32) / 4,
+                IndexType::UINT8_EXT => data_slice.len() as u32,
+                IndexType::UINT16 => (data_slice.len() as u32) / 2,
+                IndexType::UINT32 => (data_slice.len() as u32) / 4,
                 _ => 0 as u32,
             };
             let mut index_buffer =

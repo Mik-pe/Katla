@@ -208,7 +208,7 @@ impl VulkanContext {
         let surface_extensions = ash_window::enumerate_required_extensions(window).unwrap();
         let mut extension_names_raw = surface_extensions
             .iter()
-            .map(|ext| ext.as_ptr())
+            .map(|ext| *ext)
             .collect::<Vec<_>>();
         let mut instance_layers = vec![];
         if with_validation_layers {
@@ -223,7 +223,7 @@ impl VulkanContext {
             .api_version(vk::make_api_version(0, 1, 2, 0));
         let create_info = vk::InstanceCreateInfo::builder()
             .application_info(&app_info)
-            .enabled_extension_names(&extension_names_raw)
+            .enabled_extension_names(&extension_names_raw.as_slice())
             .enabled_layer_names(&instance_layers);
 
         let instance = unsafe {
@@ -307,7 +307,7 @@ impl VulkanContext {
         app_name: CString,
         engine_name: CString,
     ) -> Self {
-        let entry = unsafe { Entry::new() }.unwrap();
+        let entry = unsafe { Entry::load() }.unwrap();
         let instance = Self::create_instance(
             with_validation_layers,
             &app_name,
