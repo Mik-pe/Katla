@@ -8,6 +8,8 @@ use std::{ffi::CString, sync::Arc};
 use winit::window::{Window, WindowBuilder};
 use winit::{dpi::LogicalSize, event_loop::EventLoop};
 
+pub use ash::vk::{Format, IndexType, PipelineBindPoint};
+
 pub struct VulkanRenderer {
     pub window: Window,
     pub context: Arc<VulkanContext>,

@@ -2,9 +2,9 @@ use crate::{rendering::vertextypes::*, util::GLTFModel};
 
 use katla_math::Mat4;
 
-use ash::vk;
 use katla_vulkan::{
-    context::VulkanContext, CommandBuffer, ImageInfo, RenderPass, RenderPipeline, Texture,
+    context::VulkanContext, CommandBuffer, Format, ImageInfo, PipelineBindPoint, RenderPass,
+    RenderPipeline, Texture,
 };
 
 use std::{rc::Rc, sync::Arc};
@@ -52,7 +52,7 @@ impl Material {
                         &context,
                         image.width,
                         image.height,
-                        vk::Format::R8G8B8A8_SRGB,
+                        Format::R8G8B8A8_SRGB,
                         new_pixels.as_slice(),
                     );
                     renderpipeline
@@ -67,7 +67,7 @@ impl Material {
                         &context,
                         image.width,
                         image.height,
-                        vk::Format::R8G8B8A8_SRGB,
+                        Format::R8G8B8A8_SRGB,
                         pixels.as_slice(),
                     );
                     renderpipeline
@@ -92,13 +92,10 @@ impl Material {
     //Maybe decouple the actual data of the uniform to the drawcall-creation and
     //let the material stop caring about the image_index
     pub fn bind(&self, command_buffer: &CommandBuffer) {
-        command_buffer.bind_pipeline(
-            self.renderpipeline.pipeline,
-            vk::PipelineBindPoint::GRAPHICS,
-        );
+        command_buffer.bind_pipeline(self.renderpipeline.pipeline, PipelineBindPoint::GRAPHICS);
 
         command_buffer.bind_descriptor_sets(
-            vk::PipelineBindPoint::GRAPHICS,
+            PipelineBindPoint::GRAPHICS,
             self.renderpipeline.pipeline_layout,
             &[self.renderpipeline.uniform.next_descriptor().desc_set],
         );
