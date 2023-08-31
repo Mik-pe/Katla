@@ -1,5 +1,7 @@
 use std::collections::HashMap;
 use winit::event::{self, ElementState, VirtualKeyCode};
+pub mod map;
+pub use map::*;
 
 struct Modifier {
     code: VirtualKeyCode,
@@ -9,7 +11,7 @@ struct Modifier {
 
 #[derive(Default)]
 struct AxisHandler {
-    axis: String,
+    axis: u32,
     current_value: f32,
     modifiers: Vec<Modifier>,
     callbacks: Vec<Box<dyn FnMut(f32)>>,
@@ -39,10 +41,10 @@ impl AxisHandler {
 
 #[derive(Default)]
 pub struct InputController {
-    inputmap: HashMap<event::VirtualKeyCode, (String, f32)>,
-    axis_key_map: HashMap<event::VirtualKeyCode, String>,
+    inputmap: HashMap<event::VirtualKeyCode, (u32, f32)>,
+    axis_key_map: HashMap<event::VirtualKeyCode, u32>,
     axis_handlers: Vec<AxisHandler>,
-    action_callbacks: HashMap<String, Vec<Box<dyn FnMut(f32)>>>,
+    action_callbacks: HashMap<u32, Vec<Box<dyn FnMut(f32)>>>,
     keypressmap_callback: HashMap<
         event::VirtualKeyCode,
         Vec<Box<dyn FnMut(event::VirtualKeyCode, event::ElementState)>>,
@@ -50,22 +52,7 @@ pub struct InputController {
 }
 
 impl<'a> InputController {
-    pub fn new() -> Self {
-        Self {
-            inputmap: HashMap::new(),
-            axis_key_map: HashMap::new(),
-            axis_handlers: vec![],
-            action_callbacks: HashMap::new(),
-            keypressmap_callback: HashMap::new(),
-        }
-    }
-
-    pub fn assign_axis_input(
-        &mut self,
-        key_event: event::VirtualKeyCode,
-        input: String,
-        value: f32,
-    ) {
+    pub fn assign_axis_input(&mut self, key_event: event::VirtualKeyCode, input: u32, value: f32) {
         let axis_handler: &mut AxisHandler = {
             let mut axis_handler = None;
             for handler in &mut self.axis_handlers {
@@ -75,7 +62,7 @@ impl<'a> InputController {
             }
             if axis_handler.is_none() {
                 self.axis_handlers.push(AxisHandler {
-                    axis: input.clone(),
+                    axis: input,
                     current_value: 0.0,
                     modifiers: vec![],
                     callbacks: vec![],
@@ -94,8 +81,12 @@ impl<'a> InputController {
         self.axis_key_map.insert(key_event, input);
     }
 
-    pub fn assign_axis_callback(&mut self, input: String, callback: Box<dyn FnMut(f32)>) {
+    pub fn assign_axis_callback<T>(&mut self, input: T, callback: Box<dyn FnMut(f32)>)
+    where
+        T: Into<u32>,
+    {
         let mut axis_handler = None;
+        let input = input.into();
         for handler in &mut self.axis_handlers {
             if handler.axis == input {
                 axis_handler = Some(handler);
@@ -112,7 +103,7 @@ impl<'a> InputController {
     pub fn assign_action_input(
         &mut self,
         key_event: event::VirtualKeyCode,
-        input: String,
+        input: u32,
         value: f32,
     ) {
         self.inputmap.insert(key_event, (input, value));
@@ -167,7 +158,7 @@ impl<'a> InputController {
         }
     }
 
-    pub fn bind_input_callback(&mut self, input_key: String, callback: Box<dyn FnMut(f32)>) {
+    pub fn bind_input_callback(&mut self, input_key: u32, callback: Box<dyn FnMut(f32)>) {
         self.action_callbacks
             .entry(input_key)
             .or_default()

@@ -1,4 +1,5 @@
-use crate::inputcontroller::InputController;
+use crate::input::InputController;
+use crate::input::InputMapping;
 use katla_math::{Mat4, Vec3};
 use std::{cell::RefCell, rc::Rc};
 use winit::event::Event;
@@ -49,16 +50,16 @@ pub struct Camera {
 pub fn setup_camera_bindings(camera: Rc<RefCell<Camera>>, input_controller: &mut InputController) {
     let cam = camera.clone();
     input_controller.assign_axis_callback(
-        "SteerVert".into(),
+        InputMapping::MoveVertical,
         Box::new(move |value| cam.borrow_mut().handle_steer_vert(value)),
     );
     let cam = camera.clone();
     input_controller.assign_axis_callback(
-        "SteerHori".into(),
+        InputMapping::MoveHorizontal,
         Box::new(move |value| cam.borrow_mut().handle_steer_horiz(value)),
     );
     input_controller.assign_axis_callback(
-        "SteerFwd".into(),
+        InputMapping::MoveForward,
         Box::new(move |value| camera.borrow_mut().handle_steer_fwd(value)),
     );
 }
