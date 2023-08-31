@@ -11,7 +11,7 @@ pub use scene::*;
 use winit::{event::VirtualKeyCode, event_loop::EventLoop};
 
 use crate::{
-    cameracontroller, cameracontroller::Camera, inputcontroller::InputController, rendering::Mesh,
+    cameracontroller, cameracontroller::Camera, input::InputController, rendering::Mesh,
     util::FileCache, util::GLTFModel, util::Timer,
 };
 
@@ -178,7 +178,7 @@ impl ApplicationBuilder {
 
     pub fn with_axis_input<S>(mut self, key_event: VirtualKeyCode, input: S, value: f32) -> Self
     where
-        S: Into<String>,
+        S: Into<u32>,
     {
         self.input_controller
             .assign_axis_input(key_event, input.into(), value);
