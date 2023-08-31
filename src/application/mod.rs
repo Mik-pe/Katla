@@ -55,9 +55,6 @@ impl Application {
 
             camera.borrow_mut().handle_event(&event);
             match event {
-                Event::NewEvents(winit::event::StartCause::Init) => {
-                    *control_flow = ControlFlow::Poll;
-                }
                 Event::WindowEvent { event, .. } => {
                     input_controller.handle_event(&event);
                     match event {
@@ -98,9 +95,9 @@ impl Application {
                     timer.add_timestamp(end);
 
                     let delta_time = last_frame.elapsed().as_micros() as f32 / 1_000_000.0;
+                    last_frame = Instant::now();
                     camera.borrow_mut().update(delta_time);
 
-                    last_frame = Instant::now();
                     scene.update(
                         &camera.borrow().get_proj_mat(),
                         &camera.borrow().get_view_mat().inverse(),
@@ -127,7 +124,6 @@ impl Application {
                         stage_upload = false;
                     }
                 }
-                Event::RedrawRequested { .. } => {}
                 Event::LoopDestroyed => {
                     renderer.wait_for_device();
                     scene.teardown();
@@ -137,6 +133,22 @@ impl Application {
                 _ => {}
             }
         });
+    }
+    fn swap_frames(&mut self) {
+        self.renderer.swap_frames();
+    }
+
+    fn frame(&mut self, delta_time: f32) {
+        self.camera.borrow_mut().update(delta_time);
+
+        self.scene.update(
+            &self.camera.borrow().get_proj_mat(),
+            &self.camera.borrow().get_view_mat().inverse(),
+        );
+
+        let command_buffer = self.renderer.get_commandbuffer_opaque_pass();
+        self.scene.render(&command_buffer);
+        self.renderer.submit_frame(vec![&command_buffer]);
     }
 }
 
