@@ -4,7 +4,7 @@ use katla_vulkan::CommandBuffer;
 use crate::rendering::{Drawable, Material, Mesh};
 
 pub struct Model {
-    pub mesh: Mesh,
+    pub meshes: Vec<Mesh>,
     pub material: Material,
     pub transform: Transform,
 }
@@ -15,13 +15,14 @@ impl Model {
 
 impl Drawable for Model {
     fn update(&mut self, view: &Mat4, proj: &Mat4) {
-        let model = self.transform.make_mat4();
-        self.material
-            .upload_pipeline_data(view.clone(), proj.clone(), model);
+        for mesh in &mut self.meshes {
+            mesh.update(view, proj);
+        }
     }
 
     fn draw(&self, command_buffer: &CommandBuffer) {
-        self.material.bind(command_buffer);
-        self.mesh.draw(command_buffer);
+        for mesh in &self.meshes {
+            mesh.draw(command_buffer);
+        }
     }
 }
