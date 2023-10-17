@@ -186,10 +186,6 @@ impl GLTFModel {
                 self.bounds = sphere;
             }
         }
-        println!(
-            "Bound center: {:?}, Bound radius: {}",
-            self.bounds.center, self.bounds.radius
-        );
     }
 
     fn new<P>(path: P) -> Self

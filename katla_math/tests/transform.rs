@@ -1,7 +1,7 @@
 use std::f32::consts::{FRAC_PI_2, PI};
 
 use approx::assert_abs_diff_eq;
-use katla_math::{mat4_mul_vec3, Mat4, Quat, Transform, Vec3, Vec4};
+use katla_math::{mat4_mul_vec3, Quat, Transform, Vec3};
 
 #[test]
 fn test_scale_mat() {

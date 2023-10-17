@@ -16,7 +16,7 @@ where
 
     pub fn read(&mut self, path: PathBuf) -> Rc<T> {
         match self.objects.get(&path) {
-            Some(model) => model.clone(),
+            Some(file) => file.clone(),
             None => {
                 let cached_object = Rc::new(T::from(path.clone()));
                 self.objects.insert(path, cached_object.clone());
