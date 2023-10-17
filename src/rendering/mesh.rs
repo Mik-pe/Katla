@@ -1,54 +1,37 @@
-use crate::rendering::{Drawable, Material};
 use crate::util::GLTFModel;
 
 use katla_vulkan::context::VulkanContext;
-use katla_vulkan::{self, IndexBuffer, IndexType, RenderPass, VertexBuffer};
+use katla_vulkan::{self, IndexBuffer, IndexType, VertexBuffer};
 
-use katla_math::{Mat4, Quat, Sphere, Transform, Vec3};
 use std::{rc::Rc, sync::Arc};
 
-//TODO: Decouple pipeline from the "Mesh" struct,
-//Ideally a Mesh would only contain the vertex data and a reference to a pipeline,
-//either on its own or through a Model struct
+//TODO:
+// Handle the GPU-side in katla_vulkan
+// Ideally a Mesh would only contain the vertex/index data
+// Either own the data or, as now, the handles to the GPU data, any way works I guess
+// A future Mesh could be split into a CPU/GPU part, for certain applications
 pub struct Mesh {
     pub vertex_buffer: Option<VertexBuffer>,
     pub index_buffer: Option<IndexBuffer>,
-    pub material: Material,
     pub num_verts: u32,
-    pub transform: Transform,
-    pub bounds: Sphere,
 }
 
 impl Mesh {
-    pub fn new_from_model(
-        model: Rc<GLTFModel>,
-        context: Arc<VulkanContext>,
-        render_pass: &RenderPass,
-        num_images: usize,
-        position: Vec3,
-    ) -> Self {
-        let material = Material::new(model.clone(), context.clone(), render_pass, num_images);
-        let mut bound_sphere = model.bounds.clone();
-        bound_sphere.center = position;
-        let transform = Transform::new_from_position(position);
-        let mut mesh = Self {
-            vertex_buffer: None,
-            index_buffer: None,
-            material,
-            num_verts: 0,
-            transform,
-            bounds: bound_sphere,
-        };
-        mesh.vertex_buffer = Self::create_vertex_buffer(&context, model.vertpbr());
+    pub fn new_from_model(model: Rc<GLTFModel>, context: Arc<VulkanContext>) -> Self {
         let index_type = match model.index_stride {
             1 => IndexType::UINT8_EXT,
             2 => IndexType::UINT16,
             4 => IndexType::UINT32,
             _ => IndexType::NONE_KHR,
         };
-        mesh.index_buffer = Self::create_index_buffer(&context, model.index_data(), index_type);
+        let index_buffer = Self::create_index_buffer(&context, model.index_data(), index_type);
+        let vertex_buffer = Self::create_vertex_buffer(&context, model.vertpbr());
 
-        mesh
+        Self {
+            vertex_buffer,
+            index_buffer,
+            num_verts: 0,
+        }
     }
 
     fn create_index_buffer<DataType>(
@@ -112,21 +95,5 @@ impl Mesh {
                 command_buffer.draw_array(vertex_buffer.count(), 1, 0, 0);
             }
         }
-    }
-}
-
-impl Drawable for Mesh {
-    fn update(&mut self, view: &Mat4, proj: &Mat4) {
-        let quat = Quat::new_from_axis_angle(Vec3::new(0.0, 1.0, 0.0), 0.001);
-        self.transform.rotation = self.transform.rotation * quat;
-        let model = self.transform.make_mat4();
-        self.material
-            .upload_pipeline_data(view.clone(), proj.clone(), model);
-    }
-
-    fn draw(&self, command_buffer: &katla_vulkan::CommandBuffer) {
-        self.material.bind(command_buffer);
-
-        self.draw(command_buffer);
     }
 }

@@ -35,7 +35,7 @@ impl Application {
         let mut input_controller = self.input_controller;
         let mut model_cache = FileCache::<GLTFModel>::new();
         let mut offset = 0.0;
-        let mesh = Mesh::new_from_model(
+        let mesh = Model::new_from_gltf(
             model_cache.read(PathBuf::from("resources/models/Fox.glb")),
             renderer.context.clone(),
             //TODO: (mikpe) - should not have to send these when creating a mesh... The scene should be enough and "Mesh" should be a higher level abstraction
@@ -108,7 +108,7 @@ impl Application {
                     renderer.submit_frame(vec![&command_buffer]);
                     if stage_upload {
                         let start = Instant::now();
-                        let mesh = Mesh::new_from_model(
+                        let mesh = Model::new_from_gltf(
                             model_cache.read(PathBuf::from("resources/models/Tiger.glb")),
                             renderer.context.clone(),
                             &renderer.render_pass,

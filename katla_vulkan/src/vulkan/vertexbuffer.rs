@@ -1,5 +1,5 @@
 use super::context::VulkanContext;
-use ash::{vk, Device};
+use ash::vk;
 use gpu_allocator::vulkan::Allocation;
 
 use std::sync::Arc;
