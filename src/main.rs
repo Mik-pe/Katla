@@ -1,12 +1,6 @@
-mod application;
-mod cameracontroller;
-mod input;
-mod rendering;
-mod util;
+use katla::application::ApplicationBuilder;
 
-use application::ApplicationBuilder;
-
-use input::InputMapping;
+use katla::input::InputMapping;
 use winit::event::VirtualKeyCode;
 
 fn main() {
