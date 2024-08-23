@@ -9,7 +9,7 @@ pub struct VertexPosition {
 impl VertexPosition {
     pub fn get_vertex_binding() -> VertexBinding {
         VertexBinding {
-            formats: vec![VertexFormat::R32G32B32_SFLOAT],
+            formats: vec![VertexFormat::RGB32f],
         }
     }
 }
@@ -31,10 +31,7 @@ pub struct VertexNormal {
 impl VertexNormal {
     pub fn get_vertex_binding() -> VertexBinding {
         VertexBinding {
-            formats: vec![
-                VertexFormat::R32G32B32_SFLOAT,
-                VertexFormat::R32G32B32_SFLOAT,
-            ],
+            formats: vec![VertexFormat::RGB32f, VertexFormat::RGB32f],
         }
     }
 }
@@ -60,10 +57,10 @@ impl VertexPBR {
     pub fn get_vertex_binding() -> VertexBinding {
         VertexBinding {
             formats: vec![
-                VertexFormat::R32G32B32_SFLOAT,
-                VertexFormat::R32G32B32_SFLOAT,
-                VertexFormat::R32G32B32A32_SFLOAT,
-                VertexFormat::R32G32_SFLOAT,
+                VertexFormat::RGB32f,
+                VertexFormat::RGB32f,
+                VertexFormat::RGBA32f,
+                VertexFormat::RG32f,
             ],
         }
     }

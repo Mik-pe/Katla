@@ -1,17 +1,14 @@
 pub mod vulkan;
+use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 pub use vulkan::*;
 
 use ash::vk;
 
 use std::{ffi::CString, sync::Arc};
 
-use winit::window::{Window, WindowBuilder};
-use winit::{dpi::LogicalSize, event_loop::EventLoop};
-
 pub use ash::vk::{Format, IndexType, PipelineBindPoint};
 
 pub struct VulkanRenderer {
-    pub window: Window,
     pub context: Arc<VulkanContext>,
     pub frame_context: VulkanFrameCtx,
     pub render_pass: RenderPass,
@@ -30,23 +27,15 @@ const FRAMES_IN_FLIGHT: usize = 2;
 
 impl VulkanRenderer {
     pub fn init(
-        event_loop: &EventLoop<()>,
+        display: &dyn HasDisplayHandle,
+        window: &dyn HasWindowHandle,
         with_validation_layers: bool,
         app_name: CString,
         engine_name: CString,
     ) -> Self {
-        let window = WindowBuilder::new()
-            .with_title(app_name.to_str().expect("Invalid app name"))
-            .with_resizable(true)
-            .with_min_inner_size(LogicalSize {
-                width: 1.0,
-                height: 1.0,
-            })
-            .with_maximized(false)
-            .build(event_loop)
-            .unwrap();
         let context = Arc::new(VulkanContext::init(
-            &window,
+            display,
+            window,
             with_validation_layers,
             app_name,
             engine_name,
@@ -64,7 +53,7 @@ impl VulkanRenderer {
             .iter()
             .map(|image_view| {
                 let attachments = vec![*image_view, frame_context.depth_render_texture.image_view];
-                let create_info = vk::FramebufferCreateInfo::builder()
+                let create_info = vk::FramebufferCreateInfo::default()
                     .render_pass(render_pass.get_vk_renderpass())
                     .attachments(&attachments)
                     .width(frame_context.swapchain.get_extent().width)
@@ -82,7 +71,6 @@ impl VulkanRenderer {
         );
 
         let renderer = Self {
-            window,
             context,
             frame_context,
             render_pass,
@@ -124,6 +112,7 @@ impl VulkanRenderer {
         }
         println!("Clean shutdown!");
     }
+
     pub fn wait_for_device(&self) {
         unsafe {
             self.context.device.device_wait_idle().unwrap();
@@ -155,7 +144,7 @@ impl VulkanRenderer {
                     *image_view,
                     self.frame_context.depth_render_texture.image_view,
                 ];
-                let create_info = vk::FramebufferCreateInfo::builder()
+                let create_info = vk::FramebufferCreateInfo::default()
                     .render_pass(self.render_pass.get_vk_renderpass())
                     .attachments(&attachments)
                     .width(self.frame_context.swapchain.get_extent().width)
@@ -250,7 +239,7 @@ impl VulkanRenderer {
 
         let swapchains = vec![self.frame_context.swapchain.swapchain];
         let image_indices = vec![frame_data.image_index];
-        let present_info = vk::PresentInfoKHR::builder()
+        let present_info = vk::PresentInfoKHR::default()
             .wait_semaphores(&signal_semaphores)
             .swapchains(&swapchains)
             .image_indices(&image_indices);

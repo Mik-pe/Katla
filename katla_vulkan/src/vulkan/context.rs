@@ -1,21 +1,24 @@
 use ash::{
-    extensions::{
-        ext::DebugUtils,
-        khr::{Surface, Swapchain},
-    },
-    vk, Device, Entry, Instance,
+    ext::debug_utils::Instance as DebugInstance,
+    khr::{surface::Instance as SurfaceInstance, swapchain::Device as SwapchainDevice},
+    vk::{self},
+    Device, Entry, Instance,
 };
 use gpu_allocator::{
-    vulkan::{Allocation, Allocator, AllocatorCreateDesc},
-    AllocatorDebugSettings,
+    vulkan::{Allocation, AllocationScheme, Allocator, AllocatorCreateDesc},
+    AllocationSizes, AllocatorDebugSettings,
 };
+use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 use std::{
     cell::RefCell,
     ffi::{c_void, CStr, CString},
     mem::ManuallyDrop,
     sync::Arc,
 };
-use winit::window::Window;
+// use winit::{
+//     raw_window_handle::{HasDisplayHandle, HasRawWindowHandle, HasWindowHandle},
+//     window::Window,
+// };
 
 use super::SwapchainInfo;
 
@@ -58,8 +61,8 @@ pub struct VulkanContext {
     entry: Entry,
     pub instance: Instance,
     pub device: Device,
-    pub surface_loader: Surface,
-    pub swapchain_loader: Arc<Swapchain>,
+    pub surface_loader: SurfaceInstance,
+    pub swapchain_loader: Arc<SwapchainDevice>,
     pub physical_device: vk::PhysicalDevice,
     pub allocator: ManuallyDrop<RefCell<Allocator>>,
     pub surface: vk::SurfaceKHR,
@@ -68,7 +71,7 @@ pub struct VulkanContext {
     pub gfx_cmdpool: super::CommandPool,
     pub transfer_command_pool: vk::CommandPool,
     pub transfer_queue: vk::Queue,
-    debug_utils_loader: DebugUtils,
+    debug_utils_loader: DebugInstance,
     debug_callback: Option<vk::DebugUtilsMessengerEXT>,
 }
 pub struct VulkanFrameCtx {
@@ -83,7 +86,7 @@ pub struct VulkanFrameCtx {
 impl QueueFamilyIndices {
     pub fn find_queue_families(
         instance: &Instance,
-        surface_loader: &Surface,
+        surface_loader: &SurfaceInstance,
         surface: vk::SurfaceKHR,
         physical_device: vk::PhysicalDevice,
     ) -> Self {
@@ -138,6 +141,7 @@ impl VulkanContext {
             requirements,
             location,
             linear: true,
+            allocation_scheme: AllocationScheme::GpuAllocatorManaged,
         };
 
         let mut allocator = self.allocator.borrow_mut();
@@ -174,6 +178,7 @@ impl VulkanContext {
             requirements,
             location,
             linear: true,
+            allocation_scheme: AllocationScheme::GpuAllocatorManaged,
         };
 
         let mut allocator = self.allocator.borrow_mut();
@@ -199,29 +204,31 @@ impl VulkanContext {
         with_validation_layers: bool,
         app_name: &CStr,
         engine_name: &CStr,
-        window: &Window,
+        display: &dyn HasDisplayHandle,
         entry: &Entry,
     ) -> Instance {
         if with_validation_layers && !check_validation_support(entry) {
             panic!("Validation layers requested, but unavailable!");
         }
-        let surface_extensions = ash_window::enumerate_required_extensions(window).unwrap();
+        let surface_extensions =
+            ash_window::enumerate_required_extensions(display.display_handle().unwrap().as_raw())
+                .unwrap();
         let mut extension_names_raw = surface_extensions
             .iter()
             .map(|ext| *ext)
             .collect::<Vec<_>>();
         let mut instance_layers = vec![];
         if with_validation_layers {
-            extension_names_raw.push(DebugUtils::name().as_ptr());
+            extension_names_raw.push(ash::ext::debug_utils::NAME.as_ptr());
             instance_layers.push(LAYER_KHRONOS_VALIDATION.as_ptr() as *const i8);
         }
-        let app_info = vk::ApplicationInfo::builder()
+        let app_info = vk::ApplicationInfo::default()
             .application_name(app_name)
             .application_version(0)
             .engine_name(engine_name)
             .engine_version(0)
             .api_version(vk::make_api_version(0, 1, 2, 0));
-        let create_info = vk::InstanceCreateInfo::builder()
+        let create_info = vk::InstanceCreateInfo::default()
             .application_info(&app_info)
             .enabled_extension_names(&extension_names_raw.as_slice())
             .enabled_layer_names(&instance_layers);
@@ -302,7 +309,8 @@ impl VulkanContext {
     }
 
     pub fn init(
-        window: &Window,
+        display: &dyn HasDisplayHandle,
+        window: &dyn HasWindowHandle,
         with_validation_layers: bool,
         app_name: CString,
         engine_name: CString,
@@ -312,14 +320,22 @@ impl VulkanContext {
             with_validation_layers,
             &app_name,
             &engine_name,
-            window,
+            display,
             &entry,
         );
-        let debug_utils_loader = DebugUtils::new(&entry, &instance);
+        let debug_utils_loader = DebugInstance::new(&entry, &instance);
         let debug_callback = create_debug_messenger(&debug_utils_loader, with_validation_layers);
-        let surface_loader = Surface::new(&entry, &instance);
-        let surface =
-            unsafe { ash_window::create_surface(&entry, &instance, window, None) }.unwrap();
+        let surface_loader = SurfaceInstance::new(&entry, &instance);
+        let surface = unsafe {
+            ash_window::create_surface(
+                &entry,
+                &instance,
+                display.display_handle().unwrap().as_raw(),
+                window.window_handle().unwrap().as_raw(),
+                None,
+            )
+        }
+        .unwrap();
 
         let physical_device =
             unsafe { pick_physical_device(&instance, &surface_loader, surface) }.unwrap();
@@ -332,10 +348,9 @@ impl VulkanContext {
         );
 
         let queue_create_infos = vec![
-            vk::DeviceQueueCreateInfo::builder()
+            vk::DeviceQueueCreateInfo::default()
                 .queue_family_index(queue_indices.graphics_idx.unwrap())
-                .queue_priorities(&[1.0])
-                .build(),
+                .queue_priorities(&[1.0]),
             // vk::DeviceQueueCreateInfo::builder()
             //     .queue_family_index(queue_indices.transfer_idx.unwrap())
             //     .queue_priorities(&[0.5])
@@ -351,7 +366,7 @@ impl VulkanContext {
             with_validation_layers,
         );
 
-        let swapchain_loader = Arc::new(Swapchain::new(&instance, &device));
+        let swapchain_loader = Arc::new(SwapchainDevice::new(&instance, &device));
 
         let graphics_queue = unsafe { device.get_device_queue(graphics_queue_idx, 0) };
 
@@ -359,7 +374,7 @@ impl VulkanContext {
         let gfx_cmdpool = super::CommandPool::new(device.clone(), graphics_queue_idx);
 
         let transfer_queue = unsafe { device.get_device_queue(transfer_queue_idx, 0) };
-        let create_info = vk::CommandPoolCreateInfo::builder()
+        let create_info = vk::CommandPoolCreateInfo::default()
             .queue_family_index(transfer_queue_idx)
             .flags(vk::CommandPoolCreateFlags::RESET_COMMAND_BUFFER);
         let transfer_command_pool =
@@ -375,6 +390,7 @@ impl VulkanContext {
             physical_device,
             debug_settings,
             buffer_device_address: false,
+            allocation_sizes: AllocationSizes::default(),
         };
 
         let allocator = ManuallyDrop::new(RefCell::new(Allocator::new(&create_info).unwrap()));
@@ -427,13 +443,13 @@ impl VulkanFrameCtx {
         format: vk::Format,
         aspect_mask: vk::ImageAspectFlags,
     ) -> vk::ImageView {
-        let subresource_range = vk::ImageSubresourceRange::builder()
+        let subresource_range = vk::ImageSubresourceRange::default()
             .aspect_mask(aspect_mask)
             .base_mip_level(0)
             .level_count(1)
             .base_array_layer(0)
             .layer_count(1);
-        let create_info = vk::ImageViewCreateInfo::builder()
+        let create_info = vk::ImageViewCreateInfo::default()
             .image(image)
             .view_type(vk::ImageViewType::TYPE_2D)
             .format(format)
@@ -443,7 +459,7 @@ impl VulkanFrameCtx {
                 b: vk::ComponentSwizzle::IDENTITY,
                 a: vk::ComponentSwizzle::IDENTITY,
             })
-            .subresource_range(subresource_range.build());
+            .subresource_range(subresource_range);
         unsafe { device.create_image_view(&create_info, None) }.unwrap()
     }
 
@@ -529,7 +545,7 @@ impl VulkanFrameCtx {
 
 unsafe fn pick_physical_device(
     instance: &Instance,
-    surface_loader: &Surface,
+    surface_loader: &SurfaceInstance,
     surface: vk::SurfaceKHR,
 ) -> Option<vk::PhysicalDevice> {
     let physical_devices = instance.enumerate_physical_devices().unwrap();
@@ -549,7 +565,7 @@ unsafe fn pick_physical_device(
 
 unsafe fn is_physical_device_suitable(
     instance: &Instance,
-    surface_loader: &Surface,
+    surface_loader: &SurfaceInstance,
     physical_device: vk::PhysicalDevice,
     surface: vk::SurfaceKHR,
 ) -> u32 {
@@ -582,7 +598,7 @@ fn create_depth_render_texture(context: Arc<VulkanContext>, extent: vk::Extent2D
         height: extent.height,
         depth: 1,
     };
-    let create_info = vk::ImageCreateInfo::builder()
+    let create_info = vk::ImageCreateInfo::default()
         .image_type(vk::ImageType::TYPE_2D)
         .mip_levels(1)
         .array_layers(1)
@@ -594,7 +610,7 @@ fn create_depth_render_texture(context: Arc<VulkanContext>, extent: vk::Extent2D
 
     //https://vulkan-tutorial.com/Depth_buffering
     let (depth_image, image_memory) =
-        context.create_image(create_info.build(), gpu_allocator::MemoryLocation::GpuOnly);
+        context.create_image(create_info, gpu_allocator::MemoryLocation::GpuOnly);
 
     let image_view = VulkanFrameCtx::create_image_view(
         &context.device,
@@ -618,7 +634,7 @@ fn create_device(
     queue_create_infos: Vec<vk::DeviceQueueCreateInfo>,
     with_validation_layers: bool,
 ) -> Device {
-    let device_extensions = [Swapchain::name().as_ptr()];
+    let device_extensions = [ash::khr::swapchain::NAME.as_ptr()];
     let mut device_layers = vec![];
     if with_validation_layers {
         device_layers.push(LAYER_KHRONOS_VALIDATION.as_ptr() as *const i8);
@@ -630,7 +646,7 @@ fn create_device(
         ..Default::default()
     };
 
-    let create_info = vk::DeviceCreateInfo::builder()
+    let create_info = vk::DeviceCreateInfo::default()
         .enabled_extension_names(&device_extensions)
         .enabled_layer_names(&device_layers)
         .queue_create_infos(&queue_create_infos)
@@ -645,11 +661,11 @@ fn create_device(
 }
 
 fn create_debug_messenger(
-    debug_utils_loader: &DebugUtils,
+    debug_utils_loader: &DebugInstance,
     with_validation_layers: bool,
 ) -> Option<vk::DebugUtilsMessengerEXT> {
     if with_validation_layers {
-        let create_info = vk::DebugUtilsMessengerCreateInfoEXT::builder()
+        let create_info = vk::DebugUtilsMessengerCreateInfoEXT::default()
             .message_severity(
                 vk::DebugUtilsMessageSeverityFlagsEXT::VERBOSE
                     | vk::DebugUtilsMessageSeverityFlagsEXT::WARNING

@@ -10,7 +10,7 @@ pub struct CommandPool {
 
 impl CommandPool {
     pub fn new(device: Device, queue_family_idx: u32) -> Self {
-        let create_info = vk::CommandPoolCreateInfo::builder()
+        let create_info = vk::CommandPoolCreateInfo::default()
             .queue_family_index(queue_family_idx)
             .flags(vk::CommandPoolCreateFlags::RESET_COMMAND_BUFFER);
         let command_pool = unsafe { device.create_command_pool(&create_info, None) }.unwrap();

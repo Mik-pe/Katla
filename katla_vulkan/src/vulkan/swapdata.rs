@@ -1,4 +1,4 @@
-use ash::{extensions::khr::Swapchain, vk, Device};
+use ash::{khr::swapchain::Device as SwapchainDevice, vk, Device};
 pub struct SwapData {
     frames_in_flight: usize,
     frame: usize,
@@ -14,7 +14,7 @@ impl SwapData {
         swapchain_images: &Vec<vk::Image>,
         frames_in_flight: usize,
     ) -> Self {
-        let create_info = vk::SemaphoreCreateInfo::builder();
+        let create_info = vk::SemaphoreCreateInfo::default();
         let image_available_semaphores: Vec<_> = (0..frames_in_flight)
             .map(|_| unsafe { device.create_semaphore(&create_info, None) }.unwrap())
             .collect();
@@ -22,7 +22,7 @@ impl SwapData {
             .map(|_| unsafe { device.create_semaphore(&create_info, None) }.unwrap())
             .collect();
 
-        let create_info = vk::FenceCreateInfo::builder().flags(vk::FenceCreateFlags::SIGNALED);
+        let create_info = vk::FenceCreateInfo::default().flags(vk::FenceCreateFlags::SIGNALED);
         let in_flight_fences: Vec<_> = (0..frames_in_flight)
             .map(|_| unsafe { device.create_fence(&create_info, None) }.unwrap())
             .collect();
@@ -55,7 +55,7 @@ impl SwapData {
     pub fn swap_images(
         &mut self,
         device: &Device,
-        swapchain_loader: &Swapchain,
+        swapchain_loader: &SwapchainDevice,
         swapchain: vk::SwapchainKHR,
     ) -> (vk::Semaphore, vk::Semaphore, vk::Fence, u32) {
         //TODO: What is the bool for?
