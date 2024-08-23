@@ -77,7 +77,7 @@ impl Camera {
 
     pub fn new() -> Self {
         let camera = Self {
-            pos: Vec3::new(0.0, 0.0, -1.0),
+            pos: Vec3::new(0.0, 50.0, -450.0),
             projection: PerspectiveProjection::default(),
             velocity_dir: Vec3::new(0.0, 0.0, 0.0),
             input_dir: Vec3::new(0.0, 0.0, 0.0),
