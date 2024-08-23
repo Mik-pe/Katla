@@ -1,10 +1,13 @@
 use std::collections::HashMap;
-use winit::event::{self, ElementState, VirtualKeyCode};
+use winit::{
+    event::{self, ElementState, WindowEvent},
+    keyboard::{KeyCode, PhysicalKey},
+};
 pub mod map;
 pub use map::*;
 
 struct Modifier {
-    code: VirtualKeyCode,
+    code: KeyCode,
     state: ElementState,
     value: f32,
 }
@@ -22,7 +25,7 @@ impl AxisHandler {
         self.callbacks.push(callback);
     }
 
-    pub fn modifier_changed(&mut self, code: VirtualKeyCode, state: ElementState) {
+    pub fn modifier_changed(&mut self, code: KeyCode, state: ElementState) {
         let mut new_value = 0.0;
         for modifier in &mut self.modifiers {
             if modifier.code == code {
@@ -41,18 +44,15 @@ impl AxisHandler {
 
 #[derive(Default)]
 pub struct InputController {
-    inputmap: HashMap<event::VirtualKeyCode, (u32, f32)>,
-    axis_key_map: HashMap<event::VirtualKeyCode, u32>,
+    inputmap: HashMap<KeyCode, (u32, f32)>,
+    axis_key_map: HashMap<KeyCode, u32>,
     axis_handlers: Vec<AxisHandler>,
     action_callbacks: HashMap<u32, Vec<Box<dyn FnMut(f32)>>>,
-    keypressmap_callback: HashMap<
-        event::VirtualKeyCode,
-        Vec<Box<dyn FnMut(event::VirtualKeyCode, event::ElementState)>>,
-    >,
+    keypressmap_callback: HashMap<KeyCode, Vec<Box<dyn FnMut(KeyCode, event::ElementState)>>>,
 }
 
 impl<'a> InputController {
-    pub fn assign_axis_input(&mut self, key_event: event::VirtualKeyCode, input: u32, value: f32) {
+    pub fn assign_axis_input(&mut self, key_event: KeyCode, input: u32, value: f32) {
         let axis_handler: &mut AxisHandler = {
             let mut axis_handler = None;
             for handler in &mut self.axis_handlers {
@@ -100,17 +100,12 @@ impl<'a> InputController {
         }
     }
 
-    pub fn assign_action_input(
-        &mut self,
-        key_event: event::VirtualKeyCode,
-        input: u32,
-        value: f32,
-    ) {
-        self.inputmap.insert(key_event, (input, value));
+    pub fn assign_action_input(&mut self, key: KeyCode, input: u32, value: f32) {
+        self.inputmap.insert(key, (input, value));
     }
 
-    fn handle_input(&mut self, code: &VirtualKeyCode, state: ElementState) {
-        if let Some((key, value)) = self.inputmap.get(&code) {
+    fn handle_input(&mut self, code: &KeyCode, state: ElementState) {
+        if let Some((key, value)) = self.inputmap.get(code) {
             if state == ElementState::Pressed {
                 if let Some(callbacks) = self.action_callbacks.get_mut(key) {
                     for callback in callbacks {
@@ -126,7 +121,7 @@ impl<'a> InputController {
             }
         }
     }
-    fn handle_axis(&mut self, code: &VirtualKeyCode, state: ElementState) {
+    fn handle_axis(&mut self, code: &KeyCode, state: ElementState) {
         if let Some(key) = self.axis_key_map.get(&code) {
             for axis_handler in &mut self.axis_handlers {
                 if axis_handler.axis == *key {
@@ -138,22 +133,21 @@ impl<'a> InputController {
 
     pub fn handle_event(&mut self, event: &event::WindowEvent) {
         match event {
-            event::WindowEvent::KeyboardInput {
+            WindowEvent::KeyboardInput {
                 device_id: _,
-                input,
+                event,
                 is_synthetic: _,
-            } => match input.virtual_keycode {
-                Some(code) => {
-                    self.handle_input(&code, input.state);
-                    self.handle_axis(&code, input.state);
+            } => {
+                if let PhysicalKey::Code(code) = event.physical_key {
+                    self.handle_input(&code, event.state);
+                    self.handle_axis(&code, event.state);
                     if let Some(callbacks) = self.keypressmap_callback.get_mut(&code) {
                         for callback in callbacks {
-                            callback(code, input.state);
+                            callback(code, event.state);
                         }
                     }
                 }
-                None => {}
-            },
+            }
             _ => {}
         }
     }
@@ -167,8 +161,8 @@ impl<'a> InputController {
 
     pub fn bind_keycode_callback(
         &mut self,
-        keycode: event::VirtualKeyCode,
-        callback: Box<dyn FnMut(event::VirtualKeyCode, event::ElementState)>,
+        keycode: KeyCode,
+        callback: Box<dyn FnMut(KeyCode, event::ElementState)>,
     ) {
         self.keypressmap_callback
             .entry(keycode)

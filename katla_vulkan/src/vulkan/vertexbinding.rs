@@ -53,11 +53,10 @@ impl VertexBinding {
     }
 
     pub fn get_binding_desc(&self, binding: u32) -> vk::VertexInputBindingDescription {
-        vk::VertexInputBindingDescription::builder()
+        vk::VertexInputBindingDescription::default()
             .binding(binding)
             .stride(self.get_stride())
             .input_rate(vk::VertexInputRate::VERTEX)
-            .build()
     }
 
     pub fn get_attribute_desc(&self, binding: u32) -> Vec<vk::VertexInputAttributeDescription> {
@@ -66,12 +65,11 @@ impl VertexBinding {
         self.formats
             .iter()
             .map(|format| {
-                let out = vk::VertexInputAttributeDescription::builder()
+                let out = vk::VertexInputAttributeDescription::default()
                     .binding(binding)
                     .location(location)
                     .format(format.get_vk_format())
-                    .offset(current_offset)
-                    .build();
+                    .offset(current_offset);
                 current_offset += format.get_offset();
                 location += 1;
                 out

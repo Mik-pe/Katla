@@ -11,7 +11,7 @@ pub struct CommandBuffer {
 
 impl CommandBuffer {
     pub fn new(device: &Device, command_pool: &CommandPool) -> Self {
-        let create_info = vk::CommandBufferAllocateInfo::builder()
+        let create_info = vk::CommandBufferAllocateInfo::default()
             .level(vk::CommandBufferLevel::PRIMARY)
             .command_pool(command_pool.vk_command_pool())
             .command_buffer_count(1);
@@ -30,7 +30,7 @@ impl CommandBuffer {
     }
 
     pub fn begin_single_time_command(&self) {
-        let begin_info = vk::CommandBufferBeginInfo::builder()
+        let begin_info = vk::CommandBufferBeginInfo::default()
             .flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT);
         unsafe {
             self.device
@@ -46,7 +46,7 @@ impl CommandBuffer {
     }
 
     pub fn begin_command(&self, flags: vk::CommandBufferUsageFlags) {
-        let begin_info = vk::CommandBufferBeginInfo::builder().flags(flags);
+        let begin_info = vk::CommandBufferBeginInfo::default().flags(flags);
         unsafe {
             self.device
                 .begin_command_buffer(self.command_buffer, &begin_info)
@@ -67,7 +67,7 @@ impl CommandBuffer {
         render_area: vk::Rect2D,
         clear_values: &[vk::ClearValue],
     ) {
-        let begin_info = vk::RenderPassBeginInfo::builder()
+        let begin_info = vk::RenderPassBeginInfo::default()
             .render_pass(render_pass)
             .framebuffer(framebuffer)
             .render_area(render_area)
@@ -85,14 +85,13 @@ impl CommandBuffer {
             self.device.cmd_set_viewport(
                 self.command_buffer,
                 0,
-                &[vk::Viewport::builder()
+                &[vk::Viewport::default()
                     .height(render_area.extent.height as f32)
                     .width(render_area.extent.width as f32)
                     .x(render_area.offset.x as f32)
                     .y(render_area.offset.y as f32)
                     .min_depth(0.0)
-                    .max_depth(1.0)
-                    .build()],
+                    .max_depth(1.0)],
             )
         }
     }

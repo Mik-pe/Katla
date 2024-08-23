@@ -1,6 +1,5 @@
 use super::CommandBuffer;
 
-use ash::extensions::khr::Swapchain;
 use ash::vk::{self, Fence, Semaphore};
 use ash::Device;
 
@@ -46,7 +45,7 @@ impl Queue {
             wait_dst_stage_mask.push(vk::PipelineStageFlags::ALL_COMMANDS);
         }
 
-        let submit_info = vk::SubmitInfo::builder()
+        let submit_info = vk::SubmitInfo::default()
             .wait_dst_stage_mask(&wait_dst_stage_mask)
             .wait_semaphores(&wait_semaphores)
             .signal_semaphores(&signal_semaphores)
@@ -54,7 +53,7 @@ impl Queue {
 
         unsafe {
             self.device
-                .queue_submit(self.queue, &[*submit_info], signal_fence)
+                .queue_submit(self.queue, &[submit_info], signal_fence)
                 .unwrap();
         }
     }
@@ -65,7 +64,7 @@ impl Queue {
         image_indices: &[u32],
         swapchains: &[vk::SwapchainKHR],
     ) {
-        let present_info = vk::PresentInfoKHR::builder()
+        let present_info = vk::PresentInfoKHR::default()
             .wait_semaphores(&signal_semaphores)
             .swapchains(swapchains)
             .image_indices(&image_indices);

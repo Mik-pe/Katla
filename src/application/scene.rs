@@ -16,7 +16,6 @@ pub struct SceneObject {
 pub struct Scene {
     pub player: Player,
     pub scene_objects: Vec<SceneObject>,
-    context: Arc<katla_vulkan::VulkanContext>,
 }
 
 impl SceneObject {
@@ -32,7 +31,7 @@ impl SceneObject {
 }
 
 impl Scene {
-    pub fn new(context: Arc<katla_vulkan::VulkanContext>) -> Self {
+    pub fn new() -> Self {
         let player = Player {
             position: Vec3::new(0.0, 0.0, 0.0),
         };
@@ -40,7 +39,6 @@ impl Scene {
         Self {
             player,
             scene_objects,
-            context,
         }
     }
 
