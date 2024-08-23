@@ -41,33 +41,48 @@ pub struct Application {
 
 impl ApplicationHandler for Application {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
-        let window = event_loop
-            .create_window(
-                Window::default_attributes()
-                    .with_title(&self.info.name)
-                    .with_resizable(true)
-                    .with_min_inner_size(LogicalSize {
-                        width: 1.0,
-                        height: 1.0,
-                    })
-                    .with_maximized(false),
-            )
-            .unwrap();
+        if self.window.is_none() {
+            let window = event_loop
+                .create_window(
+                    Window::default_attributes()
+                        .with_title(&self.info.name)
+                        .with_resizable(true)
+                        .with_min_inner_size(LogicalSize {
+                            width: 1.0,
+                            height: 1.0,
+                        })
+                        .with_maximized(false),
+                )
+                .unwrap();
 
-        let engine_name = CString::new("Katla Engine").unwrap();
-        let renderer = VulkanRenderer::init(
-            &event_loop,
-            &window,
-            self.info.validation_layer_enabled,
-            CString::new(self.info.name.as_str()).unwrap(),
-            engine_name,
-        );
-        let window_size = window.inner_size();
-        let win_x = window_size.width as f32;
-        let win_y = window_size.height as f32;
-        self.camera.borrow_mut().aspect_ratio_changed(win_x / win_y);
-        self.window = Some(window);
-        self.renderer = Some(renderer);
+            let engine_name = CString::new("Katla Engine").unwrap();
+            let renderer = VulkanRenderer::init(
+                &event_loop,
+                &window,
+                self.info.validation_layer_enabled,
+                CString::new(self.info.name.as_str()).unwrap(),
+                engine_name,
+            );
+            let window_size = window.inner_size();
+            let win_x = window_size.width as f32;
+            let win_y = window_size.height as f32;
+            self.camera.borrow_mut().aspect_ratio_changed(win_x / win_y);
+            let mesh = Model::new_from_gltf(
+                self.gltf_cache
+                    .read(PathBuf::from("resources/models/Fox.glb")),
+                renderer.context.clone(),
+                //TODO: (mikpe) - should not have to send these when creating a mesh... The scene should be enough and "Mesh" should be a higher level abstraction
+                &renderer.render_pass,
+                renderer.num_images(),
+                Vec3::new(0.0, 0.0, 0.0),
+            );
+            let bounds = mesh.bounds.clone();
+            self.scene
+                .add_object(SceneObject::new(Box::new(mesh), bounds));
+
+            self.window = Some(window);
+            self.renderer = Some(renderer);
+        }
     }
 
     fn device_event(
@@ -127,6 +142,7 @@ impl ApplicationHandler for Application {
                     self.scene.update(
                         &self.camera.borrow().get_proj_mat(),
                         &self.camera.borrow().get_view_mat().inverse(),
+                        dt,
                     );
 
                     let command_buffer = renderer.get_commandbuffer_opaque_pass();
@@ -172,17 +188,6 @@ impl ApplicationHandler for Application {
 impl Application {
     pub fn init(&mut self) {
         env_logger::Builder::from_env(Env::default().default_filter_or("debug")).init();
-        //TODO (mikpe): Re-add fox to our starting scene
-        // let mesh = Model::new_from_gltf(
-        //     model_cache.read(PathBuf::from("resources/models/Fox.glb")),
-        //     renderer.context.clone(),
-        //     //TODO: (mikpe) - should not have to send these when creating a mesh... The scene should be enough and "Mesh" should be a higher level abstraction
-        //     &renderer.render_pass,
-        //     renderer.num_images(),
-        //     Vec3::new(offset, 0.0, 0.0),
-        // );
-        // let bounds = mesh.bounds.clone();
-        // scene.add_object(SceneObject::new(Box::new(mesh), bounds));
     }
 
     // fn swap_frames(&mut self) {

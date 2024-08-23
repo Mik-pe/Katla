@@ -1,4 +1,4 @@
-use std::{rc::Rc, sync::Arc};
+use std::{f32::consts::FRAC_PI_2, rc::Rc, sync::Arc};
 
 use katla_math::{Mat4, Quat, Sphere, Transform, Vec3};
 use katla_vulkan::{CommandBuffer, RenderPass, VulkanContext};
@@ -39,8 +39,8 @@ impl Model {
 }
 
 impl Drawable for Model {
-    fn update(&mut self, view: &Mat4, proj: &Mat4) {
-        let quat = Quat::new_from_axis_angle(Vec3::new(0.0, 1.0, 0.0), 0.001);
+    fn update(&mut self, view: &Mat4, proj: &Mat4, dt: f32) {
+        let quat = Quat::new_from_axis_angle(Vec3::new(0.0, 1.0, 0.0), FRAC_PI_2 * dt);
         self.transform.rotation = self.transform.rotation * quat;
         let model = self.transform.make_mat4();
         self.material

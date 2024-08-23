@@ -1,7 +1,7 @@
 use crate::rendering::Drawable;
 use katla_math::{Mat4, Sphere, Vec3};
 use katla_vulkan::CommandBuffer;
-use std::{rc::Rc, sync::Arc};
+use std::rc::Rc;
 
 pub struct Player {
     pub position: Vec3,
@@ -50,9 +50,9 @@ impl Scene {
         self.scene_objects.clear();
     }
 
-    pub fn update(&mut self, proj: &Mat4, view: &Mat4) {
+    pub fn update(&mut self, proj: &Mat4, view: &Mat4, dt: f32) {
         for object in &mut self.scene_objects {
-            object.drawable.update(&view, &proj);
+            object.drawable.update(&view, &proj, dt);
         }
     }
 
