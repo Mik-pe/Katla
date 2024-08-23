@@ -61,7 +61,7 @@ impl IndexBuffer {
         count: u32,
     ) -> Self {
         let buffer = {
-            let create_info = vk::BufferCreateInfo::builder()
+            let create_info = vk::BufferCreateInfo::default()
                 .sharing_mode(vk::SharingMode::EXCLUSIVE)
                 .usage(vk::BufferUsageFlags::INDEX_BUFFER)
                 .size(buf_size);
@@ -95,7 +95,7 @@ impl IndexBuffer {
 impl VertexBuffer {
     pub fn new(context: Arc<VulkanContext>, buf_size: vk::DeviceSize, count: u32) -> Self {
         let buffer = {
-            let create_info = vk::BufferCreateInfo::builder()
+            let create_info = vk::BufferCreateInfo::default()
                 .sharing_mode(vk::SharingMode::EXCLUSIVE)
                 .usage(vk::BufferUsageFlags::VERTEX_BUFFER)
                 .size(buf_size);

@@ -5,7 +5,7 @@ authors = ["Mik-pe <mikael.pettersson201@gmail.com>"]
 edition = "2018"
 
 [dependencies]
-winit = "^0.26"
-ash = "^0.37.0"
-ash-window = "^0.11.0"
-gpu-allocator = "^0.18.0"
+raw-window-handle = "*"
+ash = "^0.38.0"
+ash-window = "^0.13.0"
+gpu-allocator = "^0.27.0"

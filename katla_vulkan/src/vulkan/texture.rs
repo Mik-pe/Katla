@@ -21,7 +21,7 @@ impl Texture {
         context: &VulkanContext,
         size: vk::DeviceSize,
     ) -> (vk::Buffer, Allocation) {
-        let create_info = vk::BufferCreateInfo::builder()
+        let create_info = vk::BufferCreateInfo::default()
             .sharing_mode(vk::SharingMode::EXCLUSIVE)
             .usage(vk::BufferUsageFlags::TRANSFER_SRC)
             .size(size);
@@ -36,7 +36,7 @@ impl Texture {
         old_layout: vk::ImageLayout,
         new_layout: vk::ImageLayout,
     ) {
-        let subresource_range = vk::ImageSubresourceRange::builder()
+        let subresource_range = vk::ImageSubresourceRange::default()
             .aspect_mask(vk::ImageAspectFlags::COLOR)
             .base_mip_level(0)
             .level_count(1)
@@ -46,18 +46,18 @@ impl Texture {
         unsafe {
             let src_stage_mask;
             let dst_stage_mask;
-            let mut barrier_builder = vk::ImageMemoryBarrier::builder()
+            let mut barrier_default = vk::ImageMemoryBarrier::default()
                 .old_layout(old_layout)
                 .new_layout(new_layout)
                 .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
                 .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
                 .image(image)
-                .subresource_range(subresource_range.build());
+                .subresource_range(subresource_range);
 
             if old_layout == vk::ImageLayout::UNDEFINED
                 && new_layout == vk::ImageLayout::TRANSFER_DST_OPTIMAL
             {
-                barrier_builder = barrier_builder
+                barrier_default = barrier_default
                     .src_access_mask(vk::AccessFlags::empty())
                     .dst_access_mask(vk::AccessFlags::TRANSFER_WRITE);
 
@@ -66,7 +66,7 @@ impl Texture {
             } else if old_layout == vk::ImageLayout::TRANSFER_DST_OPTIMAL
                 && new_layout == vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL
             {
-                barrier_builder = barrier_builder
+                barrier_default = barrier_default
                     .src_access_mask(vk::AccessFlags::TRANSFER_WRITE)
                     .dst_access_mask(vk::AccessFlags::SHADER_READ);
 
@@ -83,7 +83,7 @@ impl Texture {
                 vk::DependencyFlags::empty(),
                 &[],
                 &[],
-                &[barrier_builder.build()],
+                &[barrier_default],
             );
         }
     }
@@ -97,27 +97,27 @@ impl Texture {
         extent: vk::Extent3D,
     ) {
         //TODO: expose a transfer command buffer?
-        let subresources = vk::ImageSubresourceLayers::builder()
+        let subresources = vk::ImageSubresourceLayers::default()
             .aspect_mask(vk::ImageAspectFlags::COLOR)
             .mip_level(0)
             .base_array_layer(0)
             .layer_count(1);
         unsafe {
-            let regions = vk::BufferImageCopy::builder()
+            let regions = vk::BufferImageCopy::default()
                 .image_extent(extent)
-                .image_subresource(subresources.build());
+                .image_subresource(subresources);
             context.device.cmd_copy_buffer_to_image(
                 command_buffer,
                 src_buffer,
                 dst_image,
                 dst_image_layout,
-                &[regions.build()],
+                &[regions],
             );
         }
     }
 
     fn create_texture_sampler(context: &VulkanContext) -> vk::Sampler {
-        let create_info = vk::SamplerCreateInfo::builder()
+        let create_info = vk::SamplerCreateInfo::default()
             .anisotropy_enable(true)
             .max_anisotropy(16.0)
             .border_color(vk::BorderColor::INT_OPAQUE_BLACK)
@@ -147,7 +147,7 @@ impl Texture {
             depth: 1,
         };
         //Create the image memory gpu_only:
-        let create_info = vk::ImageCreateInfo::builder()
+        let create_info = vk::ImageCreateInfo::default()
             .extent(extent)
             .image_type(vk::ImageType::TYPE_2D)
             .mip_levels(1)
@@ -160,7 +160,7 @@ impl Texture {
             .sharing_mode(vk::SharingMode::EXCLUSIVE);
 
         let (image_object, image_memory) =
-            context.create_image(create_info.build(), gpu_allocator::MemoryLocation::GpuOnly);
+            context.create_image(create_info, gpu_allocator::MemoryLocation::GpuOnly);
         let ms_image = total_start.elapsed().as_micros() as f64 / 1000.0;
 
         let total_size = pixel_data.len() as u64;
