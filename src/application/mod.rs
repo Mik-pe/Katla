@@ -61,10 +61,11 @@ impl Application {
                         WindowEvent::Resized(logical_size) => {
                             let win_x = logical_size.width as f32;
                             let win_y = logical_size.height as f32;
-                            camera.borrow_mut().aspect_ratio_changed(win_x / win_y);
+                            if win_x > 0.0 && win_y > 0.0 {
+                                camera.borrow_mut().aspect_ratio_changed(win_x / win_y);
 
-                            //TODO: don't recreate if we minimize...
-                            renderer.recreate_swapchain();
+                                renderer.recreate_swapchain();
+                            }
                         }
                         WindowEvent::CloseRequested => {
                             *control_flow = ControlFlow::Exit;
@@ -134,6 +135,7 @@ impl Application {
             }
         });
     }
+
     fn swap_frames(&mut self) {
         self.renderer.swap_frames();
     }

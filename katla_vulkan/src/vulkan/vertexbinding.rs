@@ -1,45 +1,45 @@
 use ash::vk::{self};
 
 pub enum VertexFormat {
-    R32_UINT,
-    R32_SINT,
-    R32_SFLOAT,
-    R32G32_UINT,
-    R32G32_SINT,
-    R32G32_SFLOAT,
-    R32G32B32_UINT,
-    R32G32B32_SINT,
-    R32G32B32_SFLOAT,
-    R32G32B32A32_UINT,
-    R32G32B32A32_SINT,
-    R32G32B32A32_SFLOAT,
+    R32u,
+    R32i,
+    R32f,
+    RG32u,
+    RG32i,
+    RG32f,
+    RGB32u,
+    RGB32i,
+    RGB32f,
+    RGBA32u,
+    RGBA32i,
+    RGBA32f,
 }
 
 impl VertexFormat {
     fn get_vk_format(&self) -> vk::Format {
         match self {
-            VertexFormat::R32_UINT => vk::Format::R32_UINT,
-            VertexFormat::R32_SINT => vk::Format::R32_SINT,
-            VertexFormat::R32_SFLOAT => vk::Format::R32_SFLOAT,
-            VertexFormat::R32G32_UINT => vk::Format::R32G32_UINT,
-            VertexFormat::R32G32_SINT => vk::Format::R32G32_SINT,
-            VertexFormat::R32G32_SFLOAT => vk::Format::R32G32_SFLOAT,
-            VertexFormat::R32G32B32_UINT => vk::Format::R32G32B32_UINT,
-            VertexFormat::R32G32B32_SINT => vk::Format::R32G32B32_SINT,
-            VertexFormat::R32G32B32_SFLOAT => vk::Format::R32G32B32_SFLOAT,
-            VertexFormat::R32G32B32A32_UINT => vk::Format::R32G32B32A32_UINT,
-            VertexFormat::R32G32B32A32_SINT => vk::Format::R32G32B32A32_SINT,
-            VertexFormat::R32G32B32A32_SFLOAT => vk::Format::R32G32B32A32_SFLOAT,
+            VertexFormat::R32u => vk::Format::R32_UINT,
+            VertexFormat::R32i => vk::Format::R32_SINT,
+            VertexFormat::R32f => vk::Format::R32_SFLOAT,
+            VertexFormat::RG32u => vk::Format::R32G32_UINT,
+            VertexFormat::RG32i => vk::Format::R32G32_SINT,
+            VertexFormat::RG32f => vk::Format::R32G32_SFLOAT,
+            VertexFormat::RGB32u => vk::Format::R32G32B32_UINT,
+            VertexFormat::RGB32i => vk::Format::R32G32B32_SINT,
+            VertexFormat::RGB32f => vk::Format::R32G32B32_SFLOAT,
+            VertexFormat::RGBA32u => vk::Format::R32G32B32A32_UINT,
+            VertexFormat::RGBA32i => vk::Format::R32G32B32A32_SINT,
+            VertexFormat::RGBA32f => vk::Format::R32G32B32A32_SFLOAT,
         }
     }
 
     fn get_offset(&self) -> u32 {
         use VertexFormat::*;
         match self {
-            R32_UINT | R32_SINT | R32_SFLOAT => 4,
-            R32G32_UINT | R32G32_SINT | R32G32_SFLOAT => 8,
-            R32G32B32_UINT | R32G32B32_SINT | R32G32B32_SFLOAT => 12,
-            R32G32B32A32_UINT | R32G32B32A32_SINT | R32G32B32A32_SFLOAT => 16,
+            R32u | R32i | R32f => 4,
+            RG32u | RG32i | RG32f => 8,
+            RGB32u | RGB32i | RGB32f => 12,
+            RGBA32u | RGBA32i | RGBA32f => 16,
         }
     }
 }
