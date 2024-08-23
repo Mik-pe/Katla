@@ -34,16 +34,4 @@ impl Timer {
         }
         self.current_mean = sum_timestamps / self.all_timestamps.len() as f64;
     }
-
-    pub fn current_mean(&self) -> f64 {
-        self.current_mean
-    }
-
-    pub fn current_max(&self) -> f64 {
-        self.current_max
-    }
-
-    pub fn current_min(&self) -> f64 {
-        self.current_min
-    }
 }
