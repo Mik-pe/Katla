@@ -1,7 +1,8 @@
 use std::sync::Arc;
 
 use ash::{
-    extensions::khr::{Surface, Swapchain as vkSwapchainLoader},
+    khr::surface::Instance as Surface,
+    khr::swapchain::Device as SwapchainDevice,
     vk::{self, PhysicalDevice},
 };
 
@@ -12,7 +13,7 @@ pub struct SwapchainInfo {
 }
 
 pub struct Swapchain {
-    pub swapchain_loader: Arc<vkSwapchainLoader>,
+    pub swapchain_loader: Arc<SwapchainDevice>,
     pub swapchain_info: SwapchainInfo,
     pub swapchain: vk::SwapchainKHR,
     pub format: vk::SurfaceFormatKHR,
@@ -23,7 +24,7 @@ pub struct Swapchain {
 
 impl Swapchain {
     pub fn create_swapchain(
-        swapchain_loader: Arc<vkSwapchainLoader>,
+        swapchain_loader: Arc<SwapchainDevice>,
         surface_loader: &Surface,
         physical_device: PhysicalDevice,
         surface: vk::SurfaceKHR,
@@ -45,7 +46,7 @@ impl Swapchain {
             image_count = surface_caps.max_image_count;
         }
         let old_swapchain = old_swapchain.unwrap_or(vk::SwapchainKHR::null());
-        let create_info = vk::SwapchainCreateInfoKHR::builder()
+        let create_info = vk::SwapchainCreateInfoKHR::default()
             .surface(surface)
             .min_image_count(image_count)
             .image_format(format.format)

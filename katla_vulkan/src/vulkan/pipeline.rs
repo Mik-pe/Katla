@@ -33,11 +33,12 @@ pub struct UniformBuffer {
     buf_size: vk::DeviceSize,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub struct ImageInfo {
     pub image_view: vk::ImageView,
     pub sampler: vk::Sampler,
     pub is_updated: bool,
+    image_info: Vec<vk::DescriptorImageInfo>,
 }
 
 pub struct UniformHandle {
@@ -60,28 +61,40 @@ impl ImageInfo {
             image_view,
             sampler,
             is_updated: false,
+            image_info: vec![vk::DescriptorImageInfo::default()
+                .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
+                .image_view(image_view)
+                .sampler(sampler)],
         }
     }
-}
 
-impl UpdateOnce for ImageInfo {
     fn update_once(&self, set: vk::DescriptorSet, binding: u32) -> vk::WriteDescriptorSet {
-        let mut image_infos = vec![];
-        image_infos.push(
-            vk::DescriptorImageInfo::builder()
-                .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
-                .image_view(self.image_view)
-                .sampler(self.sampler)
-                .build(),
-        );
-        vk::WriteDescriptorSet::builder()
+        vk::WriteDescriptorSet::default()
             .dst_set(set)
             .dst_binding(binding)
             .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
-            .image_info(image_infos.as_slice())
-            .build()
+            .image_info(&self.image_info)
     }
 }
+
+// impl UpdateOnce for ImageInfo {
+//     fn update_once(&self, set: vk::DescriptorSet, binding: u32) -> vk::WriteDescriptorSet {
+//         // let mut image_infos = vec![];
+//         // image_infos.push(
+//         //     ,
+//         // );
+
+//         // vk::WriteDescriptorSet::default()
+//         //     .dst_set(set)
+//         //     .dst_binding(binding)
+//         //     .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+//         //     .image_info(&[vk::DescriptorImageInfo::default()
+//         //         .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
+//         //         .image_view(self.image_view)
+//         //         .sampler(self.sampler)])
+//         todo!("Fix UpdateOnce?");
+//     }
+// }
 
 impl UniformHandle {
     pub fn new(
@@ -104,7 +117,7 @@ impl UniformHandle {
 
     pub fn add_image_info(&mut self, image_info: ImageInfo) {
         for descr in &mut self.descriptors {
-            descr.image_info = Some(image_info);
+            descr.image_info = Some(image_info.clone());
             //TODO: Something like this maybe? -
             // descr.static_descriptors.push(Box::new(image_info));
         }
@@ -134,7 +147,7 @@ impl UniformHandle {
     ) -> UniformDescriptor {
         let data_size = 4 * 16 * 3 as vk::DeviceSize;
 
-        let create_info = vk::BufferCreateInfo::builder()
+        let create_info = vk::BufferCreateInfo::default()
             .sharing_mode(vk::SharingMode::EXCLUSIVE)
             .usage(vk::BufferUsageFlags::UNIFORM_BUFFER)
             .size(data_size);
@@ -148,23 +161,21 @@ impl UniformHandle {
         });
 
         let desc_pool_sizes = &[
-            vk::DescriptorPoolSize::builder()
+            vk::DescriptorPoolSize::default()
                 .descriptor_count(1)
-                .ty(vk::DescriptorType::UNIFORM_BUFFER)
-                .build(),
-            vk::DescriptorPoolSize::builder()
+                .ty(vk::DescriptorType::UNIFORM_BUFFER),
+            vk::DescriptorPoolSize::default()
                 .descriptor_count(1)
-                .ty(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
-                .build(),
+                .ty(vk::DescriptorType::COMBINED_IMAGE_SAMPLER),
         ];
-        let desc_pool_info = vk::DescriptorPoolCreateInfo::builder()
+        let desc_pool_info = vk::DescriptorPoolCreateInfo::default()
             .pool_sizes(desc_pool_sizes)
             .max_sets(1);
         let desc_pool =
             unsafe { context.device.create_descriptor_pool(&desc_pool_info, None) }.unwrap();
 
         let desc_layouts = &[desc_layout.clone()];
-        let desc_info = vk::DescriptorSetAllocateInfo::builder()
+        let desc_info = vk::DescriptorSetAllocateInfo::default()
             .descriptor_pool(desc_pool)
             .set_layouts(desc_layouts);
         let desc_set = unsafe { context.device.allocate_descriptor_sets(&desc_info) }.unwrap()[0];
@@ -198,25 +209,23 @@ impl UniformDescriptor {
                 std::ptr::copy_nonoverlapping(data.as_ptr(), mapped_data, data_size as usize);
             }
 
-            let buf_info = [vk::DescriptorBufferInfo::builder()
+            let buf_info = [vk::DescriptorBufferInfo::default()
                 .buffer(uniform_buffer.buffer)
                 .offset(0)
-                .range(data_size)
-                .build()];
+                .range(data_size)];
             let mut desc_writes = vec![];
             desc_writes.push(
-                vk::WriteDescriptorSet::builder()
+                vk::WriteDescriptorSet::default()
                     .dst_set(self.desc_set)
                     .dst_binding(0)
                     .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
-                    .buffer_info(&buf_info)
-                    .build(),
+                    .buffer_info(&buf_info),
             );
             if let Some(image_info) = &mut self.image_info {
                 if !image_info.is_updated {
+                    image_info.is_updated = true;
                     let write_set = image_info.update_once(self.desc_set, 1);
                     desc_writes.push(write_set);
-                    image_info.is_updated = true;
                 }
             } else {
                 println!("No descriptor image to update!!!");
@@ -253,45 +262,41 @@ impl RenderPipeline {
         let entry_point = CString::new("main").unwrap();
         let mut vertex_spv_file = Cursor::new(SHADER_VERT);
         let vert_decoded = read_spv(&mut vertex_spv_file).unwrap();
-        let create_info = vk::ShaderModuleCreateInfo::builder().code(&vert_decoded);
+        let create_info = vk::ShaderModuleCreateInfo::default().code(&vert_decoded);
         let shader_vert =
             unsafe { context.device.create_shader_module(&create_info, None) }.unwrap();
 
         let mut frag_spv_file = Cursor::new(SHADER_FRAG);
         let frag_decoded = read_spv(&mut frag_spv_file).unwrap();
-        let create_info = vk::ShaderModuleCreateInfo::builder().code(&frag_decoded);
+        let create_info = vk::ShaderModuleCreateInfo::default().code(&frag_decoded);
         let shader_frag =
             unsafe { context.device.create_shader_module(&create_info, None) }.unwrap();
 
         let shader_stages = vec![
-            vk::PipelineShaderStageCreateInfo::builder()
+            vk::PipelineShaderStageCreateInfo::default()
                 .stage(vk::ShaderStageFlags::VERTEX)
                 .module(shader_vert)
-                .name(&entry_point)
-                .build(),
-            vk::PipelineShaderStageCreateInfo::builder()
+                .name(&entry_point),
+            vk::PipelineShaderStageCreateInfo::default()
                 .stage(vk::ShaderStageFlags::FRAGMENT)
                 .module(shader_frag)
-                .name(&entry_point)
-                .build(),
+                .name(&entry_point),
         ];
         //TODO: Descripitor sets
         let desc_layout_bindings = &[
-            vk::DescriptorSetLayoutBinding::builder()
+            vk::DescriptorSetLayoutBinding::default()
                 .binding(0)
                 .descriptor_count(1)
                 .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
-                .stage_flags(vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT)
-                .build(),
-            vk::DescriptorSetLayoutBinding::builder()
+                .stage_flags(vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT),
+            vk::DescriptorSetLayoutBinding::default()
                 .binding(1)
                 .descriptor_count(1)
                 .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
-                .stage_flags(vk::ShaderStageFlags::FRAGMENT)
-                .build(),
+                .stage_flags(vk::ShaderStageFlags::FRAGMENT),
         ];
         let desc_layout_info =
-            vk::DescriptorSetLayoutCreateInfo::builder().bindings(desc_layout_bindings);
+            vk::DescriptorSetLayoutCreateInfo::default().bindings(desc_layout_bindings);
         let desc_layout = unsafe {
             context
                 .device
@@ -304,26 +309,26 @@ impl RenderPipeline {
         let pipeline_layout_desc_layouts = &[desc_layout];
 
         let create_info =
-            vk::PipelineLayoutCreateInfo::builder().set_layouts(pipeline_layout_desc_layouts);
+            vk::PipelineLayoutCreateInfo::default().set_layouts(pipeline_layout_desc_layouts);
         let pipeline_layout =
             unsafe { context.device.create_pipeline_layout(&create_info, None) }.unwrap();
 
         let vertex_binding_desc = [vertex_binding.get_binding_desc(0)];
         let vertex_attrib_descs = vertex_binding.get_attribute_desc(0);
-        let vertex_input = vk::PipelineVertexInputStateCreateInfo::builder()
+        let vertex_input = vk::PipelineVertexInputStateCreateInfo::default()
             .vertex_binding_descriptions(&vertex_binding_desc)
             .vertex_attribute_descriptions(vertex_attrib_descs.as_slice());
 
         // https://vulkan-tutorial.com/Drawing_a_triangle/Graphics_pipeline_basics/Fixed_functions
-        let input_assembly = vk::PipelineInputAssemblyStateCreateInfo::builder()
+        let input_assembly = vk::PipelineInputAssemblyStateCreateInfo::default()
             .topology(vk::PrimitiveTopology::TRIANGLE_LIST)
             .primitive_restart_enable(false);
 
-        let viewport_state = vk::PipelineViewportStateCreateInfo::builder()
+        let viewport_state = vk::PipelineViewportStateCreateInfo::default()
             .viewport_count(1)
             .scissor_count(1);
 
-        let rasterizer = vk::PipelineRasterizationStateCreateInfo::builder()
+        let rasterizer = vk::PipelineRasterizationStateCreateInfo::default()
             .depth_clamp_enable(false)
             .rasterizer_discard_enable(false)
             .polygon_mode(vk::PolygonMode::FILL)
@@ -331,25 +336,24 @@ impl RenderPipeline {
             .cull_mode(vk::CullModeFlags::BACK)
             .front_face(vk::FrontFace::CLOCKWISE);
 
-        let multisampling = vk::PipelineMultisampleStateCreateInfo::builder()
+        let multisampling = vk::PipelineMultisampleStateCreateInfo::default()
             .sample_shading_enable(false)
             .rasterization_samples(vk::SampleCountFlags::TYPE_1);
 
-        let color_blend_attachments = vec![vk::PipelineColorBlendAttachmentState::builder()
+        let color_blend_attachments = vec![vk::PipelineColorBlendAttachmentState::default()
             .color_write_mask(
                 vk::ColorComponentFlags::R
                     | vk::ColorComponentFlags::G
                     | vk::ColorComponentFlags::B
                     | vk::ColorComponentFlags::A,
             )
-            .blend_enable(false)
-            .build()];
+            .blend_enable(false)];
 
-        let color_blending = vk::PipelineColorBlendStateCreateInfo::builder()
+        let color_blending = vk::PipelineColorBlendStateCreateInfo::default()
             .logic_op_enable(false)
             .attachments(&color_blend_attachments);
 
-        let depth_stencil_state = vk::PipelineDepthStencilStateCreateInfo::builder()
+        let depth_stencil_state = vk::PipelineDepthStencilStateCreateInfo::default()
             .depth_test_enable(true)
             .depth_write_enable(true)
             .depth_compare_op(vk::CompareOp::LESS)
@@ -357,10 +361,10 @@ impl RenderPipeline {
             .min_depth_bounds(0.0)
             .max_depth_bounds(1.0)
             .stencil_test_enable(false);
-        let dynamic_state = vk::PipelineDynamicStateCreateInfo::builder()
+        let dynamic_state = vk::PipelineDynamicStateCreateInfo::default()
             .dynamic_states(&[vk::DynamicState::VIEWPORT, vk::DynamicState::SCISSOR]);
 
-        let create_info = vk::GraphicsPipelineCreateInfo::builder()
+        let create_info = vk::GraphicsPipelineCreateInfo::default()
             .stages(&shader_stages)
             .vertex_input_state(&vertex_input)
             .input_assembly_state(&input_assembly)
@@ -377,7 +381,7 @@ impl RenderPipeline {
         let pipeline = unsafe {
             context.device.create_graphics_pipelines(
                 vk::PipelineCache::null(),
-                &[create_info.build()],
+                &[create_info],
                 None,
             )
         }

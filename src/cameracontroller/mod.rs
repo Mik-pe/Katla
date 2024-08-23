@@ -90,44 +90,32 @@ impl Camera {
         camera
     }
 
-    pub fn handle_event(&mut self, event: &Event<()>) {
-        match event {
-            Event::WindowEvent {
-                window_id: _,
-                event,
-            } => match event {
-                WindowEvent::MouseInput {
-                    device_id: _,
-                    state,
-                    button,
-                    ..
-                } => {
-                    if button == &MouseButton::Right && state == &ElementState::Pressed {
-                        self.looking = true;
-                    } else if button == &MouseButton::Right && state == &ElementState::Released {
-                        self.looking = false;
-                    }
-                }
-                _ => {}
-            },
-            Event::DeviceEvent {
-                device_id: _,
-                event,
-            } => match event {
-                DeviceEvent::MouseMotion { delta } => {
-                    if self.looking {
-                        //Since -y is up for now, this is valid:
-                        self.yaw += 0.005 * delta.0;
-                        self.pitch -= 0.005 * delta.1;
-                        self.pitch = self
-                            .pitch
-                            .max(-std::f64::consts::FRAC_PI_2 + 0.01)
-                            .min(std::f64::consts::FRAC_PI_2 - 0.01);
-                    }
-                }
-                _ => {}
-            },
-            _ => {}
+    pub fn handle_device_event(&mut self, event: &DeviceEvent) {
+        if let DeviceEvent::MouseMotion { delta } = event {
+            if self.looking {
+                //Since -y is up for now, this is valid:
+                self.yaw += 0.005 * delta.0;
+                self.pitch -= 0.005 * delta.1;
+                self.pitch = self
+                    .pitch
+                    .max(-std::f64::consts::FRAC_PI_2 + 0.01)
+                    .min(std::f64::consts::FRAC_PI_2 - 0.01);
+            }
+        }
+    }
+
+    pub fn handle_window_event(&mut self, event: &WindowEvent) {
+        if let WindowEvent::MouseInput {
+            device_id: _,
+            state,
+            button,
+        } = event
+        {
+            if button == &MouseButton::Right && state == &ElementState::Pressed {
+                self.looking = true;
+            } else if button == &MouseButton::Right && state == &ElementState::Released {
+                self.looking = false;
+            }
         }
     }
 
