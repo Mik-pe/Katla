@@ -2,7 +2,6 @@ use crate::input::InputController;
 use crate::input::InputMapping;
 use katla_math::{Mat4, Vec3};
 use std::{cell::RefCell, rc::Rc};
-use winit::event::Event;
 use winit::event::{DeviceEvent, ElementState, MouseButton, WindowEvent};
 
 pub struct PerspectiveProjection {
