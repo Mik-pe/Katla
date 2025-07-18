@@ -53,7 +53,7 @@ impl GLTFModel {
                     start_index = accessor.offset() + buffer_view.offset();
                     end_index += start_index;
                     let attr_buf = &self.buffers[buf_index];
-                    let attr_arr = (&attr_buf[start_index..end_index]).to_vec();
+                    let attr_arr = attr_buf[start_index..end_index].to_vec();
                     let iter = attr_arr.chunks(acc_stride).step_by(interleaving_step);
                     //Striding needs to be acknowledged
                     match semantic {
@@ -126,7 +126,7 @@ impl GLTFModel {
             } else if has_pos && has_norm {
                 vertex_data = positions
                     .into_iter()
-                    .zip(normals.into_iter())
+                    .zip(normals)
                     .map(|(position, normal)| VertexPBR {
                         position,
                         normal,
@@ -137,7 +137,7 @@ impl GLTFModel {
             } else if has_pos && has_tex_coords {
                 vertex_data = positions
                     .into_iter()
-                    .zip(tex_coords.into_iter())
+                    .zip(tex_coords)
                     .map(|(position, tex_coord0)| VertexPBR {
                         position,
                         normal: [0.0, 0.0, 0.0],

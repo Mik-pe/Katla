@@ -16,7 +16,7 @@ fn test_memcpy() {
         libc::memcpy(other_data.as_mut_ptr() as _, data.as_ptr() as _, NUM_BYTES);
         // std::ptr::copy_nonoverlapping(data.as_ptr(), other_data.as_mut_ptr(), NUM_BYTES);
         let after = Instant::now();
-        let time = Duration::from(after - before);
+        let time = (after - before);
         println!(
             "Duration was: {:.30} ({:.3} MB/s)",
             time.as_secs_f64(),

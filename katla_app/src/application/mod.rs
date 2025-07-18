@@ -18,8 +18,9 @@ use winit::{
 };
 
 use crate::{
-    cameracontroller, cameracontroller::Camera, input::InputController, util::FileCache,
-    util::GLTFModel, util::Timer,
+    cameracontroller::{self, fpscontrol::FpsControl, Camera, CameraController},
+    input::InputController,
+    util::{FileCache, GLTFModel, Timer},
 };
 
 struct ApplicationInfo {
@@ -31,6 +32,7 @@ pub struct Application {
     window: Option<Window>,
     renderer: Option<VulkanRenderer>,
     camera: Rc<RefCell<Camera>>,
+    controller: Rc<RefCell<FpsControl>>,
     input_controller: InputController,
     scene: Scene,
     gltf_cache: FileCache<GLTFModel>,
@@ -73,7 +75,6 @@ impl ApplicationHandler for Application {
                 renderer.context.clone(),
                 //TODO: (mikpe) - should not have to send these when creating a mesh... The scene should be enough and "Mesh" should be a higher level abstraction
                 &renderer.render_pass,
-                renderer.num_images(),
                 Vec3::new(0.0, 0.0, 0.0),
             );
             let bounds = mesh.bounds.clone();
@@ -91,7 +92,7 @@ impl ApplicationHandler for Application {
         _device_id: DeviceId,
         event: DeviceEvent,
     ) {
-        self.camera.borrow_mut().handle_device_event(&event);
+        self.controller.borrow_mut().handle_device_event(&event);
     }
 
     fn window_event(
@@ -100,7 +101,7 @@ impl ApplicationHandler for Application {
         _window_id: WindowId,
         event: WindowEvent,
     ) {
-        self.camera.borrow_mut().handle_window_event(&event);
+        self.controller.borrow_mut().handle_window_event(&event);
         if let Some(renderer) = &mut self.renderer {
             self.input_controller.handle_event(&event);
             match event {
@@ -116,31 +117,30 @@ impl ApplicationHandler for Application {
                 WindowEvent::CloseRequested => {
                     event_loop.exit();
                 }
-                WindowEvent::KeyboardInput { event, .. } => match event.state {
-                    ElementState::Pressed => {
-                        if let PhysicalKey::Code(keycode) = event.physical_key {
-                            match keycode {
-                                KeyCode::Escape => {
-                                    event_loop.exit();
-                                }
-                                KeyCode::KeyT => {
-                                    self.stage_upload = true;
-                                }
-                                _ => {}
+                WindowEvent::KeyboardInput { event, .. } => if event.state == ElementState::Pressed {
+                    if let PhysicalKey::Code(keycode) = event.physical_key {
+                        match keycode {
+                            KeyCode::Escape => {
+                                event_loop.exit();
                             }
+                            KeyCode::KeyT => {
+                                self.stage_upload = true;
+                            }
+                            _ => {}
                         }
                     }
-                    _ => {}
                 },
                 WindowEvent::RedrawRequested => {
                     renderer.swap_frames();
                     self.timer.add_timestamp();
 
                     let dt = self.timer.get_delta() as f32;
-                    self.camera.borrow_mut().update(dt);
+                    self.controller
+                        .borrow_mut()
+                        .tick_camera(&mut self.camera.borrow_mut(), dt);
 
                     self.scene.update(
-                        &self.camera.borrow().get_proj_mat(),
+                        self.camera.borrow().get_proj_mat(),
                         &self.camera.borrow().get_view_mat().inverse(),
                         dt,
                     );
@@ -155,12 +155,11 @@ impl ApplicationHandler for Application {
                                 .read(PathBuf::from("resources/models/Tiger.glb")),
                             renderer.context.clone(),
                             &renderer.render_pass,
-                            renderer.num_images(),
                             Vec3::new(100.0, 0.0, 0.0),
                         );
                         let millisecs = start.elapsed().as_micros() as f64 / 1000.0;
 
-                        println!("Mesh new took {} ms", millisecs);
+                        println!("Mesh new took {millisecs} ms");
                         // offset -= 100.0;
                         let bounds = mesh.bounds.clone();
                         self.scene
@@ -213,6 +212,7 @@ pub struct ApplicationBuilder {
     app_name: String,
     validation_layer_enabled: bool,
     camera: Rc<RefCell<Camera>>,
+    controller: Rc<RefCell<FpsControl>>,
     input_controller: InputController,
 }
 
@@ -251,7 +251,10 @@ impl ApplicationBuilder {
 
         let mut input_controller = self.input_controller;
 
-        cameracontroller::setup_camera_bindings(self.camera.clone(), &mut input_controller);
+        cameracontroller::fpscontrol::setup_camera_bindings(
+            self.controller.clone(),
+            &mut input_controller,
+        );
         let info = ApplicationInfo {
             name: self.app_name,
             validation_layer_enabled: self.validation_layer_enabled,
@@ -261,7 +264,8 @@ impl ApplicationBuilder {
             window: None,
             renderer: None,
             camera: self.camera,
-            input_controller: input_controller,
+            controller: self.controller,
+            input_controller,
             scene: Scene::new(),
             gltf_cache: FileCache::new(),
             stage_upload: false,

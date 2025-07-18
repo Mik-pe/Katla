@@ -10,8 +10,8 @@ fn test_scale_mat() {
     let vertex = Vec3::new(1.0, 1.0, 1.0);
     let transform_mat = transform.make_mat4();
     let transformed_vertex = mat4_mul_vec3(&transform_mat, &vertex);
-    println!("Matrix: {:?}", transform_mat);
-    println!("Vertex: {:?}", transformed_vertex);
+    println!("Matrix: {transform_mat:?}");
+    println!("Vertex: {transformed_vertex:?}");
     assert_abs_diff_eq!(transformed_vertex[0], scale_vec[0], epsilon = 0.0001);
     assert_abs_diff_eq!(transformed_vertex[1], scale_vec[1], epsilon = 0.0001);
     assert_abs_diff_eq!(transformed_vertex[2], scale_vec[2], epsilon = 0.0001);
@@ -24,8 +24,8 @@ fn test_rotation_mat() {
     let vertex = Vec3::new(1.0, 1.0, 1.0);
     let transform_mat = transform.make_mat4();
     let transformed_vertex = mat4_mul_vec3(&transform_mat, &vertex);
-    println!("Matrix: {:?}", transform_mat);
-    println!("Vertex: {:?}", transformed_vertex);
+    println!("Matrix: {transform_mat:?}");
+    println!("Vertex: {transformed_vertex:?}");
     assert_abs_diff_eq!(transformed_vertex[0], 1.0, epsilon = 0.0001);
     assert_abs_diff_eq!(transformed_vertex[1], -1.0, epsilon = 0.0001);
     assert_abs_diff_eq!(transformed_vertex[2], -1.0, epsilon = 0.0001);
@@ -38,8 +38,8 @@ fn test_position_mat() {
     let vertex = Vec3::new(0.0, 0.0, 0.0);
     let transform_mat = transform.make_mat4();
     let transformed_vertex = mat4_mul_vec3(&transform_mat, &vertex);
-    println!("Matrix: {:?}", transform_mat);
-    println!("Vertex: {:?}", transformed_vertex);
+    println!("Matrix: {transform_mat:?}");
+    println!("Vertex: {transformed_vertex:?}");
     assert_abs_diff_eq!(transformed_vertex[0], position[0], epsilon = 0.0001);
     assert_abs_diff_eq!(transformed_vertex[1], position[1], epsilon = 0.0001);
     assert_abs_diff_eq!(transformed_vertex[2], position[2], epsilon = 0.0001);
@@ -58,8 +58,8 @@ fn test_transform_mat() {
     let vertex = Vec3::new(1.0, 0.0, 1.0);
     let transform_mat = transform.make_mat4();
     let transformed_vertex = mat4_mul_vec3(&transform_mat, &vertex);
-    println!("Matrix: {:?}", transform_mat);
-    println!("Vertex: {:?}", transformed_vertex);
+    println!("Matrix: {transform_mat:?}");
+    println!("Vertex: {transformed_vertex:?}");
     assert_abs_diff_eq!(transformed_vertex[0], 3.0, epsilon = 0.0001);
     assert_abs_diff_eq!(transformed_vertex[1], -2.0, epsilon = 0.0001);
     assert_abs_diff_eq!(transformed_vertex[2], 0.0, epsilon = 0.0001);
@@ -77,7 +77,7 @@ fn test_transform() {
     };
     let vertex = Vec3::new(1.0, 0.0, 1.0);
     let transformed_vertex = transform * vertex;
-    println!("Vertex: {:?}", transformed_vertex);
+    println!("Vertex: {transformed_vertex:?}");
     assert_abs_diff_eq!(transformed_vertex[0], 3.0, epsilon = 0.0001);
     assert_abs_diff_eq!(transformed_vertex[1], -2.0, epsilon = 0.0001);
     assert_abs_diff_eq!(transformed_vertex[2], 0.0, epsilon = 0.0001);

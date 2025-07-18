@@ -30,6 +30,12 @@ impl SceneObject {
     }
 }
 
+impl Default for Scene {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Scene {
     pub fn new() -> Self {
         let player = Player {
@@ -52,7 +58,7 @@ impl Scene {
 
     pub fn update(&mut self, proj: &Mat4, view: &Mat4, dt: f32) {
         for object in &mut self.scene_objects {
-            object.drawable.update(&view, &proj, dt);
+            object.drawable.update(view, proj, dt);
         }
     }
 

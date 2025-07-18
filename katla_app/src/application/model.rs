@@ -20,10 +20,9 @@ impl Model {
         model: Rc<GLTFModel>,
         context: Arc<VulkanContext>,
         render_pass: &RenderPass,
-        num_images: usize,
         position: Vec3,
     ) -> Self {
-        let material = Material::new(model.clone(), context.clone(), render_pass, num_images);
+        let material = Material::new(model.clone(), context.clone(), render_pass);
         let mut bounds = model.bounds.clone();
         bounds.center = position;
         let transform = Transform::new_from_position(position);

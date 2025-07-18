@@ -13,7 +13,7 @@ fn main() {
         .with_axis_input(KeyCode::KeyS, InputMapping::MoveForward, -1.0)
         .with_axis_input(KeyCode::KeyW, InputMapping::MoveForward, 1.0)
         .with_axis_input(KeyCode::KeyQ, InputMapping::MoveVertical, -1.0)
-        .with_axis_input(KeyCode::KeyE, InputMapping::MoveVertical, 1.0)
+                    .with_axis_input(KeyCode::KeyE, InputMapping::MoveVertical, 1.0)
         .build();
 
     //TODO: add some sort of system, so that we can run stuff in-loop?

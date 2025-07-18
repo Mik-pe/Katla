@@ -103,23 +103,19 @@ impl QueueFamilyIndices {
                     && surface_loader
                         .get_physical_device_surface_support(physical_device, idx as u32, surface)
                         .unwrap()
-                {
-                    if queue_family_indices.graphics_idx.is_none() {
+                    && queue_family_indices.graphics_idx.is_none() {
                         queue_family_indices.graphics_idx = Some(idx as u32);
                         continue;
                     }
-                }
 
                 if properties.queue_flags.contains(vk::QueueFlags::TRANSFER)
                     && surface_loader
                         .get_physical_device_surface_support(physical_device, idx as u32, surface)
                         .unwrap()
-                {
-                    if queue_family_indices.transfer_idx.is_none() {
+                    && queue_family_indices.transfer_idx.is_none() {
                         queue_family_indices.transfer_idx = Some(idx as u32);
                         continue;
                     }
-                }
             }
         };
 
@@ -133,7 +129,7 @@ impl VulkanContext {
         buffer_info: &vk::BufferCreateInfo,
         location: gpu_allocator::MemoryLocation,
     ) -> (vk::Buffer, Allocation) {
-        let buffer = unsafe { self.device.create_buffer(&buffer_info, None) }.unwrap();
+        let buffer = unsafe { self.device.create_buffer(buffer_info, None) }.unwrap();
         let requirements = unsafe { self.device.get_buffer_memory_requirements(buffer) };
         //TODO: Find better names...
         let allocation_info = gpu_allocator::vulkan::AllocationCreateDesc {
@@ -213,10 +209,7 @@ impl VulkanContext {
         let surface_extensions =
             ash_window::enumerate_required_extensions(display.display_handle().unwrap().as_raw())
                 .unwrap();
-        let mut extension_names_raw = surface_extensions
-            .iter()
-            .map(|ext| *ext)
-            .collect::<Vec<_>>();
+        let mut extension_names_raw = surface_extensions.to_vec();
         let mut instance_layers = vec![];
         if with_validation_layers {
             extension_names_raw.push(ash::ext::debug_utils::NAME.as_ptr());
@@ -230,16 +223,16 @@ impl VulkanContext {
             .api_version(vk::make_api_version(0, 1, 2, 0));
         let create_info = vk::InstanceCreateInfo::default()
             .application_info(&app_info)
-            .enabled_extension_names(&extension_names_raw.as_slice())
+            .enabled_extension_names(extension_names_raw.as_slice())
             .enabled_layer_names(&instance_layers);
 
-        let instance = unsafe {
+        
+
+        unsafe {
             entry
                 .create_instance(&create_info, None)
                 .expect("Vk Instance creation error")
-        };
-
-        instance
+        }
     }
 
     //https://vulkan-tutorial.com/Depth_buffering
@@ -492,15 +485,15 @@ impl VulkanFrameCtx {
             .gfx_cmdpool
             .create_command_buffers(swapchain_image_views.len() as _);
 
-        let ctx = Self {
+        
+        Self {
             context: context.clone(),
             swapchain,
             swapchain_image_views,
             swapchain_images,
             depth_render_texture,
             command_buffers,
-        };
-        ctx
+        }
     }
 
     pub fn recreate_swapchain(&mut self) {
@@ -651,13 +644,13 @@ fn create_device(
         .enabled_layer_names(&device_layers)
         .queue_create_infos(&queue_create_infos)
         .enabled_features(&features);
-    let device = unsafe {
+    
+
+    unsafe {
         instance
             .create_device(physical_device, &create_info, None)
             .unwrap()
-    };
-
-    device
+    }
 }
 
 fn create_debug_messenger(
@@ -703,7 +696,7 @@ fn check_validation_support(entry: &Entry) -> bool {
     unsafe {
         let available_layers = entry.enumerate_instance_layer_properties().unwrap();
         let validation_name = CStr::from_ptr(LAYER_KHRONOS_VALIDATION.as_ptr() as *const i8);
-        println!("Validation name: {:?}", validation_name);
+        println!("Validation name: {validation_name:?}");
         for layer in available_layers {
             let layer_name = std::ffi::CStr::from_ptr(layer.layer_name.as_ptr() as _);
             if layer_name == validation_name {
@@ -712,5 +705,5 @@ fn check_validation_support(entry: &Entry) -> bool {
         }
     }
 
-    return false;
+    false
 }

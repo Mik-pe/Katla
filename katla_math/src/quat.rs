@@ -26,6 +26,12 @@ impl Index<usize> for Quat {
     }
 }
 
+impl Default for Quat {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Quat {
     #[inline]
     #[allow(dead_code)]
@@ -53,6 +59,13 @@ impl Quat {
         quat
     }
 
+    pub fn new_from_yaw_pitch(yaw: f32, pitch: f32) -> Quat {
+        let yaw_rotation = Quat::new_from_axis_angle(Vec3::new(0.0, 1.0, 0.0), yaw);
+        let pitch_rotation = Quat::new_from_axis_angle(Vec3::new(1.0, 0.0, 0.0), pitch);
+
+        yaw_rotation * pitch_rotation
+    }
+
     fn length_squared(&self) -> f32 {
         self.x * self.x + self.y * self.y + self.z * self.z + self.w * self.w
     }
@@ -64,10 +77,10 @@ impl Quat {
 
     pub fn normalize(&mut self) {
         let len_sq = self.length_squared();
-        self.x = self.x / len_sq;
-        self.y = self.y / len_sq;
-        self.z = self.z / len_sq;
-        self.w = self.w / len_sq;
+        self.x /= len_sq;
+        self.y /= len_sq;
+        self.z /= len_sq;
+        self.w /= len_sq;
     }
 
     pub fn inverse(&self) -> Self {
@@ -188,7 +201,7 @@ impl Mul<Vec3> for Quat {
     fn mul(self, v: Vec3) -> Self::Output {
         let q = Vec3::new(self.x, self.y, self.z);
         let t = 2.0 * q.cross(v);
-        let result = v + (self.w * t) + q.cross(t);
-        result
+        
+        v + (self.w * t) + q.cross(t)
     }
 }

@@ -70,15 +70,15 @@ impl VulkanRenderer {
             FRAMES_IN_FLIGHT,
         );
 
-        let renderer = Self {
+        
+        Self {
             context,
             frame_context,
             render_pass,
             swapchain_framebuffers,
             swap_data,
             current_framedata: None,
-        };
-        renderer
+        }
     }
 
     // fn create_framebuffers(context: &VulkanCtx) -> Vec<Framebuffer> {

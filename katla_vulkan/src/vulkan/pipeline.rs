@@ -97,14 +97,10 @@ impl ImageInfo {
 // }
 
 impl UniformHandle {
-    pub fn new(
-        num_buffered_frames: usize,
-        context: &VulkanContext,
-        desc_layout: &vk::DescriptorSetLayout,
-    ) -> Self {
+    pub fn new(context: &VulkanContext, desc_layout: &vk::DescriptorSetLayout) -> Self {
         let mut uniform_descs = vec![];
-        for _ in 0..num_buffered_frames {
-            let uniform_desc = Self::create_descriptor_sets(context, &desc_layout);
+        for _ in 0..2 {
+            let uniform_desc = Self::create_descriptor_sets(context, desc_layout);
             uniform_descs.push(uniform_desc);
         }
 
@@ -131,8 +127,8 @@ impl UniformHandle {
     }
 
     pub fn next_descriptor(&self) -> &UniformDescriptor {
-        let out_descr = &self.descriptors[self.next_bind_index];
-        out_descr
+        
+        (&self.descriptors[self.next_bind_index]) as _
     }
 
     pub fn destroy(&mut self, context: &VulkanContext) {
@@ -174,7 +170,7 @@ impl UniformHandle {
         let desc_pool =
             unsafe { context.device.create_descriptor_pool(&desc_pool_info, None) }.unwrap();
 
-        let desc_layouts = &[desc_layout.clone()];
+        let desc_layouts = &[*desc_layout];
         let desc_info = vk::DescriptorSetAllocateInfo::default()
             .descriptor_pool(desc_pool)
             .set_layouts(desc_layouts);
@@ -256,7 +252,6 @@ impl RenderPipeline {
     pub fn new(
         context: Arc<VulkanContext>,
         render_pass: vk::RenderPass,
-        num_buffered_frames: usize,
         vertex_binding: VertexBinding,
     ) -> Self {
         let entry_point = CString::new("main").unwrap();
@@ -304,7 +299,7 @@ impl RenderPipeline {
         }
         .unwrap();
 
-        let uniform = UniformHandle::new(num_buffered_frames, &context, &desc_layout);
+        let uniform = UniformHandle::new(&context, &desc_layout);
 
         let pipeline_layout_desc_layouts = &[desc_layout];
 

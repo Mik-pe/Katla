@@ -8,6 +8,12 @@ pub struct Transform {
     pub rotation: Quat,
 }
 
+impl Default for Transform {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Transform {
     pub fn new() -> Self {
         Self {
@@ -73,7 +79,7 @@ impl Mul<Vec3> for Transform {
     type Output = Vec3;
 
     fn mul(self, v: Vec3) -> Self::Output {
-        let out_pos = self.position + (self.scale * (self.rotation * v));
-        out_pos
+        
+        self.position + (self.scale * (self.rotation * v))
     }
 }

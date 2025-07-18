@@ -66,6 +66,12 @@ impl Index<usize> for Mat4 {
 // }
 
 //Mat4 is considered a column-major matrix
+impl Default for Mat4 {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Mat4 {
     pub fn new() -> Mat4 {
         Mat4([
@@ -376,15 +382,15 @@ impl Mat4 {
     }
 }
 
-impl Into<[[f32; 4]; 4]> for Mat4 {
-    fn into(self) -> [[f32; 4]; 4] {
-        let vec_arr = self.0;
-        let f_arr = [
+impl From<Mat4> for [[f32; 4]; 4] {
+    fn from(val: Mat4) -> Self {
+        let vec_arr = val.0;
+        
+        [
             vec_arr[0].into(),
             vec_arr[1].into(),
             vec_arr[2].into(),
             vec_arr[3].into(),
-        ];
-        f_arr
+        ]
     }
 }
