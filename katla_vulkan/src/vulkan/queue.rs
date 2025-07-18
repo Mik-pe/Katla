@@ -47,8 +47,8 @@ impl Queue {
 
         let submit_info = vk::SubmitInfo::default()
             .wait_dst_stage_mask(&wait_dst_stage_mask)
-            .wait_semaphores(&wait_semaphores)
-            .signal_semaphores(&signal_semaphores)
+            .wait_semaphores(wait_semaphores)
+            .signal_semaphores(signal_semaphores)
             .command_buffers(&vk_cmd_buffers);
 
         unsafe {
@@ -65,9 +65,9 @@ impl Queue {
         swapchains: &[vk::SwapchainKHR],
     ) {
         let present_info = vk::PresentInfoKHR::default()
-            .wait_semaphores(&signal_semaphores)
+            .wait_semaphores(signal_semaphores)
             .swapchains(swapchains)
-            .image_indices(&image_indices);
+            .image_indices(image_indices);
 
         // unsafe {
         //     self.context

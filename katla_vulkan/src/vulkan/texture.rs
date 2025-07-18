@@ -225,7 +225,7 @@ impl Texture {
                 "[Create Image] Image size: {:.2}MiB",
                 total_size as f64 / (1024f64 * 1024f64)
             );
-            println!("[Create Image] Total time spent: {}ms", ms_total);
+            println!("[Create Image] Total time spent: {ms_total}ms");
 
             println!(
                 "image: \t\t\t\t{:.3}ms {:.2}%",

@@ -20,13 +20,11 @@ impl Material {
         model: Rc<GLTFModel>,
         context: Arc<VulkanContext>,
         render_pass: &RenderPass,
-        num_images: usize,
     ) -> Self {
         let vertex_binding = VertexPBR::get_vertex_binding();
         let mut renderpipeline = RenderPipeline::new(
             context.clone(),
             render_pass.get_vk_renderpass(),
-            num_images,
             vertex_binding,
         );
         let mut texture = None;
@@ -35,8 +33,7 @@ impl Material {
             //TODO: Support more image formats:
             match image.format {
                 gltf::image::Format::R8G8B8 => {
-                    let mut pad_vec = Vec::new();
-                    pad_vec.resize((image.width * image.height) as usize, 0u8);
+                    let pad_vec = vec![0; (image.width * image.height) as usize];
                     let pixels = &image.pixels;
 
                     let pixel_chunks = pixels.chunks(3);

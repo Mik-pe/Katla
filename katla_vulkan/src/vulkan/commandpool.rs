@@ -27,7 +27,7 @@ impl CommandPool {
     pub fn create_command_buffers(&self, num_cmd_buffers: u32) -> Vec<super::CommandBuffer> {
         let mut command_buffers = Vec::with_capacity(num_cmd_buffers as usize);
         for _ in 0..num_cmd_buffers {
-            command_buffers.push(super::CommandBuffer::new(&self.device, &self));
+            command_buffers.push(super::CommandBuffer::new(&self.device, self));
         }
         command_buffers
     }

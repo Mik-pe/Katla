@@ -71,7 +71,7 @@ impl CommandBuffer {
             .render_pass(render_pass)
             .framebuffer(framebuffer)
             .render_area(render_area)
-            .clear_values(&clear_values);
+            .clear_values(clear_values);
 
         unsafe {
             self.device.cmd_begin_render_pass(

@@ -75,7 +75,7 @@ impl<'a> InputController {
         let modifier = Modifier {
             code: key_event,
             state: ElementState::Released,
-            value: value,
+            value,
         };
         axis_handler.modifiers.push(modifier);
         self.axis_key_map.insert(key_event, input);
@@ -112,17 +112,15 @@ impl<'a> InputController {
                         callback(*value)
                     }
                 }
-            } else {
-                if let Some(callbacks) = self.action_callbacks.get_mut(key) {
-                    for callback in callbacks {
-                        callback(0.0)
-                    }
+            } else if let Some(callbacks) = self.action_callbacks.get_mut(key) {
+                for callback in callbacks {
+                    callback(0.0)
                 }
             }
         }
     }
     fn handle_axis(&mut self, code: &KeyCode, state: ElementState) {
-        if let Some(key) = self.axis_key_map.get(&code) {
+        if let Some(key) = self.axis_key_map.get(code) {
             for axis_handler in &mut self.axis_handlers {
                 if axis_handler.axis == *key {
                     axis_handler.modifier_changed(*code, state);
@@ -132,23 +130,20 @@ impl<'a> InputController {
     }
 
     pub fn handle_event(&mut self, event: &event::WindowEvent) {
-        match event {
-            WindowEvent::KeyboardInput {
+        if let WindowEvent::KeyboardInput {
                 device_id: _,
                 event,
                 is_synthetic: _,
-            } => {
-                if let PhysicalKey::Code(code) = event.physical_key {
-                    self.handle_input(&code, event.state);
-                    self.handle_axis(&code, event.state);
-                    if let Some(callbacks) = self.keypressmap_callback.get_mut(&code) {
-                        for callback in callbacks {
-                            callback(code, event.state);
-                        }
+            } = event {
+            if let PhysicalKey::Code(code) = event.physical_key {
+                self.handle_input(&code, event.state);
+                self.handle_axis(&code, event.state);
+                if let Some(callbacks) = self.keypressmap_callback.get_mut(&code) {
+                    for callback in callbacks {
+                        callback(code, event.state);
                     }
                 }
             }
-            _ => {}
         }
     }
 

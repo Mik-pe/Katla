@@ -41,14 +41,11 @@ impl BufferObject {
                 data_size
             );
         }
-        match &self.allocation {
-            Some(allocation) => {
-                let mapped_ptr = self.context.map_buffer(allocation);
-                unsafe {
-                    std::ptr::copy_nonoverlapping(data.as_ptr(), mapped_ptr, data_size as usize);
-                }
+        if let Some(allocation) = &self.allocation {
+            let mapped_ptr = self.context.map_buffer(allocation);
+            unsafe {
+                std::ptr::copy_nonoverlapping(data.as_ptr(), mapped_ptr, data_size as usize);
             }
-            _ => {}
         }
     }
 }

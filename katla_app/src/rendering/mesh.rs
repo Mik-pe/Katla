@@ -52,7 +52,7 @@ impl Mesh {
                 IndexType::UINT8_EXT => data_slice.len() as u32,
                 IndexType::UINT16 => (data_slice.len() as u32) / 2,
                 IndexType::UINT32 => (data_slice.len() as u32) / 4,
-                _ => 0 as u32,
+                _ => 0_u32,
             };
             let mut index_buffer =
                 IndexBuffer::new(context.clone(), data_slice.len() as u64, index_type, count);
@@ -89,11 +89,9 @@ impl Mesh {
                 command_buffer.bind_vertex_buffers(0, &[vertex_buffer.object()], &[0]);
                 command_buffer.draw_indexed(index_buffer.count(), 1, 0, 0, 0);
             }
-        } else {
-            if let Some(vertex_buffer) = &self.vertex_buffer {
-                command_buffer.bind_vertex_buffers(0, &[vertex_buffer.object()], &[0]);
-                command_buffer.draw_array(vertex_buffer.count(), 1, 0, 0);
-            }
+        } else if let Some(vertex_buffer) = &self.vertex_buffer {
+            command_buffer.bind_vertex_buffers(0, &[vertex_buffer.object()], &[0]);
+            command_buffer.draw_array(vertex_buffer.count(), 1, 0, 0);
         }
     }
 }

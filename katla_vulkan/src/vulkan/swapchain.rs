@@ -71,9 +71,8 @@ impl Swapchain {
     }
 
     pub fn get_swapchain_images(&self) -> Vec<vk::Image> {
-        let swapchain_images =
-            unsafe { self.swapchain_loader.get_swapchain_images(self.swapchain) }.unwrap();
-        swapchain_images
+        
+        unsafe { self.swapchain_loader.get_swapchain_images(self.swapchain) }.unwrap()
     }
 
     pub fn get_extent(&self) -> vk::Extent2D {

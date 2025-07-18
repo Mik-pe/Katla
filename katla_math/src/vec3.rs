@@ -43,9 +43,9 @@ impl Add for Vec3 {
     }
 }
 
-impl Into<Vec3> for [f32; 3] {
-    fn into(self) -> Vec3 {
-        Vec3(self)
+impl From<[f32; 3]> for Vec3 {
+    fn from(val: [f32; 3]) -> Self {
+        Vec3(val)
     }
 }
 
@@ -131,5 +131,11 @@ impl Mul<f32> for Vec3 {
 
     fn mul(self, rhs: f32) -> Self::Output {
         Vec3([self[0] * rhs, self[1] * rhs, self[2] * rhs])
+    }
+}
+
+impl Default for Vec3 {
+    fn default() -> Self {
+        Self::new(0.0, 0.0, 0.0)
     }
 }

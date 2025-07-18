@@ -17,9 +17,9 @@ impl Index<usize> for Vec4 {
     }
 }
 
-impl Into<[f32; 4]> for Vec4 {
-    fn into(self) -> [f32; 4] {
-        self.0
+impl From<Vec4> for [f32; 4] {
+    fn from(val: Vec4) -> Self {
+        val.0
     }
 }
 

@@ -50,7 +50,7 @@ impl AABB {
         let extent = (max - min).mul(0.5);
         Self {
             center: min + extent,
-            extent: extent,
+            extent,
         }
     }
 }

@@ -19,7 +19,7 @@ impl Timer {
             current_max: 0.0,
             delta: 0.0,
             last_frame: Instant::now(),
-            max_num_timestamps: max_num_timestamps,
+            max_num_timestamps,
         }
     }
 

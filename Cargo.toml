@@ -1,2 +1,3 @@
 [workspace]
 members = ["katla_math", "katla_vulkan", "katla_app"]
+resolver = "2"
