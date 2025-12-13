@@ -39,7 +39,7 @@ impl Model {
 
 impl Drawable for Model {
     fn update(&mut self, view: &Mat4, proj: &Mat4, dt: f32) {
-        let quat = Quat::new_from_axis_angle(Vec3::new(0.0, 1.0, 0.0), FRAC_PI_2 * dt);
+        let quat = Quat::from_axis_angle(Vec3::new(0.0, 1.0, 0.0), FRAC_PI_2 * dt);
         self.transform.rotation = self.transform.rotation * quat;
         let model = self.transform.make_mat4();
         self.material

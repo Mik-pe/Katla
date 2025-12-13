@@ -11,10 +11,10 @@ const SHADER_FRAG: &[u8] = include_bytes!("../../../resources/shaders/model.frag
 
 //TODO: Make these traits more usable and dynamic for a pipeline.
 pub trait UpdateOnce {
-    fn update_once(&self, set: vk::DescriptorSet, binding: u32) -> vk::WriteDescriptorSet;
+    fn update_once(&self, set: vk::DescriptorSet, binding: u32) -> vk::WriteDescriptorSet<'_>;
 }
 pub trait UpdateAlways {
-    fn update_always(&self, set: vk::DescriptorSet, binding: u32) -> vk::WriteDescriptorSet;
+    fn update_always(&self, set: vk::DescriptorSet, binding: u32) -> vk::WriteDescriptorSet<'_>;
 }
 
 pub struct RenderPipeline {
@@ -68,7 +68,7 @@ impl ImageInfo {
         }
     }
 
-    fn update_once(&self, set: vk::DescriptorSet, binding: u32) -> vk::WriteDescriptorSet {
+    fn update_once(&self, set: vk::DescriptorSet, binding: u32) -> vk::WriteDescriptorSet<'_> {
         vk::WriteDescriptorSet::default()
             .dst_set(set)
             .dst_binding(binding)

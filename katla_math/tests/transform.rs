@@ -19,7 +19,7 @@ fn test_scale_mat() {
 
 #[test]
 fn test_rotation_mat() {
-    let rotation = Quat::new_from_axis_angle(Vec3::new(1.0, 0.0, 0.0), PI);
+    let rotation = Quat::from_axis_angle(Vec3::new(1.0, 0.0, 0.0), PI);
     let transform = Transform::new_from_rotation(rotation);
     let vertex = Vec3::new(1.0, 1.0, 1.0);
     let transform_mat = transform.make_mat4();
@@ -49,7 +49,7 @@ fn test_position_mat() {
 fn test_transform_mat() {
     let position = Vec3::new(1.0, 0.0, 0.0);
     let scale = Vec3::new(2.0, 2.0, 2.0);
-    let rotation = Quat::new_from_axis_angle(Vec3::new(1.0, 0.0, 0.0), FRAC_PI_2);
+    let rotation = Quat::from_axis_angle(Vec3::new(1.0, 0.0, 0.0), FRAC_PI_2);
     let transform = Transform {
         position,
         scale,
@@ -69,7 +69,7 @@ fn test_transform_mat() {
 fn test_transform() {
     let position = Vec3::new(1.0, 0.0, 0.0);
     let scale = Vec3::new(2.0, 2.0, 2.0);
-    let rotation = Quat::new_from_axis_angle(Vec3::new(1.0, 0.0, 0.0), FRAC_PI_2);
+    let rotation = Quat::from_axis_angle(Vec3::new(1.0, 0.0, 0.0), FRAC_PI_2);
     let transform = Transform {
         position,
         scale,

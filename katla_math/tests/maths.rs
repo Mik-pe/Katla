@@ -1,4 +1,4 @@
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use approx::assert_abs_diff_eq;
 use katla_math::{Mat4, Vec3, Vec4};

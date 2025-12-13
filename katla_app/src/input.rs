@@ -131,10 +131,11 @@ impl<'a> InputController {
 
     pub fn handle_event(&mut self, event: &event::WindowEvent) {
         if let WindowEvent::KeyboardInput {
-                device_id: _,
-                event,
-                is_synthetic: _,
-            } = event {
+            device_id: _,
+            event,
+            is_synthetic: _,
+        } = event
+        {
             if let PhysicalKey::Code(code) = event.physical_key {
                 self.handle_input(&code, event.state);
                 self.handle_axis(&code, event.state);
