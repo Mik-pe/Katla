@@ -79,7 +79,6 @@ impl Mul<Vec3> for Transform {
     type Output = Vec3;
 
     fn mul(self, v: Vec3) -> Self::Output {
-        
         self.position + (self.scale * (self.rotation * v))
     }
 }

@@ -44,7 +44,7 @@ impl Quat {
         }
     }
 
-    pub fn new_from_axis_angle(axis: Vec3, angle: f32) -> Quat {
+    pub fn from_axis_angle(axis: Vec3, angle: f32) -> Quat {
         let axis = axis.normalize();
         let factor = f32::sin(angle / 2.0);
 
@@ -60,8 +60,8 @@ impl Quat {
     }
 
     pub fn new_from_yaw_pitch(yaw: f32, pitch: f32) -> Quat {
-        let yaw_rotation = Quat::new_from_axis_angle(Vec3::new(0.0, 1.0, 0.0), yaw);
-        let pitch_rotation = Quat::new_from_axis_angle(Vec3::new(1.0, 0.0, 0.0), pitch);
+        let yaw_rotation = Quat::from_axis_angle(Vec3::new(0.0, 1.0, 0.0), yaw);
+        let pitch_rotation = Quat::from_axis_angle(Vec3::new(1.0, 0.0, 0.0), pitch);
 
         yaw_rotation * pitch_rotation
     }
@@ -201,7 +201,7 @@ impl Mul<Vec3> for Quat {
     fn mul(self, v: Vec3) -> Self::Output {
         let q = Vec3::new(self.x, self.y, self.z);
         let t = 2.0 * q.cross(v);
-        
+
         v + (self.w * t) + q.cross(t)
     }
 }

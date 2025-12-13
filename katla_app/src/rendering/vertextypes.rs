@@ -14,12 +14,12 @@ impl VertexPosition {
     }
 }
 
-#[repr(C)]
-#[derive(Default, Debug, Clone)]
-pub struct VertexPos2Color {
-    pub position: [f32; 2],
-    pub color: [f32; 3],
-}
+// #[repr(C)]
+// #[derive(Default, Debug, Clone)]
+// pub struct VertexPos2Color {
+//     pub position: [f32; 2],
+//     pub color: [f32; 3],
+// }
 
 #[repr(C)]
 #[derive(Default, Debug, Clone)]
@@ -36,13 +36,13 @@ impl VertexNormal {
     }
 }
 
-#[repr(C)]
-#[derive(Default, Debug, Clone)]
-pub struct VertexNormalTangent {
-    pub position: [f32; 3],
-    pub normal: [f32; 3],
-    pub tangent: [f32; 4],
-}
+// #[repr(C)]
+// #[derive(Default, Debug, Clone)]
+// pub struct VertexNormalTangent {
+//     pub position: [f32; 3],
+//     pub normal: [f32; 3],
+//     pub tangent: [f32; 4],
+// }
 
 #[repr(C)]
 #[derive(Default, Debug, Clone)]

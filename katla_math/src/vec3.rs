@@ -18,6 +18,22 @@ impl Index<usize> for Vec3 {
         }
     }
 }
+
+//Make accessors for x/y/z
+impl Vec3 {
+    pub fn x(&self) -> f32 {
+        self.0[0]
+    }
+
+    pub fn y(&self) -> f32 {
+        self.0[1]
+    }
+
+    pub fn z(&self) -> f32 {
+        self.0[2]
+    }
+}
+
 impl IndexMut<usize> for Vec3 {
     fn index_mut(&mut self, index: usize) -> &mut Self::Output {
         match index {
@@ -81,6 +97,17 @@ impl Vec3 {
         Vec3([self[0] / lenroot, self[1] / lenroot, self[2] / lenroot])
     }
 
+    #[inline]
+    pub fn is_normalized(&self) -> bool {
+        let lensq = self[0] * self[0] + self[1] * self[1] + self[2] * self[2];
+        f32::abs(lensq - 1.0) < f32::EPSILON
+    }
+
+    #[inline]
+    pub fn is_zero(&self) -> bool {
+        self[0] == 0.0 && self[1] == 0.0 && self[2] == 0.0
+    }
+
     pub fn distance_squared(&self) -> f32 {
         self[0] * self[0] + self[1] * self[1] + self[2] * self[2]
     }
@@ -137,5 +164,11 @@ impl Mul<f32> for Vec3 {
 impl Default for Vec3 {
     fn default() -> Self {
         Self::new(0.0, 0.0, 0.0)
+    }
+}
+
+impl PartialEq for Vec3 {
+    fn eq(&self, other: &Self) -> bool {
+        self[0] == other[0] && self[1] == other[1] && self[2] == other[2]
     }
 }

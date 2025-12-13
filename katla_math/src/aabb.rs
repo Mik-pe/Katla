@@ -7,6 +7,7 @@ pub struct AABB {
 }
 
 impl AABB {
+    // An intersection test between two AABBs.
     pub fn intersects(&self, other: &AABB) -> bool {
         if (self.center[0] - other.center[0]).abs() > (self.extent[0] + other.extent[0]) {
             return false;
@@ -21,6 +22,7 @@ impl AABB {
         true
     }
 
+    // This is a helper function to create an AABB from a list of vertices.
     pub fn create_from_verts(verts: &[Vec3]) -> Self {
         let mut min = Vec3::new(f32::MAX, f32::MAX, f32::MAX);
         let mut max = Vec3::new(f32::MIN, f32::MIN, f32::MIN);
