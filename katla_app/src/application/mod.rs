@@ -117,19 +117,21 @@ impl ApplicationHandler for Application {
                 WindowEvent::CloseRequested => {
                     event_loop.exit();
                 }
-                WindowEvent::KeyboardInput { event, .. } => if event.state == ElementState::Pressed {
-                    if let PhysicalKey::Code(keycode) = event.physical_key {
-                        match keycode {
-                            KeyCode::Escape => {
-                                event_loop.exit();
+                WindowEvent::KeyboardInput { event, .. } => {
+                    if event.state == ElementState::Pressed {
+                        if let PhysicalKey::Code(keycode) = event.physical_key {
+                            match keycode {
+                                KeyCode::Escape => {
+                                    event_loop.exit();
+                                }
+                                KeyCode::KeyT => {
+                                    self.stage_upload = true;
+                                }
+                                _ => {}
                             }
-                            KeyCode::KeyT => {
-                                self.stage_upload = true;
-                            }
-                            _ => {}
                         }
                     }
-                },
+                }
                 WindowEvent::RedrawRequested => {
                     renderer.swap_frames();
                     self.timer.add_timestamp();
