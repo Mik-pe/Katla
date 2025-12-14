@@ -71,19 +71,3 @@ fn test_mat4_into() {
         );
     }
 }
-
-// #[test]
-// fn test_inverse() {
-//     let orig_mat4 = Mat4([
-//         Vec4([22.2, 1.1, 4.4, 11.0]),
-//         Vec4([2.2, 33.1, 44.4, 11.330]),
-//         Vec4([2.52, 11.1, 4.255, 151.0]),
-//         Vec4([233.2, 1.1321, 5.4, 11.0]),
-//     ]);
-//     let inv_mat4 = orig_mat4.inverse();
-//     let multiplied = orig_mat4.mul(&inv_mat4);
-
-//     let ident = Mat4::identity();
-//     //These are not equal since of approximations and whatnot, whatever...
-//     assert_eq!(multiplied, ident);
-// }

@@ -1,5 +1,5 @@
-pub(crate) use katla_math::Vec3;
 use katla_math::Quat;
+pub(crate) use katla_math::Vec3;
 use std::{cell::RefCell, rc::Rc};
 use winit::event::{DeviceEvent, ElementState, MouseButton, WindowEvent};
 
@@ -84,7 +84,7 @@ impl Default for FpsControl {
     }
 }
 
-//This is not very fun... should find some better way for this in the future.
+// This is not very fun... should find some better way for this in the future.
 // Probably through internal mutability or something else..?
 pub fn setup_camera_bindings(
     controls: Rc<RefCell<FpsControl>>,
