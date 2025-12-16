@@ -193,17 +193,15 @@ impl<T: Component + 'static> AnyComponentStorage for ComponentStorage<T> {
 ///
 /// Maintains a HashMap of TypeId -> ComponentStorage for efficient
 /// component access.
-pub struct ComponentStorageManager<'a> {
+pub struct ComponentStorageManager {
     storages: HashMap<TypeId, Box<dyn AnyComponentStorage>>,
-    _marker: PhantomData<&'a ()>,
 }
 
-impl<'a> ComponentStorageManager<'a> {
+impl ComponentStorageManager {
     /// Creates a new empty ComponentStorageManager.
     pub fn new() -> Self {
         Self {
             storages: HashMap::new(),
-            _marker: PhantomData,
         }
     }
 
@@ -296,7 +294,7 @@ impl<'a> ComponentStorageManager<'a> {
     }
 }
 
-impl<'a> Default for ComponentStorageManager<'a> {
+impl Default for ComponentStorageManager {
     fn default() -> Self {
         Self::new()
     }

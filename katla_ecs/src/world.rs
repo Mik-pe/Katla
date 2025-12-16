@@ -27,18 +27,18 @@ use std::collections::HashSet;
 /// world.add_component(entity_id, TransformComponent::default());
 /// world.update(0.016);
 /// ```
-pub struct World<'a> {
+pub struct World {
     /// Set of active entity IDs
     entities: HashSet<EntityId>,
     /// Component storage manager
-    storage: ComponentStorageManager<'a>,
+    storage: ComponentStorageManager,
     /// Registered systems
     systems: Vec<OrderedSystem>,
     /// Next entity ID to assign
     next_entity_id: u64,
 }
 
-impl<'a> World<'a> {
+impl World {
     /// Creates a new empty World.
     pub fn new() -> Self {
         Self {
@@ -137,7 +137,7 @@ impl<'a> World<'a> {
     /// Gets a mutable reference to the component storage manager.
     ///
     /// This allows systems and external code to work directly with component storages.
-    pub fn storage_mut(&mut self) -> &mut ComponentStorageManager<'a> {
+    pub fn storage_mut(&mut self) -> &mut ComponentStorageManager {
         &mut self.storage
     }
 
@@ -211,13 +211,13 @@ impl<'a> World<'a> {
     }
 }
 
-impl<'a> Default for World<'a> {
+impl Default for World {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<'a> Drop for World<'a> {
+impl Drop for World {
     fn drop(&mut self) {
         // Clean up systems when the world is destroyed
         for ordered_system in &mut self.systems {
