@@ -79,9 +79,6 @@ impl Camera {
         }
     }
 
-    // pub fn get_cam_pos(&self) -> Vec3 {
-    //     self.pos.clone()
-    // }
     pub fn get_proj_mat(&self) -> &Mat4 {
         &self.projection.matrix
     }

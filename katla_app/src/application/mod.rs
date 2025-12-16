@@ -40,7 +40,7 @@ pub struct Application {
     stage_upload: bool,
     timer: Timer,
     info: ApplicationInfo,
-    world: World<'static>,
+    world: World,
 }
 
 impl ApplicationHandler for Application {
@@ -220,7 +220,7 @@ pub struct ApplicationBuilder {
     validation_layer_enabled: bool,
     controller: Rc<RefCell<FpsControl>>,
     input_controller: InputController,
-    world: World<'static>,
+    world: World,
 }
 
 impl ApplicationBuilder {
