@@ -2,6 +2,7 @@ use super::components::Component;
 use super::entity::EntityId;
 use std::any::{Any, TypeId};
 use std::collections::HashMap;
+use std::marker::PhantomData;
 
 /// ComponentStorage stores components of a specific type in a vector.
 ///
@@ -192,15 +193,17 @@ impl<T: Component + 'static> AnyComponentStorage for ComponentStorage<T> {
 ///
 /// Maintains a HashMap of TypeId -> ComponentStorage for efficient
 /// component access.
-pub struct ComponentStorageManager {
+pub struct ComponentStorageManager<'a> {
     storages: HashMap<TypeId, Box<dyn AnyComponentStorage>>,
+    _marker: PhantomData<&'a ()>,
 }
 
-impl ComponentStorageManager {
+impl<'a> ComponentStorageManager<'a> {
     /// Creates a new empty ComponentStorageManager.
     pub fn new() -> Self {
         Self {
             storages: HashMap::new(),
+            _marker: PhantomData,
         }
     }
 
@@ -293,7 +296,7 @@ impl ComponentStorageManager {
     }
 }
 
-impl Default for ComponentStorageManager {
+impl<'a> Default for ComponentStorageManager<'a> {
     fn default() -> Self {
         Self::new()
     }

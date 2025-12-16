@@ -1,9 +1,14 @@
+use katla_ecs::World;
 use katla_math::Quat;
 pub(crate) use katla_math::Vec3;
 use std::{cell::RefCell, rc::Rc};
 use winit::event::{DeviceEvent, ElementState, MouseButton, WindowEvent};
 
-use crate::input::{InputController, InputMapping};
+use crate::{
+    cameracontroller::Camera,
+    components::{TransformComponent, VelocityComponent},
+    input::{InputController, InputMapping},
+};
 
 use super::CameraController;
 
@@ -59,15 +64,19 @@ impl FpsControl {
 }
 
 impl CameraController for FpsControl {
-    fn tick_camera(&mut self, camera: &mut super::Camera, dt: f32) {
+    fn tick_camera(&mut self, camera: &Camera, world: &mut World, dt: f32) {
         let rotation = Quat::new_from_yaw_pitch(self.yaw as f32, self.pitch as f32);
 
-        let velocity_dir = katla_math::mat4_mul_vec3(&camera.get_view_rotation(), &self.input_dir);
+        let velocity_dir =
+            katla_math::mat4_mul_vec3(&camera.get_view_rotation(world), &self.input_dir);
 
         self.velocity_dir = Vec3::lerp(self.velocity_dir, velocity_dir, 7.0 * dt);
-
-        camera.pos = camera.pos + self.velocity_dir.mul(self.speed * dt);
-        camera.quat = rotation;
+        if let Some(velocity) = world.get_component_mut::<VelocityComponent>(camera.entity) {
+            velocity.acceleration += velocity_dir.mul(self.speed);
+        }
+        if let Some(transform) = world.get_component_mut::<TransformComponent>(camera.entity) {
+            transform.transform.rotation = rotation;
+        }
     }
 }
 

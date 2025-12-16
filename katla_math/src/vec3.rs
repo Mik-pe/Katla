@@ -2,7 +2,7 @@ use core::{
     f32,
     ops::{Add, Index, IndexMut, Sub},
 };
-use std::ops::Mul;
+use std::ops::{AddAssign, Mul};
 
 #[derive(Debug, Copy, Clone)]
 pub struct Vec3(pub [f32; 3]);
@@ -56,6 +56,14 @@ impl Add for Vec3 {
     type Output = Self;
     fn add(self, other: Self) -> Self {
         Self([self[0] + other[0], self[1] + other[1], self[2] + other[2]])
+    }
+}
+
+impl AddAssign for Vec3 {
+    fn add_assign(&mut self, other: Self) {
+        self.0[0] += other[0];
+        self.0[1] += other[1];
+        self.0[2] += other[2];
     }
 }
 
