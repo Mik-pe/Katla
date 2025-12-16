@@ -94,13 +94,11 @@ mod tests {
     use crate::storage::ComponentStorageManager;
 
     #[derive(Component)]
-    struct TestComponent {
-        value: i32,
-    }
+    struct TestComponent {}
 
     impl TestComponent {
-        fn new(value: i32) -> Self {
-            Self { value }
+        fn new() -> Self {
+            Self {}
         }
     }
 
@@ -137,7 +135,7 @@ mod tests {
         let mut system = TestSystem::new();
         let mut storage = ComponentStorageManager::new();
 
-        storage.add_component(EntityId::new(1), TestComponent::new(42));
+        storage.add_component(EntityId::new(1), TestComponent::new());
 
         system.update(&mut storage, 0.016);
 

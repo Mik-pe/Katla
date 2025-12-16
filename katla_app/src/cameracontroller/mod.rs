@@ -1,10 +1,13 @@
-use katla_math::{Mat4, Quat, Vec3};
+use katla_ecs::{EntityId, World};
+use katla_math::{Mat4, Transform, Vec3};
+
+use crate::components::{DragComponent, TransformComponent, VelocityComponent};
 
 pub mod fpscontrol;
 pub mod orbitcontrols;
 
 pub trait CameraController {
-    fn tick_camera(&mut self, camera: &mut Camera, dt: f32);
+    fn tick_camera(&mut self, camera: &Camera, world: &mut World, dt: f32);
 }
 
 pub struct PerspectiveProjection {
@@ -37,19 +40,22 @@ impl PerspectiveProjection {
 }
 
 pub struct Camera {
-    pos: Vec3,
     projection: PerspectiveProjection,
-    quat: Quat,
+    pub entity: EntityId,
 }
 
 impl Camera {
-    pub fn new() -> Self {
-        
+    pub fn new(world: &mut World) -> Self {
+        let transform = Transform::new_from_position(Vec3::new(0.0, 50.0, -450.0));
+        let id = world.create_entity();
+        let transform_component = TransformComponent::new(transform);
+        world.add_component(id, transform_component);
+        world.add_component(id, VelocityComponent::default());
+        world.add_component(id, DragComponent::new(5.0));
 
         Self {
-            pos: Vec3::new(0.0, 50.0, -450.0),
             projection: PerspectiveProjection::default(),
-            quat: Quat::new(),
+            entity: id,
         }
     }
 
@@ -65,8 +71,12 @@ impl Camera {
 
     // Note to self:
     // This is valid since we are doing some assumptions w.r.t. rotation of the surfacetransformation
-    pub fn get_view_rotation(&self) -> Mat4 {
-        self.quat.make_mat4()
+    pub fn get_view_rotation(&self, world: &World) -> Mat4 {
+        if let Some(transform) = world.get_component::<TransformComponent>(self.entity) {
+            transform.transform.rotation.make_mat4()
+        } else {
+            Mat4::identity()
+        }
     }
 
     // pub fn get_cam_pos(&self) -> Vec3 {
@@ -76,20 +86,14 @@ impl Camera {
         &self.projection.matrix
     }
 
-    pub fn get_view_mat(&self) -> Mat4 {
+    pub fn get_view_mat(&self, world: &World) -> Mat4 {
         let fwd = Vec3::new(0.0, 0.0, 1.0);
-        let to = katla_math::mat4_mul_vec3(&self.get_view_rotation(), &fwd);
-
-        Mat4::create_lookat(
-            self.pos,
-            self.pos + to,
-            Vec3::new(0.0, -1.0, 0.0),
-        )
-    }
-}
-
-impl Default for Camera {
-    fn default() -> Self {
-        Self::new()
+        let to = katla_math::mat4_mul_vec3(&self.get_view_rotation(world), &fwd);
+        if let Some(transform) = world.get_component::<TransformComponent>(self.entity) {
+            let pos = transform.transform.position;
+            Mat4::create_lookat(pos, pos + to, Vec3::new(0.0, -1.0, 0.0))
+        } else {
+            Mat4::identity()
+        }
     }
 }

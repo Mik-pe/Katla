@@ -4,6 +4,7 @@ pub mod scene;
 use std::{cell::RefCell, ffi::CString, path::PathBuf, rc::Rc, time::Instant};
 
 use env_logger::Env;
+use katla_ecs::{System, SystemExecutionOrder, World};
 use katla_math::Vec3;
 use katla_vulkan::VulkanRenderer;
 pub use model::*;
@@ -39,6 +40,7 @@ pub struct Application {
     stage_upload: bool,
     timer: Timer,
     info: ApplicationInfo,
+    world: World<'static>,
 }
 
 impl ApplicationHandler for Application {
@@ -137,13 +139,16 @@ impl ApplicationHandler for Application {
                     self.timer.add_timestamp();
 
                     let dt = self.timer.get_delta() as f32;
-                    self.controller
-                        .borrow_mut()
-                        .tick_camera(&mut self.camera.borrow_mut(), dt);
+                    self.controller.borrow_mut().tick_camera(
+                        &self.camera.borrow(),
+                        &mut self.world,
+                        dt,
+                    );
 
+                    self.world.update(dt);
                     self.scene.update(
                         self.camera.borrow().get_proj_mat(),
-                        &self.camera.borrow().get_view_mat().inverse(),
+                        &self.camera.borrow().get_view_mat(&self.world).inverse(),
                         dt,
                     );
 
@@ -213,9 +218,9 @@ impl Application {
 pub struct ApplicationBuilder {
     app_name: String,
     validation_layer_enabled: bool,
-    camera: Rc<RefCell<Camera>>,
     controller: Rc<RefCell<FpsControl>>,
     input_controller: InputController,
+    world: World<'static>,
 }
 
 impl ApplicationBuilder {
@@ -242,6 +247,19 @@ impl ApplicationBuilder {
         self
     }
 
+    pub fn with_system(mut self, system: Box<dyn System>, order: SystemExecutionOrder) -> Self {
+        self.world.register_system(system, order);
+        self
+    }
+
+    pub fn with_systems(mut self, systems: Vec<Box<dyn System>>) -> Self {
+        for system in systems {
+            self.world
+                .register_system(system, SystemExecutionOrder::default());
+        }
+        self
+    }
+
     fn build_event_loop() -> EventLoop<()> {
         let event_loop = EventLoop::new().unwrap();
         event_loop.set_control_flow(ControlFlow::Poll);
@@ -261,11 +279,13 @@ impl ApplicationBuilder {
             name: self.app_name,
             validation_layer_enabled: self.validation_layer_enabled,
         };
+        let mut world = self.world;
+        let camera = Rc::new(RefCell::new(Camera::new(&mut world)));
 
         let app = Application {
             window: None,
             renderer: None,
-            camera: self.camera,
+            camera,
             controller: self.controller,
             input_controller,
             scene: Scene::new(),
@@ -273,6 +293,7 @@ impl ApplicationBuilder {
             stage_upload: false,
             timer: Timer::new(100),
             info,
+            world,
         };
 
         (app, event_loop)
