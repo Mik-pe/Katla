@@ -5,7 +5,7 @@ use std::{cell::RefCell, ffi::CString, path::PathBuf, rc::Rc, time::Instant};
 
 use env_logger::Env;
 use katla_ecs::{System, SystemExecutionOrder, World};
-use katla_math::Vec3;
+use katla_math::{Quat, Vec3};
 use katla_vulkan::VulkanRenderer;
 pub use model::*;
 pub use scene::*;
@@ -20,6 +20,7 @@ use winit::{
 
 use crate::{
     cameracontroller::{self, fpscontrol::FpsControl, Camera, CameraController},
+    components::{Drawable, TransformComponent},
     input::InputController,
     util::{FileCache, GLTFModel, Timer},
 };
@@ -71,7 +72,7 @@ impl ApplicationHandler for Application {
             let win_x = window_size.width as f32;
             let win_y = window_size.height as f32;
             self.camera.borrow_mut().aspect_ratio_changed(win_x / win_y);
-            let mesh = Model::new_from_gltf(
+            let model = Model::new_from_gltf(
                 self.gltf_cache
                     .read(PathBuf::from("resources/models/Fox.glb")),
                 renderer.context.clone(),
@@ -79,9 +80,16 @@ impl ApplicationHandler for Application {
                 &renderer.render_pass,
                 Vec3::new(0.0, 0.0, 0.0),
             );
-            let bounds = mesh.bounds.clone();
-            self.scene
-                .add_object(SceneObject::new(Box::new(mesh), bounds));
+            // let bounds = model.bounds.clone();
+            let entity = self.world.create_entity();
+            let transform = TransformComponent::new(katla_math::Transform {
+                position: Vec3([0.0, 0.0, 0.0]),
+                scale: Vec3([1.0, 1.0, 1.0]),
+                rotation: Quat::new(),
+            });
+
+            self.world.add_component(entity, transform);
+            self.world.add_component(entity, Drawable(Box::new(model)));
 
             self.window = Some(window);
             self.renderer = Some(renderer);
@@ -146,14 +154,26 @@ impl ApplicationHandler for Application {
                     );
 
                     self.world.update(dt);
-                    self.scene.update(
-                        self.camera.borrow().get_proj_mat(),
-                        &self.camera.borrow().get_view_mat(&self.world).inverse(),
-                        dt,
-                    );
+                    let view = self
+                        .camera
+                        .borrow()
+                        .get_view_mat(&self.world)
+                        .clone()
+                        .inverse();
+                    let proj = self.camera.borrow().get_proj_mat().clone();
+                    // self.scene.update(proj, &view.inverse(), dt);
 
                     let command_buffer = renderer.get_commandbuffer_opaque_pass();
-                    self.scene.render(&command_buffer);
+                    if let Some(drawables) = self.world.storage_mut().get_storage_mut::<Drawable>()
+                    {
+                        for (_, drawable) in drawables.iter_mut() {
+                            drawable.0.update(&view, &proj, dt);
+                            drawable.0.draw(&command_buffer);
+                        }
+                        command_buffer.end_render_pass();
+                        command_buffer.end_command();
+                    }
+
                     renderer.submit_frame(vec![&command_buffer]);
                     if self.stage_upload {
                         let start = Instant::now();

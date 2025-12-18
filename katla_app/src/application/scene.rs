@@ -3,10 +3,6 @@ use katla_math::{Mat4, Sphere, Vec3};
 use katla_vulkan::CommandBuffer;
 use std::rc::Rc;
 
-pub struct Player {
-    pub position: Vec3,
-}
-
 pub struct SceneObject {
     pub position: Vec3,
     pub drawable: Box<dyn Drawable>,
@@ -14,7 +10,6 @@ pub struct SceneObject {
     pub bounds: Sphere,
 }
 pub struct Scene {
-    pub player: Player,
     pub scene_objects: Vec<SceneObject>,
 }
 
@@ -38,14 +33,8 @@ impl Default for Scene {
 
 impl Scene {
     pub fn new() -> Self {
-        let player = Player {
-            position: Vec3::new(0.0, 0.0, 0.0),
-        };
         let scene_objects = vec![];
-        Self {
-            player,
-            scene_objects,
-        }
+        Self { scene_objects }
     }
 
     // pub fn add_model(&mut self, _model_path: PathBuf) {

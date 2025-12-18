@@ -4,7 +4,6 @@ use katla_math::{Mat4, Transform, Vec3};
 use crate::components::{DragComponent, TransformComponent, VelocityComponent};
 
 pub mod fpscontrol;
-pub mod orbitcontrols;
 
 pub trait CameraController {
     fn tick_camera(&mut self, camera: &Camera, world: &mut World, dt: f32);
