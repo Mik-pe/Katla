@@ -33,8 +33,8 @@ impl Timer {
 
         self.timestamps.push_back(in_timestamp);
         let mut sum_timestamps = 0.0;
-        self.current_max = std::f64::MIN;
-        self.current_min = std::f64::MAX;
+        self.current_max = f64::MIN;
+        self.current_min = f64::MAX;
         if self.timestamps.len() > self.max_num_timestamps {
             self.timestamps.pop_front();
         }

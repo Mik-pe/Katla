@@ -1,4 +1,4 @@
-use std::{f32::consts::FRAC_PI_2, rc::Rc, sync::Arc};
+use std::{f32::consts::FRAC_PI_2, rc::Rc};
 
 use katla_math::{Mat4, Quat, Sphere, Transform, Vec3};
 use katla_vulkan::{CommandBuffer, RenderPass, VulkanContext};
@@ -18,7 +18,7 @@ pub struct Model {
 impl Model {
     pub fn new_from_gltf(
         model: Rc<GLTFModel>,
-        context: Arc<VulkanContext>,
+        context: Rc<VulkanContext>,
         render_pass: &RenderPass,
         position: Vec3,
     ) -> Self {

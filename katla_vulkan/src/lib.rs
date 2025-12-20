@@ -4,12 +4,12 @@ pub use vulkan::*;
 
 use ash::vk;
 
-use std::{ffi::CString, sync::Arc};
+use std::{ffi::CString, rc::Rc};
 
 pub use ash::vk::{Format, IndexType, PipelineBindPoint};
 
 pub struct VulkanRenderer {
-    pub context: Arc<VulkanContext>,
+    pub context: Rc<VulkanContext>,
     pub frame_context: VulkanFrameCtx,
     pub render_pass: RenderPass,
     pub swapchain_framebuffers: Vec<vk::Framebuffer>,
@@ -33,7 +33,7 @@ impl VulkanRenderer {
         app_name: CString,
         engine_name: CString,
     ) -> Self {
-        let context = Arc::new(VulkanContext::init(
+        let context = Rc::new(VulkanContext::init(
             display,
             window,
             with_validation_layers,
@@ -70,7 +70,6 @@ impl VulkanRenderer {
             FRAMES_IN_FLIGHT,
         );
 
-        
         Self {
             context,
             frame_context,

@@ -7,6 +7,6 @@ pub struct DragComponent {
 
 impl DragComponent {
     pub fn new(drag: f32) -> Self {
-        DragComponent { drag: drag }
+        DragComponent { drag }
     }
 }

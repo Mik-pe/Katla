@@ -3,6 +3,7 @@
 /// In this architecture, entities are just IDs. All component data is stored
 /// separately in the World's component vectors.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Default)]
 pub struct EntityId(pub u64);
 
 impl EntityId {
@@ -17,11 +18,6 @@ impl EntityId {
     }
 }
 
-impl Default for EntityId {
-    fn default() -> Self {
-        Self(0)
-    }
-}
 
 impl std::fmt::Display for EntityId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
