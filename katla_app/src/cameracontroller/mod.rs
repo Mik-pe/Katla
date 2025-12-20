@@ -1,7 +1,9 @@
 use katla_ecs::{EntityId, World};
 use katla_math::{Mat4, Transform, Vec3};
 
-use crate::components::{DragComponent, TransformComponent, VelocityComponent};
+use crate::components::{
+    DragComponent, PerspectiveComponent, TransformComponent, VelocityComponent,
+};
 
 pub mod fpscontrol;
 
@@ -9,37 +11,7 @@ pub trait CameraController {
     fn tick_camera(&mut self, camera: &Camera, world: &mut World, dt: f32);
 }
 
-pub struct PerspectiveProjection {
-    fov: f32,
-    near_plane: f32,
-    far_plane: f32,
-    matrix: Mat4,
-}
-
-impl Default for PerspectiveProjection {
-    fn default() -> Self {
-        let fov = 60.0;
-        let near_plane = 0.001;
-        let far_plane = 10000.0;
-        let matrix = Mat4::create_proj(fov, 1.0, near_plane, far_plane);
-
-        Self {
-            fov,
-            near_plane,
-            far_plane,
-            matrix,
-        }
-    }
-}
-
-impl PerspectiveProjection {
-    pub fn recreate_matrix(&mut self, aspect_ratio: f32) {
-        self.matrix = Mat4::create_proj(self.fov, aspect_ratio, self.near_plane, self.far_plane);
-    }
-}
-
 pub struct Camera {
-    projection: PerspectiveProjection,
     pub entity: EntityId,
 }
 
@@ -50,23 +22,22 @@ impl Camera {
         let transform_component = TransformComponent::new(transform);
         world.add_component(id, transform_component);
         world.add_component(id, VelocityComponent::default());
-        world.add_component(id, DragComponent::new(5.0));
+        world.add_component(id, DragComponent::new(0.25));
+        world.add_component(id, PerspectiveComponent::default());
 
-        Self {
-            projection: PerspectiveProjection::default(),
-            entity: id,
+        Self { entity: id }
+    }
+
+    pub fn aspect_ratio_changed(&mut self, world: &mut World, aspect_ratio: f32) {
+        if let Some(projection) = world.get_component_mut::<PerspectiveComponent>(self.entity) {
+            projection.matrix = Mat4::create_proj(
+                projection.fov,
+                aspect_ratio,
+                projection.near_plane,
+                projection.far_plane,
+            );
         }
     }
-
-    pub fn aspect_ratio_changed(&mut self, aspect_ratio: f32) {
-        self.projection.recreate_matrix(aspect_ratio);
-    }
-
-    // pub fn look_at_sphere(&mut self, sphere: &Sphere) {
-    //     self.pos = sphere.center - Vec3::new(0.0, 0.0, sphere.radius * 2.0);
-    //     self.yaw = 0.0;
-    //     self.pitch = 0.0;
-    // }
 
     // Note to self:
     // This is valid since we are doing some assumptions w.r.t. rotation of the surfacetransformation
@@ -78,8 +49,12 @@ impl Camera {
         }
     }
 
-    pub fn get_proj_mat(&self) -> &Mat4 {
-        &self.projection.matrix
+    pub fn get_proj_mat(&self, world: &World) -> Mat4 {
+        if let Some(projection) = world.get_component::<PerspectiveComponent>(self.entity) {
+            projection.matrix.clone()
+        } else {
+            Mat4::identity()
+        }
     }
 
     pub fn get_view_mat(&self, world: &World) -> Mat4 {

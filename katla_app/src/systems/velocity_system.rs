@@ -23,12 +23,18 @@ impl System for VelocitySystem {
                 .iter_mut()
                 .map(|(id, component)| {
                     if let Some(drag) = drag_storage.get(&id) {
-                        component.acceleration = component.acceleration
-                            - component.acceleration * drag.drag * delta_time;
-                        component.velocity =
-                            component.velocity - component.velocity * drag.drag * delta_time;
+                        let friction_dir = -component.velocity.clone().normalize();
+                        let friction_magnitude = component.velocity.distance_squared();
+                        let friction_vector = friction_dir * friction_magnitude;
+                        println!("Acceleration was: {:?}", component.acceleration);
+                        println!("Friction was: {:?}", friction_vector);
+                        println!("Velocity was: {:?}", component.velocity);
+
+                        component.velocity += drag.drag * friction_vector * delta_time;
                     }
+
                     component.velocity += component.acceleration * delta_time;
+                    component.acceleration = Vec3::default();
 
                     (id, component.velocity)
                 })

@@ -85,7 +85,7 @@ impl Default for FpsControl {
         Self {
             velocity_dir: Default::default(),
             input_dir: Default::default(),
-            speed: 100.0,
+            speed: 10000.0,
             yaw: 0.0,
             pitch: 0.0,
             looking: false,
