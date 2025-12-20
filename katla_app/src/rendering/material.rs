@@ -26,11 +26,11 @@ impl Material {
         let mut texture = None;
         if !model.images.is_empty() {
             let image = &model.images[0];
+            let pixels = &image.pixels;
             //TODO: Support more image formats:
             match image.format {
                 gltf::image::Format::R8G8B8 => {
                     let pad_vec = vec![0; (image.width * image.height) as usize];
-                    let pixels = &image.pixels;
 
                     let pixel_chunks = pixels.chunks(3);
 
@@ -54,8 +54,6 @@ impl Material {
                     texture = Some(tex);
                 }
                 gltf::image::Format::R8G8B8A8 => {
-                    let pixels = &image.pixels;
-
                     let tex = Texture::create_image(
                         &context,
                         image.width,

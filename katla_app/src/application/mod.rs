@@ -71,7 +71,9 @@ impl ApplicationHandler for Application {
             let window_size = window.inner_size();
             let win_x = window_size.width as f32;
             let win_y = window_size.height as f32;
-            self.camera.borrow_mut().aspect_ratio_changed(win_x / win_y);
+            self.camera
+                .borrow_mut()
+                .aspect_ratio_changed(&mut self.world, win_x / win_y);
             let model = Model::new_from_gltf(
                 self.gltf_cache
                     .read(PathBuf::from("resources/models/Fox.glb")),
@@ -110,7 +112,9 @@ impl ApplicationHandler for Application {
                     let win_x = logical_size.width as f32;
                     let win_y = logical_size.height as f32;
                     if win_x > 0.0 && win_y > 0.0 {
-                        self.camera.borrow_mut().aspect_ratio_changed(win_x / win_y);
+                        self.camera
+                            .borrow_mut()
+                            .aspect_ratio_changed(&mut self.world, win_x / win_y);
 
                         renderer.recreate_swapchain();
                     }
@@ -151,7 +155,7 @@ impl ApplicationHandler for Application {
                         .get_view_mat(&self.world)
                         .clone()
                         .inverse();
-                    let proj = self.camera.borrow().get_proj_mat().clone();
+                    let proj = self.camera.borrow().get_proj_mat(&self.world).clone();
 
                     let command_buffer = renderer.get_commandbuffer_opaque_pass();
                     if let Some(drawables) = self

@@ -2,7 +2,7 @@ use core::{
     f32,
     ops::{Add, Index, IndexMut, Sub},
 };
-use std::ops::{AddAssign, Mul};
+use std::ops::{AddAssign, Mul, Neg};
 
 #[derive(Debug, Copy, Clone)]
 pub struct Vec3(pub [f32; 3]);
@@ -178,5 +178,21 @@ impl Default for Vec3 {
 impl PartialEq for Vec3 {
     fn eq(&self, other: &Self) -> bool {
         self[0] == other[0] && self[1] == other[1] && self[2] == other[2]
+    }
+}
+
+impl Neg for Vec3 {
+    type Output = Vec3;
+
+    fn neg(self) -> Self::Output {
+        Vec3([-self[0], -self[1], -self[2]])
+    }
+}
+
+impl Neg for &Vec3 {
+    type Output = Vec3;
+
+    fn neg(self) -> Self::Output {
+        Vec3([-self[0], -self[1], -self[2]])
     }
 }
