@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::rc::Rc;
 
 use ash::{
     khr::surface::Instance as Surface,
@@ -13,7 +13,7 @@ pub struct SwapchainInfo {
 }
 
 pub struct Swapchain {
-    pub swapchain_loader: Arc<SwapchainDevice>,
+    pub swapchain_loader: Rc<SwapchainDevice>,
     pub swapchain_info: SwapchainInfo,
     pub swapchain: vk::SwapchainKHR,
     pub format: vk::SurfaceFormatKHR,
@@ -24,7 +24,7 @@ pub struct Swapchain {
 
 impl Swapchain {
     pub fn create_swapchain(
-        swapchain_loader: Arc<SwapchainDevice>,
+        swapchain_loader: Rc<SwapchainDevice>,
         surface_loader: &Surface,
         physical_device: PhysicalDevice,
         surface: vk::SurfaceKHR,
@@ -71,7 +71,6 @@ impl Swapchain {
     }
 
     pub fn get_swapchain_images(&self) -> Vec<vk::Image> {
-        
         unsafe { self.swapchain_loader.get_swapchain_images(self.swapchain) }.unwrap()
     }
 

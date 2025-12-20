@@ -13,7 +13,7 @@ use std::{
     cell::RefCell,
     ffi::{c_void, CStr, CString},
     mem::ManuallyDrop,
-    sync::Arc,
+    rc::Rc,
 };
 // use winit::{
 //     raw_window_handle::{HasDisplayHandle, HasRawWindowHandle, HasWindowHandle},
@@ -35,7 +35,7 @@ pub struct RenderTexture {
     pub format: vk::Format,
     image: vk::Image,
     image_memory: Option<Allocation>,
-    context: Arc<VulkanContext>,
+    context: Rc<VulkanContext>,
 }
 
 impl RenderTexture {
@@ -58,11 +58,11 @@ impl Drop for RenderTexture {
 }
 
 pub struct VulkanContext {
-    entry: Entry,
+    _entry: Entry,
     pub instance: Instance,
     pub device: Device,
     pub surface_loader: SurfaceInstance,
-    pub swapchain_loader: Arc<SwapchainDevice>,
+    pub swapchain_loader: Rc<SwapchainDevice>,
     pub physical_device: vk::PhysicalDevice,
     pub allocator: ManuallyDrop<RefCell<Allocator>>,
     pub surface: vk::SurfaceKHR,
@@ -75,7 +75,7 @@ pub struct VulkanContext {
     debug_callback: Option<vk::DebugUtilsMessengerEXT>,
 }
 pub struct VulkanFrameCtx {
-    pub context: Arc<VulkanContext>,
+    pub context: Rc<VulkanContext>,
     pub swapchain_image_views: Vec<vk::ImageView>,
     pub swapchain: super::Swapchain,
     pub swapchain_images: Vec<vk::Image>,
@@ -103,19 +103,21 @@ impl QueueFamilyIndices {
                     && surface_loader
                         .get_physical_device_surface_support(physical_device, idx as u32, surface)
                         .unwrap()
-                    && queue_family_indices.graphics_idx.is_none() {
-                        queue_family_indices.graphics_idx = Some(idx as u32);
-                        continue;
-                    }
+                    && queue_family_indices.graphics_idx.is_none()
+                {
+                    queue_family_indices.graphics_idx = Some(idx as u32);
+                    continue;
+                }
 
                 if properties.queue_flags.contains(vk::QueueFlags::TRANSFER)
                     && surface_loader
                         .get_physical_device_surface_support(physical_device, idx as u32, surface)
                         .unwrap()
-                    && queue_family_indices.transfer_idx.is_none() {
-                        queue_family_indices.transfer_idx = Some(idx as u32);
-                        continue;
-                    }
+                    && queue_family_indices.transfer_idx.is_none()
+                {
+                    queue_family_indices.transfer_idx = Some(idx as u32);
+                    continue;
+                }
             }
         };
 
@@ -225,8 +227,6 @@ impl VulkanContext {
             .application_info(&app_info)
             .enabled_extension_names(extension_names_raw.as_slice())
             .enabled_layer_names(&instance_layers);
-
-        
 
         unsafe {
             entry
@@ -359,7 +359,7 @@ impl VulkanContext {
             with_validation_layers,
         );
 
-        let swapchain_loader = Arc::new(SwapchainDevice::new(&instance, &device));
+        let swapchain_loader = Rc::new(SwapchainDevice::new(&instance, &device));
 
         let graphics_queue = unsafe { device.get_device_queue(graphics_queue_idx, 0) };
 
@@ -389,7 +389,7 @@ impl VulkanContext {
         let allocator = ManuallyDrop::new(RefCell::new(Allocator::new(&create_info).unwrap()));
 
         Self {
-            entry,
+            _entry: entry,
             instance,
             device,
             surface_loader,
@@ -456,7 +456,7 @@ impl VulkanFrameCtx {
         unsafe { device.create_image_view(&create_info, None) }.unwrap()
     }
 
-    pub fn init(context: &Arc<VulkanContext>) -> Self {
+    pub fn init(context: &Rc<VulkanContext>) -> Self {
         let swapchain = super::Swapchain::create_swapchain(
             context.swapchain_loader.clone(),
             &context.surface_loader,
@@ -485,7 +485,6 @@ impl VulkanFrameCtx {
             .gfx_cmdpool
             .create_command_buffers(swapchain_image_views.len() as _);
 
-        
         Self {
             context: context.clone(),
             swapchain,
@@ -584,7 +583,7 @@ unsafe fn is_physical_device_suitable(
     score
 }
 
-fn create_depth_render_texture(context: Arc<VulkanContext>, extent: vk::Extent2D) -> RenderTexture {
+fn create_depth_render_texture(context: Rc<VulkanContext>, extent: vk::Extent2D) -> RenderTexture {
     let depth_format = context.find_depth_format();
     let extent_3d = vk::Extent3D {
         width: extent.width,
@@ -641,10 +640,8 @@ fn create_device(
 
     let create_info = vk::DeviceCreateInfo::default()
         .enabled_extension_names(&device_extensions)
-        .enabled_layer_names(&device_layers)
         .queue_create_infos(&queue_create_infos)
         .enabled_features(&features);
-    
 
     unsafe {
         instance
@@ -696,7 +693,6 @@ fn check_validation_support(entry: &Entry) -> bool {
     unsafe {
         let available_layers = entry.enumerate_instance_layer_properties().unwrap();
         let validation_name = CStr::from_ptr(LAYER_KHRONOS_VALIDATION.as_ptr() as *const i8);
-        println!("Validation name: {validation_name:?}");
         for layer in available_layers {
             let layer_name = std::ffi::CStr::from_ptr(layer.layer_name.as_ptr() as _);
             if layer_name == validation_name {

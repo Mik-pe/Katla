@@ -10,8 +10,8 @@ pub struct VelocityComponent {
 impl VelocityComponent {
     pub fn new(velocity: Vec3, acceleration: Vec3) -> Self {
         VelocityComponent {
-            velocity: velocity,
-            acceleration: acceleration,
+            velocity,
+            acceleration,
         }
     }
 }

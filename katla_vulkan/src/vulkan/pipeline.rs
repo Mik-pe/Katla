@@ -2,7 +2,7 @@ use ash::{util::read_spv, vk};
 use gpu_allocator::vulkan::Allocation;
 
 use crate::vertexbinding::VertexBinding;
-use std::{ffi::CString, io::Cursor, sync::Arc};
+use std::{ffi::CString, io::Cursor, rc::Rc};
 
 use super::context::VulkanContext;
 //TODO: A more flexible shader system
@@ -18,7 +18,7 @@ pub trait UpdateAlways {
 }
 
 pub struct RenderPipeline {
-    context: Arc<VulkanContext>,
+    context: Rc<VulkanContext>,
     pub pipeline: vk::Pipeline,
     pub pipeline_layout: vk::PipelineLayout,
     pub uniform: UniformHandle,
@@ -127,7 +127,6 @@ impl UniformHandle {
     }
 
     pub fn next_descriptor(&self) -> &UniformDescriptor {
-        
         (&self.descriptors[self.next_bind_index]) as _
     }
 
@@ -250,7 +249,7 @@ impl UniformDescriptor {
 
 impl RenderPipeline {
     pub fn new(
-        context: Arc<VulkanContext>,
+        context: Rc<VulkanContext>,
         render_pass: vk::RenderPass,
         vertex_binding: VertexBinding,
     ) -> Self {

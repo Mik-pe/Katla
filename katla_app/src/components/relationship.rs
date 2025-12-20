@@ -7,7 +7,7 @@ pub struct Children {
 
 impl Children {
     pub fn new(children: Vec<EntityId>) -> Self {
-        Children { children: children }
+        Children { children }
     }
 }
 
@@ -18,6 +18,6 @@ pub struct Parent {
 
 impl Parent {
     pub fn new(parent: EntityId) -> Self {
-        Parent { parent: parent }
+        Parent { parent }
     }
 }

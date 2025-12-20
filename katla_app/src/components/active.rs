@@ -5,6 +5,12 @@ pub struct ActiveComponent {
     pub value: bool,
 }
 
+impl Default for ActiveComponent {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ActiveComponent {
     /// Creates a new ActiveComponent with the specified name.
     pub fn new() -> Self {

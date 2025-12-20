@@ -12,19 +12,18 @@ struct Modifier {
     value: f32,
 }
 
+pub type AxisAction = Box<dyn FnMut(f32)>;
+pub type KeyAction = Box<dyn FnMut(KeyCode, event::ElementState)>;
+
 #[derive(Default)]
 struct AxisHandler {
     axis: u32,
     current_value: f32,
     modifiers: Vec<Modifier>,
-    callbacks: Vec<Box<dyn FnMut(f32)>>,
+    callbacks: Vec<AxisAction>,
 }
 
 impl AxisHandler {
-    pub fn add_callback(&mut self, callback: Box<dyn FnMut(f32)>) {
-        self.callbacks.push(callback);
-    }
-
     pub fn modifier_changed(&mut self, code: KeyCode, state: ElementState) {
         let mut new_value = 0.0;
         for modifier in &mut self.modifiers {
@@ -47,11 +46,11 @@ pub struct InputController {
     inputmap: HashMap<KeyCode, (u32, f32)>,
     axis_key_map: HashMap<KeyCode, u32>,
     axis_handlers: Vec<AxisHandler>,
-    action_callbacks: HashMap<u32, Vec<Box<dyn FnMut(f32)>>>,
-    keypressmap_callback: HashMap<KeyCode, Vec<Box<dyn FnMut(KeyCode, event::ElementState)>>>,
+    action_callbacks: HashMap<u32, Vec<AxisAction>>,
+    keypressmap_callback: HashMap<KeyCode, Vec<KeyAction>>,
 }
 
-impl<'a> InputController {
+impl InputController {
     pub fn assign_axis_input(&mut self, key_event: KeyCode, input: u32, value: f32) {
         let axis_handler: &mut AxisHandler = {
             let mut axis_handler = None;
@@ -81,7 +80,7 @@ impl<'a> InputController {
         self.axis_key_map.insert(key_event, input);
     }
 
-    pub fn assign_axis_callback<T>(&mut self, input: T, callback: Box<dyn FnMut(f32)>)
+    pub fn assign_axis_callback<T>(&mut self, input: T, callback: AxisAction)
     where
         T: Into<u32>,
     {
@@ -148,18 +147,14 @@ impl<'a> InputController {
         }
     }
 
-    pub fn bind_input_callback(&mut self, input_key: u32, callback: Box<dyn FnMut(f32)>) {
+    pub fn bind_input_callback(&mut self, input_key: u32, callback: AxisAction) {
         self.action_callbacks
             .entry(input_key)
             .or_default()
             .push(callback);
     }
 
-    pub fn bind_keycode_callback(
-        &mut self,
-        keycode: KeyCode,
-        callback: Box<dyn FnMut(KeyCode, event::ElementState)>,
-    ) {
+    pub fn bind_keycode_callback(&mut self, keycode: KeyCode, callback: KeyAction) {
         self.keypressmap_callback
             .entry(keycode)
             .or_default()

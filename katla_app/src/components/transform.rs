@@ -9,7 +9,7 @@ pub struct TransformComponent {
 impl TransformComponent {
     pub fn new(transform: Transform) -> Self {
         TransformComponent {
-            transform: transform,
+            transform,
         }
     }
 }

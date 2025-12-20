@@ -6,25 +6,18 @@ use ash::Device;
 pub struct Queue {
     device: Device,
     queue: vk::Queue,
-    queue_family_index: u32,
-    queue_index: u32,
 }
 
 impl Queue {
     pub fn new(device: Device, queue_family_index: u32, queue_index: u32) -> Self {
         let queue = unsafe { device.get_device_queue(queue_family_index, queue_index) };
 
-        Self {
-            device,
-            queue,
-            queue_family_index,
-            queue_index,
-        }
+        Self { device, queue }
     }
 
     pub fn wait_idle(&self) {
         unsafe {
-            self.device.queue_wait_idle(self.queue);
+            let _ = self.device.queue_wait_idle(self.queue);
         }
     }
 
@@ -64,7 +57,7 @@ impl Queue {
         image_indices: &[u32],
         swapchains: &[vk::SwapchainKHR],
     ) {
-        let present_info = vk::PresentInfoKHR::default()
+        let _present_info = vk::PresentInfoKHR::default()
             .wait_semaphores(signal_semaphores)
             .swapchains(swapchains)
             .image_indices(image_indices);

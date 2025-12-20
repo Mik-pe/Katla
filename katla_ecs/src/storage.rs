@@ -2,7 +2,6 @@ use super::components::Component;
 use super::entity::EntityId;
 use std::any::{Any, TypeId};
 use std::collections::HashMap;
-use std::marker::PhantomData;
 
 /// ComponentStorage stores components of a specific type in a vector.
 ///

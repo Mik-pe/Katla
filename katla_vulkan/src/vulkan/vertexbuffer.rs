@@ -2,14 +2,14 @@ use super::context::VulkanContext;
 use ash::vk;
 use gpu_allocator::vulkan::Allocation;
 
-use std::sync::Arc;
+use std::rc::Rc;
 
 struct BufferObject {
     allocation: Option<Allocation>,
     buffer: vk::Buffer,
     buf_size: vk::DeviceSize,
     count: u32,
-    context: Arc<VulkanContext>,
+    context: Rc<VulkanContext>,
 }
 
 //TODO: Holding an RC for every buffer is... meh.
@@ -52,7 +52,7 @@ impl BufferObject {
 
 impl IndexBuffer {
     pub fn new(
-        context: Arc<VulkanContext>,
+        context: Rc<VulkanContext>,
         buf_size: vk::DeviceSize,
         index_type: vk::IndexType,
         count: u32,
@@ -90,7 +90,7 @@ impl IndexBuffer {
 }
 
 impl VertexBuffer {
-    pub fn new(context: Arc<VulkanContext>, buf_size: vk::DeviceSize, count: u32) -> Self {
+    pub fn new(context: Rc<VulkanContext>, buf_size: vk::DeviceSize, count: u32) -> Self {
         let buffer = {
             let create_info = vk::BufferCreateInfo::default()
                 .sharing_mode(vk::SharingMode::EXCLUSIVE)

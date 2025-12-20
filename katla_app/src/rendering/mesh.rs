@@ -3,7 +3,7 @@ use crate::util::GLTFModel;
 use katla_vulkan::context::VulkanContext;
 use katla_vulkan::{self, IndexBuffer, IndexType, VertexBuffer};
 
-use std::{rc::Rc, sync::Arc};
+use std::rc::Rc;
 
 //TODO:
 // Handle the GPU-side in katla_vulkan
@@ -17,7 +17,7 @@ pub struct Mesh {
 }
 
 impl Mesh {
-    pub fn new_from_model(model: Rc<GLTFModel>, context: Arc<VulkanContext>) -> Self {
+    pub fn new_from_model(model: Rc<GLTFModel>, context: Rc<VulkanContext>) -> Self {
         let index_type = match model.index_stride {
             1 => IndexType::UINT8_EXT,
             2 => IndexType::UINT16,
@@ -35,7 +35,7 @@ impl Mesh {
     }
 
     fn create_index_buffer<DataType>(
-        context: &Arc<VulkanContext>,
+        context: &Rc<VulkanContext>,
         data: Vec<DataType>,
         index_type: IndexType,
     ) -> Option<IndexBuffer> {
@@ -62,7 +62,7 @@ impl Mesh {
     }
 
     fn create_vertex_buffer<DataType>(
-        context: &Arc<VulkanContext>,
+        context: &Rc<VulkanContext>,
         data: Vec<DataType>,
     ) -> Option<VertexBuffer> {
         if data.is_empty() {

@@ -7,20 +7,16 @@ use katla_vulkan::{
     RenderPipeline, Texture,
 };
 
-use std::{rc::Rc, sync::Arc};
+use std::rc::Rc;
 
 pub struct Material {
     pub renderpipeline: RenderPipeline,
     pub texture: Option<Texture>,
-    context: Arc<VulkanContext>,
+    context: Rc<VulkanContext>,
 }
 
 impl Material {
-    pub fn new(
-        model: Rc<GLTFModel>,
-        context: Arc<VulkanContext>,
-        render_pass: &RenderPass,
-    ) -> Self {
+    pub fn new(model: Rc<GLTFModel>, context: Rc<VulkanContext>, render_pass: &RenderPass) -> Self {
         let vertex_binding = VertexPBR::get_vertex_binding();
         let mut renderpipeline = RenderPipeline::new(
             context.clone(),
