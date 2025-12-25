@@ -158,18 +158,12 @@ impl ApplicationHandler for Application {
                     let proj = self.camera.borrow().get_proj_mat(&self.world).clone();
 
                     let command_buffer = renderer.get_commandbuffer_opaque_pass();
-                    if let Some(drawables) = self
-                        .world
-                        .storage_mut()
-                        .get_storage_mut::<DrawableComponent>()
-                    {
-                        for (_, drawable) in drawables.iter_mut() {
-                            drawable.0.update(&view, &proj, dt);
-                            drawable.0.draw(&command_buffer);
-                        }
-                        command_buffer.end_render_pass();
-                        command_buffer.end_command();
+                    for (_, drawable) in self.world.query::<&mut DrawableComponent>() {
+                        drawable.0.update(&view, &proj, dt);
+                        drawable.0.draw(&command_buffer);
                     }
+                    command_buffer.end_render_pass();
+                    command_buffer.end_command();
 
                     renderer.submit_frame(vec![&command_buffer]);
                     if self.stage_upload {

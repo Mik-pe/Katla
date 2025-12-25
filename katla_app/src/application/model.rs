@@ -1,7 +1,4 @@
-use std::{
-    f32::consts::{FRAC_PI_2, FRAC_PI_4},
-    rc::Rc,
-};
+use std::{f32::consts::FRAC_PI_4, rc::Rc};
 
 use katla_math::{Mat4, Quat, Sphere, Transform, Vec3};
 use katla_vulkan::{CommandBuffer, RenderPass, VulkanContext};

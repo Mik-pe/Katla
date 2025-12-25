@@ -2,7 +2,7 @@ use core::{
     f32,
     ops::{Add, Index, IndexMut, Sub},
 };
-use std::ops::{AddAssign, Mul, Neg};
+use std::ops::{AddAssign, Mul, Neg, SubAssign};
 
 #[derive(Debug, Copy, Clone)]
 pub struct Vec3(pub [f32; 3]);
@@ -194,5 +194,21 @@ impl Neg for &Vec3 {
 
     fn neg(self) -> Self::Output {
         Vec3([-self[0], -self[1], -self[2]])
+    }
+}
+
+impl SubAssign<f32> for Vec3 {
+    fn sub_assign(&mut self, rhs: f32) {
+        self[0] -= rhs;
+        self[1] -= rhs;
+        self[2] -= rhs;
+    }
+}
+
+impl SubAssign for Vec3 {
+    fn sub_assign(&mut self, rhs: Self) {
+        self[0] -= rhs[0];
+        self[1] -= rhs[1];
+        self[2] -= rhs[2];
     }
 }

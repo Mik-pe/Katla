@@ -292,28 +292,26 @@ fn main() {
     println!("Total systems: {}", world.system_count());
     println!("Total frames simulated: {}", total_frames);
 
-    // Print final positions using component storage directly
+    // Print final positions using query API
     println!("\n=== Final Entity States ===");
-    let storage = world.storage();
 
-    if let (Some(names), Some(transforms)) = (
-        storage.get_storage::<NameComponent>(),
-        storage.get_storage::<TransformComponent>(),
-    ) {
-        for (entity_id, name) in names.iter() {
-            if let Some(transform) = transforms.get(entity_id) {
-                let pos = &transform.transform.position;
-                println!(
-                    "{}: Position ({:.2}, {:.2}, {:.2})",
-                    name.name, pos.0[0], pos.0[1], pos.0[2]
-                );
+    // Collect entities with health first to avoid borrow issues
+    let entities_with_health: Vec<_> = world
+        .query::<&HealthComponent>()
+        .map(|(entity, health)| (entity, health.current, health.max))
+        .collect();
 
-                if let Some(healths) = storage.get_storage::<HealthComponent>() {
-                    if let Some(health) = healths.get(entity_id) {
-                        println!("  Health: {:.1}/{:.1}", health.current, health.max);
-                    }
-                }
-            }
+    for (_entity, name, transform) in world.query::<(&NameComponent, &TransformComponent)>() {
+        let pos = &transform.transform.position;
+        println!(
+            "{}: Position ({:.2}, {:.2}, {:.2})",
+            name.name, pos.0[0], pos.0[1], pos.0[2]
+        );
+
+        // Find health for this entity
+        if let Some((_, current, max)) = entities_with_health.iter().find(|(e, _, _)| e == &_entity)
+        {
+            println!("  Health: {:.1}/{:.1}", current, max);
         }
     }
 
