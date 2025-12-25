@@ -103,7 +103,22 @@ impl World {
         self.storage.remove_component::<T>(id)
     }
 
-    /// Gets a reference to a component for an entity.
+    /// Gets a reference to a component for a specific entity.
+    ///
+    /// Use this for accessing individual entities by ID. For iterating over multiple entities
+    /// with components, prefer using queries:
+    ///
+    /// ```ignore
+    /// // Prefer queries for iteration:
+    /// for (entity, transform) in world.query::<&TransformComponent>() {
+    ///     // ...
+    /// }
+    ///
+    /// // Use get_component for specific entity access:
+    /// if let Some(transform) = world.get_component::<TransformComponent>(specific_entity) {
+    ///     // ...
+    /// }
+    /// ```
     pub fn get_component<T>(&self, id: EntityId) -> Option<&T>
     where
         T: Component + 'static,
@@ -111,7 +126,10 @@ impl World {
         self.storage.get_component::<T>(id)
     }
 
-    /// Gets a mutable reference to a component for an entity.
+    /// Gets a mutable reference to a component for a specific entity.
+    ///
+    /// Use this for accessing individual entities by ID. For iterating over multiple entities
+    /// with components, prefer using queries. See [`get_component`](Self::get_component) for details.
     pub fn get_component_mut<T>(&mut self, id: EntityId) -> Option<&mut T>
     where
         T: Component + 'static,
@@ -119,26 +137,25 @@ impl World {
         self.storage.get_component_mut::<T>(id)
     }
 
-    /// Checks if an entity has a specific component.
-    pub fn has_component<T>(&self, id: EntityId) -> bool
-    where
-        T: Component + 'static,
-    {
-        self.storage.has_component::<T>(id)
-    }
-
-    /// Gets a reference to the component storage manager.
+    /// Creates a query for iterating over entities with specific components.
     ///
-    /// This allows systems and external code to work directly with component storages.
-    pub fn storage(&self) -> &ComponentStorageManager {
-        &self.storage
-    }
-
-    /// Gets a mutable reference to the component storage manager.
+    /// Queries provide efficient iteration over entities with specific component combinations.
     ///
-    /// This allows systems and external code to work directly with component storages.
-    pub fn storage_mut(&mut self) -> &mut ComponentStorageManager {
-        &mut self.storage
+    /// # Example
+    ///
+    /// ```ignore
+    /// // Query and modify entities
+    /// for (entity, transform, velocity) in world.query::<(&mut TransformComponent, &VelocityComponent)>() {
+    ///     transform.position += velocity.value * delta_time;
+    /// }
+    ///
+    /// // Query with three components
+    /// for (entity, pos, vel, force) in world.query::<(&PositionComponent, &VelocityComponent, &ForceComponent)>() {
+    ///     // Process physics...
+    /// }
+    /// ```
+    pub fn query<Q: crate::query::QueryData>(&mut self) -> Q::Iter<'_> {
+        self.storage.query::<Q>()
     }
 
     /// Registers a system with the world.
@@ -295,7 +312,7 @@ mod tests {
         let id = world.create_entity();
 
         world.add_component(id, TestComponent::default());
-        assert!(world.has_component::<TestComponent>(id));
+        assert!(world.get_component::<TestComponent>(id).is_some());
     }
 
     #[test]
@@ -305,7 +322,7 @@ mod tests {
 
         world.add_component(id, TestComponent::default());
         assert!(world.remove_component::<TestComponent>(id));
-        assert!(!world.has_component::<TestComponent>(id));
+        assert!(world.get_component::<TestComponent>(id).is_none());
     }
 
     #[test]
@@ -390,11 +407,11 @@ mod tests {
         let id = world.create_entity();
 
         world.add_component(id, TestComponent::default());
-        assert!(world.has_component::<TestComponent>(id));
+        assert!(world.get_component::<TestComponent>(id).is_some());
 
         world.destroy_entity(id);
 
         // Component should be removed when entity is destroyed
-        assert!(!world.has_component::<TestComponent>(id));
+        assert!(world.get_component::<TestComponent>(id).is_none());
     }
 }

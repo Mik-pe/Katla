@@ -39,6 +39,10 @@ impl Transform {
         }
     }
 
+    pub fn from_position(position: Vec3) -> Self {
+        Self::new_from_position(position)
+    }
+
     pub fn new_from_scale(scale: Vec3) -> Self {
         Self {
             position: Vec3::new(0.0, 0.0, 0.0),
