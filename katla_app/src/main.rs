@@ -1,12 +1,16 @@
 use katla::application::ApplicationBuilder;
 
 use katla::input::InputMapping;
-use katla::systems::{LoggerSystem, VelocitySystem};
+use katla::systems::{LoggerSystem, PhysicsSystem, VelocitySystem};
 use katla_ecs::System;
 use winit::keyboard::KeyCode;
 
 fn main() {
-    let systems: Vec<Box<dyn System>> = vec![Box::new(LoggerSystem), Box::new(VelocitySystem)];
+    let systems: Vec<Box<dyn System>> = vec![
+        Box::new(LoggerSystem),
+        Box::new(VelocitySystem),
+        Box::new(PhysicsSystem),
+    ];
 
     let (mut application, event_loop) = ApplicationBuilder::new()
         .with_name("Katla")

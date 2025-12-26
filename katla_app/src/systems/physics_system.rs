@@ -41,11 +41,9 @@ impl PhysicsSystem {
 
 impl System for PhysicsSystem {
     fn update(&mut self, storage: &mut ComponentStorageManager, delta_time: f32) {
-        // Step 1: Apply drag forces (velocity-dependent forces)
         for (_entity, velocity, drag, force) in
             storage.query::<(&VelocityComponent, &DragComponent, &mut ForceComponent)>()
         {
-            // Drag force opposes velocity: F_drag = -coefficient * |v|^2 * v_hat
             let speed_squared = velocity.velocity.distance_squared();
             if speed_squared > 0.0 {
                 let speed = speed_squared.sqrt();
@@ -55,36 +53,29 @@ impl System for PhysicsSystem {
             }
         }
 
-        // Step 2: Apply forces to update accelerations (F = ma -> a = F/m)
-        // Collect entities with their mass values to avoid borrow issues
         let entity_masses: Vec<_> = storage
             .query::<&MassComponent>()
             .map(|(entity, mass)| (entity, mass.mass))
             .collect();
 
-        // Now update accelerations for all entities with forces
         for (entity, velocity, force) in
             storage.query::<(&mut VelocityComponent, &ForceComponent)>()
         {
-            // Find mass for this entity, default to 1.0
             let mass = entity_masses
                 .iter()
                 .find(|(e, _)| *e == entity)
                 .map(|(_, m)| *m)
                 .unwrap_or(1.0);
 
-            // Prevent division by zero
             if mass > 0.0 {
                 velocity.acceleration = force.force * (1.0 / mass);
             }
         }
 
-        // Step 3: Integrate velocity (v = v + a * dt)
         for (_entity, velocity) in storage.query::<&mut VelocityComponent>() {
             velocity.velocity += velocity.acceleration * delta_time;
         }
 
-        // Step 4: Reset forces for next frame
         for (_entity, force) in storage.query::<&mut ForceComponent>() {
             force.force = katla_math::Vec3::default();
         }
@@ -120,7 +111,6 @@ mod tests {
             VelocityComponent::new(Vec3::new(10.0, 0.0, 0.0), Vec3::default()),
         );
 
-        // Run for 1 second with dt=0.1
         for _ in 0..10 {
             world.update(0.1);
         }

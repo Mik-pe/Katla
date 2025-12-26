@@ -12,10 +12,11 @@ pub struct ModelEntity {
 impl ModelEntity {
     pub fn new(world: &mut World, model: Model) -> Self {
         let entity = world.create_entity();
-        // TODO: Implement some Resource-system,
-        let transform = TransformComponent::new(katla_math::Transform::default());
 
-        world.add_component(entity, transform);
+        world.add_component(
+            entity,
+            TransformComponent::new(katla_math::Transform::default()),
+        );
         world.add_component(entity, DrawableComponent(Box::new(model)));
         world.add_component(entity, NameComponent::new("Model"));
         Self { _entity: entity }

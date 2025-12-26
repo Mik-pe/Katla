@@ -6,7 +6,6 @@ pub struct VelocitySystem;
 
 impl System for VelocitySystem {
     fn update(&mut self, storage: &mut ComponentStorageManager, delta_time: f32) {
-        // Integrate position: p = p + v * dt
         for (_entity, transform, velocity) in
             storage.query::<(&mut TransformComponent, &VelocityComponent)>()
         {
