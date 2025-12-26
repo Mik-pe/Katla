@@ -45,12 +45,9 @@ impl System for PhysicsSystem {
             storage.query::<(&VelocityComponent, &DragComponent, &mut ForceComponent)>()
         {
             let speed_squared = velocity.velocity.distance_squared();
-            if speed_squared > 0.0 {
-                let speed = speed_squared.sqrt();
-                let velocity_direction = velocity.velocity * (1.0 / speed);
-                let drag_force = velocity_direction * (-drag.coefficient * speed_squared);
-                force.force += drag_force;
-            }
+            let velocity_direction = velocity.velocity.normalize();
+            let drag_force = velocity_direction * (-drag.coefficient * speed_squared);
+            force.force += drag_force;
         }
 
         let entity_masses: Vec<_> = storage

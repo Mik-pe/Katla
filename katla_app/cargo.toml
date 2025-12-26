@@ -10,7 +10,7 @@ katla_vulkan = { path = "../katla_vulkan" }
 katla_ecs = { path = "../katla_ecs" }
 byteorder = "1.3"
 winit = "^0.30"
-image = "0.23.11"
-env_logger = "0.9.0"
-gltf = { version = "^1.3", features = ["KHR_materials_pbrSpecularGlossiness"] }
+image = "^0.25"
+env_logger = "^0.11"
+gltf = { version = "^1.4", features = ["KHR_materials_pbrSpecularGlossiness"] }
 itertools = "0.14.0"
