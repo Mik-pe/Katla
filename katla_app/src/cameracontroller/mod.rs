@@ -2,7 +2,7 @@ use katla_ecs::{EntityId, World};
 use katla_math::{Mat4, Transform, Vec3};
 
 use crate::components::{
-    DragComponent, PerspectiveComponent, TransformComponent, VelocityComponent,
+    DragComponent, ForceComponent, PerspectiveComponent, TransformComponent, VelocityComponent,
 };
 
 pub mod fpscontrol;
@@ -22,6 +22,7 @@ impl Camera {
         let transform_component = TransformComponent::new(transform);
         world.add_component(id, transform_component);
         world.add_component(id, VelocityComponent::default());
+        world.add_component(id, ForceComponent::default());
         world.add_component(id, DragComponent::new(0.25));
         world.add_component(id, PerspectiveComponent::default());
 

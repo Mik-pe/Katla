@@ -6,7 +6,7 @@ use winit::event::{DeviceEvent, ElementState, MouseButton, WindowEvent};
 
 use crate::{
     cameracontroller::Camera,
-    components::{TransformComponent, VelocityComponent},
+    components::{ForceComponent, TransformComponent},
     input::{InputController, InputMapping},
 };
 
@@ -71,8 +71,8 @@ impl CameraController for FpsControl {
             katla_math::mat4_mul_vec3(&camera.get_view_rotation(world), &self.input_dir);
 
         self.velocity_dir = Vec3::lerp(self.velocity_dir, velocity_dir, 7.0 * dt);
-        if let Some(velocity) = world.get_component_mut::<VelocityComponent>(camera.entity) {
-            velocity.acceleration += velocity_dir.mul(self.speed);
+        if let Some(force) = world.get_component_mut::<ForceComponent>(camera.entity) {
+            force.force += velocity_dir.mul(self.speed);
         }
         if let Some(transform) = world.get_component_mut::<TransformComponent>(camera.entity) {
             transform.transform.rotation = rotation;

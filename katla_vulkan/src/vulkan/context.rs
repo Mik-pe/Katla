@@ -373,10 +373,8 @@ impl VulkanContext {
         let transfer_command_pool =
             unsafe { device.create_command_pool(&create_info, None) }.unwrap();
 
-        let debug_settings = AllocatorDebugSettings {
-            log_leaks_on_shutdown: true,
-            ..Default::default()
-        };
+        let mut debug_settings = AllocatorDebugSettings::default();
+        debug_settings.log_leaks_on_shutdown = true;
         let create_info = AllocatorCreateDesc {
             instance: instance.clone(),
             device: device.clone(),
