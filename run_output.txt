@@ -1,0 +1,16 @@
+   Compiling katla v0.1.0 (C:\dev\katla\katla_app)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 5.40s
+     Running `target\debug\katla.exe`
+Picking physical device: "Intel(R) Iris(R) Plus Graphics"
+Num family indices: 1
+[Create Image] Image size: 4.00MiB
+[Create Image] Total time spent: 4.645ms
+image: 				0.293ms 6.31%
+stage: 				0.460ms 3.60% 
+map: 				0.460ms 0.00%
+copy to map: 			1.105ms 13.89% (3795750226.244 B/s)
+unmap: 				1.106ms 0.02%
+transition image: 		2.526ms 30.57%
+copy buffer to image: 		3.094ms 12.23%
+transition + submit cmdbuf: 	4.386ms 27.81%
+free: 				4.513ms 2.73%

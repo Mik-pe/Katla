@@ -1,6 +1,8 @@
 use super::VulkanContext;
 use crate::VulkanFrameCtx;
 
+use std::mem::ManuallyDrop;
+use std::rc::Rc;
 use std::time::Instant;
 
 use ash::vk;
@@ -10,10 +12,11 @@ pub struct Texture {
     pub width: u32,
     pub height: u32,
     pub channels: u32,
-    image_memory: Allocation,
+    image_memory: ManuallyDrop<Allocation>,
     image: vk::Image,
     pub image_view: vk::ImageView,
     pub image_sampler: vk::Sampler,
+    context: Rc<VulkanContext>,
 }
 
 impl Texture {
@@ -133,8 +136,38 @@ impl Texture {
         unsafe { context.device.create_sampler(&create_info, None).unwrap() }
     }
 
+    fn convert_rgb_to_rgba(rgb_data: &[u8], width: u32, height: u32) -> Vec<u8> {
+        let pixel_count = (width * height) as usize;
+        let mut rgba_data = Vec::with_capacity(pixel_count * 4);
+
+        for chunk in rgb_data.chunks_exact(3) {
+            rgba_data.push(chunk[0]);
+            rgba_data.push(chunk[1]);
+            rgba_data.push(chunk[2]);
+            rgba_data.push(255);
+        }
+
+        rgba_data
+    }
+
+    pub fn create_image_rgb(
+        context: Rc<VulkanContext>,
+        width: u32,
+        height: u32,
+        pixel_data: &[u8],
+    ) -> Self {
+        let rgba_data = Self::convert_rgb_to_rgba(pixel_data, width, height);
+        Self::create_image(
+            context,
+            width,
+            height,
+            vk::Format::R8G8B8A8_SRGB,
+            &rgba_data,
+        )
+    }
+
     pub fn create_image(
-        context: &VulkanContext,
+        context: Rc<VulkanContext>,
         width: u32,
         height: u32,
         format: vk::Format,
@@ -165,7 +198,8 @@ impl Texture {
 
         let total_size = pixel_data.len() as u64;
 
-        let (staging_buffer, staging_allocation) = Self::create_staging_buffer(context, total_size);
+        let (staging_buffer, staging_allocation) =
+            Self::create_staging_buffer(&context, total_size);
         let ms_staging = total_start.elapsed().as_micros() as f64 / 1000.0;
 
         let map = context.map_buffer(&staging_allocation);
@@ -180,7 +214,7 @@ impl Texture {
 
             let command_buffer = context.begin_single_time_commands();
             Self::transition_image_layout(
-                context,
+                &context,
                 command_buffer.vk_command_buffer(),
                 image_object,
                 vk::ImageLayout::UNDEFINED,
@@ -189,7 +223,7 @@ impl Texture {
             let ms_trans_1 = total_start.elapsed().as_micros() as f64 / 1000.0;
 
             Self::copy_buffer_to_image(
-                context,
+                &context,
                 command_buffer.vk_command_buffer(),
                 staging_buffer,
                 image_object,
@@ -198,7 +232,7 @@ impl Texture {
             );
             let ms_copy_im = total_start.elapsed().as_micros() as f64 / 1000.0;
             Self::transition_image_layout(
-                context,
+                &context,
                 command_buffer.vk_command_buffer(),
                 image_object,
                 vk::ImageLayout::TRANSFER_DST_OPTIMAL,
@@ -219,7 +253,7 @@ impl Texture {
                 format,
                 vk::ImageAspectFlags::COLOR,
             );
-            let image_sampler = Self::create_texture_sampler(context);
+            let image_sampler = Self::create_texture_sampler(&context);
             let ms_total = total_start.elapsed().as_micros() as f64 / 1000.0;
             println!(
                 "[Create Image] Image size: {:.2}MiB",
@@ -275,23 +309,115 @@ impl Texture {
                 (ms_free - ms_trans_2) / ms_total * 100.0
             );
 
+            let channels = match format {
+                vk::Format::R8G8B8_SRGB | vk::Format::R8G8B8_UNORM => 3,
+                vk::Format::R8G8B8A8_SRGB | vk::Format::R8G8B8A8_UNORM => 4,
+                _ => 4,
+            };
+
             Self {
                 width,
                 height,
-                channels: 4,
-                image_memory,
+                channels,
+                image_memory: ManuallyDrop::new(image_memory),
                 image: image_object,
                 image_view,
                 image_sampler,
+                context,
             }
         }
     }
+}
 
-    pub fn destroy(self, context: &VulkanContext) {
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_convert_rgb_to_rgba_single_pixel() {
+        let rgb_data = vec![255, 128, 64];
+        let result = Texture::convert_rgb_to_rgba(&rgb_data, 1, 1);
+
+        assert_eq!(result.len(), 4);
+        assert_eq!(result[0], 255);
+        assert_eq!(result[1], 128);
+        assert_eq!(result[2], 64);
+        assert_eq!(result[3], 255);
+    }
+
+    #[test]
+    fn test_convert_rgb_to_rgba_multiple_pixels() {
+        let rgb_data = vec![255, 0, 0, 0, 255, 0, 0, 0, 255];
+        let result = Texture::convert_rgb_to_rgba(&rgb_data, 3, 1);
+
+        assert_eq!(result.len(), 12);
+        assert_eq!(result[0], 255);
+        assert_eq!(result[1], 0);
+        assert_eq!(result[2], 0);
+        assert_eq!(result[3], 255);
+        assert_eq!(result[4], 0);
+        assert_eq!(result[5], 255);
+        assert_eq!(result[6], 0);
+        assert_eq!(result[7], 255);
+        assert_eq!(result[8], 0);
+        assert_eq!(result[9], 0);
+        assert_eq!(result[10], 255);
+        assert_eq!(result[11], 255);
+    }
+
+    #[test]
+    fn test_convert_rgb_to_rgba_2x2() {
+        let rgb_data = vec![255, 0, 0, 0, 255, 0, 0, 0, 255, 128, 128, 128];
+        let result = Texture::convert_rgb_to_rgba(&rgb_data, 2, 2);
+
+        assert_eq!(result.len(), 16);
+        assert_eq!(&result[12..16], &[128, 128, 128, 255]);
+    }
+
+    #[test]
+    fn test_convert_rgb_to_rgba_capacity() {
+        let rgb_data = vec![100, 150, 200];
+        let result = Texture::convert_rgb_to_rgba(&rgb_data, 1, 1);
+
+        assert_eq!(result.capacity(), 4);
+    }
+
+    #[test]
+    fn test_convert_rgb_to_rgba_empty() {
+        let rgb_data: Vec<u8> = vec![];
+        let result = Texture::convert_rgb_to_rgba(&rgb_data, 0, 0);
+
+        assert_eq!(result.len(), 0);
+    }
+
+    #[test]
+    fn test_convert_rgb_to_rgba_preserves_black() {
+        let rgb_data = vec![0, 0, 0];
+        let result = Texture::convert_rgb_to_rgba(&rgb_data, 1, 1);
+
+        assert_eq!(result, vec![0, 0, 0, 255]);
+    }
+
+    #[test]
+    fn test_convert_rgb_to_rgba_preserves_white() {
+        let rgb_data = vec![255, 255, 255];
+        let result = Texture::convert_rgb_to_rgba(&rgb_data, 1, 1);
+
+        assert_eq!(result, vec![255, 255, 255, 255]);
+    }
+}
+
+impl Drop for Texture {
+    fn drop(&mut self) {
         unsafe {
-            context.device.destroy_sampler(self.image_sampler, None);
-            context.device.destroy_image_view(self.image_view, None);
+            self.context
+                .device
+                .destroy_sampler(self.image_sampler, None);
+            self.context
+                .device
+                .destroy_image_view(self.image_view, None);
         }
-        context.free_image(self.image, self.image_memory);
+        let allocation = unsafe { ManuallyDrop::take(&mut self.image_memory) };
+        self.context.free_image(self.image, allocation);
     }
 }

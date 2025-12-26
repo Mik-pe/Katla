@@ -6,7 +6,7 @@ use ash::vk;
 
 use std::{ffi::CString, rc::Rc};
 
-pub use ash::vk::{Format, IndexType, PipelineBindPoint};
+pub use ash::vk::{Format, IndexType};
 
 pub struct VulkanRenderer {
     pub context: Rc<VulkanContext>,
@@ -79,24 +79,6 @@ impl VulkanRenderer {
             current_framedata: None,
         }
     }
-
-    // fn create_framebuffers(context: &VulkanCtx) -> Vec<Framebuffer> {
-    //     context
-    //         .swapchain_image_views
-    //         .iter()
-    //         .map(|image_view| {
-    //             let attachments = vec![*image_view];
-    //             let create_info = FramebufferCreateInfo::builder()
-    //                 .render_pass(render_pass)
-    //                 .attachments(&attachments)
-    //                 .width(context.current_extent.width)
-    //                 .height(context.current_extent.height)
-    //                 .layers(1);
-
-    //             unsafe { context.device.create_framebuffer(&create_info, None, None) }.unwrap()
-    //         })
-    //         .collect()
-    // }
 
     pub fn destroy(&mut self) {
         unsafe {
