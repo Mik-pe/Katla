@@ -1,7 +1,7 @@
 struct Uniforms {
-    world: mat4x4<f32>,
-    view: mat4x4<f32>,
-    proj: mat4x4<f32>,
+    world: mat4x4f,
+    view: mat4x4f,
+    proj: mat4x4f,
 }
 
 @group(0) @binding(0)
@@ -23,6 +23,7 @@ struct VertexOutput {
     @location(4) uv: vec2<f32>,
 }
 
+
 @vertex
 fn vs_main(in: VertexInput) -> VertexOutput {
     var out: VertexOutput;
@@ -32,8 +33,8 @@ fn vs_main(in: VertexInput) -> VertexOutput {
     out.world_position = world_pos.xyz;
 
     // Transform to clip space
-    // TODO: Something is off with these transforms in wgsl -> vulkan clip space
     out.clip_position = uniforms.proj * uniforms.view * world_pos;
+    // out.clip_position.y = -out.clip_position.y;
 
     // Transform normal and tangent to world space
     let normal_matrix = mat3x3<f32>(

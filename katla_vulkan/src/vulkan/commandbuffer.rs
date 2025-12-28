@@ -86,10 +86,10 @@ impl CommandBuffer {
                 self.command_buffer,
                 0,
                 &[vk::Viewport::default()
-                    .height(render_area.extent.height as f32)
-                    .width(render_area.extent.width as f32)
                     .x(render_area.offset.x as f32)
-                    .y(render_area.offset.y as f32)
+                    .y(render_area.offset.y as f32 + render_area.extent.height as f32)
+                    .width(render_area.extent.width as f32)
+                    .height(-(render_area.extent.height as f32))
                     .min_depth(0.0)
                     .max_depth(1.0)],
             )

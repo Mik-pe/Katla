@@ -17,7 +17,7 @@ pub struct Camera {
 
 impl Camera {
     pub fn new(world: &mut World) -> Self {
-        let transform = Transform::new_from_position(Vec3::new(0.0, 50.0, -450.0));
+        let transform = Transform::new_from_position(Vec3::new(0.0, 50.0, 450.0));
         let id = world.create_entity();
         let transform_component = TransformComponent::new(transform);
         world.add_component(id, transform_component);
@@ -59,11 +59,11 @@ impl Camera {
     }
 
     pub fn get_view_mat(&self, world: &World) -> Mat4 {
-        let fwd = Vec3::new(0.0, 0.0, 1.0);
+        let fwd = Vec3::new(0.0, 0.0, -1.0);
         let to = katla_math::mat4_mul_vec3(&self.get_view_rotation(world), &fwd);
         if let Some(transform) = world.get_component::<TransformComponent>(self.entity) {
             let pos = transform.transform.position;
-            Mat4::create_lookat(pos, pos + to, Vec3::new(0.0, -1.0, 0.0))
+            Mat4::create_lookat(pos, pos + to, Vec3::new(0.0, 1.0, 0.0))
         } else {
             Mat4::identity()
         }
