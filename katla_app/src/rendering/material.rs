@@ -1,7 +1,6 @@
 use crate::{rendering::vertextypes::*, util::GLTFModel};
 
 use katla_math::Mat4;
-
 use katla_vulkan::{
     context::VulkanContext, CommandBuffer, Format, MaterialBuilder, MaterialPipeline, RenderPass,
     Texture,
@@ -51,6 +50,10 @@ impl Material {
 
         let mut builder = MaterialBuilder::new(context.clone())
             .with_vertex_binding(vertex_binding)
+            .with_vertex_shader(include_bytes!(
+                "../../../resources/shaders/model_pbr.vert.spv"
+            ))
+            .with_fragment_shader(include_bytes!("../../../resources/shaders/model.frag.spv"))
             .with_backface_culling(true)
             .with_depth_test(true)
             .with_depth_write(true);

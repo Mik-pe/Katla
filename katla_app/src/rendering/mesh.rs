@@ -1,4 +1,8 @@
+pub mod cube;
+
+use crate::rendering::VertexPBR;
 use crate::util::GLTFModel;
+pub use cube::*;
 
 use katla_vulkan::context::VulkanContext;
 use katla_vulkan::{self, IndexBuffer, IndexType, VertexBuffer};
@@ -13,10 +17,19 @@ use std::rc::Rc;
 pub struct Mesh {
     pub vertex_buffer: Option<VertexBuffer>,
     pub index_buffer: Option<IndexBuffer>,
-    pub num_verts: u32,
 }
 
 impl Mesh {
+    pub fn new(context: Rc<VulkanContext>, vertices: Vec<VertexPBR>, indices: Vec<u32>) -> Self {
+        let index_buffer = Self::create_index_buffer(&context, indices, IndexType::UINT32);
+        let vertex_buffer = Self::create_vertex_buffer(&context, vertices);
+
+        Self {
+            vertex_buffer,
+            index_buffer,
+        }
+    }
+
     pub fn new_from_model(model: Rc<GLTFModel>, context: Rc<VulkanContext>) -> Self {
         let index_type = match model.index_stride {
             1 => IndexType::UINT8_EXT,
@@ -30,7 +43,6 @@ impl Mesh {
         Self {
             vertex_buffer,
             index_buffer,
-            num_verts: 0,
         }
     }
 

@@ -23,6 +23,7 @@ use crate::{
     components::DrawableComponent,
     entities::ModelEntity,
     input::InputController,
+    rendering::create_cube,
     util::{FileCache, GLTFModel, Timer},
 };
 
@@ -83,6 +84,12 @@ impl ApplicationHandler for Application {
                 Vec3::new(0.0, 0.0, 0.0),
             );
             ModelEntity::new(&mut self.world, model);
+
+            let _cube = create_cube(
+                &mut self.world,
+                renderer.context.clone(),
+                &renderer.render_pass,
+            );
 
             self.window = Some(window);
             self.renderer = Some(renderer);
@@ -200,6 +207,6 @@ impl ApplicationHandler for Application {
 
 impl Application {
     pub fn init(&mut self) {
-        env_logger::Builder::from_env(Env::default().default_filter_or("debug")).init();
+        env_logger::Builder::from_env(Env::default().default_filter_or("info")).init();
     }
 }

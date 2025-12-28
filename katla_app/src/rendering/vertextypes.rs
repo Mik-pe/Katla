@@ -54,6 +54,20 @@ pub struct VertexPBR {
 }
 
 impl VertexPBR {
+    pub fn new(
+        position: [f32; 3],
+        normal: [f32; 3],
+        tangent: [f32; 4],
+        tex_coord0: [f32; 2],
+    ) -> Self {
+        Self {
+            position,
+            normal,
+            tangent,
+            tex_coord0,
+        }
+    }
+
     pub fn get_vertex_binding() -> VertexBinding {
         VertexBinding {
             formats: vec![
