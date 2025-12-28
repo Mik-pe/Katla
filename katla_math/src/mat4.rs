@@ -385,7 +385,7 @@ impl Mat4 {
 impl From<Mat4> for [[f32; 4]; 4] {
     fn from(val: Mat4) -> Self {
         let vec_arr = val.0;
-        
+
         [
             vec_arr[0].into(),
             vec_arr[1].into(),

@@ -3,7 +3,10 @@ use ash::{
     vk::{self},
     Device,
 };
-use naga::{back::spv, front::wgsl};
+use naga::{
+    back::spv::{self, WriterFlags},
+    front::wgsl,
+};
 use std::{
     ffi::CString,
     io::Cursor,
@@ -67,11 +70,12 @@ impl ShaderModule {
         .validate(&wgsl_module)
         .unwrap();
         let entry_point = entry_point.into();
-
+        let mut options = naga::back::spv::Options::default();
+        options.flags = WriterFlags::LABEL_VARYINGS | WriterFlags::CLAMP_FRAG_DEPTH;
         let spirv = naga::back::spv::write_vec(
             &wgsl_module,
             &module_info,
-            &naga::back::spv::Options::default(),
+            &options,
             Some(&spv::PipelineOptions {
                 shader_stage: shader_stage_to_naga(stage),
                 entry_point: entry_point.clone(),

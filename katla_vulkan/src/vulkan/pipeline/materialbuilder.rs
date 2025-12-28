@@ -4,10 +4,6 @@ use std::{path::Path, rc::Rc};
 use super::{DescriptorLayoutBuilder, ImageInfo, MaterialPipeline, PipelineBuilder, ShaderModule};
 use crate::{context::VulkanContext, RenderPass, Texture, VertexBinding};
 
-const DEFAULT_SHADER_VERT: &[u8] =
-    include_bytes!("../../../../resources/shaders/model_pbr.vert.spv");
-const DEFAULT_SHADER_FRAG: &[u8] = include_bytes!("../../../../resources/shaders/model.frag.spv");
-
 pub struct MaterialBuilder {
     context: Rc<VulkanContext>,
     vertex_shader: Option<ShaderModule>,
@@ -151,11 +147,11 @@ impl MaterialBuilder {
             .with_descriptor_layouts(vec![desc_layout]);
 
         if self.cull_back_faces {
-            pipeline_builder =
-                pipeline_builder.with_cull_mode(vk::CullModeFlags::BACK, vk::FrontFace::CLOCKWISE);
+            pipeline_builder = pipeline_builder
+                .with_cull_mode(vk::CullModeFlags::BACK, vk::FrontFace::COUNTER_CLOCKWISE);
         } else {
-            pipeline_builder =
-                pipeline_builder.with_cull_mode(vk::CullModeFlags::NONE, vk::FrontFace::CLOCKWISE);
+            pipeline_builder = pipeline_builder
+                .with_cull_mode(vk::CullModeFlags::NONE, vk::FrontFace::COUNTER_CLOCKWISE);
         }
 
         if self.alpha_blending {

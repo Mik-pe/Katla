@@ -9,7 +9,6 @@ use crate::{
     entities::ModelEntity,
     rendering::{Material, Mesh, VertexPBR},
 };
-const FRAG_SHADER: &[u8] = include_bytes!("../../../../resources/shaders/model_no_tex.frag.spv");
 
 pub fn create_cube_vertices() -> Vec<VertexPBR> {
     let mut vertices = Vec::new();
