@@ -1,5 +1,5 @@
 use ash::vk;
-use std::rc::Rc;
+use std::{path::Path, rc::Rc};
 
 use super::{DescriptorLayoutBuilder, ImageInfo, MaterialPipeline, PipelineBuilder, ShaderModule};
 use crate::{context::VulkanContext, RenderPass, Texture, VertexBinding};
@@ -10,8 +10,8 @@ const DEFAULT_SHADER_FRAG: &[u8] = include_bytes!("../../../../resources/shaders
 
 pub struct MaterialBuilder {
     context: Rc<VulkanContext>,
-    vertex_shader: Option<Vec<u8>>,
-    fragment_shader: Option<Vec<u8>>,
+    vertex_shader: Option<ShaderModule>,
+    fragment_shader: Option<ShaderModule>,
     vertex_binding: Option<VertexBinding>,
     texture: Option<Rc<Texture>>,
     depth_test: bool,
@@ -36,12 +36,46 @@ impl MaterialBuilder {
     }
 
     pub fn with_vertex_shader(mut self, shader_bytes: &[u8]) -> Self {
-        self.vertex_shader = Some(shader_bytes.to_vec());
+        let vertex_shader = ShaderModule::from_bytes(
+            self.context.device.clone(),
+            shader_bytes,
+            vk::ShaderStageFlags::VERTEX,
+            "main",
+        )
+        .unwrap();
+        self.vertex_shader = Some(vertex_shader);
         self
     }
 
     pub fn with_fragment_shader(mut self, shader_bytes: &[u8]) -> Self {
-        self.fragment_shader = Some(shader_bytes.to_vec());
+        let fragment_shader = ShaderModule::from_bytes(
+            self.context.device.clone(),
+            shader_bytes,
+            vk::ShaderStageFlags::FRAGMENT,
+            "main",
+        )
+        .unwrap();
+        self.fragment_shader = Some(fragment_shader);
+        self
+    }
+
+    pub fn with_wgsl_shader(mut self, wgsl_path: &Path) -> Self {
+        let vertex_shader = ShaderModule::from_wgsl(
+            self.context.device.clone(),
+            wgsl_path,
+            vk::ShaderStageFlags::VERTEX,
+            "vs_main",
+        )
+        .unwrap();
+        self.vertex_shader = Some(vertex_shader);
+        let fragment_shader = ShaderModule::from_wgsl(
+            self.context.device.clone(),
+            wgsl_path,
+            vk::ShaderStageFlags::FRAGMENT,
+            "fs_main",
+        )
+        .unwrap();
+        self.fragment_shader = Some(fragment_shader);
         self
     }
 
@@ -80,25 +114,12 @@ impl MaterialBuilder {
             .vertex_binding
             .ok_or(MaterialBuildError::MissingVertexBinding)?;
 
-        let vert_bytes = self.vertex_shader.as_deref().unwrap_or(DEFAULT_SHADER_VERT);
-        let frag_bytes = self
+        let vert_shader = self
+            .vertex_shader
+            .ok_or(MaterialBuildError::MissingVertexShader)?;
+        let frag_shader = self
             .fragment_shader
-            .as_deref()
-            .unwrap_or(DEFAULT_SHADER_FRAG);
-
-        let vert_shader = ShaderModule::from_bytes(
-            self.context.device.clone(),
-            vert_bytes,
-            vk::ShaderStageFlags::VERTEX,
-        )
-        .map_err(|e| MaterialBuildError::ShaderCreationFailed(format!("{:?}", e)))?;
-
-        let frag_shader = ShaderModule::from_bytes(
-            self.context.device.clone(),
-            frag_bytes,
-            vk::ShaderStageFlags::FRAGMENT,
-        )
-        .map_err(|e| MaterialBuildError::ShaderCreationFailed(format!("{:?}", e)))?;
+            .ok_or(MaterialBuildError::MissingFragmentShader)?;
 
         let desc_layout = DescriptorLayoutBuilder::new()
             .add_binding(
@@ -118,6 +139,10 @@ impl MaterialBuilder {
 
         let mut pipeline_builder = PipelineBuilder::new(self.context.clone())
             .with_shaders(vert_shader.module, frag_shader.module)
+            .with_entry_points(
+                vert_shader.entry_point.clone(),
+                frag_shader.entry_point.clone(),
+            )
             .with_vertex_input(
                 vec![vertex_binding.get_binding_desc(0)],
                 vertex_binding.get_attribute_desc(0),
@@ -157,6 +182,8 @@ impl MaterialBuilder {
 #[derive(Debug)]
 pub enum MaterialBuildError {
     MissingVertexBinding,
+    MissingVertexShader,
+    MissingFragmentShader,
     ShaderCreationFailed(String),
     DescriptorLayoutFailed(String),
     PipelineCreationFailed(String),
@@ -166,6 +193,8 @@ impl std::fmt::Display for MaterialBuildError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::MissingVertexBinding => write!(f, "Vertex binding not provided"),
+            Self::MissingVertexShader => write!(f, "Vertex shader not provided"),
+            Self::MissingFragmentShader => write!(f, "Fragment shader not provided"),
             Self::ShaderCreationFailed(e) => write!(f, "Shader creation failed: {}", e),
             Self::DescriptorLayoutFailed(e) => {
                 write!(f, "Descriptor layout creation failed: {}", e)

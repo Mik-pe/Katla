@@ -8,7 +8,8 @@ pub struct PipelineBuilder {
     context: Rc<VulkanContext>,
     vertex_shader: Option<vk::ShaderModule>,
     fragment_shader: Option<vk::ShaderModule>,
-    shader_entry_point: CString,
+    vertex_shader_entry_point: CString,
+    fragment_shader_entry_point: CString,
     vertex_bindings: Vec<vk::VertexInputBindingDescription>,
     vertex_attributes: Vec<vk::VertexInputAttributeDescription>,
     topology: vk::PrimitiveTopology,
@@ -39,7 +40,8 @@ impl PipelineBuilder {
             fragment_shader: None,
             vertex_bindings: Vec::new(),
             vertex_attributes: Vec::new(),
-            shader_entry_point: CString::new("main").unwrap(),
+            vertex_shader_entry_point: CString::new("vs_main").unwrap(),
+            fragment_shader_entry_point: CString::new("fs_main").unwrap(),
             topology: vk::PrimitiveTopology::TRIANGLE_LIST,
             polygon_mode: vk::PolygonMode::FILL,
             cull_mode: vk::CullModeFlags::BACK,
@@ -64,6 +66,12 @@ impl PipelineBuilder {
     pub fn with_shaders(mut self, vert: vk::ShaderModule, frag: vk::ShaderModule) -> Self {
         self.vertex_shader = Some(vert);
         self.fragment_shader = Some(frag);
+        self
+    }
+
+    pub fn with_entry_points(mut self, vertex: CString, fragment: CString) -> Self {
+        self.vertex_shader_entry_point = vertex;
+        self.fragment_shader_entry_point = fragment;
         self
     }
 
@@ -203,11 +211,11 @@ impl PipelineBuilder {
             vk::PipelineShaderStageCreateInfo::default()
                 .stage(vk::ShaderStageFlags::VERTEX)
                 .module(shader_vert)
-                .name(&self.shader_entry_point),
+                .name(&self.vertex_shader_entry_point),
             vk::PipelineShaderStageCreateInfo::default()
                 .stage(vk::ShaderStageFlags::FRAGMENT)
                 .module(shader_frag)
-                .name(&self.shader_entry_point),
+                .name(&self.fragment_shader_entry_point),
         ];
 
         let vertex_input = vk::PipelineVertexInputStateCreateInfo::default()

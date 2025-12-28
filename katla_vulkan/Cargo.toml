@@ -9,3 +9,5 @@ raw-window-handle = "*"
 ash = "^0.38.0"
 ash-window = "^0.13.0"
 gpu-allocator = "^0.28.0"
+naga = {version = "28.0.0", features = ["wgsl-in", "spv-out"]}
+bytemuck = "*"
