@@ -13,28 +13,33 @@ use crate::{
 pub fn create_cube_vertices() -> Vec<VertexPBR> {
     let mut vertices = Vec::new();
     for i in 0..=1 {
-        let z = if i % 2 == 0 { 0.5 } else { -0.5 };
+        let sign = if i % 2 == 0 { 1.0 } else { -1.0 };
+        let z = sign * 0.5;
+        let lower_left = Vec3::new(-0.5, -0.5, z);
+        let upper_left = Vec3::new(-0.5, 0.5, z);
+        let upper_right = Vec3::new(0.5, 0.5, z);
+        let lower_right = Vec3::new(0.5, -0.5, z);
         vertices.push(VertexPBR::new(
-            [-0.5, -0.5, z],
-            [0.0, 0.0, 1.0],
+            lower_left.0,
+            lower_left.normalize().0,
             [0.5, 0.5, 0.0, 0.0],
             [0.0, 0.0],
         ));
         vertices.push(VertexPBR::new(
-            [-0.5, 0.5, z],
-            [0.0, 0.0, 1.0],
+            upper_left.0,
+            upper_left.normalize().0,
             [0.5, 0.5, 0.0, 0.0],
             [0.0, 0.0],
         ));
         vertices.push(VertexPBR::new(
-            [0.5, 0.5, z],
-            [0.0, 0.0, 1.0],
+            upper_right.0,
+            upper_right.normalize().0,
             [0.5, 0.5, 0.0, 0.0],
             [0.0, 0.0],
         ));
         vertices.push(VertexPBR::new(
-            [0.5, -0.5, z],
-            [0.0, 0.0, 1.0],
+            lower_right.0,
+            lower_right.normalize().0,
             [0.5, 0.5, 0.0, 0.0],
             [0.0, 0.0],
         ));
@@ -45,12 +50,12 @@ pub fn create_cube_vertices() -> Vec<VertexPBR> {
 pub fn create_cube_mesh(context: Rc<VulkanContext>) -> Mesh {
     let vertices = create_cube_vertices();
     let indices = vec![
-        0, 1, 2, 2, 3, 0, // Front face
-        4, 6, 5, 6, 4, 7, // Back face
-        0, 4, 1, 1, 4, 5, // Left face
-        2, 6, 3, 3, 6, 7, // Right face
-        0, 3, 4, 4, 3, 7, // Top face
-        1, 5, 2, 2, 5, 6, // Bottom face
+        0, 2, 1, 3, 2, 0, // Front face
+        4, 5, 6, 6, 7, 4, // Back face
+        0, 1, 4, 1, 5, 4, // Left face
+        2, 3, 6, 3, 7, 6, // Right face
+        0, 4, 3, 4, 7, 3, // Top face
+        1, 2, 5, 2, 6, 5, // Bottom face
     ];
     Mesh::new(context, vertices, indices)
 }
