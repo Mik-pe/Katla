@@ -1,5 +1,7 @@
+pub mod render_graph;
 pub mod vulkan;
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
+pub use render_graph::*;
 pub use vulkan::*;
 
 use ash::vk;
