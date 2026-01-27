@@ -5,7 +5,7 @@ use std::{cell::RefCell, ffi::CString, path::PathBuf, rc::Rc, time::Instant};
 
 pub use builder::*;
 use env_logger::Env;
-use katla_ecs::World;
+use katla_ecs::{input::Action, World};
 use katla_math::Vec3;
 use katla_vulkan::VulkanRenderer;
 pub use model::*;
@@ -19,10 +19,9 @@ use winit::{
 };
 
 use crate::{
-    cameracontroller::{fpscontrol::FpsControl, Camera, CameraController},
     components::DrawableComponent,
-    entities::ModelEntity,
-    input::InputController,
+    entities::{Camera, ModelEntity},
+    input::KeyboardMapping,
     rendering::create_cube,
     util::{FileCache, GLTFModel, Timer},
 };
@@ -36,8 +35,6 @@ pub struct Application {
     window: Option<Window>,
     renderer: Option<VulkanRenderer>,
     camera: Rc<RefCell<Camera>>,
-    controller: Rc<RefCell<FpsControl>>,
-    input_controller: InputController,
     gltf_cache: FileCache<GLTFModel>,
     stage_upload: bool,
     timer: Timer,
@@ -89,6 +86,7 @@ impl ApplicationHandler for Application {
                 &mut self.world,
                 renderer.context.clone(),
                 &renderer.render_pass,
+                Vec3::new(100.0, 10.0, 100.0),
             );
 
             self.window = Some(window);
@@ -102,7 +100,12 @@ impl ApplicationHandler for Application {
         _device_id: DeviceId,
         event: DeviceEvent,
     ) {
-        self.controller.borrow_mut().handle_device_event(&event);
+        if let DeviceEvent::MouseMotion { delta } = event {
+            if self.world.get_input().is_action_pressed(Action::LookEnable) {
+                self.world.get_input_mut().mouse_delta.x += delta.0 as f32;
+                self.world.get_input_mut().mouse_delta.y += delta.1 as f32;
+            }
+        }
     }
 
     fn window_event(
@@ -111,9 +114,16 @@ impl ApplicationHandler for Application {
         _window_id: WindowId,
         event: WindowEvent,
     ) {
-        self.controller.borrow_mut().handle_window_event(&event);
+        if let WindowEvent::MouseInput { state, button, .. } = &event {
+            if *button == winit::event::MouseButton::Right {
+                let pressed = matches!(state, ElementState::Pressed);
+                self.world
+                    .get_input_mut()
+                    .set_action_state(Action::LookEnable, pressed);
+            }
+        }
+
         if let Some(renderer) = &mut self.renderer {
-            self.input_controller.handle_event(&event);
             match event {
                 WindowEvent::Resized(logical_size) => {
                     let win_x = logical_size.width as f32;
@@ -130,8 +140,15 @@ impl ApplicationHandler for Application {
                     event_loop.exit();
                 }
                 WindowEvent::KeyboardInput { event, .. } => {
-                    if event.state == ElementState::Pressed {
-                        if let PhysicalKey::Code(keycode) = event.physical_key {
+                    if let PhysicalKey::Code(keycode) = event.physical_key {
+                        let mapped_key = KeyboardMapping(keycode);
+
+                        if let Some(action) = mapped_key.to_action() {
+                            let pressed = matches!(event.state, ElementState::Pressed);
+                            self.world.get_input_mut().set_action_state(action, pressed);
+                        }
+
+                        if event.state == ElementState::Pressed {
                             match keycode {
                                 KeyCode::Escape => {
                                     event_loop.exit();
@@ -149,13 +166,8 @@ impl ApplicationHandler for Application {
                     self.timer.add_timestamp();
 
                     let dt = self.timer.get_delta() as f32;
-                    self.controller.borrow_mut().tick_camera(
-                        &self.camera.borrow(),
-                        &mut self.world,
-                        dt,
-                    );
-
                     self.world.update(dt);
+
                     let view = self
                         .camera
                         .borrow()

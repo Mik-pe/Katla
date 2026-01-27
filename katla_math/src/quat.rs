@@ -59,6 +59,44 @@ impl Quat {
         quat
     }
 
+    pub fn from_rotation_between(from: Vec3, to: Vec3) -> Quat {
+        let from = from.normalize();
+        let to = to.normalize();
+
+        let dot = from.dot(to);
+        if dot >= 0.99999 {
+            return Self {
+                x: 0.0,
+                y: 0.0,
+                z: 0.0,
+                w: 1.0,
+            };
+        }
+
+        // Vectors are opposite - pick an arbitrary perpendicular axis
+        if dot <= -0.99999 {
+            let mut axis = Vec3::new(1.0, 0.0, 0.0).cross(from);
+            let len_sq = axis[0] * axis[0] + axis[1] * axis[1] + axis[2] * axis[2];
+
+            if len_sq < 0.0001 {
+                axis = Vec3::new(0.0, 1.0, 0.0).cross(from);
+            }
+
+            axis = axis.normalize();
+            return Self {
+                x: axis[0],
+                y: axis[1],
+                z: axis[2],
+                w: 0.0,
+            };
+        }
+        let angle = f32::acos(dot);
+
+        let axis = from.cross(to).normalize();
+
+        Self::from_axis_angle(axis, angle)
+    }
+
     pub fn new_from_yaw_pitch(yaw: f32, pitch: f32) -> Quat {
         let yaw_rotation = Quat::from_axis_angle(Vec3::new(0.0, 1.0, 0.0), yaw);
         let pitch_rotation = Quat::from_axis_angle(Vec3::new(1.0, 0.0, 0.0), pitch);

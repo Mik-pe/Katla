@@ -1,15 +1,11 @@
 use std::{cell::RefCell, rc::Rc};
 
 use katla_ecs::{System, SystemExecutionOrder, World};
-use winit::{
-    event_loop::{ControlFlow, EventLoop},
-    keyboard::KeyCode,
-};
+use winit::event_loop::{ControlFlow, EventLoop};
 
 use crate::{
     application::{Application, ApplicationInfo},
-    cameracontroller::{self, fpscontrol::FpsControl, Camera},
-    input::InputController,
+    entities::Camera,
     util::{FileCache, Timer},
 };
 
@@ -17,8 +13,6 @@ use crate::{
 pub struct ApplicationBuilder {
     app_name: String,
     validation_layer_enabled: bool,
-    controller: Rc<RefCell<FpsControl>>,
-    input_controller: InputController,
     world: World,
 }
 
@@ -34,15 +28,6 @@ impl ApplicationBuilder {
 
     pub fn validation_layer(mut self, on: bool) -> Self {
         self.validation_layer_enabled = on;
-        self
-    }
-
-    pub fn with_axis_input<S>(mut self, key_event: KeyCode, input: S, value: f32) -> Self
-    where
-        S: Into<u32>,
-    {
-        self.input_controller
-            .assign_axis_input(key_event, input.into(), value);
         self
     }
 
@@ -68,12 +53,6 @@ impl ApplicationBuilder {
     pub fn build(self) -> (Application, EventLoop<()>) {
         let event_loop = Self::build_event_loop();
 
-        let mut input_controller = self.input_controller;
-
-        cameracontroller::fpscontrol::setup_camera_bindings(
-            self.controller.clone(),
-            &mut input_controller,
-        );
         let info = ApplicationInfo {
             name: self.app_name,
             validation_layer_enabled: self.validation_layer_enabled,
@@ -85,8 +64,6 @@ impl ApplicationBuilder {
             window: None,
             renderer: None,
             camera,
-            controller: self.controller,
-            input_controller,
             gltf_cache: FileCache::new(),
             stage_upload: false,
             timer: Timer::new(100),

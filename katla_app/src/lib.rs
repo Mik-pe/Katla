@@ -1,5 +1,4 @@
 pub mod application;
-pub mod cameracontroller;
 pub mod components;
 pub mod entities;
 pub mod input;

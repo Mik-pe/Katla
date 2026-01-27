@@ -1,7 +1,10 @@
+use katla_math::Vec2;
+
 use crate::components::Component;
 use crate::entity::EntityId;
 use crate::storage::ComponentStorageManager;
 use crate::system::{OrderedSystem, System, SystemExecutionOrder};
+use crate::InputState;
 use std::collections::HashSet;
 
 /// World is the central manager for the ECS framework.
@@ -31,9 +34,11 @@ pub struct World {
     /// Set of active entity IDs
     entities: HashSet<EntityId>,
     /// Component storage manager
-    storage: ComponentStorageManager,
+    pub(crate) storage: ComponentStorageManager,
     /// Registered systems
     systems: Vec<OrderedSystem>,
+    /// Global Input state
+    input_state: InputState,
     /// Next entity ID to assign
     next_entity_id: u64,
 }
@@ -45,6 +50,7 @@ impl World {
             entities: HashSet::new(),
             storage: ComponentStorageManager::new(),
             systems: Vec::new(),
+            input_state: InputState::new(),
             next_entity_id: 0,
         }
     }
@@ -183,13 +189,22 @@ impl World {
     ///
     /// * `delta_time` - Time elapsed since the last frame in seconds
     pub fn update(&mut self, delta_time: f32) {
-        for ordered_system in &mut self.systems {
+        // Avoid aliasing `&mut self.systems` and `&mut self` at the same time.
+        // Temporarily take the systems list, run updates, then put it back.
+        let mut systems = std::mem::take(&mut self.systems);
+
+        for ordered_system in &mut systems {
             if !ordered_system.system.is_enabled() {
                 continue;
             }
 
-            ordered_system.system.update(&mut self.storage, delta_time);
+            ordered_system.system.update(self, delta_time);
         }
+
+        self.systems = systems;
+
+        // Clear per-frame mouse delta after the tick.
+        self.input_state.mouse_delta = Vec2::ZERO;
     }
 
     /// Returns the number of entities in the world.
@@ -226,6 +241,22 @@ impl World {
         let entities_to_keep: HashSet<EntityId> = self.entities.clone();
         self.storage.retain_entities(&entities_to_keep);
     }
+
+    pub fn get_input(&self) -> &InputState {
+        &self.input_state
+    }
+
+    pub fn get_input_mut(&mut self) -> &mut InputState {
+        &mut self.input_state
+    }
+
+    pub fn storage(&self) -> &ComponentStorageManager {
+        &self.storage
+    }
+
+    pub fn storage_mut(&mut self) -> &mut ComponentStorageManager {
+        &mut self.storage
+    }
 }
 
 impl Default for World {
@@ -241,6 +272,17 @@ impl Drop for World {
             ordered_system.system.shutdown();
         }
     }
+}
+
+#[macro_export]
+macro_rules! add_components {
+    ($world:expr, $id:expr, $($component:expr),+ $(,)?) => {
+        {
+            $(
+                $world.add_component($id, $component);
+            )+
+        }
+    };
 }
 
 #[cfg(test)]
@@ -265,10 +307,8 @@ mod tests {
     }
 
     impl System for TestSystem {
-        fn update(&mut self, storage: &mut ComponentStorageManager, _delta_time: f32) {
-            if let Some(transforms) = storage.get_storage::<TestComponent>() {
-                self.processed_count = transforms.len();
-            }
+        fn update(&mut self, world: &mut World, _delta_time: f32) {
+            self.processed_count = world.query::<&TestComponent>().count();
         }
 
         fn name(&self) -> &str {

@@ -1,6 +1,6 @@
-use std::{f32::consts::FRAC_PI_4, rc::Rc};
+use std::rc::Rc;
 
-use katla_math::{Mat4, Quat, Transform, Vec3};
+use katla_math::{Mat4, Transform, Vec3};
 use katla_vulkan::{CommandBuffer, RenderPass, VulkanContext};
 
 use crate::{
@@ -42,9 +42,9 @@ impl Model {
 }
 
 impl Drawable for Model {
-    fn update(&mut self, view: &Mat4, proj: &Mat4, dt: f32) {
-        let quat = Quat::from_axis_angle(Vec3::new(0.0, 1.0, 0.0), FRAC_PI_4 * dt);
-        self.transform.rotation = self.transform.rotation * quat;
+    fn update(&mut self, view: &Mat4, proj: &Mat4, _dt: f32) {
+        // let quat = Quat::from_axis_angle(Vec3::new(0.0, 1.0, 0.0), FRAC_PI_4 * dt);
+        // self.transform.rotation = self.transform.rotation * quat;
         let model = self.transform.make_mat4();
         self.material
             .upload_pipeline_data(view.clone(), proj.clone(), model);

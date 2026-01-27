@@ -285,7 +285,7 @@ impl PipelineBuilder {
                 .device
                 .create_pipeline_layout(&pipeline_layout_info, None)
         }
-        .map_err(|e| PipelineError::LayoutCreationFailed(e))?;
+        .map_err(PipelineError::LayoutCreationFailed)?;
 
         let create_info = vk::GraphicsPipelineCreateInfo::default()
             .stages(&shader_stages)

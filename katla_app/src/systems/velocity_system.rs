@@ -1,16 +1,15 @@
-use katla_ecs::{ComponentStorageManager, System};
+use katla_ecs::{System, World};
 
 use crate::components::{TransformComponent, VelocityComponent};
 
 pub struct VelocitySystem;
 
 impl System for VelocitySystem {
-    fn update(&mut self, storage: &mut ComponentStorageManager, delta_time: f32) {
+    fn update(&mut self, world: &mut World, delta_time: f32) {
         for (_entity, transform, velocity) in
-            storage.query::<(&mut TransformComponent, &VelocityComponent)>()
+            world.query::<(&mut TransformComponent, &VelocityComponent)>()
         {
-            let displacement = velocity.velocity * delta_time;
-            transform.transform.position += displacement;
+            transform.transform.position += velocity.velocity * delta_time;
         }
     }
 }
