@@ -249,13 +249,10 @@ impl VulkanContext {
                     .get_physical_device_format_properties(self.physical_device, candidate)
             };
 
-            if tiling == vk::ImageTiling::LINEAR
-                && (format_props.linear_tiling_features & features) == features
-            {
-                format = Some(candidate);
-                break;
-            } else if tiling == vk::ImageTiling::OPTIMAL
-                && (format_props.optimal_tiling_features & features) == features
+            let has_features = format_props.optimal_tiling_features & features == features;
+
+            if has_features
+                && (tiling == vk::ImageTiling::LINEAR || tiling == vk::ImageTiling::OPTIMAL)
             {
                 format = Some(candidate);
                 break;

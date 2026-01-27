@@ -27,11 +27,17 @@
 //! world.update(0.016); // Apply gravity and update velocity
 //! ```
 
-use katla_ecs::{ComponentStorageManager, System};
+use katla_ecs::{System, World};
 
 use crate::components::{DragComponent, ForceComponent, MassComponent, VelocityComponent};
 
 pub struct PhysicsSystem;
+
+impl Default for PhysicsSystem {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl PhysicsSystem {
     pub fn new() -> Self {
@@ -40,9 +46,9 @@ impl PhysicsSystem {
 }
 
 impl System for PhysicsSystem {
-    fn update(&mut self, storage: &mut ComponentStorageManager, delta_time: f32) {
+    fn update(&mut self, world: &mut World, delta_time: f32) {
         for (_entity, velocity, drag, force) in
-            storage.query::<(&VelocityComponent, &DragComponent, &mut ForceComponent)>()
+            world.query::<(&VelocityComponent, &DragComponent, &mut ForceComponent)>()
         {
             let speed_squared = velocity.velocity.distance_squared();
             let velocity_direction = velocity.velocity.normalize();
@@ -50,13 +56,13 @@ impl System for PhysicsSystem {
             force.force += drag_force;
         }
 
-        let entity_masses: Vec<_> = storage
+        let entity_masses: Vec<_> = world
             .query::<&MassComponent>()
             .map(|(entity, mass)| (entity, mass.mass))
             .collect();
 
         for (entity, velocity, force) in
-            storage.query::<(&mut VelocityComponent, &ForceComponent)>()
+            world.query::<(&mut VelocityComponent, &mut ForceComponent)>()
         {
             let mass = entity_masses
                 .iter()
@@ -67,13 +73,10 @@ impl System for PhysicsSystem {
             if mass > 0.0 {
                 velocity.acceleration = force.force * (1.0 / mass);
             }
-        }
-
-        for (_entity, velocity) in storage.query::<&mut VelocityComponent>() {
             velocity.velocity += velocity.acceleration * delta_time;
         }
 
-        for (_entity, force) in storage.query::<&mut ForceComponent>() {
+        for (_entity, force) in world.query::<&mut ForceComponent>() {
             force.force = katla_math::Vec3::default();
         }
     }

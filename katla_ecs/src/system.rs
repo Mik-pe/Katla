@@ -1,4 +1,4 @@
-use super::storage::ComponentStorageManager;
+use crate::World;
 
 /// System trait for the ECS framework.
 ///
@@ -9,12 +9,12 @@ use super::storage::ComponentStorageManager;
 /// # Examples
 ///
 /// ```
-/// use katla_ecs::{System, ComponentStorageManager};
+/// use katla_ecs::{System, World};
 ///
 /// struct PhysicsSystem;
 ///
 /// impl System for PhysicsSystem {
-///     fn update(&mut self, storage: &mut ComponentStorageManager, delta_time: f32) {
+///     fn update(&mut self, world: &mut World, delta_time: f32) {
 ///         // Update physics-related components...
 ///     }
 /// }
@@ -22,13 +22,14 @@ use super::storage::ComponentStorageManager;
 pub trait System {
     /// Update logic for this system.
     ///
-    /// Called once per frame with access to all component storages.
+    /// Called once per frame with access to the entire world.
+    /// This allows systems to read input state and also access all component storages.
     ///
     /// # Arguments
     ///
-    /// * `storage` - Mutable reference to the component storage manager
+    /// * `world` - Mutable reference to the world
     /// * `delta_time` - Time elapsed since the last frame in seconds
-    fn update(&mut self, storage: &mut ComponentStorageManager, delta_time: f32);
+    fn update(&mut self, world: &mut World, delta_time: f32);
 
     /// Optional initialization logic.
     ///
@@ -91,7 +92,6 @@ mod tests {
 
     use super::*;
     use crate::entity::EntityId;
-    use crate::storage::ComponentStorageManager;
 
     #[derive(Component)]
     struct TestComponent {}
@@ -113,11 +113,11 @@ mod tests {
     }
 
     impl System for TestSystem {
-        fn update(&mut self, storage: &mut ComponentStorageManager, _delta_time: f32) {
+        fn update(&mut self, world: &mut World, _delta_time: f32) {
             self.update_count += 1;
 
-            // Access transform storage
-            if let Some(transforms) = storage.get_storage::<TestComponent>() {
+            // Access component storage via the world
+            if let Some(transforms) = world.storage.get_storage::<TestComponent>() {
                 let _count = transforms.len();
             }
         }
@@ -133,11 +133,13 @@ mod tests {
     #[test]
     fn test_system_update() {
         let mut system = TestSystem::new();
-        let mut storage = ComponentStorageManager::new();
+        let mut world = World::new();
 
-        storage.add_component(EntityId::new(1), TestComponent::new());
+        world
+            .storage
+            .add_component(EntityId::new(1), TestComponent::new());
 
-        system.update(&mut storage, 0.016);
+        system.update(&mut world, 0.016);
 
         assert_eq!(system.update_count, 1);
     }

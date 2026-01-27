@@ -1,5 +1,6 @@
 pub use active::*;
 pub use drawable::*;
+pub use fly_camera::*;
 pub use input::*;
 pub use name::*;
 pub use perspective::*;
@@ -10,6 +11,7 @@ pub use transform::*;
 
 pub mod active;
 pub mod drawable;
+pub mod fly_camera;
 pub mod input;
 pub mod name;
 pub mod perspective;

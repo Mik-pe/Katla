@@ -6,7 +6,7 @@
 //! Run with: cargo run --example ecs_demo
 
 use katla::components::{ActiveComponent, NameComponent, TagComponent, TransformComponent};
-use katla_ecs::{Component, ComponentStorageManager, System, SystemExecutionOrder, World};
+use katla_ecs::{Component, System, SystemExecutionOrder, World};
 use katla_math::{Quat, Vec3};
 
 // Custom component: Velocity
@@ -41,8 +41,9 @@ impl HealthComponent {
 struct MovementSystem;
 
 impl System for MovementSystem {
-    fn update(&mut self, storage: &mut ComponentStorageManager, delta_time: f32) {
+    fn update(&mut self, world: &mut World, delta_time: f32) {
         // Get entity IDs that have velocity
+        let storage = world.storage_mut();
         let entities_with_velocity: Vec<_> =
             if let Some(velocities) = storage.get_storage::<VelocityComponent>() {
                 velocities
@@ -85,10 +86,10 @@ impl RotationSystem {
 }
 
 impl System for RotationSystem {
-    fn update(&mut self, storage: &mut ComponentStorageManager, delta_time: f32) {
+    fn update(&mut self, world: &mut World, delta_time: f32) {
         let rotation_radians = self.rotation_speed.to_radians() * delta_time;
         let axis = Vec3::new(0.0, 1.0, 0.0);
-
+        let storage = world.storage_mut();
         if let Some(transforms) = storage.get_storage_mut::<TransformComponent>() {
             for (_entity_id, transform) in transforms.iter_mut() {
                 let rotation_quat = Quat::from_axis_angle(axis, rotation_radians);
@@ -117,7 +118,8 @@ impl HealthRegenSystem {
 }
 
 impl System for HealthRegenSystem {
-    fn update(&mut self, storage: &mut ComponentStorageManager, delta_time: f32) {
+    fn update(&mut self, world: &mut World, delta_time: f32) {
+        let storage = world.storage_mut();
         if let Some(healths) = storage.get_storage_mut::<HealthComponent>() {
             for (_entity_id, health) in healths.iter_mut() {
                 health.current = (health.current + self.regen_rate * delta_time).min(health.max);
@@ -147,12 +149,12 @@ impl StatusLoggerSystem {
 }
 
 impl System for StatusLoggerSystem {
-    fn update(&mut self, storage: &mut ComponentStorageManager, delta_time: f32) {
+    fn update(&mut self, world: &mut World, delta_time: f32) {
         self.time_accumulator += delta_time;
 
         if self.time_accumulator >= self.log_interval {
             self.time_accumulator = 0.0;
-
+            let storage = world.storage();
             let transforms = storage.get_storage::<TransformComponent>();
             let names = storage.get_storage::<NameComponent>();
             let healths = storage.get_storage::<HealthComponent>();

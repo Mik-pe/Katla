@@ -1,30 +1,27 @@
 use katla_ecs::Component;
-use katla_math::Mat4;
 
 #[derive(Component, Debug, Clone)]
-pub struct PerspectiveComponent {
+pub struct Perspective {
     pub fov: f32,
-    pub near_plane: f32,
-    pub far_plane: f32,
-    pub matrix: Mat4,
+    pub near: f32,
+    pub far: f32,
+    pub aspect_ratio: f32,
 }
 
-impl PerspectiveComponent {
+impl Perspective {
     /// Creates a new PerspectiveComponent with the specified name.
-    pub fn new(fov: f32, near_plane: f32, far_plane: f32) -> Self {
-        let matrix = Mat4::create_proj(fov, 1.0, near_plane, far_plane);
-
+    pub fn new(fov: f32, near: f32, far: f32, aspect_ratio: f32) -> Self {
         Self {
             fov,
-            near_plane,
-            far_plane,
-            matrix,
+            near,
+            far,
+            aspect_ratio,
         }
     }
 }
 
-impl Default for PerspectiveComponent {
+impl Default for Perspective {
     fn default() -> Self {
-        Self::new(60.0, 0.001, 10000.0)
+        Self::new(60.0, 0.001, 10000.0, 16.0 / 9.0)
     }
 }

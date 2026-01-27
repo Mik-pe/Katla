@@ -30,17 +30,6 @@ impl Vec4 {
     }
 
     #[inline]
-    #[allow(dead_code)]
-    pub fn add(_lhs: Vec4, _rhs: Vec4) -> Vec4 {
-        Vec4([
-            _lhs[0] + _rhs[0],
-            _lhs[1] + _rhs[1],
-            _lhs[2] + _rhs[2],
-            _lhs[3] + _rhs[3],
-        ])
-    }
-
-    #[inline]
     pub fn dot(a: &Vec4, b: &Vec4) -> f32 {
         a[0] * b[0] + a[1] * b[1] + a[2] * b[2] + a[3] * b[3]
     }

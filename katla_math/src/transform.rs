@@ -60,7 +60,7 @@ impl Transform {
         ]);
         let rot_mat = self.rotation.make_mat4();
         let pos_mat = Mat4::from_translation(self.position.0);
-        pos_mat.mul(&scale_mat.mul(&rot_mat))
+        pos_mat.mul(&rot_mat.mul(&scale_mat))
     }
 }
 

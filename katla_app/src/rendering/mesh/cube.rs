@@ -10,15 +10,16 @@ use crate::{
     rendering::{Material, Mesh, VertexPBR},
 };
 
-pub fn create_cube_vertices() -> Vec<VertexPBR> {
+pub fn create_cube_vertices(size: Vec3) -> Vec<VertexPBR> {
+    let half_size = size / 2.0;
     let mut vertices = Vec::new();
     for i in 0..=1 {
         let sign = if i % 2 == 0 { 1.0 } else { -1.0 };
-        let z = sign * 0.5;
-        let lower_left = Vec3::new(-0.5, -0.5, z);
-        let upper_left = Vec3::new(-0.5, 0.5, z);
-        let upper_right = Vec3::new(0.5, 0.5, z);
-        let lower_right = Vec3::new(0.5, -0.5, z);
+        let z = sign * half_size.z();
+        let lower_left = Vec3::new(-half_size.x(), -half_size.y(), z);
+        let upper_left = Vec3::new(-half_size.x(), half_size.y(), z);
+        let upper_right = Vec3::new(half_size.x(), half_size.y(), z);
+        let lower_right = Vec3::new(half_size.x(), -half_size.y(), z);
         vertices.push(VertexPBR::new(
             lower_left.0,
             lower_left.normalize().0,
@@ -47,8 +48,8 @@ pub fn create_cube_vertices() -> Vec<VertexPBR> {
     vertices
 }
 
-pub fn create_cube_mesh(context: Rc<VulkanContext>) -> Mesh {
-    let vertices = create_cube_vertices();
+pub fn create_cube_mesh(context: Rc<VulkanContext>, size: Vec3) -> Mesh {
+    let vertices = create_cube_vertices(size);
     let indices = vec![
         0, 2, 1, 3, 2, 0, // Front face
         4, 5, 6, 6, 7, 4, // Back face
@@ -78,11 +79,10 @@ pub fn create_cube(
     world: &mut World,
     context: Rc<VulkanContext>,
     render_pass: &RenderPass,
+    size: Vec3,
 ) -> ModelEntity {
-    let mesh = create_cube_mesh(context.clone());
+    let mesh = create_cube_mesh(context.clone(), size);
     let material = create_cube_material(context, render_pass);
-    let mut transform = Transform::default();
-    transform.scale = Vec3::new(5.0, 5.0, 5.0);
-    let model = Model::new(vec![mesh], material, transform);
+    let model = Model::new(vec![mesh], material, Transform::default());
     ModelEntity::new(world, model)
 }

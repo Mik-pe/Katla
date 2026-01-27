@@ -37,11 +37,11 @@ impl ShaderModule {
         entry_point: &str,
     ) -> Result<Self, ShaderError> {
         let mut cursor = Cursor::new(bytes);
-        let code = read_spv(&mut cursor).map_err(|e| ShaderError::InvalidSpirv(e))?;
+        let code = read_spv(&mut cursor).map_err(ShaderError::InvalidSpirv)?;
 
         let create_info = vk::ShaderModuleCreateInfo::default().code(&code);
         let module = unsafe { device.create_shader_module(&create_info, None) }
-            .map_err(|e| ShaderError::CreationFailed(e))?;
+            .map_err(ShaderError::CreationFailed)?;
 
         Ok(Self {
             module,
@@ -57,9 +57,8 @@ impl ShaderModule {
         stage: vk::ShaderStageFlags,
         entry_point: impl Into<String>,
     ) -> Result<Self, ShaderError> {
-        let wgsl_str =
-            std::fs::read_to_string(path.as_ref()).map_err(|e| ShaderError::IoError(e))?;
-        let wgsl_module = wgsl::parse_str(&wgsl_str).map_err(|e| ShaderError::WgslParseError(e))?;
+        let wgsl_str = std::fs::read_to_string(path.as_ref()).map_err(ShaderError::IoError)?;
+        let wgsl_module = wgsl::parse_str(&wgsl_str).map_err(ShaderError::WgslParseError)?;
 
         let module_info: naga::valid::ModuleInfo = naga::valid::Validator::new(
             naga::valid::ValidationFlags::all(),
@@ -70,9 +69,11 @@ impl ShaderModule {
         .validate(&wgsl_module)
         .unwrap();
         let entry_point = entry_point.into();
-        let mut options = naga::back::spv::Options::default();
-        options.flags = WriterFlags::LABEL_VARYINGS | WriterFlags::CLAMP_FRAG_DEPTH;
-        let spirv = naga::back::spv::write_vec(
+        let options = spv::Options {
+            flags: WriterFlags::LABEL_VARYINGS | WriterFlags::CLAMP_FRAG_DEPTH,
+            ..Default::default()
+        };
+        let spirv = spv::write_vec(
             &wgsl_module,
             &module_info,
             &options,
@@ -81,7 +82,7 @@ impl ShaderModule {
                 entry_point: entry_point.clone(),
             }),
         )
-        .map_err(|e| ShaderError::SpvWriteError(e))?;
+        .map_err(ShaderError::SpvWriteError)?;
         let bytes = bytemuck::cast_slice(&spirv);
         Self::from_bytes(device, bytes, stage, &entry_point)
     }
@@ -92,8 +93,8 @@ impl ShaderModule {
         stage: vk::ShaderStageFlags,
         entry_point: &str,
     ) -> Result<Self, ShaderError> {
-        let bytes = std::fs::read(path.as_ref()).map_err(|e| ShaderError::IoError(e))?;
-        Self::from_bytes(device, &bytes, stage, entry_point.into())
+        let bytes = std::fs::read(path.as_ref()).map_err(ShaderError::IoError)?;
+        Self::from_bytes(device, &bytes, stage, entry_point)
     }
 
     pub fn stage_info<'a>(
