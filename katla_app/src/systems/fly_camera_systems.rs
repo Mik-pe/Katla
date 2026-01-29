@@ -28,7 +28,7 @@ impl System for FlyCameraLookSystem {
         let should_look = input.is_action_pressed(katla_ecs::input::Action::LookEnable);
         let input_dir = self.get_input_dir(input);
 
-        if input_dir.distance_squared() == 0.0 && !should_look {
+        if input_dir.length_squared() == 0.0 && !should_look {
             return;
         }
 
