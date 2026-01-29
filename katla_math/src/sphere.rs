@@ -15,7 +15,7 @@ impl Sphere {
 
     pub fn maybe_expand(&mut self, point: Vec3) {
         if !self.point_inside(point) {
-            self.radius = (point - self.center).distance();
+            self.radius = (point - self.center).length();
         }
     }
 
@@ -23,27 +23,23 @@ impl Sphere {
         let relative_point = point - self.center;
 
         (self.radius + KINDA_SMALL_NUMBER) * (self.radius + KINDA_SMALL_NUMBER)
-            >= relative_point.distance_squared()
+            >= relative_point.length_squared()
     }
 
     pub fn intersects(&self, other: &Self) -> bool {
-        let dist_sq = (self.center - other.center).distance_squared();
+        let dist_sq = (self.center - other.center).length_squared();
         let radius_sum = self.radius + other.radius;
         dist_sq <= radius_sum * radius_sum
     }
 
-    //Create a bounding sphere from a slice that can be made into a vec3
-    pub fn create_from_verts<'a, I, T: 'a>(verts: I) -> Self
+    pub fn create_from_verts<'a, I>(verts: I) -> Self
     where
-        I: IntoIterator<Item = &'a T>,
-        &'a T: Into<&'a Vec3>,
+        I: IntoIterator<Item = &'a [f32; 3]>,
     {
         let mut min = Vec3::new(f32::MAX, f32::MAX, f32::MAX);
         let mut max = Vec3::new(f32::MIN, f32::MIN, f32::MIN);
 
-        //Bruteforcing is ok sometimes!
-        for t_vert in verts {
-            let vert: &'a Vec3 = t_vert.into();
+        for vert in verts {
             if vert[0] > max[0] {
                 max[0] = vert[0];
             }
@@ -67,7 +63,7 @@ impl Sphere {
 
         let extent = (max - min).mul(0.5);
         let center = min + extent;
-        let radius = extent.distance();
+        let radius = extent.length();
 
         Self { center, radius }
     }

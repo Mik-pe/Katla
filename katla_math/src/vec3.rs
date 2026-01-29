@@ -1,8 +1,7 @@
 use core::{
     f32,
-    ops::{Add, Index, IndexMut, Sub},
+    ops::{Add, AddAssign, Div, DivAssign, Index, IndexMut, Mul, MulAssign, Neg, Sub, SubAssign},
 };
-use std::ops::{AddAssign, Div, Mul, Neg, SubAssign};
 
 #[derive(Debug, Copy, Clone)]
 pub struct Vec3(pub [f32; 3]);
@@ -77,12 +76,6 @@ impl From<[f32; 3]> for Vec3 {
     }
 }
 
-impl<'a> From<&'a [f32; 3]> for &'a Vec3 {
-    fn from(other: &'a [f32; 3]) -> &'a Vec3 {
-        unsafe { std::mem::transmute(other) }
-    }
-}
-
 impl Vec3 {
     #[inline]
     pub fn new(x: f32, y: f32, z: f32) -> Vec3 {
@@ -120,12 +113,12 @@ impl Vec3 {
         self[0] == 0.0 && self[1] == 0.0 && self[2] == 0.0
     }
 
-    pub fn distance_squared(&self) -> f32 {
+    pub fn length_squared(&self) -> f32 {
         self[0] * self[0] + self[1] * self[1] + self[2] * self[2]
     }
 
-    pub fn distance(&self) -> f32 {
-        self.distance_squared().sqrt()
+    pub fn length(&self) -> f32 {
+        self.length_squared().sqrt()
     }
 
     #[inline]
@@ -181,11 +174,43 @@ impl Div for Vec3 {
     }
 }
 
+impl MulAssign for Vec3 {
+    fn mul_assign(&mut self, rhs: Self) {
+        self.0[0] *= rhs.0[0];
+        self.0[1] *= rhs.0[1];
+        self.0[2] *= rhs.0[2];
+    }
+}
+
+impl MulAssign<f32> for Vec3 {
+    fn mul_assign(&mut self, rhs: f32) {
+        self.0[0] *= rhs;
+        self.0[1] *= rhs;
+        self.0[2] *= rhs;
+    }
+}
+
 impl Div<f32> for Vec3 {
     type Output = Vec3;
 
     fn div(self, rhs: f32) -> Self::Output {
         Vec3([self[0] / rhs, self[1] / rhs, self[2] / rhs])
+    }
+}
+
+impl DivAssign for Vec3 {
+    fn div_assign(&mut self, rhs: Self) {
+        self.0[0] /= rhs.0[0];
+        self.0[1] /= rhs.0[1];
+        self.0[2] /= rhs.0[2];
+    }
+}
+
+impl DivAssign<f32> for Vec3 {
+    fn div_assign(&mut self, rhs: f32) {
+        self.0[0] /= rhs;
+        self.0[1] /= rhs;
+        self.0[2] /= rhs;
     }
 }
 

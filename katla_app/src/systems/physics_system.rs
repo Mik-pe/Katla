@@ -50,7 +50,7 @@ impl System for PhysicsSystem {
         for (_entity, velocity, drag, force) in
             world.query::<(&VelocityComponent, &DragComponent, &mut ForceComponent)>()
         {
-            let speed_squared = velocity.velocity.distance_squared();
+            let speed_squared = velocity.velocity.length_squared();
             let velocity_direction = velocity.velocity.normalize();
             let drag_force = velocity_direction * (-drag.coefficient * speed_squared);
             force.force += drag_force;
