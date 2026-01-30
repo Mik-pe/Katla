@@ -37,7 +37,7 @@ impl<T: Component + 'static> QueryData for &mut T {
     fn fetch(storage: &mut ComponentStorageManager) -> Self::Iter<'_> {
         if let Some(store) = storage.get_storage_mut::<T>() {
             QueryIter1Mut {
-                iter: store.components.iter_mut(),
+                iter: store.components_vec_mut().iter_mut(),
             }
         } else {
             QueryIter1Mut {
@@ -55,7 +55,7 @@ impl<T: Component + 'static> QueryData for &T {
     fn fetch(storage: &mut ComponentStorageManager) -> Self::Iter<'_> {
         if let Some(store) = storage.get_storage::<T>() {
             QueryIter1 {
-                iter: store.components.iter(),
+                iter: store.components_vec().iter(),
             }
         } else {
             QueryIter1 { iter: [].iter() }
