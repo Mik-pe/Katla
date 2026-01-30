@@ -138,7 +138,7 @@ impl<T1: Component + 'static, T2: Component + 'static, T3: Component + 'static> 
             QueryIter3 {
                 storage2: Some(s2),
                 storage3: Some(s3),
-                iter1: s1.components.iter(),
+                iter1: s1.components_vec().iter(),
             }
         } else {
             QueryIter3 {
@@ -185,7 +185,7 @@ impl<T1: Component + 'static, T2: Component + 'static, T3: Component + 'static> 
                 QueryIter3MutRefRef {
                     storage2: Some(s2),
                     storage3: Some(s3),
-                    iter1: s1.components.iter_mut(),
+                    iter1: s1.components_vec_mut().iter_mut(),
                 }
             } else {
                 QueryIter3MutRefRef {
@@ -233,7 +233,7 @@ impl<T1: Component + 'static, T2: Component + 'static, T3: Component + 'static> 
                 QueryIter3RefMutRef {
                     storage1: Some(s1),
                     storage3: Some(s3),
-                    iter2: s2.components.iter_mut(),
+                    iter2: s2.components_vec_mut().iter_mut(),
                 }
             } else {
                 QueryIter3RefMutRef {
@@ -281,7 +281,7 @@ impl<T1: Component + 'static, T2: Component + 'static, T3: Component + 'static> 
                 QueryIter3RefRefMut {
                     storage1: Some(s1),
                     storage2: Some(s2),
-                    iter3: s3.components.iter_mut(),
+                    iter3: s3.components_vec_mut().iter_mut(),
                 }
             } else {
                 QueryIter3RefRefMut {

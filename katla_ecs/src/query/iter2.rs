@@ -119,7 +119,7 @@ impl<T1: Component + 'static, T2: Component + 'static> QueryData for (&mut T1, &
             if let (Some(s1), Some(s2)) = (storage1, storage2) {
                 QueryIter2MutMut {
                     storage1: Some(s1),
-                    storage2_vec: Some(&mut s2.components),
+                    storage2_vec: Some(s2.components_vec_mut()),
                     index: 0,
                 }
             } else {
@@ -154,7 +154,7 @@ impl<T1: Component + 'static, T2: Component + 'static> QueryData for (&mut T1, &
             if let (Some(s1), Some(s2)) = (storage1, storage2) {
                 QueryIter2MutRef {
                     storage2: Some(s2),
-                    iter1: s1.components.iter_mut(),
+                    iter1: s1.components_vec_mut().iter_mut(),
                 }
             } else {
                 QueryIter2MutRef {
@@ -184,7 +184,7 @@ impl<T1: Component + 'static, T2: Component + 'static> QueryData for (&T1, &T2) 
         if let (Some(s1), Some(s2)) = (storage1, storage2) {
             QueryIter2RefRef {
                 storage2: Some(s2),
-                iter1: s1.components.iter(),
+                iter1: s1.components_vec().iter(),
             }
         } else {
             QueryIter2RefRef {
@@ -216,7 +216,7 @@ impl<T1: Component + 'static, T2: Component + 'static> QueryData for (&T1, &mut 
             if let (Some(s1), Some(s2)) = (storage1, storage2) {
                 QueryIter2RefMut {
                     storage1: Some(s1),
-                    iter2: s2.components.iter_mut(),
+                    iter2: s2.components_vec_mut().iter_mut(),
                 }
             } else {
                 QueryIter2RefMut {
