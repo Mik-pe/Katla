@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
 use katla_ecs::input::actions::Action;
+use winit::event::MouseButton;
 use winit::keyboard::KeyCode;
 use winit::keyboard::ModifiersState;
 
@@ -10,86 +11,148 @@ pub struct KeyCombo {
     pub modifiers: ModifiersState,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct MouseCombo {
+    pub button: MouseButton,
+    pub modifiers: ModifiersState,
+}
+
+impl MouseCombo {
+    /// Creates a MouseCombo with no modifiers.
+    pub fn button(button: MouseButton) -> Self {
+        Self {
+            button,
+            modifiers: ModifiersState::empty(),
+        }
+    }
+
+    /// Creates a MouseCombo with the specified modifiers.
+    pub fn with_modifiers(button: MouseButton, modifiers: ModifiersState) -> Self {
+        Self { button, modifiers }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum InputBinding {
+    Keyboard(KeyCombo),
+    Mouse(MouseCombo),
+}
+
 impl KeyCombo {
     pub fn new(key: KeyCode, modifiers: ModifiersState) -> Self {
+        Self { key, modifiers }
+    }
+
+    /// Creates a KeyCombo with no modifiers.
+    pub fn key(key: KeyCode) -> Self {
+        Self {
+            key,
+            modifiers: ModifiersState::empty(),
+        }
+    }
+
+    /// Creates a KeyCombo with the specified modifiers.
+    pub fn with_modifiers(key: KeyCode, modifiers: ModifiersState) -> Self {
         Self { key, modifiers }
     }
 }
 
 pub struct InputMapper {
-    action_map: HashMap<KeyCombo, Action>,
+    action_map: HashMap<InputBinding, Action>,
 }
 
 impl Default for InputMapper {
     fn default() -> Self {
         let mut action_map = HashMap::new();
         action_map.insert(
-            KeyCombo::new(KeyCode::Space, ModifiersState::empty()),
+            InputBinding::Keyboard(KeyCombo::key(KeyCode::Space)),
             Action::Jump,
         );
         action_map.insert(
-            KeyCombo::new(KeyCode::KeyW, ModifiersState::empty()),
+            InputBinding::Keyboard(KeyCombo::key(KeyCode::KeyW)),
             Action::MoveForward,
         );
         action_map.insert(
-            KeyCombo::new(KeyCode::KeyS, ModifiersState::empty()),
+            InputBinding::Keyboard(KeyCombo::key(KeyCode::KeyS)),
             Action::MoveBackward,
         );
         action_map.insert(
-            KeyCombo::new(KeyCode::KeyA, ModifiersState::empty()),
+            InputBinding::Keyboard(KeyCombo::key(KeyCode::KeyA)),
             Action::MoveLeft,
         );
         action_map.insert(
-            KeyCombo::new(KeyCode::KeyD, ModifiersState::empty()),
+            InputBinding::Keyboard(KeyCombo::key(KeyCode::KeyD)),
             Action::MoveRight,
         );
         action_map.insert(
-            KeyCombo::new(KeyCode::KeyE, ModifiersState::empty()),
+            InputBinding::Keyboard(KeyCombo::key(KeyCode::KeyE)),
             Action::MoveUp,
         );
 
         action_map.insert(
-            KeyCombo::new(KeyCode::KeyQ, ModifiersState::empty()),
+            InputBinding::Keyboard(KeyCombo::key(KeyCode::KeyQ)),
             Action::MoveDown,
         );
         action_map.insert(
-            KeyCombo::new(KeyCode::KeyF, ModifiersState::empty()),
+            InputBinding::Keyboard(KeyCombo::key(KeyCode::KeyF)),
             Action::Interact,
         );
         action_map.insert(
-            KeyCombo::new(KeyCode::KeyI, ModifiersState::empty()),
+            InputBinding::Keyboard(KeyCombo::key(KeyCode::KeyI)),
             Action::Inventory,
         );
         action_map.insert(
-            KeyCombo::new(KeyCode::KeyP, ModifiersState::empty()),
+            InputBinding::Keyboard(KeyCombo::key(KeyCode::KeyP)),
             Action::Pause,
         );
         action_map.insert(
-            KeyCombo::new(KeyCode::Escape, ModifiersState::empty()),
+            InputBinding::Keyboard(KeyCombo::key(KeyCode::Escape)),
             Action::Exit,
         );
+        action_map.insert(
+            InputBinding::Keyboard(KeyCombo::key(KeyCode::KeyL)),
+            Action::LookEnable,
+        );
+
+        action_map.insert(
+            InputBinding::Mouse(MouseCombo::button(MouseButton::Right)),
+            Action::LookEnable,
+        );
+        action_map.insert(
+            InputBinding::Mouse(MouseCombo::button(MouseButton::Left)),
+            Action::Interact,
+        );
+
         Self { action_map }
     }
 }
 
-pub struct KeyboardMapping(pub KeyCode);
+impl InputMapper {
+    pub fn new() -> Self {
+        Self::default()
+    }
 
-impl KeyboardMapping {
-    /// Returns the mapped ECS action for this key, if any.
-    ///
-    /// Note: Prefer `InputMapper` + `KeyCombo` for remappable bindings.
-    pub fn to_action(self) -> Option<Action> {
-        match self.0 {
-            KeyCode::Escape => Some(Action::Exit),
-            KeyCode::KeyW => Some(Action::MoveForward),
-            KeyCode::KeyA => Some(Action::MoveLeft),
-            KeyCode::KeyS => Some(Action::MoveBackward),
-            KeyCode::KeyD => Some(Action::MoveRight),
-            KeyCode::Space => Some(Action::Jump),
-            KeyCode::KeyE => Some(Action::Interact),
-            KeyCode::KeyI => Some(Action::Inventory),
-            KeyCode::KeyP => Some(Action::Pause),
-            _ => None,
-        }
+    pub fn map_action(&mut self, binding: InputBinding, action: Action) {
+        self.action_map.insert(binding, action);
+    }
+
+    pub fn unmap_action(&mut self, binding: InputBinding) -> Option<Action> {
+        self.action_map.remove(&binding)
+    }
+
+    pub fn get_action(&self, binding: &InputBinding) -> Option<Action> {
+        self.action_map.get(binding).copied()
+    }
+
+    pub fn reset_to_default(&mut self) {
+        *self = Self::default();
+    }
+
+    pub fn get_bindings_for_action(&self, action: Action) -> Vec<InputBinding> {
+        self.action_map
+            .iter()
+            .filter(|(_, &a)| a == action)
+            .map(|(binding, _)| *binding)
+            .collect()
     }
 }

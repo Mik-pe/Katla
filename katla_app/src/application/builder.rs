@@ -2,10 +2,12 @@ use std::{cell::RefCell, rc::Rc};
 
 use katla_ecs::{System, SystemExecutionOrder, World};
 use winit::event_loop::{ControlFlow, EventLoop};
+use winit::keyboard::ModifiersState;
 
 use crate::{
     application::{Application, ApplicationInfo},
     entities::Camera,
+    input::InputMapper,
     util::{FileCache, Timer},
 };
 
@@ -69,6 +71,8 @@ impl ApplicationBuilder {
             timer: Timer::new(100),
             info,
             world,
+            input_mapper: InputMapper::new(),
+            current_modifiers: ModifiersState::empty(),
         };
 
         (app, event_loop)
