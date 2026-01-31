@@ -5,6 +5,4 @@
 
 pub mod map;
 
-pub use map::{InputMapper, KeyCombo};
-
-pub use map::KeyboardMapping;
+pub use map::{InputBinding, InputMapper, KeyCombo, MouseCombo};

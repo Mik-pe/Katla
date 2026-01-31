@@ -3,6 +3,8 @@ pub mod model;
 
 use std::{cell::RefCell, ffi::CString, path::PathBuf, rc::Rc, time::Instant};
 
+use winit::keyboard::ModifiersState;
+
 pub use builder::*;
 use env_logger::Env;
 use katla_ecs::{input::Action, World};
@@ -21,7 +23,7 @@ use winit::{
 use crate::{
     components::DrawableComponent,
     entities::{Camera, ModelEntity},
-    input::KeyboardMapping,
+    input::{InputBinding, InputMapper, KeyCombo, MouseCombo},
     rendering::create_cube,
     util::{FileCache, GLTFModel, Timer},
 };
@@ -40,6 +42,8 @@ pub struct Application {
     timer: Timer,
     info: ApplicationInfo,
     world: World,
+    input_mapper: InputMapper,
+    current_modifiers: ModifiersState,
 }
 
 impl ApplicationHandler for Application {
@@ -115,11 +119,12 @@ impl ApplicationHandler for Application {
         event: WindowEvent,
     ) {
         if let WindowEvent::MouseInput { state, button, .. } = &event {
-            if *button == winit::event::MouseButton::Right {
+            let mouse_combo = MouseCombo::with_modifiers(*button, self.current_modifiers);
+            let binding = InputBinding::Mouse(mouse_combo);
+
+            if let Some(action) = self.input_mapper.get_action(&binding) {
                 let pressed = matches!(state, ElementState::Pressed);
-                self.world
-                    .get_input_mut()
-                    .set_action_state(Action::LookEnable, pressed);
+                self.world.get_input_mut().set_action_state(action, pressed);
             }
         }
 
@@ -141,9 +146,10 @@ impl ApplicationHandler for Application {
                 }
                 WindowEvent::KeyboardInput { event, .. } => {
                     if let PhysicalKey::Code(keycode) = event.physical_key {
-                        let mapped_key = KeyboardMapping(keycode);
+                        let key_combo = KeyCombo::with_modifiers(keycode, self.current_modifiers);
+                        let binding = InputBinding::Keyboard(key_combo);
 
-                        if let Some(action) = mapped_key.to_action() {
+                        if let Some(action) = self.input_mapper.get_action(&binding) {
                             let pressed = matches!(event.state, ElementState::Pressed);
                             self.world.get_input_mut().set_action_state(action, pressed);
                         }
@@ -160,6 +166,9 @@ impl ApplicationHandler for Application {
                             }
                         }
                     }
+                }
+                WindowEvent::ModifiersChanged(modifiers) => {
+                    self.current_modifiers = modifiers.state();
                 }
                 WindowEvent::RedrawRequested => {
                     renderer.swap_frames();
