@@ -1,5 +1,6 @@
 use super::VulkanContext;
 use crate::VulkanFrameCtx;
+use crate::render_graph::types::ImageFormat;
 
 use std::mem::ManuallyDrop;
 use std::rc::Rc;
@@ -161,7 +162,7 @@ impl Texture {
             context,
             width,
             height,
-            vk::Format::R8G8B8A8_SRGB,
+            ImageFormat::R8G8B8A8Srgb,
             &rgba_data,
         )
     }
@@ -170,7 +171,7 @@ impl Texture {
         context: Rc<VulkanContext>,
         width: u32,
         height: u32,
-        format: vk::Format,
+        format: ImageFormat,
         pixel_data: &[u8],
     ) -> Self {
         let total_start = Instant::now();
@@ -179,13 +180,17 @@ impl Texture {
             height,
             depth: 1,
         };
+
+        // Convert ImageFormat to vk::Format for internal use
+        let vk_format: ash::vk::Format = format.into();
+
         //Create the image memory gpu_only:
         let create_info = vk::ImageCreateInfo::default()
             .extent(extent)
             .image_type(vk::ImageType::TYPE_2D)
             .mip_levels(1)
             .array_layers(1)
-            .format(format)
+            .format(vk_format)
             .usage(vk::ImageUsageFlags::TRANSFER_DST | vk::ImageUsageFlags::SAMPLED)
             .initial_layout(vk::ImageLayout::UNDEFINED)
             .tiling(vk::ImageTiling::OPTIMAL)
@@ -250,7 +255,7 @@ impl Texture {
             let image_view = VulkanFrameCtx::create_image_view(
                 &context.device,
                 image_object,
-                format,
+                vk_format,
                 vk::ImageAspectFlags::COLOR,
             );
             let image_sampler = Self::create_texture_sampler(&context);
@@ -310,8 +315,7 @@ impl Texture {
             );
 
             let channels = match format {
-                vk::Format::R8G8B8_SRGB | vk::Format::R8G8B8_UNORM => 3,
-                vk::Format::R8G8B8A8_SRGB | vk::Format::R8G8B8A8_UNORM => 4,
+                ImageFormat::R8G8B8A8Srgb | ImageFormat::B8G8R8A8Srgb => 4,
                 _ => 4,
             };
 

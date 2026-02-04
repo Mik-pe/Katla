@@ -1,6 +1,7 @@
 pub mod commandbuffer;
 pub mod commandpool;
 pub mod context;
+pub mod framebuffer;
 pub mod pipeline;
 pub mod queue;
 pub mod renderpass;
@@ -13,6 +14,7 @@ pub mod vertexbuffer;
 pub use commandbuffer::*;
 pub use commandpool::*;
 pub use context::*;
+pub use framebuffer::*;
 pub use pipeline::*;
 pub use queue::*;
 pub use renderpass::*;
@@ -21,3 +23,6 @@ pub use swapdata::*;
 pub use texture::*;
 pub use vertexbinding::*;
 pub use vertexbuffer::*;
+
+// Re-export ImageFormat from render_graph for external use
+pub use crate::render_graph::types::ImageFormat;

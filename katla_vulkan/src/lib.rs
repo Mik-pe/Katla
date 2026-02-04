@@ -1,28 +1,35 @@
 pub mod render_graph;
 pub mod vulkan;
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
+pub use render_graph::errors::RenderGraphError;
+pub use render_graph::pass::{PassBuilder, PassExecutionContext};
+pub use render_graph::resource::{
+    CompiledResource, ResourceAccessType, ResourceId, ResourceKind, ResourceLifetime, ResourceUsage,
+};
 pub use render_graph::*;
 pub use vulkan::*;
 
-use ash::vk;
-
 use std::{ffi::CString, rc::Rc};
 
-pub use ash::vk::{Format, IndexType};
+// Import ash privately for internal use only
+// CRITICAL: Do NOT re-export ash types to downstream crates
+use ash::vk;
+
+pub struct FrameData {
+    pub available_sem: vk::Semaphore,
+    pub finished_sem: vk::Semaphore,
+    pub in_flight_fence: vk::Fence,
+    pub image_index: u32,
+}
 
 pub struct VulkanRenderer {
     pub context: Rc<VulkanContext>,
     pub frame_context: VulkanFrameCtx,
     pub render_pass: RenderPass,
     pub swapchain_framebuffers: Vec<vk::Framebuffer>,
-    swap_data: SwapData,
-    current_framedata: Option<FrameData>,
-}
-struct FrameData {
-    available_sem: vk::Semaphore,
-    finished_sem: vk::Semaphore,
-    in_flight_fence: vk::Fence,
-    image_index: u32,
+    pub swap_data: SwapData,
+    pub current_framedata: Option<FrameData>,
+    pub render_graph: Option<CompiledRenderGraph>,
 }
 
 const FRAMES_IN_FLIGHT: usize = 2;
@@ -79,6 +86,7 @@ impl VulkanRenderer {
             swapchain_framebuffers,
             swap_data,
             current_framedata: None,
+            render_graph: None,
         }
     }
 
@@ -235,5 +243,134 @@ impl VulkanRenderer {
         .unwrap();
 
         self.swap_data.step_frame();
+    }
+
+    pub fn set_render_graph(&mut self, graph: CompiledRenderGraph) {
+        self.render_graph = Some(graph);
+    }
+
+    pub fn create_swapchain_resource(
+        &self,
+        builder: &mut RenderGraphBuilder,
+        image_index: u32,
+    ) -> ResourceId {
+        builder.add_resource(
+            format!("swapchain_{}", image_index),
+            ResourceKind::ExternalImage {
+                vk_image: self.frame_context.swapchain_images[image_index as usize],
+                image_view: self.frame_context.swapchain_image_views[image_index as usize],
+                format: crate::render_graph::types::ImageFormat::R8G8B8A8Srgb.into(),
+                extent: self.frame_context.swapchain.get_extent().into(),
+            },
+        )
+    }
+
+    pub fn render_frame(&mut self) -> Result<(), RenderGraphError> {
+        self.swap_frames();
+
+        if let Some(graph) = &mut self.render_graph {
+            let frame_data = self
+                .current_framedata
+                .as_ref()
+                .ok_or(RenderGraphError::NoFrameData)?;
+
+            let pass_count = graph.passes.len();
+            for i in 0..pass_count {
+                let pass = graph
+                    .passes
+                    .get(i)
+                    .ok_or(RenderGraphError::CompilationError(format!(
+                        "Pass {} not found",
+                        i
+                    )))?;
+
+                let command_buffer =
+                    self.frame_context.command_buffers[frame_data.image_index as usize].clone();
+                command_buffer.begin_command(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT);
+
+                for barrier in &pass.pipeline_barriers_before {
+                    command_buffer.pipeline_barrier(
+                        vk::PipelineStageFlags::TOP_OF_PIPE,
+                        vk::PipelineStageFlags::BOTTOM_OF_PIPE,
+                        vk::DependencyFlags::empty(),
+                        &[*barrier],
+                        &[],
+                        &[],
+                    );
+                }
+
+                let render_area = vk::Rect2D {
+                    offset: vk::Offset2D { x: 0, y: 0 },
+                    extent: pass.extent,
+                };
+                command_buffer.begin_render_pass(
+                    pass.vk_framebuffer,
+                    pass.vk_render_pass,
+                    render_area,
+                    &pass.clear_values,
+                );
+
+                let ctx = Rc::new(PassExecutionContext::new(
+                    command_buffer.clone(),
+                    graph.resources.clone(),
+                    pass.vk_framebuffer,
+                    pass.vk_render_pass,
+                    pass.extent.into(),
+                ));
+                pass.execute(ctx, &mut graph.registry);
+
+                command_buffer.end_render_pass();
+                command_buffer.end_command();
+            }
+
+            let frame_data = self.current_framedata.take().unwrap();
+            let wait_semaphores = vec![frame_data.available_sem];
+            let signal_semaphores = vec![frame_data.finished_sem];
+            let in_flight_fence = frame_data.in_flight_fence;
+
+            unsafe {
+                self.context
+                    .device
+                    .reset_fences(&[in_flight_fence])
+                    .unwrap();
+            }
+
+            let command_buffers: Vec<vk::CommandBuffer> = self
+                .frame_context
+                .command_buffers
+                .iter()
+                .map(|cb| cb.vk_command_buffer())
+                .collect();
+
+            let submit_info = vk::SubmitInfo::default()
+                .wait_semaphores(&wait_semaphores)
+                .signal_semaphores(&signal_semaphores)
+                .command_buffers(&command_buffers);
+
+            unsafe {
+                self.context
+                    .device
+                    .queue_submit(self.context.graphics_queue, &[submit_info], in_flight_fence)
+                    .map_err(RenderGraphError::VulkanError)?;
+            }
+
+            let swapchains = vec![self.frame_context.swapchain.swapchain];
+            let image_indices = vec![frame_data.image_index];
+            let present_info = vk::PresentInfoKHR::default()
+                .wait_semaphores(&signal_semaphores)
+                .swapchains(&swapchains)
+                .image_indices(&image_indices);
+
+            unsafe {
+                self.context
+                    .swapchain_loader
+                    .queue_present(self.context.graphics_queue, &present_info)
+            }
+            .map_err(|e| RenderGraphError::VulkanError(e))?;
+
+            self.swap_data.step_frame();
+        }
+
+        Ok(())
     }
 }

@@ -2,8 +2,8 @@ use crate::{rendering::vertextypes::*, util::GLTFModel};
 
 use katla_math::Mat4;
 use katla_vulkan::{
-    context::VulkanContext, CommandBuffer, Format, MaterialBuilder, MaterialPipeline, RenderPass,
-    Texture,
+    context::VulkanContext, CommandBuffer, ImageFormat, MaterialBuilder, MaterialPipeline,
+    RenderPass, Texture,
 };
 
 use std::rc::Rc;
@@ -37,7 +37,7 @@ impl Material {
                         context.clone(),
                         image.width,
                         image.height,
-                        Format::R8G8B8A8_SRGB,
+                        ImageFormat::R8G8B8A8Srgb,
                         pixels.as_slice(),
                     );
                     texture = Some(Rc::new(tex));

@@ -1,9 +1,7 @@
 use katla_ecs::Component;
 
 #[derive(Component)]
-pub struct InputComponent {
-    
-}
+pub struct InputComponent {}
 
 impl Default for InputComponent {
     fn default() -> Self {
