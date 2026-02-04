@@ -21,7 +21,7 @@ pub struct Mesh {
 
 impl Mesh {
     pub fn new(context: Rc<VulkanContext>, vertices: Vec<VertexPBR>, indices: Vec<u32>) -> Self {
-        let index_buffer = Self::create_index_buffer(&context, indices, IndexType::UINT32);
+        let index_buffer = Self::create_index_buffer(&context, indices, IndexType::Uint32);
         let vertex_buffer = Self::create_vertex_buffer(&context, vertices);
 
         Self {
@@ -32,10 +32,10 @@ impl Mesh {
 
     pub fn new_from_model(model: Rc<GLTFModel>, context: Rc<VulkanContext>) -> Self {
         let index_type = match model.index_stride {
-            1 => IndexType::UINT8_EXT,
-            2 => IndexType::UINT16,
-            4 => IndexType::UINT32,
-            _ => IndexType::NONE_KHR,
+            1 => IndexType::Uint8,
+            2 => IndexType::Uint16,
+            4 => IndexType::Uint32,
+            _ => IndexType::None,
         };
         let index_buffer = Self::create_index_buffer(&context, model.index_data(), index_type);
         let vertex_buffer = Self::create_vertex_buffer(&context, model.vertpbr());
@@ -61,10 +61,10 @@ impl Mesh {
                 )
             };
             let count = match index_type {
-                IndexType::UINT8_EXT => data_slice.len() as u32,
-                IndexType::UINT16 => (data_slice.len() as u32) / 2,
-                IndexType::UINT32 => (data_slice.len() as u32) / 4,
-                _ => 0_u32,
+                IndexType::Uint8 => data_slice.len() as u32,
+                IndexType::Uint16 => (data_slice.len() as u32) / 2,
+                IndexType::Uint32 => (data_slice.len() as u32) / 4,
+                IndexType::None => 0_u32,
             };
             let mut index_buffer =
                 IndexBuffer::new(context.clone(), data_slice.len() as u64, index_type, count);

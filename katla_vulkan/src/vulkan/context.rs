@@ -198,6 +198,67 @@ impl VulkanContext {
         }
     }
 
+    /// Create an image view for a given image.
+    ///
+    /// # Arguments
+    /// * `image` - The Vulkan image to create a view for
+    /// * `format` - The format of the image view
+    /// * `aspect_mask` - Which aspects of the image to include in the view
+    pub fn create_image_view(
+        &self,
+        image: vk::Image,
+        format: vk::Format,
+        aspect_mask: vk::ImageAspectFlags,
+    ) -> vk::ImageView {
+        let subresource_range = vk::ImageSubresourceRange::default()
+            .aspect_mask(aspect_mask)
+            .base_mip_level(0)
+            .level_count(1)
+            .base_array_layer(0)
+            .layer_count(1);
+        let create_info = vk::ImageViewCreateInfo::default()
+            .image(image)
+            .view_type(vk::ImageViewType::TYPE_2D)
+            .format(format)
+            .components(vk::ComponentMapping {
+                r: vk::ComponentSwizzle::IDENTITY,
+                g: vk::ComponentSwizzle::IDENTITY,
+                b: vk::ComponentSwizzle::IDENTITY,
+                a: vk::ComponentSwizzle::IDENTITY,
+            })
+            .subresource_range(subresource_range);
+        unsafe { self.device.create_image_view(&create_info, None).unwrap() }
+    }
+
+    /// Create a framebuffer using the new Framebuffer wrapper.
+    ///
+    /// # Arguments
+    /// * `render_pass` - The render pass this framebuffer is compatible with
+    /// * `attachments` - Array of image views to attach to the framebuffer
+    /// * `extent` - Width and height of the framebuffer
+    pub fn create_framebuffer(
+        &self,
+        render_pass: vk::RenderPass,
+        attachments: &[vk::ImageView],
+        extent: vk::Extent2D,
+    ) -> Result<vk::Framebuffer, vk::Result> {
+        let create_info = vk::FramebufferCreateInfo::default()
+            .render_pass(render_pass)
+            .attachments(attachments)
+            .width(extent.width)
+            .height(extent.height)
+            .layers(1);
+
+        unsafe { self.device.create_framebuffer(&create_info, None) }
+    }
+
+    /// Destroy a framebuffer.
+    pub fn destroy_framebuffer(&self, framebuffer: vk::Framebuffer) {
+        unsafe {
+            self.device.destroy_framebuffer(framebuffer, None);
+        }
+    }
+
     fn create_instance(
         with_validation_layers: bool,
         app_name: &CStr,

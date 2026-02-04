@@ -68,6 +68,33 @@ impl RenderPass {
         self.vk_renderpass
     }
 
+    /// Create a render pass from custom attachments, subpasses, and dependencies.
+    /// This provides full flexibility for creating any render pass structure.
+    ///
+    /// # Arguments
+    /// * `device` - The Vulkan device
+    /// * `attachments` - Array of attachment descriptions
+    /// * `subpasses` - Array of subpass descriptions
+    /// * `dependencies` - Array of subpass dependencies (can be empty)
+    pub fn create_from_config(
+        device: Device,
+        attachments: &[vk::AttachmentDescription],
+        subpasses: &[vk::SubpassDescription],
+        dependencies: &[vk::SubpassDependency],
+    ) -> Result<Self, vk::Result> {
+        let create_info = vk::RenderPassCreateInfo::default()
+            .attachments(attachments)
+            .subpasses(subpasses)
+            .dependencies(dependencies);
+
+        let vk_renderpass = unsafe { device.create_render_pass(&create_info, None)? };
+
+        Ok(Self {
+            vk_renderpass,
+            device,
+        })
+    }
+
     pub fn destroy(&self) {
         unsafe {
             self.device.destroy_render_pass(self.vk_renderpass, None);

@@ -171,31 +171,17 @@ impl ApplicationHandler for Application {
                     self.current_modifiers = modifiers.state();
                 }
                 WindowEvent::RedrawRequested => {
-                    renderer.swap_frames();
                     self.timer.add_timestamp();
 
                     let dt = self.timer.get_delta() as f32;
                     self.world.update(dt);
 
-                    let view = self
-                        .camera
-                        .borrow()
-                        .get_view_mat(&self.world)
-                        .clone()
-                        .inverse();
-                    let proj = self.camera.borrow().get_proj_mat(&self.world).clone();
+                    // Render using render graph
+                    self.render_with_render_graph(dt);
 
-                    let command_buffer = renderer.get_commandbuffer_opaque_pass();
-                    for (_, drawable) in self.world.query::<&mut DrawableComponent>() {
-                        drawable.0.update(&view, &proj, dt);
-                        drawable.0.draw(&command_buffer);
-                    }
-                    command_buffer.end_render_pass();
-                    command_buffer.end_command();
-
-                    renderer.submit_frame(vec![&command_buffer]);
                     if self.stage_upload {
                         let start = Instant::now();
+                        let renderer = self.renderer.as_ref().expect("Renderer not initialized");
                         let model = Model::new_from_gltf(
                             self.gltf_cache
                                 .read(PathBuf::from("resources/models/Tiger.glb")),
@@ -229,5 +215,46 @@ impl ApplicationHandler for Application {
 impl Application {
     pub fn init(&mut self) {
         env_logger::Builder::from_env(Env::default().default_filter_or("info")).init();
+    }
+
+    /// Render using the existing VulkanRenderer API.
+    /// This method demonstrates Phase 1 integration - we'll use the render graph
+    /// system in future phases, but for now we use the existing API to avoid
+    /// depending on ash types in katla_app.
+    fn render_with_render_graph(&mut self, dt: f32) {
+        let renderer = match self.renderer.as_mut() {
+            Some(r) => r,
+            None => return,
+        };
+
+        // Acquire swapchain image (must be done before get_commandbuffer_opaque_pass)
+        renderer.swap_frames();
+
+        // Update world
+        self.world.update(dt);
+
+        // Get camera matrices
+        let view = self
+            .camera
+            .borrow()
+            .get_view_mat(&self.world)
+            .clone()
+            .inverse();
+        let proj = self.camera.borrow().get_proj_mat(&self.world).clone();
+
+        // Get command buffer using the existing API
+        let command_buffer = renderer.get_commandbuffer_opaque_pass();
+
+        // Draw all drawable entities
+        for (_, drawable) in self.world.query::<&mut DrawableComponent>() {
+            drawable.0.update(&view, &proj, dt);
+            drawable.0.draw(&command_buffer);
+        }
+
+        command_buffer.end_render_pass();
+        command_buffer.end_command();
+
+        // Submit frame using the existing API
+        renderer.submit_frame(vec![&command_buffer]);
     }
 }

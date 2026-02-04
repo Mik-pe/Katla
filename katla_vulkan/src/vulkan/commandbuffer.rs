@@ -1,6 +1,6 @@
 use ash::{vk, Device};
 
-use super::CommandPool;
+use super::{vertexbuffer::IndexType, CommandPool};
 
 #[derive(Clone)]
 pub struct CommandBuffer {
@@ -132,10 +132,11 @@ impl CommandBuffer {
         }
     }
 
-    pub fn bind_index_buffer(&self, buffer: vk::Buffer, offset: u64, index_type: vk::IndexType) {
+    pub fn bind_index_buffer(&self, buffer: vk::Buffer, offset: u64, index_type: IndexType) {
+        let vk_index_type: vk::IndexType = index_type.into();
         unsafe {
             self.device
-                .cmd_bind_index_buffer(self.command_buffer, buffer, offset, index_type)
+                .cmd_bind_index_buffer(self.command_buffer, buffer, offset, vk_index_type)
         }
     }
 
@@ -185,6 +186,28 @@ impl CommandBuffer {
                 first_vertex,
                 first_instance,
             )
+        }
+    }
+
+    pub fn pipeline_barrier(
+        &self,
+        src_stage_mask: vk::PipelineStageFlags,
+        dst_stage_mask: vk::PipelineStageFlags,
+        dependency_flags: vk::DependencyFlags,
+        memory_barriers: &[vk::MemoryBarrier],
+        buffer_memory_barriers: &[vk::BufferMemoryBarrier],
+        image_memory_barriers: &[vk::ImageMemoryBarrier],
+    ) {
+        unsafe {
+            self.device.cmd_pipeline_barrier(
+                self.command_buffer,
+                src_stage_mask,
+                dst_stage_mask,
+                dependency_flags,
+                memory_barriers,
+                buffer_memory_barriers,
+                image_memory_barriers,
+            );
         }
     }
 
