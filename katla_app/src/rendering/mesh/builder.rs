@@ -8,7 +8,7 @@ use katla_vulkan::{MaterialBuilder, RenderPass, Texture, VulkanContext, VulkanRe
 use crate::{
     application::Model,
     entities::ModelEntity,
-    rendering::{Material, VertexPBR},
+    rendering::{Material, ShaderRegistry, VertexPBR},
 };
 
 pub struct MeshOptions {
@@ -35,21 +35,20 @@ impl Default for MeshOptions {
     }
 }
 
-pub struct MeshBuilder<'a> {
+pub struct MeshBuilder {
     options: MeshOptions,
-    world: &'a mut World,
-    renderer: Option<&'a mut VulkanRenderer>,
+    context: Rc<VulkanContext>,
+    shader_registry: ShaderRegistry,
 }
 
-impl<'a> MeshBuilder<'a> {
+impl MeshBuilder {
     pub fn new(
-        world: &'a mut World,
-        renderer: &'a mut VulkanRenderer,
+        context: Rc<VulkanContext>,
     ) -> Self {
         Self {
             options: MeshOptions::default(),
-            world,
-            renderer: Some(renderer),
+            context,
+            shader_registry: ShaderRegistry::new(),
         }
     }
 
@@ -92,12 +91,11 @@ impl<'a> MeshBuilder<'a> {
         self
     }
 
-    pub fn create_cube(self) -> ModelEntity {
-        let renderer = self.renderer.expect("Renderer required for MeshBuilder");
+    pub fn create_cube(self, world: &mut World, renderer: &mut VulkanRenderer) -> ModelEntity {
         let size = self.options.size.unwrap_or(Vec3::new(20.0, 20.0, 20.0));
-        let mesh = crate::rendering::mesh::create_cube_mesh(renderer.context.clone(), size);
+        let mesh = crate::rendering::mesh::create_cube_mesh(self.context.clone(), size);
         let material =
-            create_material_with_color(renderer.context.clone(), &renderer.render_pass, self.options.color);
+            create_material_with_color(self.context.clone(), &renderer.render_pass, self.options.color, &self.shader_registry);
         let position = self.options.position.unwrap_or(Vec3::new(0.0, 0.0, 0.0));
         // Create transform with only position (no scale)
         let transform = Transform {
@@ -105,86 +103,82 @@ impl<'a> MeshBuilder<'a> {
             rotation: katla_math::Quat::new(),
             scale: Vec3::new(1.0, 1.0, 1.0),
         };
-        let model = Model::new(vec![mesh], material, transform);
-        ModelEntity::new_with_renderer(self.world, model, Some(renderer))
+        let model = Model::new(vec![mesh], material);
+        ModelEntity::new_with_renderer(world, model, Some(renderer), transform)
     }
 
-    pub fn create_sphere(self) -> ModelEntity {
-        let renderer = self.renderer.expect("Renderer required for MeshBuilder");
+    pub fn create_sphere(self, world: &mut World, renderer: &mut VulkanRenderer) -> ModelEntity {
         let radius = self.options.radius.unwrap_or(5.0);
         let segments = self.options.segments.unwrap_or(32);
         let rings = self.options.rings.unwrap_or(32);
-        let mesh = crate::rendering::mesh::create_sphere_mesh(renderer.context.clone(), radius, segments, rings);
+        let mesh = crate::rendering::mesh::create_sphere_mesh(self.context.clone(), radius, segments, rings);
         let material =
-            create_material_with_color(renderer.context.clone(), &renderer.render_pass, self.options.color);
+            create_material_with_color(self.context.clone(), &renderer.render_pass, self.options.color, &self.shader_registry);
         let position = self.options.position.unwrap_or(Vec3::new(0.0, 0.0, 0.0));
         let transform = Transform {
             position,
             rotation: katla_math::Quat::new(),
             scale: Vec3::new(1.0, 1.0, 1.0),
         };
-        let model = Model::new(vec![mesh], material, transform);
-        ModelEntity::new_with_renderer(self.world, model, Some(renderer))
+        let model = Model::new(vec![mesh], material);
+        ModelEntity::new_with_renderer(world, model, Some(renderer), transform)
     }
 
-    pub fn create_cylinder(self) -> ModelEntity {
-        let renderer = self.renderer.expect("Renderer required for MeshBuilder");
+    pub fn create_cylinder(self, world: &mut World, renderer: &mut VulkanRenderer) -> ModelEntity {
         let height = self.options.height.unwrap_or(10.0);
         let radius = self.options.radius.unwrap_or(5.0);
         let segments = self.options.segments.unwrap_or(32);
-        let mesh = crate::rendering::mesh::create_cylinder_mesh(renderer.context.clone(), height, radius, segments);
+        let mesh = crate::rendering::mesh::create_cylinder_mesh(self.context.clone(), height, radius, segments);
         let material =
-            create_material_with_color(renderer.context.clone(), &renderer.render_pass, self.options.color);
+            create_material_with_color(self.context.clone(), &renderer.render_pass, self.options.color, &self.shader_registry);
         let position = self.options.position.unwrap_or(Vec3::new(0.0, 0.0, 0.0));
         let transform = Transform {
             position,
             rotation: katla_math::Quat::new(),
             scale: Vec3::new(1.0, 1.0, 1.0),
         };
-        let model = Model::new(vec![mesh], material, transform);
-        ModelEntity::new_with_renderer(self.world, model, Some(renderer))
+        let model = Model::new(vec![mesh], material);
+        ModelEntity::new_with_renderer(world, model, Some(renderer), transform)
     }
 
-    pub fn create_plane(self) -> ModelEntity {
-        let renderer = self.renderer.expect("Renderer required for MeshBuilder");
+    pub fn create_plane(self, world: &mut World, renderer: &mut VulkanRenderer) -> ModelEntity {
         let size = self.options.size.unwrap_or(Vec3::new(100.0, 100.0, 1.0));
         let segments = self.options.segments.unwrap_or(32);
-        let mesh = crate::rendering::mesh::create_plane_mesh(renderer.context.clone(), size.x(), size.y(), segments);
+        let mesh = crate::rendering::mesh::create_plane_mesh(self.context.clone(), size.x(), size.y(), segments);
         let material =
-            create_material_with_color(renderer.context.clone(), &renderer.render_pass, self.options.color);
+            create_material_with_color(self.context.clone(), &renderer.render_pass, self.options.color, &self.shader_registry);
         let position = self.options.position.unwrap_or(Vec3::new(0.0, 0.0, 0.0));
         let transform = Transform {
             position,
             rotation: katla_math::Quat::new(),
             scale: Vec3::new(1.0, 1.0, 1.0),
         };
-        let model = Model::new(vec![mesh], material, transform);
-        ModelEntity::new_with_renderer(self.world, model, Some(renderer))
+        let model = Model::new(vec![mesh], material);
+        ModelEntity::new_with_renderer(world, model, Some(renderer), transform)
     }
 
-    pub fn create_torus(self) -> ModelEntity {
-        let renderer = self.renderer.expect("Renderer required for MeshBuilder");
+    pub fn create_torus(self, world: &mut World, renderer: &mut VulkanRenderer) -> ModelEntity {
         let major_radius = self.options.radius.unwrap_or(5.0) * 2.0;
         let minor_radius = self.options.radius.unwrap_or(5.0) * 0.6;
         let segments = self.options.segments.unwrap_or(32);
         let rings = self.options.rings.unwrap_or(32);
         let mesh = crate::rendering::mesh::create_torus_mesh(
-            renderer.context.clone(),
+            self.context.clone(),
             major_radius,
             minor_radius,
             segments,
             rings,
         );
         let material =
-            create_material_with_color(renderer.context.clone(), &renderer.render_pass, self.options.color);
+            create_material_with_color(self.context.clone(), &renderer.render_pass, self.options.color, &self.shader_registry);
         let position = self.options.position.unwrap_or(Vec3::new(0.0, 0.0, 0.0));
         let transform = Transform {
             position,
             rotation: katla_math::Quat::new(),
             scale: Vec3::new(1.0, 1.0, 1.0),
         };
-        let model = Model::new(vec![mesh], material, transform);
-        ModelEntity::new_with_renderer(self.world, model, Some(renderer))
+        let model = Model::new(vec![mesh], material);
+        ModelEntity::new_with_renderer(world, model, Some(renderer), transform)
     }
 }
 
@@ -192,6 +186,7 @@ fn create_material_with_color(
     context: std::rc::Rc<VulkanContext>,
     render_pass: &RenderPass,
     _color: Option<[f32; 3]>,
+    shader_registry: &ShaderRegistry,
 ) -> Material {
     // Create a checkerboard texture (64x64)
     let texture_size = 64;
@@ -227,8 +222,8 @@ fn create_material_with_color(
     let vertex_binding = VertexPBR::get_vertex_binding();
     let material_pipeline = MaterialBuilder::new(context.clone())
         .with_vertex_binding(vertex_binding.clone())
-        .with_vertex_shader(include_bytes!("../../../../resources/shaders/model_pbr.vert.spv"))
-        .with_fragment_shader(include_bytes!("../../../../resources/shaders/model.frag.spv"))
+        .with_vertex_shader(shader_registry.get_vertex_shader("model_pbr.vert"))
+        .with_fragment_shader(shader_registry.get_fragment_shader("model.frag"))
         .with_texture(texture.clone())
         .with_depth_test(true)
         .with_depth_write(true)

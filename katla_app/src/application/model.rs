@@ -1,6 +1,6 @@
 use std::rc::Rc;
 
-use katla_math::{Mat4, Transform, Vec3};
+use katla_math::Mat4;
 use katla_vulkan::{CommandBuffer, MaterialHandle, MeshHandle, RenderPass, VulkanContext};
 
 use crate::{
@@ -11,7 +11,6 @@ use crate::{
 pub struct Model {
     pub meshes: Vec<Mesh>,
     pub material: Material,
-    pub transform: Transform,
     /// Handle after registration (None until registered)
     pub mesh_handle: Option<MeshHandle>,
     /// Handle after registration (None until registered)
@@ -19,11 +18,10 @@ pub struct Model {
 }
 
 impl Model {
-    pub fn new(meshes: Vec<Mesh>, material: Material, transform: Transform) -> Self {
+    pub fn new(meshes: Vec<Mesh>, material: Material) -> Self {
         Self {
             meshes,
             material,
-            transform,
             mesh_handle: None,
             material_handle: None,
         }
@@ -33,16 +31,12 @@ impl Model {
         model: Rc<GLTFModel>,
         context: Rc<VulkanContext>,
         render_pass: &RenderPass,
-        position: Vec3,
     ) -> Self {
         let material = Material::new(model.clone(), context.clone(), render_pass);
-        let transform = Transform::new_from_position(position);
-
         let mesh = Mesh::new_from_model(model, context.clone());
         Self {
             meshes: vec![mesh],
             material,
-            transform,
             mesh_handle: None,
             material_handle: None,
         }
@@ -50,12 +44,9 @@ impl Model {
 }
 
 impl Drawable for Model {
-    fn update(&mut self, view: &Mat4, proj: &Mat4, _dt: f32) {
-        // let quat = Quat::from_axis_angle(Vec3::new(0.0, 1.0, 0.0), FRAC_PI_4 * dt);
-        // self.transform.rotation = self.transform.rotation * quat;
-        let model = self.transform.make_mat4();
+    fn update(&mut self, view: &Mat4, proj: &Mat4, model_matrix: &Mat4) {
         self.material
-            .upload_pipeline_data(view.clone(), proj.clone(), model);
+            .upload_pipeline_data(view.clone(), proj.clone(), model_matrix.clone());
     }
 
     fn draw(&self, command_buffer: &CommandBuffer) {

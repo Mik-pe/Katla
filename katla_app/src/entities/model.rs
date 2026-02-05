@@ -5,20 +5,22 @@ use crate::{
     application::Model,
     components::{DrawableComponent, NameComponent, TransformComponent},
 };
+use katla_math::Transform;
 
 pub struct ModelEntity {
     _entity: EntityId,
 }
 
 impl ModelEntity {
-    pub fn new(world: &mut World, model: Model) -> Self {
-        Self::new_with_renderer(world, model, None)
+    pub fn new(world: &mut World, model: Model, transform: Transform) -> Self {
+        Self::new_with_renderer(world, model, None, transform)
     }
 
     pub fn new_with_renderer(
         world: &mut World,
         mut model: Model,
         renderer: Option<&mut VulkanRenderer>,
+        transform: Transform,
     ) -> Self {
         let entity = world.create_entity();
 
@@ -51,20 +53,7 @@ impl ModelEntity {
             (Some(MeshHandle(0)), Some(MaterialHandle(0)))
         };
 
-        // Extract the transform data to create TransformComponent
-        let transform_ref = &model.transform;
-        // Create a new Transform with the same values (Transform has no Clone, but we can reconstruct)
-        let position = transform_ref.position;
-        let rotation = transform_ref.rotation;
-        let scale = transform_ref.scale;
-        let transform = katla_math::Transform {
-            position,
-            rotation,
-            scale,
-        };
-
         world.add_component(entity, TransformComponent::new(transform));
-        // Keep the original model with its transform intact for rendering
         world.add_component(
             entity,
             DrawableComponent::with_handles(

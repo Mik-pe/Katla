@@ -2,7 +2,7 @@ use katla_ecs::{add_components, EntityId, World};
 use katla_math::{Mat4, Transform, Vec3};
 
 use crate::components::{
-    DragComponent, FlyCameraController, FlyCameraLook, ForceComponent, Perspective,
+    DragComponent, FlyCameraControllerComponent, FlyCameraLookComponent, ForceComponent, PerspectiveComponent,
     TransformComponent, VelocityComponent,
 };
 
@@ -21,16 +21,16 @@ impl Camera {
             VelocityComponent::default(),
             ForceComponent::default(),
             DragComponent::new(0.25),
-            Perspective::default(),
-            FlyCameraController::default(),
-            FlyCameraLook::default(),
+            PerspectiveComponent::default(),
+            FlyCameraControllerComponent::default(),
+            FlyCameraLookComponent::default(),
         );
 
         Self { entity: id }
     }
 
     pub fn aspect_ratio_changed(&mut self, world: &mut World, aspect_ratio: f32) {
-        if let Some(projection) = world.get_component_mut::<Perspective>(self.entity) {
+        if let Some(projection) = world.get_component_mut::<PerspectiveComponent>(self.entity) {
             projection.aspect_ratio = aspect_ratio;
         }
     }
@@ -44,7 +44,7 @@ impl Camera {
     }
 
     pub fn get_proj_mat(&self, world: &World) -> Mat4 {
-        if let Some(projection) = world.get_component::<Perspective>(self.entity) {
+        if let Some(projection) = world.get_component::<PerspectiveComponent>(self.entity) {
             Mat4::create_proj(
                 projection.fov,
                 projection.aspect_ratio,
