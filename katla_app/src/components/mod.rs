@@ -1,9 +1,9 @@
 pub use active::*;
 pub use drawable::*;
-pub use fly_camera::*;
+pub use fly_camera::{FlyCameraControllerComponent, FlyCameraLookComponent};
 pub use input::*;
 pub use name::*;
-pub use perspective::*;
+pub use perspective::PerspectiveComponent;
 pub use physics::*;
 pub use relationship::*;
 pub use tag::*;

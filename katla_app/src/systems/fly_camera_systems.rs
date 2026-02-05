@@ -1,7 +1,7 @@
 use katla_ecs::{InputState, System, World};
 use katla_math::{Quat, Vec3};
 
-use crate::components::{FlyCameraController, FlyCameraLook, ForceComponent};
+use crate::components::{FlyCameraControllerComponent, FlyCameraLookComponent, ForceComponent};
 
 pub struct FlyCameraLookSystem;
 
@@ -38,8 +38,8 @@ impl System for FlyCameraLookSystem {
 
         let updates: Vec<(katla_ecs::EntityId, Quat, f32)> = storage
             .query::<(
-                &FlyCameraController,
-                &mut FlyCameraLook,
+                &FlyCameraControllerComponent,
+                &mut FlyCameraLookComponent,
                 &crate::components::TransformComponent,
             )>()
             .map(|(entity, ctrl, look, transform)| {

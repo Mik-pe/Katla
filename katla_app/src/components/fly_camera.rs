@@ -1,13 +1,13 @@
 use katla_ecs::Component;
 
 #[derive(Component, Debug, Clone, Copy)]
-pub struct FlyCameraController {
+pub struct FlyCameraControllerComponent {
     pub speed: f32,
     pub sensitivity: f32,
     pub pitch_limit: f32,
 }
 
-impl Default for FlyCameraController {
+impl Default for FlyCameraControllerComponent {
     fn default() -> Self {
         Self {
             speed: 10000.0,
@@ -18,7 +18,7 @@ impl Default for FlyCameraController {
 }
 
 #[derive(Component, Debug, Clone, Copy, Default)]
-pub struct FlyCameraLook {
+pub struct FlyCameraLookComponent {
     pub yaw: f32,
     pub pitch: f32,
 }

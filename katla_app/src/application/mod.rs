@@ -8,7 +8,7 @@ use winit::keyboard::ModifiersState;
 pub use builder::*;
 use env_logger::Env;
 use katla_ecs::{input::Action, World};
-use katla_math::Vec3;
+use katla_math::{Transform, Vec3};
 use katla_vulkan::VulkanRenderer;
 pub use model::*;
 use winit::{
@@ -80,51 +80,46 @@ impl ApplicationHandler for Application {
                     .read(PathBuf::from("resources/models/Fox.glb")),
                 renderer.context.clone(),
                 &renderer.render_pass,
-                Vec3::new(0.0, 0.0, 0.0),
             );
-            ModelEntity::new_with_renderer(&mut self.world, model, Some(&mut renderer));
+            let fox_transform = Transform::new_from_position(Vec3::new(0.0, 0.0, 0.0));
+            ModelEntity::new_with_renderer(&mut self.world, model, Some(&mut renderer), fox_transform);
 
             // Create meshes spaced out in a line with different colors
             let _cube = MeshBuilder::new(
-                &mut self.world,
-                &mut renderer,
+                renderer.context.clone(),
             )
             .position(Vec3::new(0.0, 5.0, 0.0))
             .color([1.0, 0.3, 0.3]) // Red tint
-            .create_cube();
+            .create_cube(&mut self.world, &mut renderer);
 
             let _sphere = MeshBuilder::new(
-                &mut self.world,
-                &mut renderer,
+                renderer.context.clone(),
             )
             .position(Vec3::new(30.0, 5.0, 0.0))
             .color([0.3, 1.0, 0.3]) // Green tint
-            .create_sphere();
+            .create_sphere(&mut self.world, &mut renderer);
 
             let _cylinder = MeshBuilder::new(
-                &mut self.world,
-                &mut renderer,
+                renderer.context.clone(),
             )
             .position(Vec3::new(-30.0, 5.0, 0.0))
             .color([0.3, 0.3, 1.0]) // Blue tint
-            .create_cylinder();
+            .create_cylinder(&mut self.world, &mut renderer);
 
             let _plane = MeshBuilder::new(
-                &mut self.world,
-                &mut renderer,
+                renderer.context.clone(),
             )
             .position(Vec3::new(0.0, -5.0, 0.0))
             .color([0.8, 0.8, 0.8]) // Gray tint
             .size(Vec3::new(100.0, 100.0, 1.0))
-            .create_plane();
+            .create_plane(&mut self.world, &mut renderer);
 
             let _torus = MeshBuilder::new(
-                &mut self.world,
-                &mut renderer,
+                renderer.context.clone(),
             )
             .position(Vec3::new(0.0, 15.0, 0.0))
             .color([1.0, 0.8, 0.3]) // Yellow tint
-            .create_torus();
+            .create_torus(&mut self.world, &mut renderer);
 
             self.window = Some(window);
             self.renderer = Some(renderer);
@@ -226,38 +221,35 @@ impl ApplicationHandler for Application {
                     self.world.update(dt);
 
                     // Render using render graph
-                    self.render_with_render_graph(dt);
+                    self.render_with_render_graph();
 
                     if self.stage_upload {
                         let start = Instant::now();
                         let renderer = self.renderer.as_mut().expect("Renderer not initialized");
 
                         let _sphere = MeshBuilder::new(
-                            &mut self.world,
-                            renderer,
+                            renderer.context.clone(),
                         )
                         .position(Vec3::new(0.0, 5.0, 0.0))
                         .color([0.8, 0.2, 0.2])
-                        .create_sphere();
+                        .create_sphere(&mut self.world, renderer);
 
                         let renderer = self.renderer.as_mut().expect("Renderer not initialized");
                         let _cube = MeshBuilder::new(
-                            &mut self.world,
-                            renderer,
+                            renderer.context.clone(),
                         )
                         .position(Vec3::new(20.0, 5.0, 0.0))
                         .color([0.2, 0.8, 0.2])
-                        .create_cube();
+                        .create_cube(&mut self.world, renderer);
 
                         let renderer = self.renderer.as_mut().expect("Renderer not initialized");
                         let _plane = MeshBuilder::new(
-                            &mut self.world,
-                            renderer,
+                            renderer.context.clone(),
                         )
                         .position(Vec3::new(0.0, -5.0, 0.0))
                         .size(Vec3::new(100.0, 100.0, 1.0))
                         .color([0.5, 0.5, 0.5])
-                        .create_plane();
+                        .create_plane(&mut self.world, renderer);
 
                         let millisecs = start.elapsed().as_micros() as f64 / 1000.0;
 
@@ -300,7 +292,7 @@ impl Application {
     }
 
     /// Render using the render graph system with draw call submission.
-    fn render_with_render_graph(&mut self, _dt: f32) {
+    fn render_with_render_graph(&mut self) {
         let renderer = match self.renderer.as_mut() {
             Some(r) => r,
             None => return,
