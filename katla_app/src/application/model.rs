@@ -1,7 +1,7 @@
 use std::rc::Rc;
 
 use katla_math::{Mat4, Transform, Vec3};
-use katla_vulkan::{CommandBuffer, RenderPass, VulkanContext};
+use katla_vulkan::{CommandBuffer, MaterialHandle, MeshHandle, RenderPass, VulkanContext};
 
 use crate::{
     rendering::{Drawable, Material, Mesh},
@@ -12,6 +12,10 @@ pub struct Model {
     pub meshes: Vec<Mesh>,
     pub material: Material,
     pub transform: Transform,
+    /// Handle after registration (None until registered)
+    pub mesh_handle: Option<MeshHandle>,
+    /// Handle after registration (None until registered)
+    pub material_handle: Option<MaterialHandle>,
 }
 
 impl Model {
@@ -20,6 +24,8 @@ impl Model {
             meshes,
             material,
             transform,
+            mesh_handle: None,
+            material_handle: None,
         }
     }
 
@@ -37,6 +43,8 @@ impl Model {
             meshes: vec![mesh],
             material,
             transform,
+            mesh_handle: None,
+            material_handle: None,
         }
     }
 }
@@ -56,5 +64,17 @@ impl Drawable for Model {
         for mesh in &self.meshes {
             mesh.draw(command_buffer);
         }
+    }
+}
+
+impl Model {
+    /// Get the mesh handle (returns None if not yet registered)
+    pub fn mesh_handle(&self) -> Option<MeshHandle> {
+        self.mesh_handle
+    }
+
+    /// Get the material handle (returns None if not yet registered)
+    pub fn material_handle(&self) -> Option<MaterialHandle> {
+        self.material_handle
     }
 }

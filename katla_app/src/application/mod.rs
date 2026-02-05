@@ -9,7 +9,7 @@ pub use builder::*;
 use env_logger::Env;
 use katla_ecs::{input::Action, World};
 use katla_math::Vec3;
-use katla_vulkan::{CommandBuffer, RenderCallback, VulkanRenderer};
+use katla_vulkan::VulkanRenderer;
 pub use model::*;
 use winit::{
     application::ApplicationHandler,
@@ -21,51 +21,11 @@ use winit::{
 };
 
 use crate::{
-    components::DrawableComponent,
     entities::{Camera, ModelEntity},
     input::{InputBinding, InputMapper, KeyCombo, MouseCombo},
     rendering::MeshBuilder,
     util::{FileCache, GLTFModel, Timer},
 };
-
-/// Render callback that captures world and camera references.
-/// This allows the render graph to invoke rendering logic without
-/// VulkanRenderer depending on application types.
-struct AppRenderCallback {
-    world: *mut World,
-    camera: Rc<RefCell<Camera>>,
-}
-
-// SAFETY: The callback is only used while Application is alive,
-// and world is owned by Application.
-unsafe impl Send for AppRenderCallback {}
-
-impl AppRenderCallback {
-    fn new(world: &mut World, camera: &Rc<RefCell<Camera>>) -> Self {
-        Self {
-            world: world as *mut World,
-            camera: camera.clone(),
-        }
-    }
-}
-
-impl RenderCallback for AppRenderCallback {
-    fn render(&mut self, command_buffer: &CommandBuffer, dt: f32) {
-        // SAFETY: The render callback is only called during Application::render_with_render_graph(),
-        // which has exclusive access to self.world.
-        let world = unsafe { &mut *self.world };
-
-        // Get camera matrices from world and camera
-        let view = self.camera.borrow().get_view_mat(world).clone().inverse();
-        let proj = self.camera.borrow().get_proj_mat(world).clone();
-
-        // Draw all drawable entities
-        for (_, drawable) in world.query::<&mut DrawableComponent>() {
-            drawable.0.update(&view, &proj, dt);
-            drawable.0.draw(command_buffer);
-        }
-    }
-}
 
 struct ApplicationInfo {
     name: String,
@@ -102,7 +62,7 @@ impl ApplicationHandler for Application {
                 .unwrap();
 
             let engine_name = CString::new("Katla Engine").unwrap();
-            let renderer = VulkanRenderer::init(
+            let mut renderer = VulkanRenderer::init(
                 &event_loop,
                 &window,
                 self.info.validation_layer_enabled,
@@ -122,13 +82,12 @@ impl ApplicationHandler for Application {
                 &renderer.render_pass,
                 Vec3::new(0.0, 0.0, 0.0),
             );
-            ModelEntity::new(&mut self.world, model);
+            ModelEntity::new_with_renderer(&mut self.world, model, Some(&mut renderer));
 
             // Create meshes spaced out in a line with different colors
             let _cube = MeshBuilder::new(
                 &mut self.world,
-                renderer.context.clone(),
-                &renderer.render_pass,
+                &mut renderer,
             )
             .position(Vec3::new(0.0, 5.0, 0.0))
             .color([1.0, 0.3, 0.3]) // Red tint
@@ -136,8 +95,7 @@ impl ApplicationHandler for Application {
 
             let _sphere = MeshBuilder::new(
                 &mut self.world,
-                renderer.context.clone(),
-                &renderer.render_pass,
+                &mut renderer,
             )
             .position(Vec3::new(30.0, 5.0, 0.0))
             .color([0.3, 1.0, 0.3]) // Green tint
@@ -145,8 +103,7 @@ impl ApplicationHandler for Application {
 
             let _cylinder = MeshBuilder::new(
                 &mut self.world,
-                renderer.context.clone(),
-                &renderer.render_pass,
+                &mut renderer,
             )
             .position(Vec3::new(-30.0, 5.0, 0.0))
             .color([0.3, 0.3, 1.0]) // Blue tint
@@ -154,8 +111,7 @@ impl ApplicationHandler for Application {
 
             let _plane = MeshBuilder::new(
                 &mut self.world,
-                renderer.context.clone(),
-                &renderer.render_pass,
+                &mut renderer,
             )
             .position(Vec3::new(0.0, -5.0, 0.0))
             .color([0.8, 0.8, 0.8]) // Gray tint
@@ -164,8 +120,7 @@ impl ApplicationHandler for Application {
 
             let _torus = MeshBuilder::new(
                 &mut self.world,
-                renderer.context.clone(),
-                &renderer.render_pass,
+                &mut renderer,
             )
             .position(Vec3::new(0.0, 15.0, 0.0))
             .color([1.0, 0.8, 0.3]) // Yellow tint
@@ -212,7 +167,7 @@ impl ApplicationHandler for Application {
         if let Some(_renderer) = &mut self.renderer {
             match event {
                 WindowEvent::Resized(logical_size) => {
-                    let new_width = logical_size.width as u32;
+                    let new_width = logical_size.width;
                     let new_height = logical_size.height as f32;
 
                     if new_width > 0 && new_height > 0.0 {
@@ -275,30 +230,29 @@ impl ApplicationHandler for Application {
 
                     if self.stage_upload {
                         let start = Instant::now();
-                        let renderer = self.renderer.as_ref().expect("Renderer not initialized");
+                        let renderer = self.renderer.as_mut().expect("Renderer not initialized");
 
                         let _sphere = MeshBuilder::new(
                             &mut self.world,
-                            renderer.context.clone(),
-                            &renderer.render_pass,
+                            renderer,
                         )
                         .position(Vec3::new(0.0, 5.0, 0.0))
                         .color([0.8, 0.2, 0.2])
                         .create_sphere();
 
+                        let renderer = self.renderer.as_mut().expect("Renderer not initialized");
                         let _cube = MeshBuilder::new(
                             &mut self.world,
-                            renderer.context.clone(),
-                            &renderer.render_pass,
+                            renderer,
                         )
                         .position(Vec3::new(20.0, 5.0, 0.0))
                         .color([0.2, 0.8, 0.2])
                         .create_cube();
 
+                        let renderer = self.renderer.as_mut().expect("Renderer not initialized");
                         let _plane = MeshBuilder::new(
                             &mut self.world,
-                            renderer.context.clone(),
-                            &renderer.render_pass,
+                            renderer,
                         )
                         .position(Vec3::new(0.0, -5.0, 0.0))
                         .size(Vec3::new(100.0, 100.0, 1.0))
@@ -341,30 +295,63 @@ impl Application {
             None => return,
         };
 
-        // Create shared dt storage that both renderer and closure can access
-        let dt_rc = Rc::new(RefCell::new(0.0f32));
-        renderer.frame_delta_time = Some(dt_rc.clone());
-
-        // Create render callback that captures world and camera
-        let callback = AppRenderCallback::new(&mut self.world, &self.camera);
-        let callback_rc = Rc::new(RefCell::new(callback));
-
         // Setup render graph with multiple framebuffers
-        renderer.setup_render_graph(callback_rc);
+        renderer.setup_render_graph();
     }
 
-    /// Render using the render graph system.
-    fn render_with_render_graph(&mut self, dt: f32) {
+    /// Render using the render graph system with draw call submission.
+    fn render_with_render_graph(&mut self, _dt: f32) {
         let renderer = match self.renderer.as_mut() {
             Some(r) => r,
             None => return,
         };
 
-        // Update delta time for the render callback
-        renderer.set_delta_time(dt);
+        // Get camera matrices
+        let view = self.camera.borrow().get_view_mat(&self.world).clone().inverse();
+        let proj = self.camera.borrow().get_proj_mat(&self.world).clone();
 
-        // Render using the cached render graphs
-        if let Err(e) = renderer.render_frame() {
+        // Build a draw list from ECS entities
+        // TODO: For now, we use the old Drawable trait approach
+        // In the next phase, we'll use the new handle-based approach
+        use katla_vulkan::{DrawCall, DrawList};
+        let mut draw_list = DrawList::new();
+
+        // Query all drawable entities
+        for (_entity, transform, drawable) in self
+            .world
+            .query::<(&crate::components::TransformComponent, &crate::components::DrawableComponent)>(
+        )
+        {
+            // Get the model matrix
+            let model_matrix = transform.transform.make_mat4();
+
+            // Convert to katla_vulkan's Mat4 format
+            let model_array: [f32; 16] = unsafe {
+                std::mem::transmute_copy(&model_matrix)
+            };
+
+            // Convert view and proj matrices
+            let view_array: [f32; 16] = unsafe { std::mem::transmute_copy(&view) };
+            let proj_array: [f32; 16] = unsafe { std::mem::transmute_copy(&proj) };
+
+            // TODO: Get mesh and material handles from DrawableComponent
+            // For now, we skip this since handles aren't registered yet
+            if let (Some(mesh_handle), Some(material_handle)) =
+                (drawable.mesh_handle, drawable.material_handle)
+            {
+                let draw_call = DrawCall::new(mesh_handle, material_handle)
+                    .with_matrices(
+                        model_array,
+                        view_array,
+                        proj_array,
+                    );
+
+                draw_list.push(draw_call);
+            }
+        }
+
+        // Render using the draw list
+        if let Err(e) = renderer.render_frame(draw_list) {
             match e {
                 katla_vulkan::RenderGraphError::SwapchainOutOfDate => {
                     // Swapchain is out of date (e.g., window resize), skip this frame

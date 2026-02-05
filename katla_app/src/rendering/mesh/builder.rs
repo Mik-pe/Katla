@@ -3,7 +3,7 @@ use std::rc::Rc;
 
 use katla_ecs::World;
 use katla_math::{Transform, Vec3};
-use katla_vulkan::{MaterialBuilder, RenderPass, Texture, VulkanContext};
+use katla_vulkan::{MaterialBuilder, RenderPass, Texture, VulkanContext, VulkanRenderer};
 
 use crate::{
     application::Model,
@@ -38,21 +38,18 @@ impl Default for MeshOptions {
 pub struct MeshBuilder<'a> {
     options: MeshOptions,
     world: &'a mut World,
-    context: std::rc::Rc<VulkanContext>,
-    render_pass: &'a RenderPass,
+    renderer: Option<&'a mut VulkanRenderer>,
 }
 
 impl<'a> MeshBuilder<'a> {
     pub fn new(
         world: &'a mut World,
-        context: std::rc::Rc<VulkanContext>,
-        render_pass: &'a RenderPass,
+        renderer: &'a mut VulkanRenderer,
     ) -> Self {
         Self {
             options: MeshOptions::default(),
             world,
-            context,
-            render_pass,
+            renderer: Some(renderer),
         }
     }
 
@@ -61,21 +58,25 @@ impl<'a> MeshBuilder<'a> {
         self
     }
 
+    #[allow(dead_code)]
     pub fn radius(mut self, radius: f32) -> Self {
         self.options.radius = Some(radius);
         self
     }
 
+    #[allow(dead_code)]
     pub fn height(mut self, height: f32) -> Self {
         self.options.height = Some(height);
         self
     }
 
+    #[allow(dead_code)]
     pub fn segments(mut self, segments: u32) -> Self {
         self.options.segments = Some(segments);
         self
     }
 
+    #[allow(dead_code)]
     pub fn rings(mut self, rings: u32) -> Self {
         self.options.rings = Some(rings);
         self
@@ -92,10 +93,11 @@ impl<'a> MeshBuilder<'a> {
     }
 
     pub fn create_cube(self) -> ModelEntity {
+        let renderer = self.renderer.expect("Renderer required for MeshBuilder");
         let size = self.options.size.unwrap_or(Vec3::new(20.0, 20.0, 20.0));
-        let mesh = crate::rendering::mesh::create_cube_mesh(self.context.clone(), size);
+        let mesh = crate::rendering::mesh::create_cube_mesh(renderer.context.clone(), size);
         let material =
-            create_material_with_color(self.context, self.render_pass, self.options.color);
+            create_material_with_color(renderer.context.clone(), &renderer.render_pass, self.options.color);
         let position = self.options.position.unwrap_or(Vec3::new(0.0, 0.0, 0.0));
         // Create transform with only position (no scale)
         let transform = Transform {
@@ -104,16 +106,17 @@ impl<'a> MeshBuilder<'a> {
             scale: Vec3::new(1.0, 1.0, 1.0),
         };
         let model = Model::new(vec![mesh], material, transform);
-        ModelEntity::new(self.world, model)
+        ModelEntity::new_with_renderer(self.world, model, Some(renderer))
     }
 
     pub fn create_sphere(self) -> ModelEntity {
+        let renderer = self.renderer.expect("Renderer required for MeshBuilder");
         let radius = self.options.radius.unwrap_or(5.0);
         let segments = self.options.segments.unwrap_or(32);
         let rings = self.options.rings.unwrap_or(32);
-        let mesh = crate::rendering::mesh::create_sphere_mesh(self.context.clone(), radius, segments, rings);
+        let mesh = crate::rendering::mesh::create_sphere_mesh(renderer.context.clone(), radius, segments, rings);
         let material =
-            create_material_with_color(self.context, self.render_pass, self.options.color);
+            create_material_with_color(renderer.context.clone(), &renderer.render_pass, self.options.color);
         let position = self.options.position.unwrap_or(Vec3::new(0.0, 0.0, 0.0));
         let transform = Transform {
             position,
@@ -121,16 +124,17 @@ impl<'a> MeshBuilder<'a> {
             scale: Vec3::new(1.0, 1.0, 1.0),
         };
         let model = Model::new(vec![mesh], material, transform);
-        ModelEntity::new(self.world, model)
+        ModelEntity::new_with_renderer(self.world, model, Some(renderer))
     }
 
     pub fn create_cylinder(self) -> ModelEntity {
+        let renderer = self.renderer.expect("Renderer required for MeshBuilder");
         let height = self.options.height.unwrap_or(10.0);
         let radius = self.options.radius.unwrap_or(5.0);
         let segments = self.options.segments.unwrap_or(32);
-        let mesh = crate::rendering::mesh::create_cylinder_mesh(self.context.clone(), height, radius, segments);
+        let mesh = crate::rendering::mesh::create_cylinder_mesh(renderer.context.clone(), height, radius, segments);
         let material =
-            create_material_with_color(self.context, self.render_pass, self.options.color);
+            create_material_with_color(renderer.context.clone(), &renderer.render_pass, self.options.color);
         let position = self.options.position.unwrap_or(Vec3::new(0.0, 0.0, 0.0));
         let transform = Transform {
             position,
@@ -138,15 +142,16 @@ impl<'a> MeshBuilder<'a> {
             scale: Vec3::new(1.0, 1.0, 1.0),
         };
         let model = Model::new(vec![mesh], material, transform);
-        ModelEntity::new(self.world, model)
+        ModelEntity::new_with_renderer(self.world, model, Some(renderer))
     }
 
     pub fn create_plane(self) -> ModelEntity {
+        let renderer = self.renderer.expect("Renderer required for MeshBuilder");
         let size = self.options.size.unwrap_or(Vec3::new(100.0, 100.0, 1.0));
         let segments = self.options.segments.unwrap_or(32);
-        let mesh = crate::rendering::mesh::create_plane_mesh(self.context.clone(), size.x(), size.y(), segments);
+        let mesh = crate::rendering::mesh::create_plane_mesh(renderer.context.clone(), size.x(), size.y(), segments);
         let material =
-            create_material_with_color(self.context, self.render_pass, self.options.color);
+            create_material_with_color(renderer.context.clone(), &renderer.render_pass, self.options.color);
         let position = self.options.position.unwrap_or(Vec3::new(0.0, 0.0, 0.0));
         let transform = Transform {
             position,
@@ -154,23 +159,24 @@ impl<'a> MeshBuilder<'a> {
             scale: Vec3::new(1.0, 1.0, 1.0),
         };
         let model = Model::new(vec![mesh], material, transform);
-        ModelEntity::new(self.world, model)
+        ModelEntity::new_with_renderer(self.world, model, Some(renderer))
     }
 
     pub fn create_torus(self) -> ModelEntity {
+        let renderer = self.renderer.expect("Renderer required for MeshBuilder");
         let major_radius = self.options.radius.unwrap_or(5.0) * 2.0;
         let minor_radius = self.options.radius.unwrap_or(5.0) * 0.6;
         let segments = self.options.segments.unwrap_or(32);
         let rings = self.options.rings.unwrap_or(32);
         let mesh = crate::rendering::mesh::create_torus_mesh(
-            self.context.clone(),
+            renderer.context.clone(),
             major_radius,
             minor_radius,
             segments,
             rings,
         );
         let material =
-            create_material_with_color(self.context, self.render_pass, self.options.color);
+            create_material_with_color(renderer.context.clone(), &renderer.render_pass, self.options.color);
         let position = self.options.position.unwrap_or(Vec3::new(0.0, 0.0, 0.0));
         let transform = Transform {
             position,
@@ -178,14 +184,14 @@ impl<'a> MeshBuilder<'a> {
             scale: Vec3::new(1.0, 1.0, 1.0),
         };
         let model = Model::new(vec![mesh], material, transform);
-        ModelEntity::new(self.world, model)
+        ModelEntity::new_with_renderer(self.world, model, Some(renderer))
     }
 }
 
 fn create_material_with_color(
-    context: Rc<VulkanContext>,
+    context: std::rc::Rc<VulkanContext>,
     render_pass: &RenderPass,
-    color: Option<[f32; 3]>,
+    _color: Option<[f32; 3]>,
 ) -> Material {
     // Create a checkerboard texture (64x64)
     let texture_size = 64;
@@ -218,8 +224,9 @@ fn create_material_with_color(
         &pixels,
     ));
 
-    let material_pipeline = MaterialBuilder::new(context)
-        .with_vertex_binding(VertexPBR::get_vertex_binding())
+    let vertex_binding = VertexPBR::get_vertex_binding();
+    let material_pipeline = MaterialBuilder::new(context.clone())
+        .with_vertex_binding(vertex_binding.clone())
         .with_vertex_shader(include_bytes!("../../../../resources/shaders/model_pbr.vert.spv"))
         .with_fragment_shader(include_bytes!("../../../../resources/shaders/model.frag.spv"))
         .with_texture(texture.clone())
@@ -230,7 +237,9 @@ fn create_material_with_color(
         .expect("Failed to create material pipeline");
 
     Material {
-        material_pipeline,
+        material_pipeline: std::rc::Rc::new(std::cell::RefCell::new(material_pipeline)),
         texture: Some(texture),
+        vertex_binding,
+        handle: None,
     }
 }
