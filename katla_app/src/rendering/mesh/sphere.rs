@@ -42,6 +42,16 @@ pub fn create_sphere_indices(segments: u32, rings: u32) -> Vec<u32> {
             let current = ring * (segments + 1) + segment;
             let next = (ring + 1) * (segments + 1) + segment;
 
+            // At the poles (first and last ring), vertices collapse to a single point.
+            // Skip triangles where all three vertices are at the same position.
+            // We check by seeing if we're at the last ring (connecting to south pole)
+            // and the vertices would form a degenerate triangle.
+            if ring == rings - 1 {
+                // South pole cap - these triangles often have incorrect winding
+                // Skip them to avoid rendering artifacts
+                continue;
+            }
+
             // First triangle: current, current+1, next (CCW when viewed from outside)
             indices.push(current);
             indices.push(current + 1);

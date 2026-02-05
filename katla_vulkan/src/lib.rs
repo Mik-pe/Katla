@@ -165,7 +165,7 @@ impl VulkanRenderer {
                             &[*image_view, new_depth_view],
                             *extent,
                         )
-                        .map_err(|e| RenderGraphError::VulkanError(e))
+                        .map_err(RenderGraphError::VulkanError)
                         .unwrap();
 
                     if image_index == 0 {
@@ -213,7 +213,7 @@ impl VulkanRenderer {
                 vk_image: self.frame_context.swapchain_images[image_index as usize],
                 image_view: self.frame_context.swapchain_image_views[image_index as usize],
                 format: swapchain_format,
-                extent: self.frame_context.swapchain.get_extent().into(),
+                extent: self.frame_context.swapchain.get_extent(),
             },
         )
     }
@@ -229,7 +229,7 @@ impl VulkanRenderer {
                 vk_image: self.frame_context.depth_render_texture.image,
                 image_view: self.frame_context.depth_render_texture.image_view,
                 format: depth_format,
-                extent: self.frame_context.swapchain.get_extent().into(),
+                extent: self.frame_context.swapchain.get_extent(),
             },
         )
     }
@@ -257,7 +257,7 @@ impl VulkanRenderer {
         let vertex_bytes = unsafe {
             std::slice::from_raw_parts(
                 vertices.as_ptr() as *const u8,
-                vertices.len() * std::mem::size_of::<T>(),
+                std::mem::size_of_val(vertices),
             )
         };
 
@@ -265,7 +265,7 @@ impl VulkanRenderer {
         let index_bytes = unsafe {
             std::slice::from_raw_parts(
                 indices.as_ptr() as *const u8,
-                indices.len() * std::mem::size_of::<U>(),
+                std::mem::size_of_val(indices),
             )
         };
 
@@ -397,7 +397,7 @@ impl VulkanRenderer {
                 vk_image: self.frame_context.swapchain_images[0],
                 image_view: self.frame_context.swapchain_image_views[0],
                 format: self.frame_context.swapchain.format.format,
-                extent: self.frame_context.swapchain.get_extent().into(),
+                extent: self.frame_context.swapchain.get_extent(),
             },
         );
 

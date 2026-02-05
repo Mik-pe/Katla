@@ -8,6 +8,7 @@ use katla_vulkan::{
 
 use std::{cell::RefCell, rc::Rc};
 
+#[derive(Clone)]
 pub struct Material {
     pub material_pipeline: Rc<RefCell<MaterialPipeline>>,
     pub texture: Option<Rc<Texture>>,

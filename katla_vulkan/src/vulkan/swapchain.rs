@@ -85,10 +85,7 @@ impl SwapchainInfo {
     pub fn choose_present_mode(&self) -> vk::PresentModeKHR {
         self.present_modes
             .iter()
-            .find(|format| match **format {
-                vk::PresentModeKHR::MAILBOX => true,
-                _ => false,
-            })
+            .find(|format| matches!(**format, vk::PresentModeKHR::MAILBOX))
             .cloned()
             .unwrap_or(vk::PresentModeKHR::FIFO)
     }

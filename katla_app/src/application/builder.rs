@@ -8,6 +8,7 @@ use crate::{
     application::{Application, ApplicationInfo},
     entities::Camera,
     input::InputMapper,
+    rendering::MaterialManager,
     util::{FileCache, Timer},
 };
 
@@ -67,6 +68,7 @@ impl ApplicationBuilder {
             renderer: None,
             camera,
             gltf_cache: FileCache::new(),
+            material_manager: MaterialManager::new(),
             stage_upload: false,
             timer: Timer::new(100),
             info,

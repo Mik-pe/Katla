@@ -13,7 +13,7 @@ pub struct SwapData {
 impl SwapData {
     pub fn new(
         device: &Device,
-        swapchain_images: &Vec<vk::Image>,
+        swapchain_images: &[vk::Image],
         frames_in_flight: usize,
     ) -> Self {
         let create_info = vk::SemaphoreCreateInfo::default();

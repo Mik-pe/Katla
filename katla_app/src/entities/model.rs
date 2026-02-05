@@ -57,7 +57,6 @@ impl ModelEntity {
         world.add_component(
             entity,
             DrawableComponent::with_handles(
-                Box::new(model),
                 mesh_handle.unwrap(),
                 material_handle.unwrap(),
             ),
@@ -68,7 +67,7 @@ impl ModelEntity {
 
     pub fn new_with_transform(
         world: &mut World,
-        model: Model,
+        _model: Model,
         transform: katla_math::Transform,
     ) -> Self {
         let entity = world.create_entity();
@@ -76,7 +75,6 @@ impl ModelEntity {
         world.add_component(
             entity,
             DrawableComponent {
-                drawable: Box::new(model),
                 mesh_handle: None,
                 material_handle: None,
             },
