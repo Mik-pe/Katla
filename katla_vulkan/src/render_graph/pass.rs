@@ -6,6 +6,16 @@ use crate::{CommandBuffer, ResourceId, ResourceUsage};
 use std::collections::HashMap;
 use std::rc::Rc;
 
+/// Describes the type of attachment when writing to a resource.
+/// This enum allows the render graph to correctly configure the attachment
+/// for either color or depth-stencil output.
+pub enum Attachment {
+    /// Color attachment output (e.g., swapchain image, offscreen render target)
+    Color(ResourceId),
+    /// Depth-stencil attachment output (e.g., depth buffer for depth testing)
+    DepthStencil(ResourceId),
+}
+
 /// Type alias for execute closures to avoid repeating complex trait object syntax.
 /// This approach isolates the trait object definition to help Rust's type inference.
 /// ExecutionRegistry stores pass execution closures by pass name.
@@ -119,19 +129,37 @@ impl PassBuilder {
     }
 
     /// Mark a resource as a write output for this pass.
-    /// This adds the resource to the outputs list and creates appropriate usage information.
-    pub fn write(&mut self, resource_id: ResourceId) -> &mut Self {
-        self.outputs.push(resource_id);
+    /// This adds the resource to the outputs list and creates appropriate usage information
+    /// based on the attachment type (color or depth-stencil).
+    pub fn write(&mut self, attachment: Attachment) -> &mut Self {
+        match attachment {
+            Attachment::Color(resource_id) => {
+                self.outputs.push(resource_id);
 
-        let usage = ResourceUsage::new(resource_id)
-            .with_write(
-                crate::types::Access::ColorAttachmentWrite,
-                crate::types::PipelineStage::ColorAttachmentOutput,
-            )
-            .with_load_op(crate::types::AttachmentLoadOp::Load)
-            .with_store_op(crate::types::AttachmentStoreOp::Store)
-            .with_layout(crate::types::ImageLayout::ColorAttachmentOptimal);
-        self.usages.push(usage);
+                let usage = ResourceUsage::new(resource_id)
+                    .with_write(
+                        crate::types::Access::ColorAttachmentWrite,
+                        crate::types::PipelineStage::ColorAttachmentOutput,
+                    )
+                    .with_load_op(crate::types::AttachmentLoadOp::Load)
+                    .with_store_op(crate::types::AttachmentStoreOp::Store)
+                    .with_layout(crate::types::ImageLayout::ColorAttachmentOptimal);
+                self.usages.push(usage);
+            }
+            Attachment::DepthStencil(resource_id) => {
+                self.outputs.push(resource_id);
+
+                let usage = ResourceUsage::new(resource_id)
+                    .with_write(
+                        crate::types::Access::DepthStencilAttachmentWrite,
+                        crate::types::PipelineStage::EarlyFragmentTests,
+                    )
+                    .with_load_op(crate::types::AttachmentLoadOp::Load)
+                    .with_store_op(crate::types::AttachmentStoreOp::Store)
+                    .with_layout(crate::types::ImageLayout::DepthStencilAttachmentOptimal);
+                self.usages.push(usage);
+            }
+        }
         self
     }
 
@@ -165,6 +193,8 @@ impl PassBuilder {
         {
             usage.clear_value = Some(ClearValue::depth(depth, stencil).into());
             usage.load_op = crate::types::AttachmentLoadOp::Clear.into();
+            // Depth attachments typically don't need to store, so use DONT_CARE
+            usage.store_op = crate::types::AttachmentStoreOp::DontCare.into();
         }
         self
     }
@@ -374,7 +404,7 @@ mod tests {
         let resource_id2 = ResourceId(1);
 
         builder.read(resource_id1);
-        builder.write(resource_id2);
+        builder.write(Attachment::Color(resource_id2));
 
         assert_eq!(builder.inputs.len(), 1);
         assert_eq!(builder.outputs.len(), 1);
@@ -389,7 +419,7 @@ mod tests {
         let resource_id = ResourceId(0);
 
         builder
-            .write(resource_id)
+            .write(Attachment::Color(resource_id))
             .clear_color(resource_id, [1.0, 0.0, 0.0, 1.0]);
 
         assert_eq!(builder.usages.len(), 1);
@@ -421,7 +451,7 @@ mod tests {
         let mut builder = PassBuilder::new("test_pass");
 
         let resource_id = ResourceId(0);
-        builder.write(resource_id);
+        builder.write(Attachment::Color(resource_id));
 
         let pass = builder.build();
 
@@ -436,7 +466,7 @@ mod tests {
         let input_id = ResourceId(0);
         let output_id = ResourceId(1);
 
-        builder.read(input_id).write(output_id).extent(1920, 1080);
+        builder.read(input_id).write(Attachment::Color(output_id)).extent(1920, 1080);
 
         let pass = builder.build();
 

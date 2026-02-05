@@ -1,6 +1,6 @@
 use super::VulkanContext;
-use crate::VulkanFrameCtx;
 use crate::render_graph::types::ImageFormat;
+use crate::VulkanFrameCtx;
 
 use std::mem::ManuallyDrop;
 use std::rc::Rc;
@@ -174,7 +174,6 @@ impl Texture {
         format: ImageFormat,
         pixel_data: &[u8],
     ) -> Self {
-        let total_start = Instant::now();
         let extent = vk::Extent3D {
             width,
             height,
@@ -199,23 +198,16 @@ impl Texture {
 
         let (image_object, image_memory) =
             context.create_image(create_info, gpu_allocator::MemoryLocation::GpuOnly);
-        let ms_image = total_start.elapsed().as_micros() as f64 / 1000.0;
 
         let total_size = pixel_data.len() as u64;
 
         let (staging_buffer, staging_allocation) =
             Self::create_staging_buffer(&context, total_size);
-        let ms_staging = total_start.elapsed().as_micros() as f64 / 1000.0;
 
         let map = context.map_buffer(&staging_allocation);
-        let ms_map_buffer = total_start.elapsed().as_micros() as f64 / 1000.0;
 
         unsafe {
             std::ptr::copy_nonoverlapping(pixel_data.as_ptr(), map, total_size as usize);
-            let ms_copy = total_start.elapsed().as_micros() as f64 / 1000.0;
-
-            // context.unmap_buffer(&staging_allocation);
-            let ms_unmap = total_start.elapsed().as_micros() as f64 / 1000.0;
 
             let command_buffer = context.begin_single_time_commands();
             Self::transition_image_layout(
@@ -225,8 +217,6 @@ impl Texture {
                 vk::ImageLayout::UNDEFINED,
                 vk::ImageLayout::TRANSFER_DST_OPTIMAL,
             );
-            let ms_trans_1 = total_start.elapsed().as_micros() as f64 / 1000.0;
-
             Self::copy_buffer_to_image(
                 &context,
                 command_buffer.vk_command_buffer(),
@@ -235,7 +225,6 @@ impl Texture {
                 vk::ImageLayout::TRANSFER_DST_OPTIMAL,
                 extent,
             );
-            let ms_copy_im = total_start.elapsed().as_micros() as f64 / 1000.0;
             Self::transition_image_layout(
                 &context,
                 command_buffer.vk_command_buffer(),
@@ -247,10 +236,7 @@ impl Texture {
             //TODO: submitting this command buffer takes lots of time
             //TODO: Fix better handling of these command buffers from the renderer
             context.end_single_time_commands(command_buffer);
-            let ms_trans_2 = total_start.elapsed().as_micros() as f64 / 1000.0;
-
             context.free_buffer(staging_buffer, staging_allocation);
-            let ms_free = total_start.elapsed().as_micros() as f64 / 1000.0;
 
             let image_view = VulkanFrameCtx::create_image_view(
                 &context.device,
@@ -259,60 +245,6 @@ impl Texture {
                 vk::ImageAspectFlags::COLOR,
             );
             let image_sampler = Self::create_texture_sampler(&context);
-            let ms_total = total_start.elapsed().as_micros() as f64 / 1000.0;
-            println!(
-                "[Create Image] Image size: {:.2}MiB",
-                total_size as f64 / (1024f64 * 1024f64)
-            );
-            println!("[Create Image] Total time spent: {ms_total}ms");
-
-            println!(
-                "image: \t\t\t\t{:.3}ms {:.2}%",
-                ms_image,
-                ms_image / ms_total * 100.0
-            );
-            println!(
-                "stage: \t\t\t\t{:.3}ms {:.2}% ",
-                ms_staging,
-                (ms_staging - ms_image) / ms_total * 100.0
-            );
-            println!(
-                "map: \t\t\t\t{:.3}ms {:.2}%",
-                ms_map_buffer,
-                (ms_map_buffer - ms_staging) / ms_total * 100.0
-            );
-            let bytes_per_sec = total_size as f64 / (ms_copy / 1000.0);
-            println!(
-                "copy to map: \t\t\t{:.3}ms {:.2}% ({:.3} B/s)",
-                ms_copy,
-                (ms_copy - ms_map_buffer) / ms_total * 100.0,
-                bytes_per_sec
-            );
-            println!(
-                "unmap: \t\t\t\t{:.3}ms {:.2}%",
-                ms_unmap,
-                (ms_unmap - ms_copy) / ms_total * 100.0
-            );
-            println!(
-                "transition image: \t\t{:.3}ms {:.2}%",
-                ms_trans_1,
-                (ms_trans_1 - ms_unmap) / ms_total * 100.0
-            );
-            println!(
-                "copy buffer to image: \t\t{:.3}ms {:.2}%",
-                ms_copy_im,
-                (ms_copy_im - ms_trans_1) / ms_total * 100.0
-            );
-            println!(
-                "transition + submit cmdbuf: \t{:.3}ms {:.2}%",
-                ms_trans_2,
-                (ms_trans_2 - ms_copy_im) / ms_total * 100.0
-            );
-            println!(
-                "free: \t\t\t\t{:.3}ms {:.2}%",
-                ms_free,
-                (ms_free - ms_trans_2) / ms_total * 100.0
-            );
 
             let channels = match format {
                 ImageFormat::R8G8B8A8Srgb | ImageFormat::B8G8R8A8Srgb => 4,

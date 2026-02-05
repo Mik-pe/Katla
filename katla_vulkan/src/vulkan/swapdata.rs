@@ -1,4 +1,6 @@
 use ash::{khr::swapchain::Device as SwapchainDevice, vk, Device};
+use crate::RenderGraphError;
+
 pub struct SwapData {
     frames_in_flight: usize,
     frame: usize,
@@ -57,7 +59,7 @@ impl SwapData {
         device: &Device,
         swapchain_loader: &SwapchainDevice,
         swapchain: vk::SwapchainKHR,
-    ) -> (vk::Semaphore, vk::Semaphore, vk::Fence, u32) {
+    ) -> Result<(vk::Semaphore, vk::Semaphore, vk::Fence, u32), RenderGraphError> {
         //TODO: What is the bool for?
         let (image_index, _) = unsafe {
             swapchain_loader.acquire_next_image(
@@ -67,20 +69,27 @@ impl SwapData {
                 vk::Fence::null(),
             )
         }
-        .unwrap();
+        .map_err(|err| {
+            if err == vk::Result::ERROR_OUT_OF_DATE_KHR || err == vk::Result::SUBOPTIMAL_KHR {
+                RenderGraphError::SwapchainOutOfDate
+            } else {
+                RenderGraphError::VulkanError(err)
+            }
+        })?;
 
         let image_in_flight = self.images_in_flight[image_index as usize];
         if image_in_flight != vk::Fence::null() {
-            unsafe { device.wait_for_fences(&[image_in_flight], true, u64::MAX) }.unwrap();
+            unsafe { device.wait_for_fences(&[image_in_flight], true, u64::MAX) }
+                .map_err(RenderGraphError::VulkanError)?;
         }
         self.images_in_flight[image_index as usize] = self.in_flight_fences[self.frame];
 
-        (
+        Ok((
             self.image_available_semaphores[self.frame],
             self.render_finished_semaphores[self.frame],
             self.in_flight_fences[self.frame],
             image_index,
-        )
+        ))
     }
 
     pub fn step_frame(&mut self) {

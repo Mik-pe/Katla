@@ -23,10 +23,14 @@ pub struct CompiledRenderGraph {
 
 /// CompiledPass represents a single compiled pass with all necessary Vulkan objects.
 /// The execute field now contains the pass name for looking up the closure in the ExecutionRegistry.
+/// Multiple framebuffers are supported (e.g., one per swapchain image).
 pub struct CompiledPass {
     pub name: String,
     pub vk_render_pass: vk::RenderPass,
-    pub vk_framebuffer: vk::Framebuffer,
+    /// The render pass to use for rendering (may differ from the compilation render pass)
+    pub active_render_pass: vk::RenderPass,
+    /// Multiple framebuffers - one per swapchain image variant
+    pub vk_framebuffers: Vec<vk::Framebuffer>,
     pub extent: vk::Extent2D,
     pub clear_values: Vec<vk::ClearValue>,
     execute: PassExecute,
@@ -46,7 +50,7 @@ pub struct SubpassDescriptor {
     input_attachments: Vec<(u32, ResourceId)>,
     color_attachments: Vec<(u32, ResourceId)>,
     depth_stencil: Option<(u32, ResourceId)>,
-    #[allow(dead_code)]  // TODO: Implement subpass resolve attachments
+    #[allow(dead_code)] // TODO: Implement subpass resolve attachments
     resolve_attachments: Vec<(u32, ResourceId)>,
     // Store Vulkan attachment references to ensure they live long enough
     vk_input_refs: Vec<vk::AttachmentReference>,
@@ -55,6 +59,93 @@ pub struct SubpassDescriptor {
 }
 
 impl CompiledRenderGraph {
+    /// Create multiple framebuffers for passes that use external images.
+    /// This is useful for swapchain rendering where you need one framebuffer per swapchain image.
+    /// Returns an error if the graph has already been compiled with framebuffers.
+    pub fn create_swapchain_framebuffers(
+        &mut self,
+        swapchain_images: &[(vk::Image, vk::ImageView, vk::Extent2D, vk::Format)],
+        immediate_render_pass: vk::RenderPass,
+    ) -> Result<(), RenderGraphError> {
+        // Find the depth image view before the loop
+        let mut depth_image_view: Option<vk::ImageView> = None;
+        for (_, resource) in self.resources.iter() {
+            if let CompiledResource::ExternalImage {
+                format, image_view, ..
+            } = resource
+            {
+                if is_depth_or_stencil(*format) {
+                    depth_image_view = Some(*image_view);
+                    break;
+                }
+            }
+        }
+
+        let depth_view = depth_image_view.ok_or_else(|| {
+            RenderGraphError::CompilationError("No depth image view found".into())
+        })?;
+
+        // For each swapchain image, we need to create new framebuffers for each pass
+        // that uses external images
+        for (image_index, (_vk_image, image_view, extent, _format)) in
+            swapchain_images.iter().enumerate()
+        {
+            // Recreate framebuffers for all passes with this swapchain image
+            for pass_idx in 0..self.passes.len() {
+                let framebuffer = self.create_framebuffer_for_pass(
+                    pass_idx,
+                    *image_view,
+                    depth_view,
+                    *extent,
+                    immediate_render_pass,
+                )?;
+                if image_index == 0 {
+                    // First framebuffer - replace the null placeholder
+                    self.framebuffers[pass_idx] = framebuffer;
+                    self.passes[pass_idx].vk_framebuffers = vec![framebuffer];
+                    // Set the active render pass to the immediate-mode render pass
+                    self.passes[pass_idx].active_render_pass = immediate_render_pass;
+                } else {
+                    // Additional framebuffers - append to the list
+                    self.passes[pass_idx].vk_framebuffers.push(framebuffer);
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Create a framebuffer for a specific pass with the given swapchain image view.
+    fn create_framebuffer_for_pass(
+        &self,
+        pass_index: usize,
+        swapchain_image_view: vk::ImageView,
+        depth_image_view: vk::ImageView,
+        swapchain_extent: vk::Extent2D,
+        immediate_render_pass: vk::RenderPass,
+    ) -> Result<vk::Framebuffer, RenderGraphError> {
+        let pass = self.passes.get(pass_index).ok_or_else(|| {
+            RenderGraphError::CompilationError(format!("Pass {} not found", pass_index))
+        })?;
+
+        // For now, we know the attachment order: color (swapchain), then depth
+        // In the future, this should be determined from the pass descriptor
+        let attachment_views = vec![swapchain_image_view, depth_image_view];
+
+        println!("Creating framebuffer for pass {}: graph_render_pass={:?}, using render_pass={:?}, attachments={:?}, extent={}x{}",
+            pass_index, pass.vk_render_pass, immediate_render_pass, attachment_views, swapchain_extent.width, swapchain_extent.height);
+
+        // Create framebuffer using the immediate-mode render pass
+        let framebuffer = self
+            .context
+            .create_framebuffer(immediate_render_pass, &attachment_views, swapchain_extent)
+            .map_err(RenderGraphError::VulkanError)?;
+
+        println!("  Created framebuffer: {:?}", framebuffer);
+
+        Ok(framebuffer)
+    }
+
     /// Compile a render graph into Vulkan objects.
     pub fn compile(
         mut graph: crate::RenderGraph,
@@ -76,8 +167,6 @@ impl CompiledRenderGraph {
         // Step 5: Create framebuffers
         let framebuffers =
             Self::create_framebuffers(&pass_structure, &vk_render_passes, &resources, context)?;
-
-        // Step 6: Calculate barriers - TODO: Implement proper barrier calculation
         // For now, use empty barriers as placeholder
         let barriers: Vec<Vec<vk::MemoryBarrier<'static>>> = vec![];
 
@@ -174,15 +263,27 @@ impl CompiledRenderGraph {
             };
 
             // Add all output resources as attachments
-            for resource_id in pass.outputs() {
+            // We check ResourceUsage.layout to determine if it's color or depth-stencil
+            for (resource_id, usage) in pass.outputs().iter().zip(pass.usages()) {
                 group.attachments.push(*resource_id);
 
-                // Add to subpass as color attachment
+                let attachment_index = (group.attachments.len() - 1) as u32;
+
+                // Check the layout to determine attachment type
+                let is_depth_stencil = usage.layout
+                    == vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL
+                    || usage.layout == vk::ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL;
+
                 if let Some(subpass) = group.subpasses.first_mut() {
-                    let attachment_index = (group.attachments.len() - 1) as u32;
-                    subpass
-                        .color_attachments
-                        .push((attachment_index, *resource_id));
+                    if is_depth_stencil {
+                        // Add as depth-stencil attachment (NOT as color attachment)
+                        subpass.depth_stencil = Some((attachment_index, *resource_id));
+                    } else {
+                        // Add as color attachment
+                        subpass
+                            .color_attachments
+                            .push((attachment_index, *resource_id));
+                    }
                 }
             }
 
@@ -253,7 +354,6 @@ impl CompiledRenderGraph {
         for group in groups {
             let mut attachments = Vec::new();
             let mut subpasses = Vec::new();
-            let mut dependencies = Vec::new();
 
             // Create attachment descriptions
             for resource_id in &group.attachments {
@@ -310,15 +410,43 @@ impl CompiledRenderGraph {
                             .final_layout(*final_layout)
                     }
                     ResourceKind::ExternalImage { format, .. } => {
+                        // Find the usage for this attachment (same as Image case)
+                        let mut load_op = vk::AttachmentLoadOp::DONT_CARE;
+                        let mut store_op = vk::AttachmentStoreOp::DONT_CARE;
+
+                        // Look at the first pass that uses this resource as an output
+                        for pass_idx in &group.pass_indices {
+                            if let Some(pass) = graph.passes.get(*pass_idx) {
+                                for usage in pass.usages() {
+                                    if usage.resource_id == *resource_id {
+                                        load_op = usage.load_op;
+                                        store_op = usage.store_op;
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+
+                        // Determine final layout based on format (swapchain vs depth)
+                        let is_depth = is_depth_or_stencil(*format);
+                        let final_layout = if is_depth {
+                            vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL
+                        } else {
+                            vk::ImageLayout::PRESENT_SRC_KHR
+                        };
+
+                        println!("ExternalImage attachment: format={:?}, load_op={:?}, store_op={:?}, final_layout={:?}",
+                            format, load_op, store_op, final_layout);
+
                         vk::AttachmentDescription::default()
                             .format(*format)
                             .samples(vk::SampleCountFlags::TYPE_1)
-                            .load_op(vk::AttachmentLoadOp::LOAD)
-                            .store_op(vk::AttachmentStoreOp::STORE)
+                            .load_op(load_op)
+                            .store_op(store_op)
                             .stencil_load_op(vk::AttachmentLoadOp::DONT_CARE)
                             .stencil_store_op(vk::AttachmentStoreOp::DONT_CARE)
                             .initial_layout(vk::ImageLayout::UNDEFINED)
-                            .final_layout(vk::ImageLayout::PRESENT_SRC_KHR)
+                            .final_layout(final_layout)
                     }
                     _ => {
                         return Err(RenderGraphError::InvalidResourceUsage(format!(
@@ -342,10 +470,14 @@ impl CompiledRenderGraph {
 
                 let bind_point = pass.bind_point();
 
-                let subpass = vk::SubpassDescription::default()
+                let mut subpass = vk::SubpassDescription::default()
                     .pipeline_bind_point(bind_point.into())
-                    .color_attachments(&subpass_desc.vk_color_refs)
-                    .input_attachments(&subpass_desc.vk_input_refs);
+                    .color_attachments(&subpass_desc.vk_color_refs);
+
+                // Only set input_attachments if we have any
+                if !subpass_desc.vk_input_refs.is_empty() {
+                    subpass = subpass.input_attachments(&subpass_desc.vk_input_refs);
+                }
 
                 let subpass = if let Some(ref depth_ref) = subpass_desc.vk_depth_ref {
                     subpass.depth_stencil_attachment(depth_ref)
@@ -357,6 +489,9 @@ impl CompiledRenderGraph {
             }
 
             // Create subpass dependencies
+            // Always create at least one dependency from EXTERNAL to subpass 0
+            // This is required for proper synchronization with external operations
+            let mut dependencies: Vec<vk::SubpassDependency> = Vec::new();
             if subpasses.len() > 1 {
                 for i in 0..subpasses.len() - 1 {
                     let dependency = vk::SubpassDependency::default()
@@ -379,6 +514,16 @@ impl CompiledRenderGraph {
                     dependencies.push(dependency);
                 }
             }
+
+            // Add dependency from EXTERNAL to first subpass for proper external synchronization
+            let external_dependency = vk::SubpassDependency::default()
+                .src_subpass(vk::SUBPASS_EXTERNAL)
+                .dst_subpass(0)
+                .src_stage_mask(vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT)
+                .src_access_mask(vk::AccessFlags::empty())
+                .dst_stage_mask(vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT)
+                .dst_access_mask(vk::AccessFlags::COLOR_ATTACHMENT_WRITE);
+            dependencies.push(external_dependency);
 
             // Create render pass using RenderPass wrapper
             let render_pass = RenderPass::create_from_config(
@@ -413,6 +558,7 @@ impl CompiledRenderGraph {
                 ResourceKind::ExternalImage {
                     vk_image,
                     image_view,
+                    format,
                     extent,
                     ..
                 } => {
@@ -421,6 +567,7 @@ impl CompiledRenderGraph {
                         CompiledResource::ExternalImage {
                             image: *vk_image,
                             image_view: *image_view,
+                            format: *format,
                             extent: *extent,
                         },
                     );
@@ -512,6 +659,22 @@ impl CompiledRenderGraph {
         let mut framebuffers = Vec::new();
 
         for (i, group) in groups.iter().enumerate() {
+            // Check if this pass uses external resources
+            let uses_external = group.attachments.iter().any(|resource_id| {
+                matches!(
+                    resources.get(resource_id),
+                    Some(CompiledResource::ExternalImage { .. })
+                        | Some(CompiledResource::ExternalBuffer { .. })
+                )
+            });
+
+            // Skip framebuffer creation for passes with external resources
+            // They will be created later by create_swapchain_framebuffers()
+            if uses_external {
+                framebuffers.push(vk::Framebuffer::null());
+                continue;
+            }
+
             // Get render pass for this framebuffer
             let render_pass = vk_render_passes.get(i).copied().ok_or_else(|| {
                 RenderGraphError::CompilationError(format!(
@@ -572,7 +735,7 @@ impl CompiledRenderGraph {
     /// Analyzes resource usage between consecutive passes and creates
     /// appropriate synchronization barriers to ensure correct memory access.
     /// TODO: Implement proper barrier calculation based on resource usage.
-    #[allow(dead_code)]  // TODO: Implement barrier calculation for multi-pass graphs
+    #[allow(dead_code)] // TODO: Implement barrier calculation for multi-pass graphs
     fn calculate_barriers(
         graph: &crate::RenderGraph,
         _lifetimes: &HashMap<ResourceId, ResourceLifetime>,
@@ -638,6 +801,9 @@ impl CompiledRenderGraph {
                 .copied()
                 .unwrap_or(vk::Framebuffer::null());
 
+            // Initialize with a single framebuffer (will be expanded for swapchain images)
+            let vk_framebuffers = vec![vk_framebuffer];
+
             // Get barriers
             let pipeline_barriers_before = barriers.get(i).cloned().unwrap_or_default();
 
@@ -648,7 +814,8 @@ impl CompiledRenderGraph {
             let compiled = CompiledPass {
                 name: pass.name().to_string(),
                 vk_render_pass,
-                vk_framebuffer,
+                active_render_pass: vk_render_pass, // Initially same as vk_render_pass
+                vk_framebuffers,
                 extent,
                 clear_values,
                 execute,
@@ -664,8 +831,21 @@ impl CompiledRenderGraph {
     /// Execute the compiled render graph.
     /// Executes all passes in order using the provided command buffer.
     /// The ExecutionRegistry (owned by this graph) provides the closure logic.
-    pub fn execute(&mut self, command_buffer: &mut CommandBuffer) -> Result<(), RenderGraphError> {
+    /// The image_index selects which framebuffer to use for each pass (for swapchain images).
+    pub fn execute(
+        &mut self,
+        command_buffer: &mut CommandBuffer,
+        image_index: usize,
+    ) -> Result<(), RenderGraphError> {
         for pass in &self.passes {
+            // Select the correct framebuffer for this image index
+            let framebuffer = pass
+                .vk_framebuffers
+                .get(image_index)
+                .or_else(|| pass.vk_framebuffers.first())
+                .copied()
+                .unwrap_or(vk::Framebuffer::null());
+
             // Apply pipeline barriers before this pass
             if !pass.pipeline_barriers_before.is_empty() {
                 // Determine stage masks - use ALL_COMMANDS as conservative default
@@ -689,8 +869,8 @@ impl CompiledRenderGraph {
                 extent: pass.extent,
             };
             command_buffer.begin_render_pass(
-                pass.vk_framebuffer,
-                pass.vk_render_pass,
+                framebuffer,
+                pass.active_render_pass,
                 render_area,
                 &pass.clear_values,
             );
@@ -700,8 +880,8 @@ impl CompiledRenderGraph {
             let ctx = Rc::new(PassExecutionContext::new(
                 (*command_buffer).clone(),
                 self.resources.clone(),
-                pass.vk_framebuffer,
-                pass.vk_render_pass,
+                framebuffer,
+                pass.active_render_pass,
                 pass.extent,
             ));
 
@@ -733,61 +913,46 @@ impl CompiledPass {
 impl Drop for CompiledRenderGraph {
     fn drop(&mut self) {
         unsafe {
-            for framebuffer in &self.framebuffers {
-                self.context.device.destroy_framebuffer(*framebuffer, None);
+            // Destroy all framebuffers from all passes
+            for pass in &self.passes {
+                for framebuffer in &pass.vk_framebuffers {
+                    self.context.device.destroy_framebuffer(*framebuffer, None);
+                }
             }
             for render_pass in &self.vk_render_passes {
                 self.context.device.destroy_render_pass(*render_pass, None);
             }
             // Clean up resources
             // Since we're in Drop and all PassExecutionContexts should be gone,
-            // we're the only owner of the Rc. Extract the HashMap safely.
-            // We use Rc::into_raw and Rc::from_raw for safe pointer manipulation.
-            let resources = {
-                // Create a new Rc with empty HashMap to replace the current one
-                let empty_hashmap = HashMap::new();
-                let empty_rc = Rc::new(empty_hashmap);
-
-                // Replace self.resources with empty Rc, getting the old Rc back
-                let old_rc = std::mem::replace(&mut self.resources, empty_rc);
-
-                // Since we're in Drop, we should be the only owner
-                // Convert the Rc to a raw pointer to extract the HashMap
-                let ptr = Rc::into_raw(old_rc);
-
-                // Read the HashMap from the pointer
-                // SAFETY: We're the only owner (strong_count == 1), so this is safe.
-                let hashmap = std::ptr::read(ptr);
-
-                // Create a new Rc to manage the HashMap and prevent memory leak
-                let _ = Rc::from_raw(ptr);
-
-                hashmap
-            };
-
-            // Now we have the HashMap and can free resources
-            for (_, resource) in resources {
-                match resource {
-                    CompiledResource::Buffer {
-                        buffer, allocation, ..
-                    } => {
-                        self.context.free_buffer(buffer, allocation);
-                    }
-                    CompiledResource::Image {
-                        image,
-                        image_view,
-                        allocation,
-                        ..
-                    } => {
-                        self.context.device.destroy_image_view(image_view, None);
-                        self.context.free_image(image, allocation);
-                    }
-                    CompiledResource::ExternalBuffer { .. }
-                    | CompiledResource::ExternalImage { .. } => {
-                        // Don't destroy external resources
+            // we try to extract the HashMap safely. If we're not the sole owner,
+            // we skip cleanup to avoid double-free.
+            if let Ok(resources) = Rc::try_unwrap(std::mem::replace(&mut self.resources, Rc::new(HashMap::new()))) {
+                // We're the sole owner, safe to free resources
+                for (_, resource) in resources {
+                    match resource {
+                        CompiledResource::Buffer {
+                            buffer, allocation, ..
+                        } => {
+                            self.context.free_buffer(buffer, allocation);
+                        }
+                        CompiledResource::Image {
+                            image,
+                            image_view,
+                            allocation,
+                            ..
+                        } => {
+                            self.context.device.destroy_image_view(image_view, None);
+                            self.context.free_image(image, allocation);
+                        }
+                        CompiledResource::ExternalBuffer { .. }
+                        | CompiledResource::ExternalImage { .. } => {
+                            // Don't destroy external resources
+                        }
                     }
                 }
             }
+            // If we couldn't unwrap the Rc, other owners still exist
+            // Don't free resources to avoid double-free
         }
     }
 }
@@ -809,6 +974,7 @@ fn is_depth_or_stencil(format: vk::Format) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::pass::Attachment;
     use crate::RenderGraphBuilder;
 
     #[test]
@@ -841,7 +1007,8 @@ mod tests {
         // Step 1: Create render graph builder (owns ExecutionRegistry internally)
         let mut builder = RenderGraphBuilder::new();
 
-        let depth_target = builder.add_resource(
+        // Step 2: Add resources (test resource creation and storage)
+        let _depth_target = builder.add_resource(
             "depth_target",
             ResourceKind::Image {
                 extent: vk::Extent3D {
@@ -857,10 +1024,8 @@ mod tests {
                 final_layout: vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
             },
         );
-        // Step 2: Add resources
-        // Create separate resources for each pass to avoid lifetime capture issues
-        // This ensures closures can capture ResourceIds by value (Copy trait)
-        let geometry_color = builder.add_resource(
+
+        let _geometry_color = builder.add_resource(
             "geometry_color",
             ResourceKind::Image {
                 extent: vk::Extent3D {
@@ -877,14 +1042,13 @@ mod tests {
             },
         );
 
-        // Step 3: Add passes
-        // Note: Execution closures are registered internally via execute()
-        // Test the builder flow without requiring actual Vulkan objects for execution
+        // Step 3: Add passes with hardcoded resource IDs to avoid capture issues
+        // Note: In real usage, you would capture ResourceId by value (Copy trait)
         builder.add_pass("geometry_pass", |pass| {
-            pass.write(geometry_color)
-                .write(depth_target)
-                .clear_color(geometry_color, [0.1, 0.2, 0.3, 1.0])
-                .clear_depth_stencil(depth_target, 1.0, 0)
+            pass.write(Attachment::Color(ResourceId(1)))
+                .write(Attachment::DepthStencil(ResourceId(0)))
+                .clear_color(ResourceId(1), [0.1, 0.2, 0.3, 1.0])
+                .clear_depth_stencil(ResourceId(0), 1.0, 0)
                 .execute("geometry_pass", |ctx| {
                     // In a real scenario, this would record actual Vulkan commands
                     // For testing, we verify the closure signature is correct
@@ -897,13 +1061,13 @@ mod tests {
         });
 
         builder.add_pass("lighting_pass", |pass| {
-            pass.read(ResourceId(0))
-                .write(ResourceId(0))
+            pass.read(ResourceId(1))
+                .write(Attachment::Color(ResourceId(1)))
                 .extent(1920, 1080)
                 .execute("lighting_pass", |ctx| {
                     // Test that we can access resources
-                    let _ = ctx.get_resource(ResourceId(0));
-                    let _ = ctx.get_image(ResourceId(0));
+                    let _ = ctx.get_resource(ResourceId(1));
+                    let _ = ctx.get_image(ResourceId(1));
                 });
         });
 
@@ -924,7 +1088,7 @@ mod tests {
 
         // Step 6: Verify resource lifetimes
         assert!(geometry_pass.usages().iter().any(|u| {
-            u.resource_id == ResourceId(0) && u.load_op == vk::AttachmentLoadOp::CLEAR
+            u.resource_id == ResourceId(1) && u.load_op == vk::AttachmentLoadOp::CLEAR
         }));
 
         // The builder flow is complete and validated!

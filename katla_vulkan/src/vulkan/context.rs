@@ -33,7 +33,7 @@ pub struct RenderTexture {
     pub extent: vk::Extent2D,
     pub image_view: vk::ImageView,
     pub format: vk::Format,
-    image: vk::Image,
+    pub image: vk::Image,
     image_memory: Option<Allocation>,
     context: Rc<VulkanContext>,
 }
@@ -518,7 +518,7 @@ impl VulkanFrameCtx {
             &context.surface_loader,
             context.physical_device,
             context.surface,
-            None,
+            None, // No old swapchain
         );
 
         let swapchain_images = swapchain.get_swapchain_images();

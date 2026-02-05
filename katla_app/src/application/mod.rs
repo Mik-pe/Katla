@@ -9,7 +9,7 @@ pub use builder::*;
 use env_logger::Env;
 use katla_ecs::{input::Action, World};
 use katla_math::Vec3;
-use katla_vulkan::VulkanRenderer;
+use katla_vulkan::{CommandBuffer, RenderCallback, VulkanRenderer};
 pub use model::*;
 use winit::{
     application::ApplicationHandler,
@@ -27,6 +27,45 @@ use crate::{
     rendering::create_cube,
     util::{FileCache, GLTFModel, Timer},
 };
+
+/// Render callback that captures world and camera references.
+/// This allows the render graph to invoke rendering logic without
+/// VulkanRenderer depending on application types.
+struct AppRenderCallback {
+    world: *mut World,
+    camera: Rc<RefCell<Camera>>,
+}
+
+// SAFETY: The callback is only used while Application is alive,
+// and world is owned by Application.
+unsafe impl Send for AppRenderCallback {}
+
+impl AppRenderCallback {
+    fn new(world: &mut World, camera: &Rc<RefCell<Camera>>) -> Self {
+        Self {
+            world: world as *mut World,
+            camera: camera.clone(),
+        }
+    }
+}
+
+impl RenderCallback for AppRenderCallback {
+    fn render(&mut self, command_buffer: &CommandBuffer, dt: f32) {
+        // SAFETY: The render callback is only called during Application::render_with_render_graph(),
+        // which has exclusive access to self.world.
+        let world = unsafe { &mut *self.world };
+
+        // Get camera matrices from world and camera
+        let view = self.camera.borrow().get_view_mat(world).clone().inverse();
+        let proj = self.camera.borrow().get_proj_mat(world).clone();
+
+        // Draw all drawable entities
+        for (_, drawable) in world.query::<&mut DrawableComponent>() {
+            drawable.0.update(&view, &proj, dt);
+            drawable.0.draw(command_buffer);
+        }
+    }
+}
 
 struct ApplicationInfo {
     name: String,
@@ -95,6 +134,9 @@ impl ApplicationHandler for Application {
 
             self.window = Some(window);
             self.renderer = Some(renderer);
+
+            // Setup render graph after renderer initialization
+            self.setup_render_graph();
         }
     }
 
@@ -128,17 +170,28 @@ impl ApplicationHandler for Application {
             }
         }
 
-        if let Some(renderer) = &mut self.renderer {
+        if let Some(_renderer) = &mut self.renderer {
             match event {
                 WindowEvent::Resized(logical_size) => {
-                    let win_x = logical_size.width as f32;
-                    let win_y = logical_size.height as f32;
-                    if win_x > 0.0 && win_y > 0.0 {
+                    let new_width = logical_size.width as u32;
+                    let new_height = logical_size.height as f32;
+
+                    if new_width > 0 && new_height > 0.0 {
+                        // Update camera aspect ratio
+                        let win_x = logical_size.width as f32;
+                        let win_y = logical_size.height as f32;
                         self.camera
                             .borrow_mut()
                             .aspect_ratio_changed(&mut self.world, win_x / win_y);
 
-                        renderer.recreate_swapchain();
+                        if let Some(ref mut renderer) = self.renderer {
+                            println!(
+                                "=== Window resized to {}x{}, recreating swapchain ===",
+                                new_width, new_height as u32
+                            );
+                            // Pass the actual window size to ensure swapchain uses correct extent
+                            renderer.recreate_swapchain();
+                        }
                     }
                 }
                 WindowEvent::CloseRequested => {
@@ -174,6 +227,8 @@ impl ApplicationHandler for Application {
                     self.timer.add_timestamp();
 
                     let dt = self.timer.get_delta() as f32;
+
+                    // Update world
                     self.world.update(dt);
 
                     // Render using render graph
@@ -217,44 +272,48 @@ impl Application {
         env_logger::Builder::from_env(Env::default().default_filter_or("info")).init();
     }
 
-    /// Render using the existing VulkanRenderer API.
-    /// This method demonstrates Phase 1 integration - we'll use the render graph
-    /// system in future phases, but for now we use the existing API to avoid
-    /// depending on ash types in katla_app.
+    /// Setup the render graph with multiple framebuffers (one per swapchain image).
+    /// This creates the graph upfront during initialization to avoid
+    /// destroying Vulkan objects while the GPU is still using them.
+    fn setup_render_graph(&mut self) {
+        let renderer = match self.renderer.as_mut() {
+            Some(r) => r,
+            None => return,
+        };
+
+        // Create shared dt storage that both renderer and closure can access
+        let dt_rc = Rc::new(RefCell::new(0.0f32));
+        renderer.frame_delta_time = Some(dt_rc.clone());
+
+        // Create render callback that captures world and camera
+        let callback = AppRenderCallback::new(&mut self.world, &self.camera);
+        let callback_rc = Rc::new(RefCell::new(callback));
+
+        // Setup render graph with multiple framebuffers
+        renderer.setup_render_graph(callback_rc);
+    }
+
+    /// Render using the render graph system.
     fn render_with_render_graph(&mut self, dt: f32) {
         let renderer = match self.renderer.as_mut() {
             Some(r) => r,
             None => return,
         };
 
-        // Acquire swapchain image (must be done before get_commandbuffer_opaque_pass)
-        renderer.swap_frames();
+        // Update delta time for the render callback
+        renderer.set_delta_time(dt);
 
-        // Update world
-        self.world.update(dt);
-
-        // Get camera matrices
-        let view = self
-            .camera
-            .borrow()
-            .get_view_mat(&self.world)
-            .clone()
-            .inverse();
-        let proj = self.camera.borrow().get_proj_mat(&self.world).clone();
-
-        // Get command buffer using the existing API
-        let command_buffer = renderer.get_commandbuffer_opaque_pass();
-
-        // Draw all drawable entities
-        for (_, drawable) in self.world.query::<&mut DrawableComponent>() {
-            drawable.0.update(&view, &proj, dt);
-            drawable.0.draw(&command_buffer);
+        // Render using the cached render graphs
+        if let Err(e) = renderer.render_frame() {
+            match e {
+                katla_vulkan::RenderGraphError::SwapchainOutOfDate => {
+                    // Swapchain is out of date (e.g., window resize), skip this frame
+                    // The swapchain will be recreated on the next frame
+                }
+                _ => {
+                    eprintln!("Render frame failed: {:?}", e);
+                }
+            }
         }
-
-        command_buffer.end_render_pass();
-        command_buffer.end_command();
-
-        // Submit frame using the existing API
-        renderer.submit_frame(vec![&command_buffer]);
     }
 }
