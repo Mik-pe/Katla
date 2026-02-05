@@ -20,6 +20,9 @@ pub enum RenderGraphError {
 
     /// No render graph has been set on the renderer
     NoRenderGraph,
+
+    /// The swapchain is out of date and needs to be recreated
+    SwapchainOutOfDate,
 }
 
 impl std::fmt::Display for RenderGraphError {
@@ -42,6 +45,9 @@ impl std::fmt::Display for RenderGraphError {
             }
             RenderGraphError::NoRenderGraph => {
                 write!(f, "No render graph set")
+            }
+            RenderGraphError::SwapchainOutOfDate => {
+                write!(f, "Swapchain is out of date")
             }
         }
     }

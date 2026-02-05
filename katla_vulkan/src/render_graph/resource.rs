@@ -182,6 +182,7 @@ pub enum CompiledResource {
     ExternalImage {
         image: vk::Image,
         image_view: vk::ImageView,
+        format: vk::Format,
         extent: vk::Extent2D,
     },
 }

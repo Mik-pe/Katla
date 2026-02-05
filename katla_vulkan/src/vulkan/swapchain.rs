@@ -38,8 +38,6 @@ impl Swapchain {
 
         let present_mode = swapchain_info.choose_present_mode();
 
-        let current_extent = surface_caps.current_extent;
-
         let mut image_count = surface_caps.min_image_count + 1;
 
         if surface_caps.max_image_count > 0 && image_count > surface_caps.max_image_count {
@@ -51,7 +49,7 @@ impl Swapchain {
             .min_image_count(image_count)
             .image_format(format.format)
             .image_color_space(format.color_space)
-            .image_extent(current_extent)
+            .image_extent(surface_caps.current_extent)
             .image_array_layers(1)
             .image_usage(vk::ImageUsageFlags::COLOR_ATTACHMENT)
             .image_sharing_mode(vk::SharingMode::EXCLUSIVE)

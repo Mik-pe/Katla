@@ -113,6 +113,7 @@ impl Default for RenderGraphBuilder {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::pass::Attachment;
 
     #[test]
     fn test_render_graph_builder_creation() {
@@ -170,7 +171,7 @@ mod tests {
         );
 
         builder.add_pass("test_pass", |pass| {
-            pass.write(resource_id)
+            pass.write(Attachment::Color(resource_id))
                 .clear_color(resource_id, [0.1, 0.2, 0.3, 1.0]);
         });
 
@@ -205,7 +206,7 @@ mod tests {
         );
 
         builder.add_pass("geometry_pass", |pass| {
-            pass.write(resource_id)
+            pass.write(Attachment::Color(resource_id))
                 .clear_color(resource_id, [0.0, 0.0, 0.0, 1.0]);
         });
 

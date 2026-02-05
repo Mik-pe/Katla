@@ -1,3 +1,4 @@
+pub mod builders;
 pub mod compiled;
 pub mod graph;
 pub mod pass;
@@ -6,10 +7,11 @@ pub mod types;
 
 pub mod errors;
 
+pub use builders::RenderGraphHelper;
 pub use compiled::{CompiledPass, CompiledRenderGraph, RenderPassGroup, SubpassDescriptor};
 pub use errors::RenderGraphError;
 pub use graph::*;
-pub use pass::{Pass, PassBuilder, PassExecutionContext};
+pub use pass::{Attachment, Pass, PassBuilder, PassExecutionContext};
 pub use resource::{
     CompiledResource, Resource, ResourceAccessType, ResourceId, ResourceKind, ResourceLifetime,
     ResourceUsage,
