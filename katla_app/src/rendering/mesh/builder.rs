@@ -3,12 +3,12 @@ use std::rc::Rc;
 
 use katla_ecs::World;
 use katla_math::{Transform, Vec3};
-use katla_vulkan::{MaterialBuilder, RenderPass, Texture, VulkanContext, VulkanRenderer};
+use katla_vulkan::{VulkanContext, VulkanRenderer};
 
 use crate::{
     application::Model,
     entities::ModelEntity,
-    rendering::{Material, ShaderRegistry, VertexPBR},
+    rendering::{create_checkerboard_material, Material, MaterialManager, ShaderRegistry},
 };
 
 pub struct MeshOptions {
@@ -19,6 +19,7 @@ pub struct MeshOptions {
     pub rings: Option<u32>,
     pub position: Option<Vec3>,
     pub color: Option<[f32; 3]>,
+    pub shared_material_name: Option<String>,
 }
 
 impl Default for MeshOptions {
@@ -31,6 +32,7 @@ impl Default for MeshOptions {
             rings: Some(32),
             position: Some(Vec3::new(0.0, 0.0, 0.0)),
             color: None,
+            shared_material_name: None,
         }
     }
 }
@@ -39,6 +41,7 @@ pub struct MeshBuilder {
     options: MeshOptions,
     context: Rc<VulkanContext>,
     shader_registry: ShaderRegistry,
+    material_manager: Option<MaterialManager>,
 }
 
 impl MeshBuilder {
@@ -49,7 +52,18 @@ impl MeshBuilder {
             options: MeshOptions::default(),
             context,
             shader_registry: ShaderRegistry::new(),
+            material_manager: None,
         }
+    }
+
+    pub fn with_material_manager(mut self, material_manager: MaterialManager) -> Self {
+        self.material_manager = Some(material_manager);
+        self
+    }
+
+    pub fn with_shared_material(mut self, name: impl Into<String>) -> Self {
+        self.options.shared_material_name = Some(name.into());
+        self
     }
 
     pub fn size(mut self, size: Vec3) -> Self {
@@ -91,13 +105,24 @@ impl MeshBuilder {
         self
     }
 
+    fn get_material(&self, renderer: &mut VulkanRenderer) -> Material {
+        // Use shared material if specified
+        if let Some(ref manager) = self.material_manager {
+            if let Some(ref name) = self.options.shared_material_name {
+                if let Some(material) = manager.clone_material_by_name(name) {
+                    return material;
+                }
+            }
+        }
+        // Otherwise create a new checkerboard material
+        create_checkerboard_material(self.context.clone(), &renderer.render_pass, &self.shader_registry)
+    }
+
     pub fn create_cube(self, world: &mut World, renderer: &mut VulkanRenderer) -> ModelEntity {
         let size = self.options.size.unwrap_or(Vec3::new(20.0, 20.0, 20.0));
         let mesh = crate::rendering::mesh::create_cube_mesh(self.context.clone(), size);
-        let material =
-            create_material_with_color(self.context.clone(), &renderer.render_pass, self.options.color, &self.shader_registry);
+        let material = self.get_material(renderer);
         let position = self.options.position.unwrap_or(Vec3::new(0.0, 0.0, 0.0));
-        // Create transform with only position (no scale)
         let transform = Transform {
             position,
             rotation: katla_math::Quat::new(),
@@ -112,8 +137,7 @@ impl MeshBuilder {
         let segments = self.options.segments.unwrap_or(32);
         let rings = self.options.rings.unwrap_or(32);
         let mesh = crate::rendering::mesh::create_sphere_mesh(self.context.clone(), radius, segments, rings);
-        let material =
-            create_material_with_color(self.context.clone(), &renderer.render_pass, self.options.color, &self.shader_registry);
+        let material = self.get_material(renderer);
         let position = self.options.position.unwrap_or(Vec3::new(0.0, 0.0, 0.0));
         let transform = Transform {
             position,
@@ -129,8 +153,7 @@ impl MeshBuilder {
         let radius = self.options.radius.unwrap_or(5.0);
         let segments = self.options.segments.unwrap_or(32);
         let mesh = crate::rendering::mesh::create_cylinder_mesh(self.context.clone(), height, radius, segments);
-        let material =
-            create_material_with_color(self.context.clone(), &renderer.render_pass, self.options.color, &self.shader_registry);
+        let material = self.get_material(renderer);
         let position = self.options.position.unwrap_or(Vec3::new(0.0, 0.0, 0.0));
         let transform = Transform {
             position,
@@ -145,8 +168,7 @@ impl MeshBuilder {
         let size = self.options.size.unwrap_or(Vec3::new(100.0, 100.0, 1.0));
         let segments = self.options.segments.unwrap_or(32);
         let mesh = crate::rendering::mesh::create_plane_mesh(self.context.clone(), size.x(), size.y(), segments);
-        let material =
-            create_material_with_color(self.context.clone(), &renderer.render_pass, self.options.color, &self.shader_registry);
+        let material = self.get_material(renderer);
         let position = self.options.position.unwrap_or(Vec3::new(0.0, 0.0, 0.0));
         let transform = Transform {
             position,
@@ -169,8 +191,7 @@ impl MeshBuilder {
             segments,
             rings,
         );
-        let material =
-            create_material_with_color(self.context.clone(), &renderer.render_pass, self.options.color, &self.shader_registry);
+        let material = self.get_material(renderer);
         let position = self.options.position.unwrap_or(Vec3::new(0.0, 0.0, 0.0));
         let transform = Transform {
             position,
@@ -179,62 +200,5 @@ impl MeshBuilder {
         };
         let model = Model::new(vec![mesh], material);
         ModelEntity::new_with_renderer(world, model, Some(renderer), transform)
-    }
-}
-
-fn create_material_with_color(
-    context: std::rc::Rc<VulkanContext>,
-    render_pass: &RenderPass,
-    _color: Option<[f32; 3]>,
-    shader_registry: &ShaderRegistry,
-) -> Material {
-    // Create a checkerboard texture (64x64)
-    let texture_size = 64;
-    let checker_size = 8; // 8x8 pixel squares
-    let mut pixels = Vec::with_capacity((texture_size * texture_size) as usize);
-
-    for y in 0..texture_size {
-        for x in 0..texture_size {
-            // Determine which checker square we're in
-            let checker_x = x / checker_size;
-            let checker_y = y / checker_size;
-
-            // Checkerboard pattern: alternate between two colors
-            let is_white = (checker_x + checker_y) % 2 == 0;
-
-            let pixel = if is_white {
-                [255, 255, 255, 255] // White
-            } else {
-                [0, 0, 0, 255] // Black
-            };
-            pixels.extend_from_slice(&pixel);
-        }
-    }
-
-    let texture = Rc::new(Texture::create_image(
-        context.clone(),
-        texture_size,
-        texture_size,
-        katla_vulkan::ImageFormat::R8G8B8A8Srgb,
-        &pixels,
-    ));
-
-    let vertex_binding = VertexPBR::get_vertex_binding();
-    let material_pipeline = MaterialBuilder::new(context.clone())
-        .with_vertex_binding(vertex_binding.clone())
-        .with_vertex_shader(shader_registry.get_vertex_shader("model_pbr.vert"))
-        .with_fragment_shader(shader_registry.get_fragment_shader("model.frag"))
-        .with_texture(texture.clone())
-        .with_depth_test(true)
-        .with_depth_write(true)
-        .with_backface_culling(true)
-        .build(render_pass)
-        .expect("Failed to create material pipeline");
-
-    Material {
-        material_pipeline: std::rc::Rc::new(std::cell::RefCell::new(material_pipeline)),
-        texture: Some(texture),
-        vertex_binding,
-        handle: None,
     }
 }

@@ -25,11 +25,11 @@ impl ShaderRegistry {
     }
 
     pub fn get_vertex_shader(&self, name: &str) -> &[u8] {
-        self.get(name).expect(&format!("Vertex shader '{}' not found", name))
+        self.get(name).unwrap_or_else(|| panic!("Vertex shader '{}' not found", name))
     }
 
     pub fn get_fragment_shader(&self, name: &str) -> &[u8] {
-        self.get(name).expect(&format!("Fragment shader '{}' not found", name))
+        self.get(name).unwrap_or_else(|| panic!("Fragment shader '{}' not found", name))
     }
 }
 

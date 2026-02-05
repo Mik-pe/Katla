@@ -1,10 +1,9 @@
 use std::rc::Rc;
 
-use katla_math::Mat4;
-use katla_vulkan::{CommandBuffer, MaterialHandle, MeshHandle, RenderPass, VulkanContext};
+use katla_vulkan::{MaterialHandle, MeshHandle, RenderPass, VulkanContext};
 
 use crate::{
-    rendering::{Drawable, Material, Mesh},
+    rendering::{Material, Mesh},
     util::GLTFModel,
 };
 
@@ -39,21 +38,6 @@ impl Model {
             material,
             mesh_handle: None,
             material_handle: None,
-        }
-    }
-}
-
-impl Drawable for Model {
-    fn update(&mut self, view: &Mat4, proj: &Mat4, model_matrix: &Mat4) {
-        self.material
-            .upload_pipeline_data(view.clone(), proj.clone(), model_matrix.clone());
-    }
-
-    fn draw(&self, command_buffer: &CommandBuffer) {
-        self.material.bind(command_buffer);
-
-        for mesh in &self.meshes {
-            mesh.draw(command_buffer);
         }
     }
 }

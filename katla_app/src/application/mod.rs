@@ -23,7 +23,7 @@ use winit::{
 use crate::{
     entities::{Camera, ModelEntity},
     input::{InputBinding, InputMapper, KeyCombo, MouseCombo},
-    rendering::MeshBuilder,
+    rendering::{create_checkerboard_material, MaterialManager, MeshBuilder, ShaderRegistry},
     util::{FileCache, GLTFModel, Timer},
 };
 
@@ -37,6 +37,7 @@ pub struct Application {
     renderer: Option<VulkanRenderer>,
     camera: Rc<RefCell<Camera>>,
     gltf_cache: FileCache<GLTFModel>,
+    material_manager: MaterialManager,
     stage_upload: bool,
     timer: Timer,
     info: ApplicationInfo,
@@ -90,6 +91,7 @@ impl ApplicationHandler for Application {
             )
             .position(Vec3::new(0.0, 5.0, 0.0))
             .color([1.0, 0.3, 0.3]) // Red tint
+            .with_shared_material("checkerboard")
             .create_cube(&mut self.world, &mut renderer);
 
             let _sphere = MeshBuilder::new(
@@ -97,6 +99,7 @@ impl ApplicationHandler for Application {
             )
             .position(Vec3::new(30.0, 5.0, 0.0))
             .color([0.3, 1.0, 0.3]) // Green tint
+            .with_shared_material("checkerboard")
             .create_sphere(&mut self.world, &mut renderer);
 
             let _cylinder = MeshBuilder::new(
@@ -104,6 +107,7 @@ impl ApplicationHandler for Application {
             )
             .position(Vec3::new(-30.0, 5.0, 0.0))
             .color([0.3, 0.3, 1.0]) // Blue tint
+            .with_shared_material("checkerboard")
             .create_cylinder(&mut self.world, &mut renderer);
 
             let _plane = MeshBuilder::new(
@@ -112,6 +116,7 @@ impl ApplicationHandler for Application {
             .position(Vec3::new(0.0, -5.0, 0.0))
             .color([0.8, 0.8, 0.8]) // Gray tint
             .size(Vec3::new(100.0, 100.0, 1.0))
+            .with_shared_material("checkerboard")
             .create_plane(&mut self.world, &mut renderer);
 
             let _torus = MeshBuilder::new(
@@ -119,9 +124,19 @@ impl ApplicationHandler for Application {
             )
             .position(Vec3::new(0.0, 15.0, 0.0))
             .color([1.0, 0.8, 0.3]) // Yellow tint
+            .with_shared_material("checkerboard")
             .create_torus(&mut self.world, &mut renderer);
 
             self.window = Some(window);
+
+            // Create shared materials
+            let checkerboard = create_checkerboard_material(
+                renderer.context.clone(),
+                &renderer.render_pass,
+                &ShaderRegistry::new(),
+            );
+            self.material_manager.register_material("checkerboard", checkerboard);
+
             self.renderer = Some(renderer);
 
             // Setup render graph after renderer initialization
@@ -232,6 +247,7 @@ impl ApplicationHandler for Application {
                         )
                         .position(Vec3::new(0.0, 5.0, 0.0))
                         .color([0.8, 0.2, 0.2])
+                        .with_shared_material("checkerboard")
                         .create_sphere(&mut self.world, renderer);
 
                         let renderer = self.renderer.as_mut().expect("Renderer not initialized");
@@ -240,6 +256,7 @@ impl ApplicationHandler for Application {
                         )
                         .position(Vec3::new(20.0, 5.0, 0.0))
                         .color([0.2, 0.8, 0.2])
+                        .with_shared_material("checkerboard")
                         .create_cube(&mut self.world, renderer);
 
                         let renderer = self.renderer.as_mut().expect("Renderer not initialized");
@@ -249,6 +266,7 @@ impl ApplicationHandler for Application {
                         .position(Vec3::new(0.0, -5.0, 0.0))
                         .size(Vec3::new(100.0, 100.0, 1.0))
                         .color([0.5, 0.5, 0.5])
+                        .with_shared_material("checkerboard")
                         .create_plane(&mut self.world, renderer);
 
                         let millisecs = start.elapsed().as_micros() as f64 / 1000.0;
@@ -266,6 +284,10 @@ impl ApplicationHandler for Application {
     }
 
     fn exiting(&mut self, _event_loop: &ActiveEventLoop) {
+        // Clean up material manager before destroying renderer
+        // This destroys all MaterialPipelines which own Vulkan resources
+        self.material_manager.destroy();
+
         if let Some(mut renderer) = self.renderer.take() {
             renderer.wait_for_device();
             renderer.destroy();
@@ -302,9 +324,8 @@ impl Application {
         let view = self.camera.borrow().get_view_mat(&self.world).clone().inverse();
         let proj = self.camera.borrow().get_proj_mat(&self.world).clone();
 
-        // Build a draw list from ECS entities
-        // TODO: For now, we use the old Drawable trait approach
-        // In the next phase, we'll use the new handle-based approach
+        // Build a draw list from ECS entities using the handle-based rendering system
+        // This provides separation between high-level (DrawCall) and low-level (CommandBuffer) rendering
         use katla_vulkan::{DrawCall, DrawList};
         let mut draw_list = DrawList::new();
 

@@ -152,13 +152,11 @@ impl AssetRegistry {
     /// This must be called before the renderer is destroyed to avoid Vulkan validation errors.
     pub fn destroy(&mut self) {
         // Destroy all materials (which contain MaterialPipelines that need explicit cleanup)
-        for material_slot in self.materials.drain(..) {
-            if let Some(material) = material_slot {
-                // MaterialPipeline::destroy() needs to be called explicitly
-                // Borrow the pipeline through the RefCell and destroy it
-                if let Ok(mut pipeline) = material.pipeline.try_borrow_mut() {
-                    pipeline.destroy();
-                }
+        for material in self.materials.drain(..).flatten() {
+            // MaterialPipeline::destroy() needs to be called explicitly
+            // Borrow the pipeline through the RefCell and destroy it
+            if let Ok(mut pipeline) = material.pipeline.try_borrow_mut() {
+                pipeline.destroy();
             }
         }
 
@@ -191,7 +189,7 @@ mod tests {
 
     #[test]
     fn test_mesh_handle_uniqueness() {
-        let registry = AssetRegistry::new();
+        let _registry = AssetRegistry::new();
 
         // Verify handles are sequential
         assert_eq!(MeshHandle(0), MeshHandle(0));
