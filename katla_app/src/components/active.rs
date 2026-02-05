@@ -25,6 +25,6 @@ mod tests {
     #[test]
     fn test_name_component() {
         let component = ActiveComponent::new();
-        assert_eq!(component.value, true);
+        assert!(component.value);
     }
 }

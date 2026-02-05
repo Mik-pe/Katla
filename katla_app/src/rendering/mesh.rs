@@ -15,7 +15,7 @@ pub use sphere::*;
 pub use torus::*;
 
 use katla_vulkan::context::VulkanContext;
-use katla_vulkan::{self, IndexBuffer, IndexType, VertexBuffer};
+use katla_vulkan::{self, IndexBuffer, IndexType, MeshHandle, VertexBuffer};
 
 use std::rc::Rc;
 
@@ -28,6 +28,8 @@ use std::rc::Rc;
 pub struct Mesh {
     pub vertex_buffer: Option<VertexBuffer>,
     pub index_buffer: Option<IndexBuffer>,
+    /// Handle after registration with renderer (None until registered)
+    pub handle: Option<MeshHandle>,
 }
 
 impl Mesh {
@@ -38,6 +40,7 @@ impl Mesh {
         Self {
             vertex_buffer,
             index_buffer,
+            handle: None,
         }
     }
 
@@ -54,6 +57,7 @@ impl Mesh {
         Self {
             vertex_buffer,
             index_buffer,
+            handle: None,
         }
     }
 
@@ -116,5 +120,10 @@ impl Mesh {
             command_buffer.bind_vertex_buffers(0, &[vertex_buffer.object()], &[0]);
             command_buffer.draw_array(vertex_buffer.count(), 1, 0, 0);
         }
+    }
+
+    /// Get the handle (returns None if not yet registered with renderer)
+    pub fn handle(&self) -> Option<MeshHandle> {
+        self.handle
     }
 }

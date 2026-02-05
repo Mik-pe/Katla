@@ -1,4 +1,5 @@
 pub mod render_graph;
+pub mod rendering;
 pub mod vulkan;
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 pub use render_graph::errors::RenderGraphError;
@@ -7,6 +8,9 @@ pub use render_graph::resource::{
     CompiledResource, ResourceAccessType, ResourceId, ResourceKind, ResourceLifetime, ResourceUsage,
 };
 pub use render_graph::*;
+pub use rendering::{
+    registry::AssetRegistry, types::{DrawCall, DrawList, MaterialHandle, MaterialParams, MeshHandle},
+};
 pub use vulkan::*;
 
 use ash::vk;
@@ -19,30 +23,16 @@ pub struct FrameData {
     pub image_index: u32,
 }
 
-/// Trait for rendering callbacks that can be invoked during render graph execution.
-/// This allows katla_app to provide rendering logic without VulkanRenderer depending
-/// on application-specific types like World or Camera.
-pub trait RenderCallback: Send {
-    /// Render a frame using the given command buffer.
-    /// The callback receives delta time.
-    /// View and projection matrices should be obtained by the callback implementation
-    /// from its internal world/camera references.
-    fn render(&mut self, command_buffer: &CommandBuffer, dt: f32);
-}
-
 pub struct VulkanRenderer {
     pub context: Rc<VulkanContext>,
     pub frame_context: VulkanFrameCtx,
     pub render_pass: RenderPass,
     pub swap_data: SwapData,
     pub current_framedata: Option<FrameData>,
-    /// Optional callback for rendering during render graph execution.
-    /// This is set by katla_app to provide drawing logic.
-    /// Stored as Rc<RefCell<>> so render graph execution closures can also access it.
-    pub render_callback: Option<Rc<RefCell<dyn RenderCallback>>>,
-    /// Delta time for the current frame, stored as Rc<RefCell<>> so both
-    /// the application and render graph closures can access it.
-    pub frame_delta_time: Option<Rc<RefCell<f32>>>,
+    /// Asset registry for managing GPU resources (meshes, materials).
+    /// This stores the actual Vulkan buffers and pipelines, while the application
+    /// only holds opaque handles (MeshHandle, MaterialHandle).
+    pub asset_registry: AssetRegistry,
     /// The render graph - single graph with multiple framebuffers (one per swapchain image)
     pub render_graph: Option<CompiledRenderGraph>,
 }
@@ -84,13 +74,15 @@ impl VulkanRenderer {
             render_pass,
             swap_data,
             current_framedata: None,
-            render_callback: None,
-            frame_delta_time: None,
+            asset_registry: AssetRegistry::new(),
             render_graph: None,
         }
     }
 
     pub fn destroy(&mut self) {
+        // Destroy all registered assets first (materials, meshes)
+        self.asset_registry.destroy();
+
         self.context.pre_destroy();
         self.swap_data.destroy(&self.context.device);
         self.render_pass.destroy();
@@ -208,15 +200,6 @@ impl VulkanRenderer {
         Ok(())
     }
 
-
-    /// Set the delta time for the current frame.
-    /// This should be called before render_frame() to pass dt to the render callback.
-    pub fn set_delta_time(&mut self, dt: f32) {
-        if let Some(dt_rc) = &self.frame_delta_time {
-            *dt_rc.borrow_mut() = dt;
-        }
-    }
-
     pub fn create_swapchain_resource(
         &self,
         builder: &mut RenderGraphBuilder,
@@ -251,10 +234,152 @@ impl VulkanRenderer {
         )
     }
 
+    /// Create a mesh from vertex and index data.
+    ///
+    /// Returns a handle that can be used in DrawCall objects.
+    /// The actual GPU buffers are managed internally by the AssetRegistry.
+    ///
+    /// # Arguments
+    /// * `vertices` - Slice of vertex data (must match the vertex binding of the material)
+    /// * `indices` - Index data for indexed drawing
+    ///
+    /// # Returns
+    /// A `MeshHandle` that references the registered mesh.
+    pub fn create_mesh<T, U>(&mut self, vertices: &[T], indices: &[U]) -> MeshHandle
+    where
+        T: bytemuck::Pod,
+        U: bytemuck::Pod,
+    {
+        use crate::rendering::registry::MeshAsset;
+        use crate::vulkan::*;
+
+        // Convert vertices to bytes
+        let vertex_bytes = unsafe {
+            std::slice::from_raw_parts(
+                vertices.as_ptr() as *const u8,
+                vertices.len() * std::mem::size_of::<T>(),
+            )
+        };
+
+        // Convert indices to bytes
+        let index_bytes = unsafe {
+            std::slice::from_raw_parts(
+                indices.as_ptr() as *const u8,
+                indices.len() * std::mem::size_of::<U>(),
+            )
+        };
+
+        // Determine index type
+        let index_type = match std::mem::size_of::<U>() {
+            1 => IndexType::Uint8,
+            2 => IndexType::Uint16,
+            4 => IndexType::Uint32,
+            _ => IndexType::None,
+        };
+
+        // Determine index count
+        let index_count = match index_type {
+            IndexType::Uint8 => index_bytes.len() as u32,
+            IndexType::Uint16 => (index_bytes.len() as u32) / 2,
+            IndexType::Uint32 => (index_bytes.len() as u32) / 4,
+            IndexType::None => 0_u32,
+        };
+
+        // Create vertex buffer and upload data
+        let vertex_buffer = if !vertex_bytes.is_empty() {
+            let mut vb = VertexBuffer::new(
+                self.context.clone(),
+                vertex_bytes.len() as u64,
+                vertices.len() as u32,
+            );
+            vb.upload_data(vertex_bytes);
+            Some(vb)
+        } else {
+            None
+        };
+
+        // Create index buffer and upload data
+        let index_buffer = if !index_bytes.is_empty() {
+            let mut ib = IndexBuffer::new(
+                self.context.clone(),
+                index_bytes.len() as u64,
+                index_type,
+                index_count,
+            );
+            ib.upload_data(index_bytes);
+            Some(ib)
+        } else {
+            None
+        };
+
+        let mesh_asset = MeshAsset {
+            vertex_buffer,
+            index_buffer,
+        };
+
+        self.asset_registry.register_mesh(mesh_asset)
+    }
+
+    /// Register a mesh with pre-existing buffers.
+    ///
+    /// This is useful when you've already created buffers and want to register them
+    /// with the renderer for use in the draw list system.
+    ///
+    /// # Arguments
+    /// * `vertex_buffer` - The vertex buffer (or None if no vertices)
+    /// * `index_buffer` - The index buffer (or None if no indices)
+    ///
+    /// # Returns
+    /// A `MeshHandle` that references the registered mesh.
+    pub fn register_mesh(
+        &mut self,
+        vertex_buffer: Option<VertexBuffer>,
+        index_buffer: Option<IndexBuffer>,
+    ) -> MeshHandle {
+        use crate::rendering::registry::MeshAsset;
+
+        let mesh_asset = MeshAsset {
+            vertex_buffer,
+            index_buffer,
+        };
+
+        self.asset_registry.register_mesh(mesh_asset)
+    }
+
+    /// Create a material from a material pipeline and optional texture.
+    ///
+    /// Returns a handle that can be used in DrawCall objects.
+    ///
+    /// # Arguments
+    /// * `pipeline` - The material pipeline (shaders, descriptors, etc.)
+    /// * `texture` - Optional texture bound to the material
+    /// * `vertex_binding` - Vertex binding description for the pipeline
+    ///
+    /// # Returns
+    /// A `MaterialHandle` that references the registered material.
+    pub fn create_material(
+        &mut self,
+        pipeline: Rc<RefCell<MaterialPipeline>>,
+        texture: Option<Rc<Texture>>,
+        vertex_binding: VertexBinding,
+    ) -> MaterialHandle {
+        use crate::rendering::registry::MaterialAsset;
+
+        let material_asset = MaterialAsset {
+            pipeline,
+            texture,
+            vertex_binding,
+        };
+
+        self.asset_registry.register_material(material_asset)
+    }
+
     /// Setup a single render graph with multiple framebuffers (one per swapchain image).
     /// This creates the graph upfront during initialization to avoid
     /// destroying Vulkan objects while the GPU is still using them.
-    pub fn setup_render_graph(&mut self, callback: Rc<RefCell<dyn RenderCallback>>) {
+    ///
+    /// The draw list will be provided each frame via `render_frame_with_drawlist`.
+    pub fn setup_render_graph(&mut self) {
         // Debug: Print the immediate-mode render pass info
         println!("=== Immediate-mode RenderPass ===");
         println!(
@@ -278,8 +403,13 @@ impl VulkanRenderer {
 
         let depth_resource = self.create_depth_resource(&mut graph_builder);
 
-        let callback_for_graph = callback.clone();
-        let dt_for_graph = self.frame_delta_time.clone();
+        // Create Rc<RefCell<>> for the draw list that will be set each frame
+        let draw_list_cell: Rc<RefCell<Option<DrawList>>> = Rc::new(RefCell::new(None));
+        let draw_list_cell_for_pass = draw_list_cell.clone(); // Clone for the closure
+
+        // Store the asset registry pointer - we know it's valid for the lifetime of the renderer
+        let asset_registry_ptr = &mut self.asset_registry as *mut AssetRegistry;
+
         let swapchain_res = swapchain_resource;
         let depth_res = depth_resource;
 
@@ -289,11 +419,61 @@ impl VulkanRenderer {
                 .clear_color(swapchain_res, [0.3, 0.5, 0.3, 1.0])
                 .clear_depth_stencil(depth_res, 1.0, 0)
                 .execute("geometry_pass", move |ctx| {
-                    if let (Ok(mut cb), Some(dt_rc)) =
-                        (callback_for_graph.try_borrow_mut(), dt_for_graph.as_ref())
-                    {
-                        let dt = *dt_rc.borrow();
-                        cb.render(&ctx.command_buffer, dt);
+                    // Get the draw list for this frame
+                    let draw_list_opt = draw_list_cell_for_pass.borrow_mut().take();
+                    if let Some(draw_list) = draw_list_opt {
+                        // SAFETY: The asset_registry_ptr is valid for the entire lifetime of the renderer
+                        // and this closure is only called while the renderer is alive
+                        // We need mutable access to call get_material_mut for update_buffer
+                        let registry = unsafe { &mut *asset_registry_ptr };
+
+                        // Process each draw call
+                        for draw in &draw_list.draws {
+                            // Get the mesh data first (immutable borrow)
+                            let mesh_data = registry.get_mesh(draw.mesh).map(|m| {
+                                (
+                                    m.index_buffer.as_ref().map(|ib| (ib.object(), ib.index_type, ib.count())),
+                                    m.vertex_buffer.as_ref().map(|vb| (vb.object(), vb.count())),
+                                )
+                            });
+
+                            // Then get material for mutable access
+                            let material = match registry.get_material_mut(draw.material) {
+                                Some(m) => m,
+                                None => continue,
+                            };
+
+                            // Skip if mesh doesn't exist
+                            let (index_data, vertex_data) = match mesh_data {
+                                Some(data) => data,
+                                None => continue,
+                            };
+
+                            // Upload uniform buffers (model, view, projection matrices)
+                            let params_bytes = draw.params.as_bytes();
+                            material.pipeline.borrow_mut().update_buffer(&params_bytes);
+
+                            // Bind the graphics pipeline
+                            let cmd_buf = ctx.command_buffer.vk_command_buffer();
+                            material.pipeline.borrow().bind(cmd_buf);
+
+                            // Bind vertex and index buffers and draw
+                            if let Some((index_buffer, index_type, index_count)) = index_data {
+                                ctx.command_buffer.bind_index_buffer(
+                                    index_buffer,
+                                    0,
+                                    index_type,
+                                );
+
+                                if let Some((vertex_buffer, _)) = vertex_data {
+                                    ctx.command_buffer.bind_vertex_buffers(0, &[vertex_buffer], &[0]);
+                                    ctx.command_buffer.draw_indexed(index_count, 1, 0, 0, 0);
+                                }
+                            } else if let Some((vertex_buffer, vertex_count)) = vertex_data {
+                                ctx.command_buffer.bind_vertex_buffers(0, &[vertex_buffer], &[0]);
+                                ctx.command_buffer.draw_array(vertex_count, 1, 0, 0);
+                            }
+                        }
                     }
                 });
         });
@@ -302,6 +482,9 @@ impl VulkanRenderer {
         let existing_render_pass = self.render_pass.get_vk_renderpass();
         match graph_builder.build(&vulkan_context) {
             Ok(mut graph) => {
+                // Store the draw_list_cell so we can update it each frame
+                graph.set_draw_list_cell(draw_list_cell);
+
                 // Create framebuffers for each swapchain image using the immediate-mode render pass
                 let swapchain_images: Vec<_> = self
                     .frame_context
@@ -332,7 +515,7 @@ impl VulkanRenderer {
         }
     }
 
-    pub fn render_frame(&mut self) -> Result<(), RenderGraphError> {
+    pub fn render_frame(&mut self, draw_list: DrawList) -> Result<(), RenderGraphError> {
         // Acquire swapchain image
         if self.current_framedata.is_none() {
             match self.swap_frames() {
@@ -357,6 +540,9 @@ impl VulkanRenderer {
             .render_graph
             .as_mut()
             .ok_or(RenderGraphError::CompilationError("No render graph".into()))?;
+
+        // Set the draw list for this frame
+        graph.set_draw_list(draw_list);
 
         let mut command_buffer = self.frame_context.command_buffers[image_index].clone();
         command_buffer.begin_command(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT);

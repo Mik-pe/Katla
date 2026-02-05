@@ -1,5 +1,6 @@
 use ash::vk::{self};
 
+#[derive(Clone, Copy)]
 pub enum VertexFormat {
     R32u,
     R32i,
@@ -45,6 +46,14 @@ impl VertexFormat {
 }
 pub struct VertexBinding {
     pub formats: Vec<VertexFormat>,
+}
+
+impl Clone for VertexBinding {
+    fn clone(&self) -> Self {
+        Self {
+            formats: self.formats.clone(),
+        }
+    }
 }
 
 impl VertexBinding {

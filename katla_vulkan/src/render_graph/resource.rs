@@ -2,7 +2,7 @@ use std::ops::AddAssign;
 
 use ash::vk;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub struct ResourceId(pub(crate) u32);
 
 #[derive(Debug)]
@@ -190,12 +190,6 @@ pub enum CompiledResource {
 impl ResourceId {
     pub fn new(id: u32) -> Self {
         ResourceId(id)
-    }
-}
-
-impl Default for ResourceId {
-    fn default() -> Self {
-        ResourceId(0)
     }
 }
 

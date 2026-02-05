@@ -230,7 +230,7 @@ impl RenderGraphHelper for RenderGraphBuilder {
         format: ImageFormat,
         extent: Extent2D,
     ) -> ResourceId {
-        let swapchain_resource = self.add_resource(
+        self.add_resource(
             name,
             ResourceKind::ExternalImage {
                 vk_image: vk::Image::null(),
@@ -238,8 +238,7 @@ impl RenderGraphHelper for RenderGraphBuilder {
                 format: format.into(),
                 extent: extent.into(),
             },
-        );
-        swapchain_resource
+        )
     }
 }
 

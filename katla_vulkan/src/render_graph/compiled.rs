@@ -1,14 +1,16 @@
 use ash::vk;
 
+use std::cell::RefCell;
 use std::collections::HashMap;
+use std::rc::Rc;
 
 use crate::render_graph::pass::{ExecutionRegistry, Pass, PassExecute, PassExecutionContext};
 use crate::render_graph::resource::{CompiledResource, ResourceId, ResourceKind, ResourceLifetime};
+use crate::rendering::DrawList;
 use crate::vulkan::RenderPass;
 use crate::CommandBuffer;
 use crate::RenderGraphError;
 use crate::VulkanContext;
-use std::rc::Rc;
 
 /// CompiledRenderGraph represents a fully compiled render graph with all Vulkan objects created.
 /// This is the result of the compilation process and can be executed each frame.
@@ -19,6 +21,9 @@ pub struct CompiledRenderGraph {
     vk_render_passes: Vec<vk::RenderPass>,
     framebuffers: Vec<vk::Framebuffer>,
     pub registry: ExecutionRegistry<'static>,
+    /// Cell for storing the draw list that will be processed during execution.
+    /// This is set each frame before calling execute().
+    draw_list_cell: Option<Rc<RefCell<Option<DrawList>>>>,
 }
 
 /// CompiledPass represents a single compiled pass with all necessary Vulkan objects.
@@ -186,6 +191,7 @@ impl CompiledRenderGraph {
             vk_render_passes,
             framebuffers,
             registry,
+            draw_list_cell: None,
         })
     }
 
@@ -828,6 +834,24 @@ impl CompiledRenderGraph {
         }
 
         Ok(compiled_passes)
+    }
+
+    /// Set the draw list cell that will be used during execution.
+    ///
+    /// This is called during setup_render_graph to store the cell that
+    /// closures will capture.
+    pub fn set_draw_list_cell(&mut self, cell: Rc<RefCell<Option<DrawList>>>) {
+        self.draw_list_cell = Some(cell);
+    }
+
+    /// Set the draw list for this frame.
+    ///
+    /// This should be called before execute() to provide the draw calls
+    /// that will be processed during render graph execution.
+    pub fn set_draw_list(&mut self, draw_list: DrawList) {
+        if let Some(cell) = &self.draw_list_cell {
+            *cell.borrow_mut() = Some(draw_list);
+        }
     }
 
     /// Execute the compiled render graph.

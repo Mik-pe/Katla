@@ -207,13 +207,9 @@ impl ComponentStorageManager {
         let type_id = std::any::TypeId::of::<T>();
         let storages = &mut self.storages;
 
-        if !storages.contains_key(&type_id) {
-            storages.insert(type_id, Box::new(ComponentStorage::<T>::new()));
-        }
-
         storages
-            .get_mut(&type_id)
-            .expect("Storage should exist after insertion")
+            .entry(type_id)
+            .or_insert_with(|| Box::new(ComponentStorage::<T>::new()))
             .as_any_mut()
             .downcast_mut::<ComponentStorage<T>>()
             .expect("Downcast should succeed")
