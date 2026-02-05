@@ -1,8 +1,18 @@
+pub mod builder;
 pub mod cube;
+pub mod cylinder;
+pub mod plane;
+pub mod sphere;
+pub mod torus;
 
 use crate::rendering::VertexPBR;
 use crate::util::GLTFModel;
+pub use builder::*;
 pub use cube::*;
+pub use cylinder::*;
+pub use plane::*;
+pub use sphere::*;
+pub use torus::*;
 
 use katla_vulkan::context::VulkanContext;
 use katla_vulkan::{self, IndexBuffer, IndexType, VertexBuffer};

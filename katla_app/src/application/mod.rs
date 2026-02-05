@@ -24,7 +24,7 @@ use crate::{
     components::DrawableComponent,
     entities::{Camera, ModelEntity},
     input::{InputBinding, InputMapper, KeyCombo, MouseCombo},
-    rendering::create_cube,
+    rendering::MeshBuilder,
     util::{FileCache, GLTFModel, Timer},
 };
 
@@ -125,12 +125,52 @@ impl ApplicationHandler for Application {
             );
             ModelEntity::new(&mut self.world, model);
 
-            let _cube = create_cube(
+            // Create meshes spaced out in a line with different colors
+            let _cube = MeshBuilder::new(
                 &mut self.world,
                 renderer.context.clone(),
                 &renderer.render_pass,
-                Vec3::new(100.0, 10.0, 100.0),
-            );
+            )
+            .position(Vec3::new(0.0, 5.0, 0.0))
+            .color([1.0, 0.3, 0.3]) // Red tint
+            .create_cube();
+
+            let _sphere = MeshBuilder::new(
+                &mut self.world,
+                renderer.context.clone(),
+                &renderer.render_pass,
+            )
+            .position(Vec3::new(30.0, 5.0, 0.0))
+            .color([0.3, 1.0, 0.3]) // Green tint
+            .create_sphere();
+
+            let _cylinder = MeshBuilder::new(
+                &mut self.world,
+                renderer.context.clone(),
+                &renderer.render_pass,
+            )
+            .position(Vec3::new(-30.0, 5.0, 0.0))
+            .color([0.3, 0.3, 1.0]) // Blue tint
+            .create_cylinder();
+
+            let _plane = MeshBuilder::new(
+                &mut self.world,
+                renderer.context.clone(),
+                &renderer.render_pass,
+            )
+            .position(Vec3::new(0.0, -5.0, 0.0))
+            .color([0.8, 0.8, 0.8]) // Gray tint
+            .size(Vec3::new(100.0, 100.0, 1.0))
+            .create_plane();
+
+            let _torus = MeshBuilder::new(
+                &mut self.world,
+                renderer.context.clone(),
+                &renderer.render_pass,
+            )
+            .position(Vec3::new(0.0, 15.0, 0.0))
+            .color([1.0, 0.8, 0.3]) // Yellow tint
+            .create_torus();
 
             self.window = Some(window);
             self.renderer = Some(renderer);
@@ -237,17 +277,38 @@ impl ApplicationHandler for Application {
                     if self.stage_upload {
                         let start = Instant::now();
                         let renderer = self.renderer.as_ref().expect("Renderer not initialized");
-                        let model = Model::new_from_gltf(
-                            self.gltf_cache
-                                .read(PathBuf::from("resources/models/Tiger.glb")),
+
+                        let _sphere = MeshBuilder::new(
+                            &mut self.world,
                             renderer.context.clone(),
                             &renderer.render_pass,
-                            Vec3::new(100.0, 0.0, 0.0),
-                        );
-                        ModelEntity::new(&mut self.world, model);
+                        )
+                        .position(Vec3::new(0.0, 5.0, 0.0))
+                        .color([0.8, 0.2, 0.2])
+                        .create_sphere();
+
+                        let _cube = MeshBuilder::new(
+                            &mut self.world,
+                            renderer.context.clone(),
+                            &renderer.render_pass,
+                        )
+                        .position(Vec3::new(20.0, 5.0, 0.0))
+                        .color([0.2, 0.8, 0.2])
+                        .create_cube();
+
+                        let _plane = MeshBuilder::new(
+                            &mut self.world,
+                            renderer.context.clone(),
+                            &renderer.render_pass,
+                        )
+                        .position(Vec3::new(0.0, -5.0, 0.0))
+                        .size(Vec3::new(100.0, 100.0, 1.0))
+                        .color([0.5, 0.5, 0.5])
+                        .create_plane();
+
                         let millisecs = start.elapsed().as_micros() as f64 / 1000.0;
 
-                        println!("Mesh new took {millisecs} ms");
+                        println!("Mesh creation took {millisecs} ms");
                         self.stage_upload = false;
                     }
                     if let Some(window) = &self.window {
