@@ -34,7 +34,8 @@ impl GLTFModel {
             for primitive in mesh.primitives() {
                 let mut start_index: usize;
                 let mut end_index: usize;
-                //TODO: Upload entire buffer and sample from it as the accessor tells us:
+                // NOTE: Currently we process attribute data in chunks. A potential optimization
+                // would be to upload entire buffers and sample based on accessor offsets.
                 let num_attributes = primitive.attributes().len();
 
                 for (semantic, accessor) in primitive.attributes() {
@@ -146,7 +147,8 @@ impl GLTFModel {
                     })
                     .collect::<Vec<VertexPBR>>();
             } else if has_pos {
-                //TODO: Auto-gen normals smoothly with triangle-data:
+                // NOTE: When normals are missing, we currently use position as a fallback.
+                // For proper rendering, smooth normals should be auto-generated from triangle data.
                 vertex_data = positions
                     .into_iter()
                     .map(|position| {
@@ -207,7 +209,6 @@ impl GLTFModel {
         model
     }
 
-    //FIXME: This is only really valid for one node in the structure!
     pub fn vertpos(&self) -> Vec<VertexPosition> {
         self.vertex_data
             .iter()

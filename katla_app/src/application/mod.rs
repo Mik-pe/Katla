@@ -119,7 +119,6 @@ impl ApplicationHandler for Application {
                 self.gltf_cache
                     .read(PathBuf::from("resources/models/Fox.glb")),
                 renderer.context.clone(),
-                //TODO: (mikpe) - should not have to send these when creating a mesh... The scene should be enough and "Mesh" should be a higher level abstraction
                 &renderer.render_pass,
                 Vec3::new(0.0, 0.0, 0.0),
             );

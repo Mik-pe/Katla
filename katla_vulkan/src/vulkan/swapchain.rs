@@ -17,9 +17,6 @@ pub struct Swapchain {
     pub swapchain_info: SwapchainInfo,
     pub swapchain: vk::SwapchainKHR,
     pub format: vk::SurfaceFormatKHR,
-    //TODO: Change these to renderpasses?
-    // pub swapchain_images: Vec<vk::Image>,
-    // pub swapchain_image_views: Vec<vk::ImageView>,
 }
 
 impl Swapchain {

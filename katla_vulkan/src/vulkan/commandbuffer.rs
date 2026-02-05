@@ -120,7 +120,6 @@ impl CommandBuffer {
         descriptor_sets: &[vk::DescriptorSet],
     ) {
         unsafe {
-            //TODO: alternatives to binding?
             self.device.cmd_bind_descriptor_sets(
                 self.command_buffer,
                 pipeline_bind_point,

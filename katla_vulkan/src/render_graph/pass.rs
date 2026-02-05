@@ -94,7 +94,7 @@ pub struct PassBuilder {
     execute: Option<PassExecute>,
     pending_execute: Option<(String, Box<dyn FnMut(Rc<PassExecutionContext>) + 'static>)>,
     #[allow(dead_code)]
-    pipeline_barriers_before: Vec<vk::MemoryBarrier<'static>>, // TODO: Barrier synchronization (not yet implemented)
+    pipeline_barriers_before: Vec<vk::MemoryBarrier<'static>>,
 }
 
 impl PassBuilder {

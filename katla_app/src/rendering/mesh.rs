@@ -19,11 +19,12 @@ use katla_vulkan::{self, IndexBuffer, IndexType, VertexBuffer};
 
 use std::rc::Rc;
 
-//TODO:
-// Handle the GPU-side in katla_vulkan
-// Ideally a Mesh would only contain the vertex/index data
-// Either own the data or, as now, the handles to the GPU data, any way works I guess
-// A future Mesh could be split into a CPU/GPU part, for certain applications
+/// Mesh represents geometry with GPU-side vertex and index buffers.
+///
+/// DESIGN NOTE: Currently `Mesh` owns GPU buffer handles directly. A future
+/// improvement could split this into separate CPU/GPU representations, where
+/// the CPU side holds the raw data and the GPU side manages Vulkan resources.
+/// This would enable features like CPU-side mesh processing and dynamic updates.
 pub struct Mesh {
     pub vertex_buffer: Option<VertexBuffer>,
     pub index_buffer: Option<IndexBuffer>,

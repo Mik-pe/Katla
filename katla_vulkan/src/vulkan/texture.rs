@@ -4,7 +4,6 @@ use crate::VulkanFrameCtx;
 
 use std::mem::ManuallyDrop;
 use std::rc::Rc;
-use std::time::Instant;
 
 use ash::vk;
 use gpu_allocator::vulkan::Allocation;
@@ -100,7 +99,6 @@ impl Texture {
         dst_image_layout: vk::ImageLayout,
         extent: vk::Extent3D,
     ) {
-        //TODO: expose a transfer command buffer?
         let subresources = vk::ImageSubresourceLayers::default()
             .aspect_mask(vk::ImageAspectFlags::COLOR)
             .mip_level(0)
@@ -233,8 +231,8 @@ impl Texture {
                 vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
             );
 
-            //TODO: submitting this command buffer takes lots of time
-            //TODO: Fix better handling of these command buffers from the renderer
+            // NOTE: Synchronous command buffer submission can be a bottleneck.
+            // For better performance, batch multiple uploads or use async transfer queues.
             context.end_single_time_commands(command_buffer);
             context.free_buffer(staging_buffer, staging_allocation);
 
