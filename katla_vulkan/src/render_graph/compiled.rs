@@ -50,7 +50,7 @@ pub struct SubpassDescriptor {
     input_attachments: Vec<(u32, ResourceId)>,
     color_attachments: Vec<(u32, ResourceId)>,
     depth_stencil: Option<(u32, ResourceId)>,
-    #[allow(dead_code)] // TODO: Implement subpass resolve attachments
+    #[allow(dead_code)]
     resolve_attachments: Vec<(u32, ResourceId)>,
     // Store Vulkan attachment references to ensure they live long enough
     vk_input_refs: Vec<vk::AttachmentReference>,
@@ -734,14 +734,16 @@ impl CompiledRenderGraph {
     /// Calculate memory barriers between passes.
     /// Analyzes resource usage between consecutive passes and creates
     /// appropriate synchronization barriers to ensure correct memory access.
-    /// TODO: Implement proper barrier calculation based on resource usage.
-    #[allow(dead_code)] // TODO: Implement barrier calculation for multi-pass graphs
+    ///
+    /// NOTE: Currently returns empty barriers. For multi-pass graphs with
+    /// complex dependencies, proper barrier calculation based on resource
+    /// usage should be implemented.
+    #[allow(dead_code)]
     fn calculate_barriers(
         graph: &crate::RenderGraph,
         _lifetimes: &HashMap<ResourceId, ResourceLifetime>,
     ) -> Vec<Vec<vk::MemoryBarrier<'static>>> {
         // Placeholder implementation - returns empty barriers
-        // TODO: Implement actual barrier calculation logic
         let _ = (graph, _lifetimes);
         vec![]
     }

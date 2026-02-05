@@ -133,7 +133,6 @@ impl VulkanContext {
     ) -> (vk::Buffer, Allocation) {
         let buffer = unsafe { self.device.create_buffer(buffer_info, None) }.unwrap();
         let requirements = unsafe { self.device.get_buffer_memory_requirements(buffer) };
-        //TODO: Find better names...
         let allocation_info = gpu_allocator::vulkan::AllocationCreateDesc {
             name: "Buffer Allocation",
             requirements,
@@ -159,7 +158,8 @@ impl VulkanContext {
         unsafe { self.device.destroy_buffer(buffer, None) };
     }
 
-    //TODO: Enable mapping of part of buffers
+    /// Map a buffer allocation to host memory.
+    /// Currently maps the entire buffer; partial mapping could be added as an optimization.
     pub fn map_buffer(&self, allocation: &Allocation) -> *mut u8 {
         allocation.mapped_ptr().unwrap().cast().as_ptr()
     }
@@ -340,7 +340,9 @@ impl VulkanContext {
         }
     }
 
-    //TODO: Make a per-thread command pool and queue for upload purposes!
+    /// Begin a one-time command buffer for transfer operations.
+    /// NOTE: For better performance in multi-threaded scenarios, consider using
+    /// per-thread command pools and dedicated transfer queues.
     pub fn begin_single_time_commands(&self) -> super::CommandBuffer {
         let command_buffer = super::CommandBuffer::new(&self.device, &self.gfx_cmdpool);
         command_buffer.begin_single_time_command();
@@ -350,9 +352,8 @@ impl VulkanContext {
     pub fn end_single_time_commands(&self, command_buffer: super::CommandBuffer) {
         command_buffer.end_single_time_command();
         let command_buffers = vec![&command_buffer];
-        //TODO: This cannot be used by multiple frames at once,
-        //ensure that we're either using another queue/commandpool, or
-        //that we are doing this in a locked manner
+        // NOTE: This submits to the graphics queue synchronously. For multi-frame
+        // concurrency, use a separate transfer queue or proper synchronization.
         self.gfx_queue
             .submit(&command_buffers, &[], &[], vk::Fence::null());
         self.gfx_queue.wait_idle();

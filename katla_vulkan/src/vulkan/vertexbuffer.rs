@@ -56,9 +56,6 @@ struct BufferObject {
     context: Rc<VulkanContext>,
 }
 
-//TODO: Holding an RC for every buffer is... meh.
-// figure out a better way of pooling this, also for safer dropping of buffers
-// that are in-flight
 impl Drop for BufferObject {
     fn drop(&mut self) {
         if let Some(allocation) = self.allocation.take() {

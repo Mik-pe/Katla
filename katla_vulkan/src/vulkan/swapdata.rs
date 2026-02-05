@@ -60,7 +60,8 @@ impl SwapData {
         swapchain_loader: &SwapchainDevice,
         swapchain: vk::SwapchainKHR,
     ) -> Result<(vk::Semaphore, vk::Semaphore, vk::Fence, u32), RenderGraphError> {
-        //TODO: What is the bool for?
+        // The second value (suboptimal) indicates whether the swapchain is no longer optimal
+        // but can still be used. We ignore it and let the frame proceed normally.
         let (image_index, _) = unsafe {
             swapchain_loader.acquire_next_image(
                 swapchain,
