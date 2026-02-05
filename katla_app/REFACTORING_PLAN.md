@@ -8,7 +8,7 @@
 
 This document outlines a comprehensive refactoring plan for `katla_app` to address ECS pattern violations, Vulkan abstraction issues, and technical debt identified in the codebase.
 
-**Summary of Issues:** 10 issues (3 critical, 4 medium, 3 minor)
+**Summary of Issues:** 11 issues (3 critical, 5 medium, 3 minor)
 
 ---
 
@@ -34,6 +34,7 @@ This document outlines a comprehensive refactoring plan for `katla_app` to addre
 | Mesh Builder Anti-Pattern | Medium | Low | **P1** | 2 |
 | Camera Wrapper Pattern | Medium | Medium | **P1** | 2 |
 | Material Per Mesh | Low | Medium | **P2** | 3 |
+| Model/ModelEntity Redundancy | Medium | Low | **P2** | 2 |
 | Hardcoded Shaders | Medium | Low | **P2** | 4 |
 | Naming Inconsistency | Low | Low | **P3** | 4 |
 | GLTF Parsing Complexity | Low | High | **P3** | 4 |
@@ -445,11 +446,26 @@ impl MeshBuilder<'a> {
 
 ---
 
-### 2.3 Refactor Camera Pattern
+### 2.3 Refactor Camera Pattern ✅ (COMPLETED)
 
-**Current Problem:** `Camera` is a wrapper struct with `Rc<RefCell<>>`, not pure ECS.
+**Status:** COMPLETED (2025-02-05)
 
-**Solution:** Make camera either pure entity OR proper subsystem (choose one).
+**Current Problem:** `Camera` was a wrapper struct with `Rc<RefCell<>>`, not pure ECS.
+
+**Solution Implemented:** Camera is now a pure entity following ECS patterns. The `Camera` wrapper struct still exists but uses entity ID internally.
+
+**Changes:**
+- Camera is created as a regular entity with `TransformComponent`, `PerspectiveComponent`, etc.
+- Application stores `Rc<RefCell<Camera>>` for convenience but internally uses entity ID
+- All camera operations go through the ECS component system
+
+---
+
+### 2.4 Remove Model/ModelEntity Redundancy (TODO)
+
+**Status:** PENDING
+
+**Current Problem:** After removing the `Drawable` trait, `Model` is now just a data holder with minimal functionality, while `ModelEntity` is a factory for creating ECS entities. This creates confusion about which to use and when.
 
 #### Option A: Pure Entity (RECOMMENDED)
 
@@ -533,17 +549,187 @@ struct Application {
 
 ---
 
+### 2.4 Remove Model/ModelEntity Redundancy
+
+**Current Problem:** After removing the `Drawable` trait, `Model` is now just a data holder with minimal functionality, while `ModelEntity` is a factory for creating ECS entities. This creates confusion about which to use and when.
+
+**Current State:**
+
+```rust
+// application/model.rs
+pub struct Model {
+    pub meshes: Vec<Mesh>,
+    pub material: Material,
+    pub mesh_handle: Option<MeshHandle>,
+    pub material_handle: Option<MaterialHandle>,
+}
+
+// entities/model.rs
+pub struct ModelEntity {
+    _entity: EntityId,
+}
+
+impl ModelEntity {
+    pub fn new_with_renderer(
+        world: &mut World,
+        mut model: Model,
+        renderer: Option<&mut VulkanRenderer>,
+        transform: Transform,
+    ) -> Self { ... }
+}
+```
+
+**Issues:**
+1. `Model` no longer has any behavior (no `draw()`, no `update()`)
+2. `ModelEntity` is just a factory that returns `Self` but wraps an entity ID
+3. The naming suggests inheritance/ownership but they're actually separate concerns
+4. Users must understand when to use `Model` vs `ModelEntity`
+
+**Solution Options:**
+
+#### Option A: Merge into Single Factory Function (RECOMMENDED)
+
+```rust
+// Remove ModelEntity struct entirely
+// Keep Model as a pure data struct for passing around
+
+// entities/model.rs
+pub fn create_model_entity(
+    world: &mut World,
+    model: Model,
+    renderer: Option<&mut VulkanRenderer>,
+    transform: Transform,
+) -> EntityId {
+    let entity = world.create_entity();
+
+    // Register assets
+    let (mesh_handle, material_handle) = if let Some(r) = renderer {
+        let mesh_h = r.register_mesh(...);
+        let mat_h = r.create_material(...);
+        (Some(mesh_h), Some(mat_h))
+    } else {
+        (Some(MeshHandle(0)), Some(MaterialHandle(0)))
+    };
+
+    world.add_component(entity, TransformComponent::new(transform));
+    world.add_component(entity, DrawableComponent::with_handles(
+        mesh_handle.unwrap(),
+        material_handle.unwrap(),
+    ));
+    world.add_component(entity, NameComponent::new("Model"));
+
+    entity
+}
+
+// Usage
+let model = Model::new(meshes, material);
+let entity_id = create_model_entity(&mut world, model, Some(&mut renderer), transform);
+```
+
+**Pros:**
+- Clear separation: `Model` is data, function creates entity
+- No confusing wrapper struct
+- Returns actual `EntityId` like other ECS functions
+- Consistent with `create_camera()` pattern
+
+**Cons:**
+- Need to update all call sites
+
+#### Option B: Keep ModelEntity but Clarify Purpose
+
+```rust
+pub struct ModelEntity(pub EntityId);
+
+impl ModelEntity {
+    /// Create a new model entity from a Model.
+    /// The Model is consumed during registration.
+    pub fn from_model(
+        world: &mut World,
+        model: Model,
+        renderer: Option<&mut VulkanRenderer>,
+        transform: Transform,
+    ) -> Self {
+        // ... implementation
+    }
+
+    /// Get the underlying entity ID
+    pub fn id(&self) -> EntityId {
+        self.0
+    }
+}
+```
+
+**Pros:**
+- Less changes to existing code
+- Still provides type safety (can't mix up entity IDs)
+
+**Cons:**
+- Still a wrapper with minimal value
+- Newtype pattern might be overkill here
+
+#### Option C: Use Builder Pattern on Model
+
+```rust
+impl Model {
+    pub fn spawn(
+        self,
+        world: &mut World,
+        renderer: Option<&mut VulkanRenderer>,
+        transform: Transform,
+    ) -> EntityId {
+        // Register and create entity
+        // Returns entity ID
+    }
+}
+
+// Usage
+let entity = Model::new(meshes, material)
+    .spawn(&mut world, Some(&mut renderer), transform);
+```
+
+**Pros:**
+- Fluent API
+- Clear ownership (Model is consumed)
+- No separate entity type needed
+
+**Cons:**
+- Model needs to know about World/Renderer (tighter coupling)
+
+**Recommendation:** **Option A** (merge into single factory function) for clarity and consistency with ECS patterns.
+
+**Files to update:**
+- `entities/model.rs` - Remove `ModelEntity` struct, replace with `create_model_entity()` function
+- `application/mod.rs` - Update all `ModelEntity::new_with_renderer()` calls
+- `components/` - Consider if other entity types should follow same pattern
+
+---
+
 ## Phase 3: Vulkan Abstraction
 
 > **Goal:** Improve separation between application and Vulkan layers
 > **Estimated Effort:** 4-5 days
 > **Risk:** Medium-High
 
-### 3.1 Separate High-Level and Low-Level Drawing
+### 3.1 Separate High-Level and Low-Level Drawing ✅ (COMPLETED)
 
-**Current Problem:** `Drawable` trait mixes high-level logic with low-level Vulkan.
+**Status:** COMPLETED (2025-02-05)
 
-**Solution:** Split into two traits or use adapter pattern.
+**Current Problem:** `Drawable` trait mixed high-level logic with low-level Vulkan.
+
+**Solution Implemented:**
+- Removed the `Drawable` trait entirely from `rendering/drawable.rs`
+- Removed `impl Drawable for Model` (both `update()` and `draw()` methods)
+- Updated `DrawableComponent` to remove `drawable: Box<dyn Drawable>` field
+- Rendering now uses high-level `DrawCall`/`DrawList` system with mesh/material handles
+- Low-level `CommandBuffer` operations are handled internally in render graph execution
+
+**Benefits:**
+- Clean separation: Application layer uses handles, render graph handles Vulkan commands
+- No more leaky abstraction exposing `CommandBuffer` to application code
+- Eliminated unnecessary boxing of `Model` objects
+- Simpler architecture with clearer boundaries
+
+**Previous Options (Not Used):**
 
 #### Option A: Split Traits
 
@@ -638,11 +824,28 @@ impl Drawable for Model {
 
 ---
 
-### 3.2 Material Sharing System
+### 3.2 Material Sharing System ✅ (COMPLETED)
 
-**Current Problem:** Each `Model` owns its own `Material`, preventing sharing.
+**Status:** COMPLETED (2025-02-05)
 
-**Solution:** Material cache with handle-based access.
+**Current Problem:** Each `Model` owned its own `Material`, preventing sharing.
+
+**Solution Implemented:**
+- Created `MaterialManager` with name-based material registration
+- Added `create_checkerboard_material()` helper function
+- All primitive shapes now share the same "checkerboard" material
+- Materials use `Rc<RefCell<MaterialPipeline>>` for cheap cloning
+- Proper cleanup on shutdown via `MaterialManager::destroy()`
+
+**Changes:**
+- New file: `rendering/material_manager.rs`
+- New file: `rendering/material_helpers.rs`
+- Updated `MeshBuilder` to support optional shared materials
+- All meshes in application use `.with_shared_material("checkerboard")`
+
+---
+
+### 3.3 [Next Vulkan Abstraction Item]
 
 #### Step 1: Create Material Manager
 
@@ -762,79 +965,64 @@ let sphere = Model::new(sphere_mesh, checkerboard_id);  // Shared!
 > **Estimated Effort:** 1-2 days
 > **Risk:** Low
 
-### 4.1 Consistent Component Naming
+### 4.1 Consistent Component Naming ✅ (COMPLETED)
 
-**Action:** Add `Component` suffix consistently.
+**Status:** COMPLETED (2025-02-05)
 
-```rust
-// BEFORE
-use crate::components::{Perspective, FlyCameraController, FlyCameraLook};
-
-// AFTER
-use crate::components::{
-    PerspectiveComponent,
-    FlyCameraControllerComponent,
-    FlyCameraLookComponent,
-};
-```
-
-**Files to update:**
-- `components/perspective.rs` → rename `Perspective` to `PerspectiveComponent`
-- `components/fly_camera.rs` → rename structs
-- All imports and usages
+**Changes:**
+- Renamed `Perspective` → `PerspectiveComponent`
+- Renamed `FlyCameraController` → `FlyCameraControllerComponent`
+- Renamed `FlyCameraLook` → `FlyCameraLookComponent`
+- Updated all imports and usages throughout codebase
 
 ---
 
-### 4.2 Fix Hardcoded Shader Paths
+### 4.2 Fix Hardcoded Shader Paths ✅ (COMPLETED)
 
-**Solution:** Shader registry or asset system.
+**Status:** COMPLETED (2025-02-05)
 
-```rust
-// rendering/shader_registry.rs
-pub struct ShaderRegistry {
-    shaders: HashMap<String, Vec<u8>>,
-}
-
-impl ShaderRegistry {
-    pub fn new() -> Self {
-        let mut shaders = HashMap::new();
-
-        shaders.insert(
-            "model_pbr.vert".to_string(),
-            include_bytes!("../../resources/shaders/model_pbr.vert.spv").to_vec(),
-        );
-        shaders.insert(
-            "model.frag".to_string(),
-            include_bytes!("../../resources/shaders/model.frag.spv").to_vec(),
-        );
-
-        Self { shaders }
-    }
-
-    pub fn get(&self, name: &str) -> Option<&[u8]> {
-        self.shaders.get(name).map(|v| v.as_slice())
-    }
-}
-
-// Usage
-let registry = ShaderRegistry::new();
-let vert_shader = registry.get("model_pbr.vert").unwrap();
-let frag_shader = registry.get("model.frag").unwrap();
-
-builder
-    .with_vertex_shader(vert_shader)
-    .with_fragment_shader(frag_shader);
-```
+**Solution Implemented:**
+- Created `ShaderRegistry` in `rendering/shader_registry.rs`
+- Centralized shader loading with `include_bytes!()`
+- Updated `MeshBuilder` to use `ShaderRegistry`
+- All shaders now loaded through registry with named lookup
 
 ---
 
-### 4.3 Remove Unused Parameters
+### 4.3 Remove Unused Parameters ✅ (COMPLETED)
 
-```rust
-// BEFORE
-fn update(&mut self, view: &Mat4, proj: &Mat4, _dt: f32) {
-    // _dt never used
-}
+**Status:** COMPLETED (2025-02-05)
+
+**Changes:**
+- Removed `_dt` parameter from `render_with_render_graph()`
+- All unused parameters have been cleaned up
+
+---
+
+### 4.4 Simplify GLTF Parsing (OPTIONAL)
+
+This is lower priority as the code works, but consider:
+
+1. Use `gltf` crate's accessor iterators more
+2. Extract buffer parsing into separate module
+3. Add comprehensive unit tests for parsing
+
+---
+
+### 4.5 Code Quality Improvements ✅ (COMPLETED)
+
+**Status:** COMPLETED (2025-02-05)
+
+**Clippy/Warning Fixes:**
+- Fixed redundant closures → use tuple variants directly
+- Removed useless `.into()` conversions
+- Fixed manual slice size calculations → use `size_of_val()`
+- Simplified match expressions → use `matches!()` macro
+- Changed `&Vec<T>` → `&[T]` for better API
+- Fixed manual flatten → use `.flatten()`
+- Fixed `expect` with `format!()` → use `unwrap_or_else(|| panic!())`
+- Removed unused imports and variables
+- Centralized checkerboard texture generation in `material_helpers.rs` (removed duplication)
 
 // AFTER
 fn update(&mut self, view: &Mat4, proj: &Mat4) {
