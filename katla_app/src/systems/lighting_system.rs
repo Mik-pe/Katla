@@ -6,6 +6,7 @@ use crate::components::{DirectionalLight, PointLight, SpotLight};
 /// This resource is updated every frame by the LightingSystem and used by the
 /// rendering system to pass light data to shaders.
 #[derive(Debug, Clone)]
+#[derive(Default)]
 pub struct LightCollection {
     /// All directional lights (sun-like lights)
     pub directional_lights: Vec<DirectionalLightData>,
@@ -60,15 +61,6 @@ pub struct SpotLightData {
     pub quadratic: f32,
 }
 
-impl Default for LightCollection {
-    fn default() -> Self {
-        Self {
-            directional_lights: Vec::new(),
-            point_lights: Vec::new(),
-            spot_lights: Vec::new(),
-        }
-    }
-}
 
 impl LightCollection {
     /// Count total number of lights

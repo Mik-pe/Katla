@@ -2,10 +2,12 @@
 ///
 /// Defines how to interpolate between animation keyframes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Default)]
 pub enum Interpolation {
     /// Linear interpolation between keyframes
     ///
     /// Most common interpolation method. Good for most animations.
+    #[default]
     Linear,
 
     /// Step interpolation (no blending)
@@ -43,8 +45,3 @@ impl Interpolation {
     }
 }
 
-impl Default for Interpolation {
-    fn default() -> Self {
-        Self::Linear
-    }
-}
