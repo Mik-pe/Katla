@@ -14,6 +14,7 @@ pub struct MaterialBuilder {
     depth_write: bool,
     cull_back_faces: bool,
     alpha_blending: bool,
+    separate_bindings: bool,
 }
 
 impl MaterialBuilder {
@@ -28,6 +29,7 @@ impl MaterialBuilder {
             depth_write: true,
             cull_back_faces: true,
             alpha_blending: false,
+            separate_bindings: false,
         }
     }
 
@@ -72,6 +74,7 @@ impl MaterialBuilder {
         )
         .unwrap();
         self.fragment_shader = Some(fragment_shader);
+        self.separate_bindings = true; // WGSL uses separate texture and sampler bindings
         self
     }
 
@@ -117,21 +120,47 @@ impl MaterialBuilder {
             .fragment_shader
             .ok_or(MaterialBuildError::MissingFragmentShader)?;
 
-        let desc_layout = DescriptorLayoutBuilder::new()
-            .add_binding(
-                0,
-                vk::DescriptorType::UNIFORM_BUFFER,
-                vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT,
-                1,
-            )
-            .add_binding(
-                1,
-                vk::DescriptorType::COMBINED_IMAGE_SAMPLER,
-                vk::ShaderStageFlags::FRAGMENT,
-                1,
-            )
-            .build(&self.context.device)
-            .map_err(|e| MaterialBuildError::DescriptorLayoutFailed(format!("{:?}", e)))?;
+        // WGSL shaders require separate texture and sampler bindings
+        let desc_layout = if self.separate_bindings {
+            DescriptorLayoutBuilder::new()
+                .add_binding(
+                    0,
+                    vk::DescriptorType::UNIFORM_BUFFER,
+                    vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT,
+                    1,
+                )
+                .add_binding(
+                    1,
+                    vk::DescriptorType::SAMPLED_IMAGE,
+                    vk::ShaderStageFlags::FRAGMENT,
+                    1,
+                )
+                .add_binding(
+                    2,
+                    vk::DescriptorType::SAMPLER,
+                    vk::ShaderStageFlags::FRAGMENT,
+                    1,
+                )
+                .build(&self.context.device)
+                .map_err(|e| MaterialBuildError::DescriptorLayoutFailed(format!("{:?}", e)))?
+        } else {
+            // Pre-compiled SPIR-V shaders use combined image sampler
+            DescriptorLayoutBuilder::new()
+                .add_binding(
+                    0,
+                    vk::DescriptorType::UNIFORM_BUFFER,
+                    vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT,
+                    1,
+                )
+                .add_binding(
+                    1,
+                    vk::DescriptorType::COMBINED_IMAGE_SAMPLER,
+                    vk::ShaderStageFlags::FRAGMENT,
+                    1,
+                )
+                .build(&self.context.device)
+                .map_err(|e| MaterialBuildError::DescriptorLayoutFailed(format!("{:?}", e)))?
+        };
 
         let mut pipeline_builder = PipelineBuilder::new(self.context.clone())
             .with_shaders(vert_shader.module, frag_shader.module)
@@ -163,7 +192,7 @@ impl MaterialBuilder {
             .map_err(|e| MaterialBuildError::PipelineCreationFailed(format!("{:?}", e)))?;
 
         let mut material_pipeline =
-            MaterialPipeline::new(pipeline, desc_layout, self.context.clone());
+            MaterialPipeline::new(pipeline, desc_layout, self.context.clone(), self.separate_bindings);
 
         if let Some(texture) = self.texture {
             material_pipeline

@@ -79,7 +79,7 @@ impl ApplicationHandler for Application {
                 .aspect_ratio_changed(&mut self.world, win_x / win_y);
             let model = Model::new_from_gltf(
                 self.gltf_cache
-                    .read(PathBuf::from("../resources/models/Fox.glb")),
+                    .read(PathBuf::from("resources/models/Fox.glb")),
                 renderer.context.clone(),
                 &renderer.render_pass,
             );
