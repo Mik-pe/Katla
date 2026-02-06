@@ -94,11 +94,11 @@ impl GLTFModel {
         }
     }
 
-    pub fn new<P>(path: P) -> Self
+    pub fn new<P>(path: P) -> Result<Self, Box<dyn std::error::Error>>
     where
         P: AsRef<Path>,
     {
-        let (document, buffers, images) = gltf::import(path).unwrap();
+        let (document, buffers, images) = gltf::import(path)?;
 
         let mut model = Self {
             document,
@@ -110,7 +110,7 @@ impl GLTFModel {
             bounds: Sphere::new(Vec3::new(0.0, 0.0, 0.0), 0.0),
         };
         model.parse_gltf();
-        model
+        Ok(model)
     }
 
     pub fn vertpos(&self) -> Vec<VertexPosition> {
@@ -143,7 +143,9 @@ impl GLTFModel {
 
 impl From<PathBuf> for GLTFModel {
     fn from(pathbuf: PathBuf) -> Self {
-        GLTFModel::new(pathbuf.as_path())
+        GLTFModel::new(&pathbuf).unwrap_or_else(|e| {
+            panic!("Failed to load GLTF model from {:?}: {}", pathbuf, e);
+        })
     }
 }
 
@@ -163,7 +165,7 @@ mod tests {
         model_path.push("models");
         model_path.push("Fox.glb");
         println!("Looking for model at: {}", model_path.display());
-        let model = GLTFModel::new(&model_path);
+        let model = GLTFModel::new(&model_path).expect("Failed to load Fox.glb");
         println!("Parsed {} vertices, {} indices", model.vertex_data.len(), model.index_data.len());
         println!("Bounds: center={:?}, radius={}", model.bounds.center, model.bounds.radius);
 
@@ -182,7 +184,7 @@ mod tests {
         model_path.push("models");
         model_path.push("Box.glb");
         println!("Looking for model at: {}", model_path.display());
-        let model = GLTFModel::new(&model_path);
+        let model = GLTFModel::new(&model_path).expect("Failed to load Box.glb");
         assert!(!model.vertex_data.is_empty());
         assert!(!model.index_data.is_empty());
         assert!(model.bounds.radius > 0.0);

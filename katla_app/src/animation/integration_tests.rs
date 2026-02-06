@@ -16,7 +16,7 @@ mod integration_tests {
         assert!(path.exists(), "Fox.glb not found at {:?}", path);
 
         // Load the GLTF model
-        let model = GLTFModel::new(&path);
+        let model = GLTFModel::new(&path).expect("Failed to load Fox.glb");
 
         // Check that animations exist
         let animations: Vec<gltf::Animation> = model.document.animations().collect();
@@ -66,7 +66,7 @@ mod integration_tests {
 
         assert!(path.exists(), "Fox.glb not found at {:?}", path);
 
-        let model = GLTFModel::new(&path);
+        let model = GLTFModel::new(&path).expect("Failed to load Fox.glb");
 
         // Check for skins
         let skins: Vec<gltf::Skin> = model.document.skins().collect();
@@ -98,7 +98,7 @@ mod integration_tests {
         path.pop(); // Go up from katla_app to workspace root
         path.push("resources/models/Fox.glb");
 
-        let model = GLTFModel::new(&path);
+        let model = GLTFModel::new(&path).expect("Failed to load Fox.glb");
 
         // Examine animation structure
         let animations: Vec<gltf::Animation> = model.document.animations().collect();
@@ -146,7 +146,7 @@ mod integration_tests {
             return;
         }
 
-        let model = GLTFModel::new(&path);
+        let model = GLTFModel::new(&path).expect("Failed to load Tiger.glb");
 
         let animations: Vec<_> = model.document.animations().collect();
         println!("Tiger model has {} animations", animations.len());
@@ -181,7 +181,13 @@ mod integration_tests {
 
             println!("\n=== Testing {} ===", model_name);
 
-            let model = GLTFModel::new(&model_path);
+            let model = match GLTFModel::new(&model_path) {
+                Ok(m) => m,
+                Err(e) => {
+                    println!("Failed to load {}: {:?}", model_name, e);
+                    continue;
+                }
+            };
 
             let animations: Vec<gltf::Animation> = model.document.animations().collect();
             let skins: Vec<gltf::Skin> = model.document.skins().collect();

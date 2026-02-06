@@ -28,6 +28,36 @@ use crate::{
     util::{FileCache, GLTFModel, Timer},
 };
 
+/// Find the resources directory by searching common locations
+fn find_resources_path() -> PathBuf {
+    // List of possible paths to check, in order of preference
+    let possible_paths = vec![
+        // Current directory (for running from workspace root)
+        PathBuf::from("resources/models"),
+        // Parent directory (for running from katla_app)
+        PathBuf::from("../resources/models"),
+        // Grandparent directory (for running from target/debug)
+        PathBuf::from("../../resources/models"),
+        // Absolute path using CARGO_MANIFEST_DIR (for tests)
+        {
+            let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+            path.pop(); // Go up from katla_app to workspace root
+            path.push("resources/models");
+            path
+        },
+    ];
+
+    for path in possible_paths {
+        if path.exists() {
+            return path;
+        }
+    }
+
+    // Fallback: return the first path even if it doesn't exist
+    // (this will give a better error message when trying to load)
+    PathBuf::from("resources/models")
+}
+
 struct ApplicationInfo {
     name: String,
     validation_layer_enabled: bool,
@@ -77,9 +107,14 @@ impl ApplicationHandler for Application {
             self.camera
                 .borrow_mut()
                 .aspect_ratio_changed(&mut self.world, win_x / win_y);
+
+            // Find and load the Fox model
+            let resources_path = find_resources_path();
+            let fox_path = resources_path.join("Fox.glb");
+            println!("Loading Fox model from: {:?}", fox_path);
+
             let model = Model::new_from_gltf(
-                self.gltf_cache
-                    .read(PathBuf::from("resources/models/Fox.glb")),
+                self.gltf_cache.read(fox_path),
                 renderer.context.clone(),
                 &renderer.render_pass,
             );
