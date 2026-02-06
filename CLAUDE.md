@@ -37,6 +37,76 @@ cargo fmt                      # Format
 cargo fmt --check              # Check formatting
 ```
 
+## Git Commit Conventions
+
+### Commit Message Format
+
+Follow a consistent format for commits:
+
+```
+Summary line (50-72 chars, imperative mood)
+
+- Optional detailed bullet points
+- Each line starts with a hyphen
+- Describe WHAT was done, not WHY
+- Keep it concise and focused
+```
+
+**Examples:**
+```
+Add animation system with skeletal and transform-based animation
+
+- AnimationPlayer component with play/pause/loop/seek controls
+- AnimatedModel, JointTransform, MorphTargetWeights components
+- AnimationClip, AnimationChannel, AnimationSampler structures
+- AnimationUpdateSystem, SkeletalAnimationSystem, MorphTargetSystem
+```
+
+```
+Fix transform hierarchy parent-child propagation
+
+- Correct multiplication order (parent * child, not child * parent)
+- Add topological sort for proper update ordering
+- Fix rotation application to child's position
+```
+
+### Commit Guidelines
+
+1. **Test before committing**: Run `cargo test` to ensure all tests pass
+2. **Keep commits focused**: One logical change per commit
+3. **Write clear summaries**: Use imperative mood ("Add", "Fix", "Refactor")
+4. **Include details**: List major files, components, or features added
+5. **No Co-Authored-By**: Do not include AI co-authorship tags
+6. **Avoid "Update":** Be specific about what was updated
+
+### Commit Workflow
+
+```bash
+# Check status
+git status
+
+# Stage relevant files
+git add path/to/files
+
+# Review changes
+git diff --staged
+
+# Commit with message
+git commit -m "Summary line
+
+- Detail one
+- Detail two
+- Detail three"
+```
+
+### When to Commit
+
+- After completing a feature or fix
+- After adding comprehensive tests
+- When code compiles and all tests pass
+- Before major refactors
+- After documentation updates
+
 ## Critical Architecture Rules
 
 ### Dependency Restrictions (Enforced Boundaries)

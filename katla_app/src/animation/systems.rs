@@ -11,42 +11,6 @@ use crate::animation::components::{AnimationPlayer, AnimatedModel};
 /// Runs before skeletal animation system to update player states.
 pub struct AnimationUpdateSystem;
 
-impl AnimationUpdateSystem {
-    fn update_animation_player(
-        player: &mut AnimationPlayer,
-        animated_model: &AnimatedModel,
-        delta_time: f32,
-    ) {
-        if !player.playing {
-            return;
-        }
-
-        // Advance time
-        player.time += delta_time * player.speed;
-
-        // Get the current clip's duration
-        let duration = if let Some(clip_name) = &player.current_clip {
-            animated_model
-                .animations
-                .get(clip_name)
-                .map(|clip| clip.duration)
-                .unwrap_or(0.0)
-        } else {
-            0.0
-        };
-
-        // Handle animation completion
-        if player.time >= duration {
-            if player.loop_animation {
-                player.time = player.time % duration;
-            } else {
-                player.time = duration;
-                player.playing = false;
-            }
-        }
-    }
-}
-
 impl System for AnimationUpdateSystem {
     fn update(&mut self, world: &mut World, delta_time: f32) {
         // Collect all entities with AnimationPlayer
@@ -80,7 +44,7 @@ impl System for AnimationUpdateSystem {
 
                                 if player.time >= clip.duration {
                                     if player.loop_animation {
-                                        player.time = player.time % clip.duration;
+                                        player.time %= clip.duration;
                                     } else {
                                         player.time = clip.duration;
                                         player.playing = false;

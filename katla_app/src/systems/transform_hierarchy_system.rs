@@ -17,16 +17,12 @@ use std::collections::{HashMap, HashSet};
 /// that depend on world-space transforms.
 ///
 /// **Performance**: O(D) where D is the number of dirty entities and their descendants.
+#[derive(Default)]
 pub struct TransformHierarchySystem {
     /// Track if we've run at least once (to initialize all transforms)
     initialized: bool,
 }
 
-impl Default for TransformHierarchySystem {
-    fn default() -> Self {
-        Self { initialized: false }
-    }
-}
 
 /// Configuration for static scene optimization.
 ///
