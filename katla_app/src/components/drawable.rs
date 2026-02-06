@@ -1,4 +1,5 @@
 use katla_ecs::Component;
+use katla_math::Color;
 use katla_vulkan::{MaterialHandle, MeshHandle};
 
 #[derive(Component)]
@@ -7,6 +8,8 @@ pub struct DrawableComponent {
     pub mesh_handle: Option<MeshHandle>,
     /// Material handle for the new rendering system
     pub material_handle: Option<MaterialHandle>,
+    /// Optional material color (multiplied with texture in shader)
+    pub color: Option<Color>,
 }
 
 impl DrawableComponent {
@@ -18,6 +21,20 @@ impl DrawableComponent {
         DrawableComponent {
             mesh_handle: Some(mesh_handle),
             material_handle: Some(material_handle),
+            color: None,
+        }
+    }
+
+    /// Create with asset handles and color
+    pub fn with_handles_and_color(
+        mesh_handle: MeshHandle,
+        material_handle: MaterialHandle,
+        color: Color,
+    ) -> Self {
+        DrawableComponent {
+            mesh_handle: Some(mesh_handle),
+            material_handle: Some(material_handle),
+            color: Some(color),
         }
     }
 }

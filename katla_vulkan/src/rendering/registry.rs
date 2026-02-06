@@ -94,9 +94,28 @@ impl AssetRegistry {
         self.materials.get(handle.0)?.as_ref()
     }
 
-    /// Get a mutable material by handle (internal use only).
-    pub(crate) fn get_material_mut(&mut self, handle: MaterialHandle) -> Option<&mut MaterialAsset> {
+    /// Get a mutable material by handle (for hot reload).
+    pub fn get_material_mut(&mut self, handle: MaterialHandle) -> Option<&mut MaterialAsset> {
         self.materials.get_mut(handle.0)?.as_mut()
+    }
+
+    /// Update a material's pipeline without destroying the old one (for hot reload).
+    ///
+    /// This replaces the pipeline Rc pointer, allowing the old pipeline to be
+    /// dropped naturally when no longer in use. This is safe for hot reload
+    /// because the GPU will finish using the old pipeline before it's actually
+    /// destroyed via the Drop trait.
+    pub fn replace_material_pipeline(
+        &mut self,
+        handle: MaterialHandle,
+        new_pipeline: std::rc::Rc<std::cell::RefCell<crate::vulkan::material::MaterialPipeline>>,
+    ) -> bool {
+        if let Some(material) = self.get_material_mut(handle) {
+            material.pipeline = new_pipeline;
+            true
+        } else {
+            false
+        }
     }
 
     /// Remove a mesh and free its resources.

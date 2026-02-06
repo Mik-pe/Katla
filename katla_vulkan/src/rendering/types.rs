@@ -27,6 +27,8 @@ pub struct MaterialParams {
     pub view_matrix: [f32; 16],
     /// Projection matrix (camera to clip space) - column-major 4x4.
     pub proj_matrix: [f32; 16],
+    /// Optional material color (RGBA, 0.0-1.0 range) for blending with texture.
+    pub color: Option<[f32; 4]>,
 }
 
 impl Default for MaterialParams {
@@ -35,6 +37,7 @@ impl Default for MaterialParams {
             model_matrix: [0.0; 16],
             view_matrix: [0.0; 16],
             proj_matrix: [0.0; 16],
+            color: None,
         }
     }
 }
@@ -71,15 +74,53 @@ impl MaterialParams {
         self
     }
 
+    /// Set the material color (RGBA, 0.0-1.0 range).
+    pub fn with_color(mut self, color: [f32; 4]) -> Self {
+        self.color = Some(color);
+        self
+    }
+
     /// Get all three matrices as a contiguous byte array for GPU upload.
     ///
-    /// Returns 192 bytes (3 matrices × 16 floats × 4 bytes).
+    /// Returns 192 bytes (3 matrices × 16 floats × 4 bytes) or 208 bytes if color is present.
+    ///
+    /// NOTE: When color is None, this returns 192 bytes. If the material was created
+    /// with has_color=true, you should either provide a color via with_color() or
+    /// the shader will read uninitialized memory for the color uniform!
     pub fn as_bytes(&self) -> Vec<u8> {
         // Combine all three matrices into a single array
         let combined = [self.model_matrix, self.view_matrix, self.proj_matrix].concat();
 
         // Use bytemuck for safe casting
-        bytemuck::cast_slice(&combined).to_vec()
+        let mut bytes = bytemuck::cast_slice(&combined).to_vec();
+
+        // Add color if present
+        if let Some(color) = self.color {
+            bytes.extend_from_slice(bytemuck::cast_slice(&color));
+        }
+
+        bytes
+    }
+
+    /// Get all three matrices plus color as a contiguous byte array for GPU upload.
+    ///
+    /// This always includes the color (defaulting to white [1.0, 1.0, 1.0, 1.0] if not set).
+    /// Returns 208 bytes (3 matrices + color).
+    ///
+    /// Use this when the material was created with has_color=true to ensure the uniform
+    /// buffer is the correct size and the color uniform is properly initialized.
+    pub fn as_bytes_with_color(&self) -> Vec<u8> {
+        // Combine all three matrices into a single array
+        let combined = [self.model_matrix, self.view_matrix, self.proj_matrix].concat();
+
+        // Use bytemuck for safe casting
+        let mut bytes = bytemuck::cast_slice(&combined).to_vec();
+
+        // Add color, defaulting to white if not specified
+        let color = self.color.unwrap_or([1.0, 1.0, 1.0, 1.0]);
+        bytes.extend_from_slice(bytemuck::cast_slice(&color));
+
+        bytes
     }
 }
 
@@ -135,6 +176,12 @@ impl DrawCall {
     /// Lower values are drawn first (useful for transparent objects).
     pub fn with_sort_key(mut self, key: u64) -> Self {
         self.sort_key = Some(key);
+        self
+    }
+
+    /// Set the material color (RGBA, 0.0-1.0 range).
+    pub fn with_color(mut self, color: [f32; 4]) -> Self {
+        self.params.color = Some(color);
         self
     }
 

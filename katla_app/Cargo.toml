@@ -13,5 +13,6 @@ winit = "^0.30"
 image = "^0.25"
 env_logger = "^0.11"
 gltf = { version = "^1.4", features = ["KHR_materials_pbrSpecularGlossiness"] }
+notify = "7.0"
 itertools = "0.14.0"
 approx = "0.5"

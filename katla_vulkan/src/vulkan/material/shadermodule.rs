@@ -58,7 +58,16 @@ impl ShaderModule {
         entry_point: impl Into<String>,
     ) -> Result<Self, ShaderError> {
         let wgsl_str = std::fs::read_to_string(path.as_ref()).map_err(ShaderError::IoError)?;
-        let wgsl_module = wgsl::parse_str(&wgsl_str).map_err(ShaderError::WgslParseError)?;
+        Self::from_wgsl_string(device, &wgsl_str, stage, entry_point)
+    }
+
+    pub fn from_wgsl_string(
+        device: Device,
+        wgsl_str: &str,
+        stage: vk::ShaderStageFlags,
+        entry_point: impl Into<String>,
+    ) -> Result<Self, ShaderError> {
+        let wgsl_module = wgsl::parse_str(wgsl_str).map_err(ShaderError::WgslParseError)?;
 
         let module_info: naga::valid::ModuleInfo = naga::valid::Validator::new(
             naga::valid::ValidationFlags::all(),

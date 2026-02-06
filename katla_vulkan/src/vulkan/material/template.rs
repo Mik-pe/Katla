@@ -1,0 +1,330 @@
+//! Material template and instance system.
+//!
+//! This module provides memory-efficient material instancing where multiple
+//! material instances can share a single pipeline while having different
+//! parameters and textures.
+
+use std::{collections::HashMap, rc::Rc};
+use super::{
+    MaterialDescriptor, MaterialPipeline, ShaderReflection, MaterialParameters,
+    MaterialValue, ShaderSource, MaterialError,
+};
+use crate::{VulkanContext, RenderPass, Texture};
+
+/// Errors that can occur with material instances
+#[derive(Debug)]
+pub enum InstanceError {
+    TemplateNotFound(String),
+    ParameterNotFound(String),
+    TypeMismatch(String),
+    UpdateFailed(String),
+}
+
+impl std::fmt::Display for InstanceError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            InstanceError::TemplateNotFound(name) => {
+                write!(f, "Material template '{}' not found", name)
+            }
+            InstanceError::ParameterNotFound(name) => {
+                write!(f, "Parameter '{}' not found", name)
+            }
+            InstanceError::TypeMismatch(msg) => {
+                write!(f, "Type mismatch: {}", msg)
+            }
+            InstanceError::UpdateFailed(msg) => {
+                write!(f, "Failed to update material: {}", msg)
+            }
+        }
+    }
+}
+
+impl std::error::Error for InstanceError {}
+
+/// A material template that contains the pipeline and shared data
+///
+/// Multiple material instances can reference this template, making it
+/// memory-efficient to have many materials with the same shader but
+/// different parameters.
+pub struct MaterialTemplate {
+    name: String,
+    descriptor: MaterialDescriptor,
+    pipeline: MaterialPipeline,
+    reflection: ShaderReflection,
+    default_parameters: MaterialParameters,
+}
+
+impl MaterialTemplate {
+    /// Create a new material template from a descriptor
+    pub fn new(
+        name: String,
+        descriptor: MaterialDescriptor,
+        reflection: ShaderReflection,
+        pipeline: MaterialPipeline,
+    ) -> Self {
+        let default_parameters = MaterialParameters::new(
+            descriptor.clone(),
+            reflection.clone(),
+        );
+
+        Self {
+            name,
+            descriptor,
+            pipeline,
+            reflection,
+            default_parameters,
+        }
+    }
+
+    /// Get the template name
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    /// Get the descriptor
+    pub fn descriptor(&self) -> &MaterialDescriptor {
+        &self.descriptor
+    }
+
+    /// Get the pipeline
+    pub fn pipeline(&self) -> &MaterialPipeline {
+        &self.pipeline
+    }
+
+    /// Get the reflection data
+    pub fn reflection(&self) -> &ShaderReflection {
+        &self.reflection
+    }
+
+    /// Get the default parameters
+    pub fn default_parameters(&self) -> &MaterialParameters {
+        &self.default_parameters
+    }
+
+    /// Update the pipeline (e.g., after hot reload)
+    ///
+    /// This affects all instances that reference this template
+    pub fn update_pipeline(&mut self, pipeline: MaterialPipeline) {
+        self.pipeline = pipeline;
+    }
+}
+
+/// An instance of a material template with instance-specific parameters
+///
+/// Each instance can have different parameter values and textures while
+/// sharing the same pipeline with other instances.
+pub struct MaterialInstance {
+    template: Rc<MaterialTemplate>,
+    parameters: HashMap<String, MaterialValue>,
+    textures: HashMap<String, Rc<Texture>>,
+}
+
+impl MaterialInstance {
+    /// Create a new instance with a shared template
+    pub fn with_template(template: Rc<MaterialTemplate>) -> Self {
+        Self {
+            template,
+            parameters: HashMap::new(),
+            textures: HashMap::new(),
+        }
+    }
+
+    /// Create a new instance with a shared template and custom parameters
+    pub fn with_template_and_params(
+        template: Rc<MaterialTemplate>,
+        params: HashMap<String, MaterialValue>,
+    ) -> Self {
+        Self {
+            template,
+            parameters: params,
+            textures: HashMap::new(),
+        }
+    }
+
+    /// Get the template this instance references
+    pub fn template(&self) -> &MaterialTemplate {
+        &self.template
+    }
+
+    /// Get the pipeline (shared with template)
+    pub fn pipeline(&self) -> &MaterialPipeline {
+        &self.template.pipeline
+    }
+
+    /// Get the reflection data (shared with template)
+    pub fn reflection(&self) -> &ShaderReflection {
+        &self.template.reflection
+    }
+
+    /// Set a parameter value
+    pub fn set_parameter(&mut self, name: impl Into<String>, value: MaterialValue) {
+        self.parameters.insert(name.into(), value);
+    }
+
+    /// Get a parameter value
+    pub fn get_parameter(&self, name: &str) -> Option<&MaterialValue> {
+        // Check instance parameters first
+        if let Some(value) = self.parameters.get(name) {
+            return Some(value);
+        }
+        // Fall back to template defaults
+        self.template.default_parameters.get(name)
+    }
+
+    /// Set a texture for a binding slot
+    pub fn set_texture(&mut self, slot: impl Into<String>, texture: Rc<Texture>) {
+        self.textures.insert(slot.into(), texture);
+    }
+
+    /// Get a texture for a binding slot
+    pub fn get_texture(&self, slot: &str) -> Option<&Rc<Texture>> {
+        self.textures.get(slot)
+    }
+
+    /// Get all instance parameters (merged with defaults)
+    pub fn get_all_parameters(&self) -> HashMap<String, MaterialValue> {
+        let mut merged = HashMap::new();
+
+        // Start with template defaults
+        for (name, value) in self.template.descriptor.parameters.iter() {
+            merged.insert(name.clone(), value.clone());
+        }
+
+        // Override with instance parameters
+        for (name, value) in self.parameters.iter() {
+            merged.insert(name.clone(), value.clone());
+        }
+
+        merged
+    }
+
+    /// Generate the uniform buffer data for this instance
+    pub fn generate_uniform_buffer(&self) -> Result<Vec<u8>, InstanceError> {
+        // Create a temporary parameters container with merged values
+        let merged_params = self.get_all_parameters();
+
+        // For now, we'll need to reconstruct the MaterialParameters
+        // In a full implementation, this would use the reflection system
+        // to generate the buffer with proper offsets
+
+        // Get the uniform buffer layout
+        let layout = self.template.reflection.get_uniforms_struct()
+            .ok_or_else(|| InstanceError::ParameterNotFound("No uniforms struct".to_string()))?;
+
+        let mut buffer = vec![0u8; layout.size];
+
+        // Fill in the parameter values at their correct offsets
+        for member in &layout.members {
+            if let Some(value) = merged_params.get(&member.name) {
+                let value_bytes = value.to_bytes();
+                let offset = member.offset;
+
+                if offset + value_bytes.len() <= buffer.len() {
+                    buffer[offset..offset + value_bytes.len()]
+                        .copy_from_slice(&value_bytes);
+                }
+            }
+        }
+
+        Ok(buffer)
+    }
+
+    /// Clone this instance
+    ///
+    /// This creates a shallow copy that shares the template but has
+    /// independent parameters and textures.
+    pub fn clone_instance(&self) -> Self {
+        Self {
+            template: Rc::clone(&self.template),
+            parameters: self.parameters.clone(),
+            textures: self.textures.clone(),
+        }
+    }
+}
+
+/// Builder for creating material templates
+pub struct MaterialTemplateBuilder {
+    name: String,
+    descriptor: Option<MaterialDescriptor>,
+    context: Option<Rc<VulkanContext>>,
+    vertex_binding: Option<crate::VertexBinding>,
+}
+
+impl MaterialTemplateBuilder {
+    /// Create a new template builder
+    pub fn new(name: impl Into<String>) -> Self {
+        Self {
+            name: name.into(),
+            descriptor: None,
+            context: None,
+            vertex_binding: None,
+        }
+    }
+
+    /// Set the material descriptor
+    pub fn descriptor(mut self, descriptor: MaterialDescriptor) -> Self {
+        self.descriptor = Some(descriptor);
+        self
+    }
+
+    /// Set the Vulkan context
+    pub fn context(mut self, context: Rc<VulkanContext>) -> Self {
+        self.context = Some(context);
+        self
+    }
+
+    /// Set the vertex binding
+    pub fn vertex_binding(mut self, binding: crate::VertexBinding) -> Self {
+        self.vertex_binding = Some(binding);
+        self
+    }
+
+    /// Build the template
+    pub fn build(self, render_pass: &RenderPass) -> Result<MaterialTemplate, MaterialError> {
+        let descriptor = self.descriptor.ok_or_else(|| {
+            MaterialError::InvalidDescriptor("No descriptor provided".to_string())
+        })?;
+
+        let context = self.context.ok_or_else(|| {
+            MaterialError::InvalidDescriptor("No context provided".to_string())
+        })?;
+
+        // Generate reflection from WGSL if possible
+        let reflection = if let (ShaderSource::WgslFile(ref path), _) =
+            (&descriptor.vertex_shader, &descriptor.fragment_shader) {
+            // Use vertex shader for reflection
+            let wgsl = std::fs::read_to_string(path)
+                .map_err(|e| MaterialError::ShaderLoadFailed(path.clone(), e))?;
+            super::ShaderReflection::from_wgsl(&wgsl)
+                .map_err(|e| MaterialError::InvalidDescriptor(format!("Reflection failed: {:?}", e)))?
+        } else {
+            // Default reflection for non-WGSL shaders
+            super::ShaderReflection {
+                structs: HashMap::new(),
+                has_color_uniform: false,
+                needs_separate_bindings: false,
+                uniform_buffer_size: 192, // Default: 3 mat4
+            }
+        };
+
+        // Build the pipeline
+        let mut builder = super::MaterialBuilder::from_descriptor(descriptor.clone(), context.clone())?;
+
+        if let Some(binding) = self.vertex_binding {
+            builder = builder.with_vertex_binding(binding);
+        }
+
+        let pipeline = builder.build(render_pass)
+            .map_err(|e| MaterialError::InvalidDescriptor(format!("Pipeline build failed: {:?}", e)))?;
+
+        Ok(MaterialTemplate::new(
+            self.name,
+            descriptor,
+            reflection,
+            pipeline,
+        ))
+    }
+}
+
+// Note: Template tests require Vulkan context and are tested through
+// the example programs and integration tests.
