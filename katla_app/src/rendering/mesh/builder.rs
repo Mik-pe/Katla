@@ -7,13 +7,12 @@ use katla_vulkan::{VulkanContext, VulkanRenderer};
 use crate::{
     application::Model,
     entities::create_model_entity,
-    rendering::{create_checkerboard_material, Material, MaterialManager, ShaderRegistry},
+    rendering::{create_checkerboard_material, Material, MaterialManager},
 };
 
 /// Base builder with common options shared across all mesh types.
 pub struct MeshBuilder {
     context: Rc<VulkanContext>,
-    shader_registry: ShaderRegistry,
     material_manager: Option<MaterialManager>,
     position: Option<Vec3>,
     color: Option<[f32; 3]>,
@@ -24,7 +23,6 @@ impl MeshBuilder {
     pub fn new(context: Rc<VulkanContext>) -> Self {
         Self {
             context,
-            shader_registry: ShaderRegistry::new(),
             material_manager: None,
             position: None,
             color: None,
@@ -145,7 +143,6 @@ macro_rules! impl_common_builder {
                 create_checkerboard_material(
                     self.base.context.clone(),
                     &renderer.render_pass,
-                    &self.base.shader_registry,
                 )
             }
 

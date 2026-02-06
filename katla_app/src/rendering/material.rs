@@ -6,7 +6,7 @@ use katla_vulkan::{
     MaterialPipeline, RenderPass, Texture, VertexBinding,
 };
 
-use std::{cell::RefCell, rc::Rc};
+use std::{cell::RefCell, path::Path, rc::Rc};
 
 #[derive(Clone)]
 pub struct Material {
@@ -55,10 +55,7 @@ impl Material {
 
         let mut builder = MaterialBuilder::new(context.clone())
             .with_vertex_binding(vertex_binding.clone())
-            .with_vertex_shader(include_bytes!(
-                "../../../resources/shaders/model_pbr.vert.spv"
-            ))
-            .with_fragment_shader(include_bytes!("../../../resources/shaders/model.frag.spv"))
+            .with_wgsl_shader(Path::new("resources/shaders/model_pbr.wgsl"))
             .with_backface_culling(true)
             .with_depth_test(true)
             .with_depth_write(true);

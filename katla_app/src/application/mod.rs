@@ -24,7 +24,7 @@ use crate::{
     components::{DirectionalLight, PointLight, TransformComponent},
     entities::{create_model_entity, Camera},
     input::{InputBinding, InputMapper, KeyCombo, MouseCombo},
-    rendering::{create_checkerboard_material, MaterialManager, MeshBuilder, ShaderRegistry},
+    rendering::{create_checkerboard_material, MaterialManager, MeshBuilder},
     util::{FileCache, GLTFModel, Timer},
 };
 
@@ -169,7 +169,6 @@ impl ApplicationHandler for Application {
             let checkerboard = create_checkerboard_material(
                 renderer.context.clone(),
                 &renderer.render_pass,
-                &ShaderRegistry::new(),
             );
             self.material_manager.register_material("checkerboard", checkerboard);
 
