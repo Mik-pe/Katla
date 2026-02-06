@@ -30,6 +30,7 @@ pub struct UniformHandle {
     next_bind_index: usize,
     next_update_index: usize,
     descriptors: Vec<UniformDescriptor>,
+    separate_bindings: bool,
 }
 
 pub struct UniformDescriptor {
@@ -37,6 +38,7 @@ pub struct UniformDescriptor {
     pub desc_pool: vk::DescriptorPool,
     pub uniform_buffer: Option<UniformBuffer>,
     pub image_info: Option<ImageInfo>,
+    separate_bindings: bool,
 }
 
 impl ImageInfo {
@@ -52,7 +54,23 @@ impl ImageInfo {
         }
     }
 
-    fn update_once(&self, set: vk::DescriptorSet, binding: u32) -> vk::WriteDescriptorSet<'_> {
+    fn update_texture(&self, set: vk::DescriptorSet, binding: u32) -> vk::WriteDescriptorSet<'_> {
+        vk::WriteDescriptorSet::default()
+            .dst_set(set)
+            .dst_binding(binding)
+            .descriptor_type(vk::DescriptorType::SAMPLED_IMAGE)
+            .image_info(&self.image_info)
+    }
+
+    fn update_sampler(&self, set: vk::DescriptorSet, binding: u32) -> vk::WriteDescriptorSet<'_> {
+        vk::WriteDescriptorSet::default()
+            .dst_set(set)
+            .dst_binding(binding)
+            .descriptor_type(vk::DescriptorType::SAMPLER)
+            .image_info(&self.image_info)
+    }
+
+    fn update_combined(&self, set: vk::DescriptorSet, binding: u32) -> vk::WriteDescriptorSet<'_> {
         vk::WriteDescriptorSet::default()
             .dst_set(set)
             .dst_binding(binding)
@@ -62,10 +80,10 @@ impl ImageInfo {
 }
 
 impl UniformHandle {
-    pub fn new(context: &VulkanContext, desc_layout: &vk::DescriptorSetLayout) -> Self {
+    pub fn new(context: &VulkanContext, desc_layout: &vk::DescriptorSetLayout, separate_bindings: bool) -> Self {
         let mut uniform_descs = vec![];
         for _ in 0..2 {
-            let uniform_desc = Self::create_descriptor_sets(context, desc_layout);
+            let uniform_desc = Self::create_descriptor_sets(context, desc_layout, separate_bindings);
             uniform_descs.push(uniform_desc);
         }
 
@@ -73,6 +91,7 @@ impl UniformHandle {
             next_bind_index: 0,
             next_update_index: 0,
             descriptors: uniform_descs,
+            separate_bindings,
         }
     }
 
@@ -102,6 +121,7 @@ impl UniformHandle {
     fn create_descriptor_sets(
         context: &VulkanContext,
         desc_layout: &vk::DescriptorSetLayout,
+        separate_bindings: bool,
     ) -> UniformDescriptor {
         let data_size = 4 * 16 * 3 as vk::DeviceSize;
 
@@ -118,16 +138,32 @@ impl UniformHandle {
             buf_size: data_size,
         });
 
-        let desc_pool_sizes = &[
-            vk::DescriptorPoolSize::default()
-                .descriptor_count(1)
-                .ty(vk::DescriptorType::UNIFORM_BUFFER),
-            vk::DescriptorPoolSize::default()
-                .descriptor_count(1)
-                .ty(vk::DescriptorType::COMBINED_IMAGE_SAMPLER),
-        ];
+        // WGSL shaders need separate texture and sampler, while SPIR-V uses combined
+        let desc_pool_sizes: Vec<vk::DescriptorPoolSize> = if separate_bindings {
+            vec![
+                vk::DescriptorPoolSize::default()
+                    .descriptor_count(1)
+                    .ty(vk::DescriptorType::UNIFORM_BUFFER),
+                vk::DescriptorPoolSize::default()
+                    .descriptor_count(1)
+                    .ty(vk::DescriptorType::SAMPLED_IMAGE),
+                vk::DescriptorPoolSize::default()
+                    .descriptor_count(1)
+                    .ty(vk::DescriptorType::SAMPLER),
+            ]
+        } else {
+            vec![
+                vk::DescriptorPoolSize::default()
+                    .descriptor_count(1)
+                    .ty(vk::DescriptorType::UNIFORM_BUFFER),
+                vk::DescriptorPoolSize::default()
+                    .descriptor_count(1)
+                    .ty(vk::DescriptorType::COMBINED_IMAGE_SAMPLER),
+            ]
+        };
+
         let desc_pool_info = vk::DescriptorPoolCreateInfo::default()
-            .pool_sizes(desc_pool_sizes)
+            .pool_sizes(&desc_pool_sizes)
             .max_sets(1);
         let desc_pool =
             unsafe { context.device.create_descriptor_pool(&desc_pool_info, None) }.unwrap();
@@ -145,6 +181,7 @@ impl UniformHandle {
             desc_pool,
             uniform_buffer,
             image_info,
+            separate_bindings,
         }
     }
 }
@@ -180,8 +217,17 @@ impl UniformDescriptor {
             if let Some(image_info) = &mut self.image_info {
                 if !image_info.is_updated {
                     image_info.is_updated = true;
-                    let write_set = image_info.update_once(self.desc_set, 1);
-                    desc_writes.push(write_set);
+                    if self.separate_bindings {
+                        // WGSL: write separate texture and sampler descriptors
+                        let texture_write = image_info.update_texture(self.desc_set, 1);
+                        let sampler_write = image_info.update_sampler(self.desc_set, 2);
+                        desc_writes.push(texture_write);
+                        desc_writes.push(sampler_write);
+                    } else {
+                        // SPIR-V: write combined image sampler descriptor
+                        let combined_write = image_info.update_combined(self.desc_set, 1);
+                        desc_writes.push(combined_write);
+                    }
                 }
             }
 
@@ -257,8 +303,9 @@ impl MaterialPipeline {
         pipeline: Pipeline,
         desc_layout: vk::DescriptorSetLayout,
         context: Rc<VulkanContext>,
+        separate_bindings: bool,
     ) -> Self {
-        let uniform = UniformHandle::new(&context, &desc_layout);
+        let uniform = UniformHandle::new(&context, &desc_layout, separate_bindings);
         Self {
             pipeline,
             uniform,
