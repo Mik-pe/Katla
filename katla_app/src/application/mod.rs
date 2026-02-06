@@ -21,7 +21,7 @@ use winit::{
 };
 
 use crate::{
-    entities::{Camera, ModelEntity},
+    entities::{create_model_entity, Camera},
     input::{InputBinding, InputMapper, KeyCombo, MouseCombo},
     rendering::{create_checkerboard_material, MaterialManager, MeshBuilder, ShaderRegistry},
     util::{FileCache, GLTFModel, Timer},
@@ -78,54 +78,48 @@ impl ApplicationHandler for Application {
                 .aspect_ratio_changed(&mut self.world, win_x / win_y);
             let model = Model::new_from_gltf(
                 self.gltf_cache
-                    .read(PathBuf::from("resources/models/Fox.glb")),
+                    .read(PathBuf::from("../resources/models/Fox.glb")),
                 renderer.context.clone(),
                 &renderer.render_pass,
             );
             let fox_transform = Transform::new_from_position(Vec3::new(0.0, 0.0, 0.0));
-            ModelEntity::new_with_renderer(&mut self.world, model, Some(&mut renderer), fox_transform);
+            create_model_entity(&mut self.world, model, Some(&mut renderer), fox_transform);
 
             // Create meshes spaced out in a line with different colors
-            let _cube = MeshBuilder::new(
-                renderer.context.clone(),
-            )
-            .position(Vec3::new(0.0, 5.0, 0.0))
-            .color([1.0, 0.3, 0.3]) // Red tint
-            .with_shared_material("checkerboard")
-            .create_cube(&mut self.world, &mut renderer);
+            let _cube = MeshBuilder::new(renderer.context.clone())
+                .position(Vec3::new(0.0, 5.0, 0.0))
+                .color([1.0, 0.3, 0.3]) // Red tint
+                .with_shared_material("checkerboard")
+                .build(&mut self.world, &mut renderer);
 
-            let _sphere = MeshBuilder::new(
-                renderer.context.clone(),
-            )
-            .position(Vec3::new(30.0, 5.0, 0.0))
-            .color([0.3, 1.0, 0.3]) // Green tint
-            .with_shared_material("checkerboard")
-            .create_sphere(&mut self.world, &mut renderer);
+            let _sphere = MeshBuilder::new(renderer.context.clone())
+                .position(Vec3::new(30.0, 5.0, 0.0))
+                .color([0.3, 1.0, 0.3]) // Green tint
+                .with_shared_material("checkerboard")
+                .sphere()
+                .build(&mut self.world, &mut renderer);
 
-            let _cylinder = MeshBuilder::new(
-                renderer.context.clone(),
-            )
-            .position(Vec3::new(-30.0, 5.0, 0.0))
-            .color([0.3, 0.3, 1.0]) // Blue tint
-            .with_shared_material("checkerboard")
-            .create_cylinder(&mut self.world, &mut renderer);
+            let _cylinder = MeshBuilder::new(renderer.context.clone())
+                .position(Vec3::new(-30.0, 5.0, 0.0))
+                .color([0.3, 0.3, 1.0]) // Blue tint
+                .with_shared_material("checkerboard")
+                .cylinder()
+                .build(&mut self.world, &mut renderer);
 
-            let _plane = MeshBuilder::new(
-                renderer.context.clone(),
-            )
-            .position(Vec3::new(0.0, -5.0, 0.0))
-            .color([0.8, 0.8, 0.8]) // Gray tint
-            .size(Vec3::new(100.0, 100.0, 1.0))
-            .with_shared_material("checkerboard")
-            .create_plane(&mut self.world, &mut renderer);
+            let _plane = MeshBuilder::new(renderer.context.clone())
+                .position(Vec3::new(0.0, -5.0, 0.0))
+                .color([0.8, 0.8, 0.8]) // Gray tint
+                .with_shared_material("checkerboard")
+                .plane()
+                .size(Vec3::new(100.0, 100.0, 1.0))
+                .build(&mut self.world, &mut renderer);
 
-            let _torus = MeshBuilder::new(
-                renderer.context.clone(),
-            )
-            .position(Vec3::new(0.0, 15.0, 0.0))
-            .color([1.0, 0.8, 0.3]) // Yellow tint
-            .with_shared_material("checkerboard")
-            .create_torus(&mut self.world, &mut renderer);
+            let _torus = MeshBuilder::new(renderer.context.clone())
+                .position(Vec3::new(0.0, 15.0, 0.0))
+                .color([1.0, 0.8, 0.3]) // Yellow tint
+                .with_shared_material("checkerboard")
+                .torus()
+                .build(&mut self.world, &mut renderer);
 
             self.window = Some(window);
 
@@ -242,32 +236,28 @@ impl ApplicationHandler for Application {
                         let start = Instant::now();
                         let renderer = self.renderer.as_mut().expect("Renderer not initialized");
 
-                        let _sphere = MeshBuilder::new(
-                            renderer.context.clone(),
-                        )
-                        .position(Vec3::new(0.0, 5.0, 0.0))
-                        .color([0.8, 0.2, 0.2])
-                        .with_shared_material("checkerboard")
-                        .create_sphere(&mut self.world, renderer);
+                        let _sphere = MeshBuilder::new(renderer.context.clone())
+                            .position(Vec3::new(0.0, 5.0, 0.0))
+                            .color([0.8, 0.2, 0.2])
+                            .with_shared_material("checkerboard")
+                            .sphere()
+                            .build(&mut self.world, renderer);
 
                         let renderer = self.renderer.as_mut().expect("Renderer not initialized");
-                        let _cube = MeshBuilder::new(
-                            renderer.context.clone(),
-                        )
-                        .position(Vec3::new(20.0, 5.0, 0.0))
-                        .color([0.2, 0.8, 0.2])
-                        .with_shared_material("checkerboard")
-                        .create_cube(&mut self.world, renderer);
+                        let _cube = MeshBuilder::new(renderer.context.clone())
+                            .position(Vec3::new(20.0, 5.0, 0.0))
+                            .color([0.2, 0.8, 0.2])
+                            .with_shared_material("checkerboard")
+                            .build(&mut self.world, renderer);
 
                         let renderer = self.renderer.as_mut().expect("Renderer not initialized");
-                        let _plane = MeshBuilder::new(
-                            renderer.context.clone(),
-                        )
-                        .position(Vec3::new(0.0, -5.0, 0.0))
-                        .size(Vec3::new(100.0, 100.0, 1.0))
-                        .color([0.5, 0.5, 0.5])
-                        .with_shared_material("checkerboard")
-                        .create_plane(&mut self.world, renderer);
+                        let _plane = MeshBuilder::new(renderer.context.clone())
+                            .position(Vec3::new(0.0, -5.0, 0.0))
+                            .color([0.5, 0.5, 0.5])
+                            .with_shared_material("checkerboard")
+                            .plane()
+                            .size(Vec3::new(100.0, 100.0, 1.0))
+                            .build(&mut self.world, renderer);
 
                         let millisecs = start.elapsed().as_micros() as f64 / 1000.0;
 
