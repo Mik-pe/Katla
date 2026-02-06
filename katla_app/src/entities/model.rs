@@ -7,80 +7,63 @@ use crate::{
 };
 use katla_math::Transform;
 
-pub struct ModelEntity {
-    _entity: EntityId,
-}
+/// Create a model entity from a Model.
+/// The Model is consumed during registration.
+///
+/// # Arguments
+/// * `world` - The ECS world to create the entity in
+/// * `model` - The model data (meshes and materials)
+/// * `renderer` - Optional Vulkan renderer for asset registration
+/// * `transform` - Initial transform for the entity
+///
+/// # Returns
+/// The created entity ID
+pub fn create_model_entity(
+    world: &mut World,
+    mut model: Model,
+    renderer: Option<&mut VulkanRenderer>,
+    transform: Transform,
+) -> EntityId {
+    let entity = world.create_entity();
 
-impl ModelEntity {
-    pub fn new(world: &mut World, model: Model, transform: Transform) -> Self {
-        Self::new_with_renderer(world, model, None, transform)
-    }
-
-    pub fn new_with_renderer(
-        world: &mut World,
-        mut model: Model,
-        renderer: Option<&mut VulkanRenderer>,
-        transform: Transform,
-    ) -> Self {
-        let entity = world.create_entity();
-
-        // Register assets with renderer if available
-        let (mesh_handle, material_handle) = if let Some(r) = renderer {
-            // Register mesh - take buffers from the first mesh
-            // Note: For now we only support single-mesh models
-            let mesh_h = if let Some(first_mesh) = model.meshes.first_mut() {
-                let vertex_buffer = first_mesh.vertex_buffer.take();
-                let index_buffer = first_mesh.index_buffer.take();
-                r.register_mesh(vertex_buffer, index_buffer)
-            } else {
-                MeshHandle(0) // Dummy handle if no meshes
-            };
-
-            // Register material
-            let mat_h = r.create_material(
-                model.material.material_pipeline.clone(),
-                model.material.texture.clone(),
-                model.material.vertex_binding.clone(),
-            );
-
-            // Store handles in the model
-            model.mesh_handle = Some(mesh_h);
-            model.material_handle = Some(mat_h);
-
-            (Some(mesh_h), Some(mat_h))
+    // Register assets with renderer if available
+    let (mesh_handle, material_handle) = if let Some(r) = renderer {
+        // Register mesh - take buffers from the first mesh
+        // Note: For now we only support single-mesh models
+        let mesh_h = if let Some(first_mesh) = model.meshes.first_mut() {
+            let vertex_buffer = first_mesh.vertex_buffer.take();
+            let index_buffer = first_mesh.index_buffer.take();
+            r.register_mesh(vertex_buffer, index_buffer)
         } else {
-            // Use dummy handles
-            (Some(MeshHandle(0)), Some(MaterialHandle(0)))
+            MeshHandle(0) // Dummy handle if no meshes
         };
 
-        world.add_component(entity, TransformComponent::new(transform));
-        world.add_component(
-            entity,
-            DrawableComponent::with_handles(
-                mesh_handle.unwrap(),
-                material_handle.unwrap(),
-            ),
+        // Register material
+        let mat_h = r.create_material(
+            model.material.material_pipeline.clone(),
+            model.material.texture.clone(),
+            model.material.vertex_binding.clone(),
         );
-        world.add_component(entity, NameComponent::new("Model"));
-        Self { _entity: entity }
-    }
 
-    pub fn new_with_transform(
-        world: &mut World,
-        _model: Model,
-        transform: katla_math::Transform,
-    ) -> Self {
-        let entity = world.create_entity();
+        // Store handles in the model
+        model.mesh_handle = Some(mesh_h);
+        model.material_handle = Some(mat_h);
 
-        world.add_component(
-            entity,
-            DrawableComponent {
-                mesh_handle: None,
-                material_handle: None,
-            },
-        );
-        world.add_component(entity, TransformComponent::new(transform));
-        world.add_component(entity, NameComponent::new("Model"));
-        Self { _entity: entity }
-    }
+        (Some(mesh_h), Some(mat_h))
+    } else {
+        // Use dummy handles
+        (Some(MeshHandle(0)), Some(MaterialHandle(0)))
+    };
+
+    world.add_component(entity, TransformComponent::new(transform));
+    world.add_component(
+        entity,
+        DrawableComponent::with_handles(
+            mesh_handle.unwrap(),
+            material_handle.unwrap(),
+        ),
+    );
+    world.add_component(entity, NameComponent::new("Model"));
+
+    entity
 }
