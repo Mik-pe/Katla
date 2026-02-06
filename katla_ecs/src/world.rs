@@ -2,9 +2,10 @@ use katla_math::Vec2;
 
 use crate::components::Component;
 use crate::entity::EntityId;
+use crate::resource::ResourceStorage;
 use crate::storage::ComponentStorageManager;
 use crate::system::{OrderedSystem, System, SystemExecutionOrder};
-use crate::InputState;
+use crate::{Resource, InputState};
 use std::collections::HashSet;
 
 /// World is the central manager for the ECS framework.
@@ -41,6 +42,8 @@ pub struct World {
     input_state: InputState,
     /// Next entity ID to assign
     next_entity_id: u64,
+    /// Global resources storage
+    resources: ResourceStorage,
 }
 
 impl World {
@@ -52,6 +55,7 @@ impl World {
             systems: Vec::new(),
             input_state: InputState::new(),
             next_entity_id: 0,
+            resources: ResourceStorage::new(),
         }
     }
 
@@ -248,6 +252,45 @@ impl World {
 
     pub fn get_input_mut(&mut self) -> &mut InputState {
         &mut self.input_state
+    }
+
+    /// Insert a resource into the world.
+    ///
+    /// If a resource of this type already exists, it will be replaced.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// world.insert_resource(GameSettings::default());
+    /// ```
+    pub fn insert_resource<R: Resource>(&mut self, resource: R) {
+        self.resources.insert(resource);
+    }
+
+    /// Get a reference to a resource.
+    ///
+    /// Returns `None` if the resource doesn't exist.
+    pub fn get_resource<R: Resource>(&self) -> Option<&R> {
+        self.resources.get()
+    }
+
+    /// Get a mutable reference to a resource.
+    ///
+    /// Returns `None` if the resource doesn't exist.
+    pub fn get_resource_mut<R: Resource>(&mut self) -> Option<&mut R> {
+        self.resources.get_mut()
+    }
+
+    /// Check if a resource exists.
+    pub fn contains_resource<R: Resource>(&self) -> bool {
+        self.resources.contains::<R>()
+    }
+
+    /// Remove a resource from the world.
+    ///
+    /// Returns `None` if the resource didn't exist.
+    pub fn remove_resource<R: Resource>(&mut self) -> Option<R> {
+        self.resources.remove()
     }
 
     pub fn storage(&self) -> &ComponentStorageManager {

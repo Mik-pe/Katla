@@ -2,6 +2,7 @@ use std::ops::Mul;
 
 use crate::{Mat4, Quat, Vec3, Vec4};
 
+#[derive(Debug, Copy, Clone)]
 pub struct Transform {
     pub position: Vec3,
     pub scale: Vec3,
@@ -67,9 +68,25 @@ impl Transform {
 impl Mul for Transform {
     type Output = Transform;
 
+    /// Compose two transforms: `parent * child`
+    ///
+    /// When multiplying transforms, the left (parent) transform is applied first,
+    /// then the right (child) transform. This matches standard matrix multiplication
+    /// order and is used for hierarchical transform composition.
+    ///
+    /// For `parent * child`:
+    /// - Position: child's local position transformed by parent's rotation/scale, then added to parent's position
+    /// - Rotation: parent's rotation followed by child's rotation (quaternion multiplication)
+    /// - Scale: combined scale (element-wise multiplication)
     fn mul(self, rhs: Self) -> Self::Output {
-        let out_pos = rhs.rotation * (rhs.scale * self.position) + rhs.position;
-        let out_rot = rhs.rotation * self.rotation;
+        // Apply parent's transform to child's position:
+        // 1. Rotate child's position by parent's rotation
+        // 2. Scale by parent's scale
+        // 3. Add parent's position
+        let out_pos = self.position + (self.scale * (self.rotation * rhs.position));
+        // Parent rotation followed by child rotation
+        let out_rot = self.rotation * rhs.rotation;
+        // Combined scale
         let out_scale = self.scale * rhs.scale;
         Self::Output {
             position: out_pos,

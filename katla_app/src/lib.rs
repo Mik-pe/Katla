@@ -1,3 +1,4 @@
+pub mod animation;
 pub mod application;
 pub mod components;
 pub mod entities;

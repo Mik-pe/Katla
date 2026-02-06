@@ -21,6 +21,7 @@ use winit::{
 };
 
 use crate::{
+    components::{DirectionalLight, PointLight, TransformComponent},
     entities::{create_model_entity, Camera},
     input::{InputBinding, InputMapper, KeyCombo, MouseCombo},
     rendering::{create_checkerboard_material, MaterialManager, MeshBuilder, ShaderRegistry},
@@ -120,6 +121,47 @@ impl ApplicationHandler for Application {
                 .with_shared_material("checkerboard")
                 .torus()
                 .build(&mut self.world, &mut renderer);
+
+            // Add lighting to the scene
+            // Directional light (sun)
+            let sun_light = self.world.create_entity();
+            self.world.add_component(
+                sun_light,
+                DirectionalLight::new(
+                    Vec3::new(-0.3, -1.0, -0.2), // Angled down and to the side
+                    [1.0, 0.95, 0.8],           // Warm white
+                    1.0,                        // Full intensity
+                ),
+            );
+
+            // Point lights for accent lighting
+            let red_light = self.world.create_entity();
+            self.world.add_component(
+                red_light,
+                TransformComponent {
+                    transform: Transform::new_from_position(Vec3::new(10.0, 10.0, 10.0)),
+                },
+            );
+            self.world.add_component(
+                red_light,
+                PointLight::new([1.0, 0.3, 0.3], 5.0, 20.0), // Red light, 5x intensity, 20 unit range
+            );
+
+            let blue_light = self.world.create_entity();
+            self.world.add_component(
+                blue_light,
+                TransformComponent {
+                    transform: Transform::new_from_position(Vec3::new(-10.0, 8.0, 10.0)),
+                },
+            );
+            self.world.add_component(
+                blue_light,
+                PointLight::new([0.3, 0.5, 1.0], 4.0, 25.0), // Blue light, 4x intensity, 25 unit range
+            );
+
+            // Add ambient light resource
+            self.world
+                .insert_resource(crate::components::AmbientLight::gray(0.15)); // 15% gray ambient
 
             self.window = Some(window);
 

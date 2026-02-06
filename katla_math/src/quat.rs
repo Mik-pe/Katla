@@ -44,6 +44,16 @@ impl Quat {
         }
     }
 
+    /// Create a quaternion from XYZW components
+    pub fn new_from_xyzw(x: f32, y: f32, z: f32, w: f32) -> Quat {
+        Quat { x, y, z, w }
+    }
+
+    /// Get the XYZW components as a tuple
+    pub fn xyzw(&self) -> (f32, f32, f32, f32) {
+        (self.x, self.y, self.z, self.w)
+    }
+
     pub fn from_axis_angle(axis: Vec3, angle: f32) -> Quat {
         let axis = axis.normalize();
         let factor = f32::sin(angle / 2.0);
