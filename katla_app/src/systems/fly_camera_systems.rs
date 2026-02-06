@@ -1,7 +1,7 @@
 use katla_ecs::{InputState, System, World};
 use katla_math::{Quat, Vec3};
 
-use crate::components::{FlyCameraControllerComponent, FlyCameraLookComponent, ForceComponent};
+use crate::components::{FlyCameraControllerComponent, FlyCameraLookComponent, ForceComponent, VelocityComponent};
 
 pub struct FlyCameraLookSystem;
 
@@ -28,15 +28,13 @@ impl System for FlyCameraLookSystem {
         let should_look = input.is_action_pressed(katla_ecs::input::Action::LookEnable);
         let input_dir = self.get_input_dir(input);
 
-        if input_dir.length_squared() == 0.0 && !should_look {
-            return;
-        }
-
         let delta = input.mouse_delta;
+        let has_movement_input = input_dir.length_squared() > 0.0;
 
         let storage = world.storage_mut();
 
-        let updates: Vec<(katla_ecs::EntityId, Quat, f32)> = storage
+        // Collect all updates first
+        let transform_updates: Vec<(katla_ecs::EntityId, Quat, f32, bool)> = storage
             .query::<(
                 &FlyCameraControllerComponent,
                 &mut FlyCameraLookComponent,
@@ -53,22 +51,42 @@ impl System for FlyCameraLookSystem {
                         entity,
                         Quat::new_from_yaw_pitch(look.yaw, look.pitch),
                         ctrl.speed,
+                        has_movement_input,
                     )
                 } else {
-                    (entity, transform.transform.rotation, ctrl.speed)
+                    (entity, transform.transform.rotation, ctrl.speed, has_movement_input)
                 }
             })
             .collect();
 
-        for (entity, rotation, speed) in updates {
-            if let Some(transform) =
-                storage.get_component_mut::<crate::components::TransformComponent>(entity)
-            {
-                transform.transform.rotation = rotation;
+        // Collect velocities for damping calculation
+        let velocities: Vec<_> = storage
+            .query::<(&VelocityComponent, &ForceComponent)>()
+            .map(|(entity, vel, _)| (entity, vel.velocity))
+            .collect();
+
+        // Apply transform updates
+        for (entity, rotation, _speed, _has_input) in &transform_updates {
+            if let Some(transform) = storage.get_component_mut::<crate::components::TransformComponent>(*entity) {
+                transform.transform.rotation = *rotation;
             }
+        }
+
+        // Apply force updates
+        for (entity, rotation, speed, has_input) in transform_updates {
             if let Some(force) = storage.get_component_mut::<ForceComponent>(entity) {
-                let world_dir = rotation.rotate_vec3(input_dir);
-                force.force += world_dir.mul(speed);
+                if has_input {
+                    // Apply movement force in the direction of camera rotation
+                    let world_dir = rotation.rotate_vec3(input_dir);
+                    force.force += world_dir.mul(speed);
+                } else {
+                    // Apply linear damping to bring camera to a stop
+                    // This is more predictable than quadratic drag for camera control
+                    if let Some((_, velocity)) = velocities.iter().find(|(e, _)| *e == entity) {
+                        let damping_factor = 15.0; // Adjust for faster/slower stop
+                        force.force -= *velocity * damping_factor;
+                    }
+                }
             }
         }
     }
