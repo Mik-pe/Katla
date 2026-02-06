@@ -1,8 +1,8 @@
-use std::rc::Rc;
+use std::{path::Path, rc::Rc};
 
 use katla_vulkan::{MaterialBuilder, RenderPass, Texture, VulkanContext, ImageFormat};
 
-use crate::rendering::{Material, ShaderRegistry, VertexPBR};
+use crate::rendering::{Material, VertexPBR};
 
 /// Create a checkerboard material for use with primitive shapes.
 ///
@@ -11,7 +11,6 @@ use crate::rendering::{Material, ShaderRegistry, VertexPBR};
 pub fn create_checkerboard_material(
     context: Rc<VulkanContext>,
     render_pass: &RenderPass,
-    shader_registry: &ShaderRegistry,
 ) -> Material {
     // Create a checkerboard texture (64x64)
     let texture_size = 64;
@@ -45,10 +44,10 @@ pub fn create_checkerboard_material(
     ));
 
     let vertex_binding = VertexPBR::get_vertex_binding();
+    let wgsl_path = Path::new("resources/shaders/model_pbr.wgsl");
     let material_pipeline = MaterialBuilder::new(context.clone())
         .with_vertex_binding(vertex_binding.clone())
-        .with_vertex_shader(shader_registry.get_vertex_shader("model_pbr.vert"))
-        .with_fragment_shader(shader_registry.get_fragment_shader("model.frag"))
+        .with_wgsl_shader(wgsl_path)
         .with_texture(texture.clone())
         .with_depth_test(true)
         .with_depth_write(true)
