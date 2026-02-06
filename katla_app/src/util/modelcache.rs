@@ -94,7 +94,7 @@ impl GLTFModel {
         }
     }
 
-    fn new<P>(path: P) -> Self
+    pub fn new<P>(path: P) -> Self
     where
         P: AsRef<Path>,
     {

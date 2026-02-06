@@ -29,6 +29,9 @@ pub mod systems;
 #[cfg(test)]
 mod tests;
 
+#[cfg(test)]
+mod integration_tests;
+
 // Re-export commonly used types
 pub use components::{AnimationPlayer, AnimatedModel, MorphTargetWeights};
 pub use clips::{AnimationClip, AnimationChannel, ChannelPath};
