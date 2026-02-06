@@ -14,3 +14,4 @@ image = "^0.25"
 env_logger = "^0.11"
 gltf = { version = "^1.4", features = ["KHR_materials_pbrSpecularGlossiness"] }
 itertools = "0.14.0"
+approx = "0.5"

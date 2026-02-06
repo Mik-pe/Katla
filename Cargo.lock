@@ -1058,6 +1058,7 @@ dependencies = [
 name = "katla"
 version = "0.1.0"
 dependencies = [
+ "approx",
  "byteorder",
  "env_logger",
  "gltf",
