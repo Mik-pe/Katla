@@ -59,12 +59,6 @@ impl System for FlyCameraLookSystem {
             })
             .collect();
 
-        // Collect velocities for damping calculation
-        let velocities: Vec<_> = storage
-            .query::<(&VelocityComponent, &ForceComponent)>()
-            .map(|(entity, vel, _)| (entity, vel.velocity))
-            .collect();
-
         // Apply transform updates
         for (entity, rotation, _speed, _has_input) in &transform_updates {
             if let Some(transform) = storage.get_component_mut::<crate::components::TransformComponent>(*entity) {
@@ -72,19 +66,24 @@ impl System for FlyCameraLookSystem {
             }
         }
 
-        // Apply force updates
+        // Apply force/velocity updates
         for (entity, rotation, speed, has_input) in transform_updates {
-            if let Some(force) = storage.get_component_mut::<ForceComponent>(entity) {
-                if has_input {
-                    // Apply movement force in the direction of camera rotation
+            if has_input {
+                // Apply movement force in the direction of camera rotation
+                if let Some(force) = storage.get_component_mut::<ForceComponent>(entity) {
                     let world_dir = rotation.rotate_vec3(input_dir);
                     force.force += world_dir.mul(speed);
-                } else {
-                    // Apply linear damping to bring camera to a stop
-                    // This is more predictable than quadratic drag for camera control
-                    if let Some((_, velocity)) = velocities.iter().find(|(e, _)| *e == entity) {
-                        let damping_factor = 15.0; // Adjust for faster/slower stop
-                        force.force -= *velocity * damping_factor;
+                }
+            } else {
+                // No input - directly reduce velocity for smooth stopping
+                if let Some(velocity) = storage.get_component_mut::<VelocityComponent>(entity) {
+                    let speed = velocity.velocity.length();
+                    if speed > 0.01 {
+                        // Reduce velocity by a percentage each frame (exponential decay)
+                        velocity.velocity *= 0.85; // Adjust for faster/slower stop
+                    } else {
+                        // Stop completely when very slow
+                        velocity.velocity = Vec3::new(0.0, 0.0, 0.0);
                     }
                 }
             }
