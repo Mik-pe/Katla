@@ -17,15 +17,14 @@ var albedo_sampler: sampler;
 struct VertexInput {
     @location(0) position: vec3f,
     @location(1) normal: vec3f,
-    @location(2) vert_tangent: vec4f,
-    @location(3) vert_texcoord0: vec2f,
+    @location(2) tangent: vec4f,
+    @location(3) uv: vec2f,
 }
 
 struct VertexOutput {
     @builtin(position) clip_position: vec4f,
-    @location(0) vs_pos: vec3f,
-    @location(1) tex_coords: vec2f,
-    @location(2) vs_norm: vec3f,
+    @location(0) uv: vec2f,
+    @location(1) normal: vec3f,
 }
 
 @vertex
@@ -36,27 +35,20 @@ fn vs_main(in: VertexInput) -> VertexOutput {
     let world_pos = uniforms.world * vec4f(in.position, 1.0);
     out.clip_position = uniforms.proj * uniforms.view * world_pos;
 
-    // Note: Original shader had a bug here: "vs_pos = vs_pos;" which was a no-op
-    // Preserving original behavior (uninitialized vs_pos)
-    out.vs_pos = out.vs_pos;
-
-    // Normal remapped to 0.5-1.0 range (preserving original behavior)
-    out.vs_norm = in.normal * 0.5 + 0.5;
-
-    // Pass through texture coordinates
-    out.tex_coords = in.vert_texcoord0;
+    // Pass through UV and normal
+    out.uv = in.uv;
+    out.normal = (uniforms.world * vec4f(in.normal, 0.0)).xyz;
 
     return out;
 }
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4f {
-    // Sample the albedo texture
-    let texture_color = textureSample(albedo_texture, albedo_sampler, in.tex_coords);
+    // Sample texture with proper WGSL syntax
+    let texture_color = textureSample(albedo_texture, albedo_sampler, in.uv);
 
     // Blend with material color (multiply mode)
     let blended = texture_color.rgb * uniforms.color.rgb;
 
-    // Hot reload test - output blended color with material alpha
     return vec4f(blended, uniforms.color.a * texture_color.a);
 }

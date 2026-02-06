@@ -449,8 +449,10 @@ impl VulkanRenderer {
                                 None => continue,
                             };
 
-                            // Upload uniform buffers (model, view, projection matrices)
-                            let params_bytes = draw.params.as_bytes();
+                            // Upload uniform buffers
+                            // The material's uniform layout determines the expected buffer size
+                            // We always provide data for all fields to avoid uninitialized memory
+                            let params_bytes = draw.params.as_bytes_with_color();
                             material.pipeline.borrow_mut().update_buffer(&params_bytes);
 
                             // Bind the graphics pipeline

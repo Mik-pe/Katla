@@ -1,10 +1,28 @@
+pub mod asset;
 pub mod builder;
+pub mod descriptor;
+pub mod file_watcher;
+pub mod hot_reload;
 pub mod materialbuilder;
+pub mod parameters;
+pub mod reflection;
+pub mod registry;
 pub mod shadermodule;
+pub mod template;
+pub mod uniform_layout;
 
 pub use builder::*;
+pub use asset::*;
+pub use descriptor::{MaterialDescriptor, ShaderSource, DescriptorBinding, UniformType, MaterialValue, RenderState, MaterialError, ShaderStage};
+pub use file_watcher::*;
+pub use hot_reload::*;
 pub use materialbuilder::*;
+pub use parameters::*;
+pub use reflection::*;
+pub use registry::*;
 pub use shadermodule::*;
+pub use template::*;
+pub use uniform_layout::*;
 
 use ash::vk;
 use gpu_allocator::vulkan::Allocation;
@@ -23,14 +41,19 @@ pub struct ImageInfo {
     pub image_view: vk::ImageView,
     pub sampler: vk::Sampler,
     pub is_updated: bool,
-    image_info: Vec<vk::DescriptorImageInfo>,
+    // For COMBINED_IMAGE_SAMPLER binding
+    combined_info: vk::DescriptorImageInfo,
+    // For SAMPLED_IMAGE binding
+    sampled_image_info: vk::DescriptorImageInfo,
+    // For SAMPLER binding
+    sampler_only_info: vk::DescriptorImageInfo,
 }
 
 pub struct UniformHandle {
     next_bind_index: usize,
     next_update_index: usize,
     descriptors: Vec<UniformDescriptor>,
-    separate_bindings: bool,
+    layout: UniformLayout,
 }
 
 pub struct UniformDescriptor {
@@ -38,52 +61,96 @@ pub struct UniformDescriptor {
     pub desc_pool: vk::DescriptorPool,
     pub uniform_buffer: Option<UniformBuffer>,
     pub image_info: Option<ImageInfo>,
-    separate_bindings: bool,
+    pub separate_bindings: bool,
 }
 
 impl ImageInfo {
     pub fn new(image_view: vk::ImageView, sampler: vk::Sampler) -> Self {
+        // Create combined image-sampler info (for COMBINED_IMAGE_SAMPLER binding)
+        let combined_info = vk::DescriptorImageInfo::default()
+            .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
+            .image_view(image_view)
+            .sampler(sampler);
+
+        // Create sampled image info (for SAMPLED_IMAGE binding - null sampler)
+        let sampled_image_info = vk::DescriptorImageInfo::default()
+            .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
+            .image_view(image_view)
+            .sampler(vk::Sampler::null());
+
+        // Create sampler-only info (for SAMPLER binding)
+        // Note: For SAMPLER descriptors, the imageView field is ignored but shouldn't be null
+        let sampler_only_info = vk::DescriptorImageInfo::default()
+            .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
+            .image_view(image_view) // Use valid image view even though it's ignored
+            .sampler(sampler);
+
         Self {
             image_view,
             sampler,
             is_updated: false,
-            image_info: vec![vk::DescriptorImageInfo::default()
-                .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
-                .image_view(image_view)
-                .sampler(sampler)],
+            combined_info,
+            sampled_image_info,
+            sampler_only_info,
         }
     }
 
-    fn update_texture(&self, set: vk::DescriptorSet, binding: u32) -> vk::WriteDescriptorSet<'_> {
-        vk::WriteDescriptorSet::default()
-            .dst_set(set)
-            .dst_binding(binding)
-            .descriptor_type(vk::DescriptorType::SAMPLED_IMAGE)
-            .image_info(&self.image_info)
-    }
-
-    fn update_sampler(&self, set: vk::DescriptorSet, binding: u32) -> vk::WriteDescriptorSet<'_> {
-        vk::WriteDescriptorSet::default()
-            .dst_set(set)
-            .dst_binding(binding)
-            .descriptor_type(vk::DescriptorType::SAMPLER)
-            .image_info(&self.image_info)
-    }
-
-    fn update_combined(&self, set: vk::DescriptorSet, binding: u32) -> vk::WriteDescriptorSet<'_> {
+    fn update_once(&self, set: vk::DescriptorSet, binding: u32) -> vk::WriteDescriptorSet<'_> {
         vk::WriteDescriptorSet::default()
             .dst_set(set)
             .dst_binding(binding)
             .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
-            .image_info(&self.image_info)
+            .image_info(std::slice::from_ref(&self.combined_info))
+    }
+
+    fn update_once_separate(&self, set: vk::DescriptorSet, image_binding: u32, sampler_binding: u32) -> (vk::WriteDescriptorSet<'_>, vk::WriteDescriptorSet<'_>) {
+        let image_write = vk::WriteDescriptorSet::default()
+            .dst_set(set)
+            .dst_binding(image_binding)
+            .descriptor_type(vk::DescriptorType::SAMPLED_IMAGE)
+            .image_info(std::slice::from_ref(&self.sampled_image_info));
+
+        let sampler_write = vk::WriteDescriptorSet::default()
+            .dst_set(set)
+            .dst_binding(sampler_binding)
+            .descriptor_type(vk::DescriptorType::SAMPLER)
+            .image_info(std::slice::from_ref(&self.sampler_only_info));
+
+        (image_write, sampler_write)
     }
 }
 
 impl UniformHandle {
-    pub fn new(context: &VulkanContext, desc_layout: &vk::DescriptorSetLayout, separate_bindings: bool) -> Self {
+    pub fn new(context: &VulkanContext, desc_layout: &vk::DescriptorSetLayout) -> Self {
+        Self::with_layout(context, desc_layout, UniformLayout::matrices_only())
+    }
+
+    pub fn new_with_bindings(context: &VulkanContext, desc_layout: &vk::DescriptorSetLayout, separate_bindings: bool) -> Self {
+        Self::with_layout_and_bindings(context, desc_layout, UniformLayout::matrices_only(), separate_bindings)
+    }
+
+    pub fn new_with_options(context: &VulkanContext, desc_layout: &vk::DescriptorSetLayout, separate_bindings: bool, has_color: bool) -> Self {
+        let layout = if has_color {
+            UniformLayout::pbr_with_color()
+        } else {
+            UniformLayout::matrices_only()
+        };
+        Self::with_layout_and_bindings(context, desc_layout, layout, separate_bindings)
+    }
+
+    pub fn with_layout(context: &VulkanContext, desc_layout: &vk::DescriptorSetLayout, layout: UniformLayout) -> Self {
+        Self::with_layout_and_bindings(context, desc_layout, layout, false)
+    }
+
+    pub fn with_layout_and_bindings(
+        context: &VulkanContext,
+        desc_layout: &vk::DescriptorSetLayout,
+        layout: UniformLayout,
+        separate_bindings: bool,
+    ) -> Self {
         let mut uniform_descs = vec![];
         for _ in 0..2 {
-            let uniform_desc = Self::create_descriptor_sets(context, desc_layout, separate_bindings);
+            let uniform_desc = Self::create_descriptor_sets(context, desc_layout, &layout, separate_bindings);
             uniform_descs.push(uniform_desc);
         }
 
@@ -91,8 +158,13 @@ impl UniformHandle {
             next_bind_index: 0,
             next_update_index: 0,
             descriptors: uniform_descs,
-            separate_bindings,
+            layout,
         }
+    }
+
+    /// Get the uniform layout for this handle.
+    pub fn layout(&self) -> &UniformLayout {
+        &self.layout
     }
 
     pub fn add_image_info(&mut self, image_info: ImageInfo) {
@@ -121,9 +193,11 @@ impl UniformHandle {
     fn create_descriptor_sets(
         context: &VulkanContext,
         desc_layout: &vk::DescriptorSetLayout,
+        layout: &UniformLayout,
         separate_bindings: bool,
     ) -> UniformDescriptor {
-        let data_size = 4 * 16 * 3 as vk::DeviceSize;
+        // Calculate buffer size from layout
+        let data_size = layout.total_size() as vk::DeviceSize;
 
         let create_info = vk::BufferCreateInfo::default()
             .sharing_mode(vk::SharingMode::EXCLUSIVE)
@@ -135,35 +209,25 @@ impl UniformHandle {
         let uniform_buffer = Some(UniformBuffer {
             allocation,
             buffer,
-            buf_size: data_size,
+            buf_size: data_size as vk::DeviceSize,
         });
 
-        // WGSL shaders need separate texture and sampler, while SPIR-V uses combined
-        let desc_pool_sizes: Vec<vk::DescriptorPoolSize> = if separate_bindings {
-            vec![
-                vk::DescriptorPoolSize::default()
-                    .descriptor_count(1)
-                    .ty(vk::DescriptorType::UNIFORM_BUFFER),
-                vk::DescriptorPoolSize::default()
-                    .descriptor_count(1)
-                    .ty(vk::DescriptorType::SAMPLED_IMAGE),
-                vk::DescriptorPoolSize::default()
-                    .descriptor_count(1)
-                    .ty(vk::DescriptorType::SAMPLER),
-            ]
-        } else {
-            vec![
-                vk::DescriptorPoolSize::default()
-                    .descriptor_count(1)
-                    .ty(vk::DescriptorType::UNIFORM_BUFFER),
-                vk::DescriptorPoolSize::default()
-                    .descriptor_count(1)
-                    .ty(vk::DescriptorType::COMBINED_IMAGE_SAMPLER),
-            ]
-        };
-
+        let desc_pool_sizes = &[
+            vk::DescriptorPoolSize::default()
+                .descriptor_count(1)
+                .ty(vk::DescriptorType::UNIFORM_BUFFER),
+            vk::DescriptorPoolSize::default()
+                .descriptor_count(1)
+                .ty(vk::DescriptorType::COMBINED_IMAGE_SAMPLER),
+            vk::DescriptorPoolSize::default()
+                .descriptor_count(1)
+                .ty(vk::DescriptorType::SAMPLED_IMAGE),
+            vk::DescriptorPoolSize::default()
+                .descriptor_count(1)
+                .ty(vk::DescriptorType::SAMPLER),
+        ];
         let desc_pool_info = vk::DescriptorPoolCreateInfo::default()
-            .pool_sizes(&desc_pool_sizes)
+            .pool_sizes(desc_pool_sizes)
             .max_sets(1);
         let desc_pool =
             unsafe { context.device.create_descriptor_pool(&desc_pool_info, None) }.unwrap();
@@ -218,15 +282,12 @@ impl UniformDescriptor {
                 if !image_info.is_updated {
                     image_info.is_updated = true;
                     if self.separate_bindings {
-                        // WGSL: write separate texture and sampler descriptors
-                        let texture_write = image_info.update_texture(self.desc_set, 1);
-                        let sampler_write = image_info.update_sampler(self.desc_set, 2);
-                        desc_writes.push(texture_write);
+                        let (image_write, sampler_write) = image_info.update_once_separate(self.desc_set, 1, 2);
+                        desc_writes.push(image_write);
                         desc_writes.push(sampler_write);
                     } else {
-                        // SPIR-V: write combined image sampler descriptor
-                        let combined_write = image_info.update_combined(self.desc_set, 1);
-                        desc_writes.push(combined_write);
+                        let write_set = image_info.update_once(self.desc_set, 1);
+                        desc_writes.push(write_set);
                     }
                 }
             }
@@ -303,15 +364,62 @@ impl MaterialPipeline {
         pipeline: Pipeline,
         desc_layout: vk::DescriptorSetLayout,
         context: Rc<VulkanContext>,
+    ) -> Self {
+        Self::with_layout(pipeline, desc_layout, context, UniformLayout::matrices_only())
+    }
+
+    pub fn new_with_bindings(
+        pipeline: Pipeline,
+        desc_layout: vk::DescriptorSetLayout,
+        context: Rc<VulkanContext>,
         separate_bindings: bool,
     ) -> Self {
-        let uniform = UniformHandle::new(&context, &desc_layout, separate_bindings);
+        Self::with_layout_and_bindings(pipeline, desc_layout, context, UniformLayout::matrices_only(), separate_bindings)
+    }
+
+    pub fn new_with_options(
+        pipeline: Pipeline,
+        desc_layout: vk::DescriptorSetLayout,
+        context: Rc<VulkanContext>,
+        separate_bindings: bool,
+        has_color: bool,
+    ) -> Self {
+        let layout = if has_color {
+            UniformLayout::pbr_with_color()
+        } else {
+            UniformLayout::matrices_only()
+        };
+        Self::with_layout_and_bindings(pipeline, desc_layout, context, layout, separate_bindings)
+    }
+
+    pub fn with_layout(
+        pipeline: Pipeline,
+        desc_layout: vk::DescriptorSetLayout,
+        context: Rc<VulkanContext>,
+        layout: UniformLayout,
+    ) -> Self {
+        Self::with_layout_and_bindings(pipeline, desc_layout, context, layout, false)
+    }
+
+    pub fn with_layout_and_bindings(
+        pipeline: Pipeline,
+        desc_layout: vk::DescriptorSetLayout,
+        context: Rc<VulkanContext>,
+        layout: UniformLayout,
+        separate_bindings: bool,
+    ) -> Self {
+        let uniform = UniformHandle::with_layout_and_bindings(&context, &desc_layout, layout, separate_bindings);
         Self {
             pipeline,
             uniform,
             desc_layout,
             context,
         }
+    }
+
+    /// Get the uniform layout for this pipeline.
+    pub fn layout(&self) -> &UniformLayout {
+        self.uniform.layout()
     }
 
     pub fn bind(&self, command_buffer: vk::CommandBuffer) {

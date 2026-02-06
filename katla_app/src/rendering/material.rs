@@ -1,6 +1,6 @@
 use crate::{rendering::vertextypes::*, util::GLTFModel};
 
-use katla_math::Mat4;
+use katla_math::{Color, Mat4};
 use katla_vulkan::{
     context::VulkanContext, CommandBuffer, ImageFormat, MaterialBuilder, MaterialHandle,
     MaterialPipeline, RenderPass, Texture, VertexBinding,
@@ -16,6 +16,8 @@ pub struct Material {
     pub vertex_binding: VertexBinding,
     /// Handle after registration with renderer (None until registered)
     pub handle: Option<MaterialHandle>,
+    /// Optional material color for blending (multiplied with texture)
+    pub color: Option<Color>,
 }
 
 impl Material {
@@ -56,6 +58,7 @@ impl Material {
         let mut builder = MaterialBuilder::new(context.clone())
             .with_vertex_binding(vertex_binding.clone())
             .with_wgsl_shader(Path::new("resources/shaders/model_pbr.wgsl"))
+            .with_color_uniform(true)  // Enable color uniform (shader expects it)
             .with_backface_culling(true)
             .with_depth_test(true)
             .with_depth_write(true);
@@ -73,6 +76,7 @@ impl Material {
             texture,
             vertex_binding,
             handle: None,
+            color: None,
         }
     }
 
@@ -83,11 +87,37 @@ impl Material {
     }
 
     pub fn upload_pipeline_data(&mut self, view: Mat4, proj: Mat4, model: Mat4) {
+        self.upload_pipeline_data_with_color(view, proj, model, None);
+    }
+
+    pub fn upload_pipeline_data_with_color(
+        &mut self,
+        view: Mat4,
+        proj: Mat4,
+        model: Mat4,
+        color: Option<Color>,
+    ) {
         let mat = [model, view, proj];
-        let data_slice = unsafe {
+        let base_data_slice = unsafe {
             std::slice::from_raw_parts(mat.as_ptr() as *const u8, std::mem::size_of_val(&mat))
         };
-        self.material_pipeline.borrow_mut().update_buffer(data_slice);
+
+        // Always include color (default to white if not specified)
+        // This is necessary because the shader expects the color uniform when has_color is enabled
+        let c = color.or(self.color).unwrap_or(Color::WHITE);
+        let color_array = c.to_array();
+        let mut data = Vec::with_capacity(base_data_slice.len() + color_array.len() * 4);
+        data.extend_from_slice(base_data_slice);
+        // Extend with color as f32 bytes
+        unsafe {
+            let color_bytes = std::slice::from_raw_parts(
+                color_array.as_ptr() as *const u8,
+                color_array.len() * 4,
+            );
+            data.extend_from_slice(color_bytes);
+        }
+
+        self.material_pipeline.borrow_mut().update_buffer(&data);
     }
 
     /// Get the handle (returns None if not yet registered with renderer)
