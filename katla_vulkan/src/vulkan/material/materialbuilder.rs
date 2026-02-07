@@ -237,11 +237,11 @@ impl MaterialBuilder {
     ///
     /// # Arguments
     /// * `render_pass` - The render pass
-    /// * `desc_layout` - The existing descriptor set layout to reuse
+    /// * `existing_desc_layout` - The existing descriptor set layout to reuse
     pub fn build_with_desc_layout(
         self,
         render_pass: &RenderPass,
-        desc_layout: vk::DescriptorSetLayout,
+        existing_desc_layout: vk::DescriptorSetLayout,
     ) -> Result<MaterialPipeline, MaterialBuildError> {
         let vertex_binding = self
             .vertex_binding
@@ -254,6 +254,8 @@ impl MaterialBuilder {
             .fragment_shader
             .ok_or(MaterialBuildError::MissingFragmentShader)?;
 
+        // Use the existing descriptor set layout instead of creating a new one
+        // This preserves compatibility with material instances' descriptor sets
         let mut pipeline_builder = PipelineBuilder::new(self.context.clone())
             .with_shaders(vert_shader.module, frag_shader.module)
             .with_entry_points(
@@ -265,7 +267,7 @@ impl MaterialBuilder {
                 vertex_binding.get_attribute_desc(0),
             )
             .with_depth_test(self.depth_test, self.depth_write, vk::CompareOp::LESS)
-            .with_descriptor_layouts(vec![desc_layout]);
+            .with_descriptor_layouts(vec![existing_desc_layout]);
 
         if self.cull_back_faces {
             pipeline_builder = pipeline_builder
@@ -286,7 +288,7 @@ impl MaterialBuilder {
         // All shaders are WGSL, which uses separate bindings
         let mut material_pipeline = MaterialPipeline::new_with_options(
             pipeline,
-            desc_layout,
+            existing_desc_layout,
             self.context.clone(),
             true,  // separate_bindings - always true for WGSL
             self.has_color,

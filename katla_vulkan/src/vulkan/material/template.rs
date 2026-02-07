@@ -76,7 +76,7 @@ impl MaterialTemplate {
     ) -> Self {
         // Extract the descriptor set layout from the pipeline
         // This will be preserved across hot reloads
-        let desc_layout = pipeline.desc_layout;
+        let desc_layout = pipeline.desc_layout.expect("Pipeline created without descriptor set layout");
 
         let default_parameters = MaterialParameters::new(
             descriptor.clone(),

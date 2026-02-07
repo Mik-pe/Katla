@@ -516,7 +516,7 @@ impl VulkanRenderer {
                                 pipeline_ref.context().device.cmd_bind_pipeline(
                                     cmd_buf,
                                     vk::PipelineBindPoint::GRAPHICS,
-                                    pipeline_ref.pipeline.handle,
+                                    pipeline_ref.vk_pipeline().handle,
                                 );
 
                                 // Use material's own descriptor set if available, otherwise pipeline's
@@ -529,7 +529,7 @@ impl VulkanRenderer {
                                 pipeline_ref.context().device.cmd_bind_descriptor_sets(
                                     cmd_buf,
                                     vk::PipelineBindPoint::GRAPHICS,
-                                    pipeline_ref.pipeline.layout,
+                                    pipeline_ref.vk_layout(),
                                     0,
                                     &[desc_set],
                                     &[],

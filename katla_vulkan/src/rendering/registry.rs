@@ -172,17 +172,23 @@ impl AssetRegistry {
     /// Destroy all registered assets and free GPU resources.
     ///
     /// This must be called before the renderer is destroyed to avoid Vulkan validation errors.
+    ///
+    /// Note: This only destroys per-material uniform buffers, not the pipelines themselves.
+    /// Pipelines are shared via Rc<RefCell<>> and are managed by MaterialRegistry.
     pub fn destroy(&mut self) {
-        // Destroy all materials (which contain MaterialPipelines that need explicit cleanup)
-        for material in self.materials.drain(..).flatten() {
-            // MaterialPipeline::destroy() needs to be called explicitly
-            // Borrow the pipeline through the RefCell and destroy it
-            if let Ok(mut pipeline) = material.pipeline.try_borrow_mut() {
-                pipeline.destroy();
+        // Destroy per-material uniform buffers
+        // Each material has its own uniform buffer with descriptor pools that need cleanup
+        for material in self.materials.iter_mut().flatten() {
+            if let Some(mut uniform) = material.uniform.take() {
+                if let Ok(pipeline) = material.pipeline.try_borrow() {
+                    uniform.destroy(pipeline.context());
+                }
             }
         }
 
-        // Drop all meshes - their VertexBuffer and IndexBuffer will be cleaned up via Drop
+        // Clear materials and meshes
+        // Pipelines will be dropped naturally (they're managed by MaterialRegistry)
+        self.materials.clear();
         self.meshes.clear();
 
         // Reset counters
