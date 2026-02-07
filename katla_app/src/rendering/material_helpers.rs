@@ -5,6 +5,43 @@ use katla_vulkan::{MaterialBuilder, RenderPass, Texture, VulkanContext, ImageFor
 
 use crate::rendering::{Material, VertexPBR};
 
+/// Create a checkerboard texture for use with materials.
+///
+/// This function creates a procedurally generated checkerboard texture
+/// that can be used with template-based materials.
+pub fn create_checkerboard_texture(context: Rc<VulkanContext>) -> Texture {
+    // Create a checkerboard texture (64x64)
+    let texture_size = 64;
+    let checker_size = 8; // 8x8 pixel squares
+    let mut pixels = Vec::with_capacity((texture_size * texture_size) as usize);
+
+    for y in 0..texture_size {
+        for x in 0..texture_size {
+            // Determine which checker square we're in
+            let checker_x = x / checker_size;
+            let checker_y = y / checker_size;
+
+            // Checkerboard pattern: alternate between two colors
+            let is_white = (checker_x + checker_y) % 2 == 0;
+
+            let pixel = if is_white {
+                Color::WHITE.to_bytes()
+            } else {
+                Color::BLACK.to_bytes()
+            };
+            pixels.extend_from_slice(&pixel);
+        }
+    }
+
+    Texture::create_image(
+        context.clone(),
+        texture_size,
+        texture_size,
+        ImageFormat::R8G8B8A8Srgb,
+        &pixels,
+    )
+}
+
 /// Create a checkerboard material for use with primitive shapes.
 ///
 /// This function creates a material with a procedurally generated checkerboard texture.
@@ -57,13 +94,12 @@ pub fn create_checkerboard_material(
         .build(render_pass)
         .expect("Failed to create material pipeline");
 
-    Material {
-        material_pipeline: std::rc::Rc::new(std::cell::RefCell::new(material_pipeline)),
-        texture: Some(texture),
+    Material::from_pipeline(
+        material_pipeline,
+        Some(texture),
         vertex_binding,
-        handle: None,
-        color: None,
-    }
+        None,
+    )
 }
 
 /// Create a colored checkerboard material for use with primitive shapes.
@@ -121,11 +157,10 @@ pub fn create_colored_checkerboard_material(
         .build(render_pass)
         .expect("Failed to create colored material pipeline");
 
-    Material {
-        material_pipeline: std::rc::Rc::new(std::cell::RefCell::new(material_pipeline)),
-        texture: Some(texture),
+    Material::from_pipeline(
+        material_pipeline,
+        Some(texture),
         vertex_binding,
-        handle: None,
-        color: Some(color),
-    }
+        Some(color),
+    )
 }

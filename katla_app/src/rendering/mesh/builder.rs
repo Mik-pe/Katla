@@ -2,35 +2,40 @@ use std::rc::Rc;
 
 use katla_ecs::{EntityId, World};
 use katla_math::{Transform, Vec3};
-use katla_vulkan::{VulkanContext, VulkanRenderer};
+use katla_vulkan::{VulkanContext, VulkanRenderer, MaterialRegistry, Texture};
 
 use crate::{
     entities::Model,
-    rendering::{create_checkerboard_material, Material, MaterialManager},
+    rendering::{create_checkerboard_material, Material},
 };
 
 /// Base builder with common options shared across all mesh types.
 pub struct MeshBuilder {
     context: Rc<VulkanContext>,
-    material_manager: Option<MaterialManager>,
+    /// Raw pointer to MaterialRegistry for template-based material creation.
+    /// This is safe because the registry outlives the builder and we only use it during build().
+    material_registry: Option<*const std::cell::RefCell<MaterialRegistry>>,
     position: Option<Vec3>,
     color: Option<[f32; 3]>,
     shared_material_name: Option<String>,
+    /// Cached checkerboard texture (created once and reused for all checkerboard materials)
+    checkerboard_texture: Option<Rc<Texture>>,
 }
 
 impl MeshBuilder {
     pub fn new(context: Rc<VulkanContext>) -> Self {
         Self {
             context,
-            material_manager: None,
+            material_registry: None,
             position: None,
             color: None,
             shared_material_name: None,
+            checkerboard_texture: None,
         }
     }
 
-    pub fn with_material_manager(mut self, material_manager: MaterialManager) -> Self {
-        self.material_manager = Some(material_manager);
+    pub fn with_material_registry_ptr(mut self, registry_ptr: *const std::cell::RefCell<MaterialRegistry>) -> Self {
+        self.material_registry = Some(registry_ptr);
         self
     }
 
@@ -105,17 +110,25 @@ impl MeshBuilder {
     pub fn build(self, world: &mut World, renderer: &mut VulkanRenderer) -> EntityId {
         self.cube().build(world, renderer)
     }
+
+    /// Get the material from the renderer's AssetRegistry by name.
+    /// This is used internally by the shape-specific builders.
+    fn get_material_from_renderer(
+        &self,
+        renderer: &VulkanRenderer,
+        name: &str,
+    ) -> Option<Material> {
+        // Try to get the material from the renderer's AssetRegistry
+        // For now, this always returns None - the MaterialManager handles materials
+        // TODO: Integrate with renderer's AssetRegistry for handle-based materials
+        None
+    }
 }
 
 /// Common functionality shared by all shape-specific builders.
 macro_rules! impl_common_builder {
     ($builder:ident) => {
         impl $builder {
-            pub fn with_material_manager(mut self, material_manager: MaterialManager) -> Self {
-                self.base.material_manager = Some(material_manager);
-                self
-            }
-
             pub fn with_shared_material(mut self, name: impl Into<String>) -> Self {
                 self.base.shared_material_name = Some(name.into());
                 self
@@ -131,14 +144,41 @@ macro_rules! impl_common_builder {
                 self
             }
 
-            fn get_material(&self, renderer: &mut VulkanRenderer) -> Material {
-                if let Some(ref manager) = self.base.material_manager {
-                    if let Some(ref name) = self.base.shared_material_name {
-                        if let Some(material) = manager.clone_material_by_name(name) {
-                            return material;
+            fn get_material(&mut self, renderer: &mut VulkanRenderer) -> Material {
+                // Try to get material from template in the registry
+                if let (Some(registry_ptr), Some(ref name)) =
+                    (self.base.material_registry, &self.base.shared_material_name)
+                {
+                    // SAFETY: The raw pointer points to the MaterialRegistry in VulkanRenderer
+                    // which is guaranteed to be valid for the lifetime of the application.
+                    // We only access it during the build() call, and the renderer always outlives the builder.
+                    unsafe {
+                        let registry = &*registry_ptr;
+                        if let Some(template) = registry.borrow().get_template(name) {
+                            println!("  MeshBuilder: Using material from template '{}'", name);
+
+                            // Check if this template needs a texture (Checkerboard uses procedural texture)
+                            // Create and cache the texture on first use
+                            let texture = if name == "Checkerboard" {
+                                if self.base.checkerboard_texture.is_none() {
+                                    self.base.checkerboard_texture = Some(std::rc::Rc::new(
+                                        crate::rendering::create_checkerboard_texture(
+                                            self.base.context.clone()
+                                        )
+                                    ));
+                                }
+                                self.base.checkerboard_texture.clone()
+                            } else {
+                                None
+                            };
+
+                            return Material::from_template(template, texture, None);
                         }
+                        println!("  MeshBuilder: Template '{}' not found, creating directly", name);
                     }
                 }
+
+                // Fallback to creating material directly
                 create_checkerboard_material(
                     self.base.context.clone(),
                     &renderer.render_pass,
@@ -146,7 +186,7 @@ macro_rules! impl_common_builder {
             }
 
             fn create_entity(
-                self,
+                mut self,
                 world: &mut World,
                 renderer: &mut VulkanRenderer,
                 mesh: crate::rendering::mesh::Mesh,
@@ -158,7 +198,11 @@ macro_rules! impl_common_builder {
                     rotation: katla_math::Quat::new(),
                     scale: Vec3::new(1.0, 1.0, 1.0),
                 };
-                Model::new(world, vec![mesh], material, Some(renderer), transform).entity
+
+                // Convert color from [f32; 3] to Color if specified
+                let color = self.base.color.map(|c| katla_math::Color::rgb(c[0], c[1], c[2]));
+
+                Model::new(world, vec![mesh], material, Some(renderer), transform, color).entity
             }
         }
     };

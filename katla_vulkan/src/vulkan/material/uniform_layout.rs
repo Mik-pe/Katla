@@ -3,8 +3,6 @@
 //! Provides a type-safe way to define uniform buffer layouts without magic byte sizes.
 //! Supports dynamic layout composition and extensibility.
 
-use ash::vk;
-
 /// Descriptor for a single uniform field in the buffer.
 #[derive(Debug, Clone, Copy)]
 pub enum UniformField {

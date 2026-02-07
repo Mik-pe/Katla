@@ -23,6 +23,9 @@ pub(crate) struct MaterialAsset {
     pub texture: Option<Rc<Texture>>,
     /// Vertex binding description.
     pub vertex_binding: VertexBinding,
+    /// Optional per-material uniform buffer (for template-based materials).
+    /// When present, this material has its own uniform buffer instead of using the pipeline's embedded one.
+    pub uniform: Option<crate::vulkan::material::UniformHandle>,
 }
 
 /// Registry for GPU assets.

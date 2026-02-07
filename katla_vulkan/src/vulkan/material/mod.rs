@@ -417,6 +417,11 @@ impl MaterialPipeline {
         }
     }
 
+    /// Get the Vulkan context for this pipeline.
+    pub fn context(&self) -> &Rc<VulkanContext> {
+        &self.context
+    }
+
     /// Get the uniform layout for this pipeline.
     pub fn layout(&self) -> &UniformLayout {
         self.uniform.layout()
@@ -441,8 +446,42 @@ impl MaterialPipeline {
         }
     }
 
+    /// Bind the pipeline with a custom descriptor set (for materials with per-material uniforms)
+    ///
+    /// # Arguments
+    /// * `command_buffer` - The command buffer to record into
+    /// * `descriptor_set` - The descriptor set to bind (from material's own uniform buffer)
+    pub fn bind_with_descriptor(&self, command_buffer: vk::CommandBuffer, descriptor_set: vk::DescriptorSet) {
+        unsafe {
+            self.context.device.cmd_bind_pipeline(
+                command_buffer,
+                vk::PipelineBindPoint::GRAPHICS,
+                self.pipeline.handle,
+            );
+
+            self.context.device.cmd_bind_descriptor_sets(
+                command_buffer,
+                vk::PipelineBindPoint::GRAPHICS,
+                self.pipeline.layout,
+                0,
+                &[descriptor_set],
+                &[],
+            );
+        }
+    }
+
     pub fn update_buffer(&mut self, data: &[u8]) {
         self.uniform.update_buffer(&self.context, data);
+    }
+
+    /// Destroy the pipeline resources (but NOT the descriptor set layout).
+    ///
+    /// This is used during hot reload when the descriptor set layout is
+    /// preserved and owned by the MaterialTemplate.
+    pub fn destroy_preserving_layout(&mut self) {
+        self.uniform.destroy(&self.context);
+        self.pipeline.destroy();
+        // Don't destroy desc_layout - it's owned by MaterialTemplate now
     }
 
     pub fn destroy(&mut self) {

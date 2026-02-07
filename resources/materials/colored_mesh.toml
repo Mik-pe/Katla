@@ -1,0 +1,36 @@
+# Colored Mesh Material
+#
+# A material that blends a texture with a material color using WGSL shaders.
+# This is useful for tinting textures with specific colors.
+
+name = "Colored Mesh"
+
+[shaders]
+vertex = "../shaders/colored_mesh.wgsl"
+fragment = "../shaders/colored_mesh.wgsl"
+
+[bindings.uniforms.transform]
+type = "mat4"
+count = 3
+name = "transform"
+
+[bindings.uniforms.color]
+type = "vec4"
+name = "color"
+
+[bindings.textures.albedo]
+binding = 1
+name = "albedo_texture"
+
+[bindings.textures.sampler]
+binding = 2
+name = "albedo_sampler"
+
+[parameters]
+color = [1.0, 0.5, 0.0, 1.0]
+
+[render_state]
+depth_test = true
+depth_write = true
+cull_backfaces = true
+alpha_blending = false

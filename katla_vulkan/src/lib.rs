@@ -39,6 +39,9 @@ pub struct VulkanRenderer {
     /// This stores the actual Vulkan buffers and pipelines, while the application
     /// only holds opaque handles (MeshHandle, MaterialHandle).
     pub asset_registry: AssetRegistry,
+    /// Material registry for template-based materials with hot reload.
+    /// Loads materials from TOML files and supports runtime shader reloading.
+    pub material_registry: RefCell<MaterialRegistry>,
     /// The render graph - single graph with multiple framebuffers (one per swapchain image)
     pub render_graph: Option<CompiledRenderGraph>,
 }
@@ -82,6 +85,7 @@ impl VulkanRenderer {
             swap_data,
             current_framedata: None,
             asset_registry: AssetRegistry::new(),
+            material_registry: RefCell::new(MaterialRegistry::new()),
             render_graph: None,
         }
     }
@@ -89,6 +93,15 @@ impl VulkanRenderer {
     pub fn destroy(&mut self) {
         // Destroy all registered assets first (materials, meshes)
         self.asset_registry.destroy();
+
+        // Destroy material templates
+        match self.material_registry.try_borrow_mut() {
+            Ok(mut registry) => registry.destroy(),
+            Err(_) => {
+                // Already borrowed or other issue - log and continue
+                eprintln!("Warning: Could not access material registry for destruction");
+            }
+        }
 
         self.context.pre_destroy();
         self.swap_data.destroy(&self.context.device);
@@ -363,6 +376,7 @@ impl VulkanRenderer {
     /// * `pipeline` - The material pipeline (shaders, descriptors, etc.)
     /// * `texture` - Optional texture bound to the material
     /// * `vertex_binding` - Vertex binding description for the pipeline
+    /// * `uniform` - Optional per-material uniform buffer (for template-based materials)
     ///
     /// # Returns
     /// A `MaterialHandle` that references the registered material.
@@ -371,6 +385,7 @@ impl VulkanRenderer {
         pipeline: Rc<RefCell<MaterialPipeline>>,
         texture: Option<Rc<Texture>>,
         vertex_binding: VertexBinding,
+        uniform: Option<crate::vulkan::material::UniformHandle>,
     ) -> MaterialHandle {
         use crate::rendering::registry::MaterialAsset;
 
@@ -378,9 +393,32 @@ impl VulkanRenderer {
             pipeline,
             texture,
             vertex_binding,
+            uniform,
         };
 
         self.asset_registry.register_material(material_asset)
+    }
+
+    /// Register a material with all its data including optional per-material uniform buffer.
+    ///
+    /// This is a convenience method for registering materials from the application layer.
+    ///
+    /// # Arguments
+    /// * `pipeline` - The material pipeline
+    /// * `texture` - Optional texture
+    /// * `vertex_binding` - Vertex binding description
+    /// * `uniform` - Optional per-material uniform buffer
+    ///
+    /// # Returns
+    /// A `MaterialHandle` that references the registered material.
+    pub fn register_material_full(
+        &mut self,
+        pipeline: Rc<RefCell<MaterialPipeline>>,
+        texture: Option<Rc<Texture>>,
+        vertex_binding: VertexBinding,
+        uniform: Option<crate::vulkan::material::UniformHandle>,
+    ) -> MaterialHandle {
+        self.create_material(pipeline, texture, vertex_binding, uniform)
     }
 
     /// Setup a single render graph with multiple framebuffers (one per swapchain image).
@@ -462,11 +500,41 @@ impl VulkanRenderer {
                             // The material's uniform layout determines the expected buffer size
                             // We always provide data for all fields to avoid uninitialized memory
                             let params_bytes = draw.params.as_bytes_with_color();
-                            material.pipeline.borrow_mut().update_buffer(&params_bytes);
 
-                            // Bind the graphics pipeline
+                            // Use material's own uniform buffer if available, otherwise pipeline's
+                            if let Some(ref mut uniform) = material.uniform {
+                                uniform.update_buffer(material.pipeline.borrow().context(), &params_bytes);
+                            } else {
+                                material.pipeline.borrow_mut().update_buffer(&params_bytes);
+                            }
+
+                            // Bind the graphics pipeline and descriptor set
                             let cmd_buf = ctx.command_buffer.vk_command_buffer();
-                            material.pipeline.borrow().bind(cmd_buf);
+                            let pipeline_ref = material.pipeline.borrow();
+
+                            unsafe {
+                                pipeline_ref.context().device.cmd_bind_pipeline(
+                                    cmd_buf,
+                                    vk::PipelineBindPoint::GRAPHICS,
+                                    pipeline_ref.pipeline.handle,
+                                );
+
+                                // Use material's own descriptor set if available, otherwise pipeline's
+                                let desc_set = if let Some(ref uniform) = material.uniform {
+                                    uniform.next_descriptor().desc_set
+                                } else {
+                                    pipeline_ref.uniform.next_descriptor().desc_set
+                                };
+
+                                pipeline_ref.context().device.cmd_bind_descriptor_sets(
+                                    cmd_buf,
+                                    vk::PipelineBindPoint::GRAPHICS,
+                                    pipeline_ref.pipeline.layout,
+                                    0,
+                                    &[desc_set],
+                                    &[],
+                                );
+                            }
 
                             // Bind vertex and index buffers and draw
                             if let Some((index_buffer, index_type, index_count)) = index_data {

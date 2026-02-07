@@ -22,7 +22,9 @@ use crate::{
     components::{DirectionalLight, PointLight, TransformComponent},
     entities::{Camera, Model},
     input::{InputBinding, InputMapper, KeyCombo, MouseCombo},
-    rendering::{create_checkerboard_material, MaterialManager, MeshBuilder},
+    rendering::{
+        create_checkerboard_material, create_checkerboard_texture, MaterialManager, MeshBuilder,
+    },
     util::{FileCache, GLTFModel, Timer},
 };
 
@@ -106,59 +108,98 @@ impl ApplicationHandler for Application {
                 .borrow_mut()
                 .aspect_ratio_changed(&mut self.world, win_x / win_y);
 
-            // Find and load the Fox model
-            let resources_path = find_resources_path();
-            let fox_path = resources_path.join("Fox.glb");
-            println!("Loading Fox model from: {:?}", fox_path);
+            // Load materials from TOML files BEFORE creating models
+            // This ensures templates are available when creating GLTF models and meshes
+            let materials_path = PathBuf::from("resources/materials");
+            let loaded_count = renderer
+                .material_registry
+                .borrow_mut()
+                .load_directory(
+                    &materials_path,
+                    renderer.context.clone(),
+                    &renderer.render_pass,
+                )
+                .expect("Failed to load materials directory");
+            println!(
+                "Loaded {} material templates from {}",
+                loaded_count,
+                materials_path.display()
+            );
+
+            // Enable hot reload for materials and shaders
+            // Watch the parent resources directory to catch changes in both materials/ and shaders/
+            let resources_path = PathBuf::from("resources");
+            renderer
+                .material_registry
+                .borrow_mut()
+                .enable_hot_reload(&resources_path, 100)
+                .expect("Failed to enable hot reload");
+            println!("Hot reload enabled for materials and shaders");
+
+            // Now find and load the Fox model (after templates are loaded)
+            let models_path = find_resources_path();
+            let fox_path = models_path.join("Fox.glb");
 
             let fox_transform = Transform::new_from_position(Vec3::new(0.0, 0.0, 0.0));
             let context = renderer.context.clone();
             let fox_model = self.gltf_cache.read(fox_path);
             let render_pass = renderer.render_pass.clone();
 
-            // Create the model entity (registers with renderer)
-            Model::new_from_gltf(
+            // Create the model entity using the gltf_default template
+            // We use the raw pointer approach similar to MeshBuilder
+            let material_registry_ptr = &renderer.material_registry as *const std::cell::RefCell<katla_vulkan::MaterialRegistry>;
+
+            Model::new_from_gltf_with_ptr(
                 &mut self.world,
                 fox_model,
                 context,
                 Some(&mut renderer),
                 &render_pass,
                 fox_transform,
+                material_registry_ptr,
             );
 
             // Create meshes spaced out in a line with different colors
+            // Get the raw pointer to material registry for mesh builders
+            let material_registry_ptr = &renderer.material_registry as *const std::cell::RefCell<katla_vulkan::MaterialRegistry>;
+
             let _cube = MeshBuilder::new(renderer.context.clone())
+                .with_material_registry_ptr(material_registry_ptr)
                 .position(Vec3::new(0.0, 5.0, 0.0))
                 .color([1.0, 0.3, 0.3]) // Red tint
-                .with_shared_material("checkerboard")
+                .with_shared_material("Checkerboard")
                 .build(&mut self.world, &mut renderer);
 
             let _sphere = MeshBuilder::new(renderer.context.clone())
+                .with_material_registry_ptr(material_registry_ptr)
                 .position(Vec3::new(30.0, 5.0, 0.0))
                 .color([0.3, 1.0, 0.3]) // Green tint
-                .with_shared_material("checkerboard")
+                .with_shared_material("Checkerboard")
                 .sphere()
                 .build(&mut self.world, &mut renderer);
 
             let _cylinder = MeshBuilder::new(renderer.context.clone())
+                .with_material_registry_ptr(material_registry_ptr)
                 .position(Vec3::new(-30.0, 5.0, 0.0))
                 .color([0.3, 0.3, 1.0]) // Blue tint
-                .with_shared_material("checkerboard")
+                .with_shared_material("Checkerboard")
                 .cylinder()
                 .build(&mut self.world, &mut renderer);
 
             let _plane = MeshBuilder::new(renderer.context.clone())
+                .with_material_registry_ptr(material_registry_ptr)
                 .position(Vec3::new(0.0, -5.0, 0.0))
                 .color([0.8, 0.8, 0.8]) // Gray tint
-                .with_shared_material("checkerboard")
+                .with_shared_material("Checkerboard")
                 .plane()
                 .size(Vec3::new(100.0, 100.0, 1.0))
                 .build(&mut self.world, &mut renderer);
 
             let _torus = MeshBuilder::new(renderer.context.clone())
+                .with_material_registry_ptr(material_registry_ptr)
                 .position(Vec3::new(0.0, 15.0, 0.0))
                 .color([1.0, 0.8, 0.3]) // Yellow tint
-                .with_shared_material("checkerboard")
+                .with_shared_material("Checkerboard")
                 .torus()
                 .build(&mut self.world, &mut renderer);
 
@@ -169,8 +210,8 @@ impl ApplicationHandler for Application {
                 sun_light,
                 DirectionalLight::new(
                     Vec3::new(-0.3, -1.0, -0.2), // Angled down and to the side
-                    [1.0, 0.95, 0.8],           // Warm white
-                    1.0,                        // Full intensity
+                    [1.0, 0.95, 0.8],            // Warm white
+                    1.0,                         // Full intensity
                 ),
             );
 
@@ -205,12 +246,24 @@ impl ApplicationHandler for Application {
 
             self.window = Some(window);
 
-            // Create shared materials
-            let checkerboard = create_checkerboard_material(
-                renderer.context.clone(),
-                &renderer.render_pass,
-            );
-            self.material_manager.register_material("checkerboard", checkerboard);
+            // Create checkerboard material from template (template loaded from TOML)
+            // The template has the pipeline and shader, we just add the procedural texture
+            let checkerboard_texture = create_checkerboard_texture(renderer.context.clone());
+            if let Some(_) = self.material_manager.register_from_template(
+                "Checkerboard",
+                &renderer.material_registry.borrow(),
+                Some(Rc::new(checkerboard_texture)),
+                None,
+            ) {
+                println!("Registered checkerboard material from template");
+            } else {
+                println!("Warning: Checkerboard template not found, using fallback");
+                // Fallback to direct creation if template doesn't exist
+                let checkerboard =
+                    create_checkerboard_material(renderer.context.clone(), &renderer.render_pass);
+                self.material_manager
+                    .register_material("checkerboard", checkerboard);
+            }
 
             self.renderer = Some(renderer);
 
@@ -316,26 +369,30 @@ impl ApplicationHandler for Application {
                     if self.stage_upload {
                         let start = Instant::now();
                         let renderer = self.renderer.as_mut().expect("Renderer not initialized");
+                        let material_registry_ptr = &renderer.material_registry as *const std::cell::RefCell<katla_vulkan::MaterialRegistry>;
 
                         let _sphere = MeshBuilder::new(renderer.context.clone())
+                            .with_material_registry_ptr(material_registry_ptr)
                             .position(Vec3::new(0.0, 5.0, 0.0))
                             .color([0.8, 0.2, 0.2])
-                            .with_shared_material("checkerboard")
+                            .with_shared_material("Checkerboard")
                             .sphere()
                             .build(&mut self.world, renderer);
 
                         let renderer = self.renderer.as_mut().expect("Renderer not initialized");
                         let _cube = MeshBuilder::new(renderer.context.clone())
+                            .with_material_registry_ptr(material_registry_ptr)
                             .position(Vec3::new(20.0, 5.0, 0.0))
                             .color([0.2, 0.8, 0.2])
-                            .with_shared_material("checkerboard")
+                            .with_shared_material("Checkerboard")
                             .build(&mut self.world, renderer);
 
                         let renderer = self.renderer.as_mut().expect("Renderer not initialized");
                         let _plane = MeshBuilder::new(renderer.context.clone())
+                            .with_material_registry_ptr(material_registry_ptr)
                             .position(Vec3::new(0.0, -5.0, 0.0))
                             .color([0.5, 0.5, 0.5])
-                            .with_shared_material("checkerboard")
+                            .with_shared_material("Checkerboard")
                             .plane()
                             .size(Vec3::new(100.0, 100.0, 1.0))
                             .build(&mut self.world, renderer);
@@ -392,8 +449,24 @@ impl Application {
         };
 
         // Get camera matrices
-        let view = self.camera.borrow().get_view_mat(&self.world).clone().inverse();
+        let view = self
+            .camera
+            .borrow()
+            .get_view_mat(&self.world)
+            .clone()
+            .inverse();
         let proj = self.camera.borrow().get_proj_mat(&self.world).clone();
+
+        // Check for material hot reload
+        if let Ok(reloaded) = renderer
+            .material_registry
+            .borrow_mut()
+            .check_hot_reload(renderer.context.clone(), &renderer.render_pass)
+        {
+            if reloaded > 0 {
+                println!("Hot reloaded {} material template(s)", reloaded);
+            }
+        }
 
         // Build a draw list from ECS entities using the handle-based rendering system
         // This provides separation between high-level (DrawCall) and low-level (CommandBuffer) rendering
@@ -401,18 +474,15 @@ impl Application {
         let mut draw_list = DrawList::new();
 
         // Query all drawable entities
-        for (_entity, transform, drawable) in self
-            .world
-            .query::<(&crate::components::TransformComponent, &crate::components::DrawableComponent)>(
-        )
-        {
+        for (_entity, transform, drawable) in self.world.query::<(
+            &crate::components::TransformComponent,
+            &crate::components::DrawableComponent,
+        )>() {
             // Get the model matrix
             let model_matrix = transform.transform.make_mat4();
 
             // Convert to katla_vulkan's Mat4 format
-            let model_array: [f32; 16] = unsafe {
-                std::mem::transmute_copy(&model_matrix)
-            };
+            let model_array: [f32; 16] = unsafe { std::mem::transmute_copy(&model_matrix) };
 
             // Convert view and proj matrices
             let view_array: [f32; 16] = unsafe { std::mem::transmute_copy(&view) };
@@ -423,12 +493,16 @@ impl Application {
             if let (Some(mesh_handle), Some(material_handle)) =
                 (drawable.mesh_handle, drawable.material_handle)
             {
-                let draw_call = DrawCall::new(mesh_handle, material_handle)
-                    .with_matrices(
-                        model_array,
-                        view_array,
-                        proj_array,
-                    );
+                let mut draw_call = DrawCall::new(mesh_handle, material_handle).with_matrices(
+                    model_array,
+                    view_array,
+                    proj_array,
+                );
+
+                // Add color override if specified in DrawableComponent
+                if let Some(color) = drawable.color {
+                    draw_call.params.color = Some(color.to_array());
+                }
 
                 draw_list.push(draw_call);
             }
