@@ -16,6 +16,7 @@ pub use sync::{
     VkDescriptorPool, VkDescriptorSet, VkDescriptorSetLayout, VkFence, VkFramebuffer, VkImage, VkImageView,
     VkRenderPass, VkSampler, VkSemaphore,
 };
+pub use vulkan::context::{ValidationMessage, ValidationMessageType, ValidationSeverity};
 pub use vulkan::*;
 
 use ash::vk;
@@ -129,11 +130,11 @@ impl VulkanRenderer {
             .swapchain_images
             .iter()
             .zip(self.frame_context.swapchain_image_views.iter())
-            .map(|(&image, &view)| {
+            .map(|(image, view)| {
                 let extent = self.frame_context.swapchain.get_extent();
                 (
-                    VkImage::new(image),
-                    VkImageView::new(view),
+                    *image,
+                    *view,
                     crate::render_graph::types::Extent2D::new(extent.width, extent.height),
                     self.frame_context.swapchain.format.format,
                 )
@@ -196,7 +197,7 @@ impl VulkanRenderer {
         let (available_sem, finished_sem, in_flight_fence, image_index) =
             self.swap_data.swap_images(
                 &self.context.device,
-                &self.context.swapchain_loader,
+                self.context.swapchain_loader.as_ref().expect("Swapchain loader required"),
                 self.frame_context.swapchain.swapchain,
             )?;
         self.current_framedata = Some(FrameData {
@@ -501,20 +502,12 @@ impl VulkanRenderer {
                     .swapchain_images
                     .iter()
                     .zip(self.frame_context.swapchain_image_views.iter())
-<<<<<<< HEAD
                     .map(|(image, view)| {
-                        (
-                            image.vk(),
-                            view.vk(),
-                            self.frame_context.swapchain.get_extent(),
-=======
-                    .map(|(&image, &view)| {
                         let extent = self.frame_context.swapchain.get_extent();
                         (
-                            VkImage::new(image),
-                            VkImageView::new(view),
+                            *image,
+                            *view,
                             crate::render_graph::types::Extent2D::new(extent.width, extent.height),
->>>>>>> 3eab8dd (Fix ash::vk type exposures in render_graph public APIs)
                             self.frame_context.swapchain.format.format,
                         )
                     })
@@ -613,6 +606,8 @@ impl VulkanRenderer {
         let present_result = unsafe {
             self.context
                 .swapchain_loader
+                .as_ref()
+                .expect("Swapchain loader required")
                 .queue_present(self.context.graphics_queue, &present_info)
         };
 
