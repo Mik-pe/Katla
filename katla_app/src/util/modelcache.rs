@@ -6,7 +6,7 @@ use gltf::Document;
 use katla_math::{Sphere, Vec3};
 
 use crate::rendering::{VertexNormal, VertexPBR, VertexPosition};
-use crate::util::gltf_parser::{build_vertex_data, AttributeParser};
+use crate::util::gltf_parser::{build_vertex_data, generate_smooth_normals, AttributeParser};
 
 #[derive(Clone)]
 pub struct GLTFModel {
@@ -31,18 +31,23 @@ impl GLTFModel {
         let parser = AttributeParser::new(&self.buffers);
 
         if let Some(mesh) = node.mesh() {
+            println!("  Mesh '{}' has {} primitives", mesh.name().unwrap_or("unnamed"), mesh.primitives().count());
+
             for primitive in mesh.primitives() {
                 // Parse attributes using the new parser
                 for (semantic, accessor) in primitive.attributes() {
                     match semantic {
                         gltf::mesh::Semantic::Positions => {
                             positions = parser.parse_positions(accessor);
+                            println!("    Parsed {} positions", positions.len());
                         }
                         gltf::mesh::Semantic::Normals => {
                             normals = parser.parse_normals(accessor);
+                            println!("    Parsed {} normals", normals.len());
                         }
                         gltf::mesh::Semantic::TexCoords(0) => {
                             tex_coords = parser.parse_tex_coords(accessor);
+                            println!("    Parsed {} tex_coords", tex_coords.len());
                         }
                         _ => {
                             continue;
@@ -56,6 +61,13 @@ impl GLTFModel {
                     index_data = indices_data;
                     index_stride = stride;
                 }
+            }
+
+            // Debug: Check if normals are empty
+            if normals.is_empty() {
+                println!("    WARNING: No normals found! Generating smooth normals from geometry...");
+                normals = generate_smooth_normals(&positions, &index_data, index_stride);
+                println!("    Generated {} normals", normals.len());
             }
 
             // Build vertex data from parsed attributes

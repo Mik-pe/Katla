@@ -36,12 +36,11 @@ fn vs_main(in: VertexInput) -> VertexOutput {
     let world_pos = uniforms.world * vec4f(in.position, 1.0);
     out.clip_position = uniforms.proj * uniforms.view * world_pos;
 
-    // Note: Original shader had a bug here: "vs_pos = vs_pos;" which was a no-op
-    // Preserving original behavior (uninitialized vs_pos)
-    out.vs_pos = out.vs_pos;
+    // Pass world position to fragment shader for lighting calculations
+    out.vs_pos = world_pos.xyz;
 
-    // Normal remapped to 0.5-1.0 range (preserving original behavior)
-    out.vs_norm = in.normal * 0.5 + 0.5;
+    // Transform normal to world space (assuming uniform scaling)
+    out.vs_norm = normalize((uniforms.world * vec4f(in.normal, 0.0)).xyz);
 
     // Pass through texture coordinates
     out.tex_coords = in.vert_texcoord0;
@@ -49,14 +48,29 @@ fn vs_main(in: VertexInput) -> VertexOutput {
     return out;
 }
 
+// Simple hardcoded directional light (temporary until uniform buffer integration)
+const LIGHT_DIRECTION = vec3f(-0.3, -1.0, -0.2);
+const LIGHT_COLOR = vec3f(1.0, 0.95, 0.9);
+const AMBIENT_COLOR = vec3f(0.15, 0.15, 0.15);
+
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4f {
     // Sample the albedo texture
-    let texture_color = textureSample(albedo_texture, albedo_sampler, in.tex_coords);
+    let albedo = textureSample(albedo_texture, albedo_sampler, in.tex_coords);
 
-    // Blend with material color (multiply mode)
-    let blended = texture_color.rgb * uniforms.color.rgb;
+    // Normalize inputs
+    let normal = normalize(in.vs_norm);
+    let light_dir = normalize(-LIGHT_DIRECTION);
 
-    // Hot reload test - output blended color with material alpha
-    return vec4f(blended, uniforms.color.a * texture_color.a);
+    // Ambient lighting
+    let ambient = AMBIENT_COLOR * albedo.rgb;
+
+    // Diffuse lighting (Lambertian)
+    let n_dot_l = max(dot(normal, light_dir), 0.0);
+    let diffuse = LIGHT_COLOR * albedo.rgb * n_dot_l;
+
+    // Combine lighting components
+    let final_color = ambient + diffuse;
+
+    return vec4f(final_color, 1.0);
 }
