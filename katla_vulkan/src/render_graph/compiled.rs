@@ -7,6 +7,7 @@ use std::rc::Rc;
 use crate::render_graph::pass::{ExecutionRegistry, Pass, PassExecute, PassExecutionContext};
 use crate::render_graph::resource::{CompiledResource, ResourceId, ResourceKind, ResourceLifetime};
 use crate::rendering::DrawList;
+use crate::sync::{VkFramebuffer, VkRenderPass};
 use crate::vulkan::RenderPass;
 use crate::CommandBuffer;
 use crate::RenderGraphError;
@@ -31,11 +32,11 @@ pub struct CompiledRenderGraph {
 /// Multiple framebuffers are supported (e.g., one per swapchain image).
 pub struct CompiledPass {
     pub name: String,
-    pub vk_render_pass: vk::RenderPass,
+    pub vk_render_pass: VkRenderPass,
     /// The render pass to use for rendering (may differ from the compilation render pass)
-    pub active_render_pass: vk::RenderPass,
+    pub active_render_pass: VkRenderPass,
     /// Multiple framebuffers - one per swapchain image variant
-    pub vk_framebuffers: Vec<vk::Framebuffer>,
+    pub vk_framebuffers: Vec<VkFramebuffer>,
     pub extent: vk::Extent2D,
     pub clear_values: Vec<vk::ClearValue>,
     execute: PassExecute,
@@ -107,12 +108,12 @@ impl CompiledRenderGraph {
                 if image_index == 0 {
                     // First framebuffer - replace the null placeholder
                     self.framebuffers[pass_idx] = framebuffer;
-                    self.passes[pass_idx].vk_framebuffers = vec![framebuffer];
+                    self.passes[pass_idx].vk_framebuffers = vec![VkFramebuffer::new(framebuffer)];
                     // Set the active render pass to the immediate-mode render pass
-                    self.passes[pass_idx].active_render_pass = immediate_render_pass;
+                    self.passes[pass_idx].active_render_pass = VkRenderPass::new(immediate_render_pass);
                 } else {
                     // Additional framebuffers - append to the list
-                    self.passes[pass_idx].vk_framebuffers.push(framebuffer);
+                    self.passes[pass_idx].vk_framebuffers.push(VkFramebuffer::new(framebuffer));
                 }
             }
         }
@@ -138,7 +139,7 @@ impl CompiledRenderGraph {
         let attachment_views = vec![swapchain_image_view, depth_image_view];
 
         println!("Creating framebuffer for pass {}: graph_render_pass={:?}, using render_pass={:?}, attachments={:?}, extent={}x{}",
-            pass_index, pass.vk_render_pass, immediate_render_pass, attachment_views, swapchain_extent.width, swapchain_extent.height);
+            pass_index, pass.vk_render_pass.vk(), immediate_render_pass, attachment_views, swapchain_extent.width, swapchain_extent.height);
 
         // Create framebuffer using the immediate-mode render pass
         let framebuffer = self
@@ -800,17 +801,19 @@ impl CompiledRenderGraph {
             };
 
             // Get render pass and framebuffer
-            let vk_render_pass = vk_render_passes
+            let vk_render_pass_raw = vk_render_passes
                 .get(i)
                 .copied()
                 .unwrap_or(vk::RenderPass::null());
-            let vk_framebuffer = framebuffers
+            let vk_framebuffer_raw = framebuffers
                 .get(i)
                 .copied()
                 .unwrap_or(vk::Framebuffer::null());
 
-            // Initialize with a single framebuffer (will be expanded for swapchain images)
-            let vk_framebuffers = vec![vk_framebuffer];
+            // Wrap in our wrapper types
+            let vk_render_pass = VkRenderPass::new(vk_render_pass_raw);
+            let active_render_pass = VkRenderPass::new(vk_render_pass_raw);
+            let vk_framebuffers = vec![VkFramebuffer::new(vk_framebuffer_raw)];
 
             // Get barriers
             let pipeline_barriers_before = barriers.get(i).cloned().unwrap_or_default();
@@ -822,7 +825,7 @@ impl CompiledRenderGraph {
             let compiled = CompiledPass {
                 name: pass.name().to_string(),
                 vk_render_pass,
-                active_render_pass: vk_render_pass, // Initially same as vk_render_pass
+                active_render_pass, // Initially same as vk_render_pass
                 vk_framebuffers,
                 extent,
                 clear_values,
@@ -869,7 +872,7 @@ impl CompiledRenderGraph {
                 .vk_framebuffers
                 .get(image_index)
                 .or_else(|| pass.vk_framebuffers.first())
-                .copied()
+                .map(|fb| fb.vk())
                 .unwrap_or(vk::Framebuffer::null());
 
             // Apply pipeline barriers before this pass
@@ -896,7 +899,7 @@ impl CompiledRenderGraph {
             };
             command_buffer.begin_render_pass(
                 framebuffer,
-                pass.active_render_pass,
+                pass.active_render_pass.vk(),
                 render_area,
                 &pass.clear_values,
             );
@@ -907,7 +910,7 @@ impl CompiledRenderGraph {
                 (*command_buffer).clone(),
                 self.resources.clone(),
                 framebuffer,
-                pass.active_render_pass,
+                pass.active_render_pass.vk(),
                 pass.extent,
             ));
 
@@ -942,7 +945,7 @@ impl Drop for CompiledRenderGraph {
             // Destroy all framebuffers from all passes
             for pass in &self.passes {
                 for framebuffer in &pass.vk_framebuffers {
-                    self.context.device.destroy_framebuffer(*framebuffer, None);
+                    self.context.device.destroy_framebuffer(framebuffer.vk(), None);
                 }
             }
             for render_pass in &self.vk_render_passes {
