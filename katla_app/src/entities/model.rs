@@ -12,10 +12,10 @@ use crate::{
 
 pub struct Model {
     pub entity: EntityId,
-    /// Handle after registration (None if no renderer provided)
-    pub mesh_handle: Option<MeshHandle>,
-    /// Handle after registration (None if no renderer provided)
-    pub material_handle: Option<MaterialHandle>,
+    /// Handle after registration (MeshHandle(0) if no renderer provided)
+    pub mesh_handle: MeshHandle,
+    /// Handle after registration (MaterialHandle(0) if no renderer provided)
+    pub material_handle: MaterialHandle,
 }
 
 impl Model {
@@ -47,19 +47,16 @@ impl Model {
                 material.vertex_binding.clone(),
             );
 
-            (Some(mesh_h), Some(mat_h))
+            (mesh_h, mat_h)
         } else {
-            // Use dummy handles
-            (Some(MeshHandle(0)), Some(MaterialHandle(0)))
+            // Use dummy handles when no renderer provided
+            (MeshHandle(0), MaterialHandle(0))
         };
 
         world.add_component(entity, TransformComponent::new(transform));
         world.add_component(
             entity,
-            DrawableComponent::with_handles(
-                mesh_handle.unwrap(),
-                material_handle.unwrap(),
-            ),
+            DrawableComponent::with_handles(mesh_handle, material_handle),
         );
         world.add_component(entity, NameComponent::new("Model"));
 

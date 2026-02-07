@@ -203,6 +203,12 @@ impl ComponentStorageManager {
     }
 
     /// Gets or creates a component storage for the given component type.
+    ///
+    /// # Safety
+    /// The downcast is sound because:
+    /// 1. We look up by TypeId::of::<T>()
+    /// 2. We either create ComponentStorage::<T> or retrieve existing storage for that TypeId
+    /// 3. Therefore, the downcast must succeed
     fn get_or_create_storage<T: Component>(&mut self) -> &mut ComponentStorage<T> {
         let type_id = std::any::TypeId::of::<T>();
         let storages = &mut self.storages;
@@ -212,10 +218,14 @@ impl ComponentStorageManager {
             .or_insert_with(|| Box::new(ComponentStorage::<T>::new()))
             .as_any_mut()
             .downcast_mut::<ComponentStorage<T>>()
-            .expect("Downcast should succeed")
+            .expect("TypeId lookup ensures correct type, downcast cannot fail")
     }
 
     /// Gets a reference to the component storage for the given component type.
+    ///
+    /// # Safety
+    /// The downcast is sound because we look up by TypeId::of::<T>(), and if
+    /// a storage exists for that TypeId, it must be ComponentStorage<T>.
     pub fn get_storage<T: Component>(&self) -> Option<&ComponentStorage<T>> {
         self.storages
             .get(&std::any::TypeId::of::<T>())
@@ -223,18 +233,22 @@ impl ComponentStorageManager {
                 storage
                     .as_any()
                     .downcast_ref::<ComponentStorage<T>>()
-                    .expect("Downcast should succeed")
+                    .expect("TypeId lookup ensures correct type, downcast cannot fail")
             })
     }
 
     /// Gets a mutable reference to the component storage for the given component type.
+    ///
+    /// # Safety
+    /// The downcast is sound because we look up by TypeId::of::<T>(), and if
+    /// a storage exists for that TypeId, it must be ComponentStorage<T>.
     pub fn get_storage_mut<T: Component>(&mut self) -> Option<&mut ComponentStorage<T>> {
         let type_id = std::any::TypeId::of::<T>();
         self.storages.get_mut(&type_id).map(|storage| {
             storage
                 .as_any_mut()
                 .downcast_mut::<ComponentStorage<T>>()
-                .expect("Downcast should succeed")
+                .expect("TypeId lookup ensures correct type, downcast cannot fail")
         })
     }
 
