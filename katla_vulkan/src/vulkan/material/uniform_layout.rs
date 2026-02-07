@@ -54,7 +54,9 @@ impl UniformLayout {
     /// Add a field to the layout and return the modified layout.
     ///
     /// # Example
-    /// ```
+    /// ```no_run
+    /// use katla_vulkan::vulkan::material::uniform_layout::{UniformLayout, UniformField};
+    ///
     /// let layout = UniformLayout::new()
     ///     .with_field(UniformField::Mat4)  // model matrix
     ///     .with_field(UniformField::Mat4)  // view matrix

@@ -14,6 +14,7 @@ use std::{
     ffi::{c_void, CStr, CString},
     mem::ManuallyDrop,
     rc::Rc,
+    sync::{Arc, Mutex},
 };
 // use winit::{
 //     raw_window_handle::{HasDisplayHandle, HasRawWindowHandle, HasWindowHandle},
@@ -25,6 +26,111 @@ use super::SwapchainInfo;
 const LAYER_KHRONOS_VALIDATION: &str = concat!("VK_LAYER_KHRONOS_validation", "\0");
 
 use crate::sync::{VkImage, VkImageView};
+
+/// Validation message severity level.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum ValidationSeverity {
+    Verbose,
+    Info,
+    Warning,
+    Error,
+}
+
+impl std::fmt::Display for ValidationSeverity {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ValidationSeverity::Verbose => write!(f, "VERBOSE"),
+            ValidationSeverity::Info => write!(f, "INFO"),
+            ValidationSeverity::Warning => write!(f, "WARNING"),
+            ValidationSeverity::Error => write!(f, "ERROR"),
+        }
+    }
+}
+
+impl From<vk::DebugUtilsMessageSeverityFlagsEXT> for ValidationSeverity {
+    fn from(severity: vk::DebugUtilsMessageSeverityFlagsEXT) -> Self {
+        if severity.contains(vk::DebugUtilsMessageSeverityFlagsEXT::ERROR) {
+            ValidationSeverity::Error
+        } else if severity.contains(vk::DebugUtilsMessageSeverityFlagsEXT::WARNING) {
+            ValidationSeverity::Warning
+        } else if severity.contains(vk::DebugUtilsMessageSeverityFlagsEXT::INFO) {
+            ValidationSeverity::Info
+        } else {
+            ValidationSeverity::Verbose
+        }
+    }
+}
+
+/// Validation message type.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ValidationMessageType {
+    General,
+    Validation,
+    Performance,
+}
+
+impl From<vk::DebugUtilsMessageTypeFlagsEXT> for ValidationMessageType {
+    fn from(message_type: vk::DebugUtilsMessageTypeFlagsEXT) -> Self {
+        if message_type.contains(vk::DebugUtilsMessageTypeFlagsEXT::VALIDATION) {
+            ValidationMessageType::Validation
+        } else if message_type.contains(vk::DebugUtilsMessageTypeFlagsEXT::PERFORMANCE) {
+            ValidationMessageType::Performance
+        } else {
+            ValidationMessageType::General
+        }
+    }
+}
+
+/// A validation message from Vulkan validation layers.
+#[derive(Debug, Clone)]
+pub struct ValidationMessage {
+    pub severity: ValidationSeverity,
+    pub message_type: ValidationMessageType,
+    pub message: String,
+    /// VUID (Vulkan Unique ID) if present, e.g., "VUID-vkCmdDraw-None-02700"
+    pub vuid: Option<String>,
+}
+
+/// Type for validation callbacks.
+///
+/// The callback receives a reference to the validation message and should return
+/// `false` to continue execution or `true` to trigger a breakpoint.
+pub type ValidationCallback = dyn FnMut(&ValidationMessage) -> bool + Send + Sync;
+
+/// Internal storage for validation callbacks.
+struct ValidationCallbackStorage {
+    callback: Option<Box<ValidationCallback>>,
+    messages: Vec<ValidationMessage>,
+}
+
+impl ValidationCallbackStorage {
+    fn new() -> Self {
+        Self {
+            callback: None,
+            messages: Vec::new(),
+        }
+    }
+
+    fn call(&mut self, msg: &ValidationMessage) -> bool {
+        // Store all messages
+        self.messages.push(msg.clone());
+
+        // Call the user callback if one is registered
+        if let Some(ref mut cb) = self.callback {
+            cb(msg)
+        } else {
+            false
+        }
+    }
+
+    fn set_callback(&mut self, callback: Box<ValidationCallback>) {
+        self.callback = Some(callback);
+    }
+
+    fn take_messages(&mut self) -> Vec<ValidationMessage> {
+        std::mem::take(&mut self.messages)
+    }
+}
 
 struct QueueFamilyIndices {
     pub graphics_idx: Option<u32>,
@@ -49,7 +155,8 @@ impl RenderTexture {
         }
         let image_memory = self.image_memory.take();
 
-        self.context.free_image(self.image.vk(), image_memory.unwrap());
+        self.context
+            .free_image(self.image.vk(), image_memory.unwrap());
     }
 }
 
@@ -63,11 +170,11 @@ pub struct VulkanContext {
     _entry: Entry,
     pub instance: Instance,
     pub device: Device,
-    pub surface_loader: SurfaceInstance,
-    pub swapchain_loader: Rc<SwapchainDevice>,
+    pub surface_loader: Option<SurfaceInstance>,
+    pub swapchain_loader: Option<Rc<SwapchainDevice>>,
     pub physical_device: vk::PhysicalDevice,
     pub allocator: ManuallyDrop<RefCell<Allocator>>,
-    pub surface: vk::SurfaceKHR,
+    pub surface: Option<vk::SurfaceKHR>,
     pub graphics_queue: vk::Queue,
     pub gfx_queue: super::Queue,
     pub gfx_cmdpool: super::CommandPool,
@@ -75,6 +182,7 @@ pub struct VulkanContext {
     pub transfer_queue: vk::Queue,
     debug_utils_loader: DebugInstance,
     debug_callback: Option<vk::DebugUtilsMessengerEXT>,
+    validation_callback: Arc<Mutex<ValidationCallbackStorage>>,
 }
 pub struct VulkanFrameCtx {
     pub context: Rc<VulkanContext>,
@@ -120,6 +228,49 @@ impl QueueFamilyIndices {
                     queue_family_indices.transfer_idx = Some(idx as u32);
                     continue;
                 }
+            }
+        };
+
+        queue_family_indices
+    }
+
+    /// Find queue families for headless rendering (without surface support check).
+    /// This is used when VK_EXT_headless_surface is available and we don't need
+    /// presentation capabilities.
+    pub fn find_queue_families_headless(
+        instance: &Instance,
+        physical_device: vk::PhysicalDevice,
+    ) -> Self {
+        let mut queue_family_indices = Self {
+            graphics_idx: None,
+            transfer_idx: None,
+        };
+        unsafe {
+            let family_props =
+                instance.get_physical_device_queue_family_properties(physical_device);
+            println!("Num family indices (headless): {}", family_props.len());
+            for (idx, properties) in family_props.iter().enumerate() {
+                // Prioritize graphics queue
+                if properties.queue_flags.contains(vk::QueueFlags::GRAPHICS)
+                    && queue_family_indices.graphics_idx.is_none()
+                {
+                    queue_family_indices.graphics_idx = Some(idx as u32);
+                    continue;
+                }
+
+                // Look for dedicated transfer queue
+                if properties.queue_flags.contains(vk::QueueFlags::TRANSFER)
+                    && !properties.queue_flags.contains(vk::QueueFlags::GRAPHICS)
+                    && queue_family_indices.transfer_idx.is_none()
+                {
+                    queue_family_indices.transfer_idx = Some(idx as u32);
+                    continue;
+                }
+            }
+
+            // If no dedicated transfer queue found, use graphics queue for transfers
+            if queue_family_indices.transfer_idx.is_none() {
+                queue_family_indices.transfer_idx = queue_family_indices.graphics_idx;
             }
         };
 
@@ -265,16 +416,23 @@ impl VulkanContext {
         with_validation_layers: bool,
         app_name: &CStr,
         engine_name: &CStr,
-        display: &dyn HasDisplayHandle,
+        display: Option<&dyn HasDisplayHandle>,
         entry: &Entry,
     ) -> Instance {
         if with_validation_layers && !check_validation_support(entry) {
             panic!("Validation layers requested, but unavailable!");
         }
-        let surface_extensions =
-            ash_window::enumerate_required_extensions(display.display_handle().unwrap().as_raw())
-                .unwrap();
-        let mut extension_names_raw = surface_extensions.to_vec();
+
+        let mut extension_names_raw = if let Some(d) = display {
+            // Windowed mode - use surface extensions from display
+            ash_window::enumerate_required_extensions(d.display_handle().unwrap().as_raw())
+                .unwrap()
+                .to_vec()
+        } else {
+            // Headless/testing mode - no surface extensions needed
+            vec![]
+        };
+
         let mut instance_layers = vec![];
         if with_validation_layers {
             extension_names_raw.push(ash::ext::debug_utils::NAME.as_ptr());
@@ -288,7 +446,7 @@ impl VulkanContext {
             .api_version(vk::make_api_version(0, 1, 2, 0));
         let create_info = vk::InstanceCreateInfo::default()
             .application_info(&app_info)
-            .enabled_extension_names(extension_names_raw.as_slice())
+            .enabled_extension_names(&extension_names_raw)
             .enabled_layer_names(&instance_layers);
 
         unsafe {
@@ -374,11 +532,17 @@ impl VulkanContext {
             with_validation_layers,
             &app_name,
             &engine_name,
-            display,
+            Some(display),
             &entry,
         );
         let debug_utils_loader = DebugInstance::new(&entry, &instance);
-        let debug_callback = create_debug_messenger(&debug_utils_loader, with_validation_layers);
+
+        // Create validation callback storage
+        let validation_callback = Arc::new(Mutex::new(ValidationCallbackStorage::new()));
+        let user_data = Arc::into_raw(validation_callback.clone()) as *mut c_void;
+
+        let debug_callback =
+            create_debug_messenger(&debug_utils_loader, with_validation_layers, user_data);
         let surface_loader = SurfaceInstance::new(&entry, &instance);
         let surface = unsafe {
             ash_window::create_surface(
@@ -418,6 +582,7 @@ impl VulkanContext {
             physical_device,
             queue_create_infos,
             with_validation_layers,
+            true, // enable_swapchain = true
         );
 
         let swapchain_loader = Rc::new(SwapchainDevice::new(&instance, &device));
@@ -451,11 +616,11 @@ impl VulkanContext {
             _entry: entry,
             instance,
             device,
-            surface_loader,
-            swapchain_loader,
+            surface_loader: Some(surface_loader),
+            swapchain_loader: Some(swapchain_loader),
             physical_device,
             allocator,
-            surface,
+            surface: Some(surface),
             graphics_queue,
             gfx_queue,
             gfx_cmdpool,
@@ -463,7 +628,178 @@ impl VulkanContext {
             transfer_queue,
             debug_utils_loader,
             debug_callback,
+            validation_callback,
         }
+    }
+
+    /// Initialize VulkanContext for testing/headless rendering.
+    ///
+    /// This creates a VulkanContext without a surface or swapchain, enabling:
+    /// - Automated testing in CI/CD pipelines
+    /// - Render graph validation without windows
+    /// - Offline rendering and compute workloads
+    /// - Tests can create their own VkImage render targets
+    ///
+    /// # Arguments
+    /// * `with_validation_layers` - Enable validation layers for debugging
+    /// * `app_name` - Application name for Vulkan identification
+    /// * `engine_name` - Engine name for Vulkan identification
+    ///
+    /// # Returns
+    /// A fully-initialized VulkanContext without a surface or swapchain
+    ///
+    /// # Panics
+    /// - If Vulkan is not available
+    /// - If no suitable physical device is found
+    /// - If device creation fails
+    ///
+    /// # Example
+    /// ```no_run
+    /// use katla_vulkan::VulkanContext;
+    /// use std::ffi::CString;
+    ///
+    /// let context = VulkanContext::init_headless(
+    ///     true,  // enable validation layers
+    ///     CString::new("My App").unwrap(),
+    ///     CString::new("My Engine").unwrap(),
+    /// );
+    /// ```
+    pub fn init_headless(
+        with_validation_layers: bool,
+        app_name: CString,
+        engine_name: CString,
+    ) -> Self {
+        let entry = unsafe { Entry::load() }.unwrap();
+        let instance = Self::create_instance(
+            with_validation_layers,
+            &app_name,
+            &engine_name,
+            None, // No display
+            &entry,
+        );
+        let debug_utils_loader = DebugInstance::new(&entry, &instance);
+
+        // Create validation callback storage
+        let validation_callback = Arc::new(Mutex::new(ValidationCallbackStorage::new()));
+        let user_data = Arc::into_raw(validation_callback.clone()) as *mut c_void;
+
+        let debug_callback =
+            create_debug_messenger(&debug_utils_loader, with_validation_layers, user_data);
+
+        // Pick physical device (no swapchain requirement)
+        let physical_device = unsafe { pick_physical_device_headless(&instance) }
+            .expect("No suitable physical device found for headless rendering");
+
+        // Find queue families (no surface support required)
+        let queue_indices =
+            QueueFamilyIndices::find_queue_families_headless(&instance, physical_device);
+
+        let queue_create_infos = vec![vk::DeviceQueueCreateInfo::default()
+            .queue_family_index(queue_indices.graphics_idx.unwrap())
+            .queue_priorities(&[1.0])];
+
+        let graphics_queue_idx = queue_indices.graphics_idx.unwrap();
+        let transfer_queue_idx = queue_indices.transfer_idx.unwrap_or(0);
+
+        // Create device WITHOUT swapchain extension
+        let device = create_device(
+            &instance,
+            physical_device,
+            queue_create_infos,
+            with_validation_layers,
+            false, // enable_swapchain = false
+        );
+
+        let graphics_queue = unsafe { device.get_device_queue(graphics_queue_idx, 0) };
+
+        let gfx_queue = super::Queue::new(device.clone(), graphics_queue_idx, 0);
+        let gfx_cmdpool = super::CommandPool::new(device.clone(), graphics_queue_idx);
+
+        let transfer_queue = unsafe { device.get_device_queue(transfer_queue_idx, 0) };
+        let create_info = vk::CommandPoolCreateInfo::default()
+            .queue_family_index(transfer_queue_idx)
+            .flags(vk::CommandPoolCreateFlags::RESET_COMMAND_BUFFER);
+        let transfer_command_pool =
+            unsafe { device.create_command_pool(&create_info, None) }.unwrap();
+
+        let mut debug_settings = AllocatorDebugSettings::default();
+        debug_settings.log_leaks_on_shutdown = true;
+        let create_info = AllocatorCreateDesc {
+            instance: instance.clone(),
+            device: device.clone(),
+            physical_device,
+            debug_settings,
+            buffer_device_address: false,
+            allocation_sizes: AllocationSizes::default(),
+        };
+
+        let allocator = ManuallyDrop::new(RefCell::new(Allocator::new(&create_info).unwrap()));
+
+        Self {
+            _entry: entry,
+            instance,
+            device,
+            surface_loader: None,
+            swapchain_loader: None,
+            physical_device,
+            allocator,
+            surface: None, // No surface!
+            graphics_queue,
+            gfx_queue,
+            gfx_cmdpool,
+            transfer_command_pool,
+            transfer_queue,
+            debug_utils_loader,
+            debug_callback,
+            validation_callback,
+        }
+    }
+
+    /// Set a custom validation callback for receiving Vulkan validation messages.
+    ///
+    /// This allows applications and tests to receive validation messages in Rust types.
+    ///
+    /// # Arguments
+    /// * `callback` - A boxed callback that receives validation messages
+    ///
+    /// # Example
+    /// ```no_run
+    /// use katla_vulkan::VulkanContext;
+    /// use katla_vulkan::ValidationMessage;
+    /// use std::sync::Mutex;
+    ///
+    /// # let context: VulkanContext = unsafe { std::mem::zeroed() };
+    /// // Capture validation messages
+    /// let context = context; // In real code, use Rc::clone(context) if needed
+    /// context.set_validation_callback(Box::new(|msg| {
+    ///     println!("Validation: {}: {}", msg.severity, msg.message);
+    ///     false // Don't break
+    /// }));
+    /// ```
+    pub fn set_validation_callback(&self, callback: Box<ValidationCallback>) {
+        let mut storage = self.validation_callback.lock().unwrap();
+        storage.set_callback(callback);
+    }
+
+    /// Get all validation messages that have been captured since the last call.
+    ///
+    /// This clears the internal message buffer, so each call returns only new messages.
+    ///
+    /// # Example
+    /// ```no_run
+    /// use katla_vulkan::VulkanContext;
+    ///
+    /// # let context: VulkanContext = unsafe { std::mem::zeroed() };
+    /// // Run Vulkan code that triggers validation errors...
+    ///
+    /// // Check for specific VUID errors
+    /// let messages = context.take_validation_messages();
+    /// let has_draw_error = messages.iter()
+    ///     .any(|m| m.vuid.as_ref().map(|v| v.contains("VUID-vkCmdDraw")).unwrap_or(false));
+    /// ```
+    pub fn take_validation_messages(&self) -> Vec<ValidationMessage> {
+        let mut storage = self.validation_callback.lock().unwrap();
+        storage.take_messages()
     }
 }
 impl Drop for VulkanContext {
@@ -476,7 +812,13 @@ impl Drop for VulkanContext {
             self.gfx_cmdpool.destroy();
             ManuallyDrop::drop(&mut self.allocator);
             self.device.destroy_device(None);
-            self.surface_loader.destroy_surface(self.surface, None);
+
+            // Destroy surface if it exists
+            if let Some(surface) = self.surface {
+                if let Some(surface_loader) = &self.surface_loader {
+                    surface_loader.destroy_surface(surface, None);
+                }
+            }
 
             if let Some(messenger) = self.debug_callback {
                 self.debug_utils_loader
@@ -516,11 +858,23 @@ impl VulkanFrameCtx {
     }
 
     pub fn init(context: &Rc<VulkanContext>) -> Self {
+        let swapchain_loader = context
+            .swapchain_loader
+            .as_ref()
+            .expect("Swapchain loader required for VulkanFrameCtx::init");
+        let surface_loader = context
+            .surface_loader
+            .as_ref()
+            .expect("Surface loader required for VulkanFrameCtx::init");
+        let surface = context
+            .surface
+            .expect("Surface required for VulkanFrameCtx::init");
+
         let swapchain = super::Swapchain::create_swapchain(
-            context.swapchain_loader.clone(),
-            &context.surface_loader,
+            swapchain_loader.clone(),
+            surface_loader,
             context.physical_device,
-            context.surface,
+            surface,
             None, // No old swapchain
         );
 
@@ -559,11 +913,26 @@ impl VulkanFrameCtx {
     }
 
     pub fn recreate_swapchain(&mut self) {
+        let swapchain_loader = self
+            .context
+            .swapchain_loader
+            .as_ref()
+            .expect("Swapchain loader required for recreate_swapchain");
+        let surface_loader = self
+            .context
+            .surface_loader
+            .as_ref()
+            .expect("Surface loader required for recreate_swapchain");
+        let surface = self
+            .context
+            .surface
+            .expect("Surface required for recreate_swapchain");
+
         let swapchain = super::Swapchain::create_swapchain(
-            self.context.swapchain_loader.clone(),
-            &self.context.surface_loader,
+            swapchain_loader.clone(),
+            surface_loader,
             self.context.physical_device,
-            self.context.surface,
+            surface,
             Some(self.swapchain.swapchain),
         );
         self.destroy();
@@ -596,7 +965,9 @@ impl VulkanFrameCtx {
     pub fn destroy(&mut self) {
         unsafe {
             for image_view in &self.swapchain_image_views {
-                self.context.device.destroy_image_view(image_view.vk(), None);
+                self.context
+                    .device
+                    .destroy_image_view(image_view.vk(), None);
             }
             self.swapchain.destroy();
             // self.depth_render_texture.destroy();
@@ -652,6 +1023,37 @@ unsafe fn is_physical_device_suitable(
     score
 }
 
+/// Pick a physical device for headless rendering.
+/// Simplified version that doesn't require swapchain support.
+unsafe fn pick_physical_device_headless(instance: &Instance) -> Option<vk::PhysicalDevice> {
+    let physical_devices = instance.enumerate_physical_devices().unwrap();
+
+    // Score devices based on type and capabilities (no swapchain requirement)
+    let physical_device = physical_devices.into_iter().max_by_key(|physical_device| {
+        let properties = instance.get_physical_device_properties(*physical_device);
+        let mut score = 0u32;
+
+        match properties.device_type {
+            vk::PhysicalDeviceType::DISCRETE_GPU => score += 1000,
+            vk::PhysicalDeviceType::INTEGRATED_GPU => score += 100,
+            vk::PhysicalDeviceType::CPU => score += 10,
+            _ => {}
+        }
+
+        score += properties.limits.max_image_dimension2_d as u32;
+        score
+    });
+
+    if let Some(device) = physical_device {
+        let properties = instance.get_physical_device_properties(device);
+        println!(
+            "Picking physical device (headless): {:?}",
+            CStr::from_ptr(properties.device_name.as_ptr())
+        );
+    }
+    physical_device
+}
+
 fn create_depth_render_texture(context: Rc<VulkanContext>, extent: vk::Extent2D) -> RenderTexture {
     let depth_format = context.find_depth_format();
     let extent_3d = vk::Extent3D {
@@ -694,8 +1096,14 @@ fn create_device(
     physical_device: vk::PhysicalDevice,
     queue_create_infos: Vec<vk::DeviceQueueCreateInfo>,
     with_validation_layers: bool,
+    enable_swapchain: bool,
 ) -> Device {
-    let device_extensions = [ash::khr::swapchain::NAME.as_ptr()];
+    let device_extensions = if enable_swapchain {
+        vec![ash::khr::swapchain::NAME.as_ptr()]
+    } else {
+        vec![]
+    };
+
     let mut device_layers = vec![];
     if with_validation_layers {
         device_layers.push(LAYER_KHRONOS_VALIDATION.as_ptr() as *const i8);
@@ -722,6 +1130,7 @@ fn create_device(
 fn create_debug_messenger(
     debug_utils_loader: &DebugInstance,
     with_validation_layers: bool,
+    user_data: *mut c_void,
 ) -> Option<vk::DebugUtilsMessengerEXT> {
     if with_validation_layers {
         let create_info = vk::DebugUtilsMessengerCreateInfoEXT::default()
@@ -734,7 +1143,8 @@ fn create_debug_messenger(
                 vk::DebugUtilsMessageTypeFlagsEXT::VALIDATION
                     | vk::DebugUtilsMessageTypeFlagsEXT::PERFORMANCE,
             )
-            .pfn_user_callback(Some(debug_callback));
+            .pfn_user_callback(Some(debug_callback))
+            .user_data(user_data);
 
         Some(
             unsafe { debug_utils_loader.create_debug_utils_messenger(&create_info, None) }.unwrap(),
@@ -745,17 +1155,64 @@ fn create_debug_messenger(
 }
 
 unsafe extern "system" fn debug_callback(
-    _message_severity: vk::DebugUtilsMessageSeverityFlagsEXT,
-    _message_types: vk::DebugUtilsMessageTypeFlagsEXT,
+    message_severity: vk::DebugUtilsMessageSeverityFlagsEXT,
+    message_types: vk::DebugUtilsMessageTypeFlagsEXT,
     p_callback_data: *const vk::DebugUtilsMessengerCallbackDataEXT,
-    _p_user_data: *mut c_void,
+    p_user_data: *mut c_void,
 ) -> vk::Bool32 {
+    let callback_data = &*p_callback_data;
+
+    // Convert to Rust types
+    let severity = ValidationSeverity::from(message_severity);
+    let message_type = ValidationMessageType::from(message_types);
+    let message = CStr::from_ptr(callback_data.p_message)
+        .to_string_lossy()
+        .to_string();
+
+    // Extract VUID from p_message_id_name if available (this is the canonical source)
+    // Otherwise try to find it in the message text (fallback for older validation layers)
+    let vuid = if !callback_data.p_message_id_name.is_null() {
+        let id_name = unsafe { CStr::from_ptr(callback_data.p_message_id_name) };
+        let id_str = id_name.to_string_lossy();
+        // Check if it's a VUID (starts with "VUID-")
+        if id_str.starts_with("VUID-") {
+            Some(id_str.to_string())
+        } else {
+            None
+        }
+    } else {
+        // Fallback: try to find VUID in message text
+        message
+            .split_whitespace()
+            .find(|s| s.starts_with("VUID-"))
+            .map(|s| s.to_string())
+    };
+
+    let validation_msg = ValidationMessage {
+        severity,
+        message_type,
+        message,
+        vuid,
+    };
+
+    // Reconstruct the Arc<Mutex<ValidationCallbackStorage>> from the raw pointer
+    let storage = Arc::from_raw(p_user_data as *const Mutex<ValidationCallbackStorage>);
+    let mut storage_guard = storage.lock().unwrap();
+    let should_break = storage_guard.call(&validation_msg);
+    drop(storage_guard);
+    let _ = Arc::into_raw(storage); // Don't drop the Arc
+
+    // Always print the message (for backwards compatibility and visibility)
     println!(
         "{}",
-        CStr::from_ptr((*p_callback_data).p_message).to_string_lossy()
+        CStr::from_ptr(callback_data.p_message).to_string_lossy()
     );
 
-    vk::FALSE
+    if should_break {
+        vk::TRUE
+    } else {
+        vk::FALSE
+    }
 }
 
 fn check_validation_support(entry: &Entry) -> bool {

@@ -15,6 +15,22 @@ impl Clone for RenderPass {
 }
 
 impl RenderPass {
+    /// Create an opaque render pass with default formats.
+    ///
+    /// This is a convenience method that uses common default formats:
+    /// - Color: R8G8B8A8_SRGB
+    /// - Depth: D32_SFLOAT
+    ///
+    /// This method does not expose ash types and is suitable for use
+    /// in integration tests where ash should not be a dependency.
+    pub fn create_default_opaque(device: Device) -> Self {
+        Self::create_opaque(
+            device,
+            vk::Format::R8G8B8A8_SRGB,
+            vk::Format::D32_SFLOAT,
+        )
+    }
+
     pub fn create_opaque(
         device: Device,
         color_format: vk::Format,
