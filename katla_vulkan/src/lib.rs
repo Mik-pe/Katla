@@ -142,7 +142,7 @@ impl VulkanRenderer {
             let new_render_pass = self.render_pass.get_vk_renderpass();
             let new_extent = self.frame_context.swapchain.get_extent();
             for pass in &mut graph.passes {
-                pass.active_render_pass = new_render_pass;
+                pass.active_render_pass = VkRenderPass::new(new_render_pass);
                 pass.extent = new_extent;
             }
 
@@ -150,7 +150,7 @@ impl VulkanRenderer {
             for pass in &graph.passes {
                 for framebuffer in &pass.vk_framebuffers {
                     unsafe {
-                        self.context.device.destroy_framebuffer(*framebuffer, None);
+                        self.context.device.destroy_framebuffer(framebuffer.vk(), None);
                     }
                 }
             }
@@ -174,9 +174,9 @@ impl VulkanRenderer {
                         .unwrap();
 
                     if image_index == 0 {
-                        graph.passes[pass_idx].vk_framebuffers = vec![framebuffer];
+                        graph.passes[pass_idx].vk_framebuffers = vec![VkFramebuffer::new(framebuffer)];
                     } else {
-                        graph.passes[pass_idx].vk_framebuffers.push(framebuffer);
+                        graph.passes[pass_idx].vk_framebuffers.push(VkFramebuffer::new(framebuffer));
                     }
                 }
             }
