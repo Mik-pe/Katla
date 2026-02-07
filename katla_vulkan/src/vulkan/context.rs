@@ -24,6 +24,8 @@ use super::SwapchainInfo;
 
 const LAYER_KHRONOS_VALIDATION: &str = concat!("VK_LAYER_KHRONOS_validation", "\0");
 
+use crate::sync::{VkImage, VkImageView};
+
 struct QueueFamilyIndices {
     pub graphics_idx: Option<u32>,
     pub transfer_idx: Option<u32>,
@@ -31,9 +33,9 @@ struct QueueFamilyIndices {
 
 pub struct RenderTexture {
     pub extent: vk::Extent2D,
-    pub image_view: vk::ImageView,
+    pub image_view: VkImageView,
     pub format: vk::Format,
-    pub image: vk::Image,
+    pub image: VkImage,
     image_memory: Option<Allocation>,
     context: Rc<VulkanContext>,
 }
@@ -43,11 +45,11 @@ impl RenderTexture {
         unsafe {
             self.context
                 .device
-                .destroy_image_view(self.image_view, None);
+                .destroy_image_view(self.image_view.vk(), None);
         }
         let image_memory = self.image_memory.take();
 
-        self.context.free_image(self.image, image_memory.unwrap());
+        self.context.free_image(self.image.vk(), image_memory.unwrap());
     }
 }
 
@@ -76,9 +78,9 @@ pub struct VulkanContext {
 }
 pub struct VulkanFrameCtx {
     pub context: Rc<VulkanContext>,
-    pub swapchain_image_views: Vec<vk::ImageView>,
+    pub swapchain_image_views: Vec<VkImageView>,
     pub swapchain: super::Swapchain,
-    pub swapchain_images: Vec<vk::Image>,
+    pub swapchain_images: Vec<VkImage>,
     pub depth_render_texture: RenderTexture,
     pub command_buffers: Vec<super::CommandBuffer>,
 }
@@ -524,16 +526,20 @@ impl VulkanFrameCtx {
 
         let swapchain_images = swapchain.get_swapchain_images();
 
-        let swapchain_image_views: Vec<_> = swapchain_images
+        let swapchain_image_views: Vec<VkImageView> = swapchain_images
             .iter()
             .map(|swapchain_image| {
-                Self::create_image_view(
+                VkImageView::new(Self::create_image_view(
                     &context.device,
                     *swapchain_image,
                     swapchain.format.format,
                     vk::ImageAspectFlags::COLOR,
-                )
+                ))
             })
+            .collect();
+        let swapchain_images_wrapped: Vec<VkImage> = swapchain_images
+            .iter()
+            .map(|img| VkImage::new(*img))
             .collect();
         let depth_render_texture =
             create_depth_render_texture(context.clone(), swapchain.get_extent());
@@ -546,7 +552,7 @@ impl VulkanFrameCtx {
             context: context.clone(),
             swapchain,
             swapchain_image_views,
-            swapchain_images,
+            swapchain_images: swapchain_images_wrapped,
             depth_render_texture,
             command_buffers,
         }
@@ -563,18 +569,24 @@ impl VulkanFrameCtx {
         self.destroy();
         self.swapchain = swapchain;
 
-        self.swapchain_images = self.swapchain.get_swapchain_images();
+        self.swapchain_images = self
+            .swapchain
+            .get_swapchain_images()
+            .iter()
+            .map(|img| VkImage::new(*img))
+            .collect();
 
         self.swapchain_image_views = self
-            .swapchain_images
+            .swapchain
+            .get_swapchain_images()
             .iter()
             .map(|swapchain_image| {
-                Self::create_image_view(
+                VkImageView::new(Self::create_image_view(
                     &self.context.device,
                     *swapchain_image,
                     self.swapchain.format.format,
                     vk::ImageAspectFlags::COLOR,
-                )
+                ))
             })
             .collect();
         self.depth_render_texture =
@@ -583,8 +595,8 @@ impl VulkanFrameCtx {
 
     pub fn destroy(&mut self) {
         unsafe {
-            for &image_view in &self.swapchain_image_views {
-                self.context.device.destroy_image_view(image_view, None);
+            for image_view in &self.swapchain_image_views {
+                self.context.device.destroy_image_view(image_view.vk(), None);
             }
             self.swapchain.destroy();
             // self.depth_render_texture.destroy();
@@ -669,8 +681,8 @@ fn create_depth_render_texture(context: Rc<VulkanContext>, extent: vk::Extent2D)
     );
     RenderTexture {
         extent,
-        image_view,
-        image: depth_image,
+        image_view: VkImageView::new(image_view),
+        image: VkImage::new(depth_image),
         image_memory: Some(image_memory),
         format: depth_format,
         context,
