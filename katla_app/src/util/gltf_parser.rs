@@ -143,6 +143,116 @@ impl<'a> AttributeParser<'a> {
     }
 }
 
+/// Generate smooth vertex normals from triangle data.
+///
+/// This calculates normals by averaging the face normals of all triangles
+/// that share each vertex. This produces smooth shading compared to flat shading.
+pub fn generate_smooth_normals(positions: &[[f32; 3]], indices: &[u8], index_stride: u8) -> Vec<[f32; 3]> {
+    use std::collections::HashMap;
+
+    let mut normals: Vec<Vec3> = vec![Vec3::new(0.0, 0.0, 0.0); positions.len()];
+    let mut counts: Vec<usize> = vec![0; positions.len()];
+
+    // Handle empty or invalid index data
+    if indices.is_empty() || index_stride == 0 {
+        // No index data - compute flat normals from sequential triplets
+        for i in (0..positions.len()).step_by(3) {
+            if i + 2 >= positions.len() {
+                break;
+            }
+
+            let v0 = Vec3(positions[i]);
+            let v1 = Vec3(positions[i + 1]);
+            let v2 = Vec3(positions[i + 2]);
+
+            // Calculate face normal using cross product
+            let edge1 = Vec3::new(v1.0[0] - v0.0[0], v1.0[1] - v0.0[1], v1.0[2] - v0.0[2]);
+            let edge2 = Vec3::new(v2.0[0] - v0.0[0], v2.0[1] - v0.0[1], v2.0[2] - v0.0[2]);
+            let face_normal = Vec3::new(
+                edge1.0[1] * edge2.0[2] - edge1.0[2] * edge2.0[1],
+                edge1.0[2] * edge2.0[0] - edge1.0[0] * edge2.0[2],
+                edge1.0[0] * edge2.0[1] - edge1.0[1] * edge2.0[0],
+            )
+            .normalize();
+
+            normals[i] = face_normal;
+            normals[i + 1] = face_normal;
+            normals[i + 2] = face_normal;
+        }
+
+        return normals.iter().map(|n| n.0).collect();
+    }
+
+    // Parse indices based on stride
+    let get_index = |data: &[u8], stride: u8, i: usize| -> usize {
+        match stride {
+            1 => data[i] as usize,
+            2 => {
+                let arr = [data[i * 2], data[i * 2 + 1]];
+                u16::from_le_bytes(arr) as usize
+            }
+            4 => {
+                let arr = [data[i * 4], data[i * 4 + 1], data[i * 4 + 2], data[i * 4 + 3]];
+                u32::from_le_bytes(arr) as usize
+            }
+            _ => 0,
+        }
+    };
+
+    let index_count = indices.len() / index_stride as usize;
+
+    // Calculate face normals and accumulate per vertex
+    for i in (0..index_count).step_by(3) {
+        if i + 2 >= index_count {
+            break;
+        }
+
+        let i0 = get_index(indices, index_stride, i);
+        let i1 = get_index(indices, index_stride, i + 1);
+        let i2 = get_index(indices, index_stride, i + 2);
+
+        if i0 >= positions.len() || i1 >= positions.len() || i2 >= positions.len() {
+            continue;
+        }
+
+        let v0 = Vec3(positions[i0]);
+        let v1 = Vec3(positions[i1]);
+        let v2 = Vec3(positions[i2]);
+
+        // Calculate face normal using cross product
+        let edge1 = Vec3::new(v1.0[0] - v0.0[0], v1.0[1] - v0.0[1], v1.0[2] - v0.0[2]);
+        let edge2 = Vec3::new(v2.0[0] - v0.0[0], v2.0[1] - v0.0[1], v2.0[2] - v0.0[2]);
+        let face_normal = Vec3::new(
+            edge1.0[1] * edge2.0[2] - edge1.0[2] * edge2.0[1],
+            edge1.0[2] * edge2.0[0] - edge1.0[0] * edge2.0[2],
+            edge1.0[0] * edge2.0[1] - edge1.0[1] * edge2.0[0],
+        );
+
+        // Accumulate face normal to each vertex
+        normals[i0] = normals[i0] + face_normal;
+        normals[i1] = normals[i1] + face_normal;
+        normals[i2] = normals[i2] + face_normal;
+
+        counts[i0] += 1;
+        counts[i1] += 1;
+        counts[i2] += 1;
+    }
+
+    // Normalize accumulated normals
+    for i in 0..normals.len() {
+        if counts[i] > 0 {
+            normals[i] = normals[i] * (1.0 / counts[i] as f32);
+            normals[i] = normals[i].normalize();
+        } else {
+            // No triangles contribute - use up as default
+            normals[i] = Vec3::new(0.0, 1.0, 0.0);
+        }
+    }
+
+    // Convert back to arrays
+    normals.iter().map(|n| n.0).collect()
+}
+
 /// Build vertex data from position, normal, and tex coord arrays.
 pub fn build_vertex_data(
     positions: Vec<[f32; 3]>,
