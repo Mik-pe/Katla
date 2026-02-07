@@ -1,5 +1,6 @@
 pub mod render_graph;
 pub mod rendering;
+pub mod sync;
 pub mod vulkan;
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 pub use render_graph::errors::RenderGraphError;
@@ -11,15 +12,16 @@ pub use render_graph::*;
 pub use rendering::{
     registry::AssetRegistry, types::{DrawCall, DrawList, MaterialHandle, MaterialParams, MeshHandle},
 };
+pub use sync::{Fence, Semaphore};
 pub use vulkan::*;
 
 use ash::vk;
 use std::{cell::RefCell, ffi::CString, rc::Rc};
 
 pub struct FrameData {
-    pub available_sem: vk::Semaphore,
-    pub finished_sem: vk::Semaphore,
-    pub in_flight_fence: vk::Fence,
+    pub available_sem: Semaphore,
+    pub finished_sem: Semaphore,
+    pub in_flight_fence: Fence,
     pub image_index: u32,
 }
 
@@ -555,10 +557,10 @@ impl VulkanRenderer {
         command_buffer.end_command();
 
         let frame_data = self.current_framedata.take().unwrap();
-        let wait_semaphores = vec![frame_data.available_sem];
+        let wait_semaphores = vec![frame_data.available_sem.vk()];
         let wait_dst_stage_mask = vec![vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT];
-        let signal_semaphores = vec![frame_data.finished_sem];
-        let in_flight_fence = frame_data.in_flight_fence;
+        let signal_semaphores = vec![frame_data.finished_sem.vk()];
+        let in_flight_fence = frame_data.in_flight_fence.vk();
 
         unsafe {
             self.context
