@@ -15,8 +15,11 @@ impl CommandBuffer {
             .level(vk::CommandBufferLevel::PRIMARY)
             .command_pool(command_pool.vk_command_pool())
             .command_buffer_count(1);
-        let command_buffer: vk::CommandBuffer =
-            unsafe { device.allocate_command_buffers(&create_info).unwrap()[0] };
+        let command_buffer: vk::CommandBuffer = unsafe {
+            device
+                .allocate_command_buffers(&create_info)
+                .expect("Failed to allocate Vulkan command buffer - check device memory")
+        }[0];
 
         Self {
             device: device.clone(),
@@ -35,13 +38,15 @@ impl CommandBuffer {
         unsafe {
             self.device
                 .begin_command_buffer(self.command_buffer, &begin_info)
-                .unwrap();
+                .expect("Failed to begin command buffer - command buffer may be in invalid state");
         }
     }
 
     pub fn end_single_time_command(&self) {
         unsafe {
-            self.device.end_command_buffer(self.command_buffer).unwrap();
+            self.device
+                .end_command_buffer(self.command_buffer)
+                .expect("Failed to end command buffer - command buffer may not be in recording state");
         }
     }
 
@@ -50,13 +55,15 @@ impl CommandBuffer {
         unsafe {
             self.device
                 .begin_command_buffer(self.command_buffer, &begin_info)
-                .unwrap();
+                .expect("Failed to begin command buffer - command buffer may be in invalid state");
         }
     }
 
     pub fn end_command(&self) {
         unsafe {
-            self.device.end_command_buffer(self.command_buffer).unwrap();
+            self.device
+                .end_command_buffer(self.command_buffer)
+                .expect("Failed to end command buffer - command buffer may not be in recording state");
         }
     }
 
