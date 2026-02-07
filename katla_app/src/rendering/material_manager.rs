@@ -6,7 +6,7 @@ use std::{
 };
 
 use crate::rendering::Material;
-use katla_vulkan::{MaterialHandle, VulkanContext, VulkanRenderer, RenderPass};
+use katla_vulkan::{MaterialHandle, VulkanContext, VulkanRenderer, RenderPass, MaterialRegistry};
 use notify::{Watcher, RecursiveMode};
 
 /// ID for referencing a shared material.
@@ -127,6 +127,40 @@ impl MaterialManager {
     /// This is needed so hot reload can update the renderer's AssetRegistry.
     pub fn register_handle(&mut self, name: &str, handle: MaterialHandle) {
         self.material_handles.insert(name.to_string(), handle);
+    }
+
+    /// Register a material from a template in the MaterialRegistry.
+    ///
+    /// This method checks if a template with the given name exists in the registry,
+    /// and if so, creates a Material from that template. This enables hot reload
+    /// to automatically update all materials using the same template.
+    ///
+    /// # Arguments
+    /// * `name` - Material name (also used to look up the template)
+    /// * `material_registry` - The MaterialRegistry containing loaded templates
+    /// * `texture` - Optional texture for this material instance
+    /// * `color` - Optional color for this material instance
+    ///
+    /// # Returns
+    /// * `Some(MaterialId)` - If template was found and material created
+    /// * `None` - If no template with that name exists
+    pub fn register_from_template(
+        &mut self,
+        name: impl Into<String>,
+        material_registry: &MaterialRegistry,
+        texture: Option<Rc<katla_vulkan::Texture>>,
+        color: Option<katla_math::Color>,
+    ) -> Option<MaterialId> {
+        let name = name.into();
+
+        // Try to get the template from the registry
+        let template = material_registry.get_template(&name)?;
+
+        // Create material from template
+        let material = Material::from_template(template, texture, color);
+
+        // Register the material
+        Some(self.register_material(name, material))
     }
 
     /// Update a material's handle (used when material is re-registered)

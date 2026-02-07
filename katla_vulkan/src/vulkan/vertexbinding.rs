@@ -1,5 +1,17 @@
 use ash::vk::{self};
 
+/// Standard PBR vertex format with position, normal, tangent, and UV
+pub fn get_pbr_vertex_binding() -> VertexBinding {
+    VertexBinding {
+        formats: vec![
+            VertexFormat::RGB32f,  // position
+            VertexFormat::RGB32f,  // normal
+            VertexFormat::RGBA32f, // tangent
+            VertexFormat::RG32f,   // uv
+        ],
+    }
+}
+
 #[derive(Clone, Copy)]
 pub enum VertexFormat {
     R32u,

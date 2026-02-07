@@ -1,0 +1,36 @@
+# GLTF Default Material
+#
+# Default material for GLTF models. Uses the model_pbr shader with
+# texture and color support.
+
+name = "gltf_default"
+
+[shaders]
+vertex = "../shaders/model_pbr.wgsl"
+fragment = "../shaders/model_pbr.wgsl"
+
+[bindings.uniforms.transform]
+type = "mat4"
+count = 3
+name = "transform"
+
+[bindings.uniforms.color]
+type = "vec4"
+name = "color"
+
+[bindings.textures.albedo]
+binding = 1
+name = "albedo_texture"
+
+[bindings.textures.sampler]
+binding = 2
+name = "albedo_sampler"
+
+[parameters]
+color = [1.0, 1.0, 1.0, 1.0]  # White - no tint by default
+
+[render_state]
+depth_test = true
+depth_write = true
+cull_backfaces = true
+alpha_blending = false

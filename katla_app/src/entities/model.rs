@@ -2,7 +2,7 @@ use std::rc::Rc;
 
 use katla_ecs::{EntityId, World};
 use katla_math::Transform;
-use katla_vulkan::{MaterialHandle, MeshHandle, RenderPass, VulkanContext, VulkanRenderer};
+use katla_vulkan::{MaterialHandle, MaterialRegistry, MeshHandle, RenderPass, VulkanContext, VulkanRenderer};
 
 use crate::{
     components::{DrawableComponent, NameComponent, TransformComponent},
@@ -25,6 +25,7 @@ impl Model {
         material: Material,
         renderer: Option<&mut VulkanRenderer>,
         transform: Transform,
+        color: Option<katla_math::Color>,
     ) -> Self {
         let entity = world.create_entity();
 
@@ -40,11 +41,13 @@ impl Model {
                 MeshHandle(0) // Dummy handle if no meshes
             };
 
-            // Register material
-            let mat_h = r.create_material(
-                material.material_pipeline.clone(),
-                material.texture.clone(),
-                material.vertex_binding.clone(),
+            // Register material with optional per-material uniform buffer
+            let (pipeline, texture, vertex_binding, uniform) = material.get_registration_data();
+            let mat_h = r.register_material_full(
+                pipeline,
+                texture,
+                vertex_binding,
+                uniform, // Move ownership to renderer
             );
 
             (mesh_h, mat_h)
@@ -54,10 +57,15 @@ impl Model {
         };
 
         world.add_component(entity, TransformComponent::new(transform));
-        world.add_component(
-            entity,
-            DrawableComponent::with_handles(mesh_handle, material_handle),
-        );
+
+        // Create DrawableComponent with optional color
+        let drawable = if let Some(c) = color {
+            DrawableComponent::with_handles_and_color(mesh_handle, material_handle, c)
+        } else {
+            DrawableComponent::with_handles(mesh_handle, material_handle)
+        };
+        world.add_component(entity, drawable);
+
         world.add_component(entity, NameComponent::new("Model"));
 
         Self {
@@ -74,10 +82,134 @@ impl Model {
         renderer: Option<&mut VulkanRenderer>,
         render_pass: &RenderPass,
         transform: Transform,
+        material_registry: Option<&MaterialRegistry>,
     ) -> Self {
-        let material = Material::new(model.clone(), context.clone(), render_pass);
+        // Try to create material from template first
+        let material = if let Some(registry) = material_registry {
+            // Try to get the "gltf_default" template
+            if let Some(template) = registry.get_template("gltf_default") {
+                // Extract texture from the GLTF model
+                let texture = if !model.images.is_empty() {
+                    let image = &model.images[0];
+                    let pixels = &image.pixels;
+
+                    match image.format {
+                        gltf::image::Format::R8G8B8 => {
+                            let tex = katla_vulkan::Texture::create_image_rgb(
+                                context.clone(),
+                                image.width,
+                                image.height,
+                                pixels.as_slice(),
+                            );
+                            Some(Rc::new(tex))
+                        }
+                        gltf::image::Format::R8G8B8A8 => {
+                            let tex = katla_vulkan::Texture::create_image(
+                                context.clone(),
+                                image.width,
+                                image.height,
+                                katla_vulkan::ImageFormat::R8G8B8A8Srgb,
+                                pixels.as_slice(),
+                            );
+                            Some(Rc::new(tex))
+                        }
+                        _ => {
+                            println!("Unsupported texture format: {:?}", image.format);
+                            None
+                        }
+                    }
+                } else {
+                    None
+                };
+
+                // Create material from template
+                Material::from_template(template, texture, None)
+            } else {
+                // Fall back to direct creation if template not found
+                Material::new(model.clone(), context.clone(), render_pass)
+            }
+        } else {
+            // No registry provided, use direct creation
+            Material::new(model.clone(), context.clone(), render_pass)
+        };
+
         let mesh = Mesh::new_from_model(model, context.clone());
 
-        Self::new(world, vec![mesh], material, renderer, transform)
+        Self::new(world, vec![mesh], material, renderer, transform, None)
+    }
+
+    /// Create a GLTF model using a raw pointer to MaterialRegistry.
+    ///
+    /// This version avoids borrow checker issues by using a raw pointer,
+    /// similar to the MeshBuilder approach.
+    ///
+    /// # Safety
+    /// The registry_ptr must point to a valid MaterialRegistry that outlives
+    /// this function call.
+    pub fn new_from_gltf_with_ptr(
+        world: &mut World,
+        model: Rc<GLTFModel>,
+        context: Rc<VulkanContext>,
+        renderer: Option<&mut VulkanRenderer>,
+        render_pass: &RenderPass,
+        transform: Transform,
+        material_registry_ptr: *const std::cell::RefCell<MaterialRegistry>,
+    ) -> Self {
+        // SAFETY: The raw pointer points to the MaterialRegistry in VulkanRenderer
+        // which is guaranteed to be valid for the lifetime of the application.
+        // We only access it during this function call.
+        let material = unsafe {
+            let registry = &*material_registry_ptr;
+
+            // Try to get the "gltf_default" template
+            if let Some(template) = registry.borrow().get_template("gltf_default") {
+                println!("  Model: Using material from template 'gltf_default'");
+
+                // Extract texture from the GLTF model
+                let texture = if !model.images.is_empty() {
+                    let image = &model.images[0];
+                    let pixels = &image.pixels;
+
+                    match image.format {
+                        gltf::image::Format::R8G8B8 => {
+                            let tex = katla_vulkan::Texture::create_image_rgb(
+                                context.clone(),
+                                image.width,
+                                image.height,
+                                pixels.as_slice(),
+                            );
+                            Some(Rc::new(tex))
+                        }
+                        gltf::image::Format::R8G8B8A8 => {
+                            let tex = katla_vulkan::Texture::create_image(
+                                context.clone(),
+                                image.width,
+                                image.height,
+                                katla_vulkan::ImageFormat::R8G8B8A8Srgb,
+                                pixels.as_slice(),
+                            );
+                            Some(Rc::new(tex))
+                        }
+                        _ => {
+                            println!("Unsupported texture format: {:?}", image.format);
+                            None
+                        }
+                    }
+                } else {
+                    None
+                };
+
+                // Create material from template
+                Material::from_template(template, texture, None)
+            } else {
+                println!("  Model: Template 'gltf_default' not found, creating directly");
+                // Fall back to direct creation if template not found
+                Material::new(model.clone(), context.clone(), render_pass)
+            }
+        };
+
+        let mesh = Mesh::new_from_model(model, context.clone());
+
+        Self::new(world, vec![mesh], material, renderer, transform, None)
     }
 }

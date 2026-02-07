@@ -4,10 +4,11 @@
 //! material instances can share a single pipeline while having different
 //! parameters and textures.
 
-use std::{collections::HashMap, rc::Rc};
+use std::{collections::HashMap, rc::Rc, cell::RefCell};
+use ash::vk;
 use super::{
     MaterialDescriptor, MaterialPipeline, ShaderReflection, MaterialParameters,
-    MaterialValue, ShaderSource, MaterialError,
+    MaterialValue, ShaderSource, MaterialError, UniformLayout,
 };
 use crate::{VulkanContext, RenderPass, Texture};
 
@@ -46,10 +47,21 @@ impl std::error::Error for InstanceError {}
 /// Multiple material instances can reference this template, making it
 /// memory-efficient to have many materials with the same shader but
 /// different parameters.
+///
+/// The pipeline is wrapped in Rc<RefCell<>> so that hot reload updates
+/// are shared across all materials using this template.
+///
+/// The descriptor set layout is stored separately from the pipeline so
+/// it can be preserved across hot reloads, ensuring that material instances'
+/// descriptor sets remain valid.
 pub struct MaterialTemplate {
     name: String,
     descriptor: MaterialDescriptor,
-    pipeline: MaterialPipeline,
+    pipeline: Rc<RefCell<MaterialPipeline>>,
+    /// The descriptor set layout, stored separately to preserve it across hot reloads.
+    /// This ensures that material instances' descriptor sets remain valid when
+    /// the pipeline is recreated.
+    desc_layout: vk::DescriptorSetLayout,
     reflection: ShaderReflection,
     default_parameters: MaterialParameters,
 }
@@ -62,6 +74,10 @@ impl MaterialTemplate {
         reflection: ShaderReflection,
         pipeline: MaterialPipeline,
     ) -> Self {
+        // Extract the descriptor set layout from the pipeline
+        // This will be preserved across hot reloads
+        let desc_layout = pipeline.desc_layout;
+
         let default_parameters = MaterialParameters::new(
             descriptor.clone(),
             reflection.clone(),
@@ -70,7 +86,8 @@ impl MaterialTemplate {
         Self {
             name,
             descriptor,
-            pipeline,
+            pipeline: Rc::new(RefCell::new(pipeline)),
+            desc_layout,
             reflection,
             default_parameters,
         }
@@ -87,8 +104,8 @@ impl MaterialTemplate {
     }
 
     /// Get the pipeline
-    pub fn pipeline(&self) -> &MaterialPipeline {
-        &self.pipeline
+    pub fn pipeline(&self) -> Rc<RefCell<MaterialPipeline>> {
+        Rc::clone(&self.pipeline)
     }
 
     /// Get the reflection data
@@ -101,11 +118,73 @@ impl MaterialTemplate {
         &self.default_parameters
     }
 
+    /// Get the descriptor set layout for this template.
+    ///
+    /// This is preserved across hot reloads to ensure that material
+    /// instances' descriptor sets remain valid.
+    pub fn desc_layout(&self) -> vk::DescriptorSetLayout {
+        self.desc_layout
+    }
+
+    /// Get the pipeline as a mutable RefCell borrow (for hot reload)
+    ///
+    /// This allows updating the pipeline in-place through the RefCell,
+    /// which is shared with all materials using this template.
+    pub fn pipeline_mut(&self) -> std::cell::RefMut<MaterialPipeline> {
+        self.pipeline.borrow_mut()
+    }
+
     /// Update the pipeline (e.g., after hot reload)
     ///
     /// This affects all instances that reference this template
     pub fn update_pipeline(&mut self, pipeline: MaterialPipeline) {
-        self.pipeline = pipeline;
+        // Destroy the old pipeline
+        if let Ok(mut old_pipeline) = self.pipeline.try_borrow_mut() {
+            old_pipeline.destroy();
+        }
+
+        // Replace the pipeline inside the existing RefCell
+        // This ensures all materials holding this Rc see the updated pipeline
+        *self.pipeline.borrow_mut() = pipeline;
+    }
+
+    /// Get the descriptor layout and context for creating new uniform buffers
+    ///
+    /// This allows materials to create their own uniform buffers while
+    /// sharing the pipeline from this template.
+    ///
+    /// Uses the stored descriptor set layout which is preserved across hot reloads.
+    pub fn get_uniform_layout_info(&self) -> (vk::DescriptorSetLayout, Rc<crate::VulkanContext>, super::UniformLayout) {
+        let pipeline = self.pipeline.borrow();
+        (self.desc_layout, pipeline.context.clone(), pipeline.uniform.layout().clone())
+    }
+
+    /// Create a new uniform buffer for a material instance
+    ///
+    /// Each material should call this to get its own uniform buffer,
+    /// avoiding conflicts when multiple materials share the same template.
+    ///
+    /// Uses separate texture and sampler bindings for WGSL shaders.
+    pub fn create_uniform(&self) -> super::UniformHandle {
+        let (desc_layout, context, layout) = self.get_uniform_layout_info();
+        // All shaders use WGSL now, which requires separate texture and sampler bindings
+        super::UniformHandle::with_layout_and_bindings(&context, &desc_layout, layout, true)
+    }
+
+    /// Destroy the template's resources.
+    ///
+    /// This destroys the pipeline and the descriptor set layout.
+    /// This should be called when the template is no longer needed.
+    pub fn destroy(&self, context: &Rc<crate::VulkanContext>) {
+        // Destroy the pipeline
+        if let Ok(mut pipeline) = self.pipeline.try_borrow_mut() {
+            pipeline.destroy();
+        }
+
+        // Destroy the descriptor set layout
+        unsafe {
+            context.device.destroy_descriptor_set_layout(self.desc_layout, None);
+        }
     }
 }
 
@@ -147,8 +226,8 @@ impl MaterialInstance {
     }
 
     /// Get the pipeline (shared with template)
-    pub fn pipeline(&self) -> &MaterialPipeline {
-        &self.template.pipeline
+    pub fn pipeline(&self) -> Rc<RefCell<MaterialPipeline>> {
+        self.template.pipeline()
     }
 
     /// Get the reflection data (shared with template)

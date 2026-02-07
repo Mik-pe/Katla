@@ -230,6 +230,77 @@ impl MaterialBuilder {
         self
     }
 
+    /// Build the material pipeline with an existing descriptor set layout.
+    ///
+    /// This is used during hot reload to preserve the descriptor set layout,
+    /// ensuring that material instances' descriptor sets remain valid.
+    ///
+    /// # Arguments
+    /// * `render_pass` - The render pass
+    /// * `desc_layout` - The existing descriptor set layout to reuse
+    pub fn build_with_desc_layout(
+        self,
+        render_pass: &RenderPass,
+        desc_layout: vk::DescriptorSetLayout,
+    ) -> Result<MaterialPipeline, MaterialBuildError> {
+        let vertex_binding = self
+            .vertex_binding
+            .ok_or(MaterialBuildError::MissingVertexBinding)?;
+
+        let vert_shader = self
+            .vertex_shader
+            .ok_or(MaterialBuildError::MissingVertexShader)?;
+        let frag_shader = self
+            .fragment_shader
+            .ok_or(MaterialBuildError::MissingFragmentShader)?;
+
+        let mut pipeline_builder = PipelineBuilder::new(self.context.clone())
+            .with_shaders(vert_shader.module, frag_shader.module)
+            .with_entry_points(
+                vert_shader.entry_point.clone(),
+                frag_shader.entry_point.clone(),
+            )
+            .with_vertex_input(
+                vec![vertex_binding.get_binding_desc(0)],
+                vertex_binding.get_attribute_desc(0),
+            )
+            .with_depth_test(self.depth_test, self.depth_write, vk::CompareOp::LESS)
+            .with_descriptor_layouts(vec![desc_layout]);
+
+        if self.cull_back_faces {
+            pipeline_builder = pipeline_builder
+                .with_cull_mode(vk::CullModeFlags::BACK, vk::FrontFace::COUNTER_CLOCKWISE);
+        } else {
+            pipeline_builder = pipeline_builder
+                .with_cull_mode(vk::CullModeFlags::NONE, vk::FrontFace::COUNTER_CLOCKWISE);
+        }
+
+        if self.alpha_blending {
+            pipeline_builder = pipeline_builder.with_alpha_blending();
+        }
+
+        let pipeline = pipeline_builder
+            .build(render_pass.get_vk_renderpass())
+            .map_err(|e| MaterialBuildError::PipelineCreationFailed(format!("{:?}", e)))?;
+
+        // All shaders are WGSL, which uses separate bindings
+        let mut material_pipeline = MaterialPipeline::new_with_options(
+            pipeline,
+            desc_layout,
+            self.context.clone(),
+            true,  // separate_bindings - always true for WGSL
+            self.has_color,
+        );
+
+        if let Some(texture) = self.texture {
+            material_pipeline
+                .uniform
+                .add_image_info(ImageInfo::new(texture.image_view.vk(), texture.image_sampler.vk()));
+        }
+
+        Ok(material_pipeline)
+    }
+
     pub fn build(self, render_pass: &RenderPass) -> Result<MaterialPipeline, MaterialBuildError> {
         let vertex_binding = self
             .vertex_binding
