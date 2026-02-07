@@ -173,7 +173,7 @@ impl PassBuilder {
             .find(|u| u.resource_id == resource_id)
         {
             usage.clear_value =
-                Some(ClearValue::color(color[0], color[1], color[2], color[3]).into());
+                Some(ClearValue::color(color[0], color[1], color[2], color[3]));
             usage.load_op = crate::types::AttachmentLoadOp::Clear.into();
         }
         self
@@ -192,7 +192,7 @@ impl PassBuilder {
             .iter_mut()
             .find(|u| u.resource_id == resource_id)
         {
-            usage.clear_value = Some(ClearValue::depth(depth, stencil).into());
+            usage.clear_value = Some(ClearValue::depth(depth, stencil));
             usage.load_op = crate::types::AttachmentLoadOp::Clear.into();
             // Depth attachments typically don't need to store, so use DONT_CARE
             usage.store_op = crate::types::AttachmentStoreOp::DontCare.into();
@@ -247,7 +247,7 @@ pub struct PassExecutionContext {
     /// The current subpass index (0 for simple passes)
     pub subpass: u32,
     /// The render extent (width and height)
-    pub extent: vk::Extent2D,
+    pub extent: Extent2D,
 }
 
 impl PassExecutionContext {
@@ -256,7 +256,7 @@ impl PassExecutionContext {
         resources: std::rc::Rc<std::collections::HashMap<ResourceId, CompiledResource>>,
         framebuffer: vk::Framebuffer,
         render_pass: vk::RenderPass,
-        extent: vk::Extent2D,
+        extent: Extent2D,
     ) -> Self {
         Self {
             command_buffer: std::rc::Rc::new(command_buffer),

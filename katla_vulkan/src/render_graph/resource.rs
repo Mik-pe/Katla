@@ -50,7 +50,7 @@ pub struct ResourceUsage {
     pub layout: vk::ImageLayout,
     pub load_op: vk::AttachmentLoadOp,
     pub store_op: vk::AttachmentStoreOp,
-    pub clear_value: Option<vk::ClearValue>,
+    pub clear_value: Option<super::types::ClearValue>,
 }
 
 impl ResourceUsage {
@@ -102,7 +102,7 @@ impl ResourceUsage {
     }
 
     pub fn with_clear_value(mut self, clear_value: super::types::ClearValue) -> Self {
-        self.clear_value = Some(clear_value.into());
+        self.clear_value = Some(clear_value);
         self
     }
 }

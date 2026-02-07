@@ -6,8 +6,9 @@ use std::rc::Rc;
 
 use crate::render_graph::pass::{ExecutionRegistry, Pass, PassExecute, PassExecutionContext};
 use crate::render_graph::resource::{CompiledResource, ResourceId, ResourceKind, ResourceLifetime};
+use crate::render_graph::types::{ClearValue, Extent2D};
 use crate::rendering::DrawList;
-use crate::sync::{VkFramebuffer, VkRenderPass};
+use crate::sync::{VkFramebuffer, VkImage, VkImageView, VkRenderPass};
 use crate::vulkan::RenderPass;
 use crate::CommandBuffer;
 use crate::RenderGraphError;
@@ -37,8 +38,8 @@ pub struct CompiledPass {
     pub active_render_pass: VkRenderPass,
     /// Multiple framebuffers - one per swapchain image variant
     pub vk_framebuffers: Vec<VkFramebuffer>,
-    pub extent: vk::Extent2D,
-    pub clear_values: Vec<vk::ClearValue>,
+    pub extent: Extent2D,
+    pub clear_values: Vec<ClearValue>,
     execute: PassExecute,
     pub pipeline_barriers_before: Vec<vk::MemoryBarrier<'static>>,
 }
@@ -70,8 +71,8 @@ impl CompiledRenderGraph {
     /// Returns an error if the graph has already been compiled with framebuffers.
     pub fn create_swapchain_framebuffers(
         &mut self,
-        swapchain_images: &[(vk::Image, vk::ImageView, vk::Extent2D, vk::Format)],
-        immediate_render_pass: vk::RenderPass,
+        swapchain_images: &[(VkImage, VkImageView, Extent2D, vk::Format)],
+        immediate_render_pass: VkRenderPass,
     ) -> Result<(), RenderGraphError> {
         // Find the depth image view before the loop
         let mut depth_image_view: Option<vk::ImageView> = None;
@@ -100,17 +101,17 @@ impl CompiledRenderGraph {
             for pass_idx in 0..self.passes.len() {
                 let framebuffer = self.create_framebuffer_for_pass(
                     pass_idx,
-                    *image_view,
+                    image_view.vk(),
                     depth_view,
-                    *extent,
-                    immediate_render_pass,
+                    (*extent).into(),
+                    immediate_render_pass.vk(),
                 )?;
                 if image_index == 0 {
                     // First framebuffer - replace the null placeholder
                     self.framebuffers[pass_idx] = framebuffer;
                     self.passes[pass_idx].vk_framebuffers = vec![VkFramebuffer::new(framebuffer)];
                     // Set the active render pass to the immediate-mode render pass
-                    self.passes[pass_idx].active_render_pass = VkRenderPass::new(immediate_render_pass);
+                    self.passes[pass_idx].active_render_pass = immediate_render_pass;
                 } else {
                     // Additional framebuffers - append to the list
                     self.passes[pass_idx].vk_framebuffers.push(VkFramebuffer::new(framebuffer));
@@ -767,27 +768,23 @@ impl CompiledRenderGraph {
 
         for (i, pass) in passes.iter_mut().enumerate() {
             // Collect clear values
-            let mut clear_values = Vec::new();
-            for usage in pass.usages() {
-                if let Some(clear_value) = usage.clear_value {
-                    clear_values.push(clear_value);
-                }
-            }
+            let clear_values: Vec<ClearValue> = pass
+                .usages()
+                .iter()
+                .filter_map(|usage| usage.clear_value)
+                .collect();
 
             // Get extent from resources or pass
             let extent = if let Some(extent) = pass.extent() {
-                extent.into()
+                extent
             } else if let Some(resource_id) = pass.outputs().first() {
                 // Try to get extent from output resources
                 if let Some(CompiledResource::Image { extent, .. }) = resources.get(resource_id) {
-                    vk::Extent2D {
-                        width: extent.width,
-                        height: extent.height,
-                    }
+                    Extent2D::new(extent.width, extent.height)
                 } else if let Some(CompiledResource::ExternalImage { extent, .. }) =
                     resources.get(resource_id)
                 {
-                    *extent
+                    (*extent).into()
                 } else {
                     return Err(RenderGraphError::CompilationError(format!(
                         "Cannot determine extent for resource {:?} - no explicit extent set",
@@ -895,13 +892,14 @@ impl CompiledRenderGraph {
             // Begin render pass
             let render_area = vk::Rect2D {
                 offset: vk::Offset2D { x: 0, y: 0 },
-                extent: pass.extent,
+                extent: pass.extent.into(),
             };
+            let clear_values_vk: Vec<vk::ClearValue> = pass.clear_values.iter().map(|cv| (*cv).into()).collect();
             command_buffer.begin_render_pass(
                 framebuffer,
                 pass.active_render_pass.vk(),
                 render_area,
-                &pass.clear_values,
+                &clear_values_vk,
             );
 
             // Create execution context with Rc-wrapped command buffer

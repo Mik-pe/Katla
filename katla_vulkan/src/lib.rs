@@ -129,11 +129,12 @@ impl VulkanRenderer {
             .swapchain_images
             .iter()
             .zip(self.frame_context.swapchain_image_views.iter())
-            .map(|(image, view)| {
+            .map(|(&image, &view)| {
+                let extent = self.frame_context.swapchain.get_extent();
                 (
-                    image.vk(),
-                    view.vk(),
-                    self.frame_context.swapchain.get_extent(),
+                    VkImage::new(image),
+                    VkImageView::new(view),
+                    crate::render_graph::types::Extent2D::new(extent.width, extent.height),
                     self.frame_context.swapchain.format.format,
                 )
             })
@@ -141,7 +142,8 @@ impl VulkanRenderer {
 
         if let Some(ref mut graph) = self.render_graph {
             let new_render_pass = self.render_pass.get_vk_renderpass();
-            let new_extent = self.frame_context.swapchain.get_extent();
+            let extent_vk = self.frame_context.swapchain.get_extent();
+            let new_extent = crate::render_graph::types::Extent2D::new(extent_vk.width, extent_vk.height);
             for pass in &mut graph.passes {
                 pass.active_render_pass = VkRenderPass::new(new_render_pass);
                 pass.extent = new_extent;
@@ -168,8 +170,8 @@ impl VulkanRenderer {
                         .context
                         .create_framebuffer(
                             new_render_pass,
-                            &[*image_view, new_depth_view],
-                            *extent,
+                            &[image_view.vk(), new_depth_view],
+                            (*extent).into(),
                         )
                         .map_err(RenderGraphError::VulkanError)
                         .unwrap();
@@ -499,18 +501,29 @@ impl VulkanRenderer {
                     .swapchain_images
                     .iter()
                     .zip(self.frame_context.swapchain_image_views.iter())
+<<<<<<< HEAD
                     .map(|(image, view)| {
                         (
                             image.vk(),
                             view.vk(),
                             self.frame_context.swapchain.get_extent(),
+=======
+                    .map(|(&image, &view)| {
+                        let extent = self.frame_context.swapchain.get_extent();
+                        (
+                            VkImage::new(image),
+                            VkImageView::new(view),
+                            crate::render_graph::types::Extent2D::new(extent.width, extent.height),
+>>>>>>> 3eab8dd (Fix ash::vk type exposures in render_graph public APIs)
                             self.frame_context.swapchain.format.format,
                         )
                     })
                     .collect();
 
+                let wrapped_render_pass = VkRenderPass::new(existing_render_pass);
+
                 if let Err(e) =
-                    graph.create_swapchain_framebuffers(&swapchain_images, existing_render_pass)
+                    graph.create_swapchain_framebuffers(&swapchain_images, wrapped_render_pass)
                 {
                     println!("Failed to create swapchain framebuffers: {:?}", e);
                 } else {
