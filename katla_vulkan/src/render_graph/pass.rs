@@ -1,6 +1,7 @@
 use ash::vk;
 
 use crate::resource::CompiledResource;
+use crate::sync::{VkFramebuffer, VkRenderPass};
 use crate::types::{ClearValue, Extent2D, PipelineBindPoint};
 use crate::{CommandBuffer, ResourceId, ResourceUsage};
 use std::collections::HashMap;
@@ -240,9 +241,9 @@ pub struct PassExecutionContext {
     /// Compiled resources available for this pass
     pub resources: std::rc::Rc<std::collections::HashMap<ResourceId, CompiledResource>>,
     /// The framebuffer for this pass
-    pub framebuffer: vk::Framebuffer,
+    pub framebuffer: VkFramebuffer,
     /// The Vulkan render pass for this pass
-    pub render_pass: vk::RenderPass,
+    pub render_pass: VkRenderPass,
     /// The current subpass index (0 for simple passes)
     pub subpass: u32,
     /// The render extent (width and height)
@@ -260,8 +261,8 @@ impl PassExecutionContext {
         Self {
             command_buffer: std::rc::Rc::new(command_buffer),
             resources,
-            framebuffer,
-            render_pass,
+            framebuffer: VkFramebuffer::new(framebuffer),
+            render_pass: VkRenderPass::new(render_pass),
             subpass: 0,
             extent,
         }
