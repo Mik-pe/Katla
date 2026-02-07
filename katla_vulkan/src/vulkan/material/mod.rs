@@ -353,9 +353,9 @@ impl Default for DescriptorLayoutBuilder {
 }
 
 pub struct MaterialPipeline {
-    pub pipeline: Pipeline,
+    pipeline: Option<Pipeline>,
     pub uniform: UniformHandle,
-    pub desc_layout: vk::DescriptorSetLayout,
+    desc_layout: Option<vk::DescriptorSetLayout>,
     context: Rc<VulkanContext>,
 }
 
@@ -410,9 +410,9 @@ impl MaterialPipeline {
     ) -> Self {
         let uniform = UniformHandle::with_layout_and_bindings(&context, &desc_layout, layout, separate_bindings);
         Self {
-            pipeline,
+            pipeline: Some(pipeline),
             uniform,
-            desc_layout,
+            desc_layout: Some(desc_layout),
             context,
         }
     }
@@ -422,23 +422,42 @@ impl MaterialPipeline {
         &self.context
     }
 
+    /// Get the pipeline handle.
+    pub fn get_pipeline(&self) -> Option<&Pipeline> {
+        self.pipeline.as_ref()
+    }
+
+    /// Get the pipeline handle (panics if pipeline was destroyed)
+    pub fn vk_pipeline(&self) -> &Pipeline {
+        self.pipeline.as_ref().expect("Pipeline accessed after destruction")
+    }
+
+    /// Get the pipeline layout (panics if pipeline was destroyed)
+    pub fn vk_layout(&self) -> vk::PipelineLayout {
+        self.pipeline
+            .as_ref()
+            .expect("Pipeline accessed after destruction")
+            .layout
+    }
+
     /// Get the uniform layout for this pipeline.
     pub fn layout(&self) -> &UniformLayout {
         self.uniform.layout()
     }
 
     pub fn bind(&self, command_buffer: vk::CommandBuffer) {
+        let pipeline = self.pipeline.as_ref().expect("Pipeline accessed after destruction");
         unsafe {
             self.context.device.cmd_bind_pipeline(
                 command_buffer,
                 vk::PipelineBindPoint::GRAPHICS,
-                self.pipeline.handle,
+                pipeline.handle,
             );
 
             self.context.device.cmd_bind_descriptor_sets(
                 command_buffer,
                 vk::PipelineBindPoint::GRAPHICS,
-                self.pipeline.layout,
+                pipeline.layout,
                 0,
                 &[self.uniform.next_descriptor().desc_set],
                 &[],
@@ -452,17 +471,18 @@ impl MaterialPipeline {
     /// * `command_buffer` - The command buffer to record into
     /// * `descriptor_set` - The descriptor set to bind (from material's own uniform buffer)
     pub fn bind_with_descriptor(&self, command_buffer: vk::CommandBuffer, descriptor_set: vk::DescriptorSet) {
+        let pipeline = self.pipeline.as_ref().expect("Pipeline accessed after destruction");
         unsafe {
             self.context.device.cmd_bind_pipeline(
                 command_buffer,
                 vk::PipelineBindPoint::GRAPHICS,
-                self.pipeline.handle,
+                pipeline.handle,
             );
 
             self.context.device.cmd_bind_descriptor_sets(
                 command_buffer,
                 vk::PipelineBindPoint::GRAPHICS,
-                self.pipeline.layout,
+                pipeline.layout,
                 0,
                 &[descriptor_set],
                 &[],
@@ -480,17 +500,41 @@ impl MaterialPipeline {
     /// preserved and owned by the MaterialTemplate.
     pub fn destroy_preserving_layout(&mut self) {
         self.uniform.destroy(&self.context);
-        self.pipeline.destroy();
-        // Don't destroy desc_layout - it's owned by MaterialTemplate now
+        if let Some(pipeline) = self.pipeline.take() {
+            pipeline.destroy();
+        }
+        // Remove descriptor set layout - it's owned by MaterialTemplate and will be destroyed there
+        let _ = self.desc_layout.take();
     }
 
     pub fn destroy(&mut self) {
         self.uniform.destroy(&self.context);
-        self.pipeline.destroy();
-        unsafe {
-            self.context
-                .device
-                .destroy_descriptor_set_layout(self.desc_layout, None);
+        if let Some(pipeline) = self.pipeline.take() {
+            pipeline.destroy();
+        }
+        if let Some(desc_layout) = self.desc_layout.take() {
+            unsafe {
+                self.context
+                    .device
+                    .destroy_descriptor_set_layout(desc_layout, None);
+            }
+        }
+    }
+}
+
+impl Drop for MaterialPipeline {
+    fn drop(&mut self) {
+        // Clean up any remaining resources
+        // Note: If destroy_preserving_layout() was called, these will already be None
+        if let Some(pipeline) = self.pipeline.take() {
+            pipeline.destroy();
+        }
+        if let Some(desc_layout) = self.desc_layout.take() {
+            unsafe {
+                self.context
+                    .device
+                    .destroy_descriptor_set_layout(desc_layout, None);
+            }
         }
     }
 }
