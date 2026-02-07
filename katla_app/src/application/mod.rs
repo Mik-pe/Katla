@@ -1,5 +1,4 @@
 pub mod builder;
-pub mod model;
 
 use std::{cell::RefCell, ffi::CString, path::PathBuf, rc::Rc, time::Instant};
 
@@ -10,7 +9,6 @@ use env_logger::Env;
 use katla_ecs::{input::Action, World};
 use katla_math::{Transform, Vec3};
 use katla_vulkan::VulkanRenderer;
-pub use model::*;
 use winit::{
     application::ApplicationHandler,
     dpi::LogicalSize,
@@ -22,7 +20,7 @@ use winit::{
 
 use crate::{
     components::{DirectionalLight, PointLight, TransformComponent},
-    entities::{create_model_entity, Camera},
+    entities::{Camera, Model},
     input::{InputBinding, InputMapper, KeyCombo, MouseCombo},
     rendering::{create_checkerboard_material, MaterialManager, MeshBuilder},
     util::{FileCache, GLTFModel, Timer},
@@ -113,13 +111,20 @@ impl ApplicationHandler for Application {
             let fox_path = resources_path.join("Fox.glb");
             println!("Loading Fox model from: {:?}", fox_path);
 
-            let model = Model::new_from_gltf(
-                self.gltf_cache.read(fox_path),
-                renderer.context.clone(),
-                &renderer.render_pass,
-            );
             let fox_transform = Transform::new_from_position(Vec3::new(0.0, 0.0, 0.0));
-            create_model_entity(&mut self.world, model, Some(&mut renderer), fox_transform);
+            let context = renderer.context.clone();
+            let fox_model = self.gltf_cache.read(fox_path);
+            let render_pass = renderer.render_pass.clone();
+
+            // Create the model entity (registers with renderer)
+            Model::new_from_gltf(
+                &mut self.world,
+                fox_model,
+                context,
+                Some(&mut renderer),
+                &render_pass,
+                fox_transform,
+            );
 
             // Create meshes spaced out in a line with different colors
             let _cube = MeshBuilder::new(renderer.context.clone())

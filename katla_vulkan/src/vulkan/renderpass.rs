@@ -5,6 +5,15 @@ pub struct RenderPass {
     device: Device,
 }
 
+impl Clone for RenderPass {
+    fn clone(&self) -> Self {
+        Self {
+            vk_renderpass: self.vk_renderpass,
+            device: self.device.clone(),
+        }
+    }
+}
+
 impl RenderPass {
     pub fn create_opaque(
         device: Device,

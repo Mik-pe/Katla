@@ -5,8 +5,7 @@ use katla_math::{Transform, Vec3};
 use katla_vulkan::{VulkanContext, VulkanRenderer};
 
 use crate::{
-    application::Model,
-    entities::create_model_entity,
+    entities::Model,
     rendering::{create_checkerboard_material, Material, MaterialManager},
 };
 
@@ -159,8 +158,7 @@ macro_rules! impl_common_builder {
                     rotation: katla_math::Quat::new(),
                     scale: Vec3::new(1.0, 1.0, 1.0),
                 };
-                let model = Model::new(vec![mesh], material);
-                create_model_entity(world, model, Some(renderer), transform)
+                Model::new(world, vec![mesh], material, Some(renderer), transform).entity
             }
         }
     };
