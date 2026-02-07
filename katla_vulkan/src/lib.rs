@@ -12,16 +12,19 @@ pub use render_graph::*;
 pub use rendering::{
     registry::AssetRegistry, types::{DrawCall, DrawList, MaterialHandle, MaterialParams, MeshHandle},
 };
-pub use sync::{Fence, Semaphore};
+pub use sync::{
+    VkDescriptorPool, VkDescriptorSet, VkDescriptorSetLayout, VkFence, VkFramebuffer, VkImage, VkImageView,
+    VkRenderPass, VkSampler, VkSemaphore,
+};
 pub use vulkan::*;
 
 use ash::vk;
 use std::{cell::RefCell, ffi::CString, rc::Rc};
 
 pub struct FrameData {
-    pub available_sem: Semaphore,
-    pub finished_sem: Semaphore,
-    pub in_flight_fence: Fence,
+    pub available_sem: VkSemaphore,
+    pub finished_sem: VkSemaphore,
+    pub in_flight_fence: VkFence,
     pub image_index: u32,
 }
 

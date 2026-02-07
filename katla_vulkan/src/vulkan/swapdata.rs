@@ -1,5 +1,5 @@
 use ash::{khr::swapchain::Device as SwapchainDevice, vk, Device};
-use crate::sync::{Fence, Semaphore};
+use crate::sync::{VkFence, VkSemaphore};
 use crate::RenderGraphError;
 
 pub struct SwapData {
@@ -60,7 +60,7 @@ impl SwapData {
         device: &Device,
         swapchain_loader: &SwapchainDevice,
         swapchain: vk::SwapchainKHR,
-    ) -> Result<(Semaphore, Semaphore, Fence, u32), RenderGraphError> {
+    ) -> Result<(VkSemaphore, VkSemaphore, VkFence, u32), RenderGraphError> {
         // The second value (suboptimal) indicates whether the swapchain is no longer optimal
         // but can still be used. We ignore it and let the frame proceed normally.
         let (image_index, _) = unsafe {
@@ -87,9 +87,9 @@ impl SwapData {
         self.images_in_flight[image_index as usize] = self.in_flight_fences[self.frame];
 
         Ok((
-            Semaphore::new(self.image_available_semaphores[self.frame]),
-            Semaphore::new(self.render_finished_semaphores[self.frame]),
-            Fence::new(self.in_flight_fences[self.frame]),
+            VkSemaphore::new(self.image_available_semaphores[self.frame]),
+            VkSemaphore::new(self.render_finished_semaphores[self.frame]),
+            VkFence::new(self.in_flight_fences[self.frame]),
             image_index,
         ))
     }
