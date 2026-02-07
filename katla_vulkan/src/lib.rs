@@ -67,9 +67,10 @@ impl VulkanRenderer {
         let render_pass =
             RenderPass::create_opaque(context.device.clone(), color_format, depth_format);
 
+        let swapchain_images_raw: Vec<vk::Image> = frame_context.swapchain_images.iter().map(|img| img.vk()).collect();
         let swap_data = SwapData::new(
             &context.device,
-            &frame_context.swapchain_images,
+            &swapchain_images_raw,
             FRAMES_IN_FLIGHT,
         );
 
@@ -128,10 +129,10 @@ impl VulkanRenderer {
             .swapchain_images
             .iter()
             .zip(self.frame_context.swapchain_image_views.iter())
-            .map(|(&image, &view)| {
+            .map(|(image, view)| {
                 (
-                    image,
-                    view,
+                    image.vk(),
+                    view.vk(),
                     self.frame_context.swapchain.get_extent(),
                     self.frame_context.swapchain.format.format,
                 )
@@ -156,7 +157,7 @@ impl VulkanRenderer {
             }
 
             // Get the new depth texture image view (depth texture is recreated during swapchain recreation)
-            let new_depth_view = self.frame_context.depth_render_texture.image_view;
+            let new_depth_view = self.frame_context.depth_render_texture.image_view.vk();
 
             // Recreate framebuffers with new swapchain images
             for (image_index, (_vk_image, image_view, extent, _format)) in
@@ -215,8 +216,8 @@ impl VulkanRenderer {
         builder.add_resource(
             format!("swapchain_{}", image_index),
             ResourceKind::ExternalImage {
-                vk_image: self.frame_context.swapchain_images[image_index as usize],
-                image_view: self.frame_context.swapchain_image_views[image_index as usize],
+                vk_image: self.frame_context.swapchain_images[image_index as usize].vk(),
+                image_view: self.frame_context.swapchain_image_views[image_index as usize].vk(),
                 format: swapchain_format,
                 extent: self.frame_context.swapchain.get_extent(),
             },
@@ -231,8 +232,8 @@ impl VulkanRenderer {
         builder.add_resource(
             "depth",
             ResourceKind::ExternalImage {
-                vk_image: self.frame_context.depth_render_texture.image,
-                image_view: self.frame_context.depth_render_texture.image_view,
+                vk_image: self.frame_context.depth_render_texture.image.vk(),
+                image_view: self.frame_context.depth_render_texture.image_view.vk(),
                 format: depth_format,
                 extent: self.frame_context.swapchain.get_extent(),
             },
@@ -399,8 +400,8 @@ impl VulkanRenderer {
         let swapchain_resource = graph_builder.add_resource(
             "swapchain",
             ResourceKind::ExternalImage {
-                vk_image: self.frame_context.swapchain_images[0],
-                image_view: self.frame_context.swapchain_image_views[0],
+                vk_image: self.frame_context.swapchain_images[0].vk(),
+                image_view: self.frame_context.swapchain_image_views[0].vk(),
                 format: self.frame_context.swapchain.format.format,
                 extent: self.frame_context.swapchain.get_extent(),
             },
@@ -498,10 +499,10 @@ impl VulkanRenderer {
                     .swapchain_images
                     .iter()
                     .zip(self.frame_context.swapchain_image_views.iter())
-                    .map(|(&image, &view)| {
+                    .map(|(image, view)| {
                         (
-                            image,
-                            view,
+                            image.vk(),
+                            view.vk(),
                             self.frame_context.swapchain.get_extent(),
                             self.frame_context.swapchain.format.format,
                         )
