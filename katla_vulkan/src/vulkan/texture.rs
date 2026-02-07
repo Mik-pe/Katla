@@ -1,5 +1,6 @@
 use super::VulkanContext;
 use crate::render_graph::types::ImageFormat;
+use crate::{VkImage, VkImageView, VkSampler};
 use crate::VulkanFrameCtx;
 
 use std::mem::ManuallyDrop;
@@ -13,9 +14,9 @@ pub struct Texture {
     pub height: u32,
     pub channels: u32,
     image_memory: ManuallyDrop<Allocation>,
-    image: vk::Image,
-    pub image_view: vk::ImageView,
-    pub image_sampler: vk::Sampler,
+    image: VkImage,
+    pub image_view: VkImageView,
+    pub image_sampler: VkSampler,
     context: Rc<VulkanContext>,
 }
 
@@ -254,9 +255,9 @@ impl Texture {
                 height,
                 channels,
                 image_memory: ManuallyDrop::new(image_memory),
-                image: image_object,
-                image_view,
-                image_sampler,
+                image: VkImage::new(image_object),
+                image_view: VkImageView::new(image_view),
+                image_sampler: VkSampler::new(image_sampler),
                 context,
             }
         }
@@ -346,12 +347,12 @@ impl Drop for Texture {
         unsafe {
             self.context
                 .device
-                .destroy_sampler(self.image_sampler, None);
+                .destroy_sampler(self.image_sampler.vk(), None);
             self.context
                 .device
-                .destroy_image_view(self.image_view, None);
+                .destroy_image_view(self.image_view.vk(), None);
         }
         let allocation = unsafe { ManuallyDrop::take(&mut self.image_memory) };
-        self.context.free_image(self.image, allocation);
+        self.context.free_image(self.image.vk(), allocation);
     }
 }

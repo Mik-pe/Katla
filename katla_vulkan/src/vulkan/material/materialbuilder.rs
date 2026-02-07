@@ -306,7 +306,7 @@ impl MaterialBuilder {
         if let Some(texture) = self.texture {
             material_pipeline
                 .uniform
-                .add_image_info(ImageInfo::new(texture.image_view, texture.image_sampler));
+                .add_image_info(ImageInfo::new(texture.image_view.vk(), texture.image_sampler.vk()));
         }
 
         Ok(material_pipeline)
