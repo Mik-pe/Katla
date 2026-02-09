@@ -140,6 +140,90 @@ impl Vec3 {
     pub fn lerp(a: Vec3, b: Vec3, ratio: f32) -> Self {
         a + ((b - a) * ratio)
     }
+
+    /// Reflect this vector across a normal
+    /// Returns the reflection direction for incident vector
+    #[inline]
+    pub fn reflect(&self, normal: Vec3) -> Vec3 {
+        *self - normal * 2.0 * self.dot(normal)
+    }
+
+    /// Project this vector onto another vector
+    #[inline]
+    pub fn project(&self, onto: Vec3) -> Vec3 {
+        onto * (self.dot(onto) / onto.dot(onto))
+    }
+
+    /// Get the perpendicular (rejection) component of this vector
+    /// Returns the component of this vector that is perpendicular to 'from'
+    #[inline]
+    pub fn reject(&self, from: Vec3) -> Vec3 {
+        *self - self.project(from)
+    }
+
+    /// Calculate the distance between this vector and another
+    #[inline]
+    pub fn distance(&self, other: &Vec3) -> f32 {
+        (*self - *other).length()
+    }
+
+    /// Calculate the squared distance between this vector and another
+    /// More efficient than distance() when you only need to compare distances
+    #[inline]
+    pub fn distance_squared(&self, other: &Vec3) -> f32 {
+        (*self - *other).length_squared()
+    }
+
+    /// Calculate the angle between this vector and another in radians
+    #[inline]
+    pub fn angle_between(&self, other: &Vec3) -> f32 {
+        let dot = self.dot(*other);
+        let cross = self.cross(*other);
+        let cross_len = cross.length();
+        f32::atan2(cross_len, dot)
+    }
+
+    /// Clamp the length of this vector to a maximum value
+    #[inline]
+    pub fn clamp_length(&self, max: f32) -> Vec3 {
+        if max < 0.0 {
+            return Vec3::new(0.0, 0.0, 0.0);
+        }
+        let len = self.length();
+        if len > max {
+            *self * (max / len)
+        } else {
+            *self
+        }
+    }
+
+    /// Clamp the length of this vector to a minimum and maximum value
+    #[inline]
+    pub fn clamp_length_min_max(&self, min: f32, max: f32) -> Vec3 {
+        if max < min {
+            return Vec3::new(0.0, 0.0, 0.0);
+        }
+        let len = self.length();
+        if len < min {
+            *self * (if len > 0.0 { min / len } else { 0.0 })
+        } else if len > max {
+            *self * (max / len)
+        } else {
+            *self
+        }
+    }
+
+    /// Create a direction vector from spherical coordinates
+    /// phi: angle from +Y axis (0 to pi), theta: angle around Y axis (0 to 2pi)
+    #[inline]
+    pub fn from_spherical(phi: f32, theta: f32) -> Vec3 {
+        let sin_phi = f32::sin(phi);
+        Vec3::new(
+            sin_phi * f32::cos(theta),
+            f32::cos(phi),
+            sin_phi * f32::sin(theta),
+        )
+    }
 }
 
 impl Mul for Vec3 {

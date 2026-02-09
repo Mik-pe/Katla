@@ -9,3 +9,20 @@ edition = "2018"
 [dev-dependencies]
 approx = "^0.5"
 libc = "*"
+criterion = "0.5"
+
+[[bench]]
+name = "vec3_bench"
+harness = false
+
+[[bench]]
+name = "mat4_bench"
+harness = false
+
+[[bench]]
+name = "quat_bench"
+harness = false
+
+[[bench]]
+name = "transform_bench"
+harness = false

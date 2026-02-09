@@ -15,6 +15,7 @@ impl Vec2 {
     pub const X_AXIS: Vec2 = Vec2 { x: 1.0, y: 0.0 };
     pub const Y_AXIS: Vec2 = Vec2 { x: 0.0, y: 1.0 };
     pub const ZERO: Vec2 = Vec2 { x: 0.0, y: 0.0 };
+    pub const ONE: Vec2 = Vec2 { x: 1.0, y: 1.0 };
 
     pub fn new(x: f32, y: f32) -> Self {
         Vec2 { x, y }
@@ -22,6 +23,84 @@ impl Vec2 {
 
     pub fn length(&self) -> f32 {
         (self.x * self.x + self.y * self.y).sqrt()
+    }
+
+    pub fn length_squared(&self) -> f32 {
+        self.x * self.x + self.y * self.y
+    }
+
+    pub fn normalize(&self) -> Vec2 {
+        let len = self.length();
+        if len == 0.0 {
+            return Vec2::ZERO;
+        }
+        Vec2 {
+            x: self.x / len,
+            y: self.y / len,
+        }
+    }
+
+    pub fn is_normalized(&self) -> bool {
+        (self.length_squared() - 1.0).abs() < f32::EPSILON
+    }
+
+    pub fn is_zero(&self) -> bool {
+        self.x == 0.0 && self.y == 0.0
+    }
+
+    pub fn dot(&self, other: &Vec2) -> f32 {
+        self.x * other.x + self.y * other.y
+    }
+
+    pub fn lerp(&self, other: &Vec2, t: f32) -> Vec2 {
+        *self + (*other - *self) * t
+    }
+
+    /// 2D cross product returns scalar (z-component of 3D cross product)
+    pub fn cross(&self, other: &Vec2) -> f32 {
+        self.x * other.y - self.y * other.x
+    }
+
+    /// Perpendicular vector (rotated 90 degrees counter-clockwise)
+    pub fn perpendicular(&self) -> Vec2 {
+        Vec2 {
+            x: -self.y,
+            y: self.x,
+        }
+    }
+
+    /// Angle from +X axis in radians
+    pub fn angle(&self) -> f32 {
+        f32::atan2(self.y, self.x)
+    }
+
+    /// Create a unit vector at the given angle from +X axis
+    pub fn from_angle(angle: f32) -> Vec2 {
+        Vec2 {
+            x: f32::cos(angle),
+            y: f32::sin(angle),
+        }
+    }
+
+    pub fn distance(&self, other: &Vec2) -> f32 {
+        (*self - *other).length()
+    }
+
+    pub fn distance_squared(&self, other: &Vec2) -> f32 {
+        (*self - *other).length_squared()
+    }
+
+    /// Swizzle operations
+    pub fn xx(&self) -> Vec2 {
+        Vec2 { x: self.x, y: self.x }
+    }
+
+    pub fn yx(&self) -> Vec2 {
+        Vec2 { x: self.y, y: self.x }
+    }
+
+    pub fn yy(&self) -> Vec2 {
+        Vec2 { x: self.y, y: self.y }
     }
 }
 

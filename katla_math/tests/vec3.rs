@@ -278,3 +278,217 @@ fn test_unit_axes() {
     assert!(Vec3::Y_AXIS.is_normalized());
     assert!(Vec3::Z_AXIS.is_normalized());
 }
+
+#[test]
+fn test_reflect() {
+    let incident = Vec3::new(1.0, -1.0, 0.0).normalize();
+    let normal = Vec3::new(0.0, 1.0, 0.0);
+    let reflected = incident.reflect(normal);
+
+    // Angle of incidence should equal angle of reflection
+    // For a horizontal surface, the Y component should flip
+    assert!((reflected.x() - incident.x()).abs() < 1e-5);
+    assert!((reflected.y() - (-incident.y())).abs() < 1e-5);
+    assert!((reflected.z() - incident.z()).abs() < 1e-5);
+}
+
+#[test]
+fn test_reflect_zero_length_normal() {
+    let v = Vec3::new(1.0, 2.0, 3.0);
+    let zero_normal = Vec3::default();
+    let reflected = v.reflect(zero_normal);
+
+    // With zero normal, dot product is 0, so we get v - 0 * 0 = v
+    // This is expected behavior - zero normal is invalid
+    assert_eq!(reflected, v);
+}
+
+#[test]
+fn test_project() {
+    let v = Vec3::new(3.0, 4.0, 0.0);
+    let onto = Vec3::new(1.0, 0.0, 0.0);
+    let projected = v.project(onto);
+
+    // Should be (3, 0, 0) - only the X component
+    assert!((projected.x() - 3.0).abs() < 1e-5);
+    assert!((projected.y() - 0.0).abs() < 1e-5);
+    assert!((projected.z() - 0.0).abs() < 1e-5);
+}
+
+#[test]
+fn test_project_perpendicular() {
+    let v = Vec3::new(0.0, 1.0, 0.0);
+    let onto = Vec3::new(1.0, 0.0, 0.0);
+    let projected = v.project(onto);
+
+    // Perpendicular vectors should project to zero
+    assert!(projected.is_zero());
+}
+
+#[test]
+fn test_reject() {
+    let v = Vec3::new(3.0, 4.0, 0.0);
+    let from = Vec3::new(1.0, 0.0, 0.0);
+    let rejected = v.reject(from);
+
+    // Should be (0, 4, 0) - only the Y component (perpendicular to X)
+    assert!((rejected.x() - 0.0).abs() < 1e-5);
+    assert!((rejected.y() - 4.0).abs() < 1e-5);
+    assert!((rejected.z() - 0.0).abs() < 1e-5);
+}
+
+#[test]
+fn test_project_plus_reject_equals_original() {
+    let v = Vec3::new(3.0, 4.0, 2.0);
+    let onto = Vec3::new(1.0, 1.0, 0.0);
+
+    let projected = v.project(onto);
+    let rejected = v.reject(onto);
+
+    // Project + Reject should equal original
+    let sum = projected + rejected;
+    assert!((sum.x() - v.x()).abs() < 1e-5);
+    assert!((sum.y() - v.y()).abs() < 1e-5);
+    assert!((sum.z() - v.z()).abs() < 1e-5);
+}
+
+#[test]
+fn test_distance() {
+    let a = Vec3::new(1.0, 0.0, 0.0);
+    let b = Vec3::new(4.0, 0.0, 0.0);
+    assert!((a.distance(&b) - 3.0).abs() < 1e-5);
+}
+
+#[test]
+fn test_distance_squared() {
+    let a = Vec3::new(1.0, 0.0, 0.0);
+    let b = Vec3::new(4.0, 0.0, 0.0);
+    assert!((a.distance_squared(&b) - 9.0).abs() < 1e-5);
+}
+
+#[test]
+fn test_distance_squared_less_expensive() {
+    let a = Vec3::new(1.0, 2.0, 3.0);
+    let b = Vec3::new(4.0, 6.0, 9.0);
+
+    let dist_sq = a.distance_squared(&b);
+    let dist = a.distance(&b);
+
+    assert!((dist_sq - dist * dist).abs() < 1e-5);
+}
+
+#[test]
+fn test_angle_between_parallel() {
+    let a = Vec3::new(1.0, 0.0, 0.0);
+    let b = Vec3::new(2.0, 0.0, 0.0);
+    let angle = a.angle_between(&b);
+
+    assert!(angle.abs() < 1e-5);
+}
+
+#[test]
+fn test_angle_between_perpendicular() {
+    let a = Vec3::new(1.0, 0.0, 0.0);
+    let b = Vec3::new(0.0, 1.0, 0.0);
+    let angle = a.angle_between(&b);
+
+    assert!((angle - std::f32::consts::FRAC_PI_2).abs() < 1e-5);
+}
+
+#[test]
+fn test_angle_between_opposite() {
+    let a = Vec3::new(1.0, 0.0, 0.0);
+    let b = Vec3::new(-1.0, 0.0, 0.0);
+    let angle = a.angle_between(&b);
+
+    assert!((angle - std::f32::consts::PI).abs() < 1e-5);
+}
+
+#[test]
+fn test_clamp_length() {
+    let v = Vec3::new(3.0, 0.0, 4.0); // length = 5
+    let clamped = v.clamp_length(3.0);
+
+    // Should have length 3
+    assert!((clamped.length() - 3.0).abs() < 1e-5);
+
+    // Direction should be preserved
+    let normalized_diff = (clamped.normalize() - v.normalize()).length();
+    assert!(normalized_diff < 1e-5);
+}
+
+#[test]
+fn test_clamp_length_already_short() {
+    let v = Vec3::new(1.0, 0.0, 0.0);
+    let clamped = v.clamp_length(5.0);
+
+    assert_eq!(clamped, v);
+}
+
+#[test]
+fn test_clamp_length_zero() {
+    let v = Vec3::new(1.0, 2.0, 3.0);
+    let clamped = v.clamp_length(0.0);
+
+    assert!(clamped.is_zero());
+}
+
+#[test]
+fn test_clamp_length_min_max() {
+    let v = Vec3::new(3.0, 0.0, 4.0); // length = 5
+    let clamped = v.clamp_length_min_max(2.0, 8.0);
+
+    assert!(clamped.length() >= 2.0);
+    assert!(clamped.length() <= 8.0);
+}
+
+#[test]
+fn test_clamp_length_min_max_too_short() {
+    let v = Vec3::new(1.0, 0.0, 0.0);
+    let clamped = v.clamp_length_min_max(2.0, 8.0);
+
+    assert!((clamped.length() - 2.0).abs() < 1e-5);
+}
+
+#[test]
+fn test_from_spherical() {
+    // From +Y axis (phi = 0), any theta gives +Y
+    let v = Vec3::from_spherical(0.0, 0.0);
+    assert!((v.x() - 0.0).abs() < 1e-5);
+    assert!((v.y() - 1.0).abs() < 1e-5);
+    assert!((v.z() - 0.0).abs() < 1e-5);
+
+    // From X axis (phi = pi/2, theta = 0)
+    let v = Vec3::from_spherical(std::f32::consts::FRAC_PI_2, 0.0);
+    assert!((v.x() - 1.0).abs() < 1e-5);
+    assert!((v.y() - 0.0).abs() < 1e-5);
+    assert!((v.z() - 0.0).abs() < 1e-5);
+
+    // From Z axis (phi = pi/2, theta = pi/2)
+    let v = Vec3::from_spherical(std::f32::consts::FRAC_PI_2, std::f32::consts::FRAC_PI_2);
+    assert!((v.x() - 0.0).abs() < 1e-5);
+    assert!((v.y() - 0.0).abs() < 1e-5);
+    assert!((v.z() - 1.0).abs() < 1e-5);
+}
+
+#[test]
+fn test_from_spherical_unit_vectors() {
+    let v = Vec3::from_spherical(std::f32::consts::FRAC_PI_2, 0.0);
+    assert!(v.is_normalized());
+
+    let v = Vec3::from_spherical(0.5, 1.2);
+    assert!(v.is_normalized());
+}
+
+#[test]
+fn test_triangle_inequality() {
+    let a = Vec3::new(1.0, 0.0, 0.0);
+    let b = Vec3::new(4.0, 0.0, 0.0);
+    let c = Vec3::new(0.0, 0.0, 0.0);
+
+    // Distance from a to b via c should be >= direct distance
+    let direct = a.distance(&b);
+    let via_c = a.distance(&c) + c.distance(&b);
+
+    assert!(via_c >= direct);
+}
