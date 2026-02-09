@@ -1,6 +1,8 @@
+use crate::Quat;
+use crate::Transform;
 use crate::Vec3;
 use crate::Vec4;
-use core::ops::Index;
+use core::ops::{Index, Mul, MulAssign};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Mat4(pub [Vec4; 4]);
@@ -330,6 +332,295 @@ impl Mat4 {
                     * inv_det,
             ]),
         ])
+    }
+
+    /// Transpose the matrix
+    pub fn transpose(&self) -> Mat4 {
+        Mat4([
+            Vec4([self[0][0], self[1][0], self[2][0], self[3][0]]),
+            Vec4([self[0][1], self[1][1], self[2][1], self[3][1]]),
+            Vec4([self[0][2], self[1][2], self[2][2], self[3][2]]),
+            Vec4([self[0][3], self[1][3], self[2][3], self[3][3]]),
+        ])
+    }
+
+    /// Transpose the matrix in place
+    pub fn transpose_mut(&mut self) -> &mut Self {
+        *self = self.transpose();
+        self
+    }
+
+    /// Create a scale matrix
+    pub fn from_scale(scale: Vec3) -> Self {
+        Mat4([
+            Vec4([scale[0], 0.0, 0.0, 0.0]),
+            Vec4([0.0, scale[1], 0.0, 0.0]),
+            Vec4([0.0, 0.0, scale[2], 0.0]),
+            Vec4([0.0, 0.0, 0.0, 1.0]),
+        ])
+    }
+
+    /// Create a rotation matrix from a quaternion
+    pub fn from_rotation(rotation: Quat) -> Self {
+        rotation.make_mat4()
+    }
+
+    /// Create a rotation matrix from Euler angles (pitch, yaw, roll)
+    pub fn from_euler_angles(pitch: f32, yaw: f32, roll: f32) -> Self {
+        let q = Quat::from_axis_angle(Vec3::X_AXIS, pitch)
+            * Quat::from_axis_angle(Vec3::Y_AXIS, yaw)
+            * Quat::from_axis_angle(Vec3::Z_AXIS, roll);
+        q.make_mat4()
+    }
+
+    /// Create a TRS (Translation, Rotation, Scale) matrix
+    pub fn from_trs(translation: Vec3, rotation: Quat, scale: Vec3) -> Self {
+        let scale_mat = Self::from_scale(scale);
+        let rot_mat = Self::from_rotation(rotation);
+        let pos_mat = Self::from_translation(translation.0);
+        pos_mat.mul(&rot_mat.mul(&scale_mat))
+    }
+
+    /// Extract the translation component
+    /// This is a fast operation that only reads the translation column
+    pub fn extract_translation(&self) -> Vec3 {
+        Vec3::new(self[3][0], self[3][1], self[3][2])
+    }
+
+    /// Decompose the matrix into translation, rotation, and scale components
+    /// This is more efficient than calling extract_translation, extract_rotation,
+    /// and extract_scale separately as it reuses intermediate calculations.
+    /// Note: This may not produce correct results if the matrix has non-uniform scaling or skew
+    pub fn decompose(&self) -> Transform {
+        // Extract translation (column 3)
+        let translation = Vec3::new(self[3][0], self[3][1], self[3][2]);
+
+        // Extract scale from the 3x3 portion
+        // Scale is the length of each column/row in the rotation-scale matrix
+        let sx = (self[0][0] * self[0][0] + self[0][1] * self[0][1] + self[0][2] * self[0][2]).sqrt();
+        let sy = (self[1][0] * self[1][0] + self[1][1] * self[1][1] + self[1][2] * self[1][2]).sqrt();
+        let sz = (self[2][0] * self[2][0] + self[2][1] * self[2][1] + self[2][2] * self[2][2]).sqrt();
+        let scale = Vec3::new(sx, sy, sz);
+
+        // Extract rotation from the 3x3 portion, removing scale
+        // Get the 3x3 rotation-scale matrix elements
+        let m00 = self[0][0] / sx;
+        let m01 = self[0][1] / sy;
+        let m02 = self[0][2] / sz;
+        let m10 = self[1][0] / sx;
+        let m11 = self[1][1] / sy;
+        let m12 = self[1][2] / sz;
+        let m20 = self[2][0] / sx;
+        let m21 = self[2][1] / sy;
+        let m22 = self[2][2] / sz;
+
+        // Calculate trace of the rotation matrix
+        let trace = m00 + m11 + m22;
+
+        let rotation = if trace > 0.0 {
+            let s = (trace + 1.0).sqrt() * 2.0;
+            let w = 0.25 * s;
+            let x = (m21 - m12) / s;
+            let y = (m02 - m20) / s;
+            let z = (m10 - m01) / s;
+            Quat::new_from_xyzw(x, y, z, w)
+        } else if (m00 > m11) && (m00 > m22) {
+            let s = ((1.0 + m00 - m11 - m22).sqrt()) * 2.0;
+            let w = (m21 - m12) / s;
+            let x = 0.25 * s;
+            let y = (m01 + m10) / s;
+            let z = (m02 + m20) / s;
+            Quat::new_from_xyzw(x, y, z, w)
+        } else if m11 > m22 {
+            let s = ((1.0 + m11 - m00 - m22).sqrt()) * 2.0;
+            let w = (m02 - m20) / s;
+            let x = (m01 + m10) / s;
+            let y = 0.25 * s;
+            let z = (m12 + m21) / s;
+            Quat::new_from_xyzw(x, y, z, w)
+        } else {
+            let s = ((1.0 + m22 - m00 - m11).sqrt()) * 2.0;
+            let w = (m10 - m01) / s;
+            let x = (m02 + m20) / s;
+            let y = (m12 + m21) / s;
+            let z = 0.25 * s;
+            Quat::new_from_xyzw(x, y, z, w)
+        };
+
+        Transform {
+            position: translation,
+            rotation,
+            scale,
+        }
+    }
+
+    /// Extract the rotation component as a quaternion
+    /// Note: This may not produce correct results if the matrix has non-uniform scaling
+    pub fn extract_rotation(&self) -> Quat {
+        // Extract the 3x3 rotation portion
+        let m00 = self[0][0];
+        let m01 = self[0][1];
+        let m02 = self[0][2];
+        let m10 = self[1][0];
+        let m11 = self[1][1];
+        let m12 = self[1][2];
+        let m20 = self[2][0];
+        let m21 = self[2][1];
+        let m22 = self[2][2];
+
+        // Calculate trace
+        let trace = m00 + m11 + m22;
+
+        if trace > 0.0 {
+            let s = (trace + 1.0).sqrt() * 2.0;
+            let w = 0.25 * s;
+            let x = (m21 - m12) / s;
+            let y = (m02 - m20) / s;
+            let z = (m10 - m01) / s;
+            Quat::new_from_xyzw(x, y, z, w)
+        } else if (m00 > m11) && (m00 > m22) {
+            let s = ((1.0 + m00 - m11 - m22).sqrt()) * 2.0;
+            let w = (m21 - m12) / s;
+            let x = 0.25 * s;
+            let y = (m01 + m10) / s;
+            let z = (m02 + m20) / s;
+            Quat::new_from_xyzw(x, y, z, w)
+        } else if m11 > m22 {
+            let s = ((1.0 + m11 - m00 - m22).sqrt()) * 2.0;
+            let w = (m02 - m20) / s;
+            let x = (m01 + m10) / s;
+            let y = 0.25 * s;
+            let z = (m12 + m21) / s;
+            Quat::new_from_xyzw(x, y, z, w)
+        } else {
+            let s = ((1.0 + m22 - m00 - m11).sqrt()) * 2.0;
+            let w = (m10 - m01) / s;
+            let x = (m02 + m20) / s;
+            let y = (m12 + m21) / s;
+            let z = 0.25 * s;
+            Quat::new_from_xyzw(x, y, z, w)
+        }
+    }
+
+    /// Extract the scale component
+    pub fn extract_scale(&self) -> Vec3 {
+        let x = (self[0][0] * self[0][0] + self[0][1] * self[0][1] + self[0][2] * self[0][2]).sqrt();
+        let y = (self[1][0] * self[1][0] + self[1][1] * self[1][1] + self[1][2] * self[1][2]).sqrt();
+        let z = (self[2][0] * self[2][0] + self[2][1] * self[2][1] + self[2][2] * self[2][2]).sqrt();
+        Vec3::new(x, y, z)
+    }
+
+    /// Extract the 3x3 portion of the matrix
+    pub fn to_mat3(&self) -> crate::Mat3 {
+        crate::Mat3([
+            crate::Vec3::new(self[0][0], self[0][1], self[0][2]),
+            crate::Vec3::new(self[1][0], self[1][1], self[1][2]),
+            crate::Vec3::new(self[2][0], self[2][1], self[2][2]),
+        ])
+    }
+}
+
+// Matrix-vector multiplication traits
+impl Mul<Vec3> for Mat4 {
+    type Output = Vec3;
+
+    fn mul(self, rhs: Vec3) -> Vec3 {
+        let row0 = self.extract_row(0);
+        let row1 = self.extract_row(1);
+        let row2 = self.extract_row(2);
+        Vec3::new(
+            Vec3::new(row0[0], row0[1], row0[2]).dot(rhs) + row0[3],
+            Vec3::new(row1[0], row1[1], row1[2]).dot(rhs) + row1[3],
+            Vec3::new(row2[0], row2[1], row2[2]).dot(rhs) + row2[3],
+        )
+    }
+}
+
+impl Mul<&Vec3> for &Mat4 {
+    type Output = Vec3;
+
+    fn mul(self, rhs: &Vec3) -> Vec3 {
+        let row0 = self.extract_row(0);
+        let row1 = self.extract_row(1);
+        let row2 = self.extract_row(2);
+        Vec3::new(
+            Vec3::new(row0[0], row0[1], row0[2]).dot(*rhs) + row0[3],
+            Vec3::new(row1[0], row1[1], row1[2]).dot(*rhs) + row1[3],
+            Vec3::new(row2[0], row2[1], row2[2]).dot(*rhs) + row2[3],
+        )
+    }
+}
+
+impl Mul<Vec4> for Mat4 {
+    type Output = Vec4;
+
+    fn mul(self, rhs: Vec4) -> Vec4 {
+        let row0 = self.extract_row(0);
+        let row1 = self.extract_row(1);
+        let row2 = self.extract_row(2);
+        let row3 = self.extract_row(3);
+        Vec4::new(
+            Vec4::dot(&row0, &rhs),
+            Vec4::dot(&row1, &rhs),
+            Vec4::dot(&row2, &rhs),
+            Vec4::dot(&row3, &rhs),
+        )
+    }
+}
+
+impl Mul<&Vec4> for &Mat4 {
+    type Output = Vec4;
+
+    fn mul(self, rhs: &Vec4) -> Vec4 {
+        let row0 = self.extract_row(0);
+        let row1 = self.extract_row(1);
+        let row2 = self.extract_row(2);
+        let row3 = self.extract_row(3);
+        Vec4::new(
+            Vec4::dot(&row0, rhs),
+            Vec4::dot(&row1, rhs),
+            Vec4::dot(&row2, rhs),
+            Vec4::dot(&row3, rhs),
+        )
+    }
+}
+
+// Matrix-matrix multiplication traits
+impl Mul<&Mat4> for Mat4 {
+    type Output = Mat4;
+
+    fn mul(self, rhs: &Mat4) -> Mat4 {
+        Mat4::mul(&self, rhs)
+    }
+}
+
+impl Mul<Mat4> for Mat4 {
+    type Output = Mat4;
+
+    fn mul(self, rhs: Mat4) -> Mat4 {
+        self.mul(&rhs)
+    }
+}
+
+impl Mul<Mat4> for &Mat4 {
+    type Output = Mat4;
+
+    fn mul(self, rhs: Mat4) -> Mat4 {
+        Mat4::mul(self, &rhs)
+    }
+}
+
+impl Mul<&Mat4> for &Mat4 {
+    type Output = Mat4;
+
+    fn mul(self, rhs: &Mat4) -> Mat4 {
+        Mat4::mul(self, rhs)
+    }
+}
+
+impl MulAssign for Mat4 {
+    fn mul_assign(&mut self, rhs: Self) {
+        *self = self.clone().mul(&rhs);
     }
 }
 

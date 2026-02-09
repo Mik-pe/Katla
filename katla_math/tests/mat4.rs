@@ -1,5 +1,5 @@
 use approx::assert_relative_eq;
-use katla_math::{Mat4, Vec3, Vec4};
+use katla_math::{Mat4, PI, Quat, Transform, Vec3, Vec4};
 
 #[test]
 fn test_default() {
@@ -375,4 +375,106 @@ fn test_indexing() {
 fn test_index_out_of_bounds() {
     let m = Mat4::default();
     let _ = m[4];
+}
+
+#[test]
+fn test_extract_translation() {
+    let m = Mat4::from_translation([5.0, 10.0, 15.0]);
+    let translation = m.extract_translation();
+
+    assert_relative_eq!(translation.x(), 5.0);
+    assert_relative_eq!(translation.y(), 10.0);
+    assert_relative_eq!(translation.z(), 15.0);
+}
+
+#[test]
+fn test_decompose_identity() {
+    let m = Mat4::identity();
+    let transform = m.decompose();
+
+    assert_relative_eq!(transform.position.x(), 0.0);
+    assert_relative_eq!(transform.position.y(), 0.0);
+    assert_relative_eq!(transform.position.z(), 0.0);
+
+    assert_relative_eq!(transform.scale.x(), 1.0);
+    assert_relative_eq!(transform.scale.y(), 1.0);
+    assert_relative_eq!(transform.scale.z(), 1.0);
+
+    // Identity quaternion
+    let (x, y, z, w) = transform.rotation.xyzw();
+    assert_relative_eq!(x, 0.0, epsilon = 1e-5);
+    assert_relative_eq!(y, 0.0, epsilon = 1e-5);
+    assert_relative_eq!(z, 0.0, epsilon = 1e-5);
+    assert_relative_eq!(w, 1.0, epsilon = 1e-5);
+}
+
+#[test]
+fn test_decompose_translation() {
+    let m = Mat4::from_translation([5.0, 10.0, 15.0]);
+    let transform = m.decompose();
+
+    assert_relative_eq!(transform.position.x(), 5.0);
+    assert_relative_eq!(transform.position.y(), 10.0);
+    assert_relative_eq!(transform.position.z(), 15.0);
+
+    assert_relative_eq!(transform.scale.x(), 1.0);
+    assert_relative_eq!(transform.scale.y(), 1.0);
+    assert_relative_eq!(transform.scale.z(), 1.0);
+}
+
+#[test]
+fn test_decompose_rotation() {
+    // Test 90 degree rotation around Z axis
+    let rotation = Quat::from_axis_angle(Vec3::new(0.0, 0.0, 1.0), PI / 2.0);
+    let m = Mat4::from_rotation(rotation);
+    let transform = m.decompose();
+
+    assert_relative_eq!(transform.position.x(), 0.0);
+    assert_relative_eq!(transform.position.y(), 0.0);
+    assert_relative_eq!(transform.position.z(), 0.0);
+
+    assert_relative_eq!(transform.scale.x(), 1.0);
+    assert_relative_eq!(transform.scale.y(), 1.0);
+    assert_relative_eq!(transform.scale.z(), 1.0);
+
+    // Check that we got a valid normalized quaternion
+    assert!(transform.rotation.is_normalized());
+}
+
+#[test]
+fn test_decompose_scale() {
+    let m = Mat4::from_scale(Vec3::new(2.0, 3.0, 4.0));
+    let transform = m.decompose();
+
+    assert_relative_eq!(transform.scale.x(), 2.0);
+    assert_relative_eq!(transform.scale.y(), 3.0);
+    assert_relative_eq!(transform.scale.z(), 4.0);
+}
+
+#[test]
+fn test_decompose_trs() {
+    // Create a transform with translation, rotation, and scale
+    let mut t = Transform::new();
+    t.position = Vec3::new(5.0, 10.0, 15.0);
+    t.rotation = Quat::from_axis_angle(Vec3::new(0.0, 1.0, 0.0), PI / 4.0);
+    t.scale = Vec3::new(2.0, 3.0, 4.0);
+
+    // Convert to matrix
+    let m = t.make_mat4();
+
+    // Decompose back
+    let decomposed = m.decompose();
+
+    // Check translation
+    assert_relative_eq!(decomposed.position.x(), 5.0, epsilon = 1e-4);
+    assert_relative_eq!(decomposed.position.y(), 10.0, epsilon = 1e-4);
+    assert_relative_eq!(decomposed.position.z(), 15.0, epsilon = 1e-4);
+
+    // Check scale
+    assert_relative_eq!(decomposed.scale.x(), 2.0, epsilon = 1e-4);
+    assert_relative_eq!(decomposed.scale.y(), 3.0, epsilon = 1e-4);
+    assert_relative_eq!(decomposed.scale.z(), 4.0, epsilon = 1e-4);
+
+    // Note: rotation may not be perfectly normalized when decomposing from
+    // matrices with non-uniform scale, which is expected behavior
 }

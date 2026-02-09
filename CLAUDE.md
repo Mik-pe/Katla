@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Katla is a Vulkan-based 3D render engine written in Rust, using ECS (Entity Component System) architecture. The project is structured as a Cargo workspace with multiple crates:
 
-- **katla_math** - Custom math library (vectors, matrices, quaternions) - NO SIMD planned
+- **katla_math** - Custom math library (vectors, matrices, quaternions) - SIMD planned (see katla_math/PLAN.md)
 - **katla_vulkan** - Vulkan rendering layer with render graph system
 - **katla_app** - Application framework, components, and systems
 - **katla_ecs** - Custom Entity Component System framework

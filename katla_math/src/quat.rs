@@ -1,4 +1,4 @@
-use crate::{vec3::Vec3, Mat4, Vec4};
+use crate::{Mat3, Vec3, Mat4, Vec4};
 use core::ops::Index;
 use std::ops::Mul;
 
@@ -125,13 +125,25 @@ impl Quat {
 
     pub fn normalize(&mut self) {
         let len_sq = self.length_squared();
-        self.x /= len_sq;
-        self.y /= len_sq;
-        self.z /= len_sq;
-        self.w /= len_sq;
+        let len = f32::sqrt(len_sq);
+        if len > 0.0 {
+            self.x /= len;
+            self.y /= len;
+            self.z /= len;
+            self.w /= len;
+        }
     }
 
     pub fn inverse(&self) -> Self {
+        Self {
+            x: -self.x,
+            y: -self.y,
+            z: -self.z,
+            w: self.w,
+        }
+    }
+
+    pub fn conjugate(&self) -> Self {
         Self {
             x: -self.x,
             y: -self.y,
@@ -226,7 +238,134 @@ impl Quat {
             Vec4([m30, m31, m32, m33]),
         ])
     }
+
+    pub fn to_mat3(&self) -> Mat3 {
+        let x2 = self.x + self.x;
+        let y2 = self.y + self.y;
+        let z2 = self.z + self.z;
+
+        let xx = self.x * x2;
+        let xy = self.x * y2;
+        let xz = self.x * z2;
+
+        let yy = self.y * y2;
+        let yz = self.y * z2;
+        let zz = self.z * z2;
+
+        let wx = self.w * x2;
+        let wy = self.w * y2;
+        let wz = self.w * z2;
+
+        let m00 = 1.0f32 - (yy + zz);
+        let m01 = xy + wz;
+        let m02 = xz - wy;
+
+        let m10 = xy - wz;
+        let m11 = 1.0f32 - (xx + zz);
+        let m12 = yz + wx;
+
+        let m20 = xz + wy;
+        let m21 = yz - wx;
+        let m22 = 1.0f32 - (xx + yy);
+
+        Mat3::from_elements(
+            m00, m01, m02,
+            m10, m11, m12,
+            m20, m21, m22,
+        )
+    }
+
+    pub fn from_euler(pitch: f32, yaw: f32, roll: f32) -> Quat {
+        let pitch_rotation = Quat::from_axis_angle(Vec3::new(1.0, 0.0, 0.0), pitch);
+        let yaw_rotation = Quat::from_axis_angle(Vec3::new(0.0, 1.0, 0.0), yaw);
+        let roll_rotation = Quat::from_axis_angle(Vec3::new(0.0, 0.0, 1.0), roll);
+
+        yaw_rotation * pitch_rotation * roll_rotation
+    }
+
+    pub fn to_euler(&self) -> (f32, f32, f32) {
+        // Roll (x-axis rotation)
+        let sinr_cosp = 2.0 * (self.w * self.x + self.y * self.z);
+        let cosr_cosp = 1.0 - 2.0 * (self.x * self.x + self.y * self.y);
+        let roll = f32::atan2(sinr_cosp, cosr_cosp);
+
+        // Pitch (y-axis rotation)
+        let sinp = 2.0 * (self.w * self.y - self.z * self.x);
+        let pitch = if f32::abs(sinp) >= 1.0 {
+            std::f32::consts::PI / 2.0 * sinp.copysign(1.0) // Use 90 degrees if out of range
+        } else {
+            f32::asin(sinp)
+        };
+
+        // Yaw (z-axis rotation)
+        let siny_cosp = 2.0 * (self.w * self.z + self.x * self.y);
+        let cosy_cosp = 1.0 - 2.0 * (self.y * self.y + self.z * self.z);
+        let yaw = f32::atan2(siny_cosp, cosy_cosp);
+
+        (pitch, yaw, roll)
+    }
 }
+
+impl From<Mat3> for Quat {
+    fn from(m: Mat3) -> Self {
+        // Convert rotation matrix to quaternion
+        // Note: Mat3 uses column-major indexing m[col][row], so we need to transpose
+        // the indices compared to standard mathematical notation m[row][col]
+        let trace = m[0][0] + m[1][1] + m[2][2];
+
+        let mut q = if trace > 0.0 {
+            let s = f32::sqrt(trace + 1.0) * 2.0;
+            let w = 0.25 * s;
+            // In standard notation: x = (m[2][1] - m[1][2]) / s
+            // With our indexing: m[col][row], so swap indices
+            let x = (m[1][2] - m[2][1]) / s;
+            let y = (m[2][0] - m[0][2]) / s;
+            let z = (m[0][1] - m[1][0]) / s;
+            Quat { x, y, z, w }
+        } else if (m[0][0] > m[1][1]) && (m[0][0] > m[2][2]) {
+            let s = f32::sqrt(1.0 + m[0][0] - m[1][1] - m[2][2]) * 2.0;
+            let w = (m[1][2] - m[2][1]) / s;
+            let x = 0.25 * s;
+            let y = (m[1][0] + m[0][1]) / s;
+            let z = (m[2][0] + m[0][2]) / s;
+            Quat { x, y, z, w }
+        } else if m[1][1] > m[2][2] {
+            let s = f32::sqrt(1.0 + m[1][1] - m[0][0] - m[2][2]) * 2.0;
+            let w = (m[2][0] - m[0][2]) / s;
+            let x = (m[1][0] + m[0][1]) / s;
+            let y = 0.25 * s;
+            let z = (m[2][1] + m[1][2]) / s;
+            Quat { x, y, z, w }
+        } else {
+            let s = f32::sqrt(1.0 + m[2][2] - m[0][0] - m[1][1]) * 2.0;
+            let w = (m[0][1] - m[1][0]) / s;
+            let x = (m[2][0] + m[0][2]) / s;
+            let y = (m[2][1] + m[1][2]) / s;
+            let z = 0.25 * s;
+            Quat { x, y, z, w }
+        };
+
+        // Normalize to handle numerical precision issues
+        let len = q.length_squared().sqrt();
+        if len > 0.0 {
+            q.x /= len;
+            q.y /= len;
+            q.z /= len;
+            q.w /= len;
+        }
+
+        q
+    }
+}
+
+impl From<Mat4> for Quat {
+    fn from(m: Mat4) -> Self {
+        // Extract the 3x3 rotation matrix from the 4x4
+        let mat3 = m.to_mat3();
+        Quat::from(mat3)
+    }
+}
+
 impl Mul for Quat {
     type Output = Quat;
 
