@@ -1040,7 +1040,7 @@ unsafe fn pick_physical_device_headless(instance: &Instance) -> Option<vk::Physi
             _ => {}
         }
 
-        score += properties.limits.max_image_dimension2_d as u32;
+        score += properties.limits.max_image_dimension2_d;
         score
     });
 

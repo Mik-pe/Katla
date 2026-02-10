@@ -8,7 +8,7 @@ use std::{collections::HashMap, rc::Rc, cell::RefCell};
 use ash::vk;
 use super::{
     MaterialDescriptor, MaterialPipeline, ShaderReflection, MaterialParameters,
-    MaterialValue, ShaderSource, MaterialError, UniformLayout,
+    MaterialValue, ShaderSource, MaterialError,
 };
 use crate::{VulkanContext, RenderPass, Texture};
 
@@ -130,7 +130,7 @@ impl MaterialTemplate {
     ///
     /// This allows updating the pipeline in-place through the RefCell,
     /// which is shared with all materials using this template.
-    pub fn pipeline_mut(&self) -> std::cell::RefMut<MaterialPipeline> {
+    pub fn pipeline_mut(&self) -> std::cell::RefMut<'_, MaterialPipeline> {
         self.pipeline.borrow_mut()
     }
 

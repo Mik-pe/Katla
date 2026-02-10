@@ -220,7 +220,7 @@ impl MaterialBuilder {
     /// uses separate texture and sampler bindings. This method is kept for
     /// backwards compatibility only.
     #[deprecated(note = "All shaders use WGSL with separate bindings")]
-    pub fn with_separate_bindings(mut self, _separate: bool) -> Self {
+    pub fn with_separate_bindings(self, _separate: bool) -> Self {
         // All shaders are WGSL now, which always uses separate bindings
         self
     }

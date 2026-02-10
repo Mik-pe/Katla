@@ -146,7 +146,7 @@ impl Model {
     /// # Safety
     /// The registry_ptr must point to a valid MaterialRegistry that outlives
     /// this function call.
-    pub fn new_from_gltf_with_ptr(
+    pub(crate) fn new_from_gltf_with_ptr(
         world: &mut World,
         model: Rc<GLTFModel>,
         context: Rc<VulkanContext>,
