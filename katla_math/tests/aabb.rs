@@ -22,13 +22,13 @@ fn test_expand() {
 #[test]
 fn test_aabb_intersects() {
     let aabb1 = AABB {
-        center: Vec3([0.0, 0.0, 0.0]),
-        extent: Vec3([1.0, 1.0, 1.0]),
+        center: Vec3::new(0.0, 0.0, 0.0),
+        extent: Vec3::new(1.0, 1.0, 1.0),
     };
 
     let aabb2 = AABB {
-        center: Vec3([0.5, 0.5, 0.5]),
-        extent: Vec3([1.0, 1.0, 1.0]),
+        center: Vec3::new(0.5, 0.5, 0.5),
+        extent: Vec3::new(1.0, 1.0, 1.0),
     };
 
     assert!(aabb1.intersects(&aabb2));
@@ -37,13 +37,13 @@ fn test_aabb_intersects() {
 #[test]
 fn test_aabb_does_not_intersect() {
     let aabb1 = AABB {
-        center: Vec3([0.0, 0.0, 0.0]),
-        extent: Vec3([1.0, 1.0, 1.0]),
+        center: Vec3::new(0.0, 0.0, 0.0),
+        extent: Vec3::new(1.0, 1.0, 1.0),
     };
 
     let aabb2 = AABB {
-        center: Vec3([-2.0, -2.0, -2.0]),
-        extent: Vec3([0.9, 0.9, 0.9]),
+        center: Vec3::new(-2.0, -2.0, -2.0),
+        extent: Vec3::new(0.9, 0.9, 0.9),
     };
 
     assert!(!aabb1.intersects(&aabb2));
@@ -52,18 +52,18 @@ fn test_aabb_does_not_intersect() {
 #[test]
 fn test_aabb_create_from_verts() {
     let verts = vec![
-        Vec3([-1.0, -1.0, -1.0]),
-        Vec3([1.0, -1.0, -1.0]),
-        Vec3([1.0, 1.0, -1.0]),
-        Vec3([-1.0, 1.0, -1.0]),
-        Vec3([-1.0, -1.0, 1.0]),
-        Vec3([1.0, -1.0, 1.0]),
-        Vec3([1.0, 1.0, 1.0]),
-        Vec3([-1.0, 1.0, 1.0]),
+        Vec3::new(-1.0, -1.0, -1.0),
+        Vec3::new(1.0, -1.0, -1.0),
+        Vec3::new(1.0, 1.0, -1.0),
+        Vec3::new(-1.0, 1.0, -1.0),
+        Vec3::new(-1.0, -1.0, 1.0),
+        Vec3::new(1.0, -1.0, 1.0),
+        Vec3::new(1.0, 1.0, 1.0),
+        Vec3::new(-1.0, 1.0, 1.0),
     ];
 
     let aabb = AABB::create_from_verts(&verts);
 
-    assert_eq!(aabb.center, Vec3([0.0, 0.0, 0.0]));
-    assert_eq!(aabb.extent, Vec3([1.0, 1.0, 1.0]));
+    assert_eq!(aabb.center, Vec3::new(0.0, 0.0, 0.0));
+    assert_eq!(aabb.extent, Vec3::new(1.0, 1.0, 1.0));
 }

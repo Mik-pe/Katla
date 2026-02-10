@@ -28,29 +28,29 @@ pub fn create_cylinder_vertices(height: f32, radius: f32, segments: u32) -> Vec<
 
         // UV coordinates: U goes around the cylinder (0-1), V goes along height (0-1)
         vertices.push(VertexPBR::new(
-            lower_left.0,
-            normal.0,
+            lower_left.to_array(),
+            normal.to_array(),
             [1.0, 0.0, 0.0, 1.0],  // Tangent
             [u, 0.0],              // UV: Bottom of cylinder
         ));
 
         vertices.push(VertexPBR::new(
-            upper_left.0,
-            normal.0,
+            upper_left.to_array(),
+            normal.to_array(),
             [1.0, 0.0, 0.0, 1.0],  // Tangent
             [u, 1.0],              // UV: Top of cylinder
         ));
 
         vertices.push(VertexPBR::new(
-            upper_right.0,
-            normal.0,
+            upper_right.to_array(),
+            normal.to_array(),
             [1.0, 0.0, 0.0, 1.0],  // Tangent
             [u, 1.0],              // UV: Top of cylinder
         ));
 
         vertices.push(VertexPBR::new(
-            lower_right.0,
-            normal.0,
+            lower_right.to_array(),
+            normal.to_array(),
             [1.0, 0.0, 0.0, 1.0],  // Tangent
             [u, 0.0],              // UV: Bottom of cylinder
         ));

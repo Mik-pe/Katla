@@ -35,70 +35,77 @@ impl Frustum {
         let combined = proj.clone() * view.clone();
 
         // Extract planes from the combined matrix
+        // When normalizing the plane normal, we must also scale the distance
         // Left plane: row3 + row0
+        let left_normal = Vec3::new(
+            combined[3][0] + combined[0][0],
+            combined[3][1] + combined[0][1],
+            combined[3][2] + combined[0][2],
+        );
+        let left_len = left_normal.length();
         let left = Plane::new(
-            Vec3::new(
-                combined[3][0] + combined[0][0],
-                combined[3][1] + combined[0][1],
-                combined[3][2] + combined[0][2],
-            )
-            .normalize(),
-            combined[3][3] + combined[0][3],
+            left_normal.normalize(),
+            (combined[3][3] + combined[0][3]) / left_len,
         );
 
         // Right plane: row3 - row0
+        let right_normal = Vec3::new(
+            combined[3][0] - combined[0][0],
+            combined[3][1] - combined[0][1],
+            combined[3][2] - combined[0][2],
+        );
+        let right_len = right_normal.length();
         let right = Plane::new(
-            Vec3::new(
-                combined[3][0] - combined[0][0],
-                combined[3][1] - combined[0][1],
-                combined[3][2] - combined[0][2],
-            )
-            .normalize(),
-            combined[3][3] - combined[0][3],
+            right_normal.normalize(),
+            (combined[3][3] - combined[0][3]) / right_len,
         );
 
         // Bottom plane: row3 + row1
+        let bottom_normal = Vec3::new(
+            combined[3][0] + combined[1][0],
+            combined[3][1] + combined[1][1],
+            combined[3][2] + combined[1][2],
+        );
+        let bottom_len = bottom_normal.length();
         let bottom = Plane::new(
-            Vec3::new(
-                combined[3][0] + combined[1][0],
-                combined[3][1] + combined[1][1],
-                combined[3][2] + combined[1][2],
-            )
-            .normalize(),
-            combined[3][3] + combined[1][3],
+            bottom_normal.normalize(),
+            (combined[3][3] + combined[1][3]) / bottom_len,
         );
 
         // Top plane: row3 - row1
+        let top_normal = Vec3::new(
+            combined[3][0] - combined[1][0],
+            combined[3][1] - combined[1][1],
+            combined[3][2] - combined[1][2],
+        );
+        let top_len = top_normal.length();
         let top = Plane::new(
-            Vec3::new(
-                combined[3][0] - combined[1][0],
-                combined[3][1] - combined[1][1],
-                combined[3][2] - combined[1][2],
-            )
-            .normalize(),
-            combined[3][3] - combined[1][3],
+            top_normal.normalize(),
+            (combined[3][3] - combined[1][3]) / top_len,
         );
 
         // Near plane: row3 + row2
+        let near_normal = Vec3::new(
+            combined[3][0] + combined[2][0],
+            combined[3][1] + combined[2][1],
+            combined[3][2] + combined[2][2],
+        );
+        let near_len = near_normal.length();
         let near = Plane::new(
-            Vec3::new(
-                combined[3][0] + combined[2][0],
-                combined[3][1] + combined[2][1],
-                combined[3][2] + combined[2][2],
-            )
-            .normalize(),
-            combined[3][3] + combined[2][3],
+            near_normal.normalize(),
+            (combined[3][3] + combined[2][3]) / near_len,
         );
 
         // Far plane: row3 - row2
+        let far_normal = Vec3::new(
+            combined[3][0] - combined[2][0],
+            combined[3][1] - combined[2][1],
+            combined[3][2] - combined[2][2],
+        );
+        let far_len = far_normal.length();
         let far = Plane::new(
-            Vec3::new(
-                combined[3][0] - combined[2][0],
-                combined[3][1] - combined[2][1],
-                combined[3][2] - combined[2][2],
-            )
-            .normalize(),
-            combined[3][3] - combined[2][3],
+            far_normal.normalize(),
+            (combined[3][3] - combined[2][3]) / far_len,
         );
 
         Frustum {

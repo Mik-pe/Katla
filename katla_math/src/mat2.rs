@@ -17,26 +17,23 @@ impl Index<usize> for Mat2 {
 }
 
 impl Mat2 {
-    pub const ZERO: Mat2 = Mat2([Vec2 { x: 0.0, y: 0.0 }, Vec2 { x: 0.0, y: 0.0 }]);
-    pub const IDENTITY: Mat2 = Mat2([Vec2 { x: 1.0, y: 0.0 }, Vec2 { x: 0.0, y: 1.0 }]);
+    #[inline]
+    pub fn zero() -> Mat2 {
+        Mat2([Vec2::new(0.0, 0.0), Vec2::new(0.0, 0.0)])
+    }
+
+    #[inline]
+    pub fn identity() -> Mat2 {
+        Mat2([Vec2::new(1.0, 0.0), Vec2::new(0.0, 1.0)])
+    }
 
     #[inline]
     pub fn new(m00: f32, m01: f32, m10: f32, m11: f32) -> Mat2 {
         // Column-major storage: column 0 (m00, m10), column 1 (m01, m11)
         Mat2([
-            Vec2 { x: m00, y: m10 },
-            Vec2 { x: m01, y: m11 },
+            Vec2::new(m00, m10),
+            Vec2::new(m01, m11),
         ])
-    }
-
-    #[inline]
-    pub fn identity() -> Self {
-        Self::IDENTITY
-    }
-
-    #[inline]
-    pub fn zero() -> Self {
-        Self::ZERO
     }
 
     /// Create a 2x2 rotation matrix
@@ -54,21 +51,21 @@ impl Mat2 {
     /// Create a 2x2 scale matrix
     #[inline]
     pub fn from_scale(scale: Vec2) -> Self {
-        Self::new(scale.x, 0.0, 0.0, scale.y)
+        Self::new(scale.x(), 0.0, 0.0, scale.y())
     }
 
     /// Multiply two 2x2 matrices
     #[inline]
     pub fn mul(&self, rhs: &Mat2) -> Mat2 {
         Mat2([
-            Vec2 {
-                x: self[0][0] * rhs[0][0] + self[1][0] * rhs[1][0],
-                y: self[0][1] * rhs[0][0] + self[1][1] * rhs[1][0],
-            },
-            Vec2 {
-                x: self[0][0] * rhs[0][1] + self[1][0] * rhs[1][1],
-                y: self[0][1] * rhs[0][1] + self[1][1] * rhs[1][1],
-            },
+            Vec2::new(
+                self[0][0] * rhs[0][0] + self[1][0] * rhs[1][0],
+                self[0][1] * rhs[0][0] + self[1][1] * rhs[1][0],
+            ),
+            Vec2::new(
+                self[0][0] * rhs[0][1] + self[1][0] * rhs[1][1],
+                self[0][1] * rhs[0][1] + self[1][1] * rhs[1][1],
+            ),
         ])
     }
 
@@ -78,14 +75,14 @@ impl Mat2 {
         // [c0r0  c1r0]     [c0r0  c0r1]
         // [c0r1  c1r1] ->  [c1r0  c1r1]
         Mat2([
-            Vec2 {
-                x: self[0][0],
-                y: self[1][0],  // Swap with c1r0
-            },
-            Vec2 {
-                x: self[0][1],  // Swap with c0r1
-                y: self[1][1],
-            },
+            Vec2::new(
+                self[0][0],
+                self[1][0],  // Swap with c1r0
+            ),
+            Vec2::new(
+                self[0][1],  // Swap with c0r1
+                self[1][1],
+            ),
         ])
     }
 
@@ -124,10 +121,7 @@ impl Mat2 {
     /// Extract scale from scale matrix (or diagonal elements)
     #[inline]
     pub fn to_scale(&self) -> Vec2 {
-        Vec2 {
-            x: self[0][0],
-            y: self[1][1],
-        }
+        Vec2::new(self[0][0], self[1][1])
     }
 }
 
@@ -138,14 +132,14 @@ impl Mul<Mat2> for Mat2 {
         // Standard matrix multiplication with column-major storage m[col][row]
         // result[col][row] = sum over k of self[k][row] * rhs[col][k]
         Mat2([
-            Vec2 {
-                x: self[0][0] * rhs[0][0] + self[1][0] * rhs[0][1],
-                y: self[0][1] * rhs[0][0] + self[1][1] * rhs[0][1],
-            },
-            Vec2 {
-                x: self[0][0] * rhs[1][0] + self[1][0] * rhs[1][1],
-                y: self[0][1] * rhs[1][0] + self[1][1] * rhs[1][1],
-            },
+            Vec2::new(
+                self[0][0] * rhs[0][0] + self[1][0] * rhs[0][1],
+                self[0][1] * rhs[0][0] + self[1][1] * rhs[0][1],
+            ),
+            Vec2::new(
+                self[0][0] * rhs[1][0] + self[1][0] * rhs[1][1],
+                self[0][1] * rhs[1][0] + self[1][1] * rhs[1][1],
+            ),
         ])
     }
 }
@@ -158,10 +152,10 @@ impl Mul<Vec2> for Mat2 {
         // With column-major m[col][row]:
         // result[0] = m[0][0] * v[0] + m[1][0] * v[1]
         // result[1] = m[0][1] * v[0] + m[1][1] * v[1]
-        Vec2 {
-            x: self[0][0] * rhs.x + self[1][0] * rhs.y,
-            y: self[0][1] * rhs.x + self[1][1] * rhs.y,
-        }
+        Vec2::new(
+            self[0][0] * rhs.x() + self[1][0] * rhs.y(),
+            self[0][1] * rhs.x() + self[1][1] * rhs.y(),
+        )
     }
 }
 
@@ -170,14 +164,8 @@ impl Mul<f32> for Mat2 {
 
     fn mul(self, scalar: f32) -> Mat2 {
         Mat2([
-            Vec2 {
-                x: self[0][0] * scalar,
-                y: self[0][1] * scalar,
-            },
-            Vec2 {
-                x: self[1][0] * scalar,
-                y: self[1][1] * scalar,
-            },
+            Vec2::new(self[0][0] * scalar, self[0][1] * scalar),
+            Vec2::new(self[1][0] * scalar, self[1][1] * scalar),
         ])
     }
 }
@@ -187,14 +175,8 @@ impl Div<f32> for Mat2 {
 
     fn div(self, scalar: f32) -> Mat2 {
         Mat2([
-            Vec2 {
-                x: self[0][0] / scalar,
-                y: self[0][1] / scalar,
-            },
-            Vec2 {
-                x: self[1][0] / scalar,
-                y: self[1][1] / scalar,
-            },
+            Vec2::new(self[0][0] / scalar, self[0][1] / scalar),
+            Vec2::new(self[1][0] / scalar, self[1][1] / scalar),
         ])
     }
 }
@@ -204,14 +186,8 @@ impl Add for Mat2 {
 
     fn add(self, rhs: Mat2) -> Mat2 {
         Mat2([
-            Vec2 {
-                x: self[0][0] + rhs[0][0],
-                y: self[0][1] + rhs[0][1],
-            },
-            Vec2 {
-                x: self[1][0] + rhs[1][0],
-                y: self[1][1] + rhs[1][1],
-            },
+            Vec2::new(self[0][0] + rhs[0][0], self[0][1] + rhs[0][1]),
+            Vec2::new(self[1][0] + rhs[1][0], self[1][1] + rhs[1][1]),
         ])
     }
 }
@@ -221,14 +197,8 @@ impl Sub for Mat2 {
 
     fn sub(self, rhs: Mat2) -> Mat2 {
         Mat2([
-            Vec2 {
-                x: self[0][0] - rhs[0][0],
-                y: self[0][1] - rhs[0][1],
-            },
-            Vec2 {
-                x: self[1][0] - rhs[1][0],
-                y: self[1][1] - rhs[1][1],
-            },
+            Vec2::new(self[0][0] - rhs[0][0], self[0][1] - rhs[0][1]),
+            Vec2::new(self[1][0] - rhs[1][0], self[1][1] - rhs[1][1]),
         ])
     }
 }
@@ -238,21 +208,15 @@ impl Neg for Mat2 {
 
     fn neg(self) -> Mat2 {
         Mat2([
-            Vec2 {
-                x: -self[0][0],
-                y: -self[0][1],
-            },
-            Vec2 {
-                x: -self[1][0],
-                y: -self[1][1],
-            },
+            Vec2::new(-self[0][0], -self[0][1]),
+            Vec2::new(-self[1][0], -self[1][1]),
         ])
     }
 }
 
 impl Default for Mat2 {
     fn default() -> Self {
-        Self::IDENTITY
+        Self::identity()
     }
 }
 

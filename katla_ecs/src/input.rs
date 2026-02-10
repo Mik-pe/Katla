@@ -35,8 +35,8 @@ impl Default for InputState {
 impl InputState {
     pub fn new() -> Self {
         InputState {
-            mouse_position: Vec2::ZERO,
-            mouse_delta: Vec2::ZERO,
+            mouse_position: Vec2::zero(),
+            mouse_delta: Vec2::zero(),
             mouse_wheel_delta: 0.0,
             mouse_buttons: [ButtonState::Released; 5],
             keyboard_keys: [false; Action::COUNT],
@@ -56,7 +56,7 @@ impl InputState {
     }
 
     pub fn set_mouse_position(&mut self, x: f32, y: f32) {
-        self.mouse_delta = Vec2::new(x - self.mouse_position.x, y - self.mouse_position.y);
+        self.mouse_delta = Vec2::new(x - self.mouse_position.x(), y - self.mouse_position.y());
         self.mouse_position = Vec2::new(x, y);
     }
 }

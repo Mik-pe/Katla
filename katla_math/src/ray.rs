@@ -143,13 +143,13 @@ impl Ray {
         let b = 2.0 * oc.dot(self.direction);
         let c = oc.dot(oc) - sphere.radius * sphere.radius;
 
-        let discriminant = b * b - 4.0 * a * c;
+        let discriminant: f32 = b * b - 4.0 * a * c;
 
         if discriminant < 0.0 {
             return None;
         }
 
-        let sqrt_disc = discriminant.sqrt();
+        let sqrt_disc = f32::sqrt(discriminant);
         let t1 = (-b - sqrt_disc) / (2.0 * a);
         let t2 = (-b + sqrt_disc) / (2.0 * a);
 
@@ -210,7 +210,7 @@ impl Ray {
     /// Transform the ray by a matrix
     pub fn transform(&self, matrix: &Mat4) -> Ray {
         let origin = matrix.clone() * self.origin;
-        let direction = matrix.to_mat3() * self.direction;
+        let direction: Vec3 = matrix.to_mat3() * self.direction;
         Ray {
             origin,
             direction: direction.normalize(),

@@ -18,10 +18,7 @@ impl Rect2D {
     pub fn from_origin_size(origin: Vec2, size: Vec2) -> Self {
         Rect2D {
             min: origin,
-            max: Vec2 {
-                x: origin.x + size.x,
-                y: origin.y + size.y,
-            },
+            max: Vec2::new(origin.x() + size.x(), origin.y() + size.y()),
         }
     }
 
@@ -29,69 +26,57 @@ impl Rect2D {
     #[inline]
     pub fn from_center_half_extents(center: Vec2, half_extents: Vec2) -> Self {
         Rect2D {
-            min: Vec2 {
-                x: center.x - half_extents.x,
-                y: center.y - half_extents.y,
-            },
-            max: Vec2 {
-                x: center.x + half_extents.x,
-                y: center.y + half_extents.y,
-            },
+            min: Vec2::new(center.x() - half_extents.x(), center.y() - half_extents.y()),
+            max: Vec2::new(center.x() + half_extents.x(), center.y() + half_extents.y()),
         }
     }
 
     /// Create a rectangle from center and full size
     #[inline]
     pub fn from_center_size(center: Vec2, size: Vec2) -> Self {
-        Self::from_center_half_extents(center, Vec2 { x: size.x * 0.5, y: size.y * 0.5 })
+        Self::from_center_half_extents(center, Vec2::new(size.x() * 0.5, size.y() * 0.5))
     }
 
     /// Get the width of the rectangle
     #[inline]
     pub fn width(&self) -> f32 {
-        self.max.x - self.min.x
+        self.max.x() - self.min.x()
     }
 
     /// Get the height of the rectangle
     #[inline]
     pub fn height(&self) -> f32 {
-        self.max.y - self.min.y
+        self.max.y() - self.min.y()
     }
 
     /// Get the size of the rectangle
     #[inline]
     pub fn size(&self) -> Vec2 {
-        Vec2 {
-            x: self.width(),
-            y: self.height(),
-        }
+        Vec2::new(self.width(), self.height())
     }
 
     /// Get the center of the rectangle
     #[inline]
     pub fn center(&self) -> Vec2 {
-        Vec2 {
-            x: (self.min.x + self.max.x) * 0.5,
-            y: (self.min.y + self.max.y) * 0.5,
-        }
+        Vec2::new(
+            (self.min.x() + self.max.x()) * 0.5,
+            (self.min.y() + self.max.y()) * 0.5,
+        )
     }
 
     /// Get the half-extents of the rectangle
     #[inline]
     pub fn half_extents(&self) -> Vec2 {
-        Vec2 {
-            x: self.width() * 0.5,
-            y: self.height() * 0.5,
-        }
+        Vec2::new(self.width() * 0.5, self.height() * 0.5)
     }
 
     /// Check if a point is contained in the rectangle
     #[inline]
     pub fn contains(&self, point: Vec2) -> bool {
-        point.x >= self.min.x
-            && point.x <= self.max.x
-            && point.y >= self.min.y
-            && point.y <= self.max.y
+        point.x() >= self.min.x()
+            && point.x() <= self.max.x()
+            && point.y() >= self.min.y()
+            && point.y() <= self.max.y()
     }
 
     /// Check if this rectangle contains another rectangle
@@ -103,26 +88,26 @@ impl Rect2D {
     /// Check if this rectangle overlaps with another rectangle
     #[inline]
     pub fn overlaps(&self, other: &Rect2D) -> bool {
-        self.min.x < other.max.x
-            && self.max.x > other.min.x
-            && self.min.y < other.max.y
-            && self.max.y > other.min.y
+        self.min.x() < other.max.x()
+            && self.max.x() > other.min.x()
+            && self.min.y() < other.max.y()
+            && self.max.y() > other.min.y()
     }
 
     /// Expand the rectangle to include a point
     #[inline]
     pub fn expand_to_include(&mut self, point: Vec2) {
-        if point.x < self.min.x {
-            self.min.x = point.x;
+        if point.x() < self.min.x() {
+            self.min = Vec2::new(point.x(), self.min.y());
         }
-        if point.x > self.max.x {
-            self.max.x = point.x;
+        if point.x() > self.max.x() {
+            self.max = Vec2::new(point.x(), self.max.y());
         }
-        if point.y < self.min.y {
-            self.min.y = point.y;
+        if point.y() < self.min.y() {
+            self.min = Vec2::new(self.min.x(), point.y());
         }
-        if point.y > self.max.y {
-            self.max.y = point.y;
+        if point.y() > self.max.y() {
+            self.max = Vec2::new(self.max.x(), point.y());
         }
     }
 
@@ -155,14 +140,8 @@ impl Rect2D {
     #[inline]
     pub fn inflate(&self, amount: f32) -> Rect2D {
         Rect2D {
-            min: Vec2 {
-                x: self.min.x - amount,
-                y: self.min.y - amount,
-            },
-            max: Vec2 {
-                x: self.max.x + amount,
-                y: self.max.y + amount,
-            },
+            min: Vec2::new(self.min.x() - amount, self.min.y() - amount),
+            max: Vec2::new(self.max.x() + amount, self.max.y() + amount),
         }
     }
 
@@ -175,16 +154,16 @@ impl Rect2D {
     /// Get the intersection of two rectangles
     #[inline]
     pub fn intersection(&self, other: &Rect2D) -> Option<Rect2D> {
-        let min = Vec2 {
-            x: self.min.x.max(other.min.x),
-            y: self.min.y.max(other.min.y),
-        };
-        let max = Vec2 {
-            x: self.max.x.min(other.max.x),
-            y: self.max.y.min(other.max.y),
-        };
+        let min = Vec2::new(
+            self.min.x().max(other.min.x()),
+            self.min.y().max(other.min.y()),
+        );
+        let max = Vec2::new(
+            self.max.x().min(other.max.x()),
+            self.max.y().min(other.max.y()),
+        );
 
-        if min.x < max.x && min.y < max.y {
+        if min.x() < max.x() && min.y() < max.y() {
             Some(Rect2D { min, max })
         } else {
             None
@@ -195,14 +174,14 @@ impl Rect2D {
     #[inline]
     pub fn union(&self, other: &Rect2D) -> Rect2D {
         Rect2D {
-            min: Vec2 {
-                x: self.min.x.min(other.min.x),
-                y: self.min.y.min(other.min.y),
-            },
-            max: Vec2 {
-                x: self.max.x.max(other.max.x),
-                y: self.max.y.max(other.max.y),
-            },
+            min: Vec2::new(
+                self.min.x().min(other.min.x()),
+                self.min.y().min(other.min.y()),
+            ),
+            max: Vec2::new(
+                self.max.x().max(other.max.x()),
+                self.max.y().max(other.max.y()),
+            ),
         }
     }
 
@@ -219,7 +198,7 @@ impl Rect2D {
     #[inline]
     pub fn from_size(size: Vec2) -> Rect2D {
         Rect2D {
-            min: Vec2 { x: 0.0, y: 0.0 },
+            min: Vec2::new(0.0, 0.0),
             max: size,
         }
     }
@@ -227,20 +206,20 @@ impl Rect2D {
     /// Clamp a point to the rectangle bounds
     #[inline]
     pub fn clamp(&self, point: Vec2) -> Vec2 {
-        Vec2 {
-            x: point.x.max(self.min.x).min(self.max.x),
-            y: point.y.max(self.min.y).min(self.max.y),
-        }
+        Vec2::new(
+            point.x().max(self.min.x()).min(self.max.x()),
+            point.y().max(self.min.y()).min(self.max.y()),
+        )
     }
 
     /// Get the corners of the rectangle
     #[inline]
     pub fn corners(&self) -> [Vec2; 4] {
         [
-            Vec2 { x: self.min.x, y: self.min.y },  // bottom-left
-            Vec2 { x: self.max.x, y: self.min.y },  // bottom-right
-            Vec2 { x: self.min.x, y: self.max.y },  // top-left
-            Vec2 { x: self.max.x, y: self.max.y },  // top-right
+            Vec2::new(self.min.x(), self.min.y()), // bottom-left
+            Vec2::new(self.max.x(), self.min.y()), // bottom-right
+            Vec2::new(self.min.x(), self.max.y()), // top-left
+            Vec2::new(self.max.x(), self.max.y()), // top-right
         ]
     }
 
@@ -262,6 +241,6 @@ impl Rect2D {
 
 impl Default for Rect2D {
     fn default() -> Self {
-        Self::new(Vec2 { x: 0.0, y: 0.0 }, Vec2 { x: 0.0, y: 0.0 })
+        Self::new(Vec2::new(0.0, 0.0), Vec2::new(0.0, 0.0))
     }
 }

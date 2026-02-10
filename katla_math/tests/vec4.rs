@@ -29,12 +29,12 @@ fn test_vec4_from_xyzw() {
 
 #[test]
 fn test_vec4_constants() {
-    assert_eq!(Vec4::ZERO, Vec4::new(0.0, 0.0, 0.0, 0.0));
-    assert_eq!(Vec4::ONE, Vec4::new(1.0, 1.0, 1.0, 1.0));
-    assert_eq!(Vec4::X_AXIS, Vec4::new(1.0, 0.0, 0.0, 0.0));
-    assert_eq!(Vec4::Y_AXIS, Vec4::new(0.0, 1.0, 0.0, 0.0));
-    assert_eq!(Vec4::Z_AXIS, Vec4::new(0.0, 0.0, 1.0, 0.0));
-    assert_eq!(Vec4::W_AXIS, Vec4::new(0.0, 0.0, 0.0, 1.0));
+    assert_eq!(Vec4::zero(), Vec4::new(0.0, 0.0, 0.0, 0.0));
+    assert_eq!(Vec4::one(), Vec4::new(1.0, 1.0, 1.0, 1.0));
+    assert_eq!(Vec4::x_axis(), Vec4::new(1.0, 0.0, 0.0, 0.0));
+    assert_eq!(Vec4::y_axis(), Vec4::new(0.0, 1.0, 0.0, 0.0));
+    assert_eq!(Vec4::z_axis(), Vec4::new(0.0, 0.0, 1.0, 0.0));
+    assert_eq!(Vec4::w_axis(), Vec4::new(0.0, 0.0, 0.0, 1.0));
 }
 
 #[test]
@@ -155,9 +155,9 @@ fn test_vec4_normalize() {
 
 #[test]
 fn test_vec4_normalize_zero() {
-    let v = Vec4::ZERO;
+    let v = Vec4::zero();
     let normalized = v.normalize();
-    assert_eq!(normalized, Vec4::ZERO);
+    assert_eq!(normalized, Vec4::zero());
 }
 
 #[test]
@@ -174,8 +174,8 @@ fn test_vec4_is_normalized() {
 
 #[test]
 fn test_vec4_is_zero() {
-    assert!(Vec4::ZERO.is_zero());
-    assert!(!Vec4::ONE.is_zero());
+    assert!(Vec4::zero().is_zero());
+    assert!(!Vec4::one().is_zero());
     assert!(!Vec4::new(0.0, 0.0, 0.0, 1.0).is_zero());
 }
 
@@ -264,7 +264,7 @@ fn test_vec4_to_array() {
 #[test]
 fn test_vec4_default() {
     let v = Vec4::default();
-    assert_eq!(v, Vec4::ZERO);
+    assert_eq!(v, Vec4::zero());
 }
 
 #[test]
