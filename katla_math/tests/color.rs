@@ -314,7 +314,7 @@ fn test_vec4_conversion() {
     assert_eq!(v[3], 0.4);
 
     // Vec4 -> Color
-    let v = Vec4([0.5, 0.6, 0.7, 0.8]);
+    let v = Vec4::new(0.5, 0.6, 0.7, 0.8);
     let c = Color::from_vec4(v);
     assert_eq!(c.r, 0.5);
     assert_eq!(c.g, 0.6);
@@ -326,7 +326,7 @@ fn test_vec4_conversion() {
     let v: Vec4 = c.into();
     assert_eq!(v[0], 0.1);
 
-    let v = Vec4([0.5, 0.6, 0.7, 0.8]);
+    let v = Vec4::new(0.5, 0.6, 0.7, 0.8);
     let c: Color = v.into();
     assert_eq!(c.r, 0.5);
 }

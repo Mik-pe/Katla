@@ -32,7 +32,7 @@ fn test_mat3_from_scale() {
 
 #[test]
 fn test_mat3_from_rotation() {
-    let q = Quat::from_axis_angle(Vec3::Z_AXIS, std::f32::consts::FRAC_PI_2);
+    let q = Quat::from_axis_angle(Vec3::z_axis(), std::f32::consts::FRAC_PI_2);
     let m = Mat3::from_rotation(q);
 
     // 90-degree rotation around Z should map (1,0,0) to (0,1,0)
@@ -199,7 +199,7 @@ fn test_mat3_indexing() {
 
 #[test]
 fn test_mat3_from_quat() {
-    let q = Quat::from_axis_angle(Vec3::Y_AXIS, std::f32::consts::FRAC_PI_2);
+    let q = Quat::from_axis_angle(Vec3::y_axis(), std::f32::consts::FRAC_PI_2);
     let m1 = Mat3::from(q);
     let m2 = Mat3::from_rotation(q);
 

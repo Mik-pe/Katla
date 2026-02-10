@@ -161,17 +161,17 @@ pub fn generate_smooth_normals(positions: &[[f32; 3]], indices: &[u8], index_str
                 break;
             }
 
-            let v0 = Vec3(positions[i]);
-            let v1 = Vec3(positions[i + 1]);
-            let v2 = Vec3(positions[i + 2]);
+            let v0 = Vec3::from(positions[i]);
+            let v1 = Vec3::from(positions[i + 1]);
+            let v2 = Vec3::from(positions[i + 2]);
 
             // Calculate face normal using cross product
-            let edge1 = Vec3::new(v1.0[0] - v0.0[0], v1.0[1] - v0.0[1], v1.0[2] - v0.0[2]);
-            let edge2 = Vec3::new(v2.0[0] - v0.0[0], v2.0[1] - v0.0[1], v2.0[2] - v0.0[2]);
+            let edge1 = Vec3::new(v1.x() - v0.x(), v1.y() - v0.y(), v1.z() - v0.z());
+            let edge2 = Vec3::new(v2.x() - v0.x(), v2.y() - v0.y(), v2.z() - v0.z());
             let face_normal = Vec3::new(
-                edge1.0[1] * edge2.0[2] - edge1.0[2] * edge2.0[1],
-                edge1.0[2] * edge2.0[0] - edge1.0[0] * edge2.0[2],
-                edge1.0[0] * edge2.0[1] - edge1.0[1] * edge2.0[0],
+                edge1.y() * edge2.z() - edge1.z() * edge2.y(),
+                edge1.z() * edge2.x() - edge1.x() * edge2.z(),
+                edge1.x() * edge2.y() - edge1.y() * edge2.x(),
             )
             .normalize();
 
@@ -180,7 +180,7 @@ pub fn generate_smooth_normals(positions: &[[f32; 3]], indices: &[u8], index_str
             normals[i + 2] = face_normal;
         }
 
-        return normals.iter().map(|n| n.0).collect();
+        return normals.iter().map(|n| n.to_array()).collect();
     }
 
     // Parse indices based on stride
@@ -215,17 +215,17 @@ pub fn generate_smooth_normals(positions: &[[f32; 3]], indices: &[u8], index_str
             continue;
         }
 
-        let v0 = Vec3(positions[i0]);
-        let v1 = Vec3(positions[i1]);
-        let v2 = Vec3(positions[i2]);
+        let v0 = Vec3::from(positions[i0]);
+        let v1 = Vec3::from(positions[i1]);
+        let v2 = Vec3::from(positions[i2]);
 
         // Calculate face normal using cross product
-        let edge1 = Vec3::new(v1.0[0] - v0.0[0], v1.0[1] - v0.0[1], v1.0[2] - v0.0[2]);
-        let edge2 = Vec3::new(v2.0[0] - v0.0[0], v2.0[1] - v0.0[1], v2.0[2] - v0.0[2]);
+        let edge1 = Vec3::new(v1.x() - v0.x(), v1.y() - v0.y(), v1.z() - v0.z());
+        let edge2 = Vec3::new(v2.x() - v0.x(), v2.y() - v0.y(), v2.z() - v0.z());
         let face_normal = Vec3::new(
-            edge1.0[1] * edge2.0[2] - edge1.0[2] * edge2.0[1],
-            edge1.0[2] * edge2.0[0] - edge1.0[0] * edge2.0[2],
-            edge1.0[0] * edge2.0[1] - edge1.0[1] * edge2.0[0],
+            edge1.y() * edge2.z() - edge1.z() * edge2.y(),
+            edge1.z() * edge2.x() - edge1.x() * edge2.z(),
+            edge1.x() * edge2.y() - edge1.y() * edge2.x(),
         );
 
         // Accumulate face normal to each vertex
@@ -250,7 +250,7 @@ pub fn generate_smooth_normals(positions: &[[f32; 3]], indices: &[u8], index_str
     }
 
     // Convert back to arrays
-    normals.iter().map(|n| n.0).collect()
+    normals.iter().map(|n| n.to_array()).collect()
 }
 
 /// Build vertex data from position, normal, and tex coord arrays.
@@ -308,11 +308,11 @@ pub fn build_vertex_data(
         positions
             .into_iter()
             .map(|position| {
-                let vert0 = Vec3(position);
+                let vert0 = Vec3::from(position);
                 let norm0 = vert0.normalize();
                 VertexPBR {
                     position,
-                    normal: norm0.0,
+                    normal: norm0.to_array(),
                     tangent: [0.0, 0.0, 0.0, 0.0],
                     tex_coord0: [0.0, 0.0],
                 }

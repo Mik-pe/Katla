@@ -24,7 +24,7 @@ pub fn create_sphere_vertices(radius: f32, segments: u32, rings: u32) -> Vec<Ver
 
             vertices.push(VertexPBR::new(
                 [x, y, z],
-                normal.0,
+                normal.to_array(),
                 [_tangent.x(), _tangent.y(), _tangent.z(), 1.0],  // Tangent
                 [texture_coords.0, texture_coords.1],              // UV
             ));
@@ -121,7 +121,7 @@ mod tests {
                 failed += 1;
                 println!(
                     "Triangle {:?} (centroid={:?}): face_normal={:?}, expected_normal={:?}, dot={}",
-                    chunk, centroid.0, face_normal.0, expected_normal.0, dot
+                    chunk, centroid.to_array(), face_normal.to_array(), expected_normal.to_array(), dot
                 );
             } else {
                 passed += 1;

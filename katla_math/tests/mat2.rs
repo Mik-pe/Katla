@@ -82,10 +82,10 @@ fn test_mat2_mul_vec2() {
 
     // Matrix-vector multiplication with column-major M:
     // result[row] = sum over col of M[col][row] * v[col]
-    // result.x = m[0][0] * v.x + m[1][0] * v.y = 1*5 + 2*6 = 17
-    // result.y = m[0][1] * v.x + m[1][1] * v.y = 3*5 + 4*6 = 39
-    assert!((result.x - 17.0).abs() < 1e-5);
-    assert!((result.y - 39.0).abs() < 1e-5);
+    // result.x() = m[0][0] * v.x + m[1][0] * v.y = 1*5 + 2*6 = 17
+    // result.y() = m[0][1] * v.x + m[1][1] * v.y = 3*5 + 4*6 = 39
+    assert!((result.x() - 17.0).abs() < 1e-5);
+    assert!((result.y() - 39.0).abs() < 1e-5);
 }
 
 #[test]
@@ -142,8 +142,8 @@ fn test_mat2_to_scale() {
     let scale = Vec2::new(2.0, 3.0);
     let m = Mat2::from_scale(scale);
     let extracted = m.to_scale();
-    assert!((extracted.x - scale.x).abs() < 1e-5);
-    assert!((extracted.y - scale.y).abs() < 1e-5);
+    assert!((extracted.x() - scale.x()).abs() < 1e-5);
+    assert!((extracted.y() - scale.y()).abs() < 1e-5);
 }
 
 #[test]
@@ -222,7 +222,7 @@ fn test_mat2_partial_eq() {
 #[test]
 fn test_mat2_default() {
     let m = Mat2::default();
-    assert_eq!(m, Mat2::IDENTITY);
+    assert_eq!(m, Mat2::identity());
 }
 
 #[test]
@@ -240,14 +240,14 @@ fn test_mat2_scale_roundtrip() {
     let m = Mat2::from_scale(scale);
     let extracted = m.to_scale();
 
-    assert!((scale.x - extracted.x).abs() < 1e-5);
-    assert!((scale.y - extracted.y).abs() < 1e-5);
+    assert!((scale.x() - extracted.x()).abs() < 1e-5);
+    assert!((scale.y() - extracted.y()).abs() < 1e-5);
 }
 
 #[test]
 fn test_mat2_constants() {
-    assert_eq!(Mat2::ZERO, Mat2::zero());
-    assert_eq!(Mat2::IDENTITY, Mat2::identity());
+    assert_eq!(Mat2::zero(), Mat2::zero());
+    assert_eq!(Mat2::identity(), Mat2::identity());
 }
 
 #[test]
@@ -257,8 +257,8 @@ fn test_mat2_rotation_transforms_vector() {
     let v = Vec2::new(1.0, 0.0);
     let result = m * v;
 
-    assert!((result.x - 0.0).abs() < 1e-5);
-    assert!((result.y - 1.0).abs() < 1e-5);
+    assert!((result.x() - 0.0).abs() < 1e-5);
+    assert!((result.y() - 1.0).abs() < 1e-5);
 }
 
 #[test]
@@ -267,6 +267,6 @@ fn test_mat2_scale_transforms_vector() {
     let v = Vec2::new(1.0, 1.0);
     let result = m * v;
 
-    assert!((result.x - 2.0).abs() < 1e-5);
-    assert!((result.y - 3.0).abs() < 1e-5);
+    assert!((result.x() - 2.0).abs() < 1e-5);
+    assert!((result.y() - 3.0).abs() < 1e-5);
 }

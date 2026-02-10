@@ -63,13 +63,13 @@ impl Transform {
 
     pub fn make_mat4(&self) -> Mat4 {
         let scale_mat = Mat4([
-            Vec4([self.scale[0], 0.0, 0.0, 0.0]),
-            Vec4([0.0, self.scale[1], 0.0, 0.0]),
-            Vec4([0.0, 0.0, self.scale[2], 0.0]),
-            Vec4([0.0, 0.0, 0.0, 1.0]),
+            Vec4::new(self.scale[0], 0.0, 0.0, 0.0),
+            Vec4::new(0.0, self.scale[1], 0.0, 0.0),
+            Vec4::new(0.0, 0.0, self.scale[2], 0.0),
+            Vec4::new(0.0, 0.0, 0.0, 1.0),
         ]);
         let rot_mat = self.rotation.make_mat4();
-        let pos_mat = Mat4::from_translation(self.position.0);
+        let pos_mat = Mat4::from_translation([self.position.x(), self.position.y(), self.position.z()]);
         pos_mat.mul(&rot_mat.mul(&scale_mat))
     }
 
@@ -121,10 +121,10 @@ impl Transform {
 
         // Build rotation matrix from basis vectors
         let rot_mat = Mat4([
-            Vec4([right[0], up_corrected[0], -forward[0], 0.0]),
-            Vec4([right[1], up_corrected[1], -forward[1], 0.0]),
-            Vec4([right[2], up_corrected[2], -forward[2], 0.0]),
-            Vec4([0.0, 0.0, 0.0, 1.0]),
+            Vec4::new(right[0], up_corrected[0], -forward[0], 0.0),
+            Vec4::new(right[1], up_corrected[1], -forward[1], 0.0),
+            Vec4::new(right[2], up_corrected[2], -forward[2], 0.0),
+            Vec4::new(0.0, 0.0, 0.0, 1.0),
         ]);
 
         let rotation = Quat::from(rot_mat.to_mat3());

@@ -32,7 +32,7 @@ pub fn create_torus_vertices(
 
             vertices.push(VertexPBR::new(
                 [x, y, z],
-                normal.0,
+                normal.to_array(),
                 [_tangent.x(), _tangent.y(), _tangent.z(), 1.0],  // Tangent
                 [texture_coords.0, texture_coords.1],              // UV
             ));
@@ -123,7 +123,7 @@ mod tests {
                 failed += 1;
                 println!(
                     "Triangle {:?}: face_normal={:?}, avg_normal={:?}, dot={}",
-                    chunk, face_normal.0, avg_normal.0, dot
+                    chunk, face_normal.to_array(), avg_normal.to_array(), dot
                 );
             } else {
                 passed += 1;

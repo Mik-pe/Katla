@@ -7,7 +7,7 @@ use winit::keyboard::ModifiersState;
 pub use builder::*;
 use env_logger::Env;
 use katla_ecs::{input::Action, World};
-use katla_math::{Transform, Vec3};
+use katla_math::{Transform, Vec2, Vec3};
 use katla_vulkan::VulkanRenderer;
 use winit::{
     application::ApplicationHandler,
@@ -280,8 +280,11 @@ impl ApplicationHandler for Application {
     ) {
         if let DeviceEvent::MouseMotion { delta } = event {
             if self.world.get_input().is_action_pressed(Action::LookEnable) {
-                self.world.get_input_mut().mouse_delta.x += delta.0 as f32;
-                self.world.get_input_mut().mouse_delta.y += delta.1 as f32;
+                let current_delta = self.world.get_input().mouse_delta;
+                self.world.get_input_mut().mouse_delta = Vec2::new(
+                    current_delta.x() + delta.0 as f32,
+                    current_delta.y() + delta.1 as f32
+                );
             }
         }
     }

@@ -208,7 +208,7 @@ impl World {
         self.systems = systems;
 
         // Clear per-frame mouse delta after the tick.
-        self.input_state.mouse_delta = Vec2::ZERO;
+        self.input_state.mouse_delta = Vec2::zero();
     }
 
     /// Returns the number of entities in the world.

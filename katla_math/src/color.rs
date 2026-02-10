@@ -115,7 +115,7 @@ impl Color {
     /// Converts the Color to a Vec4.
     #[inline]
     pub fn to_vec4(&self) -> crate::Vec4 {
-        crate::Vec4([self.r, self.g, self.b, self.a])
+        crate::Vec4::new(self.r, self.g, self.b, self.a)
     }
 
     /// Creates a Color from a Vec4.
@@ -472,7 +472,7 @@ impl MulAssign<f32> for Color {
 impl From<Color> for crate::Vec4 {
     #[inline]
     fn from(color: Color) -> Self {
-        crate::Vec4([color.r, color.g, color.b, color.a])
+        crate::Vec4::new(color.r, color.g, color.b, color.a)
     }
 }
 

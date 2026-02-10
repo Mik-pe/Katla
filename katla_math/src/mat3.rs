@@ -75,14 +75,14 @@ impl Mat3 {
 
     /// Create a 3x3 rotation matrix from Euler angles (pitch, yaw, roll)
     pub fn from_euler_angles(pitch: f32, yaw: f32, roll: f32) -> Self {
-        let q = Quat::from_axis_angle(Vec3::X_AXIS, pitch)
-            * Quat::from_axis_angle(Vec3::Y_AXIS, yaw)
-            * Quat::from_axis_angle(Vec3::Z_AXIS, roll);
+        let q = Quat::from_axis_angle(Vec3::x_axis(), pitch)
+            * Quat::from_axis_angle(Vec3::y_axis(), yaw)
+            * Quat::from_axis_angle(Vec3::z_axis(), roll);
         Self::from_rotation(q)
     }
 
     /// Create a 3x3 matrix from individual elements
-    /// Column-major order: m00, m01, m02, m10, m11, m12, m20, m21, m22
+    /// Parameters: m00, m01, m02, m10, m11, m12, m20, m21, m22
     #[allow(clippy::too_many_arguments)]
     pub fn from_elements(
         m00: f32, m01: f32, m02: f32,
@@ -232,10 +232,10 @@ impl Mat3 {
     /// Convert 3x3 matrix to 4x4 matrix (embed in upper-left)
     pub fn to_mat4(&self) -> crate::Mat4 {
         crate::Mat4([
-            crate::Vec4([self[0][0], self[0][1], self[0][2], 0.0]),
-            crate::Vec4([self[1][0], self[1][1], self[1][2], 0.0]),
-            crate::Vec4([self[2][0], self[2][1], self[2][2], 0.0]),
-            crate::Vec4([0.0, 0.0, 0.0, 1.0]),
+            crate::Vec4::new(self[0][0], self[0][1], self[0][2], 0.0),
+            crate::Vec4::new(self[1][0], self[1][1], self[1][2], 0.0),
+            crate::Vec4::new(self[2][0], self[2][1], self[2][2], 0.0),
+            crate::Vec4::new(0.0, 0.0, 0.0, 1.0),
         ])
     }
 }

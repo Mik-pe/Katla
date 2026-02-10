@@ -8,45 +8,45 @@ pub fn create_cube_vertices(size: Vec3) -> Vec<VertexPBR> {
 
     // Front face (Z+) - use full UV range [0,1]
     let n = Vec3::new(0.0, 0.0, 1.0);
-    vertices.push(VertexPBR::new([-half_size.x(), -half_size.y(), half_size.z()], n.0, [1.0, 0.0, 0.0, 1.0], [0.0, 0.0]));
-    vertices.push(VertexPBR::new([-half_size.x(), half_size.y(), half_size.z()], n.0, [1.0, 0.0, 0.0, 1.0], [0.0, 1.0]));
-    vertices.push(VertexPBR::new([half_size.x(), half_size.y(), half_size.z()], n.0, [1.0, 0.0, 0.0, 1.0], [1.0, 1.0]));
-    vertices.push(VertexPBR::new([half_size.x(), -half_size.y(), half_size.z()], n.0, [1.0, 0.0, 0.0, 1.0], [1.0, 0.0]));
+    vertices.push(VertexPBR::new([-half_size.x(), -half_size.y(), half_size.z()], n.to_array(), [1.0, 0.0, 0.0, 1.0], [0.0, 0.0]));
+    vertices.push(VertexPBR::new([-half_size.x(), half_size.y(), half_size.z()], n.to_array(), [1.0, 0.0, 0.0, 1.0], [0.0, 1.0]));
+    vertices.push(VertexPBR::new([half_size.x(), half_size.y(), half_size.z()], n.to_array(), [1.0, 0.0, 0.0, 1.0], [1.0, 1.0]));
+    vertices.push(VertexPBR::new([half_size.x(), -half_size.y(), half_size.z()], n.to_array(), [1.0, 0.0, 0.0, 1.0], [1.0, 0.0]));
 
     // Back face (Z-) - use full UV range [0,1]
     let n = Vec3::new(0.0, 0.0, -1.0);
-    vertices.push(VertexPBR::new([half_size.x(), -half_size.y(), -half_size.z()], n.0, [-1.0, 0.0, 0.0, 1.0], [0.0, 0.0]));
-    vertices.push(VertexPBR::new([half_size.x(), half_size.y(), -half_size.z()], n.0, [-1.0, 0.0, 0.0, 1.0], [0.0, 1.0]));
-    vertices.push(VertexPBR::new([-half_size.x(), half_size.y(), -half_size.z()], n.0, [-1.0, 0.0, 0.0, 1.0], [1.0, 1.0]));
-    vertices.push(VertexPBR::new([-half_size.x(), -half_size.y(), -half_size.z()], n.0, [-1.0, 0.0, 0.0, 1.0], [1.0, 0.0]));
+    vertices.push(VertexPBR::new([half_size.x(), -half_size.y(), -half_size.z()], n.to_array(), [-1.0, 0.0, 0.0, 1.0], [0.0, 0.0]));
+    vertices.push(VertexPBR::new([half_size.x(), half_size.y(), -half_size.z()], n.to_array(), [-1.0, 0.0, 0.0, 1.0], [0.0, 1.0]));
+    vertices.push(VertexPBR::new([-half_size.x(), half_size.y(), -half_size.z()], n.to_array(), [-1.0, 0.0, 0.0, 1.0], [1.0, 1.0]));
+    vertices.push(VertexPBR::new([-half_size.x(), -half_size.y(), -half_size.z()], n.to_array(), [-1.0, 0.0, 0.0, 1.0], [1.0, 0.0]));
 
     // Left face (X-) - use full UV range [0,1]
     let n = Vec3::new(-1.0, 0.0, 0.0);
-    vertices.push(VertexPBR::new([-half_size.x(), -half_size.y(), -half_size.z()], n.0, [0.0, 0.0, 1.0, 0.0], [0.0, 0.0]));
-    vertices.push(VertexPBR::new([-half_size.x(), half_size.y(), -half_size.z()], n.0, [0.0, 0.0, 1.0, 0.0], [0.0, 1.0]));
-    vertices.push(VertexPBR::new([-half_size.x(), half_size.y(), half_size.z()], n.0, [0.0, 0.0, 1.0, 0.0], [1.0, 1.0]));
-    vertices.push(VertexPBR::new([-half_size.x(), -half_size.y(), half_size.z()], n.0, [0.0, 0.0, 1.0, 0.0], [1.0, 0.0]));
+    vertices.push(VertexPBR::new([-half_size.x(), -half_size.y(), -half_size.z()], n.to_array(), [0.0, 0.0, 1.0, 0.0], [0.0, 0.0]));
+    vertices.push(VertexPBR::new([-half_size.x(), half_size.y(), -half_size.z()], n.to_array(), [0.0, 0.0, 1.0, 0.0], [0.0, 1.0]));
+    vertices.push(VertexPBR::new([-half_size.x(), half_size.y(), half_size.z()], n.to_array(), [0.0, 0.0, 1.0, 0.0], [1.0, 1.0]));
+    vertices.push(VertexPBR::new([-half_size.x(), -half_size.y(), half_size.z()], n.to_array(), [0.0, 0.0, 1.0, 0.0], [1.0, 0.0]));
 
     // Right face (X+) - use full UV range [0,1]
     let n = Vec3::new(1.0, 0.0, 0.0);
-    vertices.push(VertexPBR::new([half_size.x(), -half_size.y(), half_size.z()], n.0, [1.0, 0.0, 0.0, 1.0], [0.0, 0.0]));
-    vertices.push(VertexPBR::new([half_size.x(), half_size.y(), half_size.z()], n.0, [1.0, 0.0, 0.0, 1.0], [0.0, 1.0]));
-    vertices.push(VertexPBR::new([half_size.x(), half_size.y(), -half_size.z()], n.0, [1.0, 0.0, 0.0, 1.0], [1.0, 1.0]));
-    vertices.push(VertexPBR::new([half_size.x(), -half_size.y(), -half_size.z()], n.0, [1.0, 0.0, 0.0, 1.0], [1.0, 0.0]));
+    vertices.push(VertexPBR::new([half_size.x(), -half_size.y(), half_size.z()], n.to_array(), [1.0, 0.0, 0.0, 1.0], [0.0, 0.0]));
+    vertices.push(VertexPBR::new([half_size.x(), half_size.y(), half_size.z()], n.to_array(), [1.0, 0.0, 0.0, 1.0], [0.0, 1.0]));
+    vertices.push(VertexPBR::new([half_size.x(), half_size.y(), -half_size.z()], n.to_array(), [1.0, 0.0, 0.0, 1.0], [1.0, 1.0]));
+    vertices.push(VertexPBR::new([half_size.x(), -half_size.y(), -half_size.z()], n.to_array(), [1.0, 0.0, 0.0, 1.0], [1.0, 0.0]));
 
     // Top face (Y+) - use full UV range [0,1]
     let n = Vec3::new(0.0, 1.0, 0.0);
-    vertices.push(VertexPBR::new([-half_size.x(), half_size.y(), -half_size.z()], n.0, [1.0, 0.0, 0.0, 1.0], [0.0, 0.0]));
-    vertices.push(VertexPBR::new([-half_size.x(), half_size.y(), half_size.z()], n.0, [1.0, 0.0, 0.0, 1.0], [0.0, 1.0]));
-    vertices.push(VertexPBR::new([half_size.x(), half_size.y(), half_size.z()], n.0, [1.0, 0.0, 0.0, 1.0], [1.0, 1.0]));
-    vertices.push(VertexPBR::new([half_size.x(), half_size.y(), -half_size.z()], n.0, [1.0, 0.0, 0.0, 1.0], [1.0, 0.0]));
+    vertices.push(VertexPBR::new([-half_size.x(), half_size.y(), -half_size.z()], n.to_array(), [1.0, 0.0, 0.0, 1.0], [0.0, 0.0]));
+    vertices.push(VertexPBR::new([-half_size.x(), half_size.y(), half_size.z()], n.to_array(), [1.0, 0.0, 0.0, 1.0], [0.0, 1.0]));
+    vertices.push(VertexPBR::new([half_size.x(), half_size.y(), half_size.z()], n.to_array(), [1.0, 0.0, 0.0, 1.0], [1.0, 1.0]));
+    vertices.push(VertexPBR::new([half_size.x(), half_size.y(), -half_size.z()], n.to_array(), [1.0, 0.0, 0.0, 1.0], [1.0, 0.0]));
 
     // Bottom face (Y-) - use full UV range [0,1]
     let n = Vec3::new(0.0, -1.0, 0.0);
-    vertices.push(VertexPBR::new([-half_size.x(), -half_size.y(), half_size.z()], n.0, [1.0, 0.0, 0.0, -1.0], [0.0, 0.0]));
-    vertices.push(VertexPBR::new([-half_size.x(), -half_size.y(), -half_size.z()], n.0, [1.0, 0.0, 0.0, -1.0], [0.0, 1.0]));
-    vertices.push(VertexPBR::new([half_size.x(), -half_size.y(), -half_size.z()], n.0, [1.0, 0.0, 0.0, -1.0], [1.0, 1.0]));
-    vertices.push(VertexPBR::new([half_size.x(), -half_size.y(), half_size.z()], n.0, [1.0, 0.0, 0.0, -1.0], [1.0, 0.0]));
+    vertices.push(VertexPBR::new([-half_size.x(), -half_size.y(), half_size.z()], n.to_array(), [1.0, 0.0, 0.0, -1.0], [0.0, 0.0]));
+    vertices.push(VertexPBR::new([-half_size.x(), -half_size.y(), -half_size.z()], n.to_array(), [1.0, 0.0, 0.0, -1.0], [0.0, 1.0]));
+    vertices.push(VertexPBR::new([half_size.x(), -half_size.y(), -half_size.z()], n.to_array(), [1.0, 0.0, 0.0, -1.0], [1.0, 1.0]));
+    vertices.push(VertexPBR::new([half_size.x(), -half_size.y(), half_size.z()], n.to_array(), [1.0, 0.0, 0.0, -1.0], [1.0, 0.0]));
 
     vertices
 }
