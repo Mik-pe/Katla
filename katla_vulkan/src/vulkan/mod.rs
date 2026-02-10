@@ -1,3 +1,4 @@
+pub mod bda;
 pub mod commandbuffer;
 pub mod commandpool;
 pub mod context;
@@ -11,6 +12,7 @@ pub mod texture;
 pub mod vertexbinding;
 pub mod vertexbuffer;
 
+pub use bda::*;
 pub use commandbuffer::*;
 pub use commandpool::*;
 pub use context::*;
