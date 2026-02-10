@@ -2,4 +2,8 @@
 /target
 **/*.rs.bk
 imgui.ini
-.claude/
+# Claude Code - ignore sessions and local data, but track skills
+.claude/session/
+.claude/cache/
+.claude/settings.local.json
+!.claude/skills/
