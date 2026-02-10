@@ -16,6 +16,7 @@ use crate::{
 pub struct ApplicationBuilder {
     app_name: String,
     validation_layer_enabled: bool,
+    single_frame: bool,
     world: World,
 }
 
@@ -31,6 +32,11 @@ impl ApplicationBuilder {
 
     pub fn validation_layer(mut self, on: bool) -> Self {
         self.validation_layer_enabled = on;
+        self
+    }
+
+    pub fn single_frame(mut self, on: bool) -> Self {
+        self.single_frame = on;
         self
     }
 
@@ -59,6 +65,7 @@ impl ApplicationBuilder {
         let info = ApplicationInfo {
             name: self.app_name,
             validation_layer_enabled: self.validation_layer_enabled,
+            single_frame: self.single_frame,
         };
         let mut world = self.world;
         let camera = Rc::new(RefCell::new(Camera::new(&mut world)));
