@@ -981,6 +981,24 @@ impl CompiledRenderGraph {
         // Begin dynamic rendering
         command_buffer.begin_rendering(rendering_info);
 
+        // Set viewport and scissor for this pass
+        let viewport = vk::Viewport {
+            x: 0.0,
+            y: 0.0,
+            width: pass.extent.width as f32,
+            height: pass.extent.height as f32,
+            min_depth: 0.0,
+            max_depth: 1.0,
+        };
+
+        let scissor = vk::Rect2D {
+            offset: vk::Offset2D { x: 0, y: 0 },
+            extent: pass.extent.into(),
+        };
+
+        command_buffer.set_viewport(&[viewport]);
+        command_buffer.set_scissor(&[scissor]);
+
         // Create execution context
         let ctx = Rc::new(PassExecutionContext::new_dynamic(
             (*command_buffer).clone(),
@@ -1043,6 +1061,24 @@ impl CompiledRenderGraph {
             render_area,
             &clear_values_vk,
         );
+
+        // Set viewport and scissor for this pass
+        let viewport = vk::Viewport {
+            x: 0.0,
+            y: 0.0,
+            width: pass.extent.width as f32,
+            height: pass.extent.height as f32,
+            min_depth: 0.0,
+            max_depth: 1.0,
+        };
+
+        let scissor = vk::Rect2D {
+            offset: vk::Offset2D { x: 0, y: 0 },
+            extent: pass.extent.into(),
+        };
+
+        command_buffer.set_viewport(&[viewport]);
+        command_buffer.set_scissor(&[scissor]);
 
         // Create execution context with Rc-wrapped command buffer
         // Clone the CommandBuffer to allow sharing with user closures
