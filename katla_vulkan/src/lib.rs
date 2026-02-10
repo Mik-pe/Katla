@@ -180,6 +180,16 @@ impl VulkanRenderer {
                 swapchain_images.iter().enumerate()
             {
                 for pass_idx in 0..graph.passes.len() {
+                    // Update the color attachments for dynamic rendering
+                    if image_index < graph.passes[pass_idx].color_attachments.len() {
+                        graph.passes[pass_idx].color_attachments[image_index] = vec![image_view.vk()];
+                    }
+
+                    // Update the depth attachments for dynamic rendering
+                    if image_index < graph.passes[pass_idx].depth_attachments.len() {
+                        graph.passes[pass_idx].depth_attachments[image_index] = Some(new_depth_view);
+                    }
+
                     let framebuffer = self
                         .context
                         .create_framebuffer(
