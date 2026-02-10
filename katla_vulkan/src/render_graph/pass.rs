@@ -80,6 +80,14 @@ impl PassExecute {
     pub fn pass_name(&self) -> &str {
         &self.pass_name
     }
+
+    /// Execute this pass using the provided ExecutionRegistry.
+    pub fn execute(&self, ctx: Rc<PassExecutionContext>, registry: &mut ExecutionRegistry) {
+        let name = self.pass_name();
+        if !name.is_empty() {
+            registry.execute(name, ctx);
+        }
+    }
 }
 
 /// PassBuilder provides an ergonomic fluent API for constructing render passes.
@@ -240,17 +248,20 @@ pub struct PassExecutionContext {
     pub command_buffer: std::rc::Rc<CommandBuffer>,
     /// Compiled resources available for this pass
     pub resources: std::rc::Rc<std::collections::HashMap<ResourceId, CompiledResource>>,
-    /// The framebuffer for this pass
+    /// The framebuffer for this pass (legacy render pass only)
     pub framebuffer: VkFramebuffer,
-    /// The Vulkan render pass for this pass
+    /// The Vulkan render pass for this pass (legacy render pass only)
     pub render_pass: VkRenderPass,
     /// The current subpass index (0 for simple passes)
     pub subpass: u32,
     /// The render extent (width and height)
     pub extent: Extent2D,
+    /// Whether this pass uses dynamic rendering (Vulkan 1.3)
+    pub uses_dynamic_rendering: bool,
 }
 
 impl PassExecutionContext {
+    /// Create a new PassExecutionContext for legacy render pass rendering.
     pub fn new(
         command_buffer: CommandBuffer,
         resources: std::rc::Rc<std::collections::HashMap<ResourceId, CompiledResource>>,
@@ -265,6 +276,24 @@ impl PassExecutionContext {
             render_pass: VkRenderPass::new(render_pass),
             subpass: 0,
             extent,
+            uses_dynamic_rendering: false,
+        }
+    }
+
+    /// Create a new PassExecutionContext for dynamic rendering (Vulkan 1.3).
+    pub fn new_dynamic(
+        command_buffer: CommandBuffer,
+        resources: std::rc::Rc<std::collections::HashMap<ResourceId, CompiledResource>>,
+        extent: Extent2D,
+    ) -> Self {
+        Self {
+            command_buffer: std::rc::Rc::new(command_buffer),
+            resources,
+            framebuffer: VkFramebuffer::new(vk::Framebuffer::null()),
+            render_pass: VkRenderPass::new(vk::RenderPass::null()),
+            subpass: 0,
+            extent,
+            uses_dynamic_rendering: true,
         }
     }
 

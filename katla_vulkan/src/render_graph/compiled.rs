@@ -6,7 +6,7 @@ use std::rc::Rc;
 
 use crate::render_graph::pass::{ExecutionRegistry, Pass, PassExecute, PassExecutionContext};
 use crate::render_graph::resource::{CompiledResource, ResourceId, ResourceKind, ResourceLifetime};
-use crate::render_graph::types::{ClearValue, Extent2D};
+use crate::render_graph::types::{ClearValue, Extent2D, RenderingAttachmentInfo, RenderingInfo};
 use crate::rendering::DrawList;
 use crate::sync::{VkFramebuffer, VkImage, VkImageView, VkRenderPass};
 use crate::vulkan::RenderPass;
@@ -42,6 +42,10 @@ pub struct CompiledPass {
     pub clear_values: Vec<ClearValue>,
     execute: PassExecute,
     pub pipeline_barriers_before: Vec<vk::MemoryBarrier<'static>>,
+    /// Color attachment image views for dynamic rendering (one set per swapchain image)
+    pub color_attachments: Vec<Vec<vk::ImageView>>,
+    /// Depth attachment image view for dynamic rendering (one per swapchain image)
+    pub depth_attachments: Vec<Option<vk::ImageView>>,
 }
 
 /// RenderPassGroup groups passes that share a Vulkan render pass.
@@ -819,6 +823,44 @@ impl CompiledRenderGraph {
             let execute_name = pass.take_execute_name();
             let execute = PassExecute::new(execute_name);
 
+            // Extract color and depth attachments for dynamic rendering
+            let mut color_attachments: Vec<Vec<vk::ImageView>> = Vec::new();
+            let mut depth_attachments: Vec<Option<vk::ImageView>> = Vec::new();
+
+            for output_resource_id in pass.outputs() {
+                if let Some(resource) = resources.get(output_resource_id) {
+                    match resource {
+                        CompiledResource::ExternalImage { image_view, format, .. } => {
+                            if is_depth_or_stencil(*format) {
+                                // Depth attachment
+                                depth_attachments.push(Some(*image_view));
+                            } else {
+                                // Color attachment
+                                color_attachments.push(vec![*image_view]);
+                            }
+                        }
+                        CompiledResource::Image { image_view, format, .. } => {
+                            if is_depth_or_stencil(*format) {
+                                // Depth attachment
+                                depth_attachments.push(Some(*image_view));
+                            } else {
+                                // Color attachment
+                                color_attachments.push(vec![*image_view]);
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+            }
+
+            // If we have no attachments, add empty vectors for consistency
+            if color_attachments.is_empty() {
+                color_attachments.push(vec![]);
+            }
+            if depth_attachments.is_empty() {
+                depth_attachments.push(None);
+            }
+
             let compiled = CompiledPass {
                 name: pass.name().to_string(),
                 vk_render_pass,
@@ -828,6 +870,8 @@ impl CompiledRenderGraph {
                 clear_values,
                 execute,
                 pipeline_barriers_before,
+                color_attachments,
+                depth_attachments,
             };
 
             compiled_passes.push(compiled);
@@ -858,66 +902,164 @@ impl CompiledRenderGraph {
     /// Executes all passes in order using the provided command buffer.
     /// The ExecutionRegistry (owned by this graph) provides the closure logic.
     /// The image_index selects which framebuffer to use for each pass (for swapchain images).
+    ///
+    /// Uses Dynamic Rendering (VK_KHR_dynamic_rendering) when attachments are available,
+    /// otherwise falls back to traditional render passes.
     pub fn execute(
         &mut self,
         command_buffer: &mut CommandBuffer,
         image_index: usize,
     ) -> Result<(), RenderGraphError> {
-        for pass in &self.passes {
-            // Select the correct framebuffer for this image index
-            let framebuffer = pass
-                .vk_framebuffers
-                .get(image_index)
-                .or_else(|| pass.vk_framebuffers.first())
-                .map(|fb| fb.vk())
-                .unwrap_or(vk::Framebuffer::null());
+        let pass_count = self.passes.len();
+        for i in 0..pass_count {
+            // Check if we have dynamic rendering attachments for this image index
+            let has_dynamic_rendering = !self.passes[i].color_attachments.is_empty()
+                && self.passes[i].color_attachments.get(image_index).is_some();
 
-            // Apply pipeline barriers before this pass
-            if !pass.pipeline_barriers_before.is_empty() {
-                // Determine stage masks - use ALL_COMMANDS as conservative default
-                // In the future, we could store stage masks in CompiledPass for better precision
-                let src_stage_mask = vk::PipelineStageFlags::ALL_COMMANDS;
-                let dst_stage_mask = vk::PipelineStageFlags::ALL_COMMANDS;
-
-                command_buffer.pipeline_barrier(
-                    src_stage_mask,
-                    dst_stage_mask,
-                    vk::DependencyFlags::empty(),
-                    &pass.pipeline_barriers_before,
-                    &[],
-                    &[],
-                );
+            if has_dynamic_rendering {
+                // Use Dynamic Rendering path (Vulkan 1.3)
+                self.execute_pass_dynamic(command_buffer, i, image_index)?;
+            } else {
+                // Use legacy render pass path
+                self.execute_pass_legacy(command_buffer, i, image_index)?;
             }
+        }
+        Ok(())
+    }
 
-            // Begin render pass
-            let render_area = vk::Rect2D {
+    /// Execute a pass using dynamic rendering (Vulkan 1.3).
+    fn execute_pass_dynamic(
+        &mut self,
+        command_buffer: &mut CommandBuffer,
+        pass_index: usize,
+        image_index: usize,
+    ) -> Result<(), RenderGraphError> {
+        let pass = &self.passes[pass_index];
+
+        // Get color attachments for this image index
+        let color_attachments = pass.color_attachments.get(image_index).cloned().unwrap_or_default();
+
+        // Get depth attachment for this image index
+        let depth_attachment = pass.depth_attachments.get(image_index).copied().flatten();
+
+        // Build rendering info
+        let mut rendering_info = RenderingInfo::new()
+            .render_area(vk::Rect2D {
                 offset: vk::Offset2D { x: 0, y: 0 },
                 extent: pass.extent.into(),
-            };
-            let clear_values_vk: Vec<vk::ClearValue> = pass.clear_values.iter().map(|cv| (*cv).into()).collect();
-            command_buffer.begin_render_pass(
-                framebuffer,
-                pass.active_render_pass.vk(),
-                render_area,
-                &clear_values_vk,
-            );
+            })
+            .layer_count(1);
 
-            // Create execution context with Rc-wrapped command buffer
-            // Clone the CommandBuffer to allow sharing with user closures
-            let ctx = Rc::new(PassExecutionContext::new(
-                (*command_buffer).clone(),
-                self.resources.clone(),
-                framebuffer,
-                pass.active_render_pass.vk(),
-                pass.extent,
-            ));
+        // Add color attachments with clear values
+        for (i, image_view) in color_attachments.iter().enumerate() {
+            let clear_value = pass.clear_values.get(i).copied();
+            let mut attachment = RenderingAttachmentInfo::new(*image_view)
+                .layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL);
 
-            // Execute pass-specific commands using ExecutionRegistry
-            pass.execute(ctx, &mut self.registry);
+            if let Some(cv) = clear_value {
+                attachment = attachment.clear(cv);
+            }
 
-            // End render pass
-            command_buffer.end_render_pass();
+            rendering_info = rendering_info.add_color_attachment(attachment);
         }
+
+        // Add depth attachment with clear value
+        if let Some(depth_view) = depth_attachment {
+            // Find depth clear value (usually after color attachments)
+            let depth_clear = pass.clear_values.iter().find(|cv| matches!(cv, ClearValue::DepthStencil(_)));
+
+            let mut attachment = RenderingAttachmentInfo::new(depth_view)
+                .layout(vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
+
+            if let Some(cv) = depth_clear {
+                attachment = attachment.clear(*cv);
+            }
+
+            rendering_info = rendering_info.depth_attachment(attachment);
+        }
+
+        // Begin dynamic rendering
+        command_buffer.begin_rendering(rendering_info);
+
+        // Create execution context
+        let ctx = Rc::new(PassExecutionContext::new_dynamic(
+            (*command_buffer).clone(),
+            self.resources.clone(),
+            pass.extent,
+        ));
+
+        // Execute pass-specific commands
+        pass.execute(ctx, &mut self.registry);
+
+        // End dynamic rendering
+        command_buffer.end_rendering();
+
+        Ok(())
+    }
+
+    /// Execute a pass using legacy render passes.
+    fn execute_pass_legacy(
+        &mut self,
+        command_buffer: &mut CommandBuffer,
+        pass_index: usize,
+        image_index: usize,
+    ) -> Result<(), RenderGraphError> {
+        let pass = &self.passes[pass_index];
+
+        // Select the correct framebuffer for this image index
+        let framebuffer = pass
+            .vk_framebuffers
+            .get(image_index)
+            .or_else(|| pass.vk_framebuffers.first())
+            .map(|fb| fb.vk())
+            .unwrap_or(vk::Framebuffer::null());
+
+        // Apply pipeline barriers before this pass
+        if !pass.pipeline_barriers_before.is_empty() {
+            // Determine stage masks - use ALL_COMMANDS as conservative default
+            // In the future, we could store stage masks in CompiledPass for better precision
+            let src_stage_mask = vk::PipelineStageFlags::ALL_COMMANDS;
+            let dst_stage_mask = vk::PipelineStageFlags::ALL_COMMANDS;
+
+            command_buffer.pipeline_barrier(
+                src_stage_mask,
+                dst_stage_mask,
+                vk::DependencyFlags::empty(),
+                &pass.pipeline_barriers_before,
+                &[],
+                &[],
+            );
+        }
+
+        // Begin render pass
+        let render_area = vk::Rect2D {
+            offset: vk::Offset2D { x: 0, y: 0 },
+            extent: pass.extent.into(),
+        };
+        let clear_values_vk: Vec<vk::ClearValue> = pass.clear_values.iter().map(|cv| (*cv).into()).collect();
+        command_buffer.begin_render_pass(
+            framebuffer,
+            pass.active_render_pass.vk(),
+            render_area,
+            &clear_values_vk,
+        );
+
+        // Create execution context with Rc-wrapped command buffer
+        // Clone the CommandBuffer to allow sharing with user closures
+        let ctx = Rc::new(PassExecutionContext::new(
+            (*command_buffer).clone(),
+            self.resources.clone(),
+            framebuffer,
+            pass.active_render_pass.vk(),
+            pass.extent,
+        ));
+
+        // Execute pass-specific commands using ExecutionRegistry
+        pass.execute(ctx, &mut self.registry);
+
+        // End render pass
+        command_buffer.end_render_pass();
+
         Ok(())
     }
 }
