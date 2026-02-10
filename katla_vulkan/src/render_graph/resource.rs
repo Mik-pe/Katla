@@ -44,12 +44,12 @@ pub enum ResourceKind {
 /// the necessary Vulkan barriers between passes.
 #[derive(Clone)]
 pub struct ResourceUsage {
-    pub resource_id: ResourceId,
-    pub access: vk::AccessFlags,
-    pub stage: vk::PipelineStageFlags,
-    pub layout: vk::ImageLayout,
-    pub load_op: vk::AttachmentLoadOp,
-    pub store_op: vk::AttachmentStoreOp,
+    pub(crate) resource_id: ResourceId,
+    pub(crate) access: vk::AccessFlags,
+    pub(crate) stage: vk::PipelineStageFlags,
+    pub(crate) layout: vk::ImageLayout,
+    pub(crate) load_op: vk::AttachmentLoadOp,
+    pub(crate) store_op: vk::AttachmentStoreOp,
     pub clear_value: Option<super::types::ClearValue>,
 }
 
@@ -104,6 +104,41 @@ impl ResourceUsage {
     pub fn with_clear_value(mut self, clear_value: super::types::ClearValue) -> Self {
         self.clear_value = Some(clear_value);
         self
+    }
+
+    /// Get the resource ID.
+    pub fn resource_id(&self) -> ResourceId {
+        self.resource_id
+    }
+
+    /// Get the access flags.
+    pub fn access(&self) -> vk::AccessFlags {
+        self.access
+    }
+
+    /// Get the pipeline stage flags.
+    pub fn stage(&self) -> vk::PipelineStageFlags {
+        self.stage
+    }
+
+    /// Get the image layout.
+    pub fn layout(&self) -> vk::ImageLayout {
+        self.layout
+    }
+
+    /// Get the attachment load operation.
+    pub fn load_op(&self) -> vk::AttachmentLoadOp {
+        self.load_op
+    }
+
+    /// Get the attachment store operation.
+    pub fn store_op(&self) -> vk::AttachmentStoreOp {
+        self.store_op
+    }
+
+    /// Get the clear value, if set.
+    pub fn clear_value(&self) -> Option<super::types::ClearValue> {
+        self.clear_value
     }
 }
 
