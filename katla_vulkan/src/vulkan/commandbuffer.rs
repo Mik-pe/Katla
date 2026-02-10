@@ -312,6 +312,28 @@ impl CommandBuffer {
         }
     }
 
+    /// Set the viewport for this command buffer.
+    ///
+    /// # Arguments
+    /// * `viewports` - Slice of viewport structures to set
+    pub fn set_viewport(&self, viewports: &[vk::Viewport]) {
+        unsafe {
+            self.device
+                .cmd_set_viewport(self.command_buffer, 0, viewports);
+        }
+    }
+
+    /// Set the scissor rectangle for this command buffer.
+    ///
+    /// # Arguments
+    /// * `scissors` - Slice of scissor rectangles to set
+    pub fn set_scissor(&self, scissors: &[vk::Rect2D]) {
+        unsafe {
+            self.device
+                .cmd_set_scissor(self.command_buffer, 0, scissors);
+        }
+    }
+
     pub fn return_to_pool(&self) {
         unsafe {
             self.device
