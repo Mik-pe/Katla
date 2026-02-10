@@ -88,7 +88,7 @@ impl From<AttachmentStoreOp> for ash::vk::AttachmentStoreOp {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Extent2D {
     pub width: u32,
     pub height: u32,
@@ -492,6 +492,233 @@ impl From<ClearValue> for ash::vk::ClearValue {
         match val {
             ClearValue::Color(c) => c.into(),
             ClearValue::DepthStencil(ds) => ds.into(),
+        }
+    }
+}
+
+//=============================================================================
+// Dynamic Rendering Types (Vulkan 1.3)
+//=============================================================================
+
+/// Rendering attachment info for Dynamic Rendering.
+/// Describes a color or depth-stencil attachment for dynamic rendering.
+#[derive(Debug, Clone, Copy)]
+pub struct RenderingAttachmentInfo {
+    /// Image view to use as attachment.
+    pub image_view: ash::vk::ImageView,
+    /// Image layout expected during rendering.
+    pub image_layout: ash::vk::ImageLayout,
+    /// Load operation for this attachment.
+    pub load_op: AttachmentLoadOp,
+    /// Store operation for this attachment.
+    pub store_op: AttachmentStoreOp,
+    /// Clear value (only used if load_op is Clear).
+    pub clear_value: Option<ClearValue>,
+}
+
+impl RenderingAttachmentInfo {
+    /// Create a new rendering attachment info.
+    pub fn new(image_view: ash::vk::ImageView) -> Self {
+        Self {
+            image_view,
+            image_layout: ash::vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+            load_op: AttachmentLoadOp::Load,
+            store_op: AttachmentStoreOp::Store,
+            clear_value: None,
+        }
+    }
+
+    /// Set the image layout.
+    pub fn layout(mut self, layout: ash::vk::ImageLayout) -> Self {
+        self.image_layout = layout;
+        self
+    }
+
+    /// Set the load operation.
+    pub fn load_op(mut self, op: AttachmentLoadOp) -> Self {
+        self.load_op = op;
+        self
+    }
+
+    /// Set the store operation.
+    pub fn store_op(mut self, op: AttachmentStoreOp) -> Self {
+        self.store_op = op;
+        self
+    }
+
+    /// Set the clear value and set load_op to Clear.
+    pub fn clear(mut self, value: ClearValue) -> Self {
+        self.clear_value = Some(value);
+        self.load_op = AttachmentLoadOp::Clear;
+        self
+    }
+
+    /// Convert to Vulkan vk::RenderingAttachmentInfoKHR.
+    pub fn into_vk(self) -> ash::vk::RenderingAttachmentInfoKHR<'static> {
+        let clear_value = self.clear_value.map_or_else(
+            || ash::vk::ClearValue::default(),
+            |cv| cv.into(),
+        );
+
+        ash::vk::RenderingAttachmentInfoKHR::default()
+            .image_view(self.image_view)
+            .image_layout(self.image_layout)
+            .load_op(self.load_op.into())
+            .store_op(self.store_op.into())
+            .clear_value(clear_value)
+    }
+}
+
+/// Rendering info for Dynamic Rendering.
+/// Describes a rendering pass using VK_KHR_dynamic_rendering.
+#[derive(Debug, Clone)]
+pub struct RenderingInfo {
+    /// Color attachments.
+    pub color_attachments: Vec<RenderingAttachmentInfo>,
+    /// Depth-stencil attachment (optional).
+    pub depth_attachment: Option<RenderingAttachmentInfo>,
+    /// Stencil attachment (optional, for separate stencil).
+    pub stencil_attachment: Option<RenderingAttachmentInfo>,
+    /// Render area (offset and extent).
+    pub render_area: ash::vk::Rect2D,
+    /// Layer count.
+    pub layer_count: u32,
+    /// View mask for multiview (0 for non-multiview).
+    pub view_mask: u32,
+}
+
+impl RenderingInfo {
+    /// Create a new rendering info.
+    pub fn new() -> Self {
+        Self {
+            color_attachments: Vec::new(),
+            depth_attachment: None,
+            stencil_attachment: None,
+            render_area: ash::vk::Rect2D::default(),
+            layer_count: 1,
+            view_mask: 0,
+        }
+    }
+
+    /// Add a color attachment.
+    pub fn add_color_attachment(mut self, attachment: RenderingAttachmentInfo) -> Self {
+        self.color_attachments.push(attachment);
+        self
+    }
+
+    /// Set the depth attachment.
+    pub fn depth_attachment(mut self, attachment: RenderingAttachmentInfo) -> Self {
+        self.depth_attachment = Some(attachment);
+        self
+    }
+
+    /// Set the stencil attachment (separate from depth).
+    pub fn stencil_attachment(mut self, attachment: RenderingAttachmentInfo) -> Self {
+        self.stencil_attachment = Some(attachment);
+        self
+    }
+
+    /// Set the render area.
+    pub fn render_area(mut self, area: ash::vk::Rect2D) -> Self {
+        self.render_area = area;
+        self
+    }
+
+    /// Set the layer count.
+    pub fn layer_count(mut self, count: u32) -> Self {
+        self.layer_count = count;
+        self
+    }
+
+    /// Set the view mask for multiview.
+    pub fn view_mask(mut self, mask: u32) -> Self {
+        self.view_mask = mask;
+        self
+    }
+
+    /// Build and execute with the given callback.
+    /// This handles the lifetime issues by keeping the Vulkan structs alive during the callback.
+    pub fn build<F, R>(self, f: F) -> R
+    where
+        F: FnOnce(&ash::vk::RenderingInfoKHR) -> R,
+    {
+        let color_attachments_vk: Vec<ash::vk::RenderingAttachmentInfoKHR> = self
+            .color_attachments
+            .iter()
+            .map(|a| a.clone().into_vk())
+            .collect();
+
+        let depth_vk = self.depth_attachment.as_ref().map(|d| d.clone().into_vk());
+        let stencil_vk = self.stencil_attachment.as_ref().map(|s| s.clone().into_vk());
+
+        let mut builder = ash::vk::RenderingInfoKHR::default()
+            .render_area(self.render_area)
+            .layer_count(self.layer_count)
+            .color_attachments(&color_attachments_vk);
+
+        if self.view_mask != 0 {
+            builder = builder.view_mask(self.view_mask);
+        }
+
+        if let Some(depth) = &depth_vk {
+            builder = builder.depth_attachment(depth);
+        }
+
+        if let Some(stencil) = &stencil_vk {
+            builder = builder.stencil_attachment(stencil);
+        }
+
+        f(&builder)
+    }
+}
+
+impl Default for RenderingInfo {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Rect2D wrapper for render area specification.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Rect2D {
+    pub offset: Offset2D,
+    pub extent: Extent2D,
+}
+
+/// Offset2D wrapper for 2D offset specification.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Offset2D {
+    pub x: i32,
+    pub y: i32,
+}
+
+impl Offset2D {
+    pub fn new(x: i32, y: i32) -> Self {
+        Self { x, y }
+    }
+}
+
+impl Rect2D {
+    pub fn new(offset: Offset2D, extent: Extent2D) -> Self {
+        Self { offset, extent }
+    }
+
+    pub fn from_extents(width: u32, height: u32) -> Self {
+        Self {
+            offset: Offset2D::new(0, 0),
+            extent: Extent2D::new(width, height),
+        }
+    }
+}
+
+impl From<Rect2D> for ash::vk::Rect2D {
+    fn from(rect: Rect2D) -> Self {
+        ash::vk::Rect2D {
+            offset: ash::vk::Offset2D {
+                x: rect.offset.x,
+                y: rect.offset.y,
+            },
+            extent: rect.extent.into(),
         }
     }
 }

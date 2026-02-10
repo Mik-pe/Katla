@@ -1,6 +1,8 @@
 use ash::{vk, Device};
 
 use super::{vertexbuffer::IndexType, CommandPool};
+use crate::render_graph::types::RenderingInfo;
+use crate::sync::DependencyInfo;
 
 #[derive(Clone)]
 pub struct CommandBuffer {
@@ -214,6 +216,99 @@ impl CommandBuffer {
                 buffer_memory_barriers,
                 image_memory_barriers,
             );
+        }
+    }
+
+    /// Vulkan 1.3: Pipeline barrier 2 command using modern synchronization.
+    ///
+    /// This method uses `vkCmdPipelineBarrier2` which provides more flexible
+    /// and expressive synchronization compared to the legacy `vkCmdPipelineBarrier`.
+    ///
+    /// # Arguments
+    /// * `dependency_info` - Dependency info containing all barriers
+    ///
+    /// # Example
+    /// ```no_run
+    /// use katla_vulkan::sync::{ImageMemoryBarrier2, PipelineStage2Flags, AccessFlags2, DependencyInfo};
+    /// # use ash::vk;
+    ///
+    /// # let command_buffer: katla_vulkan::CommandBuffer = unsafe { std::mem::zeroed() };
+    /// # let image: vk::Image = unsafe { std::mem::zeroed() };
+    /// let barrier = ImageMemoryBarrier2::new(image)
+    ///     .src_stage(PipelineStage2Flags::TRANSFER)
+    ///     .dst_stage(PipelineStage2Flags::FRAGMENT_SHADER)
+    ///     .src_access(AccessFlags2::TRANSFER_WRITE)
+    ///     .dst_access(AccessFlags2::SHADER_READ)
+    ///     .old_layout(vk::ImageLayout::TRANSFER_DST_OPTIMAL)
+    ///     .new_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
+    ///     .subresource_range(vk::ImageSubresourceRange {
+    ///         aspect_mask: vk::ImageAspectFlags::COLOR,
+    ///         base_mip_level: 0,
+    ///         level_count: 1,
+    ///         base_array_layer: 0,
+    ///         layer_count: 1,
+    ///     });
+    ///
+    /// let dep_info = DependencyInfo::new()
+    ///     .add_image_barrier(barrier);
+    ///
+    /// command_buffer.pipeline_barrier2(dep_info);
+    /// ```
+    pub fn pipeline_barrier2(&self, dependency_info: DependencyInfo) {
+        dependency_info.build(|dep_info| unsafe {
+            self.device
+                .cmd_pipeline_barrier2(self.command_buffer, dep_info);
+        });
+    }
+
+    /// Vulkan 1.3: Begin dynamic rendering.
+    ///
+    /// This method begins a dynamic rendering pass using VK_KHR_dynamic_rendering,
+    /// which replaces traditional render passes and framebuffers.
+    ///
+    /// # Arguments
+    /// * `rendering_info` - Rendering info describing attachments and render area
+    ///
+    /// # Example
+    /// ```no_run
+    /// # use ash::vk;
+    /// # use katla_vulkan::render_graph::types::{RenderingAttachmentInfo, RenderingInfo, ClearValue, Extent2D};
+    /// # use katla_vulkan::CommandBuffer;
+    /// # let command_buffer: CommandBuffer = unsafe { std::mem::zeroed() };
+    /// # let color_image_view: vk::ImageView = unsafe { std::mem::zeroed() };
+    /// # let depth_image_view: vk::ImageView = unsafe { std::mem::zeroed() };
+    /// let color_attachment = RenderingAttachmentInfo::new(color_image_view)
+    ///     .clear(ClearValue::color(0.1, 0.2, 0.3, 1.0));
+    ///
+    /// let depth_attachment = RenderingAttachmentInfo::new(depth_image_view)
+    ///     .layout(vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL)
+    ///     .clear(ClearValue::depth(1.0, 0));
+    ///
+    /// let rendering_info = RenderingInfo::new()
+    ///     .add_color_attachment(color_attachment)
+    ///     .depth_attachment(depth_attachment)
+    ///     .render_area(vk::Rect2D {
+    ///         offset: vk::Offset2D { x: 0, y: 0 },
+    ///         extent: vk::Extent2D { width: 1920, height: 1080 },
+    ///     });
+    ///
+    /// command_buffer.begin_rendering(rendering_info);
+    /// // ... record draw commands ...
+    /// command_buffer.end_rendering();
+    /// ```
+    pub fn begin_rendering(&self, rendering_info: RenderingInfo) {
+        rendering_info.build(|rendering_info| unsafe {
+            self.device
+                .cmd_begin_rendering(self.command_buffer, rendering_info);
+        });
+    }
+
+    /// Vulkan 1.3: End dynamic rendering.
+    ///
+    /// Ends a dynamic rendering pass begun with `begin_rendering`.
+    pub fn end_rendering(&self) {
+        unsafe {
+            self.device.cmd_end_rendering(self.command_buffer);
         }
     }
 

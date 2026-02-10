@@ -443,7 +443,7 @@ impl VulkanContext {
             .application_version(0)
             .engine_name(engine_name)
             .engine_version(0)
-            .api_version(vk::make_api_version(0, 1, 2, 0));
+            .api_version(vk::make_api_version(0, 1, 3, 0));
         let create_info = vk::InstanceCreateInfo::default()
             .application_info(&app_info)
             .enabled_extension_names(&extension_names_raw)
@@ -606,7 +606,7 @@ impl VulkanContext {
             device: device.clone(),
             physical_device,
             debug_settings,
-            buffer_device_address: false,
+            buffer_device_address: true,  // Enable BDA for allocator
             allocation_sizes: AllocationSizes::default(),
         };
 
@@ -729,7 +729,7 @@ impl VulkanContext {
             device: device.clone(),
             physical_device,
             debug_settings,
-            buffer_device_address: false,
+            buffer_device_address: true,  // Enable BDA for allocator
             allocation_sizes: AllocationSizes::default(),
         };
 
@@ -1109,6 +1109,27 @@ fn create_device(
         device_layers.push(LAYER_KHRONOS_VALIDATION.as_ptr() as *const i8);
     }
 
+    // Enable Vulkan 1.3 features (Dynamic Rendering, Synchronization2)
+    let vk13_features = vk::PhysicalDeviceVulkan13Features {
+        s_type: vk::StructureType::PHYSICAL_DEVICE_VULKAN_1_3_FEATURES,
+        p_next: std::ptr::null_mut(),
+        dynamic_rendering: vk::TRUE,
+        synchronization2: vk::TRUE,
+        ..Default::default()
+    };
+
+    // Enable Vulkan 1.2 features (Buffer Device Address, Descriptor Indexing for bindless)
+    let mut vk12_features = vk::PhysicalDeviceVulkan12Features {
+        s_type: vk::StructureType::PHYSICAL_DEVICE_VULKAN_1_2_FEATURES,
+        p_next: &vk13_features as *const _ as *mut _,
+        buffer_device_address: vk::TRUE,
+        descriptor_indexing: vk::TRUE,
+        shader_sampled_image_array_non_uniform_indexing: vk::TRUE,
+        descriptor_binding_variable_descriptor_count: vk::TRUE,
+        runtime_descriptor_array: vk::TRUE,
+        ..Default::default()
+    };
+
     // https://vulkan-tutorial.com/Drawing_a_triangle/Setup/Logical_device_and_queues
     let features = vk::PhysicalDeviceFeatures {
         sampler_anisotropy: 1,
@@ -1118,7 +1139,8 @@ fn create_device(
     let create_info = vk::DeviceCreateInfo::default()
         .enabled_extension_names(&device_extensions)
         .queue_create_infos(&queue_create_infos)
-        .enabled_features(&features);
+        .enabled_features(&features)
+        .push_next(&mut vk12_features);
 
     unsafe {
         instance
