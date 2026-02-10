@@ -375,6 +375,410 @@ impl AsRef<vk::DescriptorPool> for VkDescriptorPool {
     }
 }
 
+//=============================================================================
+// Synchronization2 Wrapper Types (Vulkan 1.3)
+//=============================================================================
+
+/// Wrapper for Vulkan 1.3 Pipeline Stage 2 flags.
+/// Provides type-safe pipeline stage masks for modern synchronization.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct PipelineStage2Flags(pub vk::PipelineStageFlags2KHR);
+
+impl PipelineStage2Flags {
+    /// No stage.
+    pub const NONE: Self = Self(vk::PipelineStageFlags2KHR::empty());
+
+    /// Top of pipe.
+    pub const TOP_OF_PIPE: Self = Self(vk::PipelineStageFlags2KHR::TOP_OF_PIPE_KHR);
+
+    /// Draw indirect.
+    pub const DRAW_INDIRECT: Self = Self(vk::PipelineStageFlags2KHR::DRAW_INDIRECT_KHR);
+
+    /// Vertex input.
+    pub const VERTEX_INPUT: Self = Self(vk::PipelineStageFlags2KHR::VERTEX_INPUT_KHR);
+
+    /// Vertex shader.
+    pub const VERTEX_SHADER: Self = Self(vk::PipelineStageFlags2KHR::VERTEX_SHADER_KHR);
+
+    /// Fragment shader.
+    pub const FRAGMENT_SHADER: Self = Self(vk::PipelineStageFlags2KHR::FRAGMENT_SHADER_KHR);
+
+    /// Early fragment tests.
+    pub const EARLY_FRAGMENT_TESTS: Self =
+        Self(vk::PipelineStageFlags2KHR::EARLY_FRAGMENT_TESTS_KHR);
+
+    /// Late fragment tests.
+    pub const LATE_FRAGMENT_TESTS: Self =
+        Self(vk::PipelineStageFlags2KHR::LATE_FRAGMENT_TESTS_KHR);
+
+    /// Color attachment output.
+    pub const COLOR_ATTACHMENT_OUTPUT: Self =
+        Self(vk::PipelineStageFlags2KHR::COLOR_ATTACHMENT_OUTPUT_KHR);
+
+    /// Compute shader.
+    pub const COMPUTE_SHADER: Self = Self(vk::PipelineStageFlags2KHR::COMPUTE_SHADER_KHR);
+
+    /// Transfer.
+    pub const TRANSFER: Self = Self(vk::PipelineStageFlags2KHR::TRANSFER_KHR);
+
+    /// Bottom of pipe.
+    pub const BOTTOM_OF_PIPE: Self = Self(vk::PipelineStageFlags2KHR::BOTTOM_OF_PIPE_KHR);
+
+    /// Host.
+    pub const HOST: Self = Self(vk::PipelineStageFlags2KHR::HOST_KHR);
+
+    /// All graphics.
+    pub const ALL_GRAPHICS: Self = Self(vk::PipelineStageFlags2KHR::ALL_GRAPHICS_KHR);
+
+    /// All commands.
+    pub const ALL_COMMANDS: Self = Self(vk::PipelineStageFlags2KHR::ALL_COMMANDS_KHR);
+
+    /// Copy.
+    pub const COPY: Self = Self(vk::PipelineStageFlags2KHR::COPY_KHR);
+
+    /// Resolve.
+    pub const RESOLVE: Self = Self(vk::PipelineStageFlags2KHR::RESOLVE_KHR);
+
+    /// Blit.
+    pub const BLIT: Self = Self(vk::PipelineStageFlags2KHR::BLIT_KHR);
+
+    /// Clear.
+    pub const CLEAR: Self = Self(vk::PipelineStageFlags2KHR::CLEAR_KHR);
+
+    /// Index input.
+    pub const INDEX_INPUT: Self = Self(vk::PipelineStageFlags2KHR::INDEX_INPUT_KHR);
+
+    /// Vertex attribute input.
+    pub const VERTEX_ATTRIBUTE_INPUT: Self =
+        Self(vk::PipelineStageFlags2KHR::VERTEX_ATTRIBUTE_INPUT_KHR);
+
+    /// Pre-rasterization shaders.
+    pub const PRE_RASTERIZATION_SHADERS: Self =
+        Self(vk::PipelineStageFlags2KHR::PRE_RASTERIZATION_SHADERS_KHR);
+
+    /// Create new flags from raw Vulkan flags.
+    pub fn from_raw(flags: vk::PipelineStageFlags2KHR) -> Self {
+        Self(flags)
+    }
+
+    /// Get the raw Vulkan flags.
+    pub fn into_vk(self) -> vk::PipelineStageFlags2KHR {
+        self.0
+    }
+
+    /// Check if any flags are set.
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    /// Check if all specified flags are set.
+    pub fn contains(&self, other: Self) -> bool {
+        self.0.contains(other.0)
+    }
+
+    /// Bitwise OR.
+    pub fn union(self, other: Self) -> Self {
+        Self(self.0 | other.0)
+    }
+}
+
+impl Default for PipelineStage2Flags {
+    fn default() -> Self {
+        Self::NONE
+    }
+}
+
+impl From<vk::PipelineStageFlags2KHR> for PipelineStage2Flags {
+    fn from(flags: vk::PipelineStageFlags2KHR) -> Self {
+        Self(flags)
+    }
+}
+
+impl From<PipelineStage2Flags> for vk::PipelineStageFlags2KHR {
+    fn from(wrapper: PipelineStage2Flags) -> Self {
+        wrapper.0
+    }
+}
+
+/// Wrapper for Vulkan 1.3 Access 2 flags.
+/// Provides type-safe access masks for modern synchronization.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct AccessFlags2(pub vk::AccessFlags2KHR);
+
+impl AccessFlags2 {
+    /// No access.
+    pub const NONE: Self = Self(vk::AccessFlags2KHR::empty());
+
+    /// Indirect command read.
+    pub const INDIRECT_COMMAND_READ: Self =
+        Self(vk::AccessFlags2KHR::INDIRECT_COMMAND_READ_KHR);
+
+    /// Index read.
+    pub const INDEX_READ: Self = Self(vk::AccessFlags2KHR::INDEX_READ_KHR);
+
+    /// Vertex attribute read.
+    pub const VERTEX_ATTRIBUTE_READ: Self =
+        Self(vk::AccessFlags2KHR::VERTEX_ATTRIBUTE_READ_KHR);
+
+    /// Uniform read.
+    pub const UNIFORM_READ: Self = Self(vk::AccessFlags2KHR::UNIFORM_READ_KHR);
+
+    /// Input attachment read.
+    pub const INPUT_ATTACHMENT_READ: Self =
+        Self(vk::AccessFlags2KHR::INPUT_ATTACHMENT_READ_KHR);
+
+    /// Shader read.
+    pub const SHADER_READ: Self = Self(vk::AccessFlags2KHR::SHADER_READ_KHR);
+
+    /// Shader write.
+    pub const SHADER_WRITE: Self = Self(vk::AccessFlags2KHR::SHADER_WRITE_KHR);
+
+    /// Color attachment read.
+    pub const COLOR_ATTACHMENT_READ: Self =
+        Self(vk::AccessFlags2KHR::COLOR_ATTACHMENT_READ_KHR);
+
+    /// Color attachment write.
+    pub const COLOR_ATTACHMENT_WRITE: Self =
+        Self(vk::AccessFlags2KHR::COLOR_ATTACHMENT_WRITE_KHR);
+
+    /// Depth-stencil attachment read.
+    pub const DEPTH_STENCIL_ATTACHMENT_READ: Self =
+        Self(vk::AccessFlags2KHR::DEPTH_STENCIL_ATTACHMENT_READ_KHR);
+
+    /// Depth-stencil attachment write.
+    pub const DEPTH_STENCIL_ATTACHMENT_WRITE: Self =
+        Self(vk::AccessFlags2KHR::DEPTH_STENCIL_ATTACHMENT_WRITE_KHR);
+
+    /// Transfer read.
+    pub const TRANSFER_READ: Self = Self(vk::AccessFlags2KHR::TRANSFER_READ_KHR);
+
+    /// Transfer write.
+    pub const TRANSFER_WRITE: Self = Self(vk::AccessFlags2KHR::TRANSFER_WRITE_KHR);
+
+    /// Host read.
+    pub const HOST_READ: Self = Self(vk::AccessFlags2KHR::HOST_READ_KHR);
+
+    /// Host write.
+    pub const HOST_WRITE: Self = Self(vk::AccessFlags2KHR::HOST_WRITE_KHR);
+
+    /// Memory read.
+    pub const MEMORY_READ: Self = Self(vk::AccessFlags2KHR::MEMORY_READ_KHR);
+
+    /// Memory write.
+    pub const MEMORY_WRITE: Self = Self(vk::AccessFlags2KHR::MEMORY_WRITE_KHR);
+
+    /// Shader sampled read.
+    pub const SHADER_SAMPLED_READ: Self = Self(vk::AccessFlags2KHR::SHADER_SAMPLED_READ_KHR);
+
+    /// Shader storage read.
+    pub const SHADER_STORAGE_READ: Self = Self(vk::AccessFlags2KHR::SHADER_STORAGE_READ_KHR);
+
+    /// Shader storage write.
+    pub const SHADER_STORAGE_WRITE: Self = Self(vk::AccessFlags2KHR::SHADER_STORAGE_WRITE_KHR);
+
+    /// Create new flags from raw Vulkan flags.
+    pub fn from_raw(flags: vk::AccessFlags2KHR) -> Self {
+        Self(flags)
+    }
+
+    /// Get the raw Vulkan flags.
+    pub fn into_vk(self) -> vk::AccessFlags2KHR {
+        self.0
+    }
+
+    /// Check if any flags are set.
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    /// Check if all specified flags are set.
+    pub fn contains(&self, other: Self) -> bool {
+        self.0.contains(other.0)
+    }
+
+    /// Bitwise OR.
+    pub fn union(self, other: Self) -> Self {
+        Self(self.0 | other.0)
+    }
+}
+
+impl Default for AccessFlags2 {
+    fn default() -> Self {
+        Self::NONE
+    }
+}
+
+impl From<vk::AccessFlags2KHR> for AccessFlags2 {
+    fn from(flags: vk::AccessFlags2KHR) -> Self {
+        Self(flags)
+    }
+}
+
+impl From<AccessFlags2> for vk::AccessFlags2KHR {
+    fn from(wrapper: AccessFlags2) -> Self {
+        wrapper.0
+    }
+}
+
+/// Image memory barrier 2 for Vulkan 1.3 synchronization.
+///
+/// This structure provides a more flexible and expressive way to describe
+/// image memory barriers compared to the legacy vk::ImageMemoryBarrier.
+#[derive(Clone, Debug)]
+pub struct ImageMemoryBarrier2 {
+    pub src_stage_mask: PipelineStage2Flags,
+    pub dst_stage_mask: PipelineStage2Flags,
+    pub src_access_mask: AccessFlags2,
+    pub dst_access_mask: AccessFlags2,
+    pub old_layout: vk::ImageLayout,
+    pub new_layout: vk::ImageLayout,
+    pub src_queue_family_index: u32,
+    pub dst_queue_family_index: u32,
+    pub image: vk::Image,
+    pub subresource_range: vk::ImageSubresourceRange,
+}
+
+impl ImageMemoryBarrier2 {
+    /// Create a new image memory barrier 2.
+    pub fn new(image: vk::Image) -> Self {
+        Self {
+            src_stage_mask: PipelineStage2Flags::TOP_OF_PIPE,
+            dst_stage_mask: PipelineStage2Flags::BOTTOM_OF_PIPE,
+            src_access_mask: AccessFlags2::NONE,
+            dst_access_mask: AccessFlags2::NONE,
+            old_layout: vk::ImageLayout::UNDEFINED,
+            new_layout: vk::ImageLayout::UNDEFINED,
+            src_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
+            dst_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
+            image,
+            subresource_range: vk::ImageSubresourceRange::default(),
+        }
+    }
+
+    /// Set source stage mask.
+    pub fn src_stage(mut self, stage: PipelineStage2Flags) -> Self {
+        self.src_stage_mask = stage;
+        self
+    }
+
+    /// Set destination stage mask.
+    pub fn dst_stage(mut self, stage: PipelineStage2Flags) -> Self {
+        self.dst_stage_mask = stage;
+        self
+    }
+
+    /// Set source access mask.
+    pub fn src_access(mut self, access: AccessFlags2) -> Self {
+        self.src_access_mask = access;
+        self
+    }
+
+    /// Set destination access mask.
+    pub fn dst_access(mut self, access: AccessFlags2) -> Self {
+        self.dst_access_mask = access;
+        self
+    }
+
+    /// Set old image layout.
+    pub fn old_layout(mut self, layout: vk::ImageLayout) -> Self {
+        self.old_layout = layout;
+        self
+    }
+
+    /// Set new image layout.
+    pub fn new_layout(mut self, layout: vk::ImageLayout) -> Self {
+        self.new_layout = layout;
+        self
+    }
+
+    /// Set image subresource range.
+    pub fn subresource_range(mut self, range: vk::ImageSubresourceRange) -> Self {
+        self.subresource_range = range;
+        self
+    }
+
+    /// Convert to Vulkan vk::ImageMemoryBarrier2KHR.
+    pub fn into_vk(self) -> vk::ImageMemoryBarrier2KHR<'static> {
+        vk::ImageMemoryBarrier2KHR::default()
+            .src_stage_mask(self.src_stage_mask.into_vk())
+            .dst_stage_mask(self.dst_stage_mask.into_vk())
+            .src_access_mask(self.src_access_mask.into_vk())
+            .dst_access_mask(self.dst_access_mask.into_vk())
+            .old_layout(self.old_layout)
+            .new_layout(self.new_layout)
+            .src_queue_family_index(self.src_queue_family_index)
+            .dst_queue_family_index(self.dst_queue_family_index)
+            .image(self.image)
+            .subresource_range(self.subresource_range)
+    }
+}
+
+/// Dependency info for Vulkan 1.3 synchronization.
+///
+/// This structure replaces the traditional vk::DependencyInfo
+/// and provides a more flexible way to specify synchronization barriers.
+#[derive(Clone, Debug)]
+pub struct DependencyInfo {
+    pub memory_barriers: Vec<vk::MemoryBarrier2KHR<'static>>,
+    pub buffer_barriers: Vec<vk::BufferMemoryBarrier2KHR<'static>>,
+    pub image_barriers: Vec<ImageMemoryBarrier2>,
+}
+
+impl DependencyInfo {
+    /// Create a new dependency info.
+    pub fn new() -> Self {
+        Self {
+            memory_barriers: Vec::new(),
+            buffer_barriers: Vec::new(),
+            image_barriers: Vec::new(),
+        }
+    }
+
+    /// Add a memory barrier.
+    pub fn add_memory_barrier(mut self, barrier: vk::MemoryBarrier2KHR<'static>) -> Self {
+        self.memory_barriers.push(barrier);
+        self
+    }
+
+    /// Add a buffer memory barrier.
+    pub fn add_buffer_barrier(mut self, barrier: vk::BufferMemoryBarrier2KHR<'static>) -> Self {
+        self.buffer_barriers.push(barrier);
+        self
+    }
+
+    /// Add an image memory barrier.
+    pub fn add_image_barrier(mut self, barrier: ImageMemoryBarrier2) -> Self {
+        self.image_barriers.push(barrier);
+        self
+    }
+
+    /// Build and execute with the given callback.
+    /// This handles the lifetime issues by keeping the Vulkan structs alive during the callback.
+    pub fn build<F, R>(self, f: F) -> R
+    where
+        F: FnOnce(&vk::DependencyInfoKHR) -> R,
+    {
+        let image_barriers_vk: Vec<vk::ImageMemoryBarrier2KHR> = self
+            .image_barriers
+            .iter()
+            .map(|b| b.clone().into_vk())
+            .collect();
+
+        let dep_info = vk::DependencyInfoKHR::default()
+            .memory_barriers(&self.memory_barriers)
+            .buffer_memory_barriers(&self.buffer_barriers)
+            .image_memory_barriers(&image_barriers_vk);
+
+        f(&dep_info)
+    }
+}
+
+impl Default for DependencyInfo {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -407,5 +811,97 @@ mod tests {
         let fence: VkFence = vk_fence.into();
         let back: vk::Fence = fence.into();
         assert_eq!(vk_fence, back);
+    }
+
+    // Synchronization2 tests
+
+    #[test]
+    fn test_pipeline_stage2_flags() {
+        let stage = PipelineStage2Flags::COLOR_ATTACHMENT_OUTPUT;
+        assert!(!stage.is_empty());
+
+        let empty = PipelineStage2Flags::NONE;
+        assert!(empty.is_empty());
+    }
+
+    #[test]
+    fn test_pipeline_stage2_flags_union() {
+        let stage1 = PipelineStage2Flags::VERTEX_SHADER;
+        let stage2 = PipelineStage2Flags::FRAGMENT_SHADER;
+        let combined = stage1.union(stage2);
+
+        assert!(combined.contains(stage1));
+        assert!(combined.contains(stage2));
+    }
+
+    #[test]
+    fn test_pipeline_stage2_conversions() {
+        let vk_flags = vk::PipelineStageFlags2KHR::COLOR_ATTACHMENT_OUTPUT_KHR;
+        let wrapper: PipelineStage2Flags = vk_flags.into();
+        let back: vk::PipelineStageFlags2KHR = wrapper.into();
+        assert_eq!(vk_flags, back);
+    }
+
+    #[test]
+    fn test_access_flags2() {
+        let access = AccessFlags2::COLOR_ATTACHMENT_WRITE;
+        assert!(!access.is_empty());
+
+        let empty = AccessFlags2::NONE;
+        assert!(empty.is_empty());
+    }
+
+    #[test]
+    fn test_access_flags2_union() {
+        let access1 = AccessFlags2::SHADER_READ;
+        let access2 = AccessFlags2::SHADER_WRITE;
+        let combined = access1.union(access2);
+
+        assert!(combined.contains(access1));
+        assert!(combined.contains(access2));
+    }
+
+    #[test]
+    fn test_access_flags2_conversions() {
+        let vk_flags = vk::AccessFlags2KHR::COLOR_ATTACHMENT_WRITE_KHR;
+        let wrapper: AccessFlags2 = vk_flags.into();
+        let back: vk::AccessFlags2KHR = wrapper.into();
+        assert_eq!(vk_flags, back);
+    }
+
+    #[test]
+    fn test_image_memory_barrier2_builder() {
+        let image = vk::Image::null();
+        let barrier = ImageMemoryBarrier2::new(image)
+            .src_stage(PipelineStage2Flags::TRANSFER)
+            .dst_stage(PipelineStage2Flags::FRAGMENT_SHADER)
+            .src_access(AccessFlags2::TRANSFER_WRITE)
+            .dst_access(AccessFlags2::SHADER_READ)
+            .old_layout(vk::ImageLayout::TRANSFER_DST_OPTIMAL)
+            .new_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL);
+
+        assert_eq!(barrier.image, image);
+        assert_eq!(barrier.old_layout, vk::ImageLayout::TRANSFER_DST_OPTIMAL);
+        assert_eq!(barrier.new_layout, vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL);
+    }
+
+    #[test]
+    fn test_dependency_info() {
+        let image = vk::Image::null();
+        let barrier = ImageMemoryBarrier2::new(image)
+            .src_stage(PipelineStage2Flags::TRANSFER)
+            .dst_stage(PipelineStage2Flags::FRAGMENT_SHADER);
+
+        let dep_info = DependencyInfo::new().add_image_barrier(barrier);
+
+        assert_eq!(dep_info.image_barriers.len(), 1);
+    }
+
+    #[test]
+    fn test_dependency_info_default() {
+        let dep_info = DependencyInfo::default();
+        assert!(dep_info.memory_barriers.is_empty());
+        assert!(dep_info.buffer_barriers.is_empty());
+        assert!(dep_info.image_barriers.is_empty());
     }
 }
