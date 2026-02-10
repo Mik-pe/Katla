@@ -61,6 +61,7 @@ fn find_resources_path() -> PathBuf {
 struct ApplicationInfo {
     name: String,
     validation_layer_enabled: bool,
+    single_frame: bool,
 }
 
 pub struct Application {
@@ -368,6 +369,12 @@ impl ApplicationHandler for Application {
 
                     // Render using render graph
                     self.render_with_render_graph();
+
+                    // Handle single-frame mode: exit after rendering one frame
+                    if self.info.single_frame {
+                        event_loop.exit();
+                        return;
+                    }
 
                     if self.stage_upload {
                         let start = Instant::now();
