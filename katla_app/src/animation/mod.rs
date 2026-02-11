@@ -33,8 +33,9 @@ mod tests;
 mod integration_tests;
 
 // Re-export commonly used types
-pub use clips::{AnimationChannel, AnimationClip, ChannelPath};
+pub use clips::{AnimationChannel, AnimationClip, AnimationSampler, ChannelPath, SampledValue};
 pub use components::{AnimatedModel, AnimationPlayer, MorphTargetWeights};
+pub use skin::{JointWeights, Skeleton, Skin};
 pub use systems::{AnimationUpdateSystem, SkeletalAnimationSystem};
 
 use katla_ecs::World;
