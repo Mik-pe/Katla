@@ -5,7 +5,7 @@ use std::collections::HashMap;
 /// Animation player component that controls animation playback.
 ///
 /// Attach this to an entity to play animations on its animated model.
-#[derive(Component, Debug)]
+#[derive(Component, Debug, Clone)]
 pub struct AnimationPlayer {
     /// Name of the currently playing animation clip
     pub current_clip: Option<String>,
@@ -96,7 +96,7 @@ impl AnimationPlayer {
 /// Animated model component containing all animation clips for a model.
 ///
 /// This component stores the animation data loaded from GLTF files.
-#[derive(Component, Debug)]
+#[derive(Component, Debug, Clone)]
 pub struct AnimatedModel {
     /// Map of animation clip names to their data
     pub animations: HashMap<String, super::clips::AnimationClip>,

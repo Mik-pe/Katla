@@ -1,10 +1,11 @@
+use katla_ecs::Component;
 use katla_math::Mat4;
 use std::fmt;
 
 /// Skin data for skeletal animation.
 ///
 /// A skin defines the skeleton (joints) and how vertices are bound to those joints.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Component)]
 pub struct Skin {
     /// Name of this skin
     pub name: String,
@@ -50,7 +51,7 @@ impl fmt::Display for Skin {
 /// Joint transform hierarchy for skeletal animation.
 ///
 /// Stores the current transform of each joint in a skeleton.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Component)]
 pub struct Skeleton {
     /// Name of this skeleton
     pub name: String,
@@ -88,7 +89,7 @@ impl Skeleton {
 /// Joint indices and weights for vertex skinning.
 ///
 /// Each vertex can be influenced by up to 4 joints.
-#[derive(Debug, Copy, Clone, Default)]
+#[derive(Debug, Copy, Clone, Default, Component)]
 #[repr(C)]
 pub struct JointWeights {
     /// Indices of the 4 joints that influence this vertex
