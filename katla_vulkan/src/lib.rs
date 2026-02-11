@@ -659,7 +659,12 @@ impl VulkanRenderer {
         command_buffer.begin_command(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT);
 
         // Execute the render graph with the current image index
-        graph.execute(&mut command_buffer, image_index)?;
+        graph.execute(
+            &mut command_buffer,
+            image_index,
+            &self.frame_context.swapchain_images,
+            self.frame_context.depth_render_texture.image,
+        )?;
 
         command_buffer.end_command();
 

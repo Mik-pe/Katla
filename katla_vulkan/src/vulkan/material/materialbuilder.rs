@@ -5,7 +5,7 @@ use super::{
     DescriptorLayoutBuilder, ImageInfo, MaterialDescriptor, MaterialError, MaterialPipeline,
     PipelineBuilder, ShaderModule, ShaderSource,
 };
-use crate::{context::VulkanContext, RenderPass, Texture, VertexBinding};
+use crate::{context::VulkanContext, ImageFormat, RenderPass, Texture, VertexBinding};
 
 pub struct MaterialBuilder {
     context: Rc<VulkanContext>,
@@ -18,6 +18,8 @@ pub struct MaterialBuilder {
     cull_back_faces: bool,
     alpha_blending: bool,
     has_color: bool,
+    color_format: Option<ImageFormat>,
+    depth_format: Option<ImageFormat>,
 }
 
 impl MaterialBuilder {
@@ -33,6 +35,8 @@ impl MaterialBuilder {
             cull_back_faces: true,
             alpha_blending: false,
             has_color: false,
+            color_format: None,
+            depth_format: None,
         }
     }
 
@@ -218,6 +222,22 @@ impl MaterialBuilder {
         self
     }
 
+    /// Set color attachment format for dynamic rendering (Vulkan 1.3).
+    ///
+    /// This is used instead of a render pass for pipeline creation.
+    pub fn with_color_format(mut self, format: ImageFormat) -> Self {
+        self.color_format = Some(format);
+        self
+    }
+
+    /// Set depth attachment format for dynamic rendering (Vulkan 1.3).
+    ///
+    /// This is used instead of a render pass for pipeline creation.
+    pub fn with_depth_format(mut self, format: ImageFormat) -> Self {
+        self.depth_format = Some(format);
+        self
+    }
+
     /// Build the material pipeline with an existing descriptor set layout.
     ///
     /// This is used during hot reload to preserve the descriptor set layout,
@@ -228,7 +248,7 @@ impl MaterialBuilder {
     /// * `existing_desc_layout` - The existing descriptor set layout to reuse
     pub fn build_with_desc_layout(
         self,
-        render_pass: &RenderPass,
+        render_pass: Option<&RenderPass>,
         existing_desc_layout: vk::DescriptorSetLayout,
     ) -> Result<MaterialPipeline, MaterialBuildError> {
         let vertex_binding = self
@@ -269,8 +289,12 @@ impl MaterialBuilder {
             pipeline_builder = pipeline_builder.with_alpha_blending();
         }
 
+        let vk_render_pass = render_pass
+            .map(|rp| rp.get_vk_renderpass())
+            .unwrap_or(vk::RenderPass::null());
+
         let pipeline = pipeline_builder
-            .build(render_pass.get_vk_renderpass())
+            .build(vk_render_pass)
             .map_err(|e| MaterialBuildError::PipelineCreationFailed(format!("{:?}", e)))?;
 
         // All shaders are WGSL, which uses separate bindings
@@ -292,7 +316,10 @@ impl MaterialBuilder {
         Ok(material_pipeline)
     }
 
-    pub fn build(self, render_pass: &RenderPass) -> Result<MaterialPipeline, MaterialBuildError> {
+    pub fn build(
+        self,
+        render_pass: Option<&RenderPass>,
+    ) -> Result<MaterialPipeline, MaterialBuildError> {
         let vertex_binding = self
             .vertex_binding
             .ok_or(MaterialBuildError::MissingVertexBinding)?;
@@ -352,8 +379,12 @@ impl MaterialBuilder {
             pipeline_builder = pipeline_builder.with_alpha_blending();
         }
 
+        let vk_render_pass = render_pass
+            .map(|rp| rp.get_vk_renderpass())
+            .unwrap_or(vk::RenderPass::null());
+
         let pipeline = pipeline_builder
-            .build(render_pass.get_vk_renderpass())
+            .build(vk_render_pass)
             .map_err(|e| MaterialBuildError::PipelineCreationFailed(format!("{:?}", e)))?;
 
         // All shaders are WGSL, which uses separate bindings

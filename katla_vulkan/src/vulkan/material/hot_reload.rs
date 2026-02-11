@@ -63,7 +63,7 @@ impl HotReloadMaterial {
         let vertex_binding = None; // Will be set by caller
         let texture = None; // Will be set by caller
 
-        let material = builder.build(&render_pass).map_err(|e| {
+        let material = builder.build(Some(&render_pass)).map_err(|e| {
             MaterialError::InvalidDescriptor(format!("Pipeline creation failed: {:?}", e))
         })?;
 
@@ -161,7 +161,7 @@ impl HotReloadMaterial {
         }
 
         // Build new material
-        self.material = builder.build(&self.render_pass).map_err(|e| {
+        self.material = builder.build(Some(&self.render_pass)).map_err(|e| {
             HotReloadError::PipelineCreationFailed(MaterialError::InvalidDescriptor(format!(
                 "Pipeline creation failed: {:?}",
                 e

@@ -372,7 +372,10 @@ impl MaterialTemplateBuilder {
     }
 
     /// Build the template
-    pub fn build(self, render_pass: &RenderPass) -> Result<MaterialTemplate, MaterialError> {
+    pub fn build(
+        self,
+        render_pass: Option<&RenderPass>,
+    ) -> Result<MaterialTemplate, MaterialError> {
         let descriptor = self.descriptor.ok_or_else(|| {
             MaterialError::InvalidDescriptor("No descriptor provided".to_string())
         })?;

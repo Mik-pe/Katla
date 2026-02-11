@@ -1,3 +1,4 @@
+use crate::sync::{AccessFlags2, DependencyInfo, ImageMemoryBarrier2, PipelineStage2Flags};
 use ash::vk;
 
 use std::cell::RefCell;
@@ -921,6 +922,8 @@ impl CompiledRenderGraph {
         &mut self,
         command_buffer: &mut CommandBuffer,
         image_index: usize,
+        swapchain_images: &[VkImage],
+        depth_image: VkImage,
     ) -> Result<(), RenderGraphError> {
         let pass_count = self.passes.len();
         for i in 0..pass_count {
@@ -930,7 +933,13 @@ impl CompiledRenderGraph {
 
             if has_dynamic_rendering {
                 // Use Dynamic Rendering path (Vulkan 1.3)
-                self.execute_pass_dynamic(command_buffer, i, image_index)?;
+                self.execute_pass_dynamic(
+                    command_buffer,
+                    i,
+                    image_index,
+                    swapchain_images,
+                    depth_image,
+                )?;
             } else {
                 // Use legacy render pass path
                 self.execute_pass_legacy(command_buffer, i, image_index)?;
@@ -945,6 +954,8 @@ impl CompiledRenderGraph {
         command_buffer: &mut CommandBuffer,
         pass_index: usize,
         image_index: usize,
+        swapchain_images: &[VkImage],
+        depth_image: VkImage,
     ) -> Result<(), RenderGraphError> {
         let pass = &self.passes[pass_index];
 
@@ -997,6 +1008,59 @@ impl CompiledRenderGraph {
             rendering_info = rendering_info.depth_attachment(attachment);
         }
 
+        // Transition swapchain images from UNDEFINED to COLOR_ATTACHMENT_OPTIMAL before rendering
+        let swapchain_image = swapchain_images.get(image_index).map(|img| img.vk());
+        if let Some(swapchain_vk_image) = swapchain_image {
+            let barrier = ImageMemoryBarrier2::new(swapchain_vk_image)
+                .src_stage(PipelineStage2Flags::TOP_OF_PIPE)
+                .src_access(AccessFlags2::NONE)
+                .dst_stage(PipelineStage2Flags::COLOR_ATTACHMENT_OUTPUT)
+                .dst_access(AccessFlags2::COLOR_ATTACHMENT_WRITE)
+                .old_layout(vk::ImageLayout::UNDEFINED)
+                .new_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
+                .subresource_range(vk::ImageSubresourceRange {
+                    aspect_mask: vk::ImageAspectFlags::COLOR,
+                    base_mip_level: 0,
+                    level_count: 1,
+                    base_array_layer: 0,
+                    layer_count: 1,
+                });
+
+            DependencyInfo::new()
+                .add_image_barrier(barrier)
+                .build(|dep_info| unsafe {
+                    self.context
+                        .device
+                        .cmd_pipeline_barrier2(command_buffer.vk_command_buffer(), dep_info);
+                });
+        }
+
+        // Transition depth image from UNDEFINED to DEPTH_STENCIL_ATTACHMENT_OPTIMAL before rendering
+        if let Some(_depth_attachment) = depth_attachment {
+            let barrier = ImageMemoryBarrier2::new(depth_image.vk())
+                .src_stage(PipelineStage2Flags::TOP_OF_PIPE)
+                .src_access(AccessFlags2::NONE)
+                .dst_stage(PipelineStage2Flags::EARLY_FRAGMENT_TESTS)
+                .dst_access(AccessFlags2::DEPTH_STENCIL_ATTACHMENT_WRITE)
+                .old_layout(vk::ImageLayout::UNDEFINED)
+                .new_layout(vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL)
+                .subresource_range(vk::ImageSubresourceRange {
+                    aspect_mask: vk::ImageAspectFlags::DEPTH,
+                    base_mip_level: 0,
+                    level_count: 1,
+                    base_array_layer: 0,
+                    layer_count: 1,
+                });
+
+            DependencyInfo::new()
+                .add_image_barrier(barrier)
+                .build(|dep_info| unsafe {
+                    self.context
+                        .device
+                        .cmd_pipeline_barrier2(command_buffer.vk_command_buffer(), dep_info);
+                });
+        }
+
         // Begin dynamic rendering
         command_buffer.begin_rendering(rendering_info);
 
@@ -1030,6 +1094,32 @@ impl CompiledRenderGraph {
 
         // End dynamic rendering
         command_buffer.end_rendering();
+
+        // Transition swapchain image from COLOR_ATTACHMENT_OPTIMAL to PRESENT_SRC_KHR after rendering
+        if let Some(swapchain_vk_image) = swapchain_image {
+            let barrier = ImageMemoryBarrier2::new(swapchain_vk_image)
+                .src_stage(PipelineStage2Flags::COLOR_ATTACHMENT_OUTPUT)
+                .src_access(AccessFlags2::COLOR_ATTACHMENT_WRITE)
+                .dst_stage(PipelineStage2Flags::BOTTOM_OF_PIPE)
+                .dst_access(AccessFlags2::NONE)
+                .old_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
+                .new_layout(vk::ImageLayout::PRESENT_SRC_KHR)
+                .subresource_range(vk::ImageSubresourceRange {
+                    aspect_mask: vk::ImageAspectFlags::COLOR,
+                    base_mip_level: 0,
+                    level_count: 1,
+                    base_array_layer: 0,
+                    layer_count: 1,
+                });
+
+            DependencyInfo::new()
+                .add_image_barrier(barrier)
+                .build(|dep_info| unsafe {
+                    self.context
+                        .device
+                        .cmd_pipeline_barrier2(command_buffer.vk_command_buffer(), dep_info);
+                });
+        }
 
         Ok(())
     }

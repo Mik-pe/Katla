@@ -100,7 +100,7 @@ impl MaterialRegistry {
 
         // Note: vertex_binding needs to be set by the caller
         // For now, we'll store the template without it
-        let template = builder.build(render_pass)?;
+        let template = builder.build(Some(render_pass))?;
 
         // Register template with path for hot reload tracking
         self.register_template_with_path(template, path);
@@ -129,7 +129,7 @@ impl MaterialRegistry {
             .descriptor(descriptor)
             .context(context)
             .vertex_binding(vertex_binding)
-            .build(render_pass)?;
+            .build(Some(render_pass))?;
 
         // Register template with path for hot reload tracking
         self.register_template_with_path(template, path);
@@ -145,7 +145,7 @@ impl MaterialRegistry {
         &mut self,
         dir: &Path,
         context: Rc<VulkanContext>,
-        render_pass: &RenderPass,
+        render_pass: Option<&RenderPass>,
     ) -> Result<usize, MaterialError> {
         use crate::vulkan::vertexbinding::get_pbr_vertex_binding;
 
@@ -259,7 +259,7 @@ impl MaterialRegistry {
     pub fn check_hot_reload(
         &mut self,
         context: Rc<VulkanContext>,
-        render_pass: &RenderPass,
+        render_pass: Option<&RenderPass>,
     ) -> Result<usize, MaterialError> {
         // Collect all modified paths first, releasing the watcher borrow
         let modified_paths: Vec<PathBuf> = if self.file_watcher.is_some() {
@@ -435,7 +435,7 @@ pub fn load_materials_from_directory(
     render_pass: &RenderPass,
 ) -> Result<MaterialRegistry, MaterialError> {
     let mut registry = MaterialRegistry::new();
-    registry.load_directory(dir.as_ref(), context, render_pass)?;
+    registry.load_directory(dir.as_ref(), context, Some(render_pass))?;
     Ok(registry)
 }
 

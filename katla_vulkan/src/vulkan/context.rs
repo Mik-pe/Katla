@@ -142,8 +142,8 @@ pub struct RenderTexture {
     pub image_view: VkImageView,
     pub format: vk::Format,
     pub image: VkImage,
-    image_memory: Option<Allocation>,
-    context: Rc<VulkanContext>,
+    pub image_memory: Option<Allocation>,
+    pub context: Rc<VulkanContext>,
 }
 
 impl RenderTexture {
