@@ -1,5 +1,5 @@
-use std::{collections::HashMap, path::PathBuf};
 use ash::vk;
+use std::{collections::HashMap, path::PathBuf};
 
 /// Source for shader code
 #[derive(Clone, Debug)]
@@ -18,9 +18,7 @@ impl ShaderSource {
     /// Get the shader source code as a string
     pub fn load(&self) -> Result<String, std::io::Error> {
         match self {
-            ShaderSource::WgslFile(path) => {
-                std::fs::read_to_string(path)
-            }
+            ShaderSource::WgslFile(path) => std::fs::read_to_string(path),
             ShaderSource::WgslString(s) => Ok(s.clone()),
             ShaderSource::PreCompiled(_) => Ok(String::new()),
         }
@@ -57,7 +55,9 @@ impl DescriptorBinding {
         match self {
             DescriptorBinding::SampledImage { .. } => Some(vk::DescriptorType::SAMPLED_IMAGE),
             DescriptorBinding::Sampler { .. } => Some(vk::DescriptorType::SAMPLER),
-            DescriptorBinding::CombinedImageSampler { .. } => Some(vk::DescriptorType::COMBINED_IMAGE_SAMPLER),
+            DescriptorBinding::CombinedImageSampler { .. } => {
+                Some(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+            }
             DescriptorBinding::Uniform { .. } => None,
         }
     }
@@ -123,7 +123,7 @@ pub enum MaterialValue {
     Vec2([f32; 2]),
     Vec3([f32; 3]),
     Vec4([f32; 4]),
-    Color([f32; 4]),  // RGBA color values
+    Color([f32; 4]), // RGBA color values
 }
 
 impl MaterialValue {
@@ -161,7 +161,11 @@ pub struct MaterialDescriptor {
 
 impl MaterialDescriptor {
     /// Create a new material descriptor
-    pub fn new(name: impl Into<String>, vertex_shader: ShaderSource, fragment_shader: ShaderSource) -> Self {
+    pub fn new(
+        name: impl Into<String>,
+        vertex_shader: ShaderSource,
+        fragment_shader: ShaderSource,
+    ) -> Self {
         Self {
             name: name.into(),
             vertex_shader,
@@ -198,21 +202,33 @@ impl MaterialDescriptor {
 
     /// Calculate the total uniform buffer size required
     pub fn uniform_buffer_size(&self) -> usize {
-        self.bindings.iter()
-            .filter_map(|b| if let DescriptorBinding::Uniform { ty, .. } = b { Some(ty.size()) } else { None })
+        self.bindings
+            .iter()
+            .filter_map(|b| {
+                if let DescriptorBinding::Uniform { ty, .. } = b {
+                    Some(ty.size())
+                } else {
+                    None
+                }
+            })
             .sum()
     }
 
     /// Check if this material needs separate texture/sampler bindings (WGSL)
     pub fn needs_separate_bindings(&self) -> bool {
-        self.bindings.iter().any(|b| matches!(b, DescriptorBinding::SampledImage { .. } | DescriptorBinding::Sampler { .. }))
+        self.bindings.iter().any(|b| {
+            matches!(
+                b,
+                DescriptorBinding::SampledImage { .. } | DescriptorBinding::Sampler { .. }
+            )
+        })
     }
 
     /// Check if this material needs a color uniform
     pub fn has_color_uniform(&self) -> bool {
-        self.bindings.iter().any(|b| {
-            matches!(b, DescriptorBinding::Uniform { name, .. } if name == "color")
-        })
+        self.bindings
+            .iter()
+            .any(|b| matches!(b, DescriptorBinding::Uniform { name, .. } if name == "color"))
     }
 }
 
@@ -222,9 +238,16 @@ pub enum MaterialError {
     ShaderLoadFailed(PathBuf, std::io::Error),
     InvalidDescriptor(String),
     MissingBinding(String),
-    BindingConflict { binding: u32, existing: String, attempted: String },
+    BindingConflict {
+        binding: u32,
+        existing: String,
+        attempted: String,
+    },
     InvalidParameter(String),
-    ShaderCompilationFailed { stage: ShaderStage, error: String },
+    ShaderCompilationFailed {
+        stage: ShaderStage,
+        error: String,
+    },
 }
 
 impl std::fmt::Display for MaterialError {
@@ -239,15 +262,26 @@ impl std::fmt::Display for MaterialError {
             MaterialError::MissingBinding(name) => {
                 write!(f, "Missing required binding: {}", name)
             }
-            MaterialError::BindingConflict { binding, existing, attempted } => {
-                write!(f, "Binding {} conflict: '{}' already bound, attempted '{}'",
-                       binding, existing, attempted)
+            MaterialError::BindingConflict {
+                binding,
+                existing,
+                attempted,
+            } => {
+                write!(
+                    f,
+                    "Binding {} conflict: '{}' already bound, attempted '{}'",
+                    binding, existing, attempted
+                )
             }
             MaterialError::InvalidParameter(name) => {
                 write!(f, "Invalid parameter '{}'", name)
             }
             MaterialError::ShaderCompilationFailed { stage, error } => {
-                write!(f, "Shader compilation failed in {:?} stage: {}", stage, error)
+                write!(
+                    f,
+                    "Shader compilation failed in {:?} stage: {}",
+                    stage, error
+                )
             }
         }
     }

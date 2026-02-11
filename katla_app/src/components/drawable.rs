@@ -14,10 +14,7 @@ pub struct DrawableComponent {
 
 impl DrawableComponent {
     /// Create with asset handles for the new rendering system
-    pub fn with_handles(
-        mesh_handle: MeshHandle,
-        material_handle: MaterialHandle,
-    ) -> Self {
+    pub fn with_handles(mesh_handle: MeshHandle, material_handle: MaterialHandle) -> Self {
         DrawableComponent {
             mesh_handle: Some(mesh_handle),
             material_handle: Some(material_handle),

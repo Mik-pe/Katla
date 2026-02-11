@@ -33,7 +33,10 @@ fn test_validation_callback_works() {
 
     // Just verify the callback system is working - we should have some messages
     // (even if just informational messages about device capabilities)
-    println!("✓ Validation callback system working - captured {} message(s)", messages.len());
+    println!(
+        "✓ Validation callback system working - captured {} message(s)",
+        messages.len()
+    );
 
     // Cleanup
     render_pass.destroy();
@@ -52,10 +55,19 @@ fn test_validation_severity_levels() {
     let messages = context.take_validation_messages();
 
     // Filter for different severity levels
-    let error_count = messages.iter().filter(|m| m.severity == ValidationSeverity::Error).count();
-    let warning_count = messages.iter().filter(|m| m.severity == ValidationSeverity::Warning).count();
+    let error_count = messages
+        .iter()
+        .filter(|m| m.severity == ValidationSeverity::Error)
+        .count();
+    let warning_count = messages
+        .iter()
+        .filter(|m| m.severity == ValidationSeverity::Warning)
+        .count();
 
-    println!("✓ Captured {} error(s), {} warning(s)", error_count, warning_count);
+    println!(
+        "✓ Captured {} error(s), {} warning(s)",
+        error_count, warning_count
+    );
 
     // Cleanup
     render_pass.destroy();
@@ -70,7 +82,9 @@ fn find_memory_type(
     properties: vk::MemoryPropertyFlags,
 ) -> u32 {
     let memory_properties = unsafe {
-        context.instance.get_physical_device_memory_properties(context.physical_device)
+        context
+            .instance
+            .get_physical_device_memory_properties(context.physical_device)
     };
 
     for (i, memory_type) in memory_properties.memory_types.iter().enumerate() {

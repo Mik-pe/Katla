@@ -1,4 +1,4 @@
-use crate::{AABB, Mat4, Plane, Sphere, Vec3};
+use crate::{Mat4, Plane, Sphere, Vec3, AABB};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Frustum {
@@ -266,10 +266,7 @@ impl Frustum {
         let fbl = Self::intersect_three_planes(&self.left, &self.bottom, &self.far);
         let fbr = Self::intersect_three_planes(&self.right, &self.bottom, &self.far);
 
-        [
-            ntl, ntr, nbl, nbr,
-            ftl, ftr, fbl, fbr,
-        ]
+        [ntl, ntr, nbl, nbr, ftl, ftr, fbl, fbr]
     }
 
     /// Find the intersection point of three planes
@@ -332,9 +329,9 @@ mod tests {
     #[test]
     fn test_frustum_from_camera() {
         let frustum = Frustum::from_camera(
-            Vec3::new(0.0, 0.0, 5.0),  // position
-            Vec3::new(0.0, 0.0, 0.0),  // target
-            Vec3::new(0.0, 1.0, 0.0),  // up
+            Vec3::new(0.0, 0.0, 5.0), // position
+            Vec3::new(0.0, 0.0, 0.0), // target
+            Vec3::new(0.0, 1.0, 0.0), // up
             90.0,                     // fov
             16.0 / 9.0,               // aspect
             0.1,                      // near

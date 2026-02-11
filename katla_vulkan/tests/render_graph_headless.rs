@@ -8,9 +8,7 @@ mod common;
 use ash::vk;
 use common::create_headless_context;
 use katla_vulkan::{
-    render_graph::{
-        Attachment, RenderGraphBuilder, ResourceKind,
-    },
+    render_graph::{Attachment, RenderGraphBuilder, ResourceKind},
     CommandBuffer,
 };
 use std::rc::Rc;

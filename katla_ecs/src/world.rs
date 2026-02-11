@@ -5,7 +5,7 @@ use crate::entity::EntityId;
 use crate::resource::ResourceStorage;
 use crate::storage::ComponentStorageManager;
 use crate::system::{OrderedSystem, System, SystemExecutionOrder};
-use crate::{Resource, InputState};
+use crate::{InputState, Resource};
 use std::collections::HashSet;
 
 /// World is the central manager for the ECS framework.

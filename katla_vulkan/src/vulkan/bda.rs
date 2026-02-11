@@ -99,8 +99,7 @@ impl DeviceAddressBuffer {
 
         // Get the device address
         let device_address = unsafe {
-            let buffer_device_address_info = vk::BufferDeviceAddressInfo::default()
-                .buffer(buffer);
+            let buffer_device_address_info = vk::BufferDeviceAddressInfo::default().buffer(buffer);
 
             context
                 .device
@@ -220,24 +219,19 @@ impl DeviceAddressBuffer {
 
 impl Drop for DeviceAddressBuffer {
     fn drop(&mut self) {
-        self.context.free_buffer(self.buffer, std::mem::take(&mut self.allocation));
+        self.context
+            .free_buffer(self.buffer, std::mem::take(&mut self.allocation));
     }
 }
 
 /// Extension trait for creating device-address-enabled buffers.
 pub trait DeviceAddressBufferExt {
     /// Create a new Device Address Buffer.
-    fn create_device_address_buffer(
-        &self,
-        size: u64,
-    ) -> Result<DeviceAddressBuffer, vk::Result>;
+    fn create_device_address_buffer(&self, size: u64) -> Result<DeviceAddressBuffer, vk::Result>;
 }
 
 impl DeviceAddressBufferExt for Rc<VulkanContext> {
-    fn create_device_address_buffer(
-        &self,
-        size: u64,
-    ) -> Result<DeviceAddressBuffer, vk::Result> {
+    fn create_device_address_buffer(&self, size: u64) -> Result<DeviceAddressBuffer, vk::Result> {
         DeviceAddressBuffer::new(self.clone(), size)
     }
 }
@@ -256,7 +250,11 @@ mod tests {
         assert_eq!(size, 4096);
 
         // Ensure 256-byte alignment (common requirement for BDA)
-        assert_eq!(size % 256, 0, "Buffer size must be 256-byte aligned for BDA");
+        assert_eq!(
+            size % 256,
+            0,
+            "Buffer size must be 256-byte aligned for BDA"
+        );
     }
 
     #[test]

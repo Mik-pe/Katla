@@ -1,4 +1,4 @@
-use crate::{AABB, Mat4, Plane, Sphere, Vec3};
+use crate::{Mat4, Plane, Sphere, Vec3, AABB};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Ray {

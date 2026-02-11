@@ -118,7 +118,9 @@ impl CompiledRenderGraph {
                     self.passes[pass_idx].active_render_pass = immediate_render_pass;
                 } else {
                     // Additional framebuffers - append to the list
-                    self.passes[pass_idx].vk_framebuffers.push(VkFramebuffer::new(framebuffer));
+                    self.passes[pass_idx]
+                        .vk_framebuffers
+                        .push(VkFramebuffer::new(framebuffer));
                 }
             }
         }
@@ -830,7 +832,9 @@ impl CompiledRenderGraph {
             for output_resource_id in pass.outputs() {
                 if let Some(resource) = resources.get(output_resource_id) {
                     match resource {
-                        CompiledResource::ExternalImage { image_view, format, .. } => {
+                        CompiledResource::ExternalImage {
+                            image_view, format, ..
+                        } => {
                             if is_depth_or_stencil(*format) {
                                 // Depth attachment
                                 depth_attachments.push(Some(*image_view));
@@ -839,7 +843,9 @@ impl CompiledRenderGraph {
                                 color_attachments.push(vec![*image_view]);
                             }
                         }
-                        CompiledResource::Image { image_view, format, .. } => {
+                        CompiledResource::Image {
+                            image_view, format, ..
+                        } => {
                             if is_depth_or_stencil(*format) {
                                 // Depth attachment
                                 depth_attachments.push(Some(*image_view));
@@ -937,7 +943,11 @@ impl CompiledRenderGraph {
         let pass = &self.passes[pass_index];
 
         // Get color attachments for this image index
-        let color_attachments = pass.color_attachments.get(image_index).cloned().unwrap_or_default();
+        let color_attachments = pass
+            .color_attachments
+            .get(image_index)
+            .cloned()
+            .unwrap_or_default();
 
         // Get depth attachment for this image index
         let depth_attachment = pass.depth_attachments.get(image_index).copied().flatten();
@@ -966,7 +976,10 @@ impl CompiledRenderGraph {
         // Add depth attachment with clear value
         if let Some(depth_view) = depth_attachment {
             // Find depth clear value (usually after color attachments)
-            let depth_clear = pass.clear_values.iter().find(|cv| matches!(cv, ClearValue::DepthStencil(_)));
+            let depth_clear = pass
+                .clear_values
+                .iter()
+                .find(|cv| matches!(cv, ClearValue::DepthStencil(_)));
 
             let mut attachment = RenderingAttachmentInfo::new(depth_view)
                 .layout(vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
@@ -1054,7 +1067,8 @@ impl CompiledRenderGraph {
             offset: vk::Offset2D { x: 0, y: 0 },
             extent: pass.extent.into(),
         };
-        let clear_values_vk: Vec<vk::ClearValue> = pass.clear_values.iter().map(|cv| (*cv).into()).collect();
+        let clear_values_vk: Vec<vk::ClearValue> =
+            pass.clear_values.iter().map(|cv| (*cv).into()).collect();
         command_buffer.begin_render_pass(
             framebuffer,
             pass.active_render_pass.vk(),
@@ -1121,7 +1135,9 @@ impl Drop for CompiledRenderGraph {
             // Destroy all framebuffers from all passes
             for pass in &self.passes {
                 for framebuffer in &pass.vk_framebuffers {
-                    self.context.device.destroy_framebuffer(framebuffer.vk(), None);
+                    self.context
+                        .device
+                        .destroy_framebuffer(framebuffer.vk(), None);
                 }
             }
             for render_pass in &self.vk_render_passes {
@@ -1131,7 +1147,10 @@ impl Drop for CompiledRenderGraph {
             // Since we're in Drop and all PassExecutionContexts should be gone,
             // we try to extract the HashMap safely. If we're not the sole owner,
             // we skip cleanup to avoid double-free.
-            if let Ok(resources) = Rc::try_unwrap(std::mem::replace(&mut self.resources, Rc::new(HashMap::new()))) {
+            if let Ok(resources) = Rc::try_unwrap(std::mem::replace(
+                &mut self.resources,
+                Rc::new(HashMap::new()),
+            )) {
                 // We're the sole owner, safe to free resources
                 for (_, resource) in resources {
                     match resource {

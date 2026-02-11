@@ -408,8 +408,7 @@ impl PipelineStage2Flags {
         Self(vk::PipelineStageFlags2KHR::EARLY_FRAGMENT_TESTS_KHR);
 
     /// Late fragment tests.
-    pub const LATE_FRAGMENT_TESTS: Self =
-        Self(vk::PipelineStageFlags2KHR::LATE_FRAGMENT_TESTS_KHR);
+    pub const LATE_FRAGMENT_TESTS: Self = Self(vk::PipelineStageFlags2KHR::LATE_FRAGMENT_TESTS_KHR);
 
     /// Color attachment output.
     pub const COLOR_ATTACHMENT_OUTPUT: Self =
@@ -510,22 +509,19 @@ impl AccessFlags2 {
     pub const NONE: Self = Self(vk::AccessFlags2KHR::empty());
 
     /// Indirect command read.
-    pub const INDIRECT_COMMAND_READ: Self =
-        Self(vk::AccessFlags2KHR::INDIRECT_COMMAND_READ_KHR);
+    pub const INDIRECT_COMMAND_READ: Self = Self(vk::AccessFlags2KHR::INDIRECT_COMMAND_READ_KHR);
 
     /// Index read.
     pub const INDEX_READ: Self = Self(vk::AccessFlags2KHR::INDEX_READ_KHR);
 
     /// Vertex attribute read.
-    pub const VERTEX_ATTRIBUTE_READ: Self =
-        Self(vk::AccessFlags2KHR::VERTEX_ATTRIBUTE_READ_KHR);
+    pub const VERTEX_ATTRIBUTE_READ: Self = Self(vk::AccessFlags2KHR::VERTEX_ATTRIBUTE_READ_KHR);
 
     /// Uniform read.
     pub const UNIFORM_READ: Self = Self(vk::AccessFlags2KHR::UNIFORM_READ_KHR);
 
     /// Input attachment read.
-    pub const INPUT_ATTACHMENT_READ: Self =
-        Self(vk::AccessFlags2KHR::INPUT_ATTACHMENT_READ_KHR);
+    pub const INPUT_ATTACHMENT_READ: Self = Self(vk::AccessFlags2KHR::INPUT_ATTACHMENT_READ_KHR);
 
     /// Shader read.
     pub const SHADER_READ: Self = Self(vk::AccessFlags2KHR::SHADER_READ_KHR);
@@ -534,12 +530,10 @@ impl AccessFlags2 {
     pub const SHADER_WRITE: Self = Self(vk::AccessFlags2KHR::SHADER_WRITE_KHR);
 
     /// Color attachment read.
-    pub const COLOR_ATTACHMENT_READ: Self =
-        Self(vk::AccessFlags2KHR::COLOR_ATTACHMENT_READ_KHR);
+    pub const COLOR_ATTACHMENT_READ: Self = Self(vk::AccessFlags2KHR::COLOR_ATTACHMENT_READ_KHR);
 
     /// Color attachment write.
-    pub const COLOR_ATTACHMENT_WRITE: Self =
-        Self(vk::AccessFlags2KHR::COLOR_ATTACHMENT_WRITE_KHR);
+    pub const COLOR_ATTACHMENT_WRITE: Self = Self(vk::AccessFlags2KHR::COLOR_ATTACHMENT_WRITE_KHR);
 
     /// Depth-stencil attachment read.
     pub const DEPTH_STENCIL_ATTACHMENT_READ: Self =
@@ -882,7 +876,10 @@ mod tests {
 
         assert_eq!(barrier.image, image);
         assert_eq!(barrier.old_layout, vk::ImageLayout::TRANSFER_DST_OPTIMAL);
-        assert_eq!(barrier.new_layout, vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL);
+        assert_eq!(
+            barrier.new_layout,
+            vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL
+        );
     }
 
     #[test]

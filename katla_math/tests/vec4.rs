@@ -49,7 +49,7 @@ fn test_vec4_add() {
 fn test_vec4_add_ref() {
     let v1 = Vec4::new(1.0, 2.0, 3.0, 4.0);
     let v2 = Vec4::new(5.0, 6.0, 7.0, 8.0);
-    let result = &v1 + &v2;
+    let result = v1 + v2;
     assert_eq!(result, Vec4::new(6.0, 8.0, 10.0, 12.0));
 }
 
@@ -278,6 +278,6 @@ fn test_vec4_copy() {
 #[test]
 fn test_vec4_clone() {
     let v1 = Vec4::new(1.0, 2.0, 3.0, 4.0);
-    let v2 = v1.clone();
+    let v2 = v1;
     assert_eq!(v1, v2);
 }

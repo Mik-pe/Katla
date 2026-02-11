@@ -8,7 +8,7 @@ pub use perspective::PerspectiveComponent;
 pub use physics::*;
 pub use relationship::*;
 pub use tag::*;
-pub use transform::{TransformDirty, TransformComponent, WorldTransform};
+pub use transform::{TransformComponent, TransformDirty, WorldTransform};
 
 pub mod lighting;
 

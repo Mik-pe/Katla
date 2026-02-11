@@ -6,8 +6,8 @@ use std::{
 };
 
 use crate::rendering::Material;
-use katla_vulkan::{MaterialHandle, VulkanContext, VulkanRenderer, RenderPass, MaterialRegistry};
-use notify::{Watcher, RecursiveMode};
+use katla_vulkan::{MaterialHandle, MaterialRegistry, RenderPass, VulkanContext, VulkanRenderer};
+use notify::{RecursiveMode, Watcher};
 
 /// ID for referencing a shared material.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -22,7 +22,7 @@ pub struct MaterialManager {
     by_name: HashMap<String, MaterialId>,
     hot_reload: Option<MaterialHotReload>,
     shader_to_materials: HashMap<PathBuf, Vec<String>>, // Maps shader path -> material names
-    material_handles: HashMap<String, MaterialHandle>, // Maps material name -> renderer handle
+    material_handles: HashMap<String, MaterialHandle>,  // Maps material name -> renderer handle
 }
 
 impl MaterialManager {
@@ -183,7 +183,11 @@ impl MaterialManager {
     /// ```ignore
     /// material_manager.enable_hot_reload(Path::new("resources/shaders"), 100);
     /// ```
-    pub fn enable_hot_reload(&mut self, shaders_directory: &Path, debounce_ms: u64) -> Result<(), String> {
+    pub fn enable_hot_reload(
+        &mut self,
+        shaders_directory: &Path,
+        debounce_ms: u64,
+    ) -> Result<(), String> {
         let reload = MaterialHotReload::new(shaders_directory, debounce_ms)?;
         self.hot_reload = Some(reload);
         println!("Hot reload enabled for: {}", shaders_directory.display());
@@ -271,15 +275,24 @@ impl MaterialManager {
                                     // Update in MaterialManager
                                     self.materials[id.0] = new_material;
                                     reloaded += 1;
-                                    println!("  ✓ Reloaded material: {} (updated AssetRegistry)", material_name);
+                                    println!(
+                                        "  ✓ Reloaded material: {} (updated AssetRegistry)",
+                                        material_name
+                                    );
                                 } else {
-                                    println!("  ✗ Failed to update AssetRegistry: {}", material_name);
+                                    println!(
+                                        "  ✗ Failed to update AssetRegistry: {}",
+                                        material_name
+                                    );
                                 }
                             } else {
                                 // No handle in AssetRegistry - just update MaterialManager
                                 self.materials[id.0] = new_material;
                                 reloaded += 1;
-                                println!("  ✓ Reloaded material: {} (MaterialManager only)", material_name);
+                                println!(
+                                    "  ✓ Reloaded material: {} (MaterialManager only)",
+                                    material_name
+                                );
                             }
                         }
                     }
@@ -397,12 +410,17 @@ impl MaterialHotReload {
         let mut last_modified_path: Option<PathBuf> = None;
 
         for event in notify_rx {
-            if matches!(event.kind, notify::EventKind::Modify(_) | notify::EventKind::Create(_)) {
+            if matches!(
+                event.kind,
+                notify::EventKind::Modify(_) | notify::EventKind::Create(_)
+            ) {
                 let now = std::time::Instant::now();
 
                 for path in &event.paths {
                     if path.extension().is_some_and(|ext| ext == "wgsl") {
-                        if now.duration_since(last_event_time) > std::time::Duration::from_millis(debounce_ms) {
+                        if now.duration_since(last_event_time)
+                            > std::time::Duration::from_millis(debounce_ms)
+                        {
                             let _ = sender.send(path.clone());
                             last_event_time = now;
                             last_modified_path = Some(path.clone());

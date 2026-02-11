@@ -4,13 +4,13 @@
 //! material instances can share a single pipeline while having different
 //! parameters and textures.
 
-use std::{collections::HashMap, rc::Rc, cell::RefCell};
-use ash::vk;
 use super::{
-    MaterialDescriptor, MaterialPipeline, ShaderReflection, MaterialParameters,
-    MaterialValue, ShaderSource, MaterialError,
+    MaterialDescriptor, MaterialError, MaterialParameters, MaterialPipeline, MaterialValue,
+    ShaderReflection, ShaderSource,
 };
-use crate::{VulkanContext, RenderPass, Texture};
+use crate::{RenderPass, Texture, VulkanContext};
+use ash::vk;
+use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
 /// Errors that can occur with material instances
 #[derive(Debug)]
@@ -76,12 +76,11 @@ impl MaterialTemplate {
     ) -> Self {
         // Extract the descriptor set layout from the pipeline
         // This will be preserved across hot reloads
-        let desc_layout = pipeline.desc_layout.expect("Pipeline created without descriptor set layout");
+        let desc_layout = pipeline
+            .desc_layout
+            .expect("Pipeline created without descriptor set layout");
 
-        let default_parameters = MaterialParameters::new(
-            descriptor.clone(),
-            reflection.clone(),
-        );
+        let default_parameters = MaterialParameters::new(descriptor.clone(), reflection.clone());
 
         Self {
             name,
@@ -154,9 +153,19 @@ impl MaterialTemplate {
     /// sharing the pipeline from this template.
     ///
     /// Uses the stored descriptor set layout which is preserved across hot reloads.
-    pub fn get_uniform_layout_info(&self) -> (vk::DescriptorSetLayout, Rc<crate::VulkanContext>, super::UniformLayout) {
+    pub fn get_uniform_layout_info(
+        &self,
+    ) -> (
+        vk::DescriptorSetLayout,
+        Rc<crate::VulkanContext>,
+        super::UniformLayout,
+    ) {
         let pipeline = self.pipeline.borrow();
-        (self.desc_layout, pipeline.context.clone(), pipeline.uniform.layout().clone())
+        (
+            self.desc_layout,
+            pipeline.context.clone(),
+            pipeline.uniform.layout().clone(),
+        )
     }
 
     /// Create a new uniform buffer for a material instance
@@ -183,7 +192,9 @@ impl MaterialTemplate {
 
         // Destroy the descriptor set layout
         unsafe {
-            context.device.destroy_descriptor_set_layout(self.desc_layout, None);
+            context
+                .device
+                .destroy_descriptor_set_layout(self.desc_layout, None);
         }
     }
 }
@@ -287,7 +298,10 @@ impl MaterialInstance {
         // to generate the buffer with proper offsets
 
         // Get the uniform buffer layout
-        let layout = self.template.reflection.get_uniforms_struct()
+        let layout = self
+            .template
+            .reflection
+            .get_uniforms_struct()
             .ok_or_else(|| InstanceError::ParameterNotFound("No uniforms struct".to_string()))?;
 
         let mut buffer = vec![0u8; layout.size];
@@ -299,8 +313,7 @@ impl MaterialInstance {
                 let offset = member.offset;
 
                 if offset + value_bytes.len() <= buffer.len() {
-                    buffer[offset..offset + value_bytes.len()]
-                        .copy_from_slice(&value_bytes);
+                    buffer[offset..offset + value_bytes.len()].copy_from_slice(&value_bytes);
                 }
             }
         }
@@ -364,18 +377,20 @@ impl MaterialTemplateBuilder {
             MaterialError::InvalidDescriptor("No descriptor provided".to_string())
         })?;
 
-        let context = self.context.ok_or_else(|| {
-            MaterialError::InvalidDescriptor("No context provided".to_string())
-        })?;
+        let context = self
+            .context
+            .ok_or_else(|| MaterialError::InvalidDescriptor("No context provided".to_string()))?;
 
         // Generate reflection from WGSL if possible
         let reflection = if let (ShaderSource::WgslFile(ref path), _) =
-            (&descriptor.vertex_shader, &descriptor.fragment_shader) {
+            (&descriptor.vertex_shader, &descriptor.fragment_shader)
+        {
             // Use vertex shader for reflection
             let wgsl = std::fs::read_to_string(path)
                 .map_err(|e| MaterialError::ShaderLoadFailed(path.clone(), e))?;
-            super::ShaderReflection::from_wgsl(&wgsl)
-                .map_err(|e| MaterialError::InvalidDescriptor(format!("Reflection failed: {:?}", e)))?
+            super::ShaderReflection::from_wgsl(&wgsl).map_err(|e| {
+                MaterialError::InvalidDescriptor(format!("Reflection failed: {:?}", e))
+            })?
         } else {
             // Default reflection for non-WGSL shaders
             super::ShaderReflection {
@@ -387,20 +402,19 @@ impl MaterialTemplateBuilder {
         };
 
         // Build the pipeline
-        let mut builder = super::MaterialBuilder::from_descriptor(descriptor.clone(), context.clone())?;
+        let mut builder =
+            super::MaterialBuilder::from_descriptor(descriptor.clone(), context.clone())?;
 
         if let Some(binding) = self.vertex_binding {
             builder = builder.with_vertex_binding(binding);
         }
 
-        let pipeline = builder.build(render_pass)
-            .map_err(|e| MaterialError::InvalidDescriptor(format!("Pipeline build failed: {:?}", e)))?;
+        let pipeline = builder.build(render_pass).map_err(|e| {
+            MaterialError::InvalidDescriptor(format!("Pipeline build failed: {:?}", e))
+        })?;
 
         Ok(MaterialTemplate::new(
-            self.name,
-            descriptor,
-            reflection,
-            pipeline,
+            self.name, descriptor, reflection, pipeline,
         ))
     }
 }

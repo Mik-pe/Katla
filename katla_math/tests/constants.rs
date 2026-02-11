@@ -2,36 +2,31 @@ use katla_math::*;
 
 #[test]
 fn test_pi() {
-    assert!((PI - 3.14159265).abs() < 1e-5);
+    assert!((PI - core::f32::consts::PI).abs() < 1e-5);
 }
 
 #[test]
 fn test_tau() {
-    assert!((TAU - 6.2831853).abs() < 1e-5);
     assert!((TAU - 2.0 * PI).abs() < 1e-5);
 }
 
 #[test]
 fn test_frac_pi_2() {
-    assert!((FRAC_PI_2 - 1.5707963).abs() < 1e-5);
     assert!((FRAC_PI_2 - PI / 2.0).abs() < 1e-5);
 }
 
 #[test]
 fn test_frac_pi_3() {
-    assert!((FRAC_PI_3 - 1.047197).abs() < 1e-5);
     assert!((FRAC_PI_3 - PI / 3.0).abs() < 1e-5);
 }
 
 #[test]
 fn test_frac_pi_4() {
-    assert!((FRAC_PI_4 - 0.785398).abs() < 1e-5);
     assert!((FRAC_PI_4 - PI / 4.0).abs() < 1e-5);
 }
 
 #[test]
 fn test_frac_pi_6() {
-    assert!((FRAC_PI_6 - 0.5235988).abs() < 1e-5);
     assert!((FRAC_PI_6 - PI / 6.0).abs() < 1e-5);
 }
 

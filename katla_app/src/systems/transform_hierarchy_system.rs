@@ -1,6 +1,6 @@
+use crate::components::{Parent, TransformComponent, TransformDirty, WorldTransform};
 use katla_ecs::{EntityId, System, World};
 use katla_math::Transform;
-use crate::components::{Parent, TransformComponent, TransformDirty, WorldTransform};
 use std::collections::{HashMap, HashSet};
 
 /// Updates world-space transforms by propagating parent transforms to children.
@@ -22,7 +22,6 @@ pub struct TransformHierarchySystem {
     /// Track if we've run at least once (to initialize all transforms)
     initialized: bool,
 }
-
 
 /// Configuration for static scene optimization.
 ///
@@ -251,8 +250,12 @@ impl System for TransformHierarchySystem {
                     None => continue,
                 };
 
-                let world_transform =
-                    Self::calculate_world_transform(world, entity, &local_transform, &data.parent_map);
+                let world_transform = Self::calculate_world_transform(
+                    world,
+                    entity,
+                    &local_transform,
+                    &data.parent_map,
+                );
 
                 if let Some(existing) = world.get_component_mut::<WorldTransform>(entity) {
                     existing.transform = world_transform;

@@ -1,7 +1,9 @@
 #[cfg(test)]
 mod tests {
+    use crate::animation::clips::{
+        AnimationChannel, AnimationClip, AnimationSampler, ChannelPath, SampledValue,
+    };
     use crate::animation::components::{AnimationPlayer, JointTransform, MorphTargetWeights};
-    use crate::animation::clips::{AnimationClip, AnimationChannel, AnimationSampler, ChannelPath, SampledValue};
     use crate::animation::samplers::Interpolation;
     use katla_math::Quat;
     use std::collections::HashMap;
@@ -33,9 +35,7 @@ mod tests {
 
     #[test]
     fn test_animation_player_builder_pattern() {
-        let player = AnimationPlayer::new("Run")
-            .looping()
-            .with_speed(2.0);
+        let player = AnimationPlayer::new("Run").looping().with_speed(2.0);
 
         assert!(player.loop_animation);
         assert_eq!(player.speed, 2.0);
@@ -91,8 +91,7 @@ mod tests {
 
     #[test]
     fn test_animation_player_with_clip() {
-        let player = AnimationPlayer::stopped()
-            .with_clip("Jump");
+        let player = AnimationPlayer::stopped().with_clip("Jump");
 
         assert_eq!(player.current_clip.as_ref().unwrap(), "Jump");
     }
@@ -249,17 +248,10 @@ mod tests {
     #[test]
     fn test_animation_sampler_translation() {
         let inputs = vec![0.0, 0.5, 1.0];
-        let translations = vec![
-            [0.0, 0.0, 0.0],
-            [5.0, 5.0, 5.0],
-            [10.0, 10.0, 10.0],
-        ];
+        let translations = vec![[0.0, 0.0, 0.0], [5.0, 5.0, 5.0], [10.0, 10.0, 10.0]];
 
-        let sampler = AnimationSampler::new_translation(
-            inputs.clone(),
-            translations,
-            Interpolation::Linear,
-        );
+        let sampler =
+            AnimationSampler::new_translation(inputs.clone(), translations, Interpolation::Linear);
 
         assert_eq!(sampler.inputs, inputs);
         assert!(sampler.translations.is_some());
@@ -272,16 +264,9 @@ mod tests {
     #[test]
     fn test_animation_sampler_rotation() {
         let inputs = vec![0.0, 1.0];
-        let rotations = vec![
-            [0.0, 0.0, 0.0, 1.0],
-            [0.0, 0.0, 0.707, 0.707],
-        ];
+        let rotations = vec![[0.0, 0.0, 0.0, 1.0], [0.0, 0.0, 0.707, 0.707]];
 
-        let sampler = AnimationSampler::new_rotation(
-            inputs,
-            rotations,
-            Interpolation::Linear,
-        );
+        let sampler = AnimationSampler::new_rotation(inputs, rotations, Interpolation::Linear);
 
         assert!(sampler.translations.is_none());
         assert!(sampler.rotations.is_some());
@@ -318,11 +303,8 @@ mod tests {
     #[test]
     fn test_animation_sampler_keyframe_count() {
         let inputs = vec![0.0, 0.25, 0.5, 0.75, 1.0];
-        let sampler = AnimationSampler::new_translation(
-            inputs,
-            vec![[0.0; 3]; 5],
-            Interpolation::Linear,
-        );
+        let sampler =
+            AnimationSampler::new_translation(inputs, vec![[0.0; 3]; 5], Interpolation::Linear);
 
         assert_eq!(sampler.keyframe_count(), 5);
     }
@@ -330,22 +312,15 @@ mod tests {
     #[test]
     fn test_animation_sampler_duration() {
         let inputs = vec![0.0, 0.5, 1.0, 1.5, 2.0];
-        let sampler = AnimationSampler::new_translation(
-            inputs,
-            vec![[0.0; 3]; 5],
-            Interpolation::Linear,
-        );
+        let sampler =
+            AnimationSampler::new_translation(inputs, vec![[0.0; 3]; 5], Interpolation::Linear);
 
         assert_eq!(sampler.duration(), 2.0);
     }
 
     #[test]
     fn test_animation_sampler_empty_duration() {
-        let sampler = AnimationSampler::new_translation(
-            vec![],
-            vec![],
-            Interpolation::Linear,
-        );
+        let sampler = AnimationSampler::new_translation(vec![], vec![], Interpolation::Linear);
 
         assert_eq!(sampler.duration(), 0.0);
     }

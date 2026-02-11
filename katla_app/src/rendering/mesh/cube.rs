@@ -8,45 +8,165 @@ pub fn create_cube_vertices(size: Vec3) -> Vec<VertexPBR> {
 
     // Front face (Z+) - use full UV range [0,1]
     let n = Vec3::new(0.0, 0.0, 1.0);
-    vertices.push(VertexPBR::new([-half_size.x(), -half_size.y(), half_size.z()], n.to_array(), [1.0, 0.0, 0.0, 1.0], [0.0, 0.0]));
-    vertices.push(VertexPBR::new([-half_size.x(), half_size.y(), half_size.z()], n.to_array(), [1.0, 0.0, 0.0, 1.0], [0.0, 1.0]));
-    vertices.push(VertexPBR::new([half_size.x(), half_size.y(), half_size.z()], n.to_array(), [1.0, 0.0, 0.0, 1.0], [1.0, 1.0]));
-    vertices.push(VertexPBR::new([half_size.x(), -half_size.y(), half_size.z()], n.to_array(), [1.0, 0.0, 0.0, 1.0], [1.0, 0.0]));
+    vertices.push(VertexPBR::new(
+        [-half_size.x(), -half_size.y(), half_size.z()],
+        n.to_array(),
+        [1.0, 0.0, 0.0, 1.0],
+        [0.0, 0.0],
+    ));
+    vertices.push(VertexPBR::new(
+        [-half_size.x(), half_size.y(), half_size.z()],
+        n.to_array(),
+        [1.0, 0.0, 0.0, 1.0],
+        [0.0, 1.0],
+    ));
+    vertices.push(VertexPBR::new(
+        [half_size.x(), half_size.y(), half_size.z()],
+        n.to_array(),
+        [1.0, 0.0, 0.0, 1.0],
+        [1.0, 1.0],
+    ));
+    vertices.push(VertexPBR::new(
+        [half_size.x(), -half_size.y(), half_size.z()],
+        n.to_array(),
+        [1.0, 0.0, 0.0, 1.0],
+        [1.0, 0.0],
+    ));
 
     // Back face (Z-) - use full UV range [0,1]
     let n = Vec3::new(0.0, 0.0, -1.0);
-    vertices.push(VertexPBR::new([half_size.x(), -half_size.y(), -half_size.z()], n.to_array(), [-1.0, 0.0, 0.0, 1.0], [0.0, 0.0]));
-    vertices.push(VertexPBR::new([half_size.x(), half_size.y(), -half_size.z()], n.to_array(), [-1.0, 0.0, 0.0, 1.0], [0.0, 1.0]));
-    vertices.push(VertexPBR::new([-half_size.x(), half_size.y(), -half_size.z()], n.to_array(), [-1.0, 0.0, 0.0, 1.0], [1.0, 1.0]));
-    vertices.push(VertexPBR::new([-half_size.x(), -half_size.y(), -half_size.z()], n.to_array(), [-1.0, 0.0, 0.0, 1.0], [1.0, 0.0]));
+    vertices.push(VertexPBR::new(
+        [half_size.x(), -half_size.y(), -half_size.z()],
+        n.to_array(),
+        [-1.0, 0.0, 0.0, 1.0],
+        [0.0, 0.0],
+    ));
+    vertices.push(VertexPBR::new(
+        [half_size.x(), half_size.y(), -half_size.z()],
+        n.to_array(),
+        [-1.0, 0.0, 0.0, 1.0],
+        [0.0, 1.0],
+    ));
+    vertices.push(VertexPBR::new(
+        [-half_size.x(), half_size.y(), -half_size.z()],
+        n.to_array(),
+        [-1.0, 0.0, 0.0, 1.0],
+        [1.0, 1.0],
+    ));
+    vertices.push(VertexPBR::new(
+        [-half_size.x(), -half_size.y(), -half_size.z()],
+        n.to_array(),
+        [-1.0, 0.0, 0.0, 1.0],
+        [1.0, 0.0],
+    ));
 
     // Left face (X-) - use full UV range [0,1]
     let n = Vec3::new(-1.0, 0.0, 0.0);
-    vertices.push(VertexPBR::new([-half_size.x(), -half_size.y(), -half_size.z()], n.to_array(), [0.0, 0.0, 1.0, 0.0], [0.0, 0.0]));
-    vertices.push(VertexPBR::new([-half_size.x(), half_size.y(), -half_size.z()], n.to_array(), [0.0, 0.0, 1.0, 0.0], [0.0, 1.0]));
-    vertices.push(VertexPBR::new([-half_size.x(), half_size.y(), half_size.z()], n.to_array(), [0.0, 0.0, 1.0, 0.0], [1.0, 1.0]));
-    vertices.push(VertexPBR::new([-half_size.x(), -half_size.y(), half_size.z()], n.to_array(), [0.0, 0.0, 1.0, 0.0], [1.0, 0.0]));
+    vertices.push(VertexPBR::new(
+        [-half_size.x(), -half_size.y(), -half_size.z()],
+        n.to_array(),
+        [0.0, 0.0, 1.0, 0.0],
+        [0.0, 0.0],
+    ));
+    vertices.push(VertexPBR::new(
+        [-half_size.x(), half_size.y(), -half_size.z()],
+        n.to_array(),
+        [0.0, 0.0, 1.0, 0.0],
+        [0.0, 1.0],
+    ));
+    vertices.push(VertexPBR::new(
+        [-half_size.x(), half_size.y(), half_size.z()],
+        n.to_array(),
+        [0.0, 0.0, 1.0, 0.0],
+        [1.0, 1.0],
+    ));
+    vertices.push(VertexPBR::new(
+        [-half_size.x(), -half_size.y(), half_size.z()],
+        n.to_array(),
+        [0.0, 0.0, 1.0, 0.0],
+        [1.0, 0.0],
+    ));
 
     // Right face (X+) - use full UV range [0,1]
     let n = Vec3::new(1.0, 0.0, 0.0);
-    vertices.push(VertexPBR::new([half_size.x(), -half_size.y(), half_size.z()], n.to_array(), [1.0, 0.0, 0.0, 1.0], [0.0, 0.0]));
-    vertices.push(VertexPBR::new([half_size.x(), half_size.y(), half_size.z()], n.to_array(), [1.0, 0.0, 0.0, 1.0], [0.0, 1.0]));
-    vertices.push(VertexPBR::new([half_size.x(), half_size.y(), -half_size.z()], n.to_array(), [1.0, 0.0, 0.0, 1.0], [1.0, 1.0]));
-    vertices.push(VertexPBR::new([half_size.x(), -half_size.y(), -half_size.z()], n.to_array(), [1.0, 0.0, 0.0, 1.0], [1.0, 0.0]));
+    vertices.push(VertexPBR::new(
+        [half_size.x(), -half_size.y(), half_size.z()],
+        n.to_array(),
+        [1.0, 0.0, 0.0, 1.0],
+        [0.0, 0.0],
+    ));
+    vertices.push(VertexPBR::new(
+        [half_size.x(), half_size.y(), half_size.z()],
+        n.to_array(),
+        [1.0, 0.0, 0.0, 1.0],
+        [0.0, 1.0],
+    ));
+    vertices.push(VertexPBR::new(
+        [half_size.x(), half_size.y(), -half_size.z()],
+        n.to_array(),
+        [1.0, 0.0, 0.0, 1.0],
+        [1.0, 1.0],
+    ));
+    vertices.push(VertexPBR::new(
+        [half_size.x(), -half_size.y(), -half_size.z()],
+        n.to_array(),
+        [1.0, 0.0, 0.0, 1.0],
+        [1.0, 0.0],
+    ));
 
     // Top face (Y+) - use full UV range [0,1]
     let n = Vec3::new(0.0, 1.0, 0.0);
-    vertices.push(VertexPBR::new([-half_size.x(), half_size.y(), -half_size.z()], n.to_array(), [1.0, 0.0, 0.0, 1.0], [0.0, 0.0]));
-    vertices.push(VertexPBR::new([-half_size.x(), half_size.y(), half_size.z()], n.to_array(), [1.0, 0.0, 0.0, 1.0], [0.0, 1.0]));
-    vertices.push(VertexPBR::new([half_size.x(), half_size.y(), half_size.z()], n.to_array(), [1.0, 0.0, 0.0, 1.0], [1.0, 1.0]));
-    vertices.push(VertexPBR::new([half_size.x(), half_size.y(), -half_size.z()], n.to_array(), [1.0, 0.0, 0.0, 1.0], [1.0, 0.0]));
+    vertices.push(VertexPBR::new(
+        [-half_size.x(), half_size.y(), -half_size.z()],
+        n.to_array(),
+        [1.0, 0.0, 0.0, 1.0],
+        [0.0, 0.0],
+    ));
+    vertices.push(VertexPBR::new(
+        [-half_size.x(), half_size.y(), half_size.z()],
+        n.to_array(),
+        [1.0, 0.0, 0.0, 1.0],
+        [0.0, 1.0],
+    ));
+    vertices.push(VertexPBR::new(
+        [half_size.x(), half_size.y(), half_size.z()],
+        n.to_array(),
+        [1.0, 0.0, 0.0, 1.0],
+        [1.0, 1.0],
+    ));
+    vertices.push(VertexPBR::new(
+        [half_size.x(), half_size.y(), -half_size.z()],
+        n.to_array(),
+        [1.0, 0.0, 0.0, 1.0],
+        [1.0, 0.0],
+    ));
 
     // Bottom face (Y-) - use full UV range [0,1]
     let n = Vec3::new(0.0, -1.0, 0.0);
-    vertices.push(VertexPBR::new([-half_size.x(), -half_size.y(), half_size.z()], n.to_array(), [1.0, 0.0, 0.0, -1.0], [0.0, 0.0]));
-    vertices.push(VertexPBR::new([-half_size.x(), -half_size.y(), -half_size.z()], n.to_array(), [1.0, 0.0, 0.0, -1.0], [0.0, 1.0]));
-    vertices.push(VertexPBR::new([half_size.x(), -half_size.y(), -half_size.z()], n.to_array(), [1.0, 0.0, 0.0, -1.0], [1.0, 1.0]));
-    vertices.push(VertexPBR::new([half_size.x(), -half_size.y(), half_size.z()], n.to_array(), [1.0, 0.0, 0.0, -1.0], [1.0, 0.0]));
+    vertices.push(VertexPBR::new(
+        [-half_size.x(), -half_size.y(), half_size.z()],
+        n.to_array(),
+        [1.0, 0.0, 0.0, -1.0],
+        [0.0, 0.0],
+    ));
+    vertices.push(VertexPBR::new(
+        [-half_size.x(), -half_size.y(), -half_size.z()],
+        n.to_array(),
+        [1.0, 0.0, 0.0, -1.0],
+        [0.0, 1.0],
+    ));
+    vertices.push(VertexPBR::new(
+        [half_size.x(), -half_size.y(), -half_size.z()],
+        n.to_array(),
+        [1.0, 0.0, 0.0, -1.0],
+        [1.0, 1.0],
+    ));
+    vertices.push(VertexPBR::new(
+        [half_size.x(), -half_size.y(), half_size.z()],
+        n.to_array(),
+        [1.0, 0.0, 0.0, -1.0],
+        [1.0, 0.0],
+    ));
 
     vertices
 }
@@ -58,16 +178,11 @@ pub fn create_cube_mesh(context: std::rc::Rc<VulkanContext>, size: Vec3) -> Mesh
     // Top: 16,17,19, 17,18,19 | Bottom: 20,23,21, 23,22,21
     let indices = vec![
         // Front face (Z+): [0,2,1], [0,3,2] gives +Z normal
-        0, 2, 1, 0, 3, 2,
-        // Back face (Z-): [4,6,5], [4,7,6] gives -Z normal
-        4, 6, 5, 4, 7, 6,
-        // Left face (X-): [8,10,9], [8,11,10] gives -X normal
-        8, 10, 9, 8, 11, 10,
-        // Right face (X+): [12,15,13], [13,15,14] gives +X normal
-        12, 15, 13, 13, 15, 14,
-        // Top face (Y+): [16,17,19], [17,18,19] gives +Y normal
-        16, 17, 19, 17, 18, 19,
-        // Bottom face (Y-): [20,21,23], [21,22,23] gives -Y normal
+        0, 2, 1, 0, 3, 2, // Back face (Z-): [4,6,5], [4,7,6] gives -Z normal
+        4, 6, 5, 4, 7, 6, // Left face (X-): [8,10,9], [8,11,10] gives -X normal
+        8, 10, 9, 8, 11, 10, // Right face (X+): [12,15,13], [13,15,14] gives +X normal
+        12, 15, 13, 13, 15, 14, // Top face (Y+): [16,17,19], [17,18,19] gives +Y normal
+        16, 17, 19, 17, 18, 19, // Bottom face (Y-): [20,21,23], [21,22,23] gives -Y normal
         20, 21, 23, 21, 22, 23,
     ];
     Mesh::new(context, vertices, indices)
@@ -83,16 +198,11 @@ mod tests {
         let vertices = create_cube_vertices(size);
         let indices = vec![
             // Front face (Z+)
-            0, 2, 1, 0, 3, 2,
-            // Back face (Z-)
-            4, 6, 5, 4, 7, 6,
-            // Left face (X-)
-            8, 10, 9, 8, 11, 10,
-            // Right face (X+)
-            12, 15, 13, 13, 15, 14,
-            // Top face (Y+)
-            16, 17, 19, 17, 18, 19,
-            // Bottom face (Y-)
+            0, 2, 1, 0, 3, 2, // Back face (Z-)
+            4, 6, 5, 4, 7, 6, // Left face (X-)
+            8, 10, 9, 8, 11, 10, // Right face (X+)
+            12, 15, 13, 13, 15, 14, // Top face (Y+)
+            16, 17, 19, 17, 18, 19, // Bottom face (Y-)
             20, 21, 23, 21, 22, 23,
         ];
 
@@ -130,7 +240,10 @@ mod tests {
             assert!(
                 dot > 0.1,
                 "Triangle {:?} has incorrect winding: face_normal={:?}, avg_normal={:?}, dot={}",
-                chunk, face_normal.0, avg_normal.0, dot
+                chunk,
+                face_normal.0,
+                avg_normal.0,
+                dot
             );
         }
     }

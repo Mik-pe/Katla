@@ -1,6 +1,6 @@
-use ash::{khr::swapchain::Device as SwapchainDevice, vk, Device};
 use crate::sync::{VkFence, VkSemaphore};
 use crate::RenderGraphError;
+use ash::{khr::swapchain::Device as SwapchainDevice, vk, Device};
 
 pub struct SwapData {
     frames_in_flight: usize,
@@ -12,11 +12,7 @@ pub struct SwapData {
 }
 
 impl SwapData {
-    pub fn new(
-        device: &Device,
-        swapchain_images: &[vk::Image],
-        frames_in_flight: usize,
-    ) -> Self {
+    pub fn new(device: &Device, swapchain_images: &[vk::Image], frames_in_flight: usize) -> Self {
         let create_info = vk::SemaphoreCreateInfo::default();
         let image_available_semaphores: Vec<_> = (0..frames_in_flight)
             .map(|_| unsafe { device.create_semaphore(&create_info, None) }.unwrap())

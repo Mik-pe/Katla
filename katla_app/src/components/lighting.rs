@@ -153,7 +153,12 @@ impl SpotLight {
 
 impl Default for SpotLight {
     fn default() -> Self {
-        Self::white(1.0, Vec3::new(0.0, -1.0, 0.0), 10.0, std::f32::consts::FRAC_PI_4)
+        Self::white(
+            1.0,
+            Vec3::new(0.0, -1.0, 0.0),
+            10.0,
+            std::f32::consts::FRAC_PI_4,
+        )
     }
 }
 

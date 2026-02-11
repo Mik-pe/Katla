@@ -3,12 +3,9 @@
 //! This module provides runtime shader reloading, allowing shader changes
 //! to be reflected immediately without restarting the application.
 
+use super::{MaterialBuilder, MaterialDescriptor, MaterialError, MaterialPipeline, ShaderSource};
+use crate::{RenderPass, Texture, VertexBinding, VulkanContext};
 use std::{rc::Rc, time::SystemTime};
-use super::{
-    MaterialDescriptor, MaterialPipeline, MaterialBuilder, MaterialError,
-    ShaderSource,
-};
-use crate::{RenderPass, VulkanContext, VertexBinding, Texture};
 
 /// Errors that can occur during hot reload
 #[derive(Debug)]
@@ -66,12 +63,13 @@ impl HotReloadMaterial {
         let vertex_binding = None; // Will be set by caller
         let texture = None; // Will be set by caller
 
-        let material = builder.build(&render_pass)
-            .map_err(|e| MaterialError::InvalidDescriptor(format!("Pipeline creation failed: {:?}", e)))?;
+        let material = builder.build(&render_pass).map_err(|e| {
+            MaterialError::InvalidDescriptor(format!("Pipeline creation failed: {:?}", e))
+        })?;
 
         // Get initial modification time
-        let last_modified = Self::get_shader_modification_time(&descriptor)
-            .unwrap_or_else(SystemTime::now);
+        let last_modified =
+            Self::get_shader_modification_time(&descriptor).unwrap_or_else(SystemTime::now);
 
         Ok(Self {
             material,
@@ -121,15 +119,17 @@ impl HotReloadMaterial {
         // Check if shaders are reloadable
         if !self.are_shaders_reloadable() {
             return Err(HotReloadError::ShaderNotReloadable(
-                "Shaders must be file-based WGSL to support hot reload".to_string()
+                "Shaders must be file-based WGSL to support hot reload".to_string(),
             ));
         }
 
         // Check modification times
-        let current_time = Self::get_shader_modification_time(&self.descriptor)
-            .ok_or_else(|| HotReloadError::ShaderNotReloadable(
-                "Could not read shader modification time".to_string()
-            ))?;
+        let current_time =
+            Self::get_shader_modification_time(&self.descriptor).ok_or_else(|| {
+                HotReloadError::ShaderNotReloadable(
+                    "Could not read shader modification time".to_string(),
+                )
+            })?;
 
         if current_time > self.last_modified {
             // Shaders have been modified, trigger reload
@@ -147,10 +147,9 @@ impl HotReloadMaterial {
         self.material.destroy();
 
         // Rebuild the material
-        let mut builder = MaterialBuilder::from_descriptor(
-            self.descriptor.clone(),
-            self.context.clone(),
-        ).map_err(HotReloadError::PipelineCreationFailed)?;
+        let mut builder =
+            MaterialBuilder::from_descriptor(self.descriptor.clone(), self.context.clone())
+                .map_err(HotReloadError::PipelineCreationFailed)?;
 
         // Re-apply vertex binding and texture if present
         if let Some(ref binding) = self.vertex_binding {
@@ -162,11 +161,12 @@ impl HotReloadMaterial {
         }
 
         // Build new material
-        self.material = builder
-            .build(&self.render_pass)
-            .map_err(|e| HotReloadError::PipelineCreationFailed(
-                MaterialError::InvalidDescriptor(format!("Pipeline creation failed: {:?}", e))
-            ))?;
+        self.material = builder.build(&self.render_pass).map_err(|e| {
+            HotReloadError::PipelineCreationFailed(MaterialError::InvalidDescriptor(format!(
+                "Pipeline creation failed: {:?}",
+                e
+            )))
+        })?;
 
         Ok(())
     }

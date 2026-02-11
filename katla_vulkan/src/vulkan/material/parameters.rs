@@ -3,7 +3,10 @@
 //! This module provides a container for material parameters with type-safe setters
 //! and automatic buffer generation.
 
-use super::{reflection::{StructLayout, MemberType, ShaderReflection}, MaterialDescriptor, MaterialValue};
+use super::{
+    reflection::{MemberType, ShaderReflection, StructLayout},
+    MaterialDescriptor, MaterialValue,
+};
 use std::collections::HashMap;
 
 /// Error types for parameter operations
@@ -28,8 +31,16 @@ impl std::fmt::Display for ParameterError {
             ParameterError::MemberNotFound(name) => {
                 write!(f, "Parameter '{}' not found in uniform struct", name)
             }
-            ParameterError::TypeMismatch { member, expected, got } => {
-                write!(f, "Type mismatch for parameter '{}': expected {}, got {}", member, expected, got)
+            ParameterError::TypeMismatch {
+                member,
+                expected,
+                got,
+            } => {
+                write!(
+                    f,
+                    "Type mismatch for parameter '{}': expected {}, got {}",
+                    member, expected, got
+                )
             }
             ParameterError::ReflectionError(msg) => {
                 write!(f, "Reflection error: {}", msg)
@@ -62,14 +73,16 @@ impl MaterialParameters {
 
     /// Get the uniforms struct layout
     fn get_uniforms_layout(&self) -> Result<&StructLayout, ParameterError> {
-        self.reflection.get_uniforms_struct()
+        self.reflection
+            .get_uniforms_struct()
             .ok_or_else(|| ParameterError::StructNotFound("Uniforms".to_string()))
     }
 
     /// Set a float parameter
     pub fn set_float(&mut self, name: &str, value: f32) -> Result<(), ParameterError> {
         let layout = self.get_uniforms_layout()?;
-        let member = layout.find_member(name)
+        let member = layout
+            .find_member(name)
             .ok_or_else(|| ParameterError::MemberNotFound(name.to_string()))?;
 
         if member.ty != MemberType::Float {
@@ -80,14 +93,16 @@ impl MaterialParameters {
             });
         }
 
-        self.values.insert(name.to_string(), MaterialValue::Float(value));
+        self.values
+            .insert(name.to_string(), MaterialValue::Float(value));
         Ok(())
     }
 
     /// Set a Vec2 parameter
     pub fn set_vec2(&mut self, name: &str, value: [f32; 2]) -> Result<(), ParameterError> {
         let layout = self.get_uniforms_layout()?;
-        let member = layout.find_member(name)
+        let member = layout
+            .find_member(name)
             .ok_or_else(|| ParameterError::MemberNotFound(name.to_string()))?;
 
         if member.ty != MemberType::Vec2 {
@@ -98,14 +113,16 @@ impl MaterialParameters {
             });
         }
 
-        self.values.insert(name.to_string(), MaterialValue::Vec2(value));
+        self.values
+            .insert(name.to_string(), MaterialValue::Vec2(value));
         Ok(())
     }
 
     /// Set a Vec3 parameter
     pub fn set_vec3(&mut self, name: &str, value: [f32; 3]) -> Result<(), ParameterError> {
         let layout = self.get_uniforms_layout()?;
-        let member = layout.find_member(name)
+        let member = layout
+            .find_member(name)
             .ok_or_else(|| ParameterError::MemberNotFound(name.to_string()))?;
 
         if member.ty != MemberType::Vec3 {
@@ -116,14 +133,16 @@ impl MaterialParameters {
             });
         }
 
-        self.values.insert(name.to_string(), MaterialValue::Vec3(value));
+        self.values
+            .insert(name.to_string(), MaterialValue::Vec3(value));
         Ok(())
     }
 
     /// Set a Vec4 parameter
     pub fn set_vec4(&mut self, name: &str, value: [f32; 4]) -> Result<(), ParameterError> {
         let layout = self.get_uniforms_layout()?;
-        let member = layout.find_member(name)
+        let member = layout
+            .find_member(name)
             .ok_or_else(|| ParameterError::MemberNotFound(name.to_string()))?;
 
         if member.ty != MemberType::Vec4 {
@@ -134,14 +153,16 @@ impl MaterialParameters {
             });
         }
 
-        self.values.insert(name.to_string(), MaterialValue::Vec4(value));
+        self.values
+            .insert(name.to_string(), MaterialValue::Vec4(value));
         Ok(())
     }
 
     /// Set a Color parameter
     pub fn set_color(&mut self, name: &str, value: [f32; 4]) -> Result<(), ParameterError> {
         let layout = self.get_uniforms_layout()?;
-        let member = layout.find_member(name)
+        let member = layout
+            .find_member(name)
             .ok_or_else(|| ParameterError::MemberNotFound(name.to_string()))?;
 
         if member.ty != MemberType::Color {
@@ -152,7 +173,8 @@ impl MaterialParameters {
             });
         }
 
-        self.values.insert(name.to_string(), MaterialValue::Color(value));
+        self.values
+            .insert(name.to_string(), MaterialValue::Color(value));
         Ok(())
     }
 
@@ -186,8 +208,7 @@ impl MaterialParameters {
 
                 // Ensure we don't write past the buffer
                 if offset + value_bytes.len() <= buffer.len() {
-                    buffer[offset..offset + value_bytes.len()]
-                        .copy_from_slice(&value_bytes);
+                    buffer[offset..offset + value_bytes.len()].copy_from_slice(&value_bytes);
                 }
             }
         }

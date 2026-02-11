@@ -11,9 +11,12 @@ pub mod shadermodule;
 pub mod template;
 pub mod uniform_layout;
 
-pub use builder::*;
 pub use asset::*;
-pub use descriptor::{MaterialDescriptor, ShaderSource, DescriptorBinding, UniformType, MaterialValue, RenderState, MaterialError, ShaderStage};
+pub use builder::*;
+pub use descriptor::{
+    DescriptorBinding, MaterialDescriptor, MaterialError, MaterialValue, RenderState, ShaderSource,
+    ShaderStage, UniformType,
+};
 pub use file_watcher::*;
 pub use hot_reload::*;
 pub use materialbuilder::*;
@@ -103,7 +106,12 @@ impl ImageInfo {
             .image_info(std::slice::from_ref(&self.combined_info))
     }
 
-    fn update_once_separate(&self, set: vk::DescriptorSet, image_binding: u32, sampler_binding: u32) -> (vk::WriteDescriptorSet<'_>, vk::WriteDescriptorSet<'_>) {
+    fn update_once_separate(
+        &self,
+        set: vk::DescriptorSet,
+        image_binding: u32,
+        sampler_binding: u32,
+    ) -> (vk::WriteDescriptorSet<'_>, vk::WriteDescriptorSet<'_>) {
         let image_write = vk::WriteDescriptorSet::default()
             .dst_set(set)
             .dst_binding(image_binding)
@@ -125,11 +133,25 @@ impl UniformHandle {
         Self::with_layout(context, desc_layout, UniformLayout::matrices_only())
     }
 
-    pub fn new_with_bindings(context: &VulkanContext, desc_layout: &vk::DescriptorSetLayout, separate_bindings: bool) -> Self {
-        Self::with_layout_and_bindings(context, desc_layout, UniformLayout::matrices_only(), separate_bindings)
+    pub fn new_with_bindings(
+        context: &VulkanContext,
+        desc_layout: &vk::DescriptorSetLayout,
+        separate_bindings: bool,
+    ) -> Self {
+        Self::with_layout_and_bindings(
+            context,
+            desc_layout,
+            UniformLayout::matrices_only(),
+            separate_bindings,
+        )
     }
 
-    pub fn new_with_options(context: &VulkanContext, desc_layout: &vk::DescriptorSetLayout, separate_bindings: bool, has_color: bool) -> Self {
+    pub fn new_with_options(
+        context: &VulkanContext,
+        desc_layout: &vk::DescriptorSetLayout,
+        separate_bindings: bool,
+        has_color: bool,
+    ) -> Self {
         let layout = if has_color {
             UniformLayout::pbr_with_color()
         } else {
@@ -138,7 +160,11 @@ impl UniformHandle {
         Self::with_layout_and_bindings(context, desc_layout, layout, separate_bindings)
     }
 
-    pub fn with_layout(context: &VulkanContext, desc_layout: &vk::DescriptorSetLayout, layout: UniformLayout) -> Self {
+    pub fn with_layout(
+        context: &VulkanContext,
+        desc_layout: &vk::DescriptorSetLayout,
+        layout: UniformLayout,
+    ) -> Self {
         Self::with_layout_and_bindings(context, desc_layout, layout, false)
     }
 
@@ -150,7 +176,8 @@ impl UniformHandle {
     ) -> Self {
         let mut uniform_descs = vec![];
         for _ in 0..2 {
-            let uniform_desc = Self::create_descriptor_sets(context, desc_layout, &layout, separate_bindings);
+            let uniform_desc =
+                Self::create_descriptor_sets(context, desc_layout, &layout, separate_bindings);
             uniform_descs.push(uniform_desc);
         }
 
@@ -282,7 +309,8 @@ impl UniformDescriptor {
                 if !image_info.is_updated {
                     image_info.is_updated = true;
                     if self.separate_bindings {
-                        let (image_write, sampler_write) = image_info.update_once_separate(self.desc_set, 1, 2);
+                        let (image_write, sampler_write) =
+                            image_info.update_once_separate(self.desc_set, 1, 2);
                         desc_writes.push(image_write);
                         desc_writes.push(sampler_write);
                     } else {
@@ -365,7 +393,12 @@ impl MaterialPipeline {
         desc_layout: vk::DescriptorSetLayout,
         context: Rc<VulkanContext>,
     ) -> Self {
-        Self::with_layout(pipeline, desc_layout, context, UniformLayout::matrices_only())
+        Self::with_layout(
+            pipeline,
+            desc_layout,
+            context,
+            UniformLayout::matrices_only(),
+        )
     }
 
     pub fn new_with_bindings(
@@ -374,7 +407,13 @@ impl MaterialPipeline {
         context: Rc<VulkanContext>,
         separate_bindings: bool,
     ) -> Self {
-        Self::with_layout_and_bindings(pipeline, desc_layout, context, UniformLayout::matrices_only(), separate_bindings)
+        Self::with_layout_and_bindings(
+            pipeline,
+            desc_layout,
+            context,
+            UniformLayout::matrices_only(),
+            separate_bindings,
+        )
     }
 
     pub fn new_with_options(
@@ -408,7 +447,12 @@ impl MaterialPipeline {
         layout: UniformLayout,
         separate_bindings: bool,
     ) -> Self {
-        let uniform = UniformHandle::with_layout_and_bindings(&context, &desc_layout, layout, separate_bindings);
+        let uniform = UniformHandle::with_layout_and_bindings(
+            &context,
+            &desc_layout,
+            layout,
+            separate_bindings,
+        );
         Self {
             pipeline: Some(pipeline),
             uniform,
@@ -429,7 +473,9 @@ impl MaterialPipeline {
 
     /// Get the pipeline handle (panics if pipeline was destroyed)
     pub fn vk_pipeline(&self) -> &Pipeline {
-        self.pipeline.as_ref().expect("Pipeline accessed after destruction")
+        self.pipeline
+            .as_ref()
+            .expect("Pipeline accessed after destruction")
     }
 
     /// Get the pipeline layout (panics if pipeline was destroyed)
@@ -446,7 +492,10 @@ impl MaterialPipeline {
     }
 
     pub fn bind(&self, command_buffer: vk::CommandBuffer) {
-        let pipeline = self.pipeline.as_ref().expect("Pipeline accessed after destruction");
+        let pipeline = self
+            .pipeline
+            .as_ref()
+            .expect("Pipeline accessed after destruction");
         unsafe {
             self.context.device.cmd_bind_pipeline(
                 command_buffer,
@@ -470,8 +519,15 @@ impl MaterialPipeline {
     /// # Arguments
     /// * `command_buffer` - The command buffer to record into
     /// * `descriptor_set` - The descriptor set to bind (from material's own uniform buffer)
-    pub fn bind_with_descriptor(&self, command_buffer: vk::CommandBuffer, descriptor_set: vk::DescriptorSet) {
-        let pipeline = self.pipeline.as_ref().expect("Pipeline accessed after destruction");
+    pub fn bind_with_descriptor(
+        &self,
+        command_buffer: vk::CommandBuffer,
+        descriptor_set: vk::DescriptorSet,
+    ) {
+        let pipeline = self
+            .pipeline
+            .as_ref()
+            .expect("Pipeline accessed after destruction");
         unsafe {
             self.context.device.cmd_bind_pipeline(
                 command_buffer,

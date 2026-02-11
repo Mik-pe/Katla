@@ -180,8 +180,7 @@ impl PassBuilder {
             .iter_mut()
             .find(|u| u.resource_id == resource_id)
         {
-            usage.clear_value =
-                Some(ClearValue::color(color[0], color[1], color[2], color[3]));
+            usage.clear_value = Some(ClearValue::color(color[0], color[1], color[2], color[3]));
             usage.load_op = crate::types::AttachmentLoadOp::Clear.into();
         }
         self
@@ -496,7 +495,10 @@ mod tests {
         let input_id = ResourceId(0);
         let output_id = ResourceId(1);
 
-        builder.read(input_id).write(Attachment::Color(output_id)).extent(1920, 1080);
+        builder
+            .read(input_id)
+            .write(Attachment::Color(output_id))
+            .extent(1920, 1080);
 
         let pass = builder.build();
 

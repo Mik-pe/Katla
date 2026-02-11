@@ -5,7 +5,7 @@
 //! - Binding information (uniforms, textures, samplers)
 //! - Type information for validation
 
-use naga::{Module, Type, TypeInner, Handle};
+use naga::{Handle, Module, Type, TypeInner};
 use std::collections::HashMap;
 
 /// Error types for shader reflection
@@ -57,20 +57,20 @@ impl MemberType {
     pub fn size(&self) -> usize {
         match self {
             MemberType::Mat4 => 64,  // 4x4 matrix = 16 floats = 64 bytes
-            MemberType::Vec4 => 16,   // 4 floats
-            MemberType::Vec3 => 12,   // 3 floats
-            MemberType::Vec2 => 8,    // 2 floats
-            MemberType::Float => 4,   // 1 float
-            MemberType::Color => 16,  // RGBA = 4 floats
+            MemberType::Vec4 => 16,  // 4 floats
+            MemberType::Vec3 => 12,  // 3 floats
+            MemberType::Vec2 => 8,   // 2 floats
+            MemberType::Float => 4,  // 1 float
+            MemberType::Color => 16, // RGBA = 4 floats
         }
     }
 
     /// Get the alignment requirement for this type
     pub fn alignment(&self) -> usize {
         match self {
-            MemberType::Mat4 => 16,  // Mat4 needs 16-byte alignment
+            MemberType::Mat4 => 16, // Mat4 needs 16-byte alignment
             MemberType::Vec4 => 16,
-            MemberType::Vec3 => 16,  // Vec3 is treated as Vec4 for alignment
+            MemberType::Vec3 => 16, // Vec3 is treated as Vec4 for alignment
             MemberType::Vec2 => 8,
             MemberType::Float => 4,
             MemberType::Color => 16,
@@ -130,16 +130,18 @@ impl ShaderReflection {
             if let TypeInner::Struct { ref members, .. } = ty.inner {
                 let layout = Self::analyze_struct(&module, members)?;
                 // Try to get the struct name if it exists
-                let name = ty.name.clone().unwrap_or_else(|| {
-                    format!("struct_{}", handle.index())
-                });
+                let name = ty
+                    .name
+                    .clone()
+                    .unwrap_or_else(|| format!("struct_{}", handle.index()));
 
                 structs.insert(name, layout);
             }
         }
 
         // Determine if we have a color uniform
-        let has_color_uniform = structs.values()
+        let has_color_uniform = structs
+            .values()
             .any(|layout| layout.members.iter().any(|m| m.name == "color"));
 
         // For now, assume WGSL shaders need separate bindings
@@ -147,8 +149,14 @@ impl ShaderReflection {
         let needs_separate_bindings = true;
 
         // Calculate uniform buffer size
-        let uniform_buffer_size = structs.values()
-            .filter(|layout| layout.members.iter().any(|m| matches!(m.ty, MemberType::Mat4)))
+        let uniform_buffer_size = structs
+            .values()
+            .filter(|layout| {
+                layout
+                    .members
+                    .iter()
+                    .any(|m| matches!(m.ty, MemberType::Mat4))
+            })
             .map(|layout| layout.size)
             .next()
             .unwrap_or(0);
@@ -215,18 +223,22 @@ impl ShaderReflection {
                 if columns == &naga::VectorSize::Quad && rows == &naga::VectorSize::Quad {
                     Ok(MemberType::Mat4)
                 } else {
-                    Err(ReflectionError::UnsupportedType(format!("Matrix {:?}x{:?}", columns, rows)))
+                    Err(ReflectionError::UnsupportedType(format!(
+                        "Matrix {:?}x{:?}",
+                        columns, rows
+                    )))
                 }
             }
-            TypeInner::Vector { size, .. } => {
-                match size {
-                    naga::VectorSize::Quad => Ok(MemberType::Vec4),
-                    naga::VectorSize::Tri => Ok(MemberType::Vec3),
-                    naga::VectorSize::Bi => Ok(MemberType::Vec2),
-                }
-            }
+            TypeInner::Vector { size, .. } => match size {
+                naga::VectorSize::Quad => Ok(MemberType::Vec4),
+                naga::VectorSize::Tri => Ok(MemberType::Vec3),
+                naga::VectorSize::Bi => Ok(MemberType::Vec2),
+            },
             TypeInner::Scalar { .. } => Ok(MemberType::Float),
-            _ => Err(ReflectionError::UnsupportedType(format!("{:?}", type_inner))),
+            _ => Err(ReflectionError::UnsupportedType(format!(
+                "{:?}",
+                type_inner
+            ))),
         }
     }
 
@@ -244,7 +256,11 @@ impl ShaderReflection {
             }
         }
         // Fall back to first struct with mat4 members (likely the uniform buffer)
-        self.structs.values()
-            .find(|layout| layout.members.iter().any(|m| matches!(m.ty, MemberType::Mat4)))
+        self.structs.values().find(|layout| {
+            layout
+                .members
+                .iter()
+                .any(|m| matches!(m.ty, MemberType::Mat4))
+        })
     }
 }
