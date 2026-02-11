@@ -7,10 +7,11 @@ use katla_ecs::World;
 /// in the GLTF file but doesn't fully parse them yet.
 ///
 /// TODO: Full implementation requires:
-/// - Proper gltf crate accessor usage
-/// - Animation sampler parsing
-/// - Joint hierarchy building
-/// - Inverse bind matrix loading
+/// - Parse animation channels (translation, rotation, scale, morph weights)
+/// - Read keyframe data from gltf accessors (input times, output values)
+/// - Build AnimationClip structures with samplers
+/// - Create AnimatedModel component and attach to entities
+/// - Handle interpolation modes (Linear, Step, CubicSpline)
 pub fn load_animations(_world: &mut World, model: &GLTFModel) {
     let document = &model.document;
 
@@ -62,7 +63,12 @@ pub fn load_animations(_world: &mut World, model: &GLTFModel) {
     }
 
     // TODO: Create AnimatedModel component with parsed animation data
-    // For now, just log what we found
+    // Need to:
+    // 1. Build AnimationClip for each GLTF animation
+    // 2. Create AnimationChannel for each GLTF channel
+    // 3. Create AnimationSampler with keyframe data
+    // 4. Store clips in AnimatedModel.animations HashMap
+    // 5. Attach AnimatedModel to the loaded entity
     println!("Animation parsing is not yet fully implemented.");
 }
 
@@ -97,6 +103,11 @@ pub fn load_skins(_world: &mut World, model: &GLTFModel) {
     }
 
     // TODO: Store skin data properly
+    // Need to:
+    // 1. Create Skin component with joint indices
+    // 2. Load inverse bind matrices from gltf accessors
+    // 3. Store joint hierarchy (parent-child relationships)
+    // 4. Attach Skin component to the skinned mesh entity
     println!("Skin loading is not yet fully implemented.");
 }
 
@@ -108,6 +119,11 @@ pub fn build_skeleton(_model: &GLTFModel, skin_joints: &[usize]) -> Vec<katla_ma
     println!("Building skeleton for {} joints", skin_joints.len());
 
     // TODO: Extract node transforms from GLTF scene graph
+    // Need to:
+    // 1. Traverse GLTF nodes by index
+    // 2. Build parent-child relationships
+    // 3. Compute world-space transforms for each joint
+    // 4. Return transform matrices for skeleton
     // For now, return identity matrices
     vec![katla_math::Mat4::identity(); skin_joints.len()]
 }

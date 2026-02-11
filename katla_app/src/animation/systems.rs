@@ -73,7 +73,7 @@ impl AnimationUpdateSystem {
             return Some(entity);
         }
 
-        // TODO: Check parent/child relationships
+        // TODO: Check parent/child relationships via Parent/Children components
         // For now, return None
         None
     }
@@ -93,9 +93,10 @@ impl System for SkeletalAnimationSystem {
     fn update(&mut self, _world: &mut World, _delta_time: f32) {
         // TODO: Implement skeletal animation
         // This requires:
-        // 1. Sampling animation clips at current time
-        // 2. Computing joint hierarchies
-        // 3. Updating joint matrices for GPU skinning
+        // 1. Sample animation clips at current player time from AnimatedModel
+        // 2. Compute joint hierarchies using inverse bind matrices
+        // 3. Update joint matrices for GPU skinning to vertex shader
+        // 4. Upload joint matrix uniform buffer each frame
     }
 
     fn name(&self) -> &str {
@@ -115,9 +116,10 @@ impl System for MorphTargetSystem {
     fn update(&mut self, _world: &mut World, _delta_time: f32) {
         // TODO: Implement morph target animation
         // This requires:
-        // 1. Sampling weight animations
-        // 2. Updating vertex positions based on morph targets
-        // 3. Re-uploading vertex data to GPU
+        // 1. Sample weight animations at current player time
+        // 2. Interpolate vertex positions based on morph targets
+        // 3. Re-upload vertex buffer to GPU when weights change
+        // 4. Update material uniforms with morph target weights array
     }
 
     fn name(&self) -> &str {

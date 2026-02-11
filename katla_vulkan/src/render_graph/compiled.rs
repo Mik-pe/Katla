@@ -20,6 +20,8 @@ pub struct CompiledRenderGraph {
     pub context: Rc<VulkanContext>,
     pub passes: Vec<CompiledPass>,
     pub resources: Rc<HashMap<ResourceId, CompiledResource>>,
+    // TODO: Replace these raw vk types with wrapper types
+    // These should use VkRenderPass and VkFramebuffer from sync module
     vk_render_passes: Vec<vk::RenderPass>,
     framebuffers: Vec<vk::Framebuffer>,
     pub registry: ExecutionRegistry<'static>,
@@ -41,6 +43,8 @@ pub struct CompiledPass {
     pub extent: Extent2D,
     pub clear_values: Vec<ClearValue>,
     execute: PassExecute,
+    // TODO: Replace raw vk types with wrapper types
+    // MemoryBarrier, ImageView, AttachmentReference need wrapper types in sync module
     pub pipeline_barriers_before: Vec<vk::MemoryBarrier<'static>>,
     /// Color attachment image views for dynamic rendering (one set per swapchain image)
     pub color_attachments: Vec<Vec<vk::ImageView>>,
@@ -63,6 +67,8 @@ pub struct SubpassDescriptor {
     depth_stencil: Option<(u32, ResourceId)>,
     #[allow(dead_code)]
     resolve_attachments: Vec<(u32, ResourceId)>,
+    // TODO: Replace raw vk types with wrapper types
+    // AttachmentReference needs wrapper type in sync module
     // Store Vulkan attachment references to ensure they live long enough
     vk_input_refs: Vec<vk::AttachmentReference>,
     vk_color_refs: Vec<vk::AttachmentReference>,
