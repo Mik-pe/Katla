@@ -30,6 +30,9 @@ pub struct PipelineBuilder {
     descriptor_layouts: Vec<vk::DescriptorSetLayout>,
     push_constant_ranges: Vec<vk::PushConstantRange>,
     dynamic_states: Vec<vk::DynamicState>,
+    // For dynamic rendering (Vulkan 1.3)
+    color_format: Option<vk::Format>,
+    depth_format: Option<vk::Format>,
 }
 
 impl PipelineBuilder {
@@ -60,6 +63,8 @@ impl PipelineBuilder {
             descriptor_layouts: Vec::new(),
             push_constant_ranges: Vec::new(),
             dynamic_states: vec![vk::DynamicState::VIEWPORT, vk::DynamicState::SCISSOR],
+            color_format: None,
+            depth_format: None,
         }
     }
 
@@ -194,6 +199,16 @@ impl PipelineBuilder {
         self
     }
 
+    pub fn with_rendering_formats(
+        mut self,
+        color_format: Option<vk::Format>,
+        depth_format: Option<vk::Format>,
+    ) -> Self {
+        self.color_format = color_format;
+        self.depth_format = depth_format;
+        self
+    }
+
     pub fn with_dynamic_states(mut self, states: Vec<vk::DynamicState>) -> Self {
         self.dynamic_states = states;
         self
@@ -287,19 +302,56 @@ impl PipelineBuilder {
         }
         .map_err(PipelineError::LayoutCreationFailed)?;
 
-        let create_info = vk::GraphicsPipelineCreateInfo::default()
-            .stages(&shader_stages)
-            .vertex_input_state(&vertex_input)
-            .input_assembly_state(&input_assembly)
-            .viewport_state(&viewport_state)
-            .depth_stencil_state(&depth_stencil_state)
-            .rasterization_state(&rasterizer)
-            .multisample_state(&multisampling)
-            .color_blend_state(&color_blending)
-            .dynamic_state(&dynamic_state)
-            .layout(pipeline_layout)
-            .render_pass(render_pass)
-            .subpass(0);
+        // For dynamic rendering (Vulkan 1.3), we need to add VkPipelineRenderingCreateInfo
+        // to the pNext chain when render_pass is null
+        // Declare color_formats outside the if block so it lives long enough
+        let mut color_formats = Vec::new();
+        let mut rendering_create_info = if render_pass == vk::RenderPass::null()
+            && (self.color_format.is_some() || self.depth_format.is_some())
+        {
+            if let Some(fmt) = self.color_format {
+                color_formats.push(fmt);
+            }
+
+            Some(
+                vk::PipelineRenderingCreateInfo::default()
+                    .color_attachment_formats(&color_formats)
+                    .depth_attachment_format(self.depth_format.unwrap_or(vk::Format::UNDEFINED)),
+            )
+        } else {
+            None
+        };
+
+        let create_info = if let Some(ref mut rendering_info) = rendering_create_info {
+            vk::GraphicsPipelineCreateInfo::default()
+                .stages(&shader_stages)
+                .vertex_input_state(&vertex_input)
+                .input_assembly_state(&input_assembly)
+                .viewport_state(&viewport_state)
+                .depth_stencil_state(&depth_stencil_state)
+                .rasterization_state(&rasterizer)
+                .multisample_state(&multisampling)
+                .color_blend_state(&color_blending)
+                .dynamic_state(&dynamic_state)
+                .layout(pipeline_layout)
+                .render_pass(render_pass)
+                .subpass(0)
+                .push_next(rendering_info)
+        } else {
+            vk::GraphicsPipelineCreateInfo::default()
+                .stages(&shader_stages)
+                .vertex_input_state(&vertex_input)
+                .input_assembly_state(&input_assembly)
+                .viewport_state(&viewport_state)
+                .depth_stencil_state(&depth_stencil_state)
+                .rasterization_state(&rasterizer)
+                .multisample_state(&multisampling)
+                .color_blend_state(&color_blending)
+                .dynamic_state(&dynamic_state)
+                .layout(pipeline_layout)
+                .render_pass(render_pass)
+                .subpass(0)
+        };
 
         let pipeline = unsafe {
             self.context.device.create_graphics_pipelines(

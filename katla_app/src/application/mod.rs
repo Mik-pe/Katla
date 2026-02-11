@@ -49,13 +49,49 @@ fn find_resources_path() -> PathBuf {
 
     for path in possible_paths {
         if path.exists() {
+            println!("Found resources/models at: {}", path.display());
             return path;
         }
     }
 
-    // Fallback: return the first path even if it doesn't exist
-    // (this will give a better error message when trying to load)
-    PathBuf::from("resources/models")
+    panic!("Failed to find resources/models directory!");
+}
+
+/// Find the materials directory by searching common locations
+fn find_materials_path() -> PathBuf {
+    // List of possible paths to check, in order of preference
+    let possible_paths = vec![
+        // Current directory (for running from workspace root)
+        PathBuf::from("resources/materials"),
+        // Parent directory (for running from katla_app)
+        PathBuf::from("../resources/materials"),
+        // Grandparent directory (for running from target/debug)
+        PathBuf::from("../../resources/materials"),
+        // Absolute path using CARGO_MANIFEST_DIR
+        {
+            let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+            path.pop(); // Go up from katla_app to workspace root
+            path.push("resources/materials");
+            path
+        },
+    ];
+
+    for path in possible_paths {
+        if path.exists() {
+            println!("Found resources/materials at: {}", path.display());
+            return path;
+        }
+    }
+
+    panic!("Failed to find resources/materials directory!");
+}
+
+/// Find the resources root directory (parent of materials, models, shaders)
+fn find_resources_root_path() -> PathBuf {
+    let materials_path = find_materials_path();
+    let mut root = materials_path.clone();
+    root.pop(); // Remove 'materials'
+    root
 }
 
 struct ApplicationInfo {
@@ -111,7 +147,7 @@ impl ApplicationHandler for Application {
 
             // Load materials from TOML files BEFORE creating models
             // This ensures templates are available when creating GLTF models and meshes
-            let materials_path = PathBuf::from("resources/materials");
+            let materials_path = find_materials_path();
             let loaded_count = renderer
                 .material_registry
                 .borrow_mut()
@@ -129,7 +165,7 @@ impl ApplicationHandler for Application {
 
             // Enable hot reload for materials and shaders
             // Watch the parent resources directory to catch changes in both materials/ and shaders/
-            let resources_path = PathBuf::from("resources");
+            let resources_path = find_resources_root_path();
             renderer
                 .material_registry
                 .borrow_mut()
@@ -267,6 +303,9 @@ impl ApplicationHandler for Application {
                 self.material_manager
                     .register_material("checkerboard", checkerboard);
             }
+
+            // Store context reference in material manager for cleanup
+            self.material_manager.set_context(renderer.context.clone());
 
             self.renderer = Some(renderer);
 
@@ -424,12 +463,17 @@ impl ApplicationHandler for Application {
     }
 
     fn exiting(&mut self, _event_loop: &ActiveEventLoop) {
-        // Clean up material manager before destroying renderer
-        // This destroys all MaterialPipelines which own Vulkan resources
+        // Wait for GPU to finish all work BEFORE destroying any Vulkan resources
+        // This ensures no pipelines are in use when we destroy them
+        if let Some(ref mut renderer) = self.renderer {
+            renderer.wait_for_device();
+        }
+
+        // Now safe to destroy material manager (which destroys pipelines)
         self.material_manager.destroy();
 
+        // Finally destroy the renderer
         if let Some(mut renderer) = self.renderer.take() {
-            renderer.wait_for_device();
             renderer.destroy();
         }
     }

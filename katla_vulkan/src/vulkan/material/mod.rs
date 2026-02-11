@@ -61,7 +61,7 @@ pub struct UniformHandle {
 
 pub struct UniformDescriptor {
     pub desc_set: vk::DescriptorSet,
-    pub desc_pool: vk::DescriptorPool,
+    desc_pool: Option<vk::DescriptorPool>,  // Option to prevent double-free
     pub uniform_buffer: Option<UniformBuffer>,
     pub image_info: Option<ImageInfo>,
     pub separate_bindings: bool,
@@ -212,9 +212,11 @@ impl UniformHandle {
     }
 
     pub fn destroy(&mut self, context: &VulkanContext) {
+        // Destroy all descriptors and clear the vector to make this idempotent
         for desc in &mut self.descriptors {
             desc.destroy(context);
         }
+        self.descriptors.clear();
     }
 
     fn create_descriptor_sets(
@@ -269,7 +271,7 @@ impl UniformHandle {
 
         UniformDescriptor {
             desc_set,
-            desc_pool,
+            desc_pool: Some(desc_pool),
             uniform_buffer,
             image_info,
             separate_bindings,
@@ -333,8 +335,10 @@ impl UniformDescriptor {
             let buffer = self.uniform_buffer.take().unwrap();
             context.free_buffer(buffer.buffer, buffer.allocation);
         }
-        unsafe {
-            context.device.destroy_descriptor_pool(self.desc_pool, None);
+        if let Some(desc_pool) = self.desc_pool.take() {
+            unsafe {
+                context.device.destroy_descriptor_pool(desc_pool, None);
+            }
         }
     }
 }
@@ -582,6 +586,7 @@ impl Drop for MaterialPipeline {
     fn drop(&mut self) {
         // Clean up any remaining resources
         // Note: If destroy_preserving_layout() was called, these will already be None
+        self.uniform.destroy(&self.context);
         if let Some(pipeline) = self.pipeline.take() {
             pipeline.destroy();
         }

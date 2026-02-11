@@ -129,6 +129,11 @@ impl MaterialBuilder {
         // All shaders are WGSL now, which uses separate bindings
         builder.has_color = descriptor.has_color_uniform();
 
+        // Set default formats for dynamic rendering (Vulkan 1.3)
+        // These match the swapchain and depth texture formats
+        builder.color_format = Some(ImageFormat::B8G8R8A8Srgb);
+        builder.depth_format = Some(ImageFormat::D32SfloatS8Uint);
+
         Ok(builder)
     }
 
@@ -354,6 +359,19 @@ impl MaterialBuilder {
             .build(&self.context.device)
             .map_err(|e| MaterialBuildError::DescriptorLayoutFailed(format!("{:?}", e)))?;
 
+        // For dynamic rendering (render_pass is None), we need to provide color/depth formats
+        // If render_pass is Some, the formats come from the render pass
+        let color_format = if render_pass.is_none() {
+            self.color_format
+        } else {
+            None // Formats come from render_pass
+        };
+        let depth_format = if render_pass.is_none() {
+            self.depth_format
+        } else {
+            None // Formats come from render_pass
+        };
+
         let mut pipeline_builder = PipelineBuilder::new(self.context.clone())
             .with_shaders(vert_shader.module, frag_shader.module)
             .with_entry_points(
@@ -366,6 +384,13 @@ impl MaterialBuilder {
             )
             .with_depth_test(self.depth_test, self.depth_write, vk::CompareOp::LESS)
             .with_descriptor_layouts(vec![desc_layout]);
+
+        // Set rendering formats if using dynamic rendering
+        if color_format.is_some() || depth_format.is_some() {
+            let cf = color_format.map(|fmt| ash::vk::Format::from(fmt));
+            let df = depth_format.map(|fmt| ash::vk::Format::from(fmt));
+            pipeline_builder = pipeline_builder.with_rendering_formats(cf, df);
+        }
 
         if self.cull_back_faces {
             pipeline_builder = pipeline_builder

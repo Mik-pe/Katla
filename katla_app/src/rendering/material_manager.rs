@@ -22,7 +22,8 @@ pub struct MaterialManager {
     by_name: HashMap<String, MaterialId>,
     hot_reload: Option<MaterialHotReload>,
     shader_to_materials: HashMap<PathBuf, Vec<String>>, // Maps shader path -> material names
-    material_handles: HashMap<String, MaterialHandle>,  // Maps material name -> renderer handle
+    material_handles: HashMap<String, MaterialHandle>, // Maps material name -> renderer handle
+    context: Option<Rc<VulkanContext>>, // Store context for cleanup
 }
 
 impl MaterialManager {
@@ -33,7 +34,13 @@ impl MaterialManager {
             hot_reload: None,
             shader_to_materials: HashMap::new(),
             material_handles: HashMap::new(),
+            context: None,
         }
+    }
+
+    /// Set the Vulkan context for this manager (needed for cleanup)
+    pub fn set_context(&mut self, context: Rc<VulkanContext>) {
+        self.context = Some(context);
     }
 
     /// Clean up old pipelines that are no longer referenced.
@@ -339,6 +346,11 @@ impl MaterialManager {
     pub fn destroy(&mut self) {
         // Destroy active materials
         for material in &mut self.materials {
+            // Destroy per-material uniform buffers (template-based materials)
+            if let Some(ref context) = self.context {
+                material.destroy_uniform(context);
+            }
+            // Destroy the pipeline
             if let Ok(mut pipeline) = material.material_pipeline.try_borrow_mut() {
                 pipeline.destroy();
             }

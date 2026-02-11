@@ -249,4 +249,13 @@ impl Material {
             self.uniform,
         )
     }
+
+    /// Destroy the per-material uniform buffer (if any).
+    ///
+    /// This should be called during shutdown after waiting for the GPU to finish.
+    pub fn destroy_uniform(&mut self, context: &Rc<VulkanContext>) {
+        if let Some(mut uniform) = self.uniform.take() {
+            uniform.destroy(context);
+        }
+    }
 }
