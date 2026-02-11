@@ -118,7 +118,7 @@ impl ApplicationHandler for Application {
                 .load_directory(
                     &materials_path,
                     renderer.context.clone(),
-                    &renderer.render_pass,
+                    None, // Dynamic rendering: use VK_NULL_HANDLE for renderPass
                 )
                 .expect("Failed to load materials directory");
             println!(
@@ -375,7 +375,6 @@ impl ApplicationHandler for Application {
                     // Handle single-frame mode: exit after rendering one frame
                     if self.info.single_frame {
                         event_loop.exit();
-                        return;
                     }
 
                     if self.stage_upload {
@@ -474,7 +473,8 @@ impl Application {
         if let Ok(reloaded) = renderer
             .material_registry
             .borrow_mut()
-            .check_hot_reload(renderer.context.clone(), &renderer.render_pass)
+            .check_hot_reload(renderer.context.clone(), None)
+        // Dynamic rendering: use VK_NULL_HANDLE
         {
             if reloaded > 0 {
                 println!("Hot reloaded {} material template(s)", reloaded);

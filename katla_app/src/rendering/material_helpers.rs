@@ -91,7 +91,10 @@ pub fn create_checkerboard_material(
         .with_depth_test(true)
         .with_depth_write(true)
         .with_backface_culling(true)
-        .build(render_pass)
+        // Dynamic rendering: specify attachment formats
+        .with_color_format(ImageFormat::B8G8R8A8Srgb)
+        .with_depth_format(ImageFormat::D32SfloatS8Uint)
+        .build(None) // Dynamic rendering: use VK_NULL_HANDLE for renderPass
         .expect("Failed to create material pipeline");
 
     Material::from_pipeline(material_pipeline, Some(texture), vertex_binding, None)
@@ -149,7 +152,10 @@ pub fn create_colored_checkerboard_material(
         .with_depth_test(true)
         .with_depth_write(true)
         .with_backface_culling(true)
-        .build(render_pass)
+        // Dynamic rendering: specify attachment formats
+        .with_color_format(ImageFormat::B8G8R8A8Srgb)
+        .with_depth_format(ImageFormat::D32SfloatS8Uint)
+        .build(None) // Dynamic rendering: use VK_NULL_HANDLE for renderPass
         .expect("Failed to create colored material pipeline");
 
     Material::from_pipeline(
