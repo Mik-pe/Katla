@@ -185,7 +185,9 @@ macro_rules! impl_common_builder {
                 }
 
                 // Fallback to creating material directly
-                create_checkerboard_material(self.base.context.clone(), &renderer.render_pass)
+                create_checkerboard_material(
+                    self.base.context.clone(),
+                )
             }
 
             fn create_entity(

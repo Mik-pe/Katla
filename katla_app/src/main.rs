@@ -12,7 +12,7 @@ fn main() {
     let single_frame = args.contains(&"--single-frame".to_string());
 
     if single_frame {
-        println!("Running in single-frame mode for validation testing");
+        println!("Running in limited-frame mode (10 frames) for validation testing");
     }
 
     let systems: Vec<Box<dyn System>> = vec![

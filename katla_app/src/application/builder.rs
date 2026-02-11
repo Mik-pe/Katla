@@ -16,7 +16,7 @@ use crate::{
 pub struct ApplicationBuilder {
     app_name: String,
     validation_layer_enabled: bool,
-    single_frame: bool,
+    max_frames: Option<usize>,
     world: World,
 }
 
@@ -36,7 +36,13 @@ impl ApplicationBuilder {
     }
 
     pub fn single_frame(mut self, on: bool) -> Self {
-        self.single_frame = on;
+        // When single_frame is enabled, render some frames for better validation
+        self.max_frames = if on { Some(25) } else { None };
+        self
+    }
+
+    pub fn max_frames(mut self, count: usize) -> Self {
+        self.max_frames = Some(count);
         self
     }
 
@@ -65,7 +71,7 @@ impl ApplicationBuilder {
         let info = ApplicationInfo {
             name: self.app_name,
             validation_layer_enabled: self.validation_layer_enabled,
-            single_frame: self.single_frame,
+            max_frames: self.max_frames,
         };
         let mut world = self.world;
         let camera = Rc::new(RefCell::new(Camera::new(&mut world)));
@@ -82,6 +88,7 @@ impl ApplicationBuilder {
             world,
             input_mapper: InputMapper::new(),
             current_modifiers: ModifiersState::empty(),
+            frame_count: 0,
         };
 
         (app, event_loop)

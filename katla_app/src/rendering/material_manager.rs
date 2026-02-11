@@ -6,8 +6,8 @@ use std::{
 };
 
 use crate::rendering::Material;
-use katla_vulkan::{MaterialHandle, MaterialRegistry, RenderPass, VulkanContext, VulkanRenderer};
-use notify::{RecursiveMode, Watcher};
+use katla_vulkan::{MaterialHandle, VulkanContext, VulkanRenderer, MaterialRegistry};
+use notify::{Watcher, RecursiveMode};
 
 /// ID for referencing a shared material.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -244,7 +244,7 @@ impl MaterialManager {
         material_factory: F,
     ) -> usize
     where
-        F: Fn(&str, Rc<VulkanContext>, &RenderPass) -> Material,
+        F: Fn(&str, Rc<VulkanContext>) -> Material,
     {
         let Some(ref hot_reload) = self.hot_reload else {
             return 0;
@@ -265,7 +265,6 @@ impl MaterialManager {
                         let new_material = material_factory(
                             material_name,
                             renderer.context.clone(),
-                            &renderer.render_pass,
                         );
 
                         // Update the material in the manager

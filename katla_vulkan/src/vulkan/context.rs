@@ -16,10 +16,6 @@ use std::{
     rc::Rc,
     sync::{Arc, Mutex},
 };
-// use winit::{
-//     raw_window_handle::{HasDisplayHandle, HasRawWindowHandle, HasWindowHandle},
-//     window::Window,
-// };
 
 use super::SwapchainInfo;
 

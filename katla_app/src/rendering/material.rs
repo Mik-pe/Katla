@@ -3,7 +3,7 @@ use crate::{rendering::vertextypes::*, util::GLTFModel};
 use katla_math::{Color, Mat4};
 use katla_vulkan::{
     context::VulkanContext, material::UniformHandle, CommandBuffer, ImageFormat, MaterialBuilder,
-    MaterialHandle, MaterialPipeline, MaterialTemplate, RenderPass, Texture, VertexBinding,
+    MaterialHandle, MaterialPipeline, MaterialTemplate, Texture, VertexBinding,
 };
 
 use std::{cell::RefCell, path::Path, rc::Rc};
@@ -37,7 +37,7 @@ impl Clone for Material {
 }
 
 impl Material {
-    pub fn new(model: Rc<GLTFModel>, context: Rc<VulkanContext>, render_pass: &RenderPass) -> Self {
+    pub fn new(model: Rc<GLTFModel>, context: Rc<VulkanContext>) -> Self {
         let vertex_binding = VertexPBR::get_vertex_binding();
 
         let mut texture: Option<Rc<Texture>> = None;

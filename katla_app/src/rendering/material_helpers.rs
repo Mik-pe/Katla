@@ -1,7 +1,7 @@
 use std::{path::Path, rc::Rc};
 
 use katla_math::Color;
-use katla_vulkan::{ImageFormat, MaterialBuilder, RenderPass, Texture, VulkanContext};
+use katla_vulkan::{ImageFormat, MaterialBuilder, Texture, VulkanContext};
 
 use crate::rendering::{Material, VertexPBR};
 
@@ -48,7 +48,6 @@ pub fn create_checkerboard_texture(context: Rc<VulkanContext>) -> Texture {
 /// The material can then be registered with a MaterialManager and shared across multiple models.
 pub fn create_checkerboard_material(
     context: Rc<VulkanContext>,
-    render_pass: &RenderPass,
 ) -> Material {
     // Create a checkerboard texture (64x64)
     let texture_size = 64;
@@ -106,7 +105,6 @@ pub fn create_checkerboard_material(
 /// that is blended with a material color using the colored_mesh WGSL shader.
 pub fn create_colored_checkerboard_material(
     context: Rc<VulkanContext>,
-    render_pass: &RenderPass,
     color: Color,
 ) -> Material {
     // Create a checkerboard texture (64x64)

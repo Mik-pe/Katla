@@ -2,9 +2,7 @@ use std::rc::Rc;
 
 use katla_ecs::{EntityId, World};
 use katla_math::Transform;
-use katla_vulkan::{
-    MaterialHandle, MaterialRegistry, MeshHandle, RenderPass, VulkanContext, VulkanRenderer,
-};
+use katla_vulkan::{MaterialHandle, MaterialRegistry, MeshHandle, VulkanContext, VulkanRenderer};
 
 use crate::{
     components::{DrawableComponent, NameComponent, TransformComponent},
@@ -82,7 +80,6 @@ impl Model {
         model: Rc<GLTFModel>,
         context: Rc<VulkanContext>,
         renderer: Option<&mut VulkanRenderer>,
-        render_pass: &RenderPass,
         transform: Transform,
         material_registry: Option<&MaterialRegistry>,
     ) -> Self {
@@ -128,11 +125,11 @@ impl Model {
                 Material::from_template(template, texture, None)
             } else {
                 // Fall back to direct creation if template not found
-                Material::new(model.clone(), context.clone(), render_pass)
+                Material::new(model.clone(), context.clone())
             }
         } else {
             // No registry provided, use direct creation
-            Material::new(model.clone(), context.clone(), render_pass)
+            Material::new(model.clone(), context.clone())
         };
 
         let mesh = Mesh::new_from_model(model, context.clone());
@@ -153,7 +150,6 @@ impl Model {
         model: Rc<GLTFModel>,
         context: Rc<VulkanContext>,
         renderer: Option<&mut VulkanRenderer>,
-        render_pass: &RenderPass,
         transform: Transform,
         material_registry_ptr: *const std::cell::RefCell<MaterialRegistry>,
     ) -> Self {
@@ -206,7 +202,7 @@ impl Model {
             } else {
                 println!("  Model: Template 'gltf_default' not found, creating directly");
                 // Fall back to direct creation if template not found
-                Material::new(model.clone(), context.clone(), render_pass)
+                Material::new(model.clone(), context.clone())
             }
         };
 

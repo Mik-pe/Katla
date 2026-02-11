@@ -97,7 +97,7 @@ fn find_resources_root_path() -> PathBuf {
 struct ApplicationInfo {
     name: String,
     validation_layer_enabled: bool,
-    single_frame: bool,
+    max_frames: Option<usize>, // Some(n) = exit after n frames, None = run indefinitely
 }
 
 pub struct Application {
@@ -112,6 +112,7 @@ pub struct Application {
     world: World,
     input_mapper: InputMapper,
     current_modifiers: ModifiersState,
+    frame_count: usize, // Track frames rendered for max_frames limit
 }
 
 impl ApplicationHandler for Application {
@@ -122,9 +123,10 @@ impl ApplicationHandler for Application {
                     Window::default_attributes()
                         .with_title(&self.info.name)
                         .with_resizable(true)
+                        // Use primary monitor size for initial window size
                         .with_min_inner_size(LogicalSize {
-                            width: 1.0,
-                            height: 1.0,
+                            width: 800.0,  // Use reasonable default width
+                            height: 600.0,  // Use reasonable default height
                         })
                         .with_maximized(false),
                 )
@@ -180,7 +182,6 @@ impl ApplicationHandler for Application {
             let fox_transform = Transform::new_from_position(Vec3::new(0.0, 0.0, 0.0));
             let context = renderer.context.clone();
             let fox_model = self.gltf_cache.read(fox_path);
-            let render_pass = renderer.render_pass.clone();
 
             // Create the model entity using the gltf_default template
             // We use the raw pointer approach similar to MeshBuilder
@@ -192,7 +193,6 @@ impl ApplicationHandler for Application {
                 fox_model,
                 context,
                 Some(&mut renderer),
-                &render_pass,
                 fox_transform,
                 material_registry_ptr,
             );
@@ -299,7 +299,7 @@ impl ApplicationHandler for Application {
                 println!("Warning: Checkerboard template not found, using fallback");
                 // Fallback to direct creation if template doesn't exist
                 let checkerboard =
-                    create_checkerboard_material(renderer.context.clone(), &renderer.render_pass);
+                    create_checkerboard_material(renderer.context.clone());
                 self.material_manager
                     .register_material("checkerboard", checkerboard);
             }
@@ -411,9 +411,13 @@ impl ApplicationHandler for Application {
                     // Render using render graph
                     self.render_with_render_graph();
 
-                    // Handle single-frame mode: exit after rendering one frame
-                    if self.info.single_frame {
-                        event_loop.exit();
+                    // Handle max_frames limit: exit after rendering specified number of frames
+                    if let Some(max) = self.info.max_frames {
+                        self.frame_count += 1;
+                        if self.frame_count >= max {
+                            println!("Rendered {} frames, exiting", self.frame_count);
+                            event_loop.exit();
+                        }
                     }
 
                     if self.stage_upload {
