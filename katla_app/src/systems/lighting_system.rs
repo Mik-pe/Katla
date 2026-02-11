@@ -1,12 +1,11 @@
-use katla_ecs::{System, World};
 use crate::components::{DirectionalLight, PointLight, SpotLight};
+use katla_ecs::{System, World};
 
 /// Collection of all active lights in the scene.
 ///
 /// This resource is updated every frame by the LightingSystem and used by the
 /// rendering system to pass light data to shaders.
-#[derive(Debug, Clone)]
-#[derive(Default)]
+#[derive(Debug, Clone, Default)]
 pub struct LightCollection {
     /// All directional lights (sun-like lights)
     pub directional_lights: Vec<DirectionalLightData>,
@@ -61,7 +60,6 @@ pub struct SpotLightData {
     pub quadratic: f32,
 }
 
-
 impl LightCollection {
     /// Count total number of lights
     pub fn total_lights(&self) -> usize {
@@ -100,7 +98,9 @@ impl LightingSystem {
         }
 
         // Collect point lights with their world positions
-        for (_entity, light, transform) in world.query::<(&PointLight, &crate::components::TransformComponent)>() {
+        for (_entity, light, transform) in
+            world.query::<(&PointLight, &crate::components::TransformComponent)>()
+        {
             if light_collection.point_lights.len() < LightCollection::MAX_POINT_LIGHTS {
                 let pos = transform.transform.position;
                 light_collection.point_lights.push(PointLightData {
@@ -116,7 +116,9 @@ impl LightingSystem {
         }
 
         // Collect spot lights with their world positions
-        for (_entity, light, transform) in world.query::<(&SpotLight, &crate::components::TransformComponent)>() {
+        for (_entity, light, transform) in
+            world.query::<(&SpotLight, &crate::components::TransformComponent)>()
+        {
             if light_collection.spot_lights.len() < LightCollection::MAX_SPOT_LIGHTS {
                 let pos = transform.transform.position;
                 light_collection.spot_lights.push(SpotLightData {

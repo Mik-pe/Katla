@@ -1,7 +1,9 @@
 use katla_ecs::{InputState, System, World};
 use katla_math::{Quat, Vec2, Vec3};
 
-use crate::components::{FlyCameraControllerComponent, FlyCameraLookComponent, ForceComponent, VelocityComponent};
+use crate::components::{
+    FlyCameraControllerComponent, FlyCameraLookComponent, ForceComponent, VelocityComponent,
+};
 
 pub struct FlyCameraLookSystem;
 
@@ -54,14 +56,21 @@ impl System for FlyCameraLookSystem {
                         has_movement_input,
                     )
                 } else {
-                    (entity, transform.transform.rotation, ctrl.speed, has_movement_input)
+                    (
+                        entity,
+                        transform.transform.rotation,
+                        ctrl.speed,
+                        has_movement_input,
+                    )
                 }
             })
             .collect();
 
         // Apply transform updates
         for (entity, rotation, _speed, _has_input) in &transform_updates {
-            if let Some(transform) = storage.get_component_mut::<crate::components::TransformComponent>(*entity) {
+            if let Some(transform) =
+                storage.get_component_mut::<crate::components::TransformComponent>(*entity)
+            {
                 transform.transform.rotation = *rotation;
             }
         }

@@ -20,10 +20,10 @@ impl UniformField {
     /// Get the size of this field in bytes.
     pub const fn size(&self) -> usize {
         match self {
-            UniformField::Mat4 => 64,  // 4x4 floats * 4 bytes
-            UniformField::Vec3 => 12,   // 3 floats * 4 bytes
-            UniformField::Vec4 => 16,   // 4 floats * 4 bytes
-            UniformField::Float => 4,   // 1 float * 4 bytes
+            UniformField::Mat4 => 64, // 4x4 floats * 4 bytes
+            UniformField::Vec3 => 12, // 3 floats * 4 bytes
+            UniformField::Vec4 => 16, // 4 floats * 4 bytes
+            UniformField::Float => 4, // 1 float * 4 bytes
         }
     }
 }
@@ -100,15 +100,14 @@ impl UniformLayout {
     /// Standard PBR layout: world, view, projection matrices (192 bytes).
     pub fn pbr_matrices() -> Self {
         Self::new()
-            .with_field(UniformField::Mat4)  // world
-            .with_field(UniformField::Mat4)  // view
-            .with_field(UniformField::Mat4)  // projection
+            .with_field(UniformField::Mat4) // world
+            .with_field(UniformField::Mat4) // view
+            .with_field(UniformField::Mat4) // projection
     }
 
     /// PBR layout with color: world, view, projection matrices + color (208 bytes).
     pub fn pbr_with_color() -> Self {
-        Self::pbr_matrices()
-            .with_field(UniformField::Vec4)  // color
+        Self::pbr_matrices().with_field(UniformField::Vec4) // color
     }
 
     /// Minimal layout for testing (192 bytes, matrices only).
@@ -146,17 +145,17 @@ mod tests {
     #[test]
     fn test_field_offsets() {
         let layout = UniformLayout::pbr_with_color();
-        assert_eq!(layout.field_offset(0), Some(0));   // world matrix
-        assert_eq!(layout.field_offset(1), Some(64));  // view matrix
+        assert_eq!(layout.field_offset(0), Some(0)); // world matrix
+        assert_eq!(layout.field_offset(1), Some(64)); // view matrix
         assert_eq!(layout.field_offset(2), Some(128)); // projection matrix
         assert_eq!(layout.field_offset(3), Some(192)); // color
-        assert_eq!(layout.field_offset(4), None);      // out of bounds
+        assert_eq!(layout.field_offset(4), None); // out of bounds
     }
 
     #[test]
     fn test_custom_layout() {
         let layout = UniformLayout::new()
-            .with_field(UniformField::Vec4)  // position
+            .with_field(UniformField::Vec4) // position
             .with_field(UniformField::Float) // scale
             .with_field(UniformField::Vec4); // color
 

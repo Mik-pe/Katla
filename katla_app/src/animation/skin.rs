@@ -37,19 +37,13 @@ impl Skin {
 
     /// Check if this is a valid skin
     pub fn is_valid(&self) -> bool {
-        !self.joints.is_empty()
-            && self.joints.len() == self.inverse_bind_matrices.len()
+        !self.joints.is_empty() && self.joints.len() == self.inverse_bind_matrices.len()
     }
 }
 
 impl fmt::Display for Skin {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "Skin '{}' with {} joints",
-            self.name,
-            self.joint_count()
-        )
+        write!(f, "Skin '{}' with {} joints", self.name, self.joint_count())
     }
 }
 
@@ -105,10 +99,7 @@ pub struct JointWeights {
 
 impl JointWeights {
     /// Create new joint weights
-    pub fn new(
-        joint_indices: [u16; 4],
-        weights: [f32; 4],
-    ) -> Self {
+    pub fn new(joint_indices: [u16; 4], weights: [f32; 4]) -> Self {
         Self {
             joint_indices,
             weights,

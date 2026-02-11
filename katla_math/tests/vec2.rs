@@ -130,8 +130,8 @@ fn test_lerp_boundaries() {
 #[test]
 fn test_cross() {
     // 2D cross product gives the z-component of 3D cross product
-    let i = Vec2::new(1.0, 0.0);  // X-axis
-    let j = Vec2::new(0.0, 1.0);  // Y-axis
+    let i = Vec2::new(1.0, 0.0); // X-axis
+    let j = Vec2::new(0.0, 1.0); // Y-axis
     let cross = i.cross(&j);
 
     // In 3D: (1,0,0) × (0,1,0) = (0,0,1), so z = 1
@@ -170,10 +170,10 @@ fn test_perpendicular_double_rotation() {
 
 #[test]
 fn test_angle() {
-    let v = Vec2::new(1.0, 0.0);  // +X axis
+    let v = Vec2::new(1.0, 0.0); // +X axis
     assert!(v.angle().abs() < 1e-5);
 
-    let v = Vec2::new(0.0, 1.0);  // +Y axis (90 degrees)
+    let v = Vec2::new(0.0, 1.0); // +Y axis (90 degrees)
     assert!((v.angle() - std::f32::consts::FRAC_PI_2).abs() < 1e-5);
 
     let v = Vec2::new(-1.0, 0.0); // -X axis (180 degrees)

@@ -18,9 +18,9 @@ pub fn create_plane_vertices(width: f32, height: f32, segments: u32) -> Vec<Vert
 
             vertices.push(VertexPBR::new(
                 [x, y, 0.0],
-                [0.0, 0.0, 1.0],  // Normal pointing up
-                [1.0, 0.0, 0.0, 1.0],  // Tangent
-                [u, v],              // UV coordinates spanning [0,1]
+                [0.0, 0.0, 1.0],      // Normal pointing up
+                [1.0, 0.0, 0.0, 1.0], // Tangent
+                [u, v],               // UV coordinates spanning [0,1]
             ));
         }
     }
@@ -116,6 +116,10 @@ mod tests {
         }
 
         println!("Plane winding: {} passed, {} failed", passed, failed);
-        assert_eq!(failed, 0, "Plane has {} triangles with incorrect winding", failed);
+        assert_eq!(
+            failed, 0,
+            "Plane has {} triangles with incorrect winding",
+            failed
+        );
     }
 }

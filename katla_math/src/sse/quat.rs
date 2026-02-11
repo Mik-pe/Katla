@@ -9,8 +9,8 @@ use core::arch::x86_64::*;
 #[cfg(target_arch = "x86")]
 use core::arch::x86::*;
 
-use core::{f32, ops::Index, ops::Mul};
 use crate::{Mat3, Mat4, Vec3, Vec4};
+use core::{f32, ops::Index, ops::Mul};
 
 const QUAT_NORMALIZED_THRESHOLD: f32 = 0.001;
 
@@ -307,9 +307,15 @@ impl Quat {
         let wz = w * z2;
 
         Mat3::from_elements(
-            1.0 - (yy + zz), xy + wz, xz - wy,
-            xy - wz, 1.0 - (xx + zz), yz + wx,
-            xz + wy, yz - wx, 1.0 - (xx + yy),
+            1.0 - (yy + zz),
+            xy + wz,
+            xz - wy,
+            xy - wz,
+            1.0 - (xx + zz),
+            yz + wx,
+            xz + wy,
+            yz - wx,
+            1.0 - (xx + yy),
         )
     }
 

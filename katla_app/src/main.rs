@@ -1,7 +1,9 @@
 use katla::application::ApplicationBuilder;
 
 use katla::animation::AnimationUpdateSystem;
-use katla::systems::{FlyCameraLookSystem, LightingSystem, PhysicsSystem, TransformHierarchySystem, VelocitySystem};
+use katla::systems::{
+    FlyCameraLookSystem, LightingSystem, PhysicsSystem, TransformHierarchySystem, VelocitySystem,
+};
 use katla_ecs::System;
 
 fn main() {
@@ -15,8 +17,8 @@ fn main() {
 
     let systems: Vec<Box<dyn System>> = vec![
         Box::new(TransformHierarchySystem::default()), // EARLY: Update world transforms first
-        Box::new(AnimationUpdateSystem),                // Update animation playback
-        Box::new(LightingSystem),                       // Collect lights for rendering
+        Box::new(AnimationUpdateSystem),               // Update animation playback
+        Box::new(LightingSystem),                      // Collect lights for rendering
         Box::new(FlyCameraLookSystem),
         Box::new(VelocitySystem),
         Box::new(PhysicsSystem),

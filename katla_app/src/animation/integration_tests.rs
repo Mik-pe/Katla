@@ -1,8 +1,8 @@
 #[cfg(test)]
 mod integration_tests {
-    use katla_ecs::World;
+    use crate::animation::{AnimatedModel, AnimationManager};
     use crate::util::GLTFModel;
-    use crate::animation::{AnimationManager, AnimatedModel};
+    use katla_ecs::World;
     use std::path::PathBuf;
 
     #[test]
@@ -48,11 +48,17 @@ mod integration_tests {
 
         // The fox model typically has these animations
         // (exact names depend on the specific file)
-        if let Some(walk) = animation_names.iter().find(|n: &&String| n.contains("Walk") || n.contains("walk")) {
+        if let Some(walk) = animation_names
+            .iter()
+            .find(|n: &&String| n.contains("Walk") || n.contains("walk"))
+        {
             println!("Found Walk animation: {}", walk);
         }
 
-        if let Some(run) = animation_names.iter().find(|n: &&String| n.contains("Run") || n.contains("run")) {
+        if let Some(run) = animation_names
+            .iter()
+            .find(|n: &&String| n.contains("Run") || n.contains("run"))
+        {
             println!("Found Run animation: {}", run);
         }
     }
@@ -78,11 +84,17 @@ mod integration_tests {
             let joints = skin.joints().count();
             let has_ibm = skin.inverse_bind_matrices().is_some();
 
-            println!("  - {}: {} joints, inverse bind matrices: {}", skin_name, joints, has_ibm);
+            println!(
+                "  - {}: {} joints, inverse bind matrices: {}",
+                skin_name, joints, has_ibm
+            );
         }
 
         // Fox should have a skin
-        assert!(skins.len() > 0, "Fox should have a skin for skeletal animation");
+        assert!(
+            skins.len() > 0,
+            "Fox should have a skin for skeletal animation"
+        );
 
         let fox_skin = &skins[0];
         let joint_count = fox_skin.joints().count();

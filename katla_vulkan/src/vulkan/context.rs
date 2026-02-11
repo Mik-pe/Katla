@@ -606,7 +606,7 @@ impl VulkanContext {
             device: device.clone(),
             physical_device,
             debug_settings,
-            buffer_device_address: true,  // Enable BDA for allocator
+            buffer_device_address: true, // Enable BDA for allocator
             allocation_sizes: AllocationSizes::default(),
         };
 
@@ -729,7 +729,7 @@ impl VulkanContext {
             device: device.clone(),
             physical_device,
             debug_settings,
-            buffer_device_address: true,  // Enable BDA for allocator
+            buffer_device_address: true, // Enable BDA for allocator
             allocation_sizes: AllocationSizes::default(),
         };
 

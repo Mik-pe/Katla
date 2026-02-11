@@ -70,12 +70,7 @@ impl Vec3 {
 
     #[inline]
     pub fn mul(&self, _rhs: f32) -> Vec3 {
-        Vec3([
-            self.0[0] * _rhs,
-            self.0[1] * _rhs,
-            self.0[2] * _rhs,
-            0.0,
-        ])
+        Vec3([self.0[0] * _rhs, self.0[1] * _rhs, self.0[2] * _rhs, 0.0])
     }
 
     #[inline]

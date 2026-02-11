@@ -3,11 +3,11 @@
 //! This module provides functionality to load material definitions from TOML files,
 //! allowing declarative material creation without code changes.
 
-use std::{collections::HashMap, path::Path};
-use serde::Deserialize;
 use super::{
-    MaterialDescriptor, ShaderSource, DescriptorBinding, UniformType, MaterialValue, RenderState,
+    DescriptorBinding, MaterialDescriptor, MaterialValue, RenderState, ShaderSource, UniformType,
 };
+use serde::Deserialize;
+use std::{collections::HashMap, path::Path};
 
 /// Errors that can occur during material asset loading
 #[derive(Debug)]
@@ -162,11 +162,7 @@ impl MaterialToml {
         };
 
         // Build descriptor
-        let mut descriptor = MaterialDescriptor::new(
-            self.name,
-            vertex_shader,
-            fragment_shader,
-        );
+        let mut descriptor = MaterialDescriptor::new(self.name, vertex_shader, fragment_shader);
 
         // Add uniform bindings
         for (name, uniform) in self.bindings.uniforms {
@@ -225,15 +221,12 @@ fn parse_uniform_type(ty: &str, count: usize) -> Result<UniformType, AssetError>
 }
 
 /// Load a material descriptor from a TOML file
-pub fn load_material_from_file(
-    path: &Path,
-) -> Result<MaterialDescriptor, AssetError> {
+pub fn load_material_from_file(path: &Path) -> Result<MaterialDescriptor, AssetError> {
     let content = std::fs::read_to_string(path)?;
     let toml: MaterialToml = toml::from_str(&content)?;
 
     // Get the base directory for resolving relative paths
-    let base_dir = path.parent()
-        .unwrap_or(Path::new("."));
+    let base_dir = path.parent().unwrap_or(Path::new("."));
 
     toml.into_descriptor(base_dir)
 }

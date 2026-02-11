@@ -1,8 +1,8 @@
-use katla_ecs::{System, World};
-use katla_math::{Quat, Transform, Vec3};
 use crate::components::{Parent, TransformComponent, TransformDirty, WorldTransform};
 use crate::systems::{TransformHierarchySystem, TransformOptimization};
 use approx::assert_abs_diff_eq;
+use katla_ecs::{System, World};
+use katla_math::{Quat, Transform, Vec3};
 
 #[test]
 fn test_single_entity_no_parent() {
@@ -23,11 +23,7 @@ fn test_single_entity_no_parent() {
 
     // Verify world transform equals local transform (no parent)
     let world_transform = world.get_component::<WorldTransform>(entity).unwrap();
-    assert_abs_diff_eq!(
-        world_transform.transform.position[0],
-        5.0,
-        epsilon = 0.0001
-    );
+    assert_abs_diff_eq!(world_transform.transform.position[0], 5.0, epsilon = 0.0001);
     assert_abs_diff_eq!(
         world_transform.transform.position[1],
         10.0,
@@ -96,7 +92,12 @@ fn test_deep_hierarchy() {
             transform: Transform::new_from_position(Vec3::new(5.0, 0.0, 0.0)),
         },
     );
-    world.add_component(parent, Parent { parent: grandparent });
+    world.add_component(
+        parent,
+        Parent {
+            parent: grandparent,
+        },
+    );
 
     // Child: (0, 3, 0) relative to parent
     let child = world.create_entity();
@@ -222,7 +223,10 @@ fn test_rotation_accumulation() {
             transform: Transform {
                 position: Vec3::new(0.0, 0.0, 0.0),
                 scale: Vec3::new(1.0, 1.0, 1.0),
-                rotation: Quat::from_axis_angle(Vec3::new(0.0, 0.0, 1.0), std::f32::consts::FRAC_PI_2),
+                rotation: Quat::from_axis_angle(
+                    Vec3::new(0.0, 0.0, 1.0),
+                    std::f32::consts::FRAC_PI_2,
+                ),
             },
         },
     );
@@ -309,9 +313,21 @@ fn test_transform_update_on_second_run() {
     // Second run should update world transform
     system.update(&mut world, 0.016);
     let world_transform = world.get_component::<WorldTransform>(entity).unwrap();
-    assert_abs_diff_eq!(world_transform.transform.position[0], 10.0, epsilon = 0.0001);
-    assert_abs_diff_eq!(world_transform.transform.position[1], 20.0, epsilon = 0.0001);
-    assert_abs_diff_eq!(world_transform.transform.position[2], 30.0, epsilon = 0.0001);
+    assert_abs_diff_eq!(
+        world_transform.transform.position[0],
+        10.0,
+        epsilon = 0.0001
+    );
+    assert_abs_diff_eq!(
+        world_transform.transform.position[1],
+        20.0,
+        epsilon = 0.0001
+    );
+    assert_abs_diff_eq!(
+        world_transform.transform.position[2],
+        30.0,
+        epsilon = 0.0001
+    );
 }
 
 #[test]
@@ -355,10 +371,7 @@ fn test_cycle_detection_does_not_panic() {
     system.update(&mut world, 0.016);
 
     // At least some entities should have been processed (non-cyclic parts)
-    let processed = world
-        .query::<&WorldTransform>()
-        .count()
-        > 0;
+    let processed = world.query::<&WorldTransform>().count() > 0;
     assert!(processed, "At least some entities should be processed");
 }
 
@@ -447,9 +460,17 @@ fn test_dirty_flag_skips_clean_entities() {
 
     // Second run with no dirty flags - should skip processing
     // (world transforms should remain unchanged)
-    let old_pos = world.get_component::<WorldTransform>(entity1).unwrap().transform.position[0];
+    let old_pos = world
+        .get_component::<WorldTransform>(entity1)
+        .unwrap()
+        .transform
+        .position[0];
     system.update(&mut world, 0.016);
-    let new_pos = world.get_component::<WorldTransform>(entity1).unwrap().transform.position[0];
+    let new_pos = world
+        .get_component::<WorldTransform>(entity1)
+        .unwrap()
+        .transform
+        .position[0];
     assert_abs_diff_eq!(old_pos, new_pos, epsilon = 0.0001);
 }
 
@@ -506,6 +527,5 @@ fn test_static_optimization_configuration() {
     assert!(optimization.is_some());
     let opt = optimization.unwrap();
     assert_eq!(opt.total_count, 10);
-    assert_eq!(opt.moving_count, 0);  // No dirty flags on first frame (after init)
+    assert_eq!(opt.moving_count, 0); // No dirty flags on first frame (after init)
 }
-

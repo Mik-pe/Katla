@@ -30,10 +30,7 @@ impl Mat2 {
     #[inline]
     pub fn new(m00: f32, m01: f32, m10: f32, m11: f32) -> Mat2 {
         // Column-major storage: column 0 (m00, m10), column 1 (m01, m11)
-        Mat2([
-            Vec2::new(m00, m10),
-            Vec2::new(m01, m11),
-        ])
+        Mat2([Vec2::new(m00, m10), Vec2::new(m01, m11)])
     }
 
     /// Create a 2x2 rotation matrix
@@ -76,11 +73,10 @@ impl Mat2 {
         // [c0r1  c1r1] ->  [c1r0  c1r1]
         Mat2([
             Vec2::new(
-                self[0][0],
-                self[1][0],  // Swap with c1r0
+                self[0][0], self[1][0], // Swap with c1r0
             ),
             Vec2::new(
-                self[0][1],  // Swap with c0r1
+                self[0][1], // Swap with c0r1
                 self[1][1],
             ),
         ])

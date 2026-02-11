@@ -2,8 +2,8 @@ use ash::vk;
 use std::{path::Path, rc::Rc};
 
 use super::{
-    MaterialDescriptor, ShaderSource, MaterialError,
-    DescriptorLayoutBuilder, ImageInfo, MaterialPipeline, PipelineBuilder, ShaderModule,
+    DescriptorLayoutBuilder, ImageInfo, MaterialDescriptor, MaterialError, MaterialPipeline,
+    PipelineBuilder, ShaderModule, ShaderSource,
 };
 use crate::{context::VulkanContext, RenderPass, Texture, VertexBinding};
 
@@ -48,83 +48,71 @@ impl MaterialBuilder {
 
         // Load vertex shader
         let vertex_shader = match &descriptor.vertex_shader {
-            ShaderSource::WgslFile(path) => {
-                ShaderModule::from_wgsl(
-                    context.device.clone(),
-                    path,
-                    vk::ShaderStageFlags::VERTEX,
-                    "vs_main",
-                )
-                .map_err(|e| MaterialError::ShaderCompilationFailed {
-                    stage: crate::vulkan::material::ShaderStage::Vertex,
-                    error: format!("{:?}", e),
-                })?
-            }
-            ShaderSource::WgslString(wgsl) => {
-                ShaderModule::from_wgsl_string(
-                    context.device.clone(),
-                    wgsl,
-                    vk::ShaderStageFlags::VERTEX,
-                    "vs_main",
-                )
-                .map_err(|e| MaterialError::ShaderCompilationFailed {
-                    stage: crate::vulkan::material::ShaderStage::Vertex,
-                    error: format!("{:?}", e),
-                })?
-            }
-            ShaderSource::PreCompiled(bytes) => {
-                ShaderModule::from_bytes(
-                    context.device.clone(),
-                    bytes,
-                    vk::ShaderStageFlags::VERTEX,
-                    "main",
-                )
-                .map_err(|e| MaterialError::ShaderCompilationFailed {
-                    stage: crate::vulkan::material::ShaderStage::Vertex,
-                    error: format!("{:?}", e),
-                })?
-            }
+            ShaderSource::WgslFile(path) => ShaderModule::from_wgsl(
+                context.device.clone(),
+                path,
+                vk::ShaderStageFlags::VERTEX,
+                "vs_main",
+            )
+            .map_err(|e| MaterialError::ShaderCompilationFailed {
+                stage: crate::vulkan::material::ShaderStage::Vertex,
+                error: format!("{:?}", e),
+            })?,
+            ShaderSource::WgslString(wgsl) => ShaderModule::from_wgsl_string(
+                context.device.clone(),
+                wgsl,
+                vk::ShaderStageFlags::VERTEX,
+                "vs_main",
+            )
+            .map_err(|e| MaterialError::ShaderCompilationFailed {
+                stage: crate::vulkan::material::ShaderStage::Vertex,
+                error: format!("{:?}", e),
+            })?,
+            ShaderSource::PreCompiled(bytes) => ShaderModule::from_bytes(
+                context.device.clone(),
+                bytes,
+                vk::ShaderStageFlags::VERTEX,
+                "main",
+            )
+            .map_err(|e| MaterialError::ShaderCompilationFailed {
+                stage: crate::vulkan::material::ShaderStage::Vertex,
+                error: format!("{:?}", e),
+            })?,
         };
         builder.vertex_shader = Some(vertex_shader);
 
         // Load fragment shader
         let fragment_shader = match &descriptor.fragment_shader {
-            ShaderSource::WgslFile(path) => {
-                ShaderModule::from_wgsl(
-                    context.device.clone(),
-                    path,
-                    vk::ShaderStageFlags::FRAGMENT,
-                    "fs_main",
-                )
-                .map_err(|e| MaterialError::ShaderCompilationFailed {
-                    stage: crate::vulkan::material::ShaderStage::Fragment,
-                    error: format!("{:?}", e),
-                })?
-            }
-            ShaderSource::WgslString(wgsl) => {
-                ShaderModule::from_wgsl_string(
-                    context.device.clone(),
-                    wgsl,
-                    vk::ShaderStageFlags::FRAGMENT,
-                    "fs_main",
-                )
-                .map_err(|e| MaterialError::ShaderCompilationFailed {
-                    stage: crate::vulkan::material::ShaderStage::Fragment,
-                    error: format!("{:?}", e),
-                })?
-            }
-            ShaderSource::PreCompiled(bytes) => {
-                ShaderModule::from_bytes(
-                    context.device.clone(),
-                    bytes,
-                    vk::ShaderStageFlags::FRAGMENT,
-                    "main",
-                )
-                .map_err(|e| MaterialError::ShaderCompilationFailed {
-                    stage: crate::vulkan::material::ShaderStage::Fragment,
-                    error: format!("{:?}", e),
-                })?
-            }
+            ShaderSource::WgslFile(path) => ShaderModule::from_wgsl(
+                context.device.clone(),
+                path,
+                vk::ShaderStageFlags::FRAGMENT,
+                "fs_main",
+            )
+            .map_err(|e| MaterialError::ShaderCompilationFailed {
+                stage: crate::vulkan::material::ShaderStage::Fragment,
+                error: format!("{:?}", e),
+            })?,
+            ShaderSource::WgslString(wgsl) => ShaderModule::from_wgsl_string(
+                context.device.clone(),
+                wgsl,
+                vk::ShaderStageFlags::FRAGMENT,
+                "fs_main",
+            )
+            .map_err(|e| MaterialError::ShaderCompilationFailed {
+                stage: crate::vulkan::material::ShaderStage::Fragment,
+                error: format!("{:?}", e),
+            })?,
+            ShaderSource::PreCompiled(bytes) => ShaderModule::from_bytes(
+                context.device.clone(),
+                bytes,
+                vk::ShaderStageFlags::FRAGMENT,
+                "main",
+            )
+            .map_err(|e| MaterialError::ShaderCompilationFailed {
+                stage: crate::vulkan::material::ShaderStage::Fragment,
+                error: format!("{:?}", e),
+            })?,
         };
         builder.fragment_shader = Some(fragment_shader);
 
@@ -290,14 +278,15 @@ impl MaterialBuilder {
             pipeline,
             existing_desc_layout,
             self.context.clone(),
-            true,  // separate_bindings - always true for WGSL
+            true, // separate_bindings - always true for WGSL
             self.has_color,
         );
 
         if let Some(texture) = self.texture {
-            material_pipeline
-                .uniform
-                .add_image_info(ImageInfo::new(texture.image_view.vk(), texture.image_sampler.vk()));
+            material_pipeline.uniform.add_image_info(ImageInfo::new(
+                texture.image_view.vk(),
+                texture.image_sampler.vk(),
+            ));
         }
 
         Ok(material_pipeline)
@@ -372,14 +361,15 @@ impl MaterialBuilder {
             pipeline,
             desc_layout,
             self.context.clone(),
-            true,  // separate_bindings - always true for WGSL
+            true, // separate_bindings - always true for WGSL
             self.has_color,
         );
 
         if let Some(texture) = self.texture {
-            material_pipeline
-                .uniform
-                .add_image_info(ImageInfo::new(texture.image_view.vk(), texture.image_sampler.vk()));
+            material_pipeline.uniform.add_image_info(ImageInfo::new(
+                texture.image_view.vk(),
+                texture.image_sampler.vk(),
+            ));
         }
 
         Ok(material_pipeline)

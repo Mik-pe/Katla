@@ -180,10 +180,10 @@ fn test_mat2_add() {
     // result[0] = Vec2 { x: 6.0, y: 10.0 }
     // result[1] = Vec2 { x: 8.0, y: 12.0 }
 
-    assert_eq!(result[0][0], 6.0);   // column 0, x: 1+5=6
-    assert_eq!(result[0][1], 10.0);  // column 0, y: 3+7=10
-    assert_eq!(result[1][0], 8.0);   // column 1, x: 2+6=8
-    assert_eq!(result[1][1], 12.0);  // column 1, y: 4+8=12
+    assert_eq!(result[0][0], 6.0); // column 0, x: 1+5=6
+    assert_eq!(result[0][1], 10.0); // column 0, y: 3+7=10
+    assert_eq!(result[1][0], 8.0); // column 1, x: 2+6=8
+    assert_eq!(result[1][1], 12.0); // column 1, y: 4+8=12
 }
 
 #[test]

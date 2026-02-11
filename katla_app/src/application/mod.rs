@@ -148,7 +148,8 @@ impl ApplicationHandler for Application {
 
             // Create the model entity using the gltf_default template
             // We use the raw pointer approach similar to MeshBuilder
-            let material_registry_ptr = &renderer.material_registry as *const std::cell::RefCell<katla_vulkan::MaterialRegistry>;
+            let material_registry_ptr = &renderer.material_registry
+                as *const std::cell::RefCell<katla_vulkan::MaterialRegistry>;
 
             Model::new_from_gltf_with_ptr(
                 &mut self.world,
@@ -162,7 +163,8 @@ impl ApplicationHandler for Application {
 
             // Create meshes spaced out in a line with different colors
             // Get the raw pointer to material registry for mesh builders
-            let material_registry_ptr = &renderer.material_registry as *const std::cell::RefCell<katla_vulkan::MaterialRegistry>;
+            let material_registry_ptr = &renderer.material_registry
+                as *const std::cell::RefCell<katla_vulkan::MaterialRegistry>;
 
             let _cube = MeshBuilder::new(renderer.context.clone())
                 .with_material_registry_ptr(material_registry_ptr)
@@ -284,7 +286,7 @@ impl ApplicationHandler for Application {
                 let current_delta = self.world.get_input().mouse_delta;
                 self.world.get_input_mut().mouse_delta = Vec2::new(
                     current_delta.x() + delta.0 as f32,
-                    current_delta.y() + delta.1 as f32
+                    current_delta.y() + delta.1 as f32,
                 );
             }
         }
@@ -379,7 +381,8 @@ impl ApplicationHandler for Application {
                     if self.stage_upload {
                         let start = Instant::now();
                         let renderer = self.renderer.as_mut().expect("Renderer not initialized");
-                        let material_registry_ptr = &renderer.material_registry as *const std::cell::RefCell<katla_vulkan::MaterialRegistry>;
+                        let material_registry_ptr = &renderer.material_registry
+                            as *const std::cell::RefCell<katla_vulkan::MaterialRegistry>;
 
                         let _sphere = MeshBuilder::new(renderer.context.clone())
                             .with_material_registry_ptr(material_registry_ptr)

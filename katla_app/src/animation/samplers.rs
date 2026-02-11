@@ -1,8 +1,7 @@
 /// Interpolation methods for animation keyframes.
 ///
 /// Defines how to interpolate between animation keyframes.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[derive(Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum Interpolation {
     /// Linear interpolation between keyframes
     ///
@@ -29,7 +28,10 @@ impl Interpolation {
             "STEP" => Interpolation::Step,
             "CUBICSPLINE" => Interpolation::CubicSpline,
             _ => {
-                eprintln!("Unknown interpolation type: {}, defaulting to LINEAR", value);
+                eprintln!(
+                    "Unknown interpolation type: {}, defaulting to LINEAR",
+                    value
+                );
                 Interpolation::Linear
             }
         }
@@ -44,4 +46,3 @@ impl Interpolation {
         }
     }
 }
-

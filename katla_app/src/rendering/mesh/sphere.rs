@@ -25,8 +25,8 @@ pub fn create_sphere_vertices(radius: f32, segments: u32, rings: u32) -> Vec<Ver
             vertices.push(VertexPBR::new(
                 [x, y, z],
                 normal.to_array(),
-                [_tangent.x(), _tangent.y(), _tangent.z(), 1.0],  // Tangent
-                [texture_coords.0, texture_coords.1],              // UV
+                [_tangent.x(), _tangent.y(), _tangent.z(), 1.0], // Tangent
+                [texture_coords.0, texture_coords.1],            // UV
             ));
         }
     }
@@ -121,7 +121,11 @@ mod tests {
                 failed += 1;
                 println!(
                     "Triangle {:?} (centroid={:?}): face_normal={:?}, expected_normal={:?}, dot={}",
-                    chunk, centroid.to_array(), face_normal.to_array(), expected_normal.to_array(), dot
+                    chunk,
+                    centroid.to_array(),
+                    face_normal.to_array(),
+                    expected_normal.to_array(),
+                    dot
                 );
             } else {
                 passed += 1;
@@ -129,6 +133,10 @@ mod tests {
         }
 
         println!("Sphere winding: {} passed, {} failed", passed, failed);
-        assert_eq!(failed, 0, "Sphere has {} triangles with incorrect winding", failed);
+        assert_eq!(
+            failed, 0,
+            "Sphere has {} triangles with incorrect winding",
+            failed
+        );
     }
 }

@@ -46,9 +46,9 @@ impl CommandBuffer {
 
     pub fn end_single_time_command(&self) {
         unsafe {
-            self.device
-                .end_command_buffer(self.command_buffer)
-                .expect("Failed to end command buffer - command buffer may not be in recording state");
+            self.device.end_command_buffer(self.command_buffer).expect(
+                "Failed to end command buffer - command buffer may not be in recording state",
+            );
         }
     }
 
@@ -63,9 +63,9 @@ impl CommandBuffer {
 
     pub fn end_command(&self) {
         unsafe {
-            self.device
-                .end_command_buffer(self.command_buffer)
-                .expect("Failed to end command buffer - command buffer may not be in recording state");
+            self.device.end_command_buffer(self.command_buffer).expect(
+                "Failed to end command buffer - command buffer may not be in recording state",
+            );
         }
     }
 

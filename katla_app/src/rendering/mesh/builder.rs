@@ -2,7 +2,7 @@ use std::rc::Rc;
 
 use katla_ecs::{EntityId, World};
 use katla_math::{Transform, Vec3};
-use katla_vulkan::{VulkanContext, VulkanRenderer, MaterialRegistry, Texture};
+use katla_vulkan::{MaterialRegistry, Texture, VulkanContext, VulkanRenderer};
 
 use crate::{
     entities::Model,
@@ -34,7 +34,10 @@ impl MeshBuilder {
         }
     }
 
-    pub fn with_material_registry_ptr(mut self, registry_ptr: *const std::cell::RefCell<MaterialRegistry>) -> Self {
+    pub fn with_material_registry_ptr(
+        mut self,
+        registry_ptr: *const std::cell::RefCell<MaterialRegistry>,
+    ) -> Self {
         self.material_registry = Some(registry_ptr);
         self
     }
@@ -163,8 +166,8 @@ macro_rules! impl_common_builder {
                                 if self.base.checkerboard_texture.is_none() {
                                     self.base.checkerboard_texture = Some(std::rc::Rc::new(
                                         crate::rendering::create_checkerboard_texture(
-                                            self.base.context.clone()
-                                        )
+                                            self.base.context.clone(),
+                                        ),
                                     ));
                                 }
                                 self.base.checkerboard_texture.clone()
@@ -174,15 +177,15 @@ macro_rules! impl_common_builder {
 
                             return Material::from_template(template, texture, None);
                         }
-                        println!("  MeshBuilder: Template '{}' not found, creating directly", name);
+                        println!(
+                            "  MeshBuilder: Template '{}' not found, creating directly",
+                            name
+                        );
                     }
                 }
 
                 // Fallback to creating material directly
-                create_checkerboard_material(
-                    self.base.context.clone(),
-                    &renderer.render_pass,
-                )
+                create_checkerboard_material(self.base.context.clone(), &renderer.render_pass)
             }
 
             fn create_entity(
@@ -200,9 +203,20 @@ macro_rules! impl_common_builder {
                 };
 
                 // Convert color from [f32; 3] to Color if specified
-                let color = self.base.color.map(|c| katla_math::Color::rgb(c[0], c[1], c[2]));
+                let color = self
+                    .base
+                    .color
+                    .map(|c| katla_math::Color::rgb(c[0], c[1], c[2]));
 
-                Model::new(world, vec![mesh], material, Some(renderer), transform, color).entity
+                Model::new(
+                    world,
+                    vec![mesh],
+                    material,
+                    Some(renderer),
+                    transform,
+                    color,
+                )
+                .entity
             }
         }
     };

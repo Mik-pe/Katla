@@ -1,7 +1,7 @@
 use std::{path::Path, rc::Rc};
 
 use katla_math::Color;
-use katla_vulkan::{MaterialBuilder, RenderPass, Texture, VulkanContext, ImageFormat};
+use katla_vulkan::{ImageFormat, MaterialBuilder, RenderPass, Texture, VulkanContext};
 
 use crate::rendering::{Material, VertexPBR};
 
@@ -94,12 +94,7 @@ pub fn create_checkerboard_material(
         .build(render_pass)
         .expect("Failed to create material pipeline");
 
-    Material::from_pipeline(
-        material_pipeline,
-        Some(texture),
-        vertex_binding,
-        None,
-    )
+    Material::from_pipeline(material_pipeline, Some(texture), vertex_binding, None)
 }
 
 /// Create a colored checkerboard material for use with primitive shapes.

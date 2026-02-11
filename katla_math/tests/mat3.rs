@@ -56,11 +56,7 @@ fn test_mat3_from_euler_angles() {
 
 #[test]
 fn test_mat3_from_elements() {
-    let m = Mat3::from_elements(
-        1.0, 2.0, 3.0,
-        4.0, 5.0, 6.0,
-        7.0, 8.0, 9.0,
-    );
+    let m = Mat3::from_elements(1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0);
 
     assert_eq!(m[0], Vec3::new(1.0, 2.0, 3.0));
     assert_eq!(m[1], Vec3::new(4.0, 5.0, 6.0));
@@ -87,11 +83,7 @@ fn test_mat3_mul_identity() {
 
 #[test]
 fn test_mat3_transpose() {
-    let m = Mat3::from_elements(
-        1.0, 2.0, 3.0,
-        4.0, 5.0, 6.0,
-        7.0, 8.0, 9.0,
-    );
+    let m = Mat3::from_elements(1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0);
 
     let t = m.transpose();
 
@@ -102,11 +94,7 @@ fn test_mat3_transpose() {
 
 #[test]
 fn test_mat3_transpose_twice() {
-    let m = Mat3::from_elements(
-        1.0, 2.0, 3.0,
-        4.0, 5.0, 6.0,
-        7.0, 8.0, 9.0,
-    );
+    let m = Mat3::from_elements(1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0);
 
     assert_eq!(m.transpose().transpose(), m);
 }
@@ -125,11 +113,7 @@ fn test_mat3_determinant_scale() {
 
 #[test]
 fn test_mat3_determinant_singular() {
-    let m = Mat3::from_elements(
-        1.0, 2.0, 3.0,
-        4.0, 5.0, 6.0,
-        7.0, 8.0, 9.0,
-    );
+    let m = Mat3::from_elements(1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0);
 
     // This matrix has linearly dependent rows (det should be 0)
     let det = m.determinant();
@@ -155,11 +139,7 @@ fn test_mat3_inverse_scale() {
 
 #[test]
 fn test_mat3_inverse_singular() {
-    let m = Mat3::from_elements(
-        1.0, 2.0, 3.0,
-        4.0, 5.0, 6.0,
-        7.0, 8.0, 9.0,
-    );
+    let m = Mat3::from_elements(1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0);
 
     assert!(m.inverse().is_none());
 }
@@ -186,11 +166,7 @@ fn test_mat3_mul_vec3() {
 
 #[test]
 fn test_mat3_indexing() {
-    let m = Mat3::from_elements(
-        1.0, 2.0, 3.0,
-        4.0, 5.0, 6.0,
-        7.0, 8.0, 9.0,
-    );
+    let m = Mat3::from_elements(1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0);
 
     assert_eq!(m[0], Vec3::new(1.0, 2.0, 3.0));
     assert_eq!(m[1], Vec3::new(4.0, 5.0, 6.0));

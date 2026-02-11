@@ -4,6 +4,10 @@
 //! supporting loading from files, bulk loading from directories, and
 //! event-driven template hot reload using filesystem watching.
 
+use super::{
+    load_material_from_file, FileWatcher, MaterialError, MaterialTemplate, MaterialTemplateBuilder,
+};
+use crate::{RenderPass, VulkanContext};
 use std::{
     collections::HashMap,
     ffi::OsStr,
@@ -11,12 +15,6 @@ use std::{
     path::{Path, PathBuf},
     rc::Rc,
 };
-use super::{
-    MaterialTemplate, MaterialTemplateBuilder,
-    load_material_from_file, MaterialError,
-    FileWatcher,
-};
-use crate::{VulkanContext, RenderPass};
 
 /// Central registry for material templates
 pub struct MaterialRegistry {
@@ -44,11 +42,7 @@ impl MaterialRegistry {
     }
 
     /// Register a template with a specific path (for hot reload tracking)
-    pub fn register_template_with_path(
-        &mut self,
-        template: MaterialTemplate,
-        path: &Path,
-    ) {
+    pub fn register_template_with_path(&mut self, template: MaterialTemplate, path: &Path) {
         let name = template.name().to_string();
         self.templates.insert(name.clone(), Rc::new(template));
         self.template_paths.insert(name.clone(), path.to_path_buf());
@@ -92,8 +86,9 @@ impl MaterialRegistry {
         render_pass: &RenderPass,
     ) -> Result<String, MaterialError> {
         // Load descriptor from TOML
-        let descriptor = load_material_from_file(path)
-            .map_err(|e| MaterialError::InvalidDescriptor(format!("Failed to load {}: {}", path.display(), e)))?;
+        let descriptor = load_material_from_file(path).map_err(|e| {
+            MaterialError::InvalidDescriptor(format!("Failed to load {}: {}", path.display(), e))
+        })?;
 
         // Get template name from descriptor
         let name = descriptor.name.clone();
@@ -122,8 +117,9 @@ impl MaterialRegistry {
         vertex_binding: crate::VertexBinding,
     ) -> Result<String, MaterialError> {
         // Load descriptor from TOML
-        let descriptor = load_material_from_file(path)
-            .map_err(|e| MaterialError::InvalidDescriptor(format!("Failed to load {}: {}", path.display(), e)))?;
+        let descriptor = load_material_from_file(path).map_err(|e| {
+            MaterialError::InvalidDescriptor(format!("Failed to load {}: {}", path.display(), e))
+        })?;
 
         // Get template name from descriptor
         let name = descriptor.name.clone();
@@ -153,12 +149,19 @@ impl MaterialRegistry {
     ) -> Result<usize, MaterialError> {
         use crate::vulkan::vertexbinding::get_pbr_vertex_binding;
 
-        let dir_entries = fs::read_dir(dir)
-            .map_err(|e| MaterialError::InvalidDescriptor(format!("Failed to read directory {}: {}", dir.display(), e)))?;
+        let dir_entries = fs::read_dir(dir).map_err(|e| {
+            MaterialError::InvalidDescriptor(format!(
+                "Failed to read directory {}: {}",
+                dir.display(),
+                e
+            ))
+        })?;
 
         let mut loaded = 0;
         for entry in dir_entries {
-            let entry = entry.map_err(|e| MaterialError::InvalidDescriptor(format!("Failed to read directory entry: {}", e)))?;
+            let entry = entry.map_err(|e| {
+                MaterialError::InvalidDescriptor(format!("Failed to read directory entry: {}", e))
+            })?;
             let path = entry.path();
 
             // Only load .toml files
@@ -167,8 +170,13 @@ impl MaterialRegistry {
             }
 
             // Load the descriptor from the TOML file
-            let descriptor = load_material_from_file(&path)
-                .map_err(|e| MaterialError::InvalidDescriptor(format!("Failed to load {}: {}", path.display(), e)))?;
+            let descriptor = load_material_from_file(&path).map_err(|e| {
+                MaterialError::InvalidDescriptor(format!(
+                    "Failed to load {}: {}",
+                    path.display(),
+                    e
+                ))
+            })?;
 
             // Get template name from descriptor
             let name = descriptor.name.clone();
@@ -199,10 +207,15 @@ impl MaterialRegistry {
     /// * `directory` - The directory to watch for changes (typically the materials directory)
     /// * `debounce_ms` - Debounce delay in milliseconds to prevent multiple notifications
     ///   for the same file change (default: 100ms)
-    pub fn enable_hot_reload(&mut self, directory: &Path, debounce_ms: u64) -> Result<(), MaterialError> {
+    pub fn enable_hot_reload(
+        &mut self,
+        directory: &Path,
+        debounce_ms: u64,
+    ) -> Result<(), MaterialError> {
         // Create the file watcher
-        let watcher = FileWatcher::new(directory, debounce_ms)
-            .map_err(|e| MaterialError::InvalidDescriptor(format!("Failed to create file watcher: {}", e)))?;
+        let watcher = FileWatcher::new(directory, debounce_ms).map_err(|e| {
+            MaterialError::InvalidDescriptor(format!("Failed to create file watcher: {}", e))
+        })?;
 
         self.file_watcher = Some(watcher);
         self.watch_directory = Some(directory.to_path_buf());
@@ -265,12 +278,12 @@ impl MaterialRegistry {
         // Now process each modified path (no borrows held)
         for modified_path in modified_paths {
             // Find which template this file belongs to
-            let templates_to_reload: Vec<_> = self.template_paths
+            let templates_to_reload: Vec<_> = self
+                .template_paths
                 .iter()
                 .filter(|(_, path)| {
                     // Check if the modified file is the material file or a shader it uses
-                    modified_path == **path ||
-                        Self::uses_shader(&modified_path, path.as_path())
+                    modified_path == **path || Self::uses_shader(&modified_path, path.as_path())
                 })
                 .map(|(name, _)| name.clone())
                 .collect();
@@ -286,8 +299,13 @@ impl MaterialRegistry {
                 };
 
                 // Load the descriptor to get shader paths
-                let descriptor = load_material_from_file(&path)
-                    .map_err(|e| MaterialError::InvalidDescriptor(format!("Failed to load {}: {}", path.display(), e)))?;
+                let descriptor = load_material_from_file(&path).map_err(|e| {
+                    MaterialError::InvalidDescriptor(format!(
+                        "Failed to load {}: {}",
+                        path.display(),
+                        e
+                    ))
+                })?;
 
                 // Get the existing descriptor set layout from the template
                 // This is preserved across hot reloads to keep material instances' descriptor sets valid
@@ -301,12 +319,16 @@ impl MaterialRegistry {
                 // Rebuild only the pipeline (not the entire template)
                 // This preserves the Rc so all materials see the update
                 let vertex_binding = crate::vulkan::vertexbinding::get_pbr_vertex_binding();
-                let mut builder = super::MaterialBuilder::from_descriptor(descriptor.clone(), context.clone())?;
+                let mut builder =
+                    super::MaterialBuilder::from_descriptor(descriptor.clone(), context.clone())?;
                 builder = builder.with_vertex_binding(vertex_binding);
 
                 // Build with the existing descriptor set layout to preserve compatibility
-                let new_pipeline = builder.build_with_desc_layout(render_pass, desc_layout)
-                    .map_err(|e| MaterialError::InvalidDescriptor(format!("Pipeline build failed: {:?}", e)))?;
+                let new_pipeline = builder
+                    .build_with_desc_layout(render_pass, desc_layout)
+                    .map_err(|e| {
+                        MaterialError::InvalidDescriptor(format!("Pipeline build failed: {:?}", e))
+                    })?;
 
                 // Update the existing template's pipeline in-place
                 if let Some(template) = self.templates.get(&name) {
@@ -314,7 +336,10 @@ impl MaterialRegistry {
                     // This prevents validation errors about destroying resources that are still in use
                     println!("  Waiting for GPU idle before destroying pipeline...");
                     unsafe {
-                        context.device.device_wait_idle().expect("Failed to wait for device idle");
+                        context
+                            .device
+                            .device_wait_idle()
+                            .expect("Failed to wait for device idle");
                     }
 
                     // Use the new pipeline_mut() method to get mutable access through RefCell
@@ -347,7 +372,8 @@ impl MaterialRegistry {
         if let Ok(content) = fs::read_to_string(material_path) {
             // Extract just the filename from the shader path
             // This handles both absolute paths (I:\dev\...\file.wgsl) and relative paths (../shaders/file.wgsl)
-            let shader_filename = shader_path.file_name()
+            let shader_filename = shader_path
+                .file_name()
                 .and_then(|s| s.to_str())
                 .unwrap_or("");
 
