@@ -1,5 +1,5 @@
 use katla_ecs::{InputState, System, World};
-use katla_math::{Quat, Vec2, Vec3};
+use katla_math::{Quat, Vec3};
 
 use crate::components::{
     FlyCameraControllerComponent, FlyCameraLookComponent, ForceComponent, VelocityComponent,

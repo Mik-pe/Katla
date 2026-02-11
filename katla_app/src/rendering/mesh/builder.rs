@@ -116,10 +116,11 @@ impl MeshBuilder {
 
     /// Get the material from the renderer's AssetRegistry by name.
     /// This is used internally by the shape-specific builders.
+    #[allow(dead_code)]
     fn get_material_from_renderer(
         &self,
-        renderer: &VulkanRenderer,
-        name: &str,
+        _renderer: &VulkanRenderer,
+        _name: &str,
     ) -> Option<Material> {
         // Try to get the material from the renderer's AssetRegistry
         // For now, this always returns None - the MaterialManager handles materials
@@ -147,7 +148,7 @@ macro_rules! impl_common_builder {
                 self
             }
 
-            fn get_material(&mut self, renderer: &mut VulkanRenderer) -> Material {
+            fn get_material(&mut self, _renderer: &mut VulkanRenderer) -> Material {
                 // Try to get material from template in the registry
                 if let (Some(registry_ptr), Some(ref name)) =
                     (self.base.material_registry, &self.base.shared_material_name)

@@ -24,6 +24,7 @@ pub struct CompiledRenderGraph {
     // TODO: Replace these raw vk types with wrapper types
     // These should use VkRenderPass and VkFramebuffer from sync module
     vk_render_passes: Vec<vk::RenderPass>,
+    #[allow(dead_code)]
     framebuffers: Vec<vk::Framebuffer>,
     pub registry: ExecutionRegistry<'static>,
     /// Cell for storing the draw list that will be processed during execution.
@@ -86,13 +87,13 @@ impl CompiledRenderGraph {
     /// instead of traditional render passes and framebuffers.
     pub fn create_swapchain_framebuffers(
         &mut self,
-        swapchain_images: &[(VkImage, VkImageView, Extent2D, vk::Format)],
+        _swapchain_images: &[(VkImage, VkImageView, Extent2D, vk::Format)],
     ) -> Result<(), RenderGraphError> {
         // For dynamic rendering with swapchain, we don't create traditional framebuffers
         // Just ensure the framebuffers vectors are initialized (may be empty for dynamic rendering)
 
         for pass_idx in 0..self.passes.len() {
-            let pass = &self.passes[pass_idx];
+            let _pass = &self.passes[pass_idx];
 
             // For swapchain rendering, use dynamic rendering (no framebuffers needed)
             if self.passes[pass_idx].vk_framebuffers.is_empty() {
@@ -110,6 +111,7 @@ impl CompiledRenderGraph {
     }
 
     /// Create a framebuffer for a specific pass with the given swapchain image view.
+    #[allow(dead_code)]
     fn create_framebuffer_for_pass(
         &self,
         pass_index: usize,
@@ -948,7 +950,7 @@ impl CompiledRenderGraph {
             // Use the first attachment set from compile instead of adding 0 attachments
             if let Some(first_set) = pass.color_attachments.first() {
                 if !first_set.is_empty() {
-                    color_attachments.push(first_set[0].clone());
+                    color_attachments.push(first_set[0]);
                     println!("WARNING: color_attachments[{}] was empty, using fallback attachment for image_index {}",
                         pass_index, image_index);
                 }

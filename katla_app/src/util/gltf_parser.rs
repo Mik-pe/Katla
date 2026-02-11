@@ -10,6 +10,7 @@ use crate::rendering::VertexPBR;
 
 /// Represents parsed mesh data from a GLTF primitive.
 #[derive(Clone)]
+#[allow(dead_code)]
 pub struct ParsedMesh {
     /// Vertex data in PBR format
     pub vertices: Vec<VertexPBR>,
@@ -154,7 +155,6 @@ pub fn generate_smooth_normals(
     indices: &[u8],
     index_stride: u8,
 ) -> Vec<[f32; 3]> {
-    use std::collections::HashMap;
 
     let mut normals: Vec<Vec3> = vec![Vec3::new(0.0, 0.0, 0.0); positions.len()];
     let mut counts: Vec<usize> = vec![0; positions.len()];
@@ -240,9 +240,9 @@ pub fn generate_smooth_normals(
         );
 
         // Accumulate face normal to each vertex
-        normals[i0] = normals[i0] + face_normal;
-        normals[i1] = normals[i1] + face_normal;
-        normals[i2] = normals[i2] + face_normal;
+        normals[i0] += face_normal;
+        normals[i1] += face_normal;
+        normals[i2] += face_normal;
 
         counts[i0] += 1;
         counts[i1] += 1;
@@ -252,7 +252,7 @@ pub fn generate_smooth_normals(
     // Normalize accumulated normals
     for i in 0..normals.len() {
         if counts[i] > 0 {
-            normals[i] = normals[i] * (1.0 / counts[i] as f32);
+            normals[i] *= 1.0 / counts[i] as f32;
             normals[i] = normals[i].normalize();
         } else {
             // No triangles contribute - use up as default

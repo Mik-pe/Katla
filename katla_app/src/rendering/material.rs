@@ -218,7 +218,6 @@ impl Material {
         if let Some(ref mut uniform) = self.uniform {
             // Get context from pipeline to update the uniform buffer
             let pipeline = self.material_pipeline.borrow();
-            use katla_vulkan::material::UniformDescriptor;
             uniform.update_buffer(pipeline.context(), &data);
         } else {
             self.material_pipeline.borrow_mut().update_buffer(&data);
@@ -234,6 +233,7 @@ impl Material {
     ///
     /// This consumes the material and returns ownership of all fields.
     /// Used when registering materials with the renderer's AssetRegistry.
+    #[allow(clippy::type_complexity)]
     pub fn get_registration_data(
         self,
     ) -> (

@@ -23,6 +23,7 @@ pub enum Attachment {
 /// This approach avoids trait object lifetime issues by storing closures
 /// separately from pass metadata in a HashMap.
 pub struct ExecutionRegistry<'a> {
+    #[allow(clippy::type_complexity)]
     closures: HashMap<String, Box<dyn FnMut(Rc<PassExecutionContext>) + 'a>>,
 }
 
@@ -101,6 +102,7 @@ pub struct PassBuilder {
     bind_point: PipelineBindPoint,
     extent: Option<Extent2D>,
     execute: Option<PassExecute>,
+    #[allow(clippy::type_complexity)]
     pending_execute: Option<(String, Box<dyn FnMut(Rc<PassExecutionContext>) + 'static>)>,
     #[allow(dead_code)]
     pipeline_barriers_before: Vec<vk::MemoryBarrier<'static>>,
@@ -333,6 +335,7 @@ pub struct Pass {
     bind_point: PipelineBindPoint,
     extent: Option<Extent2D>,
     execute: Option<PassExecute>,
+    #[allow(clippy::type_complexity)]
     pending_execute: Option<(String, Box<dyn FnMut(Rc<PassExecutionContext>) + 'static>)>,
 }
 
@@ -406,6 +409,7 @@ impl Pass {
     /// Take the pending execution closure and name from this pass.
     /// This is used during graph building to register the closure with the ExecutionRegistry.
     /// Returns None if no execution closure was specified.
+    #[allow(clippy::type_complexity)]
     pub fn take_pending_execute(
         &mut self,
     ) -> Option<(String, Box<dyn FnMut(Rc<PassExecutionContext>) + 'static>)> {

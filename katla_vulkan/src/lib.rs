@@ -164,7 +164,7 @@ impl VulkanRenderer {
             let new_depth_view = self.frame_context.depth_render_texture.image_view.vk();
 
             // Recreate framebuffers with new swapchain images
-            for (image_index, (_vk_image, image_view, extent, _format)) in
+            for (image_index, (_vk_image, image_view, _extent, _format)) in
                 swapchain_images.iter().enumerate()
             {
                 for pass_idx in 0..graph.passes.len() {

@@ -288,12 +288,12 @@ impl ApplicationHandler for Application {
             // Create checkerboard material from template (template loaded from TOML)
             // The template has the pipeline and shader, we just add the procedural texture
             let checkerboard_texture = create_checkerboard_texture(renderer.context.clone());
-            if let Some(_) = self.material_manager.register_from_template(
+            if self.material_manager.register_from_template(
                 "Checkerboard",
                 &renderer.material_registry.borrow(),
                 Some(Rc::new(checkerboard_texture)),
                 None,
-            ) {
+            ).is_some() {
                 println!("Registered checkerboard material from template");
             } else {
                 println!("Warning: Checkerboard template not found, using fallback");

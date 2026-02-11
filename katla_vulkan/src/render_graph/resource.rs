@@ -9,7 +9,9 @@ pub struct ResourceId(pub(crate) u32);
 // Either use these fields or remove them
 #[derive(Debug)]
 pub struct Resource {
+    #[allow(dead_code)]
     pub(crate) id: ResourceId,
+    #[allow(dead_code)]
     pub(crate) name: String,
     pub(crate) kind: ResourceKind,
 }

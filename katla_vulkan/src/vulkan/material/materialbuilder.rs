@@ -387,8 +387,8 @@ impl MaterialBuilder {
 
         // Set rendering formats if using dynamic rendering
         if color_format.is_some() || depth_format.is_some() {
-            let cf = color_format.map(|fmt| ash::vk::Format::from(fmt));
-            let df = depth_format.map(|fmt| ash::vk::Format::from(fmt));
+            let cf = color_format.map(ash::vk::Format::from);
+            let df = depth_format.map(ash::vk::Format::from);
             pipeline_builder = pipeline_builder.with_rendering_formats(cf, df);
         }
 

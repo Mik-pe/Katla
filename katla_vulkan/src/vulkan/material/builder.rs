@@ -132,6 +132,7 @@ impl PipelineBuilder {
         self
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn with_blending_advanced(
         mut self,
         enable: bool,
