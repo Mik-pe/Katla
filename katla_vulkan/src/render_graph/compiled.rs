@@ -80,57 +80,29 @@ impl CompiledRenderGraph {
     /// Create multiple framebuffers for passes that use external images.
     /// This is useful for swapchain rendering where you need one framebuffer per swapchain image.
     /// Returns an error if the graph has already been compiled with framebuffers.
+    ///
+    /// NOTE: For swapchain rendering with dynamic rendering (Vulkan 1.3), framebuffers
+    /// are NOT created. Dynamic rendering uses vkCmdBeginRendering/vkCmdEndRendering
+    /// instead of traditional render passes and framebuffers.
     pub fn create_swapchain_framebuffers(
         &mut self,
         swapchain_images: &[(VkImage, VkImageView, Extent2D, vk::Format)],
-        immediate_render_pass: VkRenderPass,
     ) -> Result<(), RenderGraphError> {
-        // Find the depth image view before the loop
-        let mut depth_image_view: Option<vk::ImageView> = None;
-        for (_, resource) in self.resources.iter() {
-            if let CompiledResource::ExternalImage {
-                format, image_view, ..
-            } = resource
-            {
-                if is_depth_or_stencil(*format) {
-                    depth_image_view = Some(*image_view);
-                    break;
-                }
+        // For dynamic rendering with swapchain, we don't create traditional framebuffers
+        // Just ensure the framebuffers vectors are initialized (may be empty for dynamic rendering)
+
+        for pass_idx in 0..self.passes.len() {
+            let pass = &self.passes[pass_idx];
+
+            // For swapchain rendering, use dynamic rendering (no framebuffers needed)
+            if self.passes[pass_idx].vk_framebuffers.is_empty() {
+                // Initialize with empty vector for dynamic rendering
+                self.passes[pass_idx].vk_framebuffers = vec![];
             }
         }
 
-        let depth_view = depth_image_view.ok_or_else(|| {
-            RenderGraphError::CompilationError("No depth image view found".into())
-        })?;
-
-        // For each swapchain image, we need to create new framebuffers for each pass
-        // that uses external images
-        for (image_index, (_vk_image, image_view, extent, _format)) in
-            swapchain_images.iter().enumerate()
-        {
-            // Recreate framebuffers for all passes with this swapchain image
-            for pass_idx in 0..self.passes.len() {
-                let framebuffer = self.create_framebuffer_for_pass(
-                    pass_idx,
-                    image_view.vk(),
-                    depth_view,
-                    (*extent).into(),
-                    immediate_render_pass.vk(),
-                )?;
-                if image_index == 0 {
-                    // First framebuffer - replace the null placeholder
-                    self.framebuffers[pass_idx] = framebuffer;
-                    self.passes[pass_idx].vk_framebuffers = vec![VkFramebuffer::new(framebuffer)];
-                    // Set the active render pass to the immediate-mode render pass
-                    self.passes[pass_idx].active_render_pass = immediate_render_pass;
-                } else {
-                    // Additional framebuffers - append to the list
-                    self.passes[pass_idx]
-                        .vk_framebuffers
-                        .push(VkFramebuffer::new(framebuffer));
-                }
-            }
-        }
+        println!("Swapchain framebuffers setup complete: {} passes using dynamic rendering",
+            self.passes.len());
 
         Ok(())
     }
@@ -142,7 +114,6 @@ impl CompiledRenderGraph {
         swapchain_image_view: vk::ImageView,
         depth_image_view: vk::ImageView,
         swapchain_extent: vk::Extent2D,
-        immediate_render_pass: vk::RenderPass,
     ) -> Result<vk::Framebuffer, RenderGraphError> {
         let pass = self.passes.get(pass_index).ok_or_else(|| {
             RenderGraphError::CompilationError(format!("Pass {} not found", pass_index))
@@ -152,13 +123,13 @@ impl CompiledRenderGraph {
         // In the future, this should be determined from the pass descriptor
         let attachment_views = vec![swapchain_image_view, depth_image_view];
 
-        println!("Creating framebuffer for pass {}: graph_render_pass={:?}, using render_pass={:?}, attachments={:?}, extent={}x{}",
-            pass_index, pass.vk_render_pass.vk(), immediate_render_pass, attachment_views, swapchain_extent.width, swapchain_extent.height);
+        println!("Creating framebuffer for pass {}: graph_render_pass={:?}, using null render_pass for dynamic rendering, attachments={:?}, extent={}x{}",
+            pass_index, pass.vk_render_pass.vk(), attachment_views, swapchain_extent.width, swapchain_extent.height);
 
-        // Create framebuffer using the immediate-mode render pass
+        // Create framebuffer using null render pass for dynamic rendering
         let framebuffer = self
             .context
-            .create_framebuffer(immediate_render_pass, &attachment_views, swapchain_extent)
+            .create_framebuffer(vk::RenderPass::null(), &attachment_views, swapchain_extent)
             .map_err(RenderGraphError::VulkanError)?;
 
         println!("  Created framebuffer: {:?}", framebuffer);
@@ -833,6 +804,7 @@ impl CompiledRenderGraph {
             let execute = PassExecute::new(execute_name);
 
             // Extract color and depth attachments for dynamic rendering
+            // For swapchain rendering, we need ONE SET of attachments PER swapchain image
             let mut color_attachments: Vec<Vec<vk::ImageView>> = Vec::new();
             let mut depth_attachments: Vec<Option<vk::ImageView>> = Vec::new();
 
@@ -928,8 +900,9 @@ impl CompiledRenderGraph {
         let pass_count = self.passes.len();
         for i in 0..pass_count {
             // Check if we have dynamic rendering attachments for this image index
-            let has_dynamic_rendering = !self.passes[i].color_attachments.is_empty()
-                && self.passes[i].color_attachments.get(image_index).is_some();
+            // For swapchain rendering, we always have attachments (during compile, one set is created
+            // The get() returns None for missing per-image sets, but that's OK for swapchain
+            let has_dynamic_rendering = !self.passes[i].color_attachments.is_empty();
 
             if has_dynamic_rendering {
                 // Use Dynamic Rendering path (Vulkan 1.3)
@@ -960,11 +933,25 @@ impl CompiledRenderGraph {
         let pass = &self.passes[pass_index];
 
         // Get color attachments for this image index
-        let color_attachments = pass
+        // IMPORTANT: Always use at least one color attachment to match pipeline's colorAttachmentCount
+        // If get() returns None, use the first attachment set instead of adding 0 attachments
+        let mut color_attachments = pass
             .color_attachments
             .get(image_index)
             .cloned()
             .unwrap_or_default();
+
+        // Ensure we have at least one attachment (fallback to first set if needed)
+        if color_attachments.is_empty() {
+            // Use the first attachment set from compile instead of adding 0 attachments
+            if let Some(first_set) = pass.color_attachments.first() {
+                if !first_set.is_empty() {
+                    color_attachments.push(first_set[0].clone());
+                    println!("WARNING: color_attachments[{}] was empty, using fallback attachment for image_index {}",
+                        pass_index, image_index);
+                }
+            }
+        }
 
         // Get depth attachment for this image index
         let depth_attachment = pass.depth_attachments.get(image_index).copied().flatten();
@@ -1008,11 +995,14 @@ impl CompiledRenderGraph {
             rendering_info = rendering_info.depth_attachment(attachment);
         }
 
-        // Transition swapchain images from UNDEFINED to COLOR_ATTACHMENT_OPTIMAL before rendering
+        // Transition swapchain images from UNDEFINED/PREVIOUS to COLOR_ATTACHMENT_OPTIMAL before rendering
+        // Using UNDEFINED as the old layout works for both:
+        // 1. First use: Image starts in UNDEFINED layout
+        // 2. After present: The previous layout is discarded (Vulkan spec allows this)
         let swapchain_image = swapchain_images.get(image_index).map(|img| img.vk());
         if let Some(swapchain_vk_image) = swapchain_image {
             let barrier = ImageMemoryBarrier2::new(swapchain_vk_image)
-                .src_stage(PipelineStage2Flags::TOP_OF_PIPE)
+                .src_stage(PipelineStage2Flags::BOTTOM_OF_PIPE)
                 .src_access(AccessFlags2::NONE)
                 .dst_stage(PipelineStage2Flags::COLOR_ATTACHMENT_OUTPUT)
                 .dst_access(AccessFlags2::COLOR_ATTACHMENT_WRITE)

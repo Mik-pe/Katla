@@ -33,7 +33,6 @@ pub struct FrameData {
 pub struct VulkanRenderer {
     pub context: Rc<VulkanContext>,
     pub frame_context: VulkanFrameCtx,
-    pub render_pass: RenderPass,
     pub swap_data: SwapData,
     pub current_framedata: Option<FrameData>,
     /// Asset registry for managing GPU resources (meshes, materials).
@@ -67,11 +66,6 @@ impl VulkanRenderer {
 
         let frame_context = VulkanFrameCtx::init(&context);
 
-        let color_format = frame_context.swapchain.format.format;
-        let depth_format = frame_context.depth_render_texture.format;
-        let render_pass =
-            RenderPass::create_opaque(context.device.clone(), color_format, depth_format);
-
         let swapchain_images_raw: Vec<vk::Image> = frame_context
             .swapchain_images
             .iter()
@@ -82,7 +76,6 @@ impl VulkanRenderer {
         Self {
             context,
             frame_context,
-            render_pass,
             swap_data,
             current_framedata: None,
             asset_registry: AssetRegistry::new(),
@@ -106,7 +99,6 @@ impl VulkanRenderer {
 
         self.context.pre_destroy();
         self.swap_data.destroy(&self.context.device);
-        self.render_pass.destroy();
         self.frame_context.destroy();
         println!("Clean shutdown!");
     }
@@ -129,14 +121,6 @@ impl VulkanRenderer {
         let new_extent = self.frame_context.swapchain.get_extent();
         println!("  New extent: {}x{}", new_extent.width, new_extent.height);
 
-        // Destroy the previous render pass
-        self.render_pass.destroy();
-
-        let color_format = self.frame_context.swapchain.format.format;
-        let depth_format = self.frame_context.depth_render_texture.format;
-        self.render_pass =
-            RenderPass::create_opaque(self.context.device.clone(), color_format, depth_format);
-
         // Update render graph's active render pass if it exists
         // Collect swapchain data first to avoid borrow checker issues
         let swapchain_images: Vec<_> = self
@@ -156,12 +140,12 @@ impl VulkanRenderer {
             .collect();
 
         if let Some(ref mut graph) = self.render_graph {
-            let new_render_pass = self.render_pass.get_vk_renderpass();
             let extent_vk = self.frame_context.swapchain.get_extent();
             let new_extent =
                 crate::render_graph::types::Extent2D::new(extent_vk.width, extent_vk.height);
             for pass in &mut graph.passes {
-                pass.active_render_pass = VkRenderPass::new(new_render_pass);
+                // Use null render pass for dynamic rendering
+                pass.active_render_pass = VkRenderPass::new(vk::RenderPass::null());
                 pass.extent = new_extent;
             }
 
@@ -184,35 +168,27 @@ impl VulkanRenderer {
                 swapchain_images.iter().enumerate()
             {
                 for pass_idx in 0..graph.passes.len() {
+                    // Ensure color_attachments array has an entry for this image index
+                    while graph.passes[pass_idx].color_attachments.len() <= image_index {
+                        graph.passes[pass_idx].color_attachments.push(vec![]);
+                    }
+
                     // Update the color attachments for dynamic rendering
-                    if image_index < graph.passes[pass_idx].color_attachments.len() {
-                        graph.passes[pass_idx].color_attachments[image_index] =
-                            vec![image_view.vk()];
+                    graph.passes[pass_idx].color_attachments[image_index] = vec![image_view.vk()];
+
+                    // Ensure depth_attachments array has an entry for this image index
+                    while graph.passes[pass_idx].depth_attachments.len() <= image_index {
+                        graph.passes[pass_idx].depth_attachments.push(None);
                     }
 
                     // Update the depth attachments for dynamic rendering
-                    if image_index < graph.passes[pass_idx].depth_attachments.len() {
-                        graph.passes[pass_idx].depth_attachments[image_index] =
-                            Some(new_depth_view);
-                    }
+                    graph.passes[pass_idx].depth_attachments[image_index] = Some(new_depth_view);
 
-                    let framebuffer = self
-                        .context
-                        .create_framebuffer(
-                            new_render_pass,
-                            &[image_view.vk(), new_depth_view],
-                            (*extent).into(),
-                        )
-                        .map_err(RenderGraphError::VulkanError)
-                        .unwrap();
+                    // NOTE: For dynamic rendering, we don't create framebuffers
+                    // Just ensure vk_framebuffers vector is initialized
 
-                    if image_index == 0 {
-                        graph.passes[pass_idx].vk_framebuffers =
-                            vec![VkFramebuffer::new(framebuffer)];
-                    } else {
-                        graph.passes[pass_idx]
-                            .vk_framebuffers
-                            .push(VkFramebuffer::new(framebuffer));
+                    if image_index == 0 && graph.passes[pass_idx].vk_framebuffers.is_empty() {
+                        graph.passes[pass_idx].vk_framebuffers = vec![];
                     }
                 }
             }
@@ -449,13 +425,6 @@ impl VulkanRenderer {
     ///
     /// The draw list will be provided each frame via `render_frame_with_drawlist`.
     pub fn setup_render_graph(&mut self) {
-        // Debug: Print the immediate-mode render pass info
-        println!("=== Immediate-mode RenderPass ===");
-        println!(
-            "  VkRenderPass handle: {:?}",
-            self.render_pass.get_vk_renderpass()
-        );
-
         // Build a single render graph
         let mut graph_builder = RenderGraphBuilder::new();
 
@@ -587,7 +556,6 @@ impl VulkanRenderer {
         });
 
         let vulkan_context = self.context.clone();
-        let existing_render_pass = self.render_pass.get_vk_renderpass();
         match graph_builder.build(&vulkan_context) {
             Ok(mut graph) => {
                 // Store the draw_list_cell so we can update it each frame
@@ -610,13 +578,36 @@ impl VulkanRenderer {
                     })
                     .collect();
 
-                let wrapped_render_pass = VkRenderPass::new(existing_render_pass);
-
-                if let Err(e) =
-                    graph.create_swapchain_framebuffers(&swapchain_images, wrapped_render_pass)
+                // Create framebuffers for swapchain images (uses null render pass for dynamic rendering)
+                if let Err(e) = graph.create_swapchain_framebuffers(&swapchain_images)
                 {
                     println!("Failed to create swapchain framebuffers: {:?}", e);
                 } else {
+                    // Initialize color_attachments and depth_attachments for all swapchain images
+                    let new_depth_view = self.frame_context.depth_render_texture.image_view.vk();
+
+                    for (image_index, (_vk_image, image_view, _extent, _format)) in
+                        swapchain_images.iter().enumerate()
+                    {
+                        for pass_idx in 0..graph.passes.len() {
+                            // Ensure color_attachments array has an entry for this image index
+                            while graph.passes[pass_idx].color_attachments.len() <= image_index {
+                                graph.passes[pass_idx].color_attachments.push(vec![]);
+                            }
+
+                            // Update the color attachments for dynamic rendering
+                            graph.passes[pass_idx].color_attachments[image_index] = vec![image_view.vk()];
+
+                            // Ensure depth_attachments array has an entry for this image index
+                            while graph.passes[pass_idx].depth_attachments.len() <= image_index {
+                                graph.passes[pass_idx].depth_attachments.push(None);
+                            }
+
+                            // Update the depth attachments for dynamic rendering
+                            graph.passes[pass_idx].depth_attachments[image_index] = Some(new_depth_view);
+                        }
+                    }
+
                     self.render_graph = Some(graph);
                 }
             }
