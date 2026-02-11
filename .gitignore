@@ -7,3 +7,7 @@ imgui.ini
 .claude/cache/
 .claude/settings.local.json
 !.claude/skills/
+
+*.pdb
+*.exe
+*.dll
