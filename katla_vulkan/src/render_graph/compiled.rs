@@ -101,8 +101,10 @@ impl CompiledRenderGraph {
             }
         }
 
-        println!("Swapchain framebuffers setup complete: {} passes using dynamic rendering",
-            self.passes.len());
+        println!(
+            "Swapchain framebuffers setup complete: {} passes using dynamic rendering",
+            self.passes.len()
+        );
 
         Ok(())
     }
@@ -1057,9 +1059,9 @@ impl CompiledRenderGraph {
         // Set viewport and scissor for this pass
         let viewport = vk::Viewport {
             x: 0.0,
-            y: 0.0,
+            y: pass.extent.height as f32,
             width: pass.extent.width as f32,
-            height: pass.extent.height as f32,
+            height: -(pass.extent.height as f32),
             min_depth: 0.0,
             max_depth: 1.0,
         };
