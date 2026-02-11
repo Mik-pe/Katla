@@ -31,7 +31,11 @@ impl GLTFModel {
         let parser = AttributeParser::new(&self.buffers);
 
         if let Some(mesh) = node.mesh() {
-            println!("  Mesh '{}' has {} primitives", mesh.name().unwrap_or("unnamed"), mesh.primitives().count());
+            println!(
+                "  Mesh '{}' has {} primitives",
+                mesh.name().unwrap_or("unnamed"),
+                mesh.primitives().count()
+            );
 
             for primitive in mesh.primitives() {
                 // Parse attributes using the new parser
@@ -65,7 +69,9 @@ impl GLTFModel {
 
             // Debug: Check if normals are empty
             if normals.is_empty() {
-                println!("    WARNING: No normals found! Generating smooth normals from geometry...");
+                println!(
+                    "    WARNING: No normals found! Generating smooth normals from geometry..."
+                );
                 normals = generate_smooth_normals(&positions, &index_data, index_stride);
                 println!("    Generated {} normals", normals.len());
             }
@@ -178,8 +184,15 @@ mod tests {
         model_path.push("Fox.glb");
         println!("Looking for model at: {}", model_path.display());
         let model = GLTFModel::new(&model_path).expect("Failed to load Fox.glb");
-        println!("Parsed {} vertices, {} indices", model.vertex_data.len(), model.index_data.len());
-        println!("Bounds: center={:?}, radius={}", model.bounds.center, model.bounds.radius);
+        println!(
+            "Parsed {} vertices, {} indices",
+            model.vertex_data.len(),
+            model.index_data.len()
+        );
+        println!(
+            "Bounds: center={:?}, radius={}",
+            model.bounds.center, model.bounds.radius
+        );
 
         // Just verify we can parse the model, even if bounds are zero
         assert!(!model.vertex_data.is_empty(), "Should have vertex data");

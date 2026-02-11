@@ -1,4 +1,4 @@
-use crate::{AABB, Mat4, Ray, Sphere, Vec3};
+use crate::{Mat4, Ray, Sphere, Vec3, AABB};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Plane {
@@ -69,11 +69,31 @@ impl Plane {
     pub fn intersects_aabb(&self, aabb: &AABB) -> bool {
         // Get the positive and negative corners based on the plane normal
         let (positive, negative) = if self.normal.x() >= 0.0 {
-            (Vec3::new(aabb.center.x() + aabb.extent.x(), aabb.center.y() + aabb.extent.y(), aabb.center.z() + aabb.extent.z()),
-             Vec3::new(aabb.center.x() - aabb.extent.x(), aabb.center.y() - aabb.extent.y(), aabb.center.z() - aabb.extent.z()))
+            (
+                Vec3::new(
+                    aabb.center.x() + aabb.extent.x(),
+                    aabb.center.y() + aabb.extent.y(),
+                    aabb.center.z() + aabb.extent.z(),
+                ),
+                Vec3::new(
+                    aabb.center.x() - aabb.extent.x(),
+                    aabb.center.y() - aabb.extent.y(),
+                    aabb.center.z() - aabb.extent.z(),
+                ),
+            )
         } else {
-            (Vec3::new(aabb.center.x() - aabb.extent.x(), aabb.center.y() + aabb.extent.y(), aabb.center.z() + aabb.extent.z()),
-             Vec3::new(aabb.center.x() + aabb.extent.x(), aabb.center.y() - aabb.extent.y(), aabb.center.z() - aabb.extent.z()))
+            (
+                Vec3::new(
+                    aabb.center.x() - aabb.extent.x(),
+                    aabb.center.y() + aabb.extent.y(),
+                    aabb.center.z() + aabb.extent.z(),
+                ),
+                Vec3::new(
+                    aabb.center.x() + aabb.extent.x(),
+                    aabb.center.y() - aabb.extent.y(),
+                    aabb.center.z() - aabb.extent.z(),
+                ),
+            )
         };
 
         let pos_dist = self.distance_to_point(positive);
@@ -182,9 +202,15 @@ mod tests {
     fn test_plane_which_side() {
         let plane = Plane::new(Vec3::new(0.0, 1.0, 0.0), 5.0);
 
-        assert_eq!(plane.which_side(Vec3::new(0.0, 10.0, 0.0)), PlaneSide::Front);
+        assert_eq!(
+            plane.which_side(Vec3::new(0.0, 10.0, 0.0)),
+            PlaneSide::Front
+        );
         assert_eq!(plane.which_side(Vec3::new(0.0, 0.0, 0.0)), PlaneSide::Back);
-        assert_eq!(plane.which_side(Vec3::new(0.0, 5.0, 0.0)), PlaneSide::Intersecting);
+        assert_eq!(
+            plane.which_side(Vec3::new(0.0, 5.0, 0.0)),
+            PlaneSide::Intersecting
+        );
     }
 
     #[test]

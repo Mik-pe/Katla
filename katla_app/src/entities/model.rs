@@ -2,7 +2,9 @@ use std::rc::Rc;
 
 use katla_ecs::{EntityId, World};
 use katla_math::Transform;
-use katla_vulkan::{MaterialHandle, MaterialRegistry, MeshHandle, RenderPass, VulkanContext, VulkanRenderer};
+use katla_vulkan::{
+    MaterialHandle, MaterialRegistry, MeshHandle, RenderPass, VulkanContext, VulkanRenderer,
+};
 
 use crate::{
     components::{DrawableComponent, NameComponent, TransformComponent},

@@ -1,5 +1,5 @@
+use crate::animation::components::{AnimatedModel, AnimationPlayer};
 use katla_ecs::{EntityId, System, World};
-use crate::animation::components::{AnimationPlayer, AnimatedModel};
 
 /// Updates animation players based on elapsed time.
 ///
@@ -26,9 +26,9 @@ impl System for AnimationUpdateSystem {
 
             if let Some(model_entity) = model_entity {
                 // Clone the animation data we need
-                let animation_data = world.get_component::<AnimatedModel>(model_entity).map(|model| {
-                    model.animations.clone()
-                });
+                let animation_data = world
+                    .get_component::<AnimatedModel>(model_entity)
+                    .map(|model| model.animations.clone());
 
                 // Update the player using the cloned data
                 if let (Some(player), Some(animations)) = (

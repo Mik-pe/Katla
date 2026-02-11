@@ -21,10 +21,7 @@ fn create_headless_context() -> VulkanContext {
 }
 
 /// Create a test entity with transform component.
-fn create_test_entity(
-    world: &mut World,
-    position: Vec3,
-) -> katla_ecs::EntityId {
+fn create_test_entity(world: &mut World, position: Vec3) -> katla_ecs::EntityId {
     let entity = world.create_entity();
 
     world.add_component(
@@ -50,7 +47,7 @@ fn test_headless_vulkan_context() {
     // (surface_loader, swapchain_loader, and surface are None in headless mode)
     assert!(context.surface_loader.is_none());
     assert!(context.swapchain_loader.is_none());
-    assert!(context.surface.is_none());  // No surface in headless mode
+    assert!(context.surface.is_none()); // No surface in headless mode
 
     println!("Headless Vulkan context created successfully");
 }
@@ -80,7 +77,10 @@ fn test_headless_mesh_creation() {
     // Verify TransformComponent was added
     let transform = world.get_component::<TransformComponent>(entity);
     assert!(transform.is_some());
-    assert_eq!(transform.unwrap().transform.position, Vec3::new(0.0, 0.0, 0.0));
+    assert_eq!(
+        transform.unwrap().transform.position,
+        Vec3::new(0.0, 0.0, 0.0)
+    );
 
     println!("Entity and transform created successfully in headless mode");
 }
@@ -117,9 +117,7 @@ fn test_headless_full_integration() {
     assert!(world.entity_exists(entity3));
 
     // Query entities with TransformComponent
-    let transform_count = world
-        .query::<&TransformComponent>()
-        .count();
+    let transform_count = world.query::<&TransformComponent>().count();
     assert_eq!(transform_count, 3);
 
     // Verify each entity exists and has correct transform

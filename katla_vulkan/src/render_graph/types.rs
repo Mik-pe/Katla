@@ -555,10 +555,9 @@ impl RenderingAttachmentInfo {
 
     /// Convert to Vulkan vk::RenderingAttachmentInfoKHR.
     pub fn into_vk(self) -> ash::vk::RenderingAttachmentInfoKHR<'static> {
-        let clear_value = self.clear_value.map_or_else(
-            || ash::vk::ClearValue::default(),
-            |cv| cv.into(),
-        );
+        let clear_value = self
+            .clear_value
+            .map_or_else(|| ash::vk::ClearValue::default(), |cv| cv.into());
 
         ash::vk::RenderingAttachmentInfoKHR::default()
             .image_view(self.image_view)
@@ -649,7 +648,10 @@ impl RenderingInfo {
             .collect();
 
         let depth_vk = self.depth_attachment.as_ref().map(|d| d.clone().into_vk());
-        let stencil_vk = self.stencil_attachment.as_ref().map(|s| s.clone().into_vk());
+        let stencil_vk = self
+            .stencil_attachment
+            .as_ref()
+            .map(|s| s.clone().into_vk());
 
         let mut builder = ash::vk::RenderingInfoKHR::default()
             .render_area(self.render_area)

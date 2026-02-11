@@ -69,7 +69,8 @@ impl Transform {
             Vec4::new(0.0, 0.0, 0.0, 1.0),
         ]);
         let rot_mat = self.rotation.make_mat4();
-        let pos_mat = Mat4::from_translation([self.position.x(), self.position.y(), self.position.z()]);
+        let pos_mat =
+            Mat4::from_translation([self.position.x(), self.position.y(), self.position.z()]);
         pos_mat.mul(&rot_mat.mul(&scale_mat))
     }
 
@@ -93,9 +94,21 @@ impl Transform {
     pub fn inverse(&self) -> Self {
         let inv_rot = self.rotation.inverse();
         let inv_scale = Vec3::new(
-            if self.scale[0] != 0.0 { 1.0 / self.scale[0] } else { 0.0 },
-            if self.scale[1] != 0.0 { 1.0 / self.scale[1] } else { 0.0 },
-            if self.scale[2] != 0.0 { 1.0 / self.scale[2] } else { 0.0 },
+            if self.scale[0] != 0.0 {
+                1.0 / self.scale[0]
+            } else {
+                0.0
+            },
+            if self.scale[1] != 0.0 {
+                1.0 / self.scale[1]
+            } else {
+                0.0
+            },
+            if self.scale[2] != 0.0 {
+                1.0 / self.scale[2]
+            } else {
+                0.0
+            },
         );
         let inv_pos = inv_scale * (inv_rot * -self.position);
 

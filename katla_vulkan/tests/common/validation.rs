@@ -63,13 +63,16 @@ pub mod vuids {
     pub const DRAW_NO_PIPELINE: ExpectedVuid = ExpectedVuid::new("VUID-vkCmdDraw-None-02700");
 
     /// Ending a render pass without beginning one.
-    pub const END_RENDER_PASS_MISMATCH: ExpectedVuid = ExpectedVuid::new("VUID-vkCmdEndRenderPass-None-00679");
+    pub const END_RENDER_PASS_MISMATCH: ExpectedVuid =
+        ExpectedVuid::new("VUID-vkCmdEndRenderPass-None-00679");
 
     /// Image layout mismatch.
-    pub const IMAGE_LAYOUT_MISMATCH: ExpectedVuid = ExpectedVuid::new("VUID-VkImageMemoryBarrier-oldLayout-01199");
+    pub const IMAGE_LAYOUT_MISMATCH: ExpectedVuid =
+        ExpectedVuid::new("VUID-VkImageMemoryBarrier-oldLayout-01199");
 
     /// Command buffer in invalid state.
-    pub const CMD_BUFFER_STATE: ExpectedVuid = ExpectedVuid::new("VUID-vkCmdDraw-commandBuffer-00027");
+    pub const CMD_BUFFER_STATE: ExpectedVuid =
+        ExpectedVuid::new("VUID-vkCmdDraw-commandBuffer-00027");
 }
 
 /// Print validation test instructions to stderr.
@@ -120,18 +123,27 @@ mod tests {
     fn test_vuid_detection() {
         let output = "Some error: VUID-vkCmdDraw-None-02700";
         assert!(has_vuid_in_output(output));
-        assert!(has_specific_vuid_in_output(output, "VUID-vkCmdDraw-None-02700"));
+        assert!(has_specific_vuid_in_output(
+            output,
+            "VUID-vkCmdDraw-None-02700"
+        ));
     }
 
     #[test]
     fn test_vuid_not_found() {
         let output = "Some regular output without VUID errors";
         assert!(!has_vuid_in_output(output));
-        assert!(!has_specific_vuid_in_output(output, "VUID-vkCmdDraw-None-02700"));
+        assert!(!has_specific_vuid_in_output(
+            output,
+            "VUID-vkCmdDraw-None-02700"
+        ));
     }
 
     #[test]
     fn test_expected_vuid() {
-        assert_eq!(vuids::DRAW_NO_PIPELINE.as_str(), "VUID-vkCmdDraw-None-02700");
+        assert_eq!(
+            vuids::DRAW_NO_PIPELINE.as_str(),
+            "VUID-vkCmdDraw-None-02700"
+        );
     }
 }

@@ -57,7 +57,9 @@ impl<'a> AttributeParser<'a> {
 
     /// Parse index data from an accessor.
     pub fn parse_indices(&self, accessor: gltf::Accessor<'a>) -> (Vec<u8>, u8) {
-        let view = accessor.view().expect("Index accessor must have a buffer view");
+        let view = accessor
+            .view()
+            .expect("Index accessor must have a buffer view");
         let buf_index = view.buffer().index();
         let ind_offset = view.offset() + accessor.offset();
         let ind_size = view.length();
@@ -147,7 +149,11 @@ impl<'a> AttributeParser<'a> {
 ///
 /// This calculates normals by averaging the face normals of all triangles
 /// that share each vertex. This produces smooth shading compared to flat shading.
-pub fn generate_smooth_normals(positions: &[[f32; 3]], indices: &[u8], index_stride: u8) -> Vec<[f32; 3]> {
+pub fn generate_smooth_normals(
+    positions: &[[f32; 3]],
+    indices: &[u8],
+    index_stride: u8,
+) -> Vec<[f32; 3]> {
     use std::collections::HashMap;
 
     let mut normals: Vec<Vec3> = vec![Vec3::new(0.0, 0.0, 0.0); positions.len()];
@@ -192,7 +198,12 @@ pub fn generate_smooth_normals(positions: &[[f32; 3]], indices: &[u8], index_str
                 u16::from_le_bytes(arr) as usize
             }
             4 => {
-                let arr = [data[i * 4], data[i * 4 + 1], data[i * 4 + 2], data[i * 4 + 3]];
+                let arr = [
+                    data[i * 4],
+                    data[i * 4 + 1],
+                    data[i * 4 + 2],
+                    data[i * 4 + 3],
+                ];
                 u32::from_le_bytes(arr) as usize
             }
             _ => 0,
@@ -331,20 +342,13 @@ mod tests {
 
     #[test]
     fn test_build_vertex_data_complete() {
-        let positions = vec
-![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]]
-;
-        let normals = vec
-![[0.0, 0.0, 1.0], [0.0, 0.0, 1.0], [0.0, 0.0, 1.0]]
-;
-        let tex_coords = vec
-![[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]]
-;
+        let positions = vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]];
+        let normals = vec![[0.0, 0.0, 1.0], [0.0, 0.0, 1.0], [0.0, 0.0, 1.0]];
+        let tex_coords = vec![[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]];
 
         let (vertices, sphere) = build_vertex_data(positions, normals, tex_coords);
 
-        assert_eq!(vertices.len()
-, 3);
+        assert_eq!(vertices.len(), 3);
         assert_eq!(vertices[0].position, [0.0, 0.0, 0.0]);
         assert_eq!(vertices[0].normal, [0.0, 0.0, 1.0]);
         assert_eq!(vertices[0].tex_coord0, [0.0, 0.0]);
@@ -354,16 +358,13 @@ mod tests {
 
     #[test]
     fn test_build_vertex_data_positions_only() {
-        let positions = vec
-![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]]
-;
+        let positions = vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]];
         let normals = vec![];
         let tex_coords = vec![];
 
         let (vertices, sphere) = build_vertex_data(positions, normals, tex_coords);
 
-        assert_eq!(vertices.len()
-, 3);
+        assert_eq!(vertices.len(), 3);
         // Normals should be normalized positions
         assert_eq!(vertices[0].position, [0.0, 0.0, 0.0]);
         assert!(sphere.radius > 0.0);

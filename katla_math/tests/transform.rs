@@ -236,8 +236,8 @@ fn test_transform_with_scale() {
 fn test_transform_look_direction() {
     // Test that look_direction creates a transform with a valid rotation
     let transform = Transform::look_direction(
-        Vec3::new(0.0, 0.0, -1.0),  // Looking along -Z (forward direction)
-        Vec3::new(0.0, 1.0, 0.0),    // Up is +Y
+        Vec3::new(0.0, 0.0, -1.0), // Looking along -Z (forward direction)
+        Vec3::new(0.0, 1.0, 0.0),  // Up is +Y
     );
 
     // Verify the rotation is normalized
@@ -246,8 +246,7 @@ fn test_transform_look_direction() {
     // The forward vector should point along -Z
     let forward = transform.forward();
     // We expect forward to be approximately (0, 0, -1)
-    assert!((forward[0]).abs() < 0.1);  // X should be near 0
-    assert!((forward[1]).abs() < 0.1);  // Y should be near 0
-    assert!((forward[2] - (-1.0)).abs() < 0.1);  // Z should be near -1
+    assert!((forward[0]).abs() < 0.1); // X should be near 0
+    assert!((forward[1]).abs() < 0.1); // Y should be near 0
+    assert!((forward[2] - (-1.0)).abs() < 0.1); // Z should be near -1
 }
-

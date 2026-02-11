@@ -3,7 +3,7 @@
 //! This is used when SSE intrinsics are not available or when the scalar
 //! implementation is explicitly preferred.
 
-use crate::{Mat3, Vec3, Mat4, Vec4};
+use crate::{Mat3, Mat4, Vec3, Vec4};
 use core::ops::Index;
 use std::ops::Mul;
 
@@ -273,11 +273,7 @@ impl Quat {
         let m21 = yz - wx;
         let m22 = 1.0f32 - (xx + yy);
 
-        Mat3::from_elements(
-            m00, m01, m02,
-            m10, m11, m12,
-            m20, m21, m22,
-        )
+        Mat3::from_elements(m00, m01, m02, m10, m11, m12, m20, m21, m22)
     }
 
     pub fn from_euler(pitch: f32, yaw: f32, roll: f32) -> Quat {

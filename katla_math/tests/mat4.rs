@@ -1,5 +1,5 @@
 use approx::assert_relative_eq;
-use katla_math::{Mat4, PI, Quat, Transform, Vec3, Vec4};
+use katla_math::{Mat4, Quat, Transform, Vec3, Vec4, PI};
 
 #[test]
 fn test_default() {

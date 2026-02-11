@@ -156,7 +156,7 @@ fn test_dot() {
     let q1 = Quat::new_from_xyzw(1.0, 2.0, 3.0, 4.0);
     let q2 = Quat::new_from_xyzw(5.0, 6.0, 7.0, 8.0);
     let dot = q1.dot(q2);
-    assert_eq!(dot, 1.0*5.0 + 2.0*6.0 + 3.0*7.0 + 4.0*8.0);
+    assert_eq!(dot, 1.0 * 5.0 + 2.0 * 6.0 + 3.0 * 7.0 + 4.0 * 8.0);
 }
 
 #[test]
@@ -275,11 +275,7 @@ fn test_from_mat3() {
     let c = f32::cos(angle);
     let s = f32::sin(angle);
 
-    let m = Mat3::from_elements(
-        c, -s, 0.0,
-        s,  c, 0.0,
-        0.0, 0.0, 1.0,
-    );
+    let m = Mat3::from_elements(c, -s, 0.0, s, c, 0.0, 0.0, 0.0, 1.0);
 
     let q = Quat::from(m);
     assert!(q.is_normalized());

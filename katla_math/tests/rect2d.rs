@@ -21,8 +21,8 @@ fn test_rect2d_from_origin_size() {
 
     assert_eq!(rect.min.x(), 5.0);
     assert_eq!(rect.min.y(), 10.0);
-    assert_eq!(rect.max.x(), 20.0);  // 5 + 15
-    assert_eq!(rect.max.y(), 35.0);  // 10 + 25
+    assert_eq!(rect.max.x(), 20.0); // 5 + 15
+    assert_eq!(rect.max.y(), 35.0); // 10 + 25
 }
 
 #[test]
@@ -31,10 +31,10 @@ fn test_rect2d_from_center_half_extents() {
     let half_extents = Vec2::new(5.0, 10.0);
     let rect = Rect2D::from_center_half_extents(center, half_extents);
 
-    assert_eq!(rect.min.x(), 5.0);   // 10 - 5
-    assert_eq!(rect.min.y(), 10.0);  // 20 - 10
-    assert_eq!(rect.max.x(), 15.0);  // 10 + 5
-    assert_eq!(rect.max.y(), 30.0);  // 20 + 10
+    assert_eq!(rect.min.x(), 5.0); // 10 - 5
+    assert_eq!(rect.min.y(), 10.0); // 20 - 10
+    assert_eq!(rect.max.x(), 15.0); // 10 + 5
+    assert_eq!(rect.max.y(), 30.0); // 20 + 10
 }
 
 #[test]
@@ -43,10 +43,10 @@ fn test_rect2d_from_center_size() {
     let size = Vec2::new(10.0, 20.0);
     let rect = Rect2D::from_center_size(center, size);
 
-    assert_eq!(rect.min.x(), 5.0);   // 10 - 5
-    assert_eq!(rect.min.y(), 10.0);  // 20 - 10
-    assert_eq!(rect.max.x(), 15.0);  // 10 + 5
-    assert_eq!(rect.max.y(), 30.0);  // 20 + 10
+    assert_eq!(rect.min.x(), 5.0); // 10 - 5
+    assert_eq!(rect.min.y(), 10.0); // 20 - 10
+    assert_eq!(rect.max.x(), 15.0); // 10 + 5
+    assert_eq!(rect.max.y(), 30.0); // 20 + 10
 }
 
 #[test]
@@ -122,13 +122,13 @@ fn test_rect2d_overlaps() {
 #[test]
 fn test_rect2d_area() {
     let rect = Rect2D::new(Vec2::new(0.0, 0.0), Vec2::new(10.0, 20.0));
-    assert_eq!(rect.area(), 200.0);  // 10 * 20
+    assert_eq!(rect.area(), 200.0); // 10 * 20
 }
 
 #[test]
 fn test_rect2d_perimeter() {
     let rect = Rect2D::new(Vec2::new(0.0, 0.0), Vec2::new(10.0, 20.0));
-    assert_eq!(rect.perimeter(), 60.0);  // 2 * (10 + 20)
+    assert_eq!(rect.perimeter(), 60.0); // 2 * (10 + 20)
 }
 
 #[test]
@@ -149,10 +149,10 @@ fn test_rect2d_inflate() {
     let rect = Rect2D::new(Vec2::new(10.0, 20.0), Vec2::new(20.0, 30.0));
     let inflated = rect.inflate(5.0);
 
-    assert_eq!(inflated.min.x(), 5.0);   // 10 - 5
-    assert_eq!(inflated.min.y(), 15.0);  // 20 - 5
-    assert_eq!(inflated.max.x(), 25.0);  // 20 + 5
-    assert_eq!(inflated.max.y(), 35.0);  // 30 + 5
+    assert_eq!(inflated.min.x(), 5.0); // 10 - 5
+    assert_eq!(inflated.min.y(), 15.0); // 20 - 5
+    assert_eq!(inflated.max.x(), 25.0); // 20 + 5
+    assert_eq!(inflated.max.y(), 35.0); // 30 + 5
 }
 
 #[test]
@@ -160,10 +160,10 @@ fn test_rect2d_contract() {
     let rect = Rect2D::new(Vec2::new(10.0, 20.0), Vec2::new(20.0, 30.0));
     let contracted = rect.contract(5.0);
 
-    assert_eq!(contracted.min.x(), 15.0);  // 10 + 5
-    assert_eq!(contracted.min.y(), 25.0);  // 20 + 5
-    assert_eq!(contracted.max.x(), 15.0);  // 20 - 5
-    assert_eq!(contracted.max.y(), 25.0);  // 30 - 5
+    assert_eq!(contracted.min.x(), 15.0); // 10 + 5
+    assert_eq!(contracted.min.y(), 25.0); // 20 + 5
+    assert_eq!(contracted.max.x(), 15.0); // 20 - 5
+    assert_eq!(contracted.max.y(), 25.0); // 30 - 5
 }
 
 #[test]
@@ -240,10 +240,14 @@ fn test_rect2d_corners() {
     let rect = Rect2D::new(Vec2::new(10.0, 20.0), Vec2::new(20.0, 30.0));
     let corners = rect.corners();
 
-    assert_eq!(corners[0].x(), 10.0); assert_eq!(corners[0].y(), 20.0);  // bottom-left
-    assert_eq!(corners[1].x(), 20.0); assert_eq!(corners[1].y(), 20.0);  // bottom-right
-    assert_eq!(corners[2].x(), 10.0); assert_eq!(corners[2].y(), 30.0);  // top-left
-    assert_eq!(corners[3].x(), 20.0); assert_eq!(corners[3].y(), 30.0);  // top-right
+    assert_eq!(corners[0].x(), 10.0);
+    assert_eq!(corners[0].y(), 20.0); // bottom-left
+    assert_eq!(corners[1].x(), 20.0);
+    assert_eq!(corners[1].y(), 20.0); // bottom-right
+    assert_eq!(corners[2].x(), 10.0);
+    assert_eq!(corners[2].y(), 30.0); // top-left
+    assert_eq!(corners[3].x(), 20.0);
+    assert_eq!(corners[3].y(), 30.0); // top-right
 }
 
 #[test]
@@ -307,10 +311,10 @@ fn test_rect2d_expand_to_include() {
     let point = Vec2::new(0.0, 5.0);
     rect.expand_to_include(point);
 
-    assert_eq!(rect.min.x(), 0.0);   // Expanded to include point
-    assert_eq!(rect.min.y(), 5.0);   // Expanded to include point
-    assert_eq!(rect.max.x(), 15.0);  // Unchanged
-    assert_eq!(rect.max.y(), 20.0);  // Unchanged
+    assert_eq!(rect.min.x(), 0.0); // Expanded to include point
+    assert_eq!(rect.min.y(), 5.0); // Expanded to include point
+    assert_eq!(rect.max.x(), 15.0); // Unchanged
+    assert_eq!(rect.max.y(), 20.0); // Unchanged
 }
 
 #[test]
@@ -319,8 +323,8 @@ fn test_rect2d_expand_to_include_rect() {
     let rect2 = Rect2D::new(Vec2::new(0.0, 5.0), Vec2::new(25.0, 25.0));
     rect1.expand_to_include_rect(&rect2);
 
-    assert_eq!(rect1.min.x(), 0.0);   // Expanded to include rect2
-    assert_eq!(rect1.min.y(), 5.0);   // Expanded to include rect2
-    assert_eq!(rect1.max.x(), 25.0);  // Expanded to include rect2
-    assert_eq!(rect1.max.y(), 25.0);  // Expanded to include rect2
+    assert_eq!(rect1.min.x(), 0.0); // Expanded to include rect2
+    assert_eq!(rect1.min.y(), 5.0); // Expanded to include rect2
+    assert_eq!(rect1.max.x(), 25.0); // Expanded to include rect2
+    assert_eq!(rect1.max.y(), 25.0); // Expanded to include rect2
 }

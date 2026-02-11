@@ -54,11 +54,7 @@ fn test_lighting_components() {
     let sun_entity = world.create_entity();
     world.add_component(
         sun_entity,
-        DirectionalLight::new(
-            Vec3::new(-0.3, -1.0, -0.2),
-            [1.0, 0.95, 0.8],
-            1.0,
-        ),
+        DirectionalLight::new(Vec3::new(-0.3, -1.0, -0.2), [1.0, 0.95, 0.8], 1.0),
     );
 
     // Verify directional light was added
@@ -254,16 +250,12 @@ fn test_component_removal() {
     );
 
     // Verify component exists
-    assert!(world
-        .get_component::<TransformComponent>(entity)
-        .is_some());
+    assert!(world.get_component::<TransformComponent>(entity).is_some());
 
     // Remove component
     let removed = world.remove_component::<TransformComponent>(entity);
     assert!(removed);
 
     // Verify component is gone
-    assert!(world
-        .get_component::<TransformComponent>(entity)
-        .is_none());
+    assert!(world.get_component::<TransformComponent>(entity).is_none());
 }

@@ -1,7 +1,7 @@
-use katla_ecs::{System, World};
-use katla_math::Vec3;
 use crate::components::{DirectionalLight, PointLight, SpotLight, TransformComponent};
 use crate::systems::{LightCollection, LightingSystem};
+use katla_ecs::{System, World};
+use katla_math::Vec3;
 
 #[test]
 fn test_lighting_system_collects_directional_lights() {
@@ -92,7 +92,9 @@ fn test_lighting_system_respects_max_limits() {
             world.add_component(
                 entity,
                 TransformComponent {
-                    transform: katla_math::Transform::new_from_position(Vec3::new(i as f32, 0.0, 0.0)),
+                    transform: katla_math::Transform::new_from_position(Vec3::new(
+                        i as f32, 0.0, 0.0,
+                    )),
                 },
             );
         }

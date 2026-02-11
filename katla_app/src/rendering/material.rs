@@ -2,9 +2,8 @@ use crate::{rendering::vertextypes::*, util::GLTFModel};
 
 use katla_math::{Color, Mat4};
 use katla_vulkan::{
-    context::VulkanContext, CommandBuffer, ImageFormat, MaterialBuilder, MaterialHandle,
-    MaterialPipeline, MaterialTemplate, RenderPass, Texture, VertexBinding,
-    material::UniformHandle,
+    context::VulkanContext, material::UniformHandle, CommandBuffer, ImageFormat, MaterialBuilder,
+    MaterialHandle, MaterialPipeline, MaterialTemplate, RenderPass, Texture, VertexBinding,
 };
 
 use std::{cell::RefCell, path::Path, rc::Rc};
@@ -75,7 +74,7 @@ impl Material {
         let mut builder = MaterialBuilder::new(context.clone())
             .with_vertex_binding(vertex_binding.clone())
             .with_wgsl_shader(Path::new("resources/shaders/model_pbr.wgsl"))
-            .with_color_uniform(true)  // Enable color uniform (shader expects it)
+            .with_color_uniform(true) // Enable color uniform (shader expects it)
             .with_backface_culling(true)
             .with_depth_test(true)
             .with_depth_write(true);
@@ -232,7 +231,14 @@ impl Material {
     ///
     /// This consumes the material and returns ownership of all fields.
     /// Used when registering materials with the renderer's AssetRegistry.
-    pub fn get_registration_data(self) -> (Rc<RefCell<MaterialPipeline>>, Option<Rc<Texture>>, VertexBinding, Option<UniformHandle>) {
+    pub fn get_registration_data(
+        self,
+    ) -> (
+        Rc<RefCell<MaterialPipeline>>,
+        Option<Rc<Texture>>,
+        VertexBinding,
+        Option<UniformHandle>,
+    ) {
         (
             self.material_pipeline,
             self.texture,

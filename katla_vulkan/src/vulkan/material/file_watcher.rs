@@ -11,7 +11,7 @@ use std::{
     time::Duration,
 };
 
-use notify::{EventKind, RecursiveMode, Watcher, RecommendedWatcher};
+use notify::{EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 
 /// A file system watcher that runs in a background thread
 ///
@@ -83,10 +83,7 @@ impl FileWatcher {
 
         for event in notify_rx {
             // Filter for write/modify events
-            if matches!(
-                event.kind,
-                EventKind::Modify(_) | EventKind::Create(_)
-            ) {
+            if matches!(event.kind, EventKind::Modify(_) | EventKind::Create(_)) {
                 let now = std::time::Instant::now();
 
                 // Check if any file has relevant extension
@@ -95,7 +92,8 @@ impl FileWatcher {
                         ext == "wgsl" || ext == "toml" || ext == "vert" || ext == "frag"
                     }) {
                         // Debounce: ignore events too soon after the last one
-                        if now.duration_since(last_event_time) > Duration::from_millis(debounce_ms) {
+                        if now.duration_since(last_event_time) > Duration::from_millis(debounce_ms)
+                        {
                             let _ = sender.send(path.clone());
                             last_event_time = now;
                             last_modified_path = Some(path.clone());

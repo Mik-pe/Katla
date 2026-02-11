@@ -65,7 +65,11 @@ pub struct AnimationSampler {
 
 impl AnimationSampler {
     /// Create a new animation sampler for translation animations
-    pub fn new_translation(inputs: Vec<f32>, translations: Vec<[f32; 3]>, interpolation: Interpolation) -> Self {
+    pub fn new_translation(
+        inputs: Vec<f32>,
+        translations: Vec<[f32; 3]>,
+        interpolation: Interpolation,
+    ) -> Self {
         Self {
             inputs,
             translations: Some(translations),
@@ -77,7 +81,11 @@ impl AnimationSampler {
     }
 
     /// Create a new animation sampler for rotation animations
-    pub fn new_rotation(inputs: Vec<f32>, rotations: Vec<[f32; 4]>, interpolation: Interpolation) -> Self {
+    pub fn new_rotation(
+        inputs: Vec<f32>,
+        rotations: Vec<[f32; 4]>,
+        interpolation: Interpolation,
+    ) -> Self {
         Self {
             inputs,
             translations: None,
@@ -89,7 +97,11 @@ impl AnimationSampler {
     }
 
     /// Create a new animation sampler for scale animations
-    pub fn new_scale(inputs: Vec<f32>, scales: Vec<[f32; 3]>, interpolation: Interpolation) -> Self {
+    pub fn new_scale(
+        inputs: Vec<f32>,
+        scales: Vec<[f32; 3]>,
+        interpolation: Interpolation,
+    ) -> Self {
         Self {
             inputs,
             translations: None,

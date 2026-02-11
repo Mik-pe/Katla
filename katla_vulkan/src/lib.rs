@@ -10,11 +10,12 @@ pub use render_graph::resource::{
 };
 pub use render_graph::*;
 pub use rendering::{
-    registry::AssetRegistry, types::{DrawCall, DrawList, MaterialHandle, MaterialParams, MeshHandle},
+    registry::AssetRegistry,
+    types::{DrawCall, DrawList, MaterialHandle, MaterialParams, MeshHandle},
 };
 pub use sync::{
-    VkDescriptorPool, VkDescriptorSet, VkDescriptorSetLayout, VkFence, VkFramebuffer, VkImage, VkImageView,
-    VkRenderPass, VkSampler, VkSemaphore,
+    VkDescriptorPool, VkDescriptorSet, VkDescriptorSetLayout, VkFence, VkFramebuffer, VkImage,
+    VkImageView, VkRenderPass, VkSampler, VkSemaphore,
 };
 pub use vulkan::context::{ValidationMessage, ValidationMessageType, ValidationSeverity};
 pub use vulkan::*;
@@ -71,12 +72,12 @@ impl VulkanRenderer {
         let render_pass =
             RenderPass::create_opaque(context.device.clone(), color_format, depth_format);
 
-        let swapchain_images_raw: Vec<vk::Image> = frame_context.swapchain_images.iter().map(|img| img.vk()).collect();
-        let swap_data = SwapData::new(
-            &context.device,
-            &swapchain_images_raw,
-            FRAMES_IN_FLIGHT,
-        );
+        let swapchain_images_raw: Vec<vk::Image> = frame_context
+            .swapchain_images
+            .iter()
+            .map(|img| img.vk())
+            .collect();
+        let swap_data = SwapData::new(&context.device, &swapchain_images_raw, FRAMES_IN_FLIGHT);
 
         Self {
             context,
@@ -157,7 +158,8 @@ impl VulkanRenderer {
         if let Some(ref mut graph) = self.render_graph {
             let new_render_pass = self.render_pass.get_vk_renderpass();
             let extent_vk = self.frame_context.swapchain.get_extent();
-            let new_extent = crate::render_graph::types::Extent2D::new(extent_vk.width, extent_vk.height);
+            let new_extent =
+                crate::render_graph::types::Extent2D::new(extent_vk.width, extent_vk.height);
             for pass in &mut graph.passes {
                 pass.active_render_pass = VkRenderPass::new(new_render_pass);
                 pass.extent = new_extent;
@@ -167,7 +169,9 @@ impl VulkanRenderer {
             for pass in &graph.passes {
                 for framebuffer in &pass.vk_framebuffers {
                     unsafe {
-                        self.context.device.destroy_framebuffer(framebuffer.vk(), None);
+                        self.context
+                            .device
+                            .destroy_framebuffer(framebuffer.vk(), None);
                     }
                 }
             }
@@ -182,12 +186,14 @@ impl VulkanRenderer {
                 for pass_idx in 0..graph.passes.len() {
                     // Update the color attachments for dynamic rendering
                     if image_index < graph.passes[pass_idx].color_attachments.len() {
-                        graph.passes[pass_idx].color_attachments[image_index] = vec![image_view.vk()];
+                        graph.passes[pass_idx].color_attachments[image_index] =
+                            vec![image_view.vk()];
                     }
 
                     // Update the depth attachments for dynamic rendering
                     if image_index < graph.passes[pass_idx].depth_attachments.len() {
-                        graph.passes[pass_idx].depth_attachments[image_index] = Some(new_depth_view);
+                        graph.passes[pass_idx].depth_attachments[image_index] =
+                            Some(new_depth_view);
                     }
 
                     let framebuffer = self
@@ -201,9 +207,12 @@ impl VulkanRenderer {
                         .unwrap();
 
                     if image_index == 0 {
-                        graph.passes[pass_idx].vk_framebuffers = vec![VkFramebuffer::new(framebuffer)];
+                        graph.passes[pass_idx].vk_framebuffers =
+                            vec![VkFramebuffer::new(framebuffer)];
                     } else {
-                        graph.passes[pass_idx].vk_framebuffers.push(VkFramebuffer::new(framebuffer));
+                        graph.passes[pass_idx]
+                            .vk_framebuffers
+                            .push(VkFramebuffer::new(framebuffer));
                     }
                 }
             }
@@ -220,7 +229,10 @@ impl VulkanRenderer {
         let (available_sem, finished_sem, in_flight_fence, image_index) =
             self.swap_data.swap_images(
                 &self.context.device,
-                self.context.swapchain_loader.as_ref().expect("Swapchain loader required"),
+                self.context
+                    .swapchain_loader
+                    .as_ref()
+                    .expect("Swapchain loader required"),
                 self.frame_context.swapchain.swapchain,
             )?;
         self.current_framedata = Some(FrameData {
@@ -489,7 +501,9 @@ impl VulkanRenderer {
                             // Get the mesh data first (immutable borrow)
                             let mesh_data = registry.get_mesh(draw.mesh).map(|m| {
                                 (
-                                    m.index_buffer.as_ref().map(|ib| (ib.object(), ib.index_type, ib.count())),
+                                    m.index_buffer
+                                        .as_ref()
+                                        .map(|ib| (ib.object(), ib.index_type, ib.count())),
                                     m.vertex_buffer.as_ref().map(|vb| (vb.object(), vb.count())),
                                 )
                             });
@@ -513,7 +527,10 @@ impl VulkanRenderer {
 
                             // Use material's own uniform buffer if available, otherwise pipeline's
                             if let Some(ref mut uniform) = material.uniform {
-                                uniform.update_buffer(material.pipeline.borrow().context(), &params_bytes);
+                                uniform.update_buffer(
+                                    material.pipeline.borrow().context(),
+                                    &params_bytes,
+                                );
                             } else {
                                 material.pipeline.borrow_mut().update_buffer(&params_bytes);
                             }
@@ -548,18 +565,20 @@ impl VulkanRenderer {
 
                             // Bind vertex and index buffers and draw
                             if let Some((index_buffer, index_type, index_count)) = index_data {
-                                ctx.command_buffer.bind_index_buffer(
-                                    index_buffer,
-                                    0,
-                                    index_type,
-                                );
+                                ctx.command_buffer
+                                    .bind_index_buffer(index_buffer, 0, index_type);
 
                                 if let Some((vertex_buffer, _)) = vertex_data {
-                                    ctx.command_buffer.bind_vertex_buffers(0, &[vertex_buffer], &[0]);
+                                    ctx.command_buffer.bind_vertex_buffers(
+                                        0,
+                                        &[vertex_buffer],
+                                        &[0],
+                                    );
                                     ctx.command_buffer.draw_indexed(index_count, 1, 0, 0, 0);
                                 }
                             } else if let Some((vertex_buffer, vertex_count)) = vertex_data {
-                                ctx.command_buffer.bind_vertex_buffers(0, &[vertex_buffer], &[0]);
+                                ctx.command_buffer
+                                    .bind_vertex_buffers(0, &[vertex_buffer], &[0]);
                                 ctx.command_buffer.draw_array(vertex_count, 1, 0, 0);
                             }
                         }

@@ -33,8 +33,8 @@ pub fn create_torus_vertices(
             vertices.push(VertexPBR::new(
                 [x, y, z],
                 normal.to_array(),
-                [_tangent.x(), _tangent.y(), _tangent.z(), 1.0],  // Tangent
-                [texture_coords.0, texture_coords.1],              // UV
+                [_tangent.x(), _tangent.y(), _tangent.z(), 1.0], // Tangent
+                [texture_coords.0, texture_coords.1],            // UV
             ));
         }
     }
@@ -123,7 +123,10 @@ mod tests {
                 failed += 1;
                 println!(
                     "Triangle {:?}: face_normal={:?}, avg_normal={:?}, dot={}",
-                    chunk, face_normal.to_array(), avg_normal.to_array(), dot
+                    chunk,
+                    face_normal.to_array(),
+                    avg_normal.to_array(),
+                    dot
                 );
             } else {
                 passed += 1;
@@ -131,6 +134,10 @@ mod tests {
         }
 
         println!("Torus winding: {} passed, {} failed", passed, failed);
-        assert_eq!(failed, 0, "Torus has {} triangles with incorrect winding", failed);
+        assert_eq!(
+            failed, 0,
+            "Torus has {} triangles with incorrect winding",
+            failed
+        );
     }
 }

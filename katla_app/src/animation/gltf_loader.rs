@@ -1,5 +1,5 @@
-use katla_ecs::World;
 use crate::util::GLTFModel;
+use katla_ecs::World;
 
 /// Load animations from a GLTF model into the world.
 ///
@@ -33,8 +33,10 @@ pub fn load_animations(_world: &mut World, model: &GLTFModel) {
         let channels_count = gltf_animation.channels().count();
         let samplers_count = gltf_animation.samplers().count();
 
-        println!("  - Animation '{}': {} channels, {} samplers",
-                 name, channels_count, samplers_count);
+        println!(
+            "  - Animation '{}': {} channels, {} samplers",
+            name, channels_count, samplers_count
+        );
 
         // Log each channel
         for channel in gltf_animation.channels() {
@@ -52,10 +54,10 @@ pub fn load_animations(_world: &mut World, model: &GLTFModel) {
                 gltf::animation::Interpolation::Step => "step",
                 gltf::animation::Interpolation::CubicSpline => "cubic spline",
             };
-            println!("    - Channel on node {}: {}, interpolation: {}",
-                     target_node,
-                     property,
-                     interpolation_str);
+            println!(
+                "    - Channel on node {}: {}, interpolation: {}",
+                target_node, property, interpolation_str
+            );
         }
     }
 
@@ -88,8 +90,10 @@ pub fn load_skins(_world: &mut World, model: &GLTFModel) {
         let joints_count = gltf_skin.joints().count();
         let has_inverse_bind = gltf_skin.inverse_bind_matrices().is_some();
 
-        println!("  - Skin '{}': {} joints, inverse bind matrices: {}",
-                 name, joints_count, has_inverse_bind);
+        println!(
+            "  - Skin '{}': {} joints, inverse bind matrices: {}",
+            name, joints_count, has_inverse_bind
+        );
     }
 
     // TODO: Store skin data properly
@@ -100,10 +104,7 @@ pub fn load_skins(_world: &mut World, model: &GLTFModel) {
 ///
 /// GLTF skins reference nodes by index. We need to build the actual
 /// transform hierarchy for the skeleton.
-pub fn build_skeleton(
-    _model: &GLTFModel,
-    skin_joints: &[usize],
-) -> Vec<katla_math::Mat4> {
+pub fn build_skeleton(_model: &GLTFModel, skin_joints: &[usize]) -> Vec<katla_math::Mat4> {
     println!("Building skeleton for {} joints", skin_joints.len());
 
     // TODO: Extract node transforms from GLTF scene graph

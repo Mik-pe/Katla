@@ -30,29 +30,29 @@ pub fn create_cylinder_vertices(height: f32, radius: f32, segments: u32) -> Vec<
         vertices.push(VertexPBR::new(
             lower_left.to_array(),
             normal.to_array(),
-            [1.0, 0.0, 0.0, 1.0],  // Tangent
-            [u, 0.0],              // UV: Bottom of cylinder
+            [1.0, 0.0, 0.0, 1.0], // Tangent
+            [u, 0.0],             // UV: Bottom of cylinder
         ));
 
         vertices.push(VertexPBR::new(
             upper_left.to_array(),
             normal.to_array(),
-            [1.0, 0.0, 0.0, 1.0],  // Tangent
-            [u, 1.0],              // UV: Top of cylinder
+            [1.0, 0.0, 0.0, 1.0], // Tangent
+            [u, 1.0],             // UV: Top of cylinder
         ));
 
         vertices.push(VertexPBR::new(
             upper_right.to_array(),
             normal.to_array(),
-            [1.0, 0.0, 0.0, 1.0],  // Tangent
-            [u, 1.0],              // UV: Top of cylinder
+            [1.0, 0.0, 0.0, 1.0], // Tangent
+            [u, 1.0],             // UV: Top of cylinder
         ));
 
         vertices.push(VertexPBR::new(
             lower_right.to_array(),
             normal.to_array(),
-            [1.0, 0.0, 0.0, 1.0],  // Tangent
-            [u, 0.0],              // UV: Bottom of cylinder
+            [1.0, 0.0, 0.0, 1.0], // Tangent
+            [u, 0.0],             // UV: Bottom of cylinder
         ));
     }
 
@@ -60,16 +60,16 @@ pub fn create_cylinder_vertices(height: f32, radius: f32, segments: u32) -> Vec<
     vertices.push(VertexPBR::new(
         [0.0, -half_height, 0.0],
         [0.0, -1.0, 0.0],
-        [1.0, 0.0, 0.0, 1.0],  // Tangent
-        [0.5, 0.5],              // UV: Center of texture
+        [1.0, 0.0, 0.0, 1.0], // Tangent
+        [0.5, 0.5],           // UV: Center of texture
     ));
 
     // Top cap center vertex
     vertices.push(VertexPBR::new(
         [0.0, half_height, 0.0],
         [0.0, 1.0, 0.0],
-        [1.0, 0.0, 0.0, 1.0],  // Tangent
-        [0.5, 0.5],              // UV: Center of texture
+        [1.0, 0.0, 0.0, 1.0], // Tangent
+        [0.5, 0.5],           // UV: Center of texture
     ));
 
     vertices
@@ -100,8 +100,8 @@ pub fn create_cylinder_indices(segments: u32) -> Vec<u32> {
 
     // Bottom cap triangles (wound counter-clockwise when viewed from below)
     for segment in 0..segments {
-        let current = segment * 4;  // lower vertex of current segment
-        let next = ((segment + 1) % (segments + 1)) * 4;  // lower vertex of next segment
+        let current = segment * 4; // lower vertex of current segment
+        let next = ((segment + 1) % (segments + 1)) * 4; // lower vertex of next segment
 
         // Triangle: bottom_center -> current_lower -> next_lower (reversed for CCW from below)
         indices.push(bottom_center);
@@ -111,8 +111,8 @@ pub fn create_cylinder_indices(segments: u32) -> Vec<u32> {
 
     // Top cap triangles (wound counter-clockwise when viewed from above)
     for segment in 0..segments {
-        let current = segment * 4 + 1;  // upper vertex of current segment
-        let next = ((segment + 1) % (segments + 1)) * 4 + 1;  // upper vertex of next segment
+        let current = segment * 4 + 1; // upper vertex of current segment
+        let next = ((segment + 1) % (segments + 1)) * 4 + 1; // upper vertex of next segment
 
         // Triangle: top_center -> next_upper -> current_upper (reversed for CCW from above)
         indices.push(top_center);
@@ -187,6 +187,10 @@ mod tests {
         }
 
         println!("Cylinder winding: {} passed, {} failed", passed, failed);
-        assert_eq!(failed, 0, "Cylinder has {} triangles with incorrect winding", failed);
+        assert_eq!(
+            failed, 0,
+            "Cylinder has {} triangles with incorrect winding",
+            failed
+        );
     }
 }

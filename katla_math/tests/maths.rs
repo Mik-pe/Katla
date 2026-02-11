@@ -7,9 +7,7 @@ use katla_math::{Mat4, Vec3, Vec4};
 fn test_memcpy() {
     let mut data = Vec::<i8>::new();
     const NUM_BYTES: usize = 1024 * 1024 * 16;
-    for _ in 0..NUM_BYTES {
-        data.push(0i8);
-    }
+    data.resize(NUM_BYTES, 0i8);
     let mut other_data = Vec::<i8>::with_capacity(NUM_BYTES);
     unsafe {
         let before = Instant::now();

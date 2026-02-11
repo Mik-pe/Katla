@@ -18,19 +18,19 @@ pub mod utils;
 // Vector implementation modules
 // Always compile scalar implementations (used for Vec2, Vec3, Vec4, Mat4, Quat, and non-SSE platforms)
 mod scalar {
+    pub mod mat4;
+    pub mod quat;
     pub mod vec2;
     pub mod vec3;
     pub mod vec4;
-    pub mod quat;
-    pub mod mat4;
 }
 
 // SSE implementations (only on x86/x86_64, used for Vec4, Mat4, Quat)
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 mod sse {
-    pub mod vec4;
-    pub mod quat;
     pub mod mat4;
+    pub mod quat;
+    pub mod vec4;
 }
 
 // Vector type re-exports

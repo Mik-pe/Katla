@@ -2,8 +2,8 @@ use katla_ecs::{add_components, EntityId, World};
 use katla_math::{Mat4, Transform, Vec3};
 
 use crate::components::{
-    DragComponent, FlyCameraControllerComponent, FlyCameraLookComponent, ForceComponent, PerspectiveComponent,
-    TransformComponent, VelocityComponent,
+    DragComponent, FlyCameraControllerComponent, FlyCameraLookComponent, ForceComponent,
+    PerspectiveComponent, TransformComponent, VelocityComponent,
 };
 
 pub struct Camera {
