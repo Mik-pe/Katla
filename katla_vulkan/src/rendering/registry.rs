@@ -16,6 +16,8 @@ pub(crate) struct MeshAsset {
 }
 
 /// Internal material representation.
+// TODO: Fields `texture` and `vertex_binding` are never read (clippy warning)
+// Either use these fields in MaterialPipeline or remove them entirely
 pub(crate) struct MaterialAsset {
     /// Graphics pipeline and descriptor sets (shared ownership with interior mutability).
     pub pipeline: Rc<RefCell<MaterialPipeline>>,
@@ -24,7 +26,7 @@ pub(crate) struct MaterialAsset {
     /// Vertex binding description.
     pub vertex_binding: VertexBinding,
     /// Optional per-material uniform buffer (for template-based materials).
-    /// When present, this material has its own uniform buffer instead of using the pipeline's embedded one.
+    /// When present, this material has its own uniform buffer instead of using pipeline's embedded one.
     pub uniform: Option<crate::vulkan::material::UniformHandle>,
 }
 
@@ -83,6 +85,8 @@ impl AssetRegistry {
     }
 
     /// Get a mesh by handle (internal use only).
+    // TODO: Methods `get_mesh_mut`, `get_material`, `remove_mesh`, and `remove_material` are never used (clippy warning)
+    // Either use these methods or remove them
     pub(crate) fn get_mesh(&self, handle: MeshHandle) -> Option<&MeshAsset> {
         self.meshes.get(handle.0)?.as_ref()
     }
@@ -124,6 +128,7 @@ impl AssetRegistry {
     /// Remove a mesh and free its resources.
     ///
     /// Returns the removed mesh if it existed, or None if the handle was invalid.
+    // TODO: This method is never used (clippy warning)
     pub(crate) fn remove_mesh(&mut self, handle: MeshHandle) -> Option<MeshAsset> {
         if handle.0 < self.meshes.len() {
             self.meshes[handle.0].take()
@@ -135,6 +140,7 @@ impl AssetRegistry {
     /// Remove a material and free its resources.
     ///
     /// Returns the removed material if it existed, or None if the handle was invalid.
+    // TODO: This method is never used (clippy warning)
     pub(crate) fn remove_material(&mut self, handle: MaterialHandle) -> Option<MaterialAsset> {
         if handle.0 < self.materials.len() {
             self.materials[handle.0].take()

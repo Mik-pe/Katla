@@ -48,6 +48,11 @@ fn vs_main(in: VertexInput) -> VertexOutput {
     return out;
 }
 
+// TODO: Integrate with LightingSystem from katla_app
+// Currently using hardcoded values. Need to:
+// 1. Add LightingUniforms struct with array of DirectionalLight, PointLight, SpotLight
+// 2. Pass light data from application to shader via uniform buffer
+// 3. Remove these hardcoded constants and use actual light data
 // Simple hardcoded directional light (temporary until uniform buffer integration)
 const LIGHT_DIRECTION = vec3f(-0.3, -1.0, -0.2);
 const LIGHT_COLOR = vec3f(1.0, 0.95, 0.9);

@@ -5,6 +5,8 @@ use ash::vk;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub struct ResourceId(pub(crate) u32);
 
+// TODO: Fields `id` and `name` are never read (clippy warning)
+// Either use these fields or remove them
 #[derive(Debug)]
 pub struct Resource {
     pub(crate) id: ResourceId,
