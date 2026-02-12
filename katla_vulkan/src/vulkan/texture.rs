@@ -2,6 +2,7 @@ use super::VulkanContext;
 use crate::render_graph::types::ImageFormat;
 use crate::VulkanFrameCtx;
 use crate::{VkImage, VkImageView, VkSampler};
+use crate::sync::{ImageMemoryBarrier2, PipelineStage2Flags, AccessFlags2, DependencyInfo};
 
 use std::mem::ManuallyDrop;
 use std::rc::Rc;
@@ -47,49 +48,52 @@ impl Texture {
             .base_array_layer(0)
             .layer_count(1);
 
-        unsafe {
-            let src_stage_mask;
-            let dst_stage_mask;
-            let mut barrier_default = vk::ImageMemoryBarrier::default()
-                .old_layout(old_layout)
-                .new_layout(new_layout)
-                .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
-                .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
-                .image(image)
-                .subresource_range(subresource_range);
+        let src_stage_mask;
+        let dst_stage_mask;
+        let mut barrier_default = vk::ImageMemoryBarrier::default()
+            .old_layout(old_layout)
+            .new_layout(new_layout)
+            .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+            .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+            .image(image)
+            .subresource_range(subresource_range);
 
-            if old_layout == vk::ImageLayout::UNDEFINED
-                && new_layout == vk::ImageLayout::TRANSFER_DST_OPTIMAL
-            {
-                barrier_default = barrier_default
-                    .src_access_mask(vk::AccessFlags::empty())
-                    .dst_access_mask(vk::AccessFlags::TRANSFER_WRITE);
+        if old_layout == vk::ImageLayout::UNDEFINED
+            && new_layout == vk::ImageLayout::TRANSFER_DST_OPTIMAL
+        {
+            barrier_default = barrier_default
+                .src_access_mask(vk::AccessFlags::empty())
+                .dst_access_mask(vk::AccessFlags::TRANSFER_WRITE);
 
-                src_stage_mask = vk::PipelineStageFlags::TOP_OF_PIPE;
-                dst_stage_mask = vk::PipelineStageFlags::TRANSFER;
-            } else if old_layout == vk::ImageLayout::TRANSFER_DST_OPTIMAL
-                && new_layout == vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL
-            {
-                barrier_default = barrier_default
-                    .src_access_mask(vk::AccessFlags::TRANSFER_WRITE)
-                    .dst_access_mask(vk::AccessFlags::SHADER_READ);
+            src_stage_mask = vk::PipelineStageFlags::TOP_OF_PIPE;
+            dst_stage_mask = vk::PipelineStageFlags::TRANSFER;
+        } else if old_layout == vk::ImageLayout::TRANSFER_DST_OPTIMAL
+            && new_layout == vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL
+        {
+            barrier_default = barrier_default
+                .src_access_mask(vk::AccessFlags::TRANSFER_WRITE)
+                .dst_access_mask(vk::AccessFlags::SHADER_READ);
 
-                src_stage_mask = vk::PipelineStageFlags::TRANSFER;
-                dst_stage_mask = vk::PipelineStageFlags::FRAGMENT_SHADER;
-            } else {
-                panic!("unsupported layout transition!");
-            }
-
-            context.device.cmd_pipeline_barrier(
-                command_buffer,
-                src_stage_mask,
-                dst_stage_mask,
-                vk::DependencyFlags::empty(),
-                &[],
-                &[],
-                &[barrier_default],
-            );
+            src_stage_mask = vk::PipelineStageFlags::TRANSFER;
+            dst_stage_mask = vk::PipelineStageFlags::FRAGMENT_SHADER;
+        } else {
+            panic!("unsupported layout transition!");
         }
+
+        // Modern Vulkan 1.3 barrier using Synchronization2
+        let barrier = ImageMemoryBarrier2::new(image)
+            .src_stage(PipelineStage2Flags::from(src_stage_mask))
+            .dst_stage(PipelineStage2Flags::from(dst_stage_mask))
+            .src_access(AccessFlags2::from(barrier_default.src_access_mask))
+            .dst_access(AccessFlags2::from(barrier_default.dst_access_mask))
+            .old_layout(old_layout)
+            .new_layout(new_layout)
+            .subresource_range(subresource_range);
+
+        let dep_info = DependencyInfo::new().add_image_barrier(barrier);
+        dep_info.build(|dep_info| unsafe {
+            context.device.cmd_pipeline_barrier2(command_buffer, dep_info);
+        });
     }
 
     fn copy_buffer_to_image(

@@ -69,48 +69,6 @@ impl CommandBuffer {
         }
     }
 
-    pub fn begin_render_pass(
-        &self,
-        framebuffer: vk::Framebuffer,
-        render_pass: vk::RenderPass,
-        render_area: vk::Rect2D,
-        clear_values: &[vk::ClearValue],
-    ) {
-        let begin_info = vk::RenderPassBeginInfo::default()
-            .render_pass(render_pass)
-            .framebuffer(framebuffer)
-            .render_area(render_area)
-            .clear_values(clear_values);
-
-        unsafe {
-            self.device.cmd_begin_render_pass(
-                self.command_buffer,
-                &begin_info,
-                vk::SubpassContents::INLINE,
-            );
-            self.device
-                .cmd_set_scissor(self.command_buffer, 0, &[render_area]);
-
-            self.device.cmd_set_viewport(
-                self.command_buffer,
-                0,
-                &[vk::Viewport::default()
-                    .x(render_area.offset.x as f32)
-                    .y(render_area.offset.y as f32 + render_area.extent.height as f32)
-                    .width(render_area.extent.width as f32)
-                    .height(-(render_area.extent.height as f32))
-                    .min_depth(0.0)
-                    .max_depth(1.0)],
-            )
-        }
-    }
-
-    pub fn end_render_pass(&self) {
-        unsafe {
-            self.device.cmd_end_render_pass(self.command_buffer);
-        }
-    }
-
     pub fn bind_pipeline(
         &self,
         pipeline: vk::Pipeline,
@@ -199,24 +157,14 @@ impl CommandBuffer {
 
     pub fn pipeline_barrier(
         &self,
-        src_stage_mask: vk::PipelineStageFlags,
-        dst_stage_mask: vk::PipelineStageFlags,
-        dependency_flags: vk::DependencyFlags,
-        memory_barriers: &[vk::MemoryBarrier],
-        buffer_memory_barriers: &[vk::BufferMemoryBarrier],
-        image_memory_barriers: &[vk::ImageMemoryBarrier],
+        _src_stage_mask: vk::PipelineStageFlags,
+        _dst_stage_mask: vk::PipelineStageFlags,
+        _dependency_flags: vk::DependencyFlags,
+        _memory_barriers: &[vk::MemoryBarrier],
+        _buffer_memory_barriers: &[vk::BufferMemoryBarrier],
+        _image_memory_barriers: &[vk::ImageMemoryBarrier],
     ) {
-        unsafe {
-            self.device.cmd_pipeline_barrier(
-                self.command_buffer,
-                src_stage_mask,
-                dst_stage_mask,
-                dependency_flags,
-                memory_barriers,
-                buffer_memory_barriers,
-                image_memory_barriers,
-            );
-        }
+        // Legacy barrier removed - use pipeline_barrier2() instead
     }
 
     /// Vulkan 1.3: Pipeline barrier 2 command using modern synchronization.

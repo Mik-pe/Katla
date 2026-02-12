@@ -83,7 +83,6 @@ impl MaterialRegistry {
         &mut self,
         path: &Path,
         context: Rc<VulkanContext>,
-        render_pass: &RenderPass,
     ) -> Result<String, MaterialError> {
         // Load descriptor from TOML
         let descriptor = load_material_from_file(path).map_err(|e| {
@@ -113,7 +112,6 @@ impl MaterialRegistry {
         &mut self,
         path: &Path,
         context: Rc<VulkanContext>,
-        render_pass: &RenderPass,
         vertex_binding: crate::VertexBinding,
     ) -> Result<String, MaterialError> {
         // Load descriptor from TOML

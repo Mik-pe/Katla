@@ -15,7 +15,7 @@ pub use rendering::{
 };
 pub use sync::{
     VkDescriptorPool, VkDescriptorSet, VkDescriptorSetLayout, VkFence, VkFramebuffer, VkImage,
-    VkImageView, VkRenderPass, VkSampler, VkSemaphore,
+    VkImageView, VkSampler, VkSemaphore,
 };
 pub use vulkan::context::{ValidationMessage, ValidationMessageType, ValidationSeverity};
 pub use vulkan::*;
@@ -144,8 +144,6 @@ impl VulkanRenderer {
             let new_extent =
                 crate::render_graph::types::Extent2D::new(extent_vk.width, extent_vk.height);
             for pass in &mut graph.passes {
-                // Use null render pass for dynamic rendering
-                pass.active_render_pass = VkRenderPass::new(vk::RenderPass::null());
                 pass.extent = new_extent;
             }
 

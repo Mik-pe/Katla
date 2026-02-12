@@ -409,7 +409,7 @@ impl MaterialTemplateBuilder {
             builder = builder.with_vertex_binding(binding);
         }
 
-        let pipeline = builder.build(render_pass).map_err(|e| {
+        let pipeline = builder.build().map_err(|e| {
             MaterialError::InvalidDescriptor(format!("Pipeline build failed: {:?}", e))
         })?;
 

@@ -1,7 +1,7 @@
 use ash::vk;
 
 use crate::resource::CompiledResource;
-use crate::sync::{VkFramebuffer, VkRenderPass};
+use crate::sync::VkFramebuffer;
 use crate::types::{ClearValue, Extent2D, PipelineBindPoint};
 use crate::{CommandBuffer, ResourceId, ResourceUsage};
 use std::collections::HashMap;
@@ -252,8 +252,6 @@ pub struct PassExecutionContext {
     pub resources: std::rc::Rc<std::collections::HashMap<ResourceId, CompiledResource>>,
     /// The framebuffer for this pass (legacy render pass only)
     pub framebuffer: VkFramebuffer,
-    /// The Vulkan render pass for this pass (legacy render pass only)
-    pub render_pass: VkRenderPass,
     /// The current subpass index (0 for simple passes)
     pub subpass: u32,
     /// The render extent (width and height)
@@ -263,19 +261,17 @@ pub struct PassExecutionContext {
 }
 
 impl PassExecutionContext {
-    /// Create a new PassExecutionContext for legacy render pass rendering.
+    /// Create a new PassExecutionContext.
     pub fn new(
         command_buffer: CommandBuffer,
         resources: std::rc::Rc<std::collections::HashMap<ResourceId, CompiledResource>>,
         framebuffer: vk::Framebuffer,
-        render_pass: vk::RenderPass,
         extent: Extent2D,
     ) -> Self {
         Self {
             command_buffer: std::rc::Rc::new(command_buffer),
             resources,
             framebuffer: VkFramebuffer::new(framebuffer),
-            render_pass: VkRenderPass::new(render_pass),
             subpass: 0,
             extent,
             uses_dynamic_rendering: false,
@@ -292,7 +288,6 @@ impl PassExecutionContext {
             command_buffer: std::rc::Rc::new(command_buffer),
             resources,
             framebuffer: VkFramebuffer::new(vk::Framebuffer::null()),
-            render_pass: VkRenderPass::new(vk::RenderPass::null()),
             subpass: 0,
             extent,
             uses_dynamic_rendering: true,

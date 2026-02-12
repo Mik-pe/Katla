@@ -9,8 +9,7 @@ use crate::render_graph::pass::{ExecutionRegistry, Pass, PassExecute, PassExecut
 use crate::render_graph::resource::{CompiledResource, ResourceId, ResourceKind, ResourceLifetime};
 use crate::render_graph::types::{ClearValue, Extent2D, RenderingAttachmentInfo, RenderingInfo};
 use crate::rendering::DrawList;
-use crate::sync::{VkFramebuffer, VkImage, VkImageView, VkRenderPass};
-use crate::vulkan::RenderPass;
+use crate::sync::{VkFramebuffer, VkImage, VkImageView};
 use crate::CommandBuffer;
 use crate::RenderGraphError;
 use crate::VulkanContext;
@@ -21,9 +20,6 @@ pub struct CompiledRenderGraph {
     pub context: Rc<VulkanContext>,
     pub passes: Vec<CompiledPass>,
     pub resources: Rc<HashMap<ResourceId, CompiledResource>>,
-    // TODO: Replace these raw vk types with wrapper types
-    // These should use VkRenderPass and VkFramebuffer from sync module
-    vk_render_passes: Vec<vk::RenderPass>,
 
     #[allow(dead_code)] // Needed for resource cleanup
     framebuffers: Vec<vk::Framebuffer>,
@@ -38,9 +34,6 @@ pub struct CompiledRenderGraph {
 /// Multiple framebuffers are supported (e.g., one per swapchain image).
 pub struct CompiledPass {
     pub name: String,
-    pub vk_render_pass: VkRenderPass,
-    /// The render pass to use for rendering (may differ from the compilation render pass)
-    pub active_render_pass: VkRenderPass,
     /// Multiple framebuffers - one per swapchain image variant
     pub vk_framebuffers: Vec<VkFramebuffer>,
     pub extent: Extent2D,
@@ -122,22 +115,18 @@ impl CompiledRenderGraph {
         // Step 2: Determine render pass structure
         let pass_structure = Self::determine_render_passes(&graph, &resource_lifetimes);
 
-        // Step 3: Generate Vulkan render passes
-        let vk_render_passes = Self::generate_render_passes(&pass_structure, &graph, context)?;
-
-        // Step 4: Allocate resources
+        // Step 3: Allocate resources
         let resources = Self::allocate_resources(&graph, &resource_lifetimes, context)?;
 
-        // Step 5: Create framebuffers
+        // Step 4: Create framebuffers
         let framebuffers =
-            Self::create_framebuffers(&pass_structure, &vk_render_passes, &resources, context)?;
+            Self::create_framebuffers(&pass_structure, &resources, context)?;
         // For now, use empty barriers as placeholder
         let barriers: Vec<Vec<vk::MemoryBarrier<'static>>> = vec![];
 
-        // Step 7: Compile passes with execution info
+        // Step 5: Compile passes with execution info
         let compiled_passes = Self::compile_passes(
             &mut graph.passes,
-            &vk_render_passes,
             &framebuffers,
             &resources,
             &barriers,
@@ -147,7 +136,6 @@ impl CompiledRenderGraph {
             context: context.clone(),
             passes: compiled_passes,
             resources: Rc::new(resources),
-            vk_render_passes,
             framebuffers,
             registry,
             draw_list_cell: None,
@@ -311,7 +299,7 @@ impl CompiledRenderGraph {
     fn generate_render_passes(
         groups: &[RenderPassGroup],
         graph: &crate::RenderGraph,
-        context: &Rc<VulkanContext>,
+        _context: &Rc<VulkanContext>,
     ) -> Result<Vec<vk::RenderPass>, RenderGraphError> {
         let mut render_passes = Vec::new();
 
@@ -489,15 +477,9 @@ impl CompiledRenderGraph {
                 .dst_access_mask(vk::AccessFlags::COLOR_ATTACHMENT_WRITE);
             dependencies.push(external_dependency);
 
-            // Create render pass using RenderPass wrapper
-            let render_pass = RenderPass::create_from_config(
-                context.device.clone(),
-                &attachments,
-                &subpasses,
-                &dependencies,
-            )?;
-
-            render_passes.push(render_pass.get_vk_renderpass());
+            // Dynamic rendering: use null render pass
+            let render_pass = vk::RenderPass::null();
+            render_passes.push(render_pass);
         }
 
         Ok(render_passes)
@@ -616,13 +598,12 @@ impl CompiledRenderGraph {
     /// Create framebuffers for each render pass.
     fn create_framebuffers(
         groups: &[RenderPassGroup],
-        vk_render_passes: &[vk::RenderPass],
         resources: &HashMap<ResourceId, CompiledResource>,
-        context: &Rc<VulkanContext>,
+        _context: &Rc<VulkanContext>,
     ) -> Result<Vec<vk::Framebuffer>, RenderGraphError> {
         let mut framebuffers = Vec::new();
 
-        for (i, group) in groups.iter().enumerate() {
+        for group in groups.iter() {
             // Check if this pass uses external resources
             let uses_external = group.attachments.iter().any(|resource_id| {
                 matches!(
@@ -634,19 +615,13 @@ impl CompiledRenderGraph {
 
             // Skip framebuffer creation for passes with external resources
             // They will be created later by create_swapchain_framebuffers()
+            // For dynamic rendering, we don't need traditional framebuffers
             if uses_external {
                 framebuffers.push(vk::Framebuffer::null());
                 continue;
             }
 
-            // Get render pass for this framebuffer
-            let render_pass = vk_render_passes.get(i).copied().ok_or_else(|| {
-                RenderGraphError::CompilationError(format!(
-                    "No render pass found for group at index {}",
-                    i
-                ))
-            })?;
-
+            // For non-external resources (internal render targets), still create framebuffers
             // Get extent from the first image attachment
             let extent = match group.attachments.first() {
                 Some(resource_id) => match resources.get(resource_id) {
@@ -683,10 +658,9 @@ impl CompiledRenderGraph {
                 })
                 .collect::<Result<_, _>>()?;
 
-            // Create framebuffer using VulkanContext wrapper
-            #[allow(clippy::redundant_closure)]
-            let framebuffer = context
-                .create_framebuffer(render_pass, &attachment_views, extent)
+            // Create framebuffer - use null render pass for dynamic rendering
+            let framebuffer = _context
+                .create_framebuffer(vk::RenderPass::null(), &attachment_views, extent)
                 .map_err(|e| RenderGraphError::VulkanError(e))?;
 
             framebuffers.push(framebuffer);
@@ -698,7 +672,6 @@ impl CompiledRenderGraph {
     /// Compile passes with execution info and barriers.
     fn compile_passes(
         passes: &mut [Pass],
-        vk_render_passes: &[vk::RenderPass],
         framebuffers: &[vk::Framebuffer],
         resources: &HashMap<ResourceId, CompiledResource>,
         barriers: &[Vec<vk::MemoryBarrier<'static>>],
@@ -736,19 +709,13 @@ impl CompiledRenderGraph {
                 ));
             };
 
-            // Get render pass and framebuffer
-            let vk_render_pass_raw = vk_render_passes
-                .get(i)
-                .copied()
-                .unwrap_or(vk::RenderPass::null());
+            // Get framebuffer (null for external resources using dynamic rendering)
             let vk_framebuffer_raw = framebuffers
                 .get(i)
                 .copied()
                 .unwrap_or(vk::Framebuffer::null());
 
-            // Wrap in our wrapper types
-            let vk_render_pass = VkRenderPass::new(vk_render_pass_raw);
-            let active_render_pass = VkRenderPass::new(vk_render_pass_raw);
+            // Wrap in our wrapper type
             let vk_framebuffers = vec![VkFramebuffer::new(vk_framebuffer_raw)];
 
             // Get barriers
@@ -803,8 +770,6 @@ impl CompiledRenderGraph {
 
             let compiled = CompiledPass {
                 name: pass.name().to_string(),
-                vk_render_pass,
-                active_render_pass, // Initially same as vk_render_pass
                 vk_framebuffers,
                 extent,
                 clear_values,
@@ -1070,6 +1035,8 @@ impl CompiledRenderGraph {
     }
 
     /// Execute a pass using legacy render passes.
+    ///
+    /// NOTE: This method now uses dynamic rendering internally to avoid deprecated APIs.
     fn execute_pass_legacy(
         &mut self,
         command_buffer: &mut CommandBuffer,
@@ -1077,14 +1044,6 @@ impl CompiledRenderGraph {
         image_index: usize,
     ) -> Result<(), RenderGraphError> {
         let pass = &self.passes[pass_index];
-
-        // Select the correct framebuffer for this image index
-        let framebuffer = pass
-            .vk_framebuffers
-            .get(image_index)
-            .or_else(|| pass.vk_framebuffers.first())
-            .map(|fb| fb.vk())
-            .unwrap_or(vk::Framebuffer::null());
 
         // Apply pipeline barriers before this pass
         if !pass.pipeline_barriers_before.is_empty() {
@@ -1103,19 +1062,67 @@ impl CompiledRenderGraph {
             );
         }
 
-        // Begin render pass
+        // Use dynamic rendering (Vulkan 1.3) instead of legacy render pass
+        // Build rendering info from framebuffer attachments if available
         let render_area = vk::Rect2D {
             offset: vk::Offset2D { x: 0, y: 0 },
             extent: pass.extent.into(),
         };
-        let clear_values_vk: Vec<vk::ClearValue> =
-            pass.clear_values.iter().map(|cv| (*cv).into()).collect();
-        command_buffer.begin_render_pass(
-            framebuffer,
-            pass.active_render_pass.vk(),
-            render_area,
-            &clear_values_vk,
-        );
+
+        let mut rendering_info = RenderingInfo::new()
+            .render_area(render_area)
+            .layer_count(1);
+
+        // Try to get attachments from the pass
+        // If color_attachments is empty, this might be a test scenario - just render with minimal info
+        if pass.color_attachments.is_empty() {
+            // No attachments available - use minimal rendering info for compatibility
+            // This can happen in tests or offscreen rendering scenarios
+        } else {
+            // Use the first set of color attachments (fallback to image_index 0)
+            let color_attachments = pass
+                .color_attachments
+                .get(image_index)
+                .or_else(|| pass.color_attachments.first())
+                .cloned()
+                .unwrap_or_default();
+
+            // Add color attachments with clear values
+            for (i, image_view) in color_attachments.iter().enumerate() {
+                let clear_value = pass.clear_values.get(i).copied();
+                let mut attachment = RenderingAttachmentInfo::new(*image_view)
+                    .layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL);
+
+                if let Some(cv) = clear_value {
+                    attachment = attachment.clear(cv);
+                }
+
+                rendering_info = rendering_info.add_color_attachment(attachment);
+            }
+
+            // Add depth attachment if available
+            if let Some(depth_attachments) = pass.depth_attachments.get(image_index).or_else(|| pass.depth_attachments.first()) {
+                if let Some(depth_view) = depth_attachments {
+                    // Find depth clear value (usually after color attachments)
+                    let depth_clear = pass
+                        .clear_values
+                        .iter()
+                        .find(|cv| matches!(cv, ClearValue::DepthStencil(_)));
+
+                    let mut attachment = RenderingAttachmentInfo::new(*depth_view)
+                        .layout(vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
+
+                    if let Some(cv) = depth_clear {
+                        attachment = attachment.clear(*cv);
+                    }
+
+                    rendering_info = rendering_info.depth_attachment(attachment);
+                }
+            }
+        }
+
+        // Begin dynamic rendering
+        command_buffer.begin_rendering(rendering_info);
 
         // Set viewport and scissor for this pass
         let viewport = vk::Viewport {
@@ -1137,19 +1144,17 @@ impl CompiledRenderGraph {
 
         // Create execution context with Rc-wrapped command buffer
         // Clone the CommandBuffer to allow sharing with user closures
-        let ctx = Rc::new(PassExecutionContext::new(
+        let ctx = Rc::new(PassExecutionContext::new_dynamic(
             (*command_buffer).clone(),
             self.resources.clone(),
-            framebuffer,
-            pass.active_render_pass.vk(),
             pass.extent,
         ));
 
         // Execute pass-specific commands using ExecutionRegistry
         pass.execute(ctx, &mut self.registry);
 
-        // End render pass
-        command_buffer.end_render_pass();
+        // End dynamic rendering
+        command_buffer.end_rendering();
 
         Ok(())
     }
@@ -1180,9 +1185,6 @@ impl Drop for CompiledRenderGraph {
                         .device
                         .destroy_framebuffer(framebuffer.vk(), None);
                 }
-            }
-            for render_pass in &self.vk_render_passes {
-                self.context.device.destroy_render_pass(*render_pass, None);
             }
             // Clean up resources
             // Since we're in Drop and all PassExecutionContexts should be gone,
@@ -1252,7 +1254,7 @@ mod tests {
                 input_attachments: Vec::new(),
                 color_attachments: vec![(0, ResourceId(0))],
                 depth_stencil: None,
-                resolve_attachments: Vec::new(),
+                // resolve_attachments: Vec::new(), // TODO: Not yet implemented
                 vk_input_refs: Vec::new(),
                 vk_color_refs: Vec::new(),
                 vk_depth_ref: None,

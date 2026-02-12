@@ -155,8 +155,7 @@ impl ApplicationHandler for Application {
                 .borrow_mut()
                 .load_directory(
                     &materials_path,
-                    renderer.context.clone(),
-                    None, // Dynamic rendering: use VK_NULL_HANDLE for renderPass
+                    renderer.context.clone()
                 )
                 .expect("Failed to load materials directory");
             println!(
@@ -521,8 +520,7 @@ impl Application {
         if let Ok(reloaded) = renderer
             .material_registry
             .borrow_mut()
-            .check_hot_reload(renderer.context.clone(), None)
-        // Dynamic rendering: use VK_NULL_HANDLE
+            .check_hot_reload(renderer.context.clone())
         {
             if reloaded > 0 {
                 println!("Hot reloaded {} material template(s)", reloaded);

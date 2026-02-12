@@ -9,7 +9,7 @@
 use katla::components::TransformComponent;
 use katla_ecs::World;
 use katla_math::{Quat, Transform, Vec3};
-use katla_vulkan::{RenderPass, VulkanContext};
+use katla_vulkan::VulkanContext;
 use std::rc::Rc;
 
 /// Create a headless Vulkan context for testing.
@@ -125,7 +125,7 @@ fn test_headless_full_integration() {
 /// Test multiple entities in headless mode.
 #[test]
 fn test_headless_multiple_mesh_types() {
-    let context = Rc::new(create_headless_context());
+    let _context = Rc::new(create_headless_context());
     let mut world = World::new();
 
     // Create different entities at different positions

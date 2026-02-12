@@ -87,7 +87,7 @@ impl Material {
         }
 
         let material_pipeline = builder
-            .build(None) // Dynamic rendering: use VK_NULL_HANDLE for renderPass
+            .build()
             .expect("Failed to create material pipeline");
 
         Self {

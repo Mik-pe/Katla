@@ -191,14 +191,8 @@ impl AsRef<vk::Image> for VkImage {
 }
 
 /// Wrapper around `vk::RenderPass`.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Default)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct VkRenderPass(pub vk::RenderPass);
-
-impl Default for VkRenderPass {
-    fn default() -> Self {
-        Self(vk::RenderPass::null())
-    }
-}
 
 unsafe impl Send for VkRenderPass {}
 unsafe impl Sync for VkRenderPass {}
@@ -212,6 +206,12 @@ impl VkRenderPass {
     /// Returns the underlying `vk::RenderPass`.
     pub fn vk(&self) -> vk::RenderPass {
         self.0
+    }
+}
+
+impl Default for VkRenderPass {
+    fn default() -> Self {
+        Self(vk::RenderPass::null())
     }
 }
 
@@ -505,6 +505,14 @@ impl From<PipelineStage2Flags> for vk::PipelineStageFlags2KHR {
     }
 }
 
+/// Conversion from legacy `vk::PipelineStageFlags` to modern `PipelineStage2Flags`.
+/// This enables gradual migration from Vulkan 1.0 to Vulkan 1.3 synchronization.
+impl From<vk::PipelineStageFlags> for PipelineStage2Flags {
+    fn from(flags: vk::PipelineStageFlags) -> Self {
+        Self(vk::PipelineStageFlags2KHR::from_raw(flags.as_raw() as u64))
+    }
+}
+
 /// Wrapper for Vulkan 1.3 Access 2 flags.
 /// Provides type-safe access masks for modern synchronization.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -617,6 +625,14 @@ impl From<vk::AccessFlags2KHR> for AccessFlags2 {
 impl From<AccessFlags2> for vk::AccessFlags2KHR {
     fn from(wrapper: AccessFlags2) -> Self {
         wrapper.0
+    }
+}
+
+/// Conversion from legacy `vk::AccessFlags` to modern `AccessFlags2`.
+/// This enables gradual migration from Vulkan 1.0 to Vulkan 1.3 synchronization.
+impl From<vk::AccessFlags> for AccessFlags2 {
+    fn from(flags: vk::AccessFlags) -> Self {
+        Self(vk::AccessFlags2KHR::from_raw(flags.as_raw() as u64))
     }
 }
 
