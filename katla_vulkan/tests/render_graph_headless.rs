@@ -185,7 +185,7 @@ fn test_render_graph_lifetime_analysis_headless() {
                 height: 128,
                 depth: 1,
             },
-            format: vk::Format::R8G8B8A8_UNORM,
+            format: vk::Format::R8G8B8A8_SRGB,
             usage: vk::ImageUsageFlags::COLOR_ATTACHMENT | vk::ImageUsageFlags::SAMPLED,
             samples: vk::SampleCountFlags::TYPE_1,
             tiling: vk::ImageTiling::OPTIMAL,

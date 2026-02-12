@@ -119,18 +119,13 @@ impl CompiledRenderGraph {
         let resources = Self::allocate_resources(&graph, &resource_lifetimes, context)?;
 
         // Step 4: Create framebuffers
-        let framebuffers =
-            Self::create_framebuffers(&pass_structure, &resources, context)?;
+        let framebuffers = Self::create_framebuffers(&pass_structure, &resources, context)?;
         // For now, use empty barriers as placeholder
         let barriers: Vec<Vec<vk::MemoryBarrier<'static>>> = vec![];
 
         // Step 5: Compile passes with execution info
-        let compiled_passes = Self::compile_passes(
-            &mut graph.passes,
-            &framebuffers,
-            &resources,
-            &barriers,
-        )?;
+        let compiled_passes =
+            Self::compile_passes(&mut graph.passes, &framebuffers, &resources, &barriers)?;
 
         Ok(Self {
             context: context.clone(),
@@ -621,49 +616,11 @@ impl CompiledRenderGraph {
                 continue;
             }
 
-            // For non-external resources (internal render targets), still create framebuffers
-            // Get extent from the first image attachment
-            let extent = match group.attachments.first() {
-                Some(resource_id) => match resources.get(resource_id) {
-                    Some(CompiledResource::Image { extent, .. }) => vk::Extent2D {
-                        width: extent.width,
-                        height: extent.height,
-                    },
-                    Some(CompiledResource::ExternalImage { extent, .. }) => *extent,
-                    _ => {
-                        return Err(RenderGraphError::CompilationError(format!(
-                            "No valid extent for resource {:?}",
-                            resource_id
-                        )));
-                    }
-                },
-                None => {
-                    return Err(RenderGraphError::CompilationError(
-                        "No attachments in render pass - cannot determine extent".into(),
-                    ));
-                }
-            };
-
-            // Collect image views for framebuffer
-            let attachment_views: Vec<vk::ImageView> = group
-                .attachments
-                .iter()
-                .map(|resource_id| match resources.get(resource_id) {
-                    Some(CompiledResource::Image { image_view, .. }) => Ok(*image_view),
-                    Some(CompiledResource::ExternalImage { image_view, .. }) => Ok(*image_view),
-                    _ => Err(RenderGraphError::CompilationError(format!(
-                        "Resource {:?} is not an image",
-                        resource_id
-                    ))),
-                })
-                .collect::<Result<_, _>>()?;
-
-            // Create framebuffer - use null render pass for dynamic rendering
-            let framebuffer = _context
-                .create_framebuffer(vk::RenderPass::null(), &attachment_views, extent)
-                .map_err(|e| RenderGraphError::VulkanError(e))?;
-
-            framebuffers.push(framebuffer);
+            // For non-external resources (internal render targets), we also skip framebuffer creation
+            // when using Dynamic Rendering. Dynamic Rendering renders directly to image views
+            // without needing a framebuffer object.
+            // Framebuffers are only needed for legacy render pass compatibility.
+            framebuffers.push(vk::Framebuffer::null());
         }
 
         Ok(framebuffers)
@@ -1069,9 +1026,7 @@ impl CompiledRenderGraph {
             extent: pass.extent.into(),
         };
 
-        let mut rendering_info = RenderingInfo::new()
-            .render_area(render_area)
-            .layer_count(1);
+        let mut rendering_info = RenderingInfo::new().render_area(render_area).layer_count(1);
 
         // Try to get attachments from the pass
         // If color_attachments is empty, this might be a test scenario - just render with minimal info
@@ -1101,7 +1056,11 @@ impl CompiledRenderGraph {
             }
 
             // Add depth attachment if available
-            if let Some(depth_attachments) = pass.depth_attachments.get(image_index).or_else(|| pass.depth_attachments.first()) {
+            if let Some(depth_attachments) = pass
+                .depth_attachments
+                .get(image_index)
+                .or_else(|| pass.depth_attachments.first())
+            {
                 if let Some(depth_view) = depth_attachments {
                     // Find depth clear value (usually after color attachments)
                     let depth_clear = pass
@@ -1322,7 +1281,6 @@ mod tests {
                     let _ = ctx.command_buffer;
                     let _ = ctx.resources;
                     let _ = ctx.framebuffer;
-                    let _ = ctx.render_pass;
                     let _ = ctx.extent;
                 });
         });
