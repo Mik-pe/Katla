@@ -16,9 +16,10 @@ pub mod transform;
 pub mod utils;
 
 // Vector implementation modules
-// Always compile scalar implementations (used for Vec2, Vec3, Vec4, Mat4, Quat, and non-SSE platforms)
 mod scalar {
+    #[cfg(not(any(target_arch = "x86", target_arch = "x86_64")))]
     pub mod mat4;
+
     pub mod quat;
     pub mod vec2;
     pub mod vec3;

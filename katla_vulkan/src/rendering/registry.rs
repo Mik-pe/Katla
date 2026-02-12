@@ -21,11 +21,11 @@ pub(crate) struct MeshAsset {
 pub(crate) struct MaterialAsset {
     /// Graphics pipeline and descriptor sets (shared ownership with interior mutability).
     pub pipeline: Rc<RefCell<MaterialPipeline>>,
+    #[allow(dead_code)] // Needed for resource cleanup
     /// Optional texture bound to this material.
-    #[allow(dead_code)]
     pub texture: Option<Rc<Texture>>,
+    #[allow(dead_code)] // Needed for resource cleanup
     /// Vertex binding description.
-    #[allow(dead_code)]
     pub vertex_binding: VertexBinding,
     /// Optional per-material uniform buffer (for template-based materials).
     /// When present, this material has its own uniform buffer instead of using pipeline's embedded one.
@@ -93,21 +93,12 @@ impl AssetRegistry {
         self.meshes.get(handle.0)?.as_ref()
     }
 
-    /// Get a mutable mesh by handle (internal use only).
-    #[allow(dead_code)]
-    pub(crate) fn get_mesh_mut(&mut self, handle: MeshHandle) -> Option<&mut MeshAsset> {
-        self.meshes.get_mut(handle.0)?.as_mut()
-    }
-
-    /// Get a material by handle (internal use only).
-    #[allow(dead_code)]
-    pub(crate) fn get_material(&self, handle: MaterialHandle) -> Option<&MaterialAsset> {
-        self.materials.get(handle.0)?.as_ref()
-    }
-
     /// Get a mutable material by handle (for hot reload).
-    #[allow(dead_code)]
-    pub(crate) fn get_material_mut(&mut self, handle: MaterialHandle) -> Option<&mut MaterialAsset> {
+
+    pub(crate) fn get_material_mut(
+        &mut self,
+        handle: MaterialHandle,
+    ) -> Option<&mut MaterialAsset> {
         self.materials.get_mut(handle.0)?.as_mut()
     }
 
@@ -127,32 +118,6 @@ impl AssetRegistry {
             true
         } else {
             false
-        }
-    }
-
-    /// Remove a mesh and free its resources.
-    ///
-    /// Returns the removed mesh if it existed, or None if the handle was invalid.
-    // TODO: This method is never used (clippy warning)
-    #[allow(dead_code)]
-    pub(crate) fn remove_mesh(&mut self, handle: MeshHandle) -> Option<MeshAsset> {
-        if handle.0 < self.meshes.len() {
-            self.meshes[handle.0].take()
-        } else {
-            None
-        }
-    }
-
-    /// Remove a material and free its resources.
-    ///
-    /// Returns the removed material if it existed, or None if the handle was invalid.
-    // TODO: This method is never used (clippy warning)
-    #[allow(dead_code)]
-    pub(crate) fn remove_material(&mut self, handle: MaterialHandle) -> Option<MaterialAsset> {
-        if handle.0 < self.materials.len() {
-            self.materials[handle.0].take()
-        } else {
-            None
         }
     }
 

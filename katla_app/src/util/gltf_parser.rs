@@ -8,20 +8,6 @@ use katla_math::{Sphere, Vec3};
 
 use crate::rendering::VertexPBR;
 
-/// Represents parsed mesh data from a GLTF primitive.
-#[derive(Clone)]
-#[allow(dead_code)]
-pub struct ParsedMesh {
-    /// Vertex data in PBR format
-    pub vertices: Vec<VertexPBR>,
-    /// Index data (raw bytes)
-    pub indices: Vec<u8>,
-    /// Stride of index data (1, 2, or 4 bytes per index)
-    pub index_stride: u8,
-    /// Bounding sphere of the mesh
-    pub bounds: Sphere,
-}
-
 /// GLTF attribute parser using accessor iterators.
 pub struct AttributeParser<'a> {
     buffers: &'a [BufferData],
@@ -155,7 +141,6 @@ pub fn generate_smooth_normals(
     indices: &[u8],
     index_stride: u8,
 ) -> Vec<[f32; 3]> {
-
     let mut normals: Vec<Vec3> = vec![Vec3::new(0.0, 0.0, 0.0); positions.len()];
     let mut counts: Vec<usize> = vec![0; positions.len()];
 

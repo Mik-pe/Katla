@@ -104,7 +104,8 @@ pub struct PassBuilder {
     execute: Option<PassExecute>,
     #[allow(clippy::type_complexity)]
     pending_execute: Option<(String, Box<dyn FnMut(Rc<PassExecutionContext>) + 'static>)>,
-    #[allow(dead_code)]
+
+    #[allow(dead_code)] // Needed for resource cleanup
     pipeline_barriers_before: Vec<vk::MemoryBarrier<'static>>,
 }
 

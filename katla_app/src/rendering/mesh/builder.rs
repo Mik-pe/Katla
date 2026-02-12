@@ -113,20 +113,6 @@ impl MeshBuilder {
     pub fn build(self, world: &mut World, renderer: &mut VulkanRenderer) -> EntityId {
         self.cube().build(world, renderer)
     }
-
-    /// Get the material from the renderer's AssetRegistry by name.
-    /// This is used internally by the shape-specific builders.
-    #[allow(dead_code)]
-    fn get_material_from_renderer(
-        &self,
-        _renderer: &VulkanRenderer,
-        _name: &str,
-    ) -> Option<Material> {
-        // Try to get the material from the renderer's AssetRegistry
-        // For now, this always returns None - the MaterialManager handles materials
-        // TODO: Integrate with renderer's AssetRegistry for handle-based materials
-        None
-    }
 }
 
 /// Common functionality shared by all shape-specific builders.
@@ -186,9 +172,7 @@ macro_rules! impl_common_builder {
                 }
 
                 // Fallback to creating material directly
-                create_checkerboard_material(
-                    self.base.context.clone(),
-                )
+                create_checkerboard_material(self.base.context.clone())
             }
 
             fn create_entity(

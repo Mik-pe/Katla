@@ -1,5 +1,4 @@
 use super::samplers::Interpolation;
-use katla_math::Quat;
 use std::fmt;
 
 /// A complete animation clip that can be played on an animated model.
@@ -275,7 +274,7 @@ impl AnimationSampler {
                 h00 * v0[2] + h10 * m0[2] + h01 * v1[2] + h11 * m1[2],
             ];
             SampledValue::Vec3(result)
-        } else if let Some(ref rotations) = self.rotations {
+        } else if self.rotations.is_some() {
             // Quaternions are more complex - we use slerp-like interpolation for cubic splines
             // For now, fall back to linear for quaternions as proper quaternion cubic spline
             // requires spherical interpolation

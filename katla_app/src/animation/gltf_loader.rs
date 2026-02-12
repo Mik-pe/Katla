@@ -5,7 +5,7 @@ use crate::animation::{
 use crate::util::GLTFModel;
 use byteorder::{ByteOrder, LittleEndian};
 use gltf::buffer::Data as BufferData;
-use katla_ecs::{Component, World};
+use katla_ecs::World;
 
 /// Load animations from a GLTF model into the world.
 ///
@@ -360,7 +360,7 @@ pub fn build_skeleton(model: &GLTFModel, skin_joints: &[usize]) -> Vec<katla_mat
     for joint_index in skin_joints {
         let node = nodes.get(*joint_index);
 
-        if let Some(node) = node {
+        if node.is_some() {
             let transform = get_node_world_transform(&nodes, &parent_map, *joint_index);
             joint_transforms.push(transform);
         } else {

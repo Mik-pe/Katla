@@ -182,7 +182,8 @@ impl System for SkeletalAnimationSystem {
             // Apply inverse bind matrices
             for (i, joint_transform) in joint_transforms.iter_mut().enumerate() {
                 if i < skin.inverse_bind_matrices.len() {
-                    *joint_transform = joint_transform.clone() * skin.inverse_bind_matrices[i].clone();
+                    *joint_transform =
+                        joint_transform.clone() * skin.inverse_bind_matrices[i].clone();
                 }
             }
 
@@ -231,7 +232,7 @@ impl System for MorphTargetSystem {
                 _ => continue,
             };
 
-            let mut morph_weights = match world.get_component_mut::<MorphTargetWeights>(entity) {
+            let morph_weights = match world.get_component_mut::<MorphTargetWeights>(entity) {
                 Some(w) => w,
                 None => continue,
             };

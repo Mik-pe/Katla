@@ -24,7 +24,8 @@ pub struct CompiledRenderGraph {
     // TODO: Replace these raw vk types with wrapper types
     // These should use VkRenderPass and VkFramebuffer from sync module
     vk_render_passes: Vec<vk::RenderPass>,
-    #[allow(dead_code)]
+
+    #[allow(dead_code)] // Needed for resource cleanup
     framebuffers: Vec<vk::Framebuffer>,
     pub registry: ExecutionRegistry<'static>,
     /// Cell for storing the draw list that will be processed during execution.
@@ -67,8 +68,7 @@ pub struct SubpassDescriptor {
     input_attachments: Vec<(u32, ResourceId)>,
     color_attachments: Vec<(u32, ResourceId)>,
     depth_stencil: Option<(u32, ResourceId)>,
-    #[allow(dead_code)]
-    resolve_attachments: Vec<(u32, ResourceId)>,
+
     // TODO: Replace raw vk types with wrapper types
     // AttachmentReference needs wrapper type in sync module
     // Store Vulkan attachment references to ensure they live long enough
@@ -108,37 +108,6 @@ impl CompiledRenderGraph {
         );
 
         Ok(())
-    }
-
-    /// Create a framebuffer for a specific pass with the given swapchain image view.
-    #[allow(dead_code)]
-    fn create_framebuffer_for_pass(
-        &self,
-        pass_index: usize,
-        swapchain_image_view: vk::ImageView,
-        depth_image_view: vk::ImageView,
-        swapchain_extent: vk::Extent2D,
-    ) -> Result<vk::Framebuffer, RenderGraphError> {
-        let pass = self.passes.get(pass_index).ok_or_else(|| {
-            RenderGraphError::CompilationError(format!("Pass {} not found", pass_index))
-        })?;
-
-        // For now, we know the attachment order: color (swapchain), then depth
-        // In the future, this should be determined from the pass descriptor
-        let attachment_views = vec![swapchain_image_view, depth_image_view];
-
-        println!("Creating framebuffer for pass {}: graph_render_pass={:?}, using null render_pass for dynamic rendering, attachments={:?}, extent={}x{}",
-            pass_index, pass.vk_render_pass.vk(), attachment_views, swapchain_extent.width, swapchain_extent.height);
-
-        // Create framebuffer using null render pass for dynamic rendering
-        let framebuffer = self
-            .context
-            .create_framebuffer(vk::RenderPass::null(), &attachment_views, swapchain_extent)
-            .map_err(RenderGraphError::VulkanError)?;
-
-        println!("  Created framebuffer: {:?}", framebuffer);
-
-        Ok(framebuffer)
     }
 
     /// Compile a render graph into Vulkan objects.
@@ -251,7 +220,6 @@ impl CompiledRenderGraph {
                     input_attachments: Vec::new(),
                     color_attachments: Vec::new(),
                     depth_stencil: None,
-                    resolve_attachments: Vec::new(),
                     vk_input_refs: Vec::new(),
                     vk_color_refs: Vec::new(),
                     vk_depth_ref: None,
@@ -725,23 +693,6 @@ impl CompiledRenderGraph {
         }
 
         Ok(framebuffers)
-    }
-
-    /// Calculate memory barriers between passes.
-    /// Analyzes resource usage between consecutive passes and creates
-    /// appropriate synchronization barriers to ensure correct memory access.
-    ///
-    /// NOTE: Currently returns empty barriers. For multi-pass graphs with
-    /// complex dependencies, proper barrier calculation based on resource
-    /// usage should be implemented.
-    #[allow(dead_code)]
-    fn calculate_barriers(
-        graph: &crate::RenderGraph,
-        _lifetimes: &HashMap<ResourceId, ResourceLifetime>,
-    ) -> Vec<Vec<vk::MemoryBarrier<'static>>> {
-        // Placeholder implementation - returns empty barriers
-        let _ = (graph, _lifetimes);
-        vec![]
     }
 
     /// Compile passes with execution info and barriers.

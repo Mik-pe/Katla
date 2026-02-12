@@ -8,10 +8,9 @@ pub struct ResourceId(pub(crate) u32);
 // TODO: Fields `id` and `name` are never read (clippy warning)
 // Either use these fields or remove them
 #[derive(Debug)]
+#[allow(dead_code)]
 pub struct Resource {
-    #[allow(dead_code)]
     pub(crate) id: ResourceId,
-    #[allow(dead_code)]
     pub(crate) name: String,
     pub(crate) kind: ResourceKind,
 }
