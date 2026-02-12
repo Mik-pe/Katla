@@ -191,8 +191,14 @@ impl AsRef<vk::Image> for VkImage {
 }
 
 /// Wrapper around `vk::RenderPass`.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Default)]
 pub struct VkRenderPass(pub vk::RenderPass);
+
+impl Default for VkRenderPass {
+    fn default() -> Self {
+        Self(vk::RenderPass::null())
+    }
+}
 
 unsafe impl Send for VkRenderPass {}
 unsafe impl Sync for VkRenderPass {}

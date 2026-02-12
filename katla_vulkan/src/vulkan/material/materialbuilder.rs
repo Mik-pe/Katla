@@ -5,7 +5,7 @@ use super::{
     DescriptorLayoutBuilder, ImageInfo, MaterialDescriptor, MaterialError, MaterialPipeline,
     PipelineBuilder, ShaderModule, ShaderSource,
 };
-use crate::{context::VulkanContext, ImageFormat, RenderPass, Texture, VertexBinding};
+use crate::{context::VulkanContext, ImageFormat, Texture, VertexBinding};
 
 pub struct MaterialBuilder {
     context: Rc<VulkanContext>,
@@ -253,7 +253,6 @@ impl MaterialBuilder {
     /// * `existing_desc_layout` - The existing descriptor set layout to reuse
     pub fn build_with_desc_layout(
         self,
-        render_pass: Option<&RenderPass>,
         existing_desc_layout: vk::DescriptorSetLayout,
     ) -> Result<MaterialPipeline, MaterialBuildError> {
         let vertex_binding = self
@@ -294,9 +293,8 @@ impl MaterialBuilder {
             pipeline_builder = pipeline_builder.with_alpha_blending();
         }
 
-        let vk_render_pass = render_pass
-            .map(|rp| rp.get_vk_renderpass())
-            .unwrap_or(vk::RenderPass::null());
+        // Always use null render pass for dynamic rendering (Vulkan 1.3)
+        let vk_render_pass = vk::RenderPass::null();
 
         let pipeline = pipeline_builder
             .build(vk_render_pass)
@@ -321,10 +319,7 @@ impl MaterialBuilder {
         Ok(material_pipeline)
     }
 
-    pub fn build(
-        self,
-        render_pass: Option<&RenderPass>,
-    ) -> Result<MaterialPipeline, MaterialBuildError> {
+    pub fn build(self) -> Result<MaterialPipeline, MaterialBuildError> {
         let vertex_binding = self
             .vertex_binding
             .ok_or(MaterialBuildError::MissingVertexBinding)?;
@@ -359,18 +354,9 @@ impl MaterialBuilder {
             .build(&self.context.device)
             .map_err(|e| MaterialBuildError::DescriptorLayoutFailed(format!("{:?}", e)))?;
 
-        // For dynamic rendering (render_pass is None), we need to provide color/depth formats
-        // If render_pass is Some, the formats come from the render pass
-        let color_format = if render_pass.is_none() {
-            self.color_format
-        } else {
-            None // Formats come from render_pass
-        };
-        let depth_format = if render_pass.is_none() {
-            self.depth_format
-        } else {
-            None // Formats come from render_pass
-        };
+        // Always use builder's formats for dynamic rendering (Vulkan 1.3)
+        let color_format = self.color_format;
+        let depth_format = self.depth_format;
 
         let mut pipeline_builder = PipelineBuilder::new(self.context.clone())
             .with_shaders(vert_shader.module, frag_shader.module)
@@ -385,7 +371,7 @@ impl MaterialBuilder {
             .with_depth_test(self.depth_test, self.depth_write, vk::CompareOp::LESS)
             .with_descriptor_layouts(vec![desc_layout]);
 
-        // Set rendering formats if using dynamic rendering
+        // Set rendering formats for dynamic rendering (Vulkan 1.3)
         if color_format.is_some() || depth_format.is_some() {
             let cf = color_format.map(ash::vk::Format::from);
             let df = depth_format.map(ash::vk::Format::from);
@@ -404,9 +390,8 @@ impl MaterialBuilder {
             pipeline_builder = pipeline_builder.with_alpha_blending();
         }
 
-        let vk_render_pass = render_pass
-            .map(|rp| rp.get_vk_renderpass())
-            .unwrap_or(vk::RenderPass::null());
+        // Always use null render pass for dynamic rendering (Vulkan 1.3)
+        let vk_render_pass = vk::RenderPass::null();
 
         let pipeline = pipeline_builder
             .build(vk_render_pass)

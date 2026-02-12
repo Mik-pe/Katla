@@ -7,7 +7,7 @@
 use super::{
     load_material_from_file, FileWatcher, MaterialError, MaterialTemplate, MaterialTemplateBuilder,
 };
-use crate::{RenderPass, VulkanContext};
+use crate::VulkanContext;
 use std::{
     collections::HashMap,
     ffi::OsStr,
@@ -100,7 +100,7 @@ impl MaterialRegistry {
 
         // Note: vertex_binding needs to be set by the caller
         // For now, we'll store the template without it
-        let template = builder.build(Some(render_pass))?;
+        let template = builder.build()?;
 
         // Register template with path for hot reload tracking
         self.register_template_with_path(template, path);
@@ -129,7 +129,7 @@ impl MaterialRegistry {
             .descriptor(descriptor)
             .context(context)
             .vertex_binding(vertex_binding)
-            .build(Some(render_pass))?;
+            .build()?;
 
         // Register template with path for hot reload tracking
         self.register_template_with_path(template, path);
@@ -145,7 +145,6 @@ impl MaterialRegistry {
         &mut self,
         dir: &Path,
         context: Rc<VulkanContext>,
-        render_pass: Option<&RenderPass>,
     ) -> Result<usize, MaterialError> {
         use crate::vulkan::vertexbinding::get_pbr_vertex_binding;
 
@@ -187,7 +186,7 @@ impl MaterialRegistry {
                 .descriptor(descriptor)
                 .context(context.clone())
                 .vertex_binding(vertex_binding)
-                .build(render_pass)?;
+                .build()?;
 
             // Register template with path for hot reload tracking
             self.register_template_with_path(template, &path);
@@ -259,7 +258,6 @@ impl MaterialRegistry {
     pub fn check_hot_reload(
         &mut self,
         context: Rc<VulkanContext>,
-        render_pass: Option<&RenderPass>,
     ) -> Result<usize, MaterialError> {
         // Collect all modified paths first, releasing the watcher borrow
         let modified_paths: Vec<PathBuf> = if self.file_watcher.is_some() {
@@ -325,7 +323,7 @@ impl MaterialRegistry {
 
                 // Build with the existing descriptor set layout to preserve compatibility
                 let new_pipeline = builder
-                    .build_with_desc_layout(render_pass, desc_layout)
+                    .build_with_desc_layout(desc_layout)
                     .map_err(|e| {
                         MaterialError::InvalidDescriptor(format!("Pipeline build failed: {:?}", e))
                     })?;
@@ -432,10 +430,9 @@ impl Default for MaterialRegistry {
 pub fn load_materials_from_directory(
     dir: impl AsRef<Path>,
     context: Rc<VulkanContext>,
-    render_pass: &RenderPass,
 ) -> Result<MaterialRegistry, MaterialError> {
     let mut registry = MaterialRegistry::new();
-    registry.load_directory(dir.as_ref(), context, Some(render_pass))?;
+    registry.load_directory(dir.as_ref(), context)?;
     Ok(registry)
 }
 

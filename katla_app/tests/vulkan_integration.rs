@@ -85,21 +85,6 @@ fn test_headless_mesh_creation() {
     println!("Entity and transform created successfully in headless mode");
 }
 
-/// Test render pass creation with headless Vulkan.
-#[test]
-fn test_headless_material_creation() {
-    let context = Rc::new(create_headless_context());
-
-    // Create a simple render pass for testing
-    let render_pass = RenderPass::create_default_opaque(context.device.clone());
-
-    // If we got here without panicking, the render pass was created successfully
-    // Clean up render pass
-    render_pass.destroy();
-
-    println!("Render pass created successfully in headless mode");
-}
-
 /// Test full integration: ECS + headless Vulkan.
 #[test]
 fn test_headless_full_integration() {

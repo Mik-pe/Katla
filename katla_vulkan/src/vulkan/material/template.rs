@@ -8,7 +8,7 @@ use super::{
     MaterialDescriptor, MaterialError, MaterialParameters, MaterialPipeline, MaterialValue,
     ShaderReflection, ShaderSource,
 };
-use crate::{RenderPass, Texture, VulkanContext};
+use crate::{Texture, VulkanContext};
 use ash::vk;
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
@@ -372,10 +372,7 @@ impl MaterialTemplateBuilder {
     }
 
     /// Build the template
-    pub fn build(
-        self,
-        render_pass: Option<&RenderPass>,
-    ) -> Result<MaterialTemplate, MaterialError> {
+    pub fn build(self) -> Result<MaterialTemplate, MaterialError> {
         let descriptor = self.descriptor.ok_or_else(|| {
             MaterialError::InvalidDescriptor("No descriptor provided".to_string())
         })?;

@@ -4,7 +4,7 @@
 //! to be reflected immediately without restarting the application.
 
 use super::{MaterialBuilder, MaterialDescriptor, MaterialError, MaterialPipeline, ShaderSource};
-use crate::{RenderPass, Texture, VertexBinding, VulkanContext};
+use crate::{Texture, VertexBinding, VulkanContext};
 use std::{rc::Rc, time::SystemTime};
 
 /// Errors that can occur during hot reload
@@ -42,7 +42,6 @@ pub struct HotReloadMaterial {
     material: MaterialPipeline,
     descriptor: MaterialDescriptor,
     context: Rc<VulkanContext>,
-    render_pass: RenderPass,
     watch_enabled: bool,
     last_modified: SystemTime,
     vertex_binding: Option<VertexBinding>,
@@ -54,7 +53,6 @@ impl HotReloadMaterial {
     pub fn new(
         descriptor: MaterialDescriptor,
         context: Rc<VulkanContext>,
-        render_pass: RenderPass,
     ) -> Result<Self, MaterialError> {
         // Build the initial material
         let builder = MaterialBuilder::from_descriptor(descriptor.clone(), context.clone())?;
@@ -63,7 +61,7 @@ impl HotReloadMaterial {
         let vertex_binding = None; // Will be set by caller
         let texture = None; // Will be set by caller
 
-        let material = builder.build(Some(&render_pass)).map_err(|e| {
+        let material = builder.build().map_err(|e| {
             MaterialError::InvalidDescriptor(format!("Pipeline creation failed: {:?}", e))
         })?;
 
@@ -75,7 +73,6 @@ impl HotReloadMaterial {
             material,
             descriptor,
             context,
-            render_pass,
             watch_enabled: false,
             last_modified,
             vertex_binding,
@@ -161,7 +158,7 @@ impl HotReloadMaterial {
         }
 
         // Build new material
-        self.material = builder.build(Some(&self.render_pass)).map_err(|e| {
+        self.material = builder.build().map_err(|e| {
             HotReloadError::PipelineCreationFailed(MaterialError::InvalidDescriptor(format!(
                 "Pipeline creation failed: {:?}",
                 e
