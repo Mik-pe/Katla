@@ -96,9 +96,13 @@ grep -rn "src_stage\|dst_stage\|PipelineStageFlags" katla_vulkan/src/render_grap
 
 **Barrier Requirements:**
 
+- **Dynamic Rendering**: Katla uses `vkCmdBeginRendering`/`vkCmdEndRendering` (Vulkan 1.3), NOT traditional render passes
+- **Synchronization2**: Barriers use `ImageMemoryBarrier2` and `DependencyInfo` with `vkCmdPipelineBarrier2`
 - **Image Layout Transition**: Need barrier when layout changes (e.g., Undefined → TransferDstOptimal)
 - **Buffer Access**: Need barrier when access type changes (e.g., TransferWrite → ShaderRead)
 - **Queue Family Transfer**: Need barrier when transferring ownership between queues
+
+**Important**: The render graph automatically inserts Synchronization2 barriers for layout transitions. When using external resources (swapchain, depth), ensure correct `initial_layout` and `final_layout` are specified.
 
 **Common Barrier Issues:**
 
@@ -139,57 +143,49 @@ grep -rn "import_resource\|external" katla_vulkan/src/render_graph/
 
 ## Render Graph Usage Patterns
 
+**Note**: The Katla engine uses **Dynamic Rendering** (Vulkan 1.3) via the render graph. Traditional render pass objects are NOT used.
+
 ### Creating a Render Graph
 
 ```rust
 let mut graph_builder = RenderGraphBuilder::new();
 
-// Add internal resource (render graph manages lifetime)
-let color_target = graph_builder.add_resource(
-    "color",
-    ResourceKind::Image {
-        extent: Extent3D { width: 1920, height: 1080, depth: 1 },
-        format: ImageFormat::R8G8B8A8Srgb,
-        usage: vec![ImageUsage::ColorAttachment],
-        samples: SampleCount::Sample1,
-        tiling: ImageTiling::Optimal,
-        initial_layout: ImageLayout::Undefined,
-        final_layout: ImageLayout::ShaderReadOnlyOptimal,
+// Add external resource (swapchain - managed externally)
+let swapchain_resource = graph_builder.add_resource(
+    "swapchain",
+    ResourceKind::ExternalImage {
+        vk_image: swapchain_image,
+        image_view: swapchain_image_view,
+        format: vk::Format::B8G8R8A8_SRGB,
+        extent: vk::Extent2D { width: 1920, height: 1080 },
     },
 );
 
-// Import external resource (swapchain)
-let swapchain_image = graph_builder.import_resource(
-    "swapchain",
+// Add external depth resource
+let depth_resource = graph_builder.add_resource(
+    "depth",
     ResourceKind::ExternalImage {
-        external_handle: /* vk::Image */,
-        extent: /* ... */,
-        format: /* ... */,
-        initial_layout: ImageLayout::Undefined,  // Current state
-        final_layout: ImageLayout::PresentSrcKHR,  // After graph
+        vk_image: depth_image,
+        image_view: depth_image_view,
+        format: vk::Format::D32_SFLOAT,
+        extent: vk::Extent2D { width: 1920, height: 1080 },
     },
 );
 ```
 
-### Adding Passes
+### Adding Passes with Dynamic Rendering
 
 ```rust
 graph_builder.add_pass("geometry_pass", |pass| {
-    pass.write(color_target)  // Creates render target
-        .clear_color(color_target, [0.1, 0.1, 0.1, 1.0])
+    pass.write(Attachment::Color(swapchain_resource))
+        .write(Attachment::DepthStencil(depth_resource))
+        .clear_color(swapchain_resource, [0.3, 0.5, 0.3, 1.0])
+        .clear_depth_stencil(depth_resource, 1.0, 0)
         .execute("geometry_pass", |ctx| {
-            // Record commands
+            // Record rendering commands
+            // Dynamic rendering already active (vkCmdBeginRendering called)
             let cmd_buf = ctx.command_buffer;
-            let framebuffer = ctx.get_framebuffer();
-            // ...
-        });
-});
-
-graph_builder.add_pass("lighting_pass", |pass| {
-    pass.read(color_target)  // Read previous pass output
-        .write(swapchain_image)  // Write to swapchain
-        .execute("lighting_pass", |ctx| {
-            // ...
+            // ... draw commands ...
         });
 });
 ```
@@ -198,8 +194,15 @@ graph_builder.add_pass("lighting_pass", |pass| {
 
 ```rust
 let graph = graph_builder.build(&vulkan_context)?;
-graph.execute(&mut command_buffer)?;
+// Execute with dynamic rendering (uses vkCmdBeginRendering internally)
+graph.execute(&mut command_buffer, image_index, swapchain_images, depth_image)?;
 ```
+
+**Key Points:**
+- Use `ExternalImage` for resources created outside the graph (swapchain, depth)
+- Use `Attachment::Color` and `Attachment::DepthStencil` to specify attachment types
+- Dynamic rendering is automatic - no need to call `begin_rendering()` manually
+- Synchronization2 barriers are inserted automatically for layout transitions
 
 ## Common Render Graph Bugs
 

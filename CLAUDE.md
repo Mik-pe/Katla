@@ -241,6 +241,66 @@ pub enum ImageFormat {
 impl From<ImageFormat> for ash::vk::Format { ... }
 ```
 
+## Modern Vulkan 1.3 Rendering
+
+**Status**: ✅ The Katla engine uses modern Vulkan 1.3 (2026) rendering patterns.
+
+### Key Modern Features in Use
+
+- **Dynamic Rendering (VK_KHR_dynamic_rendering)** - Production rendering uses `vkCmdBeginRendering`/`vkCmdEndRendering` instead of legacy render passes
+- **Synchronization2 (VK_KHR_synchronization2)** - All pipeline barriers use `vkCmdPipelineBarrier2` with modern barrier types
+- **VMA Integration** - Uses `gpu_allocator` for Vulkan Memory Allocator integration
+- **Frames In-Flight** - Proper per-frame synchronization with fences and semaphores
+
+### Legacy Patterns Removed
+
+- ❌ Legacy `vk::CmdBeginRenderPass`/`vk::CmdEndRenderPass` - replaced with dynamic rendering
+- ❌ Legacy `vk::CmdPipelineBarrier` - replaced with Synchronization2's `vkCmdPipelineBarrier2`
+- ❌ RenderPass struct - only null render passes used for dynamic rendering
+- ❌ Traditional framebuffer objects - not needed with dynamic rendering
+
+### Synchronization Pattern
+
+Use **Synchronization2** for all barriers:
+
+```rust
+// Modern Synchronization2 barrier pattern
+let barrier = ImageMemoryBarrier2::new(image)
+    .src_stage(PipelineStage2Flags::TOP_OF_PIPE)
+    .src_access(AccessFlags2::NONE)
+    .dst_stage(PipelineStage2Flags::COLOR_ATTACHMENT_OUTPUT)
+    .dst_access(AccessFlags2::COLOR_ATTACHMENT_WRITE)
+    .old_layout(vk::ImageLayout::UNDEFINED)
+    .new_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
+    .subresource_range(vk::ImageSubresourceRange {
+        aspect_mask: vk::ImageAspectFlags::COLOR,
+        base_mip_level: 0,
+        level_count: 1,
+        base_array_layer: 0,
+        layer_count: 1,
+    });
+
+DependencyInfo::new()
+    .add_image_barrier(barrier)
+    .build(|dep_info| unsafe {
+        context.device.cmd_pipeline_barrier2(command_buffer, dep_info);
+    });
+```
+
+**Do NOT use** legacy barrier pattern:
+```rust
+// ❌ LEGACY - DO NOT USE
+context.device.cmd_pipeline_barrier(
+    command_buffer,
+    src_stage_mask,
+    dst_stage_mask,
+    vk::DependencyFlags::empty(),
+    &memory_barriers,
+    &buffer_barriers,
+    &image_barriers,
+);
+```
+
 ## Vulkan Wrapper Layer
 
 Located in `katla_vulkan/src/vulkan/`, wraps raw ash calls with idiomatic Rust.
@@ -249,20 +309,31 @@ Located in `katla_vulkan/src/vulkan/`, wraps raw ash calls with idiomatic Rust.
 
 - **context.rs** - VulkanContext (device, instance, physical device selection)
 - **swapchain.rs** - Swapchain management
-- **renderpass.rs** - RenderPass wrapper, `create_from_config()` for custom render passes
-- **framebuffer.rs** - Framebuffer wrapper
-- **commandbuffer.rs** - CommandBuffer wrapper, `pipeline_barrier()` for synchronization
-- **texture.rs** - Texture loading and image creation
+- **framebuffer.rs** - Framebuffer wrapper (minimal usage with dynamic rendering)
+- **commandbuffer.rs** - CommandBuffer wrapper with `begin_rendering()`/`end_rendering()` for dynamic rendering
+- **texture.rs** - Texture loading and image creation (uses Synchronization2)
 - **pipeline/** - Pipeline creation infrastructure
+- **material/** - Material system with hot reload support
+- **bda.rs** - Buffer Device Address infrastructure (for future BDA uniform buffers)
 
 ### VulkanRenderer
 
 Main renderer struct in `katla_vulkan/src/lib.rs`:
 - `context: Rc<VulkanContext>` - Vulkan context
 - `frame_context: VulkanFrameCtx` - Per-frame data
-- `render_pass: RenderPass` - Current render pass
-- `swapchain_framebuffers: Vec<vk::Framebuffer>` - Per-swapchain image framebuffers
-- `render_graph: Option<CompiledRenderGraph>` - Render graph (being integrated)
+- `swap_data: SwapData` - Swapchain synchronization (semaphores, fences)
+- `asset_registry: AssetRegistry` - GPU asset management (meshes, materials)
+- `material_registry: MaterialRegistry` - Template-based materials with hot reload
+- `render_graph: Option<CompiledRenderGraph>` - Compiled render graph with dynamic rendering
+
+### Rendering Flow
+
+1. **Frame Acquisition**: `swap_frames()` acquires next swapchain image
+2. **Render Graph Execution**: `render_frame()` executes the compiled render graph with dynamic rendering
+3. **Synchronization**: Proper semaphores/fences for frames-in-flight
+4. **Presentation**: Queue present to swapchain
+
+See `docs/vulkan-1.3-migration-plan.md` for complete migration details.
 
 ## Application Layer
 
@@ -341,39 +412,83 @@ world.register_system(Box::new(MySystem), SystemExecutionOrder::NORMAL);
 
 ### Render Graph Usage
 
+The render graph uses **dynamic rendering** by default. Passes execute with `vkCmdBeginRendering`/`vkCmdEndRendering`.
+
 ```rust
 let mut graph_builder = RenderGraphBuilder::new();
 
-let color_target = graph_builder.add_resource(
-    "color",
-    ResourceKind::Image {
-        extent: Extent3D { width: 1920, height: 1080, depth: 1 },
-        format: ImageFormat::R8G8B8A8Srgb,
-        usage: vec![ImageUsage::ColorAttachment],
-        samples: SampleCount::Sample1,
-        tiling: ImageTiling::Optimal,
-        initial_layout: ImageLayout::Undefined,
-        final_layout: ImageLayout::ShaderReadOnlyOptimal,
+// Add external resources (e.g., swapchain)
+let swapchain_resource = graph_builder.add_resource(
+    "swapchain",
+    ResourceKind::ExternalImage {
+        vk_image: swapchain_image,
+        image_view: swapchain_image_view,
+        format: vk::Format::B8G8R8A8_SRGB,
+        extent: vk::Extent2D { width: 1920, height: 1080 },
     },
 );
 
+// Add depth resource
+let depth_resource = graph_builder.add_resource(
+    "depth",
+    ResourceKind::ExternalImage {
+        vk_image: depth_image,
+        image_view: depth_image_view,
+        format: vk::Format::D32_SFLOAT,
+        extent: vk::Extent2D { width: 1920, height: 1080 },
+    },
+);
+
+// Add pass with dynamic rendering
 graph_builder.add_pass("geometry_pass", |pass| {
-    pass.write(color_target)
-        .clear_color(color_target, [0.1, 0.1, 0.1, 1.0])
+    pass.write(Attachment::Color(swapchain_resource))
+        .write(Attachment::DepthStencil(depth_resource))
+        .clear_color(swapchain_resource, [0.3, 0.5, 0.3, 1.0])
+        .clear_depth_stencil(depth_resource, 1.0, 0)
         .execute("geometry_pass", |ctx| {
-            // Record commands
+            // Record rendering commands
+            // ctx.command_buffer has begin_rendering() already called
         });
 });
 
 let graph = graph_builder.build(&vulkan_context)?;
-graph.execute(&mut command_buffer)?;
+// Execute with dynamic rendering (uses vkCmdBeginRendering internally)
+graph.execute(&mut command_buffer, image_index, swapchain_images, depth_image)?;
 ```
+
+**Key Points:**
+- Use `ExternalImage` for swapchain/depth resources created externally
+- Use `Attachment::Color` and `Attachment::DepthStencil` to specify attachment types
+- The graph automatically uses dynamic rendering (no traditional render passes)
+- Synchronization2 barriers inserted automatically for layout transitions
 
 ## Integration Notes
 
 When integrating render graph with application layer:
 
-- Use `ExternalImage` ResourceKind for swapchain images
-- Capture world/matrices in closures via renderer fields (avoid nested lifetime issues)
-- Call `renderer.render_frame()` in RedrawRequested handler
-- Render graph currently in integration phase (see katla_vulkan/src/render_graph/Plan.md)
+- **Use `ExternalImage` ResourceKind** for swapchain and depth resources created externally
+- **Dynamic rendering is automatic** - passes use `vkCmdBeginRendering`/`vkCmdEndRendering`
+- **Synchronization is automatic** - barriers inserted for layout transitions using Synchronization2
+- **No framebuffer management** - dynamic rendering doesn't require traditional framebuffers
+- **Per-swapchain image support** - graph supports multiple swapchain images via `color_attachments`/`depth_attachments` arrays
+- **Call `renderer.render_frame(draw_list)`** in RedrawRequested handler with draw calls
+- **Hot reload support** - materials can be reloaded at runtime via `MaterialRegistry`
+
+### Material System
+
+Materials use template-based configuration with hot reload:
+
+- **TOML-based material definitions** - define shaders, textures, parameters
+- **No render pass dependency** - materials work with dynamic rendering
+- **Per-material uniforms** - optional uniform buffers for material parameters
+- **Hot reload** - modify TOML files and reload at runtime
+
+### Future Enhancements (Optional)
+
+These are **not required** for Vulkan 1.3 compliance but recommended:
+
+1. **Buffer Device Address (BDA)** - Replace descriptor-based uniforms with push-constant buffer addresses
+2. **Bindless Textures** - Single texture array descriptor instead of per-texture descriptors
+3. **VMA Memory Management** - Enhanced allocator integration with persistent mapping
+
+See `docs/vulkan-1.3-migration-plan.md` for details.
