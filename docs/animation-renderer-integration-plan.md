@@ -159,8 +159,15 @@ Use push constants for joint matrix offsets or small skeletons.
 - [x] Phase 1: Vertex Format Extension ✅
 - [x] Phase 2: GPU Skinning Shader ✅
 - [x] Phase 3: Skeleton Buffer Management ✅
-- [ ] Phase 4: Material Pipeline Integration
+- [ ] Phase 4: Material Pipeline Integration (in progress)
 - [ ] Phase 5: Render Graph Integration
+
+### Additional Progress
+
+- [x] CPU-side animation system integration:
+  - `SkeletalAnimationSystem` registered in main.rs
+  - `AnimationManager::setup_animated_model()` for easy setup
+  - Fox model loaded with animation components
 
 ### Phase 1: Vertex Format Extension ✅
 

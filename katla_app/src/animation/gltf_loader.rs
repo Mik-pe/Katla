@@ -31,59 +31,7 @@ pub fn load_animations(world: &mut World, model: &GLTFModel) {
 
         log::info!("  Parsing animation '{}'", name);
 
-        let mut channels: Vec<AnimationChannel> = Vec::new();
-        let mut duration: f32 = 0.0;
-
-        for channel in gltf_animation.channels() {
-            let sampler = channel.sampler();
-            let target_node = channel.target().node().index();
-            let property = match channel.target().property() {
-                gltf::animation::Property::Translation => ChannelPath::Translation,
-                gltf::animation::Property::Rotation => ChannelPath::Rotation,
-                gltf::animation::Property::Scale => ChannelPath::Scale,
-                gltf::animation::Property::MorphTargetWeights => ChannelPath::Weights,
-            };
-
-            let interpolation = match sampler.interpolation() {
-                gltf::animation::Interpolation::Linear => Interpolation::Linear,
-                gltf::animation::Interpolation::Step => Interpolation::Step,
-                gltf::animation::Interpolation::CubicSpline => Interpolation::CubicSpline,
-            };
-
-            let input_accessor = sampler.input();
-            let output_accessor = sampler.output();
-
-            let animation_sampler = parse_sampler(
-                &model.buffers,
-                input_accessor,
-                output_accessor,
-                property,
-                interpolation,
-            );
-
-            duration = duration.max(animation_sampler.duration());
-
-            log::debug!(
-                "    - Channel on node {}: {}, {} keyframes, interpolation: {:?}",
-                target_node,
-                property,
-                animation_sampler.keyframe_count(),
-                interpolation
-            );
-
-            channels.push(AnimationChannel {
-                target_node,
-                path: property,
-                sampler: animation_sampler,
-            });
-        }
-
-        let clip = AnimationClip {
-            name: name.clone(),
-            duration,
-            channels,
-        };
-
+        let clip = load_animation_clip(&model.buffers, gltf_animation);
         animated_model.animations.insert(name, clip);
     }
 
@@ -95,6 +43,64 @@ pub fn load_animations(world: &mut World, model: &GLTFModel) {
     let entity = world.create_entity();
     world.add_component(entity, animated_model);
     log::debug!("  Attached AnimatedModel to entity {:?}", entity);
+}
+
+/// Load a single animation clip from a GLTF animation.
+///
+/// This is exposed for `AnimationManager::setup_animated_model`.
+pub fn load_animation_clip(
+    buffers: &[BufferData],
+    gltf_animation: &gltf::Animation,
+) -> AnimationClip {
+    let name = gltf_animation
+        .name()
+        .unwrap_or("Animation")
+        .to_string();
+
+    let mut channels: Vec<AnimationChannel> = Vec::new();
+    let mut duration: f32 = 0.0;
+
+    for channel in gltf_animation.channels() {
+        let sampler = channel.sampler();
+        let target_node = channel.target().node().index();
+        let property = match channel.target().property() {
+            gltf::animation::Property::Translation => ChannelPath::Translation,
+            gltf::animation::Property::Rotation => ChannelPath::Rotation,
+            gltf::animation::Property::Scale => ChannelPath::Scale,
+            gltf::animation::Property::MorphTargetWeights => ChannelPath::Weights,
+        };
+
+        let interpolation = match sampler.interpolation() {
+            gltf::animation::Interpolation::Linear => Interpolation::Linear,
+            gltf::animation::Interpolation::Step => Interpolation::Step,
+            gltf::animation::Interpolation::CubicSpline => Interpolation::CubicSpline,
+        };
+
+        let input_accessor = sampler.input();
+        let output_accessor = sampler.output();
+
+        let animation_sampler = parse_sampler(
+            buffers,
+            input_accessor,
+            output_accessor,
+            property,
+            interpolation,
+        );
+
+        duration = duration.max(animation_sampler.duration());
+
+        channels.push(AnimationChannel {
+            target_node,
+            path: property,
+            sampler: animation_sampler,
+        });
+    }
+
+    AnimationClip {
+        name,
+        duration,
+        channels,
+    }
 }
 
 fn parse_sampler(
@@ -252,6 +258,13 @@ pub fn load_skins(world: &mut World, model: &GLTFModel) {
     }
 
     log::info!("  Successfully loaded {} skins", skins.len());
+}
+
+/// Parse Mat4 matrices from an accessor.
+///
+/// This is exposed for `AnimationManager::setup_animated_model`.
+pub fn parse_mat4_from_accessor(buffers: &[BufferData], accessor: gltf::Accessor) -> Vec<katla_math::Mat4> {
+    parse_accessor_mat4(buffers, accessor)
 }
 
 fn parse_accessor_mat4(buffers: &[BufferData], accessor: gltf::Accessor) -> Vec<katla_math::Mat4> {
