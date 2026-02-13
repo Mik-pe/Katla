@@ -8,6 +8,7 @@ pub use perspective::PerspectiveComponent;
 pub use physics::*;
 pub use relationship::*;
 pub use tag::*;
+pub use third_person::*;
 pub use transform::{TransformComponent, TransformDirty, WorldTransform};
 
 pub mod lighting;
@@ -21,4 +22,5 @@ pub mod perspective;
 pub mod physics;
 pub mod relationship;
 pub mod tag;
+pub mod third_person;
 pub mod transform;
