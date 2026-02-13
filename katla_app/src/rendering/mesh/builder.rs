@@ -12,9 +12,6 @@ use crate::{
 /// Base builder with common options shared across all mesh types.
 pub struct MeshBuilder {
     context: Rc<VulkanContext>,
-    /// Raw pointer to MaterialRegistry for template-based material creation.
-    /// This is safe because the registry outlives the builder and we only use it during build().
-    material_registry: Option<*const std::cell::RefCell<MaterialRegistry>>,
     position: Option<Vec3>,
     color: Option<[f32; 3]>,
     shared_material_name: Option<String>,
@@ -26,20 +23,11 @@ impl MeshBuilder {
     pub fn new(context: Rc<VulkanContext>) -> Self {
         Self {
             context,
-            material_registry: None,
             position: None,
             color: None,
             shared_material_name: None,
             checkerboard_texture: None,
         }
-    }
-
-    pub fn with_material_registry_ptr(
-        mut self,
-        registry_ptr: *const std::cell::RefCell<MaterialRegistry>,
-    ) -> Self {
-        self.material_registry = Some(registry_ptr);
-        self
     }
 
     pub fn with_shared_material(mut self, name: impl Into<String>) -> Self {
@@ -134,41 +122,33 @@ macro_rules! impl_common_builder {
                 self
             }
 
-            fn get_material(&mut self, _renderer: &mut VulkanRenderer) -> Material {
+            fn get_material(&mut self, registry: &MaterialRegistry) -> Material {
                 // Try to get material from template in the registry
-                if let (Some(registry_ptr), Some(ref name)) =
-                    (self.base.material_registry, &self.base.shared_material_name)
-                {
-                    // SAFETY: The raw pointer points to the MaterialRegistry in VulkanRenderer
-                    // which is guaranteed to be valid for the lifetime of the application.
-                    // We only access it during the build() call, and the renderer always outlives the builder.
-                    unsafe {
-                        let registry = &*registry_ptr;
-                        if let Some(template) = registry.borrow().get_template(name) {
-                            println!("  MeshBuilder: Using material from template '{}'", name);
+                if let Some(ref name) = &self.base.shared_material_name {
+                    if let Some(template) = registry.get_template(name) {
+                        println!("  MeshBuilder: Using material from template '{}'", name);
 
-                            // Check if this template needs a texture (Checkerboard uses procedural texture)
-                            // Create and cache the texture on first use
-                            let texture = if name == "Checkerboard" {
-                                if self.base.checkerboard_texture.is_none() {
-                                    self.base.checkerboard_texture = Some(std::rc::Rc::new(
-                                        crate::rendering::create_checkerboard_texture(
-                                            self.base.context.clone(),
-                                        ),
-                                    ));
-                                }
-                                self.base.checkerboard_texture.clone()
-                            } else {
-                                None
-                            };
+                        // Check if this template needs a texture (Checkerboard uses procedural texture)
+                        // Create and cache the texture on first use
+                        let texture = if name == "Checkerboard" {
+                            if self.base.checkerboard_texture.is_none() {
+                                self.base.checkerboard_texture = Some(std::rc::Rc::new(
+                                    crate::rendering::create_checkerboard_texture(
+                                        self.base.context.clone(),
+                                    ),
+                                ));
+                            }
+                            self.base.checkerboard_texture.clone()
+                        } else {
+                            None
+                        };
 
-                            return Material::from_template(template, texture, None);
-                        }
-                        println!(
-                            "  MeshBuilder: Template '{}' not found, creating directly",
-                            name
-                        );
+                        return Material::from_template(template, texture, None);
                     }
+                    println!(
+                        "  MeshBuilder: Template '{}' not found, creating directly",
+                        name
+                    );
                 }
 
                 // Fallback to creating material directly
@@ -181,7 +161,7 @@ macro_rules! impl_common_builder {
                 renderer: &mut VulkanRenderer,
                 mesh: crate::rendering::mesh::Mesh,
             ) -> EntityId {
-                let material = self.get_material(renderer);
+                let material = self.get_material(&renderer.material_registry.borrow());
                 let position = self.base.position.unwrap_or(Vec3::new(0.0, 0.0, 0.0));
                 let transform = Transform {
                     position,

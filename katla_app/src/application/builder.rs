@@ -7,9 +7,10 @@ use winit::keyboard::ModifiersState;
 use crate::{
     application::{Application, ApplicationInfo},
     entities::Camera,
+    error::AppResult,
     input::InputMapper,
     rendering::MaterialManager,
-    systems::SkeletonUploadSystem,
+    resources::ResourceManager,
     util::{FileCache, Timer},
 };
 
@@ -66,7 +67,7 @@ impl ApplicationBuilder {
         event_loop
     }
 
-    pub fn build(self) -> (Application, EventLoop<()>) {
+    pub fn build(self) -> AppResult<(Application, EventLoop<()>)> {
         let event_loop = Self::build_event_loop();
 
         let info = ApplicationInfo {
@@ -77,6 +78,7 @@ impl ApplicationBuilder {
         let mut world = self.world;
         let camera = Rc::new(RefCell::new(Camera::new(&mut world)));
 
+        let resources = ResourceManager::discover()?;
         let app = Application {
             window: None,
             renderer: None,
@@ -90,11 +92,9 @@ impl ApplicationBuilder {
             input_mapper: InputMapper::new(),
             current_modifiers: ModifiersState::empty(),
             frame_count: 0,
-            skeleton_upload_system: SkeletonUploadSystem::new(),
-            fox_entity: None,
-            skeleton_registered: false,
+            resources,
         };
 
-        (app, event_loop)
+        Ok((app, event_loop))
     }
 }

@@ -31,7 +31,7 @@ impl Model {
 
         // Register assets with renderer if available
         let (mesh_handle, material_handle) = if let Some(r) = renderer {
-            // Register mesh - take buffers from the first mesh
+            // Register mesh - take buffers from first mesh
             // Note: For now we only support single-mesh models
             let mesh_h = if let Some(first_mesh) = meshes.first_mut() {
                 let vertex_buffer = first_mesh.vertex_buffer.take();
@@ -81,11 +81,19 @@ impl Model {
         context: Rc<VulkanContext>,
         renderer: Option<&mut VulkanRenderer>,
         transform: Transform,
-        material_registry: Option<&MaterialRegistry>,
+        material_registry: Option<&std::cell::RefCell<MaterialRegistry>>,
     ) -> Self {
         // Try to create material from template first
-        let material = if let Some(registry) = material_registry {
-            // Try to get the "gltf_default" template
+        // Use provided registry, or get from renderer
+        let registry_ref = if let Some(registry) = material_registry {
+            Some(registry)
+        } else {
+            renderer.as_ref().map(|r| &r.material_registry)
+        };
+
+        let material = if let Some(registry) = registry_ref {
+            let registry = registry.borrow();
+            // Try to get "gltf_default" template
             if let Some(template) = registry.get_template("gltf_default") {
                 // Extract texture from the GLTF model
                 let texture = if !model.images.is_empty() {
@@ -124,7 +132,7 @@ impl Model {
                 // Create material from template
                 Material::from_template(template, texture, None)
             } else {
-                // Fall back to direct creation if template not found
+                // Fallback to direct creation if template not found
                 Material::new(model.clone(), context.clone())
             }
         } else {
@@ -136,6 +144,7 @@ impl Model {
 
         Self::new(world, vec![mesh], material, renderer, transform, None)
     }
+<<<<<<< HEAD
 
     /// Create a GLTF model using a raw pointer to MaterialRegistry.
     ///
@@ -311,4 +320,6 @@ impl Model {
 
         Self::new(world, vec![mesh], material, renderer, transform, None)
     }
+=======
+>>>>>>> a99d853 (Add ResourceManager and remove raw pointers from mesh builders)
 }
