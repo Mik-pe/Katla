@@ -780,6 +780,7 @@ impl CompiledRenderGraph {
             // For swapchain rendering, we always have attachments (during compile, one set is created
             // The get() returns None for missing per-image sets, but that's OK for swapchain
             let has_dynamic_rendering = !self.passes[i].color_attachments.is_empty();
+            let is_last_pass = i == pass_count - 1;
 
             if has_dynamic_rendering {
                 // Use Dynamic Rendering path (Vulkan 1.3)
@@ -789,6 +790,7 @@ impl CompiledRenderGraph {
                     image_index,
                     swapchain_images,
                     depth_image,
+                    is_last_pass,
                 )?;
             } else {
                 // Use legacy render pass path
@@ -806,6 +808,7 @@ impl CompiledRenderGraph {
         image_index: usize,
         swapchain_images: &[VkImage],
         depth_image: VkImage,
+        is_last_pass: bool,
     ) -> Result<(), RenderGraphError> {
         let pass = &self.passes[pass_index];
 
@@ -842,13 +845,20 @@ impl CompiledRenderGraph {
             .layer_count(1);
 
         // Add color attachments with clear values
+        // Collect only color clear values (filter out depth)
+        let color_clears: Vec<_> = pass
+            .clear_values
+            .iter()
+            .filter(|cv| matches!(cv, ClearValue::Color(_)))
+            .collect();
+
         for (i, image_view) in color_attachments.iter().enumerate() {
-            let clear_value = pass.clear_values.get(i).copied();
             let mut attachment = RenderingAttachmentInfo::new(*image_view)
                 .layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL);
 
-            if let Some(cv) = clear_value {
-                attachment = attachment.clear(cv);
+            // Use filtered color clears, indexed by color attachment position
+            if let Some(&cv) = color_clears.get(i) {
+                attachment = attachment.clear(*cv);
             }
 
             rendering_info = rendering_info.add_color_attachment(attachment);
@@ -856,7 +866,7 @@ impl CompiledRenderGraph {
 
         // Add depth attachment with clear value
         if let Some(depth_view) = depth_attachment {
-            // Find depth clear value (usually after color attachments)
+            // Find depth clear value
             let depth_clear = pass
                 .clear_values
                 .iter()
@@ -865,25 +875,32 @@ impl CompiledRenderGraph {
             let mut attachment = RenderingAttachmentInfo::new(depth_view)
                 .layout(vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
 
-            if let Some(cv) = depth_clear {
-                attachment = attachment.clear(*cv);
+            if let Some(&cv) = depth_clear {
+                attachment = attachment.clear(cv);
             }
 
             rendering_info = rendering_info.depth_attachment(attachment);
         }
 
-        // Transition swapchain images from UNDEFINED/PREVIOUS to COLOR_ATTACHMENT_OPTIMAL before rendering
-        // Using UNDEFINED as the old layout works for both:
-        // 1. First use: Image starts in UNDEFINED layout
-        // 2. After present: The previous layout is discarded (Vulkan spec allows this)
+        // Transition swapchain images to COLOR_ATTACHMENT_OPTIMAL before rendering
+        // - First pass: From UNDEFINED (or PRESENT_SRC after previous frame - both are valid with UNDEFINED)
+        // - Subsequent passes: From COLOR_ATTACHMENT_OPTIMAL (preserve content from previous pass)
         let swapchain_image = swapchain_images.get(image_index).map(|img| img.vk());
         if let Some(swapchain_vk_image) = swapchain_image {
+            // For the first pass, use UNDEFINED which discards previous content (correct for clear)
+            // For subsequent passes, use COLOR_ATTACHMENT_OPTIMAL to preserve the previous pass's output
+            let old_layout = if pass_index == 0 {
+                vk::ImageLayout::UNDEFINED
+            } else {
+                vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL
+            };
+
             let barrier = ImageMemoryBarrier2::new(swapchain_vk_image)
                 .src_stage(PipelineStage2Flags::BOTTOM_OF_PIPE)
                 .src_access(AccessFlags2::NONE)
                 .dst_stage(PipelineStage2Flags::COLOR_ATTACHMENT_OUTPUT)
                 .dst_access(AccessFlags2::COLOR_ATTACHMENT_WRITE)
-                .old_layout(vk::ImageLayout::UNDEFINED)
+                .old_layout(old_layout)
                 .new_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
                 .subresource_range(vk::ImageSubresourceRange {
                     aspect_mask: vk::ImageAspectFlags::COLOR,
@@ -962,30 +979,33 @@ impl CompiledRenderGraph {
         // End dynamic rendering
         command_buffer.end_rendering();
 
-        // Transition swapchain image from COLOR_ATTACHMENT_OPTIMAL to PRESENT_SRC_KHR after rendering
-        if let Some(swapchain_vk_image) = swapchain_image {
-            let barrier = ImageMemoryBarrier2::new(swapchain_vk_image)
-                .src_stage(PipelineStage2Flags::COLOR_ATTACHMENT_OUTPUT)
-                .src_access(AccessFlags2::COLOR_ATTACHMENT_WRITE)
-                .dst_stage(PipelineStage2Flags::BOTTOM_OF_PIPE)
-                .dst_access(AccessFlags2::NONE)
-                .old_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
-                .new_layout(vk::ImageLayout::PRESENT_SRC_KHR)
-                .subresource_range(vk::ImageSubresourceRange {
-                    aspect_mask: vk::ImageAspectFlags::COLOR,
-                    base_mip_level: 0,
-                    level_count: 1,
-                    base_array_layer: 0,
-                    layer_count: 1,
-                });
+        // Transition swapchain image from COLOR_ATTACHMENT_OPTIMAL to PRESENT_SRC_KHR
+        // ONLY after the LAST pass - intermediate passes keep the image in COLOR_ATTACHMENT_OPTIMAL
+        if is_last_pass {
+            if let Some(swapchain_vk_image) = swapchain_image {
+                let barrier = ImageMemoryBarrier2::new(swapchain_vk_image)
+                    .src_stage(PipelineStage2Flags::COLOR_ATTACHMENT_OUTPUT)
+                    .src_access(AccessFlags2::COLOR_ATTACHMENT_WRITE)
+                    .dst_stage(PipelineStage2Flags::BOTTOM_OF_PIPE)
+                    .dst_access(AccessFlags2::NONE)
+                    .old_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
+                    .new_layout(vk::ImageLayout::PRESENT_SRC_KHR)
+                    .subresource_range(vk::ImageSubresourceRange {
+                        aspect_mask: vk::ImageAspectFlags::COLOR,
+                        base_mip_level: 0,
+                        level_count: 1,
+                        base_array_layer: 0,
+                        layer_count: 1,
+                    });
 
-            DependencyInfo::new()
-                .add_image_barrier(barrier)
-                .build(|dep_info| unsafe {
-                    self.context
-                        .device
-                        .cmd_pipeline_barrier2(command_buffer.vk_command_buffer(), dep_info);
-                });
+                DependencyInfo::new()
+                    .add_image_barrier(barrier)
+                    .build(|dep_info| unsafe {
+                        self.context
+                            .device
+                            .cmd_pipeline_barrier2(command_buffer.vk_command_buffer(), dep_info);
+                    });
+            }
         }
 
         Ok(())

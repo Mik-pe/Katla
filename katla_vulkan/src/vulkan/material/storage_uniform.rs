@@ -5,7 +5,7 @@
 //! accessed via `@builtin(instance_index)` in shaders.
 //!
 //! # Benefits
-//! - **Single 20KB buffer** for up to 256 objects (vs 256 separate uniform buffers)
+//! - **Single ~24KB buffer** for up to 256 objects (vs 256 separate uniform buffers)
 //! - **Persistent mapping** for CPU-side updates without repeated map/unmap
 //! - **Storage buffer access** instead of descriptor-based uniforms
 //! - **Instance index** for per-object data access (no push constants needed)
@@ -14,15 +14,19 @@
 //! # Architecture
 //! ```text
 //! ┌─────────────────────────────────────────────────────────────┐
-//! │ Storage Uniform Buffer (20KB, persistent mapping)           │
-//! ├─ [Frame Uniforms: 128 bytes]                               │
-//! │  └─ view: mat4x4 (64 bytes)                                │
-//! │  └─ proj: mat4x4 (64 bytes)                                │
-//! ├─ [Object Array: 80 bytes × 256 = 20,480 bytes]             │
-//! │    ├─ Object[0]: model (64) + color (16) = 80              │
-//! │    ├─ Object[1]: model (64) + color (16) = 80              │
+//! │ Storage Uniform Buffer (~24KB, persistent mapping)          │
+//! ├─ [Frame Uniforms: 192 bytes]                               │
+//! │  ├─ view: mat4x4 (64 bytes)                                │
+//! │  ├─ proj: mat4x4 (64 bytes)                                │
+//! │  ├─ camera_position: vec4 (16 bytes)                       │
+//! │  ├─ light_direction: vec4 (16 bytes)                       │
+//! │  ├─ light_color: vec4 (16 bytes)                           │
+//! │  └─ light_intensity: vec4 (16 bytes)                       │
+//! ├─ [Object Array: 96 bytes × 256 = 24,576 bytes]             │
+//! │    ├─ Object[0]: model (64) + color (16) + material (16)   │
+//! │    ├─ Object[1]: model (64) + color (16) + material (16)   │
 //! │    ├─ ...                                                   │
-//! │    └─ Object[255]: model (64) + color (16) = 80            │
+//! │    └─ Object[255]: model (64) + color (16) + material (16) │
 //! └─────────────────────────────────────────────────────────────┘
 //! ```
 //!
@@ -32,7 +36,7 @@
 //! use katla_vulkan::VulkanContext;
 //! use std::rc::Rc;
 //!
-//! // Create manager with ~20KB buffer (supports 256 objects)
+//! // Create manager with ~24KB buffer (supports 256 objects)
 //! let mut storage_manager = StorageUniformManager::new(context.clone())?;
 //!
 //! // Create descriptor set for binding to shaders
@@ -44,6 +48,9 @@
 //! // Update object uniforms (per draw call)
 //! let object_index = 0;
 //! storage_manager.update_object(object_index, &model_matrix, &[1.0, 0.0, 0.0, 1.0]);
+//!
+//! // Or with PBR material params
+//! storage_manager.update_object_with_material(index, &model, &color, 0.5, 0.3, 1.0);
 //!
 //! // Bind in render loop - object index comes from first_instance in draw call
 //! pipeline.bind_with_storage(command_buffer, storage_descriptor.set());
@@ -116,7 +123,7 @@ impl StorageDescriptorSet {
             .range(StorageUniformLayout::FRAME_SIZE as u64);
 
         // Create buffer info for objects array (binding 1)
-        // Offset 128, size 80*256 bytes
+        // Offset 256, size 96*256 bytes
         let objects_buffer_info = vk::DescriptorBufferInfo::default()
             .buffer(storage_buffer.buffer)
             .offset(StorageUniformLayout::OBJECT_ARRAY_OFFSET as u64)
@@ -168,10 +175,10 @@ impl Drop for StorageDescriptorSet {
     }
 }
 
-/// Frame-level uniforms (view and projection matrices).
+/// Frame-level uniforms (view and projection matrices + lighting).
 ///
 /// Shared across all objects in the buffer.
-/// Total: 128 bytes (2 × mat4x4).
+/// Total: 320 bytes (3 × mat4x4 + 4 × vec4).
 #[derive(Debug, Clone, Copy)]
 pub struct FrameUniforms {
     /// View matrix (world-to-camera transform).
@@ -179,18 +186,38 @@ pub struct FrameUniforms {
 
     /// Projection matrix (camera-to-clip transform).
     pub proj: [[f32; 4]; 4],
+
+    /// Inverse view-projection matrix (clip-to-world transform).
+    /// Used for sky rendering to convert screen coords to world rays.
+    pub inv_view_proj: [[f32; 4]; 4],
+
+    /// Camera position in world space (for specular calculations).
+    pub camera_position: [f32; 4], // vec4 for alignment
+
+    /// Light direction (normalized, points TO the light).
+    pub light_direction: [f32; 4], // vec4 for alignment
+
+    /// Light color (RGB).
+    pub light_color: [f32; 4], // vec4 for alignment
+
+    /// Light intensity.
+    pub light_intensity: [f32; 4], // single f32 + padding
 }
 
-/// Per-object uniforms (model matrix and color).
+/// Per-object uniforms (model matrix, color, and PBR material params).
 ///
-/// Total: 80 bytes (1 × mat4x4 + 1 × vec4).
+/// Total: 96 bytes (1 × mat4x4 + 2 × vec4).
 #[derive(Debug, Clone, Copy)]
 pub struct ObjectUniforms {
     /// Model matrix (object-to-world transform).
     pub model: [[f32; 4]; 4],
 
-    /// Color tint for the object.
-    pub color: [f32; 4],
+    /// Base color tint for the object (RGBA).
+    pub base_color: [f32; 4],
+
+    /// PBR material parameters.
+    /// x = metallic, y = roughness, z = ambient occlusion, w = padding
+    pub material_params: [f32; 4],
 }
 
 /// Storage uniform buffer layout constants.
@@ -203,20 +230,20 @@ impl StorageUniformLayout {
     /// Frame uniforms start at offset 0.
     pub const FRAME_OFFSET: usize = 0;
 
-    /// Size of frame uniforms (2 × mat4x4 = 128 bytes).
+    /// Size of frame uniforms (3 × mat4x4 + 4 × vec4 = 256 bytes).
     pub const FRAME_SIZE: usize = std::mem::size_of::<FrameUniforms>();
 
-    /// Object array starts after frame uniforms (offset 128).
-    pub const OBJECT_ARRAY_OFFSET: usize = 128;
+    /// Object array starts after frame uniforms (offset 256).
+    pub const OBJECT_ARRAY_OFFSET: usize = 256;
 
-    /// Size per object (1 × mat4x4 + 1 × vec4 = 80 bytes).
+    /// Size per object (1 × mat4x4 + 2 × vec4 = 96 bytes).
     pub const OBJECT_STRIDE: usize = std::mem::size_of::<ObjectUniforms>();
 
     /// Maximum number of objects supported.
     pub const MAX_OBJECTS: usize = 256;
 
     /// Total buffer size for max objects.
-    /// 128 + (80 * 256) = 128 + 20480 = 20608 bytes (~20 KB)
+    /// 256 + (96 * 256) = 256 + 24576 = 24832 bytes (~24 KB)
     pub const MAX_BUFFER_SIZE: usize =
         Self::OBJECT_ARRAY_OFFSET + (Self::OBJECT_STRIDE * Self::MAX_OBJECTS);
 }
@@ -272,21 +299,66 @@ impl StorageUniformManager {
         Ok(Self { buffer })
     }
 
-    /// Update frame uniforms (view and projection matrices).
+    /// Update frame uniforms (view, projection, and lighting).
     ///
     /// This writes the frame data to the start of the buffer
-    /// (offset 0, 128 bytes total). Should be called once per frame.
+    /// (offset 0, 256 bytes total). Should be called once per frame.
     ///
     /// # Arguments
     /// * `view` - View matrix (world-to-camera)
     /// * `proj` - Projection matrix (camera-to-clip)
+    ///
+    /// # Note
+    /// This computes a default inverse view-projection matrix. For accurate
+    /// sky rendering, use `update_frame_with_lighting()` with the correct
+    /// inverse VP matrix.
     pub fn update_frame(&mut self, view: &[[f32; 4]; 4], proj: &[[f32; 4]; 4]) {
+        // Default inverse VP (identity - won't work correctly for sky)
+        let default_inv_vp = [[0.0f32; 4]; 4];
+
+        // Use default lighting when only view/proj provided
+        self.update_frame_with_lighting(
+            view,
+            proj,
+            &default_inv_vp,
+            &[0.0, 0.0, 0.0, 0.0], // camera_position (will be computed from view inverse)
+            &[-0.3, -1.0, -0.2, 0.0], // light_direction (default)
+            &[1.0, 0.95, 0.9, 0.0],   // light_color (warm white)
+            1.0,                       // light_intensity
+        );
+    }
+
+    /// Update frame uniforms with full lighting parameters.
+    ///
+    /// # Arguments
+    /// * `view` - View matrix (world-to-camera)
+    /// * `proj` - Projection matrix (camera-to-clip)
+    /// * `inv_view_proj` - Inverse view-projection matrix (clip-to-world) for sky rendering
+    /// * `camera_position` - Camera position in world space
+    /// * `light_direction` - Normalized direction TO the light
+    /// * `light_color` - Light color (RGB)
+    /// * `light_intensity` - Light intensity multiplier
+    pub fn update_frame_with_lighting(
+        &mut self,
+        view: &[[f32; 4]; 4],
+        proj: &[[f32; 4]; 4],
+        inv_view_proj: &[[f32; 4]; 4],
+        camera_position: &[f32; 4],
+        light_direction: &[f32; 4],
+        light_color: &[f32; 4],
+        light_intensity: f32,
+    ) {
         unsafe {
             let mapped = self.buffer.map();
             let frame_ptr = mapped.as_ptr() as *mut FrameUniforms;
             *frame_ptr = FrameUniforms {
                 view: *view,
                 proj: *proj,
+                inv_view_proj: *inv_view_proj,
+                camera_position: *camera_position,
+                light_direction: *light_direction,
+                light_color: *light_color,
+                light_intensity: [light_intensity, 0.0, 0.0, 0.0],
             };
         }
     }
@@ -309,6 +381,28 @@ impl StorageUniformManager {
         model: &[[f32; 4]; 4],
         color: &[f32; 4],
     ) {
+        // Use default PBR material params
+        self.update_object_with_material(index, model, color, 0.0, 0.5, 1.0);
+    }
+
+    /// Update object uniforms with PBR material parameters.
+    ///
+    /// # Arguments
+    /// * `index` - Object index (0-255)
+    /// * `model` - Model matrix (object-to-world)
+    /// * `color` - Base color tint (RGBA)
+    /// * `metallic` - Metallic factor (0.0 = dielectric, 1.0 = metal)
+    /// * `roughness` - Roughness factor (0.0 = smooth, 1.0 = rough)
+    /// * `ao` - Ambient occlusion factor (0.0 = full occlusion, 1.0 = none)
+    pub fn update_object_with_material(
+        &mut self,
+        index: usize,
+        model: &[[f32; 4]; 4],
+        color: &[f32; 4],
+        metallic: f32,
+        roughness: f32,
+        ao: f32,
+    ) {
         assert!(index < StorageUniformLayout::MAX_OBJECTS, "Object index out of bounds");
 
         // Calculate offset for this object
@@ -320,7 +414,8 @@ impl StorageUniformManager {
             let object_ptr = (mapped.as_ptr() as usize + offset) as *mut ObjectUniforms;
             *object_ptr = ObjectUniforms {
                 model: *model,
-                color: *color,
+                base_color: *color,
+                material_params: [metallic, roughness, ao, 0.0],
             };
         }
     }
@@ -376,43 +471,44 @@ mod tests {
 
     #[test]
     fn test_frame_uniforms_size() {
-        assert_eq!(std::mem::size_of::<FrameUniforms>(), 128);
+        // 3 mat4x4 (192 bytes) + 4 vec4 (64 bytes) = 256 bytes
+        assert_eq!(std::mem::size_of::<FrameUniforms>(), 256);
     }
 
     #[test]
     fn test_object_uniforms_size() {
-        assert_eq!(std::mem::size_of::<ObjectUniforms>(), 80);
+        assert_eq!(std::mem::size_of::<ObjectUniforms>(), 96);
     }
 
     #[test]
     fn test_layout_constants() {
         assert_eq!(StorageUniformLayout::FRAME_OFFSET, 0);
-        assert_eq!(StorageUniformLayout::FRAME_SIZE, 128);
-        assert_eq!(StorageUniformLayout::OBJECT_ARRAY_OFFSET, 128);
-        assert_eq!(StorageUniformLayout::OBJECT_STRIDE, 80);
+        assert_eq!(StorageUniformLayout::FRAME_SIZE, 256);
+        assert_eq!(StorageUniformLayout::OBJECT_ARRAY_OFFSET, 256);
+        assert_eq!(StorageUniformLayout::OBJECT_STRIDE, 96);
         assert_eq!(StorageUniformLayout::MAX_OBJECTS, 256);
-        assert_eq!(StorageUniformLayout::MAX_BUFFER_SIZE, 20608);
+        assert_eq!(StorageUniformLayout::MAX_BUFFER_SIZE, 24832);
     }
 
     #[test]
     fn test_aligned_object_slots() {
-        // 80 bytes / 16 = 5 slots
-        assert_eq!(StorageUniformLayout::aligned_slots(), 5);
+        // 96 bytes / 16 = 6 slots
+        assert_eq!(StorageUniformLayout::aligned_slots(), 6);
     }
 
     #[test]
     fn test_object_offset_calculation() {
-        // Object 0: offset 128
-        assert_eq!(StorageUniformLayout::object_offset(0), 128);
-        // Object 1: offset 128 + 80 = 208
-        assert_eq!(StorageUniformLayout::object_offset(1), 208);
-        // Object 255: offset 128 + (80 * 255) = 128 + 20400 = 20528
-        assert_eq!(StorageUniformLayout::object_offset(255), 20528);
+        // Object 0: offset 256
+        assert_eq!(StorageUniformLayout::object_offset(0), 256);
+        // Object 1: offset 256 + 96 = 352
+        assert_eq!(StorageUniformLayout::object_offset(1), 352);
+        // Object 255: offset 256 + (96 * 255) = 256 + 24480 = 24736
+        assert_eq!(StorageUniformLayout::object_offset(255), 24736);
     }
 
     #[test]
     fn test_max_buffer_size() {
-        // Frame (128) + objects (80 * 256) = 20608
-        assert_eq!(StorageUniformLayout::total_size(), 20608);
+        // Frame (256) + objects (96 * 256) = 24832
+        assert_eq!(StorageUniformLayout::total_size(), 24832);
     }
 }

@@ -51,6 +51,9 @@ pub struct VulkanRenderer {
     pub storage_manager: Option<StorageUniformManager>,
     /// Storage descriptor set for binding storage buffers to shaders (set 0).
     pub storage_descriptor_set: Option<StorageDescriptorSet>,
+    /// Sky pipeline for procedural sky rendering.
+    /// Created lazily when setup_render_graph_with_sky is called.
+    pub sky_pipeline: Option<Rc<RefCell<MaterialPipeline>>>,
 }
 
 const FRAMES_IN_FLIGHT: usize = 2;
@@ -90,6 +93,7 @@ impl VulkanRenderer {
             render_graph: None,
             storage_manager: None,
             storage_descriptor_set: None,
+            sky_pipeline: None,
         }
     }
 
@@ -577,14 +581,63 @@ impl VulkanRenderer {
         let storage_manager_ptr = &mut self.storage_manager as *mut Option<StorageUniformManager>;
         let storage_descriptor_ptr = &mut self.storage_descriptor_set as *mut Option<StorageDescriptorSet>;
 
+        // Store sky pipeline pointer
+        let sky_pipeline_ptr = &mut self.sky_pipeline as *mut Option<Rc<RefCell<MaterialPipeline>>>;
+
         let swapchain_res = swapchain_resource;
         let depth_res = depth_resource;
 
+        // === SKY PASS ===
+        // Renders first, clears color and depth, writes sky to color only
+        graph_builder.add_pass("sky_pass", move |pass| {
+            pass.write(Attachment::Color(swapchain_res))
+                .write(Attachment::DepthStencil(depth_res))
+                .clear_color(swapchain_res, [0.4, 0.6, 0.9, 1.0]) // Sky blue fallback
+                .clear_depth_stencil(depth_res, 1.0, 0)
+                .execute("sky_pass", move |ctx| {
+                    // SAFETY: The pointers are valid for the entire lifetime of the renderer
+                    let sky_pipeline_opt = unsafe { &mut *sky_pipeline_ptr };
+                    let storage_descriptor_opt = unsafe { &mut *storage_descriptor_ptr };
+
+                    if let (Some(sky_pipeline), Some(storage_descriptor)) =
+                        (sky_pipeline_opt.as_ref(), storage_descriptor_opt.as_ref())
+                    {
+                        let cmd_buf = ctx.command_buffer.vk_command_buffer();
+                        let pipeline_ref = sky_pipeline.borrow();
+
+                        // Bind sky pipeline
+                        unsafe {
+                            pipeline_ref.context().device.cmd_bind_pipeline(
+                                cmd_buf,
+                                vk::PipelineBindPoint::GRAPHICS,
+                                pipeline_ref.vk_pipeline().handle,
+                            );
+
+                            // Bind storage descriptor set (set 0 = frame_data + objects)
+                            pipeline_ref.context().device.cmd_bind_descriptor_sets(
+                                cmd_buf,
+                                vk::PipelineBindPoint::GRAPHICS,
+                                pipeline_ref.vk_layout(),
+                                0,
+                                &[storage_descriptor.set()],
+                                &[],
+                            );
+                        }
+
+                        drop(pipeline_ref);
+
+                        // Draw fullscreen triangle (3 vertices, no vertex buffer)
+                        ctx.command_buffer.draw_array(3, 1, 0, 0);
+                    }
+                });
+        });
+
+        // === GEOMETRY PASS ===
+        // Renders after sky, uses load instead of clear (sky already filled background)
         graph_builder.add_pass("geometry_pass", move |pass| {
             pass.write(Attachment::Color(swapchain_res))
                 .write(Attachment::DepthStencil(depth_res))
-                .clear_color(swapchain_res, [0.3, 0.5, 0.3, 1.0])
-                .clear_depth_stencil(depth_res, 1.0, 0)
+                // NO clear - sky pass already cleared and filled the background
                 .execute("geometry_pass", move |ctx| {
                     // Get the draw list for this frame
                     let draw_list_opt = draw_list_cell_for_pass.borrow_mut().take();
@@ -595,18 +648,8 @@ impl VulkanRenderer {
                         let storage_manager = unsafe { &mut *storage_manager_ptr };
                         let storage_descriptor = unsafe { &mut *storage_descriptor_ptr };
 
-                        // Update storage frame uniforms from first draw call's view/proj
-                        if let Some(first_draw) = draw_list.draws.first() {
-                            if let Some(ref mut manager) = storage_manager.as_mut() {
-                                let view: [[f32; 4]; 4] = unsafe {
-                                    std::mem::transmute_copy(&first_draw.params.view_matrix)
-                                };
-                                let proj: [[f32; 4]; 4] = unsafe {
-                                    std::mem::transmute_copy(&first_draw.params.proj_matrix)
-                                };
-                                manager.update_frame(&view, &proj);
-                            }
-                        }
+                        // Frame uniforms are now updated in render_frame() before the graph executes
+                        // This ensures sky pass has valid data
 
                         // Track object index for storage mode
                         let mut next_object_index: u32 = 0;
@@ -653,8 +696,15 @@ impl VulkanRenderer {
                                 };
                                 let color = draw.params.color.unwrap_or([1.0, 1.0, 1.0, 1.0]);
 
-                                // Update at the object's index (not always 0)
-                                manager.update_object(object_index as usize, &model, &color);
+                                // Update at the object's index with PBR material params
+                                manager.update_object_with_material(
+                                    object_index as usize,
+                                    &model,
+                                    &color,
+                                    draw.params.metallic,
+                                    draw.params.roughness,
+                                    draw.params.ao,
+                                );
                             }
 
                             // Create texture descriptor if not already done
@@ -801,6 +851,14 @@ impl VulkanRenderer {
         }
     }
 
+    /// Set the sky pipeline for procedural sky rendering.
+    ///
+    /// This must be called before setup_render_graph() if sky rendering is desired.
+    /// The sky pipeline renders a fullscreen triangle with a procedural sky shader.
+    pub fn set_sky_pipeline(&mut self, pipeline: Rc<RefCell<MaterialPipeline>>) {
+        self.sky_pipeline = Some(pipeline);
+    }
+
     pub fn render_frame(&mut self, draw_list: DrawList) -> Result<(), RenderGraphError> {
         // Acquire swapchain image
         if self.current_framedata.is_none() {
@@ -826,6 +884,38 @@ impl VulkanRenderer {
             .render_graph
             .as_mut()
             .ok_or(RenderGraphError::CompilationError("No render graph".into()))?;
+
+        // === UPDATE FRAME UNIFORMS BEFORE RENDER GRAPH EXECUTES ===
+        // This must happen before any passes run (sky pass needs inv_view_proj)
+        if let Some(first_draw) = draw_list.draws.first() {
+            if let Some(ref mut manager) = self.storage_manager {
+                let view: [[f32; 4]; 4] = unsafe {
+                    std::mem::transmute_copy(&first_draw.params.view_matrix)
+                };
+                let proj: [[f32; 4]; 4] = unsafe {
+                    std::mem::transmute_copy(&first_draw.params.proj_matrix)
+                };
+                let inv_view_proj: [[f32; 4]; 4] = unsafe {
+                    std::mem::transmute_copy(&first_draw.params.inv_view_proj_matrix)
+                };
+
+                // Extract camera position from inverse view matrix
+                let cam_x = -(view[0][0]*view[3][0] + view[0][1]*view[3][1] + view[0][2]*view[3][2]);
+                let cam_y = -(view[1][0]*view[3][0] + view[1][1]*view[3][1] + view[1][2]*view[3][2]);
+                let cam_z = -(view[2][0]*view[3][0] + view[2][1]*view[3][1] + view[2][2]*view[3][2]);
+                let camera_position = [cam_x, cam_y, cam_z, 0.0];
+
+                manager.update_frame_with_lighting(
+                    &view,
+                    &proj,
+                    &inv_view_proj,
+                    &camera_position,
+                    &[-0.3, -1.0, -0.2, 0.0],  // light_direction (TO light)
+                    &[1.0, 0.95, 0.9, 0.0],    // light_color (warm white)
+                    1.5,                        // light_intensity
+                );
+            }
+        }
 
         // Set the draw list for this frame
         graph.set_draw_list(draw_list);

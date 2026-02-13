@@ -15,11 +15,13 @@ pub struct MaterialBuilder {
     texture: Option<Rc<Texture>>,
     depth_test: bool,
     depth_write: bool,
+    depth_compare_op: vk::CompareOp,
     cull_back_faces: bool,
     alpha_blending: bool,
     has_color: bool,
     color_format: Option<ImageFormat>,
     depth_format: Option<ImageFormat>,
+    push_constant_ranges: Vec<vk::PushConstantRange>,
 }
 
 impl MaterialBuilder {
@@ -32,11 +34,13 @@ impl MaterialBuilder {
             texture: None,
             depth_test: true,
             depth_write: true,
+            depth_compare_op: vk::CompareOp::LESS,
             cull_back_faces: true,
             alpha_blending: false,
             has_color: false,
             color_format: None,
             depth_format: None,
+            push_constant_ranges: Vec::new(),
         }
     }
 
@@ -201,6 +205,25 @@ impl MaterialBuilder {
         self
     }
 
+    pub fn with_depth_compare_op(mut self, op: vk::CompareOp) -> Self {
+        self.depth_compare_op = op;
+        self
+    }
+
+    /// Configure for sky/background rendering.
+    ///
+    /// Sets up the pipeline for sky rendering with:
+    /// - Depth test enabled but depth write disabled
+    /// - Depth compare = ALWAYS (sky always behind geometry)
+    /// - No backface culling
+    pub fn with_sky_rendering(mut self) -> Self {
+        self.depth_test = true;
+        self.depth_write = false;
+        self.depth_compare_op = vk::CompareOp::ALWAYS;
+        self.cull_back_faces = false;
+        self
+    }
+
     pub fn with_backface_culling(mut self, enable: bool) -> Self {
         self.cull_back_faces = enable;
         self
@@ -229,6 +252,30 @@ impl MaterialBuilder {
     /// This is used instead of a render pass for pipeline creation.
     pub fn with_depth_format(mut self, format: ImageFormat) -> Self {
         self.depth_format = Some(format);
+        self
+    }
+
+    /// Add a push constant range to the pipeline layout.
+    ///
+    /// Push constants are fast uniform updates that don't require descriptor sets.
+    /// Commonly used for small frequently-changing data like transform matrices.
+    ///
+    /// # Arguments
+    /// * `stages` - Shader stages that can access this push constant range
+    /// * `offset` - Offset in bytes within the push constant block
+    /// * `size` - Size in bytes of the push constant range
+    pub fn with_push_constant(
+        mut self,
+        stages: vk::ShaderStageFlags,
+        offset: u32,
+        size: u32,
+    ) -> Self {
+        self.push_constant_ranges.push(
+            vk::PushConstantRange::default()
+                .stage_flags(stages)
+                .offset(offset)
+                .size(size),
+        );
         self
     }
 
@@ -266,7 +313,7 @@ impl MaterialBuilder {
                 vec![vertex_binding.get_binding_desc(0)],
                 vertex_binding.get_attribute_desc(0),
             )
-            .with_depth_test(self.depth_test, self.depth_write, vk::CompareOp::LESS)
+            .with_depth_test(self.depth_test, self.depth_write, self.depth_compare_op)
             .with_descriptor_layouts(vec![existing_desc_layout]);
 
         if self.cull_back_faces {
@@ -381,7 +428,7 @@ impl MaterialBuilder {
                 vec![vertex_binding.get_binding_desc(0)],
                 vertex_binding.get_attribute_desc(0),
             )
-            .with_depth_test(self.depth_test, self.depth_write, vk::CompareOp::LESS)
+            .with_depth_test(self.depth_test, self.depth_write, self.depth_compare_op)
             .with_descriptor_layouts(vec![uniform_set_layout, texture_set_layout]);
         // Note: NO push constant range - we use instance_index builtin instead
 
@@ -482,7 +529,7 @@ impl MaterialBuilder {
                 vec![vertex_binding.get_binding_desc(0)],
                 vertex_binding.get_attribute_desc(0),
             )
-            .with_depth_test(self.depth_test, self.depth_write, vk::CompareOp::LESS)
+            .with_depth_test(self.depth_test, self.depth_write, self.depth_compare_op)
             .with_descriptor_layouts(vec![desc_layout]);
 
         // Set rendering formats for dynamic rendering (Vulkan 1.3)

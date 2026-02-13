@@ -27,8 +27,20 @@ pub struct MaterialParams {
     pub view_matrix: [f32; 16],
     /// Projection matrix (camera to clip space) - column-major 4x4.
     pub proj_matrix: [f32; 16],
+    /// Inverse view-projection matrix (clip to world space) - for sky rendering.
+    /// Should be computed as: inverse(proj * view)
+    pub inv_view_proj_matrix: [f32; 16],
     /// Optional material color (RGBA, 0.0-1.0 range) for blending with texture.
     pub color: Option<[f32; 4]>,
+    /// PBR material parameters: metallic (0.0-1.0).
+    /// 0.0 = dielectric (non-metal), 1.0 = full metal.
+    pub metallic: f32,
+    /// PBR material parameters: roughness (0.0-1.0).
+    /// 0.0 = perfectly smooth (mirror-like), 1.0 = completely rough (diffuse).
+    pub roughness: f32,
+    /// Ambient occlusion factor (0.0-1.0).
+    /// 0.0 = fully occluded, 1.0 = no occlusion.
+    pub ao: f32,
 }
 
 impl Default for MaterialParams {
@@ -37,7 +49,11 @@ impl Default for MaterialParams {
             model_matrix: [0.0; 16],
             view_matrix: [0.0; 16],
             proj_matrix: [0.0; 16],
+            inv_view_proj_matrix: [0.0; 16],
             color: None,
+            metallic: 0.0,
+            roughness: 0.5,
+            ao: 1.0,
         }
     }
 }
@@ -66,6 +82,13 @@ impl MaterialParams {
         self
     }
 
+    /// Set the inverse view-projection matrix from a 16-element array.
+    /// Should be computed as: inverse(proj * view)
+    pub fn with_inv_view_proj(mut self, inv_vp: [f32; 16]) -> Self {
+        self.inv_view_proj_matrix = inv_vp;
+        self
+    }
+
     /// Set all three matrices at once from 16-element arrays.
     pub fn with_matrices(mut self, model: [f32; 16], view: [f32; 16], proj: [f32; 16]) -> Self {
         self.model_matrix = model;
@@ -74,9 +97,51 @@ impl MaterialParams {
         self
     }
 
+    /// Set all matrices including inverse view-projection.
+    /// The inverse VP should be computed as: inverse(proj * view)
+    pub fn with_all_matrices(
+        mut self,
+        model: [f32; 16],
+        view: [f32; 16],
+        proj: [f32; 16],
+        inv_view_proj: [f32; 16],
+    ) -> Self {
+        self.model_matrix = model;
+        self.view_matrix = view;
+        self.proj_matrix = proj;
+        self.inv_view_proj_matrix = inv_view_proj;
+        self
+    }
+
     /// Set the material color (RGBA, 0.0-1.0 range).
     pub fn with_color(mut self, color: [f32; 4]) -> Self {
         self.color = Some(color);
+        self
+    }
+
+    /// Set PBR metallic factor (0.0 = dielectric, 1.0 = metal).
+    pub fn with_metallic(mut self, metallic: f32) -> Self {
+        self.metallic = metallic;
+        self
+    }
+
+    /// Set PBR roughness factor (0.0 = smooth, 1.0 = rough).
+    pub fn with_roughness(mut self, roughness: f32) -> Self {
+        self.roughness = roughness;
+        self
+    }
+
+    /// Set ambient occlusion factor (0.0 = occluded, 1.0 = no occlusion).
+    pub fn with_ao(mut self, ao: f32) -> Self {
+        self.ao = ao;
+        self
+    }
+
+    /// Set all PBR material parameters at once.
+    pub fn with_pbr(mut self, metallic: f32, roughness: f32, ao: f32) -> Self {
+        self.metallic = metallic;
+        self.roughness = roughness;
+        self.ao = ao;
         self
     }
 
@@ -176,6 +241,22 @@ impl DrawCall {
         self
     }
 
+    /// Set all matrices including inverse view-projection.
+    /// The inverse VP should be computed as: inverse(proj * view)
+    pub fn with_all_matrices(
+        mut self,
+        model: [f32; 16],
+        view: [f32; 16],
+        proj: [f32; 16],
+        inv_view_proj: [f32; 16],
+    ) -> Self {
+        self.params.model_matrix = model;
+        self.params.view_matrix = view;
+        self.params.proj_matrix = proj;
+        self.params.inv_view_proj_matrix = inv_view_proj;
+        self
+    }
+
     /// Set a sorting key for this draw call.
     ///
     /// Lower values are drawn first (useful for transparent objects).
@@ -202,6 +283,32 @@ impl DrawCall {
     /// by the shader to access per-object data from the object array.
     pub fn with_object_index(mut self, index: u32) -> Self {
         self.object_index = Some(index);
+        self
+    }
+
+    /// Set PBR metallic factor (0.0 = dielectric, 1.0 = metal).
+    pub fn with_metallic(mut self, metallic: f32) -> Self {
+        self.params.metallic = metallic;
+        self
+    }
+
+    /// Set PBR roughness factor (0.0 = smooth, 1.0 = rough).
+    pub fn with_roughness(mut self, roughness: f32) -> Self {
+        self.params.roughness = roughness;
+        self
+    }
+
+    /// Set ambient occlusion factor (0.0 = occluded, 1.0 = no occlusion).
+    pub fn with_ao(mut self, ao: f32) -> Self {
+        self.params.ao = ao;
+        self
+    }
+
+    /// Set all PBR material parameters at once.
+    pub fn with_pbr(mut self, metallic: f32, roughness: f32, ao: f32) -> Self {
+        self.params.metallic = metallic;
+        self.params.roughness = roughness;
+        self.params.ao = ao;
         self
     }
 }

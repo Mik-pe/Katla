@@ -24,6 +24,7 @@ use crate::{
     input::{InputBinding, InputMapper, KeyCombo, MouseCombo},
     rendering::{
         create_checkerboard_material, create_checkerboard_texture, MaterialManager, MeshBuilder,
+        SkyMaterial,
     },
     util::{FileCache, GLTFModel, Timer},
 };
@@ -501,6 +502,10 @@ impl Application {
             None => return,
         };
 
+        // Create and set up sky material for procedural sky background
+        let sky_material = SkyMaterial::new(renderer.context.clone());
+        renderer.set_sky_pipeline(sky_material.pipeline());
+
         // Setup render graph with multiple framebuffers
         renderer.setup_render_graph();
     }
@@ -520,6 +525,14 @@ impl Application {
             .clone()
             .inverse();
         let proj = self.camera.borrow().get_proj_mat(&self.world).clone();
+
+        // Compute inverse view-projection matrix for camera-relative sky
+        // VP = proj * view, then inv_VP = VP.inverse()
+        let view_proj = &proj * &view;
+        let inv_view_proj = view_proj.inverse();
+
+        // Convert inverse VP to array format for GPU
+        let inv_view_proj_array: [f32; 16] = unsafe { std::mem::transmute_copy(&inv_view_proj) };
 
         // Check for material hot reload
         if let Ok(reloaded) = renderer
@@ -557,10 +570,11 @@ impl Application {
             if let (Some(mesh_handle), Some(material_handle)) =
                 (drawable.mesh_handle, drawable.material_handle)
             {
-                let mut draw_call = DrawCall::new(mesh_handle, material_handle).with_matrices(
+                let mut draw_call = DrawCall::new(mesh_handle, material_handle).with_all_matrices(
                     model_array,
                     view_array,
                     proj_array,
+                    inv_view_proj_array,
                 );
 
                 // Add color override if specified in DrawableComponent
