@@ -370,16 +370,6 @@ impl StorageUniformManager {
     }
 }
 
-// Backward compatibility aliases
-#[deprecated(since = "0.1.0", note = "Use StorageDescriptorSet instead")]
-pub type BdaDescriptorSet = StorageDescriptorSet;
-
-#[deprecated(since = "0.1.0", note = "Use StorageUniformLayout instead")]
-pub type BdaUniformLayout = StorageUniformLayout;
-
-#[deprecated(since = "0.1.0", note = "Use StorageUniformManager instead")]
-pub type BdaUniformManager = StorageUniformManager;
-
 #[cfg(test)]
 mod tests {
     use super::*;

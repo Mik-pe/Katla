@@ -207,37 +207,6 @@ impl VulkanRenderer {
         Ok(())
     }
 
-    // Backward compatibility methods
-    #[deprecated(since = "0.1.0", note = "Use init_storage() instead")]
-    pub fn init_bda(&mut self, layout: vk::DescriptorSetLayout) -> Result<(), vk::Result> {
-        self.init_storage(layout)
-    }
-
-    #[deprecated(since = "0.1.0", note = "Use init_storage_standard() instead")]
-    pub fn init_bda_standard(&mut self) -> Result<(), vk::Result> {
-        self.init_storage_standard()
-    }
-
-    #[deprecated(since = "0.1.0", note = "Use update_storage_frame() instead")]
-    pub fn update_bda_frame(&mut self, view: &[[f32; 4]; 4], proj: &[[f32; 4]; 4]) {
-        self.update_storage_frame(view, proj);
-    }
-
-    #[deprecated(since = "0.1.0", note = "Use update_storage_object() instead")]
-    pub fn update_bda_object(&mut self, index: usize, model: &[[f32; 4]; 4], color: &[f32; 4]) {
-        self.update_storage_object(index, model, color);
-    }
-
-    #[deprecated(since = "0.1.0", note = "Use storage_descriptor() instead")]
-    pub fn bda_descriptor(&self) -> Option<vk::DescriptorSet> {
-        self.storage_descriptor()
-    }
-
-    #[deprecated(since = "0.1.0", note = "Use is_storage_initialized() instead")]
-    pub fn is_bda_initialized(&self) -> bool {
-        self.is_storage_initialized()
-    }
-
     pub fn destroy(&mut self) {
         // Destroy all registered assets first (materials, meshes)
         self.asset_registry.destroy();
@@ -626,21 +595,16 @@ impl VulkanRenderer {
                         let storage_manager = unsafe { &mut *storage_manager_ptr };
                         let storage_descriptor = unsafe { &mut *storage_descriptor_ptr };
 
-                        // Check if storage buffer mode is enabled
-                        let use_storage = storage_manager.is_some() && storage_descriptor.is_some();
-
                         // Update storage frame uniforms from first draw call's view/proj
-                        if use_storage {
-                            if let Some(first_draw) = draw_list.draws.first() {
-                                if let Some(ref mut manager) = storage_manager.as_mut() {
-                                    let view: [[f32; 4]; 4] = unsafe {
-                                        std::mem::transmute_copy(&first_draw.params.view_matrix)
-                                    };
-                                    let proj: [[f32; 4]; 4] = unsafe {
-                                        std::mem::transmute_copy(&first_draw.params.proj_matrix)
-                                    };
-                                    manager.update_frame(&view, &proj);
-                                }
+                        if let Some(first_draw) = draw_list.draws.first() {
+                            if let Some(ref mut manager) = storage_manager.as_mut() {
+                                let view: [[f32; 4]; 4] = unsafe {
+                                    std::mem::transmute_copy(&first_draw.params.view_matrix)
+                                };
+                                let proj: [[f32; 4]; 4] = unsafe {
+                                    std::mem::transmute_copy(&first_draw.params.proj_matrix)
+                                };
+                                manager.update_frame(&view, &proj);
                             }
                         }
 
@@ -680,128 +644,75 @@ impl VulkanRenderer {
 
                             let cmd_buf = ctx.command_buffer.vk_command_buffer();
 
-                            if use_storage {
-                                // === Storage Buffer Mode: Instance Index ===
-                                // Update storage buffer at the object's index
-                                // The shader uses @builtin(instance_index) to access objects[index]
-                                if let Some(ref mut manager) = storage_manager.as_mut() {
-                                    let model: [[f32; 4]; 4] = unsafe {
-                                        std::mem::transmute_copy(&draw.params.model_matrix)
-                                    };
-                                    let color = draw.params.color.unwrap_or([1.0, 1.0, 1.0, 1.0]);
+                            // === Storage Buffer Mode: Instance Index ===
+                            // Update storage buffer at the object's index
+                            // The shader uses @builtin(instance_index) to access objects[index]
+                            if let Some(ref mut manager) = storage_manager.as_mut() {
+                                let model: [[f32; 4]; 4] = unsafe {
+                                    std::mem::transmute_copy(&draw.params.model_matrix)
+                                };
+                                let color = draw.params.color.unwrap_or([1.0, 1.0, 1.0, 1.0]);
 
-                                    // Update at the object's index (not always 0)
-                                    manager.update_object(object_index as usize, &model, &color);
+                                // Update at the object's index (not always 0)
+                                manager.update_object(object_index as usize, &model, &color);
+                            }
+
+                            // Create texture descriptor if not already done
+                            // Get image_info from material's uniform (storage mode uses material's uniform for texture info)
+                            if material.pipeline.borrow().texture_descriptor.is_none() {
+                                let image_info = material
+                                    .uniform
+                                    .as_ref()
+                                    .and_then(|u| u.next_descriptor().image_info.clone());
+
+                                if let Some(info) = image_info {
+                                    let _ = material
+                                        .pipeline
+                                        .borrow_mut()
+                                        .create_texture_descriptor_with_info(&info);
                                 }
+                            }
 
-                                // Create texture descriptor if not already done
-                                // For storage mode, we need to get image_info from the material's uniform
-                                // since the pipeline's uniform doesn't have it (storage mode uses shared uniform)
-                                if material.pipeline.borrow().texture_descriptor.is_none() {
-                                    // Get image_info from material's uniform (storage mode)
-                                    // or from pipeline's uniform (legacy mode)
-                                    let image_info = material
-                                        .uniform
-                                        .as_ref()
-                                        .and_then(|u| u.next_descriptor().image_info.clone())
-                                        .or_else(|| {
-                                            material
-                                                .pipeline
-                                                .borrow()
-                                                .uniform
-                                                .next_descriptor()
-                                                .image_info
-                                                .clone()
-                                        });
+                            let pipeline_ref = material.pipeline.borrow();
 
-                                    if let Some(info) = image_info {
-                                        let _ = material
-                                            .pipeline
-                                            .borrow_mut()
-                                            .create_texture_descriptor_with_info(&info);
-                                    }
-                                }
+                            // Bind pipeline
+                            unsafe {
+                                pipeline_ref.context().device.cmd_bind_pipeline(
+                                    cmd_buf,
+                                    vk::PipelineBindPoint::GRAPHICS,
+                                    pipeline_ref.vk_pipeline().handle,
+                                );
+                            }
 
-                                let pipeline_ref = material.pipeline.borrow();
-
-                                // Bind pipeline
+                            // Bind set 0: Storage uniforms (frame_data + objects)
+                            if let Some(descriptor) = storage_descriptor.as_ref() {
                                 unsafe {
-                                    pipeline_ref.context().device.cmd_bind_pipeline(
-                                        cmd_buf,
-                                        vk::PipelineBindPoint::GRAPHICS,
-                                        pipeline_ref.vk_pipeline().handle,
-                                    );
-                                }
-
-                                // Bind set 0: Storage uniforms (frame_data + objects)
-                                if let Some(descriptor) = storage_descriptor.as_ref() {
-                                    unsafe {
-                                        pipeline_ref.context().device.cmd_bind_descriptor_sets(
-                                            cmd_buf,
-                                            vk::PipelineBindPoint::GRAPHICS,
-                                            pipeline_ref.vk_layout(),
-                                            0,
-                                            &[descriptor.set()],
-                                            &[],
-                                        );
-                                    }
-                                }
-
-                                // Bind set 1: Textures
-                                if let Some(ref tex_descriptor) = pipeline_ref.texture_descriptor {
-                                    unsafe {
-                                        pipeline_ref.context().device.cmd_bind_descriptor_sets(
-                                            cmd_buf,
-                                            vk::PipelineBindPoint::GRAPHICS,
-                                            pipeline_ref.vk_layout(),
-                                            1,
-                                            &[tex_descriptor.set()],
-                                            &[],
-                                        );
-                                    }
-                                }
-
-                                drop(pipeline_ref);
-                            } else {
-                                // === Legacy Mode: Descriptor-based uniforms ===
-                                let params_bytes = draw.params.as_bytes_with_color();
-
-                                if let Some(ref mut uniform) = material.uniform {
-                                    uniform.update_buffer(
-                                        material.pipeline.borrow().context(),
-                                        &params_bytes,
-                                    );
-                                } else {
-                                    material.pipeline.borrow_mut().update_buffer(&params_bytes);
-                                }
-
-                                let pipeline_ref = material.pipeline.borrow();
-
-                                unsafe {
-                                    pipeline_ref.context().device.cmd_bind_pipeline(
-                                        cmd_buf,
-                                        vk::PipelineBindPoint::GRAPHICS,
-                                        pipeline_ref.vk_pipeline().handle,
-                                    );
-
-                                    let desc_set = if let Some(ref uniform) = material.uniform {
-                                        uniform.next_descriptor().desc_set
-                                    } else {
-                                        pipeline_ref.uniform.next_descriptor().desc_set
-                                    };
-
                                     pipeline_ref.context().device.cmd_bind_descriptor_sets(
                                         cmd_buf,
                                         vk::PipelineBindPoint::GRAPHICS,
                                         pipeline_ref.vk_layout(),
                                         0,
-                                        &[desc_set],
+                                        &[descriptor.set()],
                                         &[],
                                     );
                                 }
-
-                                drop(pipeline_ref);
                             }
+
+                            // Bind set 1: Textures
+                            if let Some(ref tex_descriptor) = pipeline_ref.texture_descriptor {
+                                unsafe {
+                                    pipeline_ref.context().device.cmd_bind_descriptor_sets(
+                                        cmd_buf,
+                                        vk::PipelineBindPoint::GRAPHICS,
+                                        pipeline_ref.vk_layout(),
+                                        1,
+                                        &[tex_descriptor.set()],
+                                        &[],
+                                    );
+                                }
+                            }
+
+                            drop(pipeline_ref);
 
                             // Bind vertex and index buffers and draw
                             // Use object_index as first_instance for storage buffer mode
@@ -816,16 +727,12 @@ impl VulkanRenderer {
                                         &[vertex_buffer],
                                         &[0],
                                     );
-                                    // For storage buffer mode: first_instance = object_index
-                                    // For legacy mode: first_instance = 0
-                                    let first_instance = if use_storage { object_index } else { 0 };
-                                    ctx.command_buffer.draw_indexed(index_count, 1, 0, 0, first_instance);
+                                    ctx.command_buffer.draw_indexed(index_count, 1, 0, 0, object_index);
                                 }
                             } else if let Some((vertex_buffer, vertex_count)) = vertex_data {
                                 ctx.command_buffer
                                     .bind_vertex_buffers(0, &[vertex_buffer], &[0]);
-                                let first_instance = if use_storage { object_index } else { 0 };
-                                ctx.command_buffer.draw_array(vertex_count, 1, 0, first_instance);
+                                ctx.command_buffer.draw_array(vertex_count, 1, 0, object_index);
                             }
                         }
                     }

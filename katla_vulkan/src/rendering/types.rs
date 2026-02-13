@@ -137,7 +137,7 @@ pub struct DrawCall {
     pub params: MaterialParams,
     /// Optional sorting key (for transparent objects, etc.).
     pub sort_key: Option<u64>,
-    /// Object index for BDA storage buffer access.
+    /// Object index for storage buffer access.
     /// When set, the shader uses this index to access per-object uniforms.
     /// When None, uses default uniform binding (legacy mode).
     pub object_index: Option<u32>,
@@ -196,7 +196,7 @@ impl DrawCall {
         self
     }
 
-    /// Set the object index for BDA storage buffer access.
+    /// Set the object index for storage buffer access.
     ///
     /// When using storage buffer-based uniforms, this index is used
     /// by the shader to access per-object data from the object array.

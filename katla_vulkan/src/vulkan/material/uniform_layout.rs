@@ -97,9 +97,9 @@ impl Default for UniformLayout {
 
 /// Predefined uniform layouts for common material types.
 impl UniformLayout {
-    /// Empty layout for BDA mode (no uniform buffer needed).
+    /// Empty layout for storage buffer mode (no uniform buffer needed).
     ///
-    /// Used when uniform data comes from storage buffers via BdaUniformManager
+    /// Used when uniform data comes from storage buffers via StorageUniformManager
     /// instead of per-material uniform buffers.
     pub fn empty() -> Self {
         Self::new()

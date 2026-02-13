@@ -159,16 +159,6 @@ impl MaterialRegistry {
         self.load_directory_internal(dir, context, true)
     }
 
-    /// Alias for backward compatibility
-    #[deprecated(since = "0.1.0", note = "Use load_directory_storage() instead")]
-    pub fn load_directory_bda(
-        &mut self,
-        dir: &Path,
-        context: Rc<VulkanContext>,
-    ) -> Result<usize, MaterialError> {
-        self.load_directory_storage(dir, context)
-    }
-
     fn load_directory_internal(
         &mut self,
         dir: &Path,

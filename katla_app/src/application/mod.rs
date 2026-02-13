@@ -313,18 +313,6 @@ impl ApplicationHandler for Application {
 
             self.renderer = Some(renderer);
 
-            // TODO: BDA initialization disabled until descriptor infrastructure is updated
-            // The shaders have been updated but the UniformHandle/UniformDescriptor
-            // system still uses UNIFORM_BUFFER pool types.
-            // // Initialize BDA (Buffer Device Address) uniform system
-            // // This enables storage buffer-based uniforms for better performance
-            // if let Some(ref mut renderer) = self.renderer {
-            //     if let Err(e) = renderer.init_bda_standard() {
-            //         eprintln!("Warning: Failed to initialize BDA system: {:?}", e);
-            //         println!("Falling back to legacy descriptor-based uniforms");
-            //     }
-            // }
-
             // Setup render graph after renderer initialization
             self.setup_render_graph();
         }

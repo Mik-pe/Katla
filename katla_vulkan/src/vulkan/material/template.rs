@@ -61,7 +61,7 @@ pub struct MaterialTemplate {
     /// The descriptor set layout for set 0 (uniforms).
     /// This will be preserved across hot reloads.
     desc_layout: vk::DescriptorSetLayout,
-    /// The descriptor set layout for set 1 (textures) in BDA mode.
+    /// The descriptor set layout for set 1 (textures) in storage buffer mode.
     /// None for legacy mode (textures are in set 0).
     texture_set_layout: Option<vk::DescriptorSetLayout>,
     reflection: ShaderReflection,
@@ -82,7 +82,7 @@ impl MaterialTemplate {
             .desc_layout
             .expect("Pipeline created without descriptor set layout");
 
-        // Extract texture set layout for BDA mode
+        // Extract texture set layout for storage buffer mode
         let texture_set_layout = pipeline.texture_set_layout;
 
         let default_parameters = MaterialParameters::new(descriptor.clone(), reflection.clone());
@@ -131,15 +131,15 @@ impl MaterialTemplate {
         self.desc_layout
     }
 
-    /// Get the texture set layout for BDA mode.
+    /// Get the texture set layout for storage buffer mode.
     ///
     /// Returns None for legacy mode where textures are in set 0.
     pub fn texture_set_layout(&self) -> Option<vk::DescriptorSetLayout> {
         self.texture_set_layout
     }
 
-    /// Check if this template uses BDA mode (storage buffers)
-    pub fn is_bda(&self) -> bool {
+    /// Check if this template uses storage buffer mode (modern rendering)
+    pub fn is_storage(&self) -> bool {
         self.texture_set_layout.is_some()
     }
 
@@ -202,7 +202,7 @@ impl MaterialTemplate {
         if self.texture_set_layout.is_some() {
             // Storage mode: create minimal handle without buffer
             // Uniform data comes from StorageUniformManager
-            super::UniformHandle::new_bda(&context, &desc_layout)
+            super::UniformHandle::new_storage(&context, &desc_layout)
         } else {
             // Legacy mode: create full uniform buffer
             super::UniformHandle::with_layout_and_bindings(&context, &desc_layout, layout, true)
@@ -226,7 +226,7 @@ impl MaterialTemplate {
                 .destroy_descriptor_set_layout(self.desc_layout, None);
         }
 
-        // Destroy the texture set layout if present (BDA mode)
+        // Destroy the texture set layout if present (storage mode)
         if let Some(texture_layout) = self.texture_set_layout {
             unsafe {
                 context
@@ -378,7 +378,7 @@ pub struct MaterialTemplateBuilder {
     descriptor: Option<MaterialDescriptor>,
     context: Option<Rc<VulkanContext>>,
     vertex_binding: Option<crate::VertexBinding>,
-    use_bda: bool,
+    use_storage: bool,
 }
 
 impl MaterialTemplateBuilder {
@@ -389,7 +389,7 @@ impl MaterialTemplateBuilder {
             descriptor: None,
             context: None,
             vertex_binding: None,
-            use_bda: false,
+            use_storage: false,
         }
     }
 
@@ -413,7 +413,7 @@ impl MaterialTemplateBuilder {
 
     /// Enable storage buffer rendering (storage buffers + instance indexing)
     pub fn with_storage(mut self, enable: bool) -> Self {
-        self.use_bda = enable;
+        self.use_storage = enable;
         self
     }
 
@@ -425,12 +425,6 @@ impl MaterialTemplateBuilder {
     /// Build the template with storage buffers and instance indexing
     pub fn build_storage(self) -> Result<MaterialTemplate, MaterialError> {
         self.build_internal(true)
-    }
-
-    /// Alias for backward compatibility
-    #[deprecated(since = "0.1.0", note = "Use build_storage() instead")]
-    pub fn build_bda(self) -> Result<MaterialTemplate, MaterialError> {
-        self.build_storage()
     }
 
     fn build_internal(self, use_storage: bool) -> Result<MaterialTemplate, MaterialError> {
@@ -471,7 +465,7 @@ impl MaterialTemplateBuilder {
         }
 
         // Use storage buffer build method if requested, otherwise use legacy
-        let pipeline = if use_storage || self.use_bda {
+        let pipeline = if use_storage || self.use_storage {
             builder.build_with_storage().map_err(|e| {
                 MaterialError::InvalidDescriptor(format!("Storage Pipeline build failed: {:?}", e))
             })?

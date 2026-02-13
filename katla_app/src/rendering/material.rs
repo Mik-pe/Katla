@@ -2,7 +2,7 @@ use crate::{rendering::vertextypes::*, util::GLTFModel};
 
 use katla_math::{Color, Mat4};
 use katla_vulkan::{
-    context::VulkanContext, material::UniformHandle, CommandBuffer, ImageFormat, MaterialBuilder,
+    context::VulkanContext, material::UniformHandle, ImageFormat, MaterialBuilder,
     MaterialHandle, MaterialPipeline, MaterialTemplate, Texture, VertexBinding,
 };
 
@@ -184,21 +184,6 @@ impl Material {
             handle: None,
             color,
             uniform: None, // Non-template materials have embedded uniform in pipeline
-        }
-    }
-
-    pub fn bind(&self, command_buffer: &CommandBuffer) {
-        let pipeline = self.material_pipeline.borrow();
-        let vk_cmd = command_buffer.vk_command_buffer();
-
-        // If material has its own uniform buffer, bind with custom descriptor set
-        // Otherwise use the pipeline's standard bind method
-        if let Some(ref uniform) = self.uniform {
-            // Bind pipeline with material's own descriptor set
-            pipeline.bind_with_descriptor(vk_cmd, uniform.next_descriptor().desc_set);
-        } else {
-            // Use pipeline's standard bind (embedded uniform)
-            pipeline.bind(vk_cmd);
         }
     }
 

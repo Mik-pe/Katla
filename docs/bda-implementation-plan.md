@@ -18,7 +18,7 @@ cargo run --release
 
 ## Overview
 
-This document outlines the plan to implement **Storage Buffer-based uniforms with Instance Indexing** for the Katla engine. This approach provides BDA-like performance benefits while maintaining full WGSL compatibility.
+This document outlines the implementation of **Storage Buffer-based uniforms with Instance Indexing** for the Katla engine. This approach provides high-performance uniform updates while maintaining full WGSL compatibility.
 
 ### Architecture Decision
 
@@ -146,9 +146,9 @@ for (object_index, draw_call) in draw_list.iter().enumerate() {
 - [x] Legacy shaders confirmed working (current state)
 
 ### Step 2: Update Storage Buffer Manager
-- [x] `BdaUniformManager` exists in `katla_vulkan/src/vulkan/material/bda_uniform.rs`
+- [x] `StorageUniformManager` in `katla_vulkan/src/vulkan/material/storage_uniform.rs`
 - [x] Frame and object buffer management implemented
-- [x] `BdaDescriptorSet` creates descriptor set for storage buffers
+- [x] `StorageDescriptorSet` creates descriptor set for storage buffers
 
 ### Step 3: Update Material System
 - [x] `build_with_storage()` added to MaterialBuilder
@@ -157,25 +157,35 @@ for (object_index, draw_call) in draw_list.iter().enumerate() {
 - [x] `bind_with_storage()` added to MaterialPipeline (no push constants)
 
 ### Step 4: Update VulkanRenderer
-- [x] `bda_manager` field exists
-- [x] `bda_descriptor_set` field exists
-- [x] `init_bda_standard()` initialization method implemented
-- [x] `update_bda_frame()` and `update_bda_object()` methods implemented
+- [x] `storage_manager` field exists
+- [x] `storage_descriptor_set` field exists
+- [x] `init_storage_standard()` initialization method implemented
+- [x] `update_storage_frame()` and `update_storage_object()` methods implemented
 
 ### Step 5: Update Rendering Code
-- [x] Draw calls use `first_instance` for object indexing (when BDA enabled)
-- [x] Render loop handles both legacy and storage modes
+- [x] Draw calls use `first_instance` for object indexing
+- [x] Legacy render mode removed (storage mode only)
 
-### Step 6: Application Integration (PENDING)
-- [ ] Update application to call `load_directory_storage()`
-- [ ] Call `renderer.init_bda_standard()` after context creation
-- [ ] Create storage buffer shader variants
-- [ ] Test with validation layers
+### Step 6: Application Integration ✅
+- [x] Update application to call `load_directory_storage()`
+- [x] Call `renderer.init_storage_standard()` after context creation
+- [x] Create storage buffer shader variants
+- [x] Test with validation layers
 
-### Step 7: Testing
-- [ ] Run with `--single-frame` and validation layers
-- [ ] Verify rendering output matches legacy mode
-- [ ] Profile performance
+### Step 7: Testing ✅
+- [x] Run with `--single-frame` and validation layers
+- [x] Verify rendering output works correctly
+- [x] Profile performance
+
+### Step 8: Cleanup ✅
+- [x] Remove deprecated BDA method aliases (`init_bda`, `update_bda_frame`, etc.)
+- [x] Remove deprecated BDA type aliases (`BdaDescriptorSet`, `BdaUniformLayout`, `BdaUniformManager`)
+- [x] Remove deprecated `bind()` method from MaterialPipeline
+- [x] Remove legacy mode render path (storage mode is now the only mode)
+- [x] Rename `new_bda()` to `new_storage()` throughout codebase
+- [x] Rename `is_bda()` to `is_storage()` in MaterialTemplate
+- [x] Remove unused `with_bda_manager()` from PipelineBuilder
+- [x] Update all BDA references in comments to "storage"
 
 ---
 

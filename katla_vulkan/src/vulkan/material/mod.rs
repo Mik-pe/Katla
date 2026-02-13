@@ -27,8 +27,6 @@ pub use registry::*;
 pub use shadermodule::*;
 pub use storage_uniform::{
     FrameUniforms, ObjectUniforms, StorageDescriptorSet, StorageUniformLayout, StorageUniformManager,
-    // Backward compatibility
-    BdaDescriptorSet, BdaUniformLayout, BdaUniformManager,
 };
 pub use template::*;
 pub use uniform_layout::*;
@@ -254,23 +252,23 @@ impl UniformHandle {
         Self::with_layout_and_bindings(context, desc_layout, layout, separate_bindings)
     }
 
-    /// Create a minimal UniformHandle for BDA-style rendering.
+    /// Create a minimal UniformHandle for storage buffer-based rendering.
     ///
     /// This creates a handle without allocating descriptor sets or uniform buffers.
-    /// It's used for BDA mode where:
-    /// - Uniform data comes from BdaUniformManager (storage buffer)
+    /// It's used for storage buffer mode where:
+    /// - Uniform data comes from StorageUniformManager (shared storage buffer)
     /// - This handle only stores texture info for create_texture_descriptor()
     ///
     /// # Arguments
     /// * `context` - Vulkan context (unused but kept for API consistency)
     /// * `texture_layout` - Texture descriptor set layout (unused, kept for reference)
-    pub fn new_bda(_context: &VulkanContext, _texture_layout: &vk::DescriptorSetLayout) -> Self {
+    pub fn new_storage(_context: &VulkanContext, _texture_layout: &vk::DescriptorSetLayout) -> Self {
         // Create a single empty descriptor - no allocation happens
         // The image_info will be set via add_image_info() later
         let empty_descriptor = UniformDescriptor {
             desc_set: vk::DescriptorSet::null(),
             desc_pool: None, // No pool to destroy
-            uniform_buffer: None, // No buffer - BDA uses shared storage buffer
+            uniform_buffer: None, // No buffer - storage mode uses shared storage buffer
             image_info: None,
             separate_bindings: true, // WGSL always uses separate bindings
         };
@@ -279,7 +277,7 @@ impl UniformHandle {
             next_bind_index: 0,
             next_update_index: 0,
             descriptors: vec![empty_descriptor],
-            layout: UniformLayout::empty(), // Minimal layout for BDA
+            layout: UniformLayout::empty(), // Minimal layout for storage mode
         }
     }
 
@@ -511,8 +509,8 @@ pub struct MaterialPipeline {
     pipeline: Option<Pipeline>,
     pub uniform: UniformHandle,
     desc_layout: Option<vk::DescriptorSetLayout>,
-    /// Texture descriptor set layout (set 1) for BDA-style rendering.
-    /// Separated from uniform set (set 0) for bindless-style texture updates.
+    /// Texture descriptor set layout (set 1) for storage buffer rendering.
+    /// Separated from uniform set (set 0) for efficient texture updates.
     pub texture_set_layout: Option<vk::DescriptorSetLayout>,
     /// Texture descriptor set (set 1) containing material textures.
     pub texture_descriptor: Option<TextureDescriptorSet>,
@@ -607,7 +605,7 @@ impl MaterialPipeline {
     ///
     /// The UniformHandle is created minimally - it only stores texture info
     /// for later use by `create_texture_descriptor()`. Actual uniform data
-    /// comes from the shared BdaUniformManager.
+    /// comes from the shared StorageUniformManager.
     pub fn new_storage(
         pipeline: Pipeline,
         uniform_set_layout: vk::DescriptorSetLayout,
@@ -615,8 +613,8 @@ impl MaterialPipeline {
         context: Rc<VulkanContext>,
     ) -> Self {
         // Create a minimal UniformHandle that just stores texture info
-        // The actual uniform data comes from BdaUniformManager, not this handle
-        let uniform = UniformHandle::new_bda(&context, &texture_set_layout);
+        // The actual uniform data comes from StorageUniformManager, not this handle
+        let uniform = UniformHandle::new_storage(&context, &texture_set_layout);
 
         Self {
             pipeline: Some(pipeline),
@@ -626,17 +624,6 @@ impl MaterialPipeline {
             texture_descriptor: None,
             context,
         }
-    }
-
-    /// Alias for backward compatibility.
-    #[deprecated(since = "0.1.0", note = "Use new_storage() instead")]
-    pub fn new_bda(
-        pipeline: Pipeline,
-        uniform_set_layout: vk::DescriptorSetLayout,
-        texture_set_layout: vk::DescriptorSetLayout,
-        context: Rc<VulkanContext>,
-    ) -> Self {
-        Self::new_storage(pipeline, uniform_set_layout, texture_set_layout, context)
     }
 
     /// Get the Vulkan context for this pipeline.
@@ -667,42 +654,6 @@ impl MaterialPipeline {
     /// Get the uniform layout for this pipeline.
     pub fn layout(&self) -> &UniformLayout {
         self.uniform.layout()
-    }
-
-    /// Bind pipeline with a custom descriptor set (for materials with per-material uniforms).
-    ///
-    /// This method is kept for backward compatibility but should be replaced
-    /// with BDA-based uniform management for better performance.
-    ///
-    /// # Deprecated
-    /// This method uses traditional descriptor-based uniform updates.
-    /// Prefer `bind_with_bda()` for new code which uses
-    /// Buffer Device Address (BDA) for uniform data.
-    ///
-    /// NOTE: BDA implementation is pending Application integration.
-    /// Shaders must be updated before using bind_with_bda().
-    #[deprecated(since = "0.1.0", note = "Use bind_with_bda() for BDA uniform management (pending Application integration)")]
-    pub fn bind(&self, command_buffer: vk::CommandBuffer) {
-        let pipeline = self
-            .pipeline
-            .as_ref()
-            .expect("Pipeline accessed after destruction");
-        unsafe {
-            self.context.device.cmd_bind_pipeline(
-                command_buffer,
-                vk::PipelineBindPoint::GRAPHICS,
-                pipeline.handle,
-            );
-
-            self.context.device.cmd_bind_descriptor_sets(
-                command_buffer,
-                vk::PipelineBindPoint::GRAPHICS,
-                pipeline.layout,
-                0,
-                &[self.uniform.next_descriptor().desc_set],
-                &[],
-            );
-        }
     }
 
     /// Bind the pipeline with a custom descriptor set (for materials with per-material uniforms)
