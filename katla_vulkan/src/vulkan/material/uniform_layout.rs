@@ -97,6 +97,14 @@ impl Default for UniformLayout {
 
 /// Predefined uniform layouts for common material types.
 impl UniformLayout {
+    /// Empty layout for BDA mode (no uniform buffer needed).
+    ///
+    /// Used when uniform data comes from storage buffers via BdaUniformManager
+    /// instead of per-material uniform buffers.
+    pub fn empty() -> Self {
+        Self::new()
+    }
+
     /// Standard PBR layout: world, view, projection matrices (192 bytes).
     pub fn pbr_matrices() -> Self {
         Self::new()

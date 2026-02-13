@@ -147,13 +147,18 @@ impl ApplicationHandler for Application {
                 .borrow_mut()
                 .aspect_ratio_changed(&mut self.world, win_x / win_y);
 
-            // Load materials from TOML files BEFORE creating models
-            // This ensures templates are available when creating GLTF models and meshes
+            // Initialize storage uniform system for modern rendering
+            // This enables storage buffers with instance indexing
+            renderer.init_storage_standard()
+                .expect("Failed to initialize storage uniform system");
+
+            // Load materials from TOML files with storage buffer mode
+            // This creates pipelines with two-set layout (uniforms + textures)
             let materials_path = find_materials_path();
             let loaded_count = renderer
                 .material_registry
                 .borrow_mut()
-                .load_directory(
+                .load_directory_storage(
                     &materials_path,
                     renderer.context.clone()
                 )
@@ -307,6 +312,18 @@ impl ApplicationHandler for Application {
             self.material_manager.set_context(renderer.context.clone());
 
             self.renderer = Some(renderer);
+
+            // TODO: BDA initialization disabled until descriptor infrastructure is updated
+            // The shaders have been updated but the UniformHandle/UniformDescriptor
+            // system still uses UNIFORM_BUFFER pool types.
+            // // Initialize BDA (Buffer Device Address) uniform system
+            // // This enables storage buffer-based uniforms for better performance
+            // if let Some(ref mut renderer) = self.renderer {
+            //     if let Err(e) = renderer.init_bda_standard() {
+            //         eprintln!("Warning: Failed to initialize BDA system: {:?}", e);
+            //         println!("Falling back to legacy descriptor-based uniforms");
+            //     }
+            // }
 
             // Setup render graph after renderer initialization
             self.setup_render_graph();

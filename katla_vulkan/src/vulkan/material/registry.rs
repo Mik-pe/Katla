@@ -94,8 +94,8 @@ impl MaterialRegistry {
 
         // Build template
         let builder = MaterialTemplateBuilder::new(name.clone())
-            .descriptor(descriptor)
-            .context(context);
+            .with_descriptor(descriptor)
+            .with_context(context);
 
         // Note: vertex_binding needs to be set by the caller
         // For now, we'll store the template without it
@@ -124,9 +124,9 @@ impl MaterialRegistry {
 
         // Build template with vertex binding
         let template = MaterialTemplateBuilder::new(name.clone())
-            .descriptor(descriptor)
-            .context(context)
-            .vertex_binding(vertex_binding)
+            .with_descriptor(descriptor)
+            .with_context(context)
+            .with_vertex_binding(vertex_binding)
             .build()?;
 
         // Register template with path for hot reload tracking
@@ -143,6 +143,37 @@ impl MaterialRegistry {
         &mut self,
         dir: &Path,
         context: Rc<VulkanContext>,
+    ) -> Result<usize, MaterialError> {
+        self.load_directory_internal(dir, context, false)
+    }
+
+    /// Load all material templates from a directory using storage buffers with instance indexing
+    ///
+    /// This is the same as load_directory but creates pipelines with storage buffer
+    /// layouts for modern rendering using `@builtin(instance_index)`.
+    pub fn load_directory_storage(
+        &mut self,
+        dir: &Path,
+        context: Rc<VulkanContext>,
+    ) -> Result<usize, MaterialError> {
+        self.load_directory_internal(dir, context, true)
+    }
+
+    /// Alias for backward compatibility
+    #[deprecated(since = "0.1.0", note = "Use load_directory_storage() instead")]
+    pub fn load_directory_bda(
+        &mut self,
+        dir: &Path,
+        context: Rc<VulkanContext>,
+    ) -> Result<usize, MaterialError> {
+        self.load_directory_storage(dir, context)
+    }
+
+    fn load_directory_internal(
+        &mut self,
+        dir: &Path,
+        context: Rc<VulkanContext>,
+        use_storage: bool,
     ) -> Result<usize, MaterialError> {
         use crate::vulkan::vertexbinding::get_pbr_vertex_binding;
 
@@ -180,11 +211,19 @@ impl MaterialRegistry {
 
             // Build template with default PBR vertex binding
             let vertex_binding = get_pbr_vertex_binding();
-            let template = MaterialTemplateBuilder::new(name.clone())
-                .descriptor(descriptor)
-                .context(context.clone())
-                .vertex_binding(vertex_binding)
-                .build()?;
+            let template = if use_storage {
+                MaterialTemplateBuilder::new(name.clone())
+                    .with_descriptor(descriptor)
+                    .with_context(context.clone())
+                    .with_vertex_binding(vertex_binding)
+                    .build_storage()?
+            } else {
+                MaterialTemplateBuilder::new(name.clone())
+                    .with_descriptor(descriptor)
+                    .with_context(context.clone())
+                    .with_vertex_binding(vertex_binding)
+                    .build()?
+            };
 
             // Register template with path for hot reload tracking
             self.register_template_with_path(template, &path);

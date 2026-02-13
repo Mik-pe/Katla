@@ -8,6 +8,7 @@ pub mod parameters;
 pub mod reflection;
 pub mod registry;
 pub mod shadermodule;
+pub mod storage_uniform;
 pub mod template;
 pub mod uniform_layout;
 
@@ -24,6 +25,11 @@ pub use parameters::*;
 pub use reflection::*;
 pub use registry::*;
 pub use shadermodule::*;
+pub use storage_uniform::{
+    FrameUniforms, ObjectUniforms, StorageDescriptorSet, StorageUniformLayout, StorageUniformManager,
+    // Backward compatibility
+    BdaDescriptorSet, BdaUniformLayout, BdaUniformManager,
+};
 pub use template::*;
 pub use uniform_layout::*;
 
@@ -32,6 +38,94 @@ use gpu_allocator::vulkan::Allocation;
 use std::rc::Rc;
 
 use super::context::VulkanContext;
+
+/// Texture descriptor set for material textures (set 1).
+///
+/// Contains the albedo texture and sampler bindings.
+pub struct TextureDescriptorSet {
+    /// Descriptor set containing texture bindings.
+    pub descriptor_set: vk::DescriptorSet,
+    /// Descriptor pool (owned, for cleanup).
+    descriptor_pool: vk::DescriptorPool,
+    /// Device for cleanup.
+    device: ash::Device,
+}
+
+impl TextureDescriptorSet {
+    /// Create a new texture descriptor set.
+    ///
+    /// # Arguments
+    /// * `context` - Vulkan context
+    /// * `desc_layout` - Descriptor set layout for texture set (set 1)
+    /// * `image_info` - Image info for the texture
+    ///
+    /// # Returns
+    /// A new TextureDescriptorSet with texture bindings
+    pub fn new(
+        context: &Rc<VulkanContext>,
+        desc_layout: vk::DescriptorSetLayout,
+        image_info: &ImageInfo,
+    ) -> Result<Self, vk::Result> {
+        // Create descriptor pool for textures
+        let pool_sizes = [
+            vk::DescriptorPoolSize::default()
+                .ty(vk::DescriptorType::SAMPLED_IMAGE)
+                .descriptor_count(1),
+            vk::DescriptorPoolSize::default()
+                .ty(vk::DescriptorType::SAMPLER)
+                .descriptor_count(1),
+        ];
+
+        let pool_info = vk::DescriptorPoolCreateInfo::default()
+            .pool_sizes(&pool_sizes)
+            .max_sets(1);
+
+        let descriptor_pool = unsafe {
+            context
+                .device
+                .create_descriptor_pool(&pool_info, None)?
+        };
+
+        // Allocate descriptor set
+        let layouts = [desc_layout];
+        let alloc_info = vk::DescriptorSetAllocateInfo::default()
+            .descriptor_pool(descriptor_pool)
+            .set_layouts(&layouts);
+
+        let descriptor_sets = unsafe { context.device.allocate_descriptor_sets(&alloc_info)? };
+        let descriptor_set = descriptor_sets[0];
+
+        // Write texture descriptors using separate bindings
+        let (image_write, sampler_write) =
+            image_info.update_once_separate(descriptor_set, 0, 1);
+
+        unsafe {
+            context
+                .device
+                .update_descriptor_sets(&[image_write, sampler_write], &[]);
+        }
+
+        Ok(Self {
+            descriptor_set,
+            descriptor_pool,
+            device: context.device.clone(),
+        })
+    }
+
+    /// Get the descriptor set for binding.
+    pub fn set(&self) -> vk::DescriptorSet {
+        self.descriptor_set
+    }
+}
+
+impl Drop for TextureDescriptorSet {
+    fn drop(&mut self) {
+        unsafe {
+            self.device
+                .destroy_descriptor_pool(self.descriptor_pool, None);
+        }
+    }
+}
 
 pub struct UniformBuffer {
     allocation: Allocation,
@@ -158,6 +252,35 @@ impl UniformHandle {
             UniformLayout::matrices_only()
         };
         Self::with_layout_and_bindings(context, desc_layout, layout, separate_bindings)
+    }
+
+    /// Create a minimal UniformHandle for BDA-style rendering.
+    ///
+    /// This creates a handle without allocating descriptor sets or uniform buffers.
+    /// It's used for BDA mode where:
+    /// - Uniform data comes from BdaUniformManager (storage buffer)
+    /// - This handle only stores texture info for create_texture_descriptor()
+    ///
+    /// # Arguments
+    /// * `context` - Vulkan context (unused but kept for API consistency)
+    /// * `texture_layout` - Texture descriptor set layout (unused, kept for reference)
+    pub fn new_bda(_context: &VulkanContext, _texture_layout: &vk::DescriptorSetLayout) -> Self {
+        // Create a single empty descriptor - no allocation happens
+        // The image_info will be set via add_image_info() later
+        let empty_descriptor = UniformDescriptor {
+            desc_set: vk::DescriptorSet::null(),
+            desc_pool: None, // No pool to destroy
+            uniform_buffer: None, // No buffer - BDA uses shared storage buffer
+            image_info: None,
+            separate_bindings: true, // WGSL always uses separate bindings
+        };
+
+        Self {
+            next_bind_index: 0,
+            next_update_index: 0,
+            descriptors: vec![empty_descriptor],
+            layout: UniformLayout::empty(), // Minimal layout for BDA
+        }
     }
 
     pub fn with_layout(
@@ -388,6 +511,11 @@ pub struct MaterialPipeline {
     pipeline: Option<Pipeline>,
     pub uniform: UniformHandle,
     desc_layout: Option<vk::DescriptorSetLayout>,
+    /// Texture descriptor set layout (set 1) for BDA-style rendering.
+    /// Separated from uniform set (set 0) for bindless-style texture updates.
+    pub texture_set_layout: Option<vk::DescriptorSetLayout>,
+    /// Texture descriptor set (set 1) containing material textures.
+    pub texture_descriptor: Option<TextureDescriptorSet>,
     context: Rc<VulkanContext>,
 }
 
@@ -461,8 +589,54 @@ impl MaterialPipeline {
             pipeline: Some(pipeline),
             uniform,
             desc_layout: Some(desc_layout),
+            texture_set_layout: None,
+            texture_descriptor: None,
             context,
         }
+    }
+
+    /// Create a MaterialPipeline for storage buffer-based rendering with instance indexing.
+    ///
+    /// This constructor is for use with storage buffer-based uniforms.
+    /// The pipeline uses two descriptor sets:
+    /// - Set 0 (uniform_set_layout): Storage buffers for frame_data and objects
+    /// - Set 1 (texture_set_layout): Textures (separate image + sampler)
+    ///
+    /// Object indexing is done via `@builtin(instance_index)` in the shader,
+    /// which is set by the `first_instance` parameter in draw calls.
+    ///
+    /// The UniformHandle is created minimally - it only stores texture info
+    /// for later use by `create_texture_descriptor()`. Actual uniform data
+    /// comes from the shared BdaUniformManager.
+    pub fn new_storage(
+        pipeline: Pipeline,
+        uniform_set_layout: vk::DescriptorSetLayout,
+        texture_set_layout: vk::DescriptorSetLayout,
+        context: Rc<VulkanContext>,
+    ) -> Self {
+        // Create a minimal UniformHandle that just stores texture info
+        // The actual uniform data comes from BdaUniformManager, not this handle
+        let uniform = UniformHandle::new_bda(&context, &texture_set_layout);
+
+        Self {
+            pipeline: Some(pipeline),
+            uniform,
+            desc_layout: Some(uniform_set_layout),
+            texture_set_layout: Some(texture_set_layout),
+            texture_descriptor: None,
+            context,
+        }
+    }
+
+    /// Alias for backward compatibility.
+    #[deprecated(since = "0.1.0", note = "Use new_storage() instead")]
+    pub fn new_bda(
+        pipeline: Pipeline,
+        uniform_set_layout: vk::DescriptorSetLayout,
+        texture_set_layout: vk::DescriptorSetLayout,
+        context: Rc<VulkanContext>,
+    ) -> Self {
+        Self::new_storage(pipeline, uniform_set_layout, texture_set_layout, context)
     }
 
     /// Get the Vulkan context for this pipeline.
@@ -495,6 +669,19 @@ impl MaterialPipeline {
         self.uniform.layout()
     }
 
+    /// Bind pipeline with a custom descriptor set (for materials with per-material uniforms).
+    ///
+    /// This method is kept for backward compatibility but should be replaced
+    /// with BDA-based uniform management for better performance.
+    ///
+    /// # Deprecated
+    /// This method uses traditional descriptor-based uniform updates.
+    /// Prefer `bind_with_bda()` for new code which uses
+    /// Buffer Device Address (BDA) for uniform data.
+    ///
+    /// NOTE: BDA implementation is pending Application integration.
+    /// Shaders must be updated before using bind_with_bda().
+    #[deprecated(since = "0.1.0", note = "Use bind_with_bda() for BDA uniform management (pending Application integration)")]
     pub fn bind(&self, command_buffer: vk::CommandBuffer) {
         let pipeline = self
             .pipeline
@@ -550,6 +737,113 @@ impl MaterialPipeline {
         }
     }
 
+    /// Create texture descriptor set from the material's image info.
+    ///
+    /// This creates set 1 for texture bindings. Must have texture_set_layout set.
+    ///
+    /// # Arguments
+    /// * `image_info` - Optional image info to use. If None, uses the pipeline's uniform image_info.
+    ///
+    /// # Returns
+    /// Ok(()) on success, or an error if creation fails
+    pub fn create_texture_descriptor_with_info(
+        &mut self,
+        image_info: &ImageInfo,
+    ) -> Result<(), vk::Result> {
+        let texture_layout = self
+            .texture_set_layout
+            .ok_or(vk::Result::ERROR_INITIALIZATION_FAILED)?;
+
+        let texture_descriptor =
+            TextureDescriptorSet::new(&self.context, texture_layout, image_info)?;
+
+        self.texture_descriptor = Some(texture_descriptor);
+        Ok(())
+    }
+
+    /// Create texture descriptor set from the pipeline's image info.
+    ///
+    /// This creates set 1 for texture bindings. Must have texture_set_layout set
+    /// and image_info must be set in the pipeline's uniform.
+    ///
+    /// # Returns
+    /// Ok(()) on success, or an error if creation fails
+    pub fn create_texture_descriptor(&mut self) -> Result<(), vk::Result> {
+        // Clone the image_info to avoid borrow issues
+        let image_info = self
+            .uniform
+            .next_descriptor()
+            .image_info
+            .clone()
+            .ok_or(vk::Result::ERROR_INITIALIZATION_FAILED)?;
+
+        self.create_texture_descriptor_with_info(&image_info)
+    }
+
+    /// Bind pipeline with storage buffer-based uniforms (instance index style).
+    ///
+    /// This method binds:
+    /// - The pipeline
+    /// - Set 0: Storage buffer uniforms (frame_data + objects)
+    /// - Set 1: Texture descriptor
+    ///
+    /// Object indexing is done via `@builtin(instance_index)` in the shader,
+    /// which is set by the `first_instance` parameter in draw calls.
+    ///
+    /// # Arguments
+    /// * `command_buffer` - Command buffer to record into
+    /// * `storage_descriptor_set` - Storage buffer descriptor set (set 0)
+    ///
+    /// # Panics
+    /// Panics if texture_descriptor is not set (call create_texture_descriptor first)
+    pub fn bind_with_storage(
+        &self,
+        command_buffer: vk::CommandBuffer,
+        storage_descriptor_set: vk::DescriptorSet,
+    ) {
+        let pipeline = self
+            .pipeline
+            .as_ref()
+            .expect("Pipeline accessed after destruction");
+
+        let texture_set = self
+            .texture_descriptor
+            .as_ref()
+            .expect("Texture descriptor not created - call create_texture_descriptor first");
+
+        unsafe {
+            // Bind pipeline
+            self.context.device.cmd_bind_pipeline(
+                command_buffer,
+                vk::PipelineBindPoint::GRAPHICS,
+                pipeline.handle,
+            );
+
+            // Bind set 0: Storage uniforms (frame_data + objects)
+            self.context.device.cmd_bind_descriptor_sets(
+                command_buffer,
+                vk::PipelineBindPoint::GRAPHICS,
+                pipeline.layout,
+                0,
+                &[storage_descriptor_set],
+                &[],
+            );
+
+            // Bind set 1: Textures
+            self.context.device.cmd_bind_descriptor_sets(
+                command_buffer,
+                vk::PipelineBindPoint::GRAPHICS,
+                pipeline.layout,
+                1,
+                &[texture_set.set()],
+                &[],
+            );
+
+            // Note: Object index is passed via `first_instance` in draw call,
+            // and accessed in shader via `@builtin(instance_index)`
+        }
+    }
+
     pub fn update_buffer(&mut self, data: &[u8]) {
         self.uniform.update_buffer(&self.context, data);
     }
@@ -560,15 +854,18 @@ impl MaterialPipeline {
     /// preserved and owned by the MaterialTemplate.
     pub fn destroy_preserving_layout(&mut self) {
         self.uniform.destroy(&self.context);
+        self.texture_descriptor = None; // Drop cleans up descriptor pool
         if let Some(pipeline) = self.pipeline.take() {
             pipeline.destroy();
         }
-        // Remove descriptor set layout - it's owned by MaterialTemplate and will be destroyed there
+        // Remove descriptor set layouts - they're owned by MaterialTemplate and will be destroyed there
         let _ = self.desc_layout.take();
+        let _ = self.texture_set_layout.take();
     }
 
     pub fn destroy(&mut self) {
         self.uniform.destroy(&self.context);
+        self.texture_descriptor = None; // Drop cleans up descriptor pool
         if let Some(pipeline) = self.pipeline.take() {
             pipeline.destroy();
         }
@@ -579,6 +876,13 @@ impl MaterialPipeline {
                     .destroy_descriptor_set_layout(desc_layout, None);
             }
         }
+        if let Some(texture_layout) = self.texture_set_layout.take() {
+            unsafe {
+                self.context
+                    .device
+                    .destroy_descriptor_set_layout(texture_layout, None);
+            }
+        }
     }
 }
 
@@ -587,6 +891,7 @@ impl Drop for MaterialPipeline {
         // Clean up any remaining resources
         // Note: If destroy_preserving_layout() was called, these will already be None
         self.uniform.destroy(&self.context);
+        self.texture_descriptor = None; // Drop cleans up descriptor pool
         if let Some(pipeline) = self.pipeline.take() {
             pipeline.destroy();
         }
@@ -595,6 +900,13 @@ impl Drop for MaterialPipeline {
                 self.context
                     .device
                     .destroy_descriptor_set_layout(desc_layout, None);
+            }
+        }
+        if let Some(texture_layout) = self.texture_set_layout.take() {
+            unsafe {
+                self.context
+                    .device
+                    .destroy_descriptor_set_layout(texture_layout, None);
             }
         }
     }

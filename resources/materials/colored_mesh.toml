@@ -1,13 +1,13 @@
 # Colored Mesh Material
 #
 # A material that blends a texture with a material color using WGSL shaders.
-# This is useful for tinting textures with specific colors.
+# Uses storage buffers with instance indexing for modern rendering.
 
 name = "Colored Mesh"
 
 [shaders]
-vertex = "../shaders/colored_mesh.wgsl"
-fragment = "../shaders/colored_mesh.wgsl"
+vertex = "../shaders/colored_mesh_storage.wgsl"
+fragment = "../shaders/colored_mesh_storage.wgsl"
 
 [bindings.uniforms.transform]
 type = "mat4"
