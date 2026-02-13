@@ -119,6 +119,10 @@ impl Default for InputMapper {
             Action::LookEnable,
         );
         action_map.insert(
+            InputBinding::Keyboard(KeyCombo::key(KeyCode::ShiftLeft)),
+            Action::Sprint,
+        );
+        action_map.insert(
             InputBinding::Mouse(MouseCombo::button(MouseButton::Left)),
             Action::Interact,
         );

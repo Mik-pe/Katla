@@ -14,10 +14,11 @@ pub enum Action {
     Exit = 10,
 
     LookEnable = 11,
+    Sprint = 12,
 }
 
 impl Action {
-    pub const COUNT: usize = 14;
+    pub const COUNT: usize = 15;
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
