@@ -1,11 +1,10 @@
 pub mod builder;
 
-use std::{cell::RefCell, ffi::CString, path::PathBuf, rc::Rc, time::Instant};
+use std::{cell::RefCell, ffi::CString, rc::Rc, time::Instant};
 
 use winit::keyboard::ModifiersState;
 
 pub use builder::*;
-use env_logger::Env;
 use katla_ecs::{input::Action, World};
 use katla_math::{Transform, Vec2, Vec3};
 use katla_vulkan::VulkanRenderer;
@@ -27,76 +26,10 @@ use crate::{
         create_checkerboard_material, create_checkerboard_texture, MaterialManager, MeshBuilder,
         SkyMaterial,
     },
-    systems::SkeletonUploadSystem,
+    resources::ResourceManager,
     util::{FileCache, GLTFModel, Timer},
 };
 use katla_ecs::System;
-
-/// Find the resources directory by searching common locations
-fn find_resources_path() -> PathBuf {
-    // List of possible paths to check, in order of preference
-    let possible_paths = vec![
-        // Current directory (for running from workspace root)
-        PathBuf::from("resources/models"),
-        // Parent directory (for running from katla_app)
-        PathBuf::from("../resources/models"),
-        // Grandparent directory (for running from target/debug)
-        PathBuf::from("../../resources/models"),
-        // Absolute path using CARGO_MANIFEST_DIR (for tests)
-        {
-            let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-            path.pop(); // Go up from katla_app to workspace root
-            path.push("resources/models");
-            path
-        },
-    ];
-
-    for path in possible_paths {
-        if path.exists() {
-            println!("Found resources/models at: {}", path.display());
-            return path;
-        }
-    }
-
-    panic!("Failed to find resources/models directory!");
-}
-
-/// Find the materials directory by searching common locations
-fn find_materials_path() -> PathBuf {
-    // List of possible paths to check, in order of preference
-    let possible_paths = vec![
-        // Current directory (for running from workspace root)
-        PathBuf::from("resources/materials"),
-        // Parent directory (for running from katla_app)
-        PathBuf::from("../resources/materials"),
-        // Grandparent directory (for running from target/debug)
-        PathBuf::from("../../resources/materials"),
-        // Absolute path using CARGO_MANIFEST_DIR
-        {
-            let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-            path.pop(); // Go up from katla_app to workspace root
-            path.push("resources/materials");
-            path
-        },
-    ];
-
-    for path in possible_paths {
-        if path.exists() {
-            println!("Found resources/materials at: {}", path.display());
-            return path;
-        }
-    }
-
-    panic!("Failed to find resources/materials directory!");
-}
-
-/// Find the resources root directory (parent of materials, models, shaders)
-fn find_resources_root_path() -> PathBuf {
-    let materials_path = find_materials_path();
-    let mut root = materials_path.clone();
-    root.pop(); // Remove 'materials'
-    root
-}
 
 struct ApplicationInfo {
     name: String,
@@ -117,11 +50,15 @@ pub struct Application {
     input_mapper: InputMapper,
     current_modifiers: ModifiersState,
     frame_count: usize, // Track frames rendered for max_frames limit
+<<<<<<< HEAD
     skeleton_upload_system: SkeletonUploadSystem,
     /// Fox entity for skeleton registration (set during init, used after first update)
     fox_entity: Option<katla_ecs::EntityId>,
     /// Flag to track if skeleton has been registered
     skeleton_registered: bool,
+=======
+    resources: ResourceManager, // Centralized resource paths
+>>>>>>> a99d853 (Add ResourceManager and remove raw pointers from mesh builders)
 }
 
 impl ApplicationHandler for Application {
@@ -163,40 +100,38 @@ impl ApplicationHandler for Application {
 
             // Load materials from TOML files with storage buffer mode
             // This creates pipelines with two-set layout (uniforms + textures)
-            let materials_path = find_materials_path();
             let loaded_count = renderer
                 .material_registry
                 .borrow_mut()
                 .load_directory_storage(
-                    &materials_path,
+                    &self.resources.materials,
                     renderer.context.clone()
                 )
                 .expect("Failed to load materials directory");
             println!(
                 "Loaded {} material templates from {}",
                 loaded_count,
-                materials_path.display()
+                self.resources.materials.display()
             );
 
             // Enable hot reload for materials and shaders
             // Watch the parent resources directory to catch changes in both materials/ and shaders/
-            let resources_path = find_resources_root_path();
             renderer
                 .material_registry
                 .borrow_mut()
-                .enable_hot_reload(&resources_path, 100)
+                .enable_hot_reload(&self.resources.root, 100)
                 .expect("Failed to enable hot reload");
             println!("Hot reload enabled for materials and shaders");
 
             // Now find and load the Fox model (after templates are loaded)
-            let models_path = find_resources_path();
-            let fox_path = models_path.join("Fox.glb");
+            let fox_path = self.resources.model_path("Fox.glb");
 
             let fox_transform = Transform::new_from_position(Vec3::new(0.0, 5.0, 0.0))
                 .with_scale(Vec3::new(0.05, 0.05, 0.05)); // Fox model is huge, scale it down
             let context = renderer.context.clone();
             let fox_model = self.gltf_cache.read(fox_path);
 
+<<<<<<< HEAD
             // Create the model entity using the gltf_skinned template for GPU skinning
             // We use the raw pointer approach similar to MeshBuilder
             let material_registry_ptr = &renderer.material_registry
@@ -204,12 +139,16 @@ impl ApplicationHandler for Application {
 
             // Use skinned model creation for animated meshes
             let fox = Model::new_skinned_from_gltf_with_ptr(
+=======
+            // Create the model entity using the gltf_default template
+            Model::new_from_gltf(
+>>>>>>> a99d853 (Add ResourceManager and remove raw pointers from mesh builders)
                 &mut self.world,
                 fox_model.clone(),
                 context,
                 Some(&mut renderer),
                 fox_transform,
-                material_registry_ptr,
+                None, // Registry accessed internally
             );
 
             // Set up animation on the SAME entity as the model
@@ -228,19 +167,13 @@ impl ApplicationHandler for Application {
             // Create meshes spaced out in a line with different colors
 
             // Create meshes spaced out in a line with different colors
-            // Get the raw pointer to material registry for mesh builders
-            let material_registry_ptr = &renderer.material_registry
-                as *const std::cell::RefCell<katla_vulkan::MaterialRegistry>;
-
             let _cube = MeshBuilder::new(renderer.context.clone())
-                .with_material_registry_ptr(material_registry_ptr)
                 .position(Vec3::new(0.0, 5.0, 0.0))
                 .color([1.0, 0.3, 0.3]) // Red tint
                 .with_shared_material("Checkerboard")
                 .build(&mut self.world, &mut renderer);
 
             let _sphere = MeshBuilder::new(renderer.context.clone())
-                .with_material_registry_ptr(material_registry_ptr)
                 .position(Vec3::new(30.0, 5.0, 0.0))
                 .color([0.3, 1.0, 0.3]) // Green tint
                 .with_shared_material("Checkerboard")
@@ -248,7 +181,6 @@ impl ApplicationHandler for Application {
                 .build(&mut self.world, &mut renderer);
 
             let _cylinder = MeshBuilder::new(renderer.context.clone())
-                .with_material_registry_ptr(material_registry_ptr)
                 .position(Vec3::new(-30.0, 5.0, 0.0))
                 .color([0.3, 0.3, 1.0]) // Blue tint
                 .with_shared_material("Checkerboard")
@@ -256,7 +188,6 @@ impl ApplicationHandler for Application {
                 .build(&mut self.world, &mut renderer);
 
             let _plane = MeshBuilder::new(renderer.context.clone())
-                .with_material_registry_ptr(material_registry_ptr)
                 .position(Vec3::new(0.0, -5.0, 0.0))
                 .color([0.8, 0.8, 0.8]) // Gray tint
                 .with_shared_material("Checkerboard")
@@ -265,7 +196,6 @@ impl ApplicationHandler for Application {
                 .build(&mut self.world, &mut renderer);
 
             let _torus = MeshBuilder::new(renderer.context.clone())
-                .with_material_registry_ptr(material_registry_ptr)
                 .position(Vec3::new(0.0, 15.0, 0.0))
                 .color([1.0, 0.8, 0.3]) // Yellow tint
                 .with_shared_material("Checkerboard")
@@ -336,9 +266,6 @@ impl ApplicationHandler for Application {
 
             // Store context reference in material manager for cleanup
             self.material_manager.set_context(renderer.context.clone());
-
-            // Initialize skeleton upload system with Vulkan context
-            self.skeleton_upload_system.set_context(renderer.context.clone());
 
             self.renderer = Some(renderer);
 
@@ -441,6 +368,7 @@ impl ApplicationHandler for Application {
                     // Update world
                     self.world.update(dt);
 
+<<<<<<< HEAD
                     // Upload skeleton transforms to GPU
                     self.skeleton_upload_system.update(&mut self.world, dt);
 
@@ -465,6 +393,8 @@ impl ApplicationHandler for Application {
                         self.skeleton_registered = true;
                     }
 
+=======
+>>>>>>> a99d853 (Add ResourceManager and remove raw pointers from mesh builders)
                     // Render using render graph
                     self.render_with_render_graph();
 
@@ -480,12 +410,9 @@ impl ApplicationHandler for Application {
                     if self.stage_upload {
                         let start = Instant::now();
                         let renderer = self.renderer.as_mut().expect("Renderer not initialized");
-                        let material_registry_ptr = &renderer.material_registry
-                            as *const std::cell::RefCell<katla_vulkan::MaterialRegistry>;
 
                         let _sphere = MeshBuilder::new(renderer.context.clone())
-                            .with_material_registry_ptr(material_registry_ptr)
-                            .position(Vec3::new(0.0, 5.0, 0.0))
+                                        .position(Vec3::new(0.0, 5.0, 0.0))
                             .color([0.8, 0.2, 0.2])
                             .with_shared_material("Checkerboard")
                             .sphere()
@@ -493,16 +420,14 @@ impl ApplicationHandler for Application {
 
                         let renderer = self.renderer.as_mut().expect("Renderer not initialized");
                         let _cube = MeshBuilder::new(renderer.context.clone())
-                            .with_material_registry_ptr(material_registry_ptr)
-                            .position(Vec3::new(20.0, 5.0, 0.0))
+                                        .position(Vec3::new(20.0, 5.0, 0.0))
                             .color([0.2, 0.8, 0.2])
                             .with_shared_material("Checkerboard")
                             .build(&mut self.world, renderer);
 
                         let renderer = self.renderer.as_mut().expect("Renderer not initialized");
                         let _plane = MeshBuilder::new(renderer.context.clone())
-                            .with_material_registry_ptr(material_registry_ptr)
-                            .position(Vec3::new(0.0, -5.0, 0.0))
+                                        .position(Vec3::new(0.0, -5.0, 0.0))
                             .color([0.5, 0.5, 0.5])
                             .with_shared_material("Checkerboard")
                             .plane()
