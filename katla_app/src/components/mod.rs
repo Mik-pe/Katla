@@ -1,26 +1,25 @@
-pub use active::*;
-pub use drawable::*;
-pub use fly_camera::{FlyCameraControllerComponent, FlyCameraLookComponent};
-pub use input::*;
-pub use lighting::*;
-pub use name::*;
-pub use perspective::PerspectiveComponent;
-pub use physics::*;
-pub use relationship::*;
-pub use tag::*;
-pub use third_person::*;
-pub use transform::{TransformComponent, TransformDirty, WorldTransform};
+// Camera-related components
+pub use crate::components::camera::*;
 
-pub mod lighting;
+// Physics components
+pub use crate::components::physics::*;
 
-pub mod active;
-pub mod drawable;
-pub mod fly_camera;
-pub mod input;
-pub mod name;
-pub mod perspective;
+// Scene organization components
+pub use crate::components::scene::*;
+
+// Rendering components
+pub use crate::components::rendering::*;
+
+// Input components
+pub use crate::components::input::*;
+
+// Transform components
+pub use crate::components::transform::*;
+
+// Submodules
+pub mod camera;
 pub mod physics;
-pub mod relationship;
-pub mod tag;
-pub mod third_person;
+pub mod scene;
+pub mod rendering;
+pub mod input;
 pub mod transform;
