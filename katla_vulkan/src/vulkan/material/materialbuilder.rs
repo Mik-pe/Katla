@@ -211,17 +211,6 @@ impl MaterialBuilder {
         self
     }
 
-    /// Set whether to use separate texture and sampler bindings.
-    ///
-    /// Note: This is now a no-op since all shaders use WGSL which always
-    /// uses separate texture and sampler bindings. This method is kept for
-    /// backwards compatibility only.
-    #[deprecated(note = "All shaders use WGSL with separate bindings")]
-    pub fn with_separate_bindings(self, _separate: bool) -> Self {
-        // All shaders are WGSL now, which always uses separate bindings
-        self
-    }
-
     pub fn with_color_uniform(mut self, has_color: bool) -> Self {
         self.has_color = has_color;
         self

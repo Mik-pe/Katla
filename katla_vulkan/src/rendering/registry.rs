@@ -16,8 +16,6 @@ pub(crate) struct MeshAsset {
 }
 
 /// Internal material representation.
-// TODO: Fields `texture` and `vertex_binding` are never read (clippy warning)
-// Either use these fields in MaterialPipeline or remove them entirely
 pub(crate) struct MaterialAsset {
     /// Graphics pipeline and descriptor sets (shared ownership with interior mutability).
     pub pipeline: Rc<RefCell<MaterialPipeline>>,
@@ -87,14 +85,11 @@ impl AssetRegistry {
     }
 
     /// Get a mesh by handle (internal use only).
-    // TODO: Methods `get_mesh_mut`, `get_material`, `remove_mesh`, and `remove_material` are never used (clippy warning)
-    // Either use these methods or remove them
     pub(crate) fn get_mesh(&self, handle: MeshHandle) -> Option<&MeshAsset> {
         self.meshes.get(handle.0)?.as_ref()
     }
 
     /// Get a mutable material by handle (for hot reload).
-
     pub(crate) fn get_material_mut(
         &mut self,
         handle: MaterialHandle,
