@@ -2,174 +2,197 @@ use katla_ecs::Component;
 use katla_math::Quat;
 use std::collections::HashMap;
 
-/// Animation player component that controls animation playback.
-///
-/// Attach this to an entity to play animations on its animated model.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AnimationEvent {
+    Completed { clip_name: String },
+    Looped { clip_name: String, loop_count: u32 },
+}
+
 #[derive(Component, Debug, Clone)]
 pub struct AnimationPlayer {
-    /// Name of the currently playing animation clip
     pub current_clip: Option<String>,
-    /// Current playback time in seconds
+    pub duration: f32,
     pub time: f32,
-    /// Whether the animation is currently playing
     pub playing: bool,
-    /// Whether to loop the animation when it finishes
     pub loop_animation: bool,
-    /// Playback speed multiplier (1.0 = normal speed, 2.0 = 2x speed)
     pub speed: f32,
-    /// Animation blend weight (0.0 - 1.0) for blending between clips
     pub blend_weight: f32,
+    pub target_clip: Option<String>,
+    pub target_duration: f32,
+    pub target_time: f32,
+    pub blend_duration: f32,
+    pub blend_time: f32,
+    pub blending: bool,
+    pub events: Vec<AnimationEvent>,
+    pub loop_count: u32,
 }
 
 impl AnimationPlayer {
-    /// Create a new animation player for a specific clip
     pub fn new(clip_name: impl Into<String>) -> Self {
         Self {
             current_clip: Some(clip_name.into()),
+            duration: 0.0,
             time: 0.0,
             playing: true,
             loop_animation: false,
             speed: 1.0,
             blend_weight: 1.0,
+            target_clip: None,
+            target_duration: 0.0,
+            target_time: 0.0,
+            blend_duration: 0.0,
+            blend_time: 0.0,
+            blending: false,
+            events: Vec::new(),
+            loop_count: 0,
         }
     }
 
-    /// Create a stopped animation player
+    pub fn with_duration(mut self, duration: f32) -> Self {
+        self.duration = duration;
+        self
+    }
+
     pub fn stopped() -> Self {
         Self {
             current_clip: None,
+            duration: 0.0,
             time: 0.0,
             playing: false,
             loop_animation: false,
             speed: 1.0,
             blend_weight: 1.0,
+            target_clip: None,
+            target_duration: 0.0,
+            target_time: 0.0,
+            blend_duration: 0.0,
+            blend_time: 0.0,
+            blending: false,
+            events: Vec::new(),
+            loop_count: 0,
         }
     }
 
-    /// Set the animation clip to play
     pub fn with_clip(mut self, clip: impl Into<String>) -> Self {
         self.current_clip = Some(clip.into());
         self
     }
 
-    /// Enable looping
     pub fn looping(mut self) -> Self {
         self.loop_animation = true;
         self
     }
 
-    /// Set playback speed
     pub fn with_speed(mut self, speed: f32) -> Self {
         self.speed = speed;
         self
     }
 
-    /// Start playing
+    pub fn set_clip(&mut self, clip: impl Into<String>, duration: f32) {
+        self.current_clip = Some(clip.into());
+        self.duration = duration;
+        self.time = 0.0;
+        self.loop_count = 0;
+        self.blending = false;
+        self.target_clip = None;
+        self.blend_weight = 1.0;
+    }
+
+    pub fn crossfade_to(&mut self, clip: impl Into<String>, duration: f32, blend_duration: f32) {
+        self.target_clip = Some(clip.into());
+        self.target_duration = duration;
+        self.target_time = 0.0;
+        self.blend_duration = blend_duration;
+        self.blend_time = 0.0;
+        self.blending = true;
+        self.blend_weight = 1.0;
+    }
+
     pub fn play(&mut self) {
         self.playing = true;
     }
 
-    /// Pause playback
     pub fn pause(&mut self) {
         self.playing = false;
     }
 
-    /// Stop playback and reset to beginning
     pub fn stop(&mut self) {
         self.playing = false;
         self.time = 0.0;
+        self.loop_count = 0;
+        self.blending = false;
+        self.target_clip = None;
+        self.blend_weight = 1.0;
     }
 
-    /// Jump to a specific time
     pub fn seek(&mut self, time: f32) {
-        self.time = time.clamp(0.0, self.get_duration());
+        self.time = time.clamp(0.0, self.duration.max(0.0));
     }
 
-    /// Get the duration of the current animation
-    /// Returns 0.0 if no clip is set
     pub fn get_duration(&self) -> f32 {
-        // This will be set by the system based on the clip
-        0.0
+        self.duration
+    }
+
+    pub fn take_events(&mut self) -> Vec<AnimationEvent> {
+        std::mem::take(&mut self.events)
+    }
+
+    pub fn is_complete(&self) -> bool {
+        !self.playing && self.time >= self.duration && !self.loop_animation
     }
 }
 
-/// Animated model component containing all animation clips for a model.
-///
-/// This component stores the animation data loaded from GLTF files.
 #[derive(Component, Debug, Clone)]
 pub struct AnimatedModel {
-    /// Map of animation clip names to their data
     pub animations: HashMap<String, super::clips::AnimationClip>,
-    /// Named animation sequences (can combine multiple clips)
     pub sequences: HashMap<String, AnimationSequence>,
 }
 
-/// A sequence of animation clips that play in order or simultaneously.
 #[derive(Debug, Clone)]
 pub struct AnimationSequence {
-    /// Clips in this sequence and their blend weights
     pub clips: Vec<SequenceClip>,
-    /// Duration of the sequence (0.0 = calculated from clips)
     pub duration: f32,
-    /// Whether to loop the sequence
     pub loop_sequence: bool,
 }
 
 #[derive(Debug, Clone)]
 pub struct SequenceClip {
-    /// Name of the animation clip
     pub name: String,
-    /// Blend weight for this clip (0.0 - 1.0)
     pub weight: f32,
-    /// Time offset into the clip
     pub time_offset: f32,
 }
 
-/// Morph target weights for mesh deformation.
-///
-/// Used for facial animations and shape blending.
 #[derive(Component, Debug, Clone)]
 pub struct MorphTargetWeights {
-    /// Weights for each morph target (0.0 - 1.0)
     pub weights: Vec<f32>,
 }
 
 impl MorphTargetWeights {
-    /// Create morph target weights with all zeros
     pub fn new(count: usize) -> Self {
         Self {
             weights: vec![0.0; count],
         }
     }
 
-    /// Set a specific morph target weight
     pub fn set_weight(&mut self, index: usize, weight: f32) {
         if index < self.weights.len() {
             self.weights[index] = weight.clamp(0.0, 1.0);
         }
     }
 
-    /// Get a specific morph target weight
     pub fn get_weight(&self, index: usize) -> f32 {
         self.weights.get(index).copied().unwrap_or(0.0)
     }
 }
 
-/// Joint transform for skeletal animation.
-///
-/// Represents the transform of a single joint in a skeleton.
 #[derive(Debug, Copy, Clone)]
 pub struct JointTransform {
-    /// Translation
     pub translation: [f32; 3],
-    /// Rotation (quaternion)
     pub rotation: Quat,
-    /// Scale
     pub scale: [f32; 3],
 }
 
 impl JointTransform {
-    /// Create an identity joint transform
     pub fn identity() -> Self {
         Self {
             translation: [0.0, 0.0, 0.0],
@@ -178,7 +201,6 @@ impl JointTransform {
         }
     }
 
-    /// Create from translation only
     pub fn from_translation(translation: [f32; 3]) -> Self {
         Self {
             translation,
@@ -187,35 +209,48 @@ impl JointTransform {
         }
     }
 
-    /// Interpolate between two joint transforms
     pub fn lerp(&self, other: &Self, t: f32) -> Self {
+        Self::lerp_arrays(self, other, t)
+    }
+
+    pub fn lerp_arrays(a: &Self, b: &Self, t: f32) -> Self {
         let qa = katla_math::Quat::new_from_xyzw(
-            self.rotation[0],
-            self.rotation[1],
-            self.rotation[2],
-            self.rotation[3],
+            a.rotation[0],
+            a.rotation[1],
+            a.rotation[2],
+            a.rotation[3],
         );
         let qb = katla_math::Quat::new_from_xyzw(
-            other.rotation[0],
-            other.rotation[1],
-            other.rotation[2],
-            other.rotation[3],
+            b.rotation[0],
+            b.rotation[1],
+            b.rotation[2],
+            b.rotation[3],
         );
         let q_result = katla_math::Quat::slerp(qa, qb, t);
 
+        let one_minus_t = 1.0 - t;
         Self {
             translation: [
-                self.translation[0] + (other.translation[0] - self.translation[0]) * t,
-                self.translation[1] + (other.translation[1] - self.translation[1]) * t,
-                self.translation[2] + (other.translation[2] - self.translation[2]) * t,
+                a.translation[0] * one_minus_t + b.translation[0] * t,
+                a.translation[1] * one_minus_t + b.translation[1] * t,
+                a.translation[2] * one_minus_t + b.translation[2] * t,
             ],
             rotation: q_result,
             scale: [
-                self.scale[0] + (other.scale[0] - self.scale[0]) * t,
-                self.scale[1] + (other.scale[1] - self.scale[1]) * t,
-                self.scale[2] + (other.scale[2] - self.scale[2]) * t,
+                a.scale[0] * one_minus_t + b.scale[0] * t,
+                a.scale[1] * one_minus_t + b.scale[1] * t,
+                a.scale[2] * one_minus_t + b.scale[2] * t,
             ],
         }
+    }
+
+    pub fn blend(a: &Self, b: &Self, weight_a: f32, weight_b: f32) -> Self {
+        let total = weight_a + weight_b;
+        if total == 0.0 {
+            return Self::identity();
+        }
+        let t = weight_b / total;
+        Self::lerp_arrays(a, b, t)
     }
 }
 
