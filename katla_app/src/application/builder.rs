@@ -9,6 +9,7 @@ use crate::{
     entities::Camera,
     input::InputMapper,
     rendering::MaterialManager,
+    systems::SkeletonUploadSystem,
     util::{FileCache, Timer},
 };
 
@@ -89,6 +90,7 @@ impl ApplicationBuilder {
             input_mapper: InputMapper::new(),
             current_modifiers: ModifiersState::empty(),
             frame_count: 0,
+            skeleton_upload_system: SkeletonUploadSystem::new(),
         };
 
         (app, event_loop)

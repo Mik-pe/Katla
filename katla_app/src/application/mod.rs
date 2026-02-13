@@ -27,8 +27,10 @@ use crate::{
         create_checkerboard_material, create_checkerboard_texture, MaterialManager, MeshBuilder,
         SkyMaterial,
     },
+    systems::SkeletonUploadSystem,
     util::{FileCache, GLTFModel, Timer},
 };
+use katla_ecs::System;
 
 /// Find the resources directory by searching common locations
 fn find_resources_path() -> PathBuf {
@@ -115,6 +117,7 @@ pub struct Application {
     input_mapper: InputMapper,
     current_modifiers: ModifiersState,
     frame_count: usize, // Track frames rendered for max_frames limit
+    skeleton_upload_system: SkeletonUploadSystem,
 }
 
 impl ApplicationHandler for Application {
@@ -326,6 +329,9 @@ impl ApplicationHandler for Application {
             // Store context reference in material manager for cleanup
             self.material_manager.set_context(renderer.context.clone());
 
+            // Initialize skeleton upload system with Vulkan context
+            self.skeleton_upload_system.set_context(renderer.context.clone());
+
             self.renderer = Some(renderer);
 
             // Setup render graph after renderer initialization
@@ -426,6 +432,9 @@ impl ApplicationHandler for Application {
 
                     // Update world
                     self.world.update(dt);
+
+                    // Upload skeleton transforms to GPU
+                    self.skeleton_upload_system.update(&mut self.world, dt);
 
                     // Render using render graph
                     self.render_with_render_graph();
