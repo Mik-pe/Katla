@@ -7,6 +7,7 @@ pub mod materialbuilder;
 pub mod parameters;
 pub mod reflection;
 pub mod registry;
+pub mod skeleton_descriptor;
 pub mod shadermodule;
 pub mod storage_uniform;
 pub mod template;
@@ -24,6 +25,7 @@ pub use materialbuilder::*;
 pub use parameters::*;
 pub use reflection::*;
 pub use registry::*;
+pub use skeleton_descriptor::SkeletonDescriptorSet;
 pub use shadermodule::*;
 pub use storage_uniform::{
     FrameUniforms, ObjectUniforms, StorageDescriptorSet, StorageUniformLayout, StorageUniformManager,
@@ -514,6 +516,9 @@ pub struct MaterialPipeline {
     pub texture_set_layout: Option<vk::DescriptorSetLayout>,
     /// Texture descriptor set (set 1) containing material textures.
     pub texture_descriptor: Option<TextureDescriptorSet>,
+    /// Skeleton descriptor set layout (set 2) for skeletal animation.
+    /// Only present on skinned pipelines.
+    pub skeleton_set_layout: Option<vk::DescriptorSetLayout>,
     context: Rc<VulkanContext>,
 }
 
@@ -589,11 +594,10 @@ impl MaterialPipeline {
             desc_layout: Some(desc_layout),
             texture_set_layout: None,
             texture_descriptor: None,
+            skeleton_set_layout: None,
             context,
         }
     }
-
-    /// Create a MaterialPipeline for storage buffer-based rendering with instance indexing.
     ///
     /// This constructor is for use with storage buffer-based uniforms.
     /// The pipeline uses two descriptor sets:
@@ -622,6 +626,35 @@ impl MaterialPipeline {
             desc_layout: Some(uniform_set_layout),
             texture_set_layout: Some(texture_set_layout),
             texture_descriptor: None,
+            skeleton_set_layout: None,
+            context,
+        }
+    }
+
+    /// Create a MaterialPipeline for storage buffer rendering with skeletal animation.
+    ///
+    /// This is like `new_storage` but with a third descriptor set for skeleton joint matrices:
+    /// - Set 0 (uniform_set_layout): Storage buffers for frame_data and objects
+    /// - Set 1 (texture_set_layout): Textures (separate image + sampler)
+    /// - Set 2 (skeleton_set_layout): Storage buffer for joint matrices
+    ///
+    /// The skeleton descriptor set must be created and bound per animated mesh.
+    pub fn new_storage_skinned(
+        pipeline: Pipeline,
+        uniform_set_layout: vk::DescriptorSetLayout,
+        texture_set_layout: vk::DescriptorSetLayout,
+        skeleton_set_layout: vk::DescriptorSetLayout,
+        context: Rc<VulkanContext>,
+    ) -> Self {
+        let uniform = UniformHandle::new_storage(&context, &texture_set_layout);
+
+        Self {
+            pipeline: Some(pipeline),
+            uniform,
+            desc_layout: Some(uniform_set_layout),
+            texture_set_layout: Some(texture_set_layout),
+            texture_descriptor: None,
+            skeleton_set_layout: Some(skeleton_set_layout),
             context,
         }
     }

@@ -476,6 +476,136 @@ impl MaterialBuilder {
         Ok(material_pipeline)
     }
 
+    /// Build the material pipeline for skeletal animation with storage buffers.
+    ///
+    /// This creates a three-set layout:
+    /// - Set 0: Storage buffers for frame_data (binding 0) and objects array (binding 1)
+    /// - Set 1: Separate texture (binding 0) and sampler (binding 1)
+    /// - Set 2: Storage buffer for joint matrices (binding 0)
+    ///
+    /// Use this for animated meshes that need GPU skinning.
+    pub fn build_with_storage_skinned(self) -> Result<MaterialPipeline, MaterialBuildError> {
+        let vertex_binding = self
+            .vertex_binding
+            .ok_or(MaterialBuildError::MissingVertexBinding)?;
+
+        let vert_shader = self
+            .vertex_shader
+            .ok_or(MaterialBuildError::MissingVertexShader)?;
+        let frag_shader = self
+            .fragment_shader
+            .ok_or(MaterialBuildError::MissingFragmentShader)?;
+
+        // Set 0: Storage buffers for uniforms
+        let uniform_set_layout = DescriptorLayoutBuilder::new()
+            .add_binding(
+                0,
+                vk::DescriptorType::STORAGE_BUFFER,
+                vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT,
+                1, // frame_data
+            )
+            .add_binding(
+                1,
+                vk::DescriptorType::STORAGE_BUFFER,
+                vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT,
+                1, // objects array
+            )
+            .build(&self.context.device)
+            .map_err(|e| MaterialBuildError::DescriptorLayoutFailed(format!("{:?}", e)))?;
+
+        // Set 1: Textures (separate image + sampler for WGSL)
+        let texture_set_layout = DescriptorLayoutBuilder::new()
+            .add_binding(
+                0,
+                vk::DescriptorType::SAMPLED_IMAGE,
+                vk::ShaderStageFlags::FRAGMENT,
+                1,
+            )
+            .add_binding(
+                1,
+                vk::DescriptorType::SAMPLER,
+                vk::ShaderStageFlags::FRAGMENT,
+                1,
+            )
+            .build(&self.context.device)
+            .map_err(|e| MaterialBuildError::DescriptorLayoutFailed(format!("{:?}", e)))?;
+
+        // Set 2: Skeleton joint matrices (storage buffer)
+        let skeleton_set_layout = DescriptorLayoutBuilder::new()
+            .add_binding(
+                0,
+                vk::DescriptorType::STORAGE_BUFFER,
+                vk::ShaderStageFlags::VERTEX,
+                1, // joint_matrices array
+            )
+            .build(&self.context.device)
+            .map_err(|e| MaterialBuildError::DescriptorLayoutFailed(format!("{:?}", e)))?;
+
+        let color_format = self.color_format;
+        let depth_format = self.depth_format;
+
+        // Build pipeline with 3 descriptor set layouts
+        let mut pipeline_builder = PipelineBuilder::new(self.context.clone())
+            .with_shaders(vert_shader.module, frag_shader.module)
+            .with_entry_points(
+                vert_shader.entry_point.clone(),
+                frag_shader.entry_point.clone(),
+            )
+            .with_vertex_input(
+                vec![vertex_binding.get_binding_desc(0)],
+                vertex_binding.get_attribute_desc(0),
+            )
+            .with_depth_test(self.depth_test, self.depth_write, self.depth_compare_op)
+            .with_descriptor_layouts(vec![
+                uniform_set_layout,
+                texture_set_layout,
+                skeleton_set_layout,
+            ]);
+
+        // Set rendering formats for dynamic rendering (Vulkan 1.3)
+        if color_format.is_some() || depth_format.is_some() {
+            let cf = color_format.map(ash::vk::Format::from);
+            let df = depth_format.map(ash::vk::Format::from);
+            pipeline_builder = pipeline_builder.with_rendering_formats(cf, df);
+        }
+
+        if self.cull_back_faces {
+            pipeline_builder = pipeline_builder
+                .with_cull_mode(vk::CullModeFlags::BACK, vk::FrontFace::COUNTER_CLOCKWISE);
+        } else {
+            pipeline_builder = pipeline_builder
+                .with_cull_mode(vk::CullModeFlags::NONE, vk::FrontFace::COUNTER_CLOCKWISE);
+        }
+
+        if self.alpha_blending {
+            pipeline_builder = pipeline_builder.with_alpha_blending();
+        }
+
+        let vk_render_pass = vk::RenderPass::null();
+
+        let pipeline = pipeline_builder
+            .build(vk_render_pass)
+            .map_err(|e| MaterialBuildError::PipelineCreationFailed(format!("{:?}", e)))?;
+
+        // Create MaterialPipeline with skeleton layout
+        let mut material_pipeline = MaterialPipeline::new_storage_skinned(
+            pipeline,
+            uniform_set_layout,
+            texture_set_layout,
+            skeleton_set_layout,
+            self.context.clone(),
+        );
+
+        if let Some(texture) = self.texture {
+            material_pipeline.uniform.add_image_info(ImageInfo::new(
+                texture.image_view.vk(),
+                texture.image_sampler.vk(),
+            ));
+        }
+
+        Ok(material_pipeline)
+    }
+
     /// Build the material pipeline with legacy uniform buffers.
     ///
     /// Uses single descriptor set with UNIFORM_BUFFER, SAMPLED_IMAGE, and SAMPLER.

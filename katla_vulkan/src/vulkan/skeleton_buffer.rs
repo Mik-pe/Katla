@@ -74,30 +74,6 @@ impl SkeletonBuffer {
         }
     }
 
-    /// Upload joint matrices from katla_math::Mat4 format.
-    ///
-    /// Converts from Mat4 to the GPU-friendly [[f32; 4]; 4] format.
-    pub fn upload_from_mat4(&mut self, joint_matrices: &[katla_math::Mat4]) {
-        if let Some(allocation) = &self.allocation {
-            let mapped_ptr = self.context.map_buffer(allocation);
-            let joint_count = joint_matrices.len().min(MAX_JOINTS);
-
-            unsafe {
-                let dst = mapped_ptr as *mut JointMatrix;
-                for (i, matrix) in joint_matrices.iter().take(joint_count).enumerate() {
-                    // Convert Mat4 (column-major Vec4[4]) to [[f32; 4]; 4]
-                    let mat_array = *dst.add(i);
-                    for col in 0..4 {
-                        for row in 0..4 {
-                            // Mat4[col] gives column col, [row] gives the row element
-                            mat_array[col][row] = matrix[col][row];
-                        }
-                    }
-                }
-            }
-        }
-    }
-
     /// Get the Vulkan buffer handle.
     pub fn buffer(&self) -> vk::Buffer {
         self.buffer
