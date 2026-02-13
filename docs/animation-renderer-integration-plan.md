@@ -154,7 +154,15 @@ Use push constants for joint matrix offsets or small skeletons.
 
 ## Implementation Plan
 
-### Phase 1: Vertex Format Extension
+### Status
+
+- [x] Phase 1: Vertex Format Extension ✅
+- [x] Phase 2: GPU Skinning Shader ✅
+- [x] Phase 3: Skeleton Buffer Management ✅
+- [ ] Phase 4: Material Pipeline Integration
+- [ ] Phase 5: Render Graph Integration
+
+### Phase 1: Vertex Format Extension ✅
 
 **Goal:** Add skinning attributes to vertex data.
 
@@ -236,7 +244,7 @@ pub fn build_skinned_vertex_data(
 
 ---
 
-### Phase 2: GPU Skinning Shader
+### Phase 2: GPU Skinning Shader ✅
 
 **Goal:** Implement vertex skinning in WGSL.
 
@@ -331,7 +339,7 @@ GLTF stores joint indices as u8, but Vulkan/WGSL doesn't have `vec4<u8>`. Option
 
 ---
 
-### Phase 3: Skeleton Buffer Management
+### Phase 3: Skeleton Buffer Management ✅
 
 **Goal:** Upload joint matrices to GPU each frame.
 

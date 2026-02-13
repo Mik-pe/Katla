@@ -12,6 +12,23 @@ pub fn get_pbr_vertex_binding() -> VertexBinding {
     }
 }
 
+/// Skinned PBR vertex format with skeletal animation support
+///
+/// Adds joint indices (u16x4) and weights (f32x4) for GPU skinning.
+/// Each vertex can be influenced by up to 4 joints.
+pub fn get_skinned_vertex_binding() -> VertexBinding {
+    VertexBinding {
+        formats: vec![
+            VertexFormat::RGB32f,   // position (location 0)
+            VertexFormat::RGB32f,   // normal (location 1)
+            VertexFormat::RGBA32f,  // tangent (location 2)
+            VertexFormat::RG32f,    // uv (location 3)
+            VertexFormat::RGBA16u,  // joint_indices (location 4)
+            VertexFormat::RGBA32f,  // joint_weights (location 5)
+        ],
+    }
+}
+
 #[derive(Clone, Copy)]
 pub enum VertexFormat {
     R32u,
@@ -26,6 +43,7 @@ pub enum VertexFormat {
     RGBA32u,
     RGBA32i,
     RGBA32f,
+    RGBA16u,  // For joint indices (u16 x 4)
 }
 
 impl VertexFormat {
@@ -43,6 +61,7 @@ impl VertexFormat {
             VertexFormat::RGBA32u => vk::Format::R32G32B32A32_UINT,
             VertexFormat::RGBA32i => vk::Format::R32G32B32A32_SINT,
             VertexFormat::RGBA32f => vk::Format::R32G32B32A32_SFLOAT,
+            VertexFormat::RGBA16u => vk::Format::R16G16B16A16_UINT,
         }
     }
 
@@ -53,6 +72,7 @@ impl VertexFormat {
             RG32u | RG32i | RG32f => 8,
             RGB32u | RGB32i | RGB32f => 12,
             RGBA32u | RGBA32i | RGBA32f => 16,
+            RGBA16u => 8,  // 4 x u16 = 8 bytes
         }
     }
 }

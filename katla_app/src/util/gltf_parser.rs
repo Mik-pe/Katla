@@ -6,7 +6,7 @@ use byteorder::{ByteOrder, LittleEndian};
 use gltf::buffer::Data as BufferData;
 use katla_math::{Sphere, Vec3};
 
-use crate::rendering::VertexPBR;
+use crate::rendering::{VertexPBR, VertexSkinned};
 
 /// GLTF attribute parser using accessor iterators.
 pub struct AttributeParser<'a> {
@@ -39,6 +39,25 @@ impl<'a> AttributeParser<'a> {
         accessor
             .view()
             .and_then(|view| self.parse_vec2_accessor(accessor, view))
+            .unwrap_or_default()
+    }
+
+    /// Parse joint indices from an accessor (JOINTS_0).
+    ///
+    /// GLTF stores joint indices as VEC4 of u8 or u16.
+    /// We normalize to u16 for shader compatibility.
+    pub fn parse_joint_indices(&self, accessor: gltf::Accessor<'a>) -> Vec<[u16; 4]> {
+        accessor
+            .view()
+            .and_then(|view| self.parse_joints_accessor(accessor, view))
+            .unwrap_or_default()
+    }
+
+    /// Parse joint weights from an accessor (WEIGHTS_0).
+    pub fn parse_joint_weights(&self, accessor: gltf::Accessor<'a>) -> Vec<[f32; 4]> {
+        accessor
+            .view()
+            .and_then(|view| self.parse_weights_accessor(accessor, view))
             .unwrap_or_default()
     }
 
@@ -127,6 +146,98 @@ impl<'a> AttributeParser<'a> {
             )
         } else {
             // Unsupported data type
+            None
+        }
+    }
+
+    /// Helper to parse joint indices from an accessor with its view.
+    ///
+    /// GLTF stores joints as VEC4 of u8 (most common) or u16.
+    fn parse_joints_accessor(
+        &self,
+        accessor: gltf::Accessor<'a>,
+        view: gltf::buffer::View<'a>,
+    ) -> Option<Vec<[u16; 4]>> {
+        let buf_index = view.buffer().index();
+        let buf_stride = view.stride();
+        let attr_buf = &self.buffers[buf_index];
+
+        let start_index = accessor.offset() + view.offset();
+        let stride = buf_stride.unwrap_or(accessor.size());
+        let total_size = accessor.size() * accessor.count();
+        let end_index = start_index + total_size;
+
+        let attr_arr = &attr_buf[start_index..end_index];
+
+        // GLTF uses U8 or U16 for joint indices
+        match accessor.data_type() {
+            gltf::accessor::DataType::U8 => {
+                Some(
+                    attr_arr
+                        .chunks(stride)
+                        .map(|bytes| {
+                            [
+                                bytes[0] as u16,
+                                bytes[1] as u16,
+                                bytes[2] as u16,
+                                bytes[3] as u16,
+                            ]
+                        })
+                        .collect(),
+                )
+            }
+            gltf::accessor::DataType::U16 => {
+                Some(
+                    attr_arr
+                        .chunks(stride)
+                        .map(|bytes| {
+                            [
+                                LittleEndian::read_u16(&bytes[0..2]),
+                                LittleEndian::read_u16(&bytes[2..4]),
+                                LittleEndian::read_u16(&bytes[4..6]),
+                                LittleEndian::read_u16(&bytes[6..8]),
+                            ]
+                        })
+                        .collect(),
+                )
+            }
+            _ => None,
+        }
+    }
+
+    /// Helper to parse joint weights from an accessor with its view.
+    fn parse_weights_accessor(
+        &self,
+        accessor: gltf::Accessor<'a>,
+        view: gltf::buffer::View<'a>,
+    ) -> Option<Vec<[f32; 4]>> {
+        let buf_index = view.buffer().index();
+        let buf_stride = view.stride();
+        let attr_buf = &self.buffers[buf_index];
+
+        let start_index = accessor.offset() + view.offset();
+        let stride = buf_stride.unwrap_or(accessor.size());
+        let total_size = accessor.size() * accessor.count();
+        let end_index = start_index + total_size;
+
+        let attr_arr = &attr_buf[start_index..end_index];
+
+        // GLTF uses F32 for weights
+        if accessor.data_type() == gltf::accessor::DataType::F32 {
+            Some(
+                attr_arr
+                    .chunks(stride)
+                    .map(|bytes| {
+                        [
+                            LittleEndian::read_f32(&bytes[0..4]),
+                            LittleEndian::read_f32(&bytes[4..8]),
+                            LittleEndian::read_f32(&bytes[8..12]),
+                            LittleEndian::read_f32(&bytes[12..16]),
+                        ]
+                    })
+                    .collect(),
+            )
+        } else {
             None
         }
     }
@@ -311,6 +422,69 @@ pub fn build_vertex_data(
                     normal: norm0.to_array(),
                     tangent: [0.0, 0.0, 0.0, 0.0],
                     tex_coord0: [0.0, 0.0],
+                }
+            })
+            .collect()
+    } else {
+        vec![]
+    };
+
+    (vertex_data, sphere)
+}
+
+/// Build skinned vertex data with joint indices and weights for skeletal animation.
+///
+/// Falls back to default skinning data (joint 0, weight 1.0) if skinning data is missing.
+pub fn build_skinned_vertex_data(
+    positions: Vec<[f32; 3]>,
+    normals: Vec<[f32; 3]>,
+    tex_coords: Vec<[f32; 2]>,
+    joint_indices: Vec<[u16; 4]>,
+    joint_weights: Vec<[f32; 4]>,
+) -> (Vec<VertexSkinned>, Sphere) {
+    use itertools::izip;
+
+    let has_pos = !positions.is_empty();
+    let has_skinning = !joint_indices.is_empty() && !joint_weights.is_empty();
+
+    let sphere = if has_pos {
+        Sphere::create_from_verts(&positions)
+    } else {
+        Sphere::new(Vec3::new(0.0, 0.0, 0.0), 0.0)
+    };
+
+    // Default skinning: all vertices bound to joint 0 with full weight
+    let default_joints = [0u16, 0, 0, 0];
+    let default_weights = [1.0f32, 0.0, 0.0, 0.0];
+
+    let vertex_count = positions.len();
+    let vertex_data: Vec<VertexSkinned> = if has_pos && has_skinning {
+        izip!(positions, normals, tex_coords, joint_indices, joint_weights)
+            .map(|(position, normal, tex_coord, joints, weights)| VertexSkinned {
+                position,
+                normal,
+                tangent: [0.0, 0.0, 0.0, 0.0],
+                tex_coord0: tex_coord,
+                joint_indices: joints,
+                joint_weights: weights,
+            })
+            .collect()
+    } else if has_pos {
+        // No skinning data - use defaults
+        (0..vertex_count)
+            .zip(positions)
+            .zip(normals)
+            .zip(tex_coords)
+            .map(|(((i, position), normal), tex_coord)| {
+                let joints = joint_indices.get(i).copied().unwrap_or(default_joints);
+                let weights = joint_weights.get(i).copied().unwrap_or(default_weights);
+                VertexSkinned {
+                    position,
+                    normal,
+                    tangent: [0.0, 0.0, 0.0, 0.0],
+                    tex_coord0: tex_coord,
+                    joint_indices: joints,
+                    joint_weights: weights,
                 }
             })
             .collect()
