@@ -58,10 +58,12 @@ pub struct MaterialTemplate {
     name: String,
     descriptor: MaterialDescriptor,
     pipeline: Rc<RefCell<MaterialPipeline>>,
-    /// The descriptor set layout, stored separately to preserve it across hot reloads.
-    /// This ensures that material instances' descriptor sets remain valid when
-    /// the pipeline is recreated.
+    /// The descriptor set layout for set 0 (uniforms).
+    /// This will be preserved across hot reloads.
     desc_layout: vk::DescriptorSetLayout,
+    /// The descriptor set layout for set 1 (textures) in BDA mode.
+    /// None for legacy mode (textures are in set 0).
+    texture_set_layout: Option<vk::DescriptorSetLayout>,
     reflection: ShaderReflection,
     default_parameters: MaterialParameters,
 }
@@ -80,6 +82,9 @@ impl MaterialTemplate {
             .desc_layout
             .expect("Pipeline created without descriptor set layout");
 
+        // Extract texture set layout for BDA mode
+        let texture_set_layout = pipeline.texture_set_layout;
+
         let default_parameters = MaterialParameters::new(descriptor.clone(), reflection.clone());
 
         Self {
@@ -87,6 +92,7 @@ impl MaterialTemplate {
             descriptor,
             pipeline: Rc::new(RefCell::new(pipeline)),
             desc_layout,
+            texture_set_layout,
             reflection,
             default_parameters,
         }
@@ -123,6 +129,18 @@ impl MaterialTemplate {
     /// instances' descriptor sets remain valid.
     pub fn desc_layout(&self) -> vk::DescriptorSetLayout {
         self.desc_layout
+    }
+
+    /// Get the texture set layout for BDA mode.
+    ///
+    /// Returns None for legacy mode where textures are in set 0.
+    pub fn texture_set_layout(&self) -> Option<vk::DescriptorSetLayout> {
+        self.texture_set_layout
+    }
+
+    /// Check if this template uses BDA mode (storage buffers)
+    pub fn is_bda(&self) -> bool {
+        self.texture_set_layout.is_some()
     }
 
     /// Get the pipeline as a mutable RefCell borrow (for hot reload)
@@ -173,16 +191,27 @@ impl MaterialTemplate {
     /// Each material should call this to get its own uniform buffer,
     /// avoiding conflicts when multiple materials share the same template.
     ///
+    /// For storage mode (when texture_set_layout is Some), creates a minimal
+    /// uniform handle without a buffer - texture info only.
+    ///
     /// Uses separate texture and sampler bindings for WGSL shaders.
     pub fn create_uniform(&self) -> super::UniformHandle {
         let (desc_layout, context, layout) = self.get_uniform_layout_info();
-        // All shaders use WGSL now, which requires separate texture and sampler bindings
-        super::UniformHandle::with_layout_and_bindings(&context, &desc_layout, layout, true)
+
+        // Check if this is storage mode (has separate texture set layout)
+        if self.texture_set_layout.is_some() {
+            // Storage mode: create minimal handle without buffer
+            // Uniform data comes from StorageUniformManager
+            super::UniformHandle::new_bda(&context, &desc_layout)
+        } else {
+            // Legacy mode: create full uniform buffer
+            super::UniformHandle::with_layout_and_bindings(&context, &desc_layout, layout, true)
+        }
     }
 
     /// Destroy the template's resources.
     ///
-    /// This destroys the pipeline and the descriptor set layout.
+    /// This destroys the pipeline and the descriptor set layouts.
     /// This should be called when the template is no longer needed.
     pub fn destroy(&self, context: &Rc<crate::VulkanContext>) {
         // Destroy the pipeline
@@ -195,6 +224,15 @@ impl MaterialTemplate {
             context
                 .device
                 .destroy_descriptor_set_layout(self.desc_layout, None);
+        }
+
+        // Destroy the texture set layout if present (BDA mode)
+        if let Some(texture_layout) = self.texture_set_layout {
+            unsafe {
+                context
+                    .device
+                    .destroy_descriptor_set_layout(texture_layout, None);
+            }
         }
     }
 }
@@ -340,6 +378,7 @@ pub struct MaterialTemplateBuilder {
     descriptor: Option<MaterialDescriptor>,
     context: Option<Rc<VulkanContext>>,
     vertex_binding: Option<crate::VertexBinding>,
+    use_bda: bool,
 }
 
 impl MaterialTemplateBuilder {
@@ -350,29 +389,51 @@ impl MaterialTemplateBuilder {
             descriptor: None,
             context: None,
             vertex_binding: None,
+            use_bda: false,
         }
     }
 
     /// Set the material descriptor
-    pub fn descriptor(mut self, descriptor: MaterialDescriptor) -> Self {
-        self.descriptor = Some(descriptor);
+    pub fn with_descriptor(mut self, desc: MaterialDescriptor) -> Self {
+        self.descriptor = Some(desc);
         self
     }
 
     /// Set the Vulkan context
-    pub fn context(mut self, context: Rc<VulkanContext>) -> Self {
-        self.context = Some(context);
+    pub fn with_context(mut self, ctx: Rc<VulkanContext>) -> Self {
+        self.context = Some(ctx);
         self
     }
 
     /// Set the vertex binding
-    pub fn vertex_binding(mut self, binding: crate::VertexBinding) -> Self {
+    pub fn with_vertex_binding(mut self, binding: crate::VertexBinding) -> Self {
         self.vertex_binding = Some(binding);
         self
     }
 
-    /// Build the template
+    /// Enable storage buffer rendering (storage buffers + instance indexing)
+    pub fn with_storage(mut self, enable: bool) -> Self {
+        self.use_bda = enable;
+        self
+    }
+
+    /// Build the template with legacy uniform buffers
     pub fn build(self) -> Result<MaterialTemplate, MaterialError> {
+        self.build_internal(false)
+    }
+
+    /// Build the template with storage buffers and instance indexing
+    pub fn build_storage(self) -> Result<MaterialTemplate, MaterialError> {
+        self.build_internal(true)
+    }
+
+    /// Alias for backward compatibility
+    #[deprecated(since = "0.1.0", note = "Use build_storage() instead")]
+    pub fn build_bda(self) -> Result<MaterialTemplate, MaterialError> {
+        self.build_storage()
+    }
+
+    fn build_internal(self, use_storage: bool) -> Result<MaterialTemplate, MaterialError> {
         let descriptor = self.descriptor.ok_or_else(|| {
             MaterialError::InvalidDescriptor("No descriptor provided".to_string())
         })?;
@@ -409,9 +470,16 @@ impl MaterialTemplateBuilder {
             builder = builder.with_vertex_binding(binding);
         }
 
-        let pipeline = builder.build().map_err(|e| {
-            MaterialError::InvalidDescriptor(format!("Pipeline build failed: {:?}", e))
-        })?;
+        // Use storage buffer build method if requested, otherwise use legacy
+        let pipeline = if use_storage || self.use_bda {
+            builder.build_with_storage().map_err(|e| {
+                MaterialError::InvalidDescriptor(format!("Storage Pipeline build failed: {:?}", e))
+            })?
+        } else {
+            builder.build().map_err(|e| {
+                MaterialError::InvalidDescriptor(format!("Pipeline build failed: {:?}", e))
+            })?
+        };
 
         Ok(MaterialTemplate::new(
             self.name, descriptor, reflection, pipeline,

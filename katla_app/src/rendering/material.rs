@@ -121,16 +121,35 @@ impl Material {
         // For now, we use a default PBR binding - this should come from the template
         use katla_vulkan::vertexbinding::get_pbr_vertex_binding;
 
-        // Create a new uniform buffer for this material instance
-        // This allows each material to have its own uniforms while sharing the pipeline
-        let mut uniform = template.create_uniform();
+        // Check if template uses storage mode (has separate texture set layout)
+        // Storage mode doesn't need per-material uniform buffers - data comes from shared storage buffer
+        let is_storage_mode = template.texture_set_layout().is_some();
 
-        // If a texture is provided, update the uniform's descriptor sets with the texture image info
-        if let Some(ref tex) = texture {
-            use katla_vulkan::material::ImageInfo;
-            let image_info = ImageInfo::new(tex.image_view.vk(), tex.image_sampler.vk());
-            uniform.add_image_info(image_info);
-        }
+        let uniform = if is_storage_mode {
+            // Storage mode: Create minimal uniform handle just for texture info
+            // The actual uniform data comes from StorageUniformManager
+            let mut uniform = template.create_uniform();
+
+            // If a texture is provided, update the uniform's image info for texture descriptor
+            if let Some(ref tex) = texture {
+                use katla_vulkan::material::ImageInfo;
+                let image_info = ImageInfo::new(tex.image_view.vk(), tex.image_sampler.vk());
+                uniform.add_image_info(image_info);
+            }
+
+            Some(uniform)
+        } else {
+            // Legacy mode: Create full uniform buffer for this material instance
+            let mut uniform = template.create_uniform();
+
+            if let Some(ref tex) = texture {
+                use katla_vulkan::material::ImageInfo;
+                let image_info = ImageInfo::new(tex.image_view.vk(), tex.image_sampler.vk());
+                uniform.add_image_info(image_info);
+            }
+
+            Some(uniform)
+        };
 
         Self {
             material_pipeline: template.pipeline(),
@@ -138,7 +157,7 @@ impl Material {
             vertex_binding: get_pbr_vertex_binding(),
             handle: None,
             color,
-            uniform: Some(uniform),
+            uniform,
         }
     }
 

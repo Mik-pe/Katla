@@ -1,13 +1,13 @@
 # GLTF Default Material
 #
-# Default material for GLTF models. Uses the model_pbr shader with
-# texture and color support.
+# Default material for GLTF models. Uses storage buffers with
+# instance indexing for modern rendering.
 
 name = "gltf_default"
 
 [shaders]
-vertex = "../shaders/model_pbr.wgsl"
-fragment = "../shaders/model_pbr.wgsl"
+vertex = "../shaders/model_pbr_storage.wgsl"
+fragment = "../shaders/model_pbr_storage.wgsl"
 
 [bindings.uniforms.transform]
 type = "mat4"

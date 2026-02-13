@@ -12,6 +12,8 @@ pub mod vertexbinding;
 pub mod vertexbuffer;
 
 pub use bda::*;
+#[allow(deprecated)]
+pub use material::storage_uniform::*;
 pub use commandbuffer::*;
 pub use commandpool::*;
 pub use context::*;

@@ -3,6 +3,8 @@ use std::{ffi::CString, rc::Rc};
 use ash::vk;
 
 use crate::VulkanContext;
+#[allow(deprecated)]
+use crate::vulkan::material::storage_uniform::BdaUniformManager;
 
 pub struct PipelineBuilder {
     context: Rc<VulkanContext>,
@@ -30,6 +32,9 @@ pub struct PipelineBuilder {
     descriptor_layouts: Vec<vk::DescriptorSetLayout>,
     push_constant_ranges: Vec<vk::PushConstantRange>,
     dynamic_states: Vec<vk::DynamicState>,
+    /// BDA uniform manager (shared across all materials using this pipeline).
+    /// When present, materials share a single 20KB buffer for frame + object uniforms.
+    bda_manager: Option<Rc<BdaUniformManager>>,
     // For dynamic rendering (Vulkan 1.3)
     color_format: Option<vk::Format>,
     depth_format: Option<vk::Format>,
@@ -63,6 +68,7 @@ impl PipelineBuilder {
             descriptor_layouts: Vec::new(),
             push_constant_ranges: Vec::new(),
             dynamic_states: vec![vk::DynamicState::VIEWPORT, vk::DynamicState::SCISSOR],
+            bda_manager: None,
             color_format: None,
             depth_format: None,
         }
@@ -161,6 +167,27 @@ impl PipelineBuilder {
         self.blend_src_alpha = vk::BlendFactor::ONE;
         self.blend_dst_alpha = vk::BlendFactor::ZERO;
         self.blend_alpha_op = vk::BlendOp::ADD;
+        self
+    }
+
+    /// Add BDA uniform manager to pipeline builder.
+    ///
+    /// Materials with compatible layouts share a single BDA buffer
+    /// containing frame uniforms and per-object arrays.
+    ///
+    /// # Arguments
+    /// * `manager` - BDA uniform manager to share
+    ///
+    /// # Returns
+    /// Modified builder for chaining
+    ///
+    /// # Example
+    /// ```ignore
+    /// let manager = BdaUniformManager::new(context.clone())?;
+    /// let pipeline = builder.with_bda_manager(manager);
+    /// ```
+    pub fn with_bda_manager(mut self, manager: Rc<BdaUniformManager>) -> Self {
+        self.bda_manager = Some(manager);
         self
     }
 
