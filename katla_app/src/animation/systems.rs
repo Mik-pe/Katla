@@ -1,58 +1,116 @@
-use crate::animation::components::{AnimatedModel, AnimationPlayer, MorphTargetWeights};
+use crate::animation::components::{
+    AnimatedModel, AnimationEvent, AnimationPlayer, MorphTargetWeights,
+};
 use crate::animation::skin::{Skeleton, Skin};
-use crate::animation::{ChannelPath, SampledValue};
+use crate::animation::{ChannelPath, SampleBuffer, SampledValue};
 use katla_ecs::{EntityId, System, World};
 use katla_math::{Mat4, Quat, Vec3};
 
-/// Updates animation players based on elapsed time.
-///
-/// This system handles:
-/// - Advancing animation time for playing animations
-/// - Looping animations that have finished
-/// - Resetting animations that have finished (if not looping)
-///
-/// Runs before skeletal animation system to update player states.
 pub struct AnimationUpdateSystem;
 
 impl System for AnimationUpdateSystem {
     fn update(&mut self, world: &mut World, delta_time: f32) {
-        // Collect all entities with AnimationPlayer
         let player_entities: Vec<EntityId> = world
             .query::<&AnimationPlayer>()
             .map(|(entity, _player)| entity)
             .collect();
 
-        // Process each player separately to avoid borrow conflicts
         for player_entity in player_entities {
-            // Find the animated model for this player
             let model_entity = Self::find_animated_model(world, player_entity);
 
             if let Some(model_entity) = model_entity {
-                // Clone the animation data we need
-                let animation_data = world
+                let clip_info: Option<(String, f32)> = world
                     .get_component::<AnimatedModel>(model_entity)
-                    .map(|model| model.animations.clone());
+                    .and_then(|model| {
+                        world
+                            .get_component::<AnimationPlayer>(player_entity)
+                            .and_then(|player| {
+                                player.current_clip.as_ref().and_then(|name| {
+                                    model
+                                        .animations
+                                        .get(name)
+                                        .map(|clip| (name.clone(), clip.duration))
+                                })
+                            })
+                    });
 
-                // Update the player using the cloned data
-                if let (Some(player), Some(animations)) = (
-                    world.get_component_mut::<AnimationPlayer>(player_entity),
-                    animation_data,
-                ) {
-                    // Create a temporary AnimatedModel reference for the update function
-                    if let Some(clip_name) = &player.current_clip {
-                        if let Some(clip) = animations.get(clip_name) {
-                            // Update the player time directly
-                            if player.playing {
-                                player.time += delta_time * player.speed;
+                let target_clip_info: Option<(String, f32)> = if world
+                    .get_component::<AnimationPlayer>(player_entity)
+                    .map(|p| p.blending)
+                    .unwrap_or(false)
+                {
+                    world
+                        .get_component::<AnimatedModel>(model_entity)
+                        .and_then(|model| {
+                            world
+                                .get_component::<AnimationPlayer>(player_entity)
+                                .and_then(|player| {
+                                    player.target_clip.as_ref().and_then(|name| {
+                                        model
+                                            .animations
+                                            .get(name)
+                                            .map(|clip| (name.clone(), clip.duration))
+                                    })
+                                })
+                        })
+                } else {
+                    None
+                };
 
-                                if player.time >= clip.duration {
-                                    if player.loop_animation {
-                                        player.time %= clip.duration;
-                                    } else {
-                                        player.time = clip.duration;
-                                        player.playing = false;
-                                    }
+                if let Some(player) = world.get_component_mut::<AnimationPlayer>(player_entity) {
+                    if player.playing {
+                        if let Some((_, duration)) = &clip_info {
+                            player.duration = *duration;
+                        }
+
+                        player.time += delta_time * player.speed;
+
+                        if player.time >= player.duration {
+                            if player.loop_animation {
+                                player.time %= player.duration;
+                                player.loop_count += 1;
+                                player.events.push(AnimationEvent::Looped {
+                                    clip_name: player.current_clip.clone().unwrap_or_default(),
+                                    loop_count: player.loop_count,
+                                });
+                            } else {
+                                player.time = player.duration;
+                                player.playing = false;
+                                player.events.push(AnimationEvent::Completed {
+                                    clip_name: player.current_clip.clone().unwrap_or_default(),
+                                });
+                            }
+                        }
+
+                        if player.blending {
+                            if let Some((_, target_duration)) = &target_clip_info {
+                                player.target_duration = *target_duration;
+                            }
+
+                            player.target_time += delta_time * player.speed;
+                            player.blend_time += delta_time;
+
+                            if player.target_time >= player.target_duration
+                                && player.target_duration > 0.0
+                            {
+                                player.target_time %= player.target_duration;
+                            }
+
+                            if player.blend_time >= player.blend_duration {
+                                if let Some(target) = player.target_clip.take() {
+                                    player.current_clip = Some(target);
+                                    player.duration = player.target_duration;
+                                    player.time = player.target_time;
                                 }
+                                player.target_clip = None;
+                                player.target_duration = 0.0;
+                                player.target_time = 0.0;
+                                player.blend_time = 0.0;
+                                player.blending = false;
+                                player.blend_weight = 1.0;
+                            } else if player.blend_duration > 0.0 {
+                                player.blend_weight =
+                                    1.0 - (player.blend_time / player.blend_duration);
                             }
                         }
                     }
@@ -67,137 +125,137 @@ impl System for AnimationUpdateSystem {
 }
 
 impl AnimationUpdateSystem {
-    /// Find the AnimatedModel component for an entity.
-    ///
-    /// This could be on the same entity or a related entity.
     fn find_animated_model(world: &World, entity: EntityId) -> Option<EntityId> {
-        // First check if the entity itself has AnimatedModel
         if world.get_component::<AnimatedModel>(entity).is_some() {
             return Some(entity);
         }
-
-        // TODO: Check parent/child relationships via Parent/Children components
-        // For now, return None
         None
     }
 }
 
-/// Applies skeletal animation transforms to the scene.
-///
-/// This system:
-/// - Samples animation clips at the current time
-/// - Computes joint transforms for the skeleton
-/// - Updates joint matrices for vertex skinning
-///
-/// Requires animation data to be loaded from GLTF files first.
-pub struct SkeletalAnimationSystem;
+pub struct SkeletalAnimationSystem {
+    sample_buffer: SampleBuffer,
+}
+
+impl Default for SkeletalAnimationSystem {
+    fn default() -> Self {
+        Self {
+            sample_buffer: SampleBuffer::new(),
+        }
+    }
+}
 
 impl System for SkeletalAnimationSystem {
     fn update(&mut self, world: &mut World, _delta_time: f32) {
-        // Find all entities with AnimatedModel, Skin, and AnimationPlayer components
         let entities: Vec<EntityId> = world
             .query::<(&AnimatedModel, &Skin, &AnimationPlayer)>()
             .map(|(entity, _, _, _)| entity)
             .collect();
 
         for entity in entities {
-            // Get the components
-            let (animated_model, skin, player) = match (
-                world.get_component::<AnimatedModel>(entity),
-                world.get_component::<Skin>(entity),
-                world.get_component::<AnimationPlayer>(entity),
-            ) {
-                (Some(model), Some(s), Some(p)) => (model, s, p),
-                _ => continue,
-            };
+            let has_components = world.get_component::<AnimatedModel>(entity).is_some()
+                && world.get_component::<Skin>(entity).is_some()
+                && world.get_component::<AnimationPlayer>(entity).is_some();
 
-            // Only process if playing and we have a current clip
-            if !player.playing {
+            if !has_components {
                 continue;
             }
 
-            let clip_name = match &player.current_clip {
+            let playing = world
+                .get_component::<AnimationPlayer>(entity)
+                .map(|p| p.playing)
+                .unwrap_or(false);
+
+            if !playing {
+                continue;
+            }
+
+            let clip_name = world
+                .get_component::<AnimationPlayer>(entity)
+                .and_then(|p| p.current_clip.clone());
+
+            let clip_name = match clip_name {
                 Some(name) => name,
                 None => continue,
             };
 
-            let clip = match animated_model.animations.get(clip_name) {
-                Some(c) => c,
-                None => continue,
-            };
+            let clip_exists = world
+                .get_component::<AnimatedModel>(entity)
+                .map(|m| m.animations.contains_key(&clip_name))
+                .unwrap_or(false);
 
-            // Sample the animation at the current time
-            let sampled_values = clip.sample(player.time);
+            if !clip_exists {
+                continue;
+            }
 
-            // Create or get skeleton component
-            let skeleton = if let Some(skel) = world.get_component::<Skeleton>(entity) {
-                skel.clone()
-            } else {
-                Skeleton::new("skeleton", skin.joint_count())
-            };
+            let player_time = world
+                .get_component::<AnimationPlayer>(entity)
+                .map(|p| p.time)
+                .unwrap_or(0.0);
 
-            // Apply animation samples to joint transforms
-            let mut joint_transforms = skeleton.joint_transforms;
+            let joint_count = world
+                .get_component::<Skin>(entity)
+                .map(|s| s.joint_count())
+                .unwrap_or(0);
 
-            for (node_index, path, value) in sampled_values {
-                // Find which joint this node corresponds to
-                if let Some(joint_index) = skin.joints.iter().position(|&j| j == node_index) {
-                    if joint_index < joint_transforms.len() {
-                        let transform = joint_transforms[joint_index].clone();
-                        let transform_decomposed = transform.decompose();
+            if world.get_component::<Skeleton>(entity).is_none() {
+                world.add_component(entity, Skeleton::new("skeleton", joint_count));
+            }
 
-                        let new_transform = match (path, value) {
-                            (ChannelPath::Translation, SampledValue::Vec3(t)) => {
-                                let t_vec = Vec3::new(t[0], t[1], t[2]);
-                                Mat4::from_trs(
-                                    t_vec,
-                                    transform_decomposed.rotation,
-                                    transform_decomposed.scale,
-                                )
-                            }
-                            (ChannelPath::Rotation, SampledValue::Quat(q)) => {
-                                let q_quat = Quat::new_from_xyzw(q[0], q[1], q[2], q[3]);
-                                Mat4::from_trs(
-                                    transform_decomposed.position,
-                                    q_quat,
-                                    transform_decomposed.scale,
-                                )
-                            }
-                            (ChannelPath::Scale, SampledValue::Vec3(s)) => {
-                                let s_vec = Vec3::new(s[0], s[1], s[2]);
-                                Mat4::from_trs(
-                                    transform_decomposed.position,
-                                    transform_decomposed.rotation,
-                                    s_vec,
-                                )
-                            }
-                            _ => transform,
-                        };
+            let sampled_values: Vec<(usize, ChannelPath, SampledValue)> = world
+                .get_component::<AnimatedModel>(entity)
+                .and_then(|model| {
+                    model
+                        .animations
+                        .get(&clip_name)
+                        .map(|clip| clip.sample(player_time))
+                })
+                .unwrap_or_default();
 
-                        joint_transforms[joint_index] = new_transform;
+            let skin_joints: Vec<usize> = world
+                .get_component::<Skin>(entity)
+                .map(|s| s.joints.clone())
+                .unwrap_or_default();
+
+            let inverse_bind_matrices: Vec<Mat4> = world
+                .get_component::<Skin>(entity)
+                .map(|s| s.inverse_bind_matrices.clone())
+                .unwrap_or_default();
+
+            if let Some(skeleton) = world.get_component_mut::<Skeleton>(entity) {
+                for (node_index, path, value) in sampled_values {
+                    if let Some(joint_index) = skin_joints.iter().position(|&j| j == node_index) {
+                        if joint_index < skeleton.joint_transforms.len() {
+                            let transform = &skeleton.joint_transforms[joint_index];
+                            let decomposed = transform.decompose();
+
+                            let new_transform = match (path, value) {
+                                (ChannelPath::Translation, SampledValue::Vec3(t)) => {
+                                    let t_vec = Vec3::new(t[0], t[1], t[2]);
+                                    Mat4::from_trs(t_vec, decomposed.rotation, decomposed.scale)
+                                }
+                                (ChannelPath::Rotation, SampledValue::Quat(q)) => {
+                                    let q_quat = Quat::new_from_xyzw(q[0], q[1], q[2], q[3]);
+                                    Mat4::from_trs(decomposed.position, q_quat, decomposed.scale)
+                                }
+                                (ChannelPath::Scale, SampledValue::Vec3(s)) => {
+                                    let s_vec = Vec3::new(s[0], s[1], s[2]);
+                                    Mat4::from_trs(decomposed.position, decomposed.rotation, s_vec)
+                                }
+                                _ => continue,
+                            };
+
+                            skeleton.joint_transforms[joint_index] = new_transform;
+                        }
+                    }
+                }
+
+                for (i, joint_transform) in skeleton.joint_transforms.iter_mut().enumerate() {
+                    if i < inverse_bind_matrices.len() {
+                        *joint_transform = joint_transform.mul(&inverse_bind_matrices[i]);
                     }
                 }
             }
-
-            // Apply inverse bind matrices
-            for (i, joint_transform) in joint_transforms.iter_mut().enumerate() {
-                if i < skin.inverse_bind_matrices.len() {
-                    *joint_transform =
-                        joint_transform.clone() * skin.inverse_bind_matrices[i].clone();
-                }
-            }
-
-            // Update skeleton component
-            let mut updated_skeleton = Skeleton::new("skeleton", joint_transforms.len());
-            updated_skeleton.joint_transforms = joint_transforms;
-
-            // TODO: In a real implementation, upload joint matrices to GPU uniform buffer
-            // This would typically involve:
-            // 1. Getting the VulkanRenderer from world
-            // 2. Updating a uniform buffer with joint matrices
-            // 3. Binding the buffer to the vertex shader for skinning
-
-            world.add_component(entity, updated_skeleton);
         }
     }
 
@@ -206,73 +264,60 @@ impl System for SkeletalAnimationSystem {
     }
 }
 
-/// Applies morph target animations to meshes.
-///
-/// Morph targets are used for:
-/// - Facial animations
-/// - Shape blending
-/// - Mesh deformation
 pub struct MorphTargetSystem;
 
 impl System for MorphTargetSystem {
     fn update(&mut self, world: &mut World, _delta_time: f32) {
-        // Find all entities with AnimatedModel, AnimationPlayer, and MorphTargetWeights components
         let entities: Vec<EntityId> = world
             .query::<(&AnimatedModel, &AnimationPlayer, &MorphTargetWeights)>()
             .map(|(entity, _, _, _)| entity)
             .collect();
 
         for entity in entities {
-            // Get the components - clone immutable data first, then get mutable
-            let (animated_model_clone, player_clone) = match (
-                world.get_component::<AnimatedModel>(entity),
-                world.get_component::<AnimationPlayer>(entity),
-            ) {
-                (Some(model), Some(player)) => (model.animations.clone(), player.clone()),
-                _ => continue,
-            };
+            let playing = world
+                .get_component::<AnimationPlayer>(entity)
+                .map(|p| p.playing)
+                .unwrap_or(false);
 
-            let morph_weights = match world.get_component_mut::<MorphTargetWeights>(entity) {
-                Some(w) => w,
-                None => continue,
-            };
-
-            // Only process if playing and we have a current clip
-            if !player_clone.playing {
+            if !playing {
                 continue;
             }
 
-            let clip_name = match &player_clone.current_clip {
+            let clip_name = world
+                .get_component::<AnimationPlayer>(entity)
+                .and_then(|p| p.current_clip.clone());
+
+            let clip_name = match clip_name {
                 Some(name) => name,
                 None => continue,
             };
 
-            let clip = match animated_model_clone.get(clip_name) {
-                Some(c) => c,
-                None => continue,
-            };
+            let player_time = world
+                .get_component::<AnimationPlayer>(entity)
+                .map(|p| p.time)
+                .unwrap_or(0.0);
 
-            // Sample the animation at the current time
-            let sampled_values = clip.sample(player_clone.time);
+            let sampled_values: Vec<(usize, ChannelPath, SampledValue)> = world
+                .get_component::<AnimatedModel>(entity)
+                .and_then(|model| {
+                    model
+                        .animations
+                        .get(&clip_name)
+                        .map(|clip| clip.sample(player_time))
+                })
+                .unwrap_or_default();
 
-            // Apply weight animations to morph target weights
-            for (_node_index, path, value) in sampled_values {
-                if path == ChannelPath::Weights {
-                    if let SampledValue::Float(weight) = value {
-                        // For now, apply to all weights
-                        // TODO: In a real implementation, this would need to map specific
-                        // animation channels to specific morph target indices
-                        for i in 0..morph_weights.weights.len() {
-                            morph_weights.weights[i] = weight;
+            if let Some(morph_weights) = world.get_component_mut::<MorphTargetWeights>(entity) {
+                for (_node_index, path, value) in sampled_values {
+                    if path == ChannelPath::Weights {
+                        if let SampledValue::Float(weight) = value {
+                            for w in morph_weights.weights.iter_mut() {
+                                *w = weight;
+                            }
                         }
                     }
                 }
             }
-
-            // TODO: In a real implementation, this would need to:
-            // 1. Interpolate vertex positions based on morph targets
-            // 2. Re-upload vertex buffer to GPU when weights change
-            // 3. Update material uniforms with morph target weights array
         }
     }
 

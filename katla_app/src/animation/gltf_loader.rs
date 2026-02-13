@@ -7,42 +7,33 @@ use byteorder::{ByteOrder, LittleEndian};
 use gltf::buffer::Data as BufferData;
 use katla_ecs::World;
 
-/// Load animations from a GLTF model into the world.
-///
-/// Parses animation channels (translation, rotation, scale, morph weights),
-/// reads keyframe data from gltf accessors (input times, output values),
-/// builds AnimationClip structures with samplers, creates AnimatedModel component,
-/// and handles interpolation modes (Linear, Step, CubicSpline).
 pub fn load_animations(world: &mut World, model: &GLTFModel) {
     let document = &model.document;
 
-    // Check if the model has any animations
     let animations: Vec<_> = document.animations().collect();
     if animations.is_empty() {
-        println!("Model has no animations");
+        log::info!("Model has no animations");
         return;
     }
 
-    println!("Model has {} animations:", animations.len());
+    log::info!("Model has {} animations:", animations.len());
 
     let mut animated_model = AnimatedModel {
         animations: std::collections::HashMap::new(),
         sequences: std::collections::HashMap::new(),
     };
 
-    // Parse each animation
     for (index, gltf_animation) in animations.iter().enumerate() {
         let name = gltf_animation
             .name()
             .unwrap_or(&format!("Animation_{}", index))
             .to_string();
 
-        println!("  Parsing animation '{}'", name);
+        log::info!("  Parsing animation '{}'", name);
 
         let mut channels: Vec<AnimationChannel> = Vec::new();
         let mut duration: f32 = 0.0;
 
-        // Parse each channel in this animation
         for channel in gltf_animation.channels() {
             let sampler = channel.sampler();
             let target_node = channel.target().node().index();
@@ -59,7 +50,6 @@ pub fn load_animations(world: &mut World, model: &GLTFModel) {
                 gltf::animation::Interpolation::CubicSpline => Interpolation::CubicSpline,
             };
 
-            // Parse sampler data (inputs and outputs)
             let input_accessor = sampler.input();
             let output_accessor = sampler.output();
 
@@ -71,10 +61,9 @@ pub fn load_animations(world: &mut World, model: &GLTFModel) {
                 interpolation,
             );
 
-            // Update duration based on this sampler
             duration = duration.max(animation_sampler.duration());
 
-            println!(
+            log::debug!(
                 "    - Channel on node {}: {}, {} keyframes, interpolation: {:?}",
                 target_node,
                 property,
@@ -98,19 +87,16 @@ pub fn load_animations(world: &mut World, model: &GLTFModel) {
         animated_model.animations.insert(name, clip);
     }
 
-    println!(
+    log::info!(
         "  Successfully loaded {} animation clips",
         animated_model.animations.len()
     );
 
-    // Create a dummy entity to hold the animated model
-    // In a real implementation, this would be attached to the actual loaded model entity
     let entity = world.create_entity();
     world.add_component(entity, animated_model);
-    println!("  Attached AnimatedModel to entity {:?}", entity);
+    log::debug!("  Attached AnimatedModel to entity {:?}", entity);
 }
 
-/// Parse an animation sampler from GLTF accessors.
 fn parse_sampler(
     buffers: &[BufferData],
     input_accessor: gltf::Accessor,
@@ -140,7 +126,6 @@ fn parse_sampler(
     }
 }
 
-/// Parse f32 data from an accessor.
 fn parse_accessor_f32(buffers: &[BufferData], accessor: gltf::Accessor) -> Vec<f32> {
     let view = match accessor.view() {
         Some(v) => v,
@@ -164,7 +149,6 @@ fn parse_accessor_f32(buffers: &[BufferData], accessor: gltf::Accessor) -> Vec<f
         .collect()
 }
 
-/// Parse Vec3 data from an accessor.
 fn parse_accessor_vec3(buffers: &[BufferData], accessor: gltf::Accessor) -> Vec<[f32; 3]> {
     let view = match accessor.view() {
         Some(v) => v,
@@ -194,7 +178,6 @@ fn parse_accessor_vec3(buffers: &[BufferData], accessor: gltf::Accessor) -> Vec<
         .collect()
 }
 
-/// Parse Vec4 data from an accessor.
 fn parse_accessor_vec4(buffers: &[BufferData], accessor: gltf::Accessor) -> Vec<[f32; 4]> {
     let view = match accessor.view() {
         Some(v) => v,
@@ -225,62 +208,52 @@ fn parse_accessor_vec4(buffers: &[BufferData], accessor: gltf::Accessor) -> Vec<
         .collect()
 }
 
-/// Load skin data from a GLTF model.
-///
-/// Skins define the joint hierarchy and inverse bind matrices for skeletal animation.
 pub fn load_skins(world: &mut World, model: &GLTFModel) {
     let document = &model.document;
 
     let skins: Vec<_> = document.skins().collect();
     if skins.is_empty() {
-        println!("Model has no skins");
+        log::info!("Model has no skins");
         return;
     }
 
-    println!("Model has {} skins:", skins.len());
+    log::info!("Model has {} skins:", skins.len());
 
-    // Parse each skin
     for (index, gltf_skin) in skins.iter().enumerate() {
         let name = gltf_skin
             .name()
             .unwrap_or(&format!("Skin_{}", index))
             .to_string();
 
-        println!("  Parsing skin '{}'", name);
+        log::info!("  Parsing skin '{}'", name);
 
-        // Get joint indices
         let joints: Vec<usize> = gltf_skin.joints().map(|node| node.index()).collect();
         let joints_count = joints.len();
 
-        println!("    - Found {} joints", joints_count);
+        log::debug!("    - Found {} joints", joints_count);
 
-        // Parse inverse bind matrices
         let inverse_bind_matrices = if let Some(accessor) = gltf_skin.inverse_bind_matrices() {
             parse_accessor_mat4(&model.buffers, accessor)
         } else {
-            println!("    - No inverse bind matrices, using identity");
+            log::debug!("    - No inverse bind matrices, using identity");
             vec![katla_math::Mat4::identity(); joints_count]
         };
 
-        // Create skin component
         let skin = crate::animation::Skin::new(name.clone(), joints, inverse_bind_matrices);
 
-        println!(
+        log::debug!(
             "    - Created skin component with {} joints",
             skin.joint_count()
         );
 
-        // Create a dummy entity to hold the skin
-        // In a real implementation, this would be attached to the actual skinned mesh entity
         let entity = world.create_entity();
         world.add_component(entity, skin);
-        println!("    - Attached Skin component to entity {:?}", entity);
+        log::debug!("    - Attached Skin component to entity {:?}", entity);
     }
 
-    println!("  Successfully loaded {} skins", skins.len());
+    log::info!("  Successfully loaded {} skins", skins.len());
 }
 
-/// Parse Mat4 data from an accessor.
 fn parse_accessor_mat4(buffers: &[BufferData], accessor: gltf::Accessor) -> Vec<katla_math::Mat4> {
     let view = match accessor.view() {
         Some(v) => v,
@@ -328,20 +301,14 @@ fn parse_accessor_mat4(buffers: &[BufferData], accessor: gltf::Accessor) -> Vec<
         .collect()
 }
 
-/// Parse node hierarchy to build skeleton.
-///
-/// GLTF skins reference nodes by index. We need to build the actual
-/// transform hierarchy for the skeleton.
 pub fn build_skeleton(model: &GLTFModel, skin_joints: &[usize]) -> Vec<katla_math::Mat4> {
-    println!("Building skeleton for {} joints", skin_joints.len());
+    log::debug!("Building skeleton for {} joints", skin_joints.len());
 
     let mut joint_transforms = Vec::with_capacity(skin_joints.len());
     let document = &model.document;
 
-    // Get all nodes for easy lookup
     let nodes: Vec<_> = document.nodes().collect();
 
-    // Build a parent mapping for each node
     let mut parent_map: std::collections::HashMap<usize, Option<usize>> =
         std::collections::HashMap::new();
     for node in &nodes {
@@ -349,14 +316,12 @@ pub fn build_skeleton(model: &GLTFModel, skin_joints: &[usize]) -> Vec<katla_mat
         parent_map.insert(node_index, None);
     }
 
-    // Find parents by traversing the hierarchy
     for node in &nodes {
         for child in node.children() {
             parent_map.insert(child.index(), Some(node.index()));
         }
     }
 
-    // For each joint, compute its world-space transform
     for joint_index in skin_joints {
         let node = nodes.get(*joint_index);
 
@@ -364,19 +329,18 @@ pub fn build_skeleton(model: &GLTFModel, skin_joints: &[usize]) -> Vec<katla_mat
             let transform = get_node_world_transform(&nodes, &parent_map, *joint_index);
             joint_transforms.push(transform);
         } else {
-            eprintln!("    Warning: Joint node {} not found", joint_index);
+            log::warn!("    Joint node {} not found", joint_index);
             joint_transforms.push(katla_math::Mat4::identity());
         }
     }
 
-    println!(
+    log::debug!(
         "  Built skeleton with {} joint transforms",
         joint_transforms.len()
     );
     joint_transforms
 }
 
-/// Get the world-space transform of a node by traversing the hierarchy.
 fn get_node_world_transform(
     nodes: &[gltf::Node],
     parent_map: &std::collections::HashMap<usize, Option<usize>>,
@@ -387,19 +351,15 @@ fn get_node_world_transform(
         None => return katla_math::Mat4::identity(),
     };
 
-    // Get local transform
     let transform = node.transform();
     let (translation, rotation, scale) = transform.decomposed();
 
-    // Convert to katla math types
     let t = katla_math::Vec3::new(translation[0], translation[1], translation[2]);
     let r = katla_math::Quat::new_from_xyzw(rotation[0], rotation[1], rotation[2], rotation[3]);
     let s = katla_math::Vec3::new(scale[0], scale[1], scale[2]);
 
-    // Build local matrix
     let local_matrix = katla_math::Mat4::from_trs(t, r, s);
 
-    // Get parent transform recursively
     if let Some(Some(parent_index)) = parent_map.get(&node_index) {
         let parent_matrix = get_node_world_transform(nodes, parent_map, *parent_index);
         parent_matrix * local_matrix

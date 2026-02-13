@@ -16,3 +16,4 @@ gltf = { version = "^1.4", features = ["KHR_materials_pbrSpecularGlossiness"] }
 notify = "7.0"
 itertools = "0.14.0"
 approx = "0.5"
+log = "0.4"
