@@ -197,7 +197,7 @@ impl ApplicationHandler for Application {
             let material_registry_ptr = &renderer.material_registry
                 as *const std::cell::RefCell<katla_vulkan::MaterialRegistry>;
 
-            Model::new_from_gltf_with_ptr(
+            let fox = Model::new_from_gltf_with_ptr(
                 &mut self.world,
                 fox_model.clone(),
                 context,
@@ -206,18 +206,15 @@ impl ApplicationHandler for Application {
                 material_registry_ptr,
             );
 
-            // Set up animation for the Fox model
-            // Find the entity we just created (should be the most recent one with a DrawableComponent)
-            // For now, we create a separate animation entity and link it
-            // TODO: Integrate animation into the model entity directly
+            // Set up animation on the SAME entity as the model
             let fox_gltf = fox_model as Rc<GLTFModel>;
-            let anim_entity = self.world.create_entity();
             AnimationManager::setup_animated_model(
                 &mut self.world,
-                anim_entity,
+                fox.entity,  // Use the model entity!
                 &fox_gltf,
-                Some("Survey"),  // Play "Survey" animation by default (Fox has Survey, Walk, Run)
+                Some("Survey"),  // Play "Survey" animation by default
             );
+            println!("Fox model entity: {:?} with animation", fox.entity);
 
             // Create meshes spaced out in a line with different colors
             // Get the raw pointer to material registry for mesh builders
