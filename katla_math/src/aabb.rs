@@ -1,6 +1,6 @@
 use crate::Vec3;
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct AABB {
     pub center: Vec3,
     pub extent: Vec3,
