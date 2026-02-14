@@ -1,6 +1,6 @@
 pub mod builder;
 
-use std::{cell::RefCell, ffi::CString, rc::Rc, time::Instant};
+use std::{cell::RefCell, collections::HashMap, ffi::CString, rc::Rc, time::Instant};
 
 use log::{error, info, warn};
 use winit::keyboard::ModifiersState;
@@ -8,7 +8,7 @@ use winit::keyboard::ModifiersState;
 pub use builder::*;
 use katla_ecs::{input::Action, World};
 use katla_math::{Transform, Vec2, Vec3};
-use katla_vulkan::VulkanRenderer;
+use katla_vulkan::{MaterialRegistry, SkeletonBuffer, VulkanRenderer};
 use winit::{
     application::ApplicationHandler,
     dpi::LogicalSize,
@@ -19,8 +19,8 @@ use winit::{
 };
 
 use crate::{
-    animation::AnimationManager,
-    components::{DirectionalLight, PointLight, TransformComponent},
+    animation::{AnimationManager, Skeleton},
+    components::{DirectionalLight, DrawableComponent, PointLight, TransformComponent},
     entities::{Camera, Model},
     input::{InputBinding, InputMapper, KeyCombo, MouseCombo},
     rendering::{
@@ -52,6 +52,8 @@ pub struct Application {
     current_modifiers: ModifiersState,
     frame_count: usize, // Track frames rendered for max_frames limit
     resources: ResourceManager, // Centralized resource paths
+    /// Skeleton buffers for animated meshes, indexed by entity ID
+    skeleton_buffers: HashMap<katla_ecs::EntityId, Rc<RefCell<SkeletonBuffer>>>,
 }
 
 impl ApplicationHandler for Application {
@@ -124,17 +126,72 @@ impl ApplicationHandler for Application {
             let context = renderer.context.clone();
             let fox_model = self.gltf_cache.read(fox_path);
 
-            // Create the model entity using the gltf_default template
-            let fox = Model::new_from_gltf(
+            // Create the skinned model entity using the gltf_skinned template
+            // Fox has skeletal animation, so we need skinned mesh + shader
+            // Get raw pointer to material registry for skinned model creation
+            let material_registry_ptr: *const std::cell::RefCell<MaterialRegistry> =
+                &renderer.material_registry;
+            let fox = Model::new_skinned_from_gltf_with_ptr(
                 &mut self.world,
                 fox_model.clone(),
                 context,
                 Some(&mut renderer),
                 fox_transform,
-                None, // Registry accessed internally
+                material_registry_ptr,
             );
 
-            info!("Fox model entity: {:?} with animation", fox.entity);
+            info!("Fox model entity: {:?} loaded, setting up animation...", fox.entity);
+
+            // Setup animation components for the fox model
+            AnimationManager::setup_animated_model(
+                &mut self.world,
+                fox.entity,
+                &fox_model,
+                Some("Walk"), // Play "Walk" animation by default
+            );
+
+            info!("Fox model entity: {:?} with animation setup complete", fox.entity);
+
+            // Setup GPU skeleton buffer for the fox model
+            if let Some(skeleton) = self.world.get_component::<Skeleton>(fox.entity) {
+                let joint_count = skeleton.joint_transforms.len();
+                info!("Fox has {} joints, creating skeleton buffer", joint_count);
+
+                // Create skeleton buffer
+                let skeleton_buffer = Rc::new(RefCell::new(SkeletonBuffer::new(
+                    renderer.context.clone(),
+                    joint_count,
+                )));
+
+                // Get skeleton_set_layout from the material's pipeline
+                if let Some(drawable) = self.world.get_component::<DrawableComponent>(fox.entity) {
+                    if let Some(material_handle) = drawable.material_handle {
+                        if let Some(skeleton_layout) = renderer.asset_registry.get_skeleton_set_layout(material_handle) {
+                            // Register skeleton with renderer
+                            if let Some(skeleton_handle) = renderer.register_skeleton(
+                                skeleton_buffer.clone(),
+                                skeleton_layout,
+                            ) {
+                                info!("Registered skeleton with handle {:?}", skeleton_handle);
+
+                                // Set handle on DrawableComponent
+                                if let Some(drawable) = self.world.get_component_mut::<DrawableComponent>(fox.entity) {
+                                    drawable.skeleton_handle = Some(skeleton_handle);
+                                }
+
+                                // Store buffer for later uploads
+                                self.skeleton_buffers.insert(fox.entity, skeleton_buffer);
+                            } else {
+                                warn!("Failed to register skeleton with renderer");
+                            }
+                        } else {
+                            warn!("Material does not have skeleton_set_layout (not a skinned material?)");
+                        }
+                    }
+                }
+            } else {
+                warn!("Fox entity has no Skeleton component");
+            }
 
             // Create meshes spaced out in a line with different colors
 
@@ -337,8 +394,11 @@ impl ApplicationHandler for Application {
 
                     let dt = self.timer.get_delta() as f32;
 
-                    // Update world
+                    // Update world (runs animation systems)
                     self.world.update(dt);
+
+                    // Upload skeleton transforms to GPU buffers
+                    self.upload_skeleton_transforms();
 
                     // Render using render graph
                     self.render_with_render_graph();
@@ -523,6 +583,33 @@ impl Application {
                 _ => {
                     error!("Render frame failed: {:?}", e);
                 }
+            }
+        }
+    }
+
+    /// Upload skeleton joint transforms to GPU buffers.
+    ///
+    /// This is called after world.update() which runs SkeletalAnimationSystem
+    /// to compute the joint transforms.
+    fn upload_skeleton_transforms(&mut self) {
+        // Convert Mat4 to GPU-friendly [[f32; 4]; 4] format
+        fn mat4_to_array(matrix: &katla_math::Mat4) -> [[f32; 4]; 4] {
+            let data: [[f32; 4]; 4] = matrix.clone().into();
+            data
+        }
+
+        // For each entity with a stored skeleton buffer, upload the transforms
+        for (entity, buffer) in &self.skeleton_buffers {
+            if let Some(skeleton) = self.world.get_component::<Skeleton>(*entity) {
+                // Convert Mat4 joint transforms to GPU format
+                let joint_matrices: Vec<[[f32; 4]; 4]> = skeleton
+                    .joint_transforms
+                    .iter()
+                    .map(mat4_to_array)
+                    .collect();
+
+                // Upload to GPU
+                buffer.borrow_mut().upload(&joint_matrices);
             }
         }
     }

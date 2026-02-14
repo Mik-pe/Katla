@@ -1,4 +1,4 @@
-use std::{cell::RefCell, rc::Rc};
+use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
 use katla_ecs::{System, SystemExecutionOrder, World};
 use winit::event_loop::{ControlFlow, EventLoop};
@@ -93,6 +93,7 @@ impl ApplicationBuilder {
             current_modifiers: ModifiersState::empty(),
             frame_count: 0,
             resources,
+            skeleton_buffers: HashMap::new(),
         };
 
         Ok((app, event_loop))

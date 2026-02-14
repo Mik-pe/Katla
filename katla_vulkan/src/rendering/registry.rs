@@ -126,6 +126,15 @@ impl AssetRegistry {
         self.materials.iter().filter(|m| m.is_some()).count()
     }
 
+    /// Get the skeleton descriptor set layout for a material.
+    ///
+    /// Returns `None` if the material doesn't support skeletal animation.
+    pub fn get_skeleton_set_layout(&self, handle: MaterialHandle) -> Option<ash::vk::DescriptorSetLayout> {
+        self.materials.get(handle.0)?.as_ref()?;
+        let material = self.materials.get(handle.0)?.as_ref()?;
+        material.pipeline.borrow().skeleton_set_layout
+    }
+
     /// Clear all assets from the registry.
     pub fn clear(&mut self) {
         self.meshes.clear();

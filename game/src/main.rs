@@ -2,11 +2,11 @@ use clap::Parser;
 use katla_app::application::ApplicationBuilder;
 use log::info;
 
-use katla_app::animation::AnimationUpdateSystem;
+use katla_app::animation::{AnimationUpdateSystem, SkeletalAnimationSystem};
 use katla_app::systems::{
     FlyCameraLookSystem, LightingSystem, PhysicsSystem, TransformHierarchySystem, VelocitySystem,
 };
-use katla_ecs::System;
+use katla_ecs::SystemExecutionOrder;
 
 /// Katla 3D Engine - Command line arguments
 #[derive(Parser, Debug)]
@@ -30,24 +30,25 @@ fn main() {
         info!("Running in limited-frame mode (25 frames) for validation testing");
     }
 
-    let _systems: Vec<Box<dyn System>> = vec![
-        Box::new(TransformHierarchySystem::default()), // EARLY: Update world transforms first
-        Box::new(AnimationUpdateSystem),               // Update animation playback
-        Box::new(LightingSystem),                      // Collect lights for rendering
-        Box::new(FlyCameraLookSystem),
-        Box::new(VelocitySystem),
-        Box::new(PhysicsSystem),
-    ];
-
     // Build with conditional configuration
+    let builder = ApplicationBuilder::new()
+        // Register systems with proper execution order
+        .with_system(Box::new(TransformHierarchySystem::default()), SystemExecutionOrder::EARLY)
+        .with_system(Box::new(AnimationUpdateSystem), SystemExecutionOrder::NORMAL)
+        .with_system(Box::new(SkeletalAnimationSystem::default()), SystemExecutionOrder::NORMAL)
+        .with_system(Box::new(LightingSystem), SystemExecutionOrder::NORMAL)
+        .with_system(Box::new(FlyCameraLookSystem), SystemExecutionOrder::NORMAL)
+        .with_system(Box::new(PhysicsSystem), SystemExecutionOrder::NORMAL)
+        .with_system(Box::new(VelocitySystem), SystemExecutionOrder::LATE);
+
     let result = if args.single_frame {
-        ApplicationBuilder::new()
+        builder
             .with_name("Katla")
             .validation_layer(true)
             .max_frames(25)
             .build()
     } else {
-        ApplicationBuilder::new()
+        builder
             .with_name("Katla")
             .validation_layer(true)
             .build()
