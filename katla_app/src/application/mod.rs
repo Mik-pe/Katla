@@ -467,7 +467,7 @@ impl ApplicationHandler for Application {
 
 impl Application {
     pub fn init(&mut self) {
-        env_logger::Builder::from_env(Env::default().default_filter_or("info")).init();
+        // Logger is now initialized in main() before building the application
     }
 
     /// Setup the render graph with multiple framebuffers (one per swapchain image).

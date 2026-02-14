@@ -1,41 +1,66 @@
-use katla::application::ApplicationBuilder;
+use clap::Parser;
+use katla_app::application::ApplicationBuilder;
+use log::info;
 
-use katla::animation::{AnimationUpdateSystem, SkeletalAnimationSystem};
-use katla::systems::{
+use katla_app::animation::AnimationUpdateSystem;
+use katla_app::systems::{
     FlyCameraLookSystem, LightingSystem, PhysicsSystem, TransformHierarchySystem, VelocitySystem,
 };
 use katla_ecs::System;
 
-fn main() {
-    // Parse command-line arguments
-    let args: Vec<String> = std::env::args().collect();
-    let single_frame = args.contains(&"--single-frame".to_string());
+/// Katla 3D Engine - Command line arguments
+#[derive(Parser, Debug)]
+#[command(name = "katla")]
+#[command(about = "Vulkan-based 3D rendering engine", long_about = None)]
+struct Args {
+    /// Run in limited-frame mode for validation testing
+    #[arg(short, long)]
+    single_frame: bool,
+}
 
-    if single_frame {
-        println!("Running in limited-frame mode (10 frames) for validation testing");
+fn main() {
+    let args = Args::parse();
+
+    // Configure logger
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"))
+        .init();
+
+    info!("Katla 3D Engine starting...");
+    if args.single_frame {
+        info!("Running in limited-frame mode (25 frames) for validation testing");
     }
 
-    let systems: Vec<Box<dyn System>> = vec![
+    let _systems: Vec<Box<dyn System>> = vec![
         Box::new(TransformHierarchySystem::default()), // EARLY: Update world transforms first
-        Box::new(AnimationUpdateSystem),               // Update animation playback time
-        Box::new(SkeletalAnimationSystem::default()),  // Sample animations, update skeleton
+        Box::new(AnimationUpdateSystem),               // Update animation playback
         Box::new(LightingSystem),                      // Collect lights for rendering
         Box::new(FlyCameraLookSystem),
         Box::new(VelocitySystem),
         Box::new(PhysicsSystem),
     ];
 
-    let mut builder = ApplicationBuilder::new()
-        .with_name("Katla")
-        .validation_layer(true)
-        .with_systems(systems);
+    // Build with conditional configuration
+    let result = if args.single_frame {
+        ApplicationBuilder::new()
+            .with_name("Katla")
+            .validation_layer(true)
+            .max_frames(25)
+            .build()
+    } else {
+        ApplicationBuilder::new()
+            .with_name("Katla")
+            .validation_layer(true)
+            .build()
+    };
 
-    if single_frame {
-        builder = builder.single_frame(true);
+    match result {
+        Ok((mut application, event_loop)) => {
+            application.init();
+            event_loop.run_app(&mut application).unwrap();
+        }
+        Err(e) => {
+            eprintln!("Failed to initialize application: {}", e);
+            std::process::exit(1);
+        }
     }
-
-    let (mut application, event_loop) = builder.build();
-
-    application.init();
-    event_loop.run_app(&mut application).unwrap();
 }

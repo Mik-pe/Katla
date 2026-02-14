@@ -1,5 +1,5 @@
 [package]
-name = "katla"
+name = "katla_app"
 version = "0.1.0"
 authors = ["Mik-pe <mikael.pettersson201@gmail.com>"]
 edition = "2021"
@@ -17,3 +17,4 @@ notify = "7.0"
 itertools = "0.14.0"
 approx = "0.5"
 log = "0.4"
+clap = { version = "4.5", features = ["derive"] }

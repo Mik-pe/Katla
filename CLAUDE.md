@@ -35,7 +35,16 @@ cargo clippy                   # Linter
 cargo clippy --fix             # Auto-fix
 cargo fmt                      # Format
 cargo fmt --check              # Check formatting
+
+# Run
+cargo run                      # Run the application
+cargo run -- -s               # Run in limited-frame mode (25 frames) for validation
+cargo run -- --single-frame    # Same as above, long form
 ```
+
+## Command Line Arguments
+
+- `-s, --single-frame` - Run in limited-frame mode (25 frames) for validation testing. Useful for checking Vulkan validation errors without running indefinitely.
 
 ## Git Commit Conventions
 
