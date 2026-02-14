@@ -193,11 +193,11 @@ impl ApplicationHandler for Application {
                 warn!("Fox entity has no Skeleton component");
             }
 
-            // Create meshes spaced out in a line with different colors
+            // Create meshes spaced out around the scene
 
-            // Create meshes spaced out in a line with different colors
+            // Cube moved away from fox (fox is near origin)
             let _cube = MeshBuilder::new(renderer.context.clone())
-                .position(Vec3::new(0.0, 5.0, 0.0))
+                .position(Vec3::new(15.0, 5.0, -15.0))
                 .color([1.0, 0.3, 0.3]) // Red tint
                 .with_shared_material("Checkerboard")
                 .build(&mut self.world, &mut renderer);
