@@ -1,0 +1,15 @@
+name = "gltf_skinned"
+vertex_shader = "resources/shaders/model_pbr_skinned.wgsl"
+fragment_shader = "resources/shaders/model_pbr_skinned.wgsl"
+
+[render_state]
+depth_test = true
+depth_write = true
+cull_backfaces = true
+alpha_blending = false
+
+[uniforms]
+# Material uses storage buffers with instance indexing
+# Set 0: frame_data + objects (shared)
+# Set 1: textures (per-material)
+# Set 2: joint_matrices (per-mesh skeleton)
