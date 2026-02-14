@@ -50,15 +50,7 @@ pub struct Application {
     input_mapper: InputMapper,
     current_modifiers: ModifiersState,
     frame_count: usize, // Track frames rendered for max_frames limit
-<<<<<<< HEAD
-    skeleton_upload_system: SkeletonUploadSystem,
-    /// Fox entity for skeleton registration (set during init, used after first update)
-    fox_entity: Option<katla_ecs::EntityId>,
-    /// Flag to track if skeleton has been registered
-    skeleton_registered: bool,
-=======
     resources: ResourceManager, // Centralized resource paths
->>>>>>> a99d853 (Add ResourceManager and remove raw pointers from mesh builders)
 }
 
 impl ApplicationHandler for Application {
@@ -131,18 +123,8 @@ impl ApplicationHandler for Application {
             let context = renderer.context.clone();
             let fox_model = self.gltf_cache.read(fox_path);
 
-<<<<<<< HEAD
-            // Create the model entity using the gltf_skinned template for GPU skinning
-            // We use the raw pointer approach similar to MeshBuilder
-            let material_registry_ptr = &renderer.material_registry
-                as *const std::cell::RefCell<katla_vulkan::MaterialRegistry>;
-
-            // Use skinned model creation for animated meshes
-            let fox = Model::new_skinned_from_gltf_with_ptr(
-=======
             // Create the model entity using the gltf_default template
-            Model::new_from_gltf(
->>>>>>> a99d853 (Add ResourceManager and remove raw pointers from mesh builders)
+            let fox = Model::new_from_gltf(
                 &mut self.world,
                 fox_model.clone(),
                 context,
@@ -151,18 +133,7 @@ impl ApplicationHandler for Application {
                 None, // Registry accessed internally
             );
 
-            // Set up animation on the SAME entity as the model
-            let fox_gltf = fox_model as Rc<GLTFModel>;
-            AnimationManager::setup_animated_model(
-                &mut self.world,
-                fox.entity,  // Use the model entity!
-                &fox_gltf,
-                Some("Survey"),  // Play "Survey" animation by default
-            );
             println!("Fox model entity: {:?} with animation", fox.entity);
-
-            // Store the fox entity ID for skeleton registration after first update
-            self.fox_entity = Some(fox.entity);
 
             // Create meshes spaced out in a line with different colors
 
@@ -368,33 +339,6 @@ impl ApplicationHandler for Application {
                     // Update world
                     self.world.update(dt);
 
-<<<<<<< HEAD
-                    // Upload skeleton transforms to GPU
-                    self.skeleton_upload_system.update(&mut self.world, dt);
-
-                    // Register skeleton for animated meshes (first frame only)
-                    if !self.skeleton_registered {
-                        if let (Some(fox_entity), Some(renderer)) = (self.fox_entity, self.renderer.as_mut()) {
-                            if let Some(skeleton_buffer) = self.skeleton_upload_system.get_skeleton_buffer(fox_entity) {
-                                let skeleton_layout = renderer.material_registry.borrow()
-                                    .get_template("gltf_skinned")
-                                    .and_then(|t| t.pipeline().borrow().skeleton_set_layout);
-
-                                if let Some(skeleton_layout) = skeleton_layout {
-                                    if let Some(skeleton_handle) = renderer.register_skeleton(skeleton_buffer, skeleton_layout) {
-                                        if let Some(drawable) = self.world.get_component_mut::<crate::components::DrawableComponent>(fox_entity) {
-                                            drawable.skeleton_handle = Some(skeleton_handle);
-                                            println!("🦴 Registered skeleton for fox with handle {:?}", skeleton_handle);
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        self.skeleton_registered = true;
-                    }
-
-=======
->>>>>>> a99d853 (Add ResourceManager and remove raw pointers from mesh builders)
                     // Render using render graph
                     self.render_with_render_graph();
 

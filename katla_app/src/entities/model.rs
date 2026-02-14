@@ -144,8 +144,6 @@ impl Model {
 
         Self::new(world, vec![mesh], material, renderer, transform, None)
     }
-<<<<<<< HEAD
-
     /// Create a GLTF model using a raw pointer to MaterialRegistry.
     ///
     /// This version avoids borrow checker issues by using a raw pointer,
@@ -320,6 +318,4 @@ impl Model {
 
         Self::new(world, vec![mesh], material, renderer, transform, None)
     }
-=======
->>>>>>> a99d853 (Add ResourceManager and remove raw pointers from mesh builders)
 }
