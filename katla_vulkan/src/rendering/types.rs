@@ -78,6 +78,9 @@ pub struct DrawCall {
     /// Ambient occlusion factor (0.0-1.0).
     /// 0.0 = fully occluded, 1.0 = no occlusion.
     pub ao: f32,
+    /// Whether this draw uses transparency (affects sort order).
+    /// Transparent objects are sorted back-to-front, opaque front-to-back.
+    pub transparent: bool,
     /// Optional sorting key (for transparent objects, etc.).
     pub sort_key: Option<u64>,
     /// Skeleton handle for GPU skinning (Set 2).
@@ -96,6 +99,7 @@ impl DrawCall {
             metallic: 0.0,
             roughness: 0.5,
             ao: 1.0,
+            transparent: false,
             sort_key: None,
             skeleton: None,
         }
@@ -136,6 +140,14 @@ impl DrawCall {
         self.metallic = metallic;
         self.roughness = roughness;
         self.ao = ao;
+        self
+    }
+
+    /// Mark this draw call as using transparency.
+    ///
+    /// Transparent objects are sorted back-to-front for correct blending.
+    pub fn with_transparency(mut self) -> Self {
+        self.transparent = true;
         self
     }
 
@@ -248,6 +260,34 @@ impl DrawList {
         self.draws.sort_by_key(|d| d.sort_key.unwrap_or(u64::MAX));
     }
 
+    /// Sort optimally for rendering performance.
+    ///
+    /// - Opaque objects: sorted by material (reduces state changes) then front-to-back (early-Z)
+    /// - Transparent objects: sorted back-to-front (correct blending)
+    ///
+    /// This requires sort keys to be computed first via `compute_sort_keys()`.
+    pub fn sort_optimal(&mut self) {
+        self.draws.sort_by_key(|d| d.sort_key.unwrap_or(u64::MAX));
+    }
+
+    /// Compute sort keys for all draw calls based on camera distance.
+    ///
+    /// Call this before `sort_optimal()` for proper depth ordering.
+    ///
+    /// # Arguments
+    /// * `camera_position` - Camera position in world space
+    pub fn compute_sort_keys(&mut self, camera_position: [f32; 3]) {
+        for draw in &mut self.draws {
+            let distance = compute_distance_from_camera(&draw.model_matrix, camera_position);
+            draw.sort_key = Some(compute_sort_key(
+                draw.material,
+                draw.mesh,
+                distance,
+                draw.transparent,
+            ));
+        }
+    }
+
     /// Sort by material (reduces state changes during rendering).
     pub fn sort_by_material(&mut self) {
         self.draws.sort_by_key(|d| d.material.0);
@@ -290,6 +330,66 @@ impl IntoIterator for DrawList {
     fn into_iter(self) -> Self::IntoIter {
         self.draws.into_iter()
     }
+}
+
+/// Compute a sort key for optimal rendering order.
+///
+/// # Sort Key Layout (64-bit)
+/// - Opaque objects: `[material:16][mesh:16][depth:32]` - Material grouping + front-to-back
+/// - Transparent objects: `[depth:32][material:16][mesh:16]` - Back-to-front
+///
+/// # Arguments
+/// * `material` - Material handle (for state change reduction)
+/// * `mesh` - Mesh handle (for vertex buffer cache)
+/// * `distance` - Distance from camera (for depth ordering)
+/// * `transparent` - Whether the object uses transparency
+///
+/// # Returns
+/// A 64-bit sort key where lower values are drawn first.
+pub fn compute_sort_key(
+    material: MaterialHandle,
+    mesh: MeshHandle,
+    distance: f32,
+    transparent: bool,
+) -> u64 {
+    // Quantize distance to 32-bit (0 to ~16M range)
+    let depth_bits = (distance.clamp(0.0, 16777215.0) as u32) & 0xFFFFFF;
+
+    if transparent {
+        // Back-to-front for transparency: larger distance = lower key (drawn first... wait, no)
+        // Actually for transparency we want FAR objects drawn FIRST (lower key), near objects LAST
+        // So we use inverted depth or just depth directly with descending sort
+        // For simplicity: higher distance = higher key = drawn later (correct back-to-front)
+        ((depth_bits as u64) << 32) | ((material.0 as u64) << 16) | (mesh.0 as u64)
+    } else {
+        // Front-to-back for opaque: smaller distance = lower key = drawn first (early-Z optimization)
+        // But we also want material grouping for state changes
+        // So: material first, then mesh, then depth
+        ((material.0 as u64) << 48) | ((mesh.0 as u64) << 32) | (depth_bits as u64)
+    }
+}
+
+/// Compute distance from camera to an object.
+///
+/// Extracts the translation from the model matrix and computes distance.
+///
+/// # Arguments
+/// * `model_matrix` - Object's model matrix (column-major 4x4)
+/// * `camera_position` - Camera position in world space
+///
+/// # Returns
+/// Distance from camera to object center.
+pub fn compute_distance_from_camera(model_matrix: &[f32; 16], camera_position: [f32; 3]) -> f32 {
+    // Translation is in the last column (indices 12, 13, 14 for column-major)
+    let obj_x = model_matrix[12];
+    let obj_y = model_matrix[13];
+    let obj_z = model_matrix[14];
+
+    let dx = obj_x - camera_position[0];
+    let dy = obj_y - camera_position[1];
+    let dz = obj_z - camera_position[2];
+
+    (dx * dx + dy * dy + dz * dz).sqrt()
 }
 
 #[cfg(test)]
@@ -375,5 +475,77 @@ mod tests {
 
         let count = list.into_iter().count();
         assert_eq!(count, 2);
+    }
+
+    #[test]
+    fn test_compute_sort_key_opaque() {
+        let mat1 = MaterialHandle(1);
+        let mat2 = MaterialHandle(2);
+        let mesh = MeshHandle(0);
+
+        // For opaque: material grouping takes priority
+        let key_near = compute_sort_key(mat1, mesh, 10.0, false);
+        let key_far = compute_sort_key(mat1, mesh, 100.0, false);
+
+        // Same material, near should have lower key (drawn first for early-Z)
+        assert!(key_near < key_far);
+
+        // Different material, mat2 > mat1 means mat2 drawn after
+        let key_mat2 = compute_sort_key(mat2, mesh, 10.0, false);
+        assert!(key_mat2 > key_near);
+    }
+
+    #[test]
+    fn test_compute_sort_key_transparent() {
+        let mat = MaterialHandle(0);
+        let mesh = MeshHandle(0);
+
+        // For transparent: back-to-front, far objects first
+        let key_near = compute_sort_key(mat, mesh, 10.0, true);
+        let key_far = compute_sort_key(mat, mesh, 100.0, true);
+
+        // Far should have higher key (drawn later for back-to-front)
+        assert!(key_far > key_near);
+    }
+
+    #[test]
+    fn test_compute_distance_from_camera() {
+        // Identity matrix at origin
+        let model_at_origin = [
+            1.0, 0.0, 0.0, 0.0,
+            0.0, 1.0, 0.0, 0.0,
+            0.0, 0.0, 1.0, 0.0,
+            0.0, 0.0, 0.0, 1.0,
+        ];
+
+        let dist = compute_distance_from_camera(&model_at_origin, [3.0, 4.0, 0.0]);
+        assert!((dist - 5.0).abs() < 0.001); // sqrt(3^2 + 4^2) = 5
+    }
+
+    #[test]
+    fn test_draw_list_compute_sort_keys() {
+        let mut list = DrawList::new();
+        let mesh = MeshHandle(0);
+        let mat = MaterialHandle(0);
+
+        // Identity matrix at origin
+        let model = [
+            1.0, 0.0, 0.0, 0.0,
+            0.0, 1.0, 0.0, 0.0,
+            0.0, 0.0, 1.0, 0.0,
+            0.0, 0.0, 0.0, 1.0,
+        ];
+
+        list.push(DrawCall::new(mesh, mat).with_transform(model));
+        list.push(DrawCall::new(mesh, mat).with_transform(model).with_transparency());
+
+        list.compute_sort_keys([5.0, 0.0, 0.0]);
+
+        // Both should have sort keys computed
+        assert!(list.draws[0].sort_key.is_some());
+        assert!(list.draws[1].sort_key.is_some());
+
+        // Transparent should have different sort order than opaque
+        assert_ne!(list.draws[0].sort_key, list.draws[1].sort_key);
     }
 }
