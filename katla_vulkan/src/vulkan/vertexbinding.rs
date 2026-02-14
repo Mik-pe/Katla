@@ -29,7 +29,7 @@ pub fn get_skinned_vertex_binding() -> VertexBinding {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Debug)]
 pub enum VertexFormat {
     R32u,
     R32i,

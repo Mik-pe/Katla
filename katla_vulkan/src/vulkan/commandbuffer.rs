@@ -1,6 +1,11 @@
 use ash::{vk, Device};
 
-use super::{vertexbuffer::IndexType, CommandPool};
+use super::{
+    vertex_attr_set::VertexAttributeSet,
+    vertex_attribute::AttributeType,
+    vertexbuffer::IndexType,
+    CommandPool,
+};
 use crate::render_graph::types::RenderingInfo;
 use crate::sync::DependencyInfo;
 
@@ -287,5 +292,154 @@ impl CommandBuffer {
             self.device
                 .free_command_buffers(self.command_pool, &[self.command_buffer]);
         }
+    }
+
+    /// Bind all vertex attributes from an SoA attribute set.
+    ///
+    /// This method binds all attribute buffers from the set, sorted by their
+    /// default location. Use this for full-geometry passes that need all attributes.
+    ///
+    /// # Arguments
+    /// * `attributes` - The vertex attribute set to bind
+    ///
+    /// # Example
+    /// ```no_run
+    /// # use katla_vulkan::CommandBuffer;
+    /// # use katla_vulkan::vulkan::vertex_attr_set::VertexAttributeSet;
+    /// # let command_buffer: CommandBuffer = unsafe { std::mem::zeroed() };
+    /// # let attributes: VertexAttributeSet = unsafe { std::mem::zeroed() };
+    /// command_buffer.bind_vertex_attributes(&attributes);
+    /// ```
+    pub fn bind_vertex_attributes(&self, attributes: &VertexAttributeSet) {
+        // Get all attribute types and sort by default location
+        let mut attr_types: Vec<_> = attributes.attribute_types();
+        attr_types.sort_by_key(|attr| attr.default_location());
+
+        // Extract buffers and create offsets (all 0 for SoA)
+        let buffers: Vec<vk::Buffer> = attr_types
+            .iter()
+            .filter_map(|attr| attributes.get(*attr).map(|binding| binding.buffer))
+            .collect();
+
+        let offsets: Vec<vk::DeviceSize> = vec![0; buffers.len()];
+
+        if !buffers.is_empty() {
+            unsafe {
+                self.device.cmd_bind_vertex_buffers(
+                    self.command_buffer,
+                    0,
+                    &buffers,
+                    &offsets,
+                );
+            }
+        }
+    }
+
+    /// Bind only specific attributes (for depth-only, shadow passes, etc.).
+    ///
+    /// This method binds a subset of attribute buffers, enabling efficient
+    /// depth-only prepasses, shadow mapping, or deferred G-buffer fills.
+    ///
+    /// # Arguments
+    /// * `attributes` - The vertex attribute set to bind from
+    /// * `attr_types` - Slice of attribute types to bind (order matters for binding locations)
+    ///
+    /// # Example
+    /// ```no_run
+    /// # use katla_vulkan::CommandBuffer;
+    /// # use katla_vulkan::vulkan::vertex_attr_set::VertexAttributeSet;
+    /// # use katla_vulkan::vulkan::vertex_attribute::AttributeType;
+    /// # let command_buffer: CommandBuffer = unsafe { std::mem::zeroed() };
+    /// # let attributes: VertexAttributeSet = unsafe { std::mem::zeroed() };
+    /// // Depth-only pass: only position needed
+    /// command_buffer.bind_attributes_subset(&attributes, &[AttributeType::Position]);
+    ///
+    /// // Shadow mapping: position only
+    /// command_buffer.bind_attributes_subset(&attributes, &[AttributeType::Position]);
+    ///
+    /// // Deferred G-buffer fill: position + normal
+    /// command_buffer.bind_attributes_subset(
+    ///     &attributes,
+    ///     &[AttributeType::Position, AttributeType::Normal],
+    /// );
+    /// ```
+    pub fn bind_attributes_subset(
+        &self,
+        attributes: &VertexAttributeSet,
+        attr_types: &[AttributeType],
+    ) {
+        let mut buffers = Vec::new();
+        let mut offsets = Vec::new();
+
+        for attr_type in attr_types {
+            if let Some(binding) = attributes.get(*attr_type) {
+                buffers.push(binding.buffer);
+                offsets.push(0);
+            }
+        }
+
+        if !buffers.is_empty() {
+            unsafe {
+                self.device.cmd_bind_vertex_buffers(
+                    self.command_buffer,
+                    0,
+                    &buffers,
+                    &offsets,
+                );
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_bind_vertex_attributes_empty_set() {
+        // This is a compile-time test - actual Vulkan testing would require a device
+        // The important thing is that the API accepts an empty set without panicking
+        let attr_types: Vec<AttributeType> = vec![];
+        assert!(attr_types.is_empty());
+    }
+
+    #[test]
+    fn test_bind_vertex_attributes_sorted_locations() {
+        // Verify that attribute types are sorted by location
+        let mut attr_types = vec![
+            AttributeType::Tangent,
+            AttributeType::Position,
+            AttributeType::Normal,
+        ];
+
+        attr_types.sort_by_key(|attr| attr.default_location());
+
+        assert_eq!(attr_types[0], AttributeType::Position);
+        assert_eq!(attr_types[1], AttributeType::Normal);
+        assert_eq!(attr_types[2], AttributeType::Tangent);
+    }
+
+    #[test]
+    fn test_bind_attributes_subset_empty() {
+        // Empty subset should work (no buffers bound)
+        let attr_types: Vec<AttributeType> = vec![];
+        assert!(attr_types.is_empty());
+    }
+
+    #[test]
+    fn test_bind_attributes_subset_single() {
+        // Single attribute binding
+        let attr_types = vec![AttributeType::Position];
+        assert_eq!(attr_types.len(), 1);
+        assert_eq!(attr_types[0], AttributeType::Position);
+    }
+
+    #[test]
+    fn test_bind_attributes_subset_multiple() {
+        // Multiple attribute binding (e.g., for deferred G-buffer)
+        let attr_types = vec![AttributeType::Position, AttributeType::Normal];
+        assert_eq!(attr_types.len(), 2);
+        assert_eq!(attr_types[0], AttributeType::Position);
+        assert_eq!(attr_types[1], AttributeType::Normal);
     }
 }

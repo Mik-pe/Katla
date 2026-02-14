@@ -46,7 +46,7 @@ impl VertexAttributeSet {
 
     /// Get all attribute types in this set.
     pub fn attribute_types(&self) -> Vec<AttributeType> {
-        self.attributes.keys().map(|&k| *k).collect()
+        self.attributes.keys().copied().collect()
     }
 
     /// Check if this set has specific attributes.
@@ -59,15 +59,16 @@ impl VertexAttributeSet {
     /// Returns descriptions sorted by binding location for consistent pipeline creation.
     pub fn get_attribute_descriptions(&self) -> Vec<ash::vk::VertexInputAttributeDescription> {
         let mut bindings: Vec<_> = self.attributes
-            .keys()
-            .map(|attr| (attr.default_location(), attr))
+            .iter()
+            .map(|(attr, _)| (attr.default_location(), attr))
             .collect();
 
         bindings.sort_by_key(|(location, _)| *location);
 
         bindings
             .into_iter()
-            .map(|(binding, (_, attr))| attr.get_attribute_desc(binding as u32))
+            .enumerate()
+            .map(|(binding, (_, attr))| self.attributes[attr].get_attribute_desc(binding as u32))
             .collect()
     }
 
@@ -76,15 +77,16 @@ impl VertexAttributeSet {
     /// Returns descriptions sorted by binding location.
     pub fn get_binding_descriptions(&self) -> Vec<ash::vk::VertexInputBindingDescription> {
         let mut bindings: Vec<_> = self.attributes
-            .keys()
-            .map(|attr| (attr.default_location(), attr))
+            .iter()
+            .map(|(attr, _)| (attr.default_location(), attr))
             .collect();
 
         bindings.sort_by_key(|(location, _)| *location);
 
         bindings
             .into_iter()
-            .map(|(binding, (_, attr))| attr.get_binding_desc(binding as u32))
+            .enumerate()
+            .map(|(binding, (_, attr))| self.attributes[attr].get_binding_desc(binding as u32))
             .collect()
     }
 
@@ -95,7 +97,6 @@ impl VertexAttributeSet {
         attr_types
             .iter()
             .filter_map(|attr| self.attributes.get(attr).map(|binding| binding.buffer))
-            .copied()
             .collect()
     }
 }
