@@ -9,6 +9,8 @@ pub mod skeleton_buffer;
 pub mod swapchain;
 pub mod swapdata;
 pub mod texture;
+pub mod vertex_attribute;
+pub mod vertex_attr_set;
 pub mod vertexbinding;
 pub mod vertexbuffer;
 
@@ -25,6 +27,8 @@ pub use skeleton_buffer::*;
 pub use swapchain::*;
 pub use swapdata::*;
 pub use texture::*;
+pub use vertex_attribute::*;
+pub use vertex_attr_set::*;
 pub use vertexbinding::*;
 pub use vertexbuffer::*;
 

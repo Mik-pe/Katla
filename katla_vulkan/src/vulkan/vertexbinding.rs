@@ -47,7 +47,7 @@ pub enum VertexFormat {
 }
 
 impl VertexFormat {
-    fn get_vk_format(&self) -> vk::Format {
+    pub fn get_vk_format(&self) -> vk::Format {
         match self {
             VertexFormat::R32u => vk::Format::R32_UINT,
             VertexFormat::R32i => vk::Format::R32_SINT,
@@ -65,7 +65,7 @@ impl VertexFormat {
         }
     }
 
-    fn get_offset(&self) -> u32 {
+    pub fn get_offset(&self) -> u32 {
         use VertexFormat::*;
         match self {
             R32u | R32i | R32f => 4,
