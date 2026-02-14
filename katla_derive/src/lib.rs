@@ -47,11 +47,15 @@ pub fn derive_component(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
     let name = &input.ident;
 
+    // Preserve generics and where clause from the input struct
+    let generics = &input.generics;
+    let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
+
     // Generate the implementation
     // Use unqualified Component which will be resolved from scope
     // This allows it to work both inside the katla crate and in user code
     let expanded = quote! {
-        impl Component for #name {
+        impl #impl_generics Component for #name #ty_generics #where_clause {
             fn as_any(&self) -> &dyn ::std::any::Any {
                 self
             }

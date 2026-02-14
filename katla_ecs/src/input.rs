@@ -60,3 +60,319 @@ impl InputState {
         self.mouse_position = Vec2::new(x, y);
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::input::actions::ActionState;
+
+    #[test]
+    fn test_input_state_new() {
+        let state = InputState::new();
+
+        assert_eq!(state.mouse_position, Vec2::zero());
+        assert_eq!(state.mouse_delta, Vec2::zero());
+        assert_eq!(state.mouse_wheel_delta, 0.0);
+
+        // All mouse buttons should be released
+        for button in 0..5 {
+            assert_eq!(state.mouse_buttons[button], ButtonState::Released);
+        }
+
+        // All keyboard keys should be false
+        for key in 0..Action::COUNT {
+            assert!(!state.keyboard_keys[key]);
+        }
+    }
+
+    #[test]
+    fn test_input_state_default() {
+        let state = InputState::default();
+        assert_eq!(state.mouse_position, Vec2::zero());
+    }
+
+    #[test]
+    fn test_set_action_state() {
+        let mut state = InputState::new();
+
+        state.set_action_state(Action::MoveForward, true);
+        assert!(state.is_action_pressed(Action::MoveForward));
+        assert!(state.keyboard_keys[Action::MoveForward as usize]);
+
+        state.set_action_state(Action::Jump, false);
+        assert!(!state.is_action_pressed(Action::Jump));
+        assert!(!state.keyboard_keys[Action::Jump as usize]);
+    }
+
+    #[test]
+    fn test_is_action_pressed() {
+        let mut state = InputState::new();
+
+        assert!(!state.is_action_pressed(Action::MoveLeft));
+
+        state.set_action_state(Action::MoveLeft, true);
+        assert!(state.is_action_pressed(Action::MoveLeft));
+
+        state.set_action_state(Action::MoveLeft, false);
+        assert!(!state.is_action_pressed(Action::MoveLeft));
+    }
+
+    #[test]
+    fn test_multiple_action_states() {
+        let mut state = InputState::new();
+
+        state.set_action_state(Action::MoveForward, true);
+        state.set_action_state(Action::MoveLeft, true);
+        state.set_action_state(Action::Jump, false);
+
+        assert!(state.is_action_pressed(Action::MoveForward));
+        assert!(state.is_action_pressed(Action::MoveLeft));
+        assert!(!state.is_action_pressed(Action::Jump));
+    }
+
+    #[test]
+    fn test_all_actions_can_be_set() {
+        let mut state = InputState::new();
+        let actions = [
+            Action::MoveForward,
+            Action::MoveBackward,
+            Action::MoveLeft,
+            Action::MoveRight,
+            Action::MoveUp,
+            Action::MoveDown,
+            Action::Jump,
+            Action::Interact,
+            Action::Inventory,
+            Action::Pause,
+            Action::Exit,
+            Action::LookEnable,
+            Action::Sprint,
+        ];
+
+        for action in actions {
+            state.set_action_state(action, true);
+            assert!(state.is_action_pressed(action));
+        }
+    }
+
+    #[test]
+    fn test_set_mouse_button_state() {
+        let mut state = InputState::new();
+
+        state.set_mouse_button_state(MouseButton::Left, ButtonState::Pressed);
+        assert_eq!(
+            state.mouse_buttons[MouseButton::Left as usize],
+            ButtonState::Pressed
+        );
+
+        state.set_mouse_button_state(MouseButton::Right, ButtonState::Pressed);
+        assert_eq!(
+            state.mouse_buttons[MouseButton::Right as usize],
+            ButtonState::Pressed
+        );
+    }
+
+    #[test]
+    fn test_set_mouse_position() {
+        let mut state = InputState::new();
+
+        state.set_mouse_position(100.0, 200.0);
+        assert_eq!(state.mouse_position, Vec2::new(100.0, 200.0));
+        assert_eq!(state.mouse_delta, Vec2::new(100.0, 200.0));
+
+        state.set_mouse_position(150.0, 250.0);
+        assert_eq!(state.mouse_position, Vec2::new(150.0, 250.0));
+        assert_eq!(state.mouse_delta, Vec2::new(50.0, 50.0));
+    }
+
+    #[test]
+    fn test_mouse_delta_calculation() {
+        let mut state = InputState::new();
+
+        state.set_mouse_position(10.0, 20.0);
+        assert_eq!(state.mouse_delta, Vec2::new(10.0, 20.0));
+
+        state.set_mouse_position(15.0, 30.0);
+        assert_eq!(state.mouse_delta, Vec2::new(5.0, 10.0));
+
+        state.set_mouse_position(15.0, 30.0);
+        assert_eq!(state.mouse_delta, Vec2::new(0.0, 0.0));
+    }
+
+    #[test]
+    fn test_all_mouse_buttons() {
+        let mut state = InputState::new();
+
+        state.set_mouse_button_state(MouseButton::Left, ButtonState::Pressed);
+        state.set_mouse_button_state(MouseButton::Right, ButtonState::Pressed);
+        state.set_mouse_button_state(MouseButton::Middle, ButtonState::Pressed);
+        state.set_mouse_button_state(MouseButton::Forward, ButtonState::Pressed);
+        state.set_mouse_button_state(MouseButton::Backward, ButtonState::Pressed);
+
+        assert_eq!(
+            state.mouse_buttons[MouseButton::Left as usize],
+            ButtonState::Pressed
+        );
+        assert_eq!(
+            state.mouse_buttons[MouseButton::Right as usize],
+            ButtonState::Pressed
+        );
+        assert_eq!(
+            state.mouse_buttons[MouseButton::Middle as usize],
+            ButtonState::Pressed
+        );
+        assert_eq!(
+            state.mouse_buttons[MouseButton::Forward as usize],
+            ButtonState::Pressed
+        );
+        assert_eq!(
+            state.mouse_buttons[MouseButton::Backward as usize],
+            ButtonState::Pressed
+        );
+    }
+
+    #[test]
+    fn test_mouse_wheel_delta_initial() {
+        let state = InputState::new();
+        assert_eq!(state.mouse_wheel_delta, 0.0);
+    }
+
+    #[test]
+    fn test_action_values() {
+        assert_eq!(Action::MoveForward as u8, 0);
+        assert_eq!(Action::MoveBackward as u8, 1);
+        assert_eq!(Action::MoveLeft as u8, 2);
+        assert_eq!(Action::MoveRight as u8, 3);
+        assert_eq!(Action::MoveUp as u8, 4);
+        assert_eq!(Action::MoveDown as u8, 5);
+        assert_eq!(Action::Jump as u8, 6);
+        assert_eq!(Action::Interact as u8, 7);
+        assert_eq!(Action::Inventory as u8, 8);
+        assert_eq!(Action::Pause as u8, 9);
+        assert_eq!(Action::Exit as u8, 10);
+        assert_eq!(Action::LookEnable as u8, 11);
+        assert_eq!(Action::Sprint as u8, 12);
+    }
+
+    #[test]
+    fn test_action_count() {
+        assert_eq!(Action::COUNT, 15);
+    }
+
+    #[test]
+    fn test_mouse_button_values() {
+        assert_eq!(MouseButton::Left as u8, 0);
+        assert_eq!(MouseButton::Right as u8, 1);
+        assert_eq!(MouseButton::Middle as u8, 2);
+        assert_eq!(MouseButton::Forward as u8, 3);
+        assert_eq!(MouseButton::Backward as u8, 4);
+    }
+
+    #[test]
+    fn test_button_state_pressed() {
+        let pressed = ButtonState::Pressed;
+        assert_eq!(pressed, ButtonState::Pressed);
+    }
+
+    #[test]
+    fn test_button_state_released() {
+        let released = ButtonState::Released;
+        assert_eq!(released, ButtonState::Released);
+    }
+
+    #[test]
+    fn test_action_state_variants() {
+        let pressed = ActionState::Pressed;
+        let released = ActionState::Released;
+        let held = ActionState::Held;
+
+        assert_eq!(pressed, ActionState::Pressed);
+        assert_eq!(released, ActionState::Released);
+        assert_eq!(held, ActionState::Held);
+
+        assert_ne!(pressed, released);
+        assert_ne!(pressed, held);
+        assert_ne!(released, held);
+    }
+
+    #[test]
+    fn test_input_state_independence() {
+        let mut state = InputState::new();
+
+        // Set keyboard action
+        state.set_action_state(Action::Jump, true);
+
+        // Mouse buttons should still be released
+        assert_eq!(
+            state.mouse_buttons[MouseButton::Left as usize],
+            ButtonState::Released
+        );
+
+        // Set mouse button
+        state.set_mouse_button_state(MouseButton::Left, ButtonState::Pressed);
+
+        // Keyboard action should still be pressed
+        assert!(state.is_action_pressed(Action::Jump));
+    }
+
+    #[test]
+    fn test_consecutive_mouse_positions() {
+        let mut state = InputState::new();
+
+        let positions = [
+            (0.0, 0.0),
+            (10.0, 20.0),
+            (25.0, 45.0),
+            (100.0, 200.0),
+        ];
+
+        for (i, (x, y)) in positions.iter().enumerate() {
+            state.set_mouse_position(*x, *y);
+            assert_eq!(state.mouse_position, Vec2::new(*x, *y));
+
+            if i > 0 {
+                let (prev_x, prev_y) = positions[i - 1];
+                assert_eq!(
+                    state.mouse_delta,
+                    Vec2::new(*x - prev_x, *y - prev_y)
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_toggle_action_state() {
+        let mut state = InputState::new();
+
+        // Toggle on
+        state.set_action_state(Action::Sprint, true);
+        assert!(state.is_action_pressed(Action::Sprint));
+
+        // Toggle off
+        state.set_action_state(Action::Sprint, false);
+        assert!(!state.is_action_pressed(Action::Sprint));
+
+        // Toggle on again
+        state.set_action_state(Action::Sprint, true);
+        assert!(state.is_action_pressed(Action::Sprint));
+    }
+
+    #[test]
+    fn test_mouse_button_toggle() {
+        let mut state = InputState::new();
+
+        // Press
+        state.set_mouse_button_state(MouseButton::Middle, ButtonState::Pressed);
+        assert_eq!(
+            state.mouse_buttons[MouseButton::Middle as usize],
+            ButtonState::Pressed
+        );
+
+        // Release
+        state.set_mouse_button_state(MouseButton::Middle, ButtonState::Released);
+        assert_eq!(
+            state.mouse_buttons[MouseButton::Middle as usize],
+            ButtonState::Released
+        );
+    }
+}
