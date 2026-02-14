@@ -1,7 +1,6 @@
 //! Common test utilities for headless Vulkan testing.
 
 pub mod validation;
-pub mod validation_capture;
 
 use katla_vulkan::VulkanContext;
 use std::ffi::CString;
@@ -27,10 +26,4 @@ pub fn create_headless_context(with_validation_layers: bool) -> VulkanContext {
     let engine_name = CString::new("Katla Engine").unwrap();
 
     VulkanContext::init_headless(with_validation_layers, app_name, engine_name)
-}
-
-/// Helper to create a headless context with validation layers enabled.
-/// Tests can use this for better error messages during development.
-pub fn create_headless_context_validated() -> VulkanContext {
-    create_headless_context(true)
 }
