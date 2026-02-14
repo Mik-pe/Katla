@@ -1278,6 +1278,7 @@ dependencies = [
 name = "katla_derive"
 version = "0.1.0"
 dependencies = [
+ "katla_ecs",
  "proc-macro2",
  "quote",
  "syn",

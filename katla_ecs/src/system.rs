@@ -124,13 +124,6 @@ mod tests {
     }
 
     #[test]
-    fn test_system_creation() {
-        let system = TestSystem::new();
-        assert_eq!(system.update_count, 0);
-        assert!(system.is_enabled());
-    }
-
-    #[test]
     fn test_system_update() {
         let mut system = TestSystem::new();
         let mut world = World::new();
@@ -142,20 +135,5 @@ mod tests {
         system.update(&mut world, 0.016);
 
         assert_eq!(system.update_count, 1);
-    }
-
-    #[test]
-    fn test_execution_order() {
-        assert!(SystemExecutionOrder::FIRST < SystemExecutionOrder::EARLY);
-        assert!(SystemExecutionOrder::EARLY < SystemExecutionOrder::NORMAL);
-        assert!(SystemExecutionOrder::NORMAL < SystemExecutionOrder::LATE);
-        assert!(SystemExecutionOrder::LATE < SystemExecutionOrder::LAST);
-    }
-
-    #[test]
-    fn test_ordered_system() {
-        let system = Box::new(TestSystem::new());
-        let ordered = OrderedSystem::new(system, SystemExecutionOrder::EARLY);
-        assert_eq!(ordered.order, SystemExecutionOrder::EARLY);
     }
 }

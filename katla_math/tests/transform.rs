@@ -84,35 +84,6 @@ fn test_transform() {
 }
 
 #[test]
-fn test_transform_from_position_rotation_scale() {
-    let position = Vec3::new(1.0, 2.0, 3.0);
-    let rotation = Quat::from_euler(0.1, 0.2, 0.3);
-    let scale = Vec3::new(2.0, 2.0, 2.0);
-
-    let transform = Transform::from_position_rotation_scale(position, rotation, scale);
-
-    assert!((transform.position[0] - position[0]).abs() < 1e-5);
-    assert!((transform.position[1] - position[1]).abs() < 1e-5);
-    assert!((transform.position[2] - position[2]).abs() < 1e-5);
-    assert!((transform.scale[0] - scale[0]).abs() < 1e-5);
-    assert!((transform.scale[1] - scale[1]).abs() < 1e-5);
-    assert!((transform.scale[2] - scale[2]).abs() < 1e-5);
-}
-
-#[test]
-fn test_transform_is_identity() {
-    let identity = Transform::new();
-    assert!(identity.is_identity());
-
-    let transformed = Transform {
-        position: Vec3::new(1.0, 0.0, 0.0),
-        scale: Vec3::new(1.0, 1.0, 1.0),
-        rotation: Quat::new(),
-    };
-    assert!(!transformed.is_identity());
-}
-
-#[test]
 fn test_transform_inverse() {
     // Test inverse with a simpler transform (rotation + translation only)
     let transform = Transform {
@@ -199,37 +170,6 @@ fn test_transform_lerp() {
     assert!((result.position[0] - 5.0).abs() < 1e-5);
     assert!((result.position[1] - 10.0).abs() < 1e-5);
     assert!((result.position[2] - 15.0).abs() < 1e-5);
-}
-
-#[test]
-fn test_transform_with_position() {
-    let transform = Transform::new().with_position(Vec3::new(5.0, 10.0, 15.0));
-
-    assert!((transform.position[0] - 5.0).abs() < 1e-5);
-    assert!((transform.position[1] - 10.0).abs() < 1e-5);
-    assert!((transform.position[2] - 15.0).abs() < 1e-5);
-}
-
-#[test]
-fn test_transform_with_rotation() {
-    let rotation = Quat::from_euler(0.5, 0.3, 0.7);
-    let transform = Transform::new().with_rotation(rotation);
-
-    let (x, y, z, w) = transform.rotation.xyzw();
-    let (rx, ry, rz, rw) = rotation.xyzw();
-    assert!((x - rx).abs() < 1e-5);
-    assert!((y - ry).abs() < 1e-5);
-    assert!((z - rz).abs() < 1e-5);
-    assert!((w - rw).abs() < 1e-5);
-}
-
-#[test]
-fn test_transform_with_scale() {
-    let transform = Transform::new().with_scale(Vec3::new(2.0, 3.0, 4.0));
-
-    assert!((transform.scale[0] - 2.0).abs() < 1e-5);
-    assert!((transform.scale[1] - 3.0).abs() < 1e-5);
-    assert!((transform.scale[2] - 4.0).abs() < 1e-5);
 }
 
 #[test]

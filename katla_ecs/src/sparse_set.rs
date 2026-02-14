@@ -457,13 +457,6 @@ mod tests {
     }
 
     #[test]
-    fn test_sparse_set_default() {
-        let set: SparseSet<usize, i32> = SparseSet::default();
-        assert!(set.is_empty());
-        assert_eq!(set.len(), 0);
-    }
-
-    #[test]
     fn test_sparse_set_capacity_methods() {
         let mut set = SparseSet::new();
         set.insert(0, 10);

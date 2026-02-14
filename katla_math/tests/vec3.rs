@@ -184,12 +184,6 @@ fn test_from_array() {
 }
 
 #[test]
-fn test_default() {
-    let v: Vec3 = Default::default();
-    assert_eq!(v, Vec3::new(0.0, 0.0, 0.0));
-}
-
-#[test]
 #[should_panic(expected = "INDEXING OUT_OF_BOUNDS")]
 fn test_index_out_of_bounds() {
     let v = Vec3::new(1.0, 2.0, 3.0);

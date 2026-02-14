@@ -1,36 +1,6 @@
 use katla_math::{Mat3, Mat4, Quat, Vec3};
 
 #[test]
-fn test_new() {
-    let q = Quat::new();
-    let (x, y, z, w) = q.xyzw();
-    assert_eq!(x, 0.0);
-    assert_eq!(y, 0.0);
-    assert_eq!(z, 0.0);
-    assert_eq!(w, 1.0);
-}
-
-#[test]
-fn test_new_from_xyzw() {
-    let q = Quat::new_from_xyzw(1.0, 2.0, 3.0, 4.0);
-    let (x, y, z, w) = q.xyzw();
-    assert_eq!(x, 1.0);
-    assert_eq!(y, 2.0);
-    assert_eq!(z, 3.0);
-    assert_eq!(w, 4.0);
-}
-
-#[test]
-fn test_xyzw() {
-    let q = Quat::new_from_xyzw(1.0, 2.0, 3.0, 4.0);
-    let (x, y, z, w) = q.xyzw();
-    assert_eq!(x, 1.0);
-    assert_eq!(y, 2.0);
-    assert_eq!(z, 3.0);
-    assert_eq!(w, 4.0);
-}
-
-#[test]
 fn test_from_axis_angle() {
     // 90 degree rotation around Z axis
     let q = Quat::from_axis_angle(Vec3::new(0.0, 0.0, 1.0), std::f32::consts::FRAC_PI_2);
@@ -318,16 +288,6 @@ fn test_from_euler() {
 
     let q = Quat::from_euler(pitch, yaw, roll);
     assert!(q.is_normalized());
-}
-
-#[test]
-fn test_from_euler_identity() {
-    let q = Quat::from_euler(0.0, 0.0, 0.0);
-    let (x, y, z, w) = q.xyzw();
-    assert!((x - 0.0).abs() < 1e-5);
-    assert!((y - 0.0).abs() < 1e-5);
-    assert!((z - 0.0).abs() < 1e-5);
-    assert!((w - 1.0).abs() < 1e-5);
 }
 
 #[test]

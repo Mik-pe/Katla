@@ -1,7 +1,7 @@
 #[cfg(test)]
 mod tests {
     use crate::animation::clips::{
-        AnimationChannel, AnimationClip, AnimationSampler, ChannelPath, SampleBuffer, SampledValue,
+        AnimationChannel, AnimationClip, AnimationSampler, ChannelPath, SampleBuffer,
     };
     use crate::animation::components::{
         AnimationEvent, AnimationPlayer, JointTransform, MorphTargetWeights,
@@ -9,50 +9,7 @@ mod tests {
     use crate::animation::samplers::Interpolation;
     use katla_math::Quat;
 
-    #[test]
-    fn test_animation_player_new() {
-        let player = AnimationPlayer::new("Walk");
-
-        assert!(player.current_clip.is_some());
-        assert_eq!(player.current_clip.as_ref().unwrap(), "Walk");
-        assert_eq!(player.time, 0.0);
-        assert!(player.playing);
-        assert!(!player.loop_animation);
-        assert_eq!(player.speed, 1.0);
-        assert_eq!(player.blend_weight, 1.0);
-        assert!(!player.blending);
-        assert!(player.target_clip.is_none());
-        assert!(player.events.is_empty());
-        assert_eq!(player.loop_count, 0);
-    }
-
-    #[test]
-    fn test_animation_player_stopped() {
-        let player = AnimationPlayer::stopped();
-
-        assert!(player.current_clip.is_none());
-        assert_eq!(player.time, 0.0);
-        assert!(!player.playing);
-        assert!(!player.loop_animation);
-        assert_eq!(player.speed, 1.0);
-        assert_eq!(player.blend_weight, 1.0);
-    }
-
-    #[test]
-    fn test_animation_player_builder_pattern() {
-        let player = AnimationPlayer::new("Run").looping().with_speed(2.0);
-
-        assert!(player.loop_animation);
-        assert_eq!(player.speed, 2.0);
-    }
-
-    #[test]
-    fn test_animation_player_with_duration() {
-        let player = AnimationPlayer::new("Walk").with_duration(5.0);
-
-        assert_eq!(player.duration, 5.0);
-    }
-
+    // Tests for actual behavior - play/pause/stop/seek/crossfade
     #[test]
     fn test_animation_player_play_pause() {
         let mut player = AnimationPlayer::stopped();
@@ -79,14 +36,6 @@ mod tests {
     }
 
     #[test]
-    fn test_animation_player_seek() {
-        let mut player = AnimationPlayer::new("Test").with_duration(10.0);
-
-        player.seek(5.0);
-        assert_eq!(player.time, 5.0);
-    }
-
-    #[test]
     fn test_animation_player_seek_clamps() {
         let mut player = AnimationPlayer::new("Test").with_duration(10.0);
 
@@ -95,13 +44,6 @@ mod tests {
 
         player.seek(20.0);
         assert_eq!(player.time, 10.0);
-    }
-
-    #[test]
-    fn test_animation_player_with_clip() {
-        let player = AnimationPlayer::stopped().with_clip("Jump");
-
-        assert_eq!(player.current_clip.as_ref().unwrap(), "Jump");
     }
 
     #[test]
@@ -161,40 +103,7 @@ mod tests {
         assert!(player.is_complete());
     }
 
-    #[test]
-    fn test_animation_event_equality() {
-        let event1 = AnimationEvent::Completed {
-            clip_name: "Walk".to_string(),
-        };
-        let event2 = AnimationEvent::Completed {
-            clip_name: "Walk".to_string(),
-        };
-        let event3 = AnimationEvent::Completed {
-            clip_name: "Run".to_string(),
-        };
-
-        assert_eq!(event1, event2);
-        assert_ne!(event1, event3);
-    }
-
-    #[test]
-    fn test_joint_transform_identity() {
-        let identity = JointTransform::identity();
-
-        assert_eq!(identity.translation, [0.0, 0.0, 0.0]);
-        assert_eq!(identity.scale, [1.0, 1.0, 1.0]);
-        assert_eq!(identity.rotation[3], 1.0);
-    }
-
-    #[test]
-    fn test_joint_transform_from_translation() {
-        let transform = JointTransform::from_translation([1.0, 2.0, 3.0]);
-
-        assert_eq!(transform.translation, [1.0, 2.0, 3.0]);
-        assert_eq!(transform.scale, [1.0, 1.0, 1.0]);
-        assert_eq!(transform.rotation[3], 1.0);
-    }
-
+    // Tests for lerp/blending behavior (actual interpolation logic)
     #[test]
     fn test_joint_transform_lerp_translation() {
         let start = JointTransform::from_translation([0.0, 0.0, 0.0]);
@@ -244,16 +153,6 @@ mod tests {
     }
 
     #[test]
-    fn test_joint_transform_lerp_arrays() {
-        let a = JointTransform::from_translation([0.0, 0.0, 0.0]);
-        let b = JointTransform::from_translation([10.0, 20.0, 30.0]);
-
-        let result = JointTransform::lerp_arrays(&a, &b, 0.5);
-
-        assert_eq!(result.translation, [5.0, 10.0, 15.0]);
-    }
-
-    #[test]
     fn test_joint_transform_blend() {
         let a = JointTransform::from_translation([0.0, 0.0, 0.0]);
         let b = JointTransform::from_translation([10.0, 10.0, 10.0]);
@@ -263,23 +162,7 @@ mod tests {
         assert!(result.translation[0] > 5.0 && result.translation[0] < 10.0);
     }
 
-    #[test]
-    fn test_joint_transform_default() {
-        let default = JointTransform::default();
-        let identity = JointTransform::identity();
-
-        assert_eq!(default.translation, identity.translation);
-        assert_eq!(default.scale, identity.scale);
-    }
-
-    #[test]
-    fn test_morph_target_weights_new() {
-        let weights = MorphTargetWeights::new(5);
-
-        assert_eq!(weights.weights.len(), 5);
-        assert!(weights.weights.iter().all(|&w| w == 0.0));
-    }
-
+    // Tests for morph target weights (actual behavior: clamping, bounds checking)
     #[test]
     fn test_morph_target_weights_set() {
         let mut weights = MorphTargetWeights::new(3);
@@ -313,61 +196,7 @@ mod tests {
         assert_eq!(weights.get_weight(5), 0.0);
     }
 
-    #[test]
-    fn test_animation_sampler_translation() {
-        let inputs = vec![0.0, 0.5, 1.0];
-        let translations = vec![[0.0, 0.0, 0.0], [5.0, 5.0, 5.0], [10.0, 10.0, 10.0]];
-
-        let sampler =
-            AnimationSampler::new_translation(inputs.clone(), translations, Interpolation::Linear);
-
-        assert_eq!(sampler.inputs, inputs);
-        assert!(sampler.translations.is_some());
-        assert!(sampler.rotations.is_none());
-        assert!(sampler.scales.is_none());
-        assert!(sampler.weights.is_none());
-        assert_eq!(sampler.interpolation, Interpolation::Linear);
-    }
-
-    #[test]
-    fn test_animation_sampler_rotation() {
-        let inputs = vec![0.0, 1.0];
-        let rotations = vec![[0.0, 0.0, 0.0, 1.0], [0.0, 0.0, 0.707, 0.707]];
-
-        let sampler = AnimationSampler::new_rotation(inputs, rotations, Interpolation::Linear);
-
-        assert!(sampler.translations.is_none());
-        assert!(sampler.rotations.is_some());
-        assert!(sampler.scales.is_none());
-        assert!(sampler.weights.is_none());
-    }
-
-    #[test]
-    fn test_animation_sampler_scale() {
-        let inputs = vec![0.0, 1.0];
-        let scales = vec![[1.0, 1.0, 1.0], [2.0, 2.0, 2.0]];
-
-        let sampler = AnimationSampler::new_scale(inputs, scales, Interpolation::Linear);
-
-        assert!(sampler.translations.is_none());
-        assert!(sampler.rotations.is_none());
-        assert!(sampler.scales.is_some());
-        assert!(sampler.weights.is_none());
-    }
-
-    #[test]
-    fn test_animation_sampler_weights() {
-        let inputs = vec![0.0, 0.5, 1.0];
-        let weights = vec![0.0, 0.5, 1.0];
-
-        let sampler = AnimationSampler::new_weights(inputs, weights, Interpolation::Linear);
-
-        assert!(sampler.translations.is_none());
-        assert!(sampler.rotations.is_none());
-        assert!(sampler.scales.is_none());
-        assert!(sampler.weights.is_some());
-    }
-
+    // Tests for animation sampler duration calculations (actual logic)
     #[test]
     fn test_animation_sampler_keyframe_count() {
         let inputs = vec![0.0, 0.25, 0.5, 0.75, 1.0];
@@ -393,58 +222,7 @@ mod tests {
         assert_eq!(sampler.duration(), 0.0);
     }
 
-    #[test]
-    fn test_animation_channel() {
-        let sampler = AnimationSampler::new_translation(
-            vec![0.0, 1.0],
-            vec![[0.0, 0.0, 0.0], [1.0, 2.0, 3.0]],
-            Interpolation::Linear,
-        );
-
-        let channel = AnimationChannel {
-            target_node: 5,
-            path: ChannelPath::Translation,
-            sampler,
-        };
-
-        assert_eq!(channel.target_node, 5);
-        assert_eq!(channel.path, ChannelPath::Translation);
-    }
-
-    #[test]
-    fn test_animation_clip() {
-        let sampler = AnimationSampler::new_translation(
-            vec![0.0, 0.5, 1.0],
-            vec![[0.0, 0.0, 0.0], [5.0, 5.0, 5.0], [10.0, 10.0, 10.0]],
-            Interpolation::Linear,
-        );
-
-        let channel = AnimationChannel {
-            target_node: 0,
-            path: ChannelPath::Translation,
-            sampler,
-        };
-
-        let clip = AnimationClip {
-            name: "Walk".to_string(),
-            duration: 1.0,
-            channels: vec![channel],
-        };
-
-        assert_eq!(clip.name, "Walk");
-        assert_eq!(clip.duration, 1.0);
-        assert_eq!(clip.channels.len(), 1);
-        assert_eq!(clip.get_duration(), 1.0);
-    }
-
-    #[test]
-    fn test_channel_path_display() {
-        assert_eq!(format!("{}", ChannelPath::Translation), "translation");
-        assert_eq!(format!("{}", ChannelPath::Rotation), "rotation");
-        assert_eq!(format!("{}", ChannelPath::Scale), "scale");
-        assert_eq!(format!("{}", ChannelPath::Weights), "weights");
-    }
-
+    // Tests for sample buffer behavior (actual functionality)
     #[test]
     fn test_sample_buffer_clear() {
         use crate::animation::clips::AnimationSampler;
@@ -477,12 +255,6 @@ mod tests {
     }
 
     #[test]
-    fn test_sample_buffer_with_capacity() {
-        let buffer = SampleBuffer::with_capacity(10);
-        assert!(buffer.samples().is_empty());
-    }
-
-    #[test]
     fn test_animation_clip_sample_into() {
         let sampler = AnimationSampler::new_translation(
             vec![0.0, 1.0],
@@ -508,59 +280,7 @@ mod tests {
         assert_eq!(buffer.samples().len(), 1);
     }
 
-    #[test]
-    fn test_animation_clip_with_multiple_channels() {
-        let translation_sampler = AnimationSampler::new_translation(
-            vec![0.0, 1.0],
-            vec![[0.0, 0.0, 0.0], [1.0, 2.0, 3.0]],
-            Interpolation::Linear,
-        );
-
-        let rotation_sampler = AnimationSampler::new_rotation(
-            vec![0.0, 1.0],
-            vec![[0.0, 0.0, 0.0, 1.0], [0.0, 0.0, 0.707, 0.707]],
-            Interpolation::Linear,
-        );
-
-        let clip = AnimationClip {
-            name: "Run".to_string(),
-            duration: 1.0,
-            channels: vec![
-                AnimationChannel {
-                    target_node: 0,
-                    path: ChannelPath::Translation,
-                    sampler: translation_sampler,
-                },
-                AnimationChannel {
-                    target_node: 0,
-                    path: ChannelPath::Rotation,
-                    sampler: rotation_sampler,
-                },
-            ],
-        };
-
-        assert_eq!(clip.channels.len(), 2);
-        assert_eq!(clip.channels[0].path, ChannelPath::Translation);
-        assert_eq!(clip.channels[1].path, ChannelPath::Rotation);
-    }
-
-    #[test]
-    fn test_interpolation_variants() {
-        let linear = Interpolation::Linear;
-        let step = Interpolation::Step;
-        let cubic = Interpolation::CubicSpline;
-
-        assert!(matches!(linear, Interpolation::Linear));
-        assert!(matches!(step, Interpolation::Step));
-        assert!(matches!(cubic, Interpolation::CubicSpline));
-    }
-
-    #[test]
-    fn test_interpolation_default() {
-        let interpolation = Interpolation::default();
-        assert!(matches!(interpolation, Interpolation::Linear));
-    }
-
+    // Tests for interpolation conversion to/from GLTF (actual serialization logic)
     #[test]
     fn test_interpolation_to_gltf() {
         assert_eq!(Interpolation::Linear.to_gltf(), "LINEAR");

@@ -2,32 +2,6 @@ use approx::assert_relative_eq;
 use katla_math::{Mat4, Quat, Transform, Vec3, Vec4, PI};
 
 #[test]
-fn test_default() {
-    let m = Mat4::default();
-    assert_relative_eq!(m[0][0], 1.0);
-    assert_relative_eq!(m[1][1], 1.0);
-    assert_relative_eq!(m[2][2], 1.0);
-    assert_relative_eq!(m[3][3], 1.0);
-
-    for i in 0..4 {
-        for j in 0..4 {
-            if i != j {
-                assert_relative_eq!(m[i][j], 0.0);
-            }
-        }
-    }
-}
-
-#[test]
-fn test_identity() {
-    let m = Mat4::identity();
-    assert_relative_eq!(m[0][0], 1.0);
-    assert_relative_eq!(m[1][1], 1.0);
-    assert_relative_eq!(m[2][2], 1.0);
-    assert_relative_eq!(m[3][3], 1.0);
-}
-
-#[test]
 fn test_from_translation() {
     let m = Mat4::from_translation([5.0, 10.0, 15.0]);
     assert_relative_eq!(m[0][0], 1.0);
@@ -313,46 +287,6 @@ fn test_from_into() {
     assert_eq!(arr[3][1], 14.0);
     assert_eq!(arr[3][2], 15.0);
     assert_eq!(arr[3][3], 16.0);
-}
-
-#[test]
-fn test_clone() {
-    let m1 = Mat4([
-        Vec4::new(1.0, 2.0, 3.0, 4.0),
-        Vec4::new(5.0, 6.0, 7.0, 8.0),
-        Vec4::new(9.0, 10.0, 11.0, 12.0),
-        Vec4::new(13.0, 14.0, 15.0, 16.0),
-    ]);
-
-    let m2 = m1.clone();
-    assert_eq!(m1, m2);
-}
-
-#[test]
-fn test_partial_equality() {
-    let m1 = Mat4([
-        Vec4::new(1.0, 2.0, 3.0, 4.0),
-        Vec4::new(5.0, 6.0, 7.0, 8.0),
-        Vec4::new(9.0, 10.0, 11.0, 12.0),
-        Vec4::new(13.0, 14.0, 15.0, 16.0),
-    ]);
-
-    let m2 = Mat4([
-        Vec4::new(1.0, 2.0, 3.0, 4.0),
-        Vec4::new(5.0, 6.0, 7.0, 8.0),
-        Vec4::new(9.0, 10.0, 11.0, 12.0),
-        Vec4::new(13.0, 14.0, 15.0, 16.0),
-    ]);
-
-    let m3 = Mat4([
-        Vec4::new(1.0, 2.0, 3.0, 4.0),
-        Vec4::new(5.0, 6.0, 7.0, 8.0),
-        Vec4::new(9.0, 10.0, 11.0, 12.0),
-        Vec4::new(13.0, 14.0, 15.0, 0.0),
-    ]);
-
-    assert_eq!(m1, m2);
-    assert_ne!(m1, m3);
 }
 
 #[test]

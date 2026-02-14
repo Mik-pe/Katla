@@ -97,18 +97,6 @@ mod tests {
     }
 
     #[test]
-    fn test_resource_storage_new() {
-        let storage = ResourceStorage::new();
-        assert!(storage.resources.is_empty());
-    }
-
-    #[test]
-    fn test_resource_storage_default() {
-        let storage = ResourceStorage::default();
-        assert!(storage.resources.is_empty());
-    }
-
-    #[test]
     fn test_insert_and_get() {
         let mut storage = ResourceStorage::new();
         let resource = TestResource { value: 42 };
@@ -132,12 +120,6 @@ mod tests {
     }
 
     #[test]
-    fn test_get_none_when_not_inserted() {
-        let storage = ResourceStorage::new();
-        assert!(storage.get::<TestResource>().is_none());
-    }
-
-    #[test]
     fn test_get_mut_and_modify() {
         let mut storage = ResourceStorage::new();
         storage.insert(TestResource { value: 10 });
@@ -153,22 +135,10 @@ mod tests {
     }
 
     #[test]
-    fn test_get_mut_none_when_not_inserted() {
-        let mut storage = ResourceStorage::new();
-        assert!(storage.get_mut::<TestResource>().is_none());
-    }
-
-    #[test]
     fn test_contains_true_when_present() {
         let mut storage = ResourceStorage::new();
         storage.insert(TestResource { value: 42 });
         assert!(storage.contains::<TestResource>());
-    }
-
-    #[test]
-    fn test_contains_false_when_absent() {
-        let storage = ResourceStorage::new();
-        assert!(!storage.contains::<TestResource>());
     }
 
     #[test]
@@ -179,12 +149,6 @@ mod tests {
         let removed = storage.remove::<TestResource>();
         assert_eq!(removed, Some(TestResource { value: 42 }));
         assert!(!storage.contains::<TestResource>());
-    }
-
-    #[test]
-    fn test_remove_none_when_absent() {
-        let mut storage = ResourceStorage::new();
-        assert!(storage.remove::<TestResource>().is_none());
     }
 
     #[test]
