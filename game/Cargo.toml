@@ -1,0 +1,12 @@
+[package]
+name = "game"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "katla"
+path = "src/main.rs"
+
+[dependencies]
+katla = { path = "../katla_app" }
+katla_ecs = { path = "../katla_ecs" }

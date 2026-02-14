@@ -454,13 +454,8 @@ pub fn build_skinned_vertex_data(
     };
 
     // Default skinning: all vertices bound to joint 0 with full weight
-    let default_joints = [0u32, 0, 0, 0];
+    let default_joints = [0u16, 0, 0, 0];
     let default_weights = [1.0f32, 0.0, 0.0, 0.0];
-
-    // Convert u16 joint indices to u32 for GPU
-    let convert_joints = |j: &[u16; 4]| -> [u32; 4] {
-        [j[0] as u32, j[1] as u32, j[2] as u32, j[3] as u32]
-    };
 
     let vertex_count = positions.len();
     let vertex_data: Vec<VertexSkinned> = if has_pos && has_skinning {
@@ -470,7 +465,7 @@ pub fn build_skinned_vertex_data(
                 normal,
                 tangent: [0.0, 0.0, 0.0, 0.0],
                 tex_coord0: tex_coord,
-                joint_indices: convert_joints(&joints),
+                joint_indices: joints,
                 joint_weights: weights,
             })
             .collect()
@@ -481,9 +476,7 @@ pub fn build_skinned_vertex_data(
             .zip(normals)
             .zip(tex_coords)
             .map(|(((i, position), normal), tex_coord)| {
-                let joints = joint_indices.get(i)
-                    .map(|j| convert_joints(j))
-                    .unwrap_or(default_joints);
+                let joints = joint_indices.get(i).copied().unwrap_or(default_joints);
                 let weights = joint_weights.get(i).copied().unwrap_or(default_weights);
                 VertexSkinned {
                     position,

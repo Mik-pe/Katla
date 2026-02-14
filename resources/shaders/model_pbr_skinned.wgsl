@@ -57,7 +57,8 @@ struct VertexInput {
     @location(2) vert_tangent: vec4f,
     @location(3) vert_texcoord0: vec2f,
     // Skinning attributes
-    @location(4) joint_indices: vec4u,   // 4 joint indices (packed u16 as u32)
+    // Note: Vertex format is RGBA16u (u16x4), GPU zero-extends each u16 to u32
+    @location(4) joint_indices: vec4u,   // 4 joint indices (0-65535, zero-extended from u16)
     @location(5) joint_weights: vec4f,   // 4 joint weights (must sum to 1.0)
 }
 
