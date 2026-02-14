@@ -420,6 +420,19 @@ impl Mat4 {
             crate::Vec3::new(self[2][0], self[2][1], self[2][2]),
         ])
     }
+
+    /// Convert to a flat array of 16 floats in column-major order.
+    ///
+    /// This is the format expected by GPU shaders and Vulkan.
+    pub fn to_array(&self) -> [f32; 16] {
+        let arr: [[f32; 4]; 4] = self.clone().into();
+        [
+            arr[0][0], arr[0][1], arr[0][2], arr[0][3],
+            arr[1][0], arr[1][1], arr[1][2], arr[1][3],
+            arr[2][0], arr[2][1], arr[2][2], arr[2][3],
+            arr[3][0], arr[3][1], arr[3][2], arr[3][3],
+        ]
+    }
 }
 
 impl Default for Mat4 {

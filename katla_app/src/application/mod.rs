@@ -513,8 +513,8 @@ impl Application {
         let view_proj = &proj * &view;
         let inv_view_proj = view_proj.inverse();
 
-        // Convert inverse VP to array format for GPU
-        let inv_view_proj_array: [f32; 16] = unsafe { std::mem::transmute_copy(&inv_view_proj) };
+        // Convert matrices to array format for GPU (using safe to_array())
+        let inv_view_proj_array: [f32; 16] = inv_view_proj.to_array();
 
         // Check for material hot reload
         if let Ok(reloaded) = renderer
@@ -532,23 +532,19 @@ impl Application {
         use katla_vulkan::{DrawCall, DrawList};
         let mut draw_list = DrawList::new();
 
+        // Convert view and proj matrices once (shared across all draws)
+        let view_array: [f32; 16] = view.to_array();
+        let proj_array: [f32; 16] = proj.to_array();
+
         // Query all drawable entities
         for (_entity, transform, drawable) in self.world.query::<(
             &crate::components::TransformComponent,
             &crate::components::DrawableComponent,
         )>() {
-            // Get the model matrix
+            // Get the model matrix and convert to array
             let model_matrix = transform.transform.make_mat4();
+            let model_array: [f32; 16] = model_matrix.to_array();
 
-            // Convert to katla_vulkan's Mat4 format
-            let model_array: [f32; 16] = unsafe { std::mem::transmute_copy(&model_matrix) };
-
-            // Convert view and proj matrices
-            let view_array: [f32; 16] = unsafe { std::mem::transmute_copy(&view) };
-            let proj_array: [f32; 16] = unsafe { std::mem::transmute_copy(&proj) };
-
-            // TODO: Get mesh and material handles from DrawableComponent
-            // For now, we skip this since handles aren't registered yet
             if let (Some(mesh_handle), Some(material_handle)) =
                 (drawable.mesh_handle, drawable.material_handle)
             {

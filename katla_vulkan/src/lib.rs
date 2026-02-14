@@ -740,9 +740,8 @@ impl VulkanRenderer {
                             // Update storage buffer at the object's index
                             // The shader uses @builtin(instance_index) to access objects[index]
                             if let Some(ref mut manager) = storage_manager.as_mut() {
-                                let model: [[f32; 4]; 4] = unsafe {
-                                    std::mem::transmute_copy(&draw.params.model_matrix)
-                                };
+                                // Safe cast using bytemuck (both types are Pod with same layout)
+                                let model: [[f32; 4]; 4] = bytemuck::cast(draw.params.model_matrix);
                                 let color = draw.params.color.unwrap_or([1.0, 1.0, 1.0, 1.0]);
 
                                 // Update at the object's index with PBR material params
@@ -955,15 +954,10 @@ impl VulkanRenderer {
         // This must happen before any passes run (sky pass needs inv_view_proj)
         if let Some(first_draw) = draw_list.draws.first() {
             if let Some(ref mut manager) = self.storage_manager {
-                let view: [[f32; 4]; 4] = unsafe {
-                    std::mem::transmute_copy(&first_draw.params.view_matrix)
-                };
-                let proj: [[f32; 4]; 4] = unsafe {
-                    std::mem::transmute_copy(&first_draw.params.proj_matrix)
-                };
-                let inv_view_proj: [[f32; 4]; 4] = unsafe {
-                    std::mem::transmute_copy(&first_draw.params.inv_view_proj_matrix)
-                };
+                // Safe cast using bytemuck (both types are Pod with same layout)
+                let view: [[f32; 4]; 4] = bytemuck::cast(first_draw.params.view_matrix);
+                let proj: [[f32; 4]; 4] = bytemuck::cast(first_draw.params.proj_matrix);
+                let inv_view_proj: [[f32; 4]; 4] = bytemuck::cast(first_draw.params.inv_view_proj_matrix);
 
                 // Extract camera position from inverse view matrix
                 let cam_x = -(view[0][0]*view[3][0] + view[0][1]*view[3][1] + view[0][2]*view[3][2]);
