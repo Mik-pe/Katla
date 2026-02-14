@@ -1,6 +1,7 @@
 use crate::rendering::{Mesh, VertexPBR};
 use katla_math::Vec3;
 use katla_vulkan::VulkanContext;
+use log::info;
 
 pub fn create_cylinder_vertices(height: f32, radius: f32, segments: u32) -> Vec<VertexPBR> {
     let mut vertices = Vec::new();
@@ -177,7 +178,7 @@ mod tests {
 
             if dot < 0.0 {
                 failed += 1;
-                println!(
+                info!(
                     "Triangle {:?}: face_normal={:?}, avg_normal={:?}, dot={}",
                     chunk, face_normal.0, avg_normal.0, dot
                 );
@@ -186,7 +187,7 @@ mod tests {
             }
         }
 
-        println!("Cylinder winding: {} passed, {} failed", passed, failed);
+        info!("Cylinder winding: {} passed, {} failed", passed, failed);
         assert_eq!(
             failed, 0,
             "Cylinder has {} triangles with incorrect winding",

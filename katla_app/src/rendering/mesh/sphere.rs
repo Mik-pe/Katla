@@ -1,6 +1,7 @@
 use crate::rendering::{Mesh, VertexPBR};
 use katla_math::Vec3;
 use katla_vulkan::VulkanContext;
+use log::info;
 
 pub fn create_sphere_vertices(radius: f32, segments: u32, rings: u32) -> Vec<VertexPBR> {
     let mut vertices = Vec::new();
@@ -119,7 +120,7 @@ mod tests {
 
             if dot < 0.0 {
                 failed += 1;
-                println!(
+                info!(
                     "Triangle {:?} (centroid={:?}): face_normal={:?}, expected_normal={:?}, dot={}",
                     chunk,
                     centroid.to_array(),
@@ -132,7 +133,7 @@ mod tests {
             }
         }
 
-        println!("Sphere winding: {} passed, {} failed", passed, failed);
+        info!("Sphere winding: {} passed, {} failed", passed, failed);
         assert_eq!(
             failed, 0,
             "Sphere has {} triangles with incorrect winding",

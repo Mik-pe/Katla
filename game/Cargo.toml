@@ -8,5 +8,8 @@ name = "katla"
 path = "src/main.rs"
 
 [dependencies]
-katla = { path = "../katla_app" }
+katla_app = { path = "../katla_app" }
 katla_ecs = { path = "../katla_ecs" }
+clap = { version = "4.5", features = ["derive"] }
+log = "0.4"
+env_logger = "0.11"

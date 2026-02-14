@@ -3,6 +3,7 @@ use std::rc::Rc;
 use katla_ecs::{EntityId, World};
 use katla_math::Transform;
 use katla_vulkan::{MaterialHandle, MaterialRegistry, MeshHandle, VulkanContext, VulkanRenderer};
+use log::{info, warn};
 
 use crate::{
     components::{DrawableComponent, NameComponent, TransformComponent},
@@ -121,7 +122,7 @@ impl Model {
                             Some(Rc::new(tex))
                         }
                         _ => {
-                            println!("Unsupported texture format: {:?}", image.format);
+                            info!("Unsupported texture format: {:?}", image.format);
                             None
                         }
                     }
@@ -194,7 +195,7 @@ impl Model {
                             Some(Rc::new(tex))
                         }
                         _ => {
-                            println!("Unsupported texture format: {:?}", image.format);
+                            info!("Unsupported texture format: {:?}", image.format);
                             None
                         }
                     }
@@ -205,7 +206,7 @@ impl Model {
                 // Create material from template
                 Material::from_template(template, texture, None)
             } else {
-                println!("  Model: Template 'gltf_default' not found, creating directly");
+                info!("  Model: Template 'gltf_default' not found, creating directly");
                 // Fall back to direct creation if template not found
                 Material::new(model.clone(), context.clone())
             }
@@ -238,7 +239,7 @@ impl Model {
 
             // Try to get the "gltf_skinned" template for animated models
             if let Some(template) = registry.borrow().get_template("gltf_skinned") {
-                println!("  Model: Using skinned material template");
+                info!("  Model: Using skinned material template");
 
                 // Extract texture from the GLTF model
                 let texture = if !model.images.is_empty() {
@@ -274,7 +275,7 @@ impl Model {
                 // Create material from template with skinned vertex binding
                 Material::from_template_skinned(template, texture, None)
             } else {
-                println!("  Model: Template 'gltf_skinned' not found, falling back to default");
+                info!("  Model: Template 'gltf_skinned' not found, falling back to default");
                 // Fall back to default template
                 if let Some(template) = registry.borrow().get_template("gltf_default") {
                     let texture = if !model.images.is_empty() {

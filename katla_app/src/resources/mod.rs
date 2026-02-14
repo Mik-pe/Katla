@@ -2,6 +2,7 @@
 //!
 //! This module provides centralized resource path discovery and management.
 
+use log::info;
 use std::path::{Path, PathBuf};
 use crate::{AppError, AppResult};
 
@@ -53,7 +54,7 @@ impl ResourceManager {
 
         for root in possible_roots {
             if root.exists() {
-                println!("Found resources at: {}", root.display());
+                info!("Found resources at: {}", root.display());
                 return Ok(Self::from_root(root));
             }
         }

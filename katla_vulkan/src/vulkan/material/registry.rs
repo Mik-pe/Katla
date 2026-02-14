@@ -8,6 +8,7 @@ use super::{
     load_material_from_file, FileWatcher, MaterialError, MaterialTemplate, MaterialTemplateBuilder,
 };
 use crate::VulkanContext;
+use log::info;
 use std::{
     collections::HashMap,
     ffi::OsStr,
@@ -266,7 +267,7 @@ impl MaterialRegistry {
         self.file_watcher = Some(watcher);
         self.watch_directory = Some(directory.to_path_buf());
 
-        println!("Hot reload enabled for directory: {}", directory.display());
+        info!("Hot reload enabled for directory: {}", directory.display());
         Ok(())
     }
 
@@ -335,7 +336,7 @@ impl MaterialRegistry {
 
             // Reload each affected template
             for name in templates_to_reload {
-                println!("  Reloading template: {}", name);
+                info!("  Reloading template: {}", name);
 
                 // Clone the path to release the borrow
                 let path = match self.template_paths.get(&name).cloned() {
@@ -357,7 +358,7 @@ impl MaterialRegistry {
                 let desc_layout = if let Some(template) = self.templates.get(&name) {
                     template.desc_layout()
                 } else {
-                    println!("  ✗ Template not found in registry: {}", name);
+                    info!("  ✗ Template not found in registry: {}", name);
                     continue;
                 };
 
@@ -379,7 +380,7 @@ impl MaterialRegistry {
                 if let Some(template) = self.templates.get(&name) {
                     // Wait for the GPU to finish using the pipeline before destroying it
                     // This prevents validation errors about destroying resources that are still in use
-                    println!("  Waiting for GPU idle before destroying pipeline...");
+                    info!("  Waiting for GPU idle before destroying pipeline...");
                     unsafe {
                         context
                             .device
@@ -401,9 +402,9 @@ impl MaterialRegistry {
                     *pipeline_ref = new_pipeline;
 
                     reloaded += 1;
-                    println!("  ✓ Hot reloaded material template: {}", name);
+                    info!("  ✓ Hot reloaded material template: {}", name);
                 } else {
-                    println!("  ✗ Template not found in registry: {}", name);
+                    info!("  ✗ Template not found in registry: {}", name);
                 }
             }
         }

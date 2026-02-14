@@ -7,6 +7,7 @@ use std::{
 
 use crate::rendering::Material;
 use katla_vulkan::{MaterialHandle, VulkanContext, VulkanRenderer, MaterialRegistry};
+use log::{error, info, warn};
 use notify::{Watcher, RecursiveMode};
 
 /// ID for referencing a shared material.
@@ -197,7 +198,7 @@ impl MaterialManager {
     ) -> Result<(), String> {
         let reload = MaterialHotReload::new(shaders_directory, debounce_ms)?;
         self.hot_reload = Some(reload);
-        println!("Hot reload enabled for: {}", shaders_directory.display());
+        info!("Hot reload enabled for: {}", shaders_directory.display());
         Ok(())
     }
 
@@ -253,12 +254,12 @@ impl MaterialManager {
         let mut reloaded = 0;
 
         while let Some(shader_path) = hot_reload.check() {
-            println!("Shader modified: {:?}", shader_path);
+            info!("Shader modified: {:?}", shader_path);
 
             // Try to find matching materials using smart path comparison
             for (tracked_path, material_names) in &self.shader_to_materials {
                 if Self::paths_match(&shader_path, tracked_path) {
-                    println!("  Matched shader: {:?} == {:?}", shader_path, tracked_path);
+                    info!("  Matched shader: {:?} == {:?}", shader_path, tracked_path);
 
                     for material_name in material_names {
                         // Recreate the material
@@ -281,12 +282,12 @@ impl MaterialManager {
                                     // Update in MaterialManager
                                     self.materials[id.0] = new_material;
                                     reloaded += 1;
-                                    println!(
+                                    info!(
                                         "  ✓ Reloaded material: {} (updated AssetRegistry)",
                                         material_name
                                     );
                                 } else {
-                                    println!(
+                                    info!(
                                         "  ✗ Failed to update AssetRegistry: {}",
                                         material_name
                                     );
@@ -295,7 +296,7 @@ impl MaterialManager {
                                 // No handle in AssetRegistry - just update MaterialManager
                                 self.materials[id.0] = new_material;
                                 reloaded += 1;
-                                println!(
+                                info!(
                                     "  ✓ Reloaded material: {} (MaterialManager only)",
                                     material_name
                                 );
@@ -307,7 +308,7 @@ impl MaterialManager {
             }
 
             if reloaded == 0 {
-                println!("  ✗ No materials found using this shader");
+                info!("  ✗ No materials found using this shader");
             }
         }
 
@@ -404,18 +405,18 @@ impl MaterialHotReload {
         ) {
             Ok(w) => w,
             Err(e) => {
-                eprintln!("Failed to create file watcher: {:?}", e);
+                error!("Failed to create file watcher: {:?}", e);
                 return;
             }
         };
 
         // Watch the directory
         if let Err(e) = Watcher::watch(&mut watcher, &directory, RecursiveMode::Recursive) {
-            eprintln!("Failed to watch directory {}: {:?}", directory.display(), e);
+            error!("Failed to watch directory {}: {:?}", directory.display(), e);
             return;
         }
 
-        println!("File watcher started for: {}", directory.display());
+        info!("File watcher started for: {}", directory.display());
 
         let mut last_event_time = std::time::Instant::now();
         let mut last_modified_path: Option<PathBuf> = None;

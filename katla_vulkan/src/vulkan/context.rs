@@ -8,6 +8,7 @@ use gpu_allocator::{
     vulkan::{Allocation, AllocationScheme, Allocator, AllocatorCreateDesc},
     AllocationSizes, AllocatorDebugSettings,
 };
+use log::{debug, info};
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 use std::{
     cell::RefCell,
@@ -203,7 +204,7 @@ impl QueueFamilyIndices {
         unsafe {
             let family_props =
                 instance.get_physical_device_queue_family_properties(physical_device);
-            println!("Num family indices: {}", family_props.len());
+            info!("Num family indices: {}", family_props.len());
             for (idx, properties) in family_props.iter().enumerate() {
                 if properties.queue_flags.contains(vk::QueueFlags::GRAPHICS)
                     && surface_loader
@@ -244,7 +245,7 @@ impl QueueFamilyIndices {
         unsafe {
             let family_props =
                 instance.get_physical_device_queue_family_properties(physical_device);
-            println!("Num family indices (headless): {}", family_props.len());
+            info!("Num family indices (headless): {}", family_props.len());
             for (idx, properties) in family_props.iter().enumerate() {
                 // Prioritize graphics queue
                 if properties.queue_flags.contains(vk::QueueFlags::GRAPHICS)
@@ -983,7 +984,7 @@ unsafe fn pick_physical_device(
     });
     if let Some(device) = physical_device {
         let properties = instance.get_physical_device_properties(device);
-        println!(
+        info!(
             "Picking physical device: {:?}",
             CStr::from_ptr(properties.device_name.as_ptr())
         );
@@ -1042,7 +1043,7 @@ unsafe fn pick_physical_device_headless(instance: &Instance) -> Option<vk::Physi
 
     if let Some(device) = physical_device {
         let properties = instance.get_physical_device_properties(device);
-        println!(
+        info!(
             "Picking physical device (headless): {:?}",
             CStr::from_ptr(properties.device_name.as_ptr())
         );
@@ -1220,8 +1221,8 @@ unsafe extern "system" fn debug_callback(
     drop(storage_guard);
     let _ = Arc::into_raw(storage); // Don't drop the Arc
 
-    // Always print the message (for backwards compatibility and visibility)
-    println!(
+    // Always log the message (for backwards compatibility and visibility)
+    debug!(
         "{}",
         CStr::from_ptr(callback_data.p_message).to_string_lossy()
     );

@@ -1,5 +1,6 @@
 use crate::sync::{AccessFlags2, DependencyInfo, ImageMemoryBarrier2, PipelineStage2Flags};
 use ash::vk;
+use log::{info, warn};
 
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -95,7 +96,7 @@ impl CompiledRenderGraph {
             }
         }
 
-        println!(
+        info!(
             "Swapchain framebuffers setup complete: {} passes using dynamic rendering",
             self.passes.len()
         );
@@ -382,7 +383,7 @@ impl CompiledRenderGraph {
                             vk::ImageLayout::PRESENT_SRC_KHR
                         };
 
-                        println!("ExternalImage attachment: format={:?}, load_op={:?}, store_op={:?}, final_layout={:?}",
+                        info!("ExternalImage attachment: format={:?}, load_op={:?}, store_op={:?}, final_layout={:?}",
                             format, load_op, store_op, final_layout);
 
                         vk::AttachmentDescription::default()
@@ -827,7 +828,7 @@ impl CompiledRenderGraph {
             if let Some(first_set) = pass.color_attachments.first() {
                 if !first_set.is_empty() {
                     color_attachments.push(first_set[0]);
-                    println!("WARNING: color_attachments[{}] was empty, using fallback attachment for image_index {}",
+                    warn!("WARNING: color_attachments[{}] was empty, using fallback attachment for image_index {}",
                         pass_index, image_index);
                 }
             }

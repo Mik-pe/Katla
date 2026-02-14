@@ -1,6 +1,7 @@
 use crate::components::{Parent, TransformComponent, TransformDirty, WorldTransform};
 use katla_ecs::{EntityId, System, World};
 use katla_math::Transform;
+use log::warn;
 use std::collections::{HashMap, HashSet};
 
 /// Updates world-space transforms by propagating parent transforms to children.
@@ -128,7 +129,7 @@ impl TransformHierarchySystem {
     ) {
         // Check for cycles
         if visiting.contains(&entity) {
-            eprintln!(
+            warn!(
                 "Warning: Transform hierarchy cycle detected at entity {:?}. \
                  This entity and its descendants will not be updated.",
                 entity

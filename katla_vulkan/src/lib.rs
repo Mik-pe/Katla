@@ -2,6 +2,7 @@ pub mod render_graph;
 pub mod rendering;
 pub mod sync;
 pub mod vulkan;
+use log::{error, info, warn};
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 pub use render_graph::errors::RenderGraphError;
 pub use render_graph::pass::{PassBuilder, PassExecutionContext};
@@ -122,7 +123,7 @@ impl VulkanRenderer {
         self.storage_manager = Some(manager);
         self.storage_descriptor_set = Some(descriptor_set);
 
-        println!("Storage uniform system initialized (20KB buffer, 256 objects max)");
+        info!("Storage uniform system initialized (20KB buffer, 256 objects max)");
         Ok(())
     }
 
@@ -193,7 +194,7 @@ impl VulkanRenderer {
             )
             .build(&self.context.device)
             .map_err(|e| {
-                eprintln!("Failed to create storage uniform layout: {:?}", e);
+                error!("Failed to create storage uniform layout: {:?}", e);
                 vk::Result::ERROR_INITIALIZATION_FAILED
             })?;
 
@@ -211,7 +212,7 @@ impl VulkanRenderer {
                 .destroy_descriptor_set_layout(uniform_set_layout, None);
         }
 
-        println!("Storage uniform system initialized (20KB buffer, 256 objects max)");
+        info!("Storage uniform system initialized (20KB buffer, 256 objects max)");
         Ok(())
     }
 
@@ -224,7 +225,7 @@ impl VulkanRenderer {
             Ok(mut registry) => registry.destroy(),
             Err(_) => {
                 // Already borrowed or other issue - log and continue
-                eprintln!("Warning: Could not access material registry for destruction");
+                warn!("Warning: Could not access material registry for destruction");
             }
         }
 
@@ -235,7 +236,7 @@ impl VulkanRenderer {
         self.context.pre_destroy();
         self.swap_data.destroy(&self.context.device);
         self.frame_context.destroy();
-        println!("Clean shutdown!");
+        info!("Clean shutdown!");
     }
 
     pub fn wait_for_device(&self) {
@@ -248,13 +249,13 @@ impl VulkanRenderer {
         self.wait_for_device();
 
         let old_extent = self.frame_context.swapchain.get_extent();
-        println!("=== Recreating swapchain ===");
-        println!("  Old extent: {}x{}", old_extent.width, old_extent.height);
+        info!("=== Recreating swapchain ===");
+        info!("  Old extent: {}x{}", old_extent.width, old_extent.height);
 
         self.frame_context.recreate_swapchain();
 
         let new_extent = self.frame_context.swapchain.get_extent();
-        println!("  New extent: {}x{}", new_extent.width, new_extent.height);
+        info!("  New extent: {}x{}", new_extent.width, new_extent.height);
 
         // Update render graph's active render pass if it exists
         // Collect swapchain data first to avoid borrow checker issues
@@ -880,7 +881,7 @@ impl VulkanRenderer {
                 // Create framebuffers for swapchain images (uses null render pass for dynamic rendering)
                 if let Err(e) = graph.create_swapchain_framebuffers(&swapchain_images)
                 {
-                    println!("Failed to create swapchain framebuffers: {:?}", e);
+                    error!("Failed to create swapchain framebuffers: {:?}", e);
                 } else {
                     // Initialize color_attachments and depth_attachments for all swapchain images
                     let new_depth_view = self.frame_context.depth_render_texture.image_view.vk();
@@ -911,7 +912,7 @@ impl VulkanRenderer {
                 }
             }
             Err(e) => {
-                println!("Failed to compile render graph: {:?}", e);
+                error!("Failed to compile render graph: {:?}", e);
             }
         }
     }

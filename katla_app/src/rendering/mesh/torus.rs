@@ -1,6 +1,7 @@
 use crate::rendering::{Mesh, VertexPBR};
 use katla_math::Vec3;
 use katla_vulkan::VulkanContext;
+use log::info;
 
 pub fn create_torus_vertices(
     major_radius: f32,
@@ -121,7 +122,7 @@ mod tests {
 
             if dot < 0.0 {
                 failed += 1;
-                println!(
+                info!(
                     "Triangle {:?}: face_normal={:?}, avg_normal={:?}, dot={}",
                     chunk,
                     face_normal.to_array(),
@@ -133,7 +134,7 @@ mod tests {
             }
         }
 
-        println!("Torus winding: {} passed, {} failed", passed, failed);
+        info!("Torus winding: {} passed, {} failed", passed, failed);
         assert_eq!(
             failed, 0,
             "Torus has {} triangles with incorrect winding",

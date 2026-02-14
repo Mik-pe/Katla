@@ -4,6 +4,7 @@ use gltf::buffer::Data as BufferData;
 use gltf::image::Data as ImageData;
 use gltf::Document;
 use katla_math::{Sphere, Vec3};
+use log::info;
 
 use crate::rendering::{VertexNormal, VertexPBR, VertexPosition, VertexSkinned};
 use crate::util::gltf_parser::{build_skinned_vertex_data, build_vertex_data, generate_smooth_normals, AttributeParser};
@@ -33,7 +34,7 @@ impl GLTFModel {
         let parser = AttributeParser::new(&self.buffers);
 
         if let Some(mesh) = node.mesh() {
-            println!(
+            info!(
                 "  Mesh '{}' has {} primitives",
                 mesh.name().unwrap_or("unnamed"),
                 mesh.primitives().count()
@@ -45,15 +46,15 @@ impl GLTFModel {
                     match semantic {
                         gltf::mesh::Semantic::Positions => {
                             positions = parser.parse_positions(accessor);
-                            println!("    Parsed {} positions", positions.len());
+                            info!("    Parsed {} positions", positions.len());
                         }
                         gltf::mesh::Semantic::Normals => {
                             normals = parser.parse_normals(accessor);
-                            println!("    Parsed {} normals", normals.len());
+                            info!("    Parsed {} normals", normals.len());
                         }
                         gltf::mesh::Semantic::TexCoords(0) => {
                             tex_coords = parser.parse_tex_coords(accessor);
-                            println!("    Parsed {} tex_coords", tex_coords.len());
+                            info!("    Parsed {} tex_coords", tex_coords.len());
                         }
                         _ => {
                             continue;
@@ -71,11 +72,11 @@ impl GLTFModel {
 
             // Debug: Check if normals are empty
             if normals.is_empty() {
-                println!(
+                info!(
                     "    WARNING: No normals found! Generating smooth normals from geometry..."
                 );
                 normals = generate_smooth_normals(&positions, &index_data, index_stride);
-                println!("    Generated {} normals", normals.len());
+                info!("    Generated {} normals", normals.len());
             }
 
             // Build vertex data from parsed attributes
@@ -120,11 +121,11 @@ impl GLTFModel {
                         }
                         gltf::mesh::Semantic::Joints(0) => {
                             joint_indices = parser.parse_joint_indices(accessor);
-                            println!("    Parsed {} joint indices", joint_indices.len());
+                            info!("    Parsed {} joint indices", joint_indices.len());
                         }
                         gltf::mesh::Semantic::Weights(0) => {
                             joint_weights = parser.parse_joint_weights(accessor);
-                            println!("    Parsed {} joint weights", joint_weights.len());
+                            info!("    Parsed {} joint weights", joint_weights.len());
                         }
                         _ => {}
                     }
@@ -264,14 +265,14 @@ mod tests {
         model_path.push("resources");
         model_path.push("models");
         model_path.push("Fox.glb");
-        println!("Looking for model at: {}", model_path.display());
+        info!("Looking for model at: {}", model_path.display());
         let model = GLTFModel::new(&model_path).expect("Failed to load Fox.glb");
-        println!(
+        info!(
             "Parsed {} vertices, {} indices",
             model.vertex_data.len(),
             model.index_data.len()
         );
-        println!(
+        info!(
             "Bounds: center={:?}, radius={}",
             model.bounds.center, model.bounds.radius
         );
@@ -290,7 +291,7 @@ mod tests {
         model_path.push("resources");
         model_path.push("models");
         model_path.push("Box.glb");
-        println!("Looking for model at: {}", model_path.display());
+        info!("Looking for model at: {}", model_path.display());
         let model = GLTFModel::new(&model_path).expect("Failed to load Box.glb");
         assert!(!model.vertex_data.is_empty());
         assert!(!model.index_data.is_empty());

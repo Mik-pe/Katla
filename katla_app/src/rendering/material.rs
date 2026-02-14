@@ -5,6 +5,7 @@ use katla_vulkan::{
     context::VulkanContext, material::UniformHandle, ImageFormat, MaterialBuilder,
     MaterialHandle, MaterialPipeline, MaterialTemplate, Texture, VertexBinding,
 };
+use log::warn;
 
 use std::{cell::RefCell, path::Path, rc::Rc};
 
@@ -66,7 +67,7 @@ impl Material {
                     texture = Some(Rc::new(tex));
                 }
                 _ => {
-                    println!("Unsupported texture format: {:?}", image.format);
+                    warn!("Unsupported texture format: {:?}", image.format);
                 }
             }
         }

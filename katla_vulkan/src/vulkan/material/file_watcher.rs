@@ -4,6 +4,7 @@
 //! allowing materials to be reloaded immediately when shader files change
 //! without polling in the render loop.
 
+use log::{error, info, warn};
 use std::{
     path::{Path, PathBuf},
     sync::mpsc::{self, Receiver, Sender},
@@ -64,18 +65,18 @@ impl FileWatcher {
         ) {
             Ok(w) => w,
             Err(e) => {
-                eprintln!("Failed to create file watcher: {:?}", e);
+                error!("Failed to create file watcher: {:?}", e);
                 return;
             }
         };
 
         // Watch the directory recursively
         if let Err(e) = watcher.watch(&directory, RecursiveMode::Recursive) {
-            eprintln!("Failed to watch directory {}: {:?}", directory.display(), e);
+            error!("Failed to watch directory {}: {:?}", directory.display(), e);
             return;
         }
 
-        println!("File watcher started for: {}", directory.display());
+        info!("File watcher started for: {}", directory.display());
 
         // Process events
         let mut last_event_time = std::time::Instant::now();

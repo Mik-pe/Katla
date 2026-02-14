@@ -2,6 +2,7 @@ pub mod builder;
 
 use std::{cell::RefCell, ffi::CString, rc::Rc, time::Instant};
 
+use log::{error, info, warn};
 use winit::keyboard::ModifiersState;
 
 pub use builder::*;
@@ -100,7 +101,7 @@ impl ApplicationHandler for Application {
                     renderer.context.clone()
                 )
                 .expect("Failed to load materials directory");
-            println!(
+            info!(
                 "Loaded {} material templates from {}",
                 loaded_count,
                 self.resources.materials.display()
@@ -113,7 +114,7 @@ impl ApplicationHandler for Application {
                 .borrow_mut()
                 .enable_hot_reload(&self.resources.root, 100)
                 .expect("Failed to enable hot reload");
-            println!("Hot reload enabled for materials and shaders");
+            info!("Hot reload enabled for materials and shaders");
 
             // Now find and load the Fox model (after templates are loaded)
             let fox_path = self.resources.model_path("Fox.glb");
@@ -133,7 +134,7 @@ impl ApplicationHandler for Application {
                 None, // Registry accessed internally
             );
 
-            println!("Fox model entity: {:?} with animation", fox.entity);
+            info!("Fox model entity: {:?} with animation", fox.entity);
 
             // Create meshes spaced out in a line with different colors
 
@@ -225,9 +226,9 @@ impl ApplicationHandler for Application {
                 Some(Rc::new(checkerboard_texture)),
                 None,
             ).is_some() {
-                println!("Registered checkerboard material from template");
+                info!("Registered checkerboard material from template");
             } else {
-                println!("Warning: Checkerboard template not found, using fallback");
+                info!("Warning: Checkerboard template not found, using fallback");
                 // Fallback to direct creation if template doesn't exist
                 let checkerboard =
                     create_checkerboard_material(renderer.context.clone());
@@ -293,7 +294,7 @@ impl ApplicationHandler for Application {
                             .aspect_ratio_changed(&mut self.world, win_x / win_y);
 
                         if let Some(ref mut renderer) = self.renderer {
-                            println!(
+                            info!(
                                 "=== Window resized to {}x{}, recreating swapchain ===",
                                 new_width, new_height as u32
                             );
@@ -346,7 +347,7 @@ impl ApplicationHandler for Application {
                     if let Some(max) = self.info.max_frames {
                         self.frame_count += 1;
                         if self.frame_count >= max {
-                            println!("Rendered {} frames, exiting", self.frame_count);
+                            info!("Rendered {} frames, exiting", self.frame_count);
                             event_loop.exit();
                         }
                     }
@@ -380,7 +381,7 @@ impl ApplicationHandler for Application {
 
                         let millisecs = start.elapsed().as_micros() as f64 / 1000.0;
 
-                        println!("Mesh creation took {millisecs} ms");
+                        info!("Mesh creation took {millisecs} ms");
                         self.stage_upload = false;
                     }
                     if let Some(window) = &self.window {
@@ -462,7 +463,7 @@ impl Application {
             .check_hot_reload(renderer.context.clone())
         {
             if reloaded > 0 {
-                println!("Hot reloaded {} material template(s)", reloaded);
+                info!("Hot reloaded {} material template(s)", reloaded);
             }
         }
 
@@ -520,7 +521,7 @@ impl Application {
                     // The swapchain will be recreated on the next frame
                 }
                 _ => {
-                    eprintln!("Render frame failed: {:?}", e);
+                    error!("Render frame failed: {:?}", e);
                 }
             }
         }

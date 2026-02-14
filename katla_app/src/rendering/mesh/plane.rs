@@ -1,5 +1,6 @@
 use crate::rendering::{Mesh, VertexPBR};
 use katla_vulkan::VulkanContext;
+use log::info;
 
 pub fn create_plane_vertices(width: f32, height: f32, segments: u32) -> Vec<VertexPBR> {
     let mut vertices = Vec::new();
@@ -106,7 +107,7 @@ mod tests {
 
             if dot < 0.0 {
                 failed += 1;
-                println!(
+                info!(
                     "Triangle {:?}: face_normal={:?}, avg_normal={:?}, dot={}",
                     chunk, face_normal.0, avg_normal.0, dot
                 );
@@ -115,7 +116,7 @@ mod tests {
             }
         }
 
-        println!("Plane winding: {} passed, {} failed", passed, failed);
+        info!("Plane winding: {} passed, {} failed", passed, failed);
         assert_eq!(
             failed, 0,
             "Plane has {} triangles with incorrect winding",

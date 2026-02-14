@@ -919,8 +919,11 @@ dependencies = [
 name = "game"
 version = "0.1.0"
 dependencies = [
- "katla",
+ "clap",
+ "env_logger",
+ "katla_app",
  "katla_ecs",
+ "log",
 ]
 
 [[package]]
@@ -1305,6 +1308,7 @@ dependencies = [
  "ash-window",
  "bytemuck",
  "gpu-allocator",
+ "log",
  "naga",
  "notify",
  "raw-window-handle",

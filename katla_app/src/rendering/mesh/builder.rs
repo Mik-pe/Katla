@@ -3,6 +3,7 @@ use std::rc::Rc;
 use katla_ecs::{EntityId, World};
 use katla_math::{Transform, Vec3};
 use katla_vulkan::{MaterialRegistry, Texture, VulkanContext, VulkanRenderer};
+use log::info;
 
 use crate::{
     entities::Model,
@@ -126,7 +127,7 @@ macro_rules! impl_common_builder {
                 // Try to get material from template in the registry
                 if let Some(ref name) = &self.base.shared_material_name {
                     if let Some(template) = registry.get_template(name) {
-                        println!("  MeshBuilder: Using material from template '{}'", name);
+                        info!("  MeshBuilder: Using material from template '{}'", name);
 
                         // Check if this template needs a texture (Checkerboard uses procedural texture)
                         // Create and cache the texture on first use
@@ -145,7 +146,7 @@ macro_rules! impl_common_builder {
 
                         return Material::from_template(template, texture, None);
                     }
-                    println!(
+                    info!(
                         "  MeshBuilder: Template '{}' not found, creating directly",
                         name
                     );
