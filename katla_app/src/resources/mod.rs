@@ -3,6 +3,7 @@
 //! This module provides centralized resource path discovery and management.
 
 use std::path::{Path, PathBuf};
+use crate::{AppError, AppResult};
 
 /// Centralized resource path manager.
 ///
@@ -29,9 +30,10 @@ impl ResourceManager {
     /// 3. Grandparent directory (target/debug)
     /// 4. CARGO_MANIFEST_DIR absolute path
     ///
-    /// # Panics
-    /// Panics if no valid resources directory is found.
-    pub fn discover() -> Self {
+    /// # Returns
+    /// `Ok(ResourceManager)` if a valid resources directory was found
+    /// `Err(AppError::ResourcesNotFound)` if no valid directory was found
+    pub fn discover() -> AppResult<Self> {
         // List of possible root paths to check, in order of preference
         let possible_roots = vec![
             // Current directory (for running from workspace root)
@@ -52,11 +54,13 @@ impl ResourceManager {
         for root in possible_roots {
             if root.exists() {
                 println!("Found resources at: {}", root.display());
-                return Self::from_root(root);
+                return Ok(Self::from_root(root));
             }
         }
 
-        panic!("Failed to find resources directory!");
+        Err(AppError::ResourcesNotFound {
+            path: "resources/".to_string(),
+        })
     }
 
     /// Create ResourceManager from an explicit root path.
