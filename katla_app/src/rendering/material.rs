@@ -161,6 +161,50 @@ impl Material {
         }
     }
 
+    /// Create a skinned material from a template for skeletal animation.
+    ///
+    /// This uses the skinned vertex binding which includes joint indices and weights.
+    pub fn from_template_skinned(
+        template: &MaterialTemplate,
+        texture: Option<Rc<Texture>>,
+        color: Option<Color>,
+    ) -> Self {
+        use katla_vulkan::vertexbinding::get_skinned_vertex_binding;
+
+        let is_storage_mode = template.texture_set_layout().is_some();
+
+        let uniform = if is_storage_mode {
+            let mut uniform = template.create_uniform();
+
+            if let Some(ref tex) = texture {
+                use katla_vulkan::material::ImageInfo;
+                let image_info = ImageInfo::new(tex.image_view.vk(), tex.image_sampler.vk());
+                uniform.add_image_info(image_info);
+            }
+
+            Some(uniform)
+        } else {
+            let mut uniform = template.create_uniform();
+
+            if let Some(ref tex) = texture {
+                use katla_vulkan::material::ImageInfo;
+                let image_info = ImageInfo::new(tex.image_view.vk(), tex.image_sampler.vk());
+                uniform.add_image_info(image_info);
+            }
+
+            Some(uniform)
+        };
+
+        Self {
+            material_pipeline: template.pipeline(),
+            texture,
+            vertex_binding: get_skinned_vertex_binding(),
+            handle: None,
+            color,
+            uniform,
+        }
+    }
+
     /// Create a material from a MaterialPipeline directly (non-template).
     ///
     /// This is used for materials that don't use templates and have their

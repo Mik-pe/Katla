@@ -199,9 +199,29 @@ impl MaterialRegistry {
             // Get template name from descriptor
             let name = descriptor.name.clone();
 
-            // Build template with default PBR vertex binding
-            let vertex_binding = get_pbr_vertex_binding();
-            let template = if use_storage {
+            // Detect if this is a skinned material by checking shader filename
+            let is_skinned = match &descriptor.vertex_shader {
+                crate::vulkan::material::ShaderSource::WgslFile(path) => {
+                    path.to_string_lossy().to_lowercase().contains("skinned")
+                }
+                _ => false,
+            };
+
+            // Build template with appropriate vertex binding
+            let vertex_binding = if is_skinned {
+                crate::vulkan::vertexbinding::get_skinned_vertex_binding()
+            } else {
+                get_pbr_vertex_binding()
+            };
+
+            let template = if is_skinned {
+                // Skinned materials always use storage mode
+                MaterialTemplateBuilder::new(name.clone())
+                    .with_descriptor(descriptor)
+                    .with_context(context.clone())
+                    .with_vertex_binding(vertex_binding)
+                    .build_storage_skinned()?
+            } else if use_storage {
                 MaterialTemplateBuilder::new(name.clone())
                     .with_descriptor(descriptor)
                     .with_context(context.clone())

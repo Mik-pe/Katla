@@ -224,7 +224,7 @@ impl CubeBuilder {
     }
 
     pub fn build(self, world: &mut World, renderer: &mut VulkanRenderer) -> EntityId {
-        let size = self.size.unwrap_or(Vec3::new(10.0, 10.0, 10.0));
+        let size = self.size.unwrap_or(Vec3::new(1.0, 1.0, 1.0));
         let mesh = crate::rendering::mesh::create_cube_mesh(self.base.context.clone(), size);
         self.create_entity(world, renderer, mesh)
     }
@@ -257,7 +257,7 @@ impl SphereBuilder {
     }
 
     pub fn build(self, world: &mut World, renderer: &mut VulkanRenderer) -> EntityId {
-        let radius = self.radius.unwrap_or(5.0);
+        let radius = self.radius.unwrap_or(0.5);
         let segments = self.segments.unwrap_or(32);
         let rings = self.rings.unwrap_or(32);
         let mesh = crate::rendering::mesh::create_sphere_mesh(
@@ -297,8 +297,8 @@ impl CylinderBuilder {
     }
 
     pub fn build(self, world: &mut World, renderer: &mut VulkanRenderer) -> EntityId {
-        let height = self.height.unwrap_or(10.0);
-        let radius = self.radius.unwrap_or(5.0);
+        let height = self.height.unwrap_or(1.0);
+        let radius = self.radius.unwrap_or(0.5);
         let segments = self.segments.unwrap_or(32);
         let mesh = crate::rendering::mesh::create_cylinder_mesh(
             self.base.context.clone(),
@@ -331,7 +331,7 @@ impl PlaneBuilder {
     }
 
     pub fn build(self, world: &mut World, renderer: &mut VulkanRenderer) -> EntityId {
-        let size = self.size.unwrap_or(Vec3::new(100.0, 100.0, 1.0));
+        let size = self.size.unwrap_or(Vec3::new(10.0, 10.0, 1.0));
         let segments = self.segments.unwrap_or(32);
         let mesh = crate::rendering::mesh::create_plane_mesh(
             self.base.context.clone(),
@@ -370,8 +370,8 @@ impl TorusBuilder {
     }
 
     pub fn build(self, world: &mut World, renderer: &mut VulkanRenderer) -> EntityId {
-        let major_radius = self.radius.unwrap_or(5.0) * 2.0;
-        let minor_radius = self.radius.unwrap_or(5.0) * 0.6;
+        let major_radius = self.radius.unwrap_or(0.5) * 2.0;
+        let minor_radius = self.radius.unwrap_or(0.5) * 0.6;
         let segments = self.segments.unwrap_or(32);
         let rings = self.rings.unwrap_or(32);
         let mesh = crate::rendering::mesh::create_torus_mesh(

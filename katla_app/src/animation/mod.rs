@@ -132,11 +132,14 @@ impl AnimationManager {
                 vec![katla_math::Mat4::identity(); joints.len()]
             };
 
-            let skin = Skin::new("main_skin".to_string(), joints, inverse_bind_matrices);
+            let skin = Skin::new("main_skin".to_string(), joints.clone(), inverse_bind_matrices);
             world.add_component(entity, skin);
 
-            // Create skeleton component
-            world.add_component(entity, Skeleton::new("skeleton", gltf_skin.joints().count()));
+            // Build skeleton with parent hierarchy and rest pose transforms
+            let parent_indices = gltf_loader::build_skeleton_parents(&joints, document);
+            let local_transforms = gltf_loader::build_skeleton_local_transforms(&joints, document);
+            let skeleton = Skeleton::with_rest_pose("skeleton", parent_indices, local_transforms);
+            world.add_component(entity, skeleton);
         }
 
         // Add AnimationPlayer if default animation specified

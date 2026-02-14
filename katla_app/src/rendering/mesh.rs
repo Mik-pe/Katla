@@ -5,7 +5,7 @@ pub mod plane;
 pub mod sphere;
 pub mod torus;
 
-use crate::rendering::VertexPBR;
+use crate::rendering::{VertexPBR, VertexSkinned};
 use crate::util::GLTFModel;
 pub use builder::*;
 pub use cube::*;
@@ -53,6 +53,24 @@ impl Mesh {
         };
         let index_buffer = Self::create_index_buffer(&context, model.index_data(), index_type);
         let vertex_buffer = Self::create_vertex_buffer(&context, model.vertpbr());
+
+        Self {
+            vertex_buffer,
+            index_buffer,
+            handle: None,
+        }
+    }
+
+    /// Create a skinned mesh from a GLTF model with skeletal animation data.
+    pub fn new_skinned_from_model(model: Rc<GLTFModel>, context: Rc<VulkanContext>) -> Self {
+        let index_type = match model.index_stride {
+            1 => IndexType::Uint8,
+            2 => IndexType::Uint16,
+            4 => IndexType::Uint32,
+            _ => IndexType::None,
+        };
+        let index_buffer = Self::create_index_buffer(&context, model.index_data(), index_type);
+        let vertex_buffer = Self::create_vertex_buffer(&context, model.vertskinned());
 
         Self {
             vertex_buffer,

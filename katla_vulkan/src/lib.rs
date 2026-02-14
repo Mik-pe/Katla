@@ -11,7 +11,7 @@ pub use render_graph::resource::{
 pub use render_graph::*;
 pub use rendering::{
     registry::AssetRegistry,
-    types::{DrawCall, DrawList, MaterialHandle, MaterialParams, MeshHandle},
+    types::{DrawCall, DrawList, MaterialHandle, MaterialParams, MeshHandle, SkeletonHandle},
 };
 pub use sync::{
     VkDescriptorPool, VkDescriptorSet, VkDescriptorSetLayout, VkFence, VkFramebuffer, VkImage,
@@ -54,6 +54,9 @@ pub struct VulkanRenderer {
     /// Sky pipeline for procedural sky rendering.
     /// Created lazily when setup_render_graph_with_sky is called.
     pub sky_pipeline: Option<Rc<RefCell<MaterialPipeline>>>,
+    /// Skeleton descriptor sets for GPU skeletal animation.
+    /// Indexed by SkeletonHandle.
+    skeleton_descriptors: Vec<Option<SkeletonDescriptorSet>>,
 }
 
 const FRAMES_IN_FLIGHT: usize = 2;
@@ -94,6 +97,7 @@ impl VulkanRenderer {
             storage_manager: None,
             storage_descriptor_set: None,
             sky_pipeline: None,
+            skeleton_descriptors: Vec::new(),
         }
     }
 
@@ -548,6 +552,47 @@ impl VulkanRenderer {
         self.create_material(pipeline, texture, vertex_binding, uniform)
     }
 
+    /// Register a skeleton buffer for GPU skeletal animation.
+    ///
+    /// Creates a descriptor set for the skeleton buffer and returns a handle
+    /// that can be used to reference it in draw calls.
+    ///
+    /// # Arguments
+    /// * `skeleton_buffer` - The skeleton buffer containing joint matrices
+    /// * `skeleton_set_layout` - The descriptor set layout for skeleton binding (Set 2)
+    ///
+    /// # Returns
+    /// A `SkeletonHandle` that references the registered skeleton.
+    pub fn register_skeleton(
+        &mut self,
+        skeleton_buffer: Rc<RefCell<SkeletonBuffer>>,
+        skeleton_set_layout: vk::DescriptorSetLayout,
+    ) -> Option<SkeletonHandle> {
+        // Create descriptor set for skeleton
+        let descriptor = SkeletonDescriptorSet::new(
+            self.context.clone(),
+            skeleton_buffer,
+            skeleton_set_layout,
+        ).ok()?;
+
+        // Find an empty slot or add new one
+        let handle = if let Some(slot) = self.skeleton_descriptors.iter().position(|s| s.is_none()) {
+            self.skeleton_descriptors[slot] = Some(descriptor);
+            SkeletonHandle(slot as u32)
+        } else {
+            let handle = SkeletonHandle(self.skeleton_descriptors.len() as u32);
+            self.skeleton_descriptors.push(Some(descriptor));
+            handle
+        };
+
+        Some(handle)
+    }
+
+    /// Get the skeleton descriptor set for a handle.
+    pub fn get_skeleton_descriptor(&self, handle: SkeletonHandle) -> Option<&SkeletonDescriptorSet> {
+        self.skeleton_descriptors.get(handle.0 as usize)?.as_ref()
+    }
+
     /// Setup a single render graph with multiple framebuffers (one per swapchain image).
     /// This creates the graph upfront during initialization to avoid
     /// destroying Vulkan objects while the GPU is still using them.
@@ -583,6 +628,9 @@ impl VulkanRenderer {
 
         // Store sky pipeline pointer
         let sky_pipeline_ptr = &mut self.sky_pipeline as *mut Option<Rc<RefCell<MaterialPipeline>>>;
+
+        // Store skeleton descriptors pointer for GPU skeletal animation
+        let skeleton_descriptors_ptr = &mut self.skeleton_descriptors as *mut Vec<Option<SkeletonDescriptorSet>>;
 
         let swapchain_res = swapchain_resource;
         let depth_res = depth_resource;
@@ -759,6 +807,23 @@ impl VulkanRenderer {
                                         &[tex_descriptor.set()],
                                         &[],
                                     );
+                                }
+                            }
+
+                            // Bind set 2: Skeleton (for skinned meshes)
+                            if let Some(skeleton_handle) = draw.skeleton {
+                                let skeleton_descriptors = unsafe { &*skeleton_descriptors_ptr };
+                                if let Some(Some(skeleton_desc)) = skeleton_descriptors.get(skeleton_handle.0 as usize) {
+                                    unsafe {
+                                        pipeline_ref.context().device.cmd_bind_descriptor_sets(
+                                            cmd_buf,
+                                            vk::PipelineBindPoint::GRAPHICS,
+                                            pipeline_ref.vk_layout(),
+                                            2,
+                                            &[skeleton_desc.set()],
+                                            &[],
+                                        );
+                                    }
                                 }
                             }
 

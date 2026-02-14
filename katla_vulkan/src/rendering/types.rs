@@ -189,6 +189,10 @@ impl MaterialParams {
     }
 }
 
+/// Handle to a skeleton descriptor set for GPU skinning.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct SkeletonHandle(pub u32);
+
 /// High-level draw call description.
 ///
 /// Contains all information needed to render an object without exposing Vulkan types.
@@ -206,6 +210,9 @@ pub struct DrawCall {
     /// When set, the shader uses this index to access per-object uniforms.
     /// When None, uses default uniform binding (legacy mode).
     pub object_index: Option<u32>,
+    /// Skeleton handle for GPU skinning (Set 2).
+    /// Only set for animated meshes using skinned shaders.
+    pub skeleton: Option<SkeletonHandle>,
 }
 
 impl DrawCall {
@@ -217,6 +224,7 @@ impl DrawCall {
             params: MaterialParams::default(),
             sort_key: None,
             object_index: None,
+            skeleton: None,
         }
     }
 

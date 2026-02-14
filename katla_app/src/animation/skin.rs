@@ -55,8 +55,16 @@ impl fmt::Display for Skin {
 pub struct Skeleton {
     /// Name of this skeleton
     pub name: String,
-    /// Current world transforms for each joint
+    /// Current LOCAL transforms for each joint (from animation)
+    pub local_transforms: Vec<Mat4>,
+    /// Current world transforms for each joint (computed from hierarchy)
+    pub world_transforms: Vec<Mat4>,
+    /// Final skinning matrices (world_transform * inverse_bind_matrix)
+    /// These are what get uploaded to the GPU
     pub joint_transforms: Vec<Mat4>,
+    /// Parent index for each joint (None = root)
+    /// Index is into the joint array, not GLTF node index
+    pub parent_indices: Vec<Option<usize>>,
 }
 
 impl Skeleton {
@@ -64,7 +72,38 @@ impl Skeleton {
     pub fn new(name: impl Into<String>, joint_count: usize) -> Self {
         Self {
             name: name.into(),
+            local_transforms: vec![Mat4::identity(); joint_count],
+            world_transforms: vec![Mat4::identity(); joint_count],
             joint_transforms: vec![Mat4::identity(); joint_count],
+            parent_indices: vec![None; joint_count],
+        }
+    }
+
+    /// Create a skeleton with parent information
+    pub fn with_parents(name: impl Into<String>, parent_indices: Vec<Option<usize>>) -> Self {
+        let joint_count = parent_indices.len();
+        Self {
+            name: name.into(),
+            local_transforms: vec![Mat4::identity(); joint_count],
+            world_transforms: vec![Mat4::identity(); joint_count],
+            joint_transforms: vec![Mat4::identity(); joint_count],
+            parent_indices,
+        }
+    }
+
+    /// Create a skeleton with parent information and initial local transforms (rest pose)
+    pub fn with_rest_pose(
+        name: impl Into<String>,
+        parent_indices: Vec<Option<usize>>,
+        local_transforms: Vec<Mat4>,
+    ) -> Self {
+        let joint_count = parent_indices.len();
+        Self {
+            name: name.into(),
+            local_transforms,
+            world_transforms: vec![Mat4::identity(); joint_count],
+            joint_transforms: vec![Mat4::identity(); joint_count],
+            parent_indices,
         }
     }
 
@@ -73,16 +112,45 @@ impl Skeleton {
         self.joint_transforms.len()
     }
 
-    /// Update a specific joint's transform
-    pub fn set_joint_transform(&mut self, joint_index: usize, transform: Mat4) {
-        if joint_index < self.joint_transforms.len() {
-            self.joint_transforms[joint_index] = transform;
+    /// Update a specific joint's LOCAL transform
+    pub fn set_local_transform(&mut self, joint_index: usize, transform: Mat4) {
+        if joint_index < self.local_transforms.len() {
+            self.local_transforms[joint_index] = transform;
         }
     }
 
-    /// Get a specific joint's transform
+    /// Get a specific joint's world transform
     pub fn get_joint_transform(&self, joint_index: usize) -> Option<Mat4> {
         self.joint_transforms.get(joint_index).cloned()
+    }
+
+    /// Compute world transforms from local transforms using hierarchy.
+    /// Must be called after updating local_transforms and before using joint_transforms.
+    pub fn compute_world_transforms(&mut self) {
+        // Process joints in order - since parents come before children in GLTF,
+        // we can compute world transforms in a single pass
+        for i in 0..self.world_transforms.len() {
+            let local = self.local_transforms[i].clone();
+            if let Some(Some(parent_idx)) = self.parent_indices.get(i) {
+                if *parent_idx < self.world_transforms.len() {
+                    self.world_transforms[i] = self.world_transforms[*parent_idx].clone() * local;
+                } else {
+                    self.world_transforms[i] = local;
+                }
+            } else {
+                self.world_transforms[i] = local;
+            }
+        }
+    }
+
+    /// Compute final skinning matrices by applying inverse bind matrices.
+    /// Must be called after compute_world_transforms().
+    pub fn compute_skinning_matrices(&mut self, inverse_bind_matrices: &[Mat4]) {
+        for (i, skin_matrix) in self.joint_transforms.iter_mut().enumerate() {
+            if i < inverse_bind_matrices.len() {
+                *skin_matrix = self.world_transforms[i].mul(&inverse_bind_matrices[i]);
+            }
+        }
     }
 }
 

@@ -1,15 +1,40 @@
+# GLTF Skinned Material
+#
+# Material for GLTF models with skeletal animation.
+# Uses the skinned shader with GPU skeletal deformation.
+
 name = "gltf_skinned"
-vertex_shader = "resources/shaders/model_pbr_skinned.wgsl"
-fragment_shader = "resources/shaders/model_pbr_skinned.wgsl"
+
+[shaders]
+vertex = "../shaders/model_pbr_skinned.wgsl"
+fragment = "../shaders/model_pbr_skinned.wgsl"
+
+[bindings.uniforms.transform]
+type = "mat4"
+count = 3
+name = "transform"
+
+[bindings.uniforms.color]
+type = "vec4"
+name = "color"
+
+[bindings.textures.albedo]
+binding = 0
+name = "albedo_texture"
+
+[bindings.textures.sampler]
+binding = 1
+name = "albedo_sampler"
+
+[bindings.skeleton.joints]
+binding = 0
+name = "joint_matrices"
+
+[parameters]
+color = [1.0, 1.0, 1.0, 1.0]  # White - no tint by default
 
 [render_state]
 depth_test = true
 depth_write = true
 cull_backfaces = true
 alpha_blending = false
-
-[uniforms]
-# Material uses storage buffers with instance indexing
-# Set 0: frame_data + objects (shared)
-# Set 1: textures (per-material)
-# Set 2: joint_matrices (per-mesh skeleton)

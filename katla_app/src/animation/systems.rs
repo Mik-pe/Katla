@@ -223,10 +223,11 @@ impl System for SkeletalAnimationSystem {
                 .unwrap_or_default();
 
             if let Some(skeleton) = world.get_component_mut::<Skeleton>(entity) {
+                // Step 1: Update LOCAL transforms from animation samples
                 for (node_index, path, value) in sampled_values {
                     if let Some(joint_index) = skin_joints.iter().position(|&j| j == node_index) {
-                        if joint_index < skeleton.joint_transforms.len() {
-                            let transform = &skeleton.joint_transforms[joint_index];
+                        if joint_index < skeleton.local_transforms.len() {
+                            let transform = &skeleton.local_transforms[joint_index];
                             let decomposed = transform.decompose();
 
                             let new_transform = match (path, value) {
@@ -245,16 +246,17 @@ impl System for SkeletalAnimationSystem {
                                 _ => continue,
                             };
 
-                            skeleton.joint_transforms[joint_index] = new_transform;
+                            skeleton.local_transforms[joint_index] = new_transform;
                         }
                     }
                 }
 
-                for (i, joint_transform) in skeleton.joint_transforms.iter_mut().enumerate() {
-                    if i < inverse_bind_matrices.len() {
-                        *joint_transform = joint_transform.mul(&inverse_bind_matrices[i]);
-                    }
-                }
+                // Step 2: Compute WORLD transforms from hierarchy
+                skeleton.compute_world_transforms();
+
+                // Step 3: Compute final skinning matrices (world * IBM)
+                skeleton.compute_skinning_matrices(&inverse_bind_matrices);
+
             }
         }
     }

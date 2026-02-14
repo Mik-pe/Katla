@@ -12,7 +12,7 @@ pub struct Camera {
 
 impl Camera {
     pub fn new(world: &mut World) -> Self {
-        let transform = Transform::new_from_position(Vec3::new(0.0, 50.0, 450.0));
+        let transform = Transform::new_from_position(Vec3::new(0.0, 5.0, 5.0));
         let id = world.create_entity();
         add_components!(
             world,

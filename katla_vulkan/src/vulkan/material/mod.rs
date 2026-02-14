@@ -893,5 +893,12 @@ impl Drop for MaterialPipeline {
                     .destroy_descriptor_set_layout(texture_layout, None);
             }
         }
+        if let Some(skeleton_layout) = self.skeleton_set_layout.take() {
+            unsafe {
+                self.context
+                    .device
+                    .destroy_descriptor_set_layout(skeleton_layout, None);
+            }
+        }
     }
 }

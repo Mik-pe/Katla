@@ -4,6 +4,7 @@
 //! for use with skinned shaders.
 
 use ash::vk;
+use std::cell::RefCell;
 use std::rc::Rc;
 
 use super::VulkanContext;
@@ -16,7 +17,7 @@ use crate::vulkan::skeleton_buffer::SkeletonBuffer;
 pub struct SkeletonDescriptorSet {
     descriptor_set: vk::DescriptorSet,
     descriptor_pool: vk::DescriptorPool,
-    skeleton_buffer: Rc<SkeletonBuffer>,
+    skeleton_buffer: Rc<RefCell<SkeletonBuffer>>,
     context: Rc<VulkanContext>,
 }
 
@@ -25,11 +26,11 @@ impl SkeletonDescriptorSet {
     ///
     /// # Arguments
     /// * `context` - Vulkan context
-    /// * `skeleton_buffer` - The skeleton buffer containing joint matrices
+    /// * `skeleton_buffer` - The skeleton buffer containing joint matrices (wrapped in RefCell for mutation)
     /// * `layout` - The skeleton descriptor set layout from the pipeline
     pub fn new(
         context: Rc<VulkanContext>,
-        skeleton_buffer: Rc<SkeletonBuffer>,
+        skeleton_buffer: Rc<RefCell<SkeletonBuffer>>,
         layout: vk::DescriptorSetLayout,
     ) -> Result<Self, vk::Result> {
         // Create a descriptor pool for this skeleton
@@ -58,10 +59,12 @@ impl SkeletonDescriptorSet {
         let descriptor_set = descriptor_sets[0];
 
         // Update descriptor set to point to skeleton buffer
+        let buffer = skeleton_buffer.borrow();
         let buffer_info = [vk::DescriptorBufferInfo::default()
-            .buffer(skeleton_buffer.buffer())
+            .buffer(buffer.buffer())
             .offset(0)
-            .range(skeleton_buffer.size())];
+            .range(buffer.size())];
+        drop(buffer); // Release borrow before moving skeleton_buffer
 
         let write = [vk::WriteDescriptorSet::default()
             .dst_set(descriptor_set)
@@ -86,19 +89,12 @@ impl SkeletonDescriptorSet {
     pub fn set(&self) -> vk::DescriptorSet {
         self.descriptor_set
     }
-
-    /// Get the skeleton buffer.
-    pub fn buffer(&self) -> &SkeletonBuffer {
-        &self.skeleton_buffer
-    }
 }
 
 impl Drop for SkeletonDescriptorSet {
     fn drop(&mut self) {
         unsafe {
-            self.context
-                .device
-                .free_descriptor_sets(self.descriptor_pool, &[self.descriptor_set]);
+            // Destroying the pool automatically frees all descriptor sets in it
             self.context
                 .device
                 .destroy_descriptor_pool(self.descriptor_pool, None);

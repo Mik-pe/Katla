@@ -161,8 +161,6 @@ impl Model {
 
             // Try to get the "gltf_default" template
             if let Some(template) = registry.borrow().get_template("gltf_default") {
-                println!("  Model: Using material from template 'gltf_default'");
-
                 // Extract texture from the GLTF model
                 let texture = if !model.images.is_empty() {
                     let image = &model.images[0];
@@ -207,6 +205,109 @@ impl Model {
         };
 
         let mesh = Mesh::new_from_model(model, context.clone());
+
+        Self::new(world, vec![mesh], material, renderer, transform, None)
+    }
+
+    /// Create a skinned GLTF model with skeletal animation support.
+    ///
+    /// This uses the skinned shader and vertex format for GPU skeletal animation.
+    ///
+    /// # Safety
+    /// The registry_ptr must point to a valid MaterialRegistry that outlives
+    /// this function call.
+    pub(crate) fn new_skinned_from_gltf_with_ptr(
+        world: &mut World,
+        model: Rc<GLTFModel>,
+        context: Rc<VulkanContext>,
+        renderer: Option<&mut VulkanRenderer>,
+        transform: Transform,
+        material_registry_ptr: *const std::cell::RefCell<MaterialRegistry>,
+    ) -> Self {
+        // SAFETY: The raw pointer points to the MaterialRegistry in VulkanRenderer
+        // which is guaranteed to be valid for the lifetime of the application.
+        let material = unsafe {
+            let registry = &*material_registry_ptr;
+
+            // Try to get the "gltf_skinned" template for animated models
+            if let Some(template) = registry.borrow().get_template("gltf_skinned") {
+                println!("  Model: Using skinned material template");
+
+                // Extract texture from the GLTF model
+                let texture = if !model.images.is_empty() {
+                    let image = &model.images[0];
+                    let pixels = &image.pixels;
+
+                    match image.format {
+                        gltf::image::Format::R8G8B8 => {
+                            let tex = katla_vulkan::Texture::create_image_rgb(
+                                context.clone(),
+                                image.width,
+                                image.height,
+                                pixels.as_slice(),
+                            );
+                            Some(Rc::new(tex))
+                        }
+                        gltf::image::Format::R8G8B8A8 => {
+                            let tex = katla_vulkan::Texture::create_image(
+                                context.clone(),
+                                image.width,
+                                image.height,
+                                katla_vulkan::ImageFormat::R8G8B8A8Srgb,
+                                pixels.as_slice(),
+                            );
+                            Some(Rc::new(tex))
+                        }
+                        _ => None,
+                    }
+                } else {
+                    None
+                };
+
+                // Create material from template with skinned vertex binding
+                Material::from_template_skinned(template, texture, None)
+            } else {
+                println!("  Model: Template 'gltf_skinned' not found, falling back to default");
+                // Fall back to default template
+                if let Some(template) = registry.borrow().get_template("gltf_default") {
+                    let texture = if !model.images.is_empty() {
+                        let image = &model.images[0];
+                        let pixels = &image.pixels;
+
+                        match image.format {
+                            gltf::image::Format::R8G8B8 => {
+                                let tex = katla_vulkan::Texture::create_image_rgb(
+                                    context.clone(),
+                                    image.width,
+                                    image.height,
+                                    pixels.as_slice(),
+                                );
+                                Some(Rc::new(tex))
+                            }
+                            gltf::image::Format::R8G8B8A8 => {
+                                let tex = katla_vulkan::Texture::create_image(
+                                    context.clone(),
+                                    image.width,
+                                    image.height,
+                                    katla_vulkan::ImageFormat::R8G8B8A8Srgb,
+                                    pixels.as_slice(),
+                                );
+                                Some(Rc::new(tex))
+                            }
+                            _ => None,
+                        }
+                    } else {
+                        None
+                    };
+                    Material::from_template(template, texture, None)
+                } else {
+                    Material::new(model.clone(), context.clone())
+                }
+            }
+        };
+
+        // Create skinned mesh with joint indices and weights
+        let mesh = Mesh::new_skinned_from_model(model, context.clone());
 
         Self::new(world, vec![mesh], material, renderer, transform, None)
     }

@@ -5,8 +5,8 @@ use gltf::image::Data as ImageData;
 use gltf::Document;
 use katla_math::{Sphere, Vec3};
 
-use crate::rendering::{VertexNormal, VertexPBR, VertexPosition};
-use crate::util::gltf_parser::{build_vertex_data, generate_smooth_normals, AttributeParser};
+use crate::rendering::{VertexNormal, VertexPBR, VertexPosition, VertexSkinned};
+use crate::util::gltf_parser::{build_skinned_vertex_data, build_vertex_data, generate_smooth_normals, AttributeParser};
 
 #[derive(Clone)]
 pub struct GLTFModel {
@@ -14,6 +14,8 @@ pub struct GLTFModel {
     pub buffers: Vec<BufferData>,
     pub images: Vec<ImageData>,
     pub vertex_data: Vec<VertexPBR>,
+    pub skinned_vertex_data: Vec<VertexSkinned>,
+    pub has_skinning: bool,
     pub index_data: Vec<u8>,
     pub index_stride: u8,
     pub bounds: Sphere,
@@ -90,6 +92,73 @@ impl GLTFModel {
         }
     }
 
+    /// Parse a single GLTF node into skinned vertex data.
+    fn parse_node_skinned(&self, node: &gltf::Node) -> (Vec<VertexSkinned>, Vec<u8>, u8, Sphere, bool) {
+        let mut positions = vec![];
+        let mut normals = vec![];
+        let mut tex_coords = vec![];
+        let mut joint_indices = vec![];
+        let mut joint_weights = vec![];
+        let mut index_data = vec![];
+        let mut index_stride = 0u8;
+
+        let parser = AttributeParser::new(&self.buffers);
+
+        if let Some(mesh) = node.mesh() {
+            for primitive in mesh.primitives() {
+                // Parse all attributes including skinning
+                for (semantic, accessor) in primitive.attributes() {
+                    match semantic {
+                        gltf::mesh::Semantic::Positions => {
+                            positions = parser.parse_positions(accessor);
+                        }
+                        gltf::mesh::Semantic::Normals => {
+                            normals = parser.parse_normals(accessor);
+                        }
+                        gltf::mesh::Semantic::TexCoords(0) => {
+                            tex_coords = parser.parse_tex_coords(accessor);
+                        }
+                        gltf::mesh::Semantic::Joints(0) => {
+                            joint_indices = parser.parse_joint_indices(accessor);
+                            println!("    Parsed {} joint indices", joint_indices.len());
+                        }
+                        gltf::mesh::Semantic::Weights(0) => {
+                            joint_weights = parser.parse_joint_weights(accessor);
+                            println!("    Parsed {} joint weights", joint_weights.len());
+                        }
+                        _ => {}
+                    }
+                }
+
+                // Parse indices
+                if let Some(indices) = primitive.indices() {
+                    let (indices_data, stride) = parser.parse_indices(indices);
+                    index_data = indices_data;
+                    index_stride = stride;
+                }
+            }
+
+            // Generate normals if missing
+            if normals.is_empty() {
+                normals = generate_smooth_normals(&positions, &index_data, index_stride);
+            }
+
+            let has_skinning = !joint_indices.is_empty() && !joint_weights.is_empty();
+            let (vertex_data, sphere) = build_skinned_vertex_data(
+                positions, normals, tex_coords, joint_indices, joint_weights
+            );
+            (vertex_data, index_data, index_stride, sphere, has_skinning)
+        } else {
+            (
+                vec![],
+                vec![],
+                0,
+                Sphere::new(Vec3::new(0.0, 0.0, 0.0), 0.0),
+                false,
+            )
+        }
+    }
+
     fn parse_gltf(&mut self) {
         let mut used_nodes = vec![];
         for scene in self.document.scenes() {
@@ -103,8 +172,15 @@ impl GLTFModel {
 
         for node in self.document.nodes() {
             if used_nodes.contains(&node.index()) {
+                // Parse both regular and skinned vertex data
                 let (vertex_data, index_data, index_stride, sphere) = self.parse_node(&node);
+                let (skinned_data, _, _, _, has_skinning) = self.parse_node_skinned(&node);
+
                 self.vertex_data.extend(vertex_data);
+                self.skinned_vertex_data.extend(skinned_data);
+                if has_skinning {
+                    self.has_skinning = true;
+                }
                 self.index_data.extend(index_data);
                 self.index_stride = index_stride;
                 self.bounds = sphere;
@@ -123,6 +199,8 @@ impl GLTFModel {
             buffers,
             images,
             vertex_data: vec![],
+            skinned_vertex_data: vec![],
+            has_skinning: false,
             index_data: vec![],
             index_stride: 0,
             bounds: Sphere::new(Vec3::new(0.0, 0.0, 0.0), 0.0),
@@ -152,6 +230,10 @@ impl GLTFModel {
 
     pub fn vertpbr(&self) -> Vec<VertexPBR> {
         self.vertex_data.clone()
+    }
+
+    pub fn vertskinned(&self) -> Vec<VertexSkinned> {
+        self.skinned_vertex_data.clone()
     }
 
     pub fn index_data(&self) -> Vec<u8> {

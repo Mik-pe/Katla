@@ -19,11 +19,11 @@ type = "vec4"
 name = "color"
 
 [bindings.textures.albedo]
-binding = 1
+binding = 0
 name = "albedo_texture"
 
 [bindings.textures.sampler]
-binding = 2
+binding = 1
 name = "albedo_sampler"
 
 [parameters]

@@ -118,6 +118,10 @@ pub struct Application {
     current_modifiers: ModifiersState,
     frame_count: usize, // Track frames rendered for max_frames limit
     skeleton_upload_system: SkeletonUploadSystem,
+    /// Fox entity for skeleton registration (set during init, used after first update)
+    fox_entity: Option<katla_ecs::EntityId>,
+    /// Flag to track if skeleton has been registered
+    skeleton_registered: bool,
 }
 
 impl ApplicationHandler for Application {
@@ -188,16 +192,18 @@ impl ApplicationHandler for Application {
             let models_path = find_resources_path();
             let fox_path = models_path.join("Fox.glb");
 
-            let fox_transform = Transform::new_from_position(Vec3::new(0.0, 0.0, 0.0));
+            let fox_transform = Transform::new_from_position(Vec3::new(0.0, 5.0, 0.0))
+                .with_scale(Vec3::new(0.05, 0.05, 0.05)); // Fox model is huge, scale it down
             let context = renderer.context.clone();
             let fox_model = self.gltf_cache.read(fox_path);
 
-            // Create the model entity using the gltf_default template
+            // Create the model entity using the gltf_skinned template for GPU skinning
             // We use the raw pointer approach similar to MeshBuilder
             let material_registry_ptr = &renderer.material_registry
                 as *const std::cell::RefCell<katla_vulkan::MaterialRegistry>;
 
-            let fox = Model::new_from_gltf_with_ptr(
+            // Use skinned model creation for animated meshes
+            let fox = Model::new_skinned_from_gltf_with_ptr(
                 &mut self.world,
                 fox_model.clone(),
                 context,
@@ -215,6 +221,11 @@ impl ApplicationHandler for Application {
                 Some("Survey"),  // Play "Survey" animation by default
             );
             println!("Fox model entity: {:?} with animation", fox.entity);
+
+            // Store the fox entity ID for skeleton registration after first update
+            self.fox_entity = Some(fox.entity);
+
+            // Create meshes spaced out in a line with different colors
 
             // Create meshes spaced out in a line with different colors
             // Get the raw pointer to material registry for mesh builders
@@ -250,7 +261,7 @@ impl ApplicationHandler for Application {
                 .color([0.8, 0.8, 0.8]) // Gray tint
                 .with_shared_material("Checkerboard")
                 .plane()
-                .size(Vec3::new(100.0, 100.0, 1.0))
+                .size(Vec3::new(10.0, 10.0, 1.0))
                 .build(&mut self.world, &mut renderer);
 
             let _torus = MeshBuilder::new(renderer.context.clone())
@@ -433,6 +444,27 @@ impl ApplicationHandler for Application {
                     // Upload skeleton transforms to GPU
                     self.skeleton_upload_system.update(&mut self.world, dt);
 
+                    // Register skeleton for animated meshes (first frame only)
+                    if !self.skeleton_registered {
+                        if let (Some(fox_entity), Some(renderer)) = (self.fox_entity, self.renderer.as_mut()) {
+                            if let Some(skeleton_buffer) = self.skeleton_upload_system.get_skeleton_buffer(fox_entity) {
+                                let skeleton_layout = renderer.material_registry.borrow()
+                                    .get_template("gltf_skinned")
+                                    .and_then(|t| t.pipeline().borrow().skeleton_set_layout);
+
+                                if let Some(skeleton_layout) = skeleton_layout {
+                                    if let Some(skeleton_handle) = renderer.register_skeleton(skeleton_buffer, skeleton_layout) {
+                                        if let Some(drawable) = self.world.get_component_mut::<crate::components::DrawableComponent>(fox_entity) {
+                                            drawable.skeleton_handle = Some(skeleton_handle);
+                                            println!("🦴 Registered skeleton for fox with handle {:?}", skeleton_handle);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        self.skeleton_registered = true;
+                    }
+
                     // Render using render graph
                     self.render_with_render_graph();
 
@@ -602,7 +634,12 @@ impl Application {
                     draw_call.params.color = Some(color.to_array());
                 }
 
+                // Add skeleton handle for GPU skeletal animation
+                draw_call.skeleton = drawable.skeleton_handle;
+
                 draw_list.push(draw_call);
+            } else {
+                // Entity missing mesh or material handle - skip
             }
         }
 

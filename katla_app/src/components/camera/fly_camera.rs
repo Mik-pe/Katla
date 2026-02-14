@@ -10,7 +10,7 @@ pub struct FlyCameraControllerComponent {
 impl Default for FlyCameraControllerComponent {
     fn default() -> Self {
         Self {
-            speed: 10000.0,
+            speed: 100.0,
             sensitivity: 0.005,
             pitch_limit: std::f32::consts::FRAC_PI_2 - 0.01,
         }

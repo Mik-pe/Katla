@@ -91,6 +91,8 @@ impl ApplicationBuilder {
             current_modifiers: ModifiersState::empty(),
             frame_count: 0,
             skeleton_upload_system: SkeletonUploadSystem::new(),
+            fox_entity: None,
+            skeleton_registered: false,
         };
 
         (app, event_loop)

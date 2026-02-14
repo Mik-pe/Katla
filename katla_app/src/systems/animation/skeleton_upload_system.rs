@@ -91,8 +91,11 @@ impl SkeletonUploadSystem {
     }
 
     /// Convert Mat4 to GPU-friendly [[f32; 4]; 4] format
+    /// Both katla_math and WGSL use column-major, so direct copy
     fn mat4_to_array(matrix: &Mat4) -> [[f32; 4]; 4] {
-        matrix.clone().into()
+        let data: [[f32; 4]; 4] = matrix.clone().into();
+        // Direct copy - both are column-major
+        data
     }
 }
 
@@ -117,18 +120,6 @@ impl System for SkeletonUploadSystem {
                 .iter()
                 .map(Self::mat4_to_array)
                 .collect();
-
-            // Debug: Log first joint transform to verify animation is running
-            if !joint_matrices.is_empty() {
-                println!(
-                    "🦊 Skeleton entity {:?} - {} joints, joint[0] translation: [{:.2}, {:.2}, {:.2}]",
-                    entity,
-                    joint_matrices.len(),
-                    joint_matrices[0][3][0], // Translation X
-                    joint_matrices[0][3][1], // Translation Y
-                    joint_matrices[0][3][2], // Translation Z
-                );
-            }
 
             // Upload to GPU
             buffer.borrow_mut().upload(&joint_matrices);
