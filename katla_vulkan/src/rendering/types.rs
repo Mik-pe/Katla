@@ -15,21 +15,58 @@ pub struct MeshHandle(pub usize);
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub struct MaterialHandle(pub usize);
 
-/// Material parameters that can be set per draw call.
+/// Handle to a skeleton descriptor set for GPU skinning.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct SkeletonHandle(pub u32);
+
+/// Frame-level uniforms that are shared across all draw calls.
 ///
-/// These are uploaded to uniform buffers before drawing.
-/// Matrices are stored as [f32; 16] arrays in column-major order.
+/// These are set once per frame via `renderer.set_frame_uniforms()`.
+/// View/projection matrices come from the camera, lighting from the scene.
 #[derive(Clone, Debug)]
-pub struct MaterialParams {
-    /// Model matrix (object to world transform) - column-major 4x4.
-    pub model_matrix: [f32; 16],
+pub struct FrameUniforms {
     /// View matrix (world to camera transform) - column-major 4x4.
     pub view_matrix: [f32; 16],
     /// Projection matrix (camera to clip space) - column-major 4x4.
     pub proj_matrix: [f32; 16],
     /// Inverse view-projection matrix (clip to world space) - for sky rendering.
-    /// Should be computed as: inverse(proj * view)
     pub inv_view_proj_matrix: [f32; 16],
+    /// Camera position in world space.
+    pub camera_position: [f32; 4],
+    /// Light direction (normalized, points TO the light).
+    pub light_direction: [f32; 4],
+    /// Light color (RGB).
+    pub light_color: [f32; 4],
+    /// Light intensity.
+    pub light_intensity: f32,
+}
+
+impl Default for FrameUniforms {
+    fn default() -> Self {
+        Self {
+            view_matrix: [0.0; 16],
+            proj_matrix: [0.0; 16],
+            inv_view_proj_matrix: [0.0; 16],
+            camera_position: [0.0, 0.0, 0.0, 0.0],
+            light_direction: [-0.3, -1.0, -0.2, 0.0],
+            light_color: [1.0, 0.95, 0.9, 0.0],
+            light_intensity: 1.0,
+        }
+    }
+}
+
+/// High-level draw call description.
+///
+/// Contains all per-object information needed to render without exposing Vulkan types.
+/// Frame-level data (view/proj matrices, lighting) is set separately via `set_frame_uniforms()`.
+#[derive(Clone, Debug)]
+pub struct DrawCall {
+    /// Mesh to draw.
+    pub mesh: MeshHandle,
+    /// Material/shader to use.
+    pub material: MaterialHandle,
+    /// Model matrix (object to world transform) - column-major 4x4.
+    pub model_matrix: [f32; 16],
     /// Optional material color (RGBA, 0.0-1.0 range) for blending with texture.
     pub color: Option<[f32; 4]>,
     /// PBR material parameters: metallic (0.0-1.0).
@@ -41,75 +78,32 @@ pub struct MaterialParams {
     /// Ambient occlusion factor (0.0-1.0).
     /// 0.0 = fully occluded, 1.0 = no occlusion.
     pub ao: f32,
+    /// Optional sorting key (for transparent objects, etc.).
+    pub sort_key: Option<u64>,
+    /// Skeleton handle for GPU skinning (Set 2).
+    /// Only set for animated meshes using skinned shaders.
+    pub skeleton: Option<SkeletonHandle>,
 }
 
-impl Default for MaterialParams {
-    fn default() -> Self {
+impl DrawCall {
+    /// Create a new draw call with default parameters.
+    pub fn new(mesh: MeshHandle, material: MaterialHandle) -> Self {
         Self {
+            mesh,
+            material,
             model_matrix: [0.0; 16],
-            view_matrix: [0.0; 16],
-            proj_matrix: [0.0; 16],
-            inv_view_proj_matrix: [0.0; 16],
             color: None,
             metallic: 0.0,
             roughness: 0.5,
             ao: 1.0,
+            sort_key: None,
+            skeleton: None,
         }
     }
-}
 
-impl MaterialParams {
-    /// Create new material parameters with zero matrices.
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    /// Set the model matrix from a 16-element array.
-    pub fn with_model(mut self, model: [f32; 16]) -> Self {
+    /// Set the model transform matrix from a 16-element array.
+    pub fn with_transform(mut self, model: [f32; 16]) -> Self {
         self.model_matrix = model;
-        self
-    }
-
-    /// Set the view matrix from a 16-element array.
-    pub fn with_view(mut self, view: [f32; 16]) -> Self {
-        self.view_matrix = view;
-        self
-    }
-
-    /// Set the projection matrix from a 16-element array.
-    pub fn with_projection(mut self, proj: [f32; 16]) -> Self {
-        self.proj_matrix = proj;
-        self
-    }
-
-    /// Set the inverse view-projection matrix from a 16-element array.
-    /// Should be computed as: inverse(proj * view)
-    pub fn with_inv_view_proj(mut self, inv_vp: [f32; 16]) -> Self {
-        self.inv_view_proj_matrix = inv_vp;
-        self
-    }
-
-    /// Set all three matrices at once from 16-element arrays.
-    pub fn with_matrices(mut self, model: [f32; 16], view: [f32; 16], proj: [f32; 16]) -> Self {
-        self.model_matrix = model;
-        self.view_matrix = view;
-        self.proj_matrix = proj;
-        self
-    }
-
-    /// Set all matrices including inverse view-projection.
-    /// The inverse VP should be computed as: inverse(proj * view)
-    pub fn with_all_matrices(
-        mut self,
-        model: [f32; 16],
-        view: [f32; 16],
-        proj: [f32; 16],
-        inv_view_proj: [f32; 16],
-    ) -> Self {
-        self.model_matrix = model;
-        self.view_matrix = view;
-        self.proj_matrix = proj;
-        self.inv_view_proj_matrix = inv_view_proj;
         self
     }
 
@@ -145,126 +139,6 @@ impl MaterialParams {
         self
     }
 
-    /// Get all three matrices as a contiguous byte array for GPU upload.
-    ///
-    /// Returns 192 bytes (3 matrices × 16 floats × 4 bytes) or 208 bytes if color is present.
-    ///
-    /// NOTE: When color is None, this returns 192 bytes. If the material was created
-    /// with has_color=true, you should either provide a color via with_color() or
-    /// the shader will read uninitialized memory for the color uniform!
-    pub fn as_bytes(&self) -> Vec<u8> {
-        // Combine all three matrices into a single array
-        let combined = [self.model_matrix, self.view_matrix, self.proj_matrix].concat();
-
-        // Use bytemuck for safe casting
-        let mut bytes = bytemuck::cast_slice(&combined).to_vec();
-
-        // Add color if present
-        if let Some(color) = self.color {
-            bytes.extend_from_slice(bytemuck::cast_slice(&color));
-        }
-
-        bytes
-    }
-
-    /// Get all three matrices plus color as a contiguous byte array for GPU upload.
-    ///
-    /// This always includes the color (defaulting to white [1.0, 1.0, 1.0, 1.0] if not set).
-    /// Returns 208 bytes (3 matrices + color).
-    ///
-    /// Use this when the material was created with has_color=true to ensure the uniform
-    /// buffer is the correct size and the color uniform is properly initialized.
-    pub fn as_bytes_with_color(&self) -> Vec<u8> {
-        // Combine all three matrices into a single array
-        let combined = [self.model_matrix, self.view_matrix, self.proj_matrix].concat();
-
-        // Use bytemuck for safe casting
-        let mut bytes = bytemuck::cast_slice(&combined).to_vec();
-
-        // Add color, defaulting to white if not specified
-        let color = self.color.unwrap_or([1.0, 1.0, 1.0, 1.0]);
-        bytes.extend_from_slice(bytemuck::cast_slice(&color));
-
-        bytes
-    }
-}
-
-/// Handle to a skeleton descriptor set for GPU skinning.
-#[derive(Clone, Copy, Debug, Default)]
-pub struct SkeletonHandle(pub u32);
-
-/// High-level draw call description.
-///
-/// Contains all information needed to render an object without exposing Vulkan types.
-#[derive(Clone, Debug)]
-pub struct DrawCall {
-    /// Mesh to draw.
-    pub mesh: MeshHandle,
-    /// Material/shader to use.
-    pub material: MaterialHandle,
-    /// Transform matrices and uniforms.
-    pub params: MaterialParams,
-    /// Optional sorting key (for transparent objects, etc.).
-    pub sort_key: Option<u64>,
-    /// Object index for storage buffer access.
-    /// When set, the shader uses this index to access per-object uniforms.
-    /// When None, uses default uniform binding (legacy mode).
-    pub object_index: Option<u32>,
-    /// Skeleton handle for GPU skinning (Set 2).
-    /// Only set for animated meshes using skinned shaders.
-    pub skeleton: Option<SkeletonHandle>,
-}
-
-impl DrawCall {
-    /// Create a new draw call with default parameters.
-    pub fn new(mesh: MeshHandle, material: MaterialHandle) -> Self {
-        Self {
-            mesh,
-            material,
-            params: MaterialParams::default(),
-            sort_key: None,
-            object_index: None,
-            skeleton: None,
-        }
-    }
-
-    /// Set the model transform matrix from a 16-element array.
-    pub fn with_transform(mut self, model: [f32; 16]) -> Self {
-        self.params.model_matrix = model;
-        self
-    }
-
-    /// Set the camera matrices (view and projection) from 16-element arrays.
-    pub fn with_camera(mut self, view: [f32; 16], proj: [f32; 16]) -> Self {
-        self.params.view_matrix = view;
-        self.params.proj_matrix = proj;
-        self
-    }
-
-    /// Set all matrices at once from 16-element arrays.
-    pub fn with_matrices(mut self, model: [f32; 16], view: [f32; 16], proj: [f32; 16]) -> Self {
-        self.params.model_matrix = model;
-        self.params.view_matrix = view;
-        self.params.proj_matrix = proj;
-        self
-    }
-
-    /// Set all matrices including inverse view-projection.
-    /// The inverse VP should be computed as: inverse(proj * view)
-    pub fn with_all_matrices(
-        mut self,
-        model: [f32; 16],
-        view: [f32; 16],
-        proj: [f32; 16],
-        inv_view_proj: [f32; 16],
-    ) -> Self {
-        self.params.model_matrix = model;
-        self.params.view_matrix = view;
-        self.params.proj_matrix = proj;
-        self.params.inv_view_proj_matrix = inv_view_proj;
-        self
-    }
-
     /// Set a sorting key for this draw call.
     ///
     /// Lower values are drawn first (useful for transparent objects).
@@ -273,50 +147,45 @@ impl DrawCall {
         self
     }
 
-    /// Set the material color (RGBA, 0.0-1.0 range).
-    pub fn with_color(mut self, color: [f32; 4]) -> Self {
-        self.params.color = Some(color);
+    /// Set skeleton handle for GPU skinning.
+    pub fn with_skeleton(mut self, skeleton: SkeletonHandle) -> Self {
+        self.skeleton = Some(skeleton);
         self
     }
 
-    /// Set the material parameters directly.
-    pub fn with_params(mut self, params: MaterialParams) -> Self {
-        self.params = params;
+    // === Deprecated backward-compat methods ===
+
+    /// Set the camera matrices (view and projection).
+    #[deprecated(since = "0.2.0", note = "Use renderer.set_frame_uniforms() instead")]
+    pub fn with_camera(self, _view: [f32; 16], _proj: [f32; 16]) -> Self {
+        // No-op: view/proj are now set via set_frame_uniforms()
+        self
+    }
+
+    /// Set all matrices at once.
+    #[deprecated(since = "0.2.0", note = "Use with_transform() and renderer.set_frame_uniforms() instead")]
+    pub fn with_matrices(mut self, model: [f32; 16], _view: [f32; 16], _proj: [f32; 16]) -> Self {
+        self.model_matrix = model;
+        self
+    }
+
+    /// Set all matrices including inverse view-projection.
+    #[deprecated(since = "0.2.0", note = "Use with_transform() and renderer.set_frame_uniforms() instead")]
+    pub fn with_all_matrices(
+        mut self,
+        model: [f32; 16],
+        _view: [f32; 16],
+        _proj: [f32; 16],
+        _inv_view_proj: [f32; 16],
+    ) -> Self {
+        self.model_matrix = model;
         self
     }
 
     /// Set the object index for storage buffer access.
-    ///
-    /// When using storage buffer-based uniforms, this index is used
-    /// by the shader to access per-object data from the object array.
-    pub fn with_object_index(mut self, index: u32) -> Self {
-        self.object_index = Some(index);
-        self
-    }
-
-    /// Set PBR metallic factor (0.0 = dielectric, 1.0 = metal).
-    pub fn with_metallic(mut self, metallic: f32) -> Self {
-        self.params.metallic = metallic;
-        self
-    }
-
-    /// Set PBR roughness factor (0.0 = smooth, 1.0 = rough).
-    pub fn with_roughness(mut self, roughness: f32) -> Self {
-        self.params.roughness = roughness;
-        self
-    }
-
-    /// Set ambient occlusion factor (0.0 = occluded, 1.0 = no occlusion).
-    pub fn with_ao(mut self, ao: f32) -> Self {
-        self.params.ao = ao;
-        self
-    }
-
-    /// Set all PBR material parameters at once.
-    pub fn with_pbr(mut self, metallic: f32, roughness: f32, ao: f32) -> Self {
-        self.params.metallic = metallic;
-        self.params.roughness = roughness;
-        self.params.ao = ao;
+    #[deprecated(since = "0.2.0", note = "Object index is now auto-assigned")]
+    pub fn with_object_index(self, _index: u32) -> Self {
+        // No-op: object index is auto-assigned
         self
     }
 }
@@ -428,18 +297,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_material_params_as_bytes() {
-        let identity = [0.0; 16];
-        let params = MaterialParams::new()
-            .with_model(identity)
-            .with_view(identity)
-            .with_projection(identity);
-
-        let bytes = params.as_bytes();
-        assert_eq!(bytes.len(), 192); // 3 matrices * 16 floats * 4 bytes
-    }
-
-    #[test]
     fn test_draw_call_creation() {
         let mesh = MeshHandle(0);
         let material = MaterialHandle(0);
@@ -454,16 +311,24 @@ mod tests {
     fn test_draw_call_builder() {
         let mesh = MeshHandle(0);
         let material = MaterialHandle(0);
-        let model = [0.0; 16];
-        let view = [0.0; 16];
-        let proj = [0.0; 16];
+        let model = [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0];
 
         let draw = DrawCall::new(mesh, material)
             .with_transform(model)
-            .with_camera(view, proj)
+            .with_color([1.0, 0.0, 0.0, 1.0])
+            .with_pbr(0.5, 0.3, 1.0)
             .with_sort_key(42);
 
         assert_eq!(draw.sort_key, Some(42));
+        assert_eq!(draw.color, Some([1.0, 0.0, 0.0, 1.0]));
+        assert_eq!(draw.metallic, 0.5);
+        assert_eq!(draw.roughness, 0.3);
+    }
+
+    #[test]
+    fn test_frame_uniforms_default() {
+        let frame = FrameUniforms::default();
+        assert_eq!(frame.light_intensity, 1.0);
     }
 
     #[test]

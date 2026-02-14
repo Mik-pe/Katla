@@ -8,4 +8,4 @@ pub mod registry;
 pub mod types;
 
 // Re-export commonly used types for convenience
-pub use types::{DrawCall, DrawList, MaterialHandle, MaterialParams, MeshHandle};
+pub use types::{DrawCall, DrawList, FrameUniforms, MaterialHandle, MeshHandle};

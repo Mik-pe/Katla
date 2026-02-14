@@ -12,7 +12,7 @@ pub use render_graph::resource::{
 pub use render_graph::*;
 pub use rendering::{
     registry::AssetRegistry,
-    types::{DrawCall, DrawList, MaterialHandle, MaterialParams, MeshHandle, SkeletonHandle},
+    types::{DrawCall, DrawList, FrameUniforms, MaterialHandle, MeshHandle, SkeletonHandle},
 };
 pub use sync::{
     VkDescriptorPool, VkDescriptorSet, VkDescriptorSetLayout, VkFence, VkFramebuffer, VkImage,
@@ -58,6 +58,8 @@ pub struct VulkanRenderer {
     /// Skeleton descriptor sets for GPU skeletal animation.
     /// Indexed by SkeletonHandle.
     skeleton_descriptors: Vec<Option<SkeletonDescriptorSet>>,
+    /// Frame-level uniforms set once per frame via set_frame_uniforms().
+    frame_uniforms: Option<FrameUniforms>,
 }
 
 const FRAMES_IN_FLIGHT: usize = 2;
@@ -99,6 +101,7 @@ impl VulkanRenderer {
             storage_descriptor_set: None,
             sky_pipeline: None,
             skeleton_descriptors: Vec::new(),
+            frame_uniforms: None,
         }
     }
 
@@ -125,6 +128,17 @@ impl VulkanRenderer {
 
         info!("Storage uniform system initialized (20KB buffer, 256 objects max)");
         Ok(())
+    }
+
+    /// Set frame-level uniforms for the current frame.
+    ///
+    /// This should be called once per frame before `render_frame()`.
+    /// The uniforms are used by all draw calls in the frame.
+    ///
+    /// # Arguments
+    /// * `uniforms` - Frame uniforms containing view/proj matrices, camera position, and lighting
+    pub fn set_frame_uniforms(&mut self, uniforms: FrameUniforms) {
+        self.frame_uniforms = Some(uniforms);
     }
 
     /// Update frame uniforms in storage buffer.
@@ -727,12 +741,9 @@ impl VulkanRenderer {
                                 None => continue,
                             };
 
-                            // Get object index (from draw call or auto-assign)
-                            let object_index = draw.object_index.unwrap_or_else(|| {
-                                let idx = next_object_index;
-                                next_object_index += 1;
-                                idx
-                            });
+                            // Auto-assign object index for storage buffer
+                            let object_index = next_object_index;
+                            next_object_index += 1;
 
                             let cmd_buf = ctx.command_buffer.vk_command_buffer();
 
@@ -741,17 +752,17 @@ impl VulkanRenderer {
                             // The shader uses @builtin(instance_index) to access objects[index]
                             if let Some(ref mut manager) = storage_manager.as_mut() {
                                 // Safe cast using bytemuck (both types are Pod with same layout)
-                                let model: [[f32; 4]; 4] = bytemuck::cast(draw.params.model_matrix);
-                                let color = draw.params.color.unwrap_or([1.0, 1.0, 1.0, 1.0]);
+                                let model: [[f32; 4]; 4] = bytemuck::cast(draw.model_matrix);
+                                let color = draw.color.unwrap_or([1.0, 1.0, 1.0, 1.0]);
 
                                 // Update at the object's index with PBR material params
                                 manager.update_object_with_material(
                                     object_index as usize,
                                     &model,
                                     &color,
-                                    draw.params.metallic,
-                                    draw.params.roughness,
-                                    draw.params.ao,
+                                    draw.metallic,
+                                    draw.roughness,
+                                    draw.ao,
                                 );
                             }
 
@@ -952,27 +963,21 @@ impl VulkanRenderer {
 
         // === UPDATE FRAME UNIFORMS BEFORE RENDER GRAPH EXECUTES ===
         // This must happen before any passes run (sky pass needs inv_view_proj)
-        if let Some(first_draw) = draw_list.draws.first() {
+        if let Some(ref frame) = self.frame_uniforms {
             if let Some(ref mut manager) = self.storage_manager {
                 // Safe cast using bytemuck (both types are Pod with same layout)
-                let view: [[f32; 4]; 4] = bytemuck::cast(first_draw.params.view_matrix);
-                let proj: [[f32; 4]; 4] = bytemuck::cast(first_draw.params.proj_matrix);
-                let inv_view_proj: [[f32; 4]; 4] = bytemuck::cast(first_draw.params.inv_view_proj_matrix);
-
-                // Extract camera position from inverse view matrix
-                let cam_x = -(view[0][0]*view[3][0] + view[0][1]*view[3][1] + view[0][2]*view[3][2]);
-                let cam_y = -(view[1][0]*view[3][0] + view[1][1]*view[3][1] + view[1][2]*view[3][2]);
-                let cam_z = -(view[2][0]*view[3][0] + view[2][1]*view[3][1] + view[2][2]*view[3][2]);
-                let camera_position = [cam_x, cam_y, cam_z, 0.0];
+                let view: [[f32; 4]; 4] = bytemuck::cast(frame.view_matrix);
+                let proj: [[f32; 4]; 4] = bytemuck::cast(frame.proj_matrix);
+                let inv_view_proj: [[f32; 4]; 4] = bytemuck::cast(frame.inv_view_proj_matrix);
 
                 manager.update_frame_with_lighting(
                     &view,
                     &proj,
                     &inv_view_proj,
-                    &camera_position,
-                    &[-0.3, -1.0, -0.2, 0.0],  // light_direction (TO light)
-                    &[1.0, 0.95, 0.9, 0.0],    // light_color (warm white)
-                    1.5,                        // light_intensity
+                    &frame.camera_position,
+                    &frame.light_direction,
+                    &frame.light_color,
+                    frame.light_intensity,
                 );
             }
         }

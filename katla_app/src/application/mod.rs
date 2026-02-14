@@ -513,8 +513,22 @@ impl Application {
         let view_proj = &proj * &view;
         let inv_view_proj = view_proj.inverse();
 
-        // Convert matrices to array format for GPU (using safe to_array())
-        let inv_view_proj_array: [f32; 16] = inv_view_proj.to_array();
+        // Extract camera position from inverse view matrix
+        let view_arr: [[f32; 4]; 4] = view.clone().into();
+        let cam_x = -(view_arr[0][0]*view_arr[3][0] + view_arr[0][1]*view_arr[3][1] + view_arr[0][2]*view_arr[3][2]);
+        let cam_y = -(view_arr[1][0]*view_arr[3][0] + view_arr[1][1]*view_arr[3][1] + view_arr[1][2]*view_arr[3][2]);
+        let cam_z = -(view_arr[2][0]*view_arr[3][0] + view_arr[2][1]*view_arr[3][1] + view_arr[2][2]*view_arr[3][2]);
+
+        // Set frame uniforms once per frame (view/proj/lighting shared by all draws)
+        renderer.set_frame_uniforms(katla_vulkan::FrameUniforms {
+            view_matrix: view.to_array(),
+            proj_matrix: proj.to_array(),
+            inv_view_proj_matrix: inv_view_proj.to_array(),
+            camera_position: [cam_x, cam_y, cam_z, 0.0],
+            light_direction: [-0.3, -1.0, -0.2, 0.0],
+            light_color: [1.0, 0.95, 0.9, 0.0],
+            light_intensity: 1.5,
+        });
 
         // Check for material hot reload
         if let Ok(reloaded) = renderer
@@ -532,10 +546,6 @@ impl Application {
         use katla_vulkan::{DrawCall, DrawList};
         let mut draw_list = DrawList::new();
 
-        // Convert view and proj matrices once (shared across all draws)
-        let view_array: [f32; 16] = view.to_array();
-        let proj_array: [f32; 16] = proj.to_array();
-
         // Query all drawable entities
         for (_entity, transform, drawable) in self.world.query::<(
             &crate::components::TransformComponent,
@@ -548,20 +558,18 @@ impl Application {
             if let (Some(mesh_handle), Some(material_handle)) =
                 (drawable.mesh_handle, drawable.material_handle)
             {
-                let mut draw_call = DrawCall::new(mesh_handle, material_handle).with_all_matrices(
-                    model_array,
-                    view_array,
-                    proj_array,
-                    inv_view_proj_array,
-                );
+                let mut draw_call = DrawCall::new(mesh_handle, material_handle)
+                    .with_transform(model_array);
 
                 // Add color override if specified in DrawableComponent
                 if let Some(color) = drawable.color {
-                    draw_call.params.color = Some(color.to_array());
+                    draw_call = draw_call.with_color(color.to_array());
                 }
 
                 // Add skeleton handle for GPU skeletal animation
-                draw_call.skeleton = drawable.skeleton_handle;
+                if let Some(skeleton) = drawable.skeleton_handle {
+                    draw_call = draw_call.with_skeleton(skeleton);
+                }
 
                 draw_list.push(draw_call);
             } else {
