@@ -12,7 +12,7 @@ pub use render_graph::resource::{
 pub use render_graph::*;
 pub use rendering::{
     registry::AssetRegistry,
-    types::{DrawCall, DrawList, FrameUniforms, MaterialHandle, MeshHandle, SkeletonHandle},
+    types::{DrawCall, DrawList, FrameUniforms, InstanceData, MaterialHandle, MeshHandle, SkeletonHandle},
 };
 pub use sync::{
     VkDescriptorPool, VkDescriptorSet, VkDescriptorSetLayout, VkFence, VkFramebuffer, VkImage,
@@ -742,28 +742,41 @@ impl VulkanRenderer {
                             };
 
                             // Auto-assign object index for storage buffer
-                            let object_index = next_object_index;
-                            next_object_index += 1;
+                            let first_instance = next_object_index;
+                            let instance_count = draw.instance_count();
+                            next_object_index += instance_count;
 
                             let cmd_buf = ctx.command_buffer.vk_command_buffer();
 
-                            // === Storage Buffer Mode: Instance Index ===
-                            // Update storage buffer at the object's index
+                            // === Storage Buffer Mode: Upload instance data ===
                             // The shader uses @builtin(instance_index) to access objects[index]
                             if let Some(ref mut manager) = storage_manager.as_mut() {
-                                // Safe cast using bytemuck (both types are Pod with same layout)
-                                let model: [[f32; 4]; 4] = bytemuck::cast(draw.model_matrix);
-                                let color = draw.color.unwrap_or([1.0, 1.0, 1.0, 1.0]);
-
-                                // Update at the object's index with PBR material params
-                                manager.update_object_with_material(
-                                    object_index as usize,
-                                    &model,
-                                    &color,
-                                    draw.metallic,
-                                    draw.roughness,
-                                    draw.ao,
-                                );
+                                if draw.is_instanced() {
+                                    // Upload all instances to consecutive indices
+                                    for (i, instance) in draw.instances.iter().enumerate() {
+                                        let model: [[f32; 4]; 4] = bytemuck::cast(instance.model_matrix);
+                                        manager.update_object_with_material(
+                                            first_instance as usize + i,
+                                            &model,
+                                            &instance.color,
+                                            instance.metallic,
+                                            instance.roughness,
+                                            instance.ao,
+                                        );
+                                    }
+                                } else {
+                                    // Single instance mode
+                                    let model: [[f32; 4]; 4] = bytemuck::cast(draw.model_matrix);
+                                    let color = draw.color.unwrap_or([1.0, 1.0, 1.0, 1.0]);
+                                    manager.update_object_with_material(
+                                        first_instance as usize,
+                                        &model,
+                                        &color,
+                                        draw.metallic,
+                                        draw.roughness,
+                                        draw.ao,
+                                    );
+                                }
                             }
 
                             // Create texture descriptor if not already done
@@ -841,8 +854,8 @@ impl VulkanRenderer {
                             drop(pipeline_ref);
 
                             // Bind vertex and index buffers and draw
-                            // Use object_index as first_instance for storage buffer mode
-                            // The shader accesses objects[instance_index] where instance_index = first_instance
+                            // Use first_instance for storage buffer mode
+                            // The shader accesses objects[instance_index] where instance_index = first_instance + gl_InstanceIndex
                             if let Some((index_buffer, index_type, index_count)) = index_data {
                                 ctx.command_buffer
                                     .bind_index_buffer(index_buffer, 0, index_type);
@@ -853,12 +866,14 @@ impl VulkanRenderer {
                                         &[vertex_buffer],
                                         &[0],
                                     );
-                                    ctx.command_buffer.draw_indexed(index_count, 1, 0, 0, object_index);
+                                    // draw_indexed(index_count, instance_count, first_index, vertex_offset, first_instance)
+                                    ctx.command_buffer.draw_indexed(index_count, instance_count, 0, 0, first_instance);
                                 }
                             } else if let Some((vertex_buffer, vertex_count)) = vertex_data {
                                 ctx.command_buffer
                                     .bind_vertex_buffers(0, &[vertex_buffer], &[0]);
-                                ctx.command_buffer.draw_array(vertex_count, 1, 0, object_index);
+                                // draw_array(vertex_count, instance_count, first_vertex, first_instance)
+                                ctx.command_buffer.draw_array(vertex_count, instance_count, 0, first_instance);
                             }
                         }
                     }

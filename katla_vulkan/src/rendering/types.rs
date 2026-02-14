@@ -55,41 +55,107 @@ impl Default for FrameUniforms {
     }
 }
 
+/// Per-instance data for GPU instancing.
+///
+/// Each instance has its own transform and material properties,
+/// but shares the same mesh and material with other instances.
+#[derive(Clone, Debug)]
+pub struct InstanceData {
+    /// Model matrix (object to world transform) - column-major 4x4.
+    pub model_matrix: [f32; 16],
+    /// Optional material color (RGBA, 0.0-1.0 range).
+    pub color: [f32; 4],
+    /// PBR metallic factor (0.0 = dielectric, 1.0 = metal).
+    pub metallic: f32,
+    /// PBR roughness factor (0.0 = smooth, 1.0 = rough).
+    pub roughness: f32,
+    /// Ambient occlusion factor (0.0 = occluded, 1.0 = no occlusion).
+    pub ao: f32,
+}
+
+impl Default for InstanceData {
+    fn default() -> Self {
+        Self {
+            model_matrix: [
+                1.0, 0.0, 0.0, 0.0,
+                0.0, 1.0, 0.0, 0.0,
+                0.0, 0.0, 1.0, 0.0,
+                0.0, 0.0, 0.0, 1.0,
+            ],
+            color: [1.0, 1.0, 1.0, 1.0],
+            metallic: 0.0,
+            roughness: 0.5,
+            ao: 1.0,
+        }
+    }
+}
+
+impl InstanceData {
+    /// Create a new instance with default values.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Create an instance with a transform matrix.
+    pub fn with_transform(mut self, model: [f32; 16]) -> Self {
+        self.model_matrix = model;
+        self
+    }
+
+    /// Create an instance with a color.
+    pub fn with_color(mut self, color: [f32; 4]) -> Self {
+        self.color = color;
+        self
+    }
+
+    /// Create an instance with PBR parameters.
+    pub fn with_pbr(mut self, metallic: f32, roughness: f32, ao: f32) -> Self {
+        self.metallic = metallic;
+        self.roughness = roughness;
+        self.ao = ao;
+        self
+    }
+}
+
 /// High-level draw call description.
 ///
 /// Contains all per-object information needed to render without exposing Vulkan types.
 /// Frame-level data (view/proj matrices, lighting) is set separately via `set_frame_uniforms()`.
+///
+/// # Instancing
+/// When `instances` is non-empty, the draw call uses GPU instancing:
+/// - All instances share the same mesh and material
+/// - Each instance has its own transform/color/PBR in the `instances` array
+/// - A single `draw_indexed_instanced()` call renders all instances
 #[derive(Clone, Debug)]
 pub struct DrawCall {
     /// Mesh to draw.
     pub mesh: MeshHandle,
     /// Material/shader to use.
     pub material: MaterialHandle,
-    /// Model matrix (object to world transform) - column-major 4x4.
+    /// Model matrix for single-instance mode (when instances is empty).
     pub model_matrix: [f32; 16],
-    /// Optional material color (RGBA, 0.0-1.0 range) for blending with texture.
+    /// Optional material color for single-instance mode.
     pub color: Option<[f32; 4]>,
-    /// PBR material parameters: metallic (0.0-1.0).
-    /// 0.0 = dielectric (non-metal), 1.0 = full metal.
+    /// PBR metallic factor for single-instance mode.
     pub metallic: f32,
-    /// PBR material parameters: roughness (0.0-1.0).
-    /// 0.0 = perfectly smooth (mirror-like), 1.0 = completely rough (diffuse).
+    /// PBR roughness factor for single-instance mode.
     pub roughness: f32,
-    /// Ambient occlusion factor (0.0-1.0).
-    /// 0.0 = fully occluded, 1.0 = no occlusion.
+    /// Ambient occlusion factor for single-instance mode.
     pub ao: f32,
     /// Whether this draw uses transparency (affects sort order).
-    /// Transparent objects are sorted back-to-front, opaque front-to-back.
     pub transparent: bool,
     /// Optional sorting key (for transparent objects, etc.).
     pub sort_key: Option<u64>,
     /// Skeleton handle for GPU skinning (Set 2).
-    /// Only set for animated meshes using skinned shaders.
     pub skeleton: Option<SkeletonHandle>,
+    /// Instance data for GPU instancing.
+    /// When non-empty, uses instanced rendering instead of single-draw.
+    pub instances: Vec<InstanceData>,
 }
 
 impl DrawCall {
-    /// Create a new draw call with default parameters.
+    /// Create a new draw call with default parameters (single-instance mode).
     pub fn new(mesh: MeshHandle, material: MaterialHandle) -> Self {
         Self {
             mesh,
@@ -102,6 +168,41 @@ impl DrawCall {
             transparent: false,
             sort_key: None,
             skeleton: None,
+            instances: Vec::new(),
+        }
+    }
+
+    /// Create an instanced draw call with multiple instances.
+    ///
+    /// All instances share the same mesh and material but have different
+    /// transforms and material properties.
+    pub fn instanced(mesh: MeshHandle, material: MaterialHandle, instances: Vec<InstanceData>) -> Self {
+        Self {
+            mesh,
+            material,
+            model_matrix: [0.0; 16], // Not used in instanced mode
+            color: None,
+            metallic: 0.0,
+            roughness: 0.5,
+            ao: 1.0,
+            transparent: false,
+            sort_key: None,
+            skeleton: None,
+            instances,
+        }
+    }
+
+    /// Check if this draw call uses instancing.
+    pub fn is_instanced(&self) -> bool {
+        !self.instances.is_empty()
+    }
+
+    /// Get the instance count (1 for single-instance mode, instances.len() for instanced).
+    pub fn instance_count(&self) -> u32 {
+        if self.instances.is_empty() {
+            1
+        } else {
+            self.instances.len() as u32
         }
     }
 
