@@ -94,6 +94,110 @@ impl Mesh {
         }
     }
 
+    /// Create a mesh from a GLTF model using SoA (Structure of Arrays) vertex layout.
+    ///
+    /// This constructor uses ParsedAttributes from the model to create
+    /// separate buffers for each attribute type.
+    ///
+    /// # Arguments
+    /// * `model` - GLTF model with parsed attributes
+    /// * `context` - Vulkan context
+    pub fn new_from_model_soa(model: Rc<GLTFModel>, context: Rc<VulkanContext>) -> Self {
+        use crate::util::gltf_parser::ParsedAttributes;
+
+        let index_type = match model.index_stride {
+            1 => IndexType::Uint8,
+            2 => IndexType::Uint16,
+            4 => IndexType::Uint32,
+            _ => IndexType::None,
+        };
+
+        let index_buffer = Self::create_index_buffer(&context, model.index_data(), index_type);
+
+        // Try to get parsed SoA attributes
+        let mut attributes = None;
+        if let Some(parsed) = model.parsed_attributes() {
+            let vertex_count = parsed.positions.len() as u32;
+            let mut attr_set = VertexAttributeSet::new(vertex_count);
+
+            // Create separate buffers for each attribute
+            if !parsed.positions.is_empty() {
+                if let Some(buf) = Self::create_attribute_buffer(
+                    context.clone(),
+                    &parsed.positions,
+                    AttributeType::Position,
+                    VertexFormat::RGB32f,
+                ) {
+                    attr_set.add_attribute(buf);
+                }
+            }
+
+            if !parsed.normals.is_empty() {
+                if let Some(buf) = Self::create_attribute_buffer(
+                    context.clone(),
+                    &parsed.normals,
+                    AttributeType::Normal,
+                    VertexFormat::RGB32f,
+                ) {
+                    attr_set.add_attribute(buf);
+                }
+            }
+
+            if !parsed.tangents.is_empty() {
+                if let Some(buf) = Self::create_attribute_buffer(
+                    context.clone(),
+                    &parsed.tangents,
+                    AttributeType::Tangent,
+                    VertexFormat::RGBA32f,
+                ) {
+                    attr_set.add_attribute(buf);
+                }
+            }
+
+            if !parsed.tex_coords0.is_empty() {
+                if let Some(buf) = Self::create_attribute_buffer(
+                    context.clone(),
+                    &parsed.tex_coords0,
+                    AttributeType::TexCoord0,
+                    VertexFormat::RG32f,
+                ) {
+                    attr_set.add_attribute(buf);
+                }
+            }
+
+            if !parsed.joint_indices.is_empty() {
+                if let Some(buf) = Self::create_attribute_buffer(
+                    context.clone(),
+                    &parsed.joint_indices,
+                    AttributeType::JointIndices,
+                    VertexFormat::RGBA16u,
+                ) {
+                    attr_set.add_attribute(buf);
+                }
+            }
+
+            if !parsed.joint_weights.is_empty() {
+                if let Some(buf) = Self::create_attribute_buffer(
+                    context.clone(),
+                    &parsed.joint_weights,
+                    AttributeType::JointWeights,
+                    VertexFormat::RGBA32f,
+                ) {
+                    attr_set.add_attribute(buf);
+                }
+            }
+
+            attributes = Some(attr_set);
+        }
+
+        Self {
+            vertex_buffer: None,
+            index_buffer,
+            attributes,
+            handle: None,
+        }
+    }
+
     /// Create a mesh using SoA (Structure of Arrays) vertex layout.
     ///
     /// This constructor creates separate buffers for each attribute type,

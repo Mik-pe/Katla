@@ -7,7 +7,7 @@ use katla_math::{Sphere, Vec3};
 use log::info;
 
 use crate::rendering::{VertexNormal, VertexPBR, VertexPosition, VertexSkinned};
-use crate::util::gltf_parser::{build_skinned_vertex_data, build_vertex_data, generate_smooth_normals, AttributeParser};
+use crate::util::gltf_parser::{build_skinned_vertex_data, build_vertex_data, generate_smooth_normals, AttributeParser, ParsedAttributes};
 
 #[derive(Clone)]
 pub struct GLTFModel {
@@ -20,6 +20,8 @@ pub struct GLTFModel {
     pub index_data: Vec<u8>,
     pub index_stride: u8,
     pub bounds: Sphere,
+    /// SoA (Structure of Arrays) vertex attributes for flexible rendering
+    pub parsed_attributes: Option<ParsedAttributes>,
 }
 
 impl GLTFModel {
@@ -205,6 +207,7 @@ impl GLTFModel {
             index_data: vec![],
             index_stride: 0,
             bounds: Sphere::new(Vec3::new(0.0, 0.0, 0.0), 0.0),
+            parsed_attributes: None,
         };
         model.parse_gltf();
         Ok(model)
@@ -239,6 +242,31 @@ impl GLTFModel {
 
     pub fn index_data(&self) -> Vec<u8> {
         self.index_data.clone()
+    }
+
+    /// Get SoA (Structure of Arrays) vertex attributes.
+    ///
+    /// This method parses the first primitive of the first mesh node
+    /// into separate attribute arrays for flexible rendering.
+    ///
+    /// Returns None if the model has no mesh or no primitives.
+    pub fn parsed_attributes(&self) -> Option<ParsedAttributes> {
+        // Find the first mesh node
+        for node in self.document.nodes() {
+            if let Some(mesh) = node.mesh() {
+                // Get the first primitive
+                for primitive in mesh.primitives() {
+                    let parser = AttributeParser::new(&self.buffers);
+                    return Some(ParsedAttributes::from_gltf(&primitive, &parser));
+                }
+            }
+        }
+        None
+    }
+
+    /// Check if this model has SoA attributes parsed.
+    pub fn has_soa_attributes(&self) -> bool {
+        self.parsed_attributes.is_some()
     }
 }
 

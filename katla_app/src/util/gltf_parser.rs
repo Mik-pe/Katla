@@ -495,6 +495,175 @@ pub fn build_skinned_vertex_data(
     (vertex_data, sphere)
 }
 
+/// Parsed attribute data in SoA (Structure of Arrays) format.
+///
+/// This struct holds separate arrays for each vertex attribute type,
+/// enabling flexible rendering pipelines and efficient GPU memory access patterns.
+#[derive(Clone)]
+pub struct ParsedAttributes {
+    /// Vertex positions (vec3<f32>)
+    pub positions: Vec<[f32; 3]>,
+    /// Vertex normals (vec3<f32>)
+    pub normals: Vec<[f32; 3]>,
+    /// Vertex tangents (vec4<f32>)
+    pub tangents: Vec<[f32; 4]>,
+    /// Primary texture coordinates (vec2<f32>)
+    pub tex_coords0: Vec<[f32; 2]>,
+    /// Joint indices for skeletal animation (uvec4, u16x4)
+    pub joint_indices: Vec<[u16; 4]>,
+    /// Joint weights for skeletal animation (vec4<f32>)
+    pub joint_weights: Vec<[f32; 4]>,
+    /// Bounding sphere computed from positions
+    pub bounds: Sphere,
+}
+
+impl ParsedAttributes {
+    /// Create ParsedAttributes from a GLTF primitive.
+    ///
+    /// This method parses all vertex attributes from a primitive
+    /// and returns them in SoA format.
+    ///
+    /// # Arguments
+    /// * `primitive` - GLTF primitive to parse
+    /// * `parser` - AttributeParser for the GLTF buffers
+    ///
+    /// # Returns
+    /// ParsedAttributes with all available vertex data
+    pub fn from_gltf(
+        primitive: &gltf::Primitive,
+        parser: &AttributeParser,
+    ) -> Self {
+        let mut positions = vec![];
+        let mut normals = vec![];
+        let mut tangents = vec![];
+        let mut tex_coords0 = vec![];
+        let mut joint_indices = vec![];
+        let mut joint_weights = vec![];
+
+        // Parse all attributes
+        for (semantic, accessor) in primitive.attributes() {
+            match semantic {
+                gltf::mesh::Semantic::Positions => {
+                    positions = parser.parse_positions(accessor);
+                    log::info!("    Parsed {} positions", positions.len());
+                }
+                gltf::mesh::Semantic::Normals => {
+                    normals = parser.parse_normals(accessor);
+                    log::info!("    Parsed {} normals", normals.len());
+                }
+                gltf::mesh::Semantic::Tangents => {
+                    // Tangents are optional in GLTF
+                    log::info!("    Tangent attribute found but not parsed (not yet implemented)");
+                }
+                gltf::mesh::Semantic::TexCoords(0) => {
+                    tex_coords0 = parser.parse_tex_coords(accessor);
+                    log::info!("    Parsed {} tex_coords", tex_coords0.len());
+                }
+                gltf::mesh::Semantic::Joints(0) => {
+                    joint_indices = parser.parse_joint_indices(accessor);
+                    log::info!("    Parsed {} joint indices", joint_indices.len());
+                }
+                gltf::mesh::Semantic::Weights(0) => {
+                    joint_weights = parser.parse_joint_weights(accessor);
+                    log::info!("    Parsed {} joint weights", joint_weights.len());
+                }
+                _ => {
+                    // Ignore other semantics
+                }
+            }
+        }
+
+        // Compute bounding sphere from positions
+        let bounds = if !positions.is_empty() {
+            Sphere::create_from_verts(&positions)
+        } else {
+            Sphere::new(Vec3::new(0.0, 0.0, 0.0), 0.0)
+        };
+
+        Self {
+            positions,
+            normals,
+            tangents,
+            tex_coords0,
+            joint_indices,
+            joint_weights,
+            bounds,
+        }
+    }
+
+    /// Get the vertex count.
+    pub fn vertex_count(&self) -> usize {
+        self.positions.len()
+    }
+
+    /// Check if this has skeletal animation data.
+    pub fn has_skinning(&self) -> bool {
+        !self.joint_indices.is_empty() && !self.joint_weights.is_empty()
+    }
+
+    /// Check if this has specific attributes.
+    pub fn has_attributes(&self, required: &[&str]) -> bool {
+        required.iter().all(|&attr| match attr {
+            "POSITION" => !self.positions.is_empty(),
+            "NORMAL" => !self.normals.is_empty(),
+            "TANGENT" => !self.tangents.is_empty(),
+            "TEX_COORD_0" => !self.tex_coords0.is_empty(),
+            "JOINTS_0" => !self.joint_indices.is_empty(),
+            "WEIGHTS_0" => !self.joint_weights.is_empty(),
+            _ => false,
+        })
+    }
+}
+
+/// Extension to AttributeParser for tangent parsing.
+impl AttributeParser<'_> {
+    /// Parse tangent data from an accessor.
+    pub fn parse_tangents(&self, accessor: gltf::Accessor) -> Option<Vec<[f32; 4]>> {
+        accessor
+            .view()
+            .and_then(|view| self.parse_vec4_accessor(accessor, view))
+    }
+
+    /// Helper to parse Vec4 data from an accessor with its view.
+    fn parse_vec4_accessor(
+        &self,
+        accessor: gltf::Accessor,
+        view: gltf::buffer::View,
+    ) -> Option<Vec<[f32; 4]>> {
+        let buf_index = view.buffer().index();
+        let buf_stride = view.stride();
+        let attr_buf = &self.buffers[buf_index];
+
+        // Calculate indices
+        let start_index = accessor.offset() + view.offset();
+        let stride = buf_stride.unwrap_or(accessor.size());
+        let total_size = accessor.size() * accessor.count();
+        let end_index = start_index + total_size;
+
+        let attr_arr = &attr_buf[start_index..end_index];
+
+        // Parse based on data type
+        if accessor.data_type() == gltf::accessor::DataType::F32 {
+            Some(
+                attr_arr
+                    .chunks(stride)
+                    .map(|bytes| {
+                        [
+                            byteorder::LittleEndian::read_f32(&bytes[0..4]),
+                            byteorder::LittleEndian::read_f32(&bytes[4..8]),
+                            byteorder::LittleEndian::read_f32(&bytes[8..12]),
+                            byteorder::LittleEndian::read_f32(&bytes[12..16]),
+                        ]
+                    })
+                    .collect(),
+            )
+        } else {
+            // Unsupported data type
+            None
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
