@@ -11,7 +11,13 @@ This document outlines the plan for implementing UI rendering in the Katla engin
 - [x] WGSL shaders written (`resources/shaders/ui/ui.wgsl`)
 - [x] UI input handling wired up in Application
 - [x] Debug overlay UI generating draw lists
-- [ ] Actual Vulkan rendering of UI draw lists
+- [x] Actual Vulkan rendering of UI draw lists
+- [x] UI pass integrated into render graph
+- [x] Fixed vertex layout (UiShaderVertex with tight 32-byte packing)
+- [ ] Text/layout overflow issues in widgets
+- [ ] Font texture atlas support
+- [ ] Efficient buffer management (currently creates temp buffers each frame)
+- [ ] Clipping support for nested windows
 
 ## Architecture
 
@@ -32,7 +38,7 @@ katla_ui MUST NOT depend on:
 
 ### Rendering Approach
 
-The UI should integrate into the render graph as a dedicated pass:
+The UI integrates into the render graph as a dedicated pass:
 
 ```
 [sky_pass] → [geometry_pass] → [ui_pass] → [present]
@@ -42,35 +48,51 @@ The UI pass:
 1. Reads from the swapchain color attachment (no clear)
 2. Uses alpha blending (src: SRC_ALPHA, dst: ONE_MINUS_SRC_ALPHA)
 3. No depth test/write (UI is always on top)
-4. Uses screen-space coordinates
+4. Uses NDC coordinates (pre-transformed from screen space in application layer)
+
+### Critical: Vertex Layout
+
+**IMPORTANT**: `katla_math::Vec2` is 16 bytes (aligned for SIMD), but WGSL `vec2f` is 8 bytes.
+The shader-compatible vertex struct `UiShaderVertex` uses `[f32; 2]` directly:
+
+```rust
+#[repr(C)]
+pub struct UiShaderVertex {
+    pub position: [f32; 2],  // 8 bytes (not Vec2!)
+    pub uv: [f32; 2],        // 8 bytes
+    pub color: [f32; 4],     // 16 bytes
+}  // Total: 32 bytes, matching shader and vertex binding
+```
 
 ## Implementation Steps
 
-### Phase 1: UI Pipeline Setup
+### Phase 1: UI Pipeline Setup ✅
 
 1. **Create UiMaterial** (in `katla_app/src/rendering/ui_material.rs`)
    - [x] Create pipeline with alpha blending
    - [x] Configure vertex format (position[2], uv[2], color[4])
+   - [x] UiShaderVertex struct with correct memory layout
    - [ ] Create white texture placeholder for font atlas
    - [ ] Create descriptor set for uniforms + texture
 
 2. **UI Uniforms**
-   - Uniform buffer with `screen_size: vec2`
-   - Updated each frame before rendering
+   - Currently using pre-transformed NDC coordinates (no uniform needed)
+   - Future: may add screen_size uniform for shader-side transformation
 
-### Phase 2: Render Graph Integration
+### Phase 2: Render Graph Integration ✅
 
 3. **Add UI Pass to Render Graph** (in `katla_vulkan/src/lib.rs`)
-   - [ ] Add `ui_data` field to VulkanRenderer for passing draw list
-   - [ ] Add `ui_pipeline` field to VulkanRenderer
-   - [ ] Create `ui_pass` after `geometry_pass`
-   - [ ] Load (not clear) color attachment from previous pass
-   - [ ] Bind UI pipeline and render
+   - [x] Add `ui_data` field to VulkanRenderer for passing draw list
+   - [x] Add `ui_pipeline` field to VulkanRenderer
+   - [x] Create `ui_pass` after `geometry_pass`
+   - [x] Load (not clear) color attachment from previous pass
+   - [x] Bind UI pipeline and render
 
 4. **Buffer Management**
-   - [ ] Create dynamic vertex buffer for UI vertices
-   - [ ] Create dynamic index buffer for UI indices
-   - [ ] Update buffers each frame with draw list data
+   - [x] Basic working implementation (creates temp staging buffers each frame)
+   - [ ] Create persistent dynamic vertex buffer for UI vertices
+   - [ ] Create persistent dynamic index buffer for UI indices
+   - [ ] Update buffers each frame with draw list data (no allocation)
 
 ### Phase 3: Texture Support
 
@@ -83,13 +105,20 @@ The UI pass:
    - [ ] Create 1x1 white texture for non-textured UI elements
    - [ ] Use as default when no font is loaded
 
-### Phase 4: Application Integration
+### Phase 4: Widget Improvements
 
-7. **Wire Up in Application**
-   - [ ] Create UiMaterial in Application
-   - [ ] Pass UI pipeline to VulkanRenderer
-   - [ ] Call `set_ui_data()` each frame with draw list
-   - [ ] Verify rendering works
+7. **Layout Fixes**
+   - [ ] Fix text overflow in window backgrounds
+   - [ ] Auto-size windows based on content
+   - [ ] Proper clipping for nested elements
+
+### Phase 5: Application Integration ✅
+
+8. **Wire Up in Application**
+   - [x] Create UiMaterial in Application
+   - [x] Pass UI pipeline to VulkanRenderer
+   - [x] Call `set_ui_data()` each frame with draw list
+   - [x] Verify rendering works
 
 ## Technical Details
 
@@ -97,19 +126,29 @@ The UI pass:
 
 ```rust
 #[repr(C)]
-struct UiVertex {
-    position: [f32; 2],  // Screen space pixels
+struct UiShaderVertex {
+    position: [f32; 2],  // NDC coordinates (-1 to 1)
     uv: [f32; 2],        // Texture coordinates
     color: [f32; 4],     // RGBA color
 }
 ```
 
-### Shader Bindings
+### Shader (Current - No Uniforms)
 
 ```wgsl
-@group(0) @binding(0) var<uniform> screen_size: vec2f;
-@group(0) @binding(1) var font_atlas: texture_2d<f32>;
-@group(0) @binding(2) var font_sampler: sampler;
+@vertex
+fn vs_main(in: UiVertex) -> VertexOutput {
+    var out: VertexOutput;
+    out.clip_position = vec4f(in.position, 0.0, 1.0);  // Pre-transformed to NDC
+    out.uv = in.uv;
+    out.color = in.color;
+    return out;
+}
+
+@fragment
+fn fs_main(in: VertexOutput) -> @location(0) vec4f {
+    return in.color;  // Solid color, no texturing yet
+}
 ```
 
 ### Render State
@@ -118,62 +157,40 @@ struct UiVertex {
 - No depth test
 - No depth write
 - No backface culling
-- Clockwise front face (for 2D)
+- Counter-clockwise front face
 
 ### Buffer Strategy
 
-Two approaches:
+Current approach (temporary staging buffers):
+- Creates new staging buffers each frame
+- Works but inefficient (allocations every frame)
 
-1. **Dynamic Buffers (Simple)**
-   - Create buffers large enough for max UI elements
-   - Map and update each frame
-   - Simple but may cause synchronization stalls
+Planned approach (persistent buffers):
+- Create buffers large enough for max UI elements
+- Map and update each frame
+- No per-frame allocations
 
-2. **Ring Buffer (Optimized)**
-   - Multiple buffers in flight (one per frame)
-   - No synchronization needed
-   - More complex but better performance
-
-Start with approach 1, optimize to 2 if needed.
-
-## Files to Modify
+## Files Modified
 
 ### katla_vulkan
-- `src/lib.rs` - Add UI pass to render graph, ui_data field
-- `src/render_graph/compiled.rs` - May need pass ordering tweaks
+- `src/lib.rs` - UI pass in render graph, ui_data field, set_ui_data()
 
 ### katla_app
-- `src/rendering/ui_material.rs` - UI pipeline creation (NEW)
+- `src/rendering/ui_material.rs` - UI pipeline creation, UiShaderVertex struct
 - `src/rendering/mod.rs` - Export UiMaterial
-- `src/application/mod.rs` - Wire up UI rendering
+- `src/application/mod.rs` - Wire up UI rendering, transform to NDC
 - `src/ui/debug_overlay.rs` - Debug overlay component
 
 ### katla_ui
-- `src/renderer/mod.rs` - Skeleton renderer (no ash dependency)
 - `src/draw_list.rs` - Draw list with vertex/index data
+- `src/context.rs` - UiContext for immediate mode UI
+- `src/widgets/` - Window, label, button widgets
 
-## Questions/Decisions
+## Known Issues
 
-1. **Should UI rendering happen in VulkanRenderer or separately?**
-   - Decision: In VulkanRenderer as a render graph pass
-   - Rationale: Integrates with existing pipeline, proper ordering
-
-2. **How to handle the ash dependency boundary?**
-   - katla_ui should NOT depend on ash
-   - Vulkan types come from katla_vulkan wrappers
-   - Actual rendering happens in katla_vulkan/katla_app
-
-3. **Buffer updates: staging vs. direct mapping?**
-   - Start with direct mapping (simpler)
-   - May need staging for performance later
-
-## Testing
-
-1. Verify UI draw list is generated correctly (log vertex/index counts)
-2. Verify pipeline is created with correct blend state
-3. Verify UI renders on screen
-4. Verify alpha blending works correctly
-5. Verify screen size uniform is updated on resize
+1. **Text Overflow**: Window backgrounds don't account for all text lines properly
+2. **Buffer Allocations**: Creating temporary staging buffers each frame (inefficient)
+3. **No Texturing**: Font atlas not implemented, solid colors only
 
 ## Future Enhancements
 
@@ -183,3 +200,4 @@ Start with approach 1, optimize to 2 if needed.
 - [ ] Scroll areas
 - [ ] Theme system
 - [ ] Custom widget styling
+- [ ] Persistent buffer management for better performance

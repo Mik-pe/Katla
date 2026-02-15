@@ -35,19 +35,6 @@ impl DebugOverlay {
         frame_count: usize,
         entity_count: usize,
     ) {
-        // Debug window with stats
-        // Height calculation: padding(10) + title(25) + 9 lines × 20px + padding(10) = 225
-        let window_bounds = Rect2D::from_origin_size(Vec2::new(10.0, 10.0), Vec2::new(280.0, 230.0));
-        let window = ui.begin_window("debug_window", window_bounds);
-
-        // Calculate text area
-        let padding = 10.0;
-        let line_height = 20.0;
-        let mut cursor = Vec2::new(
-            window.bounds.min.x() + padding,
-            window.bounds.min.y() + padding + 25.0, // Account for title bar
-        );
-
         // Stats labels
         let stats = [
             format!("FPS: {:.1}", fps),
@@ -61,8 +48,32 @@ impl DebugOverlay {
             "  ESC - Exit".to_string(),
         ];
 
+        // Calculate window size based on content
+        let padding = 10.0;
+        let line_height = 20.0;
+        let title_height = 25.0;
+        let content_height = stats.len() as f32 * line_height + padding * 2.0;
+        let window_height = title_height + content_height;
+        let window_width = 280.0;
+
+        let window_bounds = Rect2D::from_origin_size(
+            Vec2::new(10.0, 10.0),
+            Vec2::new(window_width, window_height),
+        );
+
+        let window = ui.begin_window_with_title("debug_window", Some("Debug"), window_bounds);
+
+        // Start cursor below title bar with padding
+        let mut cursor = Vec2::new(
+            window.bounds.min.x() + padding,
+            window.bounds.min.y() + title_height + padding,
+        );
+
         for text in &stats {
-            let label_bounds = Rect2D::from_origin_size(cursor, Vec2::new(260.0, line_height));
+            let label_bounds = Rect2D::from_origin_size(
+                cursor,
+                Vec2::new(window_width - padding * 2.0, line_height),
+            );
             ui.label(text, label_bounds);
             cursor = Vec2::new(cursor.x(), cursor.y() + line_height);
         }
