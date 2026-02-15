@@ -11,6 +11,7 @@ Katla is a Vulkan-based 3D render engine written in Rust, using ECS (Entity Comp
 - **katla_app** - Application framework, components, and systems
 - **katla_ecs** - Custom Entity Component System framework
 - **katla_derive** - Derive macros for the ECS (Component trait)
+- **katla_ui** - Immediate mode UI system for debug overlays and in-game HUDs
 
 ## Build and Test Commands
 
@@ -122,10 +123,29 @@ git commit -m "Summary line
 
 **CRITICAL**: These restrictions maintain clean module boundaries and prevent circular dependencies.
 
-- **katla_vulkan** must NOT depend on: `katla_math`, `katla_ecs`, `katla_app`
-- **katla_ecs** must NOT depend on: `katla_app`, `katla_vulkan`, `katla_math`
-- **katla_math** must NOT depend on: `katla_app`, `katla_vulkan`, `katla_ecs`
-- **katla_app** can depend on: `katla_vulkan`, `katla_ecs`, `katla_math`
+```
+katla_app ─────────────────────────────────────────────────────┐
+    │                                                          │
+    ├── katla_vulkan ──┐                                       │
+    │                  │                                       │
+    ├── katla_ecs ─────┼──> NO external dependencies           │
+    │                  │                                       │
+    ├── katla_ui ──────┘                                       │
+    │                                                          │
+    └── katla_math ────────────> NO crate dependencies        │
+                                                               │
+katla_derive ──────────────────> proc-macro crate (isolated)  │
+                                                               │
+game ──────────────────────────> Application (depends on all) ◄┘
+```
+
+**Rules:**
+- **katla_vulkan** must NOT depend on: `katla_math`, `katla_ecs`, `katla_app`, `katla_ui`
+- **katla_ecs** must NOT depend on: `katla_app`, `katla_vulkan`, `katla_math`, `katla_ui`
+- **katla_math** must NOT depend on: ANY other crate
+- **katla_ui** must NOT depend on: `katla_ecs`, `katla_app`
+- **katla_ui** CAN depend on: `katla_math`, `katla_vulkan`
+- **katla_app** can depend on: `katla_vulkan`, `katla_ecs`, `katla_math`, `katla_ui`
 
 ### Ash Type Exclusion Rule
 
