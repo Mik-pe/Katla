@@ -921,6 +921,16 @@ impl VulkanRenderer {
                                 pipeline_ref.vk_pipeline().handle,
                             );
 
+                            // Push screen size constant
+                            let screen_size_bytes: [u8; 8] = std::mem::transmute(ui_data.screen_size);
+                            pipeline_ref.context().device.cmd_push_constants(
+                                cmd_buf,
+                                pipeline_ref.vk_layout(),
+                                vk::ShaderStageFlags::VERTEX,
+                                0,
+                                &screen_size_bytes,
+                            );
+
                             // Set viewport
                             let viewport = vk::Viewport {
                                 x: 0.0,

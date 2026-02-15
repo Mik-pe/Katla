@@ -6,6 +6,7 @@ use super::{
     PipelineBuilder, ShaderModule, ShaderSource,
 };
 use crate::{context::VulkanContext, ImageFormat, Texture, VertexBinding};
+use crate::render_graph::types::ShaderStages;
 
 pub struct MaterialBuilder {
     context: Rc<VulkanContext>,
@@ -266,13 +267,13 @@ impl MaterialBuilder {
     /// * `size` - Size in bytes of the push constant range
     pub fn with_push_constant(
         mut self,
-        stages: vk::ShaderStageFlags,
+        stages: ShaderStages,
         offset: u32,
         size: u32,
     ) -> Self {
         self.push_constant_ranges.push(
             vk::PushConstantRange::default()
-                .stage_flags(stages)
+                .stage_flags(stages.into())
                 .offset(offset)
                 .size(size),
         );

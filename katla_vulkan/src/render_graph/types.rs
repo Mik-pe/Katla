@@ -724,3 +724,34 @@ impl From<Rect2D> for ash::vk::Rect2D {
         }
     }
 }
+
+/// Shader stage flags for pipeline creation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct ShaderStages {
+    pub vertex: bool,
+    pub fragment: bool,
+    pub compute: bool,
+    pub geometry: bool,
+    pub tessellation_control: bool,
+    pub tessellation_evaluation: bool,
+}
+
+impl ShaderStages {
+    pub const VERTEX: Self = Self { vertex: true, fragment: false, compute: false, geometry: false, tessellation_control: false, tessellation_evaluation: false };
+    pub const FRAGMENT: Self = Self { vertex: false, fragment: true, compute: false, geometry: false, tessellation_control: false, tessellation_evaluation: false };
+    pub const VERTEX_FRAGMENT: Self = Self { vertex: true, fragment: true, compute: false, geometry: false, tessellation_control: false, tessellation_evaluation: false };
+    pub const ALL_GRAPHICS: Self = Self { vertex: true, fragment: true, compute: false, geometry: true, tessellation_control: true, tessellation_evaluation: true };
+}
+
+impl From<ShaderStages> for ash::vk::ShaderStageFlags {
+    fn from(stages: ShaderStages) -> Self {
+        let mut flags = ash::vk::ShaderStageFlags::empty();
+        if stages.vertex { flags |= ash::vk::ShaderStageFlags::VERTEX; }
+        if stages.fragment { flags |= ash::vk::ShaderStageFlags::FRAGMENT; }
+        if stages.compute { flags |= ash::vk::ShaderStageFlags::COMPUTE; }
+        if stages.geometry { flags |= ash::vk::ShaderStageFlags::GEOMETRY; }
+        if stages.tessellation_control { flags |= ash::vk::ShaderStageFlags::TESSELLATION_CONTROL; }
+        if stages.tessellation_evaluation { flags |= ash::vk::ShaderStageFlags::TESSELLATION_EVALUATION; }
+        flags
+    }
+}

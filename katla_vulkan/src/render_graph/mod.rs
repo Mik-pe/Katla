@@ -19,5 +19,5 @@ pub use resource::{
 pub use types::{
     Access, AttachmentLoadOp, AttachmentStoreOp, BufferUsage, ClearColor, ClearDepthStencil,
     ClearValue, Extent2D, Extent3D, ImageFormat, ImageLayout, ImageTiling, ImageUsage,
-    MemoryProperty, PipelineBindPoint, PipelineStage, SampleCount,
+    MemoryProperty, PipelineBindPoint, PipelineStage, SampleCount, ShaderStages,
 };
