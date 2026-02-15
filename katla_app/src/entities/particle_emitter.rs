@@ -180,12 +180,8 @@ pub fn create_particle_emitter(
     );
 
     // Create entity with transform and emitter
-    let entity = world.create_entity();
-    world.add_component(
-        entity,
+    world.spawn((
         TransformComponent::new(Transform::new_from_position(position)),
-    );
-    world.add_component(entity, emitter);
-
-    entity
+        emitter,
+    ))
 }

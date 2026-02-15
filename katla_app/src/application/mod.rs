@@ -235,40 +235,28 @@ impl ApplicationHandler for Application {
 
             // Add lighting to the scene
             // Directional light (sun)
-            let sun_light = self.world.create_entity();
-            self.world.add_component(
-                sun_light,
+            self.world.spawn((
                 DirectionalLight::new(
                     Vec3::new(-0.3, -1.0, -0.2), // Angled down and to the side
                     [1.0, 0.95, 0.8],            // Warm white
                     1.0,                         // Full intensity
                 ),
-            );
+            ));
 
             // Point lights for accent lighting
-            let red_light = self.world.create_entity();
-            self.world.add_component(
-                red_light,
+            self.world.spawn((
                 TransformComponent {
                     transform: Transform::new_from_position(Vec3::new(10.0, 10.0, 10.0)),
                 },
-            );
-            self.world.add_component(
-                red_light,
                 PointLight::new([1.0, 0.3, 0.3], 5.0, 20.0), // Red light, 5x intensity, 20 unit range
-            );
+            ));
 
-            let blue_light = self.world.create_entity();
-            self.world.add_component(
-                blue_light,
+            self.world.spawn((
                 TransformComponent {
                     transform: Transform::new_from_position(Vec3::new(-10.0, 8.0, 10.0)),
                 },
-            );
-            self.world.add_component(
-                blue_light,
                 PointLight::new([0.3, 0.5, 1.0], 4.0, 25.0), // Blue light, 4x intensity, 25 unit range
-            );
+            ));
 
             // Add ambient light resource
             self.world
@@ -955,21 +943,7 @@ impl Application {
             None => return,
         };
 
-        let entity_id = self.world.create_entity();
-
-        // Add name
-        let name = format!("{}_{}", model_type.name(), entity_id.id());
-        self.world.add_component(entity_id, crate::components::NameComponent::new(&name));
-
-        // Add transform
-        let transform = katla_math::Transform {
-            position,
-            rotation: katla_math::Quat::new(), // Identity quaternion
-            scale: Vec3::new(1.0, 1.0, 1.0),
-        };
-        self.world.add_component(entity_id, crate::components::TransformComponent::new(transform));
-
-        // Create mesh using MeshBuilder
+        // Create mesh using MeshBuilder (creates entity internally)
         let builder = MeshBuilder::new(context.clone()).position(position);
 
         let spawned_id = match model_type {
@@ -993,6 +967,12 @@ impl Application {
                 builder.torus().build(&mut self.world, self.renderer.as_mut().unwrap())
             }
         };
+
+        // Update the name component with a more descriptive name
+        let name = format!("{}_{}", model_type.name(), spawned_id.id());
+        if let Some(name_comp) = self.world.get_component_mut::<crate::components::NameComponent>(spawned_id) {
+            name_comp.name = name;
+        }
 
         info!("Spawned {} (entity {}) at {:?}", model_type.name(), spawned_id.id(), position);
     }
