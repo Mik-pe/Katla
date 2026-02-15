@@ -569,6 +569,10 @@ impl Application {
         let sky_material = SkyMaterial::new(renderer.context.clone());
         renderer.set_sky_pipeline(sky_material.pipeline());
 
+        // Create and set up UI material for overlay rendering
+        let ui_material = crate::rendering::UiMaterial::new(renderer.context.clone());
+        renderer.set_ui_pipeline(ui_material.pipeline());
+
         // Setup render graph with multiple framebuffers
         renderer.setup_render_graph();
     }
@@ -712,14 +716,44 @@ impl Application {
         let fps = if dt > 0.0 { 1.0 / dt } else { 0.0 };
         let entity_count = self.world.entity_count();
 
-        // Render debug overlay using the UI module
-        crate::ui::DebugOverlay::render(
+        // Render debug overlay and get draw list
+        let draw_list = crate::ui::DebugOverlay::render(
             &mut self.ui_context,
             screen_size,
             fps,
             self.frame_count,
             entity_count,
         );
+
+        // Pass UI data to renderer if we have data and a renderer
+        if !draw_list.is_empty() {
+            // Convert vertices to raw bytes
+            let vertices = &draw_list.vertices;
+            let vertex_bytes = unsafe {
+                std::slice::from_raw_parts(
+                    vertices.as_ptr() as *const u8,
+                    vertices.len() * std::mem::size_of::<katla_ui::UiVertex>(),
+                )
+            }.to_vec();
+
+            // Convert indices to raw bytes
+            let indices = &draw_list.indices;
+            let index_bytes = unsafe {
+                std::slice::from_raw_parts(
+                    indices.as_ptr() as *const u8,
+                    indices.len() * std::mem::size_of::<u32>(),
+                )
+            }.to_vec();
+
+            // Pass to renderer
+            if let Some(ref renderer) = self.renderer {
+                renderer.set_ui_data(
+                    vertex_bytes,
+                    index_bytes,
+                    [screen_size.x(), screen_size.y()],
+                );
+            }
+        }
 
         // Clear input state for next frame
         self.ui_context.input.clear_frame_state();

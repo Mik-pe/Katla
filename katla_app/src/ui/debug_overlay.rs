@@ -2,7 +2,7 @@
 
 use katla_math::Vec2;
 use katla_math::Rect2D;
-use katla_ui::UiContext;
+use katla_ui::{DrawList, UiContext};
 
 /// Debug overlay for displaying engine stats and controls.
 pub struct DebugOverlay {
@@ -26,19 +26,15 @@ impl DebugOverlay {
         self.visible
     }
 
-    /// Render the debug overlay.
+    /// Build the debug overlay UI.
     ///
-    /// Returns the draw list for rendering.
-    pub fn render(
+    /// Call this after `ui.begin()` and before `ui.end()`.
+    pub fn build(
         ui: &mut UiContext,
-        screen_size: Vec2,
         fps: f32,
         frame_count: usize,
         entity_count: usize,
     ) {
-        // Begin UI frame
-        ui.begin(screen_size);
-
         // Debug window with stats
         let window_bounds = Rect2D::from_origin_size(Vec2::new(10.0, 10.0), Vec2::new(280.0, 220.0));
         let window = ui.begin_window("debug_window", window_bounds);
@@ -71,9 +67,26 @@ impl DebugOverlay {
         }
 
         ui.end_window();
+    }
 
-        // End UI frame
-        ui.end();
+    /// Render the debug overlay and return the draw list.
+    ///
+    /// This handles begin/end internally.
+    pub fn render(
+        ui: &mut UiContext,
+        screen_size: Vec2,
+        fps: f32,
+        frame_count: usize,
+        entity_count: usize,
+    ) -> &DrawList {
+        // Begin UI frame
+        ui.begin(screen_size);
+
+        // Build the UI
+        Self::build(ui, fps, frame_count, entity_count);
+
+        // End UI frame and return draw list
+        ui.end()
     }
 }
 

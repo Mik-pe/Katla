@@ -55,11 +55,17 @@ pub struct VulkanRenderer {
     /// Sky pipeline for procedural sky rendering.
     /// Created lazily when setup_render_graph_with_sky is called.
     pub sky_pipeline: Option<Rc<RefCell<MaterialPipeline>>>,
+    /// UI pipeline for overlay rendering.
+    /// Created externally and passed via set_ui_pipeline.
+    pub ui_pipeline: Option<Rc<RefCell<MaterialPipeline>>>,
     /// Skeleton descriptor sets for GPU skeletal animation.
     /// Indexed by SkeletonHandle.
     skeleton_descriptors: Vec<Option<SkeletonDescriptorSet>>,
     /// Frame-level uniforms set once per frame via set_frame_uniforms().
     frame_uniforms: Option<FrameUniforms>,
+    /// UI overlay data for immediate mode UI rendering.
+    /// Set each frame via set_ui_data() and rendered in ui_pass.
+    ui_data: RefCell<Option<UiDrawData>>,
 }
 
 const FRAMES_IN_FLIGHT: usize = 2;
@@ -100,8 +106,10 @@ impl VulkanRenderer {
             storage_manager: None,
             storage_descriptor_set: None,
             sky_pipeline: None,
+            ui_pipeline: None,
             skeleton_descriptors: Vec::new(),
             frame_uniforms: None,
+            ui_data: RefCell::new(None),
         }
     }
 
@@ -880,6 +888,152 @@ impl VulkanRenderer {
                 });
         });
 
+        // === UI PASS ===
+        // Renders UI overlay after all geometry, with alpha blending
+        // Get pointers for UI rendering
+        let ui_data_ptr = &self.ui_data as *const RefCell<Option<UiDrawData>>;
+        let ui_pipeline_ptr = &self.ui_pipeline as *const Option<Rc<RefCell<MaterialPipeline>>>;
+        let storage_descriptor_ptr = &self.storage_descriptor_set as *const Option<StorageDescriptorSet>;
+
+        graph_builder.add_pass("ui_pass", move |pass| {
+            pass.write(Attachment::Color(swapchain_res))
+                // Load existing color (don't clear), no depth needed
+                .execute("ui_pass", move |ctx| {
+                    // SAFETY: Pointers are valid for the renderer's lifetime
+                    let ui_data_cell = unsafe { &*ui_data_ptr };
+                    let ui_pipeline_opt = unsafe { &*ui_pipeline_ptr };
+                    let storage_descriptor_opt = unsafe { &*storage_descriptor_ptr };
+
+                    let ui_data_ref = ui_data_cell.borrow();
+
+                    if let (Some(ui_data), Some(ui_pipeline), Some(storage_descriptor)) =
+                        (ui_data_ref.as_ref(), ui_pipeline_opt.as_ref(), storage_descriptor_opt.as_ref()) {
+                        if ui_data.vertex_data.is_empty() || ui_data.index_data.is_empty() {
+                            return;
+                        }
+
+                        let pipeline_ref = ui_pipeline.borrow();
+                        let cmd_buf = ctx.command_buffer.vk_command_buffer();
+
+                        unsafe {
+                            // Bind UI pipeline
+                            pipeline_ref.context().device.cmd_bind_pipeline(
+                                cmd_buf,
+                                vk::PipelineBindPoint::GRAPHICS,
+                                pipeline_ref.vk_pipeline().handle,
+                            );
+
+                            // Bind storage descriptor set (for now, UI shares the storage buffer layout)
+                            pipeline_ref.context().device.cmd_bind_descriptor_sets(
+                                cmd_buf,
+                                vk::PipelineBindPoint::GRAPHICS,
+                                pipeline_ref.vk_layout(),
+                                0,
+                                &[storage_descriptor.set()],
+                                &[],
+                            );
+
+                            // Set viewport
+                            let viewport = vk::Viewport {
+                                x: 0.0,
+                                y: 0.0,
+                                width: ui_data.screen_size[0],
+                                height: ui_data.screen_size[1],
+                                min_depth: 0.0,
+                                max_depth: 1.0,
+                            };
+                            pipeline_ref.context().device.cmd_set_viewport(cmd_buf, 0, &[viewport]);
+
+                            // Set scissor
+                            let scissor = vk::Rect2D {
+                                offset: vk::Offset2D { x: 0, y: 0 },
+                                extent: vk::Extent2D {
+                                    width: ui_data.screen_size[0] as u32,
+                                    height: ui_data.screen_size[1] as u32,
+                                },
+                            };
+                            pipeline_ref.context().device.cmd_set_scissor(cmd_buf, 0, &[scissor]);
+
+                            // Create temporary vertex/index buffers
+                            let vertex_size = ui_data.vertex_data.len() as u64;
+                            let index_size = ui_data.index_data.len() as u64;
+
+                            if vertex_size == 0 || index_size == 0 {
+                                return;
+                            }
+
+                            // Create staging buffers
+                            let vertex_create_info = vk::BufferCreateInfo::default()
+                                .sharing_mode(vk::SharingMode::EXCLUSIVE)
+                                .usage(vk::BufferUsageFlags::VERTEX_BUFFER)
+                                .size(vertex_size);
+
+                            let (vertex_buffer, vertex_alloc) = pipeline_ref.context().allocate_buffer(
+                                &vertex_create_info,
+                                gpu_allocator::MemoryLocation::CpuToGpu,
+                            );
+
+                            let index_create_info = vk::BufferCreateInfo::default()
+                                .sharing_mode(vk::SharingMode::EXCLUSIVE)
+                                .usage(vk::BufferUsageFlags::INDEX_BUFFER)
+                                .size(index_size);
+
+                            let (index_buffer, index_alloc) = pipeline_ref.context().allocate_buffer(
+                                &index_create_info,
+                                gpu_allocator::MemoryLocation::CpuToGpu,
+                            );
+
+                            // Upload vertex data
+                            let vertex_ptr = pipeline_ref.context().map_buffer(&vertex_alloc);
+                            std::ptr::copy_nonoverlapping(
+                                ui_data.vertex_data.as_ptr(),
+                                vertex_ptr,
+                                vertex_size as usize,
+                            );
+
+                            // Upload index data
+                            let index_ptr = pipeline_ref.context().map_buffer(&index_alloc);
+                            std::ptr::copy_nonoverlapping(
+                                ui_data.index_data.as_ptr(),
+                                index_ptr,
+                                index_size as usize,
+                            );
+
+                            // Bind vertex buffer
+                            pipeline_ref.context().device.cmd_bind_vertex_buffers(
+                                cmd_buf,
+                                0,
+                                &[vertex_buffer],
+                                &[0],
+                            );
+
+                            // Bind index buffer
+                            pipeline_ref.context().device.cmd_bind_index_buffer(
+                                cmd_buf,
+                                index_buffer,
+                                0,
+                                vk::IndexType::UINT32,
+                            );
+
+                            // Draw all indices
+                            let index_count = (index_size / 4) as u32; // u32 indices
+                            pipeline_ref.context().device.cmd_draw_indexed(
+                                cmd_buf,
+                                index_count,
+                                1,
+                                0,
+                                0,
+                                0,
+                            );
+
+                            // Cleanup staging buffers
+                            pipeline_ref.context().free_buffer(vertex_buffer, vertex_alloc);
+                            pipeline_ref.context().free_buffer(index_buffer, index_alloc);
+                        }
+                    }
+                });
+        });
+
         let vulkan_context = self.context.clone();
         match graph_builder.build(&vulkan_context) {
             Ok(mut graph) => {
@@ -948,6 +1102,13 @@ impl VulkanRenderer {
     /// The sky pipeline renders a fullscreen triangle with a procedural sky shader.
     pub fn set_sky_pipeline(&mut self, pipeline: Rc<RefCell<MaterialPipeline>>) {
         self.sky_pipeline = Some(pipeline);
+    }
+
+    /// Set the UI overlay pipeline.
+    ///
+    /// Call this before setup_render_graph() to enable UI rendering.
+    pub fn set_ui_pipeline(&mut self, pipeline: Rc<RefCell<MaterialPipeline>>) {
+        self.ui_pipeline = Some(pipeline);
     }
 
     pub fn render_frame(&mut self, draw_list: DrawList) -> Result<(), RenderGraphError> {
@@ -1074,4 +1235,30 @@ impl VulkanRenderer {
 
         Ok(())
     }
+
+    /// Set UI overlay data for rendering.
+    ///
+    /// Call this each frame before render_frame() to provide UI vertex/index data.
+    /// The UI will be rendered after the geometry pass with alpha blending.
+    ///
+    /// # Arguments
+    /// * `vertex_data` - Raw vertex data (position[2], uv[2], color[4] per vertex)
+    /// * `index_data` - Index data as raw bytes (u32 indices)
+    /// * `screen_size` - Screen dimensions in pixels
+    pub fn set_ui_data(&self, vertex_data: Vec<u8>, index_data: Vec<u8>, screen_size: [f32; 2]) {
+        *self.ui_data.borrow_mut() = Some(UiDrawData {
+            vertex_data,
+            index_data,
+            screen_size,
+            index_count: 0, // Will be calculated
+        });
+    }
+}
+
+/// UI draw data for rendering.
+pub struct UiDrawData {
+    pub vertex_data: Vec<u8>,
+    pub index_data: Vec<u8>,
+    pub screen_size: [f32; 2],
+    pub index_count: u32,
 }
