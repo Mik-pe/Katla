@@ -23,6 +23,8 @@ pub struct MaterialBuilder {
     color_format: Option<ImageFormat>,
     depth_format: Option<ImageFormat>,
     push_constant_ranges: Vec<vk::PushConstantRange>,
+    /// Use UI-style texture layout (sampled image, sampler, sampled image)
+    ui_texture_layout: bool,
 }
 
 impl MaterialBuilder {
@@ -42,6 +44,7 @@ impl MaterialBuilder {
             color_format: None,
             depth_format: None,
             push_constant_ranges: Vec::new(),
+            ui_texture_layout: false,
         }
     }
 
@@ -163,6 +166,17 @@ impl MaterialBuilder {
         )
         .unwrap();
         self.fragment_shader = Some(fragment_shader);
+        self
+    }
+
+    /// Use a UI-style texture descriptor layout.
+    ///
+    /// This creates a layout suitable for UI rendering:
+    /// - binding 0: SAMPLED_IMAGE (font atlas)
+    /// - binding 1: SAMPLER
+    /// - binding 2: SAMPLED_IMAGE (viewport texture)
+    pub fn with_ui_texture_layout(mut self) -> Self {
+        self.ui_texture_layout = true;
         self
     }
 
@@ -620,28 +634,54 @@ impl MaterialBuilder {
             .fragment_shader
             .ok_or(MaterialBuildError::MissingFragmentShader)?;
 
-        // Legacy single-set layout with uniform buffers
-        let desc_layout = DescriptorLayoutBuilder::new()
-            .add_binding(
-                0,
-                vk::DescriptorType::UNIFORM_BUFFER,
-                vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT,
-                1,
-            )
-            .add_binding(
-                1,
-                vk::DescriptorType::SAMPLED_IMAGE,
-                vk::ShaderStageFlags::FRAGMENT,
-                1,
-            )
-            .add_binding(
-                2,
-                vk::DescriptorType::SAMPLER,
-                vk::ShaderStageFlags::FRAGMENT,
-                1,
-            )
-            .build(&self.context.device)
-            .map_err(|e| MaterialBuildError::DescriptorLayoutFailed(format!("{:?}", e)))?;
+        // Create descriptor layout based on configuration
+        let desc_layout = if self.ui_texture_layout {
+            // UI texture layout: font atlas (sampled image), sampler, viewport texture (sampled image)
+            DescriptorLayoutBuilder::new()
+                .add_binding(
+                    0,
+                    vk::DescriptorType::SAMPLED_IMAGE,
+                    vk::ShaderStageFlags::FRAGMENT,
+                    1,
+                )
+                .add_binding(
+                    1,
+                    vk::DescriptorType::SAMPLER,
+                    vk::ShaderStageFlags::FRAGMENT,
+                    1,
+                )
+                .add_binding(
+                    2,
+                    vk::DescriptorType::SAMPLED_IMAGE,
+                    vk::ShaderStageFlags::FRAGMENT,
+                    1,
+                )
+                .build(&self.context.device)
+                .map_err(|e| MaterialBuildError::DescriptorLayoutFailed(format!("{:?}", e)))?
+        } else {
+            // Legacy single-set layout with uniform buffers
+            DescriptorLayoutBuilder::new()
+                .add_binding(
+                    0,
+                    vk::DescriptorType::UNIFORM_BUFFER,
+                    vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT,
+                    1,
+                )
+                .add_binding(
+                    1,
+                    vk::DescriptorType::SAMPLED_IMAGE,
+                    vk::ShaderStageFlags::FRAGMENT,
+                    1,
+                )
+                .add_binding(
+                    2,
+                    vk::DescriptorType::SAMPLER,
+                    vk::ShaderStageFlags::FRAGMENT,
+                    1,
+                )
+                .build(&self.context.device)
+                .map_err(|e| MaterialBuildError::DescriptorLayoutFailed(format!("{:?}", e)))?
+        };
 
         // Always use builder's formats for dynamic rendering (Vulkan 1.3)
         let color_format = self.color_format;

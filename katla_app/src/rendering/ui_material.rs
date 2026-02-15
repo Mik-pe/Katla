@@ -63,6 +63,7 @@ impl UiMaterial {
         let pipeline = MaterialBuilder::new(context)
             .with_vertex_binding(vertex_binding)
             .with_wgsl_shader(Path::new("resources/shaders/ui/ui.wgsl"))
+            .with_ui_texture_layout()  // Use UI-style descriptor layout
             .with_alpha_blending(true)
             .with_depth_test(false)
             .with_depth_write(false)

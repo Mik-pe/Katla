@@ -111,7 +111,8 @@ impl EditorUI {
         frame_count: usize,
     ) {
         let screen_size = ui.screen_size();
-        let padding = 4.0;
+        let padding = 4.0;  // Inner padding for content
+        let border_width = 1.0;  // Border between panels
         let toolbar_height = 32.0;
         let status_bar_height = 24.0;
         let left_panel_width = 220.0;
@@ -120,24 +121,48 @@ impl EditorUI {
         // === TOOLBAR (top) ===
         self.build_toolbar(ui, screen_size, toolbar_height, padding);
 
+        // Panel Y range (between toolbar and status bar)
+        let panel_top = toolbar_height + border_width;
+        let panel_bottom = screen_size.y() - status_bar_height - border_width;
+        let panel_height = panel_bottom - panel_top;
+
         // === LEFT PANEL: Entity Hierarchy ===
         let left_panel_bounds = Rect2D::from_origin_size(
-            Vec2::new(0.0, toolbar_height + padding),
-            Vec2::new(left_panel_width, screen_size.y() - toolbar_height - status_bar_height - padding * 2.0),
+            Vec2::new(0.0, panel_top),
+            Vec2::new(left_panel_width, panel_height),
         );
         self.build_hierarchy_panel(ui, entities, left_panel_bounds);
 
+        // Left panel right border
+        ui.draw_rect(
+            Rect2D::from_origin_size(
+                Vec2::new(left_panel_width, panel_top),
+                Vec2::new(border_width, panel_height),
+            ),
+            Color::new(0.3, 0.3, 0.3, 1.0),
+        );
+
         // === RIGHT PANEL: Properties Inspector ===
+        let right_panel_x = screen_size.x() - right_panel_width;
         let right_panel_bounds = Rect2D::from_origin_size(
-            Vec2::new(screen_size.x() - right_panel_width, toolbar_height + padding),
-            Vec2::new(right_panel_width, screen_size.y() - toolbar_height - status_bar_height - padding * 2.0),
+            Vec2::new(right_panel_x, panel_top),
+            Vec2::new(right_panel_width, panel_height),
         );
         self.build_inspector_panel(ui, entities, right_panel_bounds);
 
+        // Right panel left border
+        ui.draw_rect(
+            Rect2D::from_origin_size(
+                Vec2::new(right_panel_x - border_width, panel_top),
+                Vec2::new(border_width, panel_height),
+            ),
+            Color::new(0.3, 0.3, 0.3, 1.0),
+        );
+
         // === CENTER: Viewport Area ===
         let viewport_bounds = Rect2D::new(
-            Vec2::new(left_panel_width + padding, toolbar_height + padding),
-            Vec2::new(screen_size.x() - right_panel_width - padding, screen_size.y() - status_bar_height - padding),
+            Vec2::new(left_panel_width + border_width, panel_top),
+            Vec2::new(right_panel_x - border_width, panel_bottom),
         );
         self.build_viewport(ui, viewport_bounds);
 
