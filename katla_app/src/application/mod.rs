@@ -54,6 +54,10 @@ pub struct Application {
     resources: ResourceManager, // Centralized resource paths
     /// Skeleton buffers for animated meshes, indexed by entity ID
     skeleton_buffers: HashMap<katla_ecs::EntityId, Rc<RefCell<SkeletonBuffer>>>,
+    /// Immediate mode UI context
+    ui_context: katla_ui::UiContext,
+    /// Debug overlay UI
+    debug_overlay: crate::ui::DebugOverlay,
 }
 
 impl ApplicationHandler for Application {
@@ -334,6 +338,18 @@ impl ApplicationHandler for Application {
                 let pressed = matches!(state, ElementState::Pressed);
                 self.world.get_input_mut().set_action_state(action, pressed);
             }
+
+            // Pass mouse button to UI
+            let ui_button = match button {
+                winit::event::MouseButton::Left => Some(katla_ui::input::mouse_button::LEFT),
+                winit::event::MouseButton::Right => Some(katla_ui::input::mouse_button::RIGHT),
+                winit::event::MouseButton::Middle => Some(katla_ui::input::mouse_button::MIDDLE),
+                _ => None,
+            };
+            if let Some(btn) = ui_button {
+                let pressed = matches!(state, ElementState::Pressed);
+                self.ui_context.input.set_mouse_button(btn, pressed);
+            }
         }
 
         if let Some(_renderer) = &mut self.renderer {
@@ -360,6 +376,25 @@ impl ApplicationHandler for Application {
                         }
                     }
                 }
+                WindowEvent::CursorMoved { position, .. } => {
+                    // Update UI mouse position
+                    self.ui_context.input.set_mouse_pos(Vec2::new(
+                        position.x as f32,
+                        position.y as f32,
+                    ));
+                }
+                WindowEvent::MouseWheel { delta, .. } => {
+                    // Update UI scroll delta
+                    let scroll = match delta {
+                        winit::event::MouseScrollDelta::LineDelta(x, y) => {
+                            Vec2::new(x * 20.0, y * 20.0) // Scale for UI
+                        }
+                        winit::event::MouseScrollDelta::PixelDelta(pos) => {
+                            Vec2::new(pos.x as f32, pos.y as f32)
+                        }
+                    };
+                    self.ui_context.input.scroll_delta = scroll;
+                }
                 WindowEvent::CloseRequested => {
                     event_loop.exit();
                 }
@@ -371,6 +406,19 @@ impl ApplicationHandler for Application {
                         if let Some(action) = self.input_mapper.get_action(&binding) {
                             let pressed = matches!(event.state, ElementState::Pressed);
                             self.world.get_input_mut().set_action_state(action, pressed);
+                        }
+
+                        // Pass keyboard input to UI
+                        let ui_key = Self::winit_to_ui_key(keycode);
+                        if let Some(key) = ui_key {
+                            match event.state {
+                                ElementState::Pressed => {
+                                    self.ui_context.input.add_key_press(key);
+                                }
+                                ElementState::Released => {
+                                    self.ui_context.input.add_key_release(key);
+                                }
+                            }
                         }
 
                         if event.state == ElementState::Pressed {
@@ -389,6 +437,8 @@ impl ApplicationHandler for Application {
                 WindowEvent::ModifiersChanged(modifiers) => {
                     self.current_modifiers = modifiers.state();
                 }
+                // Note: ReceivedCharacter was removed in winit 0.30
+                // Text input handling will need to be added later if needed
                 WindowEvent::RedrawRequested => {
                     self.timer.add_timestamp();
 
@@ -402,6 +452,9 @@ impl ApplicationHandler for Application {
 
                     // Render using render graph
                     self.render_with_render_graph();
+
+                    // Render debug UI overlay
+                    self.render_debug_ui(dt);
 
                     // Handle max_frames limit: exit after rendering specified number of frames
                     if let Some(max) = self.info.max_frames {
@@ -473,6 +526,34 @@ impl ApplicationHandler for Application {
 impl Application {
     pub fn init(&mut self) {
         // Logger is now initialized in main() before building the application
+    }
+
+    /// Convert winit KeyCode to UI KeyCode.
+    fn winit_to_ui_key(keycode: KeyCode) -> Option<katla_ui::input::KeyCode> {
+        use katla_ui::input::KeyCode as UiKey;
+        Some(match keycode {
+            KeyCode::ShiftLeft | KeyCode::ShiftRight => UiKey::Shift,
+            KeyCode::ControlLeft | KeyCode::ControlRight => UiKey::Control,
+            KeyCode::AltLeft | KeyCode::AltRight => UiKey::Alt,
+            KeyCode::SuperLeft | KeyCode::SuperRight => UiKey::Super,
+            KeyCode::Tab => UiKey::Tab,
+            KeyCode::ArrowLeft => UiKey::ArrowLeft,
+            KeyCode::ArrowRight => UiKey::ArrowRight,
+            KeyCode::ArrowUp => UiKey::ArrowUp,
+            KeyCode::ArrowDown => UiKey::ArrowDown,
+            KeyCode::Home => UiKey::Home,
+            KeyCode::End => UiKey::End,
+            KeyCode::PageUp => UiKey::PageUp,
+            KeyCode::PageDown => UiKey::PageDown,
+            KeyCode::Enter | KeyCode::NumpadEnter => UiKey::Enter,
+            KeyCode::Escape => UiKey::Escape,
+            KeyCode::Backspace => UiKey::Backspace,
+            KeyCode::Delete => UiKey::Delete,
+            KeyCode::Insert => UiKey::Insert,
+            KeyCode::Space => UiKey::Space,
+            KeyCode::KeyA => UiKey::A,
+            _ => return None,
+        })
     }
 
     /// Setup the render graph with multiple framebuffers (one per swapchain image).
@@ -616,5 +697,31 @@ impl Application {
                 buffer.borrow_mut().upload(&joint_matrices);
             }
         }
+    }
+
+    /// Render debug UI overlay with stats and controls.
+    fn render_debug_ui(&mut self, dt: f32) {
+        let screen_size = if let Some(ref window) = self.window {
+            let size = window.inner_size();
+            Vec2::new(size.width as f32, size.height as f32)
+        } else {
+            Vec2::new(1920.0, 1080.0)
+        };
+
+        // Calculate stats
+        let fps = if dt > 0.0 { 1.0 / dt } else { 0.0 };
+        let entity_count = self.world.entity_count();
+
+        // Render debug overlay using the UI module
+        crate::ui::DebugOverlay::render(
+            &mut self.ui_context,
+            screen_size,
+            fps,
+            self.frame_count,
+            entity_count,
+        );
+
+        // Clear input state for next frame
+        self.ui_context.input.clear_frame_state();
     }
 }

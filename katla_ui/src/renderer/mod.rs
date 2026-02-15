@@ -5,7 +5,7 @@
 //! # Status
 //!
 //! This is a skeleton implementation. The UI logic is complete and testable,
-//! but the Vulkan integration is a work in progress due to ash version compatibility.
+//! but the Vulkan integration is a work in progress.
 //! The full implementation will include:
 //! - UI-specific Vulkan pipeline with alpha blending
 //! - Vertex/index buffer management
@@ -14,7 +14,8 @@
 use std::rc::Rc;
 
 use katla_math::Vec2;
-use katla_vulkan::VulkanContext;
+use katla_vulkan::{CommandBuffer, VulkanContext};
+use katla_vulkan::render_graph::types::ImageFormat;
 
 use crate::draw_list::DrawList;
 
@@ -36,9 +37,8 @@ impl UiRenderer {
     }
 
     /// Create the graphics pipeline.
-    pub fn create_pipeline(&mut self, _color_format: ash::vk::Format) -> Result<(), UiRenderError> {
+    pub fn create_pipeline(&mut self, _color_format: ImageFormat) -> Result<(), UiRenderError> {
         // TODO: Implement pipeline creation
-        // This requires ash version matching with katla_vulkan
         Ok(())
     }
 
@@ -53,7 +53,7 @@ impl UiRenderer {
     /// Currently a placeholder - logs draw stats for debugging.
     pub fn render(
         &mut self,
-        _cmd: ash::vk::CommandBuffer,
+        _cmd: &CommandBuffer,
         draw_list: &DrawList,
         screen_size: Vec2,
     ) {

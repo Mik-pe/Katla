@@ -1301,6 +1301,7 @@ dependencies = [
  "itertools 0.14.0",
  "katla_ecs",
  "katla_math",
+ "katla_ui",
  "katla_vulkan",
  "log",
  "notify",
@@ -1338,7 +1339,6 @@ dependencies = [
 name = "katla_ui"
 version = "0.1.0"
 dependencies = [
- "ash",
  "fontdue",
  "katla_math",
  "katla_vulkan",

@@ -94,6 +94,8 @@ impl ApplicationBuilder {
             frame_count: 0,
             resources,
             skeleton_buffers: HashMap::new(),
+            ui_context: katla_ui::UiContext::new(),
+            debug_overlay: crate::ui::DebugOverlay::new(),
         };
 
         Ok((app, event_loop))

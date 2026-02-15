@@ -6,7 +6,6 @@ edition = "2021"
 [dependencies]
 katla_math = { path = "../katla_math" }
 katla_vulkan = { path = "../katla_vulkan" }
-ash = "0.38"
 log = "0.4"
 
 # Font handling
