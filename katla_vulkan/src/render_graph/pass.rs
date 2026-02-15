@@ -171,6 +171,56 @@ impl PassBuilder {
         self
     }
 
+    /// Mark a buffer resource as storage read for compute passes.
+    ///
+    /// This is for compute shader reads from storage buffers (SSBOs).
+    pub fn read_storage(&mut self, resource_id: ResourceId) -> &mut Self {
+        self.inputs.push(resource_id);
+
+        let usage = ResourceUsage::new(resource_id).with_read(
+            crate::types::Access::ShaderRead,
+            crate::types::PipelineStage::ComputeShader,
+        );
+        self.usages.push(usage);
+        self
+    }
+
+    /// Mark a buffer resource as storage write for compute passes.
+    ///
+    /// This is for compute shader writes to storage buffers (SSBOs).
+    pub fn write_storage(&mut self, resource_id: ResourceId) -> &mut Self {
+        self.outputs.push(resource_id);
+
+        let usage = ResourceUsage::new(resource_id).with_write(
+            crate::types::Access::ShaderWrite,
+            crate::types::PipelineStage::ComputeShader,
+        );
+        self.usages.push(usage);
+        self
+    }
+
+    /// Mark a buffer resource as read_write storage for compute passes.
+    ///
+    /// This is for compute shader read-write access to storage buffers (SSBOs).
+    /// Modern GPUs handle single-buffer read_write well (Unreal Niagara, Unity VFX Graph).
+    pub fn read_write_storage(&mut self, resource_id: ResourceId) -> &mut Self {
+        self.inputs.push(resource_id);
+        self.outputs.push(resource_id);
+
+        // Combined read/write usage for compute
+        let usage = ResourceUsage::new(resource_id)
+            .with_read(
+                crate::types::Access::ShaderRead,
+                crate::types::PipelineStage::ComputeShader,
+            )
+            .with_write(
+                crate::types::Access::ShaderWrite,
+                crate::types::PipelineStage::ComputeShader,
+            );
+        self.usages.push(usage);
+        self
+    }
+
     /// Specify a clear color value for a color attachment.
     /// This should be called after write() for the resource you want to clear.
     pub fn clear_color(&mut self, resource_id: ResourceId, color: [f32; 4]) -> &mut Self {
@@ -503,5 +553,41 @@ mod tests {
         assert_eq!(pass.extent(), Some(Extent2D::new(1920, 1080)));
         assert_eq!(pass.bind_point(), PipelineBindPoint::Graphics);
         assert_eq!(pass.usages().len(), 2);
+    }
+
+    #[test]
+    fn test_pass_builder_storage_buffer_methods() {
+        let mut builder = PassBuilder::new("compute_pass");
+
+        let buffer_id = ResourceId(0);
+
+        builder
+            .bind_point(PipelineBindPoint::Compute)
+            .read_write_storage(buffer_id);
+
+        assert_eq!(builder.bind_point, PipelineBindPoint::Compute);
+        assert!(builder.inputs.contains(&buffer_id));
+        assert!(builder.outputs.contains(&buffer_id));
+        assert_eq!(builder.usages.len(), 1);
+    }
+
+    #[test]
+    fn test_pass_builder_compute_pass() {
+        let mut builder = PassBuilder::new("particle_sim");
+
+        let particle_buffer = ResourceId(0);
+        let config_buffer = ResourceId(1);
+
+        builder
+            .bind_point(PipelineBindPoint::Compute)
+            .read_storage(config_buffer)
+            .read_write_storage(particle_buffer);
+
+        let pass = builder.build();
+
+        assert_eq!(pass.bind_point(), PipelineBindPoint::Compute);
+        assert!(pass.inputs().contains(&config_buffer));
+        assert!(pass.inputs().contains(&particle_buffer));
+        assert!(pass.outputs().contains(&particle_buffer));
     }
 }
