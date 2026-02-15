@@ -276,6 +276,15 @@ impl ApplicationHandler for Application {
             self.world
                 .insert_resource(crate::components::AmbientLight::gray(0.15)); // 15% gray ambient
 
+            // Create particle emitter
+            let _particle_emitter = crate::entities::create_particle_emitter(
+                &mut self.world,
+                renderer.context.clone(),
+                Vec3::new(0.0, 10.0, 0.0), // Above the fox
+                100.0,                       // 100 particles per second
+            );
+            info!("Created particle emitter entity");
+
             self.window = Some(window);
 
             // Create checkerboard material from template (template loaded from TOML)

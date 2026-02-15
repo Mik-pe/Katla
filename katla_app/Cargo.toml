@@ -10,6 +10,7 @@ katla_vulkan = { path = "../katla_vulkan" }
 katla_ecs = { path = "../katla_ecs" }
 katla_ui = { path = "../katla_ui" }
 ash = "^0.38.0"
+bytemuck = { version = "*", features = ["derive"] }
 byteorder = "1.3"
 winit = "^0.30"
 image = "^0.25"

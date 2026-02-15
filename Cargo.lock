@@ -1308,6 +1308,7 @@ version = "0.1.0"
 dependencies = [
  "approx",
  "ash",
+ "bytemuck",
  "byteorder",
  "clap",
  "env_logger",
