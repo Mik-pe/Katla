@@ -12,7 +12,7 @@ pub use render_graph::resource::{
 pub use render_graph::*;
 pub use rendering::{
     registry::AssetRegistry,
-    types::{DrawCall, DrawList, FrameUniforms, InstanceData, MaterialHandle, MeshHandle, SkeletonHandle},
+    types::{DrawCall, DrawList, FrameUniforms, InstanceData, MaterialHandle, MeshHandle, ParticleDispatch, SkeletonHandle},
 };
 pub use sync::{
     VkDescriptorPool, VkDescriptorSet, VkDescriptorSetLayout, VkFence, VkFramebuffer, VkImage,
@@ -1276,13 +1276,70 @@ impl VulkanRenderer {
         }
 
         // Set the draw list for this frame
-        graph.set_draw_list(draw_list);
+        graph.set_draw_list(draw_list.clone());
 
         let mut command_buffer = self.frame_context.command_buffers[image_index].clone();
         command_buffer.begin_command(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT);
 
         // Set frame index for UI buffer selection (cycles through frames in flight)
         self.ui_frame_index.set(image_index % FRAMES_IN_FLIGHT);
+
+        // === DISPATCH PARTICLE COMPUTE SHADERS BEFORE RENDER GRAPH ===
+        // This runs particle simulation on GPU before any rendering
+        if !draw_list.particle_dispatches.is_empty() {
+            for particle in &draw_list.particle_dispatches {
+                // Bind compute pipeline
+                unsafe {
+                    self.context.device.cmd_bind_pipeline(
+                        command_buffer.vk_command_buffer(),
+                        vk::PipelineBindPoint::COMPUTE,
+                        particle.pipeline,
+                    );
+
+                    // Bind descriptor set
+                    self.context.device.cmd_bind_descriptor_sets(
+                        command_buffer.vk_command_buffer(),
+                        vk::PipelineBindPoint::COMPUTE,
+                        particle.pipeline_layout,
+                        0,
+                        &[particle.descriptor_set],
+                        &[],
+                    );
+
+                    // Push frame data constants
+                    self.context.device.cmd_push_constants(
+                        command_buffer.vk_command_buffer(),
+                        particle.pipeline_layout,
+                        vk::ShaderStageFlags::COMPUTE,
+                        0,
+                        bytemuck::cast_slice(&particle.frame_data),
+                    );
+
+                    // Dispatch compute workgroups
+                    self.context.device.cmd_dispatch(
+                        command_buffer.vk_command_buffer(),
+                        particle.workgroup_count,
+                        1,
+                        1,
+                    );
+                }
+            }
+
+            // Barrier: compute write -> vertex read for rendering
+            let memory_barriers = [vk::MemoryBarrier2KHR::default()
+                .src_stage_mask(vk::PipelineStageFlags2::COMPUTE_SHADER)
+                .src_access_mask(vk::AccessFlags2::SHADER_WRITE)
+                .dst_stage_mask(vk::PipelineStageFlags2::VERTEX_SHADER)
+                .dst_access_mask(vk::AccessFlags2::SHADER_READ)];
+
+            let dep_info = vk::DependencyInfoKHR::default().memory_barriers(&memory_barriers);
+
+            unsafe {
+                self.context
+                    .device
+                    .cmd_pipeline_barrier2(command_buffer.vk_command_buffer(), &dep_info);
+            }
+        }
 
         // Execute the render graph with the current image index
         graph.execute(

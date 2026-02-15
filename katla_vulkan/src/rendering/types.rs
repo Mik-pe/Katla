@@ -311,12 +311,35 @@ impl DrawCall {
 pub struct DrawList {
     /// The draw calls in this list.
     pub draws: Vec<DrawCall>,
+    /// Particle compute dispatches to run before geometry pass.
+    pub particle_dispatches: Vec<ParticleDispatch>,
+}
+
+/// Data needed to dispatch a particle compute shader.
+///
+/// This is collected from ParticleEmitter components and passed
+/// to the renderer for GPU dispatch.
+#[derive(Clone, Debug)]
+pub struct ParticleDispatch {
+    /// Compute pipeline handle
+    pub pipeline: ash::vk::Pipeline,
+    /// Pipeline layout
+    pub pipeline_layout: ash::vk::PipelineLayout,
+    /// Descriptor set for particle buffer binding
+    pub descriptor_set: ash::vk::DescriptorSet,
+    /// Frame data: (delta_time, emit_count, max_particles, random_seed)
+    pub frame_data: [f32; 4],
+    /// Number of workgroups to dispatch
+    pub workgroup_count: u32,
 }
 
 impl DrawList {
     /// Create a new empty draw list.
     pub fn new() -> Self {
-        Self { draws: Vec::new() }
+        Self {
+            draws: Vec::new(),
+            particle_dispatches: Vec::new(),
+        }
     }
 
     /// Add a draw call to the list.
@@ -324,14 +347,21 @@ impl DrawList {
         self.draws.push(draw);
     }
 
+    /// Add a particle dispatch to the list.
+    pub fn push_particle(&mut self, dispatch: ParticleDispatch) {
+        self.particle_dispatches.push(dispatch);
+    }
+
     /// Extend this list with all draws from another list.
     pub fn extend(&mut self, other: &mut DrawList) {
         self.draws.append(&mut other.draws);
+        self.particle_dispatches.append(&mut other.particle_dispatches);
     }
 
     /// Clear all draw calls from the list.
     pub fn clear(&mut self) {
         self.draws.clear();
+        self.particle_dispatches.clear();
     }
 
     /// Get the number of draw calls in the list.
@@ -342,6 +372,11 @@ impl DrawList {
     /// Check if the list is empty.
     pub fn is_empty(&self) -> bool {
         self.draws.is_empty()
+    }
+
+    /// Check if there are particle dispatches.
+    pub fn has_particles(&self) -> bool {
+        !self.particle_dispatches.is_empty()
     }
 
     /// Get an iterator over the draw calls.

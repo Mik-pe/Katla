@@ -6,24 +6,38 @@
 use ash::vk;
 use katla_ecs::Component;
 use katla_vulkan::{
-    BufferDescriptorSet, ComputePipeline, EmitterConfig, ParticleBuffer, ParticlePushConstants,
+    BufferDescriptorSet, ComputePipeline, DeviceAddressBuffer, EmitterConfig, ParticleBuffer,
+    ParticlePushConstants,
 };
+
+/// Frame data for compute shader (must match shader struct)
+#[repr(C)]
+#[derive(Clone, Copy, Debug, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct FrameData {
+    pub delta_time: f32,
+    pub emit_count: u32,
+    pub max_particles: u32,
+    pub random_seed: u32,
+}
 
 /// GPU particle emitter component.
 ///
 /// This component manages a particle system that runs entirely on the GPU.
 /// It holds:
 /// - ParticleBuffer: Storage for particle data (positions, velocities, lifetimes, etc.)
+/// - FrameDataBuffer: Uniform buffer for per-frame simulation data
 /// - ComputePipeline: Compute shader for particle simulation
-/// - DescriptorSet: For binding particle buffer to compute shader
+/// - DescriptorSet: For binding buffers to compute shader
 /// - Config: Emitter settings (position, velocity, spawn rate, etc.)
 #[derive(Component)]
 pub struct ParticleEmitter {
     /// GPU buffer containing particle data
     pub particle_buffer: ParticleBuffer,
+    /// Uniform buffer for frame data (delta_time, emit_count, etc.)
+    pub frame_data_buffer: DeviceAddressBuffer,
     /// Compute pipeline for particle simulation
     pub compute_pipeline: ComputePipeline,
-    /// Descriptor set for binding particle buffer
+    /// Descriptor set for binding buffers
     pub descriptor_set: BufferDescriptorSet,
     /// Emitter configuration
     pub config: EmitterConfig,
@@ -41,15 +55,9 @@ pub struct ParticleEmitter {
 
 impl ParticleEmitter {
     /// Create a new particle emitter.
-    ///
-    /// # Arguments
-    /// * `particle_buffer` - GPU buffer for particle storage
-    /// * `compute_pipeline` - Compute pipeline for simulation
-    /// * `descriptor_set` - Descriptor set for buffer binding
-    /// * `config` - Initial emitter configuration
-    /// * `emit_rate` - Particles per second to emit
     pub fn new(
         particle_buffer: ParticleBuffer,
+        frame_data_buffer: DeviceAddressBuffer,
         compute_pipeline: ComputePipeline,
         descriptor_set: BufferDescriptorSet,
         config: EmitterConfig,
@@ -57,6 +65,7 @@ impl ParticleEmitter {
     ) -> Self {
         Self {
             particle_buffer,
+            frame_data_buffer,
             compute_pipeline,
             descriptor_set,
             config,
@@ -71,14 +80,11 @@ impl ParticleEmitter {
     /// Update the emitter for a frame.
     ///
     /// This calculates how many particles to emit based on delta time
-    /// and the emit rate, and updates the push constants.
+    /// and the emit rate, and updates the frame data buffer.
     ///
     /// # Arguments
     /// * `delta_time` - Time since last frame in seconds
-    ///
-    /// # Returns
-    /// Push constants ready for the compute dispatch
-    pub fn update(&mut self, delta_time: f32) -> ParticlePushConstants {
+    pub fn update(&mut self, delta_time: f32) {
         // Accumulate time for emission
         if self.is_active {
             self.emit_accumulator += delta_time * self.emit_rate;
@@ -95,12 +101,17 @@ impl ParticleEmitter {
         let max_particles = self.particle_buffer.capacity() as u32;
         self.alive_count = self.alive_count.min(max_particles);
 
-        ParticlePushConstants::new(delta_time, emit_count, max_particles, self.random_seed)
+        // Update frame data buffer
+        let frame_data = FrameData {
+            delta_time,
+            emit_count,
+            max_particles,
+            random_seed: self.random_seed,
+        };
+        self.frame_data_buffer.write(std::slice::from_ref(&frame_data));
     }
 
     /// Get the workgroup count for compute dispatch.
-    ///
-    /// Uses workgroup size of 256 (matching shader).
     pub fn workgroup_count(&self) -> u32 {
         katla_vulkan::calculate_workgroup_count(self.particle_buffer.capacity() as u32, 256)
     }
@@ -148,21 +159,18 @@ mod tests {
 
     #[test]
     fn test_workgroup_calculation() {
-        // 64K particles with workgroup size 256 = 256 workgroups
         let count = katla_vulkan::calculate_workgroup_count(MAX_PARTICLES as u32, 256);
         assert_eq!(count, 256);
     }
 
     #[test]
     fn test_emit_accumulator() {
-        // Create a simple test for the emit logic
-        let emit_rate = 100.0; // 100 particles per second
-        let delta_time = 0.016; // ~60 FPS
+        let emit_rate = 100.0;
+        let delta_time = 0.016;
 
         let mut accumulator = 0.0_f32;
         let mut total_emitted = 0u32;
 
-        // Simulate 1 second
         for _ in 0..60 {
             accumulator += delta_time * emit_rate;
             let emit_count = accumulator.floor() as u32;
@@ -170,13 +178,12 @@ mod tests {
             total_emitted += emit_count;
         }
 
-        // Should emit approximately 100 particles in 1 second
         assert!(total_emitted >= 95 && total_emitted <= 105);
     }
 
     #[test]
-    fn test_push_constants_size() {
+    fn test_frame_data_size() {
         use std::mem::size_of;
-        assert_eq!(size_of::<ParticlePushConstants>(), 16);
+        assert_eq!(size_of::<FrameData>(), 16);
     }
 }

@@ -678,6 +678,24 @@ impl Application {
             }
         }
 
+        // Collect particle dispatches from particle emitters
+        use katla_vulkan::ParticleDispatch;
+        let delta_time = self.timer.get_delta() as f32;
+        for (_entity, emitter) in self.world.query::<&mut crate::components::ParticleEmitter>() {
+            // Update emitter (updates frame data buffer)
+            emitter.update(delta_time);
+
+            let dispatch = ParticleDispatch {
+                pipeline: emitter.pipeline(),
+                pipeline_layout: emitter.pipeline_layout(),
+                descriptor_set: emitter.descriptor_set(),
+                frame_data: [0.0; 4], // Frame data is now in uniform buffer, not used
+                workgroup_count: emitter.workgroup_count(),
+            };
+
+            draw_list.push_particle(dispatch);
+        }
+
         // Render using the draw list
         if let Err(e) = renderer.render_frame(draw_list) {
             match e {
