@@ -303,10 +303,7 @@ impl MaterialRegistry {
     ///     }
     /// }
     /// ```
-    pub fn check_hot_reload(
-        &mut self,
-        context: Rc<VulkanContext>,
-    ) -> Result<usize, MaterialError> {
+    pub fn check_hot_reload(&mut self, context: Rc<VulkanContext>) -> Result<usize, MaterialError> {
         // Collect all modified paths first, releasing the watcher borrow
         let modified_paths: Vec<PathBuf> = if self.file_watcher.is_some() {
             let watcher = self.file_watcher.as_ref().unwrap();
@@ -370,11 +367,9 @@ impl MaterialRegistry {
                 builder = builder.with_vertex_binding(vertex_binding);
 
                 // Build with the existing descriptor set layout to preserve compatibility
-                let new_pipeline = builder
-                    .build_with_desc_layout(desc_layout)
-                    .map_err(|e| {
-                        MaterialError::InvalidDescriptor(format!("Pipeline build failed: {:?}", e))
-                    })?;
+                let new_pipeline = builder.build_with_desc_layout(desc_layout).map_err(|e| {
+                    MaterialError::InvalidDescriptor(format!("Pipeline build failed: {:?}", e))
+                })?;
 
                 // Update the existing template's pipeline in-place
                 if let Some(template) = self.templates.get(&name) {

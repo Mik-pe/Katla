@@ -440,7 +440,11 @@ impl MaterialTemplateBuilder {
         self.build_internal(true, true)
     }
 
-    fn build_internal(self, use_storage: bool, use_skinned: bool) -> Result<MaterialTemplate, MaterialError> {
+    fn build_internal(
+        self,
+        use_storage: bool,
+        use_skinned: bool,
+    ) -> Result<MaterialTemplate, MaterialError> {
         let descriptor = self.descriptor.ok_or_else(|| {
             MaterialError::InvalidDescriptor("No descriptor provided".to_string())
         })?;

@@ -63,3 +63,4 @@ pub use draw_list::{DrawCommand, DrawList, TextureId, UiVertex};
 pub use input::UiInputState;
 pub use renderer::{UiRenderError, UiRenderer};
 pub use style::{UiStyle, UiTheme};
+pub use text::{CachedGlyph, FontError, FontId, FontSystem};

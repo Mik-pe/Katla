@@ -7,9 +7,10 @@ use std::collections::HashMap;
 
 use katla_math::{Color, Rect2D, Vec2};
 
-use crate::draw_list::DrawList;
+use crate::draw_list::{DrawList, TextureId};
 use crate::input::UiInputState;
 use crate::style::UiStyle;
+use crate::text::{FontId, FontSystem};
 
 /// ID type for UI elements.
 pub type WidgetId = u64;
@@ -27,6 +28,10 @@ pub struct UiContext {
     pub input: UiInputState,
     /// Style configuration.
     pub style: UiStyle,
+    /// Font system for text rendering.
+    pub fonts: FontSystem,
+    /// Currently active font.
+    current_font: FontId,
     /// Current screen size.
     screen_size: Vec2,
     /// Stack of clipping rectangles.
@@ -69,6 +74,8 @@ impl UiContext {
             draw_list: DrawList::new(),
             input: UiInputState::new(),
             style: UiStyle::dark(),
+            fonts: FontSystem::new(),
+            current_font: FontId::DEFAULT,
             screen_size: Vec2::new(0.0, 0.0),
             clip_stack: Vec::new(),
             id_stack: Vec::new(),
@@ -244,26 +251,64 @@ impl UiContext {
         self.draw_list.add_line(start, end, color, thickness);
     }
 
-    /// Draw text (placeholder - will use font system).
+    /// Draw text using the font system.
     ///
-    /// For now, this just draws a placeholder rectangle.
+    /// Text is rendered as textured quads from the font atlas.
+    /// If no font is loaded, draws placeholder rectangles.
     pub fn draw_text(&mut self, text: &str, position: Vec2, color: Color, size: f32) {
-        // Placeholder: Draw a rectangle representing text bounds
-        let width = text.len() as f32 * size * 0.5;
-        let height = size;
-        let bounds = Rect2D::from_origin_size(position, Vec2::new(width, height));
+        let mut cursor_x = position.x();
+        let cursor_y = position.y();
 
-        // Just draw an outline for now
-        self.draw_rect_border(bounds, Color::TRANSPARENT, color, 1.0);
+        for c in text.chars() {
+            // Try to get cached glyph
+            if let Some(glyph) = self.fonts.get_or_rasterize(self.current_font, c, size) {
+                // Skip space (no visual)
+                if c == ' ' {
+                    cursor_x += glyph.advance;
+                    continue;
+                }
 
-        // TODO: Implement actual text rendering with font system
-        let _ = (text, size); // Suppress unused warnings
+                // Calculate glyph position
+                let glyph_pos = Vec2::new(
+                    cursor_x + glyph.offset.x(),
+                    cursor_y + glyph.offset.y() + size, // Adjust for baseline
+                );
+
+                let bounds = Rect2D::from_origin_size(glyph_pos, glyph.size);
+
+                // Draw glyph as textured quad
+                self.draw_list.set_clip(self.clip_rect());
+                self.draw_list.add_textured_rect(
+                    bounds,
+                    glyph.uv_rect,
+                    color,
+                    TextureId::FONT_ATLAS,
+                );
+
+                cursor_x += glyph.advance;
+            } else {
+                // No glyph available - draw placeholder
+                let placeholder_size = Vec2::new(size * 0.6, size);
+                let bounds = Rect2D::from_origin_size(Vec2::new(cursor_x, cursor_y), placeholder_size);
+                self.draw_rect_border(bounds, Color::TRANSPARENT, color, 1.0);
+                cursor_x += placeholder_size.x();
+            }
+        }
     }
 
-    /// Measure text dimensions (placeholder).
+    /// Measure text dimensions.
     pub fn measure_text(&self, text: &str, size: f32) -> Vec2 {
-        // Placeholder: Rough estimate
-        Vec2::new(text.len() as f32 * size * 0.5, size)
+        self.fonts.measure_text(self.current_font, text, size)
+    }
+
+    /// Set the current font for text rendering.
+    pub fn set_font(&mut self, font_id: FontId) {
+        self.current_font = font_id;
+    }
+
+    /// Get the current font ID.
+    pub fn current_font(&self) -> FontId {
+        self.current_font
     }
 
     // -------------------------------------------------------------------------

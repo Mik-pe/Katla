@@ -147,7 +147,7 @@ impl ApplicationHandler for Application {
                 &mut self.world,
                 fox.entity,
                 &fox_model,
-                Some("Walk"), // Play "Walk" animation by default
+                Some("Run"), // Play "Walk" animation by default
             );
 
             info!("Fox model entity: {:?} with animation setup complete", fox.entity);
