@@ -6,8 +6,8 @@
 use ash::vk;
 use katla_ecs::Component;
 use katla_vulkan::{
-    BufferDescriptorSet, ComputePipeline, DeviceAddressBuffer, EmitterConfig, ParticleBuffer,
-    ParticlePushConstants,
+    BufferDescriptorSet, ComputePipeline, DeviceAddressBuffer, EmitterConfig, MaterialPipeline,
+    ParticleBuffer,
 };
 
 /// Frame data for compute shader (must match shader struct)
@@ -27,7 +27,8 @@ pub struct FrameData {
 /// - ParticleBuffer: Storage for particle data (positions, velocities, lifetimes, etc.)
 /// - FrameDataBuffer: Uniform buffer for per-frame simulation data
 /// - ComputePipeline: Compute shader for particle simulation
-/// - DescriptorSet: For binding buffers to compute shader
+/// - RenderPipeline: Graphics pipeline for billboard rendering
+/// - DescriptorSets: For binding buffers to shaders
 /// - Config: Emitter settings (position, velocity, spawn rate, etc.)
 #[derive(Component)]
 pub struct ParticleEmitter {
@@ -37,8 +38,12 @@ pub struct ParticleEmitter {
     pub frame_data_buffer: DeviceAddressBuffer,
     /// Compute pipeline for particle simulation
     pub compute_pipeline: ComputePipeline,
-    /// Descriptor set for binding buffers
-    pub descriptor_set: BufferDescriptorSet,
+    /// Compute descriptor set for buffers
+    pub compute_descriptor_set: BufferDescriptorSet,
+    /// Graphics pipeline for particle rendering
+    pub render_pipeline: MaterialPipeline,
+    /// Render descriptor set for particle buffer (set 1)
+    pub render_particle_descriptor: BufferDescriptorSet,
     /// Emitter configuration
     pub config: EmitterConfig,
     /// Accumulated time for particle emission
@@ -55,11 +60,14 @@ pub struct ParticleEmitter {
 
 impl ParticleEmitter {
     /// Create a new particle emitter.
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         particle_buffer: ParticleBuffer,
         frame_data_buffer: DeviceAddressBuffer,
         compute_pipeline: ComputePipeline,
-        descriptor_set: BufferDescriptorSet,
+        compute_descriptor_set: BufferDescriptorSet,
+        render_pipeline: MaterialPipeline,
+        render_particle_descriptor: BufferDescriptorSet,
         config: EmitterConfig,
         emit_rate: f32,
     ) -> Self {
@@ -67,7 +75,9 @@ impl ParticleEmitter {
             particle_buffer,
             frame_data_buffer,
             compute_pipeline,
-            descriptor_set,
+            compute_descriptor_set,
+            render_pipeline,
+            render_particle_descriptor,
             config,
             emit_accumulator: 0.0,
             emit_rate,
@@ -81,9 +91,6 @@ impl ParticleEmitter {
     ///
     /// This calculates how many particles to emit based on delta time
     /// and the emit rate, and updates the frame data buffer.
-    ///
-    /// # Arguments
-    /// * `delta_time` - Time since last frame in seconds
     pub fn update(&mut self, delta_time: f32) {
         // Accumulate time for emission
         if self.is_active {
@@ -116,6 +123,11 @@ impl ParticleEmitter {
         katla_vulkan::calculate_workgroup_count(self.particle_buffer.capacity() as u32, 256)
     }
 
+    /// Get the max particle count for rendering.
+    pub fn particle_count(&self) -> u32 {
+        self.particle_buffer.capacity() as u32
+    }
+
     /// Set the emitter position.
     pub fn set_position(&mut self, position: [f32; 3]) {
         self.config.position = position;
@@ -131,24 +143,30 @@ impl ParticleEmitter {
         self.is_active = active;
     }
 
-    /// Get the compute pipeline for binding.
-    pub fn pipeline(&self) -> vk::Pipeline {
+    // Compute shader bindings
+    pub fn compute_pipeline(&self) -> vk::Pipeline {
         self.compute_pipeline.vk_pipeline()
     }
 
-    /// Get the pipeline layout for binding.
-    pub fn pipeline_layout(&self) -> vk::PipelineLayout {
+    pub fn compute_layout(&self) -> vk::PipelineLayout {
         self.compute_pipeline.vk_layout()
     }
 
-    /// Get the descriptor set for binding.
-    pub fn descriptor_set(&self) -> vk::DescriptorSet {
-        self.descriptor_set.set()
+    pub fn compute_descriptor(&self) -> vk::DescriptorSet {
+        self.compute_descriptor_set.set()
     }
 
-    /// Get the particle buffer.
-    pub fn buffer(&self) -> &ParticleBuffer {
-        &self.particle_buffer
+    // Render shader bindings
+    pub fn render_pipeline(&self) -> vk::Pipeline {
+        self.render_pipeline.vk_pipeline().handle
+    }
+
+    pub fn render_layout(&self) -> vk::PipelineLayout {
+        self.render_pipeline.vk_layout()
+    }
+
+    pub fn render_particle_descriptor(&self) -> vk::DescriptorSet {
+        self.render_particle_descriptor.set()
     }
 }
 
