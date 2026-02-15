@@ -1472,8 +1472,9 @@ impl VulkanRenderer {
                 .dst_access_mask(vk::AccessFlags::TRANSFER_READ);
 
             // Transition viewport color to transfer dst
+            // Note: After first frame, viewport texture is in SHADER_READ_ONLY_OPTIMAL
             let viewport_barrier = vk::ImageMemoryBarrier::default()
-                .old_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
+                .old_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
                 .new_layout(vk::ImageLayout::TRANSFER_DST_OPTIMAL)
                 .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
                 .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
@@ -1485,13 +1486,13 @@ impl VulkanRenderer {
                     base_array_layer: 0,
                     layer_count: 1,
                 })
-                .src_access_mask(vk::AccessFlags::COLOR_ATTACHMENT_WRITE)
+                .src_access_mask(vk::AccessFlags::SHADER_READ)
                 .dst_access_mask(vk::AccessFlags::TRANSFER_WRITE);
 
             unsafe {
                 self.context.device.cmd_pipeline_barrier(
                     command_buffer.vk_command_buffer(),
-                    vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
+                    vk::PipelineStageFlags::FRAGMENT_SHADER,
                     vk::PipelineStageFlags::TRANSFER,
                     vk::DependencyFlags::empty(),
                     &[],
@@ -2346,10 +2347,11 @@ impl ViewportRenderTarget {
             let cmd_buffer = context.begin_single_time_commands();
             let cmd = cmd_buffer.vk_command_buffer();
 
-            // Transition color to color attachment optimal
+            // Transition color to shader read only (since we blit to it, not render to it)
+            // This matches the expected old_layout in the blit barrier
             let color_barrier = vk::ImageMemoryBarrier::default()
                 .old_layout(vk::ImageLayout::UNDEFINED)
-                .new_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
+                .new_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
                 .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
                 .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
                 .image(color_image)
@@ -2361,7 +2363,7 @@ impl ViewportRenderTarget {
                     layer_count: 1,
                 })
                 .src_access_mask(vk::AccessFlags::empty())
-                .dst_access_mask(vk::AccessFlags::COLOR_ATTACHMENT_READ | vk::AccessFlags::COLOR_ATTACHMENT_WRITE);
+                .dst_access_mask(vk::AccessFlags::SHADER_READ);
 
             // Transition depth to depth stencil attachment optimal
             let depth_barrier = vk::ImageMemoryBarrier::default()
@@ -2383,7 +2385,7 @@ impl ViewportRenderTarget {
             context.device.cmd_pipeline_barrier(
                 cmd,
                 vk::PipelineStageFlags::TOP_OF_PIPE,
-                vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT | vk::PipelineStageFlags::EARLY_FRAGMENT_TESTS,
+                vk::PipelineStageFlags::FRAGMENT_SHADER | vk::PipelineStageFlags::EARLY_FRAGMENT_TESTS,
                 vk::DependencyFlags::empty(),
                 &[],
                 &[],
