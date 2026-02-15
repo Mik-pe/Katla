@@ -386,6 +386,8 @@ impl ApplicationHandler for Application {
                             );
                             // Pass the actual window size to ensure swapchain uses correct extent
                             renderer.recreate_swapchain();
+                            // Also resize viewport render target
+                            let _ = renderer.init_viewport_target(new_width as u32, new_height as u32);
                         }
                     }
                 }
@@ -592,6 +594,12 @@ impl Application {
         // Initialize UI textures (512x512 font atlas)
         renderer.init_ui_textures(512, 512)
             .expect("Failed to initialize UI textures");
+
+        // Initialize viewport render target for game engine editor
+        // This creates an offscreen texture the UI can sample for the viewport panel
+        let viewport_size = self.window.as_ref().unwrap().inner_size();
+        renderer.init_viewport_target(viewport_size.width, viewport_size.height)
+            .expect("Failed to initialize viewport render target");
 
         // Setup render graph with multiple framebuffers
         renderer.setup_render_graph();

@@ -72,6 +72,10 @@ pub struct VulkanRenderer {
     ui_frame_index: std::cell::Cell<usize>,
     /// UI textures (font atlas, white texture, descriptor set).
     ui_textures: Option<UITextures>,
+    /// Offscreen render target for viewport rendering.
+    viewport_target: Option<ViewportRenderTarget>,
+    /// Viewport render graph (renders scene to viewport texture).
+    viewport_render_graph: Option<CompiledRenderGraph>,
 }
 
 const FRAMES_IN_FLIGHT: usize = 2;
@@ -119,6 +123,8 @@ impl VulkanRenderer {
             ui_buffers: Vec::new(),
             ui_frame_index: std::cell::Cell::new(0),
             ui_textures: None,
+            viewport_target: None,
+            viewport_render_graph: None,
         }
     }
 
@@ -300,7 +306,45 @@ impl VulkanRenderer {
         self.ui_textures.as_ref().map(|t| t.descriptor_set)
     }
 
+    /// Initialize or resize the viewport render target.
+    ///
+    /// This creates an offscreen render target for rendering the 3D scene
+    /// that can be sampled by the UI viewport panel.
+    pub fn init_viewport_target(&mut self, width: u32, height: u32) -> Result<(), vk::Result> {
+        let needs_resize = self.viewport_target.as_ref()
+            .map(|t| t.extent.width != width || t.extent.height != height)
+            .unwrap_or(true);
+
+        if needs_resize {
+            let old_target = self.viewport_target.take();
+            let target = ViewportRenderTarget::resize(&self.context, old_target, width, height)?;
+            self.viewport_target = Some(target);
+            info!("Viewport render target created/resized to {}x{}", width, height);
+        }
+        Ok(())
+    }
+
+    /// Get the viewport color image view for sampling.
+    pub fn viewport_color_view(&self) -> Option<vk::ImageView> {
+        self.viewport_target.as_ref().map(|t| t.color_image_view)
+    }
+
+    /// Get the viewport sampler.
+    pub fn viewport_sampler(&self) -> Option<vk::Sampler> {
+        self.viewport_target.as_ref().map(|t| t.sampler)
+    }
+
+    /// Get viewport dimensions.
+    pub fn viewport_extent(&self) -> Option<vk::Extent2D> {
+        self.viewport_target.as_ref().map(|t| t.extent)
+    }
+
     pub fn destroy(&mut self) {
+        // Destroy viewport render target
+        if let Some(target) = self.viewport_target.take() {
+            target.destroy(&self.context);
+        }
+
         // Destroy UI textures
         if let Some(textures) = self.ui_textures.take() {
             textures.destroy(&self.context);
@@ -1397,6 +1441,155 @@ impl VulkanRenderer {
             self.frame_context.depth_render_texture.image,
         )?;
 
+        // === COPY SWAPCHAIN TO VIEWPORT TEXTURE ===
+        // This allows the UI to sample the rendered scene in the viewport panel
+        if let Some(ref viewport_target) = self.viewport_target {
+            let swapchain_image = self.frame_context.swapchain_images[image_index].vk();
+            let swapchain_extent = self.frame_context.swapchain.get_extent();
+
+            // Transition swapchain to transfer src
+            let swapchain_barrier = vk::ImageMemoryBarrier::default()
+                .old_layout(vk::ImageLayout::PRESENT_SRC_KHR)
+                .new_layout(vk::ImageLayout::TRANSFER_SRC_OPTIMAL)
+                .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+                .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+                .image(swapchain_image)
+                .subresource_range(vk::ImageSubresourceRange {
+                    aspect_mask: vk::ImageAspectFlags::COLOR,
+                    base_mip_level: 0,
+                    level_count: 1,
+                    base_array_layer: 0,
+                    layer_count: 1,
+                })
+                .src_access_mask(vk::AccessFlags::COLOR_ATTACHMENT_WRITE)
+                .dst_access_mask(vk::AccessFlags::TRANSFER_READ);
+
+            // Transition viewport color to transfer dst
+            let viewport_barrier = vk::ImageMemoryBarrier::default()
+                .old_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
+                .new_layout(vk::ImageLayout::TRANSFER_DST_OPTIMAL)
+                .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+                .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+                .image(viewport_target.color_image)
+                .subresource_range(vk::ImageSubresourceRange {
+                    aspect_mask: vk::ImageAspectFlags::COLOR,
+                    base_mip_level: 0,
+                    level_count: 1,
+                    base_array_layer: 0,
+                    layer_count: 1,
+                })
+                .src_access_mask(vk::AccessFlags::COLOR_ATTACHMENT_WRITE)
+                .dst_access_mask(vk::AccessFlags::TRANSFER_WRITE);
+
+            unsafe {
+                self.context.device.cmd_pipeline_barrier(
+                    command_buffer.vk_command_buffer(),
+                    vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
+                    vk::PipelineStageFlags::TRANSFER,
+                    vk::DependencyFlags::empty(),
+                    &[],
+                    &[],
+                    &[swapchain_barrier, viewport_barrier],
+                );
+
+                // Blit from swapchain to viewport (scaling if needed)
+                let src_extent = vk::Extent3D {
+                    width: swapchain_extent.width,
+                    height: swapchain_extent.height,
+                    depth: 1,
+                };
+                let dst_extent = vk::Extent3D {
+                    width: viewport_target.extent.width,
+                    height: viewport_target.extent.height,
+                    depth: 1,
+                };
+
+                let blit_region = vk::ImageBlit::default()
+                    .src_subresource(vk::ImageSubresourceLayers {
+                        aspect_mask: vk::ImageAspectFlags::COLOR,
+                        mip_level: 0,
+                        base_array_layer: 0,
+                        layer_count: 1,
+                    })
+                    .src_offsets([
+                        vk::Offset3D { x: 0, y: 0, z: 0 },
+                        vk::Offset3D {
+                            x: src_extent.width as i32,
+                            y: src_extent.height as i32,
+                            z: 1,
+                        },
+                    ])
+                    .dst_subresource(vk::ImageSubresourceLayers {
+                        aspect_mask: vk::ImageAspectFlags::COLOR,
+                        mip_level: 0,
+                        base_array_layer: 0,
+                        layer_count: 1,
+                    })
+                    .dst_offsets([
+                        vk::Offset3D { x: 0, y: 0, z: 0 },
+                        vk::Offset3D {
+                            x: dst_extent.width as i32,
+                            y: dst_extent.height as i32,
+                            z: 1,
+                        },
+                    ]);
+
+                self.context.device.cmd_blit_image(
+                    command_buffer.vk_command_buffer(),
+                    swapchain_image,
+                    vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
+                    viewport_target.color_image,
+                    vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+                    &[blit_region],
+                    vk::Filter::LINEAR,
+                );
+
+                // Transition swapchain back to present
+                let swapchain_back_barrier = vk::ImageMemoryBarrier::default()
+                    .old_layout(vk::ImageLayout::TRANSFER_SRC_OPTIMAL)
+                    .new_layout(vk::ImageLayout::PRESENT_SRC_KHR)
+                    .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+                    .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+                    .image(swapchain_image)
+                    .subresource_range(vk::ImageSubresourceRange {
+                        aspect_mask: vk::ImageAspectFlags::COLOR,
+                        base_mip_level: 0,
+                        level_count: 1,
+                        base_array_layer: 0,
+                        layer_count: 1,
+                    })
+                    .src_access_mask(vk::AccessFlags::TRANSFER_READ)
+                    .dst_access_mask(vk::AccessFlags::empty());
+
+                // Transition viewport to shader read
+                let viewport_back_barrier = vk::ImageMemoryBarrier::default()
+                    .old_layout(vk::ImageLayout::TRANSFER_DST_OPTIMAL)
+                    .new_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
+                    .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+                    .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+                    .image(viewport_target.color_image)
+                    .subresource_range(vk::ImageSubresourceRange {
+                        aspect_mask: vk::ImageAspectFlags::COLOR,
+                        base_mip_level: 0,
+                        level_count: 1,
+                        base_array_layer: 0,
+                        layer_count: 1,
+                    })
+                    .src_access_mask(vk::AccessFlags::TRANSFER_WRITE)
+                    .dst_access_mask(vk::AccessFlags::SHADER_READ);
+
+                self.context.device.cmd_pipeline_barrier(
+                    command_buffer.vk_command_buffer(),
+                    vk::PipelineStageFlags::TRANSFER,
+                    vk::PipelineStageFlags::FRAGMENT_SHADER,
+                    vk::DependencyFlags::empty(),
+                    &[],
+                    &[],
+                    &[swapchain_back_barrier, viewport_back_barrier],
+                );
+            }
+        }
+
         command_buffer.end_command();
 
         let frame_data = self.current_framedata.take().unwrap();
@@ -1983,6 +2176,202 @@ impl UITextures {
             context.allocator.borrow_mut().free(self.white_image_memory).ok();
             context.device.destroy_descriptor_set_layout(self.descriptor_set_layout, None);
             context.device.destroy_descriptor_pool(self.descriptor_pool, None);
+        }
+    }
+}
+
+/// Offscreen render target for viewport rendering.
+///
+/// This holds the color and depth attachments for rendering the 3D scene
+/// to a texture that can be sampled by the UI viewport panel.
+pub struct ViewportRenderTarget {
+    /// Color attachment image.
+    pub color_image: vk::Image,
+    pub color_memory: gpu_allocator::vulkan::Allocation,
+    pub color_image_view: vk::ImageView,
+    /// Depth attachment image.
+    pub depth_image: vk::Image,
+    pub depth_memory: gpu_allocator::vulkan::Allocation,
+    pub depth_image_view: vk::ImageView,
+    /// Render extent.
+    pub extent: vk::Extent2D,
+    /// Sampler for sampling the color texture.
+    pub sampler: vk::Sampler,
+}
+
+impl ViewportRenderTarget {
+    /// Create a new viewport render target with the given dimensions.
+    pub fn new(context: &VulkanContext, width: u32, height: u32) -> Result<Self, vk::Result> {
+        unsafe {
+            let extent = vk::Extent2D { width, height };
+            let extent3d = vk::Extent3D { width, height, depth: 1 };
+
+            // Create color image (RGBA8, can be sampled and used as color attachment)
+            let color_create_info = vk::ImageCreateInfo::default()
+                .image_type(vk::ImageType::TYPE_2D)
+                .extent(extent3d)
+                .mip_levels(1)
+                .array_layers(1)
+                .format(vk::Format::R8G8B8A8_SRGB)
+                .tiling(vk::ImageTiling::OPTIMAL)
+                .initial_layout(vk::ImageLayout::UNDEFINED)
+                .usage(vk::ImageUsageFlags::COLOR_ATTACHMENT | vk::ImageUsageFlags::SAMPLED | vk::ImageUsageFlags::TRANSFER_SRC)
+                .sharing_mode(vk::SharingMode::EXCLUSIVE)
+                .samples(vk::SampleCountFlags::TYPE_1);
+
+            let (color_image, color_memory) = context.create_image(color_create_info, gpu_allocator::MemoryLocation::GpuOnly);
+
+            // Create color image view
+            let color_view_create_info = vk::ImageViewCreateInfo::default()
+                .image(color_image)
+                .view_type(vk::ImageViewType::TYPE_2D)
+                .format(vk::Format::R8G8B8A8_SRGB)
+                .components(vk::ComponentMapping::default())
+                .subresource_range(vk::ImageSubresourceRange {
+                    aspect_mask: vk::ImageAspectFlags::COLOR,
+                    base_mip_level: 0,
+                    level_count: 1,
+                    base_array_layer: 0,
+                    layer_count: 1,
+                });
+
+            let color_image_view = context.device.create_image_view(&color_view_create_info, None)?;
+
+            // Create depth image (D32_SFLOAT)
+            let depth_create_info = vk::ImageCreateInfo::default()
+                .image_type(vk::ImageType::TYPE_2D)
+                .extent(extent3d)
+                .mip_levels(1)
+                .array_layers(1)
+                .format(vk::Format::D32_SFLOAT)
+                .tiling(vk::ImageTiling::OPTIMAL)
+                .initial_layout(vk::ImageLayout::UNDEFINED)
+                .usage(vk::ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT)
+                .sharing_mode(vk::SharingMode::EXCLUSIVE)
+                .samples(vk::SampleCountFlags::TYPE_1);
+
+            let (depth_image, depth_memory) = context.create_image(depth_create_info, gpu_allocator::MemoryLocation::GpuOnly);
+
+            // Create depth image view
+            let depth_view_create_info = vk::ImageViewCreateInfo::default()
+                .image(depth_image)
+                .view_type(vk::ImageViewType::TYPE_2D)
+                .format(vk::Format::D32_SFLOAT)
+                .components(vk::ComponentMapping::default())
+                .subresource_range(vk::ImageSubresourceRange {
+                    aspect_mask: vk::ImageAspectFlags::DEPTH,
+                    base_mip_level: 0,
+                    level_count: 1,
+                    base_array_layer: 0,
+                    layer_count: 1,
+                });
+
+            let depth_image_view = context.device.create_image_view(&depth_view_create_info, None)?;
+
+            // Create sampler
+            let sampler_create_info = vk::SamplerCreateInfo::default()
+                .mag_filter(vk::Filter::LINEAR)
+                .min_filter(vk::Filter::LINEAR)
+                .address_mode_u(vk::SamplerAddressMode::CLAMP_TO_EDGE)
+                .address_mode_v(vk::SamplerAddressMode::CLAMP_TO_EDGE)
+                .address_mode_w(vk::SamplerAddressMode::CLAMP_TO_EDGE)
+                .anisotropy_enable(false)
+                .max_anisotropy(1.0)
+                .border_color(vk::BorderColor::INT_OPAQUE_BLACK)
+                .unnormalized_coordinates(false)
+                .compare_enable(false)
+                .compare_op(vk::CompareOp::ALWAYS)
+                .mipmap_mode(vk::SamplerMipmapMode::LINEAR)
+                .mip_lod_bias(0.0)
+                .min_lod(0.0)
+                .max_lod(0.0);
+
+            let sampler = context.device.create_sampler(&sampler_create_info, None)?;
+
+            // Transition images to their initial layouts
+            let cmd_buffer = context.begin_single_time_commands();
+            let cmd = cmd_buffer.vk_command_buffer();
+
+            // Transition color to color attachment optimal
+            let color_barrier = vk::ImageMemoryBarrier::default()
+                .old_layout(vk::ImageLayout::UNDEFINED)
+                .new_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
+                .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+                .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+                .image(color_image)
+                .subresource_range(vk::ImageSubresourceRange {
+                    aspect_mask: vk::ImageAspectFlags::COLOR,
+                    base_mip_level: 0,
+                    level_count: 1,
+                    base_array_layer: 0,
+                    layer_count: 1,
+                })
+                .src_access_mask(vk::AccessFlags::empty())
+                .dst_access_mask(vk::AccessFlags::COLOR_ATTACHMENT_READ | vk::AccessFlags::COLOR_ATTACHMENT_WRITE);
+
+            // Transition depth to depth stencil attachment optimal
+            let depth_barrier = vk::ImageMemoryBarrier::default()
+                .old_layout(vk::ImageLayout::UNDEFINED)
+                .new_layout(vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL)
+                .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+                .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+                .image(depth_image)
+                .subresource_range(vk::ImageSubresourceRange {
+                    aspect_mask: vk::ImageAspectFlags::DEPTH,
+                    base_mip_level: 0,
+                    level_count: 1,
+                    base_array_layer: 0,
+                    layer_count: 1,
+                })
+                .src_access_mask(vk::AccessFlags::empty())
+                .dst_access_mask(vk::AccessFlags::DEPTH_STENCIL_ATTACHMENT_READ | vk::AccessFlags::DEPTH_STENCIL_ATTACHMENT_WRITE);
+
+            context.device.cmd_pipeline_barrier(
+                cmd,
+                vk::PipelineStageFlags::TOP_OF_PIPE,
+                vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT | vk::PipelineStageFlags::EARLY_FRAGMENT_TESTS,
+                vk::DependencyFlags::empty(),
+                &[],
+                &[],
+                &[color_barrier, depth_barrier],
+            );
+
+            context.end_single_time_commands(cmd_buffer);
+
+            Ok(Self {
+                color_image,
+                color_memory,
+                color_image_view,
+                depth_image,
+                depth_memory,
+                depth_image_view,
+                extent,
+                sampler,
+            })
+        }
+    }
+
+    /// Resize the render target by recreating it.
+    pub fn resize(context: &VulkanContext, old: Option<Self>, width: u32, height: u32) -> Result<Self, vk::Result> {
+        // Destroy old resources if any
+        if let Some(old_target) = old {
+            old_target.destroy(context);
+        }
+
+        // Create new resources
+        Self::new(context, width, height)
+    }
+
+    /// Destroy the render target.
+    pub fn destroy(self, context: &VulkanContext) {
+        unsafe {
+            context.device.destroy_sampler(self.sampler, None);
+            context.device.destroy_image_view(self.color_image_view, None);
+            context.device.destroy_image(self.color_image, None);
+            context.allocator.borrow_mut().free(self.color_memory).ok();
+            context.device.destroy_image_view(self.depth_image_view, None);
+            context.device.destroy_image(self.depth_image, None);
+            context.allocator.borrow_mut().free(self.depth_memory).ok();
         }
     }
 }
