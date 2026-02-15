@@ -66,6 +66,10 @@ pub struct VulkanRenderer {
     /// UI overlay data for immediate mode UI rendering.
     /// Set each frame via set_ui_data() and rendered in ui_pass.
     ui_data: RefCell<Option<UiDrawData>>,
+    /// Persistent UI buffers (one set per frame in flight).
+    ui_buffers: Vec<UIBuffers>,
+    /// Current frame index for UI buffer selection.
+    ui_frame_index: std::cell::Cell<usize>,
 }
 
 const FRAMES_IN_FLIGHT: usize = 2;
@@ -110,6 +114,8 @@ impl VulkanRenderer {
             skeleton_descriptors: Vec::new(),
             frame_uniforms: None,
             ui_data: RefCell::new(None),
+            ui_buffers: Vec::new(),
+            ui_frame_index: std::cell::Cell::new(0),
         }
     }
 
@@ -238,7 +244,32 @@ impl VulkanRenderer {
         Ok(())
     }
 
+    /// Initialize UI buffers for persistent buffer rendering.
+    ///
+    /// Creates one set of vertex/index buffers per frame in flight.
+    /// Should be called once during initialization.
+    ///
+    /// # Arguments
+    /// * `vertex_capacity` - Maximum vertex buffer size in bytes
+    /// * `index_capacity` - Maximum index buffer size in bytes
+    pub fn init_ui_buffers(&mut self, vertex_capacity: u64, index_capacity: u64) {
+        // Create one set of buffers per frame in flight
+        for _ in 0..FRAMES_IN_FLIGHT {
+            let buffers = UIBuffers::new(&self.context, vertex_capacity, index_capacity);
+            self.ui_buffers.push(buffers);
+        }
+        info!("UI buffers initialized ({} frames, {}KB vertex, {}KB index)",
+            FRAMES_IN_FLIGHT,
+            vertex_capacity / 1024,
+            index_capacity / 1024);
+    }
+
     pub fn destroy(&mut self) {
+        // Destroy UI buffers
+        for buffers in self.ui_buffers.drain(..) {
+            buffers.destroy(&self.context);
+        }
+
         // Destroy all registered assets first (materials, meshes)
         self.asset_registry.destroy();
 
@@ -893,6 +924,7 @@ impl VulkanRenderer {
         // Get pointers for UI rendering
         let ui_data_ptr = &self.ui_data as *const RefCell<Option<UiDrawData>>;
         let ui_pipeline_ptr = &self.ui_pipeline as *const Option<Rc<RefCell<MaterialPipeline>>>;
+        let ui_buffers_ptr = &self.ui_buffers as *const Vec<UIBuffers>;
 
         graph_builder.add_pass("ui_pass", move |pass| {
             pass.write(Attachment::Color(swapchain_res))
@@ -901,6 +933,7 @@ impl VulkanRenderer {
                     // SAFETY: Pointers are valid for the renderer's lifetime
                     let ui_data_cell = unsafe { &*ui_data_ptr };
                     let ui_pipeline_opt = unsafe { &*ui_pipeline_ptr };
+                    let ui_buffers = unsafe { &*ui_buffers_ptr };
 
                     let ui_data_ref = ui_data_cell.borrow();
 
@@ -912,6 +945,9 @@ impl VulkanRenderer {
 
                         let pipeline_ref = ui_pipeline.borrow();
                         let cmd_buf = ctx.command_buffer.vk_command_buffer();
+
+                        // Get the current frame's buffers (use first set if not initialized)
+                        let buffers = ui_buffers.first();
 
                         unsafe {
                             // Bind UI pipeline
@@ -942,7 +978,6 @@ impl VulkanRenderer {
                             };
                             pipeline_ref.context().device.cmd_set_scissor(cmd_buf, 0, &[scissor]);
 
-                            // Create temporary vertex/index buffers
                             let vertex_size = ui_data.vertex_data.len() as u64;
                             let index_size = ui_data.index_data.len() as u64;
 
@@ -950,61 +985,104 @@ impl VulkanRenderer {
                                 return;
                             }
 
-                            // Create staging buffers
-                            let vertex_create_info = vk::BufferCreateInfo::default()
-                                .sharing_mode(vk::SharingMode::EXCLUSIVE)
-                                .usage(vk::BufferUsageFlags::VERTEX_BUFFER)
-                                .size(vertex_size);
+                            // Use persistent buffers if available, otherwise fall back to temporary
+                            if let Some(buffers) = buffers {
+                                // Update persistent buffers
+                                if !buffers.update_vertices(pipeline_ref.context(), &ui_data.vertex_data) {
+                                    warn!("UI vertex data exceeds buffer capacity");
+                                    return;
+                                }
+                                if !buffers.update_indices(pipeline_ref.context(), &ui_data.index_data) {
+                                    warn!("UI index data exceeds buffer capacity");
+                                    return;
+                                }
 
-                            let (vertex_buffer, vertex_alloc) = pipeline_ref.context().allocate_buffer(
-                                &vertex_create_info,
-                                gpu_allocator::MemoryLocation::CpuToGpu,
-                            );
+                                // Bind persistent buffers
+                                pipeline_ref.context().device.cmd_bind_vertex_buffers(
+                                    cmd_buf,
+                                    0,
+                                    &[buffers.vertex_buffer],
+                                    &[0],
+                                );
+                                pipeline_ref.context().device.cmd_bind_index_buffer(
+                                    cmd_buf,
+                                    buffers.index_buffer,
+                                    0,
+                                    vk::IndexType::UINT32,
+                                );
+                            } else {
+                                // Fallback: create temporary staging buffers
+                                let vertex_create_info = vk::BufferCreateInfo::default()
+                                    .sharing_mode(vk::SharingMode::EXCLUSIVE)
+                                    .usage(vk::BufferUsageFlags::VERTEX_BUFFER)
+                                    .size(vertex_size);
 
-                            let index_create_info = vk::BufferCreateInfo::default()
-                                .sharing_mode(vk::SharingMode::EXCLUSIVE)
-                                .usage(vk::BufferUsageFlags::INDEX_BUFFER)
-                                .size(index_size);
+                                let (vertex_buffer, vertex_alloc) = pipeline_ref.context().allocate_buffer(
+                                    &vertex_create_info,
+                                    gpu_allocator::MemoryLocation::CpuToGpu,
+                                );
 
-                            let (index_buffer, index_alloc) = pipeline_ref.context().allocate_buffer(
-                                &index_create_info,
-                                gpu_allocator::MemoryLocation::CpuToGpu,
-                            );
+                                let index_create_info = vk::BufferCreateInfo::default()
+                                    .sharing_mode(vk::SharingMode::EXCLUSIVE)
+                                    .usage(vk::BufferUsageFlags::INDEX_BUFFER)
+                                    .size(index_size);
 
-                            // Upload vertex data
-                            let vertex_ptr = pipeline_ref.context().map_buffer(&vertex_alloc);
-                            std::ptr::copy_nonoverlapping(
-                                ui_data.vertex_data.as_ptr(),
-                                vertex_ptr,
-                                vertex_size as usize,
-                            );
+                                let (index_buffer, index_alloc) = pipeline_ref.context().allocate_buffer(
+                                    &index_create_info,
+                                    gpu_allocator::MemoryLocation::CpuToGpu,
+                                );
 
-                            // Upload index data
-                            let index_ptr = pipeline_ref.context().map_buffer(&index_alloc);
-                            std::ptr::copy_nonoverlapping(
-                                ui_data.index_data.as_ptr(),
-                                index_ptr,
-                                index_size as usize,
-                            );
+                                // Upload vertex data
+                                let vertex_ptr = pipeline_ref.context().map_buffer(&vertex_alloc);
+                                std::ptr::copy_nonoverlapping(
+                                    ui_data.vertex_data.as_ptr(),
+                                    vertex_ptr,
+                                    vertex_size as usize,
+                                );
 
-                            // Bind vertex buffer
-                            pipeline_ref.context().device.cmd_bind_vertex_buffers(
-                                cmd_buf,
-                                0,
-                                &[vertex_buffer],
-                                &[0],
-                            );
+                                // Upload index data
+                                let index_ptr = pipeline_ref.context().map_buffer(&index_alloc);
+                                std::ptr::copy_nonoverlapping(
+                                    ui_data.index_data.as_ptr(),
+                                    index_ptr,
+                                    index_size as usize,
+                                );
 
-                            // Bind index buffer
-                            pipeline_ref.context().device.cmd_bind_index_buffer(
-                                cmd_buf,
-                                index_buffer,
-                                0,
-                                vk::IndexType::UINT32,
-                            );
+                                // Bind vertex buffer
+                                pipeline_ref.context().device.cmd_bind_vertex_buffers(
+                                    cmd_buf,
+                                    0,
+                                    &[vertex_buffer],
+                                    &[0],
+                                );
+
+                                // Bind index buffer
+                                pipeline_ref.context().device.cmd_bind_index_buffer(
+                                    cmd_buf,
+                                    index_buffer,
+                                    0,
+                                    vk::IndexType::UINT32,
+                                );
+
+                                // Draw all indices
+                                let index_count = (index_size / 4) as u32;
+                                pipeline_ref.context().device.cmd_draw_indexed(
+                                    cmd_buf,
+                                    index_count,
+                                    1,
+                                    0,
+                                    0,
+                                    0,
+                                );
+
+                                // Cleanup staging buffers
+                                pipeline_ref.context().free_buffer(vertex_buffer, vertex_alloc);
+                                pipeline_ref.context().free_buffer(index_buffer, index_alloc);
+                                return;
+                            }
 
                             // Draw all indices
-                            let index_count = (index_size / 4) as u32; // u32 indices
+                            let index_count = (index_size / 4) as u32;
                             pipeline_ref.context().device.cmd_draw_indexed(
                                 cmd_buf,
                                 index_count,
@@ -1013,10 +1091,6 @@ impl VulkanRenderer {
                                 0,
                                 0,
                             );
-
-                            // Cleanup staging buffers
-                            pipeline_ref.context().free_buffer(vertex_buffer, vertex_alloc);
-                            pipeline_ref.context().free_buffer(index_buffer, index_alloc);
                         }
                     }
                 });
@@ -1152,6 +1226,9 @@ impl VulkanRenderer {
         let mut command_buffer = self.frame_context.command_buffers[image_index].clone();
         command_buffer.begin_command(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT);
 
+        // Set frame index for UI buffer selection (cycles through frames in flight)
+        self.ui_frame_index.set(image_index % FRAMES_IN_FLIGHT);
+
         // Execute the render graph with the current image index
         graph.execute(
             &mut command_buffer,
@@ -1249,4 +1326,81 @@ pub struct UiDrawData {
     pub index_data: Vec<u8>,
     pub screen_size: [f32; 2],
     pub index_count: u32,
+}
+
+/// Persistent buffers for UI rendering.
+/// One set per frame in flight to avoid synchronization issues.
+pub struct UIBuffers {
+    /// Vertex buffer (CpuToGpu for easy updates).
+    pub vertex_buffer: vk::Buffer,
+    pub vertex_allocation: gpu_allocator::vulkan::Allocation,
+    pub vertex_capacity: u64,
+    /// Index buffer (CpuToGpu for easy updates).
+    pub index_buffer: vk::Buffer,
+    pub index_allocation: gpu_allocator::vulkan::Allocation,
+    pub index_capacity: u64,
+}
+
+impl UIBuffers {
+    /// Create new UI buffers with the given capacities.
+    pub fn new(context: &VulkanContext, vertex_capacity: u64, index_capacity: u64) -> Self {
+        let vertex_create_info = vk::BufferCreateInfo::default()
+            .sharing_mode(vk::SharingMode::EXCLUSIVE)
+            .usage(vk::BufferUsageFlags::VERTEX_BUFFER)
+            .size(vertex_capacity);
+
+        let (vertex_buffer, vertex_allocation) = context.allocate_buffer(
+            &vertex_create_info,
+            gpu_allocator::MemoryLocation::CpuToGpu,
+        );
+
+        let index_create_info = vk::BufferCreateInfo::default()
+            .sharing_mode(vk::SharingMode::EXCLUSIVE)
+            .usage(vk::BufferUsageFlags::INDEX_BUFFER)
+            .size(index_capacity);
+
+        let (index_buffer, index_allocation) = context.allocate_buffer(
+            &index_create_info,
+            gpu_allocator::MemoryLocation::CpuToGpu,
+        );
+
+        Self {
+            vertex_buffer,
+            vertex_allocation,
+            vertex_capacity,
+            index_buffer,
+            index_allocation,
+            index_capacity,
+        }
+    }
+
+    /// Update vertex data. Returns true if data fits.
+    pub fn update_vertices(&self, context: &VulkanContext, data: &[u8]) -> bool {
+        if data.len() as u64 > self.vertex_capacity {
+            return false;
+        }
+        let ptr = context.map_buffer(&self.vertex_allocation);
+        unsafe {
+            std::ptr::copy_nonoverlapping(data.as_ptr(), ptr, data.len());
+        }
+        true
+    }
+
+    /// Update index data. Returns true if data fits.
+    pub fn update_indices(&self, context: &VulkanContext, data: &[u8]) -> bool {
+        if data.len() as u64 > self.index_capacity {
+            return false;
+        }
+        let ptr = context.map_buffer(&self.index_allocation);
+        unsafe {
+            std::ptr::copy_nonoverlapping(data.as_ptr(), ptr, data.len());
+        }
+        true
+    }
+
+    /// Destroy buffers (consumes self).
+    pub fn destroy(self, context: &VulkanContext) {
+        context.free_buffer(self.vertex_buffer, self.vertex_allocation);
+        context.free_buffer(self.index_buffer, self.index_allocation);
+    }
 }

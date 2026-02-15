@@ -573,6 +573,9 @@ impl Application {
         let ui_material = crate::rendering::UiMaterial::new(renderer.context.clone());
         renderer.set_ui_pipeline(ui_material.pipeline());
 
+        // Initialize UI buffers (256KB vertex, 128KB index - enough for complex UIs)
+        renderer.init_ui_buffers(256 * 1024, 128 * 1024);
+
         // Setup render graph with multiple framebuffers
         renderer.setup_render_graph();
     }
