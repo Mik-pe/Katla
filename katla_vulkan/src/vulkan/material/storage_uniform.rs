@@ -59,19 +59,18 @@
 use ash::vk;
 use std::rc::Rc;
 
+use super::BufferDescriptorSetBuilder;
 use crate::vulkan::{bda::DeviceAddressBuffer, VulkanContext};
 
 /// Storage buffer descriptor set for uniform buffers.
 ///
 /// Contains descriptor set and pool for binding the storage buffer
 /// to shaders as storage buffers (set 0).
+///
+/// This is a convenience wrapper around [`BufferDescriptorSetBuilder`]
+/// for the common storage uniform pattern with frame_data and objects.
 pub struct StorageDescriptorSet {
-    /// Descriptor set containing frame_data (binding 0) and objects (binding 1).
-    pub descriptor_set: vk::DescriptorSet,
-    /// Descriptor pool (owned, for cleanup).
-    descriptor_pool: vk::DescriptorPool,
-    /// Device for cleanup.
-    device: ash::Device,
+    inner: super::BufferDescriptorSet,
 }
 
 impl StorageDescriptorSet {
@@ -89,89 +88,30 @@ impl StorageDescriptorSet {
         storage_buffer: &DeviceAddressBuffer,
         desc_layout: vk::DescriptorSetLayout,
     ) -> Result<Self, vk::Result> {
-        // Create descriptor pool for storage buffers
-        let pool_sizes = [
-            vk::DescriptorPoolSize::default()
-                .ty(vk::DescriptorType::STORAGE_BUFFER)
-                .descriptor_count(2), // frame_data + objects
-        ];
+        // Use the generic builder with two bindings to the same buffer
+        let inner = BufferDescriptorSetBuilder::new(context)
+            // Binding 0: frame_data (offset 0, size = FrameUniforms)
+            .add_binding(
+                storage_buffer.buffer,
+                0,
+                0,
+                StorageUniformLayout::FRAME_SIZE as u64,
+            )
+            // Binding 1: objects array (offset 256, size = ObjectUniforms * MAX_OBJECTS)
+            .add_binding(
+                storage_buffer.buffer,
+                1,
+                StorageUniformLayout::OBJECT_ARRAY_OFFSET as u64,
+                (StorageUniformLayout::OBJECT_STRIDE * StorageUniformLayout::MAX_OBJECTS) as u64,
+            )
+            .build(desc_layout)?;
 
-        let pool_info = vk::DescriptorPoolCreateInfo::default()
-            .pool_sizes(&pool_sizes)
-            .max_sets(1);
-
-        let descriptor_pool = unsafe {
-            context
-                .device
-                .create_descriptor_pool(&pool_info, None)?
-        };
-
-        // Allocate descriptor set
-        let layouts = [desc_layout];
-        let alloc_info = vk::DescriptorSetAllocateInfo::default()
-            .descriptor_pool(descriptor_pool)
-            .set_layouts(&layouts);
-
-        let descriptor_sets = unsafe { context.device.allocate_descriptor_sets(&alloc_info)? };
-        let descriptor_set = descriptor_sets[0];
-
-        // Create buffer info for frame_data (binding 0)
-        // Offset 0, size 128 bytes (FrameUniforms)
-        let frame_buffer_info = vk::DescriptorBufferInfo::default()
-            .buffer(storage_buffer.buffer)
-            .offset(0)
-            .range(StorageUniformLayout::FRAME_SIZE as u64);
-
-        // Create buffer info for objects array (binding 1)
-        // Offset 256, size 96*256 bytes
-        let objects_buffer_info = vk::DescriptorBufferInfo::default()
-            .buffer(storage_buffer.buffer)
-            .offset(StorageUniformLayout::OBJECT_ARRAY_OFFSET as u64)
-            .range((StorageUniformLayout::OBJECT_STRIDE * StorageUniformLayout::MAX_OBJECTS) as u64);
-
-        // Write descriptors
-        let descriptor_writes = [
-            // Binding 0: frame_data
-            vk::WriteDescriptorSet::default()
-                .dst_set(descriptor_set)
-                .dst_binding(0)
-                .dst_array_element(0)
-                .descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
-                .buffer_info(std::slice::from_ref(&frame_buffer_info)),
-            // Binding 1: objects array
-            vk::WriteDescriptorSet::default()
-                .dst_set(descriptor_set)
-                .dst_binding(1)
-                .dst_array_element(0)
-                .descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
-                .buffer_info(std::slice::from_ref(&objects_buffer_info)),
-        ];
-
-        unsafe {
-            context
-                .device
-                .update_descriptor_sets(&descriptor_writes, &[]);
-        }
-
-        Ok(Self {
-            descriptor_set,
-            descriptor_pool,
-            device: context.device.clone(),
-        })
+        Ok(Self { inner })
     }
 
     /// Get the descriptor set for binding.
     pub fn set(&self) -> vk::DescriptorSet {
-        self.descriptor_set
-    }
-}
-
-impl Drop for StorageDescriptorSet {
-    fn drop(&mut self) {
-        unsafe {
-            self.device
-                .destroy_descriptor_pool(self.descriptor_pool, None);
-        }
+        self.inner.set()
     }
 }
 
@@ -323,8 +263,8 @@ impl StorageUniformManager {
             &default_inv_vp,
             &[0.0, 0.0, 0.0, 0.0], // camera_position (will be computed from view inverse)
             &[-0.3, -1.0, -0.2, 0.0], // light_direction (default)
-            &[1.0, 0.95, 0.9, 0.0],   // light_color (warm white)
-            1.0,                       // light_intensity
+            &[1.0, 0.95, 0.9, 0.0], // light_color (warm white)
+            1.0,                   // light_intensity
         );
     }
 
@@ -375,12 +315,7 @@ impl StorageUniformManager {
     ///
     /// # Panics
     /// Panics if index >= 256
-    pub fn update_object(
-        &mut self,
-        index: usize,
-        model: &[[f32; 4]; 4],
-        color: &[f32; 4],
-    ) {
+    pub fn update_object(&mut self, index: usize, model: &[[f32; 4]; 4], color: &[f32; 4]) {
         // Use default PBR material params
         self.update_object_with_material(index, model, color, 0.0, 0.5, 1.0);
     }
@@ -403,7 +338,10 @@ impl StorageUniformManager {
         roughness: f32,
         ao: f32,
     ) {
-        assert!(index < StorageUniformLayout::MAX_OBJECTS, "Object index out of bounds");
+        assert!(
+            index < StorageUniformLayout::MAX_OBJECTS,
+            "Object index out of bounds"
+        );
 
         // Calculate offset for this object
         let offset = StorageUniformLayout::object_offset(index);

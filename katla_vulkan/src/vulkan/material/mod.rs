@@ -1,4 +1,5 @@
 pub mod asset;
+pub mod buffer_descriptor;
 pub mod builder;
 pub mod descriptor;
 pub mod file_watcher;
@@ -14,6 +15,9 @@ pub mod template;
 pub mod uniform_layout;
 
 pub use asset::*;
+pub use buffer_descriptor::{
+    BufferBinding, BufferDescriptorSet, BufferDescriptorSetBuilder, BufferDescriptorSource,
+};
 pub use builder::*;
 pub use descriptor::{
     DescriptorBinding, MaterialDescriptor, MaterialError, MaterialValue, RenderState, ShaderSource,
