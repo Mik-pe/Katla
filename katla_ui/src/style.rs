@@ -73,6 +73,50 @@ pub struct UiStyle {
     /// Border color for general elements.
     pub border: Color,
 
+    // Menu styling
+    /// Background color for menus.
+    pub menu_bg: Color,
+    /// Menu item color when hovered.
+    pub menu_hovered: Color,
+    /// Menu item color when active/pressed.
+    pub menu_active: Color,
+    /// Menu border color.
+    pub menu_border: Color,
+    /// Rounding radius for menu corners.
+    pub menu_rounding: f32,
+    /// Height of each menu item.
+    pub menu_item_height: f32,
+    /// Padding inside menus.
+    pub menu_padding: f32,
+    /// Minimum width for menus.
+    pub menu_min_width: f32,
+
+    // Popup styling
+    /// Background color for popups.
+    pub popup_bg: Color,
+    /// Border color for popups.
+    pub popup_border: Color,
+    /// Shadow color for popups (drawn behind).
+    pub popup_shadow: Color,
+    /// Rounding radius for popup corners.
+    pub popup_rounding: f32,
+
+    // Selectable styling
+    /// Selectable item background when hovered.
+    pub selectable_hovered: Color,
+    /// Selectable item background when selected.
+    pub selectable_selected: Color,
+
+    // Combo box styling
+    /// Combo box background color.
+    pub combo_bg: Color,
+    /// Combo box border color.
+    pub combo_border: Color,
+    /// Combo box button color when hovered.
+    pub combo_hovered: Color,
+    /// Combo box preview text color.
+    pub combo_text: Color,
+
     // Spacing
     /// Default spacing between items.
     pub item_spacing: f32,
@@ -122,6 +166,32 @@ impl UiStyle {
             separator: Color::from_rgb_hex(0x404040),
             border: Color::from_rgb_hex(0x404040),
 
+            // Menu styling (dark theme)
+            menu_bg: Color::from_rgb_hex(0x2d2d2d),
+            menu_hovered: Color::from_rgb_hex(0x404040),
+            menu_active: Color::from_rgb_hex(0x4a9eff),
+            menu_border: Color::from_rgb_hex(0x404040),
+            menu_rounding: 4.0,
+            menu_item_height: 24.0,
+            menu_padding: 4.0,
+            menu_min_width: 120.0,
+
+            // Popup styling (dark theme)
+            popup_bg: Color::from_rgb_hex(0x2d2d2d),
+            popup_border: Color::from_rgb_hex(0x404040),
+            popup_shadow: Color::new(0.0, 0.0, 0.0, 0.5),
+            popup_rounding: 4.0,
+
+            // Selectable styling (dark theme)
+            selectable_hovered: Color::from_rgb_hex(0x404040),
+            selectable_selected: Color::new(0.29, 0.62, 1.0, 0.4),
+
+            // Combo styling (dark theme)
+            combo_bg: Color::from_rgb_hex(0x282828),
+            combo_border: Color::from_rgb_hex(0x404040),
+            combo_hovered: Color::from_rgb_hex(0x404040),
+            combo_text: Color::from_rgb_hex(0xeeeeee),
+
             item_spacing: 8.0,
             item_inner_spacing: 4.0,
             indent_spacing: 20.0,
@@ -166,6 +236,32 @@ impl UiStyle {
 
             separator: Color::from_rgb_hex(0xc0c0c0),
             border: Color::from_rgb_hex(0xc0c0c0),
+
+            // Menu styling (light theme)
+            menu_bg: Color::from_rgb_hex(0xfafafa),
+            menu_hovered: Color::from_rgb_hex(0xe0e0e0),
+            menu_active: Color::from_rgb_hex(0x2070d0),
+            menu_border: Color::from_rgb_hex(0xc0c0c0),
+            menu_rounding: 4.0,
+            menu_item_height: 24.0,
+            menu_padding: 4.0,
+            menu_min_width: 120.0,
+
+            // Popup styling (light theme)
+            popup_bg: Color::from_rgb_hex(0xfafafa),
+            popup_border: Color::from_rgb_hex(0xc0c0c0),
+            popup_shadow: Color::new(0.0, 0.0, 0.0, 0.2),
+            popup_rounding: 4.0,
+
+            // Selectable styling (light theme)
+            selectable_hovered: Color::from_rgb_hex(0xe0e0e0),
+            selectable_selected: Color::new(0.13, 0.44, 0.82, 0.3),
+
+            // Combo styling (light theme)
+            combo_bg: Color::from_rgb_hex(0xffffff),
+            combo_border: Color::from_rgb_hex(0xc0c0c0),
+            combo_hovered: Color::from_rgb_hex(0xe0e0e0),
+            combo_text: Color::from_rgb_hex(0x222222),
 
             item_spacing: 8.0,
             item_inner_spacing: 4.0,
@@ -241,6 +337,32 @@ impl UiStyle {
 
             separator: Color::from_rgb_hex(0x555555),
             border: Color::from_rgb_hex(0x555555),
+
+            // Menu styling (classic theme)
+            menu_bg: Color::from_rgb_hex(0x1f1f1f),
+            menu_hovered: Color::from_rgb_hex(0x4a4a4a),
+            menu_active: Color::from_rgb_hex(0x3465a4),
+            menu_border: Color::from_rgb_hex(0x555555),
+            menu_rounding: 0.0,
+            menu_item_height: 22.0,
+            menu_padding: 2.0,
+            menu_min_width: 100.0,
+
+            // Popup styling (classic theme)
+            popup_bg: Color::from_rgb_hex(0x1f1f1f),
+            popup_border: Color::from_rgb_hex(0x555555),
+            popup_shadow: Color::new(0.0, 0.0, 0.0, 0.6),
+            popup_rounding: 0.0,
+
+            // Selectable styling (classic theme)
+            selectable_hovered: Color::from_rgb_hex(0x4a4a4a),
+            selectable_selected: Color::new(0.2, 0.4, 0.64, 0.5),
+
+            // Combo styling (classic theme)
+            combo_bg: Color::from_rgb_hex(0x3a3a3a),
+            combo_border: Color::from_rgb_hex(0x555555),
+            combo_hovered: Color::from_rgb_hex(0x4a4a4a),
+            combo_text: Color::from_rgb_hex(0xeeeeee),
 
             item_spacing: 6.0,
             item_inner_spacing: 3.0,

@@ -52,6 +52,12 @@ pub struct UiContext {
     cursor: Vec2,
     /// Current row height for layout.
     row_height: f32,
+    /// Currently open popup ID.
+    popup_id: Option<WidgetId>,
+    /// Bounds of the current popup (for click-outside detection).
+    popup_bounds: Option<Rect2D>,
+    /// Whether a popup was opened this frame (prevents immediate close).
+    popup_opened_this_frame: bool,
 }
 
 /// Persistent state for widgets.
@@ -65,6 +71,10 @@ enum WidgetState {
     TextInput(String),
     /// Window position.
     WindowPos(Vec2),
+    /// Dropdown open state.
+    DropdownOpen(bool),
+    /// Context menu position.
+    ContextMenuPos(Vec2),
 }
 
 impl UiContext {
@@ -86,6 +96,9 @@ impl UiContext {
             in_frame: false,
             cursor: Vec2::new(0.0, 0.0),
             row_height: 0.0,
+            popup_id: None,
+            popup_bounds: None,
+            popup_opened_this_frame: false,
         }
     }
 
@@ -112,6 +125,20 @@ impl UiContext {
         self.hovered_id = None;
         self.cursor = Vec2::new(0.0, 0.0);
         self.row_height = 0.0;
+        self.popup_opened_this_frame = false;
+
+        // Check for click outside popup to close it
+        if self.popup_id.is_some() && !self.popup_opened_this_frame {
+            if self.input.mouse_pressed[crate::input::mouse_button::LEFT] {
+                let mouse_outside = self.popup_bounds.map_or(true, |bounds| {
+                    !bounds.contains(self.input.mouse_pos)
+                });
+                if mouse_outside {
+                    self.popup_id = None;
+                    self.popup_bounds = None;
+                }
+            }
+        }
 
         // Set initial clip to full screen
         self.clip_stack.clear();
@@ -887,6 +914,389 @@ impl UiContext {
     pub fn color_rect(&mut self, color: Color, bounds: Rect2D) {
         self.draw_rect(bounds, color);
         self.draw_rect_border(bounds, Color::TRANSPARENT, self.style.border, 1.0);
+    }
+
+    // -------------------------------------------------------------------------
+    // Menu Widgets
+    // -------------------------------------------------------------------------
+
+    /// Draw a menu item (clickable item styled for menus).
+    ///
+    /// Returns true if clicked this frame.
+    pub fn menu_item(&mut self, id: &str, label: &str, bounds: Rect2D) -> bool {
+        let widget_id = self.generate_id(id);
+        let clicked = self.button_behavior(widget_id, bounds);
+
+        // Determine colors based on state
+        let bg_color = if self.active_id == Some(widget_id) {
+            self.style.menu_active
+        } else if self.hovered_id == Some(widget_id) || self.input.is_hovered(bounds) {
+            self.style.menu_hovered
+        } else {
+            Color::TRANSPARENT
+        };
+
+        // Draw background
+        if bg_color != Color::TRANSPARENT {
+            self.draw_rect(bounds, bg_color);
+        }
+
+        // Draw label
+        let text_pos = Vec2::new(
+            bounds.min.x() + self.style.menu_padding,
+            bounds.center().y() - self.style.font_size * 0.5,
+        );
+        self.draw_text(label, text_pos, self.style.text_color, self.style.font_size);
+
+        clicked
+    }
+
+    /// Draw a selectable item with selection state.
+    ///
+    /// Returns true if clicked this frame.
+    /// The `selected` parameter controls whether the item is highlighted as selected.
+    pub fn selectable(&mut self, id: &str, label: &str, selected: bool, bounds: Rect2D) -> bool {
+        let widget_id = self.generate_id(id);
+        let clicked = self.button_behavior(widget_id, bounds);
+
+        // Determine colors based on state
+        let bg_color = if selected {
+            self.style.selectable_selected
+        } else if self.active_id == Some(widget_id) {
+            self.style.menu_active
+        } else if self.hovered_id == Some(widget_id) || self.input.is_hovered(bounds) {
+            self.style.selectable_hovered
+        } else {
+            Color::TRANSPARENT
+        };
+
+        // Draw background
+        if bg_color != Color::TRANSPARENT {
+            self.draw_rect(bounds, bg_color);
+        }
+
+        // Draw label
+        let text_pos = Vec2::new(
+            bounds.min.x() + self.style.menu_padding,
+            bounds.center().y() - self.style.font_size * 0.5,
+        );
+        self.draw_text(label, text_pos, self.style.text_color, self.style.font_size);
+
+        clicked
+    }
+
+    /// Begin a popup container.
+    ///
+    /// Returns true if the popup is open and should have contents drawn.
+    /// Call `end_popup()` after adding contents.
+    /// The popup closes when clicking outside.
+    pub fn begin_popup(&mut self, id: &str, bounds: Rect2D) -> bool {
+        let popup_id = self.generate_id(id);
+
+        // Check if this popup is open
+        let is_open = self.popup_id == Some(popup_id);
+
+        if is_open {
+            // Draw popup background with shadow
+            let shadow_offset = Vec2::new(4.0, 4.0);
+            let shadow_bounds = Rect2D::new(bounds.min + shadow_offset, bounds.max + shadow_offset);
+            self.draw_rect(shadow_bounds, self.style.popup_shadow);
+
+            // Draw popup background
+            self.draw_rect(bounds, self.style.popup_bg);
+            self.draw_rect_border(bounds, Color::TRANSPARENT, self.style.popup_border, 1.0);
+
+            // Store bounds and push clip
+            self.popup_bounds = Some(bounds);
+            self.push_clip(bounds);
+
+            // Push ID for contents
+            self.push_id(id);
+        }
+
+        is_open
+    }
+
+    /// End a popup container.
+    pub fn end_popup(&mut self) {
+        self.pop_clip();
+        self.pop_id();
+    }
+
+    /// Begin a dropdown menu.
+    ///
+    /// Returns true if the dropdown is open and should have menu items drawn.
+    /// Call `end_dropdown()` after adding contents.
+    /// The `bounds` is the trigger button area; popup appears below it.
+    pub fn begin_dropdown(&mut self, id: &str, label: &str, bounds: Rect2D) -> bool {
+        let dropdown_id = self.generate_id(id);
+
+        // Get or initialize open state
+        let is_open = self.storage.get(&dropdown_id)
+            .map(|s| matches!(s, WidgetState::DropdownOpen(true)))
+            .unwrap_or(false);
+
+        // Draw trigger button
+        let hovered = self.update_hover(dropdown_id, bounds);
+
+        // Toggle on click
+        if self.button_behavior(dropdown_id, bounds) {
+            let new_open = !is_open;
+            self.storage.insert(dropdown_id, WidgetState::DropdownOpen(new_open));
+            if new_open {
+                self.popup_id = Some(dropdown_id);
+                self.popup_opened_this_frame = true;
+            } else {
+                self.popup_id = None;
+                self.popup_bounds = None;
+            }
+        }
+
+        // Determine button colors
+        let bg_color = if is_open {
+            self.style.menu_active
+        } else if self.active_id == Some(dropdown_id) {
+            self.style.button_active
+        } else if hovered {
+            self.style.button_hovered
+        } else {
+            self.style.button_normal
+        };
+
+        self.draw_rect(bounds, bg_color);
+
+        // Draw label with dropdown arrow
+        let arrow = " ▼";
+        let full_label = format!("{}{}", label, arrow);
+        let text_size = self.measure_text(&full_label, self.style.font_size);
+        let text_pos = Vec2::new(
+            bounds.center().x() - text_size.x() * 0.5,
+            bounds.center().y() - text_size.y() * 0.5,
+        );
+        self.draw_text(&full_label, text_pos, self.style.button_text, self.style.font_size);
+
+        // If open, prepare popup area
+        if is_open {
+            let popup_bounds = Rect2D::from_origin_size(
+                Vec2::new(bounds.min.x(), bounds.max.y()),
+                Vec2::new(
+                    bounds.width().max(self.style.menu_min_width),
+                    200.0, // Will be clipped by content
+                ),
+            );
+
+            // Draw popup background with shadow
+            let shadow_offset = Vec2::new(4.0, 4.0);
+            let shadow_bounds = Rect2D::new(popup_bounds.min + shadow_offset, popup_bounds.max + shadow_offset);
+            self.draw_rect(shadow_bounds, self.style.popup_shadow);
+            self.draw_rect(popup_bounds, self.style.popup_bg);
+            self.draw_rect_border(popup_bounds, Color::TRANSPARENT, self.style.popup_border, 1.0);
+
+            self.popup_bounds = Some(popup_bounds);
+            self.push_clip(popup_bounds);
+            self.push_id(id);
+
+            return true;
+        }
+
+        false
+    }
+
+    /// End a dropdown menu.
+    pub fn end_dropdown(&mut self) {
+        self.pop_clip();
+        self.pop_id();
+    }
+
+    /// Begin a context menu (right-click popup).
+    ///
+    /// Returns true if the context menu is open and should have items drawn.
+    /// Call `end_context_menu()` after adding contents.
+    /// Typically called after checking `is_context_menu_open()` or unconditionally.
+    pub fn begin_context_menu(&mut self, id: &str) -> bool {
+        let context_id = self.generate_id(id);
+
+        // Get stored position
+        let pos = self.storage.get(&context_id)
+            .and_then(|s| {
+                if let WidgetState::ContextMenuPos(p) = s {
+                    Some(*p)
+                } else {
+                    None
+                }
+            })
+            .unwrap_or(self.input.mouse_pos);
+
+        // Check if this context menu is open
+        let is_open = self.popup_id == Some(context_id);
+
+        if is_open {
+            // Calculate popup bounds
+            let popup_size = Vec2::new(self.style.menu_min_width, 200.0); // Height will be clipped
+
+            // Keep on screen
+            let mut popup_pos = pos;
+            if popup_pos.x() + popup_size.x() > self.screen_size.x() {
+                popup_pos = Vec2::new(self.screen_size.x() - popup_size.x() - 5.0, popup_pos.y());
+            }
+            if popup_pos.y() + popup_size.y() > self.screen_size.y() {
+                popup_pos = Vec2::new(popup_pos.x(), self.screen_size.y() - popup_size.y() - 5.0);
+            }
+
+            let popup_bounds = Rect2D::from_origin_size(popup_pos, popup_size);
+
+            // Draw popup background with shadow
+            let shadow_offset = Vec2::new(4.0, 4.0);
+            let shadow_bounds = Rect2D::new(popup_bounds.min + shadow_offset, popup_bounds.max + shadow_offset);
+            self.draw_rect(shadow_bounds, self.style.popup_shadow);
+            self.draw_rect(popup_bounds, self.style.popup_bg);
+            self.draw_rect_border(popup_bounds, Color::TRANSPARENT, self.style.popup_border, 1.0);
+
+            self.popup_bounds = Some(popup_bounds);
+            self.push_clip(popup_bounds);
+            self.push_id(id);
+
+            return true;
+        }
+
+        false
+    }
+
+    /// End a context menu.
+    pub fn end_context_menu(&mut self) {
+        self.pop_clip();
+        self.pop_id();
+    }
+
+    /// Open a context menu at the current mouse position.
+    ///
+    /// Call this when detecting a right-click on an area.
+    /// Returns true if the menu was just opened.
+    pub fn open_context_menu(&mut self, id: &str) -> bool {
+        let context_id = self.generate_id(id);
+
+        // Check for right-click
+        if self.input.mouse_pressed[crate::input::mouse_button::RIGHT] {
+            self.storage.insert(context_id, WidgetState::ContextMenuPos(self.input.mouse_pos));
+            self.popup_id = Some(context_id);
+            self.popup_opened_this_frame = true;
+            return true;
+        }
+
+        false
+    }
+
+    /// Check if a context menu is currently open.
+    pub fn is_context_menu_open(&mut self, id: &str) -> bool {
+        let context_id = self.generate_id(id);
+        self.popup_id == Some(context_id)
+    }
+
+    /// Close the current popup/dropdown/context menu.
+    pub fn close_current_popup(&mut self) {
+        // Mark any dropdown as closed
+        if let Some(popup_id) = self.popup_id {
+            self.storage.insert(popup_id, WidgetState::DropdownOpen(false));
+        }
+        self.popup_id = None;
+        self.popup_bounds = None;
+    }
+
+    /// Begin a combo box (dropdown with selection).
+    ///
+    /// Returns true if the combo is open and should have items drawn.
+    /// Call `end_combo()` after adding selectable items.
+    /// The `preview` text is shown in the closed combo box.
+    pub fn begin_combo(&mut self, id: &str, preview: &str, bounds: Rect2D) -> bool {
+        let combo_id = self.generate_id(id);
+
+        // Get or initialize open state
+        let is_open = self.storage.get(&combo_id)
+            .map(|s| matches!(s, WidgetState::DropdownOpen(true)))
+            .unwrap_or(false);
+
+        // Draw combo box
+        let hovered = self.update_hover(combo_id, bounds);
+
+        // Toggle on click
+        if self.button_behavior(combo_id, bounds) {
+            let new_open = !is_open;
+            self.storage.insert(combo_id, WidgetState::DropdownOpen(new_open));
+            if new_open {
+                self.popup_id = Some(combo_id);
+                self.popup_opened_this_frame = true;
+            } else {
+                self.popup_id = None;
+                self.popup_bounds = None;
+            }
+        }
+
+        // Determine combo colors
+        let bg_color = if is_open {
+            self.style.combo_bg
+        } else if self.active_id == Some(combo_id) {
+            self.style.combo_hovered
+        } else if hovered {
+            self.style.combo_hovered
+        } else {
+            self.style.combo_bg
+        };
+
+        self.draw_rect(bounds, bg_color);
+        self.draw_rect_border(bounds, Color::TRANSPARENT, self.style.combo_border, 1.0);
+
+        // Draw preview text
+        let text_pos = Vec2::new(
+            bounds.min.x() + self.style.menu_padding,
+            bounds.center().y() - self.style.font_size * 0.5,
+        );
+        self.draw_text(preview, text_pos, self.style.combo_text, self.style.font_size);
+
+        // Draw dropdown arrow
+        let arrow = "▼";
+        let arrow_size = self.measure_text(arrow, self.style.font_size);
+        let arrow_pos = Vec2::new(
+            bounds.max.x() - arrow_size.x() - self.style.menu_padding,
+            bounds.center().y() - self.style.font_size * 0.5,
+        );
+        self.draw_text(arrow, arrow_pos, self.style.combo_text, self.style.font_size);
+
+        // If open, prepare popup area
+        if is_open {
+            let popup_bounds = Rect2D::from_origin_size(
+                Vec2::new(bounds.min.x(), bounds.max.y()),
+                Vec2::new(
+                    bounds.width().max(self.style.menu_min_width),
+                    200.0, // Will be clipped by content
+                ),
+            );
+
+            // Draw popup background with shadow
+            let shadow_offset = Vec2::new(4.0, 4.0);
+            let shadow_bounds = Rect2D::new(popup_bounds.min + shadow_offset, popup_bounds.max + shadow_offset);
+            self.draw_rect(shadow_bounds, self.style.popup_shadow);
+            self.draw_rect(popup_bounds, self.style.popup_bg);
+            self.draw_rect_border(popup_bounds, Color::TRANSPARENT, self.style.popup_border, 1.0);
+
+            self.popup_bounds = Some(popup_bounds);
+            self.push_clip(popup_bounds);
+            self.push_id(id);
+
+            return true;
+        }
+
+        false
+    }
+
+    /// End a combo box.
+    pub fn end_combo(&mut self) {
+        self.pop_clip();
+        self.pop_id();
+    }
+
+    /// Get the menu item height for layout.
+    pub fn menu_item_height(&self) -> f32 {
+        self.style.menu_item_height
     }
 }
 
