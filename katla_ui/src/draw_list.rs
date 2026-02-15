@@ -15,6 +15,17 @@ impl TextureId {
 
     /// Default font atlas texture.
     pub const FONT_ATLAS: TextureId = TextureId(1);
+
+    /// Game viewport texture (rendered scene).
+    pub const VIEWPORT: TextureId = TextureId(2);
+
+    /// Reserved texture IDs start here.
+    pub const CUSTOM_START: u64 = 100;
+
+    /// Create a custom texture ID.
+    pub fn custom(id: u64) -> Self {
+        TextureId(Self::CUSTOM_START + id)
+    }
 }
 
 /// A single vertex in the UI draw list.

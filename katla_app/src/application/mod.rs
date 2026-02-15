@@ -56,8 +56,12 @@ pub struct Application {
     skeleton_buffers: HashMap<katla_ecs::EntityId, Rc<RefCell<SkeletonBuffer>>>,
     /// Immediate mode UI context
     ui_context: katla_ui::UiContext,
-    /// Debug overlay UI
+    /// Debug overlay UI (simplified stats)
     debug_overlay: crate::ui::DebugOverlay,
+    /// Game engine editor UI
+    editor_ui: crate::ui::EditorUI,
+    /// Use editor UI mode (vs simple debug overlay)
+    use_editor_ui: bool,
 }
 
 impl ApplicationHandler for Application {
@@ -766,24 +770,69 @@ impl Application {
         let fps = if dt > 0.0 { 1.0 / dt } else { 0.0 };
         let entity_count = self.world.entity_count();
 
-        // Render debug overlay and get draw list
-        let draw_list = self.debug_overlay.render(
-            &mut self.ui_context,
-            screen_size,
-            fps,
-            self.frame_count,
-            entity_count,
-        );
+        // Collect entity info for editor UI
+        let entity_info = self.collect_entity_info();
+
+        // Render UI (editor or debug overlay based on mode)
+        // We extract the vertices immediately to release the borrow on editor_ui
+        let (vertices, indices, use_editor) = if self.use_editor_ui {
+            let draw_list = self.editor_ui.render(
+                &mut self.ui_context,
+                screen_size,
+                &entity_info,
+                fps,
+                self.frame_count,
+            );
+            (draw_list.vertices.clone(), draw_list.indices.clone(), true)
+        } else {
+            let draw_list = self.debug_overlay.render(
+                &mut self.ui_context,
+                screen_size,
+                fps,
+                self.frame_count,
+                entity_count,
+            );
+            (draw_list.vertices.clone(), draw_list.indices.clone(), false)
+        };
+
+        // Extract editor actions (safe now since editor_ui borrow is released)
+        let editor_actions = if use_editor {
+            self.editor_ui.take_actions()
+        } else {
+            Vec::new()
+        };
+
+        // Process editor actions
+        for action in editor_actions {
+            use crate::ui::EditorAction;
+            match action {
+                EditorAction::SpawnModel(model_type, position) => {
+                    self.spawn_model_from_editor(model_type, position);
+                }
+                EditorAction::DeleteEntity(entity_id) => {
+                    self.world.destroy_entity(entity_id);
+                    info!("Deleted entity {:?}", entity_id);
+                }
+                EditorAction::SelectEntity(entity_id) => {
+                    info!("Selected entity {:?}", entity_id);
+                }
+                EditorAction::MoveEntity(_entity_id, _position) => {
+                    // TODO: Implement entity moving
+                }
+                EditorAction::TogglePlay => {
+                    info!("Toggle play mode");
+                }
+            }
+        }
 
         // Pass UI data to renderer if we have data and a renderer
-        if !draw_list.is_empty() {
+        if !vertices.is_empty() {
             use crate::rendering::ui_material::UiShaderVertex;
 
             // Transform vertices from screen space to NDC
             // Screen: (0,0) = top-left, Y increases downward
             // Standard viewport: NDC y=-1 is top, y=+1 is bottom
-            let shader_vertices: Vec<UiShaderVertex> = draw_list
-                .vertices
+            let shader_vertices: Vec<UiShaderVertex> = vertices
                 .iter()
                 .map(|v| {
                     let ndc_x = (v.position.x() / screen_size.x()) * 2.0 - 1.0;
@@ -806,7 +855,6 @@ impl Application {
             }.to_vec();
 
             // Convert indices to raw bytes
-            let indices = &draw_list.indices;
             let index_bytes = unsafe {
                 std::slice::from_raw_parts(
                     indices.as_ptr() as *const u8,
@@ -825,7 +873,6 @@ impl Application {
         }
 
         // Update font atlas texture if needed (render may have added new glyphs)
-        // This must happen after draw_list is dropped to release the borrow
         if self.ui_context.fonts.atlas_needs_update() {
             if let Some(ref mut renderer) = self.renderer {
                 let atlas_data = self.ui_context.fonts.atlas_data().to_vec();
@@ -836,5 +883,97 @@ impl Application {
 
         // Clear input state for next frame
         self.ui_context.input.clear_frame_state();
+    }
+
+    /// Collect entity information for the editor UI.
+    fn collect_entity_info(&self) -> Vec<crate::ui::EntityInfo> {
+        use crate::components::{NameComponent, TransformComponent, DrawableComponent};
+
+        let mut entities = Vec::new();
+
+        // Query all entities with transforms
+        for entity_id in self.world.entity_ids() {
+            let transform = match self.world.get_component::<TransformComponent>(entity_id) {
+                Some(t) => t,
+                None => continue,
+            };
+
+            let name = self.world.get_component::<NameComponent>(entity_id)
+                .map(|n| n.name.clone())
+                .unwrap_or_else(|| format!("Entity {}", entity_id.0));
+
+            let pos = transform.transform.position;
+            let euler = transform.transform.rotation.to_euler();
+            let rot = Vec3::new(euler.0, euler.1, euler.2);
+            let scale = transform.transform.scale;
+
+            // Check if drawable
+            let model_type = self.world.get_component::<DrawableComponent>(entity_id)
+                .map(|_| "Mesh".to_string())
+                .unwrap_or_else(|| "Empty".to_string());
+
+            entities.push(crate::ui::EntityInfo {
+                id: entity_id,
+                name,
+                position: pos,
+                rotation: rot,
+                scale,
+                model_type,
+            });
+        }
+
+        entities
+    }
+
+    /// Spawn a model from the editor UI.
+    fn spawn_model_from_editor(&mut self, model_type: crate::ui::SpawnableModel, position: Vec3) {
+        use crate::ui::SpawnableModel;
+        use crate::rendering::MeshBuilder;
+
+        let context = match &self.renderer {
+            Some(r) => r.context.clone(),
+            None => return,
+        };
+
+        let entity_id = self.world.create_entity();
+
+        // Add name
+        let name = format!("{}_{}", model_type.name(), entity_id.0);
+        self.world.add_component(entity_id, crate::components::NameComponent::new(&name));
+
+        // Add transform
+        let transform = katla_math::Transform {
+            position,
+            rotation: katla_math::Quat::new(), // Identity quaternion
+            scale: Vec3::new(1.0, 1.0, 1.0),
+        };
+        self.world.add_component(entity_id, crate::components::TransformComponent::new(transform));
+
+        // Create mesh using MeshBuilder
+        let builder = MeshBuilder::new(context.clone()).position(position);
+
+        let spawned_id = match model_type {
+            SpawnableModel::Fox => {
+                info!("Spawning Fox at {:?} (using cube placeholder)", position);
+                builder.cube().build(&mut self.world, self.renderer.as_mut().unwrap())
+            }
+            SpawnableModel::Cube => {
+                builder.cube().build(&mut self.world, self.renderer.as_mut().unwrap())
+            }
+            SpawnableModel::Sphere => {
+                builder.sphere().build(&mut self.world, self.renderer.as_mut().unwrap())
+            }
+            SpawnableModel::Cylinder => {
+                builder.cylinder().build(&mut self.world, self.renderer.as_mut().unwrap())
+            }
+            SpawnableModel::Plane => {
+                builder.plane().build(&mut self.world, self.renderer.as_mut().unwrap())
+            }
+            SpawnableModel::Torus => {
+                builder.torus().build(&mut self.world, self.renderer.as_mut().unwrap())
+            }
+        };
+
+        info!("Spawned {} (entity {}) at {:?}", model_type.name(), spawned_id.0, position);
     }
 }

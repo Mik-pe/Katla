@@ -925,6 +925,23 @@ impl UiContext {
         self.draw_rect_border(bounds, Color::TRANSPARENT, self.style.border, 1.0);
     }
 
+    /// Draw an image/texture in the given bounds.
+    ///
+    /// The texture is stretched to fill the bounds.
+    /// Use UV rect to display a portion of the texture.
+    pub fn image(&mut self, texture: crate::TextureId, bounds: Rect2D, uv: Option<Rect2D>, tint: Option<Color>) {
+        let uv_rect = uv.unwrap_or(Rect2D::new(Vec2::new(0.0, 0.0), Vec2::new(1.0, 1.0)));
+        let color = tint.unwrap_or(Color::WHITE);
+        self.draw_list.set_clip(self.clip_rect());
+        self.draw_list.add_textured_rect(bounds, uv_rect, color, texture);
+    }
+
+    /// Draw an image with a border (useful for viewport frames).
+    pub fn image_bordered(&mut self, texture: crate::TextureId, bounds: Rect2D, uv: Option<Rect2D>, tint: Option<Color>, border_color: Color) {
+        self.image(texture, bounds, uv, tint);
+        self.draw_rect_border(bounds, Color::TRANSPARENT, border_color, 1.0);
+    }
+
     /// Draw a real-time line graph.
     ///
     /// Values should be ordered oldest to newest (left to right).

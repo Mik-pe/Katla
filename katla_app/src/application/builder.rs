@@ -126,6 +126,8 @@ impl ApplicationBuilder {
             skeleton_buffers: HashMap::new(),
             ui_context,
             debug_overlay: crate::ui::DebugOverlay::new(),
+            editor_ui: crate::ui::EditorUI::new(),
+            use_editor_ui: true,  // Default to editor UI mode
         };
 
         Ok((app, event_loop))
