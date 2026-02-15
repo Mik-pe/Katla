@@ -8,7 +8,7 @@
 // - Decreases lifetime
 // - Gets recycled when lifetime reaches 0
 //
-// Uses push constants for per-frame data.
+// Uses uniform buffer for per-frame data (passed via push constants in Vulkan).
 
 // Particle data structure (must match ParticleData in particle_buffer.rs)
 struct ParticleData {
@@ -21,8 +21,8 @@ struct ParticleData {
     _pad2: vec3f,
 }
 
-// Push constants for per-frame data
-struct PushConstants {
+// Per-frame data (passed via uniform buffer, updated per-frame)
+struct FrameData {
     delta_time: f32,
     emit_count: u32,
     max_particles: u32,
@@ -33,8 +33,9 @@ struct PushConstants {
 @group(0) @binding(0)
 var<storage, read_write> particles: array<ParticleData>;
 
-// Push constants
-var<push> pc: PushConstants;
+// Uniform buffer for frame data
+@group(0) @binding(1)
+var<uniform> frame: FrameData;
 
 // Simple hash function for pseudo-random numbers
 fn hash(seed: u32) -> u32 {
@@ -95,7 +96,7 @@ fn cs_main(@builtin(global_invocation_id) global_id: vec3u) {
     let index = global_id.x;
 
     // Guard against out-of-bounds access
-    if (index >= pc.max_particles) {
+    if (index >= frame.max_particles) {
         return;
     }
 
@@ -104,14 +105,14 @@ fn cs_main(@builtin(global_invocation_id) global_id: vec3u) {
     // Check if particle is alive
     if (particle.lifetime > 0.0) {
         // Update lifetime
-        particle.lifetime -= pc.delta_time;
+        particle.lifetime -= frame.delta_time;
 
         if (particle.lifetime > 0.0) {
             // Update position
-            particle.position += particle.velocity * pc.delta_time;
+            particle.position += particle.velocity * frame.delta_time;
 
             // Apply simple gravity
-            particle.velocity.y -= 0.5 * pc.delta_time;
+            particle.velocity.y -= 0.5 * frame.delta_time;
 
             // Fade out over lifetime (last 1 second)
             if (particle.lifetime < 1.0) {
@@ -125,17 +126,17 @@ fn cs_main(@builtin(global_invocation_id) global_id: vec3u) {
     }
 
     // Emit new particles (only first N threads handle emission)
-    if (index < pc.emit_count) {
+    if (index < frame.emit_count) {
         // Find a dead particle slot to reuse
         // Use atomic operations or simple search
         // For simplicity, we emit at the current index if it's dead
         let emit_index = index;
 
-        if (emit_index < pc.max_particles) {
+        if (emit_index < frame.max_particles) {
             let dead_particle = particles[emit_index];
             if (dead_particle.lifetime <= 0.0) {
                 // Reuse this slot
-                let seed = pc.random_seed + index;
+                let seed = frame.random_seed + index;
                 particle = init_particle(emit_index, seed);
             }
         }
