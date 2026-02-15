@@ -258,8 +258,9 @@ impl DrawList {
             return;
         }
 
-        let nx = -dy / len * thickness * 0.5;
-        let ny = dx / len * thickness * 0.5;
+        // For screen coordinates (Y-down), use (dy, -dx) for counter-clockwise winding
+        let nx = dy / len * thickness * 0.5;
+        let ny = -dx / len * thickness * 0.5;
 
         self.add_convex_poly(
             &[

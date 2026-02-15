@@ -1027,23 +1027,29 @@ impl UiContext {
             })
             .collect();
 
-        // 5. Draw filled area under the line (convex polygon)
+        // 5. Draw filled area under the line (as vertical strips)
         if let Some(fill_color) = opts.fill_color {
-            let mut fill_points = Vec::with_capacity(points.len() + 2);
+            let bottom_y = graph_bounds.max.y();
 
-            // Start at bottom-left
-            fill_points.push(Vec2::new(graph_bounds.min.x(), graph_bounds.max.y()));
-
-            // Add all line points
-            fill_points.extend(points.iter().cloned());
-
-            // End at bottom-right
-            fill_points.push(Vec2::new(graph_bounds.max.x(), graph_bounds.max.y()));
-
-            // Clip to graph bounds
             self.push_clip(graph_bounds);
-            self.draw_list.set_clip(self.clip_rect());
-            self.draw_list.add_convex_poly(&fill_points, fill_color);
+
+            // Draw vertical quads between each pair of adjacent points
+            for i in 0..points.len().saturating_sub(1) {
+                let p0 = points[i];
+                let p1 = points[i + 1];
+
+                // Create a quad: top-left, top-right, bottom-right, bottom-left
+                self.draw_list.add_convex_poly(
+                    &[
+                        Vec2::new(p0.x(), p0.y()),      // top-left
+                        Vec2::new(p1.x(), p1.y()),      // top-right
+                        Vec2::new(p1.x(), bottom_y),    // bottom-right
+                        Vec2::new(p0.x(), bottom_y),    // bottom-left
+                    ],
+                    fill_color,
+                );
+            }
+
             self.pop_clip();
         }
 
