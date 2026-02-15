@@ -535,6 +535,185 @@ impl UiContext {
             1.0,
         );
     }
+
+    // -------------------------------------------------------------------------
+    // Container Widgets
+    // -------------------------------------------------------------------------
+
+    /// Begin a window container.
+    ///
+    /// Returns a WindowBuilder for chaining configuration.
+    /// Call `end_window()` after adding contents.
+    ///
+    /// # Example
+    /// ```ignore
+    /// ctx.begin_window("debug", Rect2D::from_origin_size(Vec2::new(10.0, 10.0), Vec2::new(200.0, 150.0)));
+    /// ctx.label("FPS: 60", ctx.next_item(Vec2::new(180.0, 20.0)));
+    /// ctx.end_window();
+    /// ```
+    pub fn begin_window(&mut self, id: &str, bounds: Rect2D) -> WindowState {
+        let window_id = self.generate_id(id);
+
+        // Draw window background
+        self.draw_rect(bounds, self.style.window_bg);
+
+        // Draw border
+        self.draw_rect_border(
+            bounds.contract(1.0),
+            self.style.window_bg,
+            self.style.window_border,
+            1.0,
+        );
+
+        // Push clip rect for content
+        let content_bounds = Rect2D::new(
+            Vec2::new(bounds.min.x(), bounds.min.y()),
+            bounds.max,
+        );
+        self.push_clip(content_bounds);
+
+        WindowState {
+            id: window_id,
+            bounds,
+            content_cursor: Vec2::new(
+                bounds.min.x() + self.style.window_padding,
+                bounds.min.y() + self.style.window_padding,
+            ),
+        }
+    }
+
+    /// End a window container.
+    pub fn end_window(&mut self) {
+        self.pop_clip();
+    }
+
+    /// Begin a collapsible header/panel.
+    ///
+    /// Returns true if the header is expanded.
+    pub fn begin_header(&mut self, id: &str, label: &str, open: &mut bool, bounds: Rect2D) -> bool {
+        let widget_id = self.generate_id(id);
+
+        // Click to toggle
+        if self.button_behavior(widget_id, bounds) {
+            *open = !*open;
+        }
+
+        // Draw header background
+        let bg_color = if *open {
+            self.style.window_title_bg_active
+        } else {
+            self.style.window_title_bg
+        };
+        self.draw_rect(bounds, bg_color);
+
+        // Draw arrow indicator
+        let arrow = if *open { "▼ " } else { "► " };
+        let text = format!("{}{}", arrow, label);
+        let text_pos = Vec2::new(
+            bounds.min.x() + 4.0,
+            bounds.center().y() - self.style.font_size * 0.5,
+        );
+        self.draw_text(&text, text_pos, self.style.text_color, self.style.font_size);
+
+        *open
+    }
+
+    /// Begin a child region with clipping.
+    ///
+    /// Returns the content area bounds.
+    pub fn begin_child(&mut self, _id: &str, bounds: Rect2D) -> Rect2D {
+        // Draw background
+        self.draw_rect(bounds, self.style.window_bg);
+
+        // Push clip
+        self.push_clip(bounds);
+
+        // Return content area (with padding)
+        bounds.contract(self.style.window_padding)
+    }
+
+    /// End a child region.
+    pub fn end_child(&mut self) {
+        self.pop_clip();
+    }
+
+    // -------------------------------------------------------------------------
+    // Utility Widgets
+    // -------------------------------------------------------------------------
+
+    /// Draw a progress bar.
+    pub fn progress_bar(&mut self, progress: f32, bounds: Rect2D, overlay: Option<&str>) {
+        let progress_clamped = progress.clamp(0.0, 1.0);
+
+        // Background
+        self.draw_rect(bounds, self.style.slider_track);
+
+        // Fill
+        if progress_clamped > 0.0 {
+            let fill_width = bounds.width() * progress_clamped;
+            let fill_bounds = Rect2D::from_origin_size(
+                bounds.min,
+                Vec2::new(fill_width, bounds.height()),
+            );
+            self.draw_rect(fill_bounds, self.style.slider_grab);
+        }
+
+        // Overlay text
+        if let Some(text) = overlay {
+            let text_size = self.measure_text(text, self.style.font_size);
+            let text_pos = Vec2::new(
+                bounds.center().x() - text_size.x() * 0.5,
+                bounds.center().y() - text_size.y() * 0.5,
+            );
+            self.draw_text(text, text_pos, self.style.text_color, self.style.font_size);
+        }
+    }
+
+    /// Draw a tooltip at the current mouse position.
+    pub fn tooltip(&mut self, text: &str) {
+        let padding = 4.0;
+        let text_size = self.measure_text(text, self.style.font_size);
+        let tip_size = Vec2::new(text_size.x() + padding * 2.0, text_size.y() + padding * 2.0);
+
+        // Position near mouse
+        let mut tip_pos = self.input.mouse_pos + Vec2::new(10.0, 10.0);
+
+        // Keep on screen
+        if tip_pos.x() + tip_size.x() > self.screen_size.x() {
+            tip_pos = Vec2::new(tip_pos.x() - tip_size.x() - 20.0, tip_pos.y());
+        }
+        if tip_pos.y() + tip_size.y() > self.screen_size.y() {
+            tip_pos = Vec2::new(tip_pos.x(), tip_pos.y() - tip_size.y() - 20.0);
+        }
+
+        let bounds = Rect2D::from_origin_size(tip_pos, tip_size);
+
+        // Draw tooltip
+        self.draw_rect(bounds, self.style.window_bg);
+        self.draw_rect_border(bounds, Color::TRANSPARENT, self.style.border, 1.0);
+        self.draw_text(
+            text,
+            Vec2::new(tip_pos.x() + padding, tip_pos.y() + padding),
+            self.style.text_color,
+            self.style.font_size,
+        );
+    }
+
+    /// Draw a color preview rectangle.
+    pub fn color_rect(&mut self, color: Color, bounds: Rect2D) {
+        self.draw_rect(bounds, color);
+        self.draw_rect_border(bounds, Color::TRANSPARENT, self.style.border, 1.0);
+    }
+}
+
+/// State for a window being built.
+pub struct WindowState {
+    /// Window widget ID.
+    pub id: WidgetId,
+    /// Window bounds.
+    pub bounds: Rect2D,
+    /// Cursor for content layout.
+    pub content_cursor: Vec2,
 }
 
 impl Default for UiContext {
