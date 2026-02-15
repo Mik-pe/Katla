@@ -186,6 +186,16 @@ impl FontSystem {
 
     /// Place a rasterized glyph in the texture atlas.
     fn place_in_atlas(&mut self, glyph: &RasterizedGlyph) -> Option<CachedGlyph> {
+        // Handle empty glyphs (like spaces) - they don't need atlas space
+        if glyph.width == 0 || glyph.height == 0 {
+            return Some(CachedGlyph {
+                uv_rect: Rect2D::new(Vec2::new(0.0, 0.0), Vec2::new(0.0, 0.0)),
+                size: Vec2::new(0.0, 0.0),
+                offset: Vec2::new(glyph.offset_x, glyph.offset_y),
+                advance: glyph.advance,
+            });
+        }
+
         let padding = self.glyph_padding;
         let glyph_w = glyph.width as u32 + padding * 2;
         let glyph_h = glyph.height as u32 + padding * 2;

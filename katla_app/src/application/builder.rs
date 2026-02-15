@@ -79,6 +79,36 @@ impl ApplicationBuilder {
         let camera = Rc::new(RefCell::new(Camera::new(&mut world)));
 
         let resources = ResourceManager::discover()?;
+
+        // Create UI context and load default font
+        let mut ui_context = katla_ui::UiContext::new();
+
+        // Load default font for text rendering
+        let font_path = resources.font_path("roboto-regular.ttf");
+        if font_path.exists() {
+            match std::fs::read(&font_path) {
+                Ok(font_bytes) => {
+                    match ui_context.fonts.add_font(&font_bytes) {
+                        Ok(font_id) => {
+                            // Precache common ASCII characters at typical UI sizes
+                            ui_context.fonts.precache_ascii(font_id, 14.0);
+                            ui_context.fonts.precache_ascii(font_id, 16.0);
+                            ui_context.set_font(font_id);
+                            log::info!("Loaded default font from {}", font_path.display());
+                        }
+                        Err(e) => {
+                            log::warn!("Failed to parse font: {}", e);
+                        }
+                    }
+                }
+                Err(e) => {
+                    log::warn!("Failed to read font file {}: {}", font_path.display(), e);
+                }
+            }
+        } else {
+            log::warn!("Font file not found: {}", font_path.display());
+        }
+
         let app = Application {
             window: None,
             renderer: None,
@@ -94,7 +124,7 @@ impl ApplicationBuilder {
             frame_count: 0,
             resources,
             skeleton_buffers: HashMap::new(),
-            ui_context: katla_ui::UiContext::new(),
+            ui_context,
             debug_overlay: crate::ui::DebugOverlay::new(),
         };
 

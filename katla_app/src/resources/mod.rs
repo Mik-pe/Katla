@@ -20,6 +20,8 @@ pub struct ResourceManager {
     pub materials: PathBuf,
     /// Path to shaders directory
     pub shaders: PathBuf,
+    /// Path to fonts directory
+    pub fonts: PathBuf,
 }
 
 impl ResourceManager {
@@ -69,12 +71,14 @@ impl ResourceManager {
         let models = root.join("models");
         let materials = root.join("materials");
         let shaders = root.join("shaders");
+        let fonts = root.join("fonts");
 
         Self {
             root,
             models,
             materials,
             shaders,
+            fonts,
         }
     }
 
@@ -92,6 +96,11 @@ impl ResourceManager {
     pub fn shader_path(&self, name: impl AsRef<Path>) -> PathBuf {
         self.shaders.join(name)
     }
+
+    /// Get path to a font file by name.
+    pub fn font_path(&self, name: impl AsRef<Path>) -> PathBuf {
+        self.fonts.join(name)
+    }
 }
 
 #[cfg(test)]
@@ -107,6 +116,7 @@ mod tests {
         assert_eq!(manager.models, root.join("models"));
         assert_eq!(manager.materials, root.join("materials"));
         assert_eq!(manager.shaders, root.join("shaders"));
+        assert_eq!(manager.fonts, root.join("fonts"));
     }
 
     #[test]
@@ -131,5 +141,13 @@ mod tests {
         let path = manager.shader_path("test.wgsl");
 
         assert_eq!(path, PathBuf::from("/test/resources/shaders/test.wgsl"));
+    }
+
+    #[test]
+    fn test_font_path() {
+        let manager = ResourceManager::from_root(PathBuf::from("/test/resources"));
+        let path = manager.font_path("roboto.ttf");
+
+        assert_eq!(path, PathBuf::from("/test/resources/fonts/roboto.ttf"));
     }
 }
