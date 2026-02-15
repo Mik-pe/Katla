@@ -10,13 +10,13 @@ struct VertexOutput {
     @location(1) color: vec4f,
 }
 
-@group(0) @binding(1)
+@group(0) @binding(0)
 var font_atlas: texture_2d<f32>;
 
-@group(0) @binding(2)
+@group(0) @binding(1)
 var font_sampler: sampler;
 
-@group(0) @binding(3)
+@group(0) @binding(2)
 var viewport_texture: texture_2d<f32>;
 
 @fragment
