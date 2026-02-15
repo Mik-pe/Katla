@@ -42,7 +42,7 @@ impl UiMaterial {
             .with_backface_culling(false)
             .with_color_format(ImageFormat::B8G8R8A8Srgb)
             .with_depth_format(ImageFormat::D32SfloatS8Uint)
-            .build_with_storage()
+            .build()
             .expect("Failed to create UI pipeline");
 
         Self {

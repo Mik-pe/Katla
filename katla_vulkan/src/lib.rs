@@ -893,7 +893,6 @@ impl VulkanRenderer {
         // Get pointers for UI rendering
         let ui_data_ptr = &self.ui_data as *const RefCell<Option<UiDrawData>>;
         let ui_pipeline_ptr = &self.ui_pipeline as *const Option<Rc<RefCell<MaterialPipeline>>>;
-        let storage_descriptor_ptr = &self.storage_descriptor_set as *const Option<StorageDescriptorSet>;
 
         graph_builder.add_pass("ui_pass", move |pass| {
             pass.write(Attachment::Color(swapchain_res))
@@ -902,12 +901,11 @@ impl VulkanRenderer {
                     // SAFETY: Pointers are valid for the renderer's lifetime
                     let ui_data_cell = unsafe { &*ui_data_ptr };
                     let ui_pipeline_opt = unsafe { &*ui_pipeline_ptr };
-                    let storage_descriptor_opt = unsafe { &*storage_descriptor_ptr };
 
                     let ui_data_ref = ui_data_cell.borrow();
 
-                    if let (Some(ui_data), Some(ui_pipeline), Some(storage_descriptor)) =
-                        (ui_data_ref.as_ref(), ui_pipeline_opt.as_ref(), storage_descriptor_opt.as_ref()) {
+                    if let (Some(ui_data), Some(ui_pipeline)) =
+                        (ui_data_ref.as_ref(), ui_pipeline_opt.as_ref()) {
                         if ui_data.vertex_data.is_empty() || ui_data.index_data.is_empty() {
                             return;
                         }
@@ -921,16 +919,6 @@ impl VulkanRenderer {
                                 cmd_buf,
                                 vk::PipelineBindPoint::GRAPHICS,
                                 pipeline_ref.vk_pipeline().handle,
-                            );
-
-                            // Bind storage descriptor set (for now, UI shares the storage buffer layout)
-                            pipeline_ref.context().device.cmd_bind_descriptor_sets(
-                                cmd_buf,
-                                vk::PipelineBindPoint::GRAPHICS,
-                                pipeline_ref.vk_layout(),
-                                0,
-                                &[storage_descriptor.set()],
-                                &[],
                             );
 
                             // Set viewport
