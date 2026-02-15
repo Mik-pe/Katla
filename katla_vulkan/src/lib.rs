@@ -70,6 +70,8 @@ pub struct VulkanRenderer {
     ui_buffers: Vec<UIBuffers>,
     /// Current frame index for UI buffer selection.
     ui_frame_index: std::cell::Cell<usize>,
+    /// UI textures (font atlas, white texture, descriptor set).
+    ui_textures: Option<UITextures>,
 }
 
 const FRAMES_IN_FLIGHT: usize = 2;
@@ -116,6 +118,7 @@ impl VulkanRenderer {
             ui_data: RefCell::new(None),
             ui_buffers: Vec::new(),
             ui_frame_index: std::cell::Cell::new(0),
+            ui_textures: None,
         }
     }
 
@@ -264,7 +267,45 @@ impl VulkanRenderer {
             index_capacity / 1024);
     }
 
+    /// Initialize UI textures for font atlas and solid color rendering.
+    ///
+    /// Creates font atlas texture and white fallback texture.
+    ///
+    /// # Arguments
+    /// * `atlas_width` - Font atlas width in pixels
+    /// * `atlas_height` - Font atlas height in pixels
+    pub fn init_ui_textures(&mut self, atlas_width: u32, atlas_height: u32) -> Result<(), vk::Result> {
+        let textures = UITextures::with_atlas_size(&self.context, atlas_width, atlas_height)?;
+        info!("UI textures initialized ({}x{} font atlas)", atlas_width, atlas_height);
+        self.ui_textures = Some(textures);
+        Ok(())
+    }
+
+    /// Update font atlas texture with new pixel data.
+    ///
+    /// Call this when glyphs have been added to the font system's atlas.
+    ///
+    /// # Arguments
+    /// * `pixels` - RGBA pixel data matching the atlas size
+    pub fn update_font_atlas(&mut self, pixels: &[u8]) -> bool {
+        if let Some(ref mut textures) = self.ui_textures {
+            textures.update_font_atlas(&self.context, pixels)
+        } else {
+            false
+        }
+    }
+
+    /// Get UI descriptor set for binding.
+    pub fn ui_descriptor_set(&self) -> Option<vk::DescriptorSet> {
+        self.ui_textures.as_ref().map(|t| t.descriptor_set)
+    }
+
     pub fn destroy(&mut self) {
+        // Destroy UI textures
+        if let Some(textures) = self.ui_textures.take() {
+            textures.destroy(&self.context);
+        }
+
         // Destroy UI buffers
         for buffers in self.ui_buffers.drain(..) {
             buffers.destroy(&self.context);
@@ -925,6 +966,7 @@ impl VulkanRenderer {
         let ui_data_ptr = &self.ui_data as *const RefCell<Option<UiDrawData>>;
         let ui_pipeline_ptr = &self.ui_pipeline as *const Option<Rc<RefCell<MaterialPipeline>>>;
         let ui_buffers_ptr = &self.ui_buffers as *const Vec<UIBuffers>;
+        let ui_textures_ptr = &self.ui_textures as *const Option<UITextures>;
 
         graph_builder.add_pass("ui_pass", move |pass| {
             pass.write(Attachment::Color(swapchain_res))
@@ -934,6 +976,7 @@ impl VulkanRenderer {
                     let ui_data_cell = unsafe { &*ui_data_ptr };
                     let ui_pipeline_opt = unsafe { &*ui_pipeline_ptr };
                     let ui_buffers = unsafe { &*ui_buffers_ptr };
+                    let ui_textures = unsafe { &*ui_textures_ptr };
 
                     let ui_data_ref = ui_data_cell.borrow();
 
@@ -956,6 +999,18 @@ impl VulkanRenderer {
                                 vk::PipelineBindPoint::GRAPHICS,
                                 pipeline_ref.vk_pipeline().handle,
                             );
+
+                            // Bind UI texture descriptor set (set 0)
+                            if let Some(textures) = ui_textures {
+                                pipeline_ref.context().device.cmd_bind_descriptor_sets(
+                                    cmd_buf,
+                                    vk::PipelineBindPoint::GRAPHICS,
+                                    pipeline_ref.vk_pipeline().layout,
+                                    0,
+                                    &[textures.descriptor_set],
+                                    &[],
+                                );
+                            }
 
                             // Set viewport
                             let viewport = vk::Viewport {
@@ -1402,5 +1457,427 @@ impl UIBuffers {
     pub fn destroy(self, context: &VulkanContext) {
         context.free_buffer(self.vertex_buffer, self.vertex_allocation);
         context.free_buffer(self.index_buffer, self.index_allocation);
+    }
+}
+
+/// UI texture resources for font atlas and fallback.
+pub struct UITextures {
+    /// Font atlas texture image.
+    pub font_image: vk::Image,
+    pub font_image_memory: gpu_allocator::vulkan::Allocation,
+    pub font_image_view: vk::ImageView,
+    /// White 1x1 texture for solid color elements.
+    pub white_image: vk::Image,
+    pub white_image_memory: gpu_allocator::vulkan::Allocation,
+    pub white_image_view: vk::ImageView,
+    /// Sampler for both textures.
+    pub sampler: vk::Sampler,
+    /// Descriptor set layout for UI textures.
+    pub descriptor_set_layout: vk::DescriptorSetLayout,
+    /// Descriptor set with bound textures.
+    pub descriptor_set: vk::DescriptorSet,
+    /// Descriptor pool for UI textures.
+    pub descriptor_pool: vk::DescriptorPool,
+    /// Font atlas dimensions.
+    pub atlas_width: u32,
+    pub atlas_height: u32,
+}
+
+impl UITextures {
+    /// Create UI textures with a default font atlas size.
+    pub fn new(context: &VulkanContext) -> Result<Self, vk::Result> {
+        Self::with_atlas_size(context, 512, 512)
+    }
+
+    /// Create UI textures with a specific font atlas size.
+    pub fn with_atlas_size(
+        context: &VulkanContext,
+        atlas_width: u32,
+        atlas_height: u32,
+    ) -> Result<Self, vk::Result> {
+        unsafe {
+            // Create sampler for UI textures (linear filtering, no mipmaps)
+            let sampler_create_info = vk::SamplerCreateInfo::default()
+                .mag_filter(vk::Filter::LINEAR)
+                .min_filter(vk::Filter::LINEAR)
+                .address_mode_u(vk::SamplerAddressMode::CLAMP_TO_EDGE)
+                .address_mode_v(vk::SamplerAddressMode::CLAMP_TO_EDGE)
+                .address_mode_w(vk::SamplerAddressMode::CLAMP_TO_EDGE)
+                .anisotropy_enable(false)
+                .max_anisotropy(1.0)
+                .border_color(vk::BorderColor::INT_TRANSPARENT_BLACK)
+                .unnormalized_coordinates(false)
+                .compare_enable(false)
+                .compare_op(vk::CompareOp::ALWAYS)
+                .mipmap_mode(vk::SamplerMipmapMode::LINEAR)
+                .mip_lod_bias(0.0)
+                .min_lod(0.0)
+                .max_lod(0.0);
+
+            let sampler = context.device.create_sampler(&sampler_create_info, None)?;
+
+            // Create white 1x1 texture
+            let (white_image, white_memory, white_view) =
+                Self::create_texture(context, 1, 1, &[255, 255, 255, 255])?;
+
+            // Create font atlas texture (initially white)
+            let white_pixels = vec![255u8; (atlas_width * atlas_height * 4) as usize];
+            let (font_image, font_memory, font_view) =
+                Self::create_texture(context, atlas_width, atlas_height, &white_pixels)?;
+
+            // Create descriptor set layout
+            let bindings = [
+                vk::DescriptorSetLayoutBinding::default()
+                    .binding(0)
+                    .descriptor_type(vk::DescriptorType::SAMPLED_IMAGE)
+                    .descriptor_count(1)
+                    .stage_flags(vk::ShaderStageFlags::FRAGMENT),
+                vk::DescriptorSetLayoutBinding::default()
+                    .binding(1)
+                    .descriptor_type(vk::DescriptorType::SAMPLER)
+                    .descriptor_count(1)
+                    .stage_flags(vk::ShaderStageFlags::FRAGMENT),
+            ];
+
+            let layout_create_info = vk::DescriptorSetLayoutCreateInfo::default()
+                .bindings(&bindings);
+
+            let descriptor_set_layout = context.device.create_descriptor_set_layout(&layout_create_info, None)?;
+
+            // Create descriptor pool
+            let pool_sizes = [
+                vk::DescriptorPoolSize {
+                    ty: vk::DescriptorType::SAMPLED_IMAGE,
+                    descriptor_count: 1,
+                },
+                vk::DescriptorPoolSize {
+                    ty: vk::DescriptorType::SAMPLER,
+                    descriptor_count: 1,
+                },
+            ];
+
+            let pool_create_info = vk::DescriptorPoolCreateInfo::default()
+                .pool_sizes(&pool_sizes)
+                .max_sets(1);
+
+            let descriptor_pool = context.device.create_descriptor_pool(&pool_create_info, None)?;
+
+            // Allocate descriptor set
+            let set_layouts = [descriptor_set_layout];
+            let alloc_info = vk::DescriptorSetAllocateInfo::default()
+                .descriptor_pool(descriptor_pool)
+                .set_layouts(&set_layouts);
+
+            let descriptor_sets = context.device.allocate_descriptor_sets(&alloc_info)?;
+            let descriptor_set = descriptor_sets[0];
+
+            // Update descriptor set with font texture and sampler
+            let image_info = vk::DescriptorImageInfo {
+                sampler: vk::Sampler::null(), // Not used for sampled image
+                image_view: font_view,
+                image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+            };
+
+            let sampler_info = vk::DescriptorImageInfo {
+                sampler,
+                image_view: vk::ImageView::null(),
+                image_layout: vk::ImageLayout::UNDEFINED,
+            };
+
+            let image_infos = [image_info];
+            let sampler_infos = [sampler_info];
+
+            let image_write = vk::WriteDescriptorSet::default()
+                .dst_set(descriptor_set)
+                .dst_binding(0)
+                .dst_array_element(0)
+                .descriptor_type(vk::DescriptorType::SAMPLED_IMAGE)
+                .image_info(&image_infos);
+
+            let sampler_write = vk::WriteDescriptorSet::default()
+                .dst_set(descriptor_set)
+                .dst_binding(1)
+                .dst_array_element(0)
+                .descriptor_type(vk::DescriptorType::SAMPLER)
+                .image_info(&sampler_infos);
+
+            context.device.update_descriptor_sets(&[image_write, sampler_write], &[]);
+
+            Ok(Self {
+                font_image,
+                font_image_memory: font_memory,
+                font_image_view: font_view,
+                white_image,
+                white_image_memory: white_memory,
+                white_image_view: white_view,
+                sampler,
+                descriptor_set_layout,
+                descriptor_set,
+                descriptor_pool,
+                atlas_width,
+                atlas_height,
+            })
+        }
+    }
+
+    /// Create a simple RGBA8 texture from pixel data.
+    unsafe fn create_texture(
+        context: &VulkanContext,
+        width: u32,
+        height: u32,
+        pixels: &[u8],
+    ) -> Result<(vk::Image, gpu_allocator::vulkan::Allocation, vk::ImageView), vk::Result> {
+        let extent = vk::Extent3D { width, height, depth: 1 };
+
+        // Create image
+        let image_create_info = vk::ImageCreateInfo::default()
+            .image_type(vk::ImageType::TYPE_2D)
+            .extent(extent)
+            .mip_levels(1)
+            .array_layers(1)
+            .format(vk::Format::R8G8B8A8_SRGB)
+            .tiling(vk::ImageTiling::OPTIMAL)
+            .initial_layout(vk::ImageLayout::UNDEFINED)
+            .usage(vk::ImageUsageFlags::TRANSFER_DST | vk::ImageUsageFlags::SAMPLED)
+            .sharing_mode(vk::SharingMode::EXCLUSIVE)
+            .samples(vk::SampleCountFlags::TYPE_1);
+
+        let (image, memory) = context.create_image(image_create_info, gpu_allocator::MemoryLocation::GpuOnly);
+
+        // Create staging buffer
+        let staging_create_info = vk::BufferCreateInfo::default()
+            .size(pixels.len() as u64)
+            .usage(vk::BufferUsageFlags::TRANSFER_SRC)
+            .sharing_mode(vk::SharingMode::EXCLUSIVE);
+
+        let (staging_buffer, staging_memory) =
+            context.allocate_buffer(&staging_create_info, gpu_allocator::MemoryLocation::CpuToGpu);
+
+        // Copy pixels to staging buffer
+        let staging_ptr = context.map_buffer(&staging_memory);
+        std::ptr::copy_nonoverlapping(pixels.as_ptr(), staging_ptr, pixels.len());
+
+        // Transition and copy
+        let cmd_buffer = context.begin_single_time_commands();
+        let cmd = cmd_buffer.vk_command_buffer();
+
+        // Transition to transfer dst
+        let subresource = vk::ImageSubresourceRange::default()
+            .aspect_mask(vk::ImageAspectFlags::COLOR)
+            .base_mip_level(0)
+            .level_count(1)
+            .base_array_layer(0)
+            .layer_count(1);
+
+        let barrier_undefined_to_dst = vk::ImageMemoryBarrier::default()
+            .old_layout(vk::ImageLayout::UNDEFINED)
+            .new_layout(vk::ImageLayout::TRANSFER_DST_OPTIMAL)
+            .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+            .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+            .image(image)
+            .subresource_range(subresource)
+            .src_access_mask(vk::AccessFlags::empty())
+            .dst_access_mask(vk::AccessFlags::TRANSFER_WRITE);
+
+        context.device.cmd_pipeline_barrier(
+            cmd,
+            vk::PipelineStageFlags::TOP_OF_PIPE,
+            vk::PipelineStageFlags::TRANSFER,
+            vk::DependencyFlags::empty(),
+            &[],
+            &[],
+            &[barrier_undefined_to_dst],
+        );
+
+        // Copy buffer to image
+        let region = vk::BufferImageCopy::default()
+            .buffer_offset(0)
+            .buffer_row_length(0)
+            .buffer_image_height(0)
+            .image_subresource(vk::ImageSubresourceLayers {
+                aspect_mask: vk::ImageAspectFlags::COLOR,
+                mip_level: 0,
+                base_array_layer: 0,
+                layer_count: 1,
+            })
+            .image_offset(vk::Offset3D { x: 0, y: 0, z: 0 })
+            .image_extent(extent);
+
+        context.device.cmd_copy_buffer_to_image(
+            cmd,
+            staging_buffer,
+            image,
+            vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+            &[region],
+        );
+
+        // Transition to shader read only
+        let barrier_dst_to_shader = vk::ImageMemoryBarrier::default()
+            .old_layout(vk::ImageLayout::TRANSFER_DST_OPTIMAL)
+            .new_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
+            .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+            .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+            .image(image)
+            .subresource_range(subresource)
+            .src_access_mask(vk::AccessFlags::TRANSFER_WRITE)
+            .dst_access_mask(vk::AccessFlags::SHADER_READ);
+
+        context.device.cmd_pipeline_barrier(
+            cmd,
+            vk::PipelineStageFlags::TRANSFER,
+            vk::PipelineStageFlags::FRAGMENT_SHADER,
+            vk::DependencyFlags::empty(),
+            &[],
+            &[],
+            &[barrier_dst_to_shader],
+        );
+
+        context.end_single_time_commands(cmd_buffer);
+
+        // Cleanup staging buffer
+        context.free_buffer(staging_buffer, staging_memory);
+
+        // Create image view
+        let view_create_info = vk::ImageViewCreateInfo::default()
+            .image(image)
+            .view_type(vk::ImageViewType::TYPE_2D)
+            .format(vk::Format::R8G8B8A8_SRGB)
+            .subresource_range(vk::ImageSubresourceRange {
+                aspect_mask: vk::ImageAspectFlags::COLOR,
+                base_mip_level: 0,
+                level_count: 1,
+                base_array_layer: 0,
+                layer_count: 1,
+            });
+
+        let image_view = context.device.create_image_view(&view_create_info, None)?;
+
+        Ok((image, memory, image_view))
+    }
+
+    /// Update font atlas texture with new pixel data.
+    pub fn update_font_atlas(&mut self, context: &VulkanContext, pixels: &[u8]) -> bool {
+        if pixels.len() != (self.atlas_width * self.atlas_height * 4) as usize {
+            warn!("Font atlas pixel data size mismatch");
+            return false;
+        }
+
+        unsafe {
+            // Create staging buffer
+            let staging_create_info = vk::BufferCreateInfo::default()
+                .size(pixels.len() as u64)
+                .usage(vk::BufferUsageFlags::TRANSFER_SRC)
+                .sharing_mode(vk::SharingMode::EXCLUSIVE);
+
+            let (staging_buffer, staging_memory) =
+                context.allocate_buffer(&staging_create_info, gpu_allocator::MemoryLocation::CpuToGpu);
+
+            // Copy pixels to staging buffer
+            let staging_ptr = context.map_buffer(&staging_memory);
+            std::ptr::copy_nonoverlapping(pixels.as_ptr(), staging_ptr, pixels.len());
+
+            // Transition and copy
+            let cmd_buffer = context.begin_single_time_commands();
+            let cmd = cmd_buffer.vk_command_buffer();
+
+            let extent = vk::Extent3D {
+                width: self.atlas_width,
+                height: self.atlas_height,
+                depth: 1,
+            };
+
+            let subresource = vk::ImageSubresourceRange::default()
+                .aspect_mask(vk::ImageAspectFlags::COLOR)
+                .base_mip_level(0)
+                .level_count(1)
+                .base_array_layer(0)
+                .layer_count(1);
+
+            // Transition to transfer dst
+            let barrier_to_dst = vk::ImageMemoryBarrier::default()
+                .old_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
+                .new_layout(vk::ImageLayout::TRANSFER_DST_OPTIMAL)
+                .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+                .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+                .image(self.font_image)
+                .subresource_range(subresource)
+                .src_access_mask(vk::AccessFlags::SHADER_READ)
+                .dst_access_mask(vk::AccessFlags::TRANSFER_WRITE);
+
+            context.device.cmd_pipeline_barrier(
+                cmd,
+                vk::PipelineStageFlags::FRAGMENT_SHADER,
+                vk::PipelineStageFlags::TRANSFER,
+                vk::DependencyFlags::empty(),
+                &[],
+                &[],
+                &[barrier_to_dst],
+            );
+
+            // Copy buffer to image
+            let region = vk::BufferImageCopy::default()
+                .buffer_offset(0)
+                .buffer_row_length(0)
+                .buffer_image_height(0)
+                .image_subresource(vk::ImageSubresourceLayers {
+                    aspect_mask: vk::ImageAspectFlags::COLOR,
+                    mip_level: 0,
+                    base_array_layer: 0,
+                    layer_count: 1,
+                })
+                .image_offset(vk::Offset3D { x: 0, y: 0, z: 0 })
+                .image_extent(extent);
+
+            context.device.cmd_copy_buffer_to_image(
+                cmd,
+                staging_buffer,
+                self.font_image,
+                vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+                &[region],
+            );
+
+            // Transition back to shader read only
+            let barrier_to_shader = vk::ImageMemoryBarrier::default()
+                .old_layout(vk::ImageLayout::TRANSFER_DST_OPTIMAL)
+                .new_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
+                .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+                .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+                .image(self.font_image)
+                .subresource_range(subresource)
+                .src_access_mask(vk::AccessFlags::TRANSFER_WRITE)
+                .dst_access_mask(vk::AccessFlags::SHADER_READ);
+
+            context.device.cmd_pipeline_barrier(
+                cmd,
+                vk::PipelineStageFlags::TRANSFER,
+                vk::PipelineStageFlags::FRAGMENT_SHADER,
+                vk::DependencyFlags::empty(),
+                &[],
+                &[],
+                &[barrier_to_shader],
+            );
+
+            context.end_single_time_commands(cmd_buffer);
+
+            // Cleanup staging buffer
+            context.free_buffer(staging_buffer, staging_memory);
+        }
+
+        true
+    }
+
+    /// Destroy UI textures.
+    pub fn destroy(self, context: &VulkanContext) {
+        unsafe {
+            context.device.destroy_sampler(self.sampler, None);
+            context.device.destroy_image_view(self.font_image_view, None);
+            context.device.destroy_image(self.font_image, None);
+            context.allocator.borrow_mut().free(self.font_image_memory).ok();
+            context.device.destroy_image_view(self.white_image_view, None);
+            context.device.destroy_image(self.white_image, None);
+            context.allocator.borrow_mut().free(self.white_image_memory).ok();
+            context.device.destroy_descriptor_set_layout(self.descriptor_set_layout, None);
+            context.device.destroy_descriptor_pool(self.descriptor_pool, None);
+        }
     }
 }

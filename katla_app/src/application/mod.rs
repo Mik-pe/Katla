@@ -576,6 +576,10 @@ impl Application {
         // Initialize UI buffers (256KB vertex, 128KB index - enough for complex UIs)
         renderer.init_ui_buffers(256 * 1024, 128 * 1024);
 
+        // Initialize UI textures (512x512 font atlas)
+        renderer.init_ui_textures(512, 512)
+            .expect("Failed to initialize UI textures");
+
         // Setup render graph with multiple framebuffers
         renderer.setup_render_graph();
     }
