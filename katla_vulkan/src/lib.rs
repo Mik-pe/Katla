@@ -1448,13 +1448,14 @@ impl VulkanRenderer {
             self.frame_context.depth_render_texture.image,
         )?;
 
-        // === COPY SWAPCHAIN TO VIEWPORT TEXTURE ===
-        // This allows the UI to sample the rendered scene in the viewport panel
+        // === COPY SWAPCHAIN TO VIEWPORT TEXTURE (BEFORE UI RENDERS) ===
+        // This copies the PREVIOUS frame's swapchain to viewport texture.
+        // The viewport texture will have the scene from last frame (no UI recursion).
         if let Some(ref viewport_target) = self.viewport_target {
             let swapchain_image = self.frame_context.swapchain_images[image_index].vk();
             let swapchain_extent = self.frame_context.swapchain.get_extent();
 
-            // Transition swapchain to transfer src
+            // Transition swapchain from PRESENT_SRC (previous frame) to TRANSFER_SRC
             let swapchain_barrier = vk::ImageMemoryBarrier::default()
                 .old_layout(vk::ImageLayout::PRESENT_SRC_KHR)
                 .new_layout(vk::ImageLayout::TRANSFER_SRC_OPTIMAL)
@@ -1468,11 +1469,10 @@ impl VulkanRenderer {
                     base_array_layer: 0,
                     layer_count: 1,
                 })
-                .src_access_mask(vk::AccessFlags::COLOR_ATTACHMENT_WRITE)
+                .src_access_mask(vk::AccessFlags::empty()) // Previous frame already finished
                 .dst_access_mask(vk::AccessFlags::TRANSFER_READ);
 
             // Transition viewport color to transfer dst
-            // Note: After first frame, viewport texture is in SHADER_READ_ONLY_OPTIMAL
             let viewport_barrier = vk::ImageMemoryBarrier::default()
                 .old_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
                 .new_layout(vk::ImageLayout::TRANSFER_DST_OPTIMAL)
@@ -1492,7 +1492,7 @@ impl VulkanRenderer {
             unsafe {
                 self.context.device.cmd_pipeline_barrier(
                     command_buffer.vk_command_buffer(),
-                    vk::PipelineStageFlags::FRAGMENT_SHADER,
+                    vk::PipelineStageFlags::TOP_OF_PIPE, // No prior dependency
                     vk::PipelineStageFlags::TRANSFER,
                     vk::DependencyFlags::empty(),
                     &[],
@@ -1552,10 +1552,10 @@ impl VulkanRenderer {
                     vk::Filter::LINEAR,
                 );
 
-                // Transition swapchain back to present
-                let swapchain_back_barrier = vk::ImageMemoryBarrier::default()
+                // Transition swapchain to COLOR_ATTACHMENT for render graph
+                let swapchain_to_color = vk::ImageMemoryBarrier::default()
                     .old_layout(vk::ImageLayout::TRANSFER_SRC_OPTIMAL)
-                    .new_layout(vk::ImageLayout::PRESENT_SRC_KHR)
+                    .new_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
                     .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
                     .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
                     .image(swapchain_image)
@@ -1567,10 +1567,10 @@ impl VulkanRenderer {
                         layer_count: 1,
                     })
                     .src_access_mask(vk::AccessFlags::TRANSFER_READ)
-                    .dst_access_mask(vk::AccessFlags::empty());
+                    .dst_access_mask(vk::AccessFlags::COLOR_ATTACHMENT_WRITE);
 
-                // Transition viewport to shader read
-                let viewport_back_barrier = vk::ImageMemoryBarrier::default()
+                // Transition viewport to SHADER_READ_ONLY for UI sampling
+                let viewport_to_shader = vk::ImageMemoryBarrier::default()
                     .old_layout(vk::ImageLayout::TRANSFER_DST_OPTIMAL)
                     .new_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
                     .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
@@ -1589,11 +1589,11 @@ impl VulkanRenderer {
                 self.context.device.cmd_pipeline_barrier(
                     command_buffer.vk_command_buffer(),
                     vk::PipelineStageFlags::TRANSFER,
-                    vk::PipelineStageFlags::FRAGMENT_SHADER,
+                    vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT | vk::PipelineStageFlags::FRAGMENT_SHADER,
                     vk::DependencyFlags::empty(),
                     &[],
                     &[],
-                    &[swapchain_back_barrier, viewport_back_barrier],
+                    &[swapchain_to_color, viewport_to_shader],
                 );
             }
         }
