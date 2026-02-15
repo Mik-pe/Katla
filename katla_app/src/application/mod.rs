@@ -767,7 +767,7 @@ impl Application {
         let entity_count = self.world.entity_count();
 
         // Render debug overlay and get draw list
-        let draw_list = crate::ui::DebugOverlay::render(
+        let draw_list = self.debug_overlay.render(
             &mut self.ui_context,
             screen_size,
             fps,
