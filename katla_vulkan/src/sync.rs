@@ -729,6 +729,91 @@ impl ImageMemoryBarrier2 {
     }
 }
 
+/// Buffer memory barrier 2 for Vulkan 1.3 synchronization.
+///
+/// This structure provides a builder pattern for buffer memory barriers,
+/// similar to `ImageMemoryBarrier2` but for buffer resources.
+/// Used for compute-graphics synchronization with particle buffers.
+#[derive(Clone, Debug)]
+pub struct BufferMemoryBarrier2 {
+    pub src_stage_mask: PipelineStage2Flags,
+    pub dst_stage_mask: PipelineStage2Flags,
+    pub src_access_mask: AccessFlags2,
+    pub dst_access_mask: AccessFlags2,
+    pub src_queue_family_index: u32,
+    pub dst_queue_family_index: u32,
+    pub buffer: vk::Buffer,
+    pub offset: vk::DeviceSize,
+    pub size: vk::DeviceSize,
+}
+
+impl BufferMemoryBarrier2 {
+    /// Create a new buffer memory barrier 2.
+    pub fn new(buffer: vk::Buffer) -> Self {
+        Self {
+            src_stage_mask: PipelineStage2Flags::TOP_OF_PIPE,
+            dst_stage_mask: PipelineStage2Flags::BOTTOM_OF_PIPE,
+            src_access_mask: AccessFlags2::NONE,
+            dst_access_mask: AccessFlags2::NONE,
+            src_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
+            dst_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
+            buffer,
+            offset: 0,
+            size: vk::WHOLE_SIZE,
+        }
+    }
+
+    /// Set source stage mask.
+    pub fn src_stage(mut self, stage: PipelineStage2Flags) -> Self {
+        self.src_stage_mask = stage;
+        self
+    }
+
+    /// Set destination stage mask.
+    pub fn dst_stage(mut self, stage: PipelineStage2Flags) -> Self {
+        self.dst_stage_mask = stage;
+        self
+    }
+
+    /// Set source access mask.
+    pub fn src_access(mut self, access: AccessFlags2) -> Self {
+        self.src_access_mask = access;
+        self
+    }
+
+    /// Set destination access mask.
+    pub fn dst_access(mut self, access: AccessFlags2) -> Self {
+        self.dst_access_mask = access;
+        self
+    }
+
+    /// Set buffer offset.
+    pub fn offset(mut self, offset: vk::DeviceSize) -> Self {
+        self.offset = offset;
+        self
+    }
+
+    /// Set buffer size.
+    pub fn size(mut self, size: vk::DeviceSize) -> Self {
+        self.size = size;
+        self
+    }
+
+    /// Convert to Vulkan vk::BufferMemoryBarrier2KHR.
+    pub fn into_vk(self) -> vk::BufferMemoryBarrier2KHR<'static> {
+        vk::BufferMemoryBarrier2KHR::default()
+            .src_stage_mask(self.src_stage_mask.into_vk())
+            .dst_stage_mask(self.dst_stage_mask.into_vk())
+            .src_access_mask(self.src_access_mask.into_vk())
+            .dst_access_mask(self.dst_access_mask.into_vk())
+            .src_queue_family_index(self.src_queue_family_index)
+            .dst_queue_family_index(self.dst_queue_family_index)
+            .buffer(self.buffer)
+            .offset(self.offset)
+            .size(self.size)
+    }
+}
+
 /// Dependency info for Vulkan 1.3 synchronization.
 ///
 /// This structure replaces the traditional vk::DependencyInfo
@@ -756,9 +841,17 @@ impl DependencyInfo {
         self
     }
 
-    /// Add a buffer memory barrier.
+    /// Add a buffer memory barrier (raw Vulkan type).
     pub fn add_buffer_barrier(mut self, barrier: vk::BufferMemoryBarrier2KHR<'static>) -> Self {
         self.buffer_barriers.push(barrier);
+        self
+    }
+
+    /// Add a buffer memory barrier using the wrapper type.
+    ///
+    /// This is the preferred method for adding buffer barriers.
+    pub fn add_buffer_barrier2(mut self, barrier: BufferMemoryBarrier2) -> Self {
+        self.buffer_barriers.push(barrier.into_vk());
         self
     }
 
@@ -922,5 +1015,44 @@ mod tests {
         assert!(dep_info.memory_barriers.is_empty());
         assert!(dep_info.buffer_barriers.is_empty());
         assert!(dep_info.image_barriers.is_empty());
+    }
+
+    #[test]
+    fn test_buffer_memory_barrier2_builder() {
+        let buffer = vk::Buffer::null();
+        let barrier = BufferMemoryBarrier2::new(buffer)
+            .src_stage(PipelineStage2Flags::COMPUTE_SHADER)
+            .dst_stage(PipelineStage2Flags::VERTEX_SHADER)
+            .src_access(AccessFlags2::SHADER_WRITE)
+            .dst_access(AccessFlags2::VERTEX_ATTRIBUTE_READ)
+            .offset(0)
+            .size(1024);
+
+        assert_eq!(barrier.buffer, buffer);
+        assert_eq!(barrier.offset, 0);
+        assert_eq!(barrier.size, 1024);
+    }
+
+    #[test]
+    fn test_buffer_memory_barrier2_into_vk() {
+        let buffer = vk::Buffer::null();
+        let barrier = BufferMemoryBarrier2::new(buffer)
+            .src_stage(PipelineStage2Flags::COMPUTE_SHADER)
+            .dst_stage(PipelineStage2Flags::VERTEX_INPUT);
+
+        let vk_barrier = barrier.into_vk();
+        assert_eq!(vk_barrier.buffer, buffer);
+    }
+
+    #[test]
+    fn test_dependency_info_with_buffer_barrier2() {
+        let buffer = vk::Buffer::null();
+        let barrier = BufferMemoryBarrier2::new(buffer)
+            .src_stage(PipelineStage2Flags::COMPUTE_SHADER)
+            .dst_stage(PipelineStage2Flags::VERTEX_SHADER);
+
+        let dep_info = DependencyInfo::new().add_buffer_barrier2(barrier);
+
+        assert_eq!(dep_info.buffer_barriers.len(), 1);
     }
 }

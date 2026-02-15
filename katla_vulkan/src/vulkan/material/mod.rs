@@ -1,6 +1,7 @@
 pub mod asset;
 pub mod buffer_descriptor;
 pub mod builder;
+pub mod compute_pipeline;
 pub mod descriptor;
 pub mod file_watcher;
 pub mod hot_reload;
@@ -19,6 +20,7 @@ pub use buffer_descriptor::{
     BufferBinding, BufferDescriptorSet, BufferDescriptorSetBuilder, BufferDescriptorSource,
 };
 pub use builder::*;
+pub use compute_pipeline::{ComputePipeline, ComputePipelineBuilder, ComputePipelineError};
 pub use descriptor::{
     DescriptorBinding, MaterialDescriptor, MaterialError, MaterialValue, RenderState, ShaderSource,
     ShaderStage, UniformType,
