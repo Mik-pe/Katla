@@ -1,6 +1,6 @@
 ---
 name: vulkan-modern-practices-guide
-description: Comprehensive guide to modern Vulkan 1.3 (2026) development patterns. Covers Dynamic Rendering, Buffer Device Address, Descriptor Indexing (bindless), Synchronization2, VMA integration, frames in-flight, and Slang shading language. Use when implementing new Vulkan features, refactoring legacy code, or learning modern Vulkan practices.
+description: Comprehensive guide to modern Vulkan 1.3 (2026) development patterns for Katla engine. Covers Dynamic Rendering, Synchronization2, VMA integration via gpu_allocator, frames in-flight, and WGSL shaders compiled via naga library. Use when implementing new Vulkan features, refactoring legacy code, or learning Katla's Vulkan patterns.
 allowed-tools: Read, Grep, Glob, Bash
 ---
 
@@ -404,66 +404,131 @@ impl Renderer {
 - GPU-only resources (depth images, textures)
 - Swapchain images (managed by driver)
 
-## Slang Shading Language
+## Shader Language: WGSL + naga (Katla's Approach)
 
-**Slang** is more modern than GLSL with better features:
+Katla uses **WGSL** (WebGPU Shading Language) compiled to SPIR-V via the **naga library** (embedded in Rust, not CLI).
 
-```cpp
-// Slang allows all stages in one file
+### Compilation Pipeline
+
+```
+WGSL source (.wgsl)
+    ↓ naga::front::wgsl::parse_str()
+naga IR (intermediate representation)
+    ↓ naga::back::spv::write_vec()
+SPIR-V bytecode
+    ↓
+vk::ShaderModule
+```
+
+### Example WGSL Shader
+
+```wgsl
+// Vertex/Fragment in same file
 struct VSInput {
-    float3 Pos;
-    float3 Normal;
-    float2 UV;
-};
-
-struct VSOutput {
-    float4 Pos : SV_POSITION;
-    float3 Normal;
-    float2 UV;
-    float3 LightVec;
-    float3 ViewVec;
-    uint InstanceIndex;
-};
-
-[shader("vertex")]
-VSOutput main(VSInput input, uniform ShaderData *shaderData, uint instanceIndex : SV_VulkanInstanceID) {
-    VSOutput output;
-    float4x4 modelMat = shaderData->model[instanceIndex];
-    output.Normal = mul((float3x3)mul(shaderData->view, modelMat), input.Normal);
-    output.UV = input.UV;
-    output.Pos = mul(shaderData->projection, mul(shaderData->view, mul(modelMat, float4(input.Pos.xyz, 1.0))));
-
-    float4 fragPos = mul(mul(shaderData->view, modelMat), float4(input.Pos.xyz, 1.0));
-    output.LightVec = shaderData->lightPos.xyz - fragPos.xyz;
-    output.ViewVec = -fragPos.xyz;
-    output.InstanceIndex = instanceIndex;
-    return output;
+    @location(0) position: vec3f,
+    @location(1) normal: vec3f,
+    @location(2) uv: vec2f,
 }
 
-[shader("fragment")]
-float4 main(VSOutput input) : SV_Target {
-    float3 N = normalize(input.Normal);
-    float3 L = normalize(input.LightVec);
-    float3 V = normalize(input.ViewVec);
-    float3 R = reflect(-L, N);
+struct VSOutput {
+    @builtin(position) pos: vec4f,
+    @location(0) normal: vec3f,
+    @location(1) uv: vec2f,
+}
 
-    float3 diffuse = max(dot(N, L), 0.0025);
-    float3 specular = pow(max(dot(R, V), 0.0), 16.0) * 0.75;
+// Uniform buffer (descriptor binding)
+struct FrameUniforms {
+    view_proj: mat4x4f,
+    camera_pos: vec3f,
+    _pad: f32,
+}
 
-    // Bindless texture access
-    float3 color = textures[NonUniformResourceIndex(input.InstanceIndex)]
-                        .Sample(input.UV).rgb;
+@group(0) @binding(0)
+var<uniform> frame: FrameUniforms;
 
-    return float4(diffuse * color + specular, 1.0);
+// Storage buffer for particle data (descriptor binding, NOT BDA push constants)
+struct ParticleData {
+    position: vec3f,
+    _pad1: f32,
+    velocity: vec3f,
+    lifetime: f32,
+    color: vec4f,
+    scale: f32,
+    _pad2: vec3f,
+}
+
+@group(0) @binding(0)
+var<storage, read_write> particles: array<ParticleData>;
+
+@vertex
+fn vs_main(in: VSInput) -> VSOutput {
+    var out: VSOutput;
+    out.pos = frame.view_proj * vec4f(in.position, 1.0);
+    out.normal = in.normal;
+    out.uv = in.uv;
+    return out;
+}
+
+@fragment
+fn fs_main(in: VSOutput) -> @location(0) vec4f {
+    return vec4f(1.0, 0.5, 0.0, 1.0);  // Orange
 }
 ```
 
-**Benefits:**
-- All stages in one file
-- More modern syntax
-- Runtime compilation
-- Better tooling
-- Compatible with GLSL/HLSL patterns
+### Key naga Integration Points
+
+```rust
+// shadermodule.rs - Compile WGSL string to SPIR-V
+use naga::{
+    back::spv::{self, WriterFlags},
+    front::wgsl,
+};
+
+pub fn from_wgsl_string(device: Device, wgsl_str: &str, stage: vk::ShaderStageFlags, entry_point: &str) {
+    // 1. Parse WGSL to naga IR
+    let wgsl_module = wgsl::parse_str(wgsl_str)?;
+
+    // 2. Validate
+    let module_info = naga::valid::Validator::new(
+        naga::valid::ValidationFlags::all(),
+        naga::valid::Capabilities::all(),
+    ).validate(&wgsl_module)?;
+
+    // 3. Generate SPIR-V
+    let spirv = spv::write_vec(&wgsl_module, &module_info, &options, ...)?;
+
+    // 4. Create Vulkan shader module
+    let create_info = vk::ShaderModuleCreateInfo::default().code(&spirv);
+    device.create_shader_module(&create_info, None)
+}
+```
+
+### Why naga Library (not CLI)?
+
+| Approach | Pros | Cons |
+|----------|------|------|
+| **naga library** (Katla's choice) | Hot reload, reflection access, no build step, Rust error handling | Slightly slower compile than pre-compiled |
+| naga CLI | Separate build step, caching | No runtime reload, external dependency |
+| glslang | Industry standard | No WGSL support, heavier |
+
+### Katla's Descriptor Pattern (vs BDA push constants)
+
+Katla uses **descriptors** for buffer access, not BDA via push constants:
+
+```wgsl
+// Katla's approach - descriptors
+@group(0) @binding(0)
+var<storage, read_write> particles: array<ParticleData>;
+
+// NOT this (BDA via push constant - harder in WGSL)
+// var<uniform> buffer_address: u32;  // Can't dereference in WGSL
+```
+
+**Why descriptors over BDA push constants in WGSL:**
+- WGSL has no pointer arithmetic (can't dereference raw addresses)
+- naga doesn't expose `vk::BufferDeviceAddress` as a first-class concept
+- Descriptors work cleanly with WGSL's binding model
+- BDA still useful for `DeviceAddressBuffer` features (persistent mapping, allocation)
 
 ## Quick Start Checklist
 
@@ -593,13 +658,12 @@ fn render_frame(&mut self) {
 | Vulkan 1.0 | Vulkan 1.3 | Benefit |
 |------------|------------|---------|
 | `VkRenderPass` | Dynamic Rendering | Simpler setup, no coupling |
-| Descriptors for buffers | Buffer Device Address | No descriptor management |
 | Per-texture descriptors | Bindless arrays | Scales better |
 | `vkCmdPipelineBarrier` | `vkCmdPipelineBarrier2` | More explicit |
 | Manual memory types | `VMA_MEMORY_USAGE_AUTO` | Automatic selection |
 | Map/unmap every frame | Persistent mapping | Better performance |
 | Single shared resources | Frames in flight | CPU/GPU parallelism |
-| GLSL shaders | Slang | More modern features |
+| GLSL shaders | WGSL + naga | Modern syntax, Rust integration |
 
 ## Code Examples
 
@@ -681,20 +745,25 @@ VkPipelineRenderingCreateInfo rendering_ci {
 
 ## Resources
 
+### Katla-Specific References
+- `katla_vulkan/src/vulkan/material/shadermodule.rs` - WGSL → SPIR-V compilation via naga
+- `katla_vulkan/src/vulkan/material/reflection.rs` - naga-based shader reflection
+- `katla_vulkan/src/vulkan/bda.rs` - DeviceAddressBuffer implementation
+- `resources/shaders/*.wgsl` - All shader source files
+
 ### Official Documentation
-- [How to Vulkan in 2026](https://howtovulkan.com) - **Primary reference for this guide**
+- [How to Vulkan in 2026](https://howtovulkan.com) - Modern Vulkan patterns
 - [Vulkan 1.3 Specification](https://registry.khronos.org/vulkan/specs/1.3/html/)
 - [Vulkan Guide - Best Practices](https://github.com/KhronosGroup/Vulkan-Guide)
 - [Vulkan Samples](https://github.com/KhronosGroup/Vulkan-Samples)
 
-### Libraries
-- [Vulkan Memory Allocator (VMA)](https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator)
-- [Slang Shading Language](https://shader-slang.com/)
-- [Volk - Meta-loader](https://github.com/zeux/volk)
-- [SDL3 - Windowing/Input](https://github.com/libsdl-org/SDL)
+### Libraries Katla Uses
+- [gpu_allocator](https://github.com/Traverse-Research/gpu-allocator) - Rust VMA equivalent
+- [naga](https://github.com/nical/naga) - Shader translation (WGSL → SPIR-V)
+- [ash](https://github.com/ash-rs/ash) - Vulkan bindings for Rust
+- [winit](https://github.com/rust-windowing/winit) - Windowing (not SDL)
 
 ### Feature References
 - [VK_KHR_dynamic_rendering](https://registry.khronos.org/vulkan/specs/1.3-extensions/man/html/VK_KHR_dynamic_rendering.html)
-- [VK_EXT_buffer_device_address](https://registry.khronos.org/vulkan/specs/1.3-extensions/man/html/VK_EXT_buffer_device_address.html)
-- [VK_EXT_descriptor_indexing](https://registry.khronos.org/vulkan/specs/1.3-extensions/man/html/VK_EXT_descriptor_indexing.html)
 - [VK_KHR_synchronization2](https://registry.khronos.org/vulkan/specs/1.3-extensions/man/html/VK_KHR_synchronization2.html)
+- [WGSL Specification](https://www.w3.org/TR/WGSL/)

@@ -343,7 +343,8 @@ Located in `katla_vulkan/src/vulkan/`, wraps raw ash calls with idiomatic Rust.
 - **texture.rs** - Texture loading and image creation (uses Synchronization2)
 - **pipeline/** - Pipeline creation infrastructure
 - **material/** - Material system with hot reload support
-- **bda.rs** - Buffer Device Address infrastructure (for future BDA uniform buffers)
+- **bda.rs** - `DeviceAddressBuffer` type with BDA flag + persistent mapping (used via descriptors, not push constants)
+- **particle_buffer.rs** - GPU particle buffers using `DeviceAddressBuffer`
 
 ### VulkanRenderer
 
@@ -516,8 +517,58 @@ Materials use template-based configuration with hot reload:
 
 These are **not required** for Vulkan 1.3 compliance but recommended:
 
-1. **Buffer Device Address (BDA)** - Replace descriptor-based uniforms with push-constant buffer addresses
-2. **Bindless Textures** - Single texture array descriptor instead of per-texture descriptors
-3. **VMA Memory Management** - Enhanced allocator integration with persistent mapping
+1. **Bindless Textures** - Single texture array descriptor instead of per-texture descriptors
 
 See `docs/vulkan-1.3-migration-plan.md` for details.
+
+## Shader System (WGSL + naga)
+
+Katla uses **WGSL shaders** compiled to SPIR-V via the **naga library** (not the naga CLI binary).
+
+### Compilation Pipeline
+
+```
+WGSL source (.wgsl files)
+    ↓
+naga::front::wgsl::parse_str()  [in shadermodule.rs]
+    ↓
+naga::back::spv::write_vec()    [generates SPIR-V]
+    ↓
+vk::ShaderModule
+```
+
+### Key Files
+
+- `katla_vulkan/src/vulkan/material/shadermodule.rs` - `ShaderModule::from_wgsl()` and `from_wgsl_string()`
+- `katla_vulkan/src/vulkan/material/reflection.rs` - naga-based shader reflection for uniform layouts
+- `resources/shaders/*.wgsl` - All shader source files
+
+### Example Shader Structure
+
+```wgsl
+// Uniform buffer binding (set 0, binding 0 typically)
+struct FrameUniforms {
+    view_proj: mat4x4<f32>,
+    camera_position: vec3<f32>,
+    _pad: f32,
+}
+
+@group(0) @binding(0)
+var<uniform> frame: FrameUniforms;
+
+// Storage buffer binding (for particle systems, etc.)
+@group(0) @binding(0)
+var<storage, read_write> particles: array<ParticleData>;
+
+@vertex
+fn vs_main(@builtin(vertex_index) vi: u32) -> @builtin(position) vec4<f32> {
+    // ...
+}
+```
+
+### Why naga Library (not CLI)?
+
+- **Hot reload support** - Can recompile shaders at runtime without external process
+- **Reflection** - naga parses shader structure for automatic uniform buffer layout
+- **Error messages** - Better integration with Rust error handling
+- **No build step** - Shaders compile on load, no separate SPIR-V generation needed
