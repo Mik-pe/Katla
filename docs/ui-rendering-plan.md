@@ -16,8 +16,9 @@ This document outlines the plan for implementing UI rendering in the Katla engin
 - [x] Fixed vertex layout (UiShaderVertex with tight 32-byte packing)
 - [x] Window title bar support with proper layout
 - [x] Persistent buffer management (no per-frame allocations)
-- [ ] Font texture atlas support (text renders as placeholder boxes)
-- [ ] White texture fallback for non-textured UI elements
+- [x] Font texture atlas support with GPU upload
+- [x] Roboto font loaded and ASCII characters precached
+- [ ] Text rendering verification (run app to test)
 - [ ] Clipping support for nested windows
 
 ## Architecture
@@ -96,7 +97,7 @@ pub struct UiShaderVertex {
    - [x] Update buffers each frame via memory mapping (no allocation)
    - [x] Fallback to temporary buffers if not initialized
 
-### Phase 3: Texture Support (In Progress)
+### Phase 3: Texture Support ✅
 
 5. **Font Atlas Texture**
    - [x] FontSystem has CPU-side atlas (512x512 RGBA)
@@ -106,7 +107,8 @@ pub struct UiShaderVertex {
    - [x] Update atlas texture when new glyphs added (update_font_atlas)
    - [x] Bind atlas to descriptor set in UI pass
    - [x] Wire up atlas updates in application render loop
-   - [ ] Load a font file for text rendering (needs TTF/OTF file)
+   - [x] Load Roboto font from resources/fonts/roboto-regular.ttf
+   - [x] Precache ASCII characters at 14px and 16px
 
 6. **White Texture Fallback**
    - [x] Create 1x1 white texture for non-textured UI elements
@@ -116,6 +118,9 @@ pub struct UiShaderVertex {
    - [x] Add texture/sampler bindings to ui.wgsl
    - [x] Update fragment shader to sample from texture
    - [x] Multiply texture alpha with vertex color for text
+
+8. **Bug Fixes**
+   - [x] Handle empty glyphs (spaces) in font atlas placement
 
 ### Phase 4: Widget Improvements
 
