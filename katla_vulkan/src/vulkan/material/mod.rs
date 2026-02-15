@@ -7,8 +7,8 @@ pub mod materialbuilder;
 pub mod parameters;
 pub mod reflection;
 pub mod registry;
-pub mod skeleton_descriptor;
 pub mod shadermodule;
+pub mod skeleton_descriptor;
 pub mod storage_uniform;
 pub mod template;
 pub mod uniform_layout;
@@ -25,10 +25,11 @@ pub use materialbuilder::*;
 pub use parameters::*;
 pub use reflection::*;
 pub use registry::*;
-pub use skeleton_descriptor::SkeletonDescriptorSet;
 pub use shadermodule::*;
+pub use skeleton_descriptor::SkeletonDescriptorSet;
 pub use storage_uniform::{
-    FrameUniforms, ObjectUniforms, StorageDescriptorSet, StorageUniformLayout, StorageUniformManager,
+    FrameUniforms, ObjectUniforms, StorageDescriptorSet, StorageUniformLayout,
+    StorageUniformManager,
 };
 pub use template::*;
 pub use uniform_layout::*;
@@ -38,6 +39,7 @@ use gpu_allocator::vulkan::Allocation;
 use std::rc::Rc;
 
 use super::context::VulkanContext;
+use crate::sync::{VkImageView, VkSampler};
 
 /// Texture descriptor set for material textures (set 1).
 ///
@@ -80,11 +82,7 @@ impl TextureDescriptorSet {
             .pool_sizes(&pool_sizes)
             .max_sets(1);
 
-        let descriptor_pool = unsafe {
-            context
-                .device
-                .create_descriptor_pool(&pool_info, None)?
-        };
+        let descriptor_pool = unsafe { context.device.create_descriptor_pool(&pool_info, None)? };
 
         // Allocate descriptor set
         let layouts = [desc_layout];
@@ -96,8 +94,7 @@ impl TextureDescriptorSet {
         let descriptor_set = descriptor_sets[0];
 
         // Write texture descriptors using separate bindings
-        let (image_write, sampler_write) =
-            image_info.update_once_separate(descriptor_set, 0, 1);
+        let (image_write, sampler_write) = image_info.update_once_separate(descriptor_set, 0, 1);
 
         unsafe {
             context
@@ -155,14 +152,23 @@ pub struct UniformHandle {
 
 pub struct UniformDescriptor {
     pub desc_set: vk::DescriptorSet,
-    desc_pool: Option<vk::DescriptorPool>,  // Option to prevent double-free
+    desc_pool: Option<vk::DescriptorPool>, // Option to prevent double-free
     pub uniform_buffer: Option<UniformBuffer>,
     pub image_info: Option<ImageInfo>,
     pub separate_bindings: bool,
 }
 
 impl ImageInfo {
-    pub fn new(image_view: vk::ImageView, sampler: vk::Sampler) -> Self {
+    /// Create a new ImageInfo from wrapper types.
+    ///
+    /// This is the preferred constructor that accepts wrapper types
+    /// instead of raw Vulkan types.
+    pub fn new(image_view: VkImageView, sampler: VkSampler) -> Self {
+        Self::from_raw(image_view.vk(), sampler.vk())
+    }
+
+    /// Create from raw Vulkan types (internal use).
+    fn from_raw(image_view: vk::ImageView, sampler: vk::Sampler) -> Self {
         // Create combined image-sampler info (for COMBINED_IMAGE_SAMPLER binding)
         let combined_info = vk::DescriptorImageInfo::default()
             .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
@@ -264,12 +270,15 @@ impl UniformHandle {
     /// # Arguments
     /// * `context` - Vulkan context (unused but kept for API consistency)
     /// * `texture_layout` - Texture descriptor set layout (unused, kept for reference)
-    pub fn new_storage(_context: &VulkanContext, _texture_layout: &vk::DescriptorSetLayout) -> Self {
+    pub fn new_storage(
+        _context: &VulkanContext,
+        _texture_layout: &vk::DescriptorSetLayout,
+    ) -> Self {
         // Create a single empty descriptor - no allocation happens
         // The image_info will be set via add_image_info() later
         let empty_descriptor = UniformDescriptor {
             desc_set: vk::DescriptorSet::null(),
-            desc_pool: None, // No pool to destroy
+            desc_pool: None,      // No pool to destroy
             uniform_buffer: None, // No buffer - storage mode uses shared storage buffer
             image_info: None,
             separate_bindings: true, // WGSL always uses separate bindings

@@ -40,9 +40,6 @@ pub struct CompiledPass {
     pub extent: Extent2D,
     pub clear_values: Vec<ClearValue>,
     execute: PassExecute,
-    // TODO: Replace raw vk types with wrapper types
-    // MemoryBarrier, ImageView, AttachmentReference need wrapper types in sync module
-    pub pipeline_barriers_before: Vec<vk::MemoryBarrier<'static>>,
     /// Color attachment image views for dynamic rendering (one set per swapchain image)
     pub color_attachments: Vec<Vec<vk::ImageView>>,
     /// Depth attachment image view for dynamic rendering (one per swapchain image)
@@ -121,12 +118,9 @@ impl CompiledRenderGraph {
 
         // Step 4: Create framebuffers
         let framebuffers = Self::create_framebuffers(&pass_structure, &resources, context)?;
-        // For now, use empty barriers as placeholder
-        let barriers: Vec<Vec<vk::MemoryBarrier<'static>>> = vec![];
 
         // Step 5: Compile passes with execution info
-        let compiled_passes =
-            Self::compile_passes(&mut graph.passes, &framebuffers, &resources, &barriers)?;
+        let compiled_passes = Self::compile_passes(&mut graph.passes, &framebuffers, &resources)?;
 
         Ok(Self {
             context: context.clone(),
@@ -627,12 +621,11 @@ impl CompiledRenderGraph {
         Ok(framebuffers)
     }
 
-    /// Compile passes with execution info and barriers.
+    /// Compile passes with execution info.
     fn compile_passes(
         passes: &mut [Pass],
         framebuffers: &[vk::Framebuffer],
         resources: &HashMap<ResourceId, CompiledResource>,
-        barriers: &[Vec<vk::MemoryBarrier<'static>>],
     ) -> Result<Vec<CompiledPass>, RenderGraphError> {
         let mut compiled_passes = Vec::new();
 
@@ -675,9 +668,6 @@ impl CompiledRenderGraph {
 
             // Wrap in our wrapper type
             let vk_framebuffers = vec![VkFramebuffer::new(vk_framebuffer_raw)];
-
-            // Get barriers
-            let pipeline_barriers_before = barriers.get(i).cloned().unwrap_or_default();
 
             // Get execute name from the pass
             let execute_name = pass.take_execute_name();
@@ -732,7 +722,6 @@ impl CompiledRenderGraph {
                 extent,
                 clear_values,
                 execute,
-                pipeline_barriers_before,
                 color_attachments,
                 depth_attachments,
             };
@@ -1023,22 +1012,8 @@ impl CompiledRenderGraph {
     ) -> Result<(), RenderGraphError> {
         let pass = &self.passes[pass_index];
 
-        // Apply pipeline barriers before this pass
-        if !pass.pipeline_barriers_before.is_empty() {
-            // Determine stage masks - use ALL_COMMANDS as conservative default
-            // In the future, we could store stage masks in CompiledPass for better precision
-            let src_stage_mask = vk::PipelineStageFlags::ALL_COMMANDS;
-            let dst_stage_mask = vk::PipelineStageFlags::ALL_COMMANDS;
-
-            command_buffer.pipeline_barrier(
-                src_stage_mask,
-                dst_stage_mask,
-                vk::DependencyFlags::empty(),
-                &pass.pipeline_barriers_before,
-                &[],
-                &[],
-            );
-        }
+        // Note: pipeline_barriers_before is always empty in current implementation.
+        // If barriers are needed in the future, use pipeline_barrier2() with MemoryBarrier2KHR.
 
         // Use dynamic rendering (Vulkan 1.3) instead of legacy render pass
         // Build rendering info from framebuffer attachments if available

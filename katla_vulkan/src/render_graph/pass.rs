@@ -104,9 +104,6 @@ pub struct PassBuilder {
     execute: Option<PassExecute>,
     #[allow(clippy::type_complexity)]
     pending_execute: Option<(String, Box<dyn FnMut(Rc<PassExecutionContext>) + 'static>)>,
-
-    #[allow(dead_code)] // Needed for resource cleanup
-    pipeline_barriers_before: Vec<vk::MemoryBarrier<'static>>,
 }
 
 impl PassBuilder {
@@ -121,7 +118,6 @@ impl PassBuilder {
             extent: None,
             execute: None,
             pending_execute: None,
-            pipeline_barriers_before: Vec::new(),
         }
     }
 

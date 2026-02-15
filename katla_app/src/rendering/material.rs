@@ -2,8 +2,8 @@ use crate::{rendering::vertextypes::*, util::GLTFModel};
 
 use katla_math::{Color, Mat4};
 use katla_vulkan::{
-    context::VulkanContext, material::UniformHandle, ImageFormat, MaterialBuilder,
-    MaterialHandle, MaterialPipeline, MaterialTemplate, Texture, VertexBinding,
+    context::VulkanContext, material::UniformHandle, ImageFormat, MaterialBuilder, MaterialHandle,
+    MaterialPipeline, MaterialTemplate, Texture, VertexBinding,
 };
 use log::warn;
 
@@ -87,9 +87,7 @@ impl Material {
             builder = builder.with_texture(tex.clone());
         }
 
-        let material_pipeline = builder
-            .build()
-            .expect("Failed to create material pipeline");
+        let material_pipeline = builder.build().expect("Failed to create material pipeline");
 
         Self {
             material_pipeline: Rc::new(RefCell::new(material_pipeline)),
@@ -134,7 +132,7 @@ impl Material {
             // If a texture is provided, update the uniform's image info for texture descriptor
             if let Some(ref tex) = texture {
                 use katla_vulkan::material::ImageInfo;
-                let image_info = ImageInfo::new(tex.image_view.vk(), tex.image_sampler.vk());
+                let image_info = ImageInfo::new(tex.image_view, tex.image_sampler);
                 uniform.add_image_info(image_info);
             }
 
@@ -145,7 +143,7 @@ impl Material {
 
             if let Some(ref tex) = texture {
                 use katla_vulkan::material::ImageInfo;
-                let image_info = ImageInfo::new(tex.image_view.vk(), tex.image_sampler.vk());
+                let image_info = ImageInfo::new(tex.image_view, tex.image_sampler);
                 uniform.add_image_info(image_info);
             }
 
@@ -179,7 +177,7 @@ impl Material {
 
             if let Some(ref tex) = texture {
                 use katla_vulkan::material::ImageInfo;
-                let image_info = ImageInfo::new(tex.image_view.vk(), tex.image_sampler.vk());
+                let image_info = ImageInfo::new(tex.image_view, tex.image_sampler);
                 uniform.add_image_info(image_info);
             }
 
@@ -189,7 +187,7 @@ impl Material {
 
             if let Some(ref tex) = texture {
                 use katla_vulkan::material::ImageInfo;
-                let image_info = ImageInfo::new(tex.image_view.vk(), tex.image_sampler.vk());
+                let image_info = ImageInfo::new(tex.image_view, tex.image_sampler);
                 uniform.add_image_info(image_info);
             }
 

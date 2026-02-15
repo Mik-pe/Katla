@@ -1,9 +1,7 @@
 use ash::{vk, Device};
 
 use super::{
-    vertex_attr_set::VertexAttributeSet,
-    vertex_attribute::AttributeType,
-    vertexbuffer::IndexType,
+    vertex_attr_set::VertexAttributeSet, vertex_attribute::AttributeType, vertexbuffer::IndexType,
     CommandPool,
 };
 use crate::render_graph::types::RenderingInfo;
@@ -160,6 +158,14 @@ impl CommandBuffer {
         }
     }
 
+    /// **Deprecated:** Use `pipeline_barrier2()` for Vulkan 1.3 synchronization.
+    ///
+    /// This method is a no-op. The legacy `vkCmdPipelineBarrier` has been
+    /// replaced by `vkCmdPipelineBarrier2` via the `pipeline_barrier2()` method.
+    #[deprecated(
+        since = "0.1.0",
+        note = "Use pipeline_barrier2() with DependencyInfo for Vulkan 1.3 synchronization"
+    )]
     pub fn pipeline_barrier(
         &self,
         _src_stage_mask: vk::PipelineStageFlags,
@@ -325,12 +331,8 @@ impl CommandBuffer {
 
         if !buffers.is_empty() {
             unsafe {
-                self.device.cmd_bind_vertex_buffers(
-                    self.command_buffer,
-                    0,
-                    &buffers,
-                    &offsets,
-                );
+                self.device
+                    .cmd_bind_vertex_buffers(self.command_buffer, 0, &buffers, &offsets);
             }
         }
     }
@@ -380,12 +382,8 @@ impl CommandBuffer {
 
         if !buffers.is_empty() {
             unsafe {
-                self.device.cmd_bind_vertex_buffers(
-                    self.command_buffer,
-                    0,
-                    &buffers,
-                    &offsets,
-                );
+                self.device
+                    .cmd_bind_vertex_buffers(self.command_buffer, 0, &buffers, &offsets);
             }
         }
     }
