@@ -98,27 +98,46 @@ impl FontSystem {
 
     /// Create a new font system.
     pub fn new() -> Self {
+        let mut atlas_data = vec![0; (Self::DEFAULT_ATLAS_SIZE * Self::DEFAULT_ATLAS_SIZE * 4) as usize];
+
+        // Reserve first pixel as white for solid color rendering
+        // UV (0,0) will sample this white pixel, so vertex color passes through
+        atlas_data[0] = 255; // R
+        atlas_data[1] = 255; // G
+        atlas_data[2] = 255; // B
+        atlas_data[3] = 255; // A
+
         Self {
             fonts: HashMap::new(),
             next_font_id: 0,
             glyph_cache: HashMap::new(),
             atlas_width: Self::DEFAULT_ATLAS_SIZE,
             atlas_height: Self::DEFAULT_ATLAS_SIZE,
-            atlas_cursor_x: 0,
+            atlas_cursor_x: 1, // Start after white pixel
             atlas_cursor_y: 0,
             atlas_row_height: 0,
-            atlas_data: vec![0; (Self::DEFAULT_ATLAS_SIZE * Self::DEFAULT_ATLAS_SIZE * 4) as usize],
-            atlas_dirty: false,
+            atlas_data,
+            atlas_dirty: true, // Mark dirty so renderer uploads the white pixel
             glyph_padding: 1,
         }
     }
 
     /// Create a font system with a custom atlas size.
     pub fn with_atlas_size(width: u32, height: u32) -> Self {
+        let mut atlas_data = vec![0; (width * height * 4) as usize];
+
+        // Reserve first pixel as white for solid color rendering
+        atlas_data[0] = 255;
+        atlas_data[1] = 255;
+        atlas_data[2] = 255;
+        atlas_data[3] = 255;
+
         Self {
             atlas_width: width,
             atlas_height: height,
-            atlas_data: vec![0; (width * height * 4) as usize],
+            atlas_data,
+            atlas_cursor_x: 1, // Start after white pixel
+            atlas_dirty: true,
             ..Self::new()
         }
     }
@@ -338,10 +357,17 @@ impl FontSystem {
     /// Clear the glyph cache and atlas.
     pub fn clear_cache(&mut self) {
         self.glyph_cache.clear();
-        self.atlas_cursor_x = 0;
+        self.atlas_cursor_x = 1; // Start after white pixel
         self.atlas_cursor_y = 0;
         self.atlas_row_height = 0;
         self.atlas_data.fill(0);
+
+        // Restore white pixel at (0,0) for solid color rendering
+        self.atlas_data[0] = 255;
+        self.atlas_data[1] = 255;
+        self.atlas_data[2] = 255;
+        self.atlas_data[3] = 255;
+
         self.atlas_dirty = true;
     }
 }
