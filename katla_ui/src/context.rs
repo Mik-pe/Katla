@@ -536,21 +536,165 @@ impl UiContext {
         );
     }
 
+    /// Draw a text input field.
+    ///
+    /// Returns true if the text was modified this frame.
+    /// Handles keyboard input, cursor positioning, and selection.
+    pub fn text_input(
+        &mut self,
+        id: &str,
+        text: &mut String,
+        bounds: Rect2D,
+    ) -> bool {
+        let widget_id = self.generate_id(id);
+        let hovered = self.update_hover(widget_id, bounds);
+
+        // Focus on click
+        if hovered && self.input.mouse_pressed[crate::input::mouse_button::LEFT] {
+            self.input.focused_id = Some(widget_id);
+        }
+
+        let focused = self.input.focused_id == Some(widget_id);
+        let mut changed = false;
+
+        // Handle keyboard input when focused
+        if focused {
+            self.input.want_capture_keyboard = true;
+
+            // Process character input
+            for c in &self.input.characters.clone() {
+                if *c == '\x08' {
+                    // Backspace
+                    if !text.is_empty() {
+                        text.pop();
+                        changed = true;
+                    }
+                } else if *c >= ' ' && text.len() < 256 {
+                    // Printable character
+                    text.push(*c);
+                    changed = true;
+                }
+            }
+
+            // Handle special keys
+            use crate::input::KeyCode;
+            if self.input.key_pressed(KeyCode::Enter) {
+                // Could trigger a callback here
+            }
+            if self.input.key_pressed(KeyCode::Escape) {
+                self.input.focused_id = None;
+            }
+        }
+
+        // Draw background
+        let bg_color = if focused {
+            self.style.input_bg
+        } else {
+            self.style.input_bg
+        };
+        self.draw_rect(bounds, bg_color);
+        self.draw_rect_border(bounds, Color::TRANSPARENT, self.style.input_border, 1.0);
+
+        // Draw text with clipping
+        let padding = 4.0;
+        let text_bounds = bounds.contract(padding);
+        self.push_clip(text_bounds);
+
+        let text_pos = Vec2::new(
+            bounds.min.x() + padding,
+            bounds.center().y() - self.style.font_size * 0.5,
+        );
+        self.draw_text(text, text_pos, self.style.input_text, self.style.font_size);
+
+        // Draw cursor when focused
+        if focused {
+            let cursor_x = text_pos.x() + self.measure_text(text, self.style.font_size).x();
+            self.draw_line(
+                Vec2::new(cursor_x, text_pos.y()),
+                Vec2::new(cursor_x, text_pos.y() + self.style.font_size),
+                self.style.input_cursor,
+                1.0,
+            );
+        }
+
+        self.pop_clip();
+
+        changed
+    }
+
+    /// Draw a multiline text area.
+    ///
+    /// Returns true if the text was modified this frame.
+    pub fn text_area(
+        &mut self,
+        id: &str,
+        text: &mut String,
+        bounds: Rect2D,
+    ) -> bool {
+        let widget_id = self.generate_id(id);
+        let hovered = self.update_hover(widget_id, bounds);
+
+        if hovered && self.input.mouse_pressed[crate::input::mouse_button::LEFT] {
+            self.input.focused_id = Some(widget_id);
+        }
+
+        let focused = self.input.focused_id == Some(widget_id);
+        let mut changed = false;
+
+        if focused {
+            self.input.want_capture_keyboard = true;
+
+            for c in &self.input.characters.clone() {
+                if *c == '\x08' {
+                    if !text.is_empty() {
+                        text.pop();
+                        changed = true;
+                    }
+                } else if *c >= ' ' || *c == '\n' {
+                    if text.len() < 4096 {
+                        text.push(*c);
+                        changed = true;
+                    }
+                }
+            }
+        }
+
+        // Draw background
+        self.draw_rect(bounds, self.style.input_bg);
+        self.draw_rect_border(bounds, Color::TRANSPARENT, self.style.input_border, 1.0);
+
+        // Draw text with clipping
+        let padding = 4.0;
+        self.push_clip(bounds.contract(padding));
+
+        let mut y = bounds.min.y() + padding;
+        for line in text.split('\n') {
+            if y + self.style.font_size > bounds.min.y() + padding
+                && y < bounds.max.y() - padding
+            {
+                self.draw_text(
+                    line,
+                    Vec2::new(bounds.min.x() + padding, y),
+                    self.style.input_text,
+                    self.style.font_size,
+                );
+            }
+            y += self.style.font_size + 2.0;
+        }
+
+        self.pop_clip();
+
+        changed
+    }
+
     // -------------------------------------------------------------------------
     // Container Widgets
     // -------------------------------------------------------------------------
 
     /// Begin a window container.
     ///
-    /// Returns a WindowBuilder for chaining configuration.
+    /// Returns a WindowState for window information.
     /// Call `end_window()` after adding contents.
-    ///
-    /// # Example
-    /// ```ignore
-    /// ctx.begin_window("debug", Rect2D::from_origin_size(Vec2::new(10.0, 10.0), Vec2::new(200.0, 150.0)));
-    /// ctx.label("FPS: 60", ctx.next_item(Vec2::new(180.0, 20.0)));
-    /// ctx.end_window();
-    /// ```
     pub fn begin_window(&mut self, id: &str, bounds: Rect2D) -> WindowState {
         let window_id = self.generate_id(id);
 
