@@ -12,7 +12,7 @@ pub use render_graph::resource::{
 pub use render_graph::*;
 pub use rendering::{
     registry::AssetRegistry,
-    types::{DrawCall, DrawList, FrameUniforms, InstanceData, MaterialHandle, MeshHandle, ParticleDispatch, SkeletonHandle},
+    types::{DrawCall, DrawList, FrameUniforms, InstanceData, MaterialHandle, MeshHandle, ParticleDispatch, ParticleRender, SkeletonHandle},
 };
 pub use sync::{
     VkDescriptorPool, VkDescriptorSet, VkDescriptorSetLayout, VkFence, VkFramebuffer, VkImage,
@@ -727,6 +727,9 @@ impl VulkanRenderer {
         // Store skeleton descriptors pointer for GPU skeletal animation
         let skeleton_descriptors_ptr = &mut self.skeleton_descriptors as *mut Vec<Option<SkeletonDescriptorSet>>;
 
+        // Store device pointer for particle rendering
+        let device_ptr = self.context.device.clone();
+
         let swapchain_res = swapchain_resource;
         let depth_res = depth_resource;
 
@@ -954,6 +957,51 @@ impl VulkanRenderer {
                                     .bind_vertex_buffers(0, &[vertex_buffer], &[0]);
                                 // draw_array(vertex_count, instance_count, first_vertex, first_instance)
                                 ctx.command_buffer.draw_array(vertex_count, instance_count, 0, first_instance);
+                            }
+                        }
+
+                        // === PARTICLE RENDERING ===
+                        // Render particles as billboard quads after all geometry
+                        for particle_render in &draw_list.particle_renders {
+                            let cmd_buf = ctx.command_buffer.vk_command_buffer();
+
+                            unsafe {
+                                // Bind particle graphics pipeline
+                                device_ptr.cmd_bind_pipeline(
+                                    cmd_buf,
+                                    vk::PipelineBindPoint::GRAPHICS,
+                                    particle_render.pipeline,
+                                );
+
+                                // Bind set 0: Frame uniforms (storage buffer with view/proj)
+                                device_ptr.cmd_bind_descriptor_sets(
+                                    cmd_buf,
+                                    vk::PipelineBindPoint::GRAPHICS,
+                                    particle_render.pipeline_layout,
+                                    0,
+                                    &[particle_render.frame_descriptor_set],
+                                    &[],
+                                );
+
+                                // Bind set 1: Particle buffer
+                                device_ptr.cmd_bind_descriptor_sets(
+                                    cmd_buf,
+                                    vk::PipelineBindPoint::GRAPHICS,
+                                    particle_render.pipeline_layout,
+                                    1,
+                                    &[particle_render.particle_descriptor_set],
+                                    &[],
+                                );
+
+                                // Draw instanced quads (6 vertices per quad, one instance per particle)
+                                // No vertex buffer - vertices generated in shader from vertex_id
+                                device_ptr.cmd_draw(
+                                    cmd_buf,
+                                    6, // 6 vertices per quad (2 triangles)
+                                    particle_render.particle_count, // One instance per particle
+                                    0,
+                                    0,
+                                );
                             }
                         }
                     }

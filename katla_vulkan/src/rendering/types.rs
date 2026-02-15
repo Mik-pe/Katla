@@ -313,6 +313,8 @@ pub struct DrawList {
     pub draws: Vec<DrawCall>,
     /// Particle compute dispatches to run before geometry pass.
     pub particle_dispatches: Vec<ParticleDispatch>,
+    /// Particle renders to draw in geometry pass.
+    pub particle_renders: Vec<ParticleRender>,
 }
 
 /// Data needed to dispatch a particle compute shader.
@@ -333,12 +335,31 @@ pub struct ParticleDispatch {
     pub workgroup_count: u32,
 }
 
+/// Data needed to render particles as billboards.
+///
+/// This is collected from ParticleEmitter components and passed
+/// to the renderer for instanced drawing.
+#[derive(Clone, Debug)]
+pub struct ParticleRender {
+    /// Graphics pipeline for particle rendering
+    pub pipeline: ash::vk::Pipeline,
+    /// Pipeline layout
+    pub pipeline_layout: ash::vk::PipelineLayout,
+    /// Descriptor set for frame uniforms (set 0)
+    pub frame_descriptor_set: ash::vk::DescriptorSet,
+    /// Descriptor set for particle buffer (set 1)
+    pub particle_descriptor_set: ash::vk::DescriptorSet,
+    /// Number of particles (instances) to draw
+    pub particle_count: u32,
+}
+
 impl DrawList {
     /// Create a new empty draw list.
     pub fn new() -> Self {
         Self {
             draws: Vec::new(),
             particle_dispatches: Vec::new(),
+            particle_renders: Vec::new(),
         }
     }
 
@@ -352,16 +373,23 @@ impl DrawList {
         self.particle_dispatches.push(dispatch);
     }
 
+    /// Add a particle render to the list.
+    pub fn push_particle_render(&mut self, render: ParticleRender) {
+        self.particle_renders.push(render);
+    }
+
     /// Extend this list with all draws from another list.
     pub fn extend(&mut self, other: &mut DrawList) {
         self.draws.append(&mut other.draws);
         self.particle_dispatches.append(&mut other.particle_dispatches);
+        self.particle_renders.append(&mut other.particle_renders);
     }
 
     /// Clear all draw calls from the list.
     pub fn clear(&mut self) {
         self.draws.clear();
         self.particle_dispatches.clear();
+        self.particle_renders.clear();
     }
 
     /// Get the number of draw calls in the list.
@@ -377,6 +405,11 @@ impl DrawList {
     /// Check if there are particle dispatches.
     pub fn has_particles(&self) -> bool {
         !self.particle_dispatches.is_empty()
+    }
+
+    /// Check if there are particle renders.
+    pub fn has_particle_renders(&self) -> bool {
+        !self.particle_renders.is_empty()
     }
 
     /// Get an iterator over the draw calls.

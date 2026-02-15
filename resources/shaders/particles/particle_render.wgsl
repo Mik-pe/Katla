@@ -3,7 +3,7 @@
 // Renders particles as billboard quads facing the camera.
 // Uses instanced rendering where each instance is a particle.
 //
-// Vertex shader generates a quad per particle.
+// Vertex shader generates a quad per particle (no vertex buffer needed).
 // Fragment shader draws soft-edged circles with color from particle data.
 
 // Particle data structure (must match ParticleData in particle_buffer.rs)
@@ -17,7 +17,7 @@ struct ParticleData {
     _pad2: vec3f,
 }
 
-// Frame uniforms for camera
+// Frame uniforms for camera (matches StorageUniforms in renderer)
 struct FrameUniforms {
     view: mat4x4f,
     proj: mat4x4f,
@@ -36,35 +36,30 @@ var<storage, read> frame_data: FrameUniforms;
 @group(1) @binding(0)
 var<storage, read> particles: array<ParticleData>;
 
-// Vertex input (just quad corner indices, generated per-instance)
-struct VertexInput {
-    @location(0) corner: vec2f,  // Quad corner UV (-1 to 1)
-}
-
 struct VertexOutput {
     @builtin(position) clip_position: vec4f,
     @location(0) uv: vec2f,
     @location(1) color: vec4f,
-    @location(2) @interpolate(flat) instance_idx: u32,
 }
 
-// Quad corners for billboard (two triangles)
+// Quad corners for billboard (6 vertices = 2 triangles)
 // Generated in vertex shader based on vertex ID
 fn get_corner(vertex_id: u32) -> vec2f {
+    // Triangle 1: TL, TR, BL
+    // Triangle 2: BL, TR, BR
     let corners = array<vec2f, 6>(
-        vec2f(-1.0, -1.0),  // TL
-        vec2f( 1.0, -1.0),  // TR
-        vec2f(-1.0,  1.0),  // BL
-        vec2f(-1.0,  1.0),  // BL
-        vec2f( 1.0, -1.0),  // TR
-        vec2f( 1.0,  1.0),  // BR
+        vec2f(-1.0,  1.0),  // TL (0)
+        vec2f( 1.0,  1.0),  // TR (1)
+        vec2f(-1.0, -1.0),  // BL (2)
+        vec2f(-1.0, -1.0),  // BL (3)
+        vec2f( 1.0,  1.0),  // TR (4)
+        vec2f( 1.0, -1.0),  // BR (5)
     );
-    return corners[vertex_id];
+    return corners[vertex_id % 6u];
 }
 
 @vertex
 fn vs_main(
-    in: VertexInput,
     @builtin(vertex_index) vertex_id: u32,
     @builtin(instance_index) instance_idx: u32,
 ) -> VertexOutput {
@@ -72,22 +67,20 @@ fn vs_main(
 
     let particle = particles[instance_idx];
 
-    // Skip dead particles (lifetime <= 0)
-    // We still output something but it will be clipped
+    // Skip dead particles by placing them behind the camera
     if (particle.lifetime <= 0.0) {
-        out.clip_position = vec4f(0.0, 0.0, 0.0, -1.0);  // Behind camera, clipped
+        out.clip_position = vec4f(0.0, 0.0, 0.0, -1.0);
         out.uv = vec2f(0.0);
         out.color = vec4f(0.0);
-        out.instance_idx = instance_idx;
         return out;
     }
 
-    // Get quad corner
+    // Get quad corner UV
     let corner = get_corner(vertex_id);
     out.uv = corner;
 
     // Calculate billboard facing camera
-    // Extract right and up vectors from view matrix
+    // Extract right and up vectors from view matrix (camera space)
     let view_right = vec3f(frame_data.view[0][0], frame_data.view[1][0], frame_data.view[2][0]);
     let view_up = vec3f(frame_data.view[0][1], frame_data.view[1][1], frame_data.view[2][1]);
 
@@ -103,26 +96,30 @@ fn vs_main(
 
     // Pass through color and alpha
     out.color = particle.color;
-    out.instance_idx = instance_idx;
 
     return out;
 }
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4f {
+    // Discard dead particles
+    if (in.color.a <= 0.0) {
+        discard;
+    }
+
     let uv = in.uv;
 
     // Calculate distance from center for soft circular particle
     let dist = length(uv);
 
     // Soft edge: smooth falloff from center to edge
-    let alpha = 1.0 - smoothstep(0.7, 1.0, dist);
+    let alpha = 1.0 - smoothstep(0.5, 1.0, dist);
 
     // Discard fully transparent pixels
     if (alpha < 0.01) {
         discard;
     }
 
-    // Output color with soft edge
-    return vec4f(in.color.rgb, in.color.a * alpha);
+    // Output color with soft edge (additive blending for fire effect)
+    return vec4f(in.color.rgb * in.color.a * alpha, in.color.a * alpha * 0.5);
 }

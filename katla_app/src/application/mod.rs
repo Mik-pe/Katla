@@ -678,22 +678,38 @@ impl Application {
             }
         }
 
-        // Collect particle dispatches from particle emitters
-        use katla_vulkan::ParticleDispatch;
+        // Collect particle dispatches and renders from particle emitters
+        use katla_vulkan::{ParticleDispatch, ParticleRender};
         let delta_time = self.timer.get_delta() as f32;
+
+        // Get storage descriptor for frame uniforms (before mutable borrow)
+        let storage_descriptor = renderer.storage_descriptor_set.as_ref().map(|s| s.set());
+
         for (_entity, emitter) in self.world.query::<&mut crate::components::ParticleEmitter>() {
             // Update emitter (updates frame data buffer)
             emitter.update(delta_time);
 
+            // Add compute dispatch for particle simulation
             let dispatch = ParticleDispatch {
-                pipeline: emitter.pipeline(),
-                pipeline_layout: emitter.pipeline_layout(),
-                descriptor_set: emitter.descriptor_set(),
-                frame_data: [0.0; 4], // Frame data is now in uniform buffer, not used
+                pipeline: emitter.compute_pipeline(),
+                pipeline_layout: emitter.compute_layout(),
+                descriptor_set: emitter.compute_descriptor(),
+                frame_data: [0.0; 4], // Frame data is in uniform buffer
                 workgroup_count: emitter.workgroup_count(),
             };
-
             draw_list.push_particle(dispatch);
+
+            // Add particle render if we have the storage descriptor
+            if let Some(frame_descriptor) = storage_descriptor {
+                let render = ParticleRender {
+                    pipeline: emitter.render_pipeline(),
+                    pipeline_layout: emitter.render_layout(),
+                    frame_descriptor_set: frame_descriptor,
+                    particle_descriptor_set: emitter.render_particle_descriptor(),
+                    particle_count: emitter.particle_count(),
+                };
+                draw_list.push_particle_render(render);
+            }
         }
 
         // Render using the draw list
