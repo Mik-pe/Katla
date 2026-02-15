@@ -12,7 +12,7 @@ use crate::components::{ParticleEmitter, TransformComponent};
 /// This system handles:
 /// - Emit accumulator updates based on emit rate and delta time
 /// - Synchronizing emitter position with entity transform
-/// - Preparing push constants for GPU compute dispatch
+/// - Updating the frame data uniform buffer for GPU compute dispatch
 ///
 /// Note: The actual GPU compute dispatch happens in the render graph,
 /// not in this system. This system only updates CPU-side state.
@@ -56,8 +56,8 @@ impl System for ParticleSimulationSystem {
                     emitter.set_position(pos);
                 }
 
-                // Update emitter (calculates emit count, updates accumulator)
-                let _push_constants = emitter.update(delta_time);
+                // Update emitter (calculates emit count, updates accumulator, writes to frame data buffer)
+                emitter.update(delta_time);
             }
         }
     }

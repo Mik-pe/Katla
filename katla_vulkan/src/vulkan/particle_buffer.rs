@@ -145,34 +145,6 @@ impl Default for EmitterConfig {
     }
 }
 
-/// Push constants for particle simulation compute shader.
-///
-/// This is the minimum data needed per-frame for simulation.
-#[repr(C)]
-#[derive(Clone, Copy, Debug, bytemuck::Pod, bytemuck::Zeroable)]
-pub struct ParticlePushConstants {
-    /// Time since last frame in seconds
-    pub delta_time: f32,
-    /// Number of particles to emit this frame
-    pub emit_count: u32,
-    /// Maximum particles in buffer
-    pub max_particles: u32,
-    /// Random seed for this frame (time-based)
-    pub random_seed: u32,
-}
-
-impl ParticlePushConstants {
-    /// Create new push constants for a frame.
-    pub fn new(delta_time: f32, emit_count: u32, max_particles: u32, random_seed: u32) -> Self {
-        Self {
-            delta_time,
-            emit_count,
-            max_particles,
-            random_seed,
-        }
-    }
-}
-
 /// GPU particle buffer using DeviceAddressBuffer.
 ///
 /// Wraps DeviceAddressBuffer for particle storage with:
@@ -323,11 +295,6 @@ mod tests {
         assert!(std::mem::size_of::<EmitterConfig>() <= 128);
     }
 
-    #[test]
-    fn test_push_constants_size() {
-        // Should fit in push constants (<= 128 bytes)
-        assert!(std::mem::size_of::<ParticlePushConstants>() <= 128);
-    }
 
     #[test]
     fn test_particle_data_default() {
@@ -378,12 +345,4 @@ mod tests {
         assert_eq!(config.base_lifetime, 5.0);
     }
 
-    #[test]
-    fn test_push_constants_new() {
-        let pc = ParticlePushConstants::new(0.016, 10, 65536, 12345);
-        assert!((pc.delta_time - 0.016).abs() < f32::EPSILON);
-        assert_eq!(pc.emit_count, 10);
-        assert_eq!(pc.max_particles, 65536);
-        assert_eq!(pc.random_seed, 12345);
-    }
 }
