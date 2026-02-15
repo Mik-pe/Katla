@@ -41,6 +41,7 @@ impl EntityId {
     ///
     /// This should only be used for deserialization or when you know
     /// the ID was previously created by this system.
+    #[cfg(test)]
     pub fn from_raw(raw: u64) -> Self {
         Self(raw)
     }

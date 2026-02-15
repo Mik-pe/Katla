@@ -89,20 +89,6 @@ impl World {
         bundle.spawn(self)
     }
 
-    /// Creates a new entity with a specific raw ID.
-    ///
-    /// Use with caution - this bypasses normal ID allocation and is intended
-    /// for deserialization scenarios. The ID must have been previously created
-    /// by this system.
-    pub fn create_entity_with_raw_id(&mut self, raw_id: u64) -> EntityId {
-        let id = EntityId::from_raw(raw_id);
-        // Note: This doesn't actually allocate through the allocator,
-        // it's mainly for compatibility with serialization scenarios.
-        // In practice, you'd need more sophisticated logic for true
-        // deserialization support.
-        id
-    }
-
     /// Destroys an entity and removes all its components.
     ///
     /// Returns `true` if the entity existed and was removed, `false` otherwise.
@@ -347,17 +333,6 @@ impl Drop for World {
             ordered_system.system.shutdown();
         }
     }
-}
-
-#[macro_export]
-macro_rules! add_components {
-    ($world:expr, $id:expr, $($component:expr),+ $(,)?) => {
-        {
-            $(
-                $world.add_component($id, $component);
-            )+
-        }
-    };
 }
 
 #[cfg(test)]

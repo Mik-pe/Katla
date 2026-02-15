@@ -1,4 +1,4 @@
-use katla_ecs::{add_components, EntityId, World};
+use katla_ecs::{EntityId, World};
 use katla_math::{Mat4, Transform, Vec3};
 
 use crate::components::{
@@ -13,10 +13,7 @@ pub struct Camera {
 impl Camera {
     pub fn new(world: &mut World) -> Self {
         let transform = Transform::new_from_position(Vec3::new(0.0, 5.0, 5.0));
-        let id = world.create_entity();
-        add_components!(
-            world,
-            id,
+        let entity = world.spawn((
             TransformComponent::new(transform),
             VelocityComponent::default(),
             ForceComponent::default(),
@@ -24,9 +21,9 @@ impl Camera {
             PerspectiveComponent::default(),
             FlyCameraControllerComponent::default(),
             FlyCameraLookComponent::default(),
-        );
+        ));
 
-        Self { entity: id }
+        Self { entity }
     }
 
     pub fn aspect_ratio_changed(&mut self, world: &mut World, aspect_ratio: f32) {
