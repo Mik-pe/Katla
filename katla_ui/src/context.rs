@@ -255,6 +255,8 @@ impl UiContext {
     ///
     /// Text is rendered as textured quads from the font atlas.
     /// If no font is loaded, draws placeholder rectangles.
+    ///
+    /// The position is treated as the baseline of the text.
     pub fn draw_text(&mut self, text: &str, position: Vec2, color: Color, size: f32) {
         let mut cursor_x = position.x();
         let cursor_y = position.y();
@@ -262,16 +264,18 @@ impl UiContext {
         for c in text.chars() {
             // Try to get cached glyph
             if let Some(glyph) = self.fonts.get_or_rasterize(self.current_font, c, size) {
-                // Skip space (no visual)
-                if c == ' ' {
+                // Skip empty glyphs (spaces)
+                if glyph.size.x() == 0.0 || glyph.size.y() == 0.0 {
                     cursor_x += glyph.advance;
                     continue;
                 }
 
                 // Calculate glyph position
+                // offset.y is typically negative (baseline-relative, going up)
+                // We need to add glyph.height because the glyph extends above and below the offset point
                 let glyph_pos = Vec2::new(
                     cursor_x + glyph.offset.x(),
-                    cursor_y + glyph.offset.y() + size, // Adjust for baseline
+                    cursor_y + glyph.offset.y() - glyph.size.y(),
                 );
 
                 let bounds = Rect2D::from_origin_size(glyph_pos, glyph.size);
@@ -289,7 +293,7 @@ impl UiContext {
             } else {
                 // No glyph available - draw placeholder
                 let placeholder_size = Vec2::new(size * 0.6, size);
-                let bounds = Rect2D::from_origin_size(Vec2::new(cursor_x, cursor_y), placeholder_size);
+                let bounds = Rect2D::from_origin_size(Vec2::new(cursor_x, cursor_y - size), placeholder_size);
                 self.draw_rect_border(bounds, Color::TRANSPARENT, color, 1.0);
                 cursor_x += placeholder_size.x();
             }
@@ -391,9 +395,11 @@ impl UiContext {
     /// Draw a label (non-interactive text).
     pub fn label(&mut self, text: &str, bounds: Rect2D) {
         let text_size = self.measure_text(text, self.style.font_size);
+        // Position baseline at vertical center of bounds
+        let baseline_y = bounds.min.y() + bounds.height() * 0.5 + text_size.y() * 0.3;
         let centered = Vec2::new(
             bounds.min.x() + (bounds.width() - text_size.x()) * 0.5,
-            bounds.min.y() + (bounds.height() - text_size.y()) * 0.5,
+            baseline_y,
         );
         self.draw_text(text, centered, self.style.text_color, self.style.font_size);
     }
