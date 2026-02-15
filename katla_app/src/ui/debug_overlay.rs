@@ -3,7 +3,7 @@
 use katla_math::{Color, Rect2D, Vec2};
 use katla_ui::{DrawList, UiContext};
 
-/// Render mode options for dropdown demo.
+/// Render mode options.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RenderMode {
     Solid,
@@ -21,7 +21,7 @@ impl RenderMode {
     }
 }
 
-/// Quality level for combo demo.
+/// Quality level options.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum QualityLevel {
     Low,
@@ -74,7 +74,7 @@ impl DebugOverlay {
     pub fn new() -> Self {
         Self {
             visible: true,
-            settings_visible: false,
+            settings_visible: true,
             render_mode: RenderMode::Solid,
             quality: QualityLevel::High,
             volume: 0.8,
@@ -97,8 +97,6 @@ impl DebugOverlay {
     }
 
     /// Build the debug overlay UI.
-    ///
-    /// Call this after `ui.begin()` and before `ui.end()`.
     pub fn build(
         &mut self,
         ui: &mut UiContext,
@@ -109,7 +107,7 @@ impl DebugOverlay {
         let padding = 10.0;
         let line_height = 22.0;
         let title_height = 25.0;
-        let button_height = 28.0;
+        let button_height = 24.0;
         let window_width = 300.0;
 
         // === Stats Window ===
@@ -134,17 +132,16 @@ impl DebugOverlay {
             window.bounds.min.y() + title_height + padding,
         );
 
-        // Stats
         for text in &stats {
             let label_bounds = Rect2D::from_origin_size(cursor, Vec2::new(window_width - padding * 2.0, line_height));
             ui.label(text, label_bounds);
             cursor = Vec2::new(cursor.x(), cursor.y() + line_height);
         }
 
-        // Settings button
         cursor = Vec2::new(cursor.x(), cursor.y() + padding);
         let button_bounds = Rect2D::from_origin_size(cursor, Vec2::new(window_width - padding * 2.0, button_height));
-        if ui.button("settings_btn", "⚙ Settings", button_bounds) {
+        let btn_text = if self.settings_visible { "[Close Settings]" } else { "[Settings]" };
+        if ui.button("settings_btn", btn_text, button_bounds) {
             self.settings_visible = !self.settings_visible;
         }
 
@@ -152,48 +149,40 @@ impl DebugOverlay {
 
         // === Settings Panel ===
         if self.settings_visible {
-            self.build_settings_panel(ui, window_width, padding, line_height, title_height, button_height);
+            self.build_settings_panel(ui, padding, line_height, title_height, button_height);
         }
 
-        // === Context Menu Demo ===
-        // Open context menu on right-click anywhere
+        // === Context Menu Demo (right-click) ===
         ui.open_context_menu("main_context");
 
         if ui.begin_context_menu("main_context") {
             let item_height = ui.menu_item_height();
-            let item_cursor = Vec2::new(0.0, 0.0);
 
-            let item1_bounds = Rect2D::from_origin_size(item_cursor, Vec2::new(150.0, item_height));
+            let item1_bounds = Rect2D::from_origin_size(Vec2::new(0.0, 0.0), Vec2::new(150.0, item_height));
             if ui.menu_item("ctx_solid", "Solid Mode", item1_bounds) {
                 self.render_mode = RenderMode::Solid;
-                self.context_message = "Switched to Solid mode!".to_string();
+                self.context_message = "Switched to Solid!".to_string();
                 ui.close_current_popup();
             }
 
-            let item2_bounds = Rect2D::from_origin_size(
-                Vec2::new(0.0, item_height),
-                Vec2::new(150.0, item_height)
-            );
-            if ui.menu_item("ctx_wire", "Wireframe Mode", item2_bounds) {
+            let item2_bounds = Rect2D::from_origin_size(Vec2::new(0.0, item_height), Vec2::new(150.0, item_height));
+            if ui.menu_item("ctx_wire", "Wireframe", item2_bounds) {
                 self.render_mode = RenderMode::Wireframe;
-                self.context_message = "Switched to Wireframe mode!".to_string();
+                self.context_message = "Switched to Wireframe!".to_string();
                 ui.close_current_popup();
             }
 
-            let item3_bounds = Rect2D::from_origin_size(
-                Vec2::new(0.0, item_height * 2.0),
-                Vec2::new(150.0, item_height)
-            );
-            if ui.menu_item("ctx_points", "Points Mode", item3_bounds) {
+            let item3_bounds = Rect2D::from_origin_size(Vec2::new(0.0, item_height * 2.0), Vec2::new(150.0, item_height));
+            if ui.menu_item("ctx_points", "Points", item3_bounds) {
                 self.render_mode = RenderMode::Points;
-                self.context_message = "Switched to Points mode!".to_string();
+                self.context_message = "Switched to Points!".to_string();
                 ui.close_current_popup();
             }
 
             ui.end_context_menu();
         }
 
-        // === Context Message Toast ===
+        // === Toast Message ===
         if !self.context_message.is_empty() {
             let msg_size = ui.measure_text(&self.context_message, ui.style.font_size);
             let toast_width = msg_size.x() + 20.0;
@@ -215,7 +204,6 @@ impl DebugOverlay {
     fn build_settings_panel(
         &mut self,
         ui: &mut UiContext,
-        _window_width: f32,
         padding: f32,
         line_height: f32,
         title_height: f32,
@@ -224,72 +212,63 @@ impl DebugOverlay {
         let panel_x = 320.0;
         let panel_width = 320.0;
 
-        // Calculate panel height based on content
-        let items = 9; // render mode + quality + 2 sliders + 2 checkboxes + ambient + close button + padding
-        let content_height = items as f32 * (line_height + 8.0) + padding * 2.0;
-        let panel_height = title_height + content_height;
+        // Panel height - make it taller to fit all content
+        let panel_height = 480.0;
 
         let panel_bounds = Rect2D::from_origin_size(
             Vec2::new(panel_x, 10.0),
             Vec2::new(panel_width, panel_height),
         );
 
-        let window = ui.begin_window_with_title("settings_panel", Some("⚙ Settings"), panel_bounds);
+        let window = ui.begin_window_with_title("settings_panel", Some("Settings"), panel_bounds);
 
         let mut cursor = Vec2::new(
             window.bounds.min.x() + padding,
             window.bounds.min.y() + title_height + padding,
         );
 
-        // Render Mode Dropdown
+        // === Render Mode (Selectable buttons) ===
         {
             let label_bounds = Rect2D::from_origin_size(cursor, Vec2::new(panel_width - padding * 2.0, line_height));
             ui.label("Render Mode:", label_bounds);
             cursor = Vec2::new(cursor.x(), cursor.y() + line_height + 4.0);
 
-            let dropdown_bounds = Rect2D::from_origin_size(cursor, Vec2::new(panel_width - padding * 2.0, button_height));
-            if ui.begin_dropdown("render_mode", self.render_mode.as_str(), dropdown_bounds) {
-                let item_height = ui.menu_item_height();
-                for (i, mode) in [RenderMode::Solid, RenderMode::Wireframe, RenderMode::Points].iter().enumerate() {
-                    let item_bounds = Rect2D::from_origin_size(
-                        Vec2::new(cursor.x(), cursor.y() + button_height + i as f32 * item_height),
-                        Vec2::new(panel_width - padding * 2.0, item_height),
-                    );
-                    if ui.menu_item(&format!("mode_{}", i), mode.as_str(), item_bounds) {
-                        self.render_mode = *mode;
-                        ui.close_current_popup();
-                    }
+            // Three buttons in a row for render modes
+            let btn_width = (panel_width - padding * 2.0 - 8.0) / 3.0;
+            for (i, mode) in [RenderMode::Solid, RenderMode::Wireframe, RenderMode::Points].iter().enumerate() {
+                let btn_bounds = Rect2D::from_origin_size(
+                    Vec2::new(cursor.x() + i as f32 * (btn_width + 4.0), cursor.y()),
+                    Vec2::new(btn_width, button_height),
+                );
+                let is_selected = *mode == self.render_mode;
+                if ui.selectable(&format!("render_{}", i), mode.as_str(), is_selected, btn_bounds) {
+                    self.render_mode = *mode;
                 }
-                ui.end_dropdown();
             }
-            cursor = Vec2::new(cursor.x(), cursor.y() + button_height + 8.0);
+            cursor = Vec2::new(cursor.x(), cursor.y() + button_height + 12.0);
         }
 
-        // Quality Combo Box
+        // === Quality (Selectable buttons) ===
         {
             let label_bounds = Rect2D::from_origin_size(cursor, Vec2::new(panel_width - padding * 2.0, line_height));
             ui.label("Quality:", label_bounds);
             cursor = Vec2::new(cursor.x(), cursor.y() + line_height + 4.0);
 
-            let combo_bounds = Rect2D::from_origin_size(cursor, Vec2::new(panel_width - padding * 2.0, button_height));
-            if ui.begin_combo("quality_combo", self.quality.as_str(), combo_bounds) {
-                let item_height = ui.menu_item_height();
-                for (i, quality) in QualityLevel::all().iter().enumerate() {
-                    let item_bounds = Rect2D::from_origin_size(
-                        Vec2::new(cursor.x(), cursor.y() + button_height + i as f32 * item_height),
-                        Vec2::new(panel_width - padding * 2.0, item_height),
-                    );
-                    if ui.selectable(&format!("qual_{}", i), quality.as_str(), *quality == self.quality, item_bounds) {
-                        self.quality = *quality;
-                        ui.close_current_popup();
-                    }
+            let btn_width = (panel_width - padding * 2.0 - 12.0) / 4.0;
+            for (i, quality) in QualityLevel::all().iter().enumerate() {
+                let btn_bounds = Rect2D::from_origin_size(
+                    Vec2::new(cursor.x() + i as f32 * (btn_width + 4.0), cursor.y()),
+                    Vec2::new(btn_width, button_height),
+                );
+                let is_selected = *quality == self.quality;
+                if ui.selectable(&format!("qual_{}", i), quality.as_str(), is_selected, btn_bounds) {
+                    self.quality = *quality;
                 }
-                ui.end_combo();
             }
-            cursor = Vec2::new(cursor.x(), cursor.y() + button_height + 8.0);
+            cursor = Vec2::new(cursor.x(), cursor.y() + button_height + 12.0);
         }
 
-        // Volume Slider
+        // === Volume Slider ===
         {
             let label_bounds = Rect2D::from_origin_size(cursor, Vec2::new(panel_width - padding * 2.0, line_height));
             ui.label(&format!("Volume: {:.0}%", self.volume * 100.0), label_bounds);
@@ -300,7 +279,7 @@ impl DebugOverlay {
             cursor = Vec2::new(cursor.x(), cursor.y() + 28.0);
         }
 
-        // Sensitivity Slider
+        // === Sensitivity Slider ===
         {
             let label_bounds = Rect2D::from_origin_size(cursor, Vec2::new(panel_width - padding * 2.0, line_height));
             ui.label(&format!("Sensitivity: {:.1}", self.sensitivity), label_bounds);
@@ -311,7 +290,7 @@ impl DebugOverlay {
             cursor = Vec2::new(cursor.x(), cursor.y() + 28.0);
         }
 
-        // Ambient Intensity Slider
+        // === Ambient Slider ===
         {
             let label_bounds = Rect2D::from_origin_size(cursor, Vec2::new(panel_width - padding * 2.0, line_height));
             ui.label(&format!("Ambient: {:.2}", self.ambient_intensity), label_bounds);
@@ -322,24 +301,21 @@ impl DebugOverlay {
             cursor = Vec2::new(cursor.x(), cursor.y() + 28.0);
         }
 
-        // VSync Checkbox
+        // === Checkboxes ===
         {
             let checkbox_bounds = Rect2D::from_origin_size(cursor, Vec2::new(panel_width - padding * 2.0, line_height));
-            ui.checkbox("vsync_check", "VSync", &mut self.vsync, checkbox_bounds);
+            ui.checkbox("vsync_check", "VSync Enabled", &mut self.vsync, checkbox_bounds);
             cursor = Vec2::new(cursor.x(), cursor.y() + line_height + 4.0);
-        }
 
-        // Show FPS Checkbox
-        {
             let checkbox_bounds = Rect2D::from_origin_size(cursor, Vec2::new(panel_width - padding * 2.0, line_height));
             ui.checkbox("fps_check", "Show FPS in Title", &mut self.show_fps, checkbox_bounds);
-            cursor = Vec2::new(cursor.x(), cursor.y() + line_height + 8.0);
+            cursor = Vec2::new(cursor.x(), cursor.y() + 12.0);
         }
 
-        // Close Button
+        // === Close Button ===
         {
             let button_bounds = Rect2D::from_origin_size(cursor, Vec2::new(panel_width - padding * 2.0, button_height));
-            if ui.button("close_settings", "Close Settings", button_bounds) {
+            if ui.button("close_settings", "Close Panel", button_bounds) {
                 self.settings_visible = false;
             }
         }
@@ -348,8 +324,6 @@ impl DebugOverlay {
     }
 
     /// Render the debug overlay and return the draw list.
-    ///
-    /// This handles begin/end internally.
     pub fn render<'a>(
         &mut self,
         ui: &'a mut UiContext,
@@ -358,13 +332,8 @@ impl DebugOverlay {
         frame_count: usize,
         entity_count: usize,
     ) -> &'a DrawList {
-        // Begin UI frame
         ui.begin(screen_size);
-
-        // Build the UI
         self.build(ui, fps, frame_count, entity_count);
-
-        // End UI frame and return draw list
         ui.end()
     }
 

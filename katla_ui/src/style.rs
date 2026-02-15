@@ -130,9 +130,9 @@ impl UiStyle {
     /// Create a dark theme style.
     pub fn dark() -> Self {
         Self {
-            window_bg: Color::from_rgb_hex(0x1e1e1e),
-            window_title_bg: Color::from_rgb_hex(0x2d2d2d),
-            window_title_bg_active: Color::from_rgb_hex(0x3d3d3d),
+            window_bg: Color::from_rgb_hex(0x2a2a2a),       // Slightly brighter for visibility
+            window_title_bg: Color::from_rgb_hex(0x3a3a3a),
+            window_title_bg_active: Color::from_rgb_hex(0x4a4a4a),
             window_title_text: Color::from_rgb_hex(0xeeeeee),
             window_border: Color::from_rgb_hex(0x404040),
             window_rounding: 4.0,
