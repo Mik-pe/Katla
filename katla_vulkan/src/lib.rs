@@ -320,6 +320,13 @@ impl VulkanRenderer {
             let target = ViewportRenderTarget::resize(&self.context, old_target, width, height)?;
             self.viewport_target = Some(target);
             info!("Viewport render target created/resized to {}x{}", width, height);
+
+            // Update UI textures with the new viewport image view
+            if let Some(ref mut ui_textures) = self.ui_textures {
+                if let Some(ref viewport_target) = self.viewport_target {
+                    ui_textures.set_viewport_texture(&self.context, viewport_target.color_image_view);
+                }
+            }
         }
         Ok(())
     }
@@ -1768,7 +1775,7 @@ pub struct UITextures {
     pub white_image: vk::Image,
     pub white_image_memory: gpu_allocator::vulkan::Allocation,
     pub white_image_view: vk::ImageView,
-    /// Sampler for both textures.
+    /// Sampler for textures.
     pub sampler: vk::Sampler,
     /// Descriptor set layout for UI textures.
     pub descriptor_set_layout: vk::DescriptorSetLayout,
@@ -1779,6 +1786,8 @@ pub struct UITextures {
     /// Font atlas dimensions.
     pub atlas_width: u32,
     pub atlas_height: u32,
+    /// Viewport texture image view (updated externally).
+    pub viewport_image_view: Option<vk::ImageView>,
 }
 
 impl UITextures {
@@ -1823,7 +1832,7 @@ impl UITextures {
             let (font_image, font_memory, font_view) =
                 Self::create_texture(context, atlas_width, atlas_height, &white_pixels)?;
 
-            // Create descriptor set layout
+            // Create descriptor set layout (3 bindings: font atlas, sampler, viewport texture)
             let bindings = [
                 vk::DescriptorSetLayoutBinding::default()
                     .binding(0)
@@ -1835,6 +1844,11 @@ impl UITextures {
                     .descriptor_type(vk::DescriptorType::SAMPLER)
                     .descriptor_count(1)
                     .stage_flags(vk::ShaderStageFlags::FRAGMENT),
+                vk::DescriptorSetLayoutBinding::default()
+                    .binding(2)
+                    .descriptor_type(vk::DescriptorType::SAMPLED_IMAGE)
+                    .descriptor_count(1)
+                    .stage_flags(vk::ShaderStageFlags::FRAGMENT),
             ];
 
             let layout_create_info = vk::DescriptorSetLayoutCreateInfo::default()
@@ -1842,11 +1856,11 @@ impl UITextures {
 
             let descriptor_set_layout = context.device.create_descriptor_set_layout(&layout_create_info, None)?;
 
-            // Create descriptor pool
+            // Create descriptor pool (2 sampled images + 1 sampler)
             let pool_sizes = [
                 vk::DescriptorPoolSize {
                     ty: vk::DescriptorType::SAMPLED_IMAGE,
-                    descriptor_count: 1,
+                    descriptor_count: 2,
                 },
                 vk::DescriptorPoolSize {
                     ty: vk::DescriptorType::SAMPLER,
@@ -1869,9 +1883,9 @@ impl UITextures {
             let descriptor_sets = context.device.allocate_descriptor_sets(&alloc_info)?;
             let descriptor_set = descriptor_sets[0];
 
-            // Update descriptor set with font texture and sampler
-            let image_info = vk::DescriptorImageInfo {
-                sampler: vk::Sampler::null(), // Not used for sampled image
+            // Update descriptor set with font texture, sampler, and placeholder viewport texture
+            let font_image_info = vk::DescriptorImageInfo {
+                sampler: vk::Sampler::null(),
                 image_view: font_view,
                 image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
             };
@@ -1882,15 +1896,23 @@ impl UITextures {
                 image_layout: vk::ImageLayout::UNDEFINED,
             };
 
-            let image_infos = [image_info];
-            let sampler_infos = [sampler_info];
+            // Viewport texture placeholder (use white texture initially)
+            let viewport_image_info = vk::DescriptorImageInfo {
+                sampler: vk::Sampler::null(),
+                image_view: white_view, // Placeholder - will be updated when viewport is created
+                image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+            };
 
-            let image_write = vk::WriteDescriptorSet::default()
+            let font_infos = [font_image_info];
+            let sampler_infos = [sampler_info];
+            let viewport_infos = [viewport_image_info];
+
+            let font_write = vk::WriteDescriptorSet::default()
                 .dst_set(descriptor_set)
                 .dst_binding(0)
                 .dst_array_element(0)
                 .descriptor_type(vk::DescriptorType::SAMPLED_IMAGE)
-                .image_info(&image_infos);
+                .image_info(&font_infos);
 
             let sampler_write = vk::WriteDescriptorSet::default()
                 .dst_set(descriptor_set)
@@ -1899,7 +1921,14 @@ impl UITextures {
                 .descriptor_type(vk::DescriptorType::SAMPLER)
                 .image_info(&sampler_infos);
 
-            context.device.update_descriptor_sets(&[image_write, sampler_write], &[]);
+            let viewport_write = vk::WriteDescriptorSet::default()
+                .dst_set(descriptor_set)
+                .dst_binding(2)
+                .dst_array_element(0)
+                .descriptor_type(vk::DescriptorType::SAMPLED_IMAGE)
+                .image_info(&viewport_infos);
+
+            context.device.update_descriptor_sets(&[font_write, sampler_write, viewport_write], &[]);
 
             Ok(Self {
                 font_image,
@@ -1914,6 +1943,7 @@ impl UITextures {
                 descriptor_pool,
                 atlas_width,
                 atlas_height,
+                viewport_image_view: None,
             })
         }
     }
@@ -2162,6 +2192,30 @@ impl UITextures {
         }
 
         true
+    }
+
+    /// Update viewport texture binding in the descriptor set.
+    /// Call this when the viewport render target is created or resized.
+    pub fn set_viewport_texture(&mut self, context: &VulkanContext, image_view: vk::ImageView) {
+        unsafe {
+            let viewport_image_info = vk::DescriptorImageInfo {
+                sampler: vk::Sampler::null(),
+                image_view,
+                image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+            };
+
+            let viewport_infos = [viewport_image_info];
+
+            let viewport_write = vk::WriteDescriptorSet::default()
+                .dst_set(self.descriptor_set)
+                .dst_binding(2)
+                .dst_array_element(0)
+                .descriptor_type(vk::DescriptorType::SAMPLED_IMAGE)
+                .image_info(&viewport_infos);
+
+            context.device.update_descriptor_sets(&[viewport_write], &[]);
+        }
+        self.viewport_image_view = Some(image_view);
     }
 
     /// Destroy UI textures.

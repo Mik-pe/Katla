@@ -404,34 +404,23 @@ impl EditorUI {
     }
 
     fn build_viewport(&mut self, ui: &mut UiContext, bounds: Rect2D) {
-        // Viewport background (darker, represents game view)
-        ui.draw_rect(bounds, Color::new(0.1, 0.1, 0.12, 1.0));
+        // Draw the viewport image from the rendered scene texture.
+        // UV.x >= 1.0 signals the shader to sample from viewport texture.
+        // We use (1.0, 0.0) to (2.0, 1.0) which maps to (0.0, 0.0) to (1.0, 1.0) in viewport texture.
+        ui.draw_image(
+            bounds,
+            Vec2::new(1.0, 0.0),  // UV min (shifted by 1.0 for viewport texture)
+            Vec2::new(2.0, 1.0),  // UV max (shifted by 1.0 for viewport texture)
+            Color::new(1.0, 1.0, 1.0, 1.0),  // White tint (no color modification)
+        );
 
         // Viewport border (highlighted when focused)
         ui.draw_rect_border(bounds, Color::TRANSPARENT, Color::new(0.4, 0.5, 0.6, 1.0), 2.0);
 
-        // Center text overlay (since we're not actually rendering to texture yet)
-        let overlay_text = "Game Viewport";
-        let overlay_size = ui.measure_text(overlay_text, 16.0);
-        let overlay_pos = Vec2::new(
-            bounds.center().x() - overlay_size.x() * 0.5,
-            bounds.center().y() - overlay_size.y() * 0.5,
-        );
-        ui.draw_text(overlay_text, overlay_pos, Color::new(0.4, 0.4, 0.4, 1.0), 16.0);
-
-        // Grid overlay hint
-        if self.show_grid {
-            let grid_hint = "[Grid Visible]";
-            let hint_size = ui.measure_text(grid_hint, 10.0);
-            let hint_pos = Vec2::new(bounds.min.x() + 8.0, bounds.max.y() - hint_size.y() - 8.0);
-            ui.draw_text(grid_hint, hint_pos, Color::new(0.5, 0.5, 0.5, 0.7), 10.0);
-        }
-
         // Viewport label
         let vp_label = "3D View";
-        let label_size = ui.measure_text(vp_label, 10.0);
         let label_pos = Vec2::new(bounds.min.x() + 8.0, bounds.min.y() + 8.0);
-        ui.draw_text(vp_label, label_pos, Color::new(0.6, 0.6, 0.6, 0.8), 10.0);
+        ui.draw_text(vp_label, label_pos, Color::new(0.9, 0.9, 0.9, 0.8), 10.0);
     }
 
     fn build_status_bar(&mut self, ui: &mut UiContext, screen_size: Vec2, height: f32, fps: f32, frame_count: usize, entity_count: usize) {

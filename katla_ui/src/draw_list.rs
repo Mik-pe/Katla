@@ -51,12 +51,15 @@ impl UiVertex {
         }
     }
 
-    /// Create a position-only vertex (solid color, no texture).
+    /// Create a position-only vertex (solid color, uses white pixel).
+    /// UV points to center of white pixel (0,0) to avoid linear filtering artifacts.
     #[inline]
     pub fn position_only(position: Vec2, color: Color) -> Self {
+        // White pixel is at (0,0) in 512x512 atlas, center is at (0.5/512, 0.5/512)
+        const WHITE_PIXEL_UV: f32 = 0.5 / 512.0;
         Self {
             position,
-            uv: Vec2::new(0.0, 0.0),
+            uv: Vec2::new(WHITE_PIXEL_UV, WHITE_PIXEL_UV),
             color,
         }
     }
@@ -219,6 +222,56 @@ impl DrawList {
         self.vertices.push(UiVertex::new(
             Vec2::new(bounds.min.x(), bounds.max.y()),
             Vec2::new(uv.min.x(), uv.max.y()),
+            color,
+        ));
+
+        // Two triangles
+        self.indices.extend_from_slice(&[
+            vertex_offset,
+            vertex_offset + 1,
+            vertex_offset + 2,
+            vertex_offset,
+            vertex_offset + 2,
+            vertex_offset + 3,
+        ]);
+    }
+
+    /// Add an image with custom UV coordinates.
+    ///
+    /// UV encoding for texture selection:
+    /// - uv_min.x < 1.0: Sample from font atlas
+    /// - uv_min.x >= 1.0: Sample from viewport texture (1.0 is subtracted from x)
+    pub fn add_image(&mut self, bounds: Rect2D, uv_min: Vec2, uv_max: Vec2, color: Color) {
+        // Use VIEWPORT texture ID if UV indicates viewport (x >= 1.0)
+        let texture = if uv_min.x() >= 1.0 {
+            TextureId::VIEWPORT
+        } else {
+            TextureId::FONT_ATLAS
+        };
+
+        self.set_texture(texture);
+
+        let vertex_offset = self.vertices.len() as u32;
+
+        // Four corners with UVs
+        self.vertices.push(UiVertex::new(
+            Vec2::new(bounds.min.x(), bounds.min.y()),
+            uv_min,
+            color,
+        ));
+        self.vertices.push(UiVertex::new(
+            Vec2::new(bounds.max.x(), bounds.min.y()),
+            Vec2::new(uv_max.x(), uv_min.y()),
+            color,
+        ));
+        self.vertices.push(UiVertex::new(
+            Vec2::new(bounds.max.x(), bounds.max.y()),
+            uv_max,
+            color,
+        ));
+        self.vertices.push(UiVertex::new(
+            Vec2::new(bounds.min.x(), bounds.max.y()),
+            Vec2::new(uv_min.x(), uv_max.y()),
             color,
         ));
 

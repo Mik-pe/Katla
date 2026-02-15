@@ -272,6 +272,16 @@ impl UiContext {
         );
     }
 
+    /// Draw a textured image.
+    ///
+    /// The texture is specified via UV coordinates. For viewport texture,
+    /// use uv_min with x >= 1.0 (e.g., (1.0, 0.0) to (2.0, 1.0)).
+    /// For font atlas, use uv_min with x < 1.0.
+    pub fn draw_image(&mut self, bounds: Rect2D, uv_min: Vec2, uv_max: Vec2, color: Color) {
+        self.draw_list.set_clip(self.clip_rect());
+        self.draw_list.add_image(bounds, uv_min, uv_max, color);
+    }
+
     /// Draw a line.
     pub fn draw_line(&mut self, start: Vec2, end: Vec2, color: Color, thickness: f32) {
         self.draw_list.set_clip(self.clip_rect());
