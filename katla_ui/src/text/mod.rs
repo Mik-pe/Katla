@@ -35,8 +35,10 @@ pub struct CachedGlyph {
     pub uv_rect: Rect2D,
     /// Size of the glyph in pixels.
     pub size: Vec2,
-    /// Offset from the baseline to the glyph's top-left.
+    /// Offset from cursor position to glyph's top-left.
     pub offset: Vec2,
+    /// Font ascender for baseline alignment.
+    pub ascender: f32,
     /// Horizontal advance to the next character.
     pub advance: f32,
 }
@@ -54,10 +56,12 @@ struct RasterizedGlyph {
     pub width: usize,
     /// Height in pixels.
     pub height: usize,
-    /// Horizontal offset.
+    /// Horizontal offset (left side bearing).
     pub offset_x: f32,
-    /// Vertical offset from baseline.
+    /// Vertical offset from baseline (negative = below baseline).
     pub offset_y: f32,
+    /// Font ascender for consistent top alignment.
+    pub ascender: f32,
     /// Horizontal advance.
     pub advance: f32,
 }
@@ -163,14 +167,23 @@ impl FontSystem {
         // Rasterize the glyph
         let (metrics, pixels) = font.rasterize(c, size);
 
+        // Get font-level ascender for consistent baseline alignment
+        // fontdue's ymin is relative to baseline, but we want all glyphs
+        // to share the same top edge relative to the font's ascender
+        let ascender = font.horizontal_line_metrics(size)
+            .map(|m| m.ascent)
+            .unwrap_or(size); // Fallback to size if metrics unavailable
+
         let rasterized = RasterizedGlyph {
             c,
             size,
             pixels,
             width: metrics.width,
             height: metrics.height,
-            offset_x: metrics.bounds.xmin as f32,
-            offset_y: metrics.bounds.ymin as f32,
+            // Use metrics.xmin/ymin (whole pixel bitmap offsets), NOT bounds.xmin/ymin (outline)
+            offset_x: metrics.xmin as f32,
+            offset_y: metrics.ymin as f32,
+            ascender,
             advance: metrics.advance_width,
         };
 
@@ -191,6 +204,7 @@ impl FontSystem {
                 uv_rect: Rect2D::new(Vec2::new(0.0, 0.0), Vec2::new(0.0, 0.0)),
                 size: Vec2::new(0.0, 0.0),
                 offset: Vec2::new(glyph.offset_x, glyph.offset_y),
+                ascender: glyph.ascender,
                 advance: glyph.advance,
             });
         }
@@ -257,6 +271,7 @@ impl FontSystem {
             ),
             size: Vec2::new(glyph.width as f32, glyph.height as f32),
             offset: Vec2::new(glyph.offset_x, glyph.offset_y),
+            ascender: glyph.ascender,
             advance: glyph.advance,
         })
     }

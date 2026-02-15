@@ -270,9 +270,13 @@ impl UiContext {
                     continue;
                 }
 
-                // Calculate glyph position
-                // fontdue's ymin: negative = below baseline, positive = above baseline
-                // In screen coords (y down): glyph top = baseline - ymin - height
+                // Calculate glyph position using fontdue's bitmap metrics:
+                // glyph.offset.x() = xmin (left edge offset from cursor)
+                // glyph.offset.y() = ymin (bottom edge offset from baseline, negative = below)
+                // glyph.size.y() = bitmap height
+                //
+                // For screen coords (y-down), the TOP of the bitmap is at:
+                // cursor_y - ymin - height (convert from y-up and move up by height)
                 let glyph_pos = Vec2::new(
                     cursor_x + glyph.offset.x(),
                     cursor_y - glyph.offset.y() - glyph.size.y(),

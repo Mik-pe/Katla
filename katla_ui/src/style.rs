@@ -109,7 +109,7 @@ impl UiStyle {
 
             text_color: Color::from_rgb_hex(0xeeeeee),
             text_disabled: Color::from_rgb_hex(0x808080),
-            font_size: 14.0,
+            font_size: 16.0,
 
             checkbox_bg: Color::from_rgb_hex(0x282828),
             checkbox_check: Color::from_rgb_hex(0x4a9eff),
@@ -154,7 +154,7 @@ impl UiStyle {
 
             text_color: Color::from_rgb_hex(0x222222),
             text_disabled: Color::from_rgb_hex(0x808080),
-            font_size: 14.0,
+            font_size: 16.0,
 
             checkbox_bg: Color::from_rgb_hex(0xffffff),
             checkbox_check: Color::from_rgb_hex(0x2070d0),

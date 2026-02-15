@@ -18,7 +18,7 @@ This document outlines the plan for implementing UI rendering in the Katla engin
 - [x] Persistent buffer management (no per-frame allocations)
 - [x] Font texture atlas support with GPU upload
 - [x] Roboto font loaded and ASCII characters precached
-- [ ] Text rendering verification (run app to test)
+- [x] Text rendering verification - baseline alignment fixed using glyph offset.y
 - [ ] Clipping support for nested windows
 
 ## Architecture
