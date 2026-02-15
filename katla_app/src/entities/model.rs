@@ -28,8 +28,6 @@ impl Model {
         transform: Transform,
         color: Option<katla_math::Color>,
     ) -> Self {
-        let entity = world.create_entity();
-
         // Register assets with renderer if available
         let (mesh_handle, material_handle) = if let Some(r) = renderer {
             // Register mesh - take buffers from first mesh
@@ -57,17 +55,19 @@ impl Model {
             (MeshHandle(0), MaterialHandle(0))
         };
 
-        world.add_component(entity, TransformComponent::new(transform));
-
         // Create DrawableComponent with optional color
         let drawable = if let Some(c) = color {
             DrawableComponent::with_handles_and_color(mesh_handle, material_handle, c)
         } else {
             DrawableComponent::with_handles(mesh_handle, material_handle)
         };
-        world.add_component(entity, drawable);
 
-        world.add_component(entity, NameComponent::new("Model"));
+        // Spawn entity with all components
+        let entity = world.spawn((
+            TransformComponent::new(transform),
+            drawable,
+            NameComponent::new("Model"),
+        ));
 
         Self {
             entity,
