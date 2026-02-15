@@ -283,10 +283,13 @@ impl UiContext {
     /// Text is rendered as textured quads from the font atlas.
     /// If no font is loaded, draws placeholder rectangles.
     ///
-    /// The position is treated as the baseline of the text.
+    /// `position` is the TOP-LEFT of the text bounding box.
+    /// This is the most intuitive API for UI work.
     pub fn draw_text(&mut self, text: &str, position: Vec2, color: Color, size: f32) {
         let mut cursor_x = position.x();
-        let cursor_y = position.y();
+        // Convert from top-left to baseline: baseline is ~75% down from top
+        // (accounts for ascenders - most letters don't go above 75% of line height)
+        let baseline_y = position.y() + size * 0.75;
 
         for c in text.chars() {
             // Try to get cached glyph
@@ -303,10 +306,10 @@ impl UiContext {
                 // glyph.size.y() = bitmap height
                 //
                 // For screen coords (y-down), the TOP of the bitmap is at:
-                // cursor_y - ymin - height (convert from y-up and move up by height)
+                // baseline_y - ymin - height (convert from y-up and move up by height)
                 let glyph_pos = Vec2::new(
                     cursor_x + glyph.offset.x(),
-                    cursor_y - glyph.offset.y() - glyph.size.y(),
+                    baseline_y - glyph.offset.y() - glyph.size.y(),
                 );
 
                 let bounds = Rect2D::from_origin_size(glyph_pos, glyph.size);
@@ -324,7 +327,7 @@ impl UiContext {
             } else {
                 // No glyph available - draw placeholder
                 let placeholder_size = Vec2::new(size * 0.6, size);
-                let bounds = Rect2D::from_origin_size(Vec2::new(cursor_x, cursor_y - size), placeholder_size);
+                let bounds = Rect2D::from_origin_size(position, placeholder_size);
                 self.draw_rect_border(bounds, Color::TRANSPARENT, color, 1.0);
                 cursor_x += placeholder_size.x();
             }
@@ -426,13 +429,12 @@ impl UiContext {
     /// Draw a label (non-interactive text).
     pub fn label(&mut self, text: &str, bounds: Rect2D) {
         let text_size = self.measure_text(text, self.style.font_size);
-        // Position baseline at vertical center of bounds (consistent with other widgets)
-        let baseline_y = bounds.center().y() + self.style.font_size * 0.25;
-        let centered = Vec2::new(
+        // Center text in bounds (top-left positioning)
+        let text_pos = Vec2::new(
             bounds.min.x() + (bounds.width() - text_size.x()) * 0.5,
-            baseline_y,
+            bounds.center().y() - text_size.y() * 0.5,
         );
-        self.draw_text(text, centered, self.style.text_color, self.style.font_size);
+        self.draw_text(text, text_pos, self.style.text_color, self.style.font_size);
     }
 
     /// Draw a button. Returns true if clicked this frame.
@@ -453,13 +455,11 @@ impl UiContext {
         // Draw button background
         self.draw_rect(bounds, bg_color);
 
-        // Draw button text (centered)
-        // draw_text expects position.y() to be the baseline, not top
-        // Baseline is roughly 75% up from bottom of text height
+        // Draw button text (centered, top-left positioning)
         let text_size = self.measure_text(text, self.style.font_size);
         let text_pos = Vec2::new(
             bounds.center().x() - text_size.x() * 0.5,
-            bounds.center().y() + self.style.font_size * 0.25, // baseline at center + offset
+            bounds.center().y() - text_size.y() * 0.5,
         );
         self.draw_text(text, text_pos, text_color, self.style.font_size);
 
@@ -503,10 +503,11 @@ impl UiContext {
             );
         }
 
-        // Draw label (baseline positioning)
+        // Draw label (top-left positioning, vertically centered)
+        let text_size = self.measure_text(label, self.style.font_size);
         let label_pos = Vec2::new(
             check_bounds.max.x() + 8.0,
-            bounds.center().y() + self.style.font_size * 0.25,
+            bounds.center().y() - text_size.y() * 0.5,
         );
         self.draw_text(label, label_pos, self.style.text_color, self.style.font_size);
 
@@ -637,15 +638,15 @@ impl UiContext {
         self.draw_rect(bounds, bg_color);
         self.draw_rect_border(bounds, Color::TRANSPARENT, self.style.input_border, 1.0);
 
-        // Draw text with clipping
+        // Draw text with clipping (top-left positioning, centered vertically)
         let padding = 4.0;
         let text_bounds = bounds.contract(padding);
         self.push_clip(text_bounds);
 
-        // Baseline positioning for text_input
+        let text_size = self.measure_text(text, self.style.font_size);
         let text_pos = Vec2::new(
             bounds.min.x() + padding,
-            bounds.center().y() + self.style.font_size * 0.25,
+            bounds.center().y() - text_size.y() * 0.5,
         );
         self.draw_text(text, text_pos, self.style.input_text, self.style.font_size);
 
@@ -764,10 +765,11 @@ impl UiContext {
             );
             self.draw_rect(title_bounds, self.style.window_title_bg);
 
-            // Draw title text
+            // Draw title text (top-left positioning, centered vertically in title bar)
+            let text_size = self.measure_text(title_text, self.style.font_size);
             let text_pos = Vec2::new(
                 bounds.min.x() + self.style.window_padding,
-                bounds.min.y() + (title_height - self.style.font_size) * 0.5,
+                bounds.min.y() + (title_height - text_size.y()) * 0.5,
             );
             self.draw_text(title_text, text_pos, self.style.text_color, self.style.font_size);
         }
@@ -823,12 +825,13 @@ impl UiContext {
         };
         self.draw_rect(bounds, bg_color);
 
-        // Draw arrow indicator (baseline positioning)
+        // Draw arrow indicator (top-left positioning, centered vertically)
         let arrow = if *open { "▼ " } else { "► " };
         let text = format!("{}{}", arrow, label);
+        let text_size = self.measure_text(&text, self.style.font_size);
         let text_pos = Vec2::new(
             bounds.min.x() + 4.0,
-            bounds.center().y() + self.style.font_size * 0.25,
+            bounds.center().y() - text_size.y() * 0.5,
         );
         self.draw_text(&text, text_pos, self.style.text_color, self.style.font_size);
 
@@ -947,10 +950,11 @@ impl UiContext {
             self.draw_rect(bounds, bg_color);
         }
 
-        // Draw label (baseline positioning - draw_text expects baseline Y)
+        // Draw label (top-left positioning, centered vertically)
+        let text_size = self.measure_text(label, self.style.font_size);
         let text_pos = Vec2::new(
             bounds.min.x() + self.style.menu_padding,
-            bounds.center().y() + self.style.font_size * 0.25,
+            bounds.center().y() - text_size.y() * 0.5,
         );
         self.draw_text(label, text_pos, self.style.text_color, self.style.font_size);
 
@@ -981,10 +985,11 @@ impl UiContext {
             self.draw_rect(bounds, bg_color);
         }
 
-        // Draw label (baseline positioning)
+        // Draw label (top-left positioning, centered vertically)
+        let text_size = self.measure_text(label, self.style.font_size);
         let text_pos = Vec2::new(
             bounds.min.x() + self.style.menu_padding,
-            bounds.center().y() + self.style.font_size * 0.25,
+            bounds.center().y() - text_size.y() * 0.5,
         );
         self.draw_text(label, text_pos, self.style.text_color, self.style.font_size);
 
@@ -1251,19 +1256,20 @@ impl UiContext {
         self.draw_rect(bounds, bg_color);
         self.draw_rect_border(bounds, Color::TRANSPARENT, self.style.combo_border, 1.0);
 
-        // Draw preview text (baseline positioning)
+        // Draw preview text (top-left positioning, centered vertically)
+        let text_size = self.measure_text(preview, self.style.font_size);
         let text_pos = Vec2::new(
             bounds.min.x() + self.style.menu_padding,
-            bounds.center().y() + self.style.font_size * 0.25,
+            bounds.center().y() - text_size.y() * 0.5,
         );
         self.draw_text(preview, text_pos, self.style.combo_text, self.style.font_size);
 
-        // Draw dropdown arrow (baseline positioning)
+        // Draw dropdown arrow (top-left positioning, centered vertically)
         let arrow = "▼";
         let arrow_size = self.measure_text(arrow, self.style.font_size);
         let arrow_pos = Vec2::new(
             bounds.max.x() - arrow_size.x() - self.style.menu_padding,
-            bounds.center().y() + self.style.font_size * 0.25,
+            bounds.center().y() - arrow_size.y() * 0.5,
         );
         self.draw_text(arrow, arrow_pos, self.style.combo_text, self.style.font_size);
 
