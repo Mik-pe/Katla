@@ -2,9 +2,14 @@
 
 This document describes the implementation plan for GPU-based particle effects in Katla using compute shaders.
 
-## Status: ✅ Phase 1-5 Complete
+## Status: ✅ Complete - Basic Integration Done
 
-All infrastructure and shaders have been implemented. The system is ready for integration into the render graph.
+All infrastructure and shaders have been implemented and integrated into the scene. The particle emitter entity is created at application startup.
+
+### Remaining Work
+- **Render Graph Integration**: Add compute pass to render graph for GPU dispatch
+- **Particle Rendering**: Wire up particle_render.wgsl for billboard visualization
+- **Visual Verification**: Test with actual particle visualization
 
 ## Design Decisions
 
