@@ -9,6 +9,32 @@ use katla_vulkan::{
 };
 use std::{cell::RefCell, path::Path, rc::Rc};
 
+/// Shader-compatible UI vertex with tight packing.
+///
+/// This struct matches the shader's expected layout exactly:
+/// - position: vec2f (8 bytes)
+/// - uv: vec2f (8 bytes)
+/// - color: vec4f (16 bytes)
+///
+/// Note: katla_math::Vec2 is 16 bytes (aligned), so we use [f32; 2] directly.
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct UiShaderVertex {
+    /// Position in NDC coordinates (-1 to 1).
+    pub position: [f32; 2],
+    /// Texture coordinates (0-1).
+    pub uv: [f32; 2],
+    /// Vertex color (RGBA, 0-1).
+    pub color: [f32; 4],
+}
+
+impl UiShaderVertex {
+    /// Create a new shader vertex from components.
+    pub fn new(position: [f32; 2], uv: [f32; 2], color: [f32; 4]) -> Self {
+        Self { position, uv, color }
+    }
+}
+
 /// UI material that renders immediate mode UI overlays.
 ///
 /// Uses alpha blending and no depth testing for proper overlay rendering.

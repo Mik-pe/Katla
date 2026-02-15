@@ -36,7 +36,8 @@ impl DebugOverlay {
         entity_count: usize,
     ) {
         // Debug window with stats
-        let window_bounds = Rect2D::from_origin_size(Vec2::new(10.0, 10.0), Vec2::new(280.0, 220.0));
+        // Height calculation: padding(10) + title(25) + 9 lines × 20px + padding(10) = 225
+        let window_bounds = Rect2D::from_origin_size(Vec2::new(10.0, 10.0), Vec2::new(280.0, 230.0));
         let window = ui.begin_window("debug_window", window_bounds);
 
         // Calculate text area

@@ -727,25 +727,31 @@ impl Application {
 
         // Pass UI data to renderer if we have data and a renderer
         if !draw_list.is_empty() {
+            use crate::rendering::ui_material::UiShaderVertex;
+
             // Transform vertices from screen space to NDC
             // Screen: (0,0) = top-left, Y increases downward
-            // NDC: (-1,-1) = bottom-left, Y increases upward
-            let mut transformed_vertices = Vec::with_capacity(draw_list.vertices.len());
-            for v in &draw_list.vertices {
-                let ndc_x = (v.position.x() / screen_size.x()) * 2.0 - 1.0;
-                let ndc_y = 1.0 - (v.position.y() / screen_size.y()) * 2.0;
-                transformed_vertices.push(katla_ui::UiVertex::new(
-                    Vec2::new(ndc_x, ndc_y),
-                    v.uv,
-                    v.color,
-                ));
-            }
+            // Standard viewport: NDC y=-1 is top, y=+1 is bottom
+            let shader_vertices: Vec<UiShaderVertex> = draw_list
+                .vertices
+                .iter()
+                .map(|v| {
+                    let ndc_x = (v.position.x() / screen_size.x()) * 2.0 - 1.0;
+                    let ndc_y = (v.position.y() / screen_size.y()) * 2.0 - 1.0;
+
+                    UiShaderVertex::new(
+                        [ndc_x, ndc_y],
+                        [v.uv.x(), v.uv.y()],
+                        [v.color.r, v.color.g, v.color.b, v.color.a],
+                    )
+                })
+                .collect();
 
             // Convert vertices to raw bytes
             let vertex_bytes = unsafe {
                 std::slice::from_raw_parts(
-                    transformed_vertices.as_ptr() as *const u8,
-                    transformed_vertices.len() * std::mem::size_of::<katla_ui::UiVertex>(),
+                    shader_vertices.as_ptr() as *const u8,
+                    shader_vertices.len() * std::mem::size_of::<UiShaderVertex>(),
                 )
             }.to_vec();
 
