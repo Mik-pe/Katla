@@ -1,5 +1,5 @@
-// UI vertex shader
-// Renders screen-space UI elements with texture support
+// UI shader for screen-space rendering
+// Supports font atlas and viewport texture sampling
 
 struct UiVertex {
     @location(0) position: vec2f,
@@ -14,8 +14,12 @@ struct VertexOutput {
 }
 
 // Set 0: UI textures
-@group(0) @binding(0) var font_texture: texture_2d<f32>;
+// binding 0: font atlas (SAMPLED_IMAGE)
+// binding 1: sampler
+// binding 2: viewport texture (SAMPLED_IMAGE)
+@group(0) @binding(0) var font_atlas: texture_2d<f32>;
 @group(0) @binding(1) var font_sampler: sampler;
+@group(0) @binding(2) var viewport_texture: texture_2d<f32>;
 
 @vertex
 fn vs_main(in: UiVertex) -> VertexOutput {
@@ -32,12 +36,18 @@ fn vs_main(in: UiVertex) -> VertexOutput {
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4f {
-    // Sample from font texture
-    // Font atlas contains white glyphs with alpha channel
-    // For solid color elements, use white texture (alpha = 1.0)
-    let tex_color = textureSample(font_texture, font_sampler, in.uv);
+    var tex_color: vec4f;
 
-    // Multiply texture alpha with vertex color
-    // This allows colored text and solid UI elements with the same shader
+    // UV.x >= 1.0 signals viewport texture sampling
+    // The actual viewport UV is (uv.x - 1.0, uv.y)
+    if (in.uv.x >= 1.0) {
+        let viewport_uv = vec2f(in.uv.x - 1.0, in.uv.y);
+        tex_color = textureSample(viewport_texture, font_sampler, viewport_uv);
+    } else {
+        // Sample from font atlas
+        tex_color = textureSample(font_atlas, font_sampler, in.uv);
+    }
+
+    // Multiply texture with vertex color
     return in.color * tex_color;
 }
