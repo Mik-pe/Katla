@@ -1338,6 +1338,7 @@ dependencies = [
 name = "katla_ui"
 version = "0.1.0"
 dependencies = [
+ "ash",
  "fontdue",
  "katla_math",
  "katla_vulkan",

@@ -1,15 +1,15 @@
 //! Vulkan renderer for UI draw lists.
 //!
 //! This module provides the bridge between `DrawList` and Vulkan rendering.
-//! It manages the UI pipeline, vertex/index buffers, and texture atlas.
 //!
 //! # Status
 //!
-//! This is a skeleton implementation. Full implementation requires:
+//! This is a skeleton implementation. The UI logic is complete and testable,
+//! but the Vulkan integration is a work in progress due to ash version compatibility.
+//! The full implementation will include:
 //! - UI-specific Vulkan pipeline with alpha blending
 //! - Vertex/index buffer management
 //! - Texture atlas for font glyphs
-//! - Integration with katla_vulkan's render graph
 
 use std::rc::Rc;
 
@@ -24,21 +24,9 @@ use crate::draw_list::DrawList;
 /// - Creating and managing the UI pipeline
 /// - Uploading vertex/index data to GPU
 /// - Rendering draw commands
-///
-/// # Example
-///
-/// ```ignore
-/// let mut renderer = UiRenderer::new(context)?;
-/// renderer.create_pipeline(color_format, None)?;
-///
-/// // In render loop:
-/// renderer.render(command_buffer, draw_list, screen_size);
-/// ```
 pub struct UiRenderer {
     #[allow(dead_code)]
     context: Rc<VulkanContext>,
-    // TODO: Add pipeline, buffers, texture atlas
-    // These will use katla_vulkan types, not raw ash types
 }
 
 impl UiRenderer {
@@ -47,31 +35,25 @@ impl UiRenderer {
         Ok(Self { context })
     }
 
-    /// Create or update the pipeline for a specific render format.
-    ///
-    /// This should be called once when the swapchain is created.
-    pub fn create_pipeline(
-        &mut self,
-        _color_format: katla_vulkan::ImageFormat,
-        _depth_format: Option<katla_vulkan::ImageFormat>,
-    ) -> Result<(), UiRenderError> {
-        // TODO: Create UI pipeline with:
-        // - Alpha blending enabled
-        // - No depth testing (UI is always on top)
-        // - Dynamic viewport/scissor
-        // - Vertex format matching UiVertex
+    /// Create the graphics pipeline.
+    pub fn create_pipeline(&mut self, _color_format: ash::vk::Format) -> Result<(), UiRenderError> {
+        // TODO: Implement pipeline creation
+        // This requires ash version matching with katla_vulkan
+        Ok(())
+    }
+
+    /// Update the font atlas texture.
+    pub fn update_atlas(&mut self, _width: u32, _height: u32, _data: &[u8]) -> Result<(), UiRenderError> {
+        // TODO: Implement atlas update
         Ok(())
     }
 
     /// Render a draw list to the command buffer.
     ///
-    /// # Arguments
-    /// * `_cmd` - Command buffer to record into (placeholder for now)
-    /// * `draw_list` - The draw list to render
-    /// * `screen_size` - Current screen/viewport size
+    /// Currently a placeholder - logs draw stats for debugging.
     pub fn render(
         &mut self,
-        _cmd: katla_vulkan::CommandBuffer,
+        _cmd: ash::vk::CommandBuffer,
         draw_list: &DrawList,
         screen_size: Vec2,
     ) {
@@ -79,25 +61,26 @@ impl UiRenderer {
             return;
         }
 
-        // TODO: Implement actual rendering:
-        // 1. Update vertex/index buffers
-        // 2. Bind pipeline
-        // 3. Set viewport/scissor
-        // 4. Draw each command with appropriate clip rect
-
-        // Placeholder: Just log stats
-        log::debug!(
-            "UiRenderer: {} vertices, {} indices, {} commands, screen {:?}",
+        // Log render stats for debugging
+        log::info!(
+            "UI render: {} vertices, {} indices, {} commands, screen {:?}",
             draw_list.vertex_count(),
             draw_list.index_count(),
             draw_list.command_count(),
             screen_size
         );
+
+        // TODO: Full Vulkan implementation:
+        // 1. Update uniform buffer with screen size
+        // 2. Upload vertex/index data to GPU buffers
+        // 3. Bind pipeline
+        // 4. Set viewport/scissor
+        // 5. Draw each command
     }
 
     /// Clean up resources.
     pub fn destroy(&mut self) {
-        // TODO: Clean up pipeline, buffers, texture atlas
+        // TODO: Clean up Vulkan resources
     }
 }
 
@@ -115,24 +98,21 @@ pub enum UiRenderError {
     /// Failed to create pipeline.
     PipelineCreationFailed(String),
     /// Failed to allocate buffers.
-    BufferAllocationFailed(String),
-    /// Failed to create texture atlas.
-    TextureAtlasFailed(String),
+    BufferError(String),
+    /// Failed to create texture.
+    TextureError(String),
+    /// Shader compilation error.
+    ShaderError(String),
 }
 
 impl std::fmt::Display for UiRenderError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             UiRenderError::VulkanError(msg) => write!(f, "Vulkan error: {}", msg),
-            UiRenderError::PipelineCreationFailed(msg) => {
-                write!(f, "Pipeline creation failed: {}", msg)
-            }
-            UiRenderError::BufferAllocationFailed(msg) => {
-                write!(f, "Buffer allocation failed: {}", msg)
-            }
-            UiRenderError::TextureAtlasFailed(msg) => {
-                write!(f, "Texture atlas creation failed: {}", msg)
-            }
+            UiRenderError::PipelineCreationFailed(msg) => write!(f, "Pipeline creation failed: {}", msg),
+            UiRenderError::BufferError(msg) => write!(f, "Buffer error: {}", msg),
+            UiRenderError::TextureError(msg) => write!(f, "Texture error: {}", msg),
+            UiRenderError::ShaderError(msg) => write!(f, "Shader error: {}", msg),
         }
     }
 }
