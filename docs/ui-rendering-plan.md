@@ -14,9 +14,10 @@ This document outlines the plan for implementing UI rendering in the Katla engin
 - [x] Actual Vulkan rendering of UI draw lists
 - [x] UI pass integrated into render graph
 - [x] Fixed vertex layout (UiShaderVertex with tight 32-byte packing)
-- [ ] Text/layout overflow issues in widgets
-- [ ] Font texture atlas support
-- [ ] Efficient buffer management (currently creates temp buffers each frame)
+- [x] Window title bar support with proper layout
+- [x] Persistent buffer management (no per-frame allocations)
+- [ ] Font texture atlas support (text renders as placeholder boxes)
+- [ ] White texture fallback for non-textured UI elements
 - [ ] Clipping support for nested windows
 
 ## Architecture
@@ -88,11 +89,12 @@ pub struct UiShaderVertex {
    - [x] Load (not clear) color attachment from previous pass
    - [x] Bind UI pipeline and render
 
-4. **Buffer Management**
-   - [x] Basic working implementation (creates temp staging buffers each frame)
-   - [ ] Create persistent dynamic vertex buffer for UI vertices
-   - [ ] Create persistent dynamic index buffer for UI indices
-   - [ ] Update buffers each frame with draw list data (no allocation)
+4. **Buffer Management** ✅
+   - [x] Create UIBuffers struct with persistent vertex/index buffers
+   - [x] One buffer set per frame in flight (avoids sync issues)
+   - [x] 256KB vertex + 128KB index capacity per frame
+   - [x] Update buffers each frame via memory mapping (no allocation)
+   - [x] Fallback to temporary buffers if not initialized
 
 ### Phase 3: Texture Support
 
