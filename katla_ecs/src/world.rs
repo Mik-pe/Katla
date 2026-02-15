@@ -2,11 +2,11 @@ use katla_math::Vec2;
 
 use crate::components::Component;
 use crate::entity::EntityId;
+use crate::entity_allocator::EntityAllocator;
 use crate::resource::ResourceStorage;
 use crate::storage::ComponentStorageManager;
 use crate::system::{OrderedSystem, System, SystemExecutionOrder};
 use crate::{InputState, Resource};
-use std::collections::HashSet;
 
 /// World is the central manager for the ECS framework.
 ///
@@ -32,16 +32,14 @@ use std::collections::HashSet;
 /// world.update(0.016);
 /// ```
 pub struct World {
-    /// Set of active entity IDs
-    entities: HashSet<EntityId>,
+    /// Entity allocator with generation-based IDs
+    entities: EntityAllocator,
     /// Component storage manager
     pub(crate) storage: ComponentStorageManager,
     /// Registered systems
     systems: Vec<OrderedSystem>,
     /// Global Input state
     input_state: InputState,
-    /// Next entity ID to assign
-    next_entity_id: u64,
     /// Global resources storage
     resources: ResourceStorage,
 }
@@ -50,34 +48,58 @@ impl World {
     /// Creates a new empty World.
     pub fn new() -> Self {
         Self {
-            entities: HashSet::new(),
+            entities: EntityAllocator::new(),
             storage: ComponentStorageManager::new(),
             systems: Vec::new(),
             input_state: InputState::new(),
-            next_entity_id: 0,
             resources: ResourceStorage::new(),
         }
     }
 
     /// Creates a new entity and returns its ID.
     pub fn create_entity(&mut self) -> EntityId {
-        let id = EntityId::new(self.next_entity_id);
-        self.next_entity_id += 1;
-        self.entities.insert(id);
-        id
+        self.entities.allocate()
     }
 
-    /// Creates a new entity with a specific ID.
+    /// Spawns a new entity with a bundle of components.
     ///
-    /// Use with caution - if the ID already exists, this will do nothing.
-    pub fn create_entity_with_id(&mut self, id: EntityId) -> EntityId {
-        self.entities.insert(id);
+    /// This is an ergonomic way to create an entity with multiple components
+    /// in a single call. The bundle can be any tuple of components from size 1-8.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// use katla_ecs::{World, Component, Spawnable};
+    ///
+    /// #[derive(Component, Default)]
+    /// struct Transform { position: [f32; 3] }
+    ///
+    /// #[derive(Component, Default)]
+    /// struct Velocity { value: [f32; 3] }
+    ///
+    /// let mut world = World::new();
+    ///
+    /// // Spawn entity with multiple components
+    /// let player = world.spawn((
+    ///     Transform::default(),
+    ///     Velocity::default(),
+    /// ));
+    /// ```
+    pub fn spawn<B: crate::spawn::Spawnable>(&mut self, bundle: B) -> EntityId {
+        bundle.spawn(self)
+    }
 
-        // Update next_entity_id if necessary
-        if id.0 >= self.next_entity_id {
-            self.next_entity_id = id.0 + 1;
-        }
-
+    /// Creates a new entity with a specific raw ID.
+    ///
+    /// Use with caution - this bypasses normal ID allocation and is intended
+    /// for deserialization scenarios. The ID must have been previously created
+    /// by this system.
+    pub fn create_entity_with_raw_id(&mut self, raw_id: u64) -> EntityId {
+        let id = EntityId::from_raw(raw_id);
+        // Note: This doesn't actually allocate through the allocator,
+        // it's mainly for compatibility with serialization scenarios.
+        // In practice, you'd need more sophisticated logic for true
+        // deserialization support.
         id
     }
 
@@ -85,7 +107,7 @@ impl World {
     ///
     /// Returns `true` if the entity existed and was removed, `false` otherwise.
     pub fn destroy_entity(&mut self, id: EntityId) -> bool {
-        if self.entities.remove(&id) {
+        if self.entities.deallocate(id) {
             self.storage.remove_entity(id);
             true
         } else {
@@ -95,12 +117,14 @@ impl World {
 
     /// Checks if an entity exists in the world.
     pub fn entity_exists(&self, id: EntityId) -> bool {
-        self.entities.contains(&id)
+        self.entities.is_valid(id)
     }
 
     /// Adds a component to an entity.
+    ///
+    /// Does nothing if the entity doesn't exist.
     pub fn add_component(&mut self, id: EntityId, component: impl Component + 'static) {
-        if self.entities.contains(&id) {
+        if self.entities.is_valid(id) {
             self.storage.add_component(id, component);
         }
     }
@@ -133,7 +157,11 @@ impl World {
     where
         T: Component + 'static,
     {
-        self.storage.get_component::<T>(id)
+        if self.entities.is_valid(id) {
+            self.storage.get_component::<T>(id)
+        } else {
+            None
+        }
     }
 
     /// Gets a mutable reference to a component for a specific entity.
@@ -144,7 +172,11 @@ impl World {
     where
         T: Component + 'static,
     {
-        self.storage.get_component_mut::<T>(id)
+        if self.entities.is_valid(id) {
+            self.storage.get_component_mut::<T>(id)
+        } else {
+            None
+        }
     }
 
     /// Creates a query for iterating over entities with specific components.
@@ -213,7 +245,7 @@ impl World {
 
     /// Returns the number of entities in the world.
     pub fn entity_count(&self) -> usize {
-        self.entities.len()
+        self.entities.live_count()
     }
 
     /// Returns the number of systems registered with the world.
@@ -237,13 +269,13 @@ impl World {
 
     /// Returns an iterator over all entity IDs in the world.
     pub fn entity_ids(&self) -> impl Iterator<Item = EntityId> + '_ {
-        self.entities.iter().copied()
+        self.entities.iter_live()
     }
 
     /// Removes entities that have no components.
     pub fn cleanup_empty_entities(&mut self) {
-        let entities_to_keep: HashSet<EntityId> = self.entities.clone();
-        self.storage.retain_entities(&entities_to_keep);
+        let entities_to_keep: Vec<EntityId> = self.entities.iter_live().collect();
+        self.storage.retain_entities(&entities_to_keep.iter().copied().collect());
     }
 
     pub fn get_input(&self) -> &InputState {
@@ -495,6 +527,44 @@ mod tests {
         world.destroy_entity(id);
 
         // Component should be removed when entity is destroyed
+        assert!(world.get_component::<TestComponent>(id).is_none());
+    }
+
+    #[test]
+    fn test_stale_entity_reference() {
+        let mut world = World::new();
+
+        // Create and destroy entity
+        let id1 = world.create_entity();
+        world.add_component(id1, TestComponent { value: 42 });
+
+        world.destroy_entity(id1);
+
+        // Old ID should no longer be valid
+        assert!(!world.entity_exists(id1));
+
+        // Create new entity (should reuse slot with incremented generation)
+        let id2 = world.create_entity();
+
+        // The old ID should still be invalid
+        assert!(!world.entity_exists(id1));
+
+        // The new ID should be valid
+        assert!(world.entity_exists(id2));
+    }
+
+    #[test]
+    fn test_component_access_invalid_entity() {
+        let mut world = World::new();
+        let id = world.create_entity();
+        world.destroy_entity(id);
+
+        // Should return None for invalid entity
+        assert!(world.get_component::<TestComponent>(id).is_none());
+        assert!(world.get_component_mut::<TestComponent>(id).is_none());
+
+        // add_component should be a no-op for invalid entity
+        world.add_component(id, TestComponent::default());
         assert!(world.get_component::<TestComponent>(id).is_none());
     }
 }

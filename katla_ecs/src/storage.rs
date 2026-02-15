@@ -346,7 +346,7 @@ mod tests {
     #[test]
     fn test_component_storage_insert() {
         let mut storage = ComponentStorage::<TestComponent>::new();
-        let entity = EntityId::new(0);
+        let entity = EntityId::test_new(0);
 
         storage.insert(entity, TestComponent { value: 42 });
 
@@ -357,7 +357,7 @@ mod tests {
     #[test]
     fn test_component_storage_get() {
         let mut storage = ComponentStorage::<TestComponent>::new();
-        let entity = EntityId::new(0);
+        let entity = EntityId::test_new(0);
 
         storage.insert(entity, TestComponent { value: 42 });
 
@@ -368,7 +368,7 @@ mod tests {
     #[test]
     fn test_component_storage_remove() {
         let mut storage = ComponentStorage::<TestComponent>::new();
-        let entity = EntityId::new(0);
+        let entity = EntityId::test_new(0);
 
         storage.insert(entity, TestComponent { value: 42 });
         assert!(storage.remove(entity));
@@ -379,7 +379,7 @@ mod tests {
     #[test]
     fn test_component_storage_replace() {
         let mut storage = ComponentStorage::<TestComponent>::new();
-        let entity = EntityId::new(0);
+        let entity = EntityId::test_new(0);
 
         storage.insert(entity, TestComponent { value: 42 });
         storage.insert(entity, TestComponent { value: 100 });
@@ -392,8 +392,8 @@ mod tests {
     #[test]
     fn test_component_storage_iter() {
         let mut storage = ComponentStorage::<TestComponent>::new();
-        let entity1 = EntityId::new(0);
-        let entity2 = EntityId::new(1);
+        let entity1 = EntityId::test_new(0);
+        let entity2 = EntityId::test_new(1);
 
         storage.insert(entity1, TestComponent { value: 42 });
         storage.insert(entity2, TestComponent { value: 100 });
@@ -407,7 +407,7 @@ mod tests {
     #[test]
     fn test_storage_manager() {
         let mut manager = ComponentStorageManager::new();
-        let entity = EntityId::new(0);
+        let entity = EntityId::test_new(0);
 
         manager.add_component(entity, TestComponent { value: 42 });
 
@@ -420,7 +420,7 @@ mod tests {
     #[test]
     fn test_storage_manager_remove_entity() {
         let mut manager = ComponentStorageManager::new();
-        let entity = EntityId::new(0);
+        let entity = EntityId::test_new(0);
 
         manager.add_component(entity, TestComponent { value: 42 });
         manager.remove_entity(entity);
@@ -441,8 +441,8 @@ mod tests {
     #[test]
     fn test_query_single_mutable() {
         let mut manager = ComponentStorageManager::new();
-        let entity1 = EntityId::new(0);
-        let entity2 = EntityId::new(1);
+        let entity1 = EntityId::test_new(0);
+        let entity2 = EntityId::test_new(1);
 
         manager.add_component(entity1, TestComponent { value: 10 });
         manager.add_component(entity2, TestComponent { value: 20 });
@@ -459,8 +459,8 @@ mod tests {
     #[test]
     fn test_query_single_immutable() {
         let mut manager = ComponentStorageManager::new();
-        let entity1 = EntityId::new(0);
-        let entity2 = EntityId::new(1);
+        let entity1 = EntityId::test_new(0);
+        let entity2 = EntityId::test_new(1);
 
         manager.add_component(entity1, TestComponent { value: 10 });
         manager.add_component(entity2, TestComponent { value: 20 });
@@ -477,8 +477,8 @@ mod tests {
     #[test]
     fn test_query_two_mutable() {
         let mut manager = ComponentStorageManager::new();
-        let entity1 = EntityId::new(0);
-        let entity2 = EntityId::new(1);
+        let entity1 = EntityId::test_new(0);
+        let entity2 = EntityId::test_new(1);
 
         manager.add_component(entity1, TestComponent { value: 10 });
         manager.add_component(entity1, TestComponent2 { value: 1.5 });
@@ -497,8 +497,8 @@ mod tests {
     #[test]
     fn test_query_mutable_and_immutable() {
         let mut manager = ComponentStorageManager::new();
-        let entity1 = EntityId::new(0);
-        let entity2 = EntityId::new(1);
+        let entity1 = EntityId::test_new(0);
+        let entity2 = EntityId::test_new(1);
 
         manager.add_component(entity1, TestComponent { value: 10 });
         manager.add_component(entity1, TestComponent2 { value: 1.5 });
@@ -517,8 +517,8 @@ mod tests {
     #[test]
     fn test_query_immutable_and_mutable() {
         let mut manager = ComponentStorageManager::new();
-        let entity1 = EntityId::new(0);
-        let entity2 = EntityId::new(1);
+        let entity1 = EntityId::test_new(0);
+        let entity2 = EntityId::test_new(1);
 
         manager.add_component(entity1, TestComponent { value: 10 });
         manager.add_component(entity1, TestComponent2 { value: 1.5 });
@@ -548,9 +548,9 @@ mod tests {
     #[test]
     fn test_query_partial_components() {
         let mut manager = ComponentStorageManager::new();
-        let entity1 = EntityId::new(0);
-        let entity2 = EntityId::new(1);
-        let entity3 = EntityId::new(2);
+        let entity1 = EntityId::test_new(0);
+        let entity2 = EntityId::test_new(1);
+        let entity3 = EntityId::test_new(2);
 
         manager.add_component(entity1, TestComponent { value: 10 });
         manager.add_component(entity1, TestComponent2 { value: 1.5 });
@@ -578,8 +578,8 @@ mod tests {
     #[test]
     fn test_query_three_components_all_immutable() {
         let mut manager = ComponentStorageManager::new();
-        let entity1 = EntityId::new(0);
-        let entity2 = EntityId::new(1);
+        let entity1 = EntityId::test_new(0);
+        let entity2 = EntityId::test_new(1);
 
         manager.add_component(entity1, TestComponent { value: 10 });
         manager.add_component(entity1, TestComponent2 { value: 1.5 });
@@ -610,8 +610,8 @@ mod tests {
     #[test]
     fn test_query_three_components_one_mutable() {
         let mut manager = ComponentStorageManager::new();
-        let entity1 = EntityId::new(0);
-        let entity2 = EntityId::new(1);
+        let entity1 = EntityId::test_new(0);
+        let entity2 = EntityId::test_new(1);
 
         manager.add_component(entity1, TestComponent { value: 10 });
         manager.add_component(entity1, TestComponent2 { value: 1.5 });
@@ -642,8 +642,8 @@ mod tests {
     #[test]
     fn test_query_three_components_mutable_at_end() {
         let mut manager = ComponentStorageManager::new();
-        let entity1 = EntityId::new(0);
-        let entity2 = EntityId::new(1);
+        let entity1 = EntityId::test_new(0);
+        let entity2 = EntityId::test_new(1);
 
         manager.add_component(entity1, TestComponent { value: 10 });
         manager.add_component(entity1, TestComponent2 { value: 1.5 });

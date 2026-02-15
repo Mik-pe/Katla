@@ -11,7 +11,7 @@ impl Children {
     }
 }
 
-#[derive(Component, Default)]
+#[derive(Component)]
 pub struct Parent {
     pub parent: EntityId,
 }

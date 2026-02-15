@@ -908,7 +908,7 @@ impl Application {
 
             let name = self.world.get_component::<NameComponent>(entity_id)
                 .map(|n| n.name.clone())
-                .unwrap_or_else(|| format!("Entity {}", entity_id.0));
+                .unwrap_or_else(|| format!("Entity {}", entity_id.id()));
 
             let pos = transform.transform.position;
             let euler = transform.transform.rotation.to_euler();
@@ -946,7 +946,7 @@ impl Application {
         let entity_id = self.world.create_entity();
 
         // Add name
-        let name = format!("{}_{}", model_type.name(), entity_id.0);
+        let name = format!("{}_{}", model_type.name(), entity_id.id());
         self.world.add_component(entity_id, crate::components::NameComponent::new(&name));
 
         // Add transform
@@ -982,6 +982,6 @@ impl Application {
             }
         };
 
-        info!("Spawned {} (entity {}) at {:?}", model_type.name(), spawned_id.0, position);
+        info!("Spawned {} (entity {}) at {:?}", model_type.name(), spawned_id.id(), position);
     }
 }

@@ -28,10 +28,20 @@
 mod iter1;
 mod iter2;
 mod iter3;
+mod iter4;
+mod iter5;
+mod iter6;
+mod iter7;
+mod iter8;
 
 pub use iter1::*;
 pub use iter2::*;
 pub use iter3::*;
+pub use iter4::*;
+pub use iter5::*;
+pub use iter6::*;
+pub use iter7::*;
+pub use iter8::*;
 
 /// Trait for querying components from storage.
 ///

@@ -128,9 +128,8 @@ mod tests {
         let mut system = TestSystem::new();
         let mut world = World::new();
 
-        world
-            .storage
-            .add_component(EntityId::new(1), TestComponent::new());
+        let entity = world.create_entity();
+        world.storage.add_component(entity, TestComponent::new());
 
         system.update(&mut world, 0.016);
 
