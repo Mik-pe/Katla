@@ -426,8 +426,8 @@ impl UiContext {
     /// Draw a label (non-interactive text).
     pub fn label(&mut self, text: &str, bounds: Rect2D) {
         let text_size = self.measure_text(text, self.style.font_size);
-        // Position baseline at vertical center of bounds
-        let baseline_y = bounds.min.y() + bounds.height() * 0.5 + text_size.y() * 0.3;
+        // Position baseline at vertical center of bounds (consistent with other widgets)
+        let baseline_y = bounds.center().y() + self.style.font_size * 0.25;
         let centered = Vec2::new(
             bounds.min.x() + (bounds.width() - text_size.x()) * 0.5,
             baseline_y,
@@ -454,10 +454,12 @@ impl UiContext {
         self.draw_rect(bounds, bg_color);
 
         // Draw button text (centered)
+        // draw_text expects position.y() to be the baseline, not top
+        // Baseline is roughly 75% up from bottom of text height
         let text_size = self.measure_text(text, self.style.font_size);
         let text_pos = Vec2::new(
             bounds.center().x() - text_size.x() * 0.5,
-            bounds.center().y() - text_size.y() * 0.5,
+            bounds.center().y() + self.style.font_size * 0.25, // baseline at center + offset
         );
         self.draw_text(text, text_pos, text_color, self.style.font_size);
 
@@ -501,8 +503,11 @@ impl UiContext {
             );
         }
 
-        // Draw label
-        let label_pos = Vec2::new(check_bounds.max.x() + 8.0, bounds.min.y());
+        // Draw label (baseline positioning)
+        let label_pos = Vec2::new(
+            check_bounds.max.x() + 8.0,
+            bounds.center().y() + self.style.font_size * 0.25,
+        );
         self.draw_text(label, label_pos, self.style.text_color, self.style.font_size);
 
         clicked
@@ -637,9 +642,10 @@ impl UiContext {
         let text_bounds = bounds.contract(padding);
         self.push_clip(text_bounds);
 
+        // Baseline positioning for text_input
         let text_pos = Vec2::new(
             bounds.min.x() + padding,
-            bounds.center().y() - self.style.font_size * 0.5,
+            bounds.center().y() + self.style.font_size * 0.25,
         );
         self.draw_text(text, text_pos, self.style.input_text, self.style.font_size);
 
@@ -817,12 +823,12 @@ impl UiContext {
         };
         self.draw_rect(bounds, bg_color);
 
-        // Draw arrow indicator
+        // Draw arrow indicator (baseline positioning)
         let arrow = if *open { "▼ " } else { "► " };
         let text = format!("{}{}", arrow, label);
         let text_pos = Vec2::new(
             bounds.min.x() + 4.0,
-            bounds.center().y() - self.style.font_size * 0.5,
+            bounds.center().y() + self.style.font_size * 0.25,
         );
         self.draw_text(&text, text_pos, self.style.text_color, self.style.font_size);
 
@@ -941,10 +947,10 @@ impl UiContext {
             self.draw_rect(bounds, bg_color);
         }
 
-        // Draw label
+        // Draw label (baseline positioning - draw_text expects baseline Y)
         let text_pos = Vec2::new(
             bounds.min.x() + self.style.menu_padding,
-            bounds.center().y() - self.style.font_size * 0.5,
+            bounds.center().y() + self.style.font_size * 0.25,
         );
         self.draw_text(label, text_pos, self.style.text_color, self.style.font_size);
 
@@ -975,10 +981,10 @@ impl UiContext {
             self.draw_rect(bounds, bg_color);
         }
 
-        // Draw label
+        // Draw label (baseline positioning)
         let text_pos = Vec2::new(
             bounds.min.x() + self.style.menu_padding,
-            bounds.center().y() - self.style.font_size * 0.5,
+            bounds.center().y() + self.style.font_size * 0.25,
         );
         self.draw_text(label, text_pos, self.style.text_color, self.style.font_size);
 
@@ -1245,19 +1251,19 @@ impl UiContext {
         self.draw_rect(bounds, bg_color);
         self.draw_rect_border(bounds, Color::TRANSPARENT, self.style.combo_border, 1.0);
 
-        // Draw preview text
+        // Draw preview text (baseline positioning)
         let text_pos = Vec2::new(
             bounds.min.x() + self.style.menu_padding,
-            bounds.center().y() - self.style.font_size * 0.5,
+            bounds.center().y() + self.style.font_size * 0.25,
         );
         self.draw_text(preview, text_pos, self.style.combo_text, self.style.font_size);
 
-        // Draw dropdown arrow
+        // Draw dropdown arrow (baseline positioning)
         let arrow = "▼";
         let arrow_size = self.measure_text(arrow, self.style.font_size);
         let arrow_pos = Vec2::new(
             bounds.max.x() - arrow_size.x() - self.style.menu_padding,
-            bounds.center().y() - self.style.font_size * 0.5,
+            bounds.center().y() + self.style.font_size * 0.25,
         );
         self.draw_text(arrow, arrow_pos, self.style.combo_text, self.style.font_size);
 
