@@ -781,6 +781,16 @@ impl Application {
             }
         }
 
+        // Update font atlas texture if needed (render may have added new glyphs)
+        // This must happen after draw_list is dropped to release the borrow
+        if self.ui_context.fonts.atlas_needs_update() {
+            if let Some(ref mut renderer) = self.renderer {
+                let atlas_data = self.ui_context.fonts.atlas_data().to_vec();
+                renderer.update_font_atlas(&atlas_data);
+            }
+            self.ui_context.fonts.mark_atlas_updated();
+        }
+
         // Clear input state for next frame
         self.ui_context.input.clear_frame_state();
     }
