@@ -244,7 +244,7 @@ impl EditorUI {
     fn build_hierarchy_panel(&mut self, ui: &mut UiContext, entities: &[EntityInfo], bounds: Rect2D) {
         // Panel background
         ui.draw_rect(bounds, Color::new(0.18, 0.18, 0.18, 1.0));
-        ui.draw_rect_border(bounds, Color::TRANSPARENT, Color::new(0.3, 0.3, 0.3, 1.0), 1.0);
+        ui.draw_rect_border(bounds, Color::new(0.18, 0.18, 0.18, 1.0), Color::new(0.3, 0.3, 0.3, 1.0), 1.0);
 
         // Panel header
         let header_height = 24.0;
@@ -319,7 +319,7 @@ impl EditorUI {
     fn build_inspector_panel(&mut self, ui: &mut UiContext, entities: &[EntityInfo], bounds: Rect2D) {
         // Panel background
         ui.draw_rect(bounds, Color::new(0.18, 0.18, 0.18, 1.0));
-        ui.draw_rect_border(bounds, Color::TRANSPARENT, Color::new(0.3, 0.3, 0.3, 1.0), 1.0);
+        ui.draw_rect_border(bounds, Color::new(0.18, 0.18, 0.18, 1.0), Color::new(0.3, 0.3, 0.3, 1.0), 1.0);
 
         // Panel header
         let header_height = 24.0;
@@ -429,23 +429,53 @@ impl EditorUI {
     }
 
     fn build_viewport(&mut self, ui: &mut UiContext, bounds: Rect2D) {
-        // Draw the viewport image from the rendered scene texture.
-        // UV.x >= 1.0 signals the shader to sample from viewport texture.
-        // We use (1.0, 0.0) to (2.0, 1.0) which maps to (0.0, 0.0) to (1.0, 1.0) in viewport texture.
-        ui.draw_image(
-            bounds,
-            Vec2::new(1.0, 0.0),  // UV min (shifted by 1.0 for viewport texture)
-            Vec2::new(2.0, 1.0),  // UV max (shifted by 1.0 for viewport texture)
-            Color::new(1.0, 1.0, 1.0, 1.0),  // White tint (no color modification)
-        );
+        // Viewport background - dark gray (scene will render here later)
+        ui.draw_rect(bounds, Color::new(0.15, 0.15, 0.18, 1.0));
 
-        // Viewport border (highlighted when focused)
-        ui.draw_rect_border(bounds, Color::TRANSPARENT, Color::new(0.4, 0.5, 0.6, 1.0), 2.0);
+        // Draw a simple grid pattern for visual interest
+        let grid_spacing = 40.0;
+        let grid_color = Color::new(0.25, 0.25, 0.28, 1.0);
+
+        // Vertical lines
+        let mut x = bounds.min.x();
+        while x <= bounds.max.x() {
+            ui.draw_line(
+                Vec2::new(x, bounds.min.y()),
+                Vec2::new(x, bounds.max.y()),
+                grid_color,
+                1.0,
+            );
+            x += grid_spacing;
+        }
+
+        // Horizontal lines
+        let mut y = bounds.min.y();
+        while y <= bounds.max.y() {
+            ui.draw_line(
+                Vec2::new(bounds.min.x(), y),
+                Vec2::new(bounds.max.x(), y),
+                grid_color,
+                1.0,
+            );
+            y += grid_spacing;
+        }
+
+        // Viewport border
+        ui.draw_rect_border(bounds, Color::new(0.12, 0.12, 0.12, 1.0), Color::new(0.4, 0.5, 0.6, 1.0), 2.0);
+
+        // Center text
+        let center_text = "Scene Viewport";
+        let text_size = ui.measure_text(center_text, 16.0);
+        let text_pos = Vec2::new(
+            bounds.center().x() - text_size.x() * 0.5,
+            bounds.center().y() - text_size.y() * 0.5,
+        );
+        ui.draw_text(center_text, text_pos, Color::new(0.5, 0.5, 0.55, 1.0), 16.0);
 
         // Viewport label
         let vp_label = "3D View";
         let label_pos = Vec2::new(bounds.min.x() + 8.0, bounds.min.y() + 8.0);
-        ui.draw_text(vp_label, label_pos, Color::new(0.9, 0.9, 0.9, 0.8), 10.0);
+        ui.draw_text(vp_label, label_pos, Color::new(0.7, 0.7, 0.7, 0.8), 10.0);
     }
 
     fn build_status_bar(&mut self, ui: &mut UiContext, screen_size: Vec2, height: f32, fps: f32, frame_count: usize, entity_count: usize) {
@@ -519,7 +549,7 @@ impl EditorUI {
         let shadow_bounds = Rect2D::new(menu_bounds.min + shadow_offset, menu_bounds.max + shadow_offset);
         ui.draw_rect(shadow_bounds, Color::new(0.0, 0.0, 0.0, 0.5));
         ui.draw_rect(menu_bounds, Color::new(0.2, 0.2, 0.2, 0.98));
-        ui.draw_rect_border(menu_bounds, Color::TRANSPARENT, Color::new(0.4, 0.4, 0.4, 1.0), 1.0);
+        ui.draw_rect_border(menu_bounds, Color::new(0.2, 0.2, 0.2, 1.0), Color::new(0.4, 0.4, 0.4, 1.0), 1.0);
 
         // Title
         let title_pos = Vec2::new(menu_bounds.min.x() + 12.0, menu_bounds.min.y() + 12.0);
@@ -561,7 +591,7 @@ impl EditorUI {
         let pos_text = format!("X: {:.1}  Y: {:.1}  Z: {:.1}", self.spawn_pos[0], self.spawn_pos[1], self.spawn_pos[2]);
         let pos_bounds = Rect2D::from_origin_size(cursor, Vec2::new(button_width, button_height));
         ui.draw_rect(pos_bounds, Color::new(0.15, 0.15, 0.15, 1.0));
-        ui.draw_rect_border(pos_bounds, Color::TRANSPARENT, Color::new(0.4, 0.4, 0.4, 1.0), 1.0);
+        ui.draw_rect_border(pos_bounds, Color::new(0.15, 0.15, 0.15, 1.0), Color::new(0.4, 0.4, 0.4, 1.0), 1.0);
         let pos_label_pos = Vec2::new(cursor.x() + 8.0, cursor.y() + 6.0);
         ui.draw_text(&pos_text, pos_label_pos, Color::new(0.8, 0.8, 0.8, 1.0), 12.0);
         cursor = Vec2::new(cursor.x(), cursor.y() + button_height + 12.0);
