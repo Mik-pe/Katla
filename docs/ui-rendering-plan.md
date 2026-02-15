@@ -96,16 +96,25 @@ pub struct UiShaderVertex {
    - [x] Update buffers each frame via memory mapping (no allocation)
    - [x] Fallback to temporary buffers if not initialized
 
-### Phase 3: Texture Support
+### Phase 3: Texture Support (In Progress)
 
 5. **Font Atlas Texture**
-   - [ ] Create texture atlas in UiRenderer
-   - [ ] Update atlas when new glyphs are rasterized
-   - [ ] Bind atlas to descriptor set
+   - [x] FontSystem has CPU-side atlas (512x512 RGBA)
+   - [x] Glyph rasterization and caching working
+   - [ ] Create GPU texture for font atlas
+   - [ ] Upload atlas data to GPU
+   - [ ] Update atlas texture when new glyphs added
+   - [ ] Bind atlas to descriptor set in UI pass
 
 6. **White Texture Fallback**
    - [ ] Create 1x1 white texture for non-textured UI elements
    - [ ] Use as default when no font is loaded
+   - [ ] Bind as default texture in UI material
+
+7. **Shader Updates for Texturing**
+   - [ ] Add texture/sampler bindings to ui.wgsl
+   - [ ] Update fragment shader to sample from texture
+   - [ ] Multiply texture alpha with vertex color for text
 
 ### Phase 4: Widget Improvements
 

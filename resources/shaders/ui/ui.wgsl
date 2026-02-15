@@ -1,5 +1,6 @@
 // UI vertex shader
 // Renders screen-space UI elements
+// TODO: Add texture support for font atlas rendering
 
 struct UiVertex {
     @location(0) position: vec2f,
@@ -30,5 +31,8 @@ fn vs_main(in: UiVertex) -> VertexOutput {
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4f {
     // Output vertex color directly
+    // TODO: Sample from font texture when texture support is added
+    // let tex_color = textureSample(font_texture, font_sampler, in.uv);
+    // return in.color * tex_color;
     return in.color;
 }
