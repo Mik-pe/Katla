@@ -58,7 +58,7 @@ pub mod text;
 pub mod widgets;
 
 // Re-exports for convenience
-pub use context::UiContext;
+pub use context::{GraphOptions, UiContext};
 pub use draw_list::{DrawCommand, DrawList, TextureId, UiVertex};
 pub use input::UiInputState;
 pub use renderer::{UiRenderError, UiRenderer};

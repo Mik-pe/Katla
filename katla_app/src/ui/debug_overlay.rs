@@ -1,7 +1,8 @@
 //! Debug overlay UI for displaying stats and controls.
 
 use katla_math::{Color, Rect2D, Vec2};
-use katla_ui::{DrawList, UiContext};
+use katla_ui::{DrawList, GraphOptions, UiContext};
+use crate::util::MetricsHistory;
 
 /// Render mode options.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -67,6 +68,10 @@ pub struct DebugOverlay {
     pub ambient_intensity: f32,
     /// Right-click context menu message.
     context_message: String,
+    /// FPS history for the graph.
+    fps_history: MetricsHistory,
+    /// Frame time history (in milliseconds) for the graph.
+    frame_time_history: MetricsHistory,
 }
 
 impl DebugOverlay {
@@ -83,6 +88,8 @@ impl DebugOverlay {
             show_fps: true,
             ambient_intensity: 0.3,
             context_message: String::new(),
+            fps_history: MetricsHistory::new(100),
+            frame_time_history: MetricsHistory::new(100),
         }
     }
 
@@ -101,6 +108,8 @@ impl DebugOverlay {
         &mut self,
         ui: &mut UiContext,
         fps: f32,
+        fps_history: &[f32],
+        frame_time_history: &[f32],
         frame_count: usize,
         entity_count: usize,
     ) {
@@ -108,6 +117,8 @@ impl DebugOverlay {
         let line_height = 22.0;
         let title_height = 25.0;
         let button_height = 24.0;
+        let graph_height = 50.0;
+        let graph_spacing = 5.0;
         let window_width = 300.0;
 
         // === Stats Window ===
@@ -117,7 +128,10 @@ impl DebugOverlay {
             format!("Entities: {}", entity_count),
         ];
 
-        let content_height = stats.len() as f32 * line_height + padding * 2.0 + button_height + padding;
+        // Calculate content height including graphs
+        let stats_height = stats.len() as f32 * line_height;
+        let graphs_height = (graph_height + graph_spacing) * 2.0;
+        let content_height = stats_height + padding * 2.0 + button_height + padding + graphs_height + graph_spacing;
         let window_height = title_height + content_height;
 
         let window_bounds = Rect2D::from_origin_size(
@@ -132,13 +146,43 @@ impl DebugOverlay {
             window.bounds.min.y() + title_height + padding,
         );
 
+        // Stats section
         for text in &stats {
             let label_bounds = Rect2D::from_origin_size(cursor, Vec2::new(window_width - padding * 2.0, line_height));
             ui.label(text, label_bounds);
             cursor = Vec2::new(cursor.x(), cursor.y() + line_height);
         }
 
-        cursor = Vec2::new(cursor.x(), cursor.y() + padding);
+        // FPS Graph
+        cursor = Vec2::new(cursor.x(), cursor.y() + graph_spacing);
+        let fps_graph_bounds = Rect2D::from_origin_size(
+            cursor,
+            Vec2::new(window_width - padding * 2.0, graph_height),
+        );
+        ui.graph(
+            "fps_graph",
+            Some("FPS"),
+            fps_history,
+            fps_graph_bounds,
+            Some(GraphOptions::fps()),
+        );
+
+        // Frame Time Graph
+        cursor = Vec2::new(cursor.x(), cursor.y() + graph_height + graph_spacing);
+        let frame_time_bounds = Rect2D::from_origin_size(
+            cursor,
+            Vec2::new(window_width - padding * 2.0, graph_height),
+        );
+        ui.graph(
+            "frame_time_graph",
+            Some("Frame Time (ms)"),
+            frame_time_history,
+            frame_time_bounds,
+            Some(GraphOptions::frame_time()),
+        );
+
+        // Settings toggle button
+        cursor = Vec2::new(cursor.x(), cursor.y() + graph_height + padding);
         let button_bounds = Rect2D::from_origin_size(cursor, Vec2::new(window_width - padding * 2.0, button_height));
         let btn_text = if self.settings_visible { "[Close Settings]" } else { "[Settings]" };
         if ui.button("settings_btn", btn_text, button_bounds) {
@@ -324,6 +368,8 @@ impl DebugOverlay {
     }
 
     /// Render the debug overlay and return the draw list.
+    ///
+    /// This handles begin/end internally and updates the metrics history.
     pub fn render<'a>(
         &mut self,
         ui: &'a mut UiContext,
@@ -332,8 +378,31 @@ impl DebugOverlay {
         frame_count: usize,
         entity_count: usize,
     ) -> &'a DrawList {
+        // Calculate frame time in milliseconds
+        let frame_time_ms = if fps > 0.0 {
+            1000.0 / fps
+        } else {
+            0.0
+        };
+
+        // Update history
+        self.fps_history.push(fps);
+        self.frame_time_history.push(frame_time_ms);
+
+        // Begin UI frame
         ui.begin(screen_size);
-        self.build(ui, fps, frame_count, entity_count);
+
+        // Build the UI
+        self.build(
+            ui,
+            fps,
+            &self.fps_history.values_vec(),
+            &self.frame_time_history.values_vec(),
+            frame_count,
+            entity_count,
+        );
+
+        // End UI frame and return draw list
         ui.end()
     }
 
