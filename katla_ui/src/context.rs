@@ -271,11 +271,11 @@ impl UiContext {
                 }
 
                 // Calculate glyph position
-                // offset.y is typically negative (baseline-relative, going up)
-                // We need to add glyph.height because the glyph extends above and below the offset point
+                // fontdue's ymin: negative = below baseline, positive = above baseline
+                // In screen coords (y down): glyph top = baseline - ymin - height
                 let glyph_pos = Vec2::new(
                     cursor_x + glyph.offset.x(),
-                    cursor_y + glyph.offset.y() - glyph.size.y(),
+                    cursor_y - glyph.offset.y() - glyph.size.y(),
                 );
 
                 let bounds = Rect2D::from_origin_size(glyph_pos, glyph.size);

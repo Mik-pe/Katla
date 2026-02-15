@@ -170,7 +170,6 @@ impl FontSystem {
             width: metrics.width,
             height: metrics.height,
             offset_x: metrics.bounds.xmin as f32,
-            // fontdue uses ymin + height for vertical extent
             offset_y: metrics.bounds.ymin as f32,
             advance: metrics.advance_width,
         };
