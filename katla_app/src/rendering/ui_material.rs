@@ -1,10 +1,11 @@
 //! UI material for immediate mode overlay rendering.
 //!
 //! Creates a pipeline for rendering UI elements with alpha blending.
+//! Vertices should be pre-transformed to NDC space.
 
 use katla_vulkan::{
     context::VulkanContext, material::MaterialPipeline, ImageFormat, MaterialBuilder,
-    VertexBinding, VertexFormat, ShaderStages,
+    VertexBinding, VertexFormat,
 };
 use std::{cell::RefCell, path::Path, rc::Rc};
 
@@ -22,13 +23,12 @@ impl UiMaterial {
     /// - Alpha blending enabled
     /// - No depth test or write
     /// - No backface culling
-    /// - Vertex format: position[2], uv[2], color[4]
-    /// - Push constants for screen size (vec2)
+    /// - Vertex format: position[2] (NDC), uv[2], color[4]
     pub fn new(context: Rc<VulkanContext>) -> Self {
-        // UI vertex format: position (vec2), uv (vec2), color (vec4)
+        // UI vertex format: position (vec2 in NDC), uv (vec2), color (vec4)
         let vertex_binding = VertexBinding {
             formats: vec![
-                VertexFormat::RG32f,   // position
+                VertexFormat::RG32f,   // position (NDC coordinates)
                 VertexFormat::RG32f,   // uv
                 VertexFormat::RGBA32f, // color
             ],
@@ -43,7 +43,6 @@ impl UiMaterial {
             .with_backface_culling(false)
             .with_color_format(ImageFormat::B8G8R8A8Srgb)
             .with_depth_format(ImageFormat::D32SfloatS8Uint)
-            .with_push_constant(ShaderStages::VERTEX, 0, 8) // vec2 screen_size
             .build()
             .expect("Failed to create UI pipeline");
 
