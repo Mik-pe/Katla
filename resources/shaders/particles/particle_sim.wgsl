@@ -8,7 +8,7 @@
 // - Decreases lifetime
 // - Gets recycled when lifetime reaches 0
 //
-// Uses uniform buffer for per-frame data (passed via push constants in Vulkan).
+// Frame data is passed via a uniform buffer (binding 1).
 
 // Particle data structure (must match ParticleData in particle_buffer.rs)
 struct ParticleData {
@@ -21,7 +21,7 @@ struct ParticleData {
     _pad2: vec3f,
 }
 
-// Per-frame data (passed via uniform buffer, updated per-frame)
+// Per-frame data (passed via uniform buffer)
 struct FrameData {
     delta_time: f32,
     emit_count: u32,
@@ -128,7 +128,6 @@ fn cs_main(@builtin(global_invocation_id) global_id: vec3u) {
     // Emit new particles (only first N threads handle emission)
     if (index < frame.emit_count) {
         // Find a dead particle slot to reuse
-        // Use atomic operations or simple search
         // For simplicity, we emit at the current index if it's dead
         let emit_index = index;
 

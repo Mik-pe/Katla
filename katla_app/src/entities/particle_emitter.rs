@@ -8,49 +8,11 @@ use ash::vk;
 use katla_ecs::World;
 use katla_math::{Transform, Vec3};
 use katla_vulkan::{
-    BufferDescriptorSetBuilder, ComputePipelineBuilder, EmitterConfig, ParticleBuffer,
-    ParticlePushConstants, VulkanContext,
+    BufferDescriptorSetBuilder, ComputePipelineBuilder, DeviceAddressBuffer, EmitterConfig,
+    ParticleBuffer, VulkanContext,
 };
 
 use crate::components::{ParticleEmitter, TransformComponent};
-
-/// Frame data uniform buffer (matches shader struct)
-#[repr(C)]
-#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
-struct FrameData {
-    delta_time: f32,
-    emit_count: u32,
-    max_particles: u32,
-    random_seed: u32,
-}
-
-/// Frame data buffer for compute shader
-struct FrameDataBuffer {
-    buffer: katla_vulkan::DeviceAddressBuffer,
-}
-
-impl FrameDataBuffer {
-    fn new(context: Rc<VulkanContext>) -> Result<Self, vk::Result> {
-        let size = std::mem::size_of::<FrameData>();
-        let buffer =
-            katla_vulkan::DeviceAddressBuffer::new_persistent(context, size as u64)?;
-        Ok(Self { buffer })
-    }
-
-    fn update(&mut self, data: &FrameData) {
-        self.buffer.write(std::slice::from_ref(data));
-    }
-}
-
-impl katla_vulkan::BufferDescriptorSource for FrameDataBuffer {
-    fn buffer(&self) -> vk::Buffer {
-        self.buffer.buffer
-    }
-
-    fn buffer_size(&self) -> vk::DeviceSize {
-        self.buffer.size
-    }
-}
 
 /// Create a particle emitter entity.
 ///
@@ -79,8 +41,9 @@ pub fn create_particle_emitter(
     let particle_buffer = ParticleBuffer::with_max_capacity(context.clone())
         .expect("Failed to create particle buffer");
 
-    // Create frame data uniform buffer
-    let frame_data_buffer = FrameDataBuffer::new(context.clone()).expect("Failed to create frame data buffer");
+    // Create frame data uniform buffer (16 bytes)
+    let frame_data_buffer =
+        DeviceAddressBuffer::new_persistent(context.clone(), 16).expect("Failed to create frame data buffer");
 
     // Create descriptor set layout for particle buffer + frame data
     let bindings = [
@@ -123,7 +86,7 @@ pub fn create_particle_emitter(
     )
     .expect("Failed to compile particle compute shader");
 
-    // Create compute pipeline (no push constants needed now)
+    // Create compute pipeline
     let compute_pipeline = ComputePipelineBuilder::new(context.clone())
         .with_shader(shader_module.module)
         .with_descriptor_layouts(vec![descriptor_layout])
@@ -145,6 +108,7 @@ pub fn create_particle_emitter(
     // Create particle emitter component
     let emitter = ParticleEmitter::new(
         particle_buffer,
+        frame_data_buffer,
         compute_pipeline,
         descriptor_set,
         config,
