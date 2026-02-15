@@ -1307,6 +1307,7 @@ name = "katla_app"
 version = "0.1.0"
 dependencies = [
  "approx",
+ "ash",
  "byteorder",
  "clap",
  "env_logger",

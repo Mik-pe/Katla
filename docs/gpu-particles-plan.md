@@ -2,9 +2,9 @@
 
 This document describes the implementation plan for GPU-based particle effects in Katla using compute shaders.
 
-## Status: ✅ Phase 1-3 Complete
+## Status: ✅ Phase 1-5 Complete
 
-The infrastructure for GPU particles has been implemented. The remaining work (Phase 4-5) involves ECS integration and writing the actual compute/vertex/fragment shaders.
+All infrastructure and shaders have been implemented. The system is ready for integration into the render graph.
 
 ## Design Decisions
 
@@ -94,21 +94,41 @@ pub struct EmitterConfigBuffer { ... }  // Config uniform buffer
 pub fn calculate_workgroup_count(particle_count: u32, workgroup_size: u32) -> u32
 ```
 
-### Phase 4: ECS Integration (TODO)
+### Phase 4: ECS Integration ✅
 
-**Files to Create:**
+**Created Files:**
 - `katla_app/src/components/rendering/particle.rs` - ParticleEmitter component
-- `katla_app/src/systems/particle_system.rs` - ParticleSimulationSystem
+- `katla_app/src/systems/particle/particle_system.rs` - ParticleSimulationSystem
+- `katla_app/src/systems/particle/mod.rs` - Module exports
 
-**Files to Modify:**
+**Modified Files:**
 - `katla_app/src/components/rendering/mod.rs` - Export particle module
 - `katla_app/src/systems/mod.rs` - Export particle_system module
+- `katla_app/Cargo.toml` - Added ash dependency
 
-### Phase 5: Particle Rendering (TODO)
+**Key Types:**
+```rust
+#[derive(Component)]
+pub struct ParticleEmitter {
+    pub particle_buffer: ParticleBuffer,
+    pub compute_pipeline: ComputePipeline,
+    pub descriptor_set: BufferDescriptorSet,
+    pub config: EmitterConfig,
+    pub emit_accumulator: f32,
+    pub emit_rate: f32,
+    pub is_active: bool,
+    pub alive_count: u32,
+    pub random_seed: u32,
+}
 
-**Shader Files to Create:**
-- `shaders/particle_sim.wgsl` - Compute shader for particle simulation
-- `shaders/particle_render.wgsl` - Vertex/Fragment shaders for billboard rendering
+pub struct ParticleSimulationSystem;
+```
+
+### Phase 5: Particle Rendering ✅
+
+**Created Shader Files:**
+- `resources/shaders/particles/particle_sim.wgsl` - Compute shader for simulation
+- `resources/shaders/particles/particle_render.wgsl` - Billboard rendering shaders
 
 **Compute Shader Design:**
 ```wgsl
