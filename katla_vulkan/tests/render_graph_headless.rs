@@ -207,7 +207,7 @@ fn test_render_graph_lifetime_analysis_headless() {
             println!(
                 "Render graph compiled successfully: {} passes, {} resources",
                 graph.passes.len(),
-                graph.resources.len()
+                graph.resources.borrow().len()
             );
             assert_eq!(graph.passes.len(), 1);
         }

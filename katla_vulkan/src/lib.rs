@@ -873,9 +873,12 @@ impl VulkanRenderer {
         };
 
         // Determine scene render targets based on viewport existence
-        // When viewport exists: scene -> viewport texture, UI -> output texture
-        // When no viewport: scene -> output texture directly
-        let scene_color_res = viewport_resource.unwrap_or(output_resource.unwrap_or(swapchain_resource));
+        // - With viewport: scene renders to viewport texture, UI composites viewport into output texture
+        // - Without viewport: scene renders directly to output texture
+        // Only present_pass touches the swapchain for final presentation
+        let scene_color_res = viewport_resource
+            .or(output_resource)
+            .expect("Either viewport_target or output_target must be initialized");
         let scene_depth_res = viewport_depth_resource.unwrap_or(depth_resource);
         let has_viewport = viewport_resource.is_some();
         let has_output = output_resource.is_some();
@@ -907,7 +910,7 @@ impl VulkanRenderer {
 
         // === SKY PASS ===
         // Renders first, clears color and depth, writes sky to color only
-        // Uses scene_color/scene_depth which is either viewport or swapchain
+        // Uses scene_color/scene_depth which is either viewport or output texture
         graph_builder.add_pass("sky_pass", move |pass| {
             pass.write(Attachment::Color(scene_color))
                 .write(Attachment::DepthStencil(scene_depth))
@@ -1245,8 +1248,9 @@ impl VulkanRenderer {
         let ui_buffers_ptr = &self.ui_buffers as *const Vec<UIBuffers>;
         let ui_textures_ptr = &self.ui_textures as *const Option<UITextures>;
         let ui_frame_index_ptr = &self.ui_frame_index as *const std::cell::Cell<usize>;
-        // UI renders to output texture (present_pass will copy to swapchain)
-        let ui_target_res = output_resource.unwrap_or(swapchain_resource);
+        // UI renders to output texture ONLY (present_pass will copy to swapchain)
+        // UI pass should NEVER touch the swapchain directly
+        let ui_target_res = output_resource.expect("output_target must be initialized for ui_pass");
 
         graph_builder.add_pass("ui_pass", move |pass| {
             pass.write(Attachment::Color(ui_target_res))
