@@ -6,7 +6,7 @@ use log::{debug, error, info, warn};
 use winit::keyboard::ModifiersState;
 
 pub use builder::*;
-use katla_ecs::{input::Action, World};
+use katla_ecs::{input::Action, EntityId, World};
 use katla_math::{Transform, Vec2, Vec3};
 use katla_vulkan::{MaterialRegistry, SkeletonBuffer, VulkanRenderer};
 use winit::{
@@ -893,13 +893,17 @@ impl Application {
         self.ui_context.input.clear_frame_state();
     }
 
-    /// Collect entity information for the editor UI.
+    /// Collect entity information for the editor UI in tree order.
     fn collect_entity_info(&self) -> Vec<crate::ui::EntityInfo> {
-        use crate::components::{NameComponent, TransformComponent, DrawableComponent};
+        use crate::components::{NameComponent, TransformComponent, DrawableComponent, Children, Parent};
+        use std::collections::{HashMap, HashSet};
 
-        let mut entities = Vec::new();
+        // First pass: collect all entities with transforms and their relationships
+        let mut entity_data: HashMap<EntityId, (String, Vec3, Vec3, Vec3, String)> = HashMap::new();
+        let mut parent_map: HashMap<EntityId, EntityId> = HashMap::new();
+        let mut children_map: HashMap<EntityId, Vec<EntityId>> = HashMap::new();
+        let mut root_entities: HashSet<EntityId> = HashSet::new();
 
-        // Query all entities with transforms
         for entity_id in self.world.entity_ids() {
             let transform = match self.world.get_component::<TransformComponent>(entity_id) {
                 Some(t) => t,
@@ -915,22 +919,63 @@ impl Application {
             let rot = Vec3::new(euler.0, euler.1, euler.2);
             let scale = transform.transform.scale;
 
-            // Check if drawable
             let model_type = self.world.get_component::<DrawableComponent>(entity_id)
                 .map(|_| "Mesh".to_string())
                 .unwrap_or_else(|| "Empty".to_string());
 
-            entities.push(crate::ui::EntityInfo {
-                id: entity_id,
-                name,
-                position: pos,
-                rotation: rot,
-                scale,
-                model_type,
-            });
+            entity_data.insert(entity_id, (name, pos, rot, scale, model_type));
+            root_entities.insert(entity_id);
+
+            // Track parent relationship
+            if let Some(parent) = self.world.get_component::<Parent>(entity_id) {
+                parent_map.insert(entity_id, parent.parent);
+                root_entities.remove(&entity_id);
+
+                children_map.entry(parent.parent)
+                    .or_default()
+                    .push(entity_id);
+            }
         }
 
-        entities
+        // Build tree in depth-first order
+        let mut result = Vec::new();
+
+        fn add_entity_and_children(
+            entity_id: EntityId,
+            entity_data: &HashMap<EntityId, (String, Vec3, Vec3, Vec3, String)>,
+            children_map: &HashMap<EntityId, Vec<EntityId>>,
+            result: &mut Vec<crate::ui::EntityInfo>,
+            depth: u32,
+        ) {
+            if let Some((name, pos, rot, scale, model_type)) = entity_data.get(&entity_id) {
+                let children = children_map.get(&entity_id).map(|c| c.as_slice()).unwrap_or(&[]);
+                result.push(crate::ui::EntityInfo {
+                    id: entity_id,
+                    name: name.clone(),
+                    position: *pos,
+                    rotation: *rot,
+                    scale: *scale,
+                    model_type: model_type.clone(),
+                    depth,
+                    has_children: !children.is_empty(),
+                });
+
+                // Recursively add children
+                for child_id in children {
+                    add_entity_and_children(*child_id, entity_data, children_map, result, depth + 1);
+                }
+            }
+        }
+
+        // Add root entities (those without parents) in order
+        let mut roots: Vec<EntityId> = root_entities.into_iter().collect();
+        roots.sort_by_key(|id| id.id());
+
+        for root_id in roots {
+            add_entity_and_children(root_id, &entity_data, &children_map, &mut result, 0);
+        }
+
+        result
     }
 
     /// Spawn a model from the editor UI.

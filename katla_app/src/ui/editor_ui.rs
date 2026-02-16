@@ -48,6 +48,10 @@ pub struct EntityInfo {
     pub rotation: Vec3,
     pub scale: Vec3,
     pub model_type: String,
+    /// Depth in hierarchy (0 = root, 1 = child of root, etc.)
+    pub depth: u32,
+    /// Whether this entity has children (for showing expand/collapse arrow)
+    pub has_children: bool,
 }
 
 /// Action requested from the editor UI.
@@ -309,11 +313,17 @@ impl EditorUI {
         // Entity list
         let mut cursor = Vec2::new(bounds.min.x(), bounds.min.y() + header_height + 4.0);
         let item_height = 22.0;
+        let indent_per_level = 16.0;
 
         for entity in entities {
+            // Calculate indentation based on depth
+            let indent = entity.depth as f32 * indent_per_level;
+            let item_x = bounds.min.x() + indent;
+            let item_width = bounds.width() - indent;
+
             let item_bounds = Rect2D::from_origin_size(
-                cursor,
-                Vec2::new(bounds.width(), item_height),
+                Vec2::new(item_x, cursor.y()),
+                Vec2::new(item_width, item_height),
             );
 
             let is_selected = Some(entity.id) == self.selected_entity;
@@ -331,10 +341,41 @@ impl EditorUI {
                 ui.draw_rect(item_bounds, bg_color);
             }
 
+            // Tree line indicators for hierarchy
+            if entity.depth > 0 {
+                let line_x = item_x - 8.0;
+                ui.draw_line(
+                    Vec2::new(line_x, cursor.y()),
+                    Vec2::new(line_x, cursor.y() + item_height),
+                    Color::new(0.3, 0.3, 0.3, 0.5),
+                    1.0,
+                );
+            }
+
+            // Expand/collapse arrow for entities with children
+            let text_x = if entity.has_children {
+                let arrow = "▼"; // Could be "▶" when collapsed if we add collapse state
+                let arrow_pos = Vec2::new(item_x + 4.0, cursor.y() + 3.0);
+                ui.draw_text(arrow, arrow_pos, Color::new(0.6, 0.6, 0.6, 1.0), 10.0);
+                item_x + 18.0
+            } else {
+                item_x + 8.0
+            };
+
             // Entity name
-            let name_text = format!("{} ({})", entity.name, entity.model_type);
-            let name_pos = Vec2::new(cursor.x() + 8.0, cursor.y() + 3.0);
-            ui.draw_text(&name_text, name_pos, Color::new(0.85, 0.85, 0.85, 1.0), 12.0);
+            let name_text = &entity.name;
+            let name_pos = Vec2::new(text_x, cursor.y() + 3.0);
+            ui.draw_text(name_text, name_pos, Color::new(0.85, 0.85, 0.85, 1.0), 12.0);
+
+            // Model type badge
+            let badge_color = match entity.model_type.as_str() {
+                "Mesh" => Color::new(0.3, 0.6, 0.3, 1.0),
+                _ => Color::new(0.5, 0.5, 0.5, 1.0),
+            };
+            let badge_text = &entity.model_type;
+            let badge_size = ui.measure_text(badge_text, 10.0);
+            let badge_pos = Vec2::new(item_bounds.max.x() - badge_size.x() - 8.0, cursor.y() + 5.0);
+            ui.draw_text(badge_text, badge_pos, badge_color, 10.0);
 
             // Click to select
             if ui.input.mouse_clicked(mouse_button::LEFT) && is_hovered {
