@@ -125,6 +125,13 @@ impl EditorUI {
         }
     }
 
+    /// Create editor with a specific theme.
+    pub fn with_theme(theme: Theme) -> Self {
+        let mut editor = Self::new();
+        editor.theme = theme;
+        editor
+    }
+
     /// Set the editor theme.
     pub fn set_theme(&mut self, theme: Theme) {
         self.theme = theme;

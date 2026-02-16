@@ -14,7 +14,7 @@ pub mod renderer;
 
 use std::{cell::RefCell, collections::HashMap, ffi::CString, rc::Rc, time::Instant};
 
-use log::{debug, error, info, warn};
+use log::{debug, info, warn};
 use winit::keyboard::ModifiersState;
 
 pub use builder::*;
@@ -32,12 +32,12 @@ use winit::{
 
 use crate::{
     animation::{AnimationManager, Skeleton},
-    components::{DirectionalLight, DrawableComponent, NameComponent, PointLight, TransformComponent},
+    components::{DirectionalLight, DrawableComponent, PointLight, TransformComponent},
     entities::{Camera, Model},
     input::{InputBinding, InputMapper, KeyCombo, MouseCombo},
+    preferences::Preferences,
     rendering::{
         create_checkerboard_material, create_checkerboard_texture, MaterialManager, MeshBuilder,
-        SkyMaterial,
     },
     resources::ResourceManager,
     util::{FileCache, GLTFModel, Timer},
@@ -74,6 +74,8 @@ pub struct Application {
     pub(crate) editor_ui: crate::ui::EditorUI,
     /// Use editor UI mode (vs simple debug overlay)
     pub(crate) use_editor_ui: bool,
+    /// User preferences (theme, settings)
+    pub(crate) preferences: Preferences,
 }
 
 impl ApplicationHandler for Application {
@@ -495,6 +497,13 @@ impl ApplicationHandler for Application {
     }
 
     fn exiting(&mut self, _event_loop: &ActiveEventLoop) {
+        // Save preferences before exit
+        if let Err(e) = self.preferences.save() {
+            warn!("Failed to save preferences: {}", e);
+        } else {
+            info!("Saved preferences to disk");
+        }
+
         if let Some(ref mut renderer) = self.renderer {
             renderer.wait_for_device();
         }

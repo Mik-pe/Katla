@@ -10,8 +10,10 @@ use crate::{
     entities::Camera,
     error::AppResult,
     input::InputMapper,
+    preferences::Preferences,
     rendering::MaterialManager,
     resources::ResourceManager,
+    ui::Theme,
     util::{FileCache, Timer},
 };
 
@@ -80,6 +82,12 @@ impl ApplicationBuilder {
         let camera = Rc::new(RefCell::new(Camera::new(&mut world)));
 
         let resources = ResourceManager::discover()?;
+
+        // Load user preferences
+        let preferences = Preferences::load();
+        let theme = Theme::by_name(&preferences.theme).unwrap_or_default();
+        log::info!("Loaded preferences: theme={}, show_grid={}, show_stats={}",
+            preferences.theme, preferences.show_grid, preferences.show_stats);
 
         // Create UI context and load default font
         let mut ui_context = katla_ui::UiContext::new();
@@ -152,8 +160,9 @@ impl ApplicationBuilder {
             skeleton_buffers: HashMap::new(),
             ui_context,
             debug_overlay: crate::ui::DebugOverlay::new(),
-            editor_ui: crate::ui::EditorUI::new(),
+            editor_ui: crate::ui::EditorUI::with_theme(theme),
             use_editor_ui: true,  // Default to editor UI mode
+            preferences,
         };
 
         Ok((app, event_loop))
