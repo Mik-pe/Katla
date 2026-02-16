@@ -527,12 +527,17 @@ impl UiContext {
 
     /// Check if a widget is being hovered.
     ///
-    /// This also checks if a popup is open - if so, widgets at lower Z levels
-    /// cannot be hovered (events are consumed by the popup layer).
+    /// This uses the imgui/egui approach: widgets at lower Z levels can only
+    /// be hovered if the cursor is NOT inside a higher-level popup's bounds.
+    /// This allows clicking outside popups to work correctly while still
+    /// blocking hover for widgets covered by the popup.
     pub fn is_hovered(&self, bounds: Rect2D) -> bool {
-        // If a popup is open and we're at a lower Z level, block hover
-        if self.popup_id.is_some() && self.z_index < z_index::POPUP {
-            return false;
+        // If a popup is open and cursor is inside popup bounds,
+        // block hover for widgets at lower Z levels
+        if let Some(popup_bounds) = self.popup_bounds {
+            if popup_bounds.contains(self.input.mouse_pos) && self.z_index < z_index::POPUP {
+                return false;
+            }
         }
         self.input.is_hovered(bounds) && self.active_id.is_none()
     }
