@@ -798,7 +798,7 @@ impl VulkanRenderer {
                 ResourceKind::ExternalImage {
                     vk_image: first_target.color_image,
                     image_view: first_target.color_image_view,
-                    format: vk::Format::R8G8B8A8_SRGB,
+                    format: vk::Format::B8G8R8A8_SRGB,
                     extent: first_target.extent,
                 },
             );
@@ -807,7 +807,7 @@ impl VulkanRenderer {
                 ResourceKind::ExternalImage {
                     vk_image: first_target.depth_image,
                     image_view: first_target.depth_image_view,
-                    format: vk::Format::D32_SFLOAT,
+                    format: vk::Format::D32_SFLOAT_S8_UINT,
                     extent: first_target.extent,
                 },
             );
@@ -897,7 +897,7 @@ impl VulkanRenderer {
                             };
 
                             let depth_subresource = vk::ImageSubresourceRange {
-                                aspect_mask: vk::ImageAspectFlags::DEPTH,
+                                aspect_mask: vk::ImageAspectFlags::DEPTH | vk::ImageAspectFlags::STENCIL,
                                 base_mip_level: 0,
                                 level_count: 1,
                                 base_array_layer: 0,
@@ -2403,13 +2403,13 @@ impl ViewportRenderTarget {
             let extent = vk::Extent2D { width, height };
             let extent3d = vk::Extent3D { width, height, depth: 1 };
 
-            // Create color image (RGBA8, can be sampled and used as color attachment)
+            // Create color image (BGRA8 to match swapchain and pipeline formats)
             let color_create_info = vk::ImageCreateInfo::default()
                 .image_type(vk::ImageType::TYPE_2D)
                 .extent(extent3d)
                 .mip_levels(1)
                 .array_layers(1)
-                .format(vk::Format::R8G8B8A8_SRGB)
+                .format(vk::Format::B8G8R8A8_SRGB)
                 .tiling(vk::ImageTiling::OPTIMAL)
                 .initial_layout(vk::ImageLayout::UNDEFINED)
                 .usage(vk::ImageUsageFlags::COLOR_ATTACHMENT | vk::ImageUsageFlags::SAMPLED | vk::ImageUsageFlags::TRANSFER_SRC)
@@ -2422,7 +2422,7 @@ impl ViewportRenderTarget {
             let color_view_create_info = vk::ImageViewCreateInfo::default()
                 .image(color_image)
                 .view_type(vk::ImageViewType::TYPE_2D)
-                .format(vk::Format::R8G8B8A8_SRGB)
+                .format(vk::Format::B8G8R8A8_SRGB)
                 .components(vk::ComponentMapping::default())
                 .subresource_range(vk::ImageSubresourceRange {
                     aspect_mask: vk::ImageAspectFlags::COLOR,
@@ -2434,13 +2434,13 @@ impl ViewportRenderTarget {
 
             let color_image_view = context.device.create_image_view(&color_view_create_info, None)?;
 
-            // Create depth image (D32_SFLOAT)
+            // Create depth image (D32_SFLOAT_S8_UINT to match pipeline formats)
             let depth_create_info = vk::ImageCreateInfo::default()
                 .image_type(vk::ImageType::TYPE_2D)
                 .extent(extent3d)
                 .mip_levels(1)
                 .array_layers(1)
-                .format(vk::Format::D32_SFLOAT)
+                .format(vk::Format::D32_SFLOAT_S8_UINT)
                 .tiling(vk::ImageTiling::OPTIMAL)
                 .initial_layout(vk::ImageLayout::UNDEFINED)
                 .usage(vk::ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT)
@@ -2453,10 +2453,10 @@ impl ViewportRenderTarget {
             let depth_view_create_info = vk::ImageViewCreateInfo::default()
                 .image(depth_image)
                 .view_type(vk::ImageViewType::TYPE_2D)
-                .format(vk::Format::D32_SFLOAT)
+                .format(vk::Format::D32_SFLOAT_S8_UINT)
                 .components(vk::ComponentMapping::default())
                 .subresource_range(vk::ImageSubresourceRange {
-                    aspect_mask: vk::ImageAspectFlags::DEPTH,
+                    aspect_mask: vk::ImageAspectFlags::DEPTH | vk::ImageAspectFlags::STENCIL,
                     base_mip_level: 0,
                     level_count: 1,
                     base_array_layer: 0,
@@ -2515,7 +2515,7 @@ impl ViewportRenderTarget {
                 .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
                 .image(depth_image)
                 .subresource_range(vk::ImageSubresourceRange {
-                    aspect_mask: vk::ImageAspectFlags::DEPTH,
+                    aspect_mask: vk::ImageAspectFlags::DEPTH | vk::ImageAspectFlags::STENCIL,
                     base_mip_level: 0,
                     level_count: 1,
                     base_array_layer: 0,
