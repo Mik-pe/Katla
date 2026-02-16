@@ -12,6 +12,8 @@ use katla_ui::{DrawList, ForkAwesome, UiContext, input::mouse_button};
 use katla_ecs::EntityId;
 use std::collections::HashSet;
 
+use super::theme::Theme;
+
 /// Model types that can be spawned.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SpawnableModel {
@@ -100,6 +102,8 @@ pub struct EditorUI {
     last_viewport_size: (u32, u32),
     /// Entities expanded in the hierarchy tree.
     expanded_entities: HashSet<EntityId>,
+    /// Current color theme.
+    theme: Theme,
 }
 
 impl EditorUI {
@@ -117,6 +121,35 @@ impl EditorUI {
             pending_actions: Vec::new(),
             last_viewport_size: (800, 600), // Default size
             expanded_entities: HashSet::new(),
+            theme: Theme::catppuccin(), // Default to Catppuccin because it's sick
+        }
+    }
+
+    /// Set the editor theme.
+    pub fn set_theme(&mut self, theme: Theme) {
+        self.theme = theme;
+    }
+
+    /// Get the current theme name.
+    pub fn theme_name(&self) -> &'static str {
+        self.theme.name
+    }
+
+    /// Cycle to the next theme.
+    pub fn cycle_theme(&mut self) {
+        let all_names = Theme::all_names();
+        // Find current theme by name
+        let current_idx = all_names.iter().position(|&name| {
+            (name == "catppuccin" && self.theme.name == "Catppuccin Mocha") ||
+            (name == "nord" && self.theme.name == "Nord") ||
+            (name == "tokyo_night" && self.theme.name == "Tokyo Night") ||
+            (name == "dracula" && self.theme.name == "Dracula") ||
+            (name == "gruvbox" && self.theme.name == "Gruvbox Dark") ||
+            (name == "default_dark" && self.theme.name == "Default Dark")
+        }).unwrap_or(0);
+        let next_idx = (current_idx + 1) % all_names.len();
+        if let Some(theme) = Theme::by_name(all_names[next_idx]) {
+            self.theme = theme;
         }
     }
 
@@ -332,17 +365,18 @@ impl EditorUI {
     }
 
     fn build_toolbar(&mut self, ui: &mut UiContext, screen_size: Vec2, height: f32, padding: f32) {
+        let theme = &self.theme;
         let toolbar_bounds = Rect2D::from_origin_size(
             Vec2::new(0.0, 0.0),
             Vec2::new(screen_size.x(), height),
         );
 
         // Darker toolbar background
-        ui.draw_rect(toolbar_bounds, Color::new(0.15, 0.15, 0.15, 1.0));
+        ui.draw_rect(toolbar_bounds, theme.background_dark);
         ui.draw_line(
             Vec2::new(0.0, height),
             Vec2::new(screen_size.x(), height),
-            Color::new(0.3, 0.3, 0.3, 1.0),
+            theme.separator,
             1.0,
         );
 
@@ -354,9 +388,9 @@ impl EditorUI {
         let play_text = if self.is_playing { "|| Pause" } else { "> Play" };
         let play_bounds = Rect2D::from_origin_size(cursor, Vec2::new(button_width, button_height));
         let play_color = if self.is_playing {
-            Color::new(0.2, 0.5, 0.2, 1.0)
+            theme.success
         } else {
-            Color::new(0.3, 0.3, 0.3, 1.0)
+            theme.button_bg
         };
         ui.draw_rect(play_bounds, play_color);
         if ui.button("play_btn", play_text, play_bounds) {
@@ -395,18 +429,19 @@ impl EditorUI {
             screen_size.x() * 0.5 - title_size.x() * 0.5,
             height * 0.5 - title_size.y() * 0.5,
         );
-        ui.draw_text(title, title_pos, Color::new(0.7, 0.7, 0.7, 1.0), 14.0);
+        ui.draw_text(title, title_pos, theme.text_muted, 14.0);
     }
 
     fn build_hierarchy_panel(&mut self, ui: &mut UiContext, entities: &[EntityInfo], bounds: Rect2D) {
+        let theme = self.theme.clone(); // Clone to avoid borrow issues
         // Panel background
-        ui.draw_rect(bounds, Color::new(0.18, 0.18, 0.18, 1.0));
-        ui.draw_rect_border(bounds, Color::new(0.18, 0.18, 0.18, 1.0), Color::new(0.3, 0.3, 0.3, 1.0), 1.0);
+        ui.draw_rect(bounds, theme.panel_bg);
+        ui.draw_rect_border(bounds, theme.panel_bg, theme.panel_border, 1.0);
 
         // Panel header
         let header_height = 24.0;
         let header_bounds = Rect2D::from_origin_size(bounds.min, Vec2::new(bounds.width(), header_height));
-        ui.draw_rect(header_bounds, Color::new(0.22, 0.22, 0.22, 1.0));
+        ui.draw_rect(header_bounds, theme.panel_header);
 
         // Count visible entities (respecting collapsed state)
         let visible_count = entities.iter()
@@ -415,7 +450,7 @@ impl EditorUI {
 
         let header_text = format!("Hierarchy ({} entities)", visible_count);
         let header_pos = Vec2::new(bounds.min.x() + 8.0, header_bounds.center().y() - 7.0);
-        ui.draw_text(&header_text, header_pos, Color::new(0.9, 0.9, 0.9, 1.0), 12.0);
+        ui.draw_text(&header_text, header_pos, theme.text_primary, 12.0);
 
         // Entity list
         let mut cursor = Vec2::new(bounds.min.x(), bounds.min.y() + header_height + 4.0);
@@ -442,9 +477,9 @@ impl EditorUI {
             let is_hovered = ui.input.is_hovered(item_bounds);
 
             let bg_color = if is_selected {
-                Color::new(0.2, 0.4, 0.7, 1.0)
+                theme.selection
             } else if is_hovered {
-                Color::new(0.25, 0.25, 0.25, 1.0)
+                theme.selection_hover
             } else {
                 Color::TRANSPARENT
             };
@@ -459,7 +494,7 @@ impl EditorUI {
                 ui.draw_line(
                     Vec2::new(line_x, cursor.y()),
                     Vec2::new(line_x, cursor.y() + item_height),
-                    Color::new(0.3, 0.3, 0.3, 0.5),
+                    theme.separator,
                     1.0,
                 );
             }
@@ -475,9 +510,9 @@ impl EditorUI {
                 let triangle_hovered = ui.input.is_hovered(triangle_bounds);
 
                 let triangle_color = if triangle_hovered {
-                    Color::new(0.9, 0.9, 0.9, 1.0)
+                    theme.text_primary
                 } else {
-                    Color::new(0.6, 0.6, 0.6, 1.0)
+                    theme.text_secondary
                 };
 
                 let triangle_pos = Vec2::new(item_x + 3.0, cursor.y() + 2.0);
@@ -494,7 +529,7 @@ impl EditorUI {
                 let dot_pos = Vec2::new(item_x + 6.0, cursor.y() + 8.0);
                 ui.draw_rect(
                     Rect2D::from_origin_size(dot_pos, Vec2::new(4.0, 4.0)),
-                    Color::new(0.4, 0.4, 0.4, 1.0),
+                    theme.text_muted,
                 );
                 item_x + 18.0
             };
@@ -502,15 +537,14 @@ impl EditorUI {
             // Entity name
             let name_text = &entity.name;
             let name_pos = Vec2::new(text_x, cursor.y() + 3.0);
-            ui.draw_text(name_text, name_pos, Color::new(0.85, 0.85, 0.85, 1.0), 12.0);
+            ui.draw_text(name_text, name_pos, theme.text_secondary, 12.0);
 
-            // Entity type badge with color coding
+            // Entity type badge with color coding from theme
             let badge_color = match entity.entity_type.as_str() {
-                "Mesh" => Color::new(0.3, 0.6, 0.3, 1.0),           // Green
-                "Particle Emitter" => Color::new(0.7, 0.4, 0.2, 1.0), // Orange
-                "Directional Light" => Color::new(0.6, 0.6, 0.3, 1.0), // Yellow
-                "Point Light" => Color::new(0.6, 0.5, 0.3, 1.0),      // Warm yellow
-                _ => Color::new(0.5, 0.5, 0.5, 1.0),                  // Gray
+                "Mesh" => theme.entity_mesh,
+                "Particle Emitter" => theme.entity_particle,
+                "Directional Light" | "Point Light" => theme.entity_light,
+                _ => theme.entity_empty,
             };
             let badge_text = &entity.entity_type;
             let badge_size = ui.measure_text(badge_text, 10.0);
@@ -551,22 +585,23 @@ impl EditorUI {
                 bounds.center().x() - empty_size.x() * 0.5,
                 bounds.center().y() - empty_size.y() * 0.5,
             );
-            ui.draw_text(empty_text, empty_pos, Color::new(0.5, 0.5, 0.5, 1.0), 12.0);
+            ui.draw_text(empty_text, empty_pos, theme.text_muted, 12.0);
         }
     }
 
     fn build_inspector_panel(&mut self, ui: &mut UiContext, entities: &[EntityInfo], bounds: Rect2D) {
+        let theme = &self.theme;
         // Panel background
-        ui.draw_rect(bounds, Color::new(0.18, 0.18, 0.18, 1.0));
-        ui.draw_rect_border(bounds, Color::new(0.18, 0.18, 0.18, 1.0), Color::new(0.3, 0.3, 0.3, 1.0), 1.0);
+        ui.draw_rect(bounds, theme.panel_bg);
+        ui.draw_rect_border(bounds, theme.panel_bg, theme.panel_border, 1.0);
 
         // Panel header
         let header_height = 24.0;
         let header_bounds = Rect2D::from_origin_size(bounds.min, Vec2::new(bounds.width(), header_height));
-        ui.draw_rect(header_bounds, Color::new(0.22, 0.22, 0.22, 1.0));
+        ui.draw_rect(header_bounds, theme.panel_header);
 
         let header_pos = Vec2::new(bounds.min.x() + 8.0, header_bounds.center().y() - 7.0);
-        ui.draw_text("Inspector", header_pos, Color::new(0.9, 0.9, 0.9, 1.0), 12.0);
+        ui.draw_text("Inspector", header_pos, theme.text_primary, 12.0);
 
         // Find selected entity
         let selected = self.selected_entity.and_then(|id| {
@@ -576,24 +611,24 @@ impl EditorUI {
         let mut cursor = Vec2::new(bounds.min.x() + 8.0, bounds.min.y() + header_height + 8.0);
         let line_height = 20.0;
         let label_width = 60.0;
-        let value_width = bounds.width() - label_width - 24.0;
+        let _value_width = bounds.width() - label_width - 24.0;
 
         if let Some(entity) = selected {
             // Entity name header
-            ui.draw_text(&entity.name, cursor, Color::new(0.9, 0.9, 0.9, 1.0), 14.0);
+            ui.draw_text(&entity.name, cursor, theme.text_primary, 14.0);
             cursor = Vec2::new(cursor.x(), cursor.y() + line_height + 8.0);
 
             // Separator
             ui.draw_line(
                 Vec2::new(bounds.min.x() + 8.0, cursor.y()),
                 Vec2::new(bounds.max.x() - 8.0, cursor.y()),
-                Color::new(0.3, 0.3, 0.3, 1.0),
+                theme.separator,
                 1.0,
             );
             cursor = Vec2::new(cursor.x(), cursor.y() + 8.0);
 
             // Transform section
-            ui.draw_text("Transform", cursor, Color::new(0.7, 0.85, 0.7, 1.0), 12.0);
+            ui.draw_text("Transform", cursor, theme.text_accent, 12.0);
             cursor = Vec2::new(cursor.x(), cursor.y() + line_height);
 
             // Position
@@ -601,7 +636,7 @@ impl EditorUI {
             ui.label("Position:", pos_label_bounds);
             let pos_value_bounds = Rect2D::from_origin_size(
                 Vec2::new(cursor.x() + label_width, cursor.y()),
-                Vec2::new(value_width, line_height),
+                Vec2::new(_value_width, line_height),
             );
             let pos_text = format!("({:.2}, {:.2}, {:.2})", entity.position.x(), entity.position.y(), entity.position.z());
             ui.label(&pos_text, pos_value_bounds);
@@ -612,7 +647,7 @@ impl EditorUI {
             ui.label("Rotation:", rot_label_bounds);
             let rot_value_bounds = Rect2D::from_origin_size(
                 Vec2::new(cursor.x() + label_width, cursor.y()),
-                Vec2::new(value_width, line_height),
+                Vec2::new(_value_width, line_height),
             );
             let rot_text = format!("({:.1}, {:.1}, {:.1})", entity.rotation.x(), entity.rotation.y(), entity.rotation.z());
             ui.label(&rot_text, rot_value_bounds);
@@ -623,7 +658,7 @@ impl EditorUI {
             ui.label("Scale:", scale_label_bounds);
             let scale_value_bounds = Rect2D::from_origin_size(
                 Vec2::new(cursor.x() + label_width, cursor.y()),
-                Vec2::new(value_width, line_height),
+                Vec2::new(_value_width, line_height),
             );
             let scale_text = format!("({:.2}, {:.2}, {:.2})", entity.scale.x(), entity.scale.y(), entity.scale.z());
             ui.label(&scale_text, scale_value_bounds);
@@ -633,26 +668,26 @@ impl EditorUI {
             ui.draw_line(
                 Vec2::new(bounds.min.x() + 8.0, cursor.y()),
                 Vec2::new(bounds.max.x() - 8.0, cursor.y()),
-                Color::new(0.3, 0.3, 0.3, 1.0),
+                theme.separator,
                 1.0,
             );
             cursor = Vec2::new(cursor.x(), cursor.y() + 8.0);
 
             // Entity type
-            ui.draw_text("Type", cursor, Color::new(0.7, 0.85, 0.7, 1.0), 12.0);
+            ui.draw_text("Type", cursor, theme.text_accent, 12.0);
             cursor = Vec2::new(cursor.x(), cursor.y() + line_height);
 
             let type_text = format!("  {}", entity.entity_type);
-            ui.draw_text(&type_text, cursor, Color::new(0.85, 0.85, 0.85, 1.0), 12.0);
+            ui.draw_text(&type_text, cursor, theme.text_secondary, 12.0);
             cursor = Vec2::new(cursor.x(), cursor.y() + line_height + 8.0);
 
             // Components list
-            ui.draw_text("Components", cursor, Color::new(0.7, 0.85, 0.7, 1.0), 12.0);
+            ui.draw_text("Components", cursor, theme.text_accent, 12.0);
             cursor = Vec2::new(cursor.x(), cursor.y() + line_height);
 
             for component_name in &entity.components {
                 let comp_text = format!("  {}", component_name);
-                ui.draw_text(&comp_text, cursor, Color::new(0.85, 0.85, 0.85, 1.0), 12.0);
+                ui.draw_text(&comp_text, cursor, theme.text_secondary, 12.0);
                 cursor = Vec2::new(cursor.x(), cursor.y() + line_height);
             }
 
@@ -675,11 +710,12 @@ impl EditorUI {
                 bounds.center().x() - no_sel_size.x() * 0.5,
                 bounds.center().y() - no_sel_size.y() * 0.5,
             );
-            ui.draw_text(no_selection, no_sel_pos, Color::new(0.5, 0.5, 0.5, 1.0), 12.0);
+            ui.draw_text(no_selection, no_sel_pos, theme.text_muted, 12.0);
         }
     }
 
     fn build_viewport(&mut self, ui: &mut UiContext, bounds: Rect2D) {
+        let theme = &self.theme;
         // Draw the viewport texture (rendered 3D scene)
         // UV x >= 1.0 signals viewport texture sampling in the shader
         // The shader subtracts 1.0 from x, so (1.0, 0.0) to (2.0, 1.0) maps to full texture
@@ -692,7 +728,7 @@ impl EditorUI {
 
         // Viewport border - draw ONLY the border lines, not a filled rect
         let border_width = 2.0;
-        let border_color = Color::new(0.4, 0.5, 0.6, 1.0);
+        let border_color = theme.viewport_border;
 
         // Top border
         ui.draw_rect(
@@ -724,68 +760,76 @@ impl EditorUI {
         // Viewport label
         let vp_label = "3D View";
         let label_pos = Vec2::new(bounds.min.x() + 8.0, bounds.min.y() + 8.0);
-        ui.draw_text(vp_label, label_pos, Color::new(0.7, 0.7, 0.7, 0.8), 10.0);
+        ui.draw_text(vp_label, label_pos, theme.text_muted, 10.0);
     }
 
     fn build_status_bar(&mut self, ui: &mut UiContext, screen_size: Vec2, height: f32, fps: f32, frame_count: usize, entity_count: usize) {
+        let theme = &self.theme;
         let bar_bounds = Rect2D::from_origin_size(
             Vec2::new(0.0, screen_size.y() - height),
             Vec2::new(screen_size.x(), height),
         );
 
         // Status bar background
-        ui.draw_rect(bar_bounds, Color::new(0.12, 0.12, 0.12, 1.0));
+        ui.draw_rect(bar_bounds, theme.background_dark);
         ui.draw_line(
             bar_bounds.min,
             Vec2::new(screen_size.x(), bar_bounds.min.y()),
-            Color::new(0.3, 0.3, 0.3, 1.0),
+            theme.separator,
             1.0,
         );
 
         let mut cursor = Vec2::new(8.0, bar_bounds.min.y() + 4.0);
 
-        // FPS
+        // FPS with theme colors
         let fps_text = format!("FPS: {:.0}", fps);
         let fps_color = if fps >= 55.0 {
-            Color::new(0.4, 0.8, 0.4, 1.0)
+            theme.success
         } else if fps >= 30.0 {
-            Color::new(0.8, 0.8, 0.3, 1.0)
+            theme.warning
         } else {
-            Color::new(0.9, 0.3, 0.3, 1.0)
+            theme.error
         };
         ui.draw_text(&fps_text, cursor, fps_color, 11.0);
 
         // Separator
         cursor = Vec2::new(cursor.x() + 70.0, cursor.y());
-        ui.draw_text("|", cursor, Color::new(0.4, 0.4, 0.4, 1.0), 11.0);
+        ui.draw_text("|", cursor, theme.text_muted, 11.0);
         cursor = Vec2::new(cursor.x() + 15.0, cursor.y());
 
         // Frame count
         let frame_text = format!("Frame: {}", frame_count);
-        ui.draw_text(&frame_text, cursor, Color::new(0.7, 0.7, 0.7, 1.0), 11.0);
+        ui.draw_text(&frame_text, cursor, theme.text_secondary, 11.0);
 
         // Separator
         cursor = Vec2::new(cursor.x() + 100.0, cursor.y());
-        ui.draw_text("|", cursor, Color::new(0.4, 0.4, 0.4, 1.0), 11.0);
+        ui.draw_text("|", cursor, theme.text_muted, 11.0);
         cursor = Vec2::new(cursor.x() + 15.0, cursor.y());
 
         // Entity count
         let entity_text = format!("Entities: {}", entity_count);
-        ui.draw_text(&entity_text, cursor, Color::new(0.7, 0.7, 0.7, 1.0), 11.0);
+        ui.draw_text(&entity_text, cursor, theme.text_secondary, 11.0);
 
         // Play mode indicator on right side
         let mode_text = if self.is_playing { "PLAYING" } else { "EDITING" };
         let mode_color = if self.is_playing {
-            Color::new(0.3, 0.8, 0.3, 1.0)
+            theme.success
         } else {
-            Color::new(0.7, 0.7, 0.7, 1.0)
+            theme.text_secondary
         };
         let mode_size = ui.measure_text(mode_text, 11.0);
         let mode_pos = Vec2::new(screen_size.x() - mode_size.x() - 8.0, cursor.y());
         ui.draw_text(mode_text, mode_pos, mode_color, 11.0);
+
+        // Theme name display
+        let theme_text = format!("Theme: {}", theme.name);
+        let theme_size = ui.measure_text(&theme_text, 11.0);
+        let theme_pos = Vec2::new(screen_size.x() - mode_size.x() - theme_size.x() - 100.0, cursor.y());
+        ui.draw_text(&theme_text, theme_pos, theme.text_muted, 11.0);
     }
 
     fn build_spawn_menu(&mut self, ui: &mut UiContext, screen_size: Vec2) {
+        let theme = &self.theme;
         let menu_width = 300.0;
         let menu_height = 280.0;
         let menu_bounds = Rect2D::from_origin_size(
@@ -797,19 +841,19 @@ impl EditorUI {
         let shadow_offset = Vec2::new(4.0, 4.0);
         let shadow_bounds = Rect2D::new(menu_bounds.min + shadow_offset, menu_bounds.max + shadow_offset);
         ui.draw_rect(shadow_bounds, Color::new(0.0, 0.0, 0.0, 0.5));
-        ui.draw_rect(menu_bounds, Color::new(0.2, 0.2, 0.2, 0.98));
-        ui.draw_rect_border(menu_bounds, Color::new(0.2, 0.2, 0.2, 1.0), Color::new(0.4, 0.4, 0.4, 1.0), 1.0);
+        ui.draw_rect(menu_bounds, theme.panel_bg);
+        ui.draw_rect_border(menu_bounds, theme.panel_bg, theme.panel_border, 1.0);
 
         // Title
         let title_pos = Vec2::new(menu_bounds.min.x() + 12.0, menu_bounds.min.y() + 12.0);
-        ui.draw_text("Spawn Model", title_pos, Color::WHITE, 14.0);
+        ui.draw_text("Spawn Model", title_pos, theme.text_primary, 14.0);
 
         let mut cursor = Vec2::new(menu_bounds.min.x() + 12.0, menu_bounds.min.y() + 40.0);
         let button_height = 28.0;
         let button_width = menu_width - 24.0;
 
         // Model selection
-        ui.draw_text("Model Type:", cursor, Color::new(0.8, 0.8, 0.8, 1.0), 12.0);
+        ui.draw_text("Model Type:", cursor, theme.text_secondary, 12.0);
         cursor = Vec2::new(cursor.x(), cursor.y() + 20.0);
 
         // Model buttons in 2 columns
@@ -824,7 +868,7 @@ impl EditorUI {
 
             let is_selected = *model == self.selected_spawn;
             if is_selected {
-                ui.draw_rect(btn_bounds, Color::new(0.25, 0.45, 0.65, 1.0));
+                ui.draw_rect(btn_bounds, theme.selection);
             }
             if ui.selectable(&format!("spawn_{}", model.name()), model.name(), is_selected, btn_bounds) {
                 self.selected_spawn = *model;
@@ -833,15 +877,11 @@ impl EditorUI {
         cursor = Vec2::new(cursor.x(), cursor.y() + 3.0 * (button_height + 4.0) + 12.0);
 
         // Position input with +/- buttons
-        ui.draw_text("Position (X, Y, Z):", cursor, Color::new(0.8, 0.8, 0.8, 1.0), 12.0);
+        ui.draw_text("Position (X, Y, Z):", cursor, theme.text_secondary, 12.0);
         cursor = Vec2::new(cursor.x(), cursor.y() + 20.0);
 
         let axis_labels = ["X", "Y", "Z"];
-        let axis_colors = [
-            Color::new(0.8, 0.3, 0.3, 1.0),  // Red for X
-            Color::new(0.3, 0.8, 0.3, 1.0),  // Green for Y
-            Color::new(0.3, 0.5, 0.9, 1.0),  // Blue for Z
-        ];
+        let axis_colors = [theme.error, theme.success, theme.info]; // Red, Green, Blue
         let step = 1.0;
         let mini_btn_w = 24.0;
         let value_w = button_width - mini_btn_w * 2.0 - 24.0; // Account for label + two buttons

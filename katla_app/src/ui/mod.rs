@@ -4,6 +4,8 @@
 
 mod debug_overlay;
 mod editor_ui;
+pub mod theme;
 
 pub use debug_overlay::DebugOverlay;
-pub use editor_ui::{EditorUI, EditorAction, EntityInfo, SpawnableModel};
+pub use editor_ui::{EditorAction, EditorUI, EntityInfo, SpawnableModel};
+pub use theme::Theme;
