@@ -119,6 +119,25 @@ impl EditorUI {
         frame_count: usize,
     ) {
         let screen_size = ui.screen_size();
+
+        // === KEYBOARD SHORTCUTS ===
+        // Delete key - delete selected entity
+        if ui.input.key_pressed(katla_ui::input::KeyCode::Delete) {
+            if let Some(entity_id) = self.selected_entity {
+                // Verify entity still exists in the list
+                if entities.iter().any(|e| e.id == entity_id) {
+                    self.pending_actions.push(EditorAction::DeleteEntity(entity_id));
+                    self.selected_entity = None;
+                }
+            }
+        }
+
+        // Escape - deselect / close menus
+        if ui.input.key_pressed(katla_ui::input::KeyCode::Escape) {
+            self.selected_entity = None;
+            self.show_spawn_menu = false;
+        }
+
         let padding = 4.0;  // Inner padding for content
         let toolbar_height = 32.0;
         let status_bar_height = 24.0;
@@ -613,18 +632,59 @@ impl EditorUI {
         }
         cursor = Vec2::new(cursor.x(), cursor.y() + 3.0 * (button_height + 4.0) + 12.0);
 
-        // Position input
+        // Position input with +/- buttons
         ui.draw_text("Position (X, Y, Z):", cursor, Color::new(0.8, 0.8, 0.8, 1.0), 12.0);
         cursor = Vec2::new(cursor.x(), cursor.y() + 20.0);
 
-        // Three number inputs (simplified - just show current value)
-        let pos_text = format!("X: {:.1}  Y: {:.1}  Z: {:.1}", self.spawn_pos[0], self.spawn_pos[1], self.spawn_pos[2]);
-        let pos_bounds = Rect2D::from_origin_size(cursor, Vec2::new(button_width, button_height));
-        ui.draw_rect(pos_bounds, Color::new(0.15, 0.15, 0.15, 1.0));
-        ui.draw_rect_border(pos_bounds, Color::new(0.15, 0.15, 0.15, 1.0), Color::new(0.4, 0.4, 0.4, 1.0), 1.0);
-        let pos_label_pos = Vec2::new(cursor.x() + 8.0, cursor.y() + 6.0);
-        ui.draw_text(&pos_text, pos_label_pos, Color::new(0.8, 0.8, 0.8, 1.0), 12.0);
-        cursor = Vec2::new(cursor.x(), cursor.y() + button_height + 12.0);
+        let axis_labels = ["X", "Y", "Z"];
+        let axis_colors = [
+            Color::new(0.8, 0.3, 0.3, 1.0),  // Red for X
+            Color::new(0.3, 0.8, 0.3, 1.0),  // Green for Y
+            Color::new(0.3, 0.5, 0.9, 1.0),  // Blue for Z
+        ];
+        let step = 1.0;
+        let mini_btn_w = 24.0;
+        let value_w = button_width - mini_btn_w * 2.0 - 24.0; // Account for label + two buttons
+
+        for (i, (label, color)) in axis_labels.iter().zip(axis_colors.iter()).enumerate() {
+            let row_y = cursor.y() + i as f32 * (button_height + 4.0);
+
+            // Axis label
+            ui.draw_text(label, Vec2::new(cursor.x(), row_y + 6.0), *color, 12.0);
+
+            // - button
+            let minus_bounds = Rect2D::from_origin_size(
+                Vec2::new(cursor.x() + 20.0, row_y),
+                Vec2::new(mini_btn_w, button_height),
+            );
+            if ui.button(&format!("pos_{}_minus", i), "-", minus_bounds) {
+                self.spawn_pos[i] -= step;
+            }
+
+            // Value display
+            let value_bounds = Rect2D::from_origin_size(
+                Vec2::new(cursor.x() + 20.0 + mini_btn_w, row_y),
+                Vec2::new(value_w, button_height),
+            );
+            ui.draw_rect(value_bounds, Color::new(0.15, 0.15, 0.15, 1.0));
+            let value_text = format!("{:.1}", self.spawn_pos[i]);
+            let text_size = ui.measure_text(&value_text, 12.0);
+            let text_pos = Vec2::new(
+                value_bounds.center().x() - text_size.x() * 0.5,
+                value_bounds.center().y() - text_size.y() * 0.5,
+            );
+            ui.draw_text(&value_text, text_pos, Color::new(0.9, 0.9, 0.9, 1.0), 12.0);
+
+            // + button
+            let plus_bounds = Rect2D::from_origin_size(
+                Vec2::new(cursor.x() + 20.0 + mini_btn_w + value_w, row_y),
+                Vec2::new(mini_btn_w, button_height),
+            );
+            if ui.button(&format!("pos_{}_plus", i), "+", plus_bounds) {
+                self.spawn_pos[i] += step;
+            }
+        }
+        cursor = Vec2::new(cursor.x(), cursor.y() + 3.0 * (button_height + 4.0) + 8.0);
 
         // Spawn and Cancel buttons
         let spawn_btn_bounds = Rect2D::from_origin_size(cursor, Vec2::new(button_width * 0.48, button_height));
