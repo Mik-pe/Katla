@@ -526,7 +526,14 @@ impl UiContext {
     // -------------------------------------------------------------------------
 
     /// Check if a widget is being hovered.
+    ///
+    /// This also checks if a popup is open - if so, widgets at lower Z levels
+    /// cannot be hovered (events are consumed by the popup layer).
     fn is_hovered(&self, bounds: Rect2D) -> bool {
+        // If a popup is open and we're at a lower Z level, block hover
+        if self.popup_id.is_some() && self.z_index < z_index::POPUP {
+            return false;
+        }
         self.input.is_hovered(bounds) && self.active_id.is_none()
     }
 
@@ -583,7 +590,7 @@ impl UiContext {
         // Determine colors based on state
         let (bg_color, text_color) = if self.active_id == Some(widget_id) {
             (self.style.button_active, self.style.button_text)
-        } else if self.hovered_id == Some(widget_id) || self.input.is_hovered(bounds) {
+        } else if self.hovered_id == Some(widget_id) || self.is_hovered(bounds) {
             (self.style.button_hovered, self.style.button_text)
         } else {
             (self.style.button_normal, self.style.button_text)
@@ -1249,7 +1256,7 @@ impl UiContext {
         // Determine colors based on state
         let bg_color = if self.active_id == Some(widget_id) {
             self.style.menu_active
-        } else if self.hovered_id == Some(widget_id) || self.input.is_hovered(bounds) {
+        } else if self.hovered_id == Some(widget_id) || self.is_hovered(bounds) {
             self.style.menu_hovered
         } else {
             Color::TRANSPARENT
@@ -1284,7 +1291,7 @@ impl UiContext {
             self.style.selectable_selected
         } else if self.active_id == Some(widget_id) {
             self.style.menu_active
-        } else if self.hovered_id == Some(widget_id) || self.input.is_hovered(bounds) {
+        } else if self.hovered_id == Some(widget_id) || self.is_hovered(bounds) {
             self.style.selectable_hovered
         } else {
             Color::TRANSPARENT

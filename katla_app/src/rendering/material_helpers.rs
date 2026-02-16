@@ -81,19 +81,18 @@ pub fn create_checkerboard_material(
     ));
 
     let vertex_binding = VertexPBR::get_vertex_binding();
-    let wgsl_path = Path::new("resources/shaders/colored_mesh.wgsl");
+    let wgsl_path = Path::new("resources/shaders/colored_mesh_storage.wgsl");
     let material_pipeline = MaterialBuilder::new(context.clone())
         .with_vertex_binding(vertex_binding.clone())
         .with_wgsl_shader(wgsl_path)
         .with_texture(texture.clone())
-        .with_color_uniform(true)
         .with_depth_test(true)
         .with_depth_write(true)
         .with_backface_culling(true)
         // Dynamic rendering: specify attachment formats
         .with_color_format(ImageFormat::B8G8R8A8Srgb)
         .with_depth_format(ImageFormat::D32SfloatS8Uint)
-        .build()
+        .build_with_storage()
         .expect("Failed to create material pipeline");
 
     Material::from_pipeline(material_pipeline, Some(texture), vertex_binding, None)
@@ -141,11 +140,10 @@ pub fn create_colored_checkerboard_material(
     let vertex_binding = VertexPBR::get_vertex_binding();
 
     // Use WGSL shader that supports color blending
-    let wgsl_path = std::path::Path::new("resources/shaders/colored_mesh.wgsl");
+    let wgsl_path = std::path::Path::new("resources/shaders/colored_mesh_storage.wgsl");
     let material_pipeline = MaterialBuilder::new(context.clone())
         .with_vertex_binding(vertex_binding.clone())
         .with_wgsl_shader(wgsl_path)
-        .with_color_uniform(true)
         .with_texture(texture.clone())
         .with_depth_test(true)
         .with_depth_write(true)
@@ -153,7 +151,7 @@ pub fn create_colored_checkerboard_material(
         // Dynamic rendering: specify attachment formats
         .with_color_format(ImageFormat::B8G8R8A8Srgb)
         .with_depth_format(ImageFormat::D32SfloatS8Uint)
-        .build()
+        .build_with_storage()
         .expect("Failed to create colored material pipeline");
 
     Material::from_pipeline(
