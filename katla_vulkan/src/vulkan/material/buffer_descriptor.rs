@@ -49,6 +49,8 @@ pub struct BufferDescriptorSet {
     descriptor_set: vk::DescriptorSet,
     /// The descriptor pool (owned, for cleanup).
     descriptor_pool: vk::DescriptorPool,
+    /// Optional owned descriptor set layout (for cleanup).
+    owned_layout: Option<vk::DescriptorSetLayout>,
     /// Device for cleanup.
     device: ash::Device,
 }
@@ -66,6 +68,10 @@ impl Drop for BufferDescriptorSet {
             // Destroying the pool automatically frees all descriptor sets in it
             self.device
                 .destroy_descriptor_pool(self.descriptor_pool, None);
+            // Destroy owned layout if present
+            if let Some(layout) = self.owned_layout.take() {
+                self.device.destroy_descriptor_set_layout(layout, None);
+            }
         }
     }
 }
@@ -266,8 +272,23 @@ impl<'a> BufferDescriptorSetBuilder<'a> {
         Ok(BufferDescriptorSet {
             descriptor_set,
             descriptor_pool,
+            owned_layout: None,
             device: device.clone(),
         })
+    }
+
+    /// Build the descriptor set and take ownership of the layout.
+    ///
+    /// This is useful when the descriptor set should own its layout for cleanup,
+    /// such as when the layout is created specifically for this descriptor set
+    /// and not shared with other resources.
+    pub fn build_with_owned_layout(
+        self,
+        layout: vk::DescriptorSetLayout,
+    ) -> Result<BufferDescriptorSet, vk::Result> {
+        let mut descriptor_set = self.build(layout)?;
+        descriptor_set.owned_layout = Some(layout);
+        Ok(descriptor_set)
     }
 
     /// Build the descriptor set with a pre-allocated pool.

@@ -104,12 +104,6 @@ pub fn create_particle_emitter(
             .expect("Failed to create render particle descriptor layout")
     };
 
-    // Create render particle descriptor set
-    let render_particle_descriptor = BufferDescriptorSetBuilder::new(&context)
-        .add_entire_buffer(&particle_buffer, 0)
-        .build(render_particle_descriptor_layout)
-        .expect("Failed to create render particle descriptor set");
-
     // Frame uniforms descriptor layout (set 0) - MUST match StorageUniforms layout
     // The renderer binds storage_descriptor_set which has TWO bindings:
     // - Binding 0: frame_data (FrameUniforms)
@@ -156,6 +150,7 @@ pub fn create_particle_emitter(
     .expect("Failed to compile particle fragment shader");
 
     // Create render pipeline with additive blending for fire effect
+    // Note: Pipeline borrows the layouts, but MaterialPipeline will own frame_descriptor_layout
     let render_pipeline = PipelineBuilder::new(context.clone())
         .with_shaders(vertex_shader.module, fragment_shader.module)
         .with_descriptor_layouts(vec![frame_descriptor_layout, render_particle_descriptor_layout])
@@ -166,7 +161,15 @@ pub fn create_particle_emitter(
         .build(vk::RenderPass::null()) // Dynamic rendering
         .expect("Failed to create render pipeline");
 
+    // MaterialPipeline takes ownership of frame_descriptor_layout
     let render_pipeline = MaterialPipeline::new(render_pipeline, frame_descriptor_layout, context.clone());
+
+    // Create render particle descriptor set - takes ownership of render_particle_descriptor_layout
+    // This must happen AFTER pipeline creation since pipeline builder borrows the layout
+    let render_particle_descriptor = BufferDescriptorSetBuilder::new(&context)
+        .add_entire_buffer(&particle_buffer, 0)
+        .build_with_owned_layout(render_particle_descriptor_layout)
+        .expect("Failed to create render particle descriptor set");
 
     // Create emitter config
     let config = EmitterConfig {
@@ -188,7 +191,6 @@ pub fn create_particle_emitter(
         compute_descriptor_set,
         render_pipeline,
         render_particle_descriptor,
-        render_particle_descriptor_layout,
         config,
         emit_rate,
     );

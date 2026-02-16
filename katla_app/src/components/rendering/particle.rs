@@ -44,8 +44,6 @@ pub struct ParticleEmitter {
     pub render_pipeline: MaterialPipeline,
     /// Render descriptor set for particle buffer (set 1)
     pub render_particle_descriptor: BufferDescriptorSet,
-    /// Render particle descriptor layout (owned, for cleanup)
-    render_particle_descriptor_layout: vk::DescriptorSetLayout,
     /// Emitter configuration
     pub config: EmitterConfig,
     /// Accumulated time for particle emission
@@ -70,7 +68,6 @@ impl ParticleEmitter {
         compute_descriptor_set: BufferDescriptorSet,
         render_pipeline: MaterialPipeline,
         render_particle_descriptor: BufferDescriptorSet,
-        render_particle_descriptor_layout: vk::DescriptorSetLayout,
         config: EmitterConfig,
         emit_rate: f32,
     ) -> Self {
@@ -81,7 +78,6 @@ impl ParticleEmitter {
             compute_descriptor_set,
             render_pipeline,
             render_particle_descriptor,
-            render_particle_descriptor_layout,
             config,
             emit_accumulator: 0.0,
             emit_rate,
@@ -171,19 +167,6 @@ impl ParticleEmitter {
 
     pub fn render_particle_descriptor(&self) -> vk::DescriptorSet {
         self.render_particle_descriptor.set()
-    }
-}
-
-impl Drop for ParticleEmitter {
-    fn drop(&mut self) {
-        // Destroy the render particle descriptor layout
-        // The other resources have their own Drop implementations
-        unsafe {
-            self.render_pipeline
-                .context()
-                .device
-                .destroy_descriptor_set_layout(self.render_particle_descriptor_layout, None);
-        }
     }
 }
 
