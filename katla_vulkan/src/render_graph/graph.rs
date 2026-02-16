@@ -70,6 +70,11 @@ impl RenderGraphBuilder {
             self.registry.register(exec_name, closure);
         }
 
+        // Register any pre-execution closure (runs before begin_rendering)
+        if let Some((pre_exec_name, closure)) = pass.take_pending_pre_execute() {
+            self.registry.register(pre_exec_name, closure);
+        }
+
         self.graph.add_pass(pass);
         self
     }

@@ -1,6 +1,6 @@
 use crate::sync::{AccessFlags2, DependencyInfo, ImageMemoryBarrier2, PipelineStage2Flags};
 use ash::vk;
-use log::{info, warn};
+use log::{debug, info, warn};
 
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -53,6 +53,8 @@ pub struct CompiledPass {
     pub clear_values: Vec<ClearValue>,
     pub category: PassCategory,
     execute: PassExecute,
+    /// Pre-execute callback runs BEFORE begin_rendering() for custom barrier setup
+    pre_execute: Option<PassExecute>,
     /// Color attachment image views for dynamic rendering (one set per swapchain image)
     pub color_attachments: Vec<Vec<vk::ImageView>>,
     /// Depth attachment image view for dynamic rendering (one per swapchain image)
@@ -734,12 +736,42 @@ impl CompiledRenderGraph {
             let execute_name = pass.take_execute_name();
             let execute = PassExecute::new(execute_name);
 
+            // Get pre-execute name from the pass (for custom barriers before begin_rendering)
+            let pre_execute = pass
+                .take_pre_execute_name()
+                .map(PassExecute::new);
+
             // Extract color and depth attachments for dynamic rendering
             // For swapchain rendering, we need ONE SET of attachments PER swapchain image
+            // IMPORTANT: Only include render attachments, NOT transfer resources
             let mut color_attachments: Vec<Vec<vk::ImageView>> = Vec::new();
             let mut depth_attachments: Vec<Option<vk::ImageView>> = Vec::new();
 
             for output_resource_id in pass.outputs() {
+                // Check the usage to determine if this is a render attachment or transfer resource
+                let usage_info = pass.usages().iter()
+                    .find(|u| u.resource_id == *output_resource_id);
+
+                let is_render_attachment = usage_info
+                    .map(|u| {
+                        let is_render = matches!(
+                            u.layout,
+                            vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL
+                                | vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL
+                                | vk::ImageLayout::DEPTH_ATTACHMENT_OPTIMAL
+                                | vk::ImageLayout::STENCIL_ATTACHMENT_OPTIMAL
+                        );
+                        debug!("compile pass '{}': output {:?}, layout={:?}, is_render={}",
+                            pass.name(), output_resource_id, u.layout, is_render);
+                        is_render
+                    })
+                    .unwrap_or(false);
+
+                // Skip transfer resources - they don't need render pass attachments
+                if !is_render_attachment {
+                    continue;
+                }
+
                 if let Some(resource) = resources.get(output_resource_id) {
                     match resource {
                         CompiledResource::ExternalImage {
@@ -784,6 +816,7 @@ impl CompiledRenderGraph {
                 clear_values,
                 category: pass.category(),
                 execute,
+                pre_execute,
                 color_attachments,
                 depth_attachments,
             };
@@ -882,17 +915,23 @@ impl CompiledRenderGraph {
         depth_image: VkImage,
     ) -> Result<(), RenderGraphError> {
         let pass_count = self.passes.len();
+        debug!("execute: starting {} passes", pass_count);
         for i in 0..pass_count {
             // Check if we have dynamic rendering attachments for this image index
             // For swapchain rendering, we always have attachments (during compile, one set is created
             // The get() returns None for missing per-image sets, but that's OK for swapchain
-            let has_color_attachments = !self.passes[i].color_attachments.is_empty();
+            // Check if any color attachment vector has actual content (not just empty inner vectors)
+        let has_color_attachments = self.passes[i].color_attachments.iter().any(|v| !v.is_empty());
             let has_depth_attachment = self.passes[i].depth_attachments.iter().any(|d| d.is_some());
             let has_render_attachments = has_color_attachments || has_depth_attachment;
             let is_last_pass = i == pass_count - 1;
 
+            debug!("execute: pass {} ({}), has_color={}, has_depth={}, is_transfer={}",
+                i, self.passes[i].name, has_color_attachments, has_depth_attachment, !has_render_attachments);
+
             if has_render_attachments {
                 // Use Dynamic Rendering path (Vulkan 1.3)
+                debug!("execute: calling execute_pass_dynamic for pass {}", i);
                 self.execute_pass_dynamic(
                     command_buffer,
                     i,
@@ -901,9 +940,12 @@ impl CompiledRenderGraph {
                     depth_image,
                     is_last_pass,
                 )?;
+                debug!("execute: execute_pass_dynamic for pass {} complete", i);
             } else {
                 // Transfer/compute pass - no render pass needed
+                debug!("execute: calling execute_pass_transfer for pass {}", i);
                 self.execute_pass_transfer(command_buffer, i)?;
+                debug!("execute: execute_pass_transfer for pass {} complete", i);
             }
         }
         Ok(())
@@ -1087,6 +1129,27 @@ impl CompiledRenderGraph {
                 });
         }
 
+        // Create execution context early so pre_execute can use it
+        let ctx = if let Some(ref rc) = self.renderer_context {
+            Rc::new(PassExecutionContext::with_renderer_context(
+                (*command_buffer).clone(),
+                self.resources.clone(),
+                pass.extent,
+                Rc::clone(rc),
+            ))
+        } else {
+            Rc::new(PassExecutionContext::new_dynamic(
+                (*command_buffer).clone(),
+                self.resources.clone(),
+                pass.extent,
+            ))
+        };
+
+        // Execute pre-rendering callback (for custom barriers BEFORE begin_rendering)
+        // This is needed because pipeline barriers with image transitions cannot be called
+        // inside a render pass (VUID-vkCmdPipelineBarrier2-None-09553)
+        pass.pre_execute(ctx.clone(), &mut self.registry);
+
         // Begin dynamic rendering
         command_buffer.begin_rendering(rendering_info);
 
@@ -1108,23 +1171,7 @@ impl CompiledRenderGraph {
         command_buffer.set_viewport(&[viewport]);
         command_buffer.set_scissor(&[scissor]);
 
-        // Create execution context with optional renderer context
-        let ctx = if let Some(ref rc) = self.renderer_context {
-            Rc::new(PassExecutionContext::with_renderer_context(
-                (*command_buffer).clone(),
-                self.resources.clone(),
-                pass.extent,
-                Rc::clone(rc),
-            ))
-        } else {
-            Rc::new(PassExecutionContext::new_dynamic(
-                (*command_buffer).clone(),
-                self.resources.clone(),
-                pass.extent,
-            ))
-        };
-
-        // Execute pass-specific commands
+        // Execute pass-specific commands (ctx was created before begin_rendering for pre_execute)
         pass.execute(ctx, &mut self.registry);
 
         // End dynamic rendering
@@ -1295,6 +1342,17 @@ impl CompiledPass {
         let name = self.execute.pass_name();
         if !name.is_empty() {
             registry.execute(name, ctx);
+        }
+    }
+
+    /// Execute pre-rendering callback before begin_rendering().
+    /// This is for custom pipeline barriers that must happen outside a render pass.
+    pub fn pre_execute(&self, ctx: Rc<PassExecutionContext>, registry: &mut ExecutionRegistry) {
+        if let Some(ref pre_exec) = self.pre_execute {
+            let name = pre_exec.pass_name();
+            if !name.is_empty() {
+                registry.execute(name, ctx);
+            }
         }
     }
 }

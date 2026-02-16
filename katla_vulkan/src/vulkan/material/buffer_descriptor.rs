@@ -36,6 +36,8 @@ pub struct BufferBinding {
     pub offset: vk::DeviceSize,
     /// Range/size of the binding (in bytes).
     pub range: vk::DeviceSize,
+    /// Descriptor type for this binding (STORAGE_BUFFER or UNIFORM_BUFFER).
+    pub descriptor_type: vk::DescriptorType,
 }
 
 /// Descriptor set for binding buffers to shaders.
@@ -106,6 +108,9 @@ impl<'a> BufferDescriptorSetBuilder<'a> {
     /// * `binding` - Binding number in the shader (0, 1, 2, ...)
     /// * `offset` - Offset into the buffer (bytes)
     /// * `range` - Size of the binding (bytes)
+    ///
+    /// Note: Uses the current descriptor type set by `with_descriptor_type()`
+    /// (default: STORAGE_BUFFER).
     pub fn add_binding(
         mut self,
         buffer: vk::Buffer,
@@ -118,6 +123,7 @@ impl<'a> BufferDescriptorSetBuilder<'a> {
             binding,
             offset,
             range,
+            descriptor_type: self.descriptor_type,
         });
         self
     }
@@ -135,8 +141,13 @@ impl<'a> BufferDescriptorSetBuilder<'a> {
     /// # Arguments
     /// * `source` - Any type implementing `BufferDescriptorSource`
     /// * `binding` - Binding number in the shader (0, 1, 2, ...)
+    ///
+    /// Note: Uses the current descriptor type set by `with_descriptor_type()`
+    /// (default: STORAGE_BUFFER).
     pub fn add_entire_buffer(mut self, source: &impl BufferDescriptorSource, binding: u32) -> Self {
-        self.bindings.push(source.as_binding(binding));
+        let mut binding_info = source.as_binding(binding);
+        binding_info.descriptor_type = self.descriptor_type;
+        self.bindings.push(binding_info);
         self
     }
 
@@ -149,6 +160,9 @@ impl<'a> BufferDescriptorSetBuilder<'a> {
     /// * `binding` - Binding number in the shader (0, 1, 2, ...)
     /// * `offset` - Offset into the buffer (bytes)
     /// * `range` - Size of the binding (bytes)
+    ///
+    /// Note: Uses the current descriptor type set by `with_descriptor_type()`
+    /// (default: STORAGE_BUFFER).
     pub fn add_buffer_range(
         mut self,
         source: &impl BufferDescriptorSource,
@@ -156,7 +170,9 @@ impl<'a> BufferDescriptorSetBuilder<'a> {
         offset: vk::DeviceSize,
         range: vk::DeviceSize,
     ) -> Self {
-        self.bindings.push(source.as_binding_range(binding, offset, range));
+        let mut binding_info = source.as_binding_range(binding, offset, range);
+        binding_info.descriptor_type = self.descriptor_type;
+        self.bindings.push(binding_info);
         self
     }
 
@@ -177,11 +193,30 @@ impl<'a> BufferDescriptorSetBuilder<'a> {
 
         let device = &self.context.device;
 
-        // Create descriptor pool
-        let pool_sizes = [vk::DescriptorPoolSize {
-            ty: self.descriptor_type,
-            descriptor_count: self.bindings.len() as u32,
-        }];
+        // Calculate pool sizes for each descriptor type used
+        let mut storage_count = 0u32;
+        let mut uniform_count = 0u32;
+        for binding in &self.bindings {
+            match binding.descriptor_type {
+                vk::DescriptorType::STORAGE_BUFFER => storage_count += 1,
+                vk::DescriptorType::UNIFORM_BUFFER => uniform_count += 1,
+                _ => {}
+            }
+        }
+
+        let mut pool_sizes = Vec::new();
+        if storage_count > 0 {
+            pool_sizes.push(vk::DescriptorPoolSize {
+                ty: vk::DescriptorType::STORAGE_BUFFER,
+                descriptor_count: storage_count,
+            });
+        }
+        if uniform_count > 0 {
+            pool_sizes.push(vk::DescriptorPoolSize {
+                ty: vk::DescriptorType::UNIFORM_BUFFER,
+                descriptor_count: uniform_count,
+            });
+        }
 
         let pool_info = vk::DescriptorPoolCreateInfo::default()
             .max_sets(1)
@@ -219,7 +254,7 @@ impl<'a> BufferDescriptorSetBuilder<'a> {
                     .dst_set(descriptor_set)
                     .dst_binding(b.binding)
                     .dst_array_element(0)
-                    .descriptor_type(self.descriptor_type)
+                    .descriptor_type(b.descriptor_type)  // Use per-binding descriptor type
                     .buffer_info(std::slice::from_ref(&buffer_infos[i]))
             })
             .collect();
@@ -305,22 +340,26 @@ pub trait BufferDescriptorSource {
     fn buffer_size(&self) -> vk::DeviceSize;
 
     /// Create a binding for this entire buffer.
+    /// Note: descriptor_type defaults to STORAGE_BUFFER; override with builder's with_descriptor_type().
     fn as_binding(&self, binding: u32) -> BufferBinding {
         BufferBinding {
             buffer: self.buffer(),
             binding,
             offset: 0,
             range: self.buffer_size(),
+            descriptor_type: vk::DescriptorType::STORAGE_BUFFER,
         }
     }
 
     /// Create a binding for a range within this buffer.
+    /// Note: descriptor_type defaults to STORAGE_BUFFER; override with builder's with_descriptor_type().
     fn as_binding_range(&self, binding: u32, offset: vk::DeviceSize, range: vk::DeviceSize) -> BufferBinding {
         BufferBinding {
             buffer: self.buffer(),
             binding,
             offset,
             range,
+            descriptor_type: vk::DescriptorType::STORAGE_BUFFER,
         }
     }
 }
@@ -358,6 +397,7 @@ mod tests {
             binding: 0,
             offset: 0,
             range: 1024,
+            descriptor_type: vk::DescriptorType::STORAGE_BUFFER,
         };
         assert_eq!(binding.binding, 0);
         assert_eq!(binding.range, 1024);
@@ -372,12 +412,14 @@ mod tests {
                 binding: 0,
                 offset: 0,
                 range: 256,
+                descriptor_type: vk::DescriptorType::STORAGE_BUFFER,
             },
             BufferBinding {
                 buffer: vk::Buffer::null(),
                 binding: 1,
                 offset: 256,
                 range: 24576,
+                descriptor_type: vk::DescriptorType::UNIFORM_BUFFER,
             },
         ];
         assert_eq!(bindings.len(), 2);

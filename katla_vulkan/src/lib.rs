@@ -2,7 +2,7 @@ pub mod render_graph;
 pub mod rendering;
 pub mod sync;
 pub mod vulkan;
-use log::{error, info, warn};
+use log::{debug, error, info, warn};
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 pub use render_graph::errors::RenderGraphError;
 pub use render_graph::pass::{PassBuilder, PassExecutionContext};
@@ -273,7 +273,7 @@ impl VulkanRenderer {
     pub fn init_ui_buffers(&mut self, vertex_capacity: u64, index_capacity: u64) {
         // Create one set of buffers per frame in flight
         for _ in 0..FRAMES_IN_FLIGHT {
-            let buffers = UIBuffers::new(&self.context, vertex_capacity, index_capacity);
+            let buffers = UIBuffers::new(self.context.clone(), vertex_capacity, index_capacity);
             self.ui_buffers.push(buffers);
         }
         info!("UI buffers initialized ({} frames, {}KB vertex, {}KB index)",
@@ -290,7 +290,7 @@ impl VulkanRenderer {
     /// * `atlas_width` - Font atlas width in pixels
     /// * `atlas_height` - Font atlas height in pixels
     pub fn init_ui_textures(&mut self, atlas_width: u32, atlas_height: u32) -> Result<(), vk::Result> {
-        let textures = UITextures::with_atlas_size(&self.context, atlas_width, atlas_height)?;
+        let textures = UITextures::with_atlas_size(self.context.clone(), atlas_width, atlas_height)?;
         info!("UI textures initialized ({}x{} font atlas)", atlas_width, atlas_height);
         self.ui_textures = Some(textures);
         Ok(())
@@ -326,13 +326,11 @@ impl VulkanRenderer {
             .unwrap_or(true);
 
         if needs_resize {
-            // Destroy old target
-            for target in self.viewport_targets.drain(..) {
-                target.destroy(&self.context);
-            }
+            // Destroy old target (Drop handles cleanup)
+            self.viewport_targets.clear();
 
             // Create single target
-            let target = ViewportRenderTarget::new(&self.context, width, height)?;
+            let target = ViewportRenderTarget::new(self.context.clone(), width, height)?;
             self.viewport_targets.push(target);
             info!("Viewport render target created/resized to {}x{}", width, height);
 
@@ -386,8 +384,9 @@ impl VulkanRenderer {
             .unwrap_or(true);
 
         if needs_resize {
-            let old_target = self.output_target.take();
-            let target = OutputRenderTarget::resize(&self.context, old_target, width, height)?;
+            // Old target is dropped automatically with Drop
+            self.output_target = None;
+            let target = OutputRenderTarget::new(self.context.clone(), width, height)?;
             self.output_target = Some(target);
             info!("Output render target created/resized to {}x{}", width, height);
         }
@@ -410,25 +409,24 @@ impl VulkanRenderer {
     }
 
     pub fn destroy(&mut self) {
-        // Destroy output render target
-        if let Some(target) = self.output_target.take() {
-            target.destroy(&self.context);
-        }
+        // Destroy output render target (Drop handles cleanup)
+        self.output_target = None;
 
-        // Destroy viewport render targets
-        for target in self.viewport_targets.drain(..) {
-            target.destroy(&self.context);
-        }
+        // Destroy viewport render targets (Drop handles cleanup)
+        self.viewport_targets.clear();
 
-        // Destroy UI textures
-        if let Some(textures) = self.ui_textures.take() {
-            textures.destroy(&self.context);
-        }
+        // Destroy UI textures (Drop handles cleanup)
+        self.ui_textures = None;
 
-        // Destroy UI buffers
-        for buffers in self.ui_buffers.drain(..) {
-            buffers.destroy(&self.context);
-        }
+        // Destroy UI buffers (Drop handles cleanup)
+        self.ui_buffers.clear();
+
+        // Destroy pipelines (they hold descriptor set layouts)
+        self.sky_pipeline = None;
+        self.ui_pipeline = None;
+
+        // Destroy render graph (holds framebuffers and resources)
+        self.render_graph = None;
 
         // Destroy all registered assets first (materials, meshes)
         self.asset_registry.destroy();
@@ -505,7 +503,9 @@ impl VulkanRenderer {
     }
 
     pub fn swap_frames(&mut self) -> Result<(), RenderGraphError> {
+        debug!("swap_frames: waiting for fence");
         self.swap_data.wait_for_fence(&self.context.device);
+        debug!("swap_frames: fence waited");
 
         let (available_sem, finished_sem, in_flight_fence, image_index) =
             self.swap_data.swap_images(
@@ -516,12 +516,15 @@ impl VulkanRenderer {
                     .expect("Swapchain loader required"),
                 self.frame_context.swapchain.swapchain,
             )?;
+        debug!("swap_frames: got image_index={}", image_index);
+
         self.current_framedata = Some(FrameData {
             available_sem,
             finished_sem,
             in_flight_fence,
             image_index,
         });
+        debug!("swap_frames: done");
         Ok(())
     }
 
@@ -869,7 +872,7 @@ impl VulkanRenderer {
         let scene_color = scene_color_res;
         let scene_depth = scene_depth_res;
         let uses_viewport = has_viewport;
-        let device_for_sky = self.context.device.clone();
+        let device = self.context.device.clone();
 
         // === SKY PASS ===
         // Renders first, clears color and depth, writes sky to color only
@@ -879,11 +882,14 @@ impl VulkanRenderer {
                 .write(Attachment::DepthStencil(scene_depth))
                 .clear_color(scene_color, [0.4, 0.6, 0.9, 1.0]) // Sky blue fallback
                 .clear_depth_stencil(scene_depth, 1.0, 0)
-                .execute("sky_pass", move |ctx| {
+                // Pre-execute runs BEFORE begin_rendering() - for custom barriers
+                .pre_execute("sky_pass", move |ctx| {
                     let cmd_buf = ctx.command_buffer.vk_command_buffer();
 
                     // When using viewport, we need to manually transition the viewport textures
                     // from SHADER_READ_ONLY_OPTIMAL (after UI sampling) to attachment optimal
+                    // IMPORTANT: This must happen BEFORE begin_rendering because image layout
+                    // transitions cannot happen inside a render pass (VUID-vkCmdPipelineBarrier2-None-09553)
                     if uses_viewport {
                         if let (Some((color_image, _)), Some((depth_image, _))) =
                             (ctx.get_image(scene_color), ctx.get_image(scene_depth))
@@ -929,10 +935,13 @@ impl VulkanRenderer {
                                 .add_image_barrier(color_barrier)
                                 .add_image_barrier(depth_barrier)
                                 .build(|dep_info| unsafe {
-                                    device_for_sky.cmd_pipeline_barrier2(cmd_buf, dep_info);
+                                    device.cmd_pipeline_barrier2(cmd_buf, dep_info);
                                 });
                         }
                     }
+                })
+                .execute("sky_pass", move |ctx| {
+                    let cmd_buf = ctx.command_buffer.vk_command_buffer();
 
                     // SAFETY: The pointers are valid for the entire lifetime of the renderer
                     let sky_pipeline_opt = unsafe { &mut *sky_pipeline_ptr };
@@ -1214,10 +1223,47 @@ impl VulkanRenderer {
         // UI renders to output texture ONLY (present_pass will copy to swapchain)
         // UI pass should NEVER touch the swapchain directly
         let ui_target_res = output_resource.expect("output_target must be initialized for ui_pass");
+        // Clone device for ui_pass closure (sky_pass already moved the original)
+        let ui_device = self.context.device.clone();
 
         graph_builder.add_pass("ui_pass", move |pass| {
             pass.write(Attachment::Color(ui_target_res))
                 .clear_color(ui_target_res, [0.1, 0.1, 0.1, 1.0])
+                // Pre-execute: transition viewport texture to SHADER_READ_ONLY before sampling
+                .pre_execute("ui_pass", move |ctx| {
+                    let cmd_buf = ctx.command_buffer.vk_command_buffer();
+
+                    // When using viewport, transition viewport texture from COLOR_ATTACHMENT to SHADER_READ_ONLY
+                    // This is needed because sky_pass/geometry_pass write to it as a render target,
+                    // but ui_pass samples from it via a descriptor set
+                    if uses_viewport {
+                        if let Some((viewport_image, _)) = ctx.get_image(scene_color) {
+                            let subresource = vk::ImageSubresourceRange {
+                                aspect_mask: vk::ImageAspectFlags::COLOR,
+                                base_mip_level: 0,
+                                level_count: 1,
+                                base_array_layer: 0,
+                                layer_count: 1,
+                            };
+
+                            // Transition: COLOR_ATTACHMENT_OPTIMAL -> SHADER_READ_ONLY_OPTIMAL
+                            let barrier = ImageMemoryBarrier2::new(viewport_image)
+                                .src_stage(PipelineStage2Flags::COLOR_ATTACHMENT_OUTPUT)
+                                .src_access(AccessFlags2::COLOR_ATTACHMENT_WRITE)
+                                .dst_stage(PipelineStage2Flags::FRAGMENT_SHADER)
+                                .dst_access(AccessFlags2::SHADER_READ)
+                                .old_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
+                                .new_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
+                                .subresource_range(subresource);
+
+                            DependencyInfo::new()
+                                .add_image_barrier(barrier)
+                                .build(|dep_info| unsafe {
+                                    ui_device.cmd_pipeline_barrier2(cmd_buf, dep_info);
+                                });
+                        }
+                    }
+                })
                 .execute("ui_pass", move |ctx| {
                     // SAFETY: Pointers are valid for the renderer's lifetime
                     let ui_data_cell = unsafe { &*ui_data_ptr };
@@ -1292,11 +1338,11 @@ impl VulkanRenderer {
                             // Use persistent buffers if available, otherwise fall back to temporary
                             if let Some(buffers) = buffers {
                                 // Update persistent buffers
-                                if !buffers.update_vertices(pipeline_ref.context(), &ui_data.vertex_data) {
+                                if !buffers.update_vertices(&ui_data.vertex_data) {
                                     warn!("UI vertex data exceeds buffer capacity");
                                     return;
                                 }
-                                if !buffers.update_indices(pipeline_ref.context(), &ui_data.index_data) {
+                                if !buffers.update_indices(&ui_data.index_data) {
                                     warn!("UI index data exceeds buffer capacity");
                                     return;
                                 }
@@ -1439,13 +1485,16 @@ impl VulkanRenderer {
                                 .new_layout(vk::ImageLayout::TRANSFER_SRC_OPTIMAL)
                                 .subresource_range(subresource_range);
 
-                            // Transition swapchain: PRESENT_SRC_KHR -> TRANSFER_DST_OPTIMAL
+                            // Transition swapchain: UNDEFINED -> TRANSFER_DST_OPTIMAL
+                            // Using UNDEFINED because swapchain image layout is unpredictable
+                            // (could be UNDEFINED on first use, PRESENT_SRC_KHR after presentation,
+                            // or something else depending on driver) and we're blitting over it anyway
                             let dst_barrier = ImageMemoryBarrier2::new(dst_image)
                                 .src_stage(PipelineStage2Flags::BOTTOM_OF_PIPE)
                                 .src_access(AccessFlags2::NONE)
                                 .dst_stage(PipelineStage2Flags::TRANSFER)
                                 .dst_access(AccessFlags2::TRANSFER_WRITE)
-                                .old_layout(vk::ImageLayout::PRESENT_SRC_KHR)
+                                .old_layout(vk::ImageLayout::UNDEFINED)
                                 .new_layout(vk::ImageLayout::TRANSFER_DST_OPTIMAL)
                                 .subresource_range(subresource_range);
 
@@ -1603,8 +1652,11 @@ impl VulkanRenderer {
     }
 
     pub fn render_frame(&mut self, draw_list: DrawList) -> Result<(), RenderGraphError> {
+        debug!("render_frame: start");
+
         // Acquire swapchain image
         if self.current_framedata.is_none() {
+            debug!("render_frame: acquiring swapchain image");
             match self.swap_frames() {
                 Ok(()) => {}
                 Err(RenderGraphError::SwapchainOutOfDate) => {
@@ -1615,6 +1667,7 @@ impl VulkanRenderer {
                 }
                 Err(e) => return Err(e),
             }
+            debug!("render_frame: swapchain image acquired");
         }
 
         let frame_data = self
@@ -1623,12 +1676,14 @@ impl VulkanRenderer {
             .ok_or(RenderGraphError::NoFrameData)?;
 
         let image_index = frame_data.image_index as usize;
+        debug!("render_frame: image_index={}", image_index);
 
         // Now we can safely borrow the graph
         let graph = self
             .render_graph
             .as_mut()
             .ok_or(RenderGraphError::CompilationError("No render graph".into()))?;
+        debug!("render_frame: got render graph");
 
         // === UPDATE FRAME UNIFORMS BEFORE RENDER GRAPH EXECUTES ===
         // This must happen before any passes run (sky pass needs inv_view_proj)
@@ -1650,31 +1705,39 @@ impl VulkanRenderer {
                 );
             }
         }
+        debug!("render_frame: frame uniforms updated");
 
         // Set the draw list for this frame
         graph.set_draw_list(draw_list.clone());
+        debug!("render_frame: draw list set");
 
         let mut command_buffer = self.frame_context.command_buffers[image_index].clone();
         command_buffer.begin_command(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT);
+        debug!("render_frame: command buffer begun");
 
         // Set frame index for UI buffer selection
         // Use swap_data.current_frame() which aligns with fence synchronization, NOT image_index
         // This ensures we don't reuse a buffer that's still being used by the GPU
         let frame_idx = self.swap_data.current_frame();
         self.ui_frame_index.set(frame_idx);
+        debug!("render_frame: frame_idx={}", frame_idx);
 
         // === DISPATCH PARTICLE COMPUTE SHADERS BEFORE RENDER GRAPH ===
         // This runs particle simulation on GPU before any rendering
+        debug!("render_frame: checking particle dispatches (count={})", draw_list.particle_dispatches.len());
         if !draw_list.particle_dispatches.is_empty() {
-            for particle in &draw_list.particle_dispatches {
+            debug!("render_frame: dispatching particle compute shaders");
+            for (i, particle) in draw_list.particle_dispatches.iter().enumerate() {
+                debug!("render_frame: dispatching particle {}", i);
                 // Bind compute pipeline
                 unsafe {
+                    debug!("render_frame: binding compute pipeline");
                     self.context.device.cmd_bind_pipeline(
                         command_buffer.vk_command_buffer(),
                         vk::PipelineBindPoint::COMPUTE,
                         particle.pipeline,
                     );
-
+                    debug!("render_frame: binding descriptor set");
                     // Bind descriptor set
                     self.context.device.cmd_bind_descriptor_sets(
                         command_buffer.vk_command_buffer(),
@@ -1684,7 +1747,7 @@ impl VulkanRenderer {
                         &[particle.descriptor_set],
                         &[],
                     );
-
+                    debug!("render_frame: pushing constants");
                     // Push frame data constants
                     self.context.device.cmd_push_constants(
                         command_buffer.vk_command_buffer(),
@@ -1693,7 +1756,7 @@ impl VulkanRenderer {
                         0,
                         bytemuck::cast_slice(&particle.frame_data),
                     );
-
+                    debug!("render_frame: dispatching workgroups {}", particle.workgroup_count);
                     // Dispatch compute workgroups
                     self.context.device.cmd_dispatch(
                         command_buffer.vk_command_buffer(),
@@ -1701,9 +1764,11 @@ impl VulkanRenderer {
                         1,
                         1,
                     );
+                    debug!("render_frame: particle {} dispatched", i);
                 }
             }
 
+            debug!("render_frame: inserting compute barrier");
             // Barrier: compute write -> vertex read for rendering
             let memory_barriers = [vk::MemoryBarrier2KHR::default()
                 .src_stage_mask(vk::PipelineStageFlags2::COMPUTE_SHADER)
@@ -1718,8 +1783,10 @@ impl VulkanRenderer {
                     .device
                     .cmd_pipeline_barrier2(command_buffer.vk_command_buffer(), &dep_info);
             }
+            debug!("render_frame: compute barrier inserted");
         }
 
+        debug!("render_frame: executing render graph");
         // Execute the render graph with the current image index
         // The render graph handles:
         // 1. Rendering 3D scene to viewport/output texture (geometry_pass, sky_pass)
@@ -1728,17 +1795,19 @@ impl VulkanRenderer {
 
         // Update swapchain resource to point to the current frame's image
         // This ensures present_pass blits to the correct swapchain image
+        debug!("render_frame: updating swapchain image");
         graph.update_swapchain_image(
             self.frame_context.swapchain_images[image_index].vk(),
             self.frame_context.swapchain_image_views[image_index].vk(),
         );
-
+        debug!("render_frame: calling graph.execute");
         graph.execute(
             &mut command_buffer,
             image_index,
             &self.frame_context.swapchain_images,
             self.frame_context.depth_render_texture.image,
         )?;
+        debug!("render_frame: graph.execute complete");
 
         command_buffer.end_command();
 
@@ -1836,17 +1905,19 @@ pub struct UiDrawData {
 pub struct UIBuffers {
     /// Vertex buffer (CpuToGpu for easy updates).
     pub vertex_buffer: vk::Buffer,
-    pub vertex_allocation: gpu_allocator::vulkan::Allocation,
+    pub vertex_allocation: Option<gpu_allocator::vulkan::Allocation>,
     pub vertex_capacity: u64,
     /// Index buffer (CpuToGpu for easy updates).
     pub index_buffer: vk::Buffer,
-    pub index_allocation: gpu_allocator::vulkan::Allocation,
+    pub index_allocation: Option<gpu_allocator::vulkan::Allocation>,
     pub index_capacity: u64,
+    /// Context for cleanup (allocator access).
+    context: Rc<VulkanContext>,
 }
 
 impl UIBuffers {
     /// Create new UI buffers with the given capacities.
-    pub fn new(context: &VulkanContext, vertex_capacity: u64, index_capacity: u64) -> Self {
+    pub fn new(context: Rc<VulkanContext>, vertex_capacity: u64, index_capacity: u64) -> Self {
         let vertex_create_info = vk::BufferCreateInfo::default()
             .sharing_mode(vk::SharingMode::EXCLUSIVE)
             .usage(vk::BufferUsageFlags::VERTEX_BUFFER)
@@ -1869,42 +1940,57 @@ impl UIBuffers {
 
         Self {
             vertex_buffer,
-            vertex_allocation,
+            vertex_allocation: Some(vertex_allocation),
             vertex_capacity,
             index_buffer,
-            index_allocation,
+            index_allocation: Some(index_allocation),
             index_capacity,
+            context,
         }
     }
 
     /// Update vertex data. Returns true if data fits.
-    pub fn update_vertices(&self, context: &VulkanContext, data: &[u8]) -> bool {
+    pub fn update_vertices(&self, data: &[u8]) -> bool {
         if data.len() as u64 > self.vertex_capacity {
             return false;
         }
-        let ptr = context.map_buffer(&self.vertex_allocation);
-        unsafe {
-            std::ptr::copy_nonoverlapping(data.as_ptr(), ptr, data.len());
+        if let Some(ref allocation) = self.vertex_allocation {
+            let ptr = self.context.map_buffer(allocation);
+            unsafe {
+                std::ptr::copy_nonoverlapping(data.as_ptr(), ptr, data.len());
+            }
         }
         true
     }
 
     /// Update index data. Returns true if data fits.
-    pub fn update_indices(&self, context: &VulkanContext, data: &[u8]) -> bool {
+    pub fn update_indices(&self, data: &[u8]) -> bool {
         if data.len() as u64 > self.index_capacity {
             return false;
         }
-        let ptr = context.map_buffer(&self.index_allocation);
-        unsafe {
-            std::ptr::copy_nonoverlapping(data.as_ptr(), ptr, data.len());
+        if let Some(ref allocation) = self.index_allocation {
+            let ptr = self.context.map_buffer(allocation);
+            unsafe {
+                std::ptr::copy_nonoverlapping(data.as_ptr(), ptr, data.len());
+            }
         }
         true
     }
+}
 
-    /// Destroy buffers (consumes self).
-    pub fn destroy(self, context: &VulkanContext) {
-        context.free_buffer(self.vertex_buffer, self.vertex_allocation);
-        context.free_buffer(self.index_buffer, self.index_allocation);
+impl Drop for UIBuffers {
+    fn drop(&mut self) {
+        unsafe {
+            self.context.device.destroy_buffer(self.vertex_buffer, None);
+            self.context.device.destroy_buffer(self.index_buffer, None);
+        }
+        // Free allocations via the allocator (take from Option to get ownership)
+        if let Some(allocation) = self.vertex_allocation.take() {
+            self.context.allocator.borrow_mut().free(allocation).ok();
+        }
+        if let Some(allocation) = self.index_allocation.take() {
+            self.context.allocator.borrow_mut().free(allocation).ok();
+        }
     }
 }
 
@@ -1912,11 +1998,11 @@ impl UIBuffers {
 pub struct UITextures {
     /// Font atlas texture image.
     pub font_image: vk::Image,
-    pub font_image_memory: gpu_allocator::vulkan::Allocation,
+    pub font_image_memory: Option<gpu_allocator::vulkan::Allocation>,
     pub font_image_view: vk::ImageView,
     /// White 1x1 texture for solid color elements.
     pub white_image: vk::Image,
-    pub white_image_memory: gpu_allocator::vulkan::Allocation,
+    pub white_image_memory: Option<gpu_allocator::vulkan::Allocation>,
     pub white_image_view: vk::ImageView,
     /// Sampler for textures.
     pub sampler: vk::Sampler,
@@ -1931,17 +2017,19 @@ pub struct UITextures {
     pub atlas_height: u32,
     /// Viewport texture image view (updated externally).
     pub viewport_image_view: Option<vk::ImageView>,
+    /// Context for cleanup.
+    context: Rc<VulkanContext>,
 }
 
 impl UITextures {
     /// Create UI textures with a default font atlas size.
-    pub fn new(context: &VulkanContext) -> Result<Self, vk::Result> {
+    pub fn new(context: Rc<VulkanContext>) -> Result<Self, vk::Result> {
         Self::with_atlas_size(context, 512, 512)
     }
 
     /// Create UI textures with a specific font atlas size.
     pub fn with_atlas_size(
-        context: &VulkanContext,
+        context: Rc<VulkanContext>,
         atlas_width: u32,
         atlas_height: u32,
     ) -> Result<Self, vk::Result> {
@@ -1968,12 +2056,12 @@ impl UITextures {
 
             // Create white 1x1 texture
             let (white_image, white_memory, white_view) =
-                Self::create_texture(context, 1, 1, &[255, 255, 255, 255])?;
+                Self::create_texture(&context, 1, 1, &[255, 255, 255, 255])?;
 
             // Create font atlas texture (initially white)
             let white_pixels = vec![255u8; (atlas_width * atlas_height * 4) as usize];
             let (font_image, font_memory, font_view) =
-                Self::create_texture(context, atlas_width, atlas_height, &white_pixels)?;
+                Self::create_texture(&context, atlas_width, atlas_height, &white_pixels)?;
 
             // Create descriptor set layout (3 bindings: font atlas, sampler, viewport texture)
             let bindings = [
@@ -2075,10 +2163,10 @@ impl UITextures {
 
             Ok(Self {
                 font_image,
-                font_image_memory: font_memory,
+                font_image_memory: Some(font_memory),
                 font_image_view: font_view,
                 white_image,
-                white_image_memory: white_memory,
+                white_image_memory: Some(white_memory),
                 white_image_view: white_view,
                 sampler,
                 descriptor_set_layout,
@@ -2087,6 +2175,7 @@ impl UITextures {
                 atlas_width,
                 atlas_height,
                 viewport_image_view: None,
+                context,
             })
         }
     }
@@ -2360,19 +2449,24 @@ impl UITextures {
         }
         self.viewport_image_view = Some(image_view);
     }
+}
 
-    /// Destroy UI textures.
-    pub fn destroy(self, context: &VulkanContext) {
+impl Drop for UITextures {
+    fn drop(&mut self) {
         unsafe {
-            context.device.destroy_sampler(self.sampler, None);
-            context.device.destroy_image_view(self.font_image_view, None);
-            context.device.destroy_image(self.font_image, None);
-            context.allocator.borrow_mut().free(self.font_image_memory).ok();
-            context.device.destroy_image_view(self.white_image_view, None);
-            context.device.destroy_image(self.white_image, None);
-            context.allocator.borrow_mut().free(self.white_image_memory).ok();
-            context.device.destroy_descriptor_set_layout(self.descriptor_set_layout, None);
-            context.device.destroy_descriptor_pool(self.descriptor_pool, None);
+            self.context.device.destroy_sampler(self.sampler, None);
+            self.context.device.destroy_image_view(self.font_image_view, None);
+            self.context.device.destroy_image(self.font_image, None);
+            if let Some(memory) = self.font_image_memory.take() {
+                self.context.allocator.borrow_mut().free(memory).ok();
+            }
+            self.context.device.destroy_image_view(self.white_image_view, None);
+            self.context.device.destroy_image(self.white_image, None);
+            if let Some(memory) = self.white_image_memory.take() {
+                self.context.allocator.borrow_mut().free(memory).ok();
+            }
+            self.context.device.destroy_descriptor_set_layout(self.descriptor_set_layout, None);
+            self.context.device.destroy_descriptor_pool(self.descriptor_pool, None);
         }
     }
 }
@@ -2384,21 +2478,23 @@ impl UITextures {
 pub struct ViewportRenderTarget {
     /// Color attachment image.
     pub color_image: vk::Image,
-    pub color_memory: gpu_allocator::vulkan::Allocation,
+    pub color_memory: Option<gpu_allocator::vulkan::Allocation>,
     pub color_image_view: vk::ImageView,
     /// Depth attachment image.
     pub depth_image: vk::Image,
-    pub depth_memory: gpu_allocator::vulkan::Allocation,
+    pub depth_memory: Option<gpu_allocator::vulkan::Allocation>,
     pub depth_image_view: vk::ImageView,
     /// Render extent.
     pub extent: vk::Extent2D,
     /// Sampler for sampling the color texture.
     pub sampler: vk::Sampler,
+    /// Context for cleanup.
+    context: Rc<VulkanContext>,
 }
 
 impl ViewportRenderTarget {
     /// Create a new viewport render target with the given dimensions.
-    pub fn new(context: &VulkanContext, width: u32, height: u32) -> Result<Self, vk::Result> {
+    pub fn new(context: Rc<VulkanContext>, width: u32, height: u32) -> Result<Self, vk::Result> {
         unsafe {
             let extent = vk::Extent2D { width, height };
             let extent3d = vk::Extent3D { width, height, depth: 1 };
@@ -2538,38 +2634,33 @@ impl ViewportRenderTarget {
 
             Ok(Self {
                 color_image,
-                color_memory,
+                color_memory: Some(color_memory),
                 color_image_view,
                 depth_image,
-                depth_memory,
+                depth_memory: Some(depth_memory),
                 depth_image_view,
                 extent,
                 sampler,
+                context,
             })
         }
     }
+}
 
-    /// Resize the render target by recreating it.
-    pub fn resize(context: &VulkanContext, old: Option<Self>, width: u32, height: u32) -> Result<Self, vk::Result> {
-        // Destroy old resources if any
-        if let Some(old_target) = old {
-            old_target.destroy(context);
-        }
-
-        // Create new resources
-        Self::new(context, width, height)
-    }
-
-    /// Destroy the render target.
-    pub fn destroy(self, context: &VulkanContext) {
+impl Drop for ViewportRenderTarget {
+    fn drop(&mut self) {
         unsafe {
-            context.device.destroy_sampler(self.sampler, None);
-            context.device.destroy_image_view(self.color_image_view, None);
-            context.device.destroy_image(self.color_image, None);
-            context.allocator.borrow_mut().free(self.color_memory).ok();
-            context.device.destroy_image_view(self.depth_image_view, None);
-            context.device.destroy_image(self.depth_image, None);
-            context.allocator.borrow_mut().free(self.depth_memory).ok();
+            self.context.device.destroy_sampler(self.sampler, None);
+            self.context.device.destroy_image_view(self.color_image_view, None);
+            self.context.device.destroy_image(self.color_image, None);
+            if let Some(memory) = self.color_memory.take() {
+                self.context.allocator.borrow_mut().free(memory).ok();
+            }
+            self.context.device.destroy_image_view(self.depth_image_view, None);
+            self.context.device.destroy_image(self.depth_image, None);
+            if let Some(memory) = self.depth_memory.take() {
+                self.context.allocator.borrow_mut().free(memory).ok();
+            }
         }
     }
 }
@@ -2580,15 +2671,17 @@ impl ViewportRenderTarget {
 pub struct OutputRenderTarget {
     /// Color attachment image.
     pub color_image: vk::Image,
-    pub color_memory: gpu_allocator::vulkan::Allocation,
+    pub color_memory: Option<gpu_allocator::vulkan::Allocation>,
     pub color_image_view: vk::ImageView,
     /// Render extent (matches swapchain size).
     pub extent: vk::Extent2D,
+    /// Context for cleanup.
+    context: Rc<VulkanContext>,
 }
 
 impl OutputRenderTarget {
     /// Create a new output render target with the given dimensions.
-    pub fn new(context: &VulkanContext, width: u32, height: u32) -> Result<Self, vk::Result> {
+    pub fn new(context: Rc<VulkanContext>, width: u32, height: u32) -> Result<Self, vk::Result> {
         unsafe {
             let extent = vk::Extent2D { width, height };
             let extent3d = vk::Extent3D { width, height, depth: 1 };
@@ -2658,27 +2751,23 @@ impl OutputRenderTarget {
 
             Ok(Self {
                 color_image,
-                color_memory,
+                color_memory: Some(color_memory),
                 color_image_view,
                 extent,
+                context,
             })
         }
     }
+}
 
-    /// Resize the render target by recreating it.
-    pub fn resize(context: &VulkanContext, old: Option<Self>, width: u32, height: u32) -> Result<Self, vk::Result> {
-        if let Some(old_target) = old {
-            old_target.destroy(context);
-        }
-        Self::new(context, width, height)
-    }
-
-    /// Destroy the render target.
-    pub fn destroy(self, context: &VulkanContext) {
+impl Drop for OutputRenderTarget {
+    fn drop(&mut self) {
         unsafe {
-            context.device.destroy_image_view(self.color_image_view, None);
-            context.device.destroy_image(self.color_image, None);
-            context.allocator.borrow_mut().free(self.color_memory).ok();
+            self.context.device.destroy_image_view(self.color_image_view, None);
+            self.context.device.destroy_image(self.color_image, None);
+            if let Some(memory) = self.color_memory.take() {
+                self.context.allocator.borrow_mut().free(memory).ok();
+            }
         }
     }
 }

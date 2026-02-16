@@ -74,10 +74,12 @@ pub fn create_particle_emitter(
     )
     .expect("Failed to compile particle compute shader");
 
-    // Create compute pipeline
+    // Create compute pipeline with push constant range for frame data
+    // Push constants: delta_time, emit_count, max_particles, random_seed (4 x f32 = 16 bytes)
     let compute_pipeline = ComputePipelineBuilder::new(context.clone())
         .with_shader(compute_shader.module)
         .with_descriptor_layouts(vec![compute_descriptor_layout])
+        .add_push_constant_range(vk::ShaderStageFlags::COMPUTE, 0, 16)
         .build()
         .expect("Failed to create compute pipeline");
 
@@ -108,12 +110,23 @@ pub fn create_particle_emitter(
         .build(render_particle_descriptor_layout)
         .expect("Failed to create render particle descriptor set");
 
-    // Frame uniforms descriptor layout (set 0) - matches StorageUniforms layout
-    let frame_bindings = [vk::DescriptorSetLayoutBinding::default()
-        .binding(0)
-        .descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
-        .descriptor_count(1)
-        .stage_flags(vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT)];
+    // Frame uniforms descriptor layout (set 0) - MUST match StorageUniforms layout
+    // The renderer binds storage_descriptor_set which has TWO bindings:
+    // - Binding 0: frame_data (FrameUniforms)
+    // - Binding 1: objects array (ObjectUniforms[])
+    // We only use binding 0, but the layout must match for compatibility.
+    let frame_bindings = [
+        vk::DescriptorSetLayoutBinding::default()
+            .binding(0)
+            .descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
+            .descriptor_count(1)
+            .stage_flags(vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT),
+        vk::DescriptorSetLayoutBinding::default()
+            .binding(1)
+            .descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
+            .descriptor_count(1)
+            .stage_flags(vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT),
+    ];
 
     let frame_layout_info = vk::DescriptorSetLayoutCreateInfo::default().bindings(&frame_bindings);
 
@@ -175,6 +188,7 @@ pub fn create_particle_emitter(
         compute_descriptor_set,
         render_pipeline,
         render_particle_descriptor,
+        render_particle_descriptor_layout,
         config,
         emit_rate,
     );

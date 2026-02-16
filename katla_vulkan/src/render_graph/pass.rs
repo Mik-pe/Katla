@@ -144,6 +144,12 @@ pub struct PassBuilder {
     execute: Option<PassExecute>,
     #[allow(clippy::type_complexity)]
     pending_execute: Option<(String, Box<dyn FnMut(Rc<PassExecutionContext>) + 'static>)>,
+    /// Pre-execute callback runs BEFORE begin_rendering() for custom barrier setup.
+    /// This is needed because pipeline barriers with image transitions cannot be called
+    /// inside a render pass (VUID-vkCmdPipelineBarrier2-None-09553).
+    #[allow(clippy::type_complexity)]
+    pending_pre_execute: Option<(String, Box<dyn FnMut(Rc<PassExecutionContext>) + 'static>)>,
+    pre_execute_name: Option<String>,
 }
 
 impl PassBuilder {
@@ -161,6 +167,8 @@ impl PassBuilder {
             category,
             execute: None,
             pending_execute: None,
+            pending_pre_execute: None,
+            pre_execute_name: None,
         }
     }
 
@@ -363,6 +371,20 @@ impl PassBuilder {
         self
     }
 
+    /// Specify pre-execution logic that runs BEFORE begin_rendering().
+    /// Use this for custom pipeline barriers that need to happen outside a render pass.
+    /// Pipeline barriers with image layout transitions cannot be called inside a render pass
+    /// (VUID-vkCmdPipelineBarrier2-None-09553).
+    pub fn pre_execute<F>(&mut self, name: impl Into<String>, f: F) -> &mut Self
+    where
+        F: FnMut(Rc<PassExecutionContext>) + 'static,
+    {
+        let name = name.into();
+        self.pending_pre_execute = Some((format!("pre_{}", name), Box::new(f)));
+        self.pre_execute_name = Some(format!("pre_{}", name));
+        self
+    }
+
     /// Build the pass from the builder configuration.
     pub fn build(self) -> Pass {
         Pass::from_builder(self)
@@ -488,6 +510,10 @@ pub struct Pass {
     execute: Option<PassExecute>,
     #[allow(clippy::type_complexity)]
     pending_execute: Option<(String, Box<dyn FnMut(Rc<PassExecutionContext>) + 'static>)>,
+    /// Pre-execute callback runs BEFORE begin_rendering() for custom barrier setup.
+    #[allow(clippy::type_complexity)]
+    pending_pre_execute: Option<(String, Box<dyn FnMut(Rc<PassExecutionContext>) + 'static>)>,
+    pre_execute_name: Option<String>,
 }
 
 impl Pass {
@@ -504,6 +530,8 @@ impl Pass {
             category: builder.category,
             execute: builder.execute,
             pending_execute: builder.pending_execute,
+            pending_pre_execute: builder.pending_pre_execute,
+            pre_execute_name: builder.pre_execute_name,
         }
     }
 
@@ -549,6 +577,13 @@ impl Pass {
         }
     }
 
+    /// Execute pre-execute callback before begin_rendering()
+    pub fn pre_execute(&self, ctx: Rc<PassExecutionContext>, registry: &mut ExecutionRegistry<'_>) {
+        if let Some(name) = &self.pre_execute_name {
+            registry.execute(name, ctx);
+        }
+    }
+
     /// Get the name of this pass for looking up the execution closure
     pub fn execute_name(&self) -> Option<&str> {
         self.execute.as_ref().map(|e| e.pass_name())
@@ -563,6 +598,12 @@ impl Pass {
             .unwrap_or_default()
     }
 
+    /// Get the pre-execute name for this pass.
+    /// This is used during compilation to transfer the name to the compiled pass.
+    pub fn take_pre_execute_name(&mut self) -> Option<String> {
+        self.pre_execute_name.take()
+    }
+
     /// Take the pending execution closure and name from this pass.
     /// This is used during graph building to register the closure with the ExecutionRegistry.
     /// Returns None if no execution closure was specified.
@@ -571,6 +612,15 @@ impl Pass {
         &mut self,
     ) -> Option<(String, Box<dyn FnMut(Rc<PassExecutionContext>) + 'static>)> {
         self.pending_execute.take()
+    }
+
+    /// Take the pending pre-execution closure and name from this pass.
+    /// This is used during graph building to register the closure with the ExecutionRegistry.
+    #[allow(clippy::type_complexity)]
+    pub fn take_pending_pre_execute(
+        &mut self,
+    ) -> Option<(String, Box<dyn FnMut(Rc<PassExecutionContext>) + 'static>)> {
+        self.pending_pre_execute.take()
     }
 }
 

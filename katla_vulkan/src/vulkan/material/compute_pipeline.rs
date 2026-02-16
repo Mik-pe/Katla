@@ -138,6 +138,7 @@ impl ComputePipelineBuilder {
         Ok(ComputePipeline {
             handle: pipeline,
             layout: pipeline_layout,
+            descriptor_layouts: self.descriptor_layouts,
             device: self.context.device.clone(),
         })
     }
@@ -151,6 +152,8 @@ pub struct ComputePipeline {
     pub handle: vk::Pipeline,
     /// The pipeline layout.
     pub layout: vk::PipelineLayout,
+    /// Descriptor set layouts (owned, for cleanup).
+    descriptor_layouts: Vec<vk::DescriptorSetLayout>,
     device: ash::Device,
 }
 
@@ -166,10 +169,13 @@ impl ComputePipeline {
     }
 
     /// Destroy the pipeline resources.
-    pub fn destroy(&self) {
+    pub fn destroy(&mut self) {
         unsafe {
             self.device.destroy_pipeline(self.handle, None);
             self.device.destroy_pipeline_layout(self.layout, None);
+            for layout in self.descriptor_layouts.drain(..) {
+                self.device.destroy_descriptor_set_layout(layout, None);
+            }
         }
     }
 }

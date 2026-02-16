@@ -374,6 +374,8 @@ impl ApplicationHandler for Application {
                     if new_width > 0 && new_height > 0.0 {
                         if let Some(ref mut renderer) = self.renderer {
                             info!("=== Window resized to {}x{}, recreating swapchain ===", new_width, new_height as u32);
+                            // Wait for GPU to finish before destroying old resources
+                            renderer.wait_for_device();
                             renderer.recreate_swapchain();
                             let _ = renderer.init_viewport_target(new_width as u32, new_height as u32);
                             let _ = renderer.init_output_target(new_width as u32, new_height as u32);
@@ -383,6 +385,7 @@ impl ApplicationHandler for Application {
                                 let aspect = viewport_extent.width as f32 / viewport_extent.height as f32;
                                 self.camera.borrow_mut().aspect_ratio_changed(&mut self.world, aspect);
                             }
+                            info!("=== Resize complete ===");
                         }
                     }
                 }
@@ -430,20 +433,29 @@ impl ApplicationHandler for Application {
                     self.current_modifiers = modifiers.state();
                 }
                 WindowEvent::RedrawRequested => {
+                    debug!("RedrawRequested received");
                     self.timer.add_timestamp();
                     let dt = self.timer.get_delta() as f32;
 
                     // Update world (runs animation systems)
+                    debug!("Updating world...");
                     self.world.update(dt);
+                    debug!("World updated");
 
                     // Upload skeleton transforms to GPU buffers
+                    debug!("Uploading skeleton transforms...");
                     renderer::upload_skeleton_transforms(self);
+                    debug!("Skeleton transforms uploaded");
 
                     // Render using render graph
+                    debug!("Rendering frame...");
                     renderer::render_frame(self);
+                    debug!("Frame rendered");
 
                     // Render debug UI overlay
+                    debug!("Rendering UI...");
                     editor::render_debug_ui(self, dt);
+                    debug!("UI rendered");
 
                     // Handle max_frames limit
                     if let Some(max) = self.info.max_frames {

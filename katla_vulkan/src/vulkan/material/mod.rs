@@ -381,16 +381,19 @@ impl UniformHandle {
 
         let desc_pool_sizes = &[
             vk::DescriptorPoolSize::default()
-                .descriptor_count(1)
+                .descriptor_count(4)
                 .ty(vk::DescriptorType::UNIFORM_BUFFER),
             vk::DescriptorPoolSize::default()
-                .descriptor_count(1)
+                .descriptor_count(4)
+                .ty(vk::DescriptorType::STORAGE_BUFFER),
+            vk::DescriptorPoolSize::default()
+                .descriptor_count(4)
                 .ty(vk::DescriptorType::COMBINED_IMAGE_SAMPLER),
             vk::DescriptorPoolSize::default()
-                .descriptor_count(1)
+                .descriptor_count(4)
                 .ty(vk::DescriptorType::SAMPLED_IMAGE),
             vk::DescriptorPoolSize::default()
-                .descriptor_count(1)
+                .descriptor_count(4)
                 .ty(vk::DescriptorType::SAMPLER),
         ];
         let desc_pool_info = vk::DescriptorPoolCreateInfo::default()
@@ -854,7 +857,7 @@ impl MaterialPipeline {
     pub fn destroy_preserving_layout(&mut self) {
         self.uniform.destroy(&self.context);
         self.texture_descriptor = None; // Drop cleans up descriptor pool
-        if let Some(pipeline) = self.pipeline.take() {
+        if let Some(mut pipeline) = self.pipeline.take() {
             pipeline.destroy();
         }
         // Remove descriptor set layouts - they're owned by MaterialTemplate and will be destroyed there
@@ -865,7 +868,7 @@ impl MaterialPipeline {
     pub fn destroy(&mut self) {
         self.uniform.destroy(&self.context);
         self.texture_descriptor = None; // Drop cleans up descriptor pool
-        if let Some(pipeline) = self.pipeline.take() {
+        if let Some(mut pipeline) = self.pipeline.take() {
             pipeline.destroy();
         }
         if let Some(desc_layout) = self.desc_layout.take() {
@@ -891,7 +894,7 @@ impl Drop for MaterialPipeline {
         // Note: If destroy_preserving_layout() was called, these will already be None
         self.uniform.destroy(&self.context);
         self.texture_descriptor = None; // Drop cleans up descriptor pool
-        if let Some(pipeline) = self.pipeline.take() {
+        if let Some(mut pipeline) = self.pipeline.take() {
             pipeline.destroy();
         }
         if let Some(desc_layout) = self.desc_layout.take() {
