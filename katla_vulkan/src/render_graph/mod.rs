@@ -1,5 +1,6 @@
 pub mod builders;
 pub mod compiled;
+pub mod renderer_context;
 pub mod graph;
 pub mod pass;
 pub mod resource;
@@ -11,13 +12,15 @@ pub use builders::RenderGraphHelper;
 pub use compiled::{CompiledPass, CompiledRenderGraph, RenderPassGroup, SubpassDescriptor};
 pub use errors::RenderGraphError;
 pub use graph::*;
-pub use pass::{Attachment, Pass, PassBuilder, PassExecutionContext};
+pub use pass::{Attachment, Pass, PassBuilder, PassCategory, PassExecutionContext};
+pub use renderer_context::{EmptyRenderFrameContext, RenderFrameContext, RendererContext};
 pub use resource::{
     CompiledResource, Resource, ResourceAccessType, ResourceId, ResourceKind, ResourceLifetime,
-    ResourceUsage,
+    ResourceNameMap, ResourceUsage,
 };
 pub use types::{
     Access, AttachmentLoadOp, AttachmentStoreOp, BufferUsage, ClearColor, ClearDepthStencil,
     ClearValue, Extent2D, Extent3D, ImageFormat, ImageLayout, ImageTiling, ImageUsage,
-    MemoryProperty, PipelineBindPoint, PipelineStage, SampleCount, ShaderStages,
+    MemoryProperty, PipelineBindPoint, PipelineStage, Rect2D, RenderingAttachmentInfo,
+    RenderingInfo, SampleCount, ShaderStages, VkImageView,
 };

@@ -1,18 +1,80 @@
+use std::collections::HashMap;
+use std::fmt;
 use std::ops::AddAssign;
 
 use ash::vk;
 
+/// Unique identifier for a render graph resource.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub struct ResourceId(pub(crate) u32);
 
-// TODO: Fields `id` and `name` are never read (clippy warning)
-// Either use these fields or remove them
+impl ResourceId {
+    /// Get the raw u32 value of this resource ID.
+    pub fn value(&self) -> u32 {
+        self.0
+    }
+}
+
+impl fmt::Display for ResourceId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "ResourceId({})", self.0)
+    }
+}
+
+/// Map from ResourceId to resource name for debugging purposes.
+/// This allows looking up human-readable names from ResourceIds.
+#[derive(Debug, Clone, Default)]
+pub struct ResourceNameMap {
+    names: HashMap<ResourceId, String>,
+}
+
+impl ResourceNameMap {
+    /// Create a new empty name map.
+    pub fn new() -> Self {
+        Self {
+            names: HashMap::new(),
+        }
+    }
+
+    /// Insert a name for a resource ID.
+    pub fn insert(&mut self, id: ResourceId, name: impl Into<String>) {
+        self.names.insert(id, name.into());
+    }
+
+    /// Get the name for a resource ID, if it exists.
+    pub fn get(&self, id: ResourceId) -> Option<&str> {
+        self.names.get(&id).map(|s| s.as_str())
+    }
+
+    /// Get the name for a resource ID, or return a fallback string.
+    pub fn get_or_fallback(&self, id: ResourceId) -> &str {
+        self.names.get(&id).map(|s| s.as_str()).unwrap_or("unknown")
+    }
+}
+
+/// A resource in the render graph (image, buffer, or external resource).
 #[derive(Debug)]
-#[allow(dead_code)]
 pub struct Resource {
     pub(crate) id: ResourceId,
     pub(crate) name: String,
     pub(crate) kind: ResourceKind,
+}
+
+impl Resource {
+    /// Get the resource ID.
+    pub fn id(&self) -> ResourceId {
+        self.id
+    }
+
+    /// Get the resource name.
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    /// Get the resource kind.
+    pub fn kind(&self) -> &ResourceKind {
+        &self.kind
+    }
 }
 
 #[derive(Debug)]

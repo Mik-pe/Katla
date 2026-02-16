@@ -1,11 +1,50 @@
 use ash::vk;
 
+use crate::render_graph::renderer_context::RendererContext;
 use crate::resource::CompiledResource;
 use crate::sync::VkFramebuffer;
 use crate::types::{ClearValue, Extent2D, PipelineBindPoint};
 use crate::{CommandBuffer, ResourceId, ResourceUsage};
 use std::collections::HashMap;
 use std::rc::Rc;
+
+/// Category of a render pass for filtering and categorization.
+/// Used to replace magic string comparisons like `pass.name == "ui_pass"`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum PassCategory {
+    /// Scene rendering passes (geometry, sky, particles, etc.)
+    #[default]
+    Scene,
+    /// UI overlay passes
+    Ui,
+    /// Presentation/copy passes (blit to swapchain)
+    Present,
+    /// Compute dispatches
+    Compute,
+    /// Transfer/copy operations
+    Transfer,
+}
+
+impl PassCategory {
+    /// Auto-detect category from pass name for backward compatibility.
+    /// Uses naming conventions:
+    /// - "ui_pass" -> Ui
+    /// - "present_pass" -> Present
+    /// - Names starting with "compute_" -> Compute
+    /// - Names starting with "copy_", "transfer_", "blit_" -> Transfer
+    /// - Everything else -> Scene
+    pub fn from_name(name: &str) -> Self {
+        match name {
+            "ui_pass" => PassCategory::Ui,
+            "present_pass" => PassCategory::Present,
+            n if n.starts_with("compute_") => PassCategory::Compute,
+            n if n.starts_with("copy_") || n.starts_with("transfer_") || n.starts_with("blit_") => {
+                PassCategory::Transfer
+            }
+            _ => PassCategory::Scene,
+        }
+    }
+}
 
 /// Describes the type of attachment when writing to a resource.
 /// This enum allows the render graph to correctly configure the attachment
@@ -101,6 +140,7 @@ pub struct PassBuilder {
     usages: Vec<ResourceUsage>,
     bind_point: PipelineBindPoint,
     extent: Option<Extent2D>,
+    category: PassCategory,
     execute: Option<PassExecute>,
     #[allow(clippy::type_complexity)]
     pending_execute: Option<(String, Box<dyn FnMut(Rc<PassExecutionContext>) + 'static>)>,
@@ -109,16 +149,26 @@ pub struct PassBuilder {
 impl PassBuilder {
     /// Create a new pass builder with the given name.
     pub fn new(name: impl Into<String>) -> Self {
+        let name = name.into();
+        let category = PassCategory::from_name(&name);
         Self {
-            name: name.into(),
+            name,
             inputs: Vec::new(),
             outputs: Vec::new(),
             usages: Vec::new(),
             bind_point: PipelineBindPoint::Graphics,
             extent: None,
+            category,
             execute: None,
             pending_execute: None,
         }
+    }
+
+    /// Set the pass category explicitly.
+    /// If not called, category is auto-detected from the pass name.
+    pub fn category(mut self, category: PassCategory) -> Self {
+        self.category = category;
+        self
     }
 
     /// Mark a resource as a read input for this pass.
@@ -334,6 +384,8 @@ pub struct PassExecutionContext {
     pub extent: Extent2D,
     /// Whether this pass uses dynamic rendering (Vulkan 1.3)
     pub uses_dynamic_rendering: bool,
+    /// Optional renderer context for accessing renderer state (eliminates unsafe pointers)
+    renderer_context: Option<Rc<RendererContext>>,
 }
 
 impl PassExecutionContext {
@@ -351,6 +403,7 @@ impl PassExecutionContext {
             subpass: 0,
             extent,
             uses_dynamic_rendering: false,
+            renderer_context: None,
         }
     }
 
@@ -367,7 +420,36 @@ impl PassExecutionContext {
             subpass: 0,
             extent,
             uses_dynamic_rendering: true,
+            renderer_context: None,
         }
+    }
+
+    /// Create a new PassExecutionContext with renderer context.
+    pub fn with_renderer_context(
+        command_buffer: CommandBuffer,
+        resources: std::rc::Rc<std::cell::RefCell<std::collections::HashMap<ResourceId, CompiledResource>>>,
+        extent: Extent2D,
+        renderer_context: Rc<RendererContext>,
+    ) -> Self {
+        Self {
+            command_buffer: std::rc::Rc::new(command_buffer),
+            resources,
+            framebuffer: VkFramebuffer::new(vk::Framebuffer::null()),
+            subpass: 0,
+            extent,
+            uses_dynamic_rendering: true,
+            renderer_context: Some(renderer_context),
+        }
+    }
+
+    /// Set the renderer context after creation.
+    pub fn set_renderer_context(&mut self, ctx: Rc<RendererContext>) {
+        self.renderer_context = Some(ctx);
+    }
+
+    /// Get the renderer context for accessing renderer state safely.
+    pub fn renderer_context(&self) -> Option<&RendererContext> {
+        self.renderer_context.as_deref()
     }
 
     /// Get a compiled image resource by ID (works for both Image and ExternalImage)
@@ -402,6 +484,7 @@ pub struct Pass {
     usages: Vec<ResourceUsage>,
     bind_point: PipelineBindPoint,
     extent: Option<Extent2D>,
+    category: PassCategory,
     execute: Option<PassExecute>,
     #[allow(clippy::type_complexity)]
     pending_execute: Option<(String, Box<dyn FnMut(Rc<PassExecutionContext>) + 'static>)>,
@@ -418,6 +501,7 @@ impl Pass {
             usages: builder.usages,
             bind_point: builder.bind_point,
             extent: builder.extent,
+            category: builder.category,
             execute: builder.execute,
             pending_execute: builder.pending_execute,
         }
@@ -451,6 +535,11 @@ impl Pass {
     /// Get the extent for this pass, if explicitly set
     pub fn extent(&self) -> Option<Extent2D> {
         self.extent
+    }
+
+    /// Get the category of this pass
+    pub fn category(&self) -> PassCategory {
+        self.category
     }
 
     /// Execute this pass with the given context and registry

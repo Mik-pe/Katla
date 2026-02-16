@@ -36,6 +36,28 @@ pub enum ImageLayout {
     Preinitialized,
 }
 
+impl ImageLayout {
+    /// Convert from a raw vk::ImageLayout (for backward compatibility).
+    pub fn from_vk(layout: ash::vk::ImageLayout) -> Self {
+        match layout {
+            ash::vk::ImageLayout::UNDEFINED => ImageLayout::Undefined,
+            ash::vk::ImageLayout::GENERAL => ImageLayout::General,
+            ash::vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL => ImageLayout::ColorAttachmentOptimal,
+            ash::vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL => {
+                ImageLayout::DepthStencilAttachmentOptimal
+            }
+            ash::vk::ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL => {
+                ImageLayout::DepthStencilReadOnlyOptimal
+            }
+            ash::vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL => ImageLayout::ShaderReadOnlyOptimal,
+            ash::vk::ImageLayout::TRANSFER_SRC_OPTIMAL => ImageLayout::TransferSrcOptimal,
+            ash::vk::ImageLayout::TRANSFER_DST_OPTIMAL => ImageLayout::TransferDstOptimal,
+            ash::vk::ImageLayout::PREINITIALIZED => ImageLayout::Preinitialized,
+            _ => ImageLayout::Undefined, // Fallback for unknown layouts
+        }
+    }
+}
+
 impl From<ImageLayout> for ash::vk::ImageLayout {
     fn from(layout: ImageLayout) -> Self {
         match layout {
@@ -87,6 +109,42 @@ impl From<AttachmentStoreOp> for ash::vk::AttachmentStoreOp {
         }
     }
 }
+
+//=============================================================================
+// Vulkan Handle Wrappers (for type safety in render graph API)
+//=============================================================================
+
+/// Wrapper for vk::ImageView to avoid exposing ash types in public API.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct VkImageView(pub(crate) ash::vk::ImageView);
+
+impl VkImageView {
+    /// Create a new VkImageView wrapper.
+    pub fn new(view: ash::vk::ImageView) -> Self {
+        Self(view)
+    }
+
+    /// Get the underlying Vulkan image view handle.
+    pub fn vk(&self) -> ash::vk::ImageView {
+        self.0
+    }
+}
+
+impl From<ash::vk::ImageView> for VkImageView {
+    fn from(view: ash::vk::ImageView) -> Self {
+        Self(view)
+    }
+}
+
+impl From<VkImageView> for ash::vk::ImageView {
+    fn from(view: VkImageView) -> Self {
+        view.0
+    }
+}
+
+//=============================================================================
+// Extent Types
+//=============================================================================
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Extent2D {
@@ -505,9 +563,9 @@ impl From<ClearValue> for ash::vk::ClearValue {
 #[derive(Debug, Clone, Copy)]
 pub struct RenderingAttachmentInfo {
     /// Image view to use as attachment.
-    pub image_view: ash::vk::ImageView,
+    pub image_view: VkImageView,
     /// Image layout expected during rendering.
-    pub image_layout: ash::vk::ImageLayout,
+    pub image_layout: ImageLayout,
     /// Load operation for this attachment.
     pub load_op: AttachmentLoadOp,
     /// Store operation for this attachment.
@@ -517,20 +575,31 @@ pub struct RenderingAttachmentInfo {
 }
 
 impl RenderingAttachmentInfo {
-    /// Create a new rendering attachment info.
-    pub fn new(image_view: ash::vk::ImageView) -> Self {
+    /// Create a new rendering attachment info from a VkImageView wrapper.
+    pub fn new(image_view: VkImageView) -> Self {
         Self {
             image_view,
-            image_layout: ash::vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+            image_layout: ImageLayout::ColorAttachmentOptimal,
             load_op: AttachmentLoadOp::Load,
             store_op: AttachmentStoreOp::Store,
             clear_value: None,
         }
     }
 
+    /// Create from a raw vk::ImageView (convenience for internal use).
+    pub fn from_vk(image_view: ash::vk::ImageView) -> Self {
+        Self::new(VkImageView::new(image_view))
+    }
+
     /// Set the image layout.
-    pub fn layout(mut self, layout: ash::vk::ImageLayout) -> Self {
+    pub fn layout(mut self, layout: ImageLayout) -> Self {
         self.image_layout = layout;
+        self
+    }
+
+    /// Set the image layout from a raw vk::ImageLayout (convenience).
+    pub fn layout_vk(mut self, layout: ash::vk::ImageLayout) -> Self {
+        self.image_layout = ImageLayout::from_vk(layout);
         self
     }
 
@@ -560,8 +629,8 @@ impl RenderingAttachmentInfo {
             .map_or_else(ash::vk::ClearValue::default, |cv| cv.into());
 
         ash::vk::RenderingAttachmentInfoKHR::default()
-            .image_view(self.image_view)
-            .image_layout(self.image_layout)
+            .image_view(self.image_view.vk())
+            .image_layout(self.image_layout.into())
             .load_op(self.load_op.into())
             .store_op(self.store_op.into())
             .clear_value(clear_value)

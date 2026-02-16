@@ -6,9 +6,10 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
-use crate::render_graph::pass::{ExecutionRegistry, Pass, PassExecute, PassExecutionContext};
-use crate::render_graph::resource::{CompiledResource, ResourceId, ResourceKind, ResourceLifetime};
-use crate::render_graph::types::{ClearValue, Extent2D, RenderingAttachmentInfo, RenderingInfo};
+use crate::render_graph::renderer_context::RendererContext;
+use crate::render_graph::pass::{ExecutionRegistry, Pass, PassCategory, PassExecute, PassExecutionContext};
+use crate::render_graph::resource::{CompiledResource, ResourceId, ResourceKind, ResourceLifetime, ResourceNameMap};
+use crate::render_graph::types::{ClearValue, Extent2D, ImageLayout, RenderingAttachmentInfo, RenderingInfo};
 use crate::rendering::DrawList;
 use crate::sync::{VkFramebuffer, VkImage, VkImageView};
 use crate::CommandBuffer;
@@ -22,6 +23,10 @@ pub struct CompiledRenderGraph {
     pub passes: Vec<CompiledPass>,
     /// Resources map wrapped in RefCell for per-frame updates (e.g., viewport texture double-buffering)
     pub resources: Rc<RefCell<HashMap<ResourceId, CompiledResource>>>,
+    /// Map from ResourceId to name for debugging
+    resource_names: ResourceNameMap,
+    /// Optional renderer context for safe access to renderer state
+    renderer_context: Option<Rc<RendererContext>>,
 
     #[allow(dead_code)] // Needed for resource cleanup
     framebuffers: Vec<vk::Framebuffer>,
@@ -46,6 +51,7 @@ pub struct CompiledPass {
     pub vk_framebuffers: Vec<VkFramebuffer>,
     pub extent: Extent2D,
     pub clear_values: Vec<ClearValue>,
+    pub category: PassCategory,
     execute: PassExecute,
     /// Color attachment image views for dynamic rendering (one set per swapchain image)
     pub color_attachments: Vec<Vec<vk::ImageView>>,
@@ -129,10 +135,18 @@ impl CompiledRenderGraph {
         // Step 5: Compile passes with execution info
         let compiled_passes = Self::compile_passes(&mut graph.passes, &framebuffers, &resources)?;
 
+        // Step 6: Build resource name map for debugging
+        let mut resource_names = ResourceNameMap::new();
+        for (id, resource) in &graph.resources {
+            resource_names.insert(*id, resource.name());
+        }
+
         Ok(Self {
             context: context.clone(),
             passes: compiled_passes,
             resources: Rc::new(RefCell::new(resources)),
+            resource_names,
+            renderer_context: None,
             framebuffers,
             registry,
             draw_list_cell: None,
@@ -140,6 +154,16 @@ impl CompiledRenderGraph {
             viewport_depth_resource_id: None,
             swapchain_resource_id: None,
         })
+    }
+
+    /// Get the name of a resource by ID for debugging.
+    pub fn resource_name(&self, id: ResourceId) -> &str {
+        self.resource_names.get_or_fallback(id)
+    }
+
+    /// Set the renderer context for safe access to renderer state.
+    pub fn set_renderer_context(&mut self, ctx: Rc<RendererContext>) {
+        self.renderer_context = Some(ctx);
     }
 
     /// Set the viewport resource IDs for double-buffering updates.
@@ -758,6 +782,7 @@ impl CompiledRenderGraph {
                 vk_framebuffers,
                 extent,
                 clear_values,
+                category: pass.category(),
                 execute,
                 color_attachments,
                 depth_attachments,
@@ -802,7 +827,7 @@ impl CompiledRenderGraph {
         // Update color_attachments for viewport passes (sky_pass, geometry_pass, particle_pass)
         for pass in &mut self.passes {
             // Skip ui_pass and present_pass (they use output texture or swapchain transfer, not viewport)
-            if pass.name == "ui_pass" || pass.name == "present_pass" {
+            if pass.category == PassCategory::Ui || pass.category == PassCategory::Present {
                 continue;
             }
 
@@ -893,12 +918,21 @@ impl CompiledRenderGraph {
     ) -> Result<(), RenderGraphError> {
         let pass = &self.passes[pass_index];
 
-        // Create execution context
-        let ctx = Rc::new(PassExecutionContext::new_dynamic(
-            command_buffer.clone(),
-            Rc::clone(&self.resources),
-            pass.extent,
-        ));
+        // Create execution context with optional renderer context
+        let ctx = if let Some(ref rc) = self.renderer_context {
+            Rc::new(PassExecutionContext::with_renderer_context(
+                command_buffer.clone(),
+                Rc::clone(&self.resources),
+                pass.extent,
+                Rc::clone(rc),
+            ))
+        } else {
+            Rc::new(PassExecutionContext::new_dynamic(
+                command_buffer.clone(),
+                Rc::clone(&self.resources),
+                pass.extent,
+            ))
+        };
 
         // Execute the pass closure directly (no begin_rendering/end_rendering)
         pass.execute.execute(ctx, &mut self.registry);
@@ -956,8 +990,8 @@ impl CompiledRenderGraph {
             .collect();
 
         for (i, image_view) in color_attachments.iter().enumerate() {
-            let mut attachment = RenderingAttachmentInfo::new(*image_view)
-                .layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL);
+            let mut attachment = RenderingAttachmentInfo::from_vk(*image_view)
+                .layout(ImageLayout::ColorAttachmentOptimal);
 
             // Use filtered color clears, indexed by color attachment position
             if let Some(&cv) = color_clears.get(i) {
@@ -975,8 +1009,8 @@ impl CompiledRenderGraph {
                 .iter()
                 .find(|cv| matches!(cv, ClearValue::DepthStencil(_)));
 
-            let mut attachment = RenderingAttachmentInfo::new(depth_view)
-                .layout(vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
+            let mut attachment = RenderingAttachmentInfo::from_vk(depth_view)
+                .layout(ImageLayout::DepthStencilAttachmentOptimal);
 
             if let Some(&cv) = depth_clear {
                 attachment = attachment.clear(cv);
@@ -1074,12 +1108,21 @@ impl CompiledRenderGraph {
         command_buffer.set_viewport(&[viewport]);
         command_buffer.set_scissor(&[scissor]);
 
-        // Create execution context
-        let ctx = Rc::new(PassExecutionContext::new_dynamic(
-            (*command_buffer).clone(),
-            self.resources.clone(),
-            pass.extent,
-        ));
+        // Create execution context with optional renderer context
+        let ctx = if let Some(ref rc) = self.renderer_context {
+            Rc::new(PassExecutionContext::with_renderer_context(
+                (*command_buffer).clone(),
+                self.resources.clone(),
+                pass.extent,
+                Rc::clone(rc),
+            ))
+        } else {
+            Rc::new(PassExecutionContext::new_dynamic(
+                (*command_buffer).clone(),
+                self.resources.clone(),
+                pass.extent,
+            ))
+        };
 
         // Execute pass-specific commands
         pass.execute(ctx, &mut self.registry);
@@ -1159,8 +1202,8 @@ impl CompiledRenderGraph {
             // Add color attachments with clear values
             for (i, image_view) in color_attachments.iter().enumerate() {
                 let clear_value = pass.clear_values.get(i).copied();
-                let mut attachment = RenderingAttachmentInfo::new(*image_view)
-                    .layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL);
+                let mut attachment = RenderingAttachmentInfo::from_vk(*image_view)
+                    .layout(ImageLayout::ColorAttachmentOptimal);
 
                 if let Some(cv) = clear_value {
                     attachment = attachment.clear(cv);
@@ -1182,8 +1225,8 @@ impl CompiledRenderGraph {
                         .iter()
                         .find(|cv| matches!(cv, ClearValue::DepthStencil(_)));
 
-                    let mut attachment = RenderingAttachmentInfo::new(*depth_view)
-                        .layout(vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
+                    let mut attachment = RenderingAttachmentInfo::from_vk(*depth_view)
+                        .layout(ImageLayout::DepthStencilAttachmentOptimal);
 
                     if let Some(cv) = depth_clear {
                         attachment = attachment.clear(*cv);
@@ -1215,13 +1258,21 @@ impl CompiledRenderGraph {
         command_buffer.set_viewport(&[viewport]);
         command_buffer.set_scissor(&[scissor]);
 
-        // Create execution context with Rc-wrapped command buffer
-        // Clone the CommandBuffer to allow sharing with user closures
-        let ctx = Rc::new(PassExecutionContext::new_dynamic(
-            (*command_buffer).clone(),
-            self.resources.clone(),
-            pass.extent,
-        ));
+        // Create execution context with optional renderer context
+        let ctx = if let Some(ref rc) = self.renderer_context {
+            Rc::new(PassExecutionContext::with_renderer_context(
+                (*command_buffer).clone(),
+                self.resources.clone(),
+                pass.extent,
+                Rc::clone(rc),
+            ))
+        } else {
+            Rc::new(PassExecutionContext::new_dynamic(
+                (*command_buffer).clone(),
+                self.resources.clone(),
+                pass.extent,
+            ))
+        };
 
         // Execute pass-specific commands using ExecutionRegistry
         pass.execute(ctx, &mut self.registry);

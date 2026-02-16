@@ -5,7 +5,8 @@ use super::{
     DescriptorLayoutBuilder, ImageInfo, MaterialDescriptor, MaterialError, MaterialPipeline,
     PipelineBuilder, ShaderModule, ShaderSource,
 };
-use crate::{context::VulkanContext, ImageFormat, Texture, VertexBinding};
+use crate::vulkan::context::VulkanContext;
+use crate::{ImageFormat, Texture, VertexBinding};
 use crate::render_graph::types::ShaderStages;
 
 pub struct MaterialBuilder {
