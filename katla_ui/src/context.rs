@@ -386,7 +386,13 @@ impl UiContext {
                     baseline_y - glyph.offset.y() - glyph.size.y(),
                 );
 
-                let bounds = Rect2D::from_origin_size(glyph_pos, glyph.size);
+                // Snap glyph position to pixel grid for crisp rendering
+                let snapped_pos = Vec2::new(
+                    glyph_pos.x().round(),
+                    glyph_pos.y().round(),
+                );
+
+                let bounds = Rect2D::from_origin_size(snapped_pos, glyph.size);
 
                 // Draw glyph as textured quad
                 self.draw_list.set_clip(self.clip_rect());

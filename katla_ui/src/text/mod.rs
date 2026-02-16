@@ -424,7 +424,8 @@ mod tests {
     fn test_font_system_creation() {
         let sys = FontSystem::new();
         assert_eq!(sys.atlas_width, FontSystem::DEFAULT_ATLAS_SIZE);
-        assert!(!sys.atlas_dirty);
+        // Atlas is dirty initially because white pixel at (0,0) needs upload
+        assert!(sys.atlas_dirty);
     }
 
     #[test]
