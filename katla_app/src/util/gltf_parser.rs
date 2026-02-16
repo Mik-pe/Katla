@@ -545,27 +545,27 @@ impl ParsedAttributes {
             match semantic {
                 gltf::mesh::Semantic::Positions => {
                     positions = parser.parse_positions(accessor);
-                    log::info!("    Parsed {} positions", positions.len());
+                    log::debug!("    Parsed {} positions", positions.len());
                 }
                 gltf::mesh::Semantic::Normals => {
                     normals = parser.parse_normals(accessor);
-                    log::info!("    Parsed {} normals", normals.len());
+                    log::debug!("    Parsed {} normals", normals.len());
                 }
                 gltf::mesh::Semantic::Tangents => {
                     // Tangents are optional in GLTF
-                    log::info!("    Tangent attribute found but not parsed (not yet implemented)");
+                    log::debug!("    Tangent attribute found but not parsed (not yet implemented)");
                 }
                 gltf::mesh::Semantic::TexCoords(0) => {
                     tex_coords0 = parser.parse_tex_coords(accessor);
-                    log::info!("    Parsed {} tex_coords", tex_coords0.len());
+                    log::debug!("    Parsed {} tex_coords", tex_coords0.len());
                 }
                 gltf::mesh::Semantic::Joints(0) => {
                     joint_indices = parser.parse_joint_indices(accessor);
-                    log::info!("    Parsed {} joint indices", joint_indices.len());
+                    log::debug!("    Parsed {} joint indices", joint_indices.len());
                 }
                 gltf::mesh::Semantic::Weights(0) => {
                     joint_weights = parser.parse_joint_weights(accessor);
-                    log::info!("    Parsed {} joint weights", joint_weights.len());
+                    log::debug!("    Parsed {} joint weights", joint_weights.len());
                 }
                 _ => {
                     // Ignore other semantics

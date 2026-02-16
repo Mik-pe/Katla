@@ -2,7 +2,7 @@ pub mod builder;
 
 use std::{cell::RefCell, collections::HashMap, ffi::CString, rc::Rc, time::Instant};
 
-use log::{error, info, warn};
+use log::{debug, error, info, warn};
 use winit::keyboard::ModifiersState;
 
 pub use builder::*;
@@ -152,12 +152,12 @@ impl ApplicationHandler for Application {
                 Some("Run"), // Play "Walk" animation by default
             );
 
-            info!("Fox model entity: {:?} with animation setup complete", fox.entity);
+            debug!("Fox animation setup complete for entity {:?}", fox.entity);
 
             // Setup GPU skeleton buffer for the fox model
             if let Some(skeleton) = self.world.get_component::<Skeleton>(fox.entity) {
                 let joint_count = skeleton.joint_transforms.len();
-                info!("Fox has {} joints, creating skeleton buffer", joint_count);
+                debug!("Fox has {} joints, creating skeleton buffer", joint_count);
 
                 // Create skeleton buffer
                 let skeleton_buffer = Rc::new(RefCell::new(SkeletonBuffer::new(
@@ -174,7 +174,7 @@ impl ApplicationHandler for Application {
                                 skeleton_buffer.clone(),
                                 skeleton_layout,
                             ) {
-                                info!("Registered skeleton with handle {:?}", skeleton_handle);
+                                debug!("Registered skeleton with handle {:?}", skeleton_handle);
 
                                 // Set handle on DrawableComponent
                                 if let Some(drawable) = self.world.get_component_mut::<DrawableComponent>(fox.entity) {
@@ -269,7 +269,7 @@ impl ApplicationHandler for Application {
                 Vec3::new(0.0, 10.0, 0.0), // Above the fox
                 100.0,                       // 100 particles per second
             );
-            info!("Created particle emitter entity");
+            debug!("Created particle emitter entity");
 
             self.window = Some(window);
 
@@ -282,9 +282,9 @@ impl ApplicationHandler for Application {
                 Some(Rc::new(checkerboard_texture)),
                 None,
             ).is_some() {
-                info!("Registered checkerboard material from template");
+                debug!("Registered checkerboard material from template");
             } else {
-                info!("Warning: Checkerboard template not found, using fallback");
+                warn!("Checkerboard template not found, using fallback");
                 // Fallback to direct creation if template doesn't exist
                 let checkerboard =
                     create_checkerboard_material(renderer.context.clone());
@@ -496,7 +496,7 @@ impl ApplicationHandler for Application {
 
                         let millisecs = start.elapsed().as_micros() as f64 / 1000.0;
 
-                        info!("Mesh creation took {millisecs} ms");
+                        debug!("Mesh creation took {millisecs} ms");
                         self.stage_upload = false;
                     }
                     if let Some(window) = &self.window {

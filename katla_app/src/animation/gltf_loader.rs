@@ -12,11 +12,11 @@ pub fn load_animations(world: &mut World, model: &GLTFModel) {
 
     let animations: Vec<_> = document.animations().collect();
     if animations.is_empty() {
-        log::info!("Model has no animations");
+        log::debug!("Model has no animations");
         return;
     }
 
-    log::info!("Model has {} animations:", animations.len());
+    log::debug!("Model has {} animations:", animations.len());
 
     let mut animated_model = AnimatedModel {
         animations: std::collections::HashMap::new(),
@@ -29,13 +29,13 @@ pub fn load_animations(world: &mut World, model: &GLTFModel) {
             .unwrap_or(&format!("Animation_{}", index))
             .to_string();
 
-        log::info!("  Parsing animation '{}'", name);
+        log::debug!("  Parsing animation '{}'", name);
 
         let clip = load_animation_clip(&model.buffers, gltf_animation);
         animated_model.animations.insert(name, clip);
     }
 
-    log::info!(
+    log::debug!(
         "  Successfully loaded {} animation clips",
         animated_model.animations.len()
     );
@@ -219,11 +219,11 @@ pub fn load_skins(world: &mut World, model: &GLTFModel) {
 
     let skins: Vec<_> = document.skins().collect();
     if skins.is_empty() {
-        log::info!("Model has no skins");
+        log::debug!("Model has no skins");
         return;
     }
 
-    log::info!("Model has {} skins:", skins.len());
+    log::debug!("Model has {} skins:", skins.len());
 
     for (index, gltf_skin) in skins.iter().enumerate() {
         let name = gltf_skin
@@ -231,7 +231,7 @@ pub fn load_skins(world: &mut World, model: &GLTFModel) {
             .unwrap_or(&format!("Skin_{}", index))
             .to_string();
 
-        log::info!("  Parsing skin '{}'", name);
+        log::debug!("  Parsing skin '{}'", name);
 
         let joints: Vec<usize> = gltf_skin.joints().map(|node| node.index()).collect();
         let joints_count = joints.len();
@@ -257,7 +257,7 @@ pub fn load_skins(world: &mut World, model: &GLTFModel) {
         log::debug!("    - Attached Skin component to entity {:?}", entity);
     }
 
-    log::info!("  Successfully loaded {} skins", skins.len());
+    log::debug!("  Successfully loaded {} skins", skins.len());
 }
 
 /// Parse Mat4 matrices from an accessor.

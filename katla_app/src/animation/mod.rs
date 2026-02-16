@@ -95,7 +95,7 @@ impl AnimationManager {
         // Check if model has animations
         let animations: Vec<_> = document.animations().collect();
         if animations.is_empty() {
-            log::info!("Model has no animations, skipping animation setup");
+            log::debug!("Model has no animations, skipping animation setup");
             return false;
         }
 
@@ -111,7 +111,7 @@ impl AnimationManager {
                 .unwrap_or(&format!("Animation_{}", index))
                 .to_string();
 
-            log::info!("Loading animation '{}' for entity {:?}", name, entity);
+            log::debug!("Loading animation '{}' for entity {:?}", name, entity);
 
             let clip = gltf_loader::load_animation_clip(&model.buffers, gltf_animation);
             animated_model.animations.insert(name, clip);
@@ -143,7 +143,7 @@ impl AnimationManager {
         if let Some(anim_name) = default_animation {
             let player = AnimationPlayer::new(anim_name).looping();
             world.add_component(entity, player);
-            log::info!("Started playing animation '{}' on entity {:?}", anim_name, entity);
+            log::debug!("Started playing animation '{}' on entity {:?}", anim_name, entity);
         }
 
         true
