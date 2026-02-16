@@ -1304,6 +1304,14 @@ impl UiContext {
             if new_open {
                 self.popup_id = Some(dropdown_id);
                 self.popup_opened_this_frame = true;
+                // Set popup bounds immediately so click-outside check works
+                self.popup_bounds = Some(Rect2D::from_origin_size(
+                    Vec2::new(bounds.min.x(), bounds.max.y()),
+                    Vec2::new(
+                        bounds.width().max(self.style.menu_min_width),
+                        200.0,
+                    ),
+                ));
             } else {
                 self.popup_id = None;
                 self.popup_bounds = None;

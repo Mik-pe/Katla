@@ -82,20 +82,12 @@ pub struct EditorUI {
     pub visible: bool,
     /// Currently selected entity.
     pub selected_entity: Option<EntityId>,
-    /// Show spawn menu.
-    show_spawn_menu: bool,
-    /// Spawn menu just opened this frame (skip click-outside check).
-    spawn_menu_just_opened: bool,
     /// Play mode active.
     pub is_playing: bool,
     /// Grid visibility.
     pub show_grid: bool,
     /// Stats panel visible.
     show_stats: bool,
-    /// Selected spawn model.
-    selected_spawn: SpawnableModel,
-    /// Spawn position input.
-    spawn_pos: [f32; 3],
     /// Deferred actions to be processed by the application.
     pub pending_actions: Vec<EditorAction>,
     /// Last known viewport panel size (width, height) in pixels.
@@ -111,13 +103,9 @@ impl EditorUI {
         Self {
             visible: true,
             selected_entity: None,
-            show_spawn_menu: false,
-            spawn_menu_just_opened: false,
             is_playing: false,
             show_grid: true,
             show_stats: true,
-            selected_spawn: SpawnableModel::Fox,
-            spawn_pos: [0.0, 0.0, 0.0],
             pending_actions: Vec::new(),
             last_viewport_size: (800, 600), // Default size
             expanded_entities: HashSet::new(),
@@ -277,10 +265,9 @@ impl EditorUI {
             }
         }
 
-        // Escape - deselect / close menus
+        // Escape - deselect entity
         if ui.input.key_pressed(katla_ui::input::KeyCode::Escape) {
             self.selected_entity = None;
-            self.show_spawn_menu = false;
         }
 
         let padding = 4.0;  // Inner padding for content
@@ -364,11 +351,6 @@ impl EditorUI {
 
         // === STATUS BAR (bottom) ===
         self.build_status_bar(ui, screen_size, status_bar_height, fps, frame_count, entities.len());
-
-        // === SPAWN MENU POPUP ===
-        if self.show_spawn_menu {
-            self.build_spawn_menu(ui, screen_size);
-        }
     }
 
     fn build_toolbar(&mut self, ui: &mut UiContext, screen_size: Vec2, height: f32, padding: f32) {
@@ -406,11 +388,19 @@ impl EditorUI {
         }
         cursor = Vec2::new(cursor.x() + button_width + padding, cursor.y());
 
-        // Spawn button
+        // Spawn dropdown
         let spawn_bounds = Rect2D::from_origin_size(cursor, Vec2::new(button_width, button_height));
-        if ui.button("spawn_btn", "+ Spawn", spawn_bounds) {
-            self.show_spawn_menu = !self.show_spawn_menu;
-            self.spawn_menu_just_opened = self.show_spawn_menu;
+        if ui.begin_dropdown("spawn_dropdown", "+ Spawn", spawn_bounds) {
+            for model in SpawnableModel::all() {
+                if ui.menu_item(&format!("spawn_{}", model.name()), model.name(), Rect2D::from_origin_size(
+                    Vec2::new(spawn_bounds.min.x(), spawn_bounds.max.y() + (*model as usize as f32) * 24.0),
+                    Vec2::new(spawn_bounds.width(), 24.0),
+                )) {
+                    self.pending_actions.push(EditorAction::SpawnModel(*model, Vec3::new(0.0, 0.0, 0.0)));
+                    ui.close_current_popup();
+                }
+            }
+            ui.end_dropdown();
         }
         cursor = Vec2::new(cursor.x() + button_width + padding, cursor.y());
 
@@ -833,132 +823,6 @@ impl EditorUI {
         let theme_size = ui.measure_text(&theme_text, 11.0);
         let theme_pos = Vec2::new(screen_size.x() - mode_size.x() - theme_size.x() - 100.0, cursor.y());
         ui.draw_text(&theme_text, theme_pos, theme.text_muted, 11.0);
-    }
-
-    fn build_spawn_menu(&mut self, ui: &mut UiContext, screen_size: Vec2) {
-        let theme = &self.theme;
-        let menu_width = 300.0;
-        let menu_height = 340.0;  // Increased to fit all content
-        let menu_bounds = Rect2D::from_origin_size(
-            Vec2::new(screen_size.x() * 0.5 - menu_width * 0.5, 80.0),
-            Vec2::new(menu_width, menu_height),
-        );
-
-        // Menu background with shadow
-        let shadow_offset = Vec2::new(4.0, 4.0);
-        let shadow_bounds = Rect2D::new(menu_bounds.min + shadow_offset, menu_bounds.max + shadow_offset);
-        ui.draw_rect(shadow_bounds, Color::new(0.0, 0.0, 0.0, 0.5));
-        ui.draw_rect(menu_bounds, theme.panel_bg);
-        ui.draw_rect_border(menu_bounds, theme.panel_bg, theme.panel_border, 1.0);
-
-        // Title
-        let title_pos = Vec2::new(menu_bounds.min.x() + 12.0, menu_bounds.min.y() + 12.0);
-        ui.draw_text("Spawn Model", title_pos, theme.text_primary, 14.0);
-
-        let mut cursor = Vec2::new(menu_bounds.min.x() + 12.0, menu_bounds.min.y() + 40.0);
-        let button_height = 28.0;
-        let button_width = menu_width - 24.0;
-
-        // Model selection
-        ui.draw_text("Model Type:", cursor, theme.text_secondary, 12.0);
-        cursor = Vec2::new(cursor.x(), cursor.y() + 20.0);
-
-        // Model buttons in 2 columns
-        let col_width = (button_width - 8.0) / 2.0;
-        for (i, model) in SpawnableModel::all().iter().enumerate() {
-            let col = i % 2;
-            let row = i / 2;
-            let btn_bounds = Rect2D::from_origin_size(
-                Vec2::new(cursor.x() + col as f32 * (col_width + 8.0), cursor.y() + row as f32 * (button_height + 4.0)),
-                Vec2::new(col_width, button_height),
-            );
-
-            let is_selected = *model == self.selected_spawn;
-            if is_selected {
-                ui.draw_rect(btn_bounds, theme.selection);
-            }
-            if ui.selectable(&format!("spawn_{}", model.name()), model.name(), is_selected, btn_bounds) {
-                self.selected_spawn = *model;
-            }
-        }
-        cursor = Vec2::new(cursor.x(), cursor.y() + 3.0 * (button_height + 4.0) + 12.0);
-
-        // Position input with +/- buttons
-        ui.draw_text("Position (X, Y, Z):", cursor, theme.text_secondary, 12.0);
-        cursor = Vec2::new(cursor.x(), cursor.y() + 20.0);
-
-        let axis_labels = ["X", "Y", "Z"];
-        let axis_colors = [theme.error, theme.success, theme.info]; // Red, Green, Blue
-        let step = 1.0;
-        let mini_btn_w = 24.0;
-        let value_w = button_width - mini_btn_w * 2.0 - 24.0; // Account for label + two buttons
-
-        for (i, (label, color)) in axis_labels.iter().zip(axis_colors.iter()).enumerate() {
-            let row_y = cursor.y() + i as f32 * (button_height + 4.0);
-
-            // Axis label
-            ui.draw_text(label, Vec2::new(cursor.x(), row_y + 6.0), *color, 12.0);
-
-            // - button
-            let minus_bounds = Rect2D::from_origin_size(
-                Vec2::new(cursor.x() + 20.0, row_y),
-                Vec2::new(mini_btn_w, button_height),
-            );
-            if ui.button(&format!("pos_{}_minus", i), "-", minus_bounds) {
-                self.spawn_pos[i] -= step;
-            }
-
-            // Value display
-            let value_bounds = Rect2D::from_origin_size(
-                Vec2::new(cursor.x() + 20.0 + mini_btn_w, row_y),
-                Vec2::new(value_w, button_height),
-            );
-            ui.draw_rect(value_bounds, Color::new(0.15, 0.15, 0.15, 1.0));
-            let value_text = format!("{:.1}", self.spawn_pos[i]);
-            let text_size = ui.measure_text(&value_text, 12.0);
-            let text_pos = Vec2::new(
-                value_bounds.center().x() - text_size.x() * 0.5,
-                value_bounds.center().y() - text_size.y() * 0.5,
-            );
-            ui.draw_text(&value_text, text_pos, Color::new(0.9, 0.9, 0.9, 1.0), 12.0);
-
-            // + button
-            let plus_bounds = Rect2D::from_origin_size(
-                Vec2::new(cursor.x() + 20.0 + mini_btn_w + value_w, row_y),
-                Vec2::new(mini_btn_w, button_height),
-            );
-            if ui.button(&format!("pos_{}_plus", i), "+", plus_bounds) {
-                self.spawn_pos[i] += step;
-            }
-        }
-        cursor = Vec2::new(cursor.x(), cursor.y() + 3.0 * (button_height + 4.0) + 8.0);
-
-        // Spawn and Cancel buttons
-        let spawn_btn_bounds = Rect2D::from_origin_size(cursor, Vec2::new(button_width * 0.48, button_height));
-        if ui.button("do_spawn", "Spawn", spawn_btn_bounds) {
-            let pos = Vec3::new(self.spawn_pos[0], self.spawn_pos[1], self.spawn_pos[2]);
-            self.pending_actions.push(EditorAction::SpawnModel(self.selected_spawn, pos));
-            self.show_spawn_menu = false;
-        }
-
-        let cancel_btn_bounds = Rect2D::from_origin_size(
-            Vec2::new(cursor.x() + button_width * 0.52, cursor.y()),
-            Vec2::new(button_width * 0.48, button_height),
-        );
-        if ui.button("cancel_spawn", "Cancel", cancel_btn_bounds) {
-            self.show_spawn_menu = false;
-        }
-
-        // Click outside to close (but not on the same frame it opened)
-        if !self.spawn_menu_just_opened
-            && ui.input.mouse_clicked(mouse_button::LEFT)
-            && !ui.input.is_hovered(menu_bounds)
-        {
-            self.show_spawn_menu = false;
-        }
-
-        // Reset the just-opened flag for next frame
-        self.spawn_menu_just_opened = false;
     }
 
     /// Render the editor UI and return the draw list.
