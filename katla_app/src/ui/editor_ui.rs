@@ -74,6 +74,12 @@ pub enum EditorAction {
     MoveEntity(EntityId, Vec3),
     /// Toggle play/pause.
     TogglePlay,
+    /// Change the editor theme.
+    SetTheme(String),
+    /// Toggle grid visibility.
+    ToggleGrid,
+    /// Toggle stats visibility.
+    ToggleStats,
 }
 
 /// Game Engine Editor UI state.
@@ -82,12 +88,22 @@ pub struct EditorUI {
     pub visible: bool,
     /// Currently selected entity.
     pub selected_entity: Option<EntityId>,
+    /// Show spawn menu.
+    show_spawn_menu: bool,
+    /// Spawn menu just opened this frame (skip click-outside check).
+    spawn_menu_just_opened: bool,
+    /// Show preferences panel.
+    show_preferences: bool,
     /// Play mode active.
     pub is_playing: bool,
     /// Grid visibility.
     pub show_grid: bool,
     /// Stats panel visible.
-    show_stats: bool,
+    pub show_stats: bool,
+    /// Selected spawn model.
+    selected_spawn: SpawnableModel,
+    /// Spawn position input.
+    spawn_pos: [f32; 3],
     /// Deferred actions to be processed by the application.
     pub pending_actions: Vec<EditorAction>,
     /// Last known viewport panel size (width, height) in pixels.
@@ -95,7 +111,7 @@ pub struct EditorUI {
     /// Entities expanded in the hierarchy tree.
     expanded_entities: HashSet<EntityId>,
     /// Current color theme.
-    theme: Theme,
+    pub theme: Theme,
 }
 
 impl EditorUI {
@@ -103,9 +119,14 @@ impl EditorUI {
         Self {
             visible: true,
             selected_entity: None,
+            show_spawn_menu: false,
+            spawn_menu_just_opened: false,
+            show_preferences: false,
             is_playing: false,
             show_grid: true,
             show_stats: true,
+            selected_spawn: SpawnableModel::Fox,
+            spawn_pos: [0.0, 0.0, 0.0],
             pending_actions: Vec::new(),
             last_viewport_size: (800, 600), // Default size
             expanded_entities: HashSet::new(),
@@ -125,27 +146,29 @@ impl EditorUI {
         self.theme = theme;
     }
 
+    /// Get the current theme key (for preferences).
+    pub fn theme_key(&self) -> &'static str {
+        match self.theme.name {
+            "Catppuccin Mocha" => "catppuccin",
+            "Nord" => "nord",
+            "Tokyo Night" => "tokyo_night",
+            "Dracula" => "dracula",
+            "Gruvbox Dark" => "gruvbox",
+            "One Dark" => "one_dark",
+            "Material Palenight" => "material_palenight",
+            "Ayu Dark" => "ayu_dark",
+            "GitHub Dark" => "github_dark",
+            "Monokai" => "monokai",
+            "Rosé Pine" => "rose_pine",
+            "Kanagawa" => "kanagawa",
+            "Solarized Dark" => "solarized_dark",
+            _ => "catppuccin",
+        }
+    }
+
     /// Get the current theme name.
     pub fn theme_name(&self) -> &'static str {
         self.theme.name
-    }
-
-    /// Cycle to the next theme.
-    pub fn cycle_theme(&mut self) {
-        let all_names = Theme::all_names();
-        // Find current theme by name
-        let current_idx = all_names.iter().position(|&name| {
-            (name == "catppuccin" && self.theme.name == "Catppuccin Mocha") ||
-            (name == "nord" && self.theme.name == "Nord") ||
-            (name == "tokyo_night" && self.theme.name == "Tokyo Night") ||
-            (name == "dracula" && self.theme.name == "Dracula") ||
-            (name == "gruvbox" && self.theme.name == "Gruvbox Dark") ||
-            (name == "default_dark" && self.theme.name == "Default Dark")
-        }).unwrap_or(0);
-        let next_idx = (current_idx + 1) % all_names.len();
-        if let Some(theme) = Theme::by_name(all_names[next_idx]) {
-            self.theme = theme;
-        }
     }
 
     /// Get the last known viewport panel size in pixels.
@@ -351,6 +374,11 @@ impl EditorUI {
 
         // === STATUS BAR (bottom) ===
         self.build_status_bar(ui, screen_size, status_bar_height, fps, frame_count, entities.len());
+
+        // === PREFERENCES PANEL (overlay) ===
+        if self.show_preferences {
+            self.build_preferences_panel(ui, screen_size);
+        }
     }
 
     fn build_toolbar(&mut self, ui: &mut UiContext, screen_size: Vec2, height: f32, padding: f32) {
@@ -417,6 +445,19 @@ impl EditorUI {
         let stats_bounds = Rect2D::from_origin_size(cursor, Vec2::new(button_width, button_height));
         if ui.button("stats_btn", stats_text, stats_bounds) {
             self.show_stats = !self.show_stats;
+        }
+
+        // Settings button on the right side
+        let settings_text = "⚙ Settings";
+        let settings_size = ui.measure_text(settings_text, 12.0);
+        let settings_bounds = Rect2D::from_origin_size(
+            Vec2::new(screen_size.x() - settings_size.x() - padding * 3.0, padding),
+            Vec2::new(settings_size.x() + padding * 2.0, button_height),
+        );
+        let settings_color = if self.show_preferences { theme.selection } else { theme.button_bg };
+        ui.draw_rect(settings_bounds, settings_color);
+        if ui.button("settings_btn", settings_text, settings_bounds) {
+            self.show_preferences = !self.show_preferences;
         }
 
         // Title in center
@@ -823,6 +864,136 @@ impl EditorUI {
         let theme_size = ui.measure_text(&theme_text, 11.0);
         let theme_pos = Vec2::new(screen_size.x() - mode_size.x() - theme_size.x() - 100.0, cursor.y());
         ui.draw_text(&theme_text, theme_pos, theme.text_muted, 11.0);
+    }
+
+    fn build_preferences_panel(&mut self, ui: &mut UiContext, screen_size: Vec2) {
+        let theme = &self.theme;
+        let panel_width = 400.0;
+        let panel_height = 450.0;
+        let panel_bounds = Rect2D::from_origin_size(
+            Vec2::new(screen_size.x() * 0.5 - panel_width * 0.5, screen_size.y() * 0.5 - panel_height * 0.5),
+            Vec2::new(panel_width, panel_height),
+        );
+
+        // Shadow
+        let shadow_offset = Vec2::new(6.0, 6.0);
+        let shadow_bounds = Rect2D::new(panel_bounds.min + shadow_offset, panel_bounds.max + shadow_offset);
+        ui.draw_rect(shadow_bounds, Color::new(0.0, 0.0, 0.0, 0.6));
+
+        // Panel background
+        ui.draw_rect(panel_bounds, theme.panel_bg);
+        ui.draw_rect_border(panel_bounds, theme.panel_bg, theme.panel_border, 1.0);
+
+        // Title bar
+        let title_bar_height = 32.0;
+        let title_bounds = Rect2D::from_origin_size(
+            panel_bounds.min,
+            Vec2::new(panel_width, title_bar_height),
+        );
+        ui.draw_rect(title_bounds, theme.panel_header);
+
+        let title_pos = Vec2::new(panel_bounds.min.x() + 12.0, panel_bounds.min.y() + 8.0);
+        ui.draw_text("Preferences", title_pos, theme.text_primary, 14.0);
+
+        // Close button
+        let close_size = 24.0;
+        let close_bounds = Rect2D::from_origin_size(
+            Vec2::new(panel_bounds.max.x() - close_size - 6.0, panel_bounds.min.y() + 4.0),
+            Vec2::new(close_size, close_size),
+        );
+        if ui.button("close_prefs", "×", close_bounds) {
+            self.show_preferences = false;
+        }
+
+        let mut cursor = Vec2::new(panel_bounds.min.x() + 16.0, panel_bounds.min.y() + title_bar_height + 16.0);
+        let content_width = panel_width - 32.0;
+        let row_height = 28.0;
+        let spacing = 8.0;
+
+        // === THEME SECTION ===
+        ui.draw_text("Theme", cursor, theme.text_secondary, 12.0);
+        cursor = Vec2::new(cursor.x(), cursor.y() + 20.0);
+
+        // Theme grid (2 columns)
+        let col_width = (content_width - spacing) / 2.0;
+        let themes = Theme::all_names();
+        let theme_names = [
+            ("catppuccin", "Catppuccin"),
+            ("nord", "Nord"),
+            ("tokyo_night", "Tokyo Night"),
+            ("dracula", "Dracula"),
+            ("gruvbox", "Gruvbox"),
+            ("one_dark", "One Dark"),
+            ("material_palenight", "Material Palenight"),
+            ("ayu_dark", "Ayu Dark"),
+            ("github_dark", "GitHub Dark"),
+            ("monokai", "Monokai"),
+            ("rose_pine", "Rosé Pine"),
+            ("kanagawa", "Kanagawa"),
+            ("solarized_dark", "Solarized Dark"),
+        ];
+
+        let current_theme_key = self.theme_key();
+        for (i, (key, display_name)) in theme_names.iter().enumerate() {
+            let col = i % 2;
+            let row = i / 2;
+            let btn_bounds = Rect2D::from_origin_size(
+                Vec2::new(cursor.x() + col as f32 * (col_width + spacing), cursor.y() + row as f32 * (row_height + 4.0)),
+                Vec2::new(col_width, row_height),
+            );
+
+            let is_selected = *key == current_theme_key;
+            let btn_color = if is_selected { theme.selection } else { theme.button_bg };
+            ui.draw_rect(btn_bounds, btn_color);
+
+            let text_color = if is_selected { theme.button_text } else { theme.text_primary };
+            let text_size = ui.measure_text(display_name, 11.0);
+            let text_pos = Vec2::new(
+                btn_bounds.center().x() - text_size.x() * 0.5,
+                btn_bounds.center().y() - text_size.y() * 0.5,
+            );
+            ui.draw_text(display_name, text_pos, text_color, 11.0);
+
+            if ui.button(&format!("theme_{}", key), "", btn_bounds) {
+                self.pending_actions.push(EditorAction::SetTheme(key.to_string()));
+            }
+        }
+
+        cursor = Vec2::new(cursor.x(), cursor.y() + 7.0 * (row_height + 4.0) + 16.0);
+
+        // === VIEW OPTIONS ===
+        ui.draw_text("View Options", cursor, theme.text_secondary, 12.0);
+        cursor = Vec2::new(cursor.x(), cursor.y() + 24.0);
+
+        // Grid toggle
+        let grid_btn_bounds = Rect2D::from_origin_size(cursor, Vec2::new(content_width, row_height));
+        let grid_color = if self.show_grid { theme.success } else { theme.button_bg };
+        ui.draw_rect(grid_btn_bounds, grid_color);
+        let grid_text = if self.show_grid { "✓ Show Grid" } else { "  Show Grid" };
+        let grid_text_color = if self.show_grid { theme.button_text } else { theme.text_primary };
+        let grid_text_pos = Vec2::new(grid_btn_bounds.min.x() + 12.0, grid_btn_bounds.min.y() + 6.0);
+        ui.draw_text(grid_text, grid_text_pos, grid_text_color, 12.0);
+        if ui.button("pref_grid_toggle", "", grid_btn_bounds) {
+            self.pending_actions.push(EditorAction::ToggleGrid);
+        }
+        cursor = Vec2::new(cursor.x(), cursor.y() + row_height + 4.0);
+
+        // Stats toggle
+        let stats_btn_bounds = Rect2D::from_origin_size(cursor, Vec2::new(content_width, row_height));
+        let stats_color = if self.show_stats { theme.success } else { theme.button_bg };
+        ui.draw_rect(stats_btn_bounds, stats_color);
+        let stats_text = if self.show_stats { "✓ Show Stats" } else { "  Show Stats" };
+        let stats_text_color = if self.show_stats { theme.button_text } else { theme.text_primary };
+        let stats_text_pos = Vec2::new(stats_btn_bounds.min.x() + 12.0, stats_btn_bounds.min.y() + 6.0);
+        ui.draw_text(stats_text, stats_text_pos, stats_text_color, 12.0);
+        if ui.button("pref_stats_toggle", "", stats_btn_bounds) {
+            self.pending_actions.push(EditorAction::ToggleStats);
+        }
+
+        // Click outside to close
+        if ui.input.mouse_clicked(mouse_button::LEFT) && !ui.input.is_hovered(panel_bounds) {
+            self.show_preferences = false;
+        }
     }
 
     /// Render the editor UI and return the draw list.

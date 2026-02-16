@@ -87,6 +87,21 @@ pub fn render_debug_ui(app: &mut Application, dt: f32) {
             EditorAction::TogglePlay => {
                 info!("Toggle play mode");
             }
+            EditorAction::SetTheme(theme_key) => {
+                if let Some(theme) = crate::ui::Theme::by_name(&theme_key) {
+                    app.editor_ui.set_theme(theme);
+                    app.preferences.theme = theme_key;
+                    info!("Theme changed to: {}", app.editor_ui.theme_name());
+                }
+            }
+            EditorAction::ToggleGrid => {
+                app.editor_ui.show_grid = !app.editor_ui.show_grid;
+                app.preferences.show_grid = app.editor_ui.show_grid;
+            }
+            EditorAction::ToggleStats => {
+                app.editor_ui.show_stats = !app.editor_ui.show_stats;
+                app.preferences.show_stats = app.editor_ui.show_stats;
+            }
         }
     }
 

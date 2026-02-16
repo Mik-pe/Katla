@@ -49,9 +49,23 @@ pub struct Theme {
 }
 
 impl Theme {
-    /// Get all available theme names.
+    /// Get all available theme names (keys for preferences).
     pub fn all_names() -> &'static [&'static str] {
-        &["catppuccin", "nord", "tokyo_night", "dracula", "gruvbox", "default_dark"]
+        &[
+            "catppuccin",
+            "nord",
+            "tokyo_night",
+            "dracula",
+            "gruvbox",
+            "one_dark",
+            "material_palenight",
+            "ayu_dark",
+            "github_dark",
+            "monokai",
+            "rose_pine",
+            "kanagawa",
+            "solarized_dark",
+        ]
     }
 
     /// Get a theme by name key.
@@ -62,7 +76,14 @@ impl Theme {
             "tokyo_night" => Some(Self::tokyo_night()),
             "dracula" => Some(Self::dracula()),
             "gruvbox" => Some(Self::gruvbox()),
-            "default_dark" => Some(Self::default_dark()),
+            "one_dark" => Some(Self::one_dark()),
+            "material_palenight" => Some(Self::material_palenight()),
+            "ayu_dark" => Some(Self::ayu_dark()),
+            "github_dark" => Some(Self::github_dark()),
+            "monokai" => Some(Self::monokai()),
+            "rose_pine" => Some(Self::rose_pine()),
+            "kanagawa" => Some(Self::kanagawa()),
+            "solarized_dark" => Some(Self::solarized_dark()),
             _ => None,
         }
     }
@@ -288,6 +309,294 @@ impl Theme {
             error: Color::from_rgb_hex(0xF14C4C),
             info: Color::from_rgb_hex(0x75BEFF),
             viewport_border: Color::from_rgb_hex(0x474747),
+        }
+    }
+
+    /// One Dark - Atom's iconic dark theme
+    /// https://github.com/atom/one-dark-ui
+    pub fn one_dark() -> Theme {
+        Theme {
+            name: "One Dark",
+            background: Color::from_rgb_hex(0x282C34),
+            background_light: Color::from_rgb_hex(0x3E4451),
+            background_dark: Color::from_rgb_hex(0x21252B),
+            panel_bg: Color::from_rgb_hex(0x282C34),
+            panel_header: Color::from_rgb_hex(0x3E4451),
+            panel_border: Color::from_rgb_hex(0x4B5263),
+            text_primary: Color::from_rgb_hex(0xABB2BF),
+            text_secondary: Color::from_rgb_hex(0x9DA5B4),
+            text_muted: Color::from_rgb_hex(0x5C6370),
+            text_accent: Color::from_rgb_hex(0x98C379),
+            button_bg: Color::from_rgb_hex(0x3E4451),
+            button_hover: Color::from_rgb_hex(0x4B5263),
+            button_active: Color::from_rgb_hex(0x61AFEF),
+            button_text: Color::from_rgb_hex(0xABB2BF),
+            selection: Color::from_rgb_hex(0x3E4451),
+            selection_hover: Color::from_rgb_hex(0x4B5263),
+            highlight: Color::from_rgb_hex(0xC678DD),
+            separator: Color::from_rgb_hex(0x3E4451),
+            border: Color::from_rgb_hex(0x4B5263),
+            entity_mesh: Color::from_rgb_hex(0x98C379),
+            entity_particle: Color::from_rgb_hex(0xD19A66),
+            entity_light: Color::from_rgb_hex(0xE5C07B),
+            entity_empty: Color::from_rgb_hex(0x5C6370),
+            success: Color::from_rgb_hex(0x98C379),
+            warning: Color::from_rgb_hex(0xE5C07B),
+            error: Color::from_rgb_hex(0xE06C75),
+            info: Color::from_rgb_hex(0x61AFEF),
+            viewport_border: Color::from_rgb_hex(0x61AFEF),
+        }
+    }
+
+    /// Material Palenight - Material Design inspired dark theme
+    /// https://github.com/equinusocio/material-theme
+    pub fn material_palenight() -> Theme {
+        Theme {
+            name: "Material Palenight",
+            background: Color::from_rgb_hex(0x292D3E),
+            background_light: Color::from_rgb_hex(0x3A3F5B),
+            background_dark: Color::from_rgb_hex(0x1E2133),
+            panel_bg: Color::from_rgb_hex(0x292D3E),
+            panel_header: Color::from_rgb_hex(0x3A3F5B),
+            panel_border: Color::from_rgb_hex(0x414763),
+            text_primary: Color::from_rgb_hex(0xA6ACCD),
+            text_secondary: Color::from_rgb_hex(0x8A93B5),
+            text_muted: Color::from_rgb_hex(0x676E95),
+            text_accent: Color::from_rgb_hex(0xC3E88D),
+            button_bg: Color::from_rgb_hex(0x3A3F5B),
+            button_hover: Color::from_rgb_hex(0x414763),
+            button_active: Color::from_rgb_hex(0x82AAFF),
+            button_text: Color::from_rgb_hex(0xA6ACCD),
+            selection: Color::from_rgb_hex(0x676E95),
+            selection_hover: Color::from_rgb_hex(0x7A819D),
+            highlight: Color::from_rgb_hex(0xC792EA),
+            separator: Color::from_rgb_hex(0x3A3F5B),
+            border: Color::from_rgb_hex(0x414763),
+            entity_mesh: Color::from_rgb_hex(0xC3E88D),
+            entity_particle: Color::from_rgb_hex(0xF78C6C),
+            entity_light: Color::from_rgb_hex(0xFFCB6B),
+            entity_empty: Color::from_rgb_hex(0x676E95),
+            success: Color::from_rgb_hex(0xC3E88D),
+            warning: Color::from_rgb_hex(0xFFCB6B),
+            error: Color::from_rgb_hex(0xFF5370),
+            info: Color::from_rgb_hex(0x82AAFF),
+            viewport_border: Color::from_rgb_hex(0x82AAFF),
+        }
+    }
+
+    /// Ayu Dark - A simple and clean dark theme
+    /// https://github.com/ayu-theme
+    pub fn ayu_dark() -> Theme {
+        Theme {
+            name: "Ayu Dark",
+            background: Color::from_rgb_hex(0x0D1017),
+            background_light: Color::from_rgb_hex(0x1A1F29),
+            background_dark: Color::from_rgb_hex(0x070A0F),
+            panel_bg: Color::from_rgb_hex(0x0D1017),
+            panel_header: Color::from_rgb_hex(0x1A1F29),
+            panel_border: Color::from_rgb_hex(0x2D3440),
+            text_primary: Color::from_rgb_hex(0xBFBDB6),
+            text_secondary: Color::from_rgb_hex(0xA8A49D),
+            text_muted: Color::from_rgb_hex(0x5C6773),
+            text_accent: Color::from_rgb_hex(0xBED9F5),
+            button_bg: Color::from_rgb_hex(0x1A1F29),
+            button_hover: Color::from_rgb_hex(0x2D3440),
+            button_active: Color::from_rgb_hex(0x39BAE6),
+            button_text: Color::from_rgb_hex(0xBFBDB6),
+            selection: Color::from_rgb_hex(0x1A1F29),
+            selection_hover: Color::from_rgb_hex(0x2D3440),
+            highlight: Color::from_rgb_hex(0xF07178),
+            separator: Color::from_rgb_hex(0x1A1F29),
+            border: Color::from_rgb_hex(0x2D3440),
+            entity_mesh: Color::from_rgb_hex(0x7FD962),
+            entity_particle: Color::from_rgb_hex(0xFF9940),
+            entity_light: Color::from_rgb_hex(0xFFB454),
+            entity_empty: Color::from_rgb_hex(0x5C6773),
+            success: Color::from_rgb_hex(0x7FD962),
+            warning: Color::from_rgb_hex(0xFFB454),
+            error: Color::from_rgb_hex(0xF07178),
+            info: Color::from_rgb_hex(0x39BAE6),
+            viewport_border: Color::from_rgb_hex(0x39BAE6),
+        }
+    }
+
+    /// GitHub Dark - GitHub's official dark theme
+    /// https://github.com/primer/github-vscode-theme
+    pub fn github_dark() -> Theme {
+        Theme {
+            name: "GitHub Dark",
+            background: Color::from_rgb_hex(0x0D1117),
+            background_light: Color::from_rgb_hex(0x161B22),
+            background_dark: Color::from_rgb_hex(0x010409),
+            panel_bg: Color::from_rgb_hex(0x0D1117),
+            panel_header: Color::from_rgb_hex(0x161B22),
+            panel_border: Color::from_rgb_hex(0x30363D),
+            text_primary: Color::from_rgb_hex(0xE6EDF3),
+            text_secondary: Color::from_rgb_hex(0xC9D1D9),
+            text_muted: Color::from_rgb_hex(0x7D8590),
+            text_accent: Color::from_rgb_hex(0x3FB950),
+            button_bg: Color::from_rgb_hex(0x21262D),
+            button_hover: Color::from_rgb_hex(0x30363D),
+            button_active: Color::from_rgb_hex(0x1F6FEB),
+            button_text: Color::from_rgb_hex(0xE6EDF3),
+            selection: Color::from_rgb_hex(0x1F6FEB),
+            selection_hover: Color::from_rgb_hex(0x388BFD),
+            highlight: Color::from_rgb_hex(0xF778BA),
+            separator: Color::from_rgb_hex(0x21262D),
+            border: Color::from_rgb_hex(0x30363D),
+            entity_mesh: Color::from_rgb_hex(0x3FB950),
+            entity_particle: Color::from_rgb_hex(0xDB6D28),
+            entity_light: Color::from_rgb_hex(0xD29922),
+            entity_empty: Color::from_rgb_hex(0x7D8590),
+            success: Color::from_rgb_hex(0x3FB950),
+            warning: Color::from_rgb_hex(0xD29922),
+            error: Color::from_rgb_hex(0xF85149),
+            info: Color::from_rgb_hex(0x58A6FF),
+            viewport_border: Color::from_rgb_hex(0x30363D),
+        }
+    }
+
+    /// Monokai - Classic Monokai color scheme
+    /// https://monokai.pro/
+    pub fn monokai() -> Theme {
+        Theme {
+            name: "Monokai",
+            background: Color::from_rgb_hex(0x272822),
+            background_light: Color::from_rgb_hex(0x3E3D32),
+            background_dark: Color::from_rgb_hex(0x1E1F1C),
+            panel_bg: Color::from_rgb_hex(0x272822),
+            panel_header: Color::from_rgb_hex(0x3E3D32),
+            panel_border: Color::from_rgb_hex(0x49483E),
+            text_primary: Color::from_rgb_hex(0xF8F8F2),
+            text_secondary: Color::from_rgb_hex(0xCFCFC2),
+            text_muted: Color::from_rgb_hex(0x75715E),
+            text_accent: Color::from_rgb_hex(0xA6E22E),
+            button_bg: Color::from_rgb_hex(0x3E3D32),
+            button_hover: Color::from_rgb_hex(0x49483E),
+            button_active: Color::from_rgb_hex(0x66D9EF),
+            button_text: Color::from_rgb_hex(0xF8F8F2),
+            selection: Color::from_rgb_hex(0x49483E),
+            selection_hover: Color::from_rgb_hex(0x5A5950),
+            highlight: Color::from_rgb_hex(0xFD971F),
+            separator: Color::from_rgb_hex(0x3E3D32),
+            border: Color::from_rgb_hex(0x49483E),
+            entity_mesh: Color::from_rgb_hex(0xA6E22E),
+            entity_particle: Color::from_rgb_hex(0xFD971F),
+            entity_light: Color::from_rgb_hex(0xE6DB74),
+            entity_empty: Color::from_rgb_hex(0x75715E),
+            success: Color::from_rgb_hex(0xA6E22E),
+            warning: Color::from_rgb_hex(0xE6DB74),
+            error: Color::from_rgb_hex(0xF92672),
+            info: Color::from_rgb_hex(0x66D9EF),
+            viewport_border: Color::from_rgb_hex(0x66D9EF),
+        }
+    }
+
+    /// Rosé Pine - Soothing pastel theme for the high-spirited
+    /// https://rosepinetheme.com/
+    pub fn rose_pine() -> Theme {
+        Theme {
+            name: "Rosé Pine",
+            background: Color::from_rgb_hex(0x191724),
+            background_light: Color::from_rgb_hex(0x1F1D2E),
+            background_dark: Color::from_rgb_hex(0x13111C),
+            panel_bg: Color::from_rgb_hex(0x191724),
+            panel_header: Color::from_rgb_hex(0x1F1D2E),
+            panel_border: Color::from_rgb_hex(0x26233A),
+            text_primary: Color::from_rgb_hex(0xE0DEF4),
+            text_secondary: Color::from_rgb_hex(0xC4C7D7),
+            text_muted: Color::from_rgb_hex(0x6E6A86),
+            text_accent: Color::from_rgb_hex(0x9CCFD8),
+            button_bg: Color::from_rgb_hex(0x1F1D2E),
+            button_hover: Color::from_rgb_hex(0x26233A),
+            button_active: Color::from_rgb_hex(0xEBBCBA),
+            button_text: Color::from_rgb_hex(0xE0DEF4),
+            selection: Color::from_rgb_hex(0x403D52),
+            selection_hover: Color::from_rgb_hex(0x524F67),
+            highlight: Color::from_rgb_hex(0xF6C177),
+            separator: Color::from_rgb_hex(0x1F1D2E),
+            border: Color::from_rgb_hex(0x26233A),
+            entity_mesh: Color::from_rgb_hex(0x9CCFD8),
+            entity_particle: Color::from_rgb_hex(0xEB6F92),
+            entity_light: Color::from_rgb_hex(0xF6C177),
+            entity_empty: Color::from_rgb_hex(0x6E6A86),
+            success: Color::from_rgb_hex(0x9CCFD8),
+            warning: Color::from_rgb_hex(0xF6C177),
+            error: Color::from_rgb_hex(0xEB6F92),
+            info: Color::from_rgb_hex(0xC4A7E7),
+            viewport_border: Color::from_rgb_hex(0x524F67),
+        }
+    }
+
+    /// Kanagawa - Inspired by the colors of the famous painting by Katsushika Hokusai
+    /// https://github.com/rebelot/kanagawa.nvim
+    pub fn kanagawa() -> Theme {
+        Theme {
+            name: "Kanagawa",
+            background: Color::from_rgb_hex(0x1F1F28),
+            background_light: Color::from_rgb_hex(0x2A2A3C),
+            background_dark: Color::from_rgb_hex(0x16161D),
+            panel_bg: Color::from_rgb_hex(0x1F1F28),
+            panel_header: Color::from_rgb_hex(0x2A2A3C),
+            panel_border: Color::from_rgb_hex(0x3B3B4F),
+            text_primary: Color::from_rgb_hex(0xDCD7BA),
+            text_secondary: Color::from_rgb_hex(0xC8C0B8),
+            text_muted: Color::from_rgb_hex(0x727169),
+            text_accent: Color::from_rgb_hex(0x76946A),
+            button_bg: Color::from_rgb_hex(0x2A2A3C),
+            button_hover: Color::from_rgb_hex(0x3B3B4F),
+            button_active: Color::from_rgb_hex(0x7E9CD8),
+            button_text: Color::from_rgb_hex(0xDCD7BA),
+            selection: Color::from_rgb_hex(0x2D4F67),
+            selection_hover: Color::from_rgb_hex(0x3D5F77),
+            highlight: Color::from_rgb_hex(0x957FB8),
+            separator: Color::from_rgb_hex(0x2A2A3C),
+            border: Color::from_rgb_hex(0x3B3B4F),
+            entity_mesh: Color::from_rgb_hex(0x76946A),
+            entity_particle: Color::from_rgb_hex(0xFFA066),
+            entity_light: Color::from_rgb_hex(0xE6C384),
+            entity_empty: Color::from_rgb_hex(0x727169),
+            success: Color::from_rgb_hex(0x76946A),
+            warning: Color::from_rgb_hex(0xE6C384),
+            error: Color::from_rgb_hex(0xC34043),
+            info: Color::from_rgb_hex(0x7E9CD8),
+            viewport_border: Color::from_rgb_hex(0x7E9CD8),
+        }
+    }
+
+    /// Solarized Dark - Precision color scheme for machines and people
+    /// https://ethanschoonover.com/solarized/
+    pub fn solarized_dark() -> Theme {
+        Theme {
+            name: "Solarized Dark",
+            background: Color::from_rgb_hex(0x002B36),
+            background_light: Color::from_rgb_hex(0x073642),
+            background_dark: Color::from_rgb_hex(0x001E26),
+            panel_bg: Color::from_rgb_hex(0x002B36),
+            panel_header: Color::from_rgb_hex(0x073642),
+            panel_border: Color::from_rgb_hex(0x094B5A),
+            text_primary: Color::from_rgb_hex(0x839496),
+            text_secondary: Color::from_rgb_hex(0x657B83),
+            text_muted: Color::from_rgb_hex(0x586E75),
+            text_accent: Color::from_rgb_hex(0x859900),
+            button_bg: Color::from_rgb_hex(0x073642),
+            button_hover: Color::from_rgb_hex(0x094B5A),
+            button_active: Color::from_rgb_hex(0x268BD2),
+            button_text: Color::from_rgb_hex(0x839496),
+            selection: Color::from_rgb_hex(0x094B5A),
+            selection_hover: Color::from_rgb_hex(0x0A5A6C),
+            highlight: Color::from_rgb_hex(0xD33682),
+            separator: Color::from_rgb_hex(0x073642),
+            border: Color::from_rgb_hex(0x094B5A),
+            entity_mesh: Color::from_rgb_hex(0x859900),
+            entity_particle: Color::from_rgb_hex(0xCB4B16),
+            entity_light: Color::from_rgb_hex(0xB58900),
+            entity_empty: Color::from_rgb_hex(0x586E75),
+            success: Color::from_rgb_hex(0x859900),
+            warning: Color::from_rgb_hex(0xB58900),
+            error: Color::from_rgb_hex(0xDC322F),
+            info: Color::from_rgb_hex(0x268BD2),
+            viewport_border: Color::from_rgb_hex(0x268BD2),
         }
     }
 }
