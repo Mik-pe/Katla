@@ -10,6 +10,7 @@
 use katla_math::{Color, Rect2D, Vec2, Vec3};
 use katla_ui::{DrawList, UiContext, input::mouse_button};
 use katla_ecs::EntityId;
+use std::collections::HashSet;
 
 /// Model types that can be spawned.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -52,6 +53,8 @@ pub struct EntityInfo {
     pub depth: u32,
     /// Whether this entity has children (for showing expand/collapse arrow)
     pub has_children: bool,
+    /// Parent entity ID (if any)
+    pub parent_id: Option<EntityId>,
 }
 
 /// Action requested from the editor UI.
@@ -91,6 +94,8 @@ pub struct EditorUI {
     pub pending_actions: Vec<EditorAction>,
     /// Last known viewport panel size (width, height) in pixels.
     last_viewport_size: (u32, u32),
+    /// Entities expanded in the hierarchy tree.
+    expanded_entities: HashSet<EntityId>,
 }
 
 impl EditorUI {
@@ -106,12 +111,43 @@ impl EditorUI {
             spawn_pos: [0.0, 0.0, 0.0],
             pending_actions: Vec::new(),
             last_viewport_size: (800, 600), // Default size
+            expanded_entities: HashSet::new(),
         }
     }
 
     /// Get the last known viewport panel size in pixels.
     pub fn viewport_size(&self) -> (u32, u32) {
         self.last_viewport_size
+    }
+
+    /// Check if an entity is expanded in the hierarchy.
+    pub fn is_expanded(&self, entity_id: EntityId) -> bool {
+        self.expanded_entities.contains(&entity_id)
+    }
+
+    /// Toggle expansion of an entity.
+    pub fn toggle_expand(&mut self, entity_id: EntityId) {
+        if self.expanded_entities.contains(&entity_id) {
+            self.expanded_entities.remove(&entity_id);
+        } else {
+            self.expanded_entities.insert(entity_id);
+        }
+    }
+
+    /// Check if an entity should be visible (all ancestors are expanded).
+    fn is_entity_visible(&self, entity: &EntityInfo, all_entities: &[EntityInfo]) -> bool {
+        let mut current = entity.parent_id;
+        while let Some(parent_id) = current {
+            // If parent is collapsed, this entity is not visible
+            if !self.expanded_entities.contains(&parent_id) {
+                return false;
+            }
+            // Find parent's parent
+            current = all_entities.iter()
+                .find(|e| e.id == parent_id)
+                .and_then(|e| e.parent_id);
+        }
+        true
     }
 
     /// Build the editor UI.
@@ -306,7 +342,12 @@ impl EditorUI {
         let header_bounds = Rect2D::from_origin_size(bounds.min, Vec2::new(bounds.width(), header_height));
         ui.draw_rect(header_bounds, Color::new(0.22, 0.22, 0.22, 1.0));
 
-        let header_text = format!("Hierarchy ({} entities)", entities.len());
+        // Count visible entities (respecting collapsed state)
+        let visible_count = entities.iter()
+            .filter(|e| self.is_entity_visible(e, entities))
+            .count();
+
+        let header_text = format!("Hierarchy ({} entities)", visible_count);
         let header_pos = Vec2::new(bounds.min.x() + 8.0, header_bounds.center().y() - 7.0);
         ui.draw_text(&header_text, header_pos, Color::new(0.9, 0.9, 0.9, 1.0), 12.0);
 
@@ -316,6 +357,11 @@ impl EditorUI {
         let indent_per_level = 16.0;
 
         for entity in entities {
+            // Skip entities whose ancestors are collapsed
+            if !self.is_entity_visible(entity, entities) {
+                continue;
+            }
+
             // Calculate indentation based on depth
             let indent = entity.depth as f32 * indent_per_level;
             let item_x = bounds.min.x() + indent;
@@ -352,14 +398,39 @@ impl EditorUI {
                 );
             }
 
-            // Expand/collapse arrow for entities with children
+            // Expand/collapse triangle for entities with children
             let text_x = if entity.has_children {
-                let arrow = "▼"; // Could be "▶" when collapsed if we add collapse state
-                let arrow_pos = Vec2::new(item_x + 4.0, cursor.y() + 3.0);
-                ui.draw_text(arrow, arrow_pos, Color::new(0.6, 0.6, 0.6, 1.0), 10.0);
+                let is_expanded = self.expanded_entities.contains(&entity.id);
+                let triangle = if is_expanded { "▼" } else { "▶" };
+                let triangle_bounds = Rect2D::from_origin_size(
+                    Vec2::new(item_x + 2.0, cursor.y()),
+                    Vec2::new(16.0, item_height),
+                );
+                let triangle_hovered = ui.input.is_hovered(triangle_bounds);
+
+                let triangle_color = if triangle_hovered {
+                    Color::new(0.9, 0.9, 0.9, 1.0)
+                } else {
+                    Color::new(0.6, 0.6, 0.6, 1.0)
+                };
+
+                let triangle_pos = Vec2::new(item_x + 4.0, cursor.y() + 4.0);
+                ui.draw_text(triangle, triangle_pos, triangle_color, 10.0);
+
+                // Click on triangle to toggle expand
+                if ui.input.mouse_clicked(mouse_button::LEFT) && triangle_hovered {
+                    self.toggle_expand(entity.id);
+                }
+
                 item_x + 18.0
             } else {
-                item_x + 8.0
+                // Leaf node - show a small dot indicator
+                let dot_pos = Vec2::new(item_x + 6.0, cursor.y() + 8.0);
+                ui.draw_rect(
+                    Rect2D::from_origin_size(dot_pos, Vec2::new(4.0, 4.0)),
+                    Color::new(0.4, 0.4, 0.4, 1.0),
+                );
+                item_x + 18.0
             };
 
             // Entity name
@@ -377,8 +448,15 @@ impl EditorUI {
             let badge_pos = Vec2::new(item_bounds.max.x() - badge_size.x() - 8.0, cursor.y() + 5.0);
             ui.draw_text(badge_text, badge_pos, badge_color, 10.0);
 
-            // Click to select
-            if ui.input.mouse_clicked(mouse_button::LEFT) && is_hovered {
+            // Click to select (but not on triangle)
+            let triangle_width = if entity.has_children { 18.0 } else { 0.0 };
+            let select_bounds = Rect2D::from_origin_size(
+                Vec2::new(item_x + triangle_width, cursor.y()),
+                Vec2::new(item_width - triangle_width, item_height),
+            );
+            let select_hovered = ui.input.is_hovered(select_bounds);
+
+            if ui.input.mouse_clicked(mouse_button::LEFT) && select_hovered {
                 self.selected_entity = Some(entity.id);
                 self.pending_actions.push(EditorAction::SelectEntity(entity.id));
             }

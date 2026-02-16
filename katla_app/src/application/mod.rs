@@ -942,6 +942,7 @@ impl Application {
 
         fn add_entity_and_children(
             entity_id: EntityId,
+            parent_id: Option<EntityId>,
             entity_data: &HashMap<EntityId, (String, Vec3, Vec3, Vec3, String)>,
             children_map: &HashMap<EntityId, Vec<EntityId>>,
             result: &mut Vec<crate::ui::EntityInfo>,
@@ -958,11 +959,12 @@ impl Application {
                     model_type: model_type.clone(),
                     depth,
                     has_children: !children.is_empty(),
+                    parent_id,
                 });
 
                 // Recursively add children
                 for child_id in children {
-                    add_entity_and_children(*child_id, entity_data, children_map, result, depth + 1);
+                    add_entity_and_children(*child_id, Some(entity_id), entity_data, children_map, result, depth + 1);
                 }
             }
         }
@@ -972,7 +974,7 @@ impl Application {
         roots.sort_by_key(|id| id.id());
 
         for root_id in roots {
-            add_entity_and_children(root_id, &entity_data, &children_map, &mut result, 0);
+            add_entity_and_children(root_id, None, &entity_data, &children_map, &mut result, 0);
         }
 
         result
