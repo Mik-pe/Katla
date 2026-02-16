@@ -160,14 +160,74 @@ impl EditorUI {
     ) {
         let screen_size = ui.screen_size();
 
+        // Get visible entities (respecting collapsed state) for keyboard navigation
+        let visible_entities: Vec<EntityId> = entities
+            .iter()
+            .filter(|e| self.is_entity_visible(e, entities))
+            .map(|e| e.id)
+            .collect();
+
         // === KEYBOARD SHORTCUTS ===
         // Delete key - delete selected entity
         if ui.input.key_pressed(katla_ui::input::KeyCode::Delete) {
             if let Some(entity_id) = self.selected_entity {
-                // Verify entity still exists in the list
                 if entities.iter().any(|e| e.id == entity_id) {
                     self.pending_actions.push(EditorAction::DeleteEntity(entity_id));
                     self.selected_entity = None;
+                }
+            }
+        }
+
+        // Arrow Up - select previous entity
+        if ui.input.key_pressed(katla_ui::input::KeyCode::ArrowUp) {
+            if let Some(current_id) = self.selected_entity {
+                if let Some(pos) = visible_entities.iter().position(|id| *id == current_id) {
+                    if pos > 0 {
+                        self.selected_entity = Some(visible_entities[pos - 1]);
+                    }
+                }
+            } else if !visible_entities.is_empty() {
+                // No selection - select last entity
+                self.selected_entity = Some(*visible_entities.last().unwrap());
+            }
+        }
+
+        // Arrow Down - select next entity
+        if ui.input.key_pressed(katla_ui::input::KeyCode::ArrowDown) {
+            if let Some(current_id) = self.selected_entity {
+                if let Some(pos) = visible_entities.iter().position(|id| *id == current_id) {
+                    if pos < visible_entities.len() - 1 {
+                        self.selected_entity = Some(visible_entities[pos + 1]);
+                    }
+                }
+            } else if !visible_entities.is_empty() {
+                // No selection - select first entity
+                self.selected_entity = Some(visible_entities[0]);
+            }
+        }
+
+        // Arrow Right - expand selected entity
+        if ui.input.key_pressed(katla_ui::input::KeyCode::ArrowRight) {
+            if let Some(entity_id) = self.selected_entity {
+                if !self.expanded_entities.contains(&entity_id) {
+                    self.expanded_entities.insert(entity_id);
+                }
+            }
+        }
+
+        // Arrow Left - collapse selected entity (or select parent)
+        if ui.input.key_pressed(katla_ui::input::KeyCode::ArrowLeft) {
+            if let Some(entity_id) = self.selected_entity {
+                if self.expanded_entities.contains(&entity_id) {
+                    // Collapse if expanded
+                    self.expanded_entities.remove(&entity_id);
+                } else {
+                    // Select parent if collapsed
+                    if let Some(entity) = entities.iter().find(|e| e.id == entity_id) {
+                        if let Some(parent_id) = entity.parent_id {
+                            self.selected_entity = Some(parent_id);
+                        }
+                    }
                 }
             }
         }
