@@ -8,7 +8,7 @@
 //! - Status bar (bottom)
 
 use katla_math::{Color, Rect2D, Vec2, Vec3};
-use katla_ui::{DrawList, UiContext, input::mouse_button};
+use katla_ui::{DrawList, ForkAwesome, UiContext, input::mouse_button};
 use katla_ecs::EntityId;
 use std::collections::HashSet;
 
@@ -462,11 +462,10 @@ impl EditorUI {
                 );
             }
 
-            // Expand/collapse triangle for entities with children
+            // Expand/collapse icon for entities with children
             let text_x = if entity.has_children {
                 let is_expanded = self.expanded_entities.contains(&entity.id);
-                // Use ASCII since roboto font doesn't have Unicode triangles
-                let triangle = if is_expanded { "v" } else { ">" };
+                let icon = if is_expanded { ForkAwesome::CHEVRON_DOWN } else { ForkAwesome::CHEVRON_RIGHT };
                 let triangle_bounds = Rect2D::from_origin_size(
                     Vec2::new(item_x + 2.0, cursor.y()),
                     Vec2::new(16.0, item_height),
@@ -479,8 +478,8 @@ impl EditorUI {
                     Color::new(0.6, 0.6, 0.6, 1.0)
                 };
 
-                let triangle_pos = Vec2::new(item_x + 4.0, cursor.y() + 4.0);
-                ui.draw_text(triangle, triangle_pos, triangle_color, 10.0);
+                let triangle_pos = Vec2::new(item_x + 3.0, cursor.y() + 2.0);
+                ui.draw_icon(icon, triangle_pos, 12.0, triangle_color);
 
                 // Click on triangle to toggle expand
                 if ui.input.mouse_clicked(mouse_button::LEFT) && triangle_hovered {

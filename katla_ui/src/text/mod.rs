@@ -15,6 +15,8 @@ pub struct FontId(pub u32);
 impl FontId {
     /// Default/built-in font ID.
     pub const DEFAULT: FontId = FontId(0);
+    /// Icon font ID (for ForkAwesome or similar icon fonts).
+    pub const ICON: FontId = FontId(1);
 }
 
 /// Font size stored as fixed-point for hashing.
@@ -300,6 +302,16 @@ impl FontSystem {
         // ASCII printable range
         for c in ' '..='~' {
             self.get_or_rasterize(font_id, c, size);
+        }
+    }
+
+    /// Pre-cache common icons for an icon font.
+    ///
+    /// This rasterizes frequently used icons at the given size to avoid
+    /// runtime hitches when rendering icons for the first time.
+    pub fn precache_icons(&mut self, font_id: FontId, size: f32, icons: &[char]) {
+        for &icon in icons {
+            self.get_or_rasterize(font_id, icon, size);
         }
     }
 

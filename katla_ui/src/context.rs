@@ -8,6 +8,7 @@ use std::collections::HashMap;
 use katla_math::{Color, Rect2D, Vec2};
 
 use crate::draw_list::{DrawList, TextureId};
+use crate::icons::ForkAwesome;
 use crate::input::UiInputState;
 use crate::style::UiStyle;
 use crate::text::{FontId, FontSystem};
@@ -347,6 +348,68 @@ impl UiContext {
     /// Measure text dimensions.
     pub fn measure_text(&self, text: &str, size: f32) -> Vec2 {
         self.fonts.measure_text(self.current_font, text, size)
+    }
+
+    /// Draw an icon from an icon font (like ForkAwesome).
+    ///
+    /// This is a convenience method that temporarily switches to the icon font,
+    /// renders the icon, and restores the previous font.
+    ///
+    /// # Arguments
+    /// * `icon` - The icon character (use constants from `icons::ForkAwesome`)
+    /// * `position` - Top-left position of the icon
+    /// * `size` - Font size in pixels
+    /// * `color` - RGBA color
+    ///
+    /// # Example
+    /// ```ignore
+    /// use katla_ui::{FontId, icons::ForkAwesome};
+    ///
+    /// ui.draw_icon(ForkAwesome::CUBE, pos, 16.0, [1.0, 1.0, 1.0, 1.0]);
+    /// ```
+    pub fn draw_icon(&mut self, icon: char, position: Vec2, size: f32, color: Color) {
+        let prev_font = self.current_font;
+        self.current_font = FontId::ICON;
+
+        let mut buf = [0u8; 4];
+        let icon_str = icon.encode_utf8(&mut buf);
+        self.draw_text(icon_str, position, color, size);
+
+        self.current_font = prev_font;
+    }
+
+    /// Draw an icon centered within bounds.
+    ///
+    /// This is useful for icon buttons where you want the icon centered.
+    pub fn draw_icon_centered(&mut self, icon: char, bounds: Rect2D, size: f32, color: Color) {
+        // Get icon metrics to center it
+        let prev_font = self.current_font;
+        self.current_font = FontId::ICON;
+
+        let mut buf = [0u8; 4];
+        let icon_str = icon.encode_utf8(&mut buf);
+        let icon_size = self.measure_text(icon_str, size);
+
+        let pos = Vec2::new(
+            bounds.center().x() - icon_size.x() * 0.5,
+            bounds.center().y() - icon_size.y() * 0.5,
+        );
+
+        self.draw_text(icon_str, pos, color, size);
+        self.current_font = prev_font;
+    }
+
+    /// Measure an icon's dimensions.
+    pub fn measure_icon(&mut self, icon: char, size: f32) -> Vec2 {
+        let prev_font = self.current_font;
+        self.current_font = FontId::ICON;
+
+        let mut buf = [0u8; 4];
+        let icon_str = icon.encode_utf8(&mut buf);
+        let dims = self.measure_text(icon_str, size);
+
+        self.current_font = prev_font;
+        dims
     }
 
     /// Set the current font for text rendering.
@@ -835,15 +898,22 @@ impl UiContext {
         };
         self.draw_rect(bounds, bg_color);
 
-        // Draw arrow indicator (top-left positioning, centered vertically)
-        let arrow = if *open { "▼ " } else { "► " };
-        let text = format!("{}{}", arrow, label);
-        let text_size = self.measure_text(&text, self.style.font_size);
-        let text_pos = Vec2::new(
+        // Draw expand/collapse icon
+        let icon = if *open { ForkAwesome::CHEVRON_DOWN } else { ForkAwesome::CHEVRON_RIGHT };
+        let icon_size = self.style.font_size;
+        let icon_pos = Vec2::new(
             bounds.min.x() + 4.0,
+            bounds.center().y() - icon_size * 0.5,
+        );
+        self.draw_icon(icon, icon_pos, icon_size, self.style.text_color);
+
+        // Draw label text after icon
+        let text_size = self.measure_text(label, self.style.font_size);
+        let text_pos = Vec2::new(
+            bounds.min.x() + icon_size + 8.0,
             bounds.center().y() - text_size.y() * 0.5,
         );
-        self.draw_text(&text, text_pos, self.style.text_color, self.style.font_size);
+        self.draw_text(label, text_pos, self.style.text_color, self.style.font_size);
 
         *open
     }
@@ -1252,15 +1322,22 @@ impl UiContext {
 
         self.draw_rect(bounds, bg_color);
 
-        // Draw label with dropdown arrow
-        let arrow = " ▼";
-        let full_label = format!("{}{}", label, arrow);
-        let text_size = self.measure_text(&full_label, self.style.font_size);
+        // Draw label centered
+        let text_size = self.measure_text(label, self.style.font_size);
         let text_pos = Vec2::new(
-            bounds.center().x() - text_size.x() * 0.5,
+            bounds.center().x() - text_size.x() * 0.5 - 10.0,
             bounds.center().y() - text_size.y() * 0.5,
         );
-        self.draw_text(&full_label, text_pos, self.style.button_text, self.style.font_size);
+        self.draw_text(label, text_pos, self.style.button_text, self.style.font_size);
+
+        // Draw dropdown icon
+        let icon = ForkAwesome::CARET_DOWN;
+        let icon_size = self.style.font_size;
+        let icon_pos = Vec2::new(
+            bounds.center().x() + text_size.x() * 0.5 + 2.0,
+            bounds.center().y() - icon_size * 0.5,
+        );
+        self.draw_icon(icon, icon_pos, icon_size, self.style.button_text);
 
         // If open, prepare popup area
         if is_open {
@@ -1440,14 +1517,14 @@ impl UiContext {
         );
         self.draw_text(preview, text_pos, self.style.combo_text, self.style.font_size);
 
-        // Draw dropdown arrow (top-left positioning, centered vertically)
-        let arrow = "▼";
-        let arrow_size = self.measure_text(arrow, self.style.font_size);
-        let arrow_pos = Vec2::new(
-            bounds.max.x() - arrow_size.x() - self.style.menu_padding,
-            bounds.center().y() - arrow_size.y() * 0.5,
+        // Draw dropdown icon
+        let icon = ForkAwesome::CARET_DOWN;
+        let icon_size = self.style.font_size;
+        let icon_pos = Vec2::new(
+            bounds.max.x() - icon_size - self.style.menu_padding,
+            bounds.center().y() - icon_size * 0.5,
         );
-        self.draw_text(arrow, arrow_pos, self.style.combo_text, self.style.font_size);
+        self.draw_icon(icon, icon_pos, icon_size, self.style.combo_text);
 
         // If open, prepare popup area
         if is_open {

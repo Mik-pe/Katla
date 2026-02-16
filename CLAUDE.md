@@ -47,6 +47,10 @@ cargo run -- --single-frame    # Same as above, long form
 
 - `-s, --single-frame` - Run in limited-frame mode (25 frames) for validation testing. Useful for checking Vulkan validation errors without running indefinitely.
 
+## Working Conventions
+
+- **Task Continuity**: When working with tasks, continue through the task list without asking for confirmation between tasks. If there are pending tasks, proceed to the next one automatically.
+
 ## Git Commit Conventions
 
 ### Commit Message Format

@@ -42,6 +42,23 @@
 //! ui_renderer.render(command_buffer, draw_list, screen_size);
 //! ```
 //!
+//! # Icon Fonts
+//!
+//! Icon fonts like ForkAwesome can be loaded and used for rendering icons.
+//! Load the icon font with `FontId::ICON` and use `draw_icon()`:
+//!
+//! ```ignore
+//! use katla_ui::{FontId, icons::ForkAwesome};
+//!
+//! // In setup:
+//! let icon_bytes = include_bytes!("path/to/forkawesome.ttf");
+//! ui.fonts.add_font_with_id(icon_bytes, FontId::ICON)?;
+//! ui.fonts.precache_icons(FontId::ICON, 16.0, ForkAwesome::common_icons());
+//!
+//! // In render loop:
+//! ui.draw_icon(ForkAwesome::CUBE, pos, 16.0, [1.0, 1.0, 1.0, 1.0]);
+//! ```
+//!
 //! # Dependency Restrictions
 //!
 //! This crate follows Katla's architecture rules:
@@ -50,6 +67,7 @@
 
 pub mod context;
 pub mod draw_list;
+pub mod icons;
 pub mod input;
 pub mod primitives;
 pub mod renderer;
@@ -60,6 +78,7 @@ pub mod widgets;
 // Re-exports for convenience
 pub use context::{GraphOptions, UiContext};
 pub use draw_list::{DrawCommand, DrawList, TextureId, UiVertex};
+pub use icons::ForkAwesome;
 pub use input::UiInputState;
 pub use renderer::{UiRenderError, UiRenderer};
 pub use style::{UiStyle, UiTheme};

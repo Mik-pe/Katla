@@ -1,6 +1,7 @@
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
 use katla_ecs::{System, SystemExecutionOrder, World};
+use katla_ui::{FontId, ForkAwesome};
 use winit::event_loop::{ControlFlow, EventLoop};
 use winit::keyboard::ModifiersState;
 
@@ -107,6 +108,31 @@ impl ApplicationBuilder {
             }
         } else {
             log::warn!("Font file not found: {}", font_path.display());
+        }
+
+        // Load icon font (ForkAwesome)
+        let icon_font_path = resources.font_path("forkawesome-webfont.ttf");
+        if icon_font_path.exists() {
+            match std::fs::read(&icon_font_path) {
+                Ok(font_bytes) => {
+                    match ui_context.fonts.add_font_with_id(&font_bytes, FontId::ICON) {
+                        Ok(()) => {
+                            // Precache common icons at typical UI sizes
+                            ui_context.fonts.precache_icons(FontId::ICON, 14.0, ForkAwesome::common_icons());
+                            ui_context.fonts.precache_icons(FontId::ICON, 16.0, ForkAwesome::common_icons());
+                            log::info!("Loaded icon font from {}", icon_font_path.display());
+                        }
+                        Err(e) => {
+                            log::warn!("Failed to parse icon font: {}", e);
+                        }
+                    }
+                }
+                Err(e) => {
+                    log::warn!("Failed to read icon font file {}: {}", icon_font_path.display(), e);
+                }
+            }
+        } else {
+            log::warn!("Icon font file not found: {}", icon_font_path.display());
         }
 
         let app = Application {
