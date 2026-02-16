@@ -1,0 +1,314 @@
+//! Editor subsystem - handles UI rendering, entity management, and editor actions.
+
+use std::collections::{HashMap, HashSet};
+
+use log::info;
+
+use katla_ecs::EntityId;
+use katla_math::{Vec2, Vec3};
+
+use crate::components::{
+    Children, DrawableComponent, EditorHidden, NameComponent, Parent, TransformComponent,
+};
+use crate::rendering::MeshBuilder;
+use crate::ui::{EditorAction, EntityInfo, SpawnableModel};
+
+use super::Application;
+
+/// Render debug UI overlay with stats and controls.
+pub fn render_debug_ui(app: &mut Application, dt: f32) {
+    let screen_size = if let Some(ref window) = app.window {
+        let size = window.inner_size();
+        Vec2::new(size.width as f32, size.height as f32)
+    } else {
+        Vec2::new(1920.0, 1080.0)
+    };
+
+    // Calculate stats
+    let fps = if dt > 0.0 { 1.0 / dt } else { 0.0 };
+    let entity_count = app.world.entity_count();
+
+    // Collect entity info for editor UI
+    let entity_info = collect_entity_info(app);
+
+    // Render UI (editor or debug overlay based on mode)
+    // We extract the vertices immediately to release the borrow on editor_ui
+    let (vertices, indices, use_editor) = if app.use_editor_ui {
+        let draw_list = app.editor_ui.render(
+            &mut app.ui_context,
+            screen_size,
+            &entity_info,
+            fps,
+            app.frame_count,
+        );
+        (draw_list.vertices.clone(), draw_list.indices.clone(), true)
+    } else {
+        let draw_list = app.debug_overlay.render(
+            &mut app.ui_context,
+            screen_size,
+            fps,
+            app.frame_count,
+            entity_count,
+        );
+        (draw_list.vertices.clone(), draw_list.indices.clone(), false)
+    };
+
+    // Extract editor actions (safe now since editor_ui borrow is released)
+    let editor_actions = if use_editor {
+        app.editor_ui.take_actions()
+    } else {
+        Vec::new()
+    };
+
+    // Process editor actions
+    for action in editor_actions {
+        match action {
+            EditorAction::SpawnModel(model_type, position) => {
+                spawn_model(app, model_type, position);
+            }
+            EditorAction::DeleteEntity(entity_id) => {
+                // Cascade delete: collect all children first, then delete in reverse order
+                let mut to_delete = vec![entity_id];
+                collect_children_recursive(app, entity_id, &mut to_delete);
+
+                // Delete in reverse order (children before parents)
+                for id in to_delete.into_iter().rev() {
+                    app.world.destroy_entity(id);
+                }
+                info!("Deleted entity {:?} and its children", entity_id);
+            }
+            EditorAction::SelectEntity(entity_id) => {
+                info!("Selected entity {:?}", entity_id);
+            }
+            EditorAction::MoveEntity(_entity_id, _position) => {
+                // TODO: Implement entity moving
+            }
+            EditorAction::TogglePlay => {
+                info!("Toggle play mode");
+            }
+        }
+    }
+
+    // Pass UI data to renderer if we have data and a renderer
+    if !vertices.is_empty() {
+        use crate::rendering::ui_material::UiShaderVertex;
+
+        // Transform vertices from screen space to NDC
+        // Screen: (0,0) = top-left, Y increases downward
+        // Standard viewport: NDC y=-1 is top, y=+1 is bottom
+        let shader_vertices: Vec<UiShaderVertex> = vertices
+            .iter()
+            .map(|v| {
+                let ndc_x = (v.position.x() / screen_size.x()) * 2.0 - 1.0;
+                let ndc_y = (v.position.y() / screen_size.y()) * 2.0 - 1.0;
+
+                UiShaderVertex::new(
+                    [ndc_x, ndc_y],
+                    [v.uv.x(), v.uv.y()],
+                    [v.color.r, v.color.g, v.color.b, v.color.a],
+                )
+            })
+            .collect();
+
+        // Convert vertices to raw bytes
+        let vertex_bytes = unsafe {
+            std::slice::from_raw_parts(
+                shader_vertices.as_ptr() as *const u8,
+                shader_vertices.len() * std::mem::size_of::<UiShaderVertex>(),
+            )
+        }
+        .to_vec();
+
+        // Convert indices to raw bytes
+        let index_bytes = unsafe {
+            std::slice::from_raw_parts(
+                indices.as_ptr() as *const u8,
+                indices.len() * std::mem::size_of::<u32>(),
+            )
+        }
+        .to_vec();
+
+        // Pass to renderer
+        if let Some(ref renderer) = app.renderer {
+            renderer.set_ui_data(
+                vertex_bytes,
+                index_bytes,
+                [screen_size.x(), screen_size.y()],
+            );
+        }
+    }
+
+    // Update font atlas texture if needed (render may have added new glyphs)
+    if app.ui_context.fonts.atlas_needs_update() {
+        if let Some(ref mut renderer) = app.renderer {
+            let atlas_data = app.ui_context.fonts.atlas_data().to_vec();
+            renderer.update_font_atlas(&atlas_data);
+        }
+        app.ui_context.fonts.mark_atlas_updated();
+    }
+
+    // Clear input state for next frame
+    app.ui_context.input.clear_frame_state();
+}
+
+/// Collect entity information for the editor UI in tree order.
+pub fn collect_entity_info(app: &Application) -> Vec<EntityInfo> {
+    // First pass: collect all entities with transforms and their relationships
+    let mut entity_data: HashMap<EntityId, (String, Vec3, Vec3, Vec3, String)> = HashMap::new();
+    let mut parent_map: HashMap<EntityId, EntityId> = HashMap::new();
+    let mut children_map: HashMap<EntityId, Vec<EntityId>> = HashMap::new();
+    let mut root_entities: HashSet<EntityId> = HashSet::new();
+
+    for entity_id in app.world.entity_ids() {
+        // Skip entities marked as hidden from editor
+        if app.world.get_component::<EditorHidden>(entity_id).is_some() {
+            continue;
+        }
+
+        let transform = match app.world.get_component::<TransformComponent>(entity_id) {
+            Some(t) => t,
+            None => continue,
+        };
+
+        let name = app
+            .world
+            .get_component::<NameComponent>(entity_id)
+            .map(|n| n.name.clone())
+            .unwrap_or_else(|| format!("Entity {}", entity_id.id()));
+
+        let pos = transform.transform.position;
+        let euler = transform.transform.rotation.to_euler();
+        let rot = Vec3::new(euler.0, euler.1, euler.2);
+        let scale = transform.transform.scale;
+
+        let model_type = app
+            .world
+            .get_component::<DrawableComponent>(entity_id)
+            .map(|_| "Mesh".to_string())
+            .unwrap_or_else(|| "Empty".to_string());
+
+        entity_data.insert(entity_id, (name, pos, rot, scale, model_type));
+        root_entities.insert(entity_id);
+
+        // Track parent relationship
+        if let Some(parent) = app.world.get_component::<Parent>(entity_id) {
+            parent_map.insert(entity_id, parent.parent);
+            root_entities.remove(&entity_id);
+
+            children_map
+                .entry(parent.parent)
+                .or_default()
+                .push(entity_id);
+        }
+    }
+
+    // Build tree in depth-first order
+    let mut result = Vec::new();
+
+    fn add_entity_and_children(
+        entity_id: EntityId,
+        parent_id: Option<EntityId>,
+        entity_data: &HashMap<EntityId, (String, Vec3, Vec3, Vec3, String)>,
+        children_map: &HashMap<EntityId, Vec<EntityId>>,
+        result: &mut Vec<EntityInfo>,
+        depth: u32,
+    ) {
+        if let Some((name, pos, rot, scale, model_type)) = entity_data.get(&entity_id) {
+            let children = children_map
+                .get(&entity_id)
+                .map(|c| c.as_slice())
+                .unwrap_or(&[]);
+            result.push(EntityInfo {
+                id: entity_id,
+                name: name.clone(),
+                position: *pos,
+                rotation: *rot,
+                scale: *scale,
+                model_type: model_type.clone(),
+                depth,
+                has_children: !children.is_empty(),
+                parent_id,
+            });
+
+            // Recursively add children
+            for child_id in children {
+                add_entity_and_children(
+                    *child_id,
+                    Some(entity_id),
+                    entity_data,
+                    children_map,
+                    result,
+                    depth + 1,
+                );
+            }
+        }
+    }
+
+    // Add root entities (those without parents) in order
+    let mut roots: Vec<EntityId> = root_entities.into_iter().collect();
+    roots.sort_by_key(|id| id.id());
+
+    for root_id in roots {
+        add_entity_and_children(root_id, None, &entity_data, &children_map, &mut result, 0);
+    }
+
+    result
+}
+
+/// Recursively collect all children of an entity for cascade delete.
+pub fn collect_children_recursive(app: &Application, entity_id: EntityId, result: &mut Vec<EntityId>) {
+    if let Some(children) = app.world.get_component::<Children>(entity_id) {
+        for child_id in &children.children {
+            result.push(*child_id);
+            collect_children_recursive(app, *child_id, result);
+        }
+    }
+}
+
+/// Spawn a model from the editor UI.
+pub fn spawn_model(app: &mut Application, model_type: SpawnableModel, position: Vec3) {
+    let context = match &app.renderer {
+        Some(r) => r.context.clone(),
+        None => return,
+    };
+
+    // Create mesh using MeshBuilder (creates entity internally)
+    let builder = MeshBuilder::new(context.clone()).position(position);
+
+    let spawned_id = match model_type {
+        SpawnableModel::Fox => {
+            info!("Spawning Fox at {:?} (using cube placeholder)", position);
+            builder
+                .cube()
+                .build(&mut app.world, app.renderer.as_mut().unwrap())
+        }
+        SpawnableModel::Cube => builder
+            .cube()
+            .build(&mut app.world, app.renderer.as_mut().unwrap()),
+        SpawnableModel::Sphere => builder
+            .sphere()
+            .build(&mut app.world, app.renderer.as_mut().unwrap()),
+        SpawnableModel::Cylinder => builder
+            .cylinder()
+            .build(&mut app.world, app.renderer.as_mut().unwrap()),
+        SpawnableModel::Plane => builder
+            .plane()
+            .build(&mut app.world, app.renderer.as_mut().unwrap()),
+        SpawnableModel::Torus => builder
+            .torus()
+            .build(&mut app.world, app.renderer.as_mut().unwrap()),
+    };
+
+    // Update the name component with a more descriptive name
+    let name = format!("{}_{}", model_type.name(), spawned_id.id());
+    if let Some(name_comp) = app.world.get_component_mut::<NameComponent>(spawned_id) {
+        name_comp.name = name;
+    }
+
+    info!(
+        "Spawned {} (entity {}) at {:?}",
+        model_type.name(),
+        spawned_id.id(),
+        position
+    );
+}

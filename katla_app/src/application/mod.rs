@@ -1,4 +1,16 @@
+//! Application module - main application lifecycle and event handling.
+//!
+//! This module contains the main [`Application`] struct and its implementation
+//! of [`ApplicationHandler`] for winit event handling. The heavy lifting is
+//! delegated to submodules:
+//!
+//! - [`builder`] - Application builder pattern
+//! - [`renderer`] - Render graph setup and frame rendering
+//! - [`editor`] - UI rendering and entity management for the editor
+
 pub mod builder;
+pub mod editor;
+pub mod renderer;
 
 use std::{cell::RefCell, collections::HashMap, ffi::CString, rc::Rc, time::Instant};
 
@@ -30,7 +42,6 @@ use crate::{
     resources::ResourceManager,
     util::{FileCache, GLTFModel, Timer},
 };
-use katla_ecs::System;
 
 struct ApplicationInfo {
     name: String,
@@ -38,30 +49,31 @@ struct ApplicationInfo {
     max_frames: Option<usize>, // Some(n) = exit after n frames, None = run indefinitely
 }
 
+/// Main application struct containing all engine state.
 pub struct Application {
-    window: Option<Window>,
-    renderer: Option<VulkanRenderer>,
-    camera: Rc<RefCell<Camera>>,
-    gltf_cache: FileCache<GLTFModel>,
-    material_manager: MaterialManager,
-    stage_upload: bool,
-    timer: Timer,
-    info: ApplicationInfo,
-    world: World,
-    input_mapper: InputMapper,
-    current_modifiers: ModifiersState,
-    frame_count: usize,         // Track frames rendered for max_frames limit
-    resources: ResourceManager, // Centralized resource paths
+    pub(crate) window: Option<Window>,
+    pub(crate) renderer: Option<VulkanRenderer>,
+    pub(crate) camera: Rc<RefCell<Camera>>,
+    pub(crate) gltf_cache: FileCache<GLTFModel>,
+    pub(crate) material_manager: MaterialManager,
+    pub(crate) stage_upload: bool,
+    pub(crate) timer: Timer,
+    pub(crate) info: ApplicationInfo,
+    pub(crate) world: World,
+    pub(crate) input_mapper: InputMapper,
+    pub(crate) current_modifiers: ModifiersState,
+    pub(crate) frame_count: usize,
+    pub(crate) resources: ResourceManager,
     /// Skeleton buffers for animated meshes, indexed by entity ID
-    skeleton_buffers: HashMap<katla_ecs::EntityId, Rc<RefCell<SkeletonBuffer>>>,
+    pub(crate) skeleton_buffers: HashMap<EntityId, Rc<RefCell<SkeletonBuffer>>>,
     /// Immediate mode UI context
-    ui_context: katla_ui::UiContext,
+    pub(crate) ui_context: katla_ui::UiContext,
     /// Debug overlay UI (simplified stats)
-    debug_overlay: crate::ui::DebugOverlay,
+    pub(crate) debug_overlay: crate::ui::DebugOverlay,
     /// Game engine editor UI
-    editor_ui: crate::ui::EditorUI,
+    pub(crate) editor_ui: crate::ui::EditorUI,
     /// Use editor UI mode (vs simple debug overlay)
-    use_editor_ui: bool,
+    pub(crate) use_editor_ui: bool,
 }
 
 impl ApplicationHandler for Application {
@@ -72,10 +84,9 @@ impl ApplicationHandler for Application {
                     Window::default_attributes()
                         .with_title(&self.info.name)
                         .with_resizable(true)
-                        // Use primary monitor size for initial window size
                         .with_min_inner_size(LogicalSize {
-                            width: 800.0,  // Use reasonable default width
-                            height: 600.0, // Use reasonable default height
+                            width: 800.0,
+                            height: 600.0,
                         })
                         .with_maximized(false),
                 )
@@ -90,14 +101,10 @@ impl ApplicationHandler for Application {
                 engine_name,
             );
 
-            // Initialize storage uniform system for modern rendering
-            // This enables storage buffers with instance indexing
             renderer
                 .init_storage_standard()
                 .expect("Failed to initialize storage uniform system");
 
-            // Load materials from TOML files with storage buffer mode
-            // This creates pipelines with two-set layout (uniforms + textures)
             let loaded_count = renderer
                 .material_registry
                 .borrow_mut()
@@ -109,8 +116,6 @@ impl ApplicationHandler for Application {
                 self.resources.materials.display()
             );
 
-            // Enable hot reload for materials and shaders
-            // Watch the parent resources directory to catch changes in both materials/ and shaders/
             renderer
                 .material_registry
                 .borrow_mut()
@@ -118,17 +123,13 @@ impl ApplicationHandler for Application {
                 .expect("Failed to enable hot reload");
             info!("Hot reload enabled for materials and shaders");
 
-            // Now find and load the Fox model (after templates are loaded)
+            // Load Fox model with skeletal animation
             let fox_path = self.resources.model_path("Fox.glb");
-
             let fox_transform = Transform::new_from_position(Vec3::new(0.0, 5.0, 0.0))
-                .with_scale(Vec3::new(0.05, 0.05, 0.05)); // Fox model is huge, scale it down
+                .with_scale(Vec3::new(0.05, 0.05, 0.05));
             let context = renderer.context.clone();
             let fox_model = self.gltf_cache.read(fox_path);
 
-            // Create the skinned model entity using the gltf_skinned template
-            // Fox has skeletal animation, so we need skinned mesh + shader
-            // Get raw pointer to material registry for skinned model creation
             let material_registry_ptr: *const std::cell::RefCell<MaterialRegistry> =
                 &renderer.material_registry;
             let fox = Model::new_skinned_from_gltf_with_ptr(
@@ -140,46 +141,38 @@ impl ApplicationHandler for Application {
                 material_registry_ptr,
             );
 
-            info!(
-                "Fox model entity: {:?} loaded, setting up animation...",
-                fox.entity
-            );
+            info!("Fox model entity: {:?} loaded, setting up animation...", fox.entity);
 
-            // Setup animation components for the fox model
             AnimationManager::setup_animated_model(
                 &mut self.world,
                 fox.entity,
                 &fox_model,
-                Some("Run"), // Play "Walk" animation by default
+                Some("Run"),
             );
 
             debug!("Fox animation setup complete for entity {:?}", fox.entity);
 
-            // Setup GPU skeleton buffer for the fox model
+            // Setup GPU skeleton buffer
             if let Some(skeleton) = self.world.get_component::<Skeleton>(fox.entity) {
                 let joint_count = skeleton.joint_transforms.len();
                 debug!("Fox has {} joints, creating skeleton buffer", joint_count);
 
-                // Create skeleton buffer
                 let skeleton_buffer = Rc::new(RefCell::new(SkeletonBuffer::new(
                     renderer.context.clone(),
                     joint_count,
                 )));
 
-                // Get skeleton_set_layout from the material's pipeline
                 if let Some(drawable) = self.world.get_component::<DrawableComponent>(fox.entity) {
                     if let Some(material_handle) = drawable.material_handle {
                         if let Some(skeleton_layout) = renderer
                             .asset_registry
                             .get_skeleton_set_layout(material_handle)
                         {
-                            // Register skeleton with renderer
                             if let Some(skeleton_handle) =
                                 renderer.register_skeleton(skeleton_buffer.clone(), skeleton_layout)
                             {
                                 debug!("Registered skeleton with handle {:?}", skeleton_handle);
 
-                                // Set handle on DrawableComponent
                                 if let Some(drawable) = self
                                     .world
                                     .get_component_mut::<DrawableComponent>(fox.entity)
@@ -187,13 +180,12 @@ impl ApplicationHandler for Application {
                                     drawable.skeleton_handle = Some(skeleton_handle);
                                 }
 
-                                // Store buffer for later uploads
                                 self.skeleton_buffers.insert(fox.entity, skeleton_buffer);
                             } else {
                                 warn!("Failed to register skeleton with renderer");
                             }
                         } else {
-                            warn!("Material does not have skeleton_set_layout (not a skinned material?)");
+                            warn!("Material does not have skeleton_set_layout");
                         }
                     }
                 }
@@ -201,32 +193,30 @@ impl ApplicationHandler for Application {
                 warn!("Fox entity has no Skeleton component");
             }
 
-            // Create meshes spaced out around the scene
-
-            // Cube moved away from fox (fox is near origin)
+            // Create scene meshes
             let _cube = MeshBuilder::new(renderer.context.clone())
                 .position(Vec3::new(15.0, 5.0, -15.0))
-                .color([1.0, 0.3, 0.3]) // Red tint
+                .color([1.0, 0.3, 0.3])
                 .with_shared_material("Checkerboard")
                 .build(&mut self.world, &mut renderer);
 
             let _sphere = MeshBuilder::new(renderer.context.clone())
                 .position(Vec3::new(30.0, 5.0, 0.0))
-                .color([0.3, 1.0, 0.3]) // Green tint
+                .color([0.3, 1.0, 0.3])
                 .with_shared_material("Checkerboard")
                 .sphere()
                 .build(&mut self.world, &mut renderer);
 
             let _cylinder = MeshBuilder::new(renderer.context.clone())
                 .position(Vec3::new(-30.0, 5.0, 0.0))
-                .color([0.3, 0.3, 1.0]) // Blue tint
+                .color([0.3, 0.3, 1.0])
                 .with_shared_material("Checkerboard")
                 .cylinder()
                 .build(&mut self.world, &mut renderer);
 
             let _plane = MeshBuilder::new(renderer.context.clone())
                 .position(Vec3::new(0.0, -5.0, 0.0))
-                .color([0.8, 0.8, 0.8]) // Gray tint
+                .color([0.8, 0.8, 0.8])
                 .with_shared_material("Checkerboard")
                 .plane()
                 .size(Vec3::new(10.0, 10.0, 1.0))
@@ -234,22 +224,19 @@ impl ApplicationHandler for Application {
 
             let _torus = MeshBuilder::new(renderer.context.clone())
                 .position(Vec3::new(0.0, 15.0, 0.0))
-                .color([1.0, 0.8, 0.3]) // Yellow tint
+                .color([1.0, 0.8, 0.3])
                 .with_shared_material("Checkerboard")
                 .torus()
                 .build(&mut self.world, &mut renderer);
 
-            // Set up parent-child relationships for tree view demo
-            // Make torus a child of fox (floating above it)
-            use crate::components::{Children, Parent, NameComponent};
+            // Setup parent-child relationships
+            use crate::components::{Children, NameComponent, Parent};
 
-            // Add Parent component to torus pointing to fox
             if let Some(torus_name) = self.world.get_component_mut::<NameComponent>(_torus) {
                 torus_name.name = "Torus (Fox child)".to_string();
             }
             self.world.add_component(_torus, Parent::new(fox.entity));
 
-            // Add Children component to fox
             let existing_children = self.world.get_component::<Children>(fox.entity)
                 .map(|c| c.children.clone())
                 .unwrap_or_default();
@@ -257,30 +244,27 @@ impl ApplicationHandler for Application {
             children.push(_torus);
             self.world.add_component(fox.entity, Children::new(children));
 
-            // Add lighting to the scene
-            // Directional light (sun)
+            // Add lighting
             self.world.spawn((DirectionalLight::new(
-                Vec3::new(-0.3, -1.0, -0.2), // Angled down and to the side
-                [1.0, 0.95, 0.8],            // Warm white
-                1.0,                         // Full intensity
+                Vec3::new(-0.3, -1.0, -0.2),
+                [1.0, 0.95, 0.8],
+                1.0,
             ),));
 
-            // Point lights for accent lighting
             let _red_light = self.world.spawn((
                 TransformComponent {
                     transform: Transform::new_from_position(Vec3::new(10.0, 10.0, 10.0)),
                 },
-                PointLight::new([1.0, 0.3, 0.3], 5.0, 20.0), // Red light, 5x intensity, 20 unit range
+                PointLight::new([1.0, 0.3, 0.3], 5.0, 20.0),
             ));
 
             let _blue_light = self.world.spawn((
                 TransformComponent {
                     transform: Transform::new_from_position(Vec3::new(-10.0, 8.0, 10.0)),
                 },
-                PointLight::new([0.3, 0.5, 1.0], 4.0, 25.0), // Blue light, 4x intensity, 25 unit range
+                PointLight::new([0.3, 0.5, 1.0], 4.0, 25.0),
             ));
 
-            // Make blue light a child of cube (for tree view demo)
             self.world.add_component(_blue_light, Parent::new(_cube));
             let existing_children = self.world.get_component::<Children>(_cube)
                 .map(|c| c.children.clone())
@@ -289,23 +273,20 @@ impl ApplicationHandler for Application {
             cube_children.push(_blue_light);
             self.world.add_component(_cube, Children::new(cube_children));
 
-            // Add ambient light resource
-            self.world
-                .insert_resource(crate::components::AmbientLight::gray(0.15)); // 15% gray ambient
+            self.world.insert_resource(crate::components::AmbientLight::gray(0.15));
 
             // Create particle emitter
             let _particle_emitter = crate::entities::create_particle_emitter(
                 &mut self.world,
                 renderer.context.clone(),
-                Vec3::new(0.0, 10.0, 0.0), // Above the fox
-                100.0,                     // 100 particles per second
+                Vec3::new(0.0, 10.0, 0.0),
+                100.0,
             );
             debug!("Created particle emitter entity");
 
             self.window = Some(window);
 
-            // Create checkerboard material from template (template loaded from TOML)
-            // The template has the pipeline and shader, we just add the procedural texture
+            // Setup checkerboard material
             let checkerboard_texture = create_checkerboard_texture(renderer.context.clone());
             if self
                 .material_manager
@@ -320,19 +301,16 @@ impl ApplicationHandler for Application {
                 debug!("Registered checkerboard material from template");
             } else {
                 warn!("Checkerboard template not found, using fallback");
-                // Fallback to direct creation if template doesn't exist
                 let checkerboard = create_checkerboard_material(renderer.context.clone());
-                self.material_manager
-                    .register_material("checkerboard", checkerboard);
+                self.material_manager.register_material("checkerboard", checkerboard);
             }
 
-            // Store context reference in material manager for cleanup
             self.material_manager.set_context(renderer.context.clone());
 
             self.renderer = Some(renderer);
 
-            // Setup render graph after renderer initialization
-            self.setup_render_graph();
+            // Setup render graph
+            renderer::setup_render_graph(self);
         }
     }
 
@@ -368,7 +346,6 @@ impl ApplicationHandler for Application {
                 self.world.get_input_mut().set_action_state(action, pressed);
             }
 
-            // Pass mouse button to UI
             let ui_button = match button {
                 winit::event::MouseButton::Left => Some(katla_ui::input::mouse_button::LEFT),
                 winit::event::MouseButton::Right => Some(katla_ui::input::mouse_button::RIGHT),
@@ -389,47 +366,26 @@ impl ApplicationHandler for Application {
 
                     if new_width > 0 && new_height > 0.0 {
                         if let Some(ref mut renderer) = self.renderer {
-                            info!(
-                                "=== Window resized to {}x{}, recreating swapchain ===",
-                                new_width, new_height as u32
-                            );
-                            // Pass the actual window size to ensure swapchain uses correct extent
+                            info!("=== Window resized to {}x{}, recreating swapchain ===", new_width, new_height as u32);
                             renderer.recreate_swapchain();
-                            // Also resize viewport render target
-                            let _ =
-                                renderer.init_viewport_target(new_width as u32, new_height as u32);
-                            // Resize output render target for UI composition
-                            let _ =
-                                renderer.init_output_target(new_width as u32, new_height as u32);
-                            // Rebuild render graph to update resource references
+                            let _ = renderer.init_viewport_target(new_width as u32, new_height as u32);
+                            let _ = renderer.init_output_target(new_width as u32, new_height as u32);
                             renderer.setup_render_graph();
 
-                            // Update camera aspect ratio based on viewport texture size
                             if let Some(viewport_extent) = renderer.viewport_extent() {
-                                let aspect =
-                                    viewport_extent.width as f32 / viewport_extent.height as f32;
-                                self.camera
-                                    .borrow_mut()
-                                    .aspect_ratio_changed(&mut self.world, aspect);
+                                let aspect = viewport_extent.width as f32 / viewport_extent.height as f32;
+                                self.camera.borrow_mut().aspect_ratio_changed(&mut self.world, aspect);
                             }
                         }
                     }
                 }
                 WindowEvent::CursorMoved { position, .. } => {
-                    // Update UI mouse position
-                    self.ui_context
-                        .input
-                        .set_mouse_pos(Vec2::new(position.x as f32, position.y as f32));
+                    self.ui_context.input.set_mouse_pos(Vec2::new(position.x as f32, position.y as f32));
                 }
                 WindowEvent::MouseWheel { delta, .. } => {
-                    // Update UI scroll delta
                     let scroll = match delta {
-                        winit::event::MouseScrollDelta::LineDelta(x, y) => {
-                            Vec2::new(x * 20.0, y * 20.0) // Scale for UI
-                        }
-                        winit::event::MouseScrollDelta::PixelDelta(pos) => {
-                            Vec2::new(pos.x as f32, pos.y as f32)
-                        }
+                        winit::event::MouseScrollDelta::LineDelta(x, y) => Vec2::new(x * 20.0, y * 20.0),
+                        winit::event::MouseScrollDelta::PixelDelta(pos) => Vec2::new(pos.x as f32, pos.y as f32),
                     };
                     self.ui_context.input.scroll_delta = scroll;
                 }
@@ -446,27 +402,18 @@ impl ApplicationHandler for Application {
                             self.world.get_input_mut().set_action_state(action, pressed);
                         }
 
-                        // Pass keyboard input to UI
                         let ui_key = Self::winit_to_ui_key(keycode);
                         if let Some(key) = ui_key {
                             match event.state {
-                                ElementState::Pressed => {
-                                    self.ui_context.input.add_key_press(key);
-                                }
-                                ElementState::Released => {
-                                    self.ui_context.input.add_key_release(key);
-                                }
+                                ElementState::Pressed => self.ui_context.input.add_key_press(key),
+                                ElementState::Released => self.ui_context.input.add_key_release(key),
                             }
                         }
 
                         if event.state == ElementState::Pressed {
                             match keycode {
-                                KeyCode::Escape => {
-                                    event_loop.exit();
-                                }
-                                KeyCode::KeyT => {
-                                    self.stage_upload = true;
-                                }
+                                KeyCode::Escape => event_loop.exit(),
+                                KeyCode::KeyT => self.stage_upload = true,
                                 _ => {}
                             }
                         }
@@ -475,26 +422,23 @@ impl ApplicationHandler for Application {
                 WindowEvent::ModifiersChanged(modifiers) => {
                     self.current_modifiers = modifiers.state();
                 }
-                // Note: ReceivedCharacter was removed in winit 0.30
-                // Text input handling will need to be added later if needed
                 WindowEvent::RedrawRequested => {
                     self.timer.add_timestamp();
-
                     let dt = self.timer.get_delta() as f32;
 
                     // Update world (runs animation systems)
                     self.world.update(dt);
 
                     // Upload skeleton transforms to GPU buffers
-                    self.upload_skeleton_transforms();
+                    renderer::upload_skeleton_transforms(self);
 
                     // Render using render graph
-                    self.render_with_render_graph();
+                    renderer::render_frame(self);
 
                     // Render debug UI overlay
-                    self.render_debug_ui(dt);
+                    editor::render_debug_ui(self, dt);
 
-                    // Handle max_frames limit: exit after rendering specified number of frames
+                    // Handle max_frames limit
                     if let Some(max) = self.info.max_frames {
                         self.frame_count += 1;
                         if self.frame_count >= max {
@@ -503,6 +447,7 @@ impl ApplicationHandler for Application {
                         }
                     }
 
+                    // Stage upload test (KeyT)
                     if self.stage_upload {
                         let start = Instant::now();
                         let renderer = self.renderer.as_mut().expect("Renderer not initialized");
@@ -531,10 +476,10 @@ impl ApplicationHandler for Application {
                             .build(&mut self.world, renderer);
 
                         let millisecs = start.elapsed().as_micros() as f64 / 1000.0;
-
                         debug!("Mesh creation took {millisecs} ms");
                         self.stage_upload = false;
                     }
+
                     if let Some(window) = &self.window {
                         window.request_redraw();
                     }
@@ -545,16 +490,12 @@ impl ApplicationHandler for Application {
     }
 
     fn exiting(&mut self, _event_loop: &ActiveEventLoop) {
-        // Wait for GPU to finish all work BEFORE destroying any Vulkan resources
-        // This ensures no pipelines are in use when we destroy them
         if let Some(ref mut renderer) = self.renderer {
             renderer.wait_for_device();
         }
 
-        // Now safe to destroy material manager (which destroys pipelines)
         self.material_manager.destroy();
 
-        // Finally destroy the renderer
         if let Some(mut renderer) = self.renderer.take() {
             renderer.destroy();
         }
@@ -592,536 +533,5 @@ impl Application {
             KeyCode::KeyA => UiKey::A,
             _ => return None,
         })
-    }
-
-    /// Setup the render graph with multiple framebuffers (one per swapchain image).
-    /// This creates the graph upfront during initialization to avoid
-    /// destroying Vulkan objects while the GPU is still using them.
-    fn setup_render_graph(&mut self) {
-        let renderer = match self.renderer.as_mut() {
-            Some(r) => r,
-            None => return,
-        };
-
-        // Create and set up sky material for procedural sky background
-        let sky_material = SkyMaterial::new(renderer.context.clone());
-        renderer.set_sky_pipeline(sky_material.pipeline());
-
-        // Create and set up UI material for overlay rendering
-        let ui_material = crate::rendering::UiMaterial::new(renderer.context.clone());
-        renderer.set_ui_pipeline(ui_material.pipeline());
-
-        // Initialize UI buffers (256KB vertex, 128KB index - enough for complex UIs)
-        renderer.init_ui_buffers(256 * 1024, 128 * 1024);
-
-        // Initialize UI textures (512x512 font atlas)
-        renderer
-            .init_ui_textures(512, 512)
-            .expect("Failed to initialize UI textures");
-
-        // Initialize viewport render target for game engine editor
-        // This creates an offscreen texture the UI can sample for the viewport panel
-        let viewport_size = self.window.as_ref().unwrap().inner_size();
-        renderer
-            .init_viewport_target(viewport_size.width, viewport_size.height)
-            .expect("Failed to initialize viewport render target");
-
-        // Initialize output render target for final UI composition
-        // This is where UI renders, then present_pass copies to swapchain
-        renderer
-            .init_output_target(viewport_size.width, viewport_size.height)
-            .expect("Failed to initialize output render target");
-
-        // Set camera aspect ratio based on viewport texture size (not window size!)
-        if let Some(viewport_extent) = renderer.viewport_extent() {
-            let aspect = viewport_extent.width as f32 / viewport_extent.height as f32;
-            self.camera
-                .borrow_mut()
-                .aspect_ratio_changed(&mut self.world, aspect);
-        }
-
-        // Setup render graph with multiple framebuffers
-        renderer.setup_render_graph();
-    }
-
-    /// Render using the render graph system with draw call submission.
-    fn render_with_render_graph(&mut self) {
-        let renderer = match self.renderer.as_mut() {
-            Some(r) => r,
-            None => return,
-        };
-
-        // Get camera matrices
-        let view = self
-            .camera
-            .borrow()
-            .get_view_mat(&self.world)
-            .clone()
-            .inverse();
-        let proj = self.camera.borrow().get_proj_mat(&self.world).clone();
-
-        // Compute inverse view-projection matrix for camera-relative sky
-        // VP = proj * view, then inv_VP = VP.inverse()
-        let view_proj = &proj * &view;
-        let inv_view_proj = view_proj.inverse();
-
-        // Extract camera position from inverse view matrix
-        let view_arr: [[f32; 4]; 4] = view.clone().into();
-        let cam_x = -(view_arr[0][0] * view_arr[3][0]
-            + view_arr[0][1] * view_arr[3][1]
-            + view_arr[0][2] * view_arr[3][2]);
-        let cam_y = -(view_arr[1][0] * view_arr[3][0]
-            + view_arr[1][1] * view_arr[3][1]
-            + view_arr[1][2] * view_arr[3][2]);
-        let cam_z = -(view_arr[2][0] * view_arr[3][0]
-            + view_arr[2][1] * view_arr[3][1]
-            + view_arr[2][2] * view_arr[3][2]);
-
-        // Set frame uniforms once per frame (view/proj/lighting shared by all draws)
-        renderer.set_frame_uniforms(katla_vulkan::FrameUniforms {
-            view_matrix: view.to_array(),
-            proj_matrix: proj.to_array(),
-            inv_view_proj_matrix: inv_view_proj.to_array(),
-            camera_position: [cam_x, cam_y, cam_z, 0.0],
-            light_direction: [-0.3, -1.0, -0.2, 0.0],
-            light_color: [1.0, 0.95, 0.9, 0.0],
-            light_intensity: 1.5,
-        });
-
-        // Check for material hot reload
-        if let Ok(reloaded) = renderer
-            .material_registry
-            .borrow_mut()
-            .check_hot_reload(renderer.context.clone())
-        {
-            if reloaded > 0 {
-                info!("Hot reloaded {} material template(s)", reloaded);
-            }
-        }
-
-        // Build a draw list from ECS entities using the handle-based rendering system
-        // This provides separation between high-level (DrawCall) and low-level (CommandBuffer) rendering
-        use katla_vulkan::{DrawCall, DrawList};
-        let mut draw_list = DrawList::new();
-
-        // Query all drawable entities
-        for (_entity, transform, drawable) in self.world.query::<(
-            &crate::components::TransformComponent,
-            &crate::components::DrawableComponent,
-        )>() {
-            // Get the model matrix and convert to array
-            let model_matrix = transform.transform.make_mat4();
-            let model_array: [f32; 16] = model_matrix.to_array();
-
-            if let (Some(mesh_handle), Some(material_handle)) =
-                (drawable.mesh_handle, drawable.material_handle)
-            {
-                let mut draw_call =
-                    DrawCall::new(mesh_handle, material_handle).with_transform(model_array);
-
-                // Add color override if specified in DrawableComponent
-                if let Some(color) = drawable.color {
-                    draw_call = draw_call.with_color(color.to_array());
-                }
-
-                // Add skeleton handle for GPU skeletal animation
-                if let Some(skeleton) = drawable.skeleton_handle {
-                    draw_call = draw_call.with_skeleton(skeleton);
-                }
-
-                draw_list.push(draw_call);
-            } else {
-                // Entity missing mesh or material handle - skip
-            }
-        }
-
-        // Collect particle dispatches and renders from particle emitters
-        use katla_vulkan::{ParticleDispatch, ParticleRender};
-        let delta_time = self.timer.get_delta() as f32;
-
-        // Get storage descriptor for frame uniforms (before mutable borrow)
-        let storage_descriptor = renderer.storage_descriptor_set.as_ref().map(|s| s.set());
-
-        for (_entity, emitter) in self
-            .world
-            .query::<&mut crate::components::ParticleEmitter>()
-        {
-            // Update emitter (updates frame data buffer)
-            emitter.update(delta_time);
-
-            // Add compute dispatch for particle simulation
-            let dispatch = ParticleDispatch {
-                pipeline: emitter.compute_pipeline(),
-                pipeline_layout: emitter.compute_layout(),
-                descriptor_set: emitter.compute_descriptor(),
-                frame_data: [0.0; 4], // Frame data is in uniform buffer
-                workgroup_count: emitter.workgroup_count(),
-            };
-            draw_list.push_particle(dispatch);
-
-            // Add particle render if we have the storage descriptor
-            if let Some(frame_descriptor) = storage_descriptor {
-                let render = ParticleRender {
-                    pipeline: emitter.render_pipeline(),
-                    pipeline_layout: emitter.render_layout(),
-                    frame_descriptor_set: frame_descriptor,
-                    particle_descriptor_set: emitter.render_particle_descriptor(),
-                    particle_count: emitter.particle_count(),
-                };
-                draw_list.push_particle_render(render);
-            }
-        }
-
-        // Render using the draw list
-        if let Err(e) = renderer.render_frame(draw_list) {
-            match e {
-                katla_vulkan::RenderGraphError::SwapchainOutOfDate => {
-                    // Swapchain is out of date (e.g., window resize), skip this frame
-                    // The swapchain will be recreated on the next frame
-                }
-                _ => {
-                    error!("Render frame failed: {:?}", e);
-                }
-            }
-        }
-    }
-
-    /// Upload skeleton joint transforms to GPU buffers.
-    ///
-    /// This is called after world.update() which runs SkeletalAnimationSystem
-    /// to compute the joint transforms.
-    fn upload_skeleton_transforms(&mut self) {
-        // Convert Mat4 to GPU-friendly [[f32; 4]; 4] format
-        fn mat4_to_array(matrix: &katla_math::Mat4) -> [[f32; 4]; 4] {
-            let data: [[f32; 4]; 4] = matrix.clone().into();
-            data
-        }
-
-        // For each entity with a stored skeleton buffer, upload the transforms
-        for (entity, buffer) in &self.skeleton_buffers {
-            if let Some(skeleton) = self.world.get_component::<Skeleton>(*entity) {
-                // Convert Mat4 joint transforms to GPU format
-                let joint_matrices: Vec<[[f32; 4]; 4]> = skeleton
-                    .joint_transforms
-                    .iter()
-                    .map(mat4_to_array)
-                    .collect();
-
-                // Upload to GPU
-                buffer.borrow_mut().upload(&joint_matrices);
-            }
-        }
-    }
-
-    /// Render debug UI overlay with stats and controls.
-    fn render_debug_ui(&mut self, dt: f32) {
-        let screen_size = if let Some(ref window) = self.window {
-            let size = window.inner_size();
-            Vec2::new(size.width as f32, size.height as f32)
-        } else {
-            Vec2::new(1920.0, 1080.0)
-        };
-
-        // Calculate stats
-        let fps = if dt > 0.0 { 1.0 / dt } else { 0.0 };
-        let entity_count = self.world.entity_count();
-
-        // Collect entity info for editor UI
-        let entity_info = self.collect_entity_info();
-
-        // Render UI (editor or debug overlay based on mode)
-        // We extract the vertices immediately to release the borrow on editor_ui
-        let (vertices, indices, use_editor) = if self.use_editor_ui {
-            let draw_list = self.editor_ui.render(
-                &mut self.ui_context,
-                screen_size,
-                &entity_info,
-                fps,
-                self.frame_count,
-            );
-            (draw_list.vertices.clone(), draw_list.indices.clone(), true)
-        } else {
-            let draw_list = self.debug_overlay.render(
-                &mut self.ui_context,
-                screen_size,
-                fps,
-                self.frame_count,
-                entity_count,
-            );
-            (draw_list.vertices.clone(), draw_list.indices.clone(), false)
-        };
-
-        // Extract editor actions (safe now since editor_ui borrow is released)
-        let editor_actions = if use_editor {
-            self.editor_ui.take_actions()
-        } else {
-            Vec::new()
-        };
-
-        // Process editor actions
-        for action in editor_actions {
-            use crate::ui::EditorAction;
-            match action {
-                EditorAction::SpawnModel(model_type, position) => {
-                    self.spawn_model_from_editor(model_type, position);
-                }
-                EditorAction::DeleteEntity(entity_id) => {
-                    // Cascade delete: collect all children first, then delete in reverse order
-                    let mut to_delete = vec![entity_id];
-                    self.collect_children_recursive(entity_id, &mut to_delete);
-
-                    // Delete in reverse order (children before parents)
-                    for id in to_delete.into_iter().rev() {
-                        self.world.destroy_entity(id);
-                    }
-                    info!("Deleted entity {:?} and its children", entity_id);
-                }
-                EditorAction::SelectEntity(entity_id) => {
-                    info!("Selected entity {:?}", entity_id);
-                }
-                EditorAction::MoveEntity(_entity_id, _position) => {
-                    // TODO: Implement entity moving
-                }
-                EditorAction::TogglePlay => {
-                    info!("Toggle play mode");
-                }
-            }
-        }
-
-        // Pass UI data to renderer if we have data and a renderer
-        if !vertices.is_empty() {
-            use crate::rendering::ui_material::UiShaderVertex;
-
-            // Transform vertices from screen space to NDC
-            // Screen: (0,0) = top-left, Y increases downward
-            // Standard viewport: NDC y=-1 is top, y=+1 is bottom
-            let shader_vertices: Vec<UiShaderVertex> = vertices
-                .iter()
-                .map(|v| {
-                    let ndc_x = (v.position.x() / screen_size.x()) * 2.0 - 1.0;
-                    let ndc_y = (v.position.y() / screen_size.y()) * 2.0 - 1.0;
-
-                    UiShaderVertex::new(
-                        [ndc_x, ndc_y],
-                        [v.uv.x(), v.uv.y()],
-                        [v.color.r, v.color.g, v.color.b, v.color.a],
-                    )
-                })
-                .collect();
-
-            // Convert vertices to raw bytes
-            let vertex_bytes = unsafe {
-                std::slice::from_raw_parts(
-                    shader_vertices.as_ptr() as *const u8,
-                    shader_vertices.len() * std::mem::size_of::<UiShaderVertex>(),
-                )
-            }
-            .to_vec();
-
-            // Convert indices to raw bytes
-            let index_bytes = unsafe {
-                std::slice::from_raw_parts(
-                    indices.as_ptr() as *const u8,
-                    indices.len() * std::mem::size_of::<u32>(),
-                )
-            }
-            .to_vec();
-
-            // Pass to renderer
-            if let Some(ref renderer) = self.renderer {
-                renderer.set_ui_data(
-                    vertex_bytes,
-                    index_bytes,
-                    [screen_size.x(), screen_size.y()],
-                );
-            }
-        }
-
-        // Update font atlas texture if needed (render may have added new glyphs)
-        if self.ui_context.fonts.atlas_needs_update() {
-            if let Some(ref mut renderer) = self.renderer {
-                let atlas_data = self.ui_context.fonts.atlas_data().to_vec();
-                renderer.update_font_atlas(&atlas_data);
-            }
-            self.ui_context.fonts.mark_atlas_updated();
-        }
-
-        // Clear input state for next frame
-        self.ui_context.input.clear_frame_state();
-    }
-
-    /// Collect entity information for the editor UI in tree order.
-    fn collect_entity_info(&self) -> Vec<crate::ui::EntityInfo> {
-        use crate::components::{
-            Children, DrawableComponent, EditorHidden, NameComponent, Parent, TransformComponent,
-        };
-        use std::collections::{HashMap, HashSet};
-
-        // First pass: collect all entities with transforms and their relationships
-        let mut entity_data: HashMap<EntityId, (String, Vec3, Vec3, Vec3, String)> = HashMap::new();
-        let mut parent_map: HashMap<EntityId, EntityId> = HashMap::new();
-        let mut children_map: HashMap<EntityId, Vec<EntityId>> = HashMap::new();
-        let mut root_entities: HashSet<EntityId> = HashSet::new();
-
-        for entity_id in self.world.entity_ids() {
-            // Skip entities marked as hidden from editor
-            if self.world.get_component::<EditorHidden>(entity_id).is_some() {
-                continue;
-            }
-
-            let transform = match self.world.get_component::<TransformComponent>(entity_id) {
-                Some(t) => t,
-                None => continue,
-            };
-
-            let name = self
-                .world
-                .get_component::<NameComponent>(entity_id)
-                .map(|n| n.name.clone())
-                .unwrap_or_else(|| format!("Entity {}", entity_id.id()));
-
-            let pos = transform.transform.position;
-            let euler = transform.transform.rotation.to_euler();
-            let rot = Vec3::new(euler.0, euler.1, euler.2);
-            let scale = transform.transform.scale;
-
-            let model_type = self
-                .world
-                .get_component::<DrawableComponent>(entity_id)
-                .map(|_| "Mesh".to_string())
-                .unwrap_or_else(|| "Empty".to_string());
-
-            entity_data.insert(entity_id, (name, pos, rot, scale, model_type));
-            root_entities.insert(entity_id);
-
-            // Track parent relationship
-            if let Some(parent) = self.world.get_component::<Parent>(entity_id) {
-                parent_map.insert(entity_id, parent.parent);
-                root_entities.remove(&entity_id);
-
-                children_map
-                    .entry(parent.parent)
-                    .or_default()
-                    .push(entity_id);
-            }
-        }
-
-        // Build tree in depth-first order
-        let mut result = Vec::new();
-
-        fn add_entity_and_children(
-            entity_id: EntityId,
-            parent_id: Option<EntityId>,
-            entity_data: &HashMap<EntityId, (String, Vec3, Vec3, Vec3, String)>,
-            children_map: &HashMap<EntityId, Vec<EntityId>>,
-            result: &mut Vec<crate::ui::EntityInfo>,
-            depth: u32,
-        ) {
-            if let Some((name, pos, rot, scale, model_type)) = entity_data.get(&entity_id) {
-                let children = children_map
-                    .get(&entity_id)
-                    .map(|c| c.as_slice())
-                    .unwrap_or(&[]);
-                result.push(crate::ui::EntityInfo {
-                    id: entity_id,
-                    name: name.clone(),
-                    position: *pos,
-                    rotation: *rot,
-                    scale: *scale,
-                    model_type: model_type.clone(),
-                    depth,
-                    has_children: !children.is_empty(),
-                    parent_id,
-                });
-
-                // Recursively add children
-                for child_id in children {
-                    add_entity_and_children(
-                        *child_id,
-                        Some(entity_id),
-                        entity_data,
-                        children_map,
-                        result,
-                        depth + 1,
-                    );
-                }
-            }
-        }
-
-        // Add root entities (those without parents) in order
-        let mut roots: Vec<EntityId> = root_entities.into_iter().collect();
-        roots.sort_by_key(|id| id.id());
-
-        for root_id in roots {
-            add_entity_and_children(root_id, None, &entity_data, &children_map, &mut result, 0);
-        }
-
-        result
-    }
-
-    /// Recursively collect all children of an entity for cascade delete.
-    fn collect_children_recursive(&self, entity_id: EntityId, result: &mut Vec<EntityId>) {
-        use crate::components::Children;
-
-        if let Some(children) = self.world.get_component::<Children>(entity_id) {
-            for child_id in &children.children {
-                result.push(*child_id);
-                self.collect_children_recursive(*child_id, result);
-            }
-        }
-    }
-
-    /// Spawn a model from the editor UI.
-    fn spawn_model_from_editor(&mut self, model_type: crate::ui::SpawnableModel, position: Vec3) {
-        use crate::rendering::MeshBuilder;
-        use crate::ui::SpawnableModel;
-
-        let context = match &self.renderer {
-            Some(r) => r.context.clone(),
-            None => return,
-        };
-
-        // Create mesh using MeshBuilder (creates entity internally)
-        let builder = MeshBuilder::new(context.clone()).position(position);
-
-        let spawned_id = match model_type {
-            SpawnableModel::Fox => {
-                info!("Spawning Fox at {:?} (using cube placeholder)", position);
-                builder
-                    .cube()
-                    .build(&mut self.world, self.renderer.as_mut().unwrap())
-            }
-            SpawnableModel::Cube => builder
-                .cube()
-                .build(&mut self.world, self.renderer.as_mut().unwrap()),
-            SpawnableModel::Sphere => builder
-                .sphere()
-                .build(&mut self.world, self.renderer.as_mut().unwrap()),
-            SpawnableModel::Cylinder => builder
-                .cylinder()
-                .build(&mut self.world, self.renderer.as_mut().unwrap()),
-            SpawnableModel::Plane => builder
-                .plane()
-                .build(&mut self.world, self.renderer.as_mut().unwrap()),
-            SpawnableModel::Torus => builder
-                .torus()
-                .build(&mut self.world, self.renderer.as_mut().unwrap()),
-        };
-
-        // Update the name component with a more descriptive name
-        let name = format!("{}_{}", model_type.name(), spawned_id.id());
-        if let Some(name_comp) = self
-            .world
-            .get_component_mut::<crate::components::NameComponent>(spawned_id)
-        {
-            name_comp.name = name;
-        }
-
-        info!(
-            "Spawned {} (entity {}) at {:?}",
-            model_type.name(),
-            spawned_id.id(),
-            position
-        );
     }
 }
