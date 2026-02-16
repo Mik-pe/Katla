@@ -15,6 +15,7 @@ pub use rendering::{
     types::{DrawCall, DrawList, FrameUniforms, InstanceData, MaterialHandle, MeshHandle, ParticleDispatch, ParticleRender, SkeletonHandle},
 };
 pub use sync::{
+    AccessFlags2, DependencyInfo, ImageMemoryBarrier2, PipelineStage2Flags,
     VkDescriptorPool, VkDescriptorSet, VkDescriptorSetLayout, VkFence, VkFramebuffer, VkImage,
     VkImageView, VkSampler, VkSemaphore,
 };
@@ -72,8 +73,8 @@ pub struct VulkanRenderer {
     ui_frame_index: std::cell::Cell<usize>,
     /// UI textures (font atlas, white texture, descriptor set).
     ui_textures: Option<UITextures>,
-    /// Offscreen render target for viewport rendering.
-    viewport_target: Option<ViewportRenderTarget>,
+    /// Offscreen render targets for viewport rendering (one per frame in flight to avoid races).
+    viewport_targets: Vec<ViewportRenderTarget>,
     /// Viewport render graph (renders scene to viewport texture).
     viewport_render_graph: Option<CompiledRenderGraph>,
 }
@@ -123,7 +124,7 @@ impl VulkanRenderer {
             ui_buffers: Vec::new(),
             ui_frame_index: std::cell::Cell::new(0),
             ui_textures: None,
-            viewport_target: None,
+            viewport_targets: Vec::new(),
             viewport_render_graph: None,
         }
     }
@@ -306,24 +307,33 @@ impl VulkanRenderer {
         self.ui_textures.as_ref().map(|t| t.descriptor_set)
     }
 
-    /// Initialize or resize the viewport render target.
+    /// Initialize or resize the viewport render targets.
     ///
-    /// This creates an offscreen render target for rendering the 3D scene
-    /// that can be sampled by the UI viewport panel.
+    /// This creates offscreen render targets (one per frame in flight) for rendering
+    /// the 3D scene that can be sampled by the UI viewport panel.
+    /// Double-buffering prevents race conditions when frames overlap.
     pub fn init_viewport_target(&mut self, width: u32, height: u32) -> Result<(), vk::Result> {
-        let needs_resize = self.viewport_target.as_ref()
+        let needs_resize = self.viewport_targets.first()
             .map(|t| t.extent.width != width || t.extent.height != height)
             .unwrap_or(true);
 
         if needs_resize {
-            let old_target = self.viewport_target.take();
-            let target = ViewportRenderTarget::resize(&self.context, old_target, width, height)?;
-            self.viewport_target = Some(target);
-            info!("Viewport render target created/resized to {}x{}", width, height);
+            // Destroy old targets
+            for target in self.viewport_targets.drain(..) {
+                target.destroy(&self.context);
+            }
 
-            // Update UI textures with the new viewport image view
+            // Create new targets (one per frame in flight)
+            for i in 0..FRAMES_IN_FLIGHT {
+                let target = ViewportRenderTarget::new(&self.context, width, height)?;
+                self.viewport_targets.push(target);
+                info!("Viewport render target {} created/resized to {}x{}", i, width, height);
+            }
+
+            // Update UI textures with the first viewport image view
+            // The UI will sample from the "previous" frame's texture
             if let Some(ref mut ui_textures) = self.ui_textures {
-                if let Some(ref viewport_target) = self.viewport_target {
+                if let Some(ref viewport_target) = self.viewport_targets.first() {
                     ui_textures.set_viewport_texture(&self.context, viewport_target.color_image_view);
                 }
             }
@@ -331,24 +341,50 @@ impl VulkanRenderer {
         Ok(())
     }
 
-    /// Get the viewport color image view for sampling.
-    pub fn viewport_color_view(&self) -> Option<vk::ImageView> {
-        self.viewport_target.as_ref().map(|t| t.color_image_view)
+    /// Get the viewport color image view for the current frame (for rendering).
+    pub fn viewport_color_view_for_frame(&self, frame_index: usize) -> Option<vk::ImageView> {
+        self.viewport_targets.get(frame_index % self.viewport_targets.len())
+            .map(|t| t.color_image_view)
+    }
+
+    /// Get the viewport depth image for the current frame (for rendering).
+    pub fn viewport_depth_for_frame(&self, frame_index: usize) -> Option<vk::Image> {
+        self.viewport_targets.get(frame_index % self.viewport_targets.len())
+            .map(|t| t.depth_image)
+    }
+
+    /// Get the viewport color image for the current frame (for rendering).
+    pub fn viewport_color_image_for_frame(&self, frame_index: usize) -> Option<vk::Image> {
+        self.viewport_targets.get(frame_index % self.viewport_targets.len())
+            .map(|t| t.color_image)
+    }
+
+    /// Get the viewport depth image view for the current frame (for rendering).
+    pub fn viewport_depth_view_for_frame(&self, frame_index: usize) -> Option<vk::ImageView> {
+        self.viewport_targets.get(frame_index % self.viewport_targets.len())
+            .map(|t| t.depth_image_view)
+    }
+
+    /// Get the viewport color image view for UI sampling.
+    /// Uses the SAME texture as the current frame - no latency!
+    /// The fence synchronization ensures the previous frame with this frame_index has completed.
+    pub fn viewport_color_view_for_ui(&self, current_frame_index: usize) -> Option<vk::ImageView> {
+        self.viewport_color_view_for_frame(current_frame_index)
     }
 
     /// Get the viewport sampler.
     pub fn viewport_sampler(&self) -> Option<vk::Sampler> {
-        self.viewport_target.as_ref().map(|t| t.sampler)
+        self.viewport_targets.first().map(|t| t.sampler)
     }
 
     /// Get viewport dimensions.
     pub fn viewport_extent(&self) -> Option<vk::Extent2D> {
-        self.viewport_target.as_ref().map(|t| t.extent)
+        self.viewport_targets.first().map(|t| t.extent)
     }
 
     pub fn destroy(&mut self) {
-        // Destroy viewport render target
-        if let Some(target) = self.viewport_target.take() {
+        // Destroy viewport render targets
+        for target in self.viewport_targets.drain(..) {
             target.destroy(&self.context);
         }
 
@@ -440,13 +476,22 @@ impl VulkanRenderer {
             }
 
             // Get the new depth texture image view (depth texture is recreated during swapchain recreation)
-            let new_depth_view = self.frame_context.depth_render_texture.image_view.vk();
+            let _new_depth_view = self.frame_context.depth_render_texture.image_view.vk();
+
+            // Collect pass indices that need swapchain attachment updates
+            // ONLY ui_pass renders to swapchain with color attachments
+            // copy_pass uses transfer operations, not color attachments
+            // sky_pass and geometry_pass render to viewport texture (handled by setup_render_graph)
+            let swapchain_pass_indices: Vec<usize> = graph.passes.iter().enumerate()
+                .filter(|(_, pass)| pass.name == "ui_pass")
+                .map(|(idx, _)| idx)
+                .collect();
 
             // Recreate framebuffers with new swapchain images
             for (image_index, (_vk_image, image_view, _extent, _format)) in
                 swapchain_images.iter().enumerate()
             {
-                for pass_idx in 0..graph.passes.len() {
+                for &pass_idx in &swapchain_pass_indices {
                     // Ensure color_attachments array has an entry for this image index
                     while graph.passes[pass_idx].color_attachments.len() <= image_index {
                         graph.passes[pass_idx].color_attachments.push(vec![]);
@@ -455,17 +500,8 @@ impl VulkanRenderer {
                     // Update the color attachments for dynamic rendering
                     graph.passes[pass_idx].color_attachments[image_index] = vec![image_view.vk()];
 
-                    // Ensure depth_attachments array has an entry for this image index
-                    while graph.passes[pass_idx].depth_attachments.len() <= image_index {
-                        graph.passes[pass_idx].depth_attachments.push(None);
-                    }
-
-                    // Update the depth attachments for dynamic rendering
-                    graph.passes[pass_idx].depth_attachments[image_index] = Some(new_depth_view);
-
                     // NOTE: For dynamic rendering, we don't create framebuffers
                     // Just ensure vk_framebuffers vector is initialized
-
                     if image_index == 0 && graph.passes[pass_idx].vk_framebuffers.is_empty() {
                         graph.passes[pass_idx].vk_framebuffers = vec![];
                     }
@@ -744,6 +780,9 @@ impl VulkanRenderer {
     /// destroying Vulkan objects while the GPU is still using them.
     ///
     /// The draw list will be provided each frame via `render_frame_with_drawlist`.
+    ///
+    /// When a viewport target exists, scene renders to viewport texture first,
+    /// then copies to swapchain before UI rendering. This prevents UI recursion.
     pub fn setup_render_graph(&mut self) {
         // Build a single render graph
         let mut graph_builder = RenderGraphBuilder::new();
@@ -759,7 +798,42 @@ impl VulkanRenderer {
             },
         );
 
+        // Create viewport resources if we have viewport targets
+        // Scene will render to viewport texture, then copy to swapchain for UI
+        // Note: We use the first viewport texture here, but update_viewport_attachments
+        // will switch to the correct texture each frame for double-buffering
+        let (viewport_resource, viewport_depth_resource, viewport_extent) = if let Some(first_target) = self.viewport_targets.first() {
+            let color = graph_builder.add_resource(
+                "viewport_color",
+                ResourceKind::ExternalImage {
+                    vk_image: first_target.color_image,
+                    image_view: first_target.color_image_view,
+                    format: vk::Format::R8G8B8A8_SRGB,
+                    extent: first_target.extent,
+                },
+            );
+            let depth = graph_builder.add_resource(
+                "viewport_depth",
+                ResourceKind::ExternalImage {
+                    vk_image: first_target.depth_image,
+                    image_view: first_target.depth_image_view,
+                    format: vk::Format::D32_SFLOAT,
+                    extent: first_target.extent,
+                },
+            );
+            (Some(color), Some(depth), Some(first_target.extent))
+        } else {
+            (None, None, None)
+        };
+
         let depth_resource = self.create_depth_resource(&mut graph_builder);
+
+        // Determine scene render targets based on viewport existence
+        // When viewport exists: scene -> viewport texture
+        // When no viewport: scene -> swapchain directly
+        let scene_color_res = viewport_resource.unwrap_or(swapchain_resource);
+        let scene_depth_res = viewport_depth_resource.unwrap_or(depth_resource);
+        let has_viewport = viewport_resource.is_some();
 
         // Create Rc<RefCell<>> for the draw list that will be set each frame
         let draw_list_cell: Rc<RefCell<Option<DrawList>>> = Rc::new(RefCell::new(None));
@@ -782,16 +856,74 @@ impl VulkanRenderer {
         let device_ptr = self.context.device.clone();
 
         let swapchain_res = swapchain_resource;
-        let depth_res = depth_resource;
+        let scene_color = scene_color_res;
+        let scene_depth = scene_depth_res;
+        let uses_viewport = has_viewport;
+        let device_for_sky = self.context.device.clone();
 
         // === SKY PASS ===
         // Renders first, clears color and depth, writes sky to color only
+        // Uses scene_color/scene_depth which is either viewport or swapchain
         graph_builder.add_pass("sky_pass", move |pass| {
-            pass.write(Attachment::Color(swapchain_res))
-                .write(Attachment::DepthStencil(depth_res))
-                .clear_color(swapchain_res, [0.4, 0.6, 0.9, 1.0]) // Sky blue fallback
-                .clear_depth_stencil(depth_res, 1.0, 0)
+            pass.write(Attachment::Color(scene_color))
+                .write(Attachment::DepthStencil(scene_depth))
+                .clear_color(scene_color, [0.4, 0.6, 0.9, 1.0]) // Sky blue fallback
+                .clear_depth_stencil(scene_depth, 1.0, 0)
                 .execute("sky_pass", move |ctx| {
+                    let cmd_buf = ctx.command_buffer.vk_command_buffer();
+
+                    // When using viewport, we need to manually transition the viewport textures
+                    // from SHADER_READ_ONLY_OPTIMAL (after UI sampling) to attachment optimal
+                    if uses_viewport {
+                        if let (Some((color_image, _)), Some((depth_image, _))) =
+                            (ctx.get_image(scene_color), ctx.get_image(scene_depth))
+                        {
+                            let color_subresource = vk::ImageSubresourceRange {
+                                aspect_mask: vk::ImageAspectFlags::COLOR,
+                                base_mip_level: 0,
+                                level_count: 1,
+                                base_array_layer: 0,
+                                layer_count: 1,
+                            };
+
+                            let depth_subresource = vk::ImageSubresourceRange {
+                                aspect_mask: vk::ImageAspectFlags::DEPTH,
+                                base_mip_level: 0,
+                                level_count: 1,
+                                base_array_layer: 0,
+                                layer_count: 1,
+                            };
+
+                            // Transition color: SHADER_READ_ONLY -> COLOR_ATTACHMENT_OPTIMAL
+                            let color_barrier = ImageMemoryBarrier2::new(color_image)
+                                .src_stage(PipelineStage2Flags::FRAGMENT_SHADER)
+                                .src_access(AccessFlags2::SHADER_READ)
+                                .dst_stage(PipelineStage2Flags::COLOR_ATTACHMENT_OUTPUT)
+                                .dst_access(AccessFlags2::COLOR_ATTACHMENT_WRITE)
+                                .old_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
+                                .new_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
+                                .subresource_range(color_subresource);
+
+                            // Transition depth: DEPTH_STENCIL_ATTACHMENT -> DEPTH_STENCIL_ATTACHMENT_OPTIMAL
+                            // (depth stays in attachment format, just need proper stage sync)
+                            let depth_barrier = ImageMemoryBarrier2::new(depth_image)
+                                .src_stage(PipelineStage2Flags::LATE_FRAGMENT_TESTS)
+                                .src_access(AccessFlags2::DEPTH_STENCIL_ATTACHMENT_WRITE)
+                                .dst_stage(PipelineStage2Flags::EARLY_FRAGMENT_TESTS)
+                                .dst_access(AccessFlags2::DEPTH_STENCIL_ATTACHMENT_WRITE)
+                                .old_layout(vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL)
+                                .new_layout(vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL)
+                                .subresource_range(depth_subresource);
+
+                            DependencyInfo::new()
+                                .add_image_barrier(color_barrier)
+                                .add_image_barrier(depth_barrier)
+                                .build(|dep_info| unsafe {
+                                    device_for_sky.cmd_pipeline_barrier2(cmd_buf, dep_info);
+                                });
+                        }
+                    }
+
                     // SAFETY: The pointers are valid for the entire lifetime of the renderer
                     let sky_pipeline_opt = unsafe { &mut *sky_pipeline_ptr };
                     let storage_descriptor_opt = unsafe { &mut *storage_descriptor_ptr };
@@ -799,7 +931,6 @@ impl VulkanRenderer {
                     if let (Some(sky_pipeline), Some(storage_descriptor)) =
                         (sky_pipeline_opt.as_ref(), storage_descriptor_opt.as_ref())
                     {
-                        let cmd_buf = ctx.command_buffer.vk_command_buffer();
                         let pipeline_ref = sky_pipeline.borrow();
 
                         // Bind sky pipeline
@@ -831,9 +962,10 @@ impl VulkanRenderer {
 
         // === GEOMETRY PASS ===
         // Renders after sky, uses load instead of clear (sky already filled background)
+        // Uses scene_color/scene_depth which is either viewport or swapchain
         graph_builder.add_pass("geometry_pass", move |pass| {
-            pass.write(Attachment::Color(swapchain_res))
-                .write(Attachment::DepthStencil(depth_res))
+            pass.write(Attachment::Color(scene_color))
+                .write(Attachment::DepthStencil(scene_depth))
                 // NO clear - sky pass already cleared and filled the background
                 .execute("geometry_pass", move |ctx| {
                     // Get the draw list for this frame
@@ -1061,21 +1193,32 @@ impl VulkanRenderer {
 
         // === UI PASS ===
         // Renders UI overlay after all geometry, with alpha blending
+        // When viewport exists: UI samples viewport texture directly (no copy needed!)
+        // When no viewport: geometry_pass filled swapchain directly
         // Get pointers for UI rendering
         let ui_data_ptr = &self.ui_data as *const RefCell<Option<UiDrawData>>;
         let ui_pipeline_ptr = &self.ui_pipeline as *const Option<Rc<RefCell<MaterialPipeline>>>;
         let ui_buffers_ptr = &self.ui_buffers as *const Vec<UIBuffers>;
         let ui_textures_ptr = &self.ui_textures as *const Option<UITextures>;
+        let ui_frame_index_ptr = &self.ui_frame_index as *const std::cell::Cell<usize>;
+        let uses_viewport_ui = has_viewport;
 
         graph_builder.add_pass("ui_pass", move |pass| {
-            pass.write(Attachment::Color(swapchain_res))
-                // Load existing color (don't clear), no depth needed
-                .execute("ui_pass", move |ctx| {
+            let mut pass_builder = pass.write(Attachment::Color(swapchain_res));
+
+            // When viewport exists, clear the swapchain since we're not blitting to it
+            // The UI will sample the viewport texture and draw it in the viewport panel
+            if uses_viewport_ui {
+                pass_builder = pass_builder.clear_color(swapchain_res, [0.1, 0.1, 0.1, 1.0]); // Dark background
+            }
+
+            pass_builder.execute("ui_pass", move |ctx| {
                     // SAFETY: Pointers are valid for the renderer's lifetime
                     let ui_data_cell = unsafe { &*ui_data_ptr };
                     let ui_pipeline_opt = unsafe { &*ui_pipeline_ptr };
                     let ui_buffers = unsafe { &*ui_buffers_ptr };
                     let ui_textures = unsafe { &*ui_textures_ptr };
+                    let ui_frame_index = unsafe { &*ui_frame_index_ptr };
 
                     let ui_data_ref = ui_data_cell.borrow();
 
@@ -1088,8 +1231,9 @@ impl VulkanRenderer {
                         let pipeline_ref = ui_pipeline.borrow();
                         let cmd_buf = ctx.command_buffer.vk_command_buffer();
 
-                        // Get the current frame's buffers (use first set if not initialized)
-                        let buffers = ui_buffers.first();
+                        // Get the current frame's buffers using frame index
+                        let frame_idx = ui_frame_index.get();
+                        let buffers = ui_buffers.get(frame_idx);
 
                         unsafe {
                             // Bind UI pipeline
@@ -1134,6 +1278,7 @@ impl VulkanRenderer {
 
                             let vertex_size = ui_data.vertex_data.len() as u64;
                             let index_size = ui_data.index_data.len() as u64;
+                            let index_count = (index_size / 4) as u32;
 
                             if vertex_size == 0 || index_size == 0 {
                                 return;
@@ -1279,28 +1424,30 @@ impl VulkanRenderer {
                     error!("Failed to create swapchain framebuffers: {:?}", e);
                 } else {
                     // Initialize color_attachments and depth_attachments for all swapchain images
-                    let new_depth_view = self.frame_context.depth_render_texture.image_view.vk();
+                    // Only update passes that render to swapchain (copy_pass, ui_pass)
+                    // sky_pass and geometry_pass render to viewport texture (already set during compilation)
+                    let swapchain_pass_indices: Vec<usize> = graph.passes.iter().enumerate()
+                        .filter(|(_, pass)| pass.name == "copy_pass" || pass.name == "ui_pass")
+                        .map(|(idx, _)| idx)
+                        .collect();
 
                     for (image_index, (_vk_image, image_view, _extent, _format)) in
                         swapchain_images.iter().enumerate()
                     {
-                        for pass_idx in 0..graph.passes.len() {
+                        for &pass_idx in &swapchain_pass_indices {
                             // Ensure color_attachments array has an entry for this image index
                             while graph.passes[pass_idx].color_attachments.len() <= image_index {
                                 graph.passes[pass_idx].color_attachments.push(vec![]);
                             }
 
-                            // Update the color attachments for dynamic rendering
+                            // Update the color attachments for dynamic rendering (swapchain)
                             graph.passes[pass_idx].color_attachments[image_index] = vec![image_view.vk()];
-
-                            // Ensure depth_attachments array has an entry for this image index
-                            while graph.passes[pass_idx].depth_attachments.len() <= image_index {
-                                graph.passes[pass_idx].depth_attachments.push(None);
-                            }
-
-                            // Update the depth attachments for dynamic rendering
-                            graph.passes[pass_idx].depth_attachments[image_index] = Some(new_depth_view);
                         }
+                    }
+
+                    // Set viewport resource IDs for double-buffering updates
+                    if let (Some(color_id), Some(depth_id)) = (viewport_resource, viewport_depth_resource) {
+                        graph.set_viewport_resource_ids(color_id, depth_id);
                     }
 
                     self.render_graph = Some(graph);
@@ -1348,10 +1495,37 @@ impl VulkanRenderer {
             .ok_or(RenderGraphError::NoFrameData)?;
 
         let image_index = frame_data.image_index as usize;
+
+        // === EXTRACT VIEWPORT DATA BEFORE BORROWING GRAPH ===
+        // This must be done before borrowing self.render_graph to avoid borrow checker issues
+        let frame_index = self.swap_data.current_frame();
+        let viewport_attachments = if !self.viewport_targets.is_empty() {
+            let color_view = self.viewport_color_view_for_frame(frame_index);
+            let depth_view = self.viewport_depth_view_for_frame(frame_index);
+            let color_image = self.viewport_color_image_for_frame(frame_index);
+            let depth_image = self.viewport_depth_for_frame(frame_index);
+            (color_view, depth_view, color_image, depth_image)
+        } else {
+            (None, None, None, None)
+        };
+
+        // Update UI descriptor set to sample from the current frame's viewport texture
+        if let (Some(color_view), Some(_), Some(_), Some(_)) = viewport_attachments {
+            if let Some(ref mut ui_textures) = self.ui_textures {
+                ui_textures.set_viewport_texture(&self.context, color_view);
+            }
+        }
+
+        // Now we can safely borrow the graph
         let graph = self
             .render_graph
             .as_mut()
             .ok_or(RenderGraphError::CompilationError("No render graph".into()))?;
+
+        // Update render graph viewport attachments
+        if let (Some(color_view), Some(depth_view), Some(color_image), Some(depth_image)) = viewport_attachments {
+            graph.update_viewport_attachments(color_view, depth_view, color_image, depth_image);
+        }
 
         // === UPDATE FRAME UNIFORMS BEFORE RENDER GRAPH EXECUTES ===
         // This must happen before any passes run (sky pass needs inv_view_proj)
@@ -1380,8 +1554,11 @@ impl VulkanRenderer {
         let mut command_buffer = self.frame_context.command_buffers[image_index].clone();
         command_buffer.begin_command(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT);
 
-        // Set frame index for UI buffer selection (cycles through frames in flight)
-        self.ui_frame_index.set(image_index % FRAMES_IN_FLIGHT);
+        // Set frame index for UI buffer selection
+        // Use swap_data.current_frame() which aligns with fence synchronization, NOT image_index
+        // This ensures we don't reuse a buffer that's still being used by the GPU
+        let frame_idx = self.swap_data.current_frame();
+        self.ui_frame_index.set(frame_idx);
 
         // === DISPATCH PARTICLE COMPUTE SHADERS BEFORE RENDER GRAPH ===
         // This runs particle simulation on GPU before any rendering
@@ -1441,162 +1618,16 @@ impl VulkanRenderer {
         }
 
         // Execute the render graph with the current image index
+        // The render graph handles:
+        // 1. Rendering 3D scene to viewport texture (geometry_pass, sky_pass, particle_pass)
+        // 2. Copying viewport texture to swapchain (copy_pass, when viewport exists)
+        // 3. Rendering UI overlay on swapchain (ui_pass)
         graph.execute(
             &mut command_buffer,
             image_index,
             &self.frame_context.swapchain_images,
             self.frame_context.depth_render_texture.image,
         )?;
-
-        // === COPY SWAPCHAIN TO VIEWPORT TEXTURE (BEFORE UI RENDERS) ===
-        // This copies the PREVIOUS frame's swapchain to viewport texture.
-        // The viewport texture will have the scene from last frame (no UI recursion).
-        if let Some(ref viewport_target) = self.viewport_target {
-            let swapchain_image = self.frame_context.swapchain_images[image_index].vk();
-            let swapchain_extent = self.frame_context.swapchain.get_extent();
-
-            // Transition swapchain from PRESENT_SRC (previous frame) to TRANSFER_SRC
-            let swapchain_barrier = vk::ImageMemoryBarrier::default()
-                .old_layout(vk::ImageLayout::PRESENT_SRC_KHR)
-                .new_layout(vk::ImageLayout::TRANSFER_SRC_OPTIMAL)
-                .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
-                .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
-                .image(swapchain_image)
-                .subresource_range(vk::ImageSubresourceRange {
-                    aspect_mask: vk::ImageAspectFlags::COLOR,
-                    base_mip_level: 0,
-                    level_count: 1,
-                    base_array_layer: 0,
-                    layer_count: 1,
-                })
-                .src_access_mask(vk::AccessFlags::empty()) // Previous frame already finished
-                .dst_access_mask(vk::AccessFlags::TRANSFER_READ);
-
-            // Transition viewport color to transfer dst
-            let viewport_barrier = vk::ImageMemoryBarrier::default()
-                .old_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
-                .new_layout(vk::ImageLayout::TRANSFER_DST_OPTIMAL)
-                .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
-                .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
-                .image(viewport_target.color_image)
-                .subresource_range(vk::ImageSubresourceRange {
-                    aspect_mask: vk::ImageAspectFlags::COLOR,
-                    base_mip_level: 0,
-                    level_count: 1,
-                    base_array_layer: 0,
-                    layer_count: 1,
-                })
-                .src_access_mask(vk::AccessFlags::SHADER_READ)
-                .dst_access_mask(vk::AccessFlags::TRANSFER_WRITE);
-
-            unsafe {
-                self.context.device.cmd_pipeline_barrier(
-                    command_buffer.vk_command_buffer(),
-                    vk::PipelineStageFlags::TOP_OF_PIPE, // No prior dependency
-                    vk::PipelineStageFlags::TRANSFER,
-                    vk::DependencyFlags::empty(),
-                    &[],
-                    &[],
-                    &[swapchain_barrier, viewport_barrier],
-                );
-
-                // Blit from swapchain to viewport (scaling if needed)
-                let src_extent = vk::Extent3D {
-                    width: swapchain_extent.width,
-                    height: swapchain_extent.height,
-                    depth: 1,
-                };
-                let dst_extent = vk::Extent3D {
-                    width: viewport_target.extent.width,
-                    height: viewport_target.extent.height,
-                    depth: 1,
-                };
-
-                let blit_region = vk::ImageBlit::default()
-                    .src_subresource(vk::ImageSubresourceLayers {
-                        aspect_mask: vk::ImageAspectFlags::COLOR,
-                        mip_level: 0,
-                        base_array_layer: 0,
-                        layer_count: 1,
-                    })
-                    .src_offsets([
-                        vk::Offset3D { x: 0, y: 0, z: 0 },
-                        vk::Offset3D {
-                            x: src_extent.width as i32,
-                            y: src_extent.height as i32,
-                            z: 1,
-                        },
-                    ])
-                    .dst_subresource(vk::ImageSubresourceLayers {
-                        aspect_mask: vk::ImageAspectFlags::COLOR,
-                        mip_level: 0,
-                        base_array_layer: 0,
-                        layer_count: 1,
-                    })
-                    .dst_offsets([
-                        vk::Offset3D { x: 0, y: 0, z: 0 },
-                        vk::Offset3D {
-                            x: dst_extent.width as i32,
-                            y: dst_extent.height as i32,
-                            z: 1,
-                        },
-                    ]);
-
-                self.context.device.cmd_blit_image(
-                    command_buffer.vk_command_buffer(),
-                    swapchain_image,
-                    vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
-                    viewport_target.color_image,
-                    vk::ImageLayout::TRANSFER_DST_OPTIMAL,
-                    &[blit_region],
-                    vk::Filter::LINEAR,
-                );
-
-                // Transition swapchain to COLOR_ATTACHMENT for render graph
-                let swapchain_to_color = vk::ImageMemoryBarrier::default()
-                    .old_layout(vk::ImageLayout::TRANSFER_SRC_OPTIMAL)
-                    .new_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
-                    .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
-                    .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
-                    .image(swapchain_image)
-                    .subresource_range(vk::ImageSubresourceRange {
-                        aspect_mask: vk::ImageAspectFlags::COLOR,
-                        base_mip_level: 0,
-                        level_count: 1,
-                        base_array_layer: 0,
-                        layer_count: 1,
-                    })
-                    .src_access_mask(vk::AccessFlags::TRANSFER_READ)
-                    .dst_access_mask(vk::AccessFlags::COLOR_ATTACHMENT_WRITE);
-
-                // Transition viewport to SHADER_READ_ONLY for UI sampling
-                let viewport_to_shader = vk::ImageMemoryBarrier::default()
-                    .old_layout(vk::ImageLayout::TRANSFER_DST_OPTIMAL)
-                    .new_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
-                    .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
-                    .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
-                    .image(viewport_target.color_image)
-                    .subresource_range(vk::ImageSubresourceRange {
-                        aspect_mask: vk::ImageAspectFlags::COLOR,
-                        base_mip_level: 0,
-                        level_count: 1,
-                        base_array_layer: 0,
-                        layer_count: 1,
-                    })
-                    .src_access_mask(vk::AccessFlags::TRANSFER_WRITE)
-                    .dst_access_mask(vk::AccessFlags::SHADER_READ);
-
-                self.context.device.cmd_pipeline_barrier(
-                    command_buffer.vk_command_buffer(),
-                    vk::PipelineStageFlags::TRANSFER,
-                    vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT | vk::PipelineStageFlags::FRAGMENT_SHADER,
-                    vk::DependencyFlags::empty(),
-                    &[],
-                    &[],
-                    &[swapchain_to_color, viewport_to_shader],
-                );
-            }
-        }
 
         command_buffer.end_command();
 

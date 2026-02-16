@@ -85,6 +85,8 @@ pub struct EditorUI {
     spawn_pos: [f32; 3],
     /// Deferred actions to be processed by the application.
     pub pending_actions: Vec<EditorAction>,
+    /// Last known viewport panel size (width, height) in pixels.
+    last_viewport_size: (u32, u32),
 }
 
 impl EditorUI {
@@ -99,7 +101,13 @@ impl EditorUI {
             selected_spawn: SpawnableModel::Fox,
             spawn_pos: [0.0, 0.0, 0.0],
             pending_actions: Vec::new(),
+            last_viewport_size: (800, 600), // Default size
         }
+    }
+
+    /// Get the last known viewport panel size in pixels.
+    pub fn viewport_size(&self) -> (u32, u32) {
+        self.last_viewport_size
     }
 
     /// Build the editor UI.
@@ -112,7 +120,6 @@ impl EditorUI {
     ) {
         let screen_size = ui.screen_size();
         let padding = 4.0;  // Inner padding for content
-        let border_width = 1.0;  // Border between panels
         let toolbar_height = 32.0;
         let status_bar_height = 24.0;
         let left_panel_width = 220.0;
@@ -121,9 +128,18 @@ impl EditorUI {
         // === TOOLBAR (top) ===
         self.build_toolbar(ui, screen_size, toolbar_height, padding);
 
-        // Panel Y range (between toolbar and status bar)
-        let panel_top = toolbar_height + border_width;
-        let panel_bottom = screen_size.y() - status_bar_height - border_width;
+        // Toolbar bottom border (fills gap)
+        ui.draw_rect(
+            Rect2D::from_origin_size(
+                Vec2::new(0.0, toolbar_height),
+                Vec2::new(screen_size.x(), 1.0),
+            ),
+            Color::new(0.3, 0.3, 0.3, 1.0),
+        );
+
+        // Panel Y range (between toolbar and status bar, no gaps)
+        let panel_top = toolbar_height + 1.0;  // Just after toolbar border
+        let panel_bottom = screen_size.y() - status_bar_height;
         let panel_height = panel_bottom - panel_top;
 
         // === LEFT PANEL: Entity Hierarchy ===
@@ -137,7 +153,7 @@ impl EditorUI {
         ui.draw_rect(
             Rect2D::from_origin_size(
                 Vec2::new(left_panel_width, panel_top),
-                Vec2::new(border_width, panel_height),
+                Vec2::new(1.0, panel_height),
             ),
             Color::new(0.3, 0.3, 0.3, 1.0),
         );
@@ -153,18 +169,34 @@ impl EditorUI {
         // Right panel left border
         ui.draw_rect(
             Rect2D::from_origin_size(
-                Vec2::new(right_panel_x - border_width, panel_top),
-                Vec2::new(border_width, panel_height),
+                Vec2::new(right_panel_x - 1.0, panel_top),
+                Vec2::new(1.0, panel_height),
             ),
             Color::new(0.3, 0.3, 0.3, 1.0),
         );
 
         // === CENTER: Viewport Area ===
         let viewport_bounds = Rect2D::new(
-            Vec2::new(left_panel_width + border_width, panel_top),
-            Vec2::new(right_panel_x - border_width, panel_bottom),
+            Vec2::new(left_panel_width + 1.0, panel_top),
+            Vec2::new(right_panel_x - 1.0, panel_bottom),
         );
+
+        // Track viewport size for render target sizing
+        self.last_viewport_size = (
+            viewport_bounds.width().max(1.0) as u32,
+            viewport_bounds.height().max(1.0) as u32,
+        );
+
         self.build_viewport(ui, viewport_bounds);
+
+        // Status bar top border (fills gap)
+        ui.draw_rect(
+            Rect2D::from_origin_size(
+                Vec2::new(0.0, panel_bottom),
+                Vec2::new(screen_size.x(), 1.0),
+            ),
+            Color::new(0.3, 0.3, 0.3, 1.0),
+        );
 
         // === STATUS BAR (bottom) ===
         self.build_status_bar(ui, screen_size, status_bar_height, fps, frame_count, entities.len());
@@ -429,48 +461,46 @@ impl EditorUI {
     }
 
     fn build_viewport(&mut self, ui: &mut UiContext, bounds: Rect2D) {
-        // Viewport background - dark gray (scene will render here later)
-        ui.draw_rect(bounds, Color::new(0.15, 0.15, 0.18, 1.0));
-
-        // Draw a simple grid pattern for visual interest
-        let grid_spacing = 40.0;
-        let grid_color = Color::new(0.25, 0.25, 0.28, 1.0);
-
-        // Vertical lines
-        let mut x = bounds.min.x();
-        while x <= bounds.max.x() {
-            ui.draw_line(
-                Vec2::new(x, bounds.min.y()),
-                Vec2::new(x, bounds.max.y()),
-                grid_color,
-                1.0,
-            );
-            x += grid_spacing;
-        }
-
-        // Horizontal lines
-        let mut y = bounds.min.y();
-        while y <= bounds.max.y() {
-            ui.draw_line(
-                Vec2::new(bounds.min.x(), y),
-                Vec2::new(bounds.max.x(), y),
-                grid_color,
-                1.0,
-            );
-            y += grid_spacing;
-        }
-
-        // Viewport border
-        ui.draw_rect_border(bounds, Color::new(0.12, 0.12, 0.12, 1.0), Color::new(0.4, 0.5, 0.6, 1.0), 2.0);
-
-        // Center text
-        let center_text = "Scene Viewport";
-        let text_size = ui.measure_text(center_text, 16.0);
-        let text_pos = Vec2::new(
-            bounds.center().x() - text_size.x() * 0.5,
-            bounds.center().y() - text_size.y() * 0.5,
+        // Draw the viewport texture (rendered 3D scene)
+        // UV x >= 1.0 signals viewport texture sampling in the shader
+        // The shader subtracts 1.0 from x, so (1.0, 0.0) to (2.0, 1.0) maps to full texture
+        ui.draw_image(
+            bounds,
+            Vec2::new(1.0, 0.0),  // uv_min: viewport texture starts at (0, 0) after -1.0 offset
+            Vec2::new(2.0, 1.0),  // uv_max: viewport texture ends at (1, 1) after -1.0 offset
+            Color::WHITE,
         );
-        ui.draw_text(center_text, text_pos, Color::new(0.5, 0.5, 0.55, 1.0), 16.0);
+
+        // Viewport border - draw ONLY the border lines, not a filled rect
+        let border_width = 2.0;
+        let border_color = Color::new(0.4, 0.5, 0.6, 1.0);
+
+        // Top border
+        ui.draw_rect(
+            Rect2D::from_origin_size(bounds.min, Vec2::new(bounds.width(), border_width)),
+            border_color,
+        );
+        // Bottom border
+        ui.draw_rect(
+            Rect2D::from_origin_size(
+                Vec2::new(bounds.min.x(), bounds.max.y() - border_width),
+                Vec2::new(bounds.width(), border_width),
+            ),
+            border_color,
+        );
+        // Left border
+        ui.draw_rect(
+            Rect2D::from_origin_size(bounds.min, Vec2::new(border_width, bounds.height())),
+            border_color,
+        );
+        // Right border
+        ui.draw_rect(
+            Rect2D::from_origin_size(
+                Vec2::new(bounds.max.x() - border_width, bounds.min.y()),
+                Vec2::new(border_width, bounds.height()),
+            ),
+            border_color,
+        );
 
         // Viewport label
         let vp_label = "3D View";

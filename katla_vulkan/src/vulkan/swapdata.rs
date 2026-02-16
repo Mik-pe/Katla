@@ -107,6 +107,11 @@ impl SwapData {
         self.frame = (self.frame + 1) % self.frames_in_flight;
     }
 
+    /// Get the current frame index (0 to frames_in_flight-1)
+    pub fn current_frame(&self) -> usize {
+        self.frame
+    }
+
     pub fn destroy(&mut self, device: &Device) {
         unsafe {
             for &semaphore in self

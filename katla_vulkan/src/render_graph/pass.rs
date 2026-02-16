@@ -171,6 +171,36 @@ impl PassBuilder {
         self
     }
 
+    /// Mark a resource as transfer read for copy/blit operations.
+    /// This is for vkCmdBlitImage/vkCmdCopyImage source images.
+    pub fn read_transfer(&mut self, resource_id: ResourceId) -> &mut Self {
+        self.inputs.push(resource_id);
+
+        let usage = ResourceUsage::new(resource_id)
+            .with_read(
+                crate::types::Access::TransferRead,
+                crate::types::PipelineStage::Transfer,
+            )
+            .with_layout(crate::types::ImageLayout::TransferSrcOptimal);
+        self.usages.push(usage);
+        self
+    }
+
+    /// Mark a resource as transfer write for copy/blit operations.
+    /// This is for vkCmdBlitImage/vkCmdCopyImage destination images.
+    pub fn write_transfer(&mut self, resource_id: ResourceId) -> &mut Self {
+        self.outputs.push(resource_id);
+
+        let usage = ResourceUsage::new(resource_id)
+            .with_write(
+                crate::types::Access::TransferWrite,
+                crate::types::PipelineStage::Transfer,
+            )
+            .with_layout(crate::types::ImageLayout::TransferDstOptimal);
+        self.usages.push(usage);
+        self
+    }
+
     /// Mark a buffer resource as storage read for compute passes.
     ///
     /// This is for compute shader reads from storage buffers (SSBOs).
@@ -294,8 +324,8 @@ impl PassBuilder {
 pub struct PassExecutionContext {
     /// Command buffer to record commands into
     pub command_buffer: std::rc::Rc<CommandBuffer>,
-    /// Compiled resources available for this pass
-    pub resources: std::rc::Rc<std::collections::HashMap<ResourceId, CompiledResource>>,
+    /// Compiled resources available for this pass (wrapped in RefCell for per-frame updates)
+    pub resources: std::rc::Rc<std::cell::RefCell<std::collections::HashMap<ResourceId, CompiledResource>>>,
     /// The framebuffer for this pass (legacy render pass only)
     pub framebuffer: VkFramebuffer,
     /// The current subpass index (0 for simple passes)
@@ -310,7 +340,7 @@ impl PassExecutionContext {
     /// Create a new PassExecutionContext.
     pub fn new(
         command_buffer: CommandBuffer,
-        resources: std::rc::Rc<std::collections::HashMap<ResourceId, CompiledResource>>,
+        resources: std::rc::Rc<std::cell::RefCell<std::collections::HashMap<ResourceId, CompiledResource>>>,
         framebuffer: vk::Framebuffer,
         extent: Extent2D,
     ) -> Self {
@@ -327,7 +357,7 @@ impl PassExecutionContext {
     /// Create a new PassExecutionContext for dynamic rendering (Vulkan 1.3).
     pub fn new_dynamic(
         command_buffer: CommandBuffer,
-        resources: std::rc::Rc<std::collections::HashMap<ResourceId, CompiledResource>>,
+        resources: std::rc::Rc<std::cell::RefCell<std::collections::HashMap<ResourceId, CompiledResource>>>,
         extent: Extent2D,
     ) -> Self {
         Self {
@@ -340,29 +370,25 @@ impl PassExecutionContext {
         }
     }
 
-    /// Get a compiled resource by ID, if it exists
-    pub fn get_resource(&self, resource_id: ResourceId) -> Option<&CompiledResource> {
-        self.resources.get(&resource_id)
-    }
-
-    /// Get a compiled image resource by ID
+    /// Get a compiled image resource by ID (works for both Image and ExternalImage)
     pub fn get_image(&self, resource_id: ResourceId) -> Option<(vk::Image, vk::ImageView)> {
-        if let Some(CompiledResource::Image {
-            image, image_view, ..
-        }) = self.resources.get(&resource_id)
-        {
-            Some((*image, *image_view))
-        } else {
-            None
+        match self.resources.borrow().get(&resource_id) {
+            Some(CompiledResource::Image {
+                image, image_view, ..
+            }) => Some((*image, *image_view)),
+            Some(CompiledResource::ExternalImage {
+                image, image_view, ..
+            }) => Some((*image, *image_view)),
+            _ => None,
         }
     }
 
-    /// Get a compiled buffer resource by ID
+    /// Get a compiled buffer resource by ID (works for both Buffer and ExternalBuffer)
     pub fn get_buffer(&self, resource_id: ResourceId) -> Option<vk::Buffer> {
-        if let Some(CompiledResource::Buffer { buffer, .. }) = self.resources.get(&resource_id) {
-            Some(*buffer)
-        } else {
-            None
+        match self.resources.borrow().get(&resource_id) {
+            Some(CompiledResource::Buffer { buffer, .. }) => Some(*buffer),
+            Some(CompiledResource::ExternalBuffer { buffer }) => Some(*buffer),
+            _ => None,
         }
     }
 }

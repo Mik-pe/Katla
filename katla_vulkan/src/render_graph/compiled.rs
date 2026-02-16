@@ -20,7 +20,8 @@ use crate::VulkanContext;
 pub struct CompiledRenderGraph {
     pub context: Rc<VulkanContext>,
     pub passes: Vec<CompiledPass>,
-    pub resources: Rc<HashMap<ResourceId, CompiledResource>>,
+    /// Resources map wrapped in RefCell for per-frame updates (e.g., viewport texture double-buffering)
+    pub resources: Rc<RefCell<HashMap<ResourceId, CompiledResource>>>,
 
     #[allow(dead_code)] // Needed for resource cleanup
     framebuffers: Vec<vk::Framebuffer>,
@@ -28,6 +29,10 @@ pub struct CompiledRenderGraph {
     /// Cell for storing the draw list that will be processed during execution.
     /// This is set each frame before calling execute().
     draw_list_cell: Option<Rc<RefCell<Option<DrawList>>>>,
+    /// Viewport color resource ID (for double-buffering updates)
+    viewport_color_resource_id: Option<ResourceId>,
+    /// Viewport depth resource ID (for double-buffering updates)
+    viewport_depth_resource_id: Option<ResourceId>,
 }
 
 /// CompiledPass represents a single compiled pass with all necessary Vulkan objects.
@@ -125,11 +130,20 @@ impl CompiledRenderGraph {
         Ok(Self {
             context: context.clone(),
             passes: compiled_passes,
-            resources: Rc::new(resources),
+            resources: Rc::new(RefCell::new(resources)),
             framebuffers,
             registry,
             draw_list_cell: None,
+            viewport_color_resource_id: None,
+            viewport_depth_resource_id: None,
         })
+    }
+
+    /// Set the viewport resource IDs for double-buffering updates.
+    /// This should be called after compile if the graph uses viewport textures.
+    pub fn set_viewport_resource_ids(&mut self, color_id: ResourceId, depth_id: ResourceId) {
+        self.viewport_color_resource_id = Some(color_id);
+        self.viewport_depth_resource_id = Some(depth_id);
     }
 
     /// Analyze resource lifetimes across all passes.
@@ -750,6 +764,61 @@ impl CompiledRenderGraph {
         }
     }
 
+    /// Update viewport texture attachments for double-buffering support.
+    ///
+    /// This should be called before execute() to update the viewport color and depth
+    /// attachments to use the correct textures for the current frame index.
+    /// This prevents race conditions when frames overlap (frames in flight > 1).
+    pub fn update_viewport_attachments(
+        &mut self,
+        color_image_view: vk::ImageView,
+        depth_image_view: vk::ImageView,
+        color_image: vk::Image,
+        depth_image: vk::Image,
+    ) {
+        // Update color_attachments for viewport passes (sky_pass, geometry_pass, particle_pass)
+        for pass in &mut self.passes {
+            // Skip ui_pass and copy_pass (they use swapchain, not viewport)
+            if pass.name == "ui_pass" || pass.name == "copy_pass" {
+                continue;
+            }
+
+            // For viewport passes, update the first color attachment
+            if !pass.color_attachments.is_empty() {
+                pass.color_attachments[0] = vec![color_image_view];
+            }
+
+            // Update depth attachment
+            if pass.depth_attachments.iter().any(|d| d.is_some()) {
+                pass.depth_attachments[0] = Some(depth_image_view);
+            }
+        }
+
+        // Update the resources map so ctx.get_image() returns the correct viewport texture
+        // This is crucial for copy_pass which uses get_image() to get the viewport texture
+        let mut resources = self.resources.borrow_mut();
+
+        // Update viewport color resource
+        if let Some(color_id) = self.viewport_color_resource_id {
+            if let Some(resource) = resources.get_mut(&color_id) {
+                if let CompiledResource::ExternalImage { image, image_view, .. } = resource {
+                    *image = color_image;
+                    *image_view = color_image_view;
+                }
+            }
+        }
+
+        // Update viewport depth resource
+        if let Some(depth_id) = self.viewport_depth_resource_id {
+            if let Some(resource) = resources.get_mut(&depth_id) {
+                if let CompiledResource::ExternalImage { image, image_view, .. } = resource {
+                    *image = depth_image;
+                    *image_view = depth_image_view;
+                }
+            }
+        }
+    }
+
     /// Execute the compiled render graph.
     /// Executes all passes in order using the provided command buffer.
     /// The ExecutionRegistry (owned by this graph) provides the closure logic.
@@ -769,10 +838,12 @@ impl CompiledRenderGraph {
             // Check if we have dynamic rendering attachments for this image index
             // For swapchain rendering, we always have attachments (during compile, one set is created
             // The get() returns None for missing per-image sets, but that's OK for swapchain
-            let has_dynamic_rendering = !self.passes[i].color_attachments.is_empty();
+            let has_color_attachments = !self.passes[i].color_attachments.is_empty();
+            let has_depth_attachment = self.passes[i].depth_attachments.iter().any(|d| d.is_some());
+            let has_render_attachments = has_color_attachments || has_depth_attachment;
             let is_last_pass = i == pass_count - 1;
 
-            if has_dynamic_rendering {
+            if has_render_attachments {
                 // Use Dynamic Rendering path (Vulkan 1.3)
                 self.execute_pass_dynamic(
                     command_buffer,
@@ -783,10 +854,32 @@ impl CompiledRenderGraph {
                     is_last_pass,
                 )?;
             } else {
-                // Use legacy render pass path
-                self.execute_pass_legacy(command_buffer, i, image_index)?;
+                // Transfer/compute pass - no render pass needed
+                self.execute_pass_transfer(command_buffer, i)?;
             }
         }
+        Ok(())
+    }
+
+    /// Execute a transfer-only pass (no render pass, just command recording).
+    /// Used for vkCmdBlitImage, vkCmdCopyImage, compute dispatches, etc.
+    fn execute_pass_transfer(
+        &mut self,
+        command_buffer: &mut CommandBuffer,
+        pass_index: usize,
+    ) -> Result<(), RenderGraphError> {
+        let pass = &self.passes[pass_index];
+
+        // Create execution context
+        let ctx = Rc::new(PassExecutionContext::new_dynamic(
+            command_buffer.clone(),
+            Rc::clone(&self.resources),
+            pass.extent,
+        ));
+
+        // Execute the pass closure directly (no begin_rendering/end_rendering)
+        pass.execute.execute(ctx, &mut self.registry);
+
         Ok(())
     }
 
@@ -805,26 +898,23 @@ impl CompiledRenderGraph {
         // Get color attachments for this image index
         // IMPORTANT: Always use at least one color attachment to match pipeline's colorAttachmentCount
         // If get() returns None, use the first attachment set instead of adding 0 attachments
-        let mut color_attachments = pass
-            .color_attachments
-            .get(image_index)
-            .cloned()
-            .unwrap_or_default();
-
-        // Ensure we have at least one attachment (fallback to first set if needed)
-        if color_attachments.is_empty() {
-            // Use the first attachment set from compile instead of adding 0 attachments
-            if let Some(first_set) = pass.color_attachments.first() {
-                if !first_set.is_empty() {
-                    color_attachments.push(first_set[0]);
-                    warn!("WARNING: color_attachments[{}] was empty, using fallback attachment for image_index {}",
-                        pass_index, image_index);
-                }
-            }
-        }
+        // This handles both swapchain rendering (multiple sets) and viewport rendering (single set)
+        let color_attachments = if let Some(attachments) = pass.color_attachments.get(image_index) {
+            attachments.clone()
+        } else {
+            // Fallback to first set for non-swapchain attachments (e.g., viewport texture)
+            pass.color_attachments.first()
+                .filter(|v| !v.is_empty())
+                .cloned()
+                .unwrap_or_default()
+        };
 
         // Get depth attachment for this image index
-        let depth_attachment = pass.depth_attachments.get(image_index).copied().flatten();
+        // Fallback to first depth attachment for non-swapchain attachments
+        let depth_attachment = pass.depth_attachments.get(image_index)
+            .copied()
+            .flatten()
+            .or_else(|| pass.depth_attachments.first().copied().flatten());
 
         // Build rendering info
         let mut rendering_info = RenderingInfo::new()
@@ -873,11 +963,16 @@ impl CompiledRenderGraph {
         }
 
         // Transition swapchain images to COLOR_ATTACHMENT_OPTIMAL before rendering
-        // - First pass: From UNDEFINED (or PRESENT_SRC after previous frame - both are valid with UNDEFINED)
+        // - First pass using swapchain: From UNDEFINED (or PRESENT_SRC after previous frame)
         // - Subsequent passes: From COLOR_ATTACHMENT_OPTIMAL (preserve content from previous pass)
+        //
+        // IMPORTANT: Only transition swapchain if this pass is actually writing to it!
+        // When viewport exists, sky_pass and geometry_pass write to viewport texture, NOT swapchain.
+        // We detect this by checking if color_attachments has per-image variants (swapchain) or not (viewport).
+        let is_writing_to_swapchain = pass.color_attachments.get(image_index).is_some();
         let swapchain_image = swapchain_images.get(image_index).map(|img| img.vk());
-        if let Some(swapchain_vk_image) = swapchain_image {
-            // For the first pass, use UNDEFINED which discards previous content (correct for clear)
+        if let (Some(swapchain_vk_image), true) = (swapchain_image, is_writing_to_swapchain) {
+            // For the first pass using swapchain, use UNDEFINED which discards previous content
             // For subsequent passes, use COLOR_ATTACHMENT_OPTIMAL to preserve the previous pass's output
             let old_layout = if pass_index == 0 {
                 vk::ImageLayout::UNDEFINED
@@ -1147,10 +1242,10 @@ impl Drop for CompiledRenderGraph {
             // we skip cleanup to avoid double-free.
             if let Ok(resources) = Rc::try_unwrap(std::mem::replace(
                 &mut self.resources,
-                Rc::new(HashMap::new()),
+                Rc::new(RefCell::new(HashMap::new())),
             )) {
                 // We're the sole owner, safe to free resources
-                for (_, resource) in resources {
+                for (_, resource) in resources.into_inner() {
                     match resource {
                         CompiledResource::Buffer {
                             buffer, allocation, ..
@@ -1287,7 +1382,6 @@ mod tests {
                 .extent(1920, 1080)
                 .execute("lighting_pass", |ctx| {
                     // Test that we can access resources
-                    let _ = ctx.get_resource(ResourceId(1));
                     let _ = ctx.get_image(ResourceId(1));
                 });
         });

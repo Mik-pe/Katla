@@ -89,12 +89,6 @@ impl ApplicationHandler for Application {
                 CString::new(self.info.name.as_str()).unwrap(),
                 engine_name,
             );
-            let window_size = window.inner_size();
-            let win_x = window_size.width as f32;
-            let win_y = window_size.height as f32;
-            self.camera
-                .borrow_mut()
-                .aspect_ratio_changed(&mut self.world, win_x / win_y);
 
             // Initialize storage uniform system for modern rendering
             // This enables storage buffers with instance indexing
@@ -372,13 +366,6 @@ impl ApplicationHandler for Application {
                     let new_height = logical_size.height as f32;
 
                     if new_width > 0 && new_height > 0.0 {
-                        // Update camera aspect ratio
-                        let win_x = logical_size.width as f32;
-                        let win_y = logical_size.height as f32;
-                        self.camera
-                            .borrow_mut()
-                            .aspect_ratio_changed(&mut self.world, win_x / win_y);
-
                         if let Some(ref mut renderer) = self.renderer {
                             info!(
                                 "=== Window resized to {}x{}, recreating swapchain ===",
@@ -388,6 +375,16 @@ impl ApplicationHandler for Application {
                             renderer.recreate_swapchain();
                             // Also resize viewport render target
                             let _ = renderer.init_viewport_target(new_width as u32, new_height as u32);
+                            // Rebuild render graph to update viewport resource references
+                            renderer.setup_render_graph();
+
+                            // Update camera aspect ratio based on viewport texture size
+                            if let Some(viewport_extent) = renderer.viewport_extent() {
+                                let aspect = viewport_extent.width as f32 / viewport_extent.height as f32;
+                                self.camera
+                                    .borrow_mut()
+                                    .aspect_ratio_changed(&mut self.world, aspect);
+                            }
                         }
                     }
                 }
@@ -600,6 +597,14 @@ impl Application {
         let viewport_size = self.window.as_ref().unwrap().inner_size();
         renderer.init_viewport_target(viewport_size.width, viewport_size.height)
             .expect("Failed to initialize viewport render target");
+
+        // Set camera aspect ratio based on viewport texture size (not window size!)
+        if let Some(viewport_extent) = renderer.viewport_extent() {
+            let aspect = viewport_extent.width as f32 / viewport_extent.height as f32;
+            self.camera
+                .borrow_mut()
+                .aspect_ratio_changed(&mut self.world, aspect);
+        }
 
         // Setup render graph with multiple framebuffers
         renderer.setup_render_graph();
