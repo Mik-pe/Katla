@@ -50,7 +50,7 @@ pub struct Application {
     world: World,
     input_mapper: InputMapper,
     current_modifiers: ModifiersState,
-    frame_count: usize, // Track frames rendered for max_frames limit
+    frame_count: usize,         // Track frames rendered for max_frames limit
     resources: ResourceManager, // Centralized resource paths
     /// Skeleton buffers for animated meshes, indexed by entity ID
     skeleton_buffers: HashMap<katla_ecs::EntityId, Rc<RefCell<SkeletonBuffer>>>,
@@ -74,8 +74,8 @@ impl ApplicationHandler for Application {
                         .with_resizable(true)
                         // Use primary monitor size for initial window size
                         .with_min_inner_size(LogicalSize {
-                            width: 80.0,  // Use reasonable default width
-                            height: 600.0,  // Use reasonable default height
+                            width: 800.0,  // Use reasonable default width
+                            height: 600.0, // Use reasonable default height
                         })
                         .with_maximized(false),
                 )
@@ -92,7 +92,8 @@ impl ApplicationHandler for Application {
 
             // Initialize storage uniform system for modern rendering
             // This enables storage buffers with instance indexing
-            renderer.init_storage_standard()
+            renderer
+                .init_storage_standard()
                 .expect("Failed to initialize storage uniform system");
 
             // Load materials from TOML files with storage buffer mode
@@ -100,10 +101,7 @@ impl ApplicationHandler for Application {
             let loaded_count = renderer
                 .material_registry
                 .borrow_mut()
-                .load_directory_storage(
-                    &self.resources.materials,
-                    renderer.context.clone()
-                )
+                .load_directory_storage(&self.resources.materials, renderer.context.clone())
                 .expect("Failed to load materials directory");
             info!(
                 "Loaded {} material templates from {}",
@@ -142,7 +140,10 @@ impl ApplicationHandler for Application {
                 material_registry_ptr,
             );
 
-            info!("Fox model entity: {:?} loaded, setting up animation...", fox.entity);
+            info!(
+                "Fox model entity: {:?} loaded, setting up animation...",
+                fox.entity
+            );
 
             // Setup animation components for the fox model
             AnimationManager::setup_animated_model(
@@ -168,16 +169,21 @@ impl ApplicationHandler for Application {
                 // Get skeleton_set_layout from the material's pipeline
                 if let Some(drawable) = self.world.get_component::<DrawableComponent>(fox.entity) {
                     if let Some(material_handle) = drawable.material_handle {
-                        if let Some(skeleton_layout) = renderer.asset_registry.get_skeleton_set_layout(material_handle) {
+                        if let Some(skeleton_layout) = renderer
+                            .asset_registry
+                            .get_skeleton_set_layout(material_handle)
+                        {
                             // Register skeleton with renderer
-                            if let Some(skeleton_handle) = renderer.register_skeleton(
-                                skeleton_buffer.clone(),
-                                skeleton_layout,
-                            ) {
+                            if let Some(skeleton_handle) =
+                                renderer.register_skeleton(skeleton_buffer.clone(), skeleton_layout)
+                            {
                                 debug!("Registered skeleton with handle {:?}", skeleton_handle);
 
                                 // Set handle on DrawableComponent
-                                if let Some(drawable) = self.world.get_component_mut::<DrawableComponent>(fox.entity) {
+                                if let Some(drawable) = self
+                                    .world
+                                    .get_component_mut::<DrawableComponent>(fox.entity)
+                                {
                                     drawable.skeleton_handle = Some(skeleton_handle);
                                 }
 
@@ -235,13 +241,11 @@ impl ApplicationHandler for Application {
 
             // Add lighting to the scene
             // Directional light (sun)
-            self.world.spawn((
-                DirectionalLight::new(
-                    Vec3::new(-0.3, -1.0, -0.2), // Angled down and to the side
-                    [1.0, 0.95, 0.8],            // Warm white
-                    1.0,                         // Full intensity
-                ),
-            ));
+            self.world.spawn((DirectionalLight::new(
+                Vec3::new(-0.3, -1.0, -0.2), // Angled down and to the side
+                [1.0, 0.95, 0.8],            // Warm white
+                1.0,                         // Full intensity
+            ),));
 
             // Point lights for accent lighting
             self.world.spawn((
@@ -267,7 +271,7 @@ impl ApplicationHandler for Application {
                 &mut self.world,
                 renderer.context.clone(),
                 Vec3::new(0.0, 10.0, 0.0), // Above the fox
-                100.0,                       // 100 particles per second
+                100.0,                     // 100 particles per second
             );
             debug!("Created particle emitter entity");
 
@@ -276,18 +280,21 @@ impl ApplicationHandler for Application {
             // Create checkerboard material from template (template loaded from TOML)
             // The template has the pipeline and shader, we just add the procedural texture
             let checkerboard_texture = create_checkerboard_texture(renderer.context.clone());
-            if self.material_manager.register_from_template(
-                "Checkerboard",
-                &renderer.material_registry.borrow(),
-                Some(Rc::new(checkerboard_texture)),
-                None,
-            ).is_some() {
+            if self
+                .material_manager
+                .register_from_template(
+                    "Checkerboard",
+                    &renderer.material_registry.borrow(),
+                    Some(Rc::new(checkerboard_texture)),
+                    None,
+                )
+                .is_some()
+            {
                 debug!("Registered checkerboard material from template");
             } else {
                 warn!("Checkerboard template not found, using fallback");
                 // Fallback to direct creation if template doesn't exist
-                let checkerboard =
-                    create_checkerboard_material(renderer.context.clone());
+                let checkerboard = create_checkerboard_material(renderer.context.clone());
                 self.material_manager
                     .register_material("checkerboard", checkerboard);
             }
@@ -362,15 +369,18 @@ impl ApplicationHandler for Application {
                             // Pass the actual window size to ensure swapchain uses correct extent
                             renderer.recreate_swapchain();
                             // Also resize viewport render target
-                            let _ = renderer.init_viewport_target(new_width as u32, new_height as u32);
+                            let _ =
+                                renderer.init_viewport_target(new_width as u32, new_height as u32);
                             // Resize output render target for UI composition
-                            let _ = renderer.init_output_target(new_width as u32, new_height as u32);
+                            let _ =
+                                renderer.init_output_target(new_width as u32, new_height as u32);
                             // Rebuild render graph to update resource references
                             renderer.setup_render_graph();
 
                             // Update camera aspect ratio based on viewport texture size
                             if let Some(viewport_extent) = renderer.viewport_extent() {
-                                let aspect = viewport_extent.width as f32 / viewport_extent.height as f32;
+                                let aspect =
+                                    viewport_extent.width as f32 / viewport_extent.height as f32;
                                 self.camera
                                     .borrow_mut()
                                     .aspect_ratio_changed(&mut self.world, aspect);
@@ -380,10 +390,9 @@ impl ApplicationHandler for Application {
                 }
                 WindowEvent::CursorMoved { position, .. } => {
                     // Update UI mouse position
-                    self.ui_context.input.set_mouse_pos(Vec2::new(
-                        position.x as f32,
-                        position.y as f32,
-                    ));
+                    self.ui_context
+                        .input
+                        .set_mouse_pos(Vec2::new(position.x as f32, position.y as f32));
                 }
                 WindowEvent::MouseWheel { delta, .. } => {
                     // Update UI scroll delta
@@ -472,7 +481,7 @@ impl ApplicationHandler for Application {
                         let renderer = self.renderer.as_mut().expect("Renderer not initialized");
 
                         let _sphere = MeshBuilder::new(renderer.context.clone())
-                                        .position(Vec3::new(0.0, 5.0, 0.0))
+                            .position(Vec3::new(0.0, 5.0, 0.0))
                             .color([0.8, 0.2, 0.2])
                             .with_shared_material("Checkerboard")
                             .sphere()
@@ -480,14 +489,14 @@ impl ApplicationHandler for Application {
 
                         let renderer = self.renderer.as_mut().expect("Renderer not initialized");
                         let _cube = MeshBuilder::new(renderer.context.clone())
-                                        .position(Vec3::new(20.0, 5.0, 0.0))
+                            .position(Vec3::new(20.0, 5.0, 0.0))
                             .color([0.2, 0.8, 0.2])
                             .with_shared_material("Checkerboard")
                             .build(&mut self.world, renderer);
 
                         let renderer = self.renderer.as_mut().expect("Renderer not initialized");
                         let _plane = MeshBuilder::new(renderer.context.clone())
-                                        .position(Vec3::new(0.0, -5.0, 0.0))
+                            .position(Vec3::new(0.0, -5.0, 0.0))
                             .color([0.5, 0.5, 0.5])
                             .with_shared_material("Checkerboard")
                             .plane()
@@ -579,18 +588,21 @@ impl Application {
         renderer.init_ui_buffers(256 * 1024, 128 * 1024);
 
         // Initialize UI textures (512x512 font atlas)
-        renderer.init_ui_textures(512, 512)
+        renderer
+            .init_ui_textures(512, 512)
             .expect("Failed to initialize UI textures");
 
         // Initialize viewport render target for game engine editor
         // This creates an offscreen texture the UI can sample for the viewport panel
         let viewport_size = self.window.as_ref().unwrap().inner_size();
-        renderer.init_viewport_target(viewport_size.width, viewport_size.height)
+        renderer
+            .init_viewport_target(viewport_size.width, viewport_size.height)
             .expect("Failed to initialize viewport render target");
 
         // Initialize output render target for final UI composition
         // This is where UI renders, then present_pass copies to swapchain
-        renderer.init_output_target(viewport_size.width, viewport_size.height)
+        renderer
+            .init_output_target(viewport_size.width, viewport_size.height)
             .expect("Failed to initialize output render target");
 
         // Set camera aspect ratio based on viewport texture size (not window size!)
@@ -628,9 +640,15 @@ impl Application {
 
         // Extract camera position from inverse view matrix
         let view_arr: [[f32; 4]; 4] = view.clone().into();
-        let cam_x = -(view_arr[0][0]*view_arr[3][0] + view_arr[0][1]*view_arr[3][1] + view_arr[0][2]*view_arr[3][2]);
-        let cam_y = -(view_arr[1][0]*view_arr[3][0] + view_arr[1][1]*view_arr[3][1] + view_arr[1][2]*view_arr[3][2]);
-        let cam_z = -(view_arr[2][0]*view_arr[3][0] + view_arr[2][1]*view_arr[3][1] + view_arr[2][2]*view_arr[3][2]);
+        let cam_x = -(view_arr[0][0] * view_arr[3][0]
+            + view_arr[0][1] * view_arr[3][1]
+            + view_arr[0][2] * view_arr[3][2]);
+        let cam_y = -(view_arr[1][0] * view_arr[3][0]
+            + view_arr[1][1] * view_arr[3][1]
+            + view_arr[1][2] * view_arr[3][2]);
+        let cam_z = -(view_arr[2][0] * view_arr[3][0]
+            + view_arr[2][1] * view_arr[3][1]
+            + view_arr[2][2] * view_arr[3][2]);
 
         // Set frame uniforms once per frame (view/proj/lighting shared by all draws)
         renderer.set_frame_uniforms(katla_vulkan::FrameUniforms {
@@ -671,8 +689,8 @@ impl Application {
             if let (Some(mesh_handle), Some(material_handle)) =
                 (drawable.mesh_handle, drawable.material_handle)
             {
-                let mut draw_call = DrawCall::new(mesh_handle, material_handle)
-                    .with_transform(model_array);
+                let mut draw_call =
+                    DrawCall::new(mesh_handle, material_handle).with_transform(model_array);
 
                 // Add color override if specified in DrawableComponent
                 if let Some(color) = drawable.color {
@@ -697,7 +715,10 @@ impl Application {
         // Get storage descriptor for frame uniforms (before mutable borrow)
         let storage_descriptor = renderer.storage_descriptor_set.as_ref().map(|s| s.set());
 
-        for (_entity, emitter) in self.world.query::<&mut crate::components::ParticleEmitter>() {
+        for (_entity, emitter) in self
+            .world
+            .query::<&mut crate::components::ParticleEmitter>()
+        {
             // Update emitter (updates frame data buffer)
             emitter.update(delta_time);
 
@@ -860,7 +881,8 @@ impl Application {
                     shader_vertices.as_ptr() as *const u8,
                     shader_vertices.len() * std::mem::size_of::<UiShaderVertex>(),
                 )
-            }.to_vec();
+            }
+            .to_vec();
 
             // Convert indices to raw bytes
             let index_bytes = unsafe {
@@ -868,7 +890,8 @@ impl Application {
                     indices.as_ptr() as *const u8,
                     indices.len() * std::mem::size_of::<u32>(),
                 )
-            }.to_vec();
+            }
+            .to_vec();
 
             // Pass to renderer
             if let Some(ref renderer) = self.renderer {
@@ -895,7 +918,9 @@ impl Application {
 
     /// Collect entity information for the editor UI in tree order.
     fn collect_entity_info(&self) -> Vec<crate::ui::EntityInfo> {
-        use crate::components::{NameComponent, TransformComponent, DrawableComponent, Children, Parent};
+        use crate::components::{
+            Children, DrawableComponent, NameComponent, Parent, TransformComponent,
+        };
         use std::collections::{HashMap, HashSet};
 
         // First pass: collect all entities with transforms and their relationships
@@ -910,7 +935,9 @@ impl Application {
                 None => continue,
             };
 
-            let name = self.world.get_component::<NameComponent>(entity_id)
+            let name = self
+                .world
+                .get_component::<NameComponent>(entity_id)
                 .map(|n| n.name.clone())
                 .unwrap_or_else(|| format!("Entity {}", entity_id.id()));
 
@@ -919,7 +946,9 @@ impl Application {
             let rot = Vec3::new(euler.0, euler.1, euler.2);
             let scale = transform.transform.scale;
 
-            let model_type = self.world.get_component::<DrawableComponent>(entity_id)
+            let model_type = self
+                .world
+                .get_component::<DrawableComponent>(entity_id)
                 .map(|_| "Mesh".to_string())
                 .unwrap_or_else(|| "Empty".to_string());
 
@@ -931,7 +960,8 @@ impl Application {
                 parent_map.insert(entity_id, parent.parent);
                 root_entities.remove(&entity_id);
 
-                children_map.entry(parent.parent)
+                children_map
+                    .entry(parent.parent)
                     .or_default()
                     .push(entity_id);
             }
@@ -949,7 +979,10 @@ impl Application {
             depth: u32,
         ) {
             if let Some((name, pos, rot, scale, model_type)) = entity_data.get(&entity_id) {
-                let children = children_map.get(&entity_id).map(|c| c.as_slice()).unwrap_or(&[]);
+                let children = children_map
+                    .get(&entity_id)
+                    .map(|c| c.as_slice())
+                    .unwrap_or(&[]);
                 result.push(crate::ui::EntityInfo {
                     id: entity_id,
                     name: name.clone(),
@@ -964,7 +997,14 @@ impl Application {
 
                 // Recursively add children
                 for child_id in children {
-                    add_entity_and_children(*child_id, Some(entity_id), entity_data, children_map, result, depth + 1);
+                    add_entity_and_children(
+                        *child_id,
+                        Some(entity_id),
+                        entity_data,
+                        children_map,
+                        result,
+                        depth + 1,
+                    );
                 }
             }
         }
@@ -982,8 +1022,8 @@ impl Application {
 
     /// Spawn a model from the editor UI.
     fn spawn_model_from_editor(&mut self, model_type: crate::ui::SpawnableModel, position: Vec3) {
-        use crate::ui::SpawnableModel;
         use crate::rendering::MeshBuilder;
+        use crate::ui::SpawnableModel;
 
         let context = match &self.renderer {
             Some(r) => r.context.clone(),
@@ -996,31 +1036,41 @@ impl Application {
         let spawned_id = match model_type {
             SpawnableModel::Fox => {
                 info!("Spawning Fox at {:?} (using cube placeholder)", position);
-                builder.cube().build(&mut self.world, self.renderer.as_mut().unwrap())
+                builder
+                    .cube()
+                    .build(&mut self.world, self.renderer.as_mut().unwrap())
             }
-            SpawnableModel::Cube => {
-                builder.cube().build(&mut self.world, self.renderer.as_mut().unwrap())
-            }
-            SpawnableModel::Sphere => {
-                builder.sphere().build(&mut self.world, self.renderer.as_mut().unwrap())
-            }
-            SpawnableModel::Cylinder => {
-                builder.cylinder().build(&mut self.world, self.renderer.as_mut().unwrap())
-            }
-            SpawnableModel::Plane => {
-                builder.plane().build(&mut self.world, self.renderer.as_mut().unwrap())
-            }
-            SpawnableModel::Torus => {
-                builder.torus().build(&mut self.world, self.renderer.as_mut().unwrap())
-            }
+            SpawnableModel::Cube => builder
+                .cube()
+                .build(&mut self.world, self.renderer.as_mut().unwrap()),
+            SpawnableModel::Sphere => builder
+                .sphere()
+                .build(&mut self.world, self.renderer.as_mut().unwrap()),
+            SpawnableModel::Cylinder => builder
+                .cylinder()
+                .build(&mut self.world, self.renderer.as_mut().unwrap()),
+            SpawnableModel::Plane => builder
+                .plane()
+                .build(&mut self.world, self.renderer.as_mut().unwrap()),
+            SpawnableModel::Torus => builder
+                .torus()
+                .build(&mut self.world, self.renderer.as_mut().unwrap()),
         };
 
         // Update the name component with a more descriptive name
         let name = format!("{}_{}", model_type.name(), spawned_id.id());
-        if let Some(name_comp) = self.world.get_component_mut::<crate::components::NameComponent>(spawned_id) {
+        if let Some(name_comp) = self
+            .world
+            .get_component_mut::<crate::components::NameComponent>(spawned_id)
+        {
             name_comp.name = name;
         }
 
-        info!("Spawned {} (entity {}) at {:?}", model_type.name(), spawned_id.id(), position);
+        info!(
+            "Spawned {} (entity {}) at {:?}",
+            model_type.name(),
+            spawned_id.id(),
+            position
+        );
     }
 }
