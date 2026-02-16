@@ -310,31 +310,28 @@ impl VulkanRenderer {
         self.ui_textures.as_ref().map(|t| t.descriptor_set)
     }
 
-    /// Initialize or resize the viewport render targets.
+    /// Initialize or resize the viewport render target.
     ///
-    /// This creates offscreen render targets (one per frame in flight) for rendering
+    /// This creates a single offscreen render target for rendering
     /// the 3D scene that can be sampled by the UI viewport panel.
-    /// Double-buffering prevents race conditions when frames overlap.
+    /// Single-buffered is fine with proper fence synchronization.
     pub fn init_viewport_target(&mut self, width: u32, height: u32) -> Result<(), vk::Result> {
         let needs_resize = self.viewport_targets.first()
             .map(|t| t.extent.width != width || t.extent.height != height)
             .unwrap_or(true);
 
         if needs_resize {
-            // Destroy old targets
+            // Destroy old target
             for target in self.viewport_targets.drain(..) {
                 target.destroy(&self.context);
             }
 
-            // Create new targets (one per frame in flight)
-            for i in 0..FRAMES_IN_FLIGHT {
-                let target = ViewportRenderTarget::new(&self.context, width, height)?;
-                self.viewport_targets.push(target);
-                info!("Viewport render target {} created/resized to {}x{}", i, width, height);
-            }
+            // Create single target
+            let target = ViewportRenderTarget::new(&self.context, width, height)?;
+            self.viewport_targets.push(target);
+            info!("Viewport render target created/resized to {}x{}", width, height);
 
-            // Update UI textures with the first viewport image view
-            // The UI will sample from the "previous" frame's texture
+            // Update UI textures with the viewport image view
             if let Some(ref mut ui_textures) = self.ui_textures {
                 if let Some(ref viewport_target) = self.viewport_targets.first() {
                     ui_textures.set_viewport_texture(&self.context, viewport_target.color_image_view);
@@ -344,35 +341,24 @@ impl VulkanRenderer {
         Ok(())
     }
 
-    /// Get the viewport color image view for the current frame (for rendering).
-    pub fn viewport_color_view_for_frame(&self, frame_index: usize) -> Option<vk::ImageView> {
-        self.viewport_targets.get(frame_index % self.viewport_targets.len())
-            .map(|t| t.color_image_view)
+    /// Get the viewport color image view (for rendering).
+    pub fn viewport_color_view(&self) -> Option<vk::ImageView> {
+        self.viewport_targets.first().map(|t| t.color_image_view)
     }
 
-    /// Get the viewport depth image for the current frame (for rendering).
-    pub fn viewport_depth_for_frame(&self, frame_index: usize) -> Option<vk::Image> {
-        self.viewport_targets.get(frame_index % self.viewport_targets.len())
-            .map(|t| t.depth_image)
+    /// Get the viewport depth image (for rendering).
+    pub fn viewport_depth_image(&self) -> Option<vk::Image> {
+        self.viewport_targets.first().map(|t| t.depth_image)
     }
 
-    /// Get the viewport color image for the current frame (for rendering).
-    pub fn viewport_color_image_for_frame(&self, frame_index: usize) -> Option<vk::Image> {
-        self.viewport_targets.get(frame_index % self.viewport_targets.len())
-            .map(|t| t.color_image)
+    /// Get the viewport color image (for rendering).
+    pub fn viewport_color_image(&self) -> Option<vk::Image> {
+        self.viewport_targets.first().map(|t| t.color_image)
     }
 
-    /// Get the viewport depth image view for the current frame (for rendering).
-    pub fn viewport_depth_view_for_frame(&self, frame_index: usize) -> Option<vk::ImageView> {
-        self.viewport_targets.get(frame_index % self.viewport_targets.len())
-            .map(|t| t.depth_image_view)
-    }
-
-    /// Get the viewport color image view for UI sampling.
-    /// Uses the SAME texture as the current frame - no latency!
-    /// The fence synchronization ensures the previous frame with this frame_index has completed.
-    pub fn viewport_color_view_for_ui(&self, current_frame_index: usize) -> Option<vk::ImageView> {
-        self.viewport_color_view_for_frame(current_frame_index)
+    /// Get the viewport depth image view (for rendering).
+    pub fn viewport_depth_view(&self) -> Option<vk::ImageView> {
+        self.viewport_targets.first().map(|t| t.depth_image_view)
     }
 
     /// Get the viewport sampler.
@@ -1259,12 +1245,12 @@ impl VulkanRenderer {
         let ui_buffers_ptr = &self.ui_buffers as *const Vec<UIBuffers>;
         let ui_textures_ptr = &self.ui_textures as *const Option<UITextures>;
         let ui_frame_index_ptr = &self.ui_frame_index as *const std::cell::Cell<usize>;
-        // UI renders to output texture if available, otherwise swapchain (fallback)
+        // UI renders to output texture (present_pass will copy to swapchain)
         let ui_target_res = output_resource.unwrap_or(swapchain_resource);
 
         graph_builder.add_pass("ui_pass", move |pass| {
             pass.write(Attachment::Color(ui_target_res))
-                .clear_color(ui_target_res, [0.1, 0.1, 0.1, 1.0]) // Dark background
+                .clear_color(ui_target_res, [0.1, 0.1, 0.1, 1.0])
                 .execute("ui_pass", move |ctx| {
                     // SAFETY: Pointers are valid for the renderer's lifetime
                     let ui_data_cell = unsafe { &*ui_data_ptr };
@@ -1683,36 +1669,11 @@ impl VulkanRenderer {
 
         let image_index = frame_data.image_index as usize;
 
-        // === EXTRACT VIEWPORT DATA BEFORE BORROWING GRAPH ===
-        // This must be done before borrowing self.render_graph to avoid borrow checker issues
-        let frame_index = self.swap_data.current_frame();
-        let viewport_attachments = if !self.viewport_targets.is_empty() {
-            let color_view = self.viewport_color_view_for_frame(frame_index);
-            let depth_view = self.viewport_depth_view_for_frame(frame_index);
-            let color_image = self.viewport_color_image_for_frame(frame_index);
-            let depth_image = self.viewport_depth_for_frame(frame_index);
-            (color_view, depth_view, color_image, depth_image)
-        } else {
-            (None, None, None, None)
-        };
-
-        // Update UI descriptor set to sample from the current frame's viewport texture
-        if let (Some(color_view), Some(_), Some(_), Some(_)) = viewport_attachments {
-            if let Some(ref mut ui_textures) = self.ui_textures {
-                ui_textures.set_viewport_texture(&self.context, color_view);
-            }
-        }
-
         // Now we can safely borrow the graph
         let graph = self
             .render_graph
             .as_mut()
             .ok_or(RenderGraphError::CompilationError("No render graph".into()))?;
-
-        // Update render graph viewport attachments
-        if let (Some(color_view), Some(depth_view), Some(color_image), Some(depth_image)) = viewport_attachments {
-            graph.update_viewport_attachments(color_view, depth_view, color_image, depth_image);
-        }
 
         // === UPDATE FRAME UNIFORMS BEFORE RENDER GRAPH EXECUTES ===
         // This must happen before any passes run (sky pass needs inv_view_proj)
