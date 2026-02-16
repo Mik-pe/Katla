@@ -75,6 +75,8 @@ pub struct VulkanRenderer {
     ui_textures: Option<UITextures>,
     /// Offscreen render targets for viewport rendering (one per frame in flight to avoid races).
     viewport_targets: Vec<ViewportRenderTarget>,
+    /// Output render target for final composition (UI renders here, then present_pass copies to swapchain).
+    output_target: Option<OutputRenderTarget>,
     /// Viewport render graph (renders scene to viewport texture).
     viewport_render_graph: Option<CompiledRenderGraph>,
 }
@@ -125,6 +127,7 @@ impl VulkanRenderer {
             ui_frame_index: std::cell::Cell::new(0),
             ui_textures: None,
             viewport_targets: Vec::new(),
+            output_target: None,
             viewport_render_graph: None,
         }
     }
@@ -382,7 +385,45 @@ impl VulkanRenderer {
         self.viewport_targets.first().map(|t| t.extent)
     }
 
+    /// Initialize or resize the output render target.
+    ///
+    /// This creates a texture that the UI renders to, which is then
+    /// copied to the swapchain by the present pass.
+    pub fn init_output_target(&mut self, width: u32, height: u32) -> Result<(), vk::Result> {
+        let needs_resize = self.output_target.as_ref()
+            .map(|t| t.extent.width != width || t.extent.height != height)
+            .unwrap_or(true);
+
+        if needs_resize {
+            let old_target = self.output_target.take();
+            let target = OutputRenderTarget::resize(&self.context, old_target, width, height)?;
+            self.output_target = Some(target);
+            info!("Output render target created/resized to {}x{}", width, height);
+        }
+        Ok(())
+    }
+
+    /// Get the output color image view (for rendering UI).
+    pub fn output_color_view(&self) -> Option<vk::ImageView> {
+        self.output_target.as_ref().map(|t| t.color_image_view)
+    }
+
+    /// Get the output color image (for present pass blit).
+    pub fn output_color_image(&self) -> Option<vk::Image> {
+        self.output_target.as_ref().map(|t| t.color_image)
+    }
+
+    /// Get output dimensions.
+    pub fn output_extent(&self) -> Option<vk::Extent2D> {
+        self.output_target.as_ref().map(|t| t.extent)
+    }
+
     pub fn destroy(&mut self) {
+        // Destroy output render target
+        if let Some(target) = self.output_target.take() {
+            target.destroy(&self.context);
+        }
+
         // Destroy viewport render targets
         for target in self.viewport_targets.drain(..) {
             target.destroy(&self.context);
@@ -802,7 +843,7 @@ impl VulkanRenderer {
         // Scene will render to viewport texture, then copy to swapchain for UI
         // Note: We use the first viewport texture here, but update_viewport_attachments
         // will switch to the correct texture each frame for double-buffering
-        let (viewport_resource, viewport_depth_resource, viewport_extent) = if let Some(first_target) = self.viewport_targets.first() {
+        let (viewport_resource, viewport_depth_resource, _viewport_extent) = if let Some(first_target) = self.viewport_targets.first() {
             let color = graph_builder.add_resource(
                 "viewport_color",
                 ResourceKind::ExternalImage {
@@ -828,12 +869,30 @@ impl VulkanRenderer {
 
         let depth_resource = self.create_depth_resource(&mut graph_builder);
 
+        // Create output resource for UI composition
+        // UI renders to this texture, then present_pass copies it to swapchain
+        // This decouples rendering from presentation for a cleaner architecture
+        let output_resource = if let Some(ref output_target) = self.output_target {
+            Some(graph_builder.add_resource(
+                "output_color",
+                ResourceKind::ExternalImage {
+                    vk_image: output_target.color_image,
+                    image_view: output_target.color_image_view,
+                    format: vk::Format::B8G8R8A8_SRGB,
+                    extent: output_target.extent,
+                },
+            ))
+        } else {
+            None
+        };
+
         // Determine scene render targets based on viewport existence
-        // When viewport exists: scene -> viewport texture
-        // When no viewport: scene -> swapchain directly
-        let scene_color_res = viewport_resource.unwrap_or(swapchain_resource);
+        // When viewport exists: scene -> viewport texture, UI -> output texture
+        // When no viewport: scene -> output texture directly
+        let scene_color_res = viewport_resource.unwrap_or(output_resource.unwrap_or(swapchain_resource));
         let scene_depth_res = viewport_depth_resource.unwrap_or(depth_resource);
         let has_viewport = viewport_resource.is_some();
+        let has_output = output_resource.is_some();
 
         // Create Rc<RefCell<>> for the draw list that will be set each frame
         let draw_list_cell: Rc<RefCell<Option<DrawList>>> = Rc::new(RefCell::new(None));
@@ -855,7 +914,6 @@ impl VulkanRenderer {
         // Store device pointer for particle rendering
         let device_ptr = self.context.device.clone();
 
-        let swapchain_res = swapchain_resource;
         let scene_color = scene_color_res;
         let scene_depth = scene_depth_res;
         let uses_viewport = has_viewport;
@@ -1192,27 +1250,22 @@ impl VulkanRenderer {
         });
 
         // === UI PASS ===
-        // Renders UI overlay after all geometry, with alpha blending
-        // When viewport exists: UI samples viewport texture directly (no copy needed!)
-        // When no viewport: geometry_pass filled swapchain directly
+        // Renders UI overlay to the output texture
+        // When viewport exists: UI samples viewport texture and draws it in the viewport panel
+        // The output texture is then copied to swapchain by present_pass
         // Get pointers for UI rendering
         let ui_data_ptr = &self.ui_data as *const RefCell<Option<UiDrawData>>;
         let ui_pipeline_ptr = &self.ui_pipeline as *const Option<Rc<RefCell<MaterialPipeline>>>;
         let ui_buffers_ptr = &self.ui_buffers as *const Vec<UIBuffers>;
         let ui_textures_ptr = &self.ui_textures as *const Option<UITextures>;
         let ui_frame_index_ptr = &self.ui_frame_index as *const std::cell::Cell<usize>;
-        let uses_viewport_ui = has_viewport;
+        // UI renders to output texture if available, otherwise swapchain (fallback)
+        let ui_target_res = output_resource.unwrap_or(swapchain_resource);
 
         graph_builder.add_pass("ui_pass", move |pass| {
-            let mut pass_builder = pass.write(Attachment::Color(swapchain_res));
-
-            // When viewport exists, clear the swapchain since we're not blitting to it
-            // The UI will sample the viewport texture and draw it in the viewport panel
-            if uses_viewport_ui {
-                pass_builder = pass_builder.clear_color(swapchain_res, [0.1, 0.1, 0.1, 1.0]); // Dark background
-            }
-
-            pass_builder.execute("ui_pass", move |ctx| {
+            pass.write(Attachment::Color(ui_target_res))
+                .clear_color(ui_target_res, [0.1, 0.1, 0.1, 1.0]) // Dark background
+                .execute("ui_pass", move |ctx| {
                     // SAFETY: Pointers are valid for the renderer's lifetime
                     let ui_data_cell = unsafe { &*ui_data_ptr };
                     let ui_pipeline_opt = unsafe { &*ui_pipeline_ptr };
@@ -1278,7 +1331,6 @@ impl VulkanRenderer {
 
                             let vertex_size = ui_data.vertex_data.len() as u64;
                             let index_size = ui_data.index_data.len() as u64;
-                            let index_count = (index_size / 4) as u32;
 
                             if vertex_size == 0 || index_size == 0 {
                                 return;
@@ -1394,6 +1446,141 @@ impl VulkanRenderer {
                     }
                 });
         });
+
+        // === PRESENT PASS (conditional) ===
+        // When output texture exists: blit output texture to swapchain for presentation
+        // This is a transfer-only pass that handles the final copy to swapchain
+        if let (Some(output_res), true) = (output_resource, has_output) {
+            let output_src = output_res;
+            let swapchain_dst = swapchain_resource;
+            let device_for_present = self.context.device.clone();
+            let output_extent_for_present = self.output_extent();
+
+            graph_builder.add_pass("present_pass", move |pass| {
+                pass.read_transfer(output_src)
+                    .write_transfer(swapchain_dst)
+                    .execute("present_pass", move |ctx| {
+                        let cmd_buf = ctx.command_buffer.vk_command_buffer();
+
+                        // Get images from resources
+                        let (src_image, _) = ctx.get_image(output_src).expect("output image");
+                        let (dst_image, _) = ctx.get_image(swapchain_dst).expect("swapchain image");
+
+                        if let Some(extent) = output_extent_for_present {
+                            let subresource_range = vk::ImageSubresourceRange {
+                                aspect_mask: vk::ImageAspectFlags::COLOR,
+                                base_mip_level: 0,
+                                level_count: 1,
+                                base_array_layer: 0,
+                                layer_count: 1,
+                            };
+
+                            // === PRE-BLIT BARRIERS ===
+                            // Transition output: COLOR_ATTACHMENT_OPTIMAL -> TRANSFER_SRC_OPTIMAL
+                            let src_barrier = ImageMemoryBarrier2::new(src_image)
+                                .src_stage(PipelineStage2Flags::COLOR_ATTACHMENT_OUTPUT)
+                                .src_access(AccessFlags2::COLOR_ATTACHMENT_WRITE)
+                                .dst_stage(PipelineStage2Flags::TRANSFER)
+                                .dst_access(AccessFlags2::TRANSFER_READ)
+                                .old_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
+                                .new_layout(vk::ImageLayout::TRANSFER_SRC_OPTIMAL)
+                                .subresource_range(subresource_range);
+
+                            // Transition swapchain: PRESENT_SRC_KHR -> TRANSFER_DST_OPTIMAL
+                            let dst_barrier = ImageMemoryBarrier2::new(dst_image)
+                                .src_stage(PipelineStage2Flags::BOTTOM_OF_PIPE)
+                                .src_access(AccessFlags2::NONE)
+                                .dst_stage(PipelineStage2Flags::TRANSFER)
+                                .dst_access(AccessFlags2::TRANSFER_WRITE)
+                                .old_layout(vk::ImageLayout::PRESENT_SRC_KHR)
+                                .new_layout(vk::ImageLayout::TRANSFER_DST_OPTIMAL)
+                                .subresource_range(subresource_range);
+
+                            DependencyInfo::new()
+                                .add_image_barrier(src_barrier)
+                                .add_image_barrier(dst_barrier)
+                                .build(|dep_info| unsafe {
+                                    device_for_present.cmd_pipeline_barrier2(cmd_buf, dep_info);
+                                });
+
+                            // === BLIT ===
+                            let src_subresource = vk::ImageSubresourceLayers::default()
+                                .aspect_mask(vk::ImageAspectFlags::COLOR)
+                                .mip_level(0)
+                                .base_array_layer(0)
+                                .layer_count(1);
+
+                            let dst_subresource = vk::ImageSubresourceLayers::default()
+                                .aspect_mask(vk::ImageAspectFlags::COLOR)
+                                .mip_level(0)
+                                .base_array_layer(0)
+                                .layer_count(1);
+
+                            let blit_region = vk::ImageBlit::default()
+                                .src_subresource(src_subresource)
+                                .src_offsets([
+                                    vk::Offset3D { x: 0, y: 0, z: 0 },
+                                    vk::Offset3D {
+                                        x: extent.width as i32,
+                                        y: extent.height as i32,
+                                        z: 1,
+                                    },
+                                ])
+                                .dst_subresource(dst_subresource)
+                                .dst_offsets([
+                                    vk::Offset3D { x: 0, y: 0, z: 0 },
+                                    vk::Offset3D {
+                                        x: extent.width as i32,
+                                        y: extent.height as i32,
+                                        z: 1,
+                                    },
+                                ]);
+
+                            unsafe {
+                                device_for_present.cmd_blit_image(
+                                    cmd_buf,
+                                    src_image,
+                                    vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
+                                    dst_image,
+                                    vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+                                    &[blit_region],
+                                    vk::Filter::LINEAR,
+                                );
+                            }
+
+                            // === POST-BLIT BARRIERS ===
+                            // Transition output: TRANSFER_SRC_OPTIMAL -> COLOR_ATTACHMENT_OPTIMAL (for next frame)
+                            let src_barrier_back = ImageMemoryBarrier2::new(src_image)
+                                .src_stage(PipelineStage2Flags::TRANSFER)
+                                .src_access(AccessFlags2::TRANSFER_READ)
+                                .dst_stage(PipelineStage2Flags::COLOR_ATTACHMENT_OUTPUT)
+                                .dst_access(AccessFlags2::COLOR_ATTACHMENT_WRITE)
+                                .old_layout(vk::ImageLayout::TRANSFER_SRC_OPTIMAL)
+                                .new_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
+                                .subresource_range(subresource_range);
+
+                            // Transition swapchain: TRANSFER_DST_OPTIMAL -> PRESENT_SRC_KHR
+                            // Note: The render graph will handle the final transition for the last pass
+                            // But since this is a transfer pass, we need to do it manually
+                            let dst_barrier_back = ImageMemoryBarrier2::new(dst_image)
+                                .src_stage(PipelineStage2Flags::TRANSFER)
+                                .src_access(AccessFlags2::TRANSFER_WRITE)
+                                .dst_stage(PipelineStage2Flags::BOTTOM_OF_PIPE)
+                                .dst_access(AccessFlags2::NONE)
+                                .old_layout(vk::ImageLayout::TRANSFER_DST_OPTIMAL)
+                                .new_layout(vk::ImageLayout::PRESENT_SRC_KHR)
+                                .subresource_range(subresource_range);
+
+                            DependencyInfo::new()
+                                .add_image_barrier(src_barrier_back)
+                                .add_image_barrier(dst_barrier_back)
+                                .build(|dep_info| unsafe {
+                                    device_for_present.cmd_pipeline_barrier2(cmd_buf, dep_info);
+                                });
+                        }
+                    });
+            });
+        }
 
         let vulkan_context = self.context.clone();
         match graph_builder.build(&vulkan_context) {
@@ -2459,6 +2646,115 @@ impl ViewportRenderTarget {
             context.device.destroy_image_view(self.depth_image_view, None);
             context.device.destroy_image(self.depth_image, None);
             context.allocator.borrow_mut().free(self.depth_memory).ok();
+        }
+    }
+}
+
+/// Output render target for final UI composition.
+/// The UI renders to this texture, then present_pass blits it to the swapchain.
+/// This decouples rendering from presentation for a cleaner architecture.
+pub struct OutputRenderTarget {
+    /// Color attachment image.
+    pub color_image: vk::Image,
+    pub color_memory: gpu_allocator::vulkan::Allocation,
+    pub color_image_view: vk::ImageView,
+    /// Render extent (matches swapchain size).
+    pub extent: vk::Extent2D,
+}
+
+impl OutputRenderTarget {
+    /// Create a new output render target with the given dimensions.
+    pub fn new(context: &VulkanContext, width: u32, height: u32) -> Result<Self, vk::Result> {
+        unsafe {
+            let extent = vk::Extent2D { width, height };
+            let extent3d = vk::Extent3D { width, height, depth: 1 };
+
+            // Create color image (RGBA8, can be used as color attachment and transfer source)
+            let color_create_info = vk::ImageCreateInfo::default()
+                .image_type(vk::ImageType::TYPE_2D)
+                .extent(extent3d)
+                .mip_levels(1)
+                .array_layers(1)
+                .format(vk::Format::B8G8R8A8_SRGB) // Match swapchain format
+                .tiling(vk::ImageTiling::OPTIMAL)
+                .initial_layout(vk::ImageLayout::UNDEFINED)
+                .usage(vk::ImageUsageFlags::COLOR_ATTACHMENT | vk::ImageUsageFlags::TRANSFER_SRC)
+                .sharing_mode(vk::SharingMode::EXCLUSIVE)
+                .samples(vk::SampleCountFlags::TYPE_1);
+
+            let (color_image, color_memory) = context.create_image(color_create_info, gpu_allocator::MemoryLocation::GpuOnly);
+
+            // Create color image view
+            let color_view_create_info = vk::ImageViewCreateInfo::default()
+                .image(color_image)
+                .view_type(vk::ImageViewType::TYPE_2D)
+                .format(vk::Format::B8G8R8A8_SRGB)
+                .components(vk::ComponentMapping::default())
+                .subresource_range(vk::ImageSubresourceRange {
+                    aspect_mask: vk::ImageAspectFlags::COLOR,
+                    base_mip_level: 0,
+                    level_count: 1,
+                    base_array_layer: 0,
+                    layer_count: 1,
+                });
+
+            let color_image_view = context.device.create_image_view(&color_view_create_info, None)?;
+
+            // Transition image to COLOR_ATTACHMENT_OPTIMAL (ready for UI rendering)
+            let cmd_buffer = context.begin_single_time_commands();
+            let cmd = cmd_buffer.vk_command_buffer();
+
+            let color_barrier = vk::ImageMemoryBarrier::default()
+                .old_layout(vk::ImageLayout::UNDEFINED)
+                .new_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
+                .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+                .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+                .image(color_image)
+                .subresource_range(vk::ImageSubresourceRange {
+                    aspect_mask: vk::ImageAspectFlags::COLOR,
+                    base_mip_level: 0,
+                    level_count: 1,
+                    base_array_layer: 0,
+                    layer_count: 1,
+                })
+                .src_access_mask(vk::AccessFlags::empty())
+                .dst_access_mask(vk::AccessFlags::COLOR_ATTACHMENT_WRITE);
+
+            context.device.cmd_pipeline_barrier(
+                cmd,
+                vk::PipelineStageFlags::TOP_OF_PIPE,
+                vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
+                vk::DependencyFlags::empty(),
+                &[],
+                &[],
+                &[color_barrier],
+            );
+
+            context.end_single_time_commands(cmd_buffer);
+
+            Ok(Self {
+                color_image,
+                color_memory,
+                color_image_view,
+                extent,
+            })
+        }
+    }
+
+    /// Resize the render target by recreating it.
+    pub fn resize(context: &VulkanContext, old: Option<Self>, width: u32, height: u32) -> Result<Self, vk::Result> {
+        if let Some(old_target) = old {
+            old_target.destroy(context);
+        }
+        Self::new(context, width, height)
+    }
+
+    /// Destroy the render target.
+    pub fn destroy(self, context: &VulkanContext) {
+        unsafe {
+            context.device.destroy_image_view(self.color_image_view, None);
+            context.device.destroy_image(self.color_image, None);
+            context.allocator.borrow_mut().free(self.color_memory).ok();
         }
     }
 }

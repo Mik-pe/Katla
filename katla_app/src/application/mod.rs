@@ -375,7 +375,9 @@ impl ApplicationHandler for Application {
                             renderer.recreate_swapchain();
                             // Also resize viewport render target
                             let _ = renderer.init_viewport_target(new_width as u32, new_height as u32);
-                            // Rebuild render graph to update viewport resource references
+                            // Resize output render target for UI composition
+                            let _ = renderer.init_output_target(new_width as u32, new_height as u32);
+                            // Rebuild render graph to update resource references
                             renderer.setup_render_graph();
 
                             // Update camera aspect ratio based on viewport texture size
@@ -597,6 +599,11 @@ impl Application {
         let viewport_size = self.window.as_ref().unwrap().inner_size();
         renderer.init_viewport_target(viewport_size.width, viewport_size.height)
             .expect("Failed to initialize viewport render target");
+
+        // Initialize output render target for final UI composition
+        // This is where UI renders, then present_pass copies to swapchain
+        renderer.init_output_target(viewport_size.width, viewport_size.height)
+            .expect("Failed to initialize output render target");
 
         // Set camera aspect ratio based on viewport texture size (not window size!)
         if let Some(viewport_extent) = renderer.viewport_extent() {
