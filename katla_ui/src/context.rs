@@ -488,7 +488,8 @@ impl UiContext {
         let clicked = self.active_id == Some(id)
             && self.input.mouse_released[crate::input::mouse_button::LEFT];
 
-        if self.input.mouse_released[crate::input::mouse_button::LEFT] {
+        // Only clear active_id if we're the active widget
+        if clicked {
             self.active_id = None;
         }
 
