@@ -8,7 +8,8 @@ use katla_ecs::EntityId;
 use katla_math::{Vec2, Vec3};
 
 use crate::components::{
-    Children, DrawableComponent, EditorHidden, NameComponent, Parent, TransformComponent,
+    Children, DirectionalLight, DrawableComponent, EditorHidden, NameComponent, Parent,
+    ParticleEmitter, PointLight, TransformComponent,
 };
 use crate::rendering::MeshBuilder;
 use crate::ui::{EditorAction, EntityInfo, SpawnableModel};
@@ -181,11 +182,18 @@ pub fn collect_entity_info(app: &Application) -> Vec<EntityInfo> {
         let rot = Vec3::new(euler.0, euler.1, euler.2);
         let scale = transform.transform.scale;
 
-        let model_type = app
-            .world
-            .get_component::<DrawableComponent>(entity_id)
-            .map(|_| "Mesh".to_string())
-            .unwrap_or_else(|| "Empty".to_string());
+        // Determine entity type based on components
+        let model_type = if app.world.get_component::<ParticleEmitter>(entity_id).is_some() {
+            "Particle Emitter".to_string()
+        } else if app.world.get_component::<DirectionalLight>(entity_id).is_some() {
+            "Directional Light".to_string()
+        } else if app.world.get_component::<PointLight>(entity_id).is_some() {
+            "Point Light".to_string()
+        } else if app.world.get_component::<DrawableComponent>(entity_id).is_some() {
+            "Mesh".to_string()
+        } else {
+            "Empty".to_string()
+        };
 
         entity_data.insert(entity_id, (name, pos, rot, scale, model_type));
         root_entities.insert(entity_id);

@@ -32,7 +32,7 @@ use winit::{
 
 use crate::{
     animation::{AnimationManager, Skeleton},
-    components::{DirectionalLight, DrawableComponent, PointLight, TransformComponent},
+    components::{DirectionalLight, DrawableComponent, NameComponent, PointLight, TransformComponent},
     entities::{Camera, Model},
     input::{InputBinding, InputMapper, KeyCombo, MouseCombo},
     rendering::{
@@ -245,17 +245,21 @@ impl ApplicationHandler for Application {
             self.world.add_component(fox.entity, Children::new(children));
 
             // Add lighting
-            self.world.spawn((DirectionalLight::new(
-                Vec3::new(-0.3, -1.0, -0.2),
-                [1.0, 0.95, 0.8],
-                1.0,
-            ),));
+            let _sun = self.world.spawn((
+                DirectionalLight::new(
+                    Vec3::new(-0.3, -1.0, -0.2),
+                    [1.0, 0.95, 0.8],
+                    1.0,
+                ),
+                NameComponent::new("Sun Light"),
+            ));
 
             let _red_light = self.world.spawn((
                 TransformComponent {
                     transform: Transform::new_from_position(Vec3::new(10.0, 10.0, 10.0)),
                 },
                 PointLight::new([1.0, 0.3, 0.3], 5.0, 20.0),
+                NameComponent::new("Red Point Light"),
             ));
 
             let _blue_light = self.world.spawn((
@@ -263,6 +267,7 @@ impl ApplicationHandler for Application {
                     transform: Transform::new_from_position(Vec3::new(-10.0, 8.0, 10.0)),
                 },
                 PointLight::new([0.3, 0.5, 1.0], 4.0, 25.0),
+                NameComponent::new("Blue Point Light"),
             ));
 
             self.world.add_component(_blue_light, Parent::new(_cube));

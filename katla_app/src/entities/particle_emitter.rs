@@ -12,7 +12,7 @@ use katla_vulkan::{
     MaterialPipeline, ParticleBuffer, Pipeline, PipelineBuilder, ShaderModule, VulkanContext,
 };
 
-use crate::components::{ParticleEmitter, TransformComponent};
+use crate::components::{NameComponent, ParticleEmitter, TransformComponent};
 
 /// Create a particle emitter entity.
 ///
@@ -183,5 +183,6 @@ pub fn create_particle_emitter(
     world.spawn((
         TransformComponent::new(Transform::new_from_position(position)),
         emitter,
+        NameComponent::new("Particle Emitter"),
     ))
 }
