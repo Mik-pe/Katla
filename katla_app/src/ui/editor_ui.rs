@@ -448,17 +448,25 @@ impl EditorUI {
         }
 
         // Settings button on the right side
-        let settings_text = "⚙ Settings";
-        let settings_size = ui.measure_text(settings_text, 12.0);
+        let settings_text = " Settings";
+        let settings_text_size = ui.measure_text(settings_text, 12.0);
+        let icon_size = 14.0;
+        let icon_padding = 4.0;
+        let settings_total_width = icon_size + icon_padding + settings_text_size.x();
         let settings_bounds = Rect2D::from_origin_size(
-            Vec2::new(screen_size.x() - settings_size.x() - padding * 3.0, padding),
-            Vec2::new(settings_size.x() + padding * 2.0, button_height),
+            Vec2::new(screen_size.x() - settings_total_width - padding * 3.0, padding),
+            Vec2::new(settings_total_width + padding * 2.0, button_height),
         );
         let settings_color = if self.show_preferences { theme.selection } else { theme.button_bg };
         ui.draw_rect(settings_bounds, settings_color);
-        if ui.button("settings_btn", settings_text, settings_bounds) {
+        if ui.button("settings_btn", "", settings_bounds) {
             self.show_preferences = !self.show_preferences;
         }
+        // Draw icon and text on top
+        let icon_pos = Vec2::new(settings_bounds.min.x() + padding, settings_bounds.center().y() - icon_size * 0.5);
+        ui.draw_icon(ForkAwesome::COG, icon_pos, icon_size, theme.text_primary);
+        let text_pos = Vec2::new(icon_pos.x() + icon_size + icon_padding, settings_bounds.center().y() - settings_text_size.y() * 0.5);
+        ui.draw_text(settings_text, text_pos, theme.text_primary, 12.0);
 
         // Title in center
         let title = "Katla Engine Editor";
