@@ -529,7 +529,7 @@ impl UiContext {
     ///
     /// This also checks if a popup is open - if so, widgets at lower Z levels
     /// cannot be hovered (events are consumed by the popup layer).
-    fn is_hovered(&self, bounds: Rect2D) -> bool {
+    pub fn is_hovered(&self, bounds: Rect2D) -> bool {
         // If a popup is open and we're at a lower Z level, block hover
         if self.popup_id.is_some() && self.z_index < z_index::POPUP {
             return false;

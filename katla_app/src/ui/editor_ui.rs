@@ -575,7 +575,7 @@ impl EditorUI {
             );
 
             let is_selected = Some(entity.id) == self.selected_entity;
-            let is_hovered = ui.input.is_hovered(item_bounds);
+            let is_hovered = ui.is_hovered(item_bounds);
 
             let bg_color = if is_selected {
                 theme.selection
@@ -608,7 +608,7 @@ impl EditorUI {
                     Vec2::new(item_x + 2.0, cursor.y()),
                     Vec2::new(16.0, item_height),
                 );
-                let triangle_hovered = ui.input.is_hovered(triangle_bounds);
+                let triangle_hovered = ui.is_hovered(triangle_bounds);
 
                 let triangle_color = if triangle_hovered {
                     theme.text_primary
@@ -658,7 +658,7 @@ impl EditorUI {
                 Vec2::new(item_x + triangle_width, cursor.y()),
                 Vec2::new(item_width - triangle_width, item_height),
             );
-            let select_hovered = ui.input.is_hovered(select_bounds);
+            let select_hovered = ui.is_hovered(select_bounds);
 
             if ui.input.mouse_clicked(mouse_button::LEFT) && select_hovered {
                 self.selected_entity = Some(entity.id);
@@ -954,7 +954,7 @@ impl EditorUI {
             Vec2::new(panel_pos.x() + panel_width - 30.0, panel_pos.y()),
             Vec2::new(30.0, title_bar_height),
         );
-        let can_drag = ui.input.is_hovered(title_bounds) && !ui.input.is_hovered(close_btn_area);
+        let can_drag = ui.is_hovered(title_bounds) && !ui.is_hovered(close_btn_area);
 
         if ui.input.mouse_clicked(mouse_button::LEFT) && can_drag {
             self.dragging_panel = true;
@@ -1102,7 +1102,7 @@ impl EditorUI {
         }
 
         // Click outside to close (but not while dragging)
-        if !self.dragging_panel && ui.input.mouse_clicked(mouse_button::LEFT) && !ui.input.is_hovered(panel_bounds) {
+        if !self.dragging_panel && ui.input.mouse_clicked(mouse_button::LEFT) && !ui.is_hovered(panel_bounds) {
             self.show_preferences = false;
             self.preferences_panel_pos = None;
         }
