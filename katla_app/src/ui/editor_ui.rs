@@ -1343,6 +1343,9 @@ impl EditorUI {
         fps: f32,
         frame_count: usize,
     ) -> &'a DrawList {
+        // Apply theme to UI style
+        self.theme.apply_to_style(&mut ui.style);
+
         ui.begin(screen_size);
         self.build(ui, entities, fps, frame_count);
         ui.end()

@@ -34,7 +34,7 @@ pub fn render_debug_ui(app: &mut Application, dt: f32) {
 
     // Render UI (editor or debug overlay based on mode)
     // We extract the vertices immediately to release the borrow on editor_ui
-    let (vertices, indices, use_editor) = if app.use_editor_ui {
+    let (vertices, indices, commands, use_editor) = if app.use_editor_ui {
         let draw_list = app.editor_ui.render(
             &mut app.ui_context,
             screen_size,
@@ -42,7 +42,12 @@ pub fn render_debug_ui(app: &mut Application, dt: f32) {
             fps,
             app.frame_count,
         );
-        (draw_list.vertices.clone(), draw_list.indices.clone(), true)
+        (
+            draw_list.vertices.clone(),
+            draw_list.indices.clone(),
+            draw_list.commands.clone(),
+            true,
+        )
     } else {
         let draw_list = app.debug_overlay.render(
             &mut app.ui_context,
@@ -51,7 +56,12 @@ pub fn render_debug_ui(app: &mut Application, dt: f32) {
             app.frame_count,
             entity_count,
         );
-        (draw_list.vertices.clone(), draw_list.indices.clone(), false)
+        (
+            draw_list.vertices.clone(),
+            draw_list.indices.clone(),
+            draw_list.commands.clone(),
+            false,
+        )
     };
 
     // Extract editor actions (safe now since editor_ui borrow is released)
@@ -144,12 +154,28 @@ pub fn render_debug_ui(app: &mut Application, dt: f32) {
         }
         .to_vec();
 
+        // Convert commands to renderer format
+        let ui_commands: Vec<katla_vulkan::UiDrawCommand> = commands
+            .iter()
+            .map(|cmd| katla_vulkan::UiDrawCommand {
+                index_offset: cmd.index_offset,
+                index_count: cmd.index_count,
+                clip_rect: [
+                    cmd.clip_rect.min.x(),
+                    cmd.clip_rect.min.y(),
+                    cmd.clip_rect.width(),
+                    cmd.clip_rect.height(),
+                ],
+            })
+            .collect();
+
         // Pass to renderer
         if let Some(ref renderer) = app.renderer {
             renderer.set_ui_data(
                 vertex_bytes,
                 index_bytes,
                 [screen_size.x(), screen_size.y()],
+                ui_commands,
             );
         }
     }

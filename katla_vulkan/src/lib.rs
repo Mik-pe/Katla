@@ -1414,16 +1414,31 @@ impl VulkanRenderer {
                                     vk::IndexType::UINT32,
                                 );
 
-                                // Draw all indices
-                                let index_count = (index_size / 4) as u32;
-                                pipeline_ref.context().device.cmd_draw_indexed(
-                                    cmd_buf,
-                                    index_count,
-                                    1,
-                                    0,
-                                    0,
-                                    0,
-                                );
+                                // Draw each command with its clip rectangle
+                                for cmd in &ui_data.commands {
+                                    // Set scissor for this command
+                                    let scissor = vk::Rect2D {
+                                        offset: vk::Offset2D {
+                                            x: cmd.clip_rect[0] as i32,
+                                            y: cmd.clip_rect[1] as i32,
+                                        },
+                                        extent: vk::Extent2D {
+                                            width: cmd.clip_rect[2] as u32,
+                                            height: cmd.clip_rect[3] as u32,
+                                        },
+                                    };
+                                    pipeline_ref.context().device.cmd_set_scissor(cmd_buf, 0, &[scissor]);
+
+                                    // Draw this command's indices
+                                    pipeline_ref.context().device.cmd_draw_indexed(
+                                        cmd_buf,
+                                        cmd.index_count,
+                                        1,
+                                        cmd.index_offset,
+                                        0,
+                                        0,
+                                    );
+                                }
 
                                 // Cleanup staging buffers
                                 pipeline_ref.context().free_buffer(vertex_buffer, vertex_alloc);
@@ -1431,16 +1446,31 @@ impl VulkanRenderer {
                                 return;
                             }
 
-                            // Draw all indices
-                            let index_count = (index_size / 4) as u32;
-                            pipeline_ref.context().device.cmd_draw_indexed(
-                                cmd_buf,
-                                index_count,
-                                1,
-                                0,
-                                0,
-                                0,
-                            );
+                            // Draw each command with its clip rectangle (persistent buffers path)
+                            for cmd in &ui_data.commands {
+                                // Set scissor for this command
+                                let scissor = vk::Rect2D {
+                                    offset: vk::Offset2D {
+                                        x: cmd.clip_rect[0] as i32,
+                                        y: cmd.clip_rect[1] as i32,
+                                    },
+                                    extent: vk::Extent2D {
+                                        width: cmd.clip_rect[2] as u32,
+                                        height: cmd.clip_rect[3] as u32,
+                                    },
+                                };
+                                pipeline_ref.context().device.cmd_set_scissor(cmd_buf, 0, &[scissor]);
+
+                                // Draw this command's indices
+                                pipeline_ref.context().device.cmd_draw_indexed(
+                                    cmd_buf,
+                                    cmd.index_count,
+                                    1,
+                                    cmd.index_offset,
+                                    0,
+                                    0,
+                                );
+                            }
                         }
                     }
                 });
@@ -1882,14 +1912,27 @@ impl VulkanRenderer {
     /// * `vertex_data` - Raw vertex data (position[2], uv[2], color[4] per vertex)
     /// * `index_data` - Index data as raw bytes (u32 indices)
     /// * `screen_size` - Screen dimensions in pixels
-    pub fn set_ui_data(&self, vertex_data: Vec<u8>, index_data: Vec<u8>, screen_size: [f32; 2]) {
+    /// * `commands` - Draw commands with clip rectangles (for proper Z-ordering and clipping)
+    pub fn set_ui_data(&self, vertex_data: Vec<u8>, index_data: Vec<u8>, screen_size: [f32; 2], commands: Vec<UiDrawCommand>) {
         *self.ui_data.borrow_mut() = Some(UiDrawData {
             vertex_data,
             index_data,
             screen_size,
             index_count: 0, // Will be calculated
+            commands,
         });
     }
+}
+
+/// A single draw command for UI rendering.
+#[derive(Debug, Clone)]
+pub struct UiDrawCommand {
+    /// Index offset in the index buffer.
+    pub index_offset: u32,
+    /// Number of indices to draw.
+    pub index_count: u32,
+    /// Clip rectangle (scissor) for this command.
+    pub clip_rect: [f32; 4], // [x, y, width, height]
 }
 
 /// UI draw data for rendering.
@@ -1898,6 +1941,8 @@ pub struct UiDrawData {
     pub index_data: Vec<u8>,
     pub screen_size: [f32; 2],
     pub index_count: u32,
+    /// Draw commands with clip rectangles.
+    pub commands: Vec<UiDrawCommand>,
 }
 
 /// Persistent buffers for UI rendering.

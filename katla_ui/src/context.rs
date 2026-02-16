@@ -59,6 +59,22 @@ pub struct UiContext {
     popup_bounds: Option<Rect2D>,
     /// Whether a popup was opened this frame (prevents immediate close).
     popup_opened_this_frame: bool,
+    /// Current Z-index for rendering (higher = on top).
+    z_index: u32,
+    /// Z-index stack for nested containers.
+    z_stack: Vec<u32>,
+}
+
+/// Z-index constants for UI layers.
+pub mod z_index {
+    /// Default layer for regular UI elements.
+    pub const DEFAULT: u32 = 0;
+    /// Layer for floating panels/windows.
+    pub const PANEL: u32 = 100;
+    /// Layer for dropdowns and popups.
+    pub const POPUP: u32 = 200;
+    /// Layer for tooltips (always on top).
+    pub const TOOLTIP: u32 = 300;
 }
 
 /// Persistent state for widgets.
@@ -100,6 +116,8 @@ impl UiContext {
             popup_id: None,
             popup_bounds: None,
             popup_opened_this_frame: false,
+            z_index: z_index::DEFAULT,
+            z_stack: Vec::new(),
         }
     }
 
@@ -122,13 +140,16 @@ impl UiContext {
         self.screen_size = screen_size;
         self.draw_list.clear();
         self.id_stack.clear();
+        self.z_stack.clear();
+        self.z_index = z_index::DEFAULT;
         self.id_counter = 0;
         self.hovered_id = None;
         self.cursor = Vec2::new(0.0, 0.0);
         self.row_height = 0.0;
-        self.popup_opened_this_frame = false;
 
         // Check for click outside popup to close it
+        // NOTE: We check BEFORE resetting popup_opened_this_frame so that
+        // popups opened in the previous frame don't get closed immediately
         if self.popup_id.is_some() && !self.popup_opened_this_frame {
             if self.input.mouse_pressed[crate::input::mouse_button::LEFT] {
                 let mouse_outside = self.popup_bounds.map_or(true, |bounds| {
@@ -140,6 +161,9 @@ impl UiContext {
                 }
             }
         }
+
+        // Reset the flag AFTER the check
+        self.popup_opened_this_frame = false;
 
         // Set initial clip to full screen
         self.clip_stack.clear();
@@ -223,11 +247,50 @@ impl UiContext {
         self.draw_list.set_clip(clipped);
     }
 
+    /// Push an absolute clip rectangle (no intersection with current).
+    ///
+    /// Use this for popups that need to render outside their parent container.
+    pub fn push_clip_absolute(&mut self, rect: Rect2D) {
+        self.clip_stack.push(rect);
+        self.draw_list.set_clip(rect);
+    }
+
     /// Pop a clip rectangle.
     pub fn pop_clip(&mut self) {
         if self.clip_stack.len() > 1 {
             self.clip_stack.pop();
             self.draw_list.set_clip(self.clip_rect());
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // Z-Index Management
+    // -------------------------------------------------------------------------
+
+    /// Set the current Z-index for rendering.
+    ///
+    /// Higher Z values are rendered on top of lower Z values.
+    /// Use the constants in `z_index` module for common layers.
+    pub fn set_z_index(&mut self, z: u32) {
+        self.z_index = z;
+        self.draw_list.set_z_index(z);
+    }
+
+    /// Get the current Z-index.
+    pub fn z_index(&self) -> u32 {
+        self.z_index
+    }
+
+    /// Push a new Z-index onto the stack and set it as current.
+    pub fn push_z_index(&mut self, z: u32) {
+        self.z_stack.push(self.z_index);
+        self.set_z_index(z);
+    }
+
+    /// Pop a Z-index from the stack and restore the previous value.
+    pub fn pop_z_index(&mut self) {
+        if let Some(prev_z) = self.z_stack.pop() {
+            self.set_z_index(prev_z);
         }
     }
 
@@ -1255,6 +1318,9 @@ impl UiContext {
         let is_open = self.popup_id == Some(popup_id);
 
         if is_open {
+            // Switch to popup Z-index
+            self.push_z_index(z_index::POPUP);
+
             // Draw popup background with shadow
             let shadow_offset = Vec2::new(4.0, 4.0);
             let shadow_bounds = Rect2D::new(bounds.min + shadow_offset, bounds.max + shadow_offset);
@@ -1264,9 +1330,9 @@ impl UiContext {
             self.draw_rect(bounds, self.style.popup_bg);
             self.draw_rect_border(bounds, Color::TRANSPARENT, self.style.popup_border, 1.0);
 
-            // Store bounds and push clip
+            // Store bounds and push clip (absolute - no intersection with parent)
             self.popup_bounds = Some(bounds);
-            self.push_clip(bounds);
+            self.push_clip_absolute(bounds);
 
             // Push ID for contents
             self.push_id(id);
@@ -1279,6 +1345,7 @@ impl UiContext {
     pub fn end_popup(&mut self) {
         self.pop_clip();
         self.pop_id();
+        self.pop_z_index();
     }
 
     /// Begin a dropdown menu.
@@ -1350,6 +1417,9 @@ impl UiContext {
 
         // If open, prepare popup area
         if is_open {
+            // Switch to popup Z-index
+            self.push_z_index(z_index::POPUP);
+
             let popup_bounds = Rect2D::from_origin_size(
                 Vec2::new(bounds.min.x(), bounds.max.y()),
                 Vec2::new(
@@ -1366,7 +1436,7 @@ impl UiContext {
             self.draw_rect_border(popup_bounds, Color::TRANSPARENT, self.style.popup_border, 1.0);
 
             self.popup_bounds = Some(popup_bounds);
-            self.push_clip(popup_bounds);
+            self.push_clip_absolute(popup_bounds);  // Absolute clip - render outside parent
             self.push_id(id);
 
             return true;
@@ -1379,6 +1449,7 @@ impl UiContext {
     pub fn end_dropdown(&mut self) {
         self.pop_clip();
         self.pop_id();
+        self.pop_z_index();
     }
 
     /// Begin a context menu (right-click popup).
@@ -1404,6 +1475,9 @@ impl UiContext {
         let is_open = self.popup_id == Some(context_id);
 
         if is_open {
+            // Switch to popup Z-index
+            self.push_z_index(z_index::POPUP);
+
             // Calculate popup bounds
             let popup_size = Vec2::new(self.style.menu_min_width, 200.0); // Height will be clipped
 
@@ -1426,7 +1500,7 @@ impl UiContext {
             self.draw_rect_border(popup_bounds, Color::TRANSPARENT, self.style.popup_border, 1.0);
 
             self.popup_bounds = Some(popup_bounds);
-            self.push_clip(popup_bounds);
+            self.push_clip_absolute(popup_bounds);  // Absolute clip - render outside parent
             self.push_id(id);
 
             return true;
@@ -1439,6 +1513,7 @@ impl UiContext {
     pub fn end_context_menu(&mut self) {
         self.pop_clip();
         self.pop_id();
+        self.pop_z_index();
     }
 
     /// Open a context menu at the current mouse position.
@@ -1537,6 +1612,9 @@ impl UiContext {
 
         // If open, prepare popup area
         if is_open {
+            // Switch to popup Z-index
+            self.push_z_index(z_index::POPUP);
+
             let popup_bounds = Rect2D::from_origin_size(
                 Vec2::new(bounds.min.x(), bounds.max.y()),
                 Vec2::new(
@@ -1553,7 +1631,7 @@ impl UiContext {
             self.draw_rect_border(popup_bounds, Color::TRANSPARENT, self.style.popup_border, 1.0);
 
             self.popup_bounds = Some(popup_bounds);
-            self.push_clip(popup_bounds);
+            self.push_clip_absolute(popup_bounds);  // Absolute clip - render outside parent
             self.push_id(id);
 
             return true;
@@ -1566,6 +1644,7 @@ impl UiContext {
     pub fn end_combo(&mut self) {
         self.pop_clip();
         self.pop_id();
+        self.pop_z_index();
     }
 
     /// Get the menu item height for layout.

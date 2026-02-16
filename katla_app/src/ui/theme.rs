@@ -46,6 +46,10 @@ pub struct Theme {
     pub info: Color,
     /// Viewport
     pub viewport_border: Color,
+    /// Popup/Dropdown colors
+    pub popup_bg: Color,
+    pub popup_border: Color,
+    pub popup_shadow: Color,
 }
 
 impl Theme {
@@ -130,6 +134,10 @@ impl Theme {
             info: Color::from_rgb_hex(0x89D9EB),             // Sky
             // Viewport
             viewport_border: Color::from_rgb_hex(0x89B4FA),  // Blue
+            // Popups
+            popup_bg: Color::from_rgb_hex(0x313244),         // Surface0
+            popup_border: Color::from_rgb_hex(0x45475A),     // Surface1
+            popup_shadow: Color::new(0.0, 0.0, 0.0, 0.5),
         }
     }
 
@@ -166,6 +174,10 @@ impl Theme {
             error: Color::from_rgb_hex(0xBF616A),            // Nord11
             info: Color::from_rgb_hex(0x88C0D0),             // Nord8
             viewport_border: Color::from_rgb_hex(0x81A1C1),  // Nord10
+            // Popups
+            popup_bg: Color::from_rgb_hex(0x3B4252),         // Nord1
+            popup_border: Color::from_rgb_hex(0x4C566A),     // Nord3
+            popup_shadow: Color::new(0.0, 0.0, 0.0, 0.5),
         }
     }
 
@@ -202,6 +214,10 @@ impl Theme {
             error: Color::from_rgb_hex(0xF7768E),            // red
             info: Color::from_rgb_hex(0x7DCFEF),             // cyan
             viewport_border: Color::from_rgb_hex(0x7AA2F7),  // blue
+            // Popups
+            popup_bg: Color::from_rgb_hex(0x242533),         // bg_dark
+            popup_border: Color::from_rgb_hex(0x3B3E4D),     // border
+            popup_shadow: Color::new(0.0, 0.0, 0.0, 0.5),
         }
     }
 
@@ -238,6 +254,10 @@ impl Theme {
             error: Color::from_rgb_hex(0xFF5555),            // Red
             info: Color::from_rgb_hex(0x8BE9FD),             // Cyan
             viewport_border: Color::from_rgb_hex(0xBD93F9),  // Purple
+            // Popups
+            popup_bg: Color::from_rgb_hex(0x44475A),         // CurrentLine
+            popup_border: Color::from_rgb_hex(0x6272A4),     // Comment
+            popup_shadow: Color::new(0.0, 0.0, 0.0, 0.5),
         }
     }
 
@@ -274,6 +294,10 @@ impl Theme {
             error: Color::from_rgb_hex(0xFB4934),            // red
             info: Color::from_rgb_hex(0x83A598),             // blue
             viewport_border: Color::from_rgb_hex(0xD79921),  // yellow
+            // Popups
+            popup_bg: Color::from_rgb_hex(0x3C3836),         // bg1
+            popup_border: Color::from_rgb_hex(0x504A45),     // bg2
+            popup_shadow: Color::new(0.0, 0.0, 0.0, 0.5),
         }
     }
 
@@ -291,7 +315,7 @@ impl Theme {
             text_secondary: Color::from_rgb_hex(0xAAAAAA),
             text_muted: Color::from_rgb_hex(0x6E6E6E),
             text_accent: Color::from_rgb_hex(0x6A9955),      // VS Code green
-            button_bg: Color::from_rgb_hex(0x0E639E),        // VS Code blue
+            button_bg: Color::from_rgb_hex(0x0E639C),        // VS Code blue
             button_hover: Color::from_rgb_hex(0x1172B8),
             button_active: Color::from_rgb_hex(0x0078D4),
             button_text: Color::from_rgb_hex(0xFFFFFF),
@@ -309,6 +333,10 @@ impl Theme {
             error: Color::from_rgb_hex(0xF14C4C),
             info: Color::from_rgb_hex(0x75BEFF),
             viewport_border: Color::from_rgb_hex(0x474747),
+            // Popups
+            popup_bg: Color::from_rgb_hex(0x2D2D2D),
+            popup_border: Color::from_rgb_hex(0x3C3C3C),
+            popup_shadow: Color::new(0.0, 0.0, 0.0, 0.5),
         }
     }
 
@@ -345,6 +373,10 @@ impl Theme {
             error: Color::from_rgb_hex(0xE06C75),
             info: Color::from_rgb_hex(0x61AFEF),
             viewport_border: Color::from_rgb_hex(0x61AFEF),
+            // Popups
+            popup_bg: Color::from_rgb_hex(0x3E4451),
+            popup_border: Color::from_rgb_hex(0x4B5263),
+            popup_shadow: Color::new(0.0, 0.0, 0.0, 0.5),
         }
     }
 
@@ -381,6 +413,10 @@ impl Theme {
             error: Color::from_rgb_hex(0xFF5370),
             info: Color::from_rgb_hex(0x82AAFF),
             viewport_border: Color::from_rgb_hex(0x82AAFF),
+            // Popups
+            popup_bg: Color::from_rgb_hex(0x3A3F5B),
+            popup_border: Color::from_rgb_hex(0x414763),
+            popup_shadow: Color::new(0.0, 0.0, 0.0, 0.5),
         }
     }
 
@@ -417,6 +453,10 @@ impl Theme {
             error: Color::from_rgb_hex(0xF07178),
             info: Color::from_rgb_hex(0x39BAE6),
             viewport_border: Color::from_rgb_hex(0x39BAE6),
+            // Popups
+            popup_bg: Color::from_rgb_hex(0x1A1F29),
+            popup_border: Color::from_rgb_hex(0x2D3440),
+            popup_shadow: Color::new(0.0, 0.0, 0.0, 0.5),
         }
     }
 
@@ -453,6 +493,10 @@ impl Theme {
             error: Color::from_rgb_hex(0xF85149),
             info: Color::from_rgb_hex(0x58A6FF),
             viewport_border: Color::from_rgb_hex(0x30363D),
+            // Popups
+            popup_bg: Color::from_rgb_hex(0x161B22),
+            popup_border: Color::from_rgb_hex(0x30363D),
+            popup_shadow: Color::new(0.0, 0.0, 0.0, 0.5),
         }
     }
 
@@ -489,6 +533,10 @@ impl Theme {
             error: Color::from_rgb_hex(0xF92672),
             info: Color::from_rgb_hex(0x66D9EF),
             viewport_border: Color::from_rgb_hex(0x66D9EF),
+            // Popups
+            popup_bg: Color::from_rgb_hex(0x3E3D32),
+            popup_border: Color::from_rgb_hex(0x49483E),
+            popup_shadow: Color::new(0.0, 0.0, 0.0, 0.5),
         }
     }
 
@@ -525,6 +573,10 @@ impl Theme {
             error: Color::from_rgb_hex(0xEB6F92),
             info: Color::from_rgb_hex(0xC4A7E7),
             viewport_border: Color::from_rgb_hex(0x524F67),
+            // Popups
+            popup_bg: Color::from_rgb_hex(0x1F1D2E),
+            popup_border: Color::from_rgb_hex(0x26233A),
+            popup_shadow: Color::new(0.0, 0.0, 0.0, 0.5),
         }
     }
 
@@ -561,6 +613,10 @@ impl Theme {
             error: Color::from_rgb_hex(0xC34043),
             info: Color::from_rgb_hex(0x7E9CD8),
             viewport_border: Color::from_rgb_hex(0x7E9CD8),
+            // Popups
+            popup_bg: Color::from_rgb_hex(0x2A2A3C),
+            popup_border: Color::from_rgb_hex(0x3B3B4F),
+            popup_shadow: Color::new(0.0, 0.0, 0.0, 0.5),
         }
     }
 
@@ -597,7 +653,61 @@ impl Theme {
             error: Color::from_rgb_hex(0xDC322F),
             info: Color::from_rgb_hex(0x268BD2),
             viewport_border: Color::from_rgb_hex(0x268BD2),
+            // Popups
+            popup_bg: Color::from_rgb_hex(0x073642),
+            popup_border: Color::from_rgb_hex(0x094B5A),
+            popup_shadow: Color::new(0.0, 0.0, 0.0, 0.5),
         }
+    }
+
+    /// Apply theme colors to a UiStyle.
+    pub fn apply_to_style(&self, style: &mut katla_ui::UiStyle) {
+        // Panel/window colors
+        style.window_bg = self.panel_bg;
+        style.window_title_bg = self.panel_header;
+        style.window_title_bg_active = self.panel_header;
+        style.window_title_text = self.text_primary;
+        style.window_border = self.panel_border;
+
+        // Button colors
+        style.button_normal = self.button_bg;
+        style.button_hovered = self.button_hover;
+        style.button_active = self.button_active;
+        style.button_text = self.button_text;
+
+        // Text colors
+        style.text_color = self.text_primary;
+        style.text_disabled = self.text_muted;
+
+        // Selection/highlight
+        style.selectable_hovered = self.selection_hover;
+        style.selectable_selected = self.selection;
+
+        // Separator/lines
+        style.separator = self.separator;
+        style.border = self.border;
+
+        // Menu colors
+        style.menu_bg = self.popup_bg;
+        style.menu_hovered = self.selection_hover;
+        style.menu_active = self.selection;
+        style.menu_border = self.popup_border;
+
+        // Popup colors
+        style.popup_bg = self.popup_bg;
+        style.popup_border = self.popup_border;
+        style.popup_shadow = self.popup_shadow;
+
+        // Combo box colors
+        style.combo_bg = self.button_bg;
+        style.combo_hovered = self.button_hover;
+        style.combo_border = self.border;
+        style.combo_text = self.text_primary;
+
+        // Input colors
+        style.input_bg = self.panel_bg;
+        style.input_border = self.border;
+        style.input_text = self.text_primary;
     }
 }
 

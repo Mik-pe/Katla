@@ -79,16 +79,19 @@ pub struct DrawCommand {
     pub index_count: u32,
     /// Starting index in the index buffer.
     pub index_offset: u32,
+    /// Z-index for render order (higher = rendered on top).
+    pub z_index: u32,
 }
 
 impl DrawCommand {
     /// Create a new draw command.
-    pub fn new(texture: TextureId, clip_rect: Rect2D, index_count: u32, index_offset: u32) -> Self {
+    pub fn new(texture: TextureId, clip_rect: Rect2D, index_count: u32, index_offset: u32, z_index: u32) -> Self {
         Self {
             texture,
             clip_rect,
             index_count,
             index_offset,
+            z_index,
         }
     }
 }
@@ -109,6 +112,8 @@ pub struct DrawList {
     current_clip: Rect2D,
     /// Current texture for batching.
     current_texture: TextureId,
+    /// Current Z-index for render order.
+    current_z: u32,
 }
 
 impl DrawList {
@@ -120,6 +125,7 @@ impl DrawList {
             commands: Vec::new(),
             current_clip: Rect2D::from_size(Vec2::new(f32::MAX, f32::MAX)),
             current_texture: TextureId::NONE,
+            current_z: 0,
         }
     }
 
@@ -130,6 +136,22 @@ impl DrawList {
         self.commands.clear();
         self.current_clip = Rect2D::from_size(Vec2::new(f32::MAX, f32::MAX));
         self.current_texture = TextureId::NONE;
+        self.current_z = 0;
+    }
+
+    /// Set the current Z-index for subsequent draw commands.
+    ///
+    /// Higher Z values are rendered on top of lower Z values.
+    pub fn set_z_index(&mut self, z: u32) {
+        if self.current_z != z {
+            self.flush_batch();
+            self.current_z = z;
+        }
+    }
+
+    /// Get the current Z-index.
+    pub fn z_index(&self) -> u32 {
+        self.current_z
     }
 
     /// Set the current clip rectangle.
@@ -375,13 +397,17 @@ impl DrawList {
                 self.current_clip,
                 batch_index_count,
                 index_offset,
+                self.current_z,
             ));
         }
     }
 
-    /// Finalize the draw list, flushing any pending batch.
+    /// Finalize the draw list, flushing any pending batch and sorting by Z-index.
     pub fn finalize(&mut self) {
         self.flush_batch();
+
+        // Sort commands by Z-index (stable sort preserves order within same Z)
+        self.commands.sort_by_key(|c| c.z_index);
     }
 
     /// Check if the draw list is empty.
