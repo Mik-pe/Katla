@@ -154,8 +154,13 @@ pub fn render_debug_ui(app: &mut Application, dt: f32) {
 
 /// Collect entity information for the editor UI in tree order.
 pub fn collect_entity_info(app: &Application) -> Vec<EntityInfo> {
+    use crate::animation::Skeleton;
+    use crate::components::AmbientLight;
+
     // First pass: collect all entities with transforms and their relationships
-    let mut entity_data: HashMap<EntityId, (String, Vec3, Vec3, Vec3, String)> = HashMap::new();
+    // EntityData: (name, position, rotation, scale, entity_type, components)
+    type EntityData = (String, Vec3, Vec3, Vec3, String, Vec<String>);
+    let mut entity_data: HashMap<EntityId, EntityData> = HashMap::new();
     let mut parent_map: HashMap<EntityId, EntityId> = HashMap::new();
     let mut children_map: HashMap<EntityId, Vec<EntityId>> = HashMap::new();
     let mut root_entities: HashSet<EntityId> = HashSet::new();
@@ -182,8 +187,40 @@ pub fn collect_entity_info(app: &Application) -> Vec<EntityInfo> {
         let rot = Vec3::new(euler.0, euler.1, euler.2);
         let scale = transform.transform.scale;
 
-        // Determine entity type based on components
-        let model_type = if app.world.get_component::<ParticleEmitter>(entity_id).is_some() {
+        // Collect all component names for this entity
+        let mut components: Vec<String> = Vec::new();
+
+        // Check for each component type and add friendly names
+        if app.world.get_component::<TransformComponent>(entity_id).is_some() {
+            components.push("Transform".to_string());
+        }
+        if app.world.get_component::<NameComponent>(entity_id).is_some() {
+            components.push("Name".to_string());
+        }
+        if app.world.get_component::<DrawableComponent>(entity_id).is_some() {
+            components.push("Drawable".to_string());
+        }
+        if app.world.get_component::<ParticleEmitter>(entity_id).is_some() {
+            components.push("ParticleEmitter".to_string());
+        }
+        if app.world.get_component::<DirectionalLight>(entity_id).is_some() {
+            components.push("DirectionalLight".to_string());
+        }
+        if app.world.get_component::<PointLight>(entity_id).is_some() {
+            components.push("PointLight".to_string());
+        }
+        if app.world.get_component::<Parent>(entity_id).is_some() {
+            components.push("Parent".to_string());
+        }
+        if app.world.get_component::<Children>(entity_id).is_some() {
+            components.push("Children".to_string());
+        }
+        if app.world.get_component::<Skeleton>(entity_id).is_some() {
+            components.push("Skeleton".to_string());
+        }
+
+        // Determine entity type based on primary component
+        let entity_type = if app.world.get_component::<ParticleEmitter>(entity_id).is_some() {
             "Particle Emitter".to_string()
         } else if app.world.get_component::<DirectionalLight>(entity_id).is_some() {
             "Directional Light".to_string()
@@ -195,7 +232,7 @@ pub fn collect_entity_info(app: &Application) -> Vec<EntityInfo> {
             "Empty".to_string()
         };
 
-        entity_data.insert(entity_id, (name, pos, rot, scale, model_type));
+        entity_data.insert(entity_id, (name, pos, rot, scale, entity_type, components));
         root_entities.insert(entity_id);
 
         // Track parent relationship
@@ -216,12 +253,12 @@ pub fn collect_entity_info(app: &Application) -> Vec<EntityInfo> {
     fn add_entity_and_children(
         entity_id: EntityId,
         parent_id: Option<EntityId>,
-        entity_data: &HashMap<EntityId, (String, Vec3, Vec3, Vec3, String)>,
+        entity_data: &HashMap<EntityId, EntityData>,
         children_map: &HashMap<EntityId, Vec<EntityId>>,
         result: &mut Vec<EntityInfo>,
         depth: u32,
     ) {
-        if let Some((name, pos, rot, scale, model_type)) = entity_data.get(&entity_id) {
+        if let Some((name, pos, rot, scale, entity_type, components)) = entity_data.get(&entity_id) {
             let children = children_map
                 .get(&entity_id)
                 .map(|c| c.as_slice())
@@ -232,7 +269,8 @@ pub fn collect_entity_info(app: &Application) -> Vec<EntityInfo> {
                 position: *pos,
                 rotation: *rot,
                 scale: *scale,
-                model_type: model_type.clone(),
+                entity_type: entity_type.clone(),
+                components: components.clone(),
                 depth,
                 has_children: !children.is_empty(),
                 parent_id,

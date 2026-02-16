@@ -48,7 +48,9 @@ pub struct EntityInfo {
     pub position: Vec3,
     pub rotation: Vec3,
     pub scale: Vec3,
-    pub model_type: String,
+    pub entity_type: String,
+    /// List of component type names on this entity
+    pub components: Vec<String>,
     /// Depth in hierarchy (0 = root, 1 = child of root, etc.)
     pub depth: u32,
     /// Whether this entity has children (for showing expand/collapse arrow)
@@ -502,12 +504,15 @@ impl EditorUI {
             let name_pos = Vec2::new(text_x, cursor.y() + 3.0);
             ui.draw_text(name_text, name_pos, Color::new(0.85, 0.85, 0.85, 1.0), 12.0);
 
-            // Model type badge
-            let badge_color = match entity.model_type.as_str() {
-                "Mesh" => Color::new(0.3, 0.6, 0.3, 1.0),
-                _ => Color::new(0.5, 0.5, 0.5, 1.0),
+            // Entity type badge with color coding
+            let badge_color = match entity.entity_type.as_str() {
+                "Mesh" => Color::new(0.3, 0.6, 0.3, 1.0),           // Green
+                "Particle Emitter" => Color::new(0.7, 0.4, 0.2, 1.0), // Orange
+                "Directional Light" => Color::new(0.6, 0.6, 0.3, 1.0), // Yellow
+                "Point Light" => Color::new(0.6, 0.5, 0.3, 1.0),      // Warm yellow
+                _ => Color::new(0.5, 0.5, 0.5, 1.0),                  // Gray
             };
-            let badge_text = &entity.model_type;
+            let badge_text = &entity.entity_type;
             let badge_size = ui.measure_text(badge_text, 10.0);
             let badge_pos = Vec2::new(item_bounds.max.x() - badge_size.x() - 8.0, cursor.y() + 5.0);
             ui.draw_text(badge_text, badge_pos, badge_color, 10.0);
@@ -633,13 +638,25 @@ impl EditorUI {
             );
             cursor = Vec2::new(cursor.x(), cursor.y() + 8.0);
 
-            // Model type
+            // Entity type
+            ui.draw_text("Type", cursor, Color::new(0.7, 0.85, 0.7, 1.0), 12.0);
+            cursor = Vec2::new(cursor.x(), cursor.y() + line_height);
+
+            let type_text = format!("  {}", entity.entity_type);
+            ui.draw_text(&type_text, cursor, Color::new(0.85, 0.85, 0.85, 1.0), 12.0);
+            cursor = Vec2::new(cursor.x(), cursor.y() + line_height + 8.0);
+
+            // Components list
             ui.draw_text("Components", cursor, Color::new(0.7, 0.85, 0.7, 1.0), 12.0);
             cursor = Vec2::new(cursor.x(), cursor.y() + line_height);
 
-            let model_text = format!("Model: {}", entity.model_type);
-            ui.draw_text(&model_text, cursor, Color::new(0.85, 0.85, 0.85, 1.0), 12.0);
-            cursor = Vec2::new(cursor.x(), cursor.y() + line_height + 16.0);
+            for component_name in &entity.components {
+                let comp_text = format!("  {}", component_name);
+                ui.draw_text(&comp_text, cursor, Color::new(0.85, 0.85, 0.85, 1.0), 12.0);
+                cursor = Vec2::new(cursor.x(), cursor.y() + line_height);
+            }
+
+            cursor = Vec2::new(cursor.x(), cursor.y() + 8.0);
 
             // Delete button
             let delete_bounds = Rect2D::from_origin_size(
