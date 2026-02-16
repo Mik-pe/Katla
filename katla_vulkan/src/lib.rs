@@ -465,24 +465,6 @@ impl VulkanRenderer {
         let new_extent = self.frame_context.swapchain.get_extent();
         info!("  New extent: {}x{}", new_extent.width, new_extent.height);
 
-        // Update render graph's active render pass if it exists
-        // Collect swapchain data first to avoid borrow checker issues
-        let swapchain_images: Vec<_> = self
-            .frame_context
-            .swapchain_images
-            .iter()
-            .zip(self.frame_context.swapchain_image_views.iter())
-            .map(|(image, view)| {
-                let extent = self.frame_context.swapchain.get_extent();
-                (
-                    *image,
-                    *view,
-                    crate::render_graph::types::Extent2D::new(extent.width, extent.height),
-                    self.frame_context.swapchain.format.format,
-                )
-            })
-            .collect();
-
         if let Some(ref mut graph) = self.render_graph {
             let extent_vk = self.frame_context.swapchain.get_extent();
             let new_extent =
@@ -505,35 +487,11 @@ impl VulkanRenderer {
             // Get the new depth texture image view (depth texture is recreated during swapchain recreation)
             let _new_depth_view = self.frame_context.depth_render_texture.image_view.vk();
 
-            // Collect pass indices that need swapchain attachment updates
-            // ONLY ui_pass renders to swapchain with color attachments
-            // copy_pass uses transfer operations, not color attachments
-            // sky_pass and geometry_pass render to viewport texture (handled by setup_render_graph)
-            let swapchain_pass_indices: Vec<usize> = graph.passes.iter().enumerate()
-                .filter(|(_, pass)| pass.name == "ui_pass")
-                .map(|(idx, _)| idx)
-                .collect();
-
-            // Recreate framebuffers with new swapchain images
-            for (image_index, (_vk_image, image_view, _extent, _format)) in
-                swapchain_images.iter().enumerate()
-            {
-                for &pass_idx in &swapchain_pass_indices {
-                    // Ensure color_attachments array has an entry for this image index
-                    while graph.passes[pass_idx].color_attachments.len() <= image_index {
-                        graph.passes[pass_idx].color_attachments.push(vec![]);
-                    }
-
-                    // Update the color attachments for dynamic rendering
-                    graph.passes[pass_idx].color_attachments[image_index] = vec![image_view.vk()];
-
-                    // NOTE: For dynamic rendering, we don't create framebuffers
-                    // Just ensure vk_framebuffers vector is initialized
-                    if image_index == 0 && graph.passes[pass_idx].vk_framebuffers.is_empty() {
-                        graph.passes[pass_idx].vk_framebuffers = vec![];
-                    }
-                }
-            }
+            // No passes render directly to swapchain with color attachments anymore.
+            // - sky_pass and geometry_pass render to viewport/output texture
+            // - ui_pass renders to output texture
+            // - present_pass uses transfer operations (blit) to copy output to swapchain
+            // Therefore, no swapchain attachment updates are needed here.
         }
     }
 
@@ -1600,32 +1558,20 @@ impl VulkanRenderer {
                 {
                     error!("Failed to create swapchain framebuffers: {:?}", e);
                 } else {
-                    // Initialize color_attachments and depth_attachments for all swapchain images
-                    // Only update passes that render to swapchain (copy_pass, ui_pass)
-                    // sky_pass and geometry_pass render to viewport texture (already set during compilation)
-                    let swapchain_pass_indices: Vec<usize> = graph.passes.iter().enumerate()
-                        .filter(|(_, pass)| pass.name == "copy_pass" || pass.name == "ui_pass")
-                        .map(|(idx, _)| idx)
-                        .collect();
-
-                    for (image_index, (_vk_image, image_view, _extent, _format)) in
-                        swapchain_images.iter().enumerate()
-                    {
-                        for &pass_idx in &swapchain_pass_indices {
-                            // Ensure color_attachments array has an entry for this image index
-                            while graph.passes[pass_idx].color_attachments.len() <= image_index {
-                                graph.passes[pass_idx].color_attachments.push(vec![]);
-                            }
-
-                            // Update the color attachments for dynamic rendering (swapchain)
-                            graph.passes[pass_idx].color_attachments[image_index] = vec![image_view.vk()];
-                        }
-                    }
+                    // No passes render directly to swapchain with color attachments:
+                    // - sky_pass/geometry_pass render to viewport/output texture
+                    // - ui_pass renders to output texture
+                    // - present_pass uses transfer operations (blit), not color attachments
+                    // Therefore, no swapchain attachment initialization is needed here.
 
                     // Set viewport resource IDs for double-buffering updates
                     if let (Some(color_id), Some(depth_id)) = (viewport_resource, viewport_depth_resource) {
                         graph.set_viewport_resource_ids(color_id, depth_id);
                     }
+
+                    // Set swapchain resource ID for per-frame image updates
+                    // present_pass uses this to blit to the correct swapchain image
+                    graph.set_swapchain_resource_id(swapchain_resource);
 
                     self.render_graph = Some(graph);
                 }
@@ -1771,9 +1717,17 @@ impl VulkanRenderer {
 
         // Execute the render graph with the current image index
         // The render graph handles:
-        // 1. Rendering 3D scene to viewport texture (geometry_pass, sky_pass, particle_pass)
-        // 2. Copying viewport texture to swapchain (copy_pass, when viewport exists)
-        // 3. Rendering UI overlay on swapchain (ui_pass)
+        // 1. Rendering 3D scene to viewport/output texture (geometry_pass, sky_pass)
+        // 2. Rendering UI overlay on output texture (ui_pass)
+        // 3. Blitting output texture to swapchain (present_pass)
+
+        // Update swapchain resource to point to the current frame's image
+        // This ensures present_pass blits to the correct swapchain image
+        graph.update_swapchain_image(
+            self.frame_context.swapchain_images[image_index].vk(),
+            self.frame_context.swapchain_image_views[image_index].vk(),
+        );
+
         graph.execute(
             &mut command_buffer,
             image_index,

@@ -33,6 +33,8 @@ pub struct CompiledRenderGraph {
     viewport_color_resource_id: Option<ResourceId>,
     /// Viewport depth resource ID (for double-buffering updates)
     viewport_depth_resource_id: Option<ResourceId>,
+    /// Swapchain resource ID (for per-frame image updates)
+    swapchain_resource_id: Option<ResourceId>,
 }
 
 /// CompiledPass represents a single compiled pass with all necessary Vulkan objects.
@@ -136,6 +138,7 @@ impl CompiledRenderGraph {
             draw_list_cell: None,
             viewport_color_resource_id: None,
             viewport_depth_resource_id: None,
+            swapchain_resource_id: None,
         })
     }
 
@@ -144,6 +147,26 @@ impl CompiledRenderGraph {
     pub fn set_viewport_resource_ids(&mut self, color_id: ResourceId, depth_id: ResourceId) {
         self.viewport_color_resource_id = Some(color_id);
         self.viewport_depth_resource_id = Some(depth_id);
+    }
+
+    /// Set the swapchain resource ID for per-frame image updates.
+    /// This should be called after compile if the graph uses the swapchain.
+    pub fn set_swapchain_resource_id(&mut self, swapchain_id: ResourceId) {
+        self.swapchain_resource_id = Some(swapchain_id);
+    }
+
+    /// Update the swapchain image for the current frame.
+    /// This must be called before execute() to ensure present_pass blits to the correct image.
+    pub fn update_swapchain_image(&mut self, image: vk::Image, image_view: vk::ImageView) {
+        if let Some(swapchain_id) = self.swapchain_resource_id {
+            let mut resources = self.resources.borrow_mut();
+            if let Some(resource) = resources.get_mut(&swapchain_id) {
+                if let CompiledResource::ExternalImage { image: res_image, image_view: res_image_view, .. } = resource {
+                    *res_image = image;
+                    *res_image_view = image_view;
+                }
+            }
+        }
     }
 
     /// Analyze resource lifetimes across all passes.
@@ -778,8 +801,8 @@ impl CompiledRenderGraph {
     ) {
         // Update color_attachments for viewport passes (sky_pass, geometry_pass, particle_pass)
         for pass in &mut self.passes {
-            // Skip ui_pass and copy_pass (they use swapchain, not viewport)
-            if pass.name == "ui_pass" || pass.name == "copy_pass" {
+            // Skip ui_pass and present_pass (they use output texture or swapchain transfer, not viewport)
+            if pass.name == "ui_pass" || pass.name == "present_pass" {
                 continue;
             }
 
