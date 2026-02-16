@@ -407,6 +407,59 @@ Follow patterns established in AGENTS.md:
 - **Documentation**: `///` for public APIs, `//!` for module-level
 - **Visibility**: Use `pub(crate)` for internal APIs that are public within the crate
 - **Performance**: Mark hot path functions with `#[inline]`, prefer stack allocation
+- **Logging**: Use appropriate log levels (see Logging Guidelines below)
+
+## Logging Guidelines
+
+Use the `log` crate with appropriate levels to balance visibility vs noise:
+
+### Log Levels
+
+| Level | Use For | Examples |
+|-------|---------|----------|
+| `error!` | Unrecoverable errors, critical failures | GPU device lost, failed to create swapchain |
+| `warn!` | Recoverable issues, missing optional data | No normals found, template not found using fallback |
+| `info!` | Major lifecycle events, user-visible actions | Window resized, model loaded, hot reload enabled |
+| `debug!` | Detailed diagnostic info | Parsed X vertices, shader reloaded, entity spawned |
+
+### What Goes Where
+
+**INFO level** (default, visible in normal runs):
+- Application startup/shutdown
+- Window resize events
+- Model/resource loading completed
+- Hot reload enabled/disabled
+- User-initiated editor actions (delete, select, spawn)
+- Frame count on exit (validation mode)
+
+**DEBUG level** (use `RUST_LOG=debug` to see):
+- Detailed parsing info (vertex counts, joint counts, etc.)
+- Per-component attribute parsing
+- Shader file matching and hot reload details
+- Animation/skin parsing details
+- Skeleton buffer creation
+- Mesh creation timing
+- Internal state changes
+
+**WARN level**:
+- Missing optional data (normals, templates)
+- Fallback behavior activated
+- Non-critical failures (failed to register skeleton)
+
+### Example
+
+```rust
+use log::{debug, info, warn};
+
+// Startup - INFO (user cares)
+info!("Loading model from {}", path.display());
+
+// Parsing details - DEBUG (developer debugging)
+debug!("Parsed {} vertices, {} indices", vertices.len(), indices.len());
+
+// Missing data with fallback - WARN
+warn!("Mesh has no normals, generating smooth normals from geometry");
+```
 
 ## Common Patterns
 

@@ -74,7 +74,7 @@ impl ApplicationHandler for Application {
                         .with_resizable(true)
                         // Use primary monitor size for initial window size
                         .with_min_inner_size(LogicalSize {
-                            width: 800.0,  // Use reasonable default width
+                            width: 80.0,  // Use reasonable default width
                             height: 600.0,  // Use reasonable default height
                         })
                         .with_maximized(false),
