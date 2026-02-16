@@ -80,6 +80,8 @@ pub struct EditorUI {
     pub selected_entity: Option<EntityId>,
     /// Show spawn menu.
     show_spawn_menu: bool,
+    /// Spawn menu just opened this frame (skip click-outside check).
+    spawn_menu_just_opened: bool,
     /// Play mode active.
     pub is_playing: bool,
     /// Grid visibility.
@@ -104,6 +106,7 @@ impl EditorUI {
             visible: true,
             selected_entity: None,
             show_spawn_menu: false,
+            spawn_menu_just_opened: false,
             is_playing: false,
             show_grid: true,
             show_stats: true,
@@ -364,6 +367,7 @@ impl EditorUI {
         let spawn_bounds = Rect2D::from_origin_size(cursor, Vec2::new(button_width, button_height));
         if ui.button("spawn_btn", "+ Spawn", spawn_bounds) {
             self.show_spawn_menu = !self.show_spawn_menu;
+            self.spawn_menu_just_opened = self.show_spawn_menu;
         }
         cursor = Vec2::new(cursor.x() + button_width + padding, cursor.y());
 
@@ -461,7 +465,8 @@ impl EditorUI {
             // Expand/collapse triangle for entities with children
             let text_x = if entity.has_children {
                 let is_expanded = self.expanded_entities.contains(&entity.id);
-                let triangle = if is_expanded { "▼" } else { "▶" };
+                // Use ASCII since roboto font doesn't have Unicode triangles
+                let triangle = if is_expanded { "v" } else { ">" };
                 let triangle_bounds = Rect2D::from_origin_size(
                     Vec2::new(item_x + 2.0, cursor.y()),
                     Vec2::new(16.0, item_height),
@@ -881,10 +886,16 @@ impl EditorUI {
             self.show_spawn_menu = false;
         }
 
-        // Click outside to close
-        if ui.input.mouse_clicked(mouse_button::LEFT) && !ui.input.is_hovered(menu_bounds) {
+        // Click outside to close (but not on the same frame it opened)
+        if !self.spawn_menu_just_opened
+            && ui.input.mouse_clicked(mouse_button::LEFT)
+            && !ui.input.is_hovered(menu_bounds)
+        {
             self.show_spawn_menu = false;
         }
+
+        // Reset the just-opened flag for next frame
+        self.spawn_menu_just_opened = false;
     }
 
     /// Render the editor UI and return the draw list.

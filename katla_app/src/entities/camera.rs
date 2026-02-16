@@ -3,7 +3,7 @@ use katla_math::{Mat4, Transform, Vec3};
 
 use crate::components::{
     DragComponent, FlyCameraControllerComponent, FlyCameraLookComponent, ForceComponent,
-    PerspectiveComponent, TransformComponent, VelocityComponent,
+    PerspectiveComponent, TransformComponent, VelocityComponent, EditorHidden,
 };
 
 pub struct Camera {
@@ -21,6 +21,7 @@ impl Camera {
             PerspectiveComponent::default(),
             FlyCameraControllerComponent::default(),
             FlyCameraLookComponent::default(),
+            EditorHidden, // Hide from editor hierarchy
         ));
 
         Self { entity }

@@ -239,6 +239,24 @@ impl ApplicationHandler for Application {
                 .torus()
                 .build(&mut self.world, &mut renderer);
 
+            // Set up parent-child relationships for tree view demo
+            // Make torus a child of fox (floating above it)
+            use crate::components::{Children, Parent, NameComponent};
+
+            // Add Parent component to torus pointing to fox
+            if let Some(torus_name) = self.world.get_component_mut::<NameComponent>(_torus) {
+                torus_name.name = "Torus (Fox child)".to_string();
+            }
+            self.world.add_component(_torus, Parent::new(fox.entity));
+
+            // Add Children component to fox
+            let existing_children = self.world.get_component::<Children>(fox.entity)
+                .map(|c| c.children.clone())
+                .unwrap_or_default();
+            let mut children = existing_children;
+            children.push(_torus);
+            self.world.add_component(fox.entity, Children::new(children));
+
             // Add lighting to the scene
             // Directional light (sun)
             self.world.spawn((DirectionalLight::new(
@@ -248,19 +266,28 @@ impl ApplicationHandler for Application {
             ),));
 
             // Point lights for accent lighting
-            self.world.spawn((
+            let _red_light = self.world.spawn((
                 TransformComponent {
                     transform: Transform::new_from_position(Vec3::new(10.0, 10.0, 10.0)),
                 },
                 PointLight::new([1.0, 0.3, 0.3], 5.0, 20.0), // Red light, 5x intensity, 20 unit range
             ));
 
-            self.world.spawn((
+            let _blue_light = self.world.spawn((
                 TransformComponent {
                     transform: Transform::new_from_position(Vec3::new(-10.0, 8.0, 10.0)),
                 },
                 PointLight::new([0.3, 0.5, 1.0], 4.0, 25.0), // Blue light, 4x intensity, 25 unit range
             ));
+
+            // Make blue light a child of cube (for tree view demo)
+            self.world.add_component(_blue_light, Parent::new(_cube));
+            let existing_children = self.world.get_component::<Children>(_cube)
+                .map(|c| c.children.clone())
+                .unwrap_or_default();
+            let mut cube_children = existing_children;
+            cube_children.push(_blue_light);
+            self.world.add_component(_cube, Children::new(cube_children));
 
             // Add ambient light resource
             self.world
@@ -839,8 +866,15 @@ impl Application {
                     self.spawn_model_from_editor(model_type, position);
                 }
                 EditorAction::DeleteEntity(entity_id) => {
-                    self.world.destroy_entity(entity_id);
-                    info!("Deleted entity {:?}", entity_id);
+                    // Cascade delete: collect all children first, then delete in reverse order
+                    let mut to_delete = vec![entity_id];
+                    self.collect_children_recursive(entity_id, &mut to_delete);
+
+                    // Delete in reverse order (children before parents)
+                    for id in to_delete.into_iter().rev() {
+                        self.world.destroy_entity(id);
+                    }
+                    info!("Deleted entity {:?} and its children", entity_id);
                 }
                 EditorAction::SelectEntity(entity_id) => {
                     info!("Selected entity {:?}", entity_id);
@@ -919,7 +953,7 @@ impl Application {
     /// Collect entity information for the editor UI in tree order.
     fn collect_entity_info(&self) -> Vec<crate::ui::EntityInfo> {
         use crate::components::{
-            Children, DrawableComponent, NameComponent, Parent, TransformComponent,
+            Children, DrawableComponent, EditorHidden, NameComponent, Parent, TransformComponent,
         };
         use std::collections::{HashMap, HashSet};
 
@@ -930,6 +964,11 @@ impl Application {
         let mut root_entities: HashSet<EntityId> = HashSet::new();
 
         for entity_id in self.world.entity_ids() {
+            // Skip entities marked as hidden from editor
+            if self.world.get_component::<EditorHidden>(entity_id).is_some() {
+                continue;
+            }
+
             let transform = match self.world.get_component::<TransformComponent>(entity_id) {
                 Some(t) => t,
                 None => continue,
@@ -1018,6 +1057,18 @@ impl Application {
         }
 
         result
+    }
+
+    /// Recursively collect all children of an entity for cascade delete.
+    fn collect_children_recursive(&self, entity_id: EntityId, result: &mut Vec<EntityId>) {
+        use crate::components::Children;
+
+        if let Some(children) = self.world.get_component::<Children>(entity_id) {
+            for child_id in &children.children {
+                result.push(*child_id);
+                self.collect_children_recursive(*child_id, result);
+            }
+        }
     }
 
     /// Spawn a model from the editor UI.
