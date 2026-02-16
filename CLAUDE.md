@@ -497,51 +497,78 @@ world.register_system(Box::new(MySystem), SystemExecutionOrder::NORMAL);
 
 The render graph uses **dynamic rendering** by default. Passes execute with `vkCmdBeginRendering`/`vkCmdEndRendering`.
 
+**Architecture:** Scene and UI passes render to an intermediate `output_texture`. Only the `present_pass` touches the swapchain, using transfer operations (blit) to copy the output texture to the swapchain image.
+
 ```rust
 let mut graph_builder = RenderGraphBuilder::new();
 
-// Add external resources (e.g., swapchain)
+// Add swapchain resource (placeholder - updated per-frame)
 let swapchain_resource = graph_builder.add_resource(
     "swapchain",
     ResourceKind::ExternalImage {
-        vk_image: swapchain_image,
-        image_view: swapchain_image_view,
+        vk_image: swapchain_images[0],  // Placeholder, updated each frame
+        image_view: swapchain_image_views[0],
         format: vk::Format::B8G8R8A8_SRGB,
         extent: vk::Extent2D { width: 1920, height: 1080 },
     },
 );
 
-// Add depth resource
-let depth_resource = graph_builder.add_resource(
-    "depth",
+// Add output texture (scene + UI render here)
+let output_resource = graph_builder.add_resource(
+    "output_color",
     ResourceKind::ExternalImage {
-        vk_image: depth_image,
-        image_view: depth_image_view,
-        format: vk::Format::D32_SFLOAT,
+        vk_image: output_image,
+        image_view: output_image_view,
+        format: vk::Format::B8G8R8A8_SRGB,
         extent: vk::Extent2D { width: 1920, height: 1080 },
     },
 );
 
-// Add pass with dynamic rendering
+// Scene pass renders to output texture (NOT swapchain!)
 graph_builder.add_pass("geometry_pass", |pass| {
-    pass.write(Attachment::Color(swapchain_resource))
-        .write(Attachment::DepthStencil(depth_resource))
-        .clear_color(swapchain_resource, [0.3, 0.5, 0.3, 1.0])
-        .clear_depth_stencil(depth_resource, 1.0, 0)
+    pass.write(Attachment::Color(output_resource))
+        .clear_color(output_resource, [0.3, 0.5, 0.3, 1.0])
         .execute("geometry_pass", |ctx| {
             // Record rendering commands
-            // ctx.command_buffer has begin_rendering() already called
         });
 });
 
-let graph = graph_builder.build(&vulkan_context)?;
-// Execute with dynamic rendering (uses vkCmdBeginRendering internally)
-graph.execute(&mut command_buffer, image_index, swapchain_images, depth_image)?;
+// UI pass composites on top of output texture
+graph_builder.add_pass("ui_pass", |pass| {
+    pass.write(Attachment::Color(output_resource))
+        .execute("ui_pass", |ctx| {
+            // Record UI commands (no clear - loading existing content)
+        });
+});
+
+// Present pass copies output to swapchain using transfer (blit)
+graph_builder.add_pass("present_pass", |pass| {
+    pass.read_transfer(output_resource)
+        .write_transfer(swapchain_resource)
+        .execute("present_pass", |ctx| {
+            // vkCmdBlitImage from output to swapchain
+        });
+});
+
+let mut graph = graph_builder.build(&vulkan_context)?;
+
+// IMPORTANT: Set swapchain resource ID for per-frame updates
+graph.set_swapchain_resource_id(swapchain_resource);
+
+// Each frame before execute: update swapchain to current acquired image
+graph.update_swapchain_image(
+    swapchain_images[frame_index],
+    swapchain_image_views[frame_index],
+);
+
+graph.execute(&mut command_buffer, image_index, &swapchain_images, depth_image)?;
 ```
 
 **Key Points:**
-- Use `ExternalImage` for swapchain/depth resources created externally
-- Use `Attachment::Color` and `Attachment::DepthStencil` to specify attachment types
+- **Only present_pass touches swapchain** - Uses `read_transfer()`/`write_transfer()` for blit, NOT color attachments
+- **Scene/UI render to output_texture** - Intermediate texture allows compositing before presentation
+- **Per-frame swapchain update** - Call `update_swapchain_image()` before execute() to use the correct acquired image
+- **Use `ExternalImage` ResourceKind** for swapchain and resources created externally
 - The graph automatically uses dynamic rendering (no traditional render passes)
 - Synchronization2 barriers inserted automatically for layout transitions
 
