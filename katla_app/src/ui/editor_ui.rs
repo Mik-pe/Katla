@@ -838,7 +838,7 @@ impl EditorUI {
     fn build_spawn_menu(&mut self, ui: &mut UiContext, screen_size: Vec2) {
         let theme = &self.theme;
         let menu_width = 300.0;
-        let menu_height = 280.0;
+        let menu_height = 340.0;  // Increased to fit all content
         let menu_bounds = Rect2D::from_origin_size(
             Vec2::new(screen_size.x() * 0.5 - menu_width * 0.5, 80.0),
             Vec2::new(menu_width, menu_height),
