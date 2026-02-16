@@ -943,9 +943,17 @@ impl EditorUI {
             );
 
             let is_selected = *key == current_theme_key;
+
+            // Button click detection
+            if ui.button(&format!("theme_{}", key), "", btn_bounds) {
+                self.pending_actions.push(EditorAction::SetTheme(key.to_string()));
+            }
+
+            // Draw custom background on top (for selection state)
             let btn_color = if is_selected { theme.selection } else { theme.button_bg };
             ui.draw_rect(btn_bounds, btn_color);
 
+            // Draw text
             let text_color = if is_selected { theme.button_text } else { theme.text_primary };
             let text_size = ui.measure_text(display_name, 11.0);
             let text_pos = Vec2::new(
@@ -953,10 +961,6 @@ impl EditorUI {
                 btn_bounds.center().y() - text_size.y() * 0.5,
             );
             ui.draw_text(display_name, text_pos, text_color, 11.0);
-
-            if ui.button(&format!("theme_{}", key), "", btn_bounds) {
-                self.pending_actions.push(EditorAction::SetTheme(key.to_string()));
-            }
         }
 
         cursor = Vec2::new(cursor.x(), cursor.y() + 7.0 * (row_height + 4.0) + 16.0);
@@ -967,28 +971,28 @@ impl EditorUI {
 
         // Grid toggle
         let grid_btn_bounds = Rect2D::from_origin_size(cursor, Vec2::new(content_width, row_height));
+        if ui.button("pref_grid_toggle", "", grid_btn_bounds) {
+            self.pending_actions.push(EditorAction::ToggleGrid);
+        }
         let grid_color = if self.show_grid { theme.success } else { theme.button_bg };
         ui.draw_rect(grid_btn_bounds, grid_color);
         let grid_text = if self.show_grid { "✓ Show Grid" } else { "  Show Grid" };
         let grid_text_color = if self.show_grid { theme.button_text } else { theme.text_primary };
         let grid_text_pos = Vec2::new(grid_btn_bounds.min.x() + 12.0, grid_btn_bounds.min.y() + 6.0);
         ui.draw_text(grid_text, grid_text_pos, grid_text_color, 12.0);
-        if ui.button("pref_grid_toggle", "", grid_btn_bounds) {
-            self.pending_actions.push(EditorAction::ToggleGrid);
-        }
         cursor = Vec2::new(cursor.x(), cursor.y() + row_height + 4.0);
 
         // Stats toggle
         let stats_btn_bounds = Rect2D::from_origin_size(cursor, Vec2::new(content_width, row_height));
+        if ui.button("pref_stats_toggle", "", stats_btn_bounds) {
+            self.pending_actions.push(EditorAction::ToggleStats);
+        }
         let stats_color = if self.show_stats { theme.success } else { theme.button_bg };
         ui.draw_rect(stats_btn_bounds, stats_color);
         let stats_text = if self.show_stats { "✓ Show Stats" } else { "  Show Stats" };
         let stats_text_color = if self.show_stats { theme.button_text } else { theme.text_primary };
         let stats_text_pos = Vec2::new(stats_btn_bounds.min.x() + 12.0, stats_btn_bounds.min.y() + 6.0);
         ui.draw_text(stats_text, stats_text_pos, stats_text_color, 12.0);
-        if ui.button("pref_stats_toggle", "", stats_btn_bounds) {
-            self.pending_actions.push(EditorAction::ToggleStats);
-        }
 
         // Click outside to close
         if ui.input.mouse_clicked(mouse_button::LEFT) && !ui.input.is_hovered(panel_bounds) {
