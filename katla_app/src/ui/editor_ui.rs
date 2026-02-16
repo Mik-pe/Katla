@@ -390,7 +390,7 @@ impl EditorUI {
 
         // Spawn dropdown
         let spawn_bounds = Rect2D::from_origin_size(cursor, Vec2::new(button_width, button_height));
-        if ui.begin_dropdown("spawn_dropdown", "+ Spawn", spawn_bounds) {
+        if ui.begin_dropdown("spawn_dropdown", "Spawn", spawn_bounds) {
             for model in SpawnableModel::all() {
                 if ui.menu_item(&format!("spawn_{}", model.name()), model.name(), Rect2D::from_origin_size(
                     Vec2::new(spawn_bounds.min.x(), spawn_bounds.max.y() + (*model as usize as f32) * 24.0),
