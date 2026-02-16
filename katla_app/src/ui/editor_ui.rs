@@ -61,6 +61,40 @@ pub struct EntityInfo {
     pub parent_id: Option<EntityId>,
 }
 
+/// Preferences panel tabs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum PreferencesTab {
+    #[default]
+    Appearance,
+    Editor,
+    Keybindings,
+    About,
+}
+
+impl PreferencesTab {
+    pub fn all() -> &'static [PreferencesTab] {
+        &[PreferencesTab::Appearance, PreferencesTab::Editor, PreferencesTab::Keybindings, PreferencesTab::About]
+    }
+
+    pub fn name(&self) -> &'static str {
+        match self {
+            PreferencesTab::Appearance => "Appearance",
+            PreferencesTab::Editor => "Editor",
+            PreferencesTab::Keybindings => "Keybindings",
+            PreferencesTab::About => "About",
+        }
+    }
+
+    pub fn icon(&self) -> char {
+        match self {
+            PreferencesTab::Appearance => ForkAwesome::PAINT_BRUSH,
+            PreferencesTab::Editor => ForkAwesome::PENCIL,
+            PreferencesTab::Keybindings => ForkAwesome::KEY,
+            PreferencesTab::About => ForkAwesome::INFO_CIRCLE,
+        }
+    }
+}
+
 /// Action requested from the editor UI.
 #[derive(Debug, Clone)]
 pub enum EditorAction {
@@ -100,6 +134,14 @@ pub struct EditorUI {
     dragging_panel: bool,
     /// Offset from panel top-left when dragging started.
     drag_offset: Vec2,
+    /// Currently selected preferences tab.
+    preferences_tab: PreferencesTab,
+    /// Camera movement speed (for editor camera).
+    pub camera_speed: f32,
+    /// Snap to grid when moving entities.
+    pub snap_to_grid: bool,
+    /// Grid size for snapping.
+    pub grid_size: f32,
     /// Play mode active.
     pub is_playing: bool,
     /// Grid visibility.
@@ -131,6 +173,10 @@ impl EditorUI {
             preferences_panel_pos: None,
             dragging_panel: false,
             drag_offset: Vec2::new(0.0, 0.0),
+            preferences_tab: PreferencesTab::default(),
+            camera_speed: 50.0,
+            snap_to_grid: true,
+            grid_size: 1.0,
             is_playing: false,
             show_grid: true,
             show_stats: true,
@@ -885,9 +931,10 @@ impl EditorUI {
 
     fn build_preferences_panel(&mut self, ui: &mut UiContext, screen_size: Vec2) {
         let theme = self.theme.clone();
-        let panel_width = 400.0;
-        let panel_height = 450.0;
+        let panel_width = 450.0;
+        let panel_height = 500.0;
         let title_bar_height = 32.0;
+        let tab_bar_height = 36.0;
 
         // Calculate panel position (centered by default, or use stored position)
         let default_pos = Vec2::new(
@@ -970,7 +1017,7 @@ impl EditorUI {
         }
 
         let title_pos = Vec2::new(panel_bounds.min.x() + 12.0, panel_bounds.min.y() + 14.0);
-        ui.draw_text("Preferences", title_pos, theme.text_primary, 14.0);
+        ui.draw_text("Settings", title_pos, theme.text_primary, 14.0);
 
         // Close button
         let close_size = 24.0;
@@ -980,21 +1027,94 @@ impl EditorUI {
         );
         if ui.button("close_prefs", "×", close_bounds) {
             self.show_preferences = false;
-            self.preferences_panel_pos = None; // Reset position when closed
+            self.preferences_panel_pos = None;
         }
 
-        let mut cursor = Vec2::new(panel_bounds.min.x() + 16.0, panel_bounds.min.y() + title_bar_height + 16.0);
+        // === TAB BAR ===
+        let tab_bar_bounds = Rect2D::from_origin_size(
+            Vec2::new(panel_bounds.min.x(), panel_bounds.min.y() + title_bar_height),
+            Vec2::new(panel_width, tab_bar_height),
+        );
+        ui.draw_rect(tab_bar_bounds, theme.background_dark);
+
+        let tab_width = panel_width / PreferencesTab::all().len() as f32;
+        for (i, tab) in PreferencesTab::all().iter().enumerate() {
+            let tab_bounds = Rect2D::from_origin_size(
+                Vec2::new(panel_bounds.min.x() + i as f32 * tab_width, tab_bar_bounds.min.y()),
+                Vec2::new(tab_width, tab_bar_height),
+            );
+            let is_selected = *tab == self.preferences_tab;
+
+            // Tab background
+            let tab_color = if is_selected { theme.panel_bg } else { theme.background_dark };
+            ui.draw_rect(tab_bounds, tab_color);
+
+            // Tab bottom border (highlight for selected)
+            if is_selected {
+                ui.draw_line(
+                    Vec2::new(tab_bounds.min.x(), tab_bounds.max.y()),
+                    Vec2::new(tab_bounds.max.x(), tab_bounds.max.y()),
+                    theme.selection,
+                    2.0,
+                );
+            }
+
+            // Tab click
+            if ui.button(&format!("tab_{:?}", tab), "", tab_bounds) && !is_selected {
+                self.preferences_tab = *tab;
+            }
+
+            // Tab icon + text
+            let icon = tab.icon();
+            let icon_size = 12.0;
+            let text = tab.name();
+            let text_size = ui.measure_text(text, 11.0);
+            let total_width = icon_size + 4.0 + text_size.x();
+            let start_x = tab_bounds.center().x() - total_width * 0.5;
+
+            let icon_color = if is_selected { theme.text_primary } else { theme.text_muted };
+            ui.draw_icon(icon, Vec2::new(start_x, tab_bounds.center().y() - icon_size * 0.5), icon_size, icon_color);
+
+            let text_color = if is_selected { theme.text_primary } else { theme.text_muted };
+            ui.draw_text(text, Vec2::new(start_x + icon_size + 4.0, tab_bounds.center().y() - text_size.y() * 0.5), text_color, 11.0);
+        }
+
+        // === TAB CONTENT ===
+        let content_start_y = panel_bounds.min.y() + title_bar_height + tab_bar_height + 8.0;
+        let mut cursor = Vec2::new(panel_bounds.min.x() + 16.0, content_start_y);
         let content_width = panel_width - 32.0;
         let row_height = 28.0;
         let spacing = 8.0;
 
+        match self.preferences_tab {
+            PreferencesTab::Appearance => {
+                self.build_appearance_tab(ui, &theme, cursor, content_width, row_height, spacing);
+            }
+            PreferencesTab::Editor => {
+                self.build_editor_tab(ui, &theme, cursor, content_width, row_height, spacing);
+            }
+            PreferencesTab::Keybindings => {
+                self.build_keybindings_tab(ui, &theme, cursor, content_width, row_height, spacing);
+            }
+            PreferencesTab::About => {
+                self.build_about_tab(ui, &theme, cursor, content_width);
+            }
+        }
+
+        // Click outside to close (but not while dragging)
+        if !self.dragging_panel && ui.input.mouse_clicked(mouse_button::LEFT) && !ui.input.is_hovered(panel_bounds) {
+            self.show_preferences = false;
+            self.preferences_panel_pos = None;
+        }
+    }
+
+    fn build_appearance_tab(&mut self, ui: &mut UiContext, theme: &Theme, mut cursor: Vec2, content_width: f32, row_height: f32, spacing: f32) {
         // === THEME SECTION ===
-        ui.draw_text("Theme", cursor, theme.text_secondary, 12.0);
+        ui.draw_text("Color Theme", cursor, theme.text_secondary, 12.0);
         cursor = Vec2::new(cursor.x(), cursor.y() + 20.0);
 
         // Theme grid (2 columns)
         let col_width = (content_width - spacing) / 2.0;
-        let themes = Theme::all_names();
         let theme_names = [
             ("catppuccin", "Catppuccin"),
             ("nord", "Nord"),
@@ -1022,16 +1142,13 @@ impl EditorUI {
 
             let is_selected = *key == current_theme_key;
 
-            // Button click detection
             if ui.button(&format!("theme_{}", key), "", btn_bounds) {
                 self.pending_actions.push(EditorAction::SetTheme(key.to_string()));
             }
 
-            // Draw custom background on top (for selection state)
             let btn_color = if is_selected { theme.selection } else { theme.button_bg };
             ui.draw_rect(btn_bounds, btn_color);
 
-            // Draw text
             let text_color = if is_selected { theme.button_text } else { theme.text_primary };
             let text_size = ui.measure_text(display_name, 11.0);
             let text_pos = Vec2::new(
@@ -1056,8 +1173,7 @@ impl EditorUI {
         ui.draw_rect(grid_btn_bounds, grid_color);
         let grid_text = if self.show_grid { "✓ Show Grid" } else { "  Show Grid" };
         let grid_text_color = if self.show_grid { theme.button_text } else { theme.text_primary };
-        let grid_text_pos = Vec2::new(grid_btn_bounds.min.x() + 12.0, grid_btn_bounds.min.y() + 6.0);
-        ui.draw_text(grid_text, grid_text_pos, grid_text_color, 12.0);
+        ui.draw_text(grid_text, Vec2::new(grid_btn_bounds.min.x() + 12.0, grid_btn_bounds.min.y() + 6.0), grid_text_color, 12.0);
         cursor = Vec2::new(cursor.x(), cursor.y() + row_height + 4.0);
 
         // Stats toggle
@@ -1067,15 +1183,154 @@ impl EditorUI {
         }
         let stats_color = if self.show_stats { theme.success } else { theme.button_bg };
         ui.draw_rect(stats_btn_bounds, stats_color);
-        let stats_text = if self.show_stats { "✓ Show Stats" } else { "  Show Stats" };
+        let stats_text = if self.show_stats { "✓ Show Stats Panel" } else { "  Show Stats Panel" };
         let stats_text_color = if self.show_stats { theme.button_text } else { theme.text_primary };
-        let stats_text_pos = Vec2::new(stats_btn_bounds.min.x() + 12.0, stats_btn_bounds.min.y() + 6.0);
-        ui.draw_text(stats_text, stats_text_pos, stats_text_color, 12.0);
+        ui.draw_text(stats_text, Vec2::new(stats_btn_bounds.min.x() + 12.0, stats_btn_bounds.min.y() + 6.0), stats_text_color, 12.0);
+    }
 
-        // Click outside to close (but not while dragging)
-        if !self.dragging_panel && ui.input.mouse_clicked(mouse_button::LEFT) && !ui.input.is_hovered(panel_bounds) {
-            self.show_preferences = false;
-            self.preferences_panel_pos = None; // Reset position when closed
+    fn build_editor_tab(&mut self, ui: &mut UiContext, theme: &Theme, mut cursor: Vec2, content_width: f32, row_height: f32, _spacing: f32) {
+        ui.draw_text("Editor Settings", cursor, theme.text_secondary, 12.0);
+        cursor = Vec2::new(cursor.x(), cursor.y() + 24.0);
+
+        // Snap to grid toggle
+        let snap_btn_bounds = Rect2D::from_origin_size(cursor, Vec2::new(content_width, row_height));
+        if ui.button("pref_snap_toggle", "", snap_btn_bounds) {
+            self.snap_to_grid = !self.snap_to_grid;
+        }
+        let snap_color = if self.snap_to_grid { theme.success } else { theme.button_bg };
+        ui.draw_rect(snap_btn_bounds, snap_color);
+        let snap_text = if self.snap_to_grid { "✓ Snap to Grid" } else { "  Snap to Grid" };
+        let snap_text_color = if self.snap_to_grid { theme.button_text } else { theme.text_primary };
+        ui.draw_text(snap_text, Vec2::new(snap_btn_bounds.min.x() + 12.0, snap_btn_bounds.min.y() + 6.0), snap_text_color, 12.0);
+        cursor = Vec2::new(cursor.x(), cursor.y() + row_height + 12.0);
+
+        // Camera speed
+        ui.draw_text("Camera Speed", cursor, theme.text_secondary, 12.0);
+        cursor = Vec2::new(cursor.x(), cursor.y() + 20.0);
+
+        let speed_text = format!("{:.0}", self.camera_speed);
+        ui.draw_text(&speed_text, Vec2::new(cursor.x(), cursor.y()), theme.text_primary, 12.0);
+        cursor = Vec2::new(cursor.x(), cursor.y() + 20.0);
+
+        // Slider background
+        let slider_bounds = Rect2D::from_origin_size(cursor, Vec2::new(content_width, 20.0));
+        ui.draw_rect(slider_bounds, theme.button_bg);
+
+        // Slider fill
+        let fill_percent = (self.camera_speed - 10.0) / 190.0; // 10-200 range
+        let fill_width = content_width * fill_percent;
+        let fill_bounds = Rect2D::from_origin_size(cursor, Vec2::new(fill_width, 20.0));
+        ui.draw_rect(fill_bounds, theme.selection);
+
+        // Slider handle
+        if ui.button("camera_speed_slider", "", slider_bounds) {
+            // Click to set value
+        }
+
+        cursor = Vec2::new(cursor.x(), cursor.y() + 40.0);
+
+        // Grid size
+        ui.draw_text(&format!("Grid Size: {:.1}", self.grid_size), cursor, theme.text_secondary, 12.0);
+        cursor = Vec2::new(cursor.x(), cursor.y() + 24.0);
+
+        // Grid size buttons
+        let sizes = [0.5, 1.0, 2.0, 5.0, 10.0];
+        let btn_width = (content_width - 4.0 * 8.0) / 5.0;
+        for (i, &size) in sizes.iter().enumerate() {
+            let btn_bounds = Rect2D::from_origin_size(
+                Vec2::new(cursor.x() + i as f32 * (btn_width + 8.0), cursor.y()),
+                Vec2::new(btn_width, row_height),
+            );
+            let is_selected = (self.grid_size - size).abs() < 0.01;
+            if ui.button(&format!("grid_size_{}", size), "", btn_bounds) {
+                self.grid_size = size;
+            }
+            let btn_color = if is_selected { theme.selection } else { theme.button_bg };
+            ui.draw_rect(btn_bounds, btn_color);
+            let text_color = if is_selected { theme.button_text } else { theme.text_primary };
+            let text = format!("{:.1}", size);
+            let text_size = ui.measure_text(&text, 11.0);
+            ui.draw_text(&text, Vec2::new(btn_bounds.center().x() - text_size.x() * 0.5, btn_bounds.center().y() - text_size.y() * 0.5), text_color, 11.0);
+        }
+    }
+
+    fn build_keybindings_tab(&mut self, ui: &mut UiContext, theme: &Theme, mut cursor: Vec2, content_width: f32, row_height: f32, _spacing: f32) {
+        ui.draw_text("Keyboard Shortcuts", cursor, theme.text_secondary, 12.0);
+        cursor = Vec2::new(cursor.x(), cursor.y() + 24.0);
+
+        let shortcuts = [
+            ("Delete", "Delete selected entity"),
+            ("↑ / ↓", "Navigate entity list"),
+            ("← / →", "Collapse/Expand hierarchy"),
+            ("Escape", "Deselect / Close panel"),
+            ("T", "Test mesh spawn"),
+        ];
+
+        for (key, desc) in shortcuts {
+            let row_bounds = Rect2D::from_origin_size(cursor, Vec2::new(content_width, row_height));
+            ui.draw_rect(row_bounds, theme.button_bg);
+
+            // Key badge
+            let badge_width = 60.0;
+            let badge_bounds = Rect2D::from_origin_size(cursor, Vec2::new(badge_width, row_height));
+            ui.draw_rect(badge_bounds, theme.background_light);
+            let key_size = ui.measure_text(key, 11.0);
+            ui.draw_text(key, Vec2::new(badge_bounds.center().x() - key_size.x() * 0.5, badge_bounds.center().y() - key_size.y() * 0.5), theme.text_accent, 11.0);
+
+            // Description
+            ui.draw_text(desc, Vec2::new(cursor.x() + badge_width + 12.0, cursor.y() + 6.0), theme.text_primary, 12.0);
+
+            cursor = Vec2::new(cursor.x(), cursor.y() + row_height + 4.0);
+        }
+
+        cursor = Vec2::new(cursor.x(), cursor.y() + 16.0);
+        ui.draw_text("(Custom keybindings coming soon)", cursor, theme.text_muted, 11.0);
+    }
+
+    fn build_about_tab(&mut self, ui: &mut UiContext, theme: &Theme, mut cursor: Vec2, content_width: f32) {
+        // Center content
+        let center_x = cursor.x() + content_width * 0.5;
+
+        // Logo / Title
+        let title = "Katla Engine";
+        let title_size = ui.measure_text(title, 24.0);
+        ui.draw_text(title, Vec2::new(center_x - title_size.x() * 0.5, cursor.y()), theme.text_primary, 24.0);
+        cursor = Vec2::new(cursor.x(), cursor.y() + 40.0);
+
+        // Version
+        let version = "Version 0.1.0";
+        let version_size = ui.measure_text(version, 14.0);
+        ui.draw_text(version, Vec2::new(center_x - version_size.x() * 0.5, cursor.y()), theme.text_secondary, 14.0);
+        cursor = Vec2::new(cursor.x(), cursor.y() + 30.0);
+
+        // Description
+        let desc = "A Vulkan-based 3D game engine\nwritten in Rust with ECS architecture.";
+        for line in desc.split('\n') {
+            let line_size = ui.measure_text(line, 12.0);
+            ui.draw_text(line, Vec2::new(center_x - line_size.x() * 0.5, cursor.y()), theme.text_muted, 12.0);
+            cursor = Vec2::new(cursor.x(), cursor.y() + 20.0);
+        }
+
+        cursor = Vec2::new(cursor.x(), cursor.y() + 30.0);
+
+        // Features
+        ui.draw_text("Features", Vec2::new(center_x - 30.0, cursor.y()), theme.text_secondary, 12.0);
+        cursor = Vec2::new(cursor.x(), cursor.y() + 24.0);
+
+        let features = [
+            "Vulkan 1.3 with Dynamic Rendering",
+            "ECS Architecture",
+            "Skeletal Animation",
+            "Particle Systems",
+            "Hot Reloadable Shaders",
+            "Immediate Mode UI",
+        ];
+
+        for feature in features {
+            let check_size = ui.measure_text("✓", 12.0);
+            ui.draw_text("✓", Vec2::new(center_x - 100.0, cursor.y()), theme.success, 12.0);
+            ui.draw_text(feature, Vec2::new(center_x - 80.0, cursor.y()), theme.text_primary, 12.0);
+            cursor = Vec2::new(cursor.x(), cursor.y() + 18.0);
         }
     }
 
