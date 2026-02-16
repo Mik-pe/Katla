@@ -94,6 +94,12 @@ pub struct EditorUI {
     spawn_menu_just_opened: bool,
     /// Show preferences panel.
     show_preferences: bool,
+    /// Preferences panel position (None = centered).
+    preferences_panel_pos: Option<Vec2>,
+    /// Currently dragging panel title bar.
+    dragging_panel: bool,
+    /// Offset from panel top-left when dragging started.
+    drag_offset: Vec2,
     /// Play mode active.
     pub is_playing: bool,
     /// Grid visibility.
@@ -122,6 +128,9 @@ impl EditorUI {
             show_spawn_menu: false,
             spawn_menu_just_opened: false,
             show_preferences: false,
+            preferences_panel_pos: None,
+            dragging_panel: false,
+            drag_offset: Vec2::new(0.0, 0.0),
             is_playing: false,
             show_grid: true,
             show_stats: true,
@@ -875,13 +884,56 @@ impl EditorUI {
     }
 
     fn build_preferences_panel(&mut self, ui: &mut UiContext, screen_size: Vec2) {
-        let theme = &self.theme;
+        let theme = self.theme.clone();
         let panel_width = 400.0;
         let panel_height = 450.0;
-        let panel_bounds = Rect2D::from_origin_size(
-            Vec2::new(screen_size.x() * 0.5 - panel_width * 0.5, screen_size.y() * 0.5 - panel_height * 0.5),
-            Vec2::new(panel_width, panel_height),
+        let title_bar_height = 32.0;
+
+        // Calculate panel position (centered by default, or use stored position)
+        let default_pos = Vec2::new(
+            screen_size.x() * 0.5 - panel_width * 0.5,
+            screen_size.y() * 0.5 - panel_height * 0.5,
         );
+        let panel_pos = self.preferences_panel_pos.unwrap_or(default_pos);
+
+        // Handle dragging
+        let title_bounds = Rect2D::from_origin_size(
+            panel_pos,
+            Vec2::new(panel_width, title_bar_height),
+        );
+
+        // Check if we should start dragging (click on title bar, not on close button)
+        let close_btn_area = Rect2D::from_origin_size(
+            Vec2::new(panel_pos.x() + panel_width - 30.0, panel_pos.y()),
+            Vec2::new(30.0, title_bar_height),
+        );
+        let can_drag = ui.input.is_hovered(title_bounds) && !ui.input.is_hovered(close_btn_area);
+
+        if ui.input.mouse_clicked(mouse_button::LEFT) && can_drag {
+            self.dragging_panel = true;
+            let mouse_pos = ui.input.mouse_pos;
+            self.drag_offset = Vec2::new(mouse_pos.x() - panel_pos.x(), mouse_pos.y() - panel_pos.y());
+        }
+
+        if self.dragging_panel {
+            if ui.input.is_mouse_down(mouse_button::LEFT) {
+                let mouse_pos = ui.input.mouse_pos;
+                let new_pos = Vec2::new(
+                    mouse_pos.x() - self.drag_offset.x(),
+                    mouse_pos.y() - self.drag_offset.y(),
+                );
+                // Clamp to screen bounds
+                let clamped_x = new_pos.x().clamp(0.0, (screen_size.x() - panel_width).max(0.0));
+                let clamped_y = new_pos.y().clamp(0.0, (screen_size.y() - panel_height).max(0.0));
+                self.preferences_panel_pos = Some(Vec2::new(clamped_x, clamped_y));
+            } else {
+                self.dragging_panel = false;
+            }
+        }
+
+        // Use current panel position (may have been updated during drag)
+        let panel_pos = self.preferences_panel_pos.unwrap_or(default_pos);
+        let panel_bounds = Rect2D::from_origin_size(panel_pos, Vec2::new(panel_width, panel_height));
 
         // Shadow
         let shadow_offset = Vec2::new(6.0, 6.0);
@@ -893,14 +945,31 @@ impl EditorUI {
         ui.draw_rect_border(panel_bounds, theme.panel_bg, theme.panel_border, 1.0);
 
         // Title bar
-        let title_bar_height = 32.0;
         let title_bounds = Rect2D::from_origin_size(
             panel_bounds.min,
             Vec2::new(panel_width, title_bar_height),
         );
-        ui.draw_rect(title_bounds, theme.panel_header);
+        let title_color = if self.dragging_panel || (can_drag && !self.dragging_panel) {
+            theme.background_light
+        } else {
+            theme.panel_header
+        };
+        ui.draw_rect(title_bounds, title_color);
 
-        let title_pos = Vec2::new(panel_bounds.min.x() + 12.0, panel_bounds.min.y() + 8.0);
+        // Drag handle indicator (three lines)
+        let handle_x = panel_bounds.min.x() + panel_width * 0.5 - 20.0;
+        let handle_y = panel_bounds.min.y() + 6.0;
+        for i in 0..3 {
+            let line_y = handle_y + i as f32 * 3.0;
+            ui.draw_line(
+                Vec2::new(handle_x, line_y),
+                Vec2::new(handle_x + 40.0, line_y),
+                theme.text_muted,
+                1.0,
+            );
+        }
+
+        let title_pos = Vec2::new(panel_bounds.min.x() + 12.0, panel_bounds.min.y() + 14.0);
         ui.draw_text("Preferences", title_pos, theme.text_primary, 14.0);
 
         // Close button
@@ -911,6 +980,7 @@ impl EditorUI {
         );
         if ui.button("close_prefs", "×", close_bounds) {
             self.show_preferences = false;
+            self.preferences_panel_pos = None; // Reset position when closed
         }
 
         let mut cursor = Vec2::new(panel_bounds.min.x() + 16.0, panel_bounds.min.y() + title_bar_height + 16.0);
@@ -1002,9 +1072,10 @@ impl EditorUI {
         let stats_text_pos = Vec2::new(stats_btn_bounds.min.x() + 12.0, stats_btn_bounds.min.y() + 6.0);
         ui.draw_text(stats_text, stats_text_pos, stats_text_color, 12.0);
 
-        // Click outside to close
-        if ui.input.mouse_clicked(mouse_button::LEFT) && !ui.input.is_hovered(panel_bounds) {
+        // Click outside to close (but not while dragging)
+        if !self.dragging_panel && ui.input.mouse_clicked(mouse_button::LEFT) && !ui.input.is_hovered(panel_bounds) {
             self.show_preferences = false;
+            self.preferences_panel_pos = None; // Reset position when closed
         }
     }
 
