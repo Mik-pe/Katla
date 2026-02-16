@@ -798,6 +798,38 @@ impl VulkanContext {
         let mut storage = self.validation_callback.lock().unwrap();
         storage.take_messages()
     }
+
+    /// Set up default logging callback that logs validation messages at appropriate levels.
+    ///
+    /// - Error messages → `error!`
+    /// - Warning messages → `warn!`
+    /// - Info messages → `info!`
+    /// - Verbose messages → `debug!`
+    pub fn setup_validation_logging(&self) {
+        self.set_validation_callback(Box::new(|msg| {
+            let prefix = if let Some(ref vuid) = msg.vuid {
+                format!("[{}]", vuid)
+            } else {
+                String::new()
+            };
+
+            match msg.severity {
+                ValidationSeverity::Error => {
+                    log::error!("{} {}", prefix, msg.message);
+                }
+                ValidationSeverity::Warning => {
+                    log::warn!("{} {}", prefix, msg.message);
+                }
+                ValidationSeverity::Info => {
+                    log::info!("{} {}", prefix, msg.message);
+                }
+                ValidationSeverity::Verbose => {
+                    log::debug!("{} {}", prefix, msg.message);
+                }
+            }
+            false // Don't break on any message
+        }));
+    }
 }
 impl Drop for VulkanContext {
     fn drop(&mut self) {

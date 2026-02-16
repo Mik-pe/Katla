@@ -99,6 +99,11 @@ impl VulkanRenderer {
             engine_name,
         ));
 
+        // Set up validation logging at appropriate log levels
+        if with_validation_layers {
+            context.setup_validation_logging();
+        }
+
         let frame_context = VulkanFrameCtx::init(&context);
 
         let swapchain_images_raw: Vec<vk::Image> = frame_context
