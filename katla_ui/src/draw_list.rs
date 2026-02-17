@@ -52,11 +52,10 @@ impl UiVertex {
     }
 
     /// Create a position-only vertex (solid color, uses white pixel).
-    /// UV points to center of white pixel (0,0) to avoid linear filtering artifacts.
+    /// UV points to the white pixel at (0,0) in the font atlas.
     #[inline]
     pub fn position_only(position: Vec2, color: Color) -> Self {
-        // White pixel is at (0,0) in 512x512 atlas, center is at (0.5/512, 0.5/512)
-        const WHITE_PIXEL_UV: f32 = 0.5 / 512.0;
+        const WHITE_PIXEL_UV: f32 = 0.0;
         Self {
             position,
             uv: Vec2::new(WHITE_PIXEL_UV, WHITE_PIXEL_UV),
