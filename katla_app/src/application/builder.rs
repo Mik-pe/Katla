@@ -86,8 +86,12 @@ impl ApplicationBuilder {
         // Load user preferences
         let preferences = Preferences::load();
         let theme = Theme::by_name(&preferences.theme).unwrap_or_default();
-        log::info!("Loaded preferences: theme={}, show_grid={}, show_stats={}",
-            preferences.theme, preferences.show_grid, preferences.show_stats);
+        log::info!(
+            "Loaded preferences: theme={}, show_grid={}, show_stats={}",
+            preferences.theme,
+            preferences.show_grid,
+            preferences.show_stats
+        );
 
         // Create UI context and load default font
         let mut ui_context = katla_ui::UiContext::new();
@@ -130,8 +134,18 @@ impl ApplicationBuilder {
                             // Precache common icons at typical UI sizes
                             // Note: Using scale_factor 1.0 for initial cache; will re-rasterize at
                             // actual DPI scale on first use if different
-                            ui_context.fonts.precache_icons(FontId::ICON, 14.0, 1.0, ForkAwesome::common_icons());
-                            ui_context.fonts.precache_icons(FontId::ICON, 16.0, 1.0, ForkAwesome::common_icons());
+                            ui_context.fonts.precache_icons(
+                                FontId::ICON,
+                                14.0,
+                                1.0,
+                                ForkAwesome::common_icons(),
+                            );
+                            ui_context.fonts.precache_icons(
+                                FontId::ICON,
+                                16.0,
+                                1.0,
+                                ForkAwesome::common_icons(),
+                            );
                             log::info!("Loaded icon font from {}", icon_font_path.display());
                         }
                         Err(e) => {
@@ -140,7 +154,11 @@ impl ApplicationBuilder {
                     }
                 }
                 Err(e) => {
-                    log::warn!("Failed to read icon font file {}: {}", icon_font_path.display(), e);
+                    log::warn!(
+                        "Failed to read icon font file {}: {}",
+                        icon_font_path.display(),
+                        e
+                    );
                 }
             }
         } else {
@@ -165,9 +183,9 @@ impl ApplicationBuilder {
             ui_context,
             debug_overlay: crate::ui::DebugOverlay::new(),
             editor_ui: crate::ui::EditorUI::with_theme(theme),
-            use_editor_ui: true,  // Default to editor UI mode
+            use_editor_ui: true, // Default to editor UI mode
             preferences,
-            scale_factor: 1.0,  // Will be updated when window is created
+            scale_factor: 1.0, // Will be updated when window is created
         };
 
         Ok((app, event_loop))

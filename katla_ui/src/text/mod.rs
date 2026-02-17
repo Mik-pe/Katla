@@ -112,7 +112,8 @@ impl FontSystem {
 
     /// Create a new font system.
     pub fn new() -> Self {
-        let mut atlas_data = vec![0; (Self::DEFAULT_ATLAS_SIZE * Self::DEFAULT_ATLAS_SIZE * 4) as usize];
+        let mut atlas_data =
+            vec![0; (Self::DEFAULT_ATLAS_SIZE * Self::DEFAULT_ATLAS_SIZE * 4) as usize];
 
         // Reserve first pixel as white for solid color rendering
         // UV (0,0) will sample this white pixel, so vertex color passes through
@@ -251,7 +252,8 @@ impl FontSystem {
                     ascender: ascender / scale_factor,
                     advance: advance / scale_factor,
                 };
-                self.glyph_cache.insert((font_id, c, size_key, scale_key), cached.clone());
+                self.glyph_cache
+                    .insert((font_id, c, size_key, scale_key), cached.clone());
                 return Some(cached);
             }
         };
@@ -273,7 +275,8 @@ impl FontSystem {
                 ascender: ascender / scale_factor,
                 advance: advance / scale_factor,
             };
-            self.glyph_cache.insert((font_id, c, size_key, scale_key), cached.clone());
+            self.glyph_cache
+                .insert((font_id, c, size_key, scale_key), cached.clone());
             return Some(cached);
         }
 
@@ -289,14 +292,16 @@ impl FontSystem {
 
         // Convert physical pixel metrics to logical pixels for UI positioning
         //
-        // ab_glyph coordinate system (y-UP):
+        // ab_glyph coordinate system (y-UP from baseline):
         // - Glyph position (0,0) is at baseline
-        // - bounds.min.y is the TOP of the glyph relative to baseline
-        // - For glyphs extending above baseline (like 'A'), bounds.min.y is NEGATIVE
+        // - bounds.min.y is typically NEGATIVE (top of glyph, above baseline)
+        // - bounds.max.y is typically 0 or positive (bottom, at or below baseline)
         //
         // Screen coordinate system (y-DOWN):
-        // - top_offset = distance from baseline UP to top of glyph
-        // - Since bounds.min.y is negative when above baseline: top_offset = -bounds.min.y
+        // - We want: glyph_top_y = baseline_y + bounds.min.y (since min.y is negative)
+        // - Equivalently: glyph_top_y = baseline_y - |bounds.min.y|
+        //
+        // top_offset stores the positive distance from baseline to glyph top
         let top_offset = -bounds.min.y / scale_factor;
 
         let rasterized = RasterizedGlyph {
@@ -316,7 +321,8 @@ impl FontSystem {
         let cached = self.place_in_atlas(&rasterized, scale_factor)?;
 
         // Cache the result
-        self.glyph_cache.insert((font_id, c, size_key, scale_key), cached.clone());
+        self.glyph_cache
+            .insert((font_id, c, size_key, scale_key), cached.clone());
 
         Some(cached)
     }
@@ -326,7 +332,11 @@ impl FontSystem {
     /// # Arguments
     /// * `glyph` - The rasterized glyph (width/height in physical pixels, metrics in logical pixels)
     /// * `scale_factor` - DPI scale factor for converting physical size to logical
-    fn place_in_atlas(&mut self, glyph: &RasterizedGlyph, scale_factor: f32) -> Option<CachedGlyph> {
+    fn place_in_atlas(
+        &mut self,
+        glyph: &RasterizedGlyph,
+        scale_factor: f32,
+    ) -> Option<CachedGlyph> {
         // Handle empty glyphs (like spaces) - they don't need atlas space
         if glyph.width == 0 || glyph.height == 0 {
             return Some(CachedGlyph {
@@ -399,10 +409,7 @@ impl FontSystem {
         let logical_height = glyph.height as f32 / scale_factor;
 
         Some(CachedGlyph {
-            uv_rect: Rect2D::new(
-                Vec2::new(uv_min_x, uv_min_y),
-                Vec2::new(uv_max_x, uv_max_y),
-            ),
+            uv_rect: Rect2D::new(Vec2::new(uv_min_x, uv_min_y), Vec2::new(uv_max_x, uv_max_y)),
             size: Vec2::new(logical_width, logical_height),
             offset_x: glyph.offset_x,
             top_offset: glyph.top_offset,
@@ -423,7 +430,13 @@ impl FontSystem {
     ///
     /// This rasterizes frequently used icons at the given size to avoid
     /// runtime hitches when rendering icons for the first time.
-    pub fn precache_icons(&mut self, font_id: FontId, size: f32, scale_factor: f32, icons: &[char]) {
+    pub fn precache_icons(
+        &mut self,
+        font_id: FontId,
+        size: f32,
+        scale_factor: f32,
+        icons: &[char],
+    ) {
         for &icon in icons {
             self.get_or_rasterize(font_id, icon, size, scale_factor);
         }
@@ -433,7 +446,12 @@ impl FontSystem {
     ///
     /// Returns (ascent, descent, line_gap) in logical pixels.
     /// These values are needed for proper text baseline positioning.
-    pub fn get_font_metrics(&self, font_id: FontId, size: f32, scale_factor: f32) -> Option<(f32, f32, f32)> {
+    pub fn get_font_metrics(
+        &self,
+        font_id: FontId,
+        size: f32,
+        scale_factor: f32,
+    ) -> Option<(f32, f32, f32)> {
         let font = self.fonts.get(&font_id)?;
         let physical_size = size * scale_factor;
         let scaled_font = font.as_scaled(PxScale::from(physical_size));

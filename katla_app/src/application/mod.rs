@@ -148,7 +148,10 @@ impl ApplicationHandler for Application {
                 material_registry_ptr,
             );
 
-            info!("Fox model entity: {:?} loaded, setting up animation...", fox.entity);
+            info!(
+                "Fox model entity: {:?} loaded, setting up animation...",
+                fox.entity
+            );
 
             AnimationManager::setup_animated_model(
                 &mut self.world,
@@ -244,20 +247,19 @@ impl ApplicationHandler for Application {
             }
             self.world.add_component(_torus, Parent::new(fox.entity));
 
-            let existing_children = self.world.get_component::<Children>(fox.entity)
+            let existing_children = self
+                .world
+                .get_component::<Children>(fox.entity)
                 .map(|c| c.children.clone())
                 .unwrap_or_default();
             let mut children = existing_children;
             children.push(_torus);
-            self.world.add_component(fox.entity, Children::new(children));
+            self.world
+                .add_component(fox.entity, Children::new(children));
 
             // Add lighting
             let _sun = self.world.spawn((
-                DirectionalLight::new(
-                    Vec3::new(-0.3, -1.0, -0.2),
-                    [1.0, 0.95, 0.8],
-                    1.0,
-                ),
+                DirectionalLight::new(Vec3::new(-0.3, -1.0, -0.2), [1.0, 0.95, 0.8], 1.0),
                 NameComponent::new("Sun Light"),
             ));
 
@@ -278,14 +280,18 @@ impl ApplicationHandler for Application {
             ));
 
             self.world.add_component(_blue_light, Parent::new(_cube));
-            let existing_children = self.world.get_component::<Children>(_cube)
+            let existing_children = self
+                .world
+                .get_component::<Children>(_cube)
                 .map(|c| c.children.clone())
                 .unwrap_or_default();
             let mut cube_children = existing_children;
             cube_children.push(_blue_light);
-            self.world.add_component(_cube, Children::new(cube_children));
+            self.world
+                .add_component(_cube, Children::new(cube_children));
 
-            self.world.insert_resource(crate::components::AmbientLight::gray(0.15));
+            self.world
+                .insert_resource(crate::components::AmbientLight::gray(0.15));
 
             // Create particle emitter
             let _particle_emitter = crate::entities::create_particle_emitter(
@@ -314,7 +320,8 @@ impl ApplicationHandler for Application {
             } else {
                 warn!("Checkerboard template not found, using fallback");
                 let checkerboard = create_checkerboard_material(renderer.context.clone());
-                self.material_manager.register_material("checkerboard", checkerboard);
+                self.material_manager
+                    .register_material("checkerboard", checkerboard);
             }
 
             self.material_manager.set_context(renderer.context.clone());
@@ -378,29 +385,50 @@ impl ApplicationHandler for Application {
 
                     if new_width > 0 && new_height > 0.0 {
                         if let Some(ref mut renderer) = self.renderer {
-                            info!("=== Window resized to {}x{}, recreating swapchain ===", new_width, new_height as u32);
+                            info!(
+                                "=== Window resized to {}x{}, recreating swapchain ===",
+                                new_width, new_height as u32
+                            );
                             // Wait for GPU to finish before destroying old resources
                             renderer.wait_for_device();
                             renderer.recreate_swapchain();
-                            let _ = renderer.init_viewport_target(new_width as u32, new_height as u32);
-                            let _ = renderer.init_output_target(new_width as u32, new_height as u32);
+                            let _ =
+                                renderer.init_viewport_target(new_width as u32, new_height as u32);
+                            let _ =
+                                renderer.init_output_target(new_width as u32, new_height as u32);
                             renderer.setup_render_graph();
 
                             if let Some(viewport_extent) = renderer.viewport_extent() {
-                                let aspect = viewport_extent.width as f32 / viewport_extent.height as f32;
-                                self.camera.borrow_mut().aspect_ratio_changed(&mut self.world, aspect);
+                                let aspect =
+                                    viewport_extent.width as f32 / viewport_extent.height as f32;
+                                self.camera
+                                    .borrow_mut()
+                                    .aspect_ratio_changed(&mut self.world, aspect);
                             }
                             info!("=== Resize complete ===");
                         }
                     }
                 }
                 WindowEvent::CursorMoved { position, .. } => {
-                    self.ui_context.input.set_mouse_pos(Vec2::new(position.x as f32, position.y as f32));
+                    // Convert physical pixels to logical pixels for UI
+                    let logical_x = position.x as f32 / self.scale_factor;
+                    let logical_y = position.y as f32 / self.scale_factor;
+                    self.ui_context
+                        .input
+                        .set_mouse_pos(Vec2::new(logical_x, logical_y));
                 }
                 WindowEvent::MouseWheel { delta, .. } => {
                     let scroll = match delta {
-                        winit::event::MouseScrollDelta::LineDelta(x, y) => Vec2::new(x * 20.0, y * 20.0),
-                        winit::event::MouseScrollDelta::PixelDelta(pos) => Vec2::new(pos.x as f32, pos.y as f32),
+                        winit::event::MouseScrollDelta::LineDelta(x, y) => {
+                            Vec2::new(x * 20.0, y * 20.0)
+                        }
+                        winit::event::MouseScrollDelta::PixelDelta(pos) => {
+                            // Convert physical to logical pixels
+                            Vec2::new(
+                                pos.x as f32 / self.scale_factor,
+                                pos.y as f32 / self.scale_factor,
+                            )
+                        }
                     };
                     self.ui_context.input.scroll_delta = scroll;
                 }
@@ -421,7 +449,9 @@ impl ApplicationHandler for Application {
                         if let Some(key) = ui_key {
                             match event.state {
                                 ElementState::Pressed => self.ui_context.input.add_key_press(key),
-                                ElementState::Released => self.ui_context.input.add_key_release(key),
+                                ElementState::Released => {
+                                    self.ui_context.input.add_key_release(key)
+                                }
                             }
                         }
 

@@ -243,19 +243,39 @@ pub fn collect_entity_info(app: &Application) -> Vec<EntityInfo> {
         let mut components: Vec<String> = Vec::new();
 
         // Check for each component type and add friendly names
-        if app.world.get_component::<TransformComponent>(entity_id).is_some() {
+        if app
+            .world
+            .get_component::<TransformComponent>(entity_id)
+            .is_some()
+        {
             components.push("Transform".to_string());
         }
-        if app.world.get_component::<NameComponent>(entity_id).is_some() {
+        if app
+            .world
+            .get_component::<NameComponent>(entity_id)
+            .is_some()
+        {
             components.push("Name".to_string());
         }
-        if app.world.get_component::<DrawableComponent>(entity_id).is_some() {
+        if app
+            .world
+            .get_component::<DrawableComponent>(entity_id)
+            .is_some()
+        {
             components.push("Drawable".to_string());
         }
-        if app.world.get_component::<ParticleEmitter>(entity_id).is_some() {
+        if app
+            .world
+            .get_component::<ParticleEmitter>(entity_id)
+            .is_some()
+        {
             components.push("ParticleEmitter".to_string());
         }
-        if app.world.get_component::<DirectionalLight>(entity_id).is_some() {
+        if app
+            .world
+            .get_component::<DirectionalLight>(entity_id)
+            .is_some()
+        {
             components.push("DirectionalLight".to_string());
         }
         if app.world.get_component::<PointLight>(entity_id).is_some() {
@@ -272,13 +292,25 @@ pub fn collect_entity_info(app: &Application) -> Vec<EntityInfo> {
         }
 
         // Determine entity type based on primary component
-        let entity_type = if app.world.get_component::<ParticleEmitter>(entity_id).is_some() {
+        let entity_type = if app
+            .world
+            .get_component::<ParticleEmitter>(entity_id)
+            .is_some()
+        {
             "Particle Emitter".to_string()
-        } else if app.world.get_component::<DirectionalLight>(entity_id).is_some() {
+        } else if app
+            .world
+            .get_component::<DirectionalLight>(entity_id)
+            .is_some()
+        {
             "Directional Light".to_string()
         } else if app.world.get_component::<PointLight>(entity_id).is_some() {
             "Point Light".to_string()
-        } else if app.world.get_component::<DrawableComponent>(entity_id).is_some() {
+        } else if app
+            .world
+            .get_component::<DrawableComponent>(entity_id)
+            .is_some()
+        {
             "Mesh".to_string()
         } else {
             "Empty".to_string()
@@ -310,7 +342,8 @@ pub fn collect_entity_info(app: &Application) -> Vec<EntityInfo> {
         result: &mut Vec<EntityInfo>,
         depth: u32,
     ) {
-        if let Some((name, pos, rot, scale, entity_type, components)) = entity_data.get(&entity_id) {
+        if let Some((name, pos, rot, scale, entity_type, components)) = entity_data.get(&entity_id)
+        {
             let children = children_map
                 .get(&entity_id)
                 .map(|c| c.as_slice())
@@ -354,7 +387,11 @@ pub fn collect_entity_info(app: &Application) -> Vec<EntityInfo> {
 }
 
 /// Recursively collect all children of an entity for cascade delete.
-pub fn collect_children_recursive(app: &Application, entity_id: EntityId, result: &mut Vec<EntityId>) {
+pub fn collect_children_recursive(
+    app: &Application,
+    entity_id: EntityId,
+    result: &mut Vec<EntityId>,
+) {
     if let Some(children) = app.world.get_component::<Children>(entity_id) {
         for child_id in &children.children {
             result.push(*child_id);

@@ -157,9 +157,9 @@ impl UiContext {
         // popups opened in the previous frame don't get closed immediately
         if self.popup_id.is_some() && !self.popup_opened_this_frame {
             if self.input.mouse_pressed[crate::input::mouse_button::LEFT] {
-                let mouse_outside = self.popup_bounds.map_or(true, |bounds| {
-                    !bounds.contains(self.input.mouse_pos)
-                });
+                let mouse_outside = self
+                    .popup_bounds
+                    .map_or(true, |bounds| !bounds.contains(self.input.mouse_pos));
                 if mouse_outside {
                     self.popup_id = None;
                     self.popup_bounds = None;
@@ -253,13 +253,18 @@ impl UiContext {
     /// Get the current clip rectangle.
     #[inline]
     pub fn clip_rect(&self) -> Rect2D {
-        *self.clip_stack.last().unwrap_or(&Rect2D::from_size(self.screen_size))
+        *self
+            .clip_stack
+            .last()
+            .unwrap_or(&Rect2D::from_size(self.screen_size))
     }
 
     /// Push a new clip rectangle (intersection with current).
     pub fn push_clip(&mut self, rect: Rect2D) {
         let current = self.clip_rect();
-        let clipped = current.intersection(&rect).unwrap_or(Rect2D::new(Vec2::new(0.0, 0.0), Vec2::new(0.0, 0.0)));
+        let clipped = current
+            .intersection(&rect)
+            .unwrap_or(Rect2D::new(Vec2::new(0.0, 0.0), Vec2::new(0.0, 0.0)));
         self.clip_stack.push(clipped);
         self.draw_list.set_clip(clipped);
     }
@@ -322,7 +327,13 @@ impl UiContext {
     }
 
     /// Draw a rectangle with a border.
-    pub fn draw_rect_border(&mut self, bounds: Rect2D, fill: Color, border: Color, border_width: f32) {
+    pub fn draw_rect_border(
+        &mut self,
+        bounds: Rect2D,
+        fill: Color,
+        border: Color,
+        border_width: f32,
+    ) {
         self.draw_rect(bounds, fill);
 
         // Top
@@ -386,7 +397,10 @@ impl UiContext {
 
         for c in text.chars() {
             // Try to get cached glyph (scale font size by DPI factor)
-            if let Some(glyph) = self.fonts.get_or_rasterize(self.current_font, c, size, self.scale_factor) {
+            if let Some(glyph) =
+                self.fonts
+                    .get_or_rasterize(self.current_font, c, size, self.scale_factor)
+            {
                 // Skip empty glyphs (spaces)
                 if glyph.size.x() == 0.0 || glyph.size.y() == 0.0 {
                     cursor_x += glyph.advance;
@@ -396,16 +410,10 @@ impl UiContext {
                 // Calculate glyph position:
                 // - cursor_x + glyph.offset_x = left edge of glyph
                 // - baseline_y - glyph.top_offset = top edge of glyph (top_offset is distance up from baseline)
-                let glyph_pos = Vec2::new(
-                    cursor_x + glyph.offset_x,
-                    baseline_y - glyph.top_offset,
-                );
+                let glyph_pos = Vec2::new(cursor_x + glyph.offset_x, baseline_y - glyph.top_offset);
 
                 // Snap glyph position to pixel grid for crisp rendering
-                let snapped_pos = Vec2::new(
-                    glyph_pos.x().round(),
-                    glyph_pos.y().round(),
-                );
+                let snapped_pos = Vec2::new(glyph_pos.x().round(), glyph_pos.y().round());
 
                 let bounds = Rect2D::from_origin_size(snapped_pos, glyph.size);
 
@@ -431,7 +439,8 @@ impl UiContext {
 
     /// Measure text dimensions in logical pixels.
     pub fn measure_text(&self, text: &str, size: f32) -> Vec2 {
-        self.fonts.measure_text(self.current_font, text, size, self.scale_factor)
+        self.fonts
+            .measure_text(self.current_font, text, size, self.scale_factor)
     }
 
     /// Get the font ascent (baseline to font top) in logical pixels.
@@ -470,6 +479,59 @@ impl UiContext {
         self.draw_text(icon_str, position, color, size);
 
         self.current_font = prev_font;
+    }
+
+    /// Draw an icon aligned with adjacent text.
+    ///
+    /// This method uses the reference font's ascent for baseline positioning,
+    /// ensuring icons align properly with text rendered in that font.
+    /// Use this when drawing icons alongside regular text.
+    ///
+    /// # Arguments
+    /// * `icon` - The icon character (use constants from `icons::ForkAwesome`)
+    /// * `position` - Top-left position (same as you'd use for adjacent text)
+    /// * `size` - Font size in pixels
+    /// * `color` - RGBA color
+    /// * `ref_font` - Reference font to use for baseline alignment (usually FontId::DEFAULT)
+    pub fn draw_icon_aligned(
+        &mut self,
+        icon: char,
+        position: Vec2,
+        size: f32,
+        color: Color,
+        ref_font: FontId,
+    ) {
+        // Get text font metrics
+        let text_ascent = self
+            .fonts
+            .get_font_metrics(ref_font, size, self.scale_factor)
+            .map(|(a, _, _)| a)
+            .unwrap_or(size * 0.75);
+
+        // Get icon's actual rendered size
+        let icon_glyph = self
+            .fonts
+            .get_or_rasterize(FontId::ICON, icon, size, self.scale_factor);
+
+        if let Some(glyph) = icon_glyph {
+            if glyph.size.x() > 0.0 && glyph.size.y() > 0.0 {
+                // Text centerline: position.y + text_ascent/2
+                // Icon center should match: icon_top + icon_height/2 = text_center
+                let text_center_y = position.y() + text_ascent * 0.5;
+                let icon_top_y = text_center_y - glyph.size.y() * 0.5;
+
+                let glyph_pos =
+                    Vec2::new((position.x() + glyph.offset_x).round(), icon_top_y.round());
+                let bounds = katla_math::Rect2D::from_origin_size(glyph_pos, glyph.size);
+                self.draw_list.set_clip(self.clip_rect());
+                self.draw_list.add_textured_rect(
+                    bounds,
+                    glyph.uv_rect,
+                    color,
+                    TextureId::FONT_ATLAS,
+                );
+            }
+        }
     }
 
     /// Draw an icon centered within bounds.
@@ -532,7 +594,10 @@ impl UiContext {
 
     /// Move cursor to next line.
     pub fn newline(&mut self) {
-        self.cursor = Vec2::new(0.0, self.cursor.y() + self.row_height + self.style.item_spacing);
+        self.cursor = Vec2::new(
+            0.0,
+            self.cursor.y() + self.row_height + self.style.item_spacing,
+        );
         self.row_height = 0.0;
     }
 
@@ -689,13 +754,25 @@ impl UiContext {
             check_bounds.max.x() + 8.0,
             bounds.center().y() - text_size.y() * 0.5,
         );
-        self.draw_text(label, label_pos, self.style.text_color, self.style.font_size);
+        self.draw_text(
+            label,
+            label_pos,
+            self.style.text_color,
+            self.style.font_size,
+        );
 
         clicked
     }
 
     /// Draw a slider. Returns true if value changed.
-    pub fn slider(&mut self, id: &str, value: &mut f32, min: f32, max: f32, bounds: Rect2D) -> bool {
+    pub fn slider(
+        &mut self,
+        id: &str,
+        value: &mut f32,
+        min: f32,
+        max: f32,
+        bounds: Rect2D,
+    ) -> bool {
         let widget_id = self.generate_id(id);
 
         let hovered = self.update_hover(widget_id, bounds);
@@ -706,8 +783,8 @@ impl UiContext {
 
         if active {
             if self.input.mouse_down[crate::input::mouse_button::LEFT] {
-                let t = ((self.input.mouse_pos.x() - bounds.min.x()) / bounds.width())
-                    .clamp(0.0, 1.0);
+                let t =
+                    ((self.input.mouse_pos.x() - bounds.min.x()) / bounds.width()).clamp(0.0, 1.0);
                 let new_value = min + t * (max - min);
                 if (new_value - *value).abs() > 0.0001 {
                     *value = new_value;
@@ -763,12 +840,7 @@ impl UiContext {
     ///
     /// Returns true if the text was modified this frame.
     /// Handles keyboard input, cursor positioning, and selection.
-    pub fn text_input(
-        &mut self,
-        id: &str,
-        text: &mut String,
-        bounds: Rect2D,
-    ) -> bool {
+    pub fn text_input(&mut self, id: &str, text: &mut String, bounds: Rect2D) -> bool {
         let widget_id = self.generate_id(id);
         let hovered = self.update_hover(widget_id, bounds);
 
@@ -849,12 +921,7 @@ impl UiContext {
     /// Draw a multiline text area.
     ///
     /// Returns true if the text was modified this frame.
-    pub fn text_area(
-        &mut self,
-        id: &str,
-        text: &mut String,
-        bounds: Rect2D,
-    ) -> bool {
+    pub fn text_area(&mut self, id: &str, text: &mut String, bounds: Rect2D) -> bool {
         let widget_id = self.generate_id(id);
         let hovered = self.update_hover(widget_id, bounds);
 
@@ -893,9 +960,7 @@ impl UiContext {
 
         let mut y = bounds.min.y() + padding;
         for line in text.split('\n') {
-            if y + self.style.font_size > bounds.min.y() + padding
-                && y < bounds.max.y() - padding
-            {
+            if y + self.style.font_size > bounds.min.y() + padding && y < bounds.max.y() - padding {
                 self.draw_text(
                     line,
                     Vec2::new(bounds.min.x() + padding, y),
@@ -928,7 +993,12 @@ impl UiContext {
     /// If title is provided, draws a title bar at the top.
     /// Returns a WindowState for window information.
     /// Call `end_window()` after adding contents.
-    pub fn begin_window_with_title(&mut self, id: &str, title: Option<&str>, bounds: Rect2D) -> WindowState {
+    pub fn begin_window_with_title(
+        &mut self,
+        id: &str,
+        title: Option<&str>,
+        bounds: Rect2D,
+    ) -> WindowState {
         let window_id = self.generate_id(id);
 
         // Title bar height
@@ -939,10 +1009,8 @@ impl UiContext {
 
         // Draw title bar if provided
         if let Some(title_text) = title {
-            let title_bounds = Rect2D::from_origin_size(
-                bounds.min,
-                Vec2::new(bounds.width(), title_height),
-            );
+            let title_bounds =
+                Rect2D::from_origin_size(bounds.min, Vec2::new(bounds.width(), title_height));
             self.draw_rect(title_bounds, self.style.window_title_bg);
 
             // Draw title text (top-left positioning, centered vertically in title bar)
@@ -951,7 +1019,12 @@ impl UiContext {
                 bounds.min.x() + self.style.window_padding,
                 bounds.min.y() + (title_height - text_size.y()) * 0.5,
             );
-            self.draw_text(title_text, text_pos, self.style.text_color, self.style.font_size);
+            self.draw_text(
+                title_text,
+                text_pos,
+                self.style.text_color,
+                self.style.font_size,
+            );
         }
 
         // Draw border around entire window
@@ -964,10 +1037,7 @@ impl UiContext {
 
         // Content area starts below title bar
         let content_top = bounds.min.y() + title_height;
-        let content_bounds = Rect2D::new(
-            Vec2::new(bounds.min.x(), content_top),
-            bounds.max,
-        );
+        let content_bounds = Rect2D::new(Vec2::new(bounds.min.x(), content_top), bounds.max);
         self.push_clip(content_bounds);
 
         WindowState {
@@ -1006,13 +1076,20 @@ impl UiContext {
         self.draw_rect(bounds, bg_color);
 
         // Draw expand/collapse icon
-        let icon = if *open { ForkAwesome::CHEVRON_DOWN } else { ForkAwesome::CHEVRON_RIGHT };
+        let icon = if *open {
+            ForkAwesome::CHEVRON_DOWN
+        } else {
+            ForkAwesome::CHEVRON_RIGHT
+        };
         let icon_size = self.style.font_size;
-        let icon_pos = Vec2::new(
-            bounds.min.x() + 4.0,
-            bounds.center().y() - icon_size * 0.5,
+        let icon_pos = Vec2::new(bounds.min.x() + 4.0, bounds.center().y() - icon_size * 0.5);
+        self.draw_icon_aligned(
+            icon,
+            icon_pos,
+            icon_size,
+            self.style.text_color,
+            FontId::DEFAULT,
         );
-        self.draw_icon(icon, icon_pos, icon_size, self.style.text_color);
 
         // Draw label text after icon
         let text_size = self.measure_text(label, self.style.font_size);
@@ -1058,10 +1135,8 @@ impl UiContext {
         // Fill
         if progress_clamped > 0.0 {
             let fill_width = bounds.width() * progress_clamped;
-            let fill_bounds = Rect2D::from_origin_size(
-                bounds.min,
-                Vec2::new(fill_width, bounds.height()),
-            );
+            let fill_bounds =
+                Rect2D::from_origin_size(bounds.min, Vec2::new(fill_width, bounds.height()));
             self.draw_rect(fill_bounds, self.style.slider_grab);
         }
 
@@ -1116,15 +1191,29 @@ impl UiContext {
     ///
     /// The texture is stretched to fill the bounds.
     /// Use UV rect to display a portion of the texture.
-    pub fn image(&mut self, texture: crate::TextureId, bounds: Rect2D, uv: Option<Rect2D>, tint: Option<Color>) {
+    pub fn image(
+        &mut self,
+        texture: crate::TextureId,
+        bounds: Rect2D,
+        uv: Option<Rect2D>,
+        tint: Option<Color>,
+    ) {
         let uv_rect = uv.unwrap_or(Rect2D::new(Vec2::new(0.0, 0.0), Vec2::new(1.0, 1.0)));
         let color = tint.unwrap_or(Color::WHITE);
         self.draw_list.set_clip(self.clip_rect());
-        self.draw_list.add_textured_rect(bounds, uv_rect, color, texture);
+        self.draw_list
+            .add_textured_rect(bounds, uv_rect, color, texture);
     }
 
     /// Draw an image with a border (useful for viewport frames).
-    pub fn image_bordered(&mut self, texture: crate::TextureId, bounds: Rect2D, uv: Option<Rect2D>, tint: Option<Color>, border_color: Color) {
+    pub fn image_bordered(
+        &mut self,
+        texture: crate::TextureId,
+        bounds: Rect2D,
+        uv: Option<Rect2D>,
+        tint: Option<Color>,
+        border_color: Color,
+    ) {
         self.image(texture, bounds, uv, tint);
         self.draw_rect_border(bounds, Color::TRANSPARENT, border_color, 1.0);
     }
@@ -1148,22 +1237,24 @@ impl UiContext {
         if values.is_empty() {
             self.draw_rect(bounds, opts.bg_color);
             if let Some(label_text) = label {
-                let text_pos = Vec2::new(
-                    bounds.min.x() + 5.0,
-                    bounds.min.y() + 5.0,
+                let text_pos = Vec2::new(bounds.min.x() + 5.0, bounds.min.y() + 5.0);
+                self.draw_text(
+                    label_text,
+                    text_pos,
+                    self.style.text_color,
+                    self.style.font_size,
                 );
-                self.draw_text(label_text, text_pos, self.style.text_color, self.style.font_size);
             }
             return;
         }
 
         // Calculate min/max
-        let min_val = opts.min_value.unwrap_or_else(|| {
-            values.iter().cloned().fold(f32::INFINITY, f32::min)
-        });
-        let max_val = opts.max_value.unwrap_or_else(|| {
-            values.iter().cloned().fold(f32::NEG_INFINITY, f32::max)
-        });
+        let min_val = opts
+            .min_value
+            .unwrap_or_else(|| values.iter().cloned().fold(f32::INFINITY, f32::min));
+        let max_val = opts
+            .max_value
+            .unwrap_or_else(|| values.iter().cloned().fold(f32::NEG_INFINITY, f32::max));
 
         // Ensure we have a valid range
         let range = if (max_val - min_val).abs() < 0.001 {
@@ -1177,7 +1268,10 @@ impl UiContext {
         let padding = 3.0;
 
         let graph_bounds = Rect2D::new(
-            Vec2::new(bounds.min.x() + padding, bounds.min.y() + label_height + padding),
+            Vec2::new(
+                bounds.min.x() + padding,
+                bounds.min.y() + label_height + padding,
+            ),
             Vec2::new(bounds.max.x() - padding, bounds.max.y() - padding),
         );
 
@@ -1186,11 +1280,13 @@ impl UiContext {
 
         // 2. Draw label if provided
         if let Some(label_text) = label {
-            let text_pos = Vec2::new(
-                bounds.min.x() + 5.0,
-                bounds.min.y() + 2.0,
+            let text_pos = Vec2::new(bounds.min.x() + 5.0, bounds.min.y() + 2.0);
+            self.draw_text(
+                label_text,
+                text_pos,
+                self.style.text_color,
+                self.style.font_size,
             );
-            self.draw_text(label_text, text_pos, self.style.text_color, self.style.font_size);
         }
 
         // 3. Draw grid lines (horizontal)
@@ -1245,10 +1341,10 @@ impl UiContext {
                 // Create a quad: top-left, top-right, bottom-right, bottom-left
                 self.draw_list.add_convex_poly(
                     &[
-                        Vec2::new(p0.x(), p0.y()),      // top-left
-                        Vec2::new(p1.x(), p1.y()),      // top-right
-                        Vec2::new(p1.x(), bottom_y),    // bottom-right
-                        Vec2::new(p0.x(), bottom_y),    // bottom-left
+                        Vec2::new(p0.x(), p0.y()),   // top-left
+                        Vec2::new(p1.x(), p1.y()),   // top-right
+                        Vec2::new(p1.x(), bottom_y), // bottom-right
+                        Vec2::new(p0.x(), bottom_y), // bottom-left
                     ],
                     fill_color,
                 );
@@ -1260,7 +1356,12 @@ impl UiContext {
         // 6. Draw the line segments
         self.push_clip(graph_bounds);
         for i in 0..points.len().saturating_sub(1) {
-            self.draw_line(points[i], points[i + 1], opts.line_color, opts.line_thickness);
+            self.draw_line(
+                points[i],
+                points[i + 1],
+                opts.line_color,
+                opts.line_thickness,
+            );
         }
         self.pop_clip();
 
@@ -1400,7 +1501,9 @@ impl UiContext {
         let dropdown_id = self.generate_id(id);
 
         // Get or initialize open state
-        let is_open = self.storage.get(&dropdown_id)
+        let is_open = self
+            .storage
+            .get(&dropdown_id)
             .map(|s| matches!(s, WidgetState::DropdownOpen(true)))
             .unwrap_or(false);
 
@@ -1410,17 +1513,15 @@ impl UiContext {
         // Toggle on click
         if self.button_behavior(dropdown_id, bounds) {
             let new_open = !is_open;
-            self.storage.insert(dropdown_id, WidgetState::DropdownOpen(new_open));
+            self.storage
+                .insert(dropdown_id, WidgetState::DropdownOpen(new_open));
             if new_open {
                 self.popup_id = Some(dropdown_id);
                 self.popup_opened_this_frame = true;
                 // Set popup bounds immediately so click-outside check works
                 self.popup_bounds = Some(Rect2D::from_origin_size(
                     Vec2::new(bounds.min.x(), bounds.max.y()),
-                    Vec2::new(
-                        bounds.width().max(self.style.menu_min_width),
-                        200.0,
-                    ),
+                    Vec2::new(bounds.width().max(self.style.menu_min_width), 200.0),
                 ));
             } else {
                 self.popup_id = None;
@@ -1447,7 +1548,12 @@ impl UiContext {
             bounds.center().x() - text_size.x() * 0.5 - 10.0,
             bounds.center().y() - text_size.y() * 0.5,
         );
-        self.draw_text(label, text_pos, self.style.button_text, self.style.font_size);
+        self.draw_text(
+            label,
+            text_pos,
+            self.style.button_text,
+            self.style.font_size,
+        );
 
         // Draw dropdown icon
         let icon = ForkAwesome::CARET_DOWN;
@@ -1456,7 +1562,13 @@ impl UiContext {
             bounds.center().x() + text_size.x() * 0.5 + 2.0,
             bounds.center().y() - icon_size * 0.5,
         );
-        self.draw_icon(icon, icon_pos, icon_size, self.style.button_text);
+        self.draw_icon_aligned(
+            icon,
+            icon_pos,
+            icon_size,
+            self.style.button_text,
+            FontId::DEFAULT,
+        );
 
         // If open, prepare popup area
         if is_open {
@@ -1473,13 +1585,21 @@ impl UiContext {
 
             // Draw popup background with shadow
             let shadow_offset = Vec2::new(4.0, 4.0);
-            let shadow_bounds = Rect2D::new(popup_bounds.min + shadow_offset, popup_bounds.max + shadow_offset);
+            let shadow_bounds = Rect2D::new(
+                popup_bounds.min + shadow_offset,
+                popup_bounds.max + shadow_offset,
+            );
             self.draw_rect(shadow_bounds, self.style.popup_shadow);
             self.draw_rect(popup_bounds, self.style.popup_bg);
-            self.draw_rect_border(popup_bounds, Color::TRANSPARENT, self.style.popup_border, 1.0);
+            self.draw_rect_border(
+                popup_bounds,
+                Color::TRANSPARENT,
+                self.style.popup_border,
+                1.0,
+            );
 
             self.popup_bounds = Some(popup_bounds);
-            self.push_clip_absolute(popup_bounds);  // Absolute clip - render outside parent
+            self.push_clip_absolute(popup_bounds); // Absolute clip - render outside parent
             self.push_id(id);
 
             return true;
@@ -1504,7 +1624,9 @@ impl UiContext {
         let context_id = self.generate_id(id);
 
         // Get stored position
-        let pos = self.storage.get(&context_id)
+        let pos = self
+            .storage
+            .get(&context_id)
             .and_then(|s| {
                 if let WidgetState::ContextMenuPos(p) = s {
                     Some(*p)
@@ -1537,13 +1659,21 @@ impl UiContext {
 
             // Draw popup background with shadow
             let shadow_offset = Vec2::new(4.0, 4.0);
-            let shadow_bounds = Rect2D::new(popup_bounds.min + shadow_offset, popup_bounds.max + shadow_offset);
+            let shadow_bounds = Rect2D::new(
+                popup_bounds.min + shadow_offset,
+                popup_bounds.max + shadow_offset,
+            );
             self.draw_rect(shadow_bounds, self.style.popup_shadow);
             self.draw_rect(popup_bounds, self.style.popup_bg);
-            self.draw_rect_border(popup_bounds, Color::TRANSPARENT, self.style.popup_border, 1.0);
+            self.draw_rect_border(
+                popup_bounds,
+                Color::TRANSPARENT,
+                self.style.popup_border,
+                1.0,
+            );
 
             self.popup_bounds = Some(popup_bounds);
-            self.push_clip_absolute(popup_bounds);  // Absolute clip - render outside parent
+            self.push_clip_absolute(popup_bounds); // Absolute clip - render outside parent
             self.push_id(id);
 
             return true;
@@ -1568,7 +1698,10 @@ impl UiContext {
 
         // Check for right-click
         if self.input.mouse_pressed[crate::input::mouse_button::RIGHT] {
-            self.storage.insert(context_id, WidgetState::ContextMenuPos(self.input.mouse_pos));
+            self.storage.insert(
+                context_id,
+                WidgetState::ContextMenuPos(self.input.mouse_pos),
+            );
             self.popup_id = Some(context_id);
             self.popup_opened_this_frame = true;
             return true;
@@ -1587,7 +1720,8 @@ impl UiContext {
     pub fn close_current_popup(&mut self) {
         // Mark any dropdown as closed
         if let Some(popup_id) = self.popup_id {
-            self.storage.insert(popup_id, WidgetState::DropdownOpen(false));
+            self.storage
+                .insert(popup_id, WidgetState::DropdownOpen(false));
         }
         self.popup_id = None;
         self.popup_bounds = None;
@@ -1602,7 +1736,9 @@ impl UiContext {
         let combo_id = self.generate_id(id);
 
         // Get or initialize open state
-        let is_open = self.storage.get(&combo_id)
+        let is_open = self
+            .storage
+            .get(&combo_id)
             .map(|s| matches!(s, WidgetState::DropdownOpen(true)))
             .unwrap_or(false);
 
@@ -1612,7 +1748,8 @@ impl UiContext {
         // Toggle on click
         if self.button_behavior(combo_id, bounds) {
             let new_open = !is_open;
-            self.storage.insert(combo_id, WidgetState::DropdownOpen(new_open));
+            self.storage
+                .insert(combo_id, WidgetState::DropdownOpen(new_open));
             if new_open {
                 self.popup_id = Some(combo_id);
                 self.popup_opened_this_frame = true;
@@ -1642,7 +1779,12 @@ impl UiContext {
             bounds.min.x() + self.style.menu_padding,
             bounds.center().y() - text_size.y() * 0.5,
         );
-        self.draw_text(preview, text_pos, self.style.combo_text, self.style.font_size);
+        self.draw_text(
+            preview,
+            text_pos,
+            self.style.combo_text,
+            self.style.font_size,
+        );
 
         // Draw dropdown icon
         let icon = ForkAwesome::CARET_DOWN;
@@ -1651,7 +1793,13 @@ impl UiContext {
             bounds.max.x() - icon_size - self.style.menu_padding,
             bounds.center().y() - icon_size * 0.5,
         );
-        self.draw_icon(icon, icon_pos, icon_size, self.style.combo_text);
+        self.draw_icon_aligned(
+            icon,
+            icon_pos,
+            icon_size,
+            self.style.combo_text,
+            FontId::DEFAULT,
+        );
 
         // If open, prepare popup area
         if is_open {
@@ -1668,13 +1816,21 @@ impl UiContext {
 
             // Draw popup background with shadow
             let shadow_offset = Vec2::new(4.0, 4.0);
-            let shadow_bounds = Rect2D::new(popup_bounds.min + shadow_offset, popup_bounds.max + shadow_offset);
+            let shadow_bounds = Rect2D::new(
+                popup_bounds.min + shadow_offset,
+                popup_bounds.max + shadow_offset,
+            );
             self.draw_rect(shadow_bounds, self.style.popup_shadow);
             self.draw_rect(popup_bounds, self.style.popup_bg);
-            self.draw_rect_border(popup_bounds, Color::TRANSPARENT, self.style.popup_border, 1.0);
+            self.draw_rect_border(
+                popup_bounds,
+                Color::TRANSPARENT,
+                self.style.popup_border,
+                1.0,
+            );
 
             self.popup_bounds = Some(popup_bounds);
-            self.push_clip_absolute(popup_bounds);  // Absolute clip - render outside parent
+            self.push_clip_absolute(popup_bounds); // Absolute clip - render outside parent
             self.push_id(id);
 
             return true;

@@ -120,7 +120,10 @@ pub fn render_frame(app: &mut Application) {
     let mut draw_list = DrawList::new();
 
     // Query all drawable entities
-    for (_entity, transform, drawable) in app.world.query::<(&TransformComponent, &DrawableComponent)>() {
+    for (_entity, transform, drawable) in app
+        .world
+        .query::<(&TransformComponent, &DrawableComponent)>()
+    {
         // Get the model matrix and convert to array
         let model_matrix = transform.transform.make_mat4();
         let model_array: [f32; 16] = model_matrix.to_array();
