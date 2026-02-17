@@ -1251,10 +1251,9 @@ impl EditorUI {
         }
 
         // Click outside to close (but not while dragging)
-        if !self.dragging_panel
-            && ui.input.mouse_clicked(mouse_button::LEFT)
-            && !ui.is_hovered(panel_bounds)
-        {
+        // Use input.is_hovered directly to bypass popup_bounds and active_id checks
+        let mouse_in_panel = ui.input.is_hovered(panel_bounds);
+        if !self.dragging_panel && ui.input.mouse_clicked(mouse_button::LEFT) && !mouse_in_panel {
             self.show_preferences = false;
             self.preferences_panel_pos = None;
         }
