@@ -92,7 +92,7 @@ impl ApplicationHandler for Application {
                             width: 800.0,
                             height: 600.0,
                         })
-                        .with_maximized(false),
+                        .with_maximized(true),
                 )
                 .unwrap();
 
