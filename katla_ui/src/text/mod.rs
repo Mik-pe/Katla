@@ -47,8 +47,11 @@ pub struct CachedGlyph {
     pub uv_rect: Rect2D,
     /// Size of the glyph in pixels.
     pub size: Vec2,
-    /// Offset from cursor position to glyph's top-left.
-    pub offset: Vec2,
+    /// Horizontal offset from cursor position to glyph's left edge (left side bearing).
+    pub offset_x: f32,
+    /// Distance from baseline to top of glyph bitmap in screen coords (y-down).
+    /// This is positive and represents how far up from baseline the top of the glyph is.
+    pub top_offset: f32,
     /// Font ascender for baseline alignment.
     pub ascender: f32,
     /// Horizontal advance to the next character.
@@ -68,8 +71,9 @@ struct RasterizedGlyph {
     pub height: usize,
     /// Horizontal offset (left side bearing).
     pub offset_x: f32,
-    /// Vertical offset from baseline (negative = below baseline).
-    pub offset_y: f32,
+    /// Distance from baseline to top of glyph bitmap in screen coords.
+    /// Positive value - how far up from baseline the top edge is.
+    pub top_offset: f32,
     /// Font ascender for consistent top alignment.
     pub ascender: f32,
     /// Horizontal advance.
@@ -254,16 +258,26 @@ impl FontSystem {
         });
 
         // Convert physical pixel metrics to logical pixels for UI positioning
+        //
+        // ab_glyph coordinate system (y-UP):
+        // - Glyph position (0,0) is at baseline
+        // - bounds.min.y is the TOP of the glyph relative to baseline
+        // - For glyphs extending above baseline (like 'A'), bounds.min.y is NEGATIVE
+        //
+        // Screen coordinate system (y-DOWN):
+        // - top_offset = distance from baseline UP to top of glyph
+        // - Since bounds.min.y is negative when above baseline: top_offset = -bounds.min.y
+        let top_offset = -bounds.min.y / scale_factor;
+
         let rasterized = RasterizedGlyph {
             c,
             pixels,
             width,
             height,
-            // ab_glyph's bounds min is the top-left corner offset (convert to logical)
+            // ab_glyph's bounds.min.x is the left edge offset from cursor (left side bearing)
             offset_x: bounds.min.x / scale_factor,
-            // ab_glyph y-axis is inverted compared to fontdue:
-            // bounds.min.y is the top of the glyph relative to baseline
-            offset_y: bounds.min.y / scale_factor,
+            // Distance from baseline to top of glyph (positive in screen y-down coords)
+            top_offset,
             ascender: ascender / scale_factor,
             advance: advance / scale_factor,
         };
@@ -288,7 +302,8 @@ impl FontSystem {
             return Some(CachedGlyph {
                 uv_rect: Rect2D::new(Vec2::new(0.0, 0.0), Vec2::new(0.0, 0.0)),
                 size: Vec2::new(0.0, 0.0),
-                offset: Vec2::new(glyph.offset_x, glyph.offset_y),
+                offset_x: glyph.offset_x,
+                top_offset: glyph.top_offset,
                 ascender: glyph.ascender,
                 advance: glyph.advance,
             });
@@ -359,7 +374,8 @@ impl FontSystem {
                 Vec2::new(uv_max_x, uv_max_y),
             ),
             size: Vec2::new(logical_width, logical_height),
-            offset: Vec2::new(glyph.offset_x, glyph.offset_y),
+            offset_x: glyph.offset_x,
+            top_offset: glyph.top_offset,
             ascender: glyph.ascender,
             advance: glyph.advance,
         })

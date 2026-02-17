@@ -378,8 +378,8 @@ impl UiContext {
     /// This is the most intuitive API for UI work.
     pub fn draw_text(&mut self, text: &str, position: Vec2, color: Color, size: f32) {
         let mut cursor_x = position.x();
-        // Convert from top-left to baseline: baseline is ~75% down from top
-        // (accounts for ascenders - most letters don't go above 75% of line height)
+        // Convert from top-left to baseline: baseline is at position.y + ascender
+        // The ascender is the distance from baseline to font top
         let baseline_y = position.y() + size * 0.75;
 
         for c in text.chars() {
@@ -391,16 +391,12 @@ impl UiContext {
                     continue;
                 }
 
-                // Calculate glyph position using fontdue's bitmap metrics:
-                // glyph.offset.x() = xmin (left edge offset from cursor)
-                // glyph.offset.y() = ymin (bottom edge offset from baseline, negative = below)
-                // glyph.size.y() = bitmap height
-                //
-                // For screen coords (y-down), the TOP of the bitmap is at:
-                // baseline_y - ymin - height (convert from y-up and move up by height)
+                // Calculate glyph position:
+                // - cursor_x + glyph.offset_x = left edge of glyph
+                // - baseline_y - glyph.top_offset = top edge of glyph (top_offset is distance up from baseline)
                 let glyph_pos = Vec2::new(
-                    cursor_x + glyph.offset.x(),
-                    baseline_y - glyph.offset.y() - glyph.size.y(),
+                    cursor_x + glyph.offset_x,
+                    baseline_y - glyph.top_offset,
                 );
 
                 // Snap glyph position to pixel grid for crisp rendering
