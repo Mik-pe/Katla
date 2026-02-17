@@ -408,6 +408,8 @@ impl UiContext {
     /// `position` is the TOP-LEFT of the text bounding box.
     /// This is the most intuitive API for UI work.
     pub fn draw_text(&mut self, text: &str, position: Vec2, color: Color, size: f32) {
+        use crate::text::SubpixelBin;
+
         let mut cursor_x = position.x();
 
         // Get the actual font ascent for proper baseline positioning
@@ -419,7 +421,7 @@ impl UiContext {
             // Try to get cached glyph (scale font size by DPI factor)
             if let Some(glyph) =
                 self.fonts
-                    .get_or_rasterize(self.current_font, c, size, self.scale_factor)
+                    .get_or_rasterize(self.current_font, c, size, self.scale_factor, SubpixelBin::Zero)
             {
                 // Skip empty glyphs (spaces)
                 if glyph.size.x() == 0.0 || glyph.size.y() == 0.0 {
@@ -552,7 +554,7 @@ impl UiContext {
         // Get icon's actual rendered size
         let icon_glyph = self
             .fonts
-            .get_or_rasterize(FontId::ICON, icon, size, self.scale_factor);
+            .get_or_rasterize(FontId::ICON, icon, size, self.scale_factor, crate::text::SubpixelBin::Zero);
 
         if let Some(glyph) = icon_glyph {
             if glyph.size.x() > 0.0 && glyph.size.y() > 0.0 {
