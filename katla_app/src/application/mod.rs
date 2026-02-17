@@ -361,8 +361,11 @@ impl ApplicationHandler for Application {
             let binding = InputBinding::Mouse(mouse_combo);
 
             if let Some(action) = self.input_mapper.get_action(&binding) {
-                let pressed = matches!(state, ElementState::Pressed);
-                self.world.get_input_mut().set_action_state(action, pressed);
+                // Only send mouse input to game when viewport is focused
+                if self.editor_ui.focused_panel == crate::ui::FocusedPanel::Viewport {
+                    let pressed = matches!(state, ElementState::Pressed);
+                    self.world.get_input_mut().set_action_state(action, pressed);
+                }
             }
 
             let ui_button = match button {
@@ -441,8 +444,11 @@ impl ApplicationHandler for Application {
                         let binding = InputBinding::Keyboard(key_combo);
 
                         if let Some(action) = self.input_mapper.get_action(&binding) {
-                            let pressed = matches!(event.state, ElementState::Pressed);
-                            self.world.get_input_mut().set_action_state(action, pressed);
+                            // Only send keyboard input to game when viewport is focused
+                            if self.editor_ui.focused_panel == crate::ui::FocusedPanel::Viewport {
+                                let pressed = matches!(event.state, ElementState::Pressed);
+                                self.world.get_input_mut().set_action_state(action, pressed);
+                            }
                         }
 
                         let ui_key = Self::winit_to_ui_key(keycode);
@@ -456,10 +462,13 @@ impl ApplicationHandler for Application {
                         }
 
                         if event.state == ElementState::Pressed {
-                            match keycode {
-                                KeyCode::Escape => event_loop.exit(),
-                                KeyCode::KeyT => self.stage_upload = true,
-                                _ => {}
+                            // Only process game-specific keys when viewport is focused
+                            if self.editor_ui.focused_panel == crate::ui::FocusedPanel::Viewport {
+                                match keycode {
+                                    KeyCode::Escape => event_loop.exit(),
+                                    KeyCode::KeyT => self.stage_upload = true,
+                                    _ => {}
+                                }
                             }
                         }
                     }

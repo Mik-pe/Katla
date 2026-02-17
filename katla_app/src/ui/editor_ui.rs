@@ -12,6 +12,7 @@ use katla_math::{Color, Rect2D, Vec2, Vec3};
 use katla_ui::{input::mouse_button, DrawList, FontId, FontSize, ForkAwesome, UiContext};
 use std::collections::HashSet;
 
+use super::asset_browser::AssetBrowserState;
 use super::theme::Theme;
 
 /// Model types that can be spawned.
@@ -130,6 +131,24 @@ pub enum EditorAction {
     SetFontScale(f32),
 }
 
+/// Which panel is currently focused (receives input).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum FocusedPanel {
+    /// No panel focused (default).
+    #[default]
+    None,
+    /// Game viewport - game receives input.
+    Viewport,
+    /// Hierarchy panel.
+    Hierarchy,
+    /// Inspector panel.
+    Inspector,
+    /// Asset browser panel.
+    AssetBrowser,
+    /// Toolbar.
+    Toolbar,
+}
+
 /// Game Engine Editor UI state.
 pub struct EditorUI {
     /// Whether the editor is visible.
@@ -176,6 +195,10 @@ pub struct EditorUI {
     expanded_entities: HashSet<EntityId>,
     /// Current color theme.
     pub theme: Theme,
+    /// Asset browser panel state.
+    pub asset_browser: AssetBrowserState,
+    /// Currently focused panel (receives keyboard input).
+    pub focused_panel: FocusedPanel,
 }
 
 impl EditorUI {
@@ -203,6 +226,8 @@ impl EditorUI {
             last_viewport_size: (800, 600), // Default size
             expanded_entities: HashSet::new(),
             theme: Theme::catppuccin(), // Default to Catppuccin because it's sick
+            asset_browser: AssetBrowserState::new(),
+            focused_panel: FocusedPanel::Viewport, // Default to viewport
         }
     }
 
@@ -383,6 +408,13 @@ impl EditorUI {
         let left_panel_width = 220.0;
         let right_panel_width = 280.0;
 
+        // Asset browser height (0 if collapsed)
+        let asset_browser_height = if self.asset_browser.collapsed {
+            28.0 // Just the header when collapsed
+        } else {
+            self.asset_browser.panel_height
+        };
+
         // === TOOLBAR (top) ===
         self.build_toolbar(ui, screen_size, toolbar_height, padding);
 
@@ -395,9 +427,9 @@ impl EditorUI {
             Color::new(0.3, 0.3, 0.3, 1.0),
         );
 
-        // Panel Y range (between toolbar and status bar, no gaps)
+        // Panel Y range (between toolbar and asset browser, no gaps)
         let panel_top = toolbar_height + 1.0; // Just after toolbar border
-        let panel_bottom = screen_size.y() - status_bar_height;
+        let panel_bottom = screen_size.y() - status_bar_height - asset_browser_height;
         let panel_height = panel_bottom - panel_top;
 
         // === LEFT PANEL: Entity Hierarchy ===
@@ -446,6 +478,22 @@ impl EditorUI {
         );
 
         self.build_viewport(ui, viewport_bounds);
+
+        // === ASSET BROWSER (bottom panel) ===
+        let asset_browser_bounds = Rect2D::from_origin_size(
+            Vec2::new(0.0, panel_bottom),
+            Vec2::new(screen_size.x(), asset_browser_height),
+        );
+        super::asset_browser::build_asset_browser(&mut self.asset_browser, ui, &self.theme, asset_browser_bounds, &mut self.focused_panel);
+
+        // Asset browser top border
+        ui.draw_rect(
+            Rect2D::from_origin_size(
+                Vec2::new(0.0, panel_bottom),
+                Vec2::new(screen_size.x(), 1.0),
+            ),
+            Color::new(0.3, 0.3, 0.3, 1.0),
+        );
 
         // Status bar top border (fills gap)
         ui.draw_rect(
@@ -630,9 +678,22 @@ impl EditorUI {
         bounds: Rect2D,
     ) {
         let theme = self.theme.clone(); // Clone to avoid borrow issues
-                                        // Panel background
+
+        // Focus this panel when clicked
+        if ui.is_hovered(bounds) && ui.input.mouse_clicked(katla_ui::input::mouse_button::LEFT) {
+            self.focused_panel = FocusedPanel::Hierarchy;
+        }
+
+        // Panel background
         ui.draw_rect(bounds, theme.panel_bg);
-        ui.draw_rect_border(bounds, theme.panel_bg, theme.panel_border, 1.0);
+
+        // Draw focus indicator border if focused
+        let is_focused = self.focused_panel == FocusedPanel::Hierarchy;
+        if is_focused {
+            ui.draw_rect_border(bounds, theme.panel_bg, theme.highlight, 2.0);
+        } else {
+            ui.draw_rect_border(bounds, theme.panel_bg, theme.panel_border, 1.0);
+        }
 
         // Panel header
         let header_height = 24.0;
@@ -825,9 +886,22 @@ impl EditorUI {
         bounds: Rect2D,
     ) {
         let theme = &self.theme;
+
+        // Focus this panel when clicked
+        if ui.is_hovered(bounds) && ui.input.mouse_clicked(katla_ui::input::mouse_button::LEFT) {
+            self.focused_panel = FocusedPanel::Inspector;
+        }
+
         // Panel background
         ui.draw_rect(bounds, theme.panel_bg);
-        ui.draw_rect_border(bounds, theme.panel_bg, theme.panel_border, 1.0);
+
+        // Draw focus indicator border if focused
+        let is_focused = self.focused_panel == FocusedPanel::Inspector;
+        if is_focused {
+            ui.draw_rect_border(bounds, theme.panel_bg, theme.highlight, 2.0);
+        } else {
+            ui.draw_rect_border(bounds, theme.panel_bg, theme.panel_border, 1.0);
+        }
 
         // Panel header
         let header_height = 24.0;
@@ -1010,6 +1084,19 @@ impl EditorUI {
 
     fn build_viewport(&mut self, ui: &mut UiContext, bounds: Rect2D) {
         let theme = &self.theme;
+
+        // Focus this panel when clicked
+        if ui.is_hovered(bounds) && ui.input.mouse_clicked(katla_ui::input::mouse_button::LEFT) {
+            self.focused_panel = FocusedPanel::Viewport;
+        }
+
+        // Draw focus indicator border if focused
+        let is_focused = self.focused_panel == FocusedPanel::Viewport;
+        if is_focused {
+            // Draw highlight border
+            ui.draw_rect_border(bounds, Color::TRANSPARENT, theme.highlight, 2.0);
+        }
+
         // Draw the viewport texture (rendered 3D scene)
         // UV x >= 1.0 signals viewport texture sampling in the shader
         // The shader subtracts 1.0 from x, so (1.0, 0.0) to (2.0, 1.0) maps to full texture
