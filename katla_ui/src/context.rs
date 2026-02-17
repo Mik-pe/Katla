@@ -37,6 +37,8 @@ pub struct UiContext {
     screen_size: Vec2,
     /// DPI scale factor (physical pixels per logical pixel).
     scale_factor: f32,
+    /// Font scale multiplier for accessibility (1.0 = 100%).
+    font_scale: f32,
     /// Stack of clipping rectangles.
     clip_stack: Vec<Rect2D>,
     /// Stack of widget IDs for nesting.
@@ -107,6 +109,7 @@ impl UiContext {
             current_font: FontId::DEFAULT,
             screen_size: Vec2::new(0.0, 0.0),
             scale_factor: 1.0,
+            font_scale: 1.0,
             clip_stack: Vec::new(),
             id_stack: Vec::new(),
             id_counter: 0,
@@ -130,6 +133,23 @@ impl UiContext {
             style,
             ..Self::new()
         }
+    }
+
+    /// Set the font scale multiplier for accessibility.
+    ///
+    /// Use 1.0 for default (100%), 1.25 for 125%, 2.0 for 200%, etc.
+    pub fn set_font_scale(&mut self, scale: f32) {
+        self.font_scale = scale.clamp(0.5, 3.0);
+    }
+
+    /// Get the current font scale multiplier.
+    pub fn font_scale(&self) -> f32 {
+        self.font_scale
+    }
+
+    /// Convert a FontSize to scaled pixels using current font_scale.
+    pub fn scaled_font_size(&self, size: crate::style::FontSize) -> f32 {
+        size.to_pixels_scaled(self.font_scale)
     }
 
     /// Begin a new frame.

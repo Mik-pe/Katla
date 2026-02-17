@@ -121,6 +121,11 @@ pub fn render_debug_ui(app: &mut Application, dt: f32) {
                 app.editor_ui.show_stats = !app.editor_ui.show_stats;
                 app.preferences.show_stats = app.editor_ui.show_stats;
             }
+            EditorAction::SetFontScale(scale) => {
+                app.editor_ui.set_font_scale(scale);
+                app.preferences.font_scale = scale;
+                info!("Font scale changed to: {:.0}%", scale * 100.0);
+            }
         }
     }
 

@@ -35,6 +35,14 @@ impl FontSize {
         self.to_points() * (4.0 / 3.0)
     }
 
+    /// Convert font size to pixels with a scale multiplier.
+    ///
+    /// Use this for accessibility/UI scaling.
+    #[inline]
+    pub fn to_pixels_scaled(self, scale: f32) -> f32 {
+        self.to_pixels() * scale
+    }
+
     /// Get font size in points.
     #[inline]
     pub fn to_points(self) -> f32 {

@@ -87,10 +87,11 @@ impl ApplicationBuilder {
         let preferences = Preferences::load();
         let theme = Theme::by_name(&preferences.theme).unwrap_or_default();
         log::info!(
-            "Loaded preferences: theme={}, show_grid={}, show_stats={}",
+            "Loaded preferences: theme={}, show_grid={}, show_stats={}, font_scale={}",
             preferences.theme,
             preferences.show_grid,
-            preferences.show_stats
+            preferences.show_stats,
+            preferences.font_scale
         );
 
         // Create UI context and load default font
@@ -182,7 +183,13 @@ impl ApplicationBuilder {
             skeleton_buffers: HashMap::new(),
             ui_context,
             debug_overlay: crate::ui::DebugOverlay::new(),
-            editor_ui: crate::ui::EditorUI::with_theme(theme),
+            editor_ui: {
+                let mut editor = crate::ui::EditorUI::with_theme(theme);
+                editor.show_grid = preferences.show_grid;
+                editor.show_stats = preferences.show_stats;
+                editor.set_font_scale(preferences.font_scale);
+                editor
+            },
             use_editor_ui: true, // Default to editor UI mode
             preferences,
             scale_factor: 1.0, // Will be updated when window is created

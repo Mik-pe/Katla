@@ -22,6 +22,8 @@ pub struct Preferences {
     pub show_grid: bool,
     /// Show the stats panel.
     pub show_stats: bool,
+    /// Font scale multiplier (1.0 = 100%, 1.25 = 125%, etc.)
+    pub font_scale: f32,
 }
 
 impl Default for Preferences {
@@ -30,6 +32,7 @@ impl Default for Preferences {
             theme: "catppuccin".to_string(),
             show_grid: true,
             show_stats: true,
+            font_scale: 1.0,
         }
     }
 }
@@ -72,7 +75,10 @@ impl Preferences {
     /// Save preferences to disk.
     pub fn save(&self) -> io::Result<()> {
         let config_dir = Self::config_dir().ok_or_else(|| {
-            io::Error::new(io::ErrorKind::NotFound, "Could not determine config directory")
+            io::Error::new(
+                io::ErrorKind::NotFound,
+                "Could not determine config directory",
+            )
         })?;
 
         // Create the config directory if it doesn't exist
@@ -82,7 +88,10 @@ impl Preferences {
         }
 
         let path = Self::file_path().ok_or_else(|| {
-            io::Error::new(io::ErrorKind::NotFound, "Could not determine preferences file path")
+            io::Error::new(
+                io::ErrorKind::NotFound,
+                "Could not determine preferences file path",
+            )
         })?;
 
         let content = self.to_toml();
@@ -125,6 +134,10 @@ impl Preferences {
                     "show_stats" => {
                         prefs.show_stats = value.parse().unwrap_or(true);
                     }
+                    "font_scale" => {
+                        let scale: f32 = value.parse().unwrap_or(1.0);
+                        prefs.font_scale = scale.clamp(0.5, 3.0);
+                    }
                     _ => {
                         debug!("Unknown preference key: {}", key);
                     }
@@ -149,8 +162,11 @@ show_grid = {}
 
 # Show the stats panel
 show_stats = {}
+
+# Font scale multiplier (0.5 = 50%, 1.0 = 100%, 2.0 = 200%)
+font_scale = {}
 "#,
-            self.theme, self.show_grid, self.show_stats
+            self.theme, self.show_grid, self.show_stats, self.font_scale
         )
     }
 }
@@ -165,6 +181,7 @@ mod tests {
         assert_eq!(prefs.theme, "catppuccin");
         assert!(prefs.show_grid);
         assert!(prefs.show_stats);
+        assert_eq!(prefs.font_scale, 1.0);
     }
 
     #[test]
@@ -173,11 +190,13 @@ mod tests {
 theme = "nord"
 show_grid = false
 show_stats = true
+font_scale = 1.25
 "#;
         let prefs = Preferences::parse_toml(content);
         assert_eq!(prefs.theme, "nord");
         assert!(!prefs.show_grid);
         assert!(prefs.show_stats);
+        assert_eq!(prefs.font_scale, 1.25);
     }
 
     #[test]
@@ -186,10 +205,12 @@ show_stats = true
             theme: "dracula".to_string(),
             show_grid: false,
             show_stats: true,
+            font_scale: 1.5,
         };
         let toml = prefs.to_toml();
         assert!(toml.contains("theme = \"dracula\""));
         assert!(toml.contains("show_grid = false"));
+        assert!(toml.contains("font_scale = 1.5"));
     }
 
     #[test]
