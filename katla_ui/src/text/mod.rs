@@ -2,10 +2,50 @@
 //!
 //! This module provides font loading, glyph caching, and text rendering
 //! using the `ab_glyph` library for rasterization.
+//!
+//! # Subpixel Positioning
+//!
+//! For crisp text at any position, we use 4 subpixel bins (0.0, 0.25, 0.5, 0.75)
+//! for horizontal positioning. Each bin caches a separate version of the glyph,
+//! shifted by the subpixel offset. This approach is inspired by egui and cosmic-text.
+//!
+//! # Gamma Correction
+//!
+//! Glyph coverage values are gamma-corrected for perceptually uniform text weight.
+//! Without gamma correction, text can appear too thin (light fonts) or too thick
+//! (dark fonts on light backgrounds).
 
 use ab_glyph::{Font, FontRef, Glyph, PxScale, ScaleFont};
 use katla_math::{Rect2D, Vec2};
 use std::collections::HashMap;
+
+/// Gamma factor for text rendering.
+///
+/// sRGB text on sRGB background needs approximately 1.45 gamma adjustment
+/// for perceptually uniform blending. This is derived from the sRGB gamma
+/// of ~2.2: sqrt(2.2) ≈ 1.48, commonly rounded to 1.45.
+const GAMMA_FACTOR: f32 = 1.45;
+
+/// Convert coverage value to perceptually uniform alpha.
+///
+/// When rendering text, the coverage value from the rasterizer represents
+/// the fraction of the pixel covered by the glyph. For correct blending on
+/// sRGB displays, we need to convert this to a perceptually uniform alpha.
+///
+/// This function applies gamma correction: alpha = coverage^(1/gamma)
+#[inline]
+fn coverage_to_alpha(coverage: f32) -> f32 {
+    coverage.powf(1.0 / GAMMA_FACTOR)
+}
+
+/// Convert perceptually uniform alpha back to coverage (inverse of above).
+///
+/// Used when reading back alpha values for calculations.
+#[inline]
+#[allow(dead_code)]
+fn alpha_to_coverage(alpha: f32) -> f32 {
+    alpha.powf(GAMMA_FACTOR)
+}
 
 /// A handle to a loaded font.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -16,6 +56,64 @@ impl FontId {
     pub const DEFAULT: FontId = FontId(0);
     /// Icon font ID (for ForkAwesome or similar icon fonts).
     pub const ICON: FontId = FontId(1);
+}
+
+/// Subpixel bin for horizontal glyph positioning.
+///
+/// We use 4 bins representing 0.0, 0.25, 0.5, and 0.75 subpixel offsets.
+/// This allows crisp text rendering at any fractional X position by caching
+/// 4 versions of each glyph, each shifted by the corresponding subpixel offset.
+///
+/// This approach is used by egui and cosmic-text for high-quality text rendering.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum SubpixelBin {
+    /// 0.0 subpixel offset
+    Zero,
+    /// 0.25 subpixel offset
+    One,
+    /// 0.5 subpixel offset
+    Two,
+    /// 0.75 subpixel offset
+    Three,
+}
+
+impl SubpixelBin {
+    /// Create a subpixel bin from a fractional position.
+    ///
+    /// Returns the integer floor position and the subpixel bin.
+    /// For example, `new(10.3)` returns `(10, SubpixelBin::One)`.
+    #[inline]
+    pub fn new(pos: f32) -> (i32, Self) {
+        // Handle negative positions correctly
+        let floor = pos.floor() as i32;
+        let frac = pos - pos.floor();
+
+        // Map fractional part [0, 1) to bins:
+        // [0.0, 0.25) -> Zero (0.0)
+        // [0.25, 0.5) -> One (0.25)
+        // [0.5, 0.75) -> Two (0.5)
+        // [0.75, 1.0) -> Three (0.75)
+        let bin = match (frac * 4.0) as u32 {
+            0 => SubpixelBin::Zero,
+            1 => SubpixelBin::One,
+            2 => SubpixelBin::Two,
+            _ => SubpixelBin::Three,
+        };
+        (floor, bin)
+    }
+
+    /// Get the subpixel offset for this bin.
+    ///
+    /// Returns 0.0, 0.25, 0.5, or 0.75 depending on the bin.
+    #[inline]
+    pub fn as_offset(&self) -> f32 {
+        match self {
+            SubpixelBin::Zero => 0.0,
+            SubpixelBin::One => 0.25,
+            SubpixelBin::Two => 0.5,
+            SubpixelBin::Three => 0.75,
+        }
+    }
 }
 
 /// Font size stored as fixed-point for hashing.
@@ -86,8 +184,8 @@ pub struct FontSystem {
     fonts: HashMap<FontId, FontRef<'static>>,
     /// Next font ID.
     next_font_id: u32,
-    /// Glyph cache: (font_id, char, size_key, scale_key) -> cached glyph.
-    glyph_cache: HashMap<(FontId, char, FontSizeKey, ScaleFactorKey), CachedGlyph>,
+    /// Glyph cache: (font_id, char, size_key, scale_key, subpixel_bin) -> cached glyph.
+    glyph_cache: HashMap<(FontId, char, FontSizeKey, ScaleFactorKey, SubpixelBin), CachedGlyph>,
     /// Texture atlas width.
     atlas_width: u32,
     /// Texture atlas height.
@@ -109,15 +207,19 @@ pub struct FontSystem {
 }
 
 impl FontSystem {
-    /// Default atlas size.
-    const DEFAULT_ATLAS_SIZE: u32 = 512;
-    /// Maximum atlas size.
-    const MAX_ATLAS_SIZE: u32 = 2048;
+    /// Default atlas width.
+    const DEFAULT_ATLAS_WIDTH: u32 = 256;
+    /// Default atlas height.
+    const DEFAULT_ATLAS_HEIGHT: u32 = 256;
+    /// Maximum atlas width (egui-style: wide atlas for efficient glyph packing).
+    const MAX_ATLAS_WIDTH: u32 = 8192;
+    /// Maximum atlas height.
+    const MAX_ATLAS_HEIGHT: u32 = 8192;
 
     /// Create a new font system.
     pub fn new() -> Self {
         let mut atlas_data =
-            vec![0; (Self::DEFAULT_ATLAS_SIZE * Self::DEFAULT_ATLAS_SIZE * 4) as usize];
+            vec![0; (Self::DEFAULT_ATLAS_WIDTH * Self::DEFAULT_ATLAS_HEIGHT * 4) as usize];
 
         // Reserve first pixel as white for solid color rendering
         // UV (0,0) will sample this white pixel, so vertex color passes through
@@ -130,8 +232,8 @@ impl FontSystem {
             fonts: HashMap::new(),
             next_font_id: 0,
             glyph_cache: HashMap::new(),
-            atlas_width: Self::DEFAULT_ATLAS_SIZE,
-            atlas_height: Self::DEFAULT_ATLAS_SIZE,
+            atlas_width: Self::DEFAULT_ATLAS_WIDTH,
+            atlas_height: Self::DEFAULT_ATLAS_HEIGHT,
             atlas_cursor_x: 1, // Start after white pixel
             atlas_cursor_y: 0,
             atlas_row_height: 0,
@@ -212,18 +314,23 @@ impl FontSystem {
     /// * `c` - The character to rasterize
     /// * `logical_size` - Font size in logical pixels
     /// * `scale_factor` - DPI scale factor (physical pixels per logical pixel)
+    /// * `subpixel_bin` - Subpixel position bin for crisp fractional positioning
     pub fn get_or_rasterize(
         &mut self,
         font_id: FontId,
         c: char,
         logical_size: f32,
         scale_factor: f32,
+        subpixel_bin: SubpixelBin,
     ) -> Option<CachedGlyph> {
         let size_key = FontSizeKey::from_f32(logical_size);
         let scale_key = ScaleFactorKey::from_f32(scale_factor);
 
-        // Check cache first
-        if let Some(cached) = self.glyph_cache.get(&(font_id, c, size_key, scale_key)) {
+        // Check cache first (now includes subpixel bin in key)
+        if let Some(cached) = self
+            .glyph_cache
+            .get(&(font_id, c, size_key, scale_key, subpixel_bin))
+        {
             return Some(cached.clone());
         }
 
@@ -244,11 +351,15 @@ impl FontSystem {
         // Calculate advance width (physical pixels)
         let advance = scaled_font.h_advance(glyph_id);
 
+        // Get subpixel offset for this bin (in physical pixels)
+        let subpixel_offset = subpixel_bin.as_offset() * scale_factor;
+
         // Get outline glyph (may be None for whitespace, control chars)
+        // Apply subpixel offset to position for crisp fractional rendering
         let glyph = Glyph {
             id: glyph_id,
             scale: PxScale::from(physical_size),
-            position: ab_glyph::point(0.0, 0.0),
+            position: ab_glyph::point(subpixel_offset, 0.0),
         };
 
         let outlined = match font.outline_glyph(glyph) {
@@ -263,18 +374,36 @@ impl FontSystem {
                     ascender: ascender / scale_factor,
                     advance: advance / scale_factor,
                 };
-                self.glyph_cache
-                    .insert((font_id, c, size_key, scale_key), cached.clone());
+                self.glyph_cache.insert(
+                    (font_id, c, size_key, scale_key, subpixel_bin),
+                    cached.clone(),
+                );
                 return Some(cached);
             }
         };
 
-        // Get pixel bounds (in physical pixels)
+        // Get pixel bounds (in physical pixels) - this changes with subpixel offset
         let bounds = outlined.px_bounds();
 
-        // Allocate pixel buffer
-        let width = bounds.width().ceil() as usize;
-        let height = bounds.height().ceil() as usize;
+        // IMPORTANT: Get CONSISTENT metrics from unshifted glyph.
+        // This ensures all subpixel bins have the same size, preventing
+        // visual "jumps" when switching between bins.
+        let glyph_for_metrics = Glyph {
+            id: glyph_id,
+            scale: PxScale::from(physical_size),
+            position: ab_glyph::point(0.0, 0.0), // No subpixel offset for metrics
+        };
+        let metrics_bounds = font.outline_glyph(glyph_for_metrics)
+            .map(|g| g.px_bounds())
+            .unwrap_or(bounds);
+
+        // Use consistent metrics for offset_x, top_offset, AND size
+        let offset_x = metrics_bounds.min.x / scale_factor;
+        let top_offset = -metrics_bounds.min.y / scale_factor;
+
+        // Consistent size from unshifted bounds (in physical pixels)
+        let width = metrics_bounds.width().ceil() as usize;
+        let height = metrics_bounds.height().ceil() as usize;
 
         // Handle empty glyph bounds (shouldn't happen if outline exists, but be safe)
         if width == 0 || height == 0 {
@@ -286,43 +415,35 @@ impl FontSystem {
                 ascender: ascender / scale_factor,
                 advance: advance / scale_factor,
             };
-            self.glyph_cache
-                .insert((font_id, c, size_key, scale_key), cached.clone());
+            self.glyph_cache.insert(
+                (font_id, c, size_key, scale_key, subpixel_bin),
+                cached.clone(),
+            );
             return Some(cached);
         }
 
         // Draw glyph to pixel buffer
+        // Note: The pixel data is from the shifted outline, but we use consistent
+        // size from unshifted bounds. Pixels outside the buffer are clipped.
         let mut pixels = vec![0u8; width * height];
         outlined.draw(|x, y, coverage| {
             let px = x as usize;
             let py = y as usize;
             if px < width && py < height {
-                pixels[py * width + px] = (coverage * 255.0) as u8;
+                // Apply gamma correction for perceptually uniform text weight
+                let alpha = coverage_to_alpha(coverage);
+                pixels[py * width + px] = (alpha * 255.0) as u8;
             }
         });
-
-        // Convert physical pixel metrics to logical pixels for UI positioning
-        //
-        // ab_glyph coordinate system (y-UP from baseline):
-        // - Glyph position (0,0) is at baseline
-        // - bounds.min.y is typically NEGATIVE (top of glyph, above baseline)
-        // - bounds.max.y is typically 0 or positive (bottom, at or below baseline)
-        //
-        // Screen coordinate system (y-DOWN):
-        // - We want: glyph_top_y = baseline_y + bounds.min.y (since min.y is negative)
-        // - Equivalently: glyph_top_y = baseline_y - |bounds.min.y|
-        //
-        // top_offset stores the positive distance from baseline to glyph top
-        let top_offset = -bounds.min.y / scale_factor;
 
         let rasterized = RasterizedGlyph {
             c,
             pixels,
             width,
             height,
-            // ab_glyph's bounds.min.x is the left edge offset from cursor (left side bearing)
-            offset_x: bounds.min.x / scale_factor,
-            // Distance from baseline to top of glyph (positive in screen y-down coords)
+            // Consistent horizontal offset (NOT affected by subpixel positioning)
+            offset_x,
+            // Consistent vertical offset (NOT affected by subpixel positioning)
             top_offset,
             ascender: ascender / scale_factor,
             advance: advance / scale_factor,
@@ -331,9 +452,11 @@ impl FontSystem {
         // Place in atlas (uses physical pixels for crisp rendering)
         let cached = self.place_in_atlas(&rasterized, scale_factor)?;
 
-        // Cache the result
-        self.glyph_cache
-            .insert((font_id, c, size_key, scale_key), cached.clone());
+        // Cache the result (includes subpixel bin in key)
+        self.glyph_cache.insert(
+            (font_id, c, size_key, scale_key, subpixel_bin),
+            cached.clone(),
+        );
 
         Some(cached)
     }
@@ -430,10 +553,21 @@ impl FontSystem {
     }
 
     /// Pre-cache common ASCII characters for a font.
+    ///
+    /// This pre-caches all 4 subpixel bins for each character for optimal
+    /// rendering performance at any position.
     pub fn precache_ascii(&mut self, font_id: FontId, size: f32, scale_factor: f32) {
         // ASCII printable range
         for c in ' '..='~' {
-            self.get_or_rasterize(font_id, c, size, scale_factor);
+            // Cache all 4 subpixel bins
+            for bin in [
+                SubpixelBin::Zero,
+                SubpixelBin::One,
+                SubpixelBin::Two,
+                SubpixelBin::Three,
+            ] {
+                self.get_or_rasterize(font_id, c, size, scale_factor, bin);
+            }
         }
     }
 
@@ -441,6 +575,7 @@ impl FontSystem {
     ///
     /// This rasterizes frequently used icons at the given size to avoid
     /// runtime hitches when rendering icons for the first time.
+    /// Only caches SubpixelBin::Zero for icons (usually positioned at integer coords).
     pub fn precache_icons(
         &mut self,
         font_id: FontId,
@@ -449,7 +584,8 @@ impl FontSystem {
         icons: &[char],
     ) {
         for &icon in icons {
-            self.get_or_rasterize(font_id, icon, size, scale_factor);
+            // Icons are typically at integer positions, so just cache bin Zero
+            self.get_or_rasterize(font_id, icon, size, scale_factor, SubpixelBin::Zero);
         }
     }
 
@@ -475,9 +611,48 @@ impl FontSystem {
         ))
     }
 
+    /// Get kerning between two characters.
+    ///
+    /// Returns the kerning adjustment in logical pixels.
+    /// This should be added to the cursor position before placing the second character.
+    ///
+    /// Kerning adjusts spacing between specific character pairs (like "AV", "Te")
+    /// for better visual appearance.
+    pub fn get_kerning(
+        &self,
+        font_id: FontId,
+        left: char,
+        right: char,
+        size: f32,
+        scale_factor: f32,
+    ) -> f32 {
+        let Some(font) = self.fonts.get(&font_id) else {
+            return 0.0;
+        };
+
+        // Get unscaled kerning from the font's kern table
+        let left_id = font.glyph_id(left);
+        let right_id = font.glyph_id(right);
+        let unscaled_kern = font.kern_unscaled(left_id, right_id);
+
+        // Scale to physical pixels, then convert to logical
+        let physical_size = size * scale_factor;
+        let scaled_kern = unscaled_kern * physical_size / font.units_per_em().unwrap_or(1.0);
+        scaled_kern / scale_factor
+    }
+
     /// Measure text dimensions without rendering.
     ///
     /// Returns dimensions in logical pixels.
+    /// Note: This uses SubpixelBin::Zero for cache lookup since advance width
+    /// is the same regardless of subpixel position.
+    /// Measure text dimensions without rendering.
+    ///
+    /// Returns dimensions in logical pixels.
+    /// Note: This uses SubpixelBin::Zero for cache lookup since advance width
+    /// is the same regardless of subpixel position.
+    ///
+    /// This method includes kerning between character pairs.
     pub fn measure_text(&self, font_id: FontId, text: &str, size: f32, scale_factor: f32) -> Vec2 {
         let font = match self.fonts.get(&font_id) {
             Some(f) => f,
@@ -493,10 +668,20 @@ impl FontSystem {
 
         let mut width = 0.0f32;
         let mut max_height = 0.0f32;
+        let mut prev_char: Option<char> = None;
 
         for c in text.chars() {
+            // Apply kerning between previous and current character
+            if let Some(prev) = prev_char {
+                width += self.get_kerning(font_id, prev, c, size, scale_factor);
+            }
+
             // Check cache first (metrics are stored in logical pixels)
-            if let Some(cached) = self.glyph_cache.get(&(font_id, c, size_key, scale_key)) {
+            // Use SubpixelBin::Zero since advance width is independent of subpixel position
+            if let Some(cached) = self
+                .glyph_cache
+                .get(&(font_id, c, size_key, scale_key, SubpixelBin::Zero))
+            {
                 width += cached.advance;
                 max_height = max_height.max(cached.size.y());
             } else {
@@ -505,6 +690,8 @@ impl FontSystem {
                 width += scaled_font.h_advance(glyph_id) / scale_factor;
                 max_height = max_height.max(scaled_font.height() / scale_factor);
             }
+
+            prev_char = Some(c);
         }
 
         Vec2::new(width, max_height)
@@ -548,11 +735,29 @@ impl FontSystem {
 
     /// Grow the atlas to accommodate more glyphs.
     ///
+    /// Uses egui-style strategy:
+    /// 1. First grow width to MAX_ATLAS_WIDTH (8192)
+    /// 2. Then grow height as needed
+    ///
+    /// This is more memory-efficient than square resizing because glyphs
+    /// are typically short, so we pack them horizontally first.
+    ///
     /// Returns true if the atlas was grown, false if already at max size.
     fn grow_atlas(&mut self) -> bool {
-        let new_size = if self.atlas_width < Self::MAX_ATLAS_SIZE {
-            (self.atlas_width * 2).min(Self::MAX_ATLAS_SIZE)
+        let (new_width, new_height) = if self.atlas_width < Self::MAX_ATLAS_WIDTH {
+            // Grow width first (double until max)
+            let new_width = (self.atlas_width * 2).min(Self::MAX_ATLAS_WIDTH);
+            (new_width, self.atlas_height)
+        } else if self.atlas_height < Self::MAX_ATLAS_HEIGHT {
+            // Width at max, grow height
+            let new_height = (self.atlas_height * 2).min(Self::MAX_ATLAS_HEIGHT);
+            (self.atlas_width, new_height)
         } else {
+            log::warn!(
+                "Font atlas at maximum size {}x{}, cannot grow further",
+                self.atlas_width,
+                self.atlas_height
+            );
             return false;
         };
 
@@ -560,31 +765,36 @@ impl FontSystem {
             "Growing font atlas from {}x{} to {}x{}",
             self.atlas_width,
             self.atlas_height,
-            new_size,
-            new_size
+            new_width,
+            new_height
         );
 
         // Create new larger buffer
-        let mut new_data = vec![0u8; (new_size * new_size * 4) as usize];
+        let mut new_data = vec![0u8; (new_width * new_height * 4) as usize];
 
-        // Copy old data to new buffer
+        // Copy old data to new buffer (preserving existing glyphs)
         for y in 0..self.atlas_height {
             let src_start = (y * self.atlas_width * 4) as usize;
             let src_end = src_start + (self.atlas_width * 4) as usize;
-            let dst_start = (y * new_size * 4) as usize;
+            let dst_start = (y * new_width * 4) as usize;
             new_data[dst_start..dst_start + (self.atlas_width * 4) as usize]
                 .copy_from_slice(&self.atlas_data[src_start..src_end]);
         }
 
         self.atlas_data = new_data;
-        self.atlas_width = new_size;
-        self.atlas_height = new_size;
+        self.atlas_width = new_width;
+        self.atlas_height = new_height;
         self.atlas_dirty = true;
         self.atlas_resized = true;
 
         // Invalidate glyph cache since UV coordinates changed
         // We need to re-rasterize everything with correct UVs
         self.glyph_cache.clear();
+
+        // Reset cursor to start fresh in the new space
+        self.atlas_cursor_x = 0;
+        self.atlas_cursor_y = 0;
+        self.atlas_row_height = 0;
 
         true
     }
@@ -646,7 +856,8 @@ mod tests {
     #[test]
     fn test_font_system_creation() {
         let sys = FontSystem::new();
-        assert_eq!(sys.atlas_width, FontSystem::DEFAULT_ATLAS_SIZE);
+        assert_eq!(sys.atlas_width, FontSystem::DEFAULT_ATLAS_WIDTH);
+        assert_eq!(sys.atlas_height, FontSystem::DEFAULT_ATLAS_HEIGHT);
         // Atlas is dirty initially because white pixel at (0,0) needs upload
         assert!(sys.atlas_dirty);
     }
@@ -654,5 +865,101 @@ mod tests {
     #[test]
     fn test_font_id_default() {
         assert_eq!(FontId::DEFAULT, FontId(0));
+    }
+
+    #[test]
+    fn test_subpixel_bin_zero() {
+        let (floor, bin) = SubpixelBin::new(10.0);
+        assert_eq!(floor, 10);
+        assert_eq!(bin, SubpixelBin::Zero);
+        assert_eq!(bin.as_offset(), 0.0);
+    }
+
+    #[test]
+    fn test_subpixel_bin_one() {
+        let (floor, bin) = SubpixelBin::new(10.25);
+        assert_eq!(floor, 10);
+        assert_eq!(bin, SubpixelBin::One);
+        assert_eq!(bin.as_offset(), 0.25);
+    }
+
+    #[test]
+    fn test_subpixel_bin_two() {
+        let (floor, bin) = SubpixelBin::new(10.5);
+        assert_eq!(floor, 10);
+        assert_eq!(bin, SubpixelBin::Two);
+        assert_eq!(bin.as_offset(), 0.5);
+    }
+
+    #[test]
+    fn test_subpixel_bin_three() {
+        let (floor, bin) = SubpixelBin::new(10.75);
+        assert_eq!(floor, 10);
+        assert_eq!(bin, SubpixelBin::Three);
+        assert_eq!(bin.as_offset(), 0.75);
+    }
+
+    #[test]
+    fn test_subpixel_bin_boundary() {
+        // Test boundary cases
+        let (floor, bin) = SubpixelBin::new(10.249);
+        assert_eq!(floor, 10);
+        assert_eq!(bin, SubpixelBin::Zero);
+
+        let (floor, bin) = SubpixelBin::new(10.25);
+        assert_eq!(floor, 10);
+        assert_eq!(bin, SubpixelBin::One);
+
+        let (floor, bin) = SubpixelBin::new(10.99);
+        assert_eq!(floor, 10);
+        assert_eq!(bin, SubpixelBin::Three);
+    }
+
+    #[test]
+    fn test_subpixel_bin_negative() {
+        // Test negative values
+        // -0.3 -> floor -1, frac = -0.3 - (-1) = 0.7 -> bin Two (0.7 * 4 = 2.8 -> 2)
+        let (floor, bin) = SubpixelBin::new(-0.3);
+        assert_eq!(floor, -1);
+        assert_eq!(bin, SubpixelBin::Two);
+
+        // -0.8 -> floor -1, frac = 0.2 -> bin Zero
+        let (floor, bin) = SubpixelBin::new(-0.8);
+        assert_eq!(floor, -1);
+        assert_eq!(bin, SubpixelBin::Zero);
+    }
+
+    #[test]
+    fn test_gamma_correction_identity() {
+        // coverage_to_alpha and alpha_to_coverage should be inverses
+        for coverage in [0.0, 0.25, 0.5, 0.75, 1.0] {
+            let alpha = coverage_to_alpha(coverage);
+            let back = alpha_to_coverage(alpha);
+            assert!(
+                (back - coverage).abs() < 0.001,
+                "Coverage {} -> alpha {} -> coverage {}",
+                coverage,
+                alpha,
+                back
+            );
+        }
+    }
+
+    #[test]
+    fn test_gamma_correction_midpoint() {
+        // 0.5 coverage should become > 0.5 alpha (brighter midtones)
+        let alpha = coverage_to_alpha(0.5);
+        assert!(alpha > 0.5, "Gamma correction should brighten midtones");
+        assert!(
+            (alpha - 0.5_f32.powf(1.0 / 1.45)).abs() < 0.001,
+            "Alpha should match expected gamma-corrected value"
+        );
+    }
+
+    #[test]
+    fn test_gamma_correction_extremes() {
+        // Extremes should stay the same
+        assert!((coverage_to_alpha(0.0) - 0.0).abs() < 0.001);
+        assert!((coverage_to_alpha(1.0) - 1.0).abs() < 0.001);
     }
 }
