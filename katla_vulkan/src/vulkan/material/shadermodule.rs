@@ -67,6 +67,26 @@ impl ShaderModule {
         stage: vk::ShaderStageFlags,
         entry_point: impl Into<String>,
     ) -> Result<Self, ShaderError> {
+        Self::from_wgsl_string_impl(device, wgsl_str, stage, entry_point)
+    }
+
+    /// Create a shader module from WGSL source string using wrapper types.
+    pub fn from_wgsl_string_wrapped(
+        device: Device,
+        wgsl_str: &str,
+        stage: crate::render_graph::types::ShaderStages,
+        entry_point: impl Into<String>,
+    ) -> Result<Self, ShaderError> {
+        let vk_stage: vk::ShaderStageFlags = stage.into();
+        Self::from_wgsl_string_impl(device, wgsl_str, vk_stage, entry_point)
+    }
+
+    fn from_wgsl_string_impl(
+        device: Device,
+        wgsl_str: &str,
+        stage: vk::ShaderStageFlags,
+        entry_point: impl Into<String>,
+    ) -> Result<Self, ShaderError> {
         let wgsl_module = wgsl::parse_str(wgsl_str).map_err(ShaderError::WgslParseError)?;
 
         let module_info: naga::valid::ModuleInfo = naga::valid::Validator::new(

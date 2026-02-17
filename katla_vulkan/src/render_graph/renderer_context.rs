@@ -94,12 +94,21 @@ impl RendererContext {
     }
 
     /// Get storage descriptor set for binding (set 0).
-    pub fn storage_descriptor(&self) -> Option<vk::DescriptorSet> {
+    pub fn storage_descriptor(&self) -> Option<crate::sync::VkDescriptorSet> {
         self.storage_descriptor_set
             .as_ref()?
             .borrow()
             .as_ref()
             .map(|ds| ds.set())
+    }
+
+    /// Get storage descriptor set as raw vk handle (for internal use).
+    pub fn vk_storage_descriptor(&self) -> Option<vk::DescriptorSet> {
+        self.storage_descriptor_set
+            .as_ref()?
+            .borrow()
+            .as_ref()
+            .map(|ds| ds.vk_set())
     }
 
     /// Check if asset registry is available.

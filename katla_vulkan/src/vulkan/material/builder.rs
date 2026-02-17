@@ -2,6 +2,11 @@ use std::{ffi::CString, rc::Rc};
 
 use ash::vk;
 
+use crate::sync::{VkPipeline, VkPipelineLayout};
+use crate::vulkan::pipeline_state::{
+    BlendFactor, BlendOp, CompareOp, CullMode, DynamicState, FrontFace, PolygonMode,
+    PrimitiveTopology,
+};
 use crate::VulkanContext;
 
 pub struct PipelineBuilder {
@@ -12,24 +17,24 @@ pub struct PipelineBuilder {
     fragment_shader_entry_point: CString,
     vertex_bindings: Vec<vk::VertexInputBindingDescription>,
     vertex_attributes: Vec<vk::VertexInputAttributeDescription>,
-    topology: vk::PrimitiveTopology,
-    polygon_mode: vk::PolygonMode,
-    cull_mode: vk::CullModeFlags,
-    front_face: vk::FrontFace,
+    topology: PrimitiveTopology,
+    polygon_mode: PolygonMode,
+    cull_mode: CullMode,
+    front_face: FrontFace,
     line_width: f32,
     depth_test: bool,
     depth_write: bool,
-    depth_compare_op: vk::CompareOp,
+    depth_compare_op: CompareOp,
     blend_enable: bool,
-    blend_src_color: vk::BlendFactor,
-    blend_dst_color: vk::BlendFactor,
-    blend_color_op: vk::BlendOp,
-    blend_src_alpha: vk::BlendFactor,
-    blend_dst_alpha: vk::BlendFactor,
-    blend_alpha_op: vk::BlendOp,
+    blend_src_color: BlendFactor,
+    blend_dst_color: BlendFactor,
+    blend_color_op: BlendOp,
+    blend_src_alpha: BlendFactor,
+    blend_dst_alpha: BlendFactor,
+    blend_alpha_op: BlendOp,
     descriptor_layouts: Vec<vk::DescriptorSetLayout>,
     push_constant_ranges: Vec<vk::PushConstantRange>,
-    dynamic_states: Vec<vk::DynamicState>,
+    dynamic_states: Vec<DynamicState>,
     // For dynamic rendering (Vulkan 1.3)
     color_format: Option<vk::Format>,
     depth_format: Option<vk::Format>,
@@ -45,24 +50,24 @@ impl PipelineBuilder {
             vertex_attributes: Vec::new(),
             vertex_shader_entry_point: CString::new("vs_main").unwrap(),
             fragment_shader_entry_point: CString::new("fs_main").unwrap(),
-            topology: vk::PrimitiveTopology::TRIANGLE_LIST,
-            polygon_mode: vk::PolygonMode::FILL,
-            cull_mode: vk::CullModeFlags::BACK,
-            front_face: vk::FrontFace::COUNTER_CLOCKWISE,
+            topology: PrimitiveTopology::TriangleList,
+            polygon_mode: PolygonMode::Fill,
+            cull_mode: CullMode::Back,
+            front_face: FrontFace::CounterClockwise,
             line_width: 1.0,
             depth_test: true,
             depth_write: true,
-            depth_compare_op: vk::CompareOp::LESS,
+            depth_compare_op: CompareOp::Less,
             blend_enable: false,
-            blend_src_color: vk::BlendFactor::SRC_ALPHA,
-            blend_dst_color: vk::BlendFactor::ONE_MINUS_SRC_ALPHA,
-            blend_color_op: vk::BlendOp::ADD,
-            blend_src_alpha: vk::BlendFactor::ONE,
-            blend_dst_alpha: vk::BlendFactor::ZERO,
-            blend_alpha_op: vk::BlendOp::ADD,
+            blend_src_color: BlendFactor::SrcAlpha,
+            blend_dst_color: BlendFactor::OneMinusSrcAlpha,
+            blend_color_op: BlendOp::Add,
+            blend_src_alpha: BlendFactor::One,
+            blend_dst_alpha: BlendFactor::Zero,
+            blend_alpha_op: BlendOp::Add,
             descriptor_layouts: Vec::new(),
             push_constant_ranges: Vec::new(),
-            dynamic_states: vec![vk::DynamicState::VIEWPORT, vk::DynamicState::SCISSOR],
+            dynamic_states: vec![DynamicState::Viewport, DynamicState::Scissor],
             color_format: None,
             depth_format: None,
         }
@@ -90,24 +95,24 @@ impl PipelineBuilder {
         self
     }
 
-    pub fn with_topology(mut self, topology: vk::PrimitiveTopology) -> Self {
+    pub fn with_topology(mut self, topology: PrimitiveTopology) -> Self {
         self.topology = topology;
         self
     }
 
-    pub fn with_polygon_mode(mut self, mode: vk::PolygonMode) -> Self {
+    pub fn with_polygon_mode(mut self, mode: PolygonMode) -> Self {
         self.polygon_mode = mode;
         self
     }
 
-    pub fn with_depth_test(mut self, enable: bool, write: bool, op: vk::CompareOp) -> Self {
+    pub fn with_depth_test(mut self, enable: bool, write: bool, op: CompareOp) -> Self {
         self.depth_test = enable;
         self.depth_write = write;
         self.depth_compare_op = op;
         self
     }
 
-    pub fn with_cull_mode(mut self, mode: vk::CullModeFlags, front: vk::FrontFace) -> Self {
+    pub fn with_cull_mode(mut self, mode: CullMode, front: FrontFace) -> Self {
         self.cull_mode = mode;
         self.front_face = front;
         self
@@ -121,14 +126,14 @@ impl PipelineBuilder {
     pub fn with_blending(
         mut self,
         enable: bool,
-        src: vk::BlendFactor,
-        dst: vk::BlendFactor,
+        src: BlendFactor,
+        dst: BlendFactor,
     ) -> Self {
         self.blend_enable = enable;
         self.blend_src_color = src;
         self.blend_dst_color = dst;
-        self.blend_src_alpha = vk::BlendFactor::ONE;
-        self.blend_dst_alpha = vk::BlendFactor::ZERO;
+        self.blend_src_alpha = BlendFactor::One;
+        self.blend_dst_alpha = BlendFactor::Zero;
         self
     }
 
@@ -136,12 +141,12 @@ impl PipelineBuilder {
     pub fn with_blending_advanced(
         mut self,
         enable: bool,
-        src_color: vk::BlendFactor,
-        dst_color: vk::BlendFactor,
-        color_op: vk::BlendOp,
-        src_alpha: vk::BlendFactor,
-        dst_alpha: vk::BlendFactor,
-        alpha_op: vk::BlendOp,
+        src_color: BlendFactor,
+        dst_color: BlendFactor,
+        color_op: BlendOp,
+        src_alpha: BlendFactor,
+        dst_alpha: BlendFactor,
+        alpha_op: BlendOp,
     ) -> Self {
         self.blend_enable = enable;
         self.blend_src_color = src_color;
@@ -155,23 +160,23 @@ impl PipelineBuilder {
 
     pub fn with_alpha_blending(mut self) -> Self {
         self.blend_enable = true;
-        self.blend_src_color = vk::BlendFactor::SRC_ALPHA;
-        self.blend_dst_color = vk::BlendFactor::ONE_MINUS_SRC_ALPHA;
-        self.blend_color_op = vk::BlendOp::ADD;
-        self.blend_src_alpha = vk::BlendFactor::ONE;
-        self.blend_dst_alpha = vk::BlendFactor::ZERO;
-        self.blend_alpha_op = vk::BlendOp::ADD;
+        self.blend_src_color = BlendFactor::SrcAlpha;
+        self.blend_dst_color = BlendFactor::OneMinusSrcAlpha;
+        self.blend_color_op = BlendOp::Add;
+        self.blend_src_alpha = BlendFactor::One;
+        self.blend_dst_alpha = BlendFactor::Zero;
+        self.blend_alpha_op = BlendOp::Add;
         self
     }
 
     pub fn with_additive_blending(mut self) -> Self {
         self.blend_enable = true;
-        self.blend_src_color = vk::BlendFactor::SRC_ALPHA;
-        self.blend_dst_color = vk::BlendFactor::ONE;
-        self.blend_color_op = vk::BlendOp::ADD;
-        self.blend_src_alpha = vk::BlendFactor::ONE;
-        self.blend_dst_alpha = vk::BlendFactor::ONE;
-        self.blend_alpha_op = vk::BlendOp::ADD;
+        self.blend_src_color = BlendFactor::SrcAlpha;
+        self.blend_dst_color = BlendFactor::One;
+        self.blend_color_op = BlendOp::Add;
+        self.blend_src_alpha = BlendFactor::One;
+        self.blend_dst_alpha = BlendFactor::One;
+        self.blend_alpha_op = BlendOp::Add;
         self
     }
 
@@ -202,20 +207,21 @@ impl PipelineBuilder {
 
     pub fn with_rendering_formats(
         mut self,
-        color_format: Option<vk::Format>,
-        depth_format: Option<vk::Format>,
+        color_format: Option<crate::render_graph::types::ImageFormat>,
+        depth_format: Option<crate::render_graph::types::ImageFormat>,
     ) -> Self {
-        self.color_format = color_format;
-        self.depth_format = depth_format;
+        self.color_format = color_format.map(|f| f.into());
+        self.depth_format = depth_format.map(|f| f.into());
         self
     }
 
-    pub fn with_dynamic_states(mut self, states: Vec<vk::DynamicState>) -> Self {
+    pub fn with_dynamic_states(mut self, states: Vec<DynamicState>) -> Self {
         self.dynamic_states = states;
         self
     }
 
-    pub fn build(self, render_pass: vk::RenderPass) -> Result<Pipeline, PipelineError> {
+    pub fn build(self, render_pass: crate::sync::VkRenderPass) -> Result<Pipeline, PipelineError> {
+        let vk_render_pass: vk::RenderPass = render_pass.into();
         let shader_vert = self
             .vertex_shader
             .ok_or(PipelineError::MissingVertexShader)?;
@@ -239,7 +245,7 @@ impl PipelineBuilder {
             .vertex_attribute_descriptions(&self.vertex_attributes);
 
         let input_assembly = vk::PipelineInputAssemblyStateCreateInfo::default()
-            .topology(self.topology)
+            .topology(self.topology.into())
             .primitive_restart_enable(false);
 
         let viewport_state = vk::PipelineViewportStateCreateInfo::default()
@@ -249,10 +255,10 @@ impl PipelineBuilder {
         let rasterizer = vk::PipelineRasterizationStateCreateInfo::default()
             .depth_clamp_enable(false)
             .rasterizer_discard_enable(false)
-            .polygon_mode(self.polygon_mode)
+            .polygon_mode(self.polygon_mode.into())
             .line_width(self.line_width)
-            .cull_mode(self.cull_mode)
-            .front_face(self.front_face)
+            .cull_mode(self.cull_mode.into())
+            .front_face(self.front_face.into())
             .depth_bias_enable(false);
 
         let multisampling = vk::PipelineMultisampleStateCreateInfo::default()
@@ -267,12 +273,12 @@ impl PipelineBuilder {
                     | vk::ColorComponentFlags::A,
             )
             .blend_enable(self.blend_enable)
-            .src_color_blend_factor(self.blend_src_color)
-            .dst_color_blend_factor(self.blend_dst_color)
-            .color_blend_op(self.blend_color_op)
-            .src_alpha_blend_factor(self.blend_src_alpha)
-            .dst_alpha_blend_factor(self.blend_dst_alpha)
-            .alpha_blend_op(self.blend_alpha_op);
+            .src_color_blend_factor(self.blend_src_color.into())
+            .dst_color_blend_factor(self.blend_dst_color.into())
+            .color_blend_op(self.blend_color_op.into())
+            .src_alpha_blend_factor(self.blend_src_alpha.into())
+            .dst_alpha_blend_factor(self.blend_dst_alpha.into())
+            .alpha_blend_op(self.blend_alpha_op.into());
 
         let color_blend_attachments = vec![color_blend_attachment];
 
@@ -283,14 +289,16 @@ impl PipelineBuilder {
         let depth_stencil_state = vk::PipelineDepthStencilStateCreateInfo::default()
             .depth_test_enable(self.depth_test)
             .depth_write_enable(self.depth_write)
-            .depth_compare_op(self.depth_compare_op)
+            .depth_compare_op(self.depth_compare_op.into())
             .depth_bounds_test_enable(false)
             .min_depth_bounds(0.0)
             .max_depth_bounds(1.0)
             .stencil_test_enable(false);
 
+        let dynamic_states_vk: Vec<vk::DynamicState> =
+            self.dynamic_states.iter().map(|s| (*s).into()).collect();
         let dynamic_state =
-            vk::PipelineDynamicStateCreateInfo::default().dynamic_states(&self.dynamic_states);
+            vk::PipelineDynamicStateCreateInfo::default().dynamic_states(&dynamic_states_vk);
 
         let pipeline_layout_info = vk::PipelineLayoutCreateInfo::default()
             .set_layouts(&self.descriptor_layouts)
@@ -307,7 +315,7 @@ impl PipelineBuilder {
         // to the pNext chain when render_pass is null
         // Declare color_formats outside the if block so it lives long enough
         let mut color_formats = Vec::new();
-        let mut rendering_create_info = if render_pass == vk::RenderPass::null()
+        let mut rendering_create_info = if vk_render_pass == vk::RenderPass::null()
             && (self.color_format.is_some() || self.depth_format.is_some())
         {
             if let Some(fmt) = self.color_format {
@@ -335,7 +343,7 @@ impl PipelineBuilder {
                 .color_blend_state(&color_blending)
                 .dynamic_state(&dynamic_state)
                 .layout(pipeline_layout)
-                .render_pass(render_pass)
+                .render_pass(vk_render_pass)
                 .subpass(0)
                 .push_next(rendering_info)
         } else {
@@ -350,7 +358,7 @@ impl PipelineBuilder {
                 .color_blend_state(&color_blending)
                 .dynamic_state(&dynamic_state)
                 .layout(pipeline_layout)
-                .render_pass(render_pass)
+                .render_pass(vk_render_pass)
                 .subpass(0)
         };
 
@@ -372,12 +380,32 @@ impl PipelineBuilder {
 }
 
 pub struct Pipeline {
-    pub handle: vk::Pipeline,
-    pub layout: vk::PipelineLayout,
+    handle: vk::Pipeline,
+    layout: vk::PipelineLayout,
     device: ash::Device,
 }
 
 impl Pipeline {
+    /// Get the pipeline handle as a wrapper type.
+    pub fn pipeline(&self) -> VkPipeline {
+        VkPipeline::new(self.handle)
+    }
+
+    /// Get the pipeline layout as a wrapper type.
+    pub fn pipeline_layout(&self) -> VkPipelineLayout {
+        VkPipelineLayout::new(self.layout)
+    }
+
+    /// Get the raw Vulkan pipeline handle (for internal use).
+    pub fn vk_pipeline(&self) -> vk::Pipeline {
+        self.handle
+    }
+
+    /// Get the raw Vulkan pipeline layout handle (for internal use).
+    pub fn vk_layout(&self) -> vk::PipelineLayout {
+        self.layout
+    }
+
     pub fn destroy(&self) {
         unsafe {
             self.device.destroy_pipeline(self.handle, None);

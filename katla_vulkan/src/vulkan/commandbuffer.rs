@@ -231,16 +231,16 @@ impl CommandBuffer {
     /// # Example
     /// ```no_run
     /// # use ash::vk;
-    /// # use katla_vulkan::render_graph::types::{RenderingAttachmentInfo, RenderingInfo, ClearValue, Extent2D};
+    /// # use katla_vulkan::render_graph::types::{RenderingAttachmentInfo, RenderingInfo, ClearValue, Extent2D, ImageLayout, VkImageView};
     /// # use katla_vulkan::CommandBuffer;
     /// # let command_buffer: CommandBuffer = unsafe { std::mem::zeroed() };
-    /// # let color_image_view: vk::ImageView = unsafe { std::mem::zeroed() };
-    /// # let depth_image_view: vk::ImageView = unsafe { std::mem::zeroed() };
+    /// # let color_image_view: VkImageView = unsafe { std::mem::zeroed() };
+    /// # let depth_image_view: VkImageView = unsafe { std::mem::zeroed() };
     /// let color_attachment = RenderingAttachmentInfo::new(color_image_view)
     ///     .clear(ClearValue::color(0.1, 0.2, 0.3, 1.0));
     ///
     /// let depth_attachment = RenderingAttachmentInfo::new(depth_image_view)
-    ///     .layout(vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL)
+    ///     .layout(ImageLayout::DepthStencilAttachmentOptimal)
     ///     .clear(ClearValue::depth(1.0, 0));
     ///
     /// let rendering_info = RenderingInfo::new()

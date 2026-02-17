@@ -3,6 +3,8 @@
 //! This module provides types that avoid exposing ash::vk to the application layer.
 //! Mesh and material data is registered with the renderer and referenced via opaque handles.
 
+use crate::sync::{VkDescriptorSet, VkPipeline, VkPipelineLayout};
+
 /// High-level mesh handle - opaque token, no ash types exposed.
 ///
 /// The actual mesh data (vertex/index buffers) is stored internally in the AssetRegistry.
@@ -324,11 +326,11 @@ pub struct DrawList {
 #[derive(Clone, Debug)]
 pub struct ParticleDispatch {
     /// Compute pipeline handle
-    pub pipeline: ash::vk::Pipeline,
+    pub pipeline: VkPipeline,
     /// Pipeline layout
-    pub pipeline_layout: ash::vk::PipelineLayout,
+    pub pipeline_layout: VkPipelineLayout,
     /// Descriptor set for particle buffer binding
-    pub descriptor_set: ash::vk::DescriptorSet,
+    pub descriptor_set: VkDescriptorSet,
     /// Frame data: (delta_time, emit_count, max_particles, random_seed)
     pub frame_data: [f32; 4],
     /// Number of workgroups to dispatch
@@ -342,13 +344,13 @@ pub struct ParticleDispatch {
 #[derive(Clone, Debug)]
 pub struct ParticleRender {
     /// Graphics pipeline for particle rendering
-    pub pipeline: ash::vk::Pipeline,
+    pub pipeline: VkPipeline,
     /// Pipeline layout
-    pub pipeline_layout: ash::vk::PipelineLayout,
+    pub pipeline_layout: VkPipelineLayout,
     /// Descriptor set for frame uniforms (set 0)
-    pub frame_descriptor_set: ash::vk::DescriptorSet,
+    pub frame_descriptor_set: VkDescriptorSet,
     /// Descriptor set for particle buffer (set 1)
-    pub particle_descriptor_set: ash::vk::DescriptorSet,
+    pub particle_descriptor_set: VkDescriptorSet,
     /// Number of particles (instances) to draw
     pub particle_count: u32,
 }

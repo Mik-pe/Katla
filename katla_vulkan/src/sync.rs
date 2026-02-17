@@ -381,6 +381,135 @@ impl AsRef<vk::DescriptorPool> for VkDescriptorPool {
     }
 }
 
+/// Wrapper around `vk::Pipeline`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct VkPipeline(pub vk::Pipeline);
+
+unsafe impl Send for VkPipeline {}
+unsafe impl Sync for VkPipeline {}
+
+impl VkPipeline {
+    /// Creates a new Pipeline wrapper.
+    pub fn new(pipeline: vk::Pipeline) -> Self {
+        Self(pipeline)
+    }
+
+    /// Returns the underlying `vk::Pipeline`.
+    pub fn vk(&self) -> vk::Pipeline {
+        self.0
+    }
+}
+
+impl Default for VkPipeline {
+    fn default() -> Self {
+        Self(vk::Pipeline::null())
+    }
+}
+
+impl From<vk::Pipeline> for VkPipeline {
+    fn from(pipeline: vk::Pipeline) -> Self {
+        Self(pipeline)
+    }
+}
+
+impl From<VkPipeline> for vk::Pipeline {
+    fn from(wrapper: VkPipeline) -> Self {
+        wrapper.0
+    }
+}
+
+impl AsRef<vk::Pipeline> for VkPipeline {
+    fn as_ref(&self) -> &vk::Pipeline {
+        &self.0
+    }
+}
+
+/// Wrapper around `vk::PipelineLayout`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct VkPipelineLayout(pub vk::PipelineLayout);
+
+unsafe impl Send for VkPipelineLayout {}
+unsafe impl Sync for VkPipelineLayout {}
+
+impl VkPipelineLayout {
+    /// Creates a new PipelineLayout wrapper.
+    pub fn new(pipeline_layout: vk::PipelineLayout) -> Self {
+        Self(pipeline_layout)
+    }
+
+    /// Returns the underlying `vk::PipelineLayout`.
+    pub fn vk(&self) -> vk::PipelineLayout {
+        self.0
+    }
+}
+
+impl Default for VkPipelineLayout {
+    fn default() -> Self {
+        Self(vk::PipelineLayout::null())
+    }
+}
+
+impl From<vk::PipelineLayout> for VkPipelineLayout {
+    fn from(pipeline_layout: vk::PipelineLayout) -> Self {
+        Self(pipeline_layout)
+    }
+}
+
+impl From<VkPipelineLayout> for vk::PipelineLayout {
+    fn from(wrapper: VkPipelineLayout) -> Self {
+        wrapper.0
+    }
+}
+
+impl AsRef<vk::PipelineLayout> for VkPipelineLayout {
+    fn as_ref(&self) -> &vk::PipelineLayout {
+        &self.0
+    }
+}
+
+/// Wrapper around `vk::Buffer`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct VkBuffer(pub vk::Buffer);
+
+unsafe impl Send for VkBuffer {}
+unsafe impl Sync for VkBuffer {}
+
+impl VkBuffer {
+    /// Creates a new Buffer wrapper.
+    pub fn new(buffer: vk::Buffer) -> Self {
+        Self(buffer)
+    }
+
+    /// Returns the underlying `vk::Buffer`.
+    pub fn vk(&self) -> vk::Buffer {
+        self.0
+    }
+}
+
+impl Default for VkBuffer {
+    fn default() -> Self {
+        Self(vk::Buffer::null())
+    }
+}
+
+impl From<vk::Buffer> for VkBuffer {
+    fn from(buffer: vk::Buffer) -> Self {
+        Self(buffer)
+    }
+}
+
+impl From<VkBuffer> for vk::Buffer {
+    fn from(wrapper: VkBuffer) -> Self {
+        wrapper.0
+    }
+}
+
+impl AsRef<vk::Buffer> for VkBuffer {
+    fn as_ref(&self) -> &vk::Buffer {
+        &self.0
+    }
+}
+
 //=============================================================================
 // Synchronization2 Wrapper Types (Vulkan 1.3)
 //=============================================================================
@@ -888,6 +1017,49 @@ impl Default for DependencyInfo {
     }
 }
 
+/// Wrapper around `vk::CommandBuffer`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct VkCommandBuffer(pub vk::CommandBuffer);
+
+unsafe impl Send for VkCommandBuffer {}
+unsafe impl Sync for VkCommandBuffer {}
+
+impl VkCommandBuffer {
+    /// Creates a new CommandBuffer wrapper.
+    pub fn new(command_buffer: vk::CommandBuffer) -> Self {
+        Self(command_buffer)
+    }
+
+    /// Returns the underlying `vk::CommandBuffer`.
+    pub fn vk(&self) -> vk::CommandBuffer {
+        self.0
+    }
+}
+
+impl Default for VkCommandBuffer {
+    fn default() -> Self {
+        Self(vk::CommandBuffer::null())
+    }
+}
+
+impl From<vk::CommandBuffer> for VkCommandBuffer {
+    fn from(command_buffer: vk::CommandBuffer) -> Self {
+        Self(command_buffer)
+    }
+}
+
+impl From<VkCommandBuffer> for vk::CommandBuffer {
+    fn from(wrapper: VkCommandBuffer) -> Self {
+        wrapper.0
+    }
+}
+
+impl AsRef<vk::CommandBuffer> for VkCommandBuffer {
+    fn as_ref(&self) -> &vk::CommandBuffer {
+        &self.0
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1054,5 +1226,50 @@ mod tests {
         let dep_info = DependencyInfo::new().add_buffer_barrier2(barrier);
 
         assert_eq!(dep_info.buffer_barriers.len(), 1);
+    }
+
+    #[test]
+    fn test_pipeline_wrapper() {
+        let vk_pipeline = vk::Pipeline::null();
+        let pipeline = VkPipeline::new(vk_pipeline);
+        assert_eq!(pipeline.vk(), vk_pipeline);
+    }
+
+    #[test]
+    fn test_pipeline_conversions() {
+        let vk_pipeline = vk::Pipeline::null();
+        let pipeline: VkPipeline = vk_pipeline.into();
+        let back: vk::Pipeline = pipeline.into();
+        assert_eq!(vk_pipeline, back);
+    }
+
+    #[test]
+    fn test_pipeline_layout_wrapper() {
+        let vk_layout = vk::PipelineLayout::null();
+        let layout = VkPipelineLayout::new(vk_layout);
+        assert_eq!(layout.vk(), vk_layout);
+    }
+
+    #[test]
+    fn test_pipeline_layout_conversions() {
+        let vk_layout = vk::PipelineLayout::null();
+        let layout: VkPipelineLayout = vk_layout.into();
+        let back: vk::PipelineLayout = layout.into();
+        assert_eq!(vk_layout, back);
+    }
+
+    #[test]
+    fn test_buffer_wrapper() {
+        let vk_buffer = vk::Buffer::null();
+        let buffer = VkBuffer::new(vk_buffer);
+        assert_eq!(buffer.vk(), vk_buffer);
+    }
+
+    #[test]
+    fn test_buffer_conversions() {
+        let vk_buffer = vk::Buffer::null();
+        let buffer: VkBuffer = vk_buffer.into();
+        let back: vk::Buffer = buffer.into();
+        assert_eq!(vk_buffer, back);
     }
 }

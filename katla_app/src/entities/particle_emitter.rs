@@ -4,12 +4,13 @@
 
 use std::rc::Rc;
 
-use ash::vk;
 use katla_ecs::World;
 use katla_math::{Transform, Vec3};
 use katla_vulkan::{
-    BufferDescriptorSetBuilder, ComputePipelineBuilder, DeviceAddressBuffer, EmitterConfig,
-    MaterialPipeline, ParticleBuffer, Pipeline, PipelineBuilder, ShaderModule, VulkanContext,
+    BufferDescriptorSetBuilder, CompareOp, ComputePipelineBuilder, CullMode,
+    DescriptorSetLayoutBuilder, DescriptorType, DeviceAddressBuffer, EmitterConfig,
+    FrontFace, ImageFormat, MaterialPipeline, ParticleBuffer, PipelineBuilder,
+    ShaderModule, ShaderStages, VkRenderPass, VulkanContext,
 };
 
 use crate::components::{NameComponent, ParticleEmitter, TransformComponent};
@@ -34,42 +35,26 @@ pub fn create_particle_emitter(
 
     // === COMPUTE PIPELINE ===
     // Descriptor layout: binding 0 = particles (storage), binding 1 = frame data (uniform)
-    let compute_bindings = [
-        vk::DescriptorSetLayoutBinding::default()
-            .binding(0)
-            .descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
-            .descriptor_count(1)
-            .stage_flags(vk::ShaderStageFlags::COMPUTE),
-        vk::DescriptorSetLayoutBinding::default()
-            .binding(1)
-            .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
-            .descriptor_count(1)
-            .stage_flags(vk::ShaderStageFlags::COMPUTE),
-    ];
-
-    let compute_layout_info = vk::DescriptorSetLayoutCreateInfo::default().bindings(&compute_bindings);
-
-    let compute_descriptor_layout = unsafe {
-        context
-            .device
-            .create_descriptor_set_layout(&compute_layout_info, None)
-            .expect("Failed to create compute descriptor layout")
-    };
+    let compute_descriptor_layout = DescriptorSetLayoutBuilder::new()
+        .add_binding(0, DescriptorType::StorageBuffer, ShaderStages::COMPUTE)
+        .add_binding(1, DescriptorType::UniformBuffer, ShaderStages::COMPUTE)
+        .build(&context)
+        .expect("Failed to create compute descriptor layout");
 
     // Create compute descriptor set
     let compute_descriptor_set = BufferDescriptorSetBuilder::new(&context)
         .add_entire_buffer(&particle_buffer, 0)
-        .with_descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
+        .with_descriptor_type_wrapped(DescriptorType::UniformBuffer)
         .add_entire_buffer(&frame_data_buffer, 1)
-        .build(compute_descriptor_layout)
+        .build(compute_descriptor_layout.vk())
         .expect("Failed to create compute descriptor set");
 
     // Load and compile compute shader
     let compute_shader_code = include_str!("../../../resources/shaders/particles/particle_sim.wgsl");
-    let compute_shader = ShaderModule::from_wgsl_string(
+    let compute_shader = ShaderModule::from_wgsl_string_wrapped(
         context.device.clone(),
         compute_shader_code,
-        vk::ShaderStageFlags::COMPUTE,
+        ShaderStages::COMPUTE,
         "cs_main",
     )
     .expect("Failed to compile particle compute shader");
@@ -78,8 +63,8 @@ pub fn create_particle_emitter(
     // Push constants: delta_time, emit_count, max_particles, random_seed (4 x f32 = 16 bytes)
     let compute_pipeline = ComputePipelineBuilder::new(context.clone())
         .with_shader(compute_shader.module)
-        .with_descriptor_layouts(vec![compute_descriptor_layout])
-        .add_push_constant_range(vk::ShaderStageFlags::COMPUTE, 0, 16)
+        .with_descriptor_layouts(vec![compute_descriptor_layout.vk()])
+        .add_push_constant_range_wrapped(ShaderStages::COMPUTE, 0, 16)
         .build()
         .expect("Failed to create compute pipeline");
 
@@ -88,63 +73,36 @@ pub fn create_particle_emitter(
     // Note: Set 0 is bound by the renderer from storage_manager
 
     // Particle buffer descriptor layout (set 1)
-    let render_particle_bindings = [vk::DescriptorSetLayoutBinding::default()
-        .binding(0)
-        .descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
-        .descriptor_count(1)
-        .stage_flags(vk::ShaderStageFlags::VERTEX)];
-
-    let render_particle_layout_info =
-        vk::DescriptorSetLayoutCreateInfo::default().bindings(&render_particle_bindings);
-
-    let render_particle_descriptor_layout = unsafe {
-        context
-            .device
-            .create_descriptor_set_layout(&render_particle_layout_info, None)
-            .expect("Failed to create render particle descriptor layout")
-    };
+    let render_particle_descriptor_layout = DescriptorSetLayoutBuilder::new()
+        .add_binding(0, DescriptorType::StorageBuffer, ShaderStages::VERTEX)
+        .build(&context)
+        .expect("Failed to create render particle descriptor layout");
 
     // Frame uniforms descriptor layout (set 0) - MUST match StorageUniforms layout
     // The renderer binds storage_descriptor_set which has TWO bindings:
     // - Binding 0: frame_data (FrameUniforms)
     // - Binding 1: objects array (ObjectUniforms[])
     // We only use binding 0, but the layout must match for compatibility.
-    let frame_bindings = [
-        vk::DescriptorSetLayoutBinding::default()
-            .binding(0)
-            .descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
-            .descriptor_count(1)
-            .stage_flags(vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT),
-        vk::DescriptorSetLayoutBinding::default()
-            .binding(1)
-            .descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
-            .descriptor_count(1)
-            .stage_flags(vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT),
-    ];
-
-    let frame_layout_info = vk::DescriptorSetLayoutCreateInfo::default().bindings(&frame_bindings);
-
-    let frame_descriptor_layout = unsafe {
-        context
-            .device
-            .create_descriptor_set_layout(&frame_layout_info, None)
-            .expect("Failed to create frame descriptor layout")
-    };
+    let frame_descriptor_layout = DescriptorSetLayoutBuilder::new()
+        .add_binding(0, DescriptorType::StorageBuffer, ShaderStages::VERTEX_FRAGMENT)
+        .add_binding(1, DescriptorType::StorageBuffer, ShaderStages::VERTEX_FRAGMENT)
+        .build(&context)
+        .expect("Failed to create frame descriptor layout");
 
     // Load and compile render shaders
     let render_shader_code = include_str!("../../../resources/shaders/particles/particle_render.wgsl");
-    let vertex_shader = ShaderModule::from_wgsl_string(
+    let vertex_shader = ShaderModule::from_wgsl_string_wrapped(
         context.device.clone(),
         render_shader_code,
-        vk::ShaderStageFlags::VERTEX,
+        ShaderStages::VERTEX,
         "vs_main",
     )
     .expect("Failed to compile particle vertex shader");
 
-    let fragment_shader = ShaderModule::from_wgsl_string(
+    let fragment_shader = ShaderModule::from_wgsl_string_wrapped(
         context.device.clone(),
         render_shader_code,
-        vk::ShaderStageFlags::FRAGMENT,
+        ShaderStages::FRAGMENT,
         "fs_main",
     )
     .expect("Failed to compile particle fragment shader");
@@ -153,22 +111,22 @@ pub fn create_particle_emitter(
     // Note: Pipeline borrows the layouts, but MaterialPipeline will own frame_descriptor_layout
     let render_pipeline = PipelineBuilder::new(context.clone())
         .with_shaders(vertex_shader.module, fragment_shader.module)
-        .with_descriptor_layouts(vec![frame_descriptor_layout, render_particle_descriptor_layout])
+        .with_descriptor_layouts(vec![frame_descriptor_layout.vk(), render_particle_descriptor_layout.vk()])
         .with_additive_blending()
-        .with_depth_test(true, false, vk::CompareOp::LESS) // depth test but no write
-        .with_cull_mode(vk::CullModeFlags::NONE, vk::FrontFace::COUNTER_CLOCKWISE)
-        .with_rendering_formats(Some(vk::Format::B8G8R8A8_SRGB), Some(vk::Format::D32_SFLOAT_S8_UINT))
-        .build(vk::RenderPass::null()) // Dynamic rendering
+        .with_depth_test(true, false, CompareOp::Less) // depth test but no write
+        .with_cull_mode(CullMode::None, FrontFace::CounterClockwise)
+        .with_rendering_formats(Some(ImageFormat::B8G8R8A8Srgb), Some(ImageFormat::D32SfloatS8Uint))
+        .build(VkRenderPass::default()) // Dynamic rendering
         .expect("Failed to create render pipeline");
 
     // MaterialPipeline takes ownership of frame_descriptor_layout
-    let render_pipeline = MaterialPipeline::new(render_pipeline, frame_descriptor_layout, context.clone());
+    let render_pipeline = MaterialPipeline::new(render_pipeline, frame_descriptor_layout.vk(), context.clone());
 
     // Create render particle descriptor set - takes ownership of render_particle_descriptor_layout
     // This must happen AFTER pipeline creation since pipeline builder borrows the layout
     let render_particle_descriptor = BufferDescriptorSetBuilder::new(&context)
         .add_entire_buffer(&particle_buffer, 0)
-        .build_with_owned_layout(render_particle_descriptor_layout)
+        .build_with_owned_layout(render_particle_descriptor_layout.vk())
         .expect("Failed to create render particle descriptor set");
 
     // Create emitter config

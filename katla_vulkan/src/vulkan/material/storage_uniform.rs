@@ -109,9 +109,14 @@ impl StorageDescriptorSet {
         Ok(Self { inner })
     }
 
-    /// Get the descriptor set for binding.
-    pub fn set(&self) -> vk::DescriptorSet {
+    /// Get the descriptor set for binding as a wrapper type.
+    pub fn set(&self) -> crate::sync::VkDescriptorSet {
         self.inner.set()
+    }
+
+    /// Get the raw Vulkan descriptor set handle (for internal use).
+    pub fn vk_set(&self) -> vk::DescriptorSet {
+        self.inner.vk_set()
     }
 }
 

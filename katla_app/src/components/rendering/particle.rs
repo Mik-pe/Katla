@@ -3,11 +3,10 @@
 //! This component manages GPU-based particle effects using compute shaders.
 //! It holds all the resources needed for particle simulation and rendering.
 
-use ash::vk;
 use katla_ecs::Component;
 use katla_vulkan::{
     BufferDescriptorSet, ComputePipeline, DeviceAddressBuffer, EmitterConfig, MaterialPipeline,
-    ParticleBuffer,
+    ParticleBuffer, VkDescriptorSet, VkPipeline, VkPipelineLayout,
 };
 
 /// Frame data for compute shader (must match shader struct)
@@ -144,28 +143,28 @@ impl ParticleEmitter {
     }
 
     // Compute shader bindings
-    pub fn compute_pipeline(&self) -> vk::Pipeline {
-        self.compute_pipeline.vk_pipeline()
+    pub fn compute_pipeline(&self) -> VkPipeline {
+        self.compute_pipeline.pipeline()
     }
 
-    pub fn compute_layout(&self) -> vk::PipelineLayout {
-        self.compute_pipeline.vk_layout()
+    pub fn compute_layout(&self) -> VkPipelineLayout {
+        self.compute_pipeline.pipeline_layout()
     }
 
-    pub fn compute_descriptor(&self) -> vk::DescriptorSet {
+    pub fn compute_descriptor(&self) -> VkDescriptorSet {
         self.compute_descriptor_set.set()
     }
 
     // Render shader bindings
-    pub fn render_pipeline(&self) -> vk::Pipeline {
-        self.render_pipeline.vk_pipeline().handle
+    pub fn render_pipeline(&self) -> VkPipeline {
+        self.render_pipeline.vk_pipeline().pipeline()
     }
 
-    pub fn render_layout(&self) -> vk::PipelineLayout {
-        self.render_pipeline.vk_layout()
+    pub fn render_layout(&self) -> VkPipelineLayout {
+        self.render_pipeline.vk_layout().into()
     }
 
-    pub fn render_particle_descriptor(&self) -> vk::DescriptorSet {
+    pub fn render_particle_descriptor(&self) -> VkDescriptorSet {
         self.render_particle_descriptor.set()
     }
 }

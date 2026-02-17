@@ -22,6 +22,7 @@ use std::{ffi::CString, rc::Rc};
 
 use ash::vk;
 
+use crate::sync::{VkPipeline, VkPipelineLayout};
 use crate::VulkanContext;
 
 /// Builder for creating compute pipelines.
@@ -94,6 +95,23 @@ impl ComputePipelineBuilder {
         self
     }
 
+    /// Add a push constant range using wrapper types.
+    pub fn add_push_constant_range_wrapped(
+        mut self,
+        stages: crate::render_graph::types::ShaderStages,
+        offset: u32,
+        size: u32,
+    ) -> Self {
+        let vk_stages: vk::ShaderStageFlags = stages.into();
+        self.push_constant_ranges.push(
+            vk::PushConstantRange::default()
+                .stage_flags(vk_stages)
+                .offset(offset)
+                .size(size),
+        );
+        self
+    }
+
     /// Build the compute pipeline.
     ///
     /// # Returns
@@ -149,21 +167,31 @@ impl ComputePipelineBuilder {
 /// Contains the pipeline handle and layout for dispatching compute operations.
 pub struct ComputePipeline {
     /// The Vulkan pipeline handle.
-    pub handle: vk::Pipeline,
+    handle: vk::Pipeline,
     /// The pipeline layout.
-    pub layout: vk::PipelineLayout,
+    layout: vk::PipelineLayout,
     /// Descriptor set layouts (owned, for cleanup).
     descriptor_layouts: Vec<vk::DescriptorSetLayout>,
     device: ash::Device,
 }
 
 impl ComputePipeline {
-    /// Get the pipeline handle.
+    /// Get the pipeline handle as a wrapper type.
+    pub fn pipeline(&self) -> VkPipeline {
+        VkPipeline::new(self.handle)
+    }
+
+    /// Get the pipeline layout as a wrapper type.
+    pub fn pipeline_layout(&self) -> VkPipelineLayout {
+        VkPipelineLayout::new(self.layout)
+    }
+
+    /// Get the raw Vulkan pipeline handle (for internal use).
     pub fn vk_pipeline(&self) -> vk::Pipeline {
         self.handle
     }
 
-    /// Get the pipeline layout.
+    /// Get the raw Vulkan pipeline layout handle (for internal use).
     pub fn vk_layout(&self) -> vk::PipelineLayout {
         self.layout
     }

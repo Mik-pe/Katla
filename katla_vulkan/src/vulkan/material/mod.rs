@@ -52,11 +52,23 @@ use crate::sync::{VkImageView, VkSampler};
 /// Contains the albedo texture and sampler bindings.
 pub struct TextureDescriptorSet {
     /// Descriptor set containing texture bindings.
-    pub descriptor_set: vk::DescriptorSet,
+    descriptor_set: vk::DescriptorSet,
     /// Descriptor pool (owned, for cleanup).
     descriptor_pool: vk::DescriptorPool,
     /// Device for cleanup.
     device: ash::Device,
+}
+
+impl TextureDescriptorSet {
+    /// Get the descriptor set as a wrapper type.
+    pub fn set(&self) -> crate::sync::VkDescriptorSet {
+        crate::sync::VkDescriptorSet::new(self.descriptor_set)
+    }
+
+    /// Get the raw Vulkan descriptor set handle (for internal use).
+    pub fn vk_set(&self) -> vk::DescriptorSet {
+        self.descriptor_set
+    }
 }
 
 impl TextureDescriptorSet {
@@ -113,11 +125,6 @@ impl TextureDescriptorSet {
             descriptor_pool,
             device: context.device.clone(),
         })
-    }
-
-    /// Get the descriptor set for binding.
-    pub fn set(&self) -> vk::DescriptorSet {
-        self.descriptor_set
     }
 }
 
@@ -699,7 +706,7 @@ impl MaterialPipeline {
         self.pipeline
             .as_ref()
             .expect("Pipeline accessed after destruction")
-            .layout
+            .vk_layout()
     }
 
     /// Get the uniform layout for this pipeline.
@@ -725,13 +732,13 @@ impl MaterialPipeline {
             self.context.device.cmd_bind_pipeline(
                 command_buffer,
                 vk::PipelineBindPoint::GRAPHICS,
-                pipeline.handle,
+                pipeline.vk_pipeline(),
             );
 
             self.context.device.cmd_bind_descriptor_sets(
                 command_buffer,
                 vk::PipelineBindPoint::GRAPHICS,
-                pipeline.layout,
+                pipeline.vk_layout(),
                 0,
                 &[descriptor_set],
                 &[],
@@ -818,14 +825,14 @@ impl MaterialPipeline {
             self.context.device.cmd_bind_pipeline(
                 command_buffer,
                 vk::PipelineBindPoint::GRAPHICS,
-                pipeline.handle,
+                pipeline.vk_pipeline(),
             );
 
             // Bind set 0: Storage uniforms (frame_data + objects)
             self.context.device.cmd_bind_descriptor_sets(
                 command_buffer,
                 vk::PipelineBindPoint::GRAPHICS,
-                pipeline.layout,
+                pipeline.vk_layout(),
                 0,
                 &[storage_descriptor_set],
                 &[],
@@ -835,9 +842,9 @@ impl MaterialPipeline {
             self.context.device.cmd_bind_descriptor_sets(
                 command_buffer,
                 vk::PipelineBindPoint::GRAPHICS,
-                pipeline.layout,
+                pipeline.vk_layout(),
                 1,
-                &[texture_set.set()],
+                &[texture_set.vk_set()],
                 &[],
             );
 

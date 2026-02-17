@@ -6,6 +6,7 @@ use super::{
     PipelineBuilder, ShaderModule, ShaderSource,
 };
 use crate::vulkan::context::VulkanContext;
+use crate::vulkan::pipeline_state::{CullMode, CompareOp, FrontFace};
 use crate::{ImageFormat, Texture, VertexBinding};
 use crate::render_graph::types::ShaderStages;
 
@@ -17,7 +18,7 @@ pub struct MaterialBuilder {
     texture: Option<Rc<Texture>>,
     depth_test: bool,
     depth_write: bool,
-    depth_compare_op: vk::CompareOp,
+    depth_compare_op: CompareOp,
     cull_back_faces: bool,
     alpha_blending: bool,
     has_color: bool,
@@ -38,7 +39,7 @@ impl MaterialBuilder {
             texture: None,
             depth_test: true,
             depth_write: true,
-            depth_compare_op: vk::CompareOp::LESS,
+            depth_compare_op: CompareOp::Less,
             cull_back_faces: true,
             alpha_blending: false,
             has_color: false,
@@ -221,7 +222,7 @@ impl MaterialBuilder {
         self
     }
 
-    pub fn with_depth_compare_op(mut self, op: vk::CompareOp) -> Self {
+    pub fn with_depth_compare_op(mut self, op: CompareOp) -> Self {
         self.depth_compare_op = op;
         self
     }
@@ -235,7 +236,7 @@ impl MaterialBuilder {
     pub fn with_sky_rendering(mut self) -> Self {
         self.depth_test = true;
         self.depth_write = false;
-        self.depth_compare_op = vk::CompareOp::ALWAYS;
+        self.depth_compare_op = CompareOp::Always;
         self.cull_back_faces = false;
         self
     }
@@ -334,10 +335,10 @@ impl MaterialBuilder {
 
         if self.cull_back_faces {
             pipeline_builder = pipeline_builder
-                .with_cull_mode(vk::CullModeFlags::BACK, vk::FrontFace::COUNTER_CLOCKWISE);
+                .with_cull_mode(CullMode::Back, FrontFace::CounterClockwise);
         } else {
             pipeline_builder = pipeline_builder
-                .with_cull_mode(vk::CullModeFlags::NONE, vk::FrontFace::COUNTER_CLOCKWISE);
+                .with_cull_mode(CullMode::None, FrontFace::CounterClockwise);
         }
 
         if self.alpha_blending {
@@ -348,7 +349,7 @@ impl MaterialBuilder {
         let vk_render_pass = vk::RenderPass::null();
 
         let pipeline = pipeline_builder
-            .build(vk_render_pass)
+            .build(crate::sync::VkRenderPass::from(vk_render_pass))
             .map_err(|e| MaterialBuildError::PipelineCreationFailed(format!("{:?}", e)))?;
 
         // All shaders are WGSL, which uses separate bindings
@@ -449,17 +450,15 @@ impl MaterialBuilder {
 
         // Set rendering formats for dynamic rendering (Vulkan 1.3)
         if color_format.is_some() || depth_format.is_some() {
-            let cf = color_format.map(ash::vk::Format::from);
-            let df = depth_format.map(ash::vk::Format::from);
-            pipeline_builder = pipeline_builder.with_rendering_formats(cf, df);
+            pipeline_builder = pipeline_builder.with_rendering_formats(color_format, depth_format);
         }
 
         if self.cull_back_faces {
             pipeline_builder = pipeline_builder
-                .with_cull_mode(vk::CullModeFlags::BACK, vk::FrontFace::COUNTER_CLOCKWISE);
+                .with_cull_mode(CullMode::Back, FrontFace::CounterClockwise);
         } else {
             pipeline_builder = pipeline_builder
-                .with_cull_mode(vk::CullModeFlags::NONE, vk::FrontFace::COUNTER_CLOCKWISE);
+                .with_cull_mode(CullMode::None, FrontFace::CounterClockwise);
         }
 
         if self.alpha_blending {
@@ -470,7 +469,7 @@ impl MaterialBuilder {
         let vk_render_pass = vk::RenderPass::null();
 
         let pipeline = pipeline_builder
-            .build(vk_render_pass)
+            .build(crate::sync::VkRenderPass::from(vk_render_pass))
             .map_err(|e| MaterialBuildError::PipelineCreationFailed(format!("{:?}", e)))?;
 
         // Create MaterialPipeline with storage buffer configuration
@@ -578,17 +577,15 @@ impl MaterialBuilder {
 
         // Set rendering formats for dynamic rendering (Vulkan 1.3)
         if color_format.is_some() || depth_format.is_some() {
-            let cf = color_format.map(ash::vk::Format::from);
-            let df = depth_format.map(ash::vk::Format::from);
-            pipeline_builder = pipeline_builder.with_rendering_formats(cf, df);
+            pipeline_builder = pipeline_builder.with_rendering_formats(color_format, depth_format);
         }
 
         if self.cull_back_faces {
             pipeline_builder = pipeline_builder
-                .with_cull_mode(vk::CullModeFlags::BACK, vk::FrontFace::COUNTER_CLOCKWISE);
+                .with_cull_mode(CullMode::Back, FrontFace::CounterClockwise);
         } else {
             pipeline_builder = pipeline_builder
-                .with_cull_mode(vk::CullModeFlags::NONE, vk::FrontFace::COUNTER_CLOCKWISE);
+                .with_cull_mode(CullMode::None, FrontFace::CounterClockwise);
         }
 
         if self.alpha_blending {
@@ -598,7 +595,7 @@ impl MaterialBuilder {
         let vk_render_pass = vk::RenderPass::null();
 
         let pipeline = pipeline_builder
-            .build(vk_render_pass)
+            .build(crate::sync::VkRenderPass::from(vk_render_pass))
             .map_err(|e| MaterialBuildError::PipelineCreationFailed(format!("{:?}", e)))?;
 
         // Create MaterialPipeline with skeleton layout
@@ -703,17 +700,15 @@ impl MaterialBuilder {
 
         // Set rendering formats for dynamic rendering (Vulkan 1.3)
         if color_format.is_some() || depth_format.is_some() {
-            let cf = color_format.map(ash::vk::Format::from);
-            let df = depth_format.map(ash::vk::Format::from);
-            pipeline_builder = pipeline_builder.with_rendering_formats(cf, df);
+            pipeline_builder = pipeline_builder.with_rendering_formats(color_format, depth_format);
         }
 
         if self.cull_back_faces {
             pipeline_builder = pipeline_builder
-                .with_cull_mode(vk::CullModeFlags::BACK, vk::FrontFace::COUNTER_CLOCKWISE);
+                .with_cull_mode(CullMode::Back, FrontFace::CounterClockwise);
         } else {
             pipeline_builder = pipeline_builder
-                .with_cull_mode(vk::CullModeFlags::NONE, vk::FrontFace::COUNTER_CLOCKWISE);
+                .with_cull_mode(CullMode::None, FrontFace::CounterClockwise);
         }
 
         if self.alpha_blending {
@@ -724,7 +719,7 @@ impl MaterialBuilder {
         let vk_render_pass = vk::RenderPass::null();
 
         let pipeline = pipeline_builder
-            .build(vk_render_pass)
+            .build(crate::sync::VkRenderPass::from(vk_render_pass))
             .map_err(|e| MaterialBuildError::PipelineCreationFailed(format!("{:?}", e)))?;
 
         // All shaders are WGSL, which uses separate bindings

@@ -56,8 +56,13 @@ pub struct BufferDescriptorSet {
 }
 
 impl BufferDescriptorSet {
-    /// Get the descriptor set handle for binding.
-    pub fn set(&self) -> vk::DescriptorSet {
+    /// Get the descriptor set handle as a wrapper type.
+    pub fn set(&self) -> crate::sync::VkDescriptorSet {
+        crate::sync::VkDescriptorSet::new(self.descriptor_set)
+    }
+
+    /// Get the raw Vulkan descriptor set handle (for internal use).
+    pub fn vk_set(&self) -> vk::DescriptorSet {
         self.descriptor_set
     }
 }
@@ -104,6 +109,17 @@ impl<'a> BufferDescriptorSetBuilder<'a> {
     /// ```
     pub fn with_descriptor_type(mut self, descriptor_type: vk::DescriptorType) -> Self {
         self.descriptor_type = descriptor_type;
+        self
+    }
+
+    /// Set the descriptor type using the wrapper type.
+    ///
+    /// Use this for uniform buffers:
+    /// ```ignore
+    /// builder.with_descriptor_type_wrapped(DescriptorType::UniformBuffer)
+    /// ```
+    pub fn with_descriptor_type_wrapped(mut self, descriptor_type: crate::vulkan::pipeline_state::DescriptorType) -> Self {
+        self.descriptor_type = descriptor_type.into();
         self
     }
 

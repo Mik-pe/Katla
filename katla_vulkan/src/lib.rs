@@ -15,9 +15,9 @@ pub use rendering::{
     types::{DrawCall, DrawList, FrameUniforms, InstanceData, MaterialHandle, MeshHandle, ParticleDispatch, ParticleRender, SkeletonHandle},
 };
 pub use sync::{
-    AccessFlags2, DependencyInfo, ImageMemoryBarrier2, PipelineStage2Flags,
-    VkDescriptorPool, VkDescriptorSet, VkDescriptorSetLayout, VkFence, VkFramebuffer, VkImage,
-    VkImageView, VkSampler, VkSemaphore,
+    AccessFlags2, BufferMemoryBarrier2, DependencyInfo, ImageMemoryBarrier2, PipelineStage2Flags,
+    VkBuffer, VkCommandBuffer, VkDescriptorPool, VkDescriptorSet, VkDescriptorSetLayout, VkFence, VkFramebuffer, VkImage,
+    VkImageView, VkPipeline, VkPipelineLayout, VkRenderPass, VkSampler, VkSemaphore,
 };
 pub use vulkan::context::{ValidationMessage, ValidationMessageType, ValidationSeverity};
 pub use vulkan::material::storage_uniform::*;
@@ -206,8 +206,13 @@ impl VulkanRenderer {
     /// Get storage descriptor set for binding (set 0).
     ///
     /// Returns None if storage system not initialized.
-    pub fn storage_descriptor(&self) -> Option<vk::DescriptorSet> {
+    pub fn storage_descriptor(&self) -> Option<VkDescriptorSet> {
         self.storage_descriptor_set.as_ref().map(|ds| ds.set())
+    }
+
+    /// Get storage descriptor set as raw vk handle (for internal use).
+    pub fn vk_storage_descriptor(&self) -> Option<vk::DescriptorSet> {
+        self.storage_descriptor_set.as_ref().map(|ds| ds.vk_set())
     }
 
     /// Check if storage uniform system is initialized.
@@ -310,9 +315,14 @@ impl VulkanRenderer {
         }
     }
 
-    /// Get UI descriptor set for binding.
-    pub fn ui_descriptor_set(&self) -> Option<vk::DescriptorSet> {
-        self.ui_textures.as_ref().map(|t| t.descriptor_set)
+    /// Get UI descriptor set for binding as wrapper type.
+    pub fn ui_descriptor_set(&self) -> Option<VkDescriptorSet> {
+        self.ui_textures.as_ref().map(|t| t.set())
+    }
+
+    /// Get UI descriptor set as raw vk handle (for internal use).
+    pub fn vk_ui_descriptor_set(&self) -> Option<vk::DescriptorSet> {
+        self.ui_textures.as_ref().map(|t| t.vk_set())
     }
 
     /// Initialize or resize the viewport render target.
@@ -957,7 +967,7 @@ impl VulkanRenderer {
                             pipeline_ref.context().device.cmd_bind_pipeline(
                                 cmd_buf,
                                 vk::PipelineBindPoint::GRAPHICS,
-                                pipeline_ref.vk_pipeline().handle,
+                                pipeline_ref.vk_pipeline().vk_pipeline(),
                             );
 
                             // Bind storage descriptor set (set 0 = frame_data + objects)
@@ -966,7 +976,7 @@ impl VulkanRenderer {
                                 vk::PipelineBindPoint::GRAPHICS,
                                 pipeline_ref.vk_layout(),
                                 0,
-                                &[storage_descriptor.set()],
+                                &[storage_descriptor.vk_set()],
                                 &[],
                             );
                         }
@@ -1087,7 +1097,7 @@ impl VulkanRenderer {
                                 pipeline_ref.context().device.cmd_bind_pipeline(
                                     cmd_buf,
                                     vk::PipelineBindPoint::GRAPHICS,
-                                    pipeline_ref.vk_pipeline().handle,
+                                    pipeline_ref.vk_pipeline().vk_pipeline(),
                                 );
                             }
 
@@ -1099,7 +1109,7 @@ impl VulkanRenderer {
                                         vk::PipelineBindPoint::GRAPHICS,
                                         pipeline_ref.vk_layout(),
                                         0,
-                                        &[descriptor.set()],
+                                        &[descriptor.vk_set()],
                                         &[],
                                     );
                                 }
@@ -1113,7 +1123,7 @@ impl VulkanRenderer {
                                         vk::PipelineBindPoint::GRAPHICS,
                                         pipeline_ref.vk_layout(),
                                         1,
-                                        &[tex_descriptor.set()],
+                                        &[tex_descriptor.vk_set()],
                                         &[],
                                     );
                                 }
@@ -1129,7 +1139,7 @@ impl VulkanRenderer {
                                             vk::PipelineBindPoint::GRAPHICS,
                                             pipeline_ref.vk_layout(),
                                             2,
-                                            &[skeleton_desc.set()],
+                                            &[skeleton_desc.vk_set()],
                                             &[],
                                         );
                                     }
@@ -1172,16 +1182,16 @@ impl VulkanRenderer {
                                 device_ptr.cmd_bind_pipeline(
                                     cmd_buf,
                                     vk::PipelineBindPoint::GRAPHICS,
-                                    particle_render.pipeline,
+                                    particle_render.pipeline.vk(),
                                 );
 
                                 // Bind set 0: Frame uniforms (storage buffer with view/proj)
                                 device_ptr.cmd_bind_descriptor_sets(
                                     cmd_buf,
                                     vk::PipelineBindPoint::GRAPHICS,
-                                    particle_render.pipeline_layout,
+                                    particle_render.pipeline_layout.vk(),
                                     0,
-                                    &[particle_render.frame_descriptor_set],
+                                    &[particle_render.frame_descriptor_set.vk()],
                                     &[],
                                 );
 
@@ -1189,9 +1199,9 @@ impl VulkanRenderer {
                                 device_ptr.cmd_bind_descriptor_sets(
                                     cmd_buf,
                                     vk::PipelineBindPoint::GRAPHICS,
-                                    particle_render.pipeline_layout,
+                                    particle_render.pipeline_layout.vk(),
                                     1,
-                                    &[particle_render.particle_descriptor_set],
+                                    &[particle_render.particle_descriptor_set.vk()],
                                     &[],
                                 );
 
@@ -1292,7 +1302,7 @@ impl VulkanRenderer {
                             pipeline_ref.context().device.cmd_bind_pipeline(
                                 cmd_buf,
                                 vk::PipelineBindPoint::GRAPHICS,
-                                pipeline_ref.vk_pipeline().handle,
+                                pipeline_ref.vk_pipeline().vk_pipeline(),
                             );
 
                             // Bind UI texture descriptor set (set 0)
@@ -1300,9 +1310,9 @@ impl VulkanRenderer {
                                 pipeline_ref.context().device.cmd_bind_descriptor_sets(
                                     cmd_buf,
                                     vk::PipelineBindPoint::GRAPHICS,
-                                    pipeline_ref.vk_pipeline().layout,
+                                    pipeline_ref.vk_layout(),
                                     0,
-                                    &[textures.descriptor_set],
+                                    &[textures.vk_set()],
                                     &[],
                                 );
                             }
@@ -1765,23 +1775,23 @@ impl VulkanRenderer {
                     self.context.device.cmd_bind_pipeline(
                         command_buffer.vk_command_buffer(),
                         vk::PipelineBindPoint::COMPUTE,
-                        particle.pipeline,
+                        particle.pipeline.vk(),
                     );
                     debug!("render_frame: binding descriptor set");
                     // Bind descriptor set
                     self.context.device.cmd_bind_descriptor_sets(
                         command_buffer.vk_command_buffer(),
                         vk::PipelineBindPoint::COMPUTE,
-                        particle.pipeline_layout,
+                        particle.pipeline_layout.vk(),
                         0,
-                        &[particle.descriptor_set],
+                        &[particle.descriptor_set.vk()],
                         &[],
                     );
                     debug!("render_frame: pushing constants");
                     // Push frame data constants
                     self.context.device.cmd_push_constants(
                         command_buffer.vk_command_buffer(),
-                        particle.pipeline_layout,
+                        particle.pipeline_layout.vk(),
                         vk::ShaderStageFlags::COMPUTE,
                         0,
                         bytemuck::cast_slice(&particle.frame_data),
@@ -2067,6 +2077,16 @@ pub struct UITextures {
 }
 
 impl UITextures {
+    /// Get the descriptor set as a wrapper type.
+    pub fn set(&self) -> VkDescriptorSet {
+        VkDescriptorSet::new(self.descriptor_set)
+    }
+
+    /// Get the raw Vulkan descriptor set handle (for internal use).
+    pub fn vk_set(&self) -> vk::DescriptorSet {
+        self.descriptor_set
+    }
+
     /// Create UI textures with a default font atlas size.
     pub fn new(context: Rc<VulkanContext>) -> Result<Self, vk::Result> {
         Self::with_atlas_size(context, 512, 512)
