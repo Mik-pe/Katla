@@ -100,8 +100,10 @@ impl ApplicationBuilder {
                     match ui_context.fonts.add_font(&font_bytes) {
                         Ok(font_id) => {
                             // Precache common ASCII characters at typical UI sizes
-                            ui_context.fonts.precache_ascii(font_id, 14.0);
-                            ui_context.fonts.precache_ascii(font_id, 16.0);
+                            // Note: Using scale_factor 1.0 for initial cache; will re-rasterize at
+                            // actual DPI scale on first use if different
+                            ui_context.fonts.precache_ascii(font_id, 14.0, 1.0);
+                            ui_context.fonts.precache_ascii(font_id, 16.0, 1.0);
                             ui_context.set_font(font_id);
                             log::info!("Loaded default font from {}", font_path.display());
                         }
@@ -126,8 +128,10 @@ impl ApplicationBuilder {
                     match ui_context.fonts.add_font_with_id(&font_bytes, FontId::ICON) {
                         Ok(()) => {
                             // Precache common icons at typical UI sizes
-                            ui_context.fonts.precache_icons(FontId::ICON, 14.0, ForkAwesome::common_icons());
-                            ui_context.fonts.precache_icons(FontId::ICON, 16.0, ForkAwesome::common_icons());
+                            // Note: Using scale_factor 1.0 for initial cache; will re-rasterize at
+                            // actual DPI scale on first use if different
+                            ui_context.fonts.precache_icons(FontId::ICON, 14.0, 1.0, ForkAwesome::common_icons());
+                            ui_context.fonts.precache_icons(FontId::ICON, 16.0, 1.0, ForkAwesome::common_icons());
                             log::info!("Loaded icon font from {}", icon_font_path.display());
                         }
                         Err(e) => {
@@ -163,6 +167,7 @@ impl ApplicationBuilder {
             editor_ui: crate::ui::EditorUI::with_theme(theme),
             use_editor_ui: true,  // Default to editor UI mode
             preferences,
+            scale_factor: 1.0,  // Will be updated when window is created
         };
 
         Ok((app, event_loop))

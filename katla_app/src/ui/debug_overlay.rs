@@ -374,6 +374,7 @@ impl DebugOverlay {
         &mut self,
         ui: &'a mut UiContext,
         screen_size: Vec2,
+        scale_factor: f32,
         fps: f32,
         frame_count: usize,
         entity_count: usize,
@@ -390,7 +391,7 @@ impl DebugOverlay {
         self.frame_time_history.push(frame_time_ms);
 
         // Begin UI frame
-        ui.begin(screen_size);
+        ui.begin(screen_size, scale_factor);
 
         // Build the UI
         self.build(

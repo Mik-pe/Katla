@@ -53,7 +53,7 @@
 //! // In setup:
 //! let icon_bytes = include_bytes!("path/to/forkawesome.ttf");
 //! ui.fonts.add_font_with_id(icon_bytes, FontId::ICON)?;
-//! ui.fonts.precache_icons(FontId::ICON, 16.0, ForkAwesome::common_icons());
+//! ui.fonts.precache_icons(FontId::ICON, 16.0, scale_factor, ForkAwesome::common_icons());
 //!
 //! // In render loop:
 //! ui.draw_icon(ForkAwesome::CUBE, pos, 16.0, [1.0, 1.0, 1.0, 1.0]);

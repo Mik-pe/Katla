@@ -76,6 +76,8 @@ pub struct Application {
     pub(crate) use_editor_ui: bool,
     /// User preferences (theme, settings)
     pub(crate) preferences: Preferences,
+    /// DPI scale factor (physical pixels per logical pixel)
+    pub(crate) scale_factor: f32,
 }
 
 impl ApplicationHandler for Application {
@@ -93,6 +95,9 @@ impl ApplicationHandler for Application {
                         .with_maximized(false),
                 )
                 .unwrap();
+
+            // Get initial DPI scale factor
+            self.scale_factor = window.scale_factor() as f32;
 
             let engine_name = CString::new("Katla Engine").unwrap();
             let mut renderer = VulkanRenderer::init(
@@ -431,6 +436,10 @@ impl ApplicationHandler for Application {
                 }
                 WindowEvent::ModifiersChanged(modifiers) => {
                     self.current_modifiers = modifiers.state();
+                }
+                WindowEvent::ScaleFactorChanged { scale_factor, .. } => {
+                    self.scale_factor = scale_factor as f32;
+                    debug!("DPI scale factor changed to {}", self.scale_factor);
                 }
                 WindowEvent::RedrawRequested => {
                     debug!("RedrawRequested received");

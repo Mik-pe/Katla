@@ -33,8 +33,10 @@ pub struct UiContext {
     pub fonts: FontSystem,
     /// Currently active font.
     current_font: FontId,
-    /// Current screen size.
+    /// Current screen size (logical pixels).
     screen_size: Vec2,
+    /// DPI scale factor (physical pixels per logical pixel).
+    scale_factor: f32,
     /// Stack of clipping rectangles.
     clip_stack: Vec<Rect2D>,
     /// Stack of widget IDs for nesting.
@@ -104,6 +106,7 @@ impl UiContext {
             fonts: FontSystem::new(),
             current_font: FontId::DEFAULT,
             screen_size: Vec2::new(0.0, 0.0),
+            scale_factor: 1.0,
             clip_stack: Vec::new(),
             id_stack: Vec::new(),
             id_counter: 0,
@@ -132,12 +135,14 @@ impl UiContext {
     /// Begin a new frame.
     ///
     /// Must be called before any widget functions.
-    /// `screen_size` is the current window/render target size.
-    pub fn begin(&mut self, screen_size: Vec2) {
+    /// `screen_size` is the current window/render target size in logical pixels.
+    /// `scale_factor` is the DPI scale factor (physical pixels per logical pixel).
+    pub fn begin(&mut self, screen_size: Vec2, scale_factor: f32) {
         debug_assert!(!self.in_frame, "begin() called while already in frame");
 
         self.in_frame = true;
         self.screen_size = screen_size;
+        self.scale_factor = scale_factor;
         self.draw_list.clear();
         self.id_stack.clear();
         self.z_stack.clear();
@@ -191,6 +196,18 @@ impl UiContext {
     #[inline]
     pub fn screen_size(&self) -> Vec2 {
         self.screen_size
+    }
+
+    /// Get the current DPI scale factor.
+    #[inline]
+    pub fn scale_factor(&self) -> f32 {
+        self.scale_factor
+    }
+
+    /// Scale a logical pixel value to physical pixels.
+    #[inline]
+    pub fn scale(&self, logical: f32) -> f32 {
+        logical * self.scale_factor
     }
 
     // -------------------------------------------------------------------------
@@ -366,8 +383,8 @@ impl UiContext {
         let baseline_y = position.y() + size * 0.75;
 
         for c in text.chars() {
-            // Try to get cached glyph
-            if let Some(glyph) = self.fonts.get_or_rasterize(self.current_font, c, size) {
+            // Try to get cached glyph (scale font size by DPI factor)
+            if let Some(glyph) = self.fonts.get_or_rasterize(self.current_font, c, size, self.scale_factor) {
                 // Skip empty glyphs (spaces)
                 if glyph.size.x() == 0.0 || glyph.size.y() == 0.0 {
                     cursor_x += glyph.advance;
@@ -414,9 +431,9 @@ impl UiContext {
         }
     }
 
-    /// Measure text dimensions.
+    /// Measure text dimensions in logical pixels.
     pub fn measure_text(&self, text: &str, size: f32) -> Vec2 {
-        self.fonts.measure_text(self.current_font, text, size)
+        self.fonts.measure_text(self.current_font, text, size, self.scale_factor)
     }
 
     /// Draw an icon from an icon font (like ForkAwesome).
@@ -1766,7 +1783,7 @@ mod tests {
     fn test_begin_end_frame() {
         let mut ctx = UiContext::new();
 
-        ctx.begin(Vec2::new(800.0, 600.0));
+        ctx.begin(Vec2::new(800.0, 600.0), 1.0);
         assert_eq!(ctx.screen_size(), Vec2::new(800.0, 600.0));
 
         let draw_list = ctx.end();
@@ -1776,7 +1793,7 @@ mod tests {
     #[test]
     fn test_draw_rect() {
         let mut ctx = UiContext::new();
-        ctx.begin(Vec2::new(800.0, 600.0));
+        ctx.begin(Vec2::new(800.0, 600.0), 1.0);
 
         ctx.draw_rect(
             Rect2D::from_origin_size(Vec2::new(10.0, 10.0), Vec2::new(100.0, 50.0)),
@@ -1791,7 +1808,7 @@ mod tests {
     #[test]
     fn test_id_generation() {
         let mut ctx = UiContext::new();
-        ctx.begin(Vec2::new(800.0, 600.0));
+        ctx.begin(Vec2::new(800.0, 600.0), 1.0);
 
         let id1 = ctx.generate_id("test");
         let id2 = ctx.generate_id("test");

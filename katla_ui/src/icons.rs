@@ -336,7 +336,7 @@ impl ForkAwesome {
     ///
     /// Use this to precache the most frequently used icons in your UI:
     /// ```ignore
-    /// ui.fonts.precache_icons(FontId::ICON, 16.0, ForkAwesome::common_icons());
+    /// ui.fonts.precache_icons(FontId::ICON, 16.0, scale_factor, ForkAwesome::common_icons());
     /// ```
     pub fn common_icons() -> &'static [char] {
         &[

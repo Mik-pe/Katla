@@ -34,10 +34,12 @@ pub fn render_debug_ui(app: &mut Application, dt: f32) {
 
     // Render UI (editor or debug overlay based on mode)
     // We extract the vertices immediately to release the borrow on editor_ui
+    let scale_factor = app.scale_factor;
     let (vertices, indices, commands, use_editor) = if app.use_editor_ui {
         let draw_list = app.editor_ui.render(
             &mut app.ui_context,
             screen_size,
+            scale_factor,
             &entity_info,
             fps,
             app.frame_count,
@@ -52,6 +54,7 @@ pub fn render_debug_ui(app: &mut Application, dt: f32) {
         let draw_list = app.debug_overlay.render(
             &mut app.ui_context,
             screen_size,
+            scale_factor,
             fps,
             app.frame_count,
             entity_count,

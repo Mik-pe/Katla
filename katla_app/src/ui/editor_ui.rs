@@ -1339,6 +1339,7 @@ impl EditorUI {
         &'a mut self,
         ui: &'a mut UiContext,
         screen_size: Vec2,
+        scale_factor: f32,
         entities: &'a [EntityInfo],
         fps: f32,
         frame_count: usize,
@@ -1346,7 +1347,7 @@ impl EditorUI {
         // Apply theme to UI style
         self.theme.apply_to_style(&mut ui.style);
 
-        ui.begin(screen_size);
+        ui.begin(screen_size, scale_factor);
         self.build(ui, entities, fps, frame_count);
         ui.end()
     }

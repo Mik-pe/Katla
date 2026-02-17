@@ -29,6 +29,17 @@ impl FontSizeKey {
     }
 }
 
+/// Scale factor stored as fixed-point for hashing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+struct ScaleFactorKey(u32);
+
+impl ScaleFactorKey {
+    fn from_f32(scale: f32) -> Self {
+        // Store as 8.24 fixed point for hashing
+        ScaleFactorKey((scale * 16777216.0) as u32)
+    }
+}
+
 /// A cached glyph's render data.
 #[derive(Debug, Clone)]
 pub struct CachedGlyph {
@@ -71,8 +82,8 @@ pub struct FontSystem {
     fonts: HashMap<FontId, FontRef<'static>>,
     /// Next font ID.
     next_font_id: u32,
-    /// Glyph cache: (font_id, char, size_key) -> cached glyph.
-    glyph_cache: HashMap<(FontId, char, FontSizeKey), CachedGlyph>,
+    /// Glyph cache: (font_id, char, size_key, scale_key) -> cached glyph.
+    glyph_cache: HashMap<(FontId, char, FontSizeKey, ScaleFactorKey), CachedGlyph>,
     /// Texture atlas width.
     atlas_width: u32,
     /// Texture atlas height.
@@ -179,18 +190,34 @@ impl FontSystem {
     /// Rasterize a glyph and add to the atlas.
     ///
     /// Returns the cached glyph info if successful.
-    pub fn get_or_rasterize(&mut self, font_id: FontId, c: char, size: f32) -> Option<CachedGlyph> {
-        let size_key = FontSizeKey::from_f32(size);
+    ///
+    /// # Arguments
+    /// * `font_id` - The font to use
+    /// * `c` - The character to rasterize
+    /// * `logical_size` - Font size in logical pixels
+    /// * `scale_factor` - DPI scale factor (physical pixels per logical pixel)
+    pub fn get_or_rasterize(
+        &mut self,
+        font_id: FontId,
+        c: char,
+        logical_size: f32,
+        scale_factor: f32,
+    ) -> Option<CachedGlyph> {
+        let size_key = FontSizeKey::from_f32(logical_size);
+        let scale_key = ScaleFactorKey::from_f32(scale_factor);
 
         // Check cache first
-        if let Some(cached) = self.glyph_cache.get(&(font_id, c, size_key)) {
+        if let Some(cached) = self.glyph_cache.get(&(font_id, c, size_key, scale_key)) {
             return Some(cached.clone());
         }
 
         let font = self.fonts.get(&font_id)?;
 
-        // Rasterize the glyph using ab_glyph
-        let scaled_font = font.as_scaled(PxScale::from(size));
+        // Calculate physical pixel size for rasterization
+        let physical_size = logical_size * scale_factor;
+
+        // Rasterize the glyph using ab_glyph at physical resolution
+        let scaled_font = font.as_scaled(PxScale::from(physical_size));
 
         // Get glyph ID for character
         let glyph_id = font.glyph_id(c);
@@ -198,18 +225,18 @@ impl FontSystem {
         // Get outline glyph (may be None for whitespace, control chars)
         let glyph = Glyph {
             id: glyph_id,
-            scale: PxScale::from(size),
+            scale: PxScale::from(physical_size),
             position: ab_glyph::point(0.0, 0.0),
         };
         let outlined = font.outline_glyph(glyph)?;
 
-        // Get pixel bounds
+        // Get pixel bounds (in physical pixels)
         let bounds = outlined.px_bounds();
 
-        // Get font metrics for baseline alignment
+        // Get font metrics for baseline alignment (physical pixels)
         let ascender = scaled_font.ascent();
 
-        // Calculate advance width
+        // Calculate advance width (physical pixels)
         let advance = scaled_font.h_advance(glyph_id);
 
         // Allocate pixel buffer
@@ -226,31 +253,36 @@ impl FontSystem {
             }
         });
 
+        // Convert physical pixel metrics to logical pixels for UI positioning
         let rasterized = RasterizedGlyph {
             c,
             pixels,
             width,
             height,
-            // ab_glyph's bounds min is the top-left corner offset
-            offset_x: bounds.min.x,
+            // ab_glyph's bounds min is the top-left corner offset (convert to logical)
+            offset_x: bounds.min.x / scale_factor,
             // ab_glyph y-axis is inverted compared to fontdue:
             // bounds.min.y is the top of the glyph relative to baseline
-            offset_y: bounds.min.y,
-            ascender,
-            advance,
+            offset_y: bounds.min.y / scale_factor,
+            ascender: ascender / scale_factor,
+            advance: advance / scale_factor,
         };
 
-        // Place in atlas
-        let cached = self.place_in_atlas(&rasterized)?;
+        // Place in atlas (uses physical pixels for crisp rendering)
+        let cached = self.place_in_atlas(&rasterized, scale_factor)?;
 
         // Cache the result
-        self.glyph_cache.insert((font_id, c, size_key), cached.clone());
+        self.glyph_cache.insert((font_id, c, size_key, scale_key), cached.clone());
 
         Some(cached)
     }
 
     /// Place a rasterized glyph in the texture atlas.
-    fn place_in_atlas(&mut self, glyph: &RasterizedGlyph) -> Option<CachedGlyph> {
+    ///
+    /// # Arguments
+    /// * `glyph` - The rasterized glyph (width/height in physical pixels, metrics in logical pixels)
+    /// * `scale_factor` - DPI scale factor for converting physical size to logical
+    fn place_in_atlas(&mut self, glyph: &RasterizedGlyph, scale_factor: f32) -> Option<CachedGlyph> {
         // Handle empty glyphs (like spaces) - they don't need atlas space
         if glyph.width == 0 || glyph.height == 0 {
             return Some(CachedGlyph {
@@ -311,18 +343,22 @@ impl FontSystem {
         self.atlas_row_height = self.atlas_row_height.max(glyph_h);
         self.atlas_dirty = true;
 
-        // Calculate UV coordinates (normalized)
+        // Calculate UV coordinates (normalized - scale-independent)
         let uv_min_x = x as f32 / self.atlas_width as f32;
         let uv_min_y = y as f32 / self.atlas_height as f32;
         let uv_max_x = (x as usize + glyph.width) as f32 / self.atlas_width as f32;
         let uv_max_y = (y as usize + glyph.height) as f32 / self.atlas_height as f32;
+
+        // Convert physical pixel size to logical pixels for UI positioning
+        let logical_width = glyph.width as f32 / scale_factor;
+        let logical_height = glyph.height as f32 / scale_factor;
 
         Some(CachedGlyph {
             uv_rect: Rect2D::new(
                 Vec2::new(uv_min_x, uv_min_y),
                 Vec2::new(uv_max_x, uv_max_y),
             ),
-            size: Vec2::new(glyph.width as f32, glyph.height as f32),
+            size: Vec2::new(logical_width, logical_height),
             offset: Vec2::new(glyph.offset_x, glyph.offset_y),
             ascender: glyph.ascender,
             advance: glyph.advance,
@@ -330,10 +366,10 @@ impl FontSystem {
     }
 
     /// Pre-cache common ASCII characters for a font.
-    pub fn precache_ascii(&mut self, font_id: FontId, size: f32) {
+    pub fn precache_ascii(&mut self, font_id: FontId, size: f32, scale_factor: f32) {
         // ASCII printable range
         for c in ' '..='~' {
-            self.get_or_rasterize(font_id, c, size);
+            self.get_or_rasterize(font_id, c, size, scale_factor);
         }
     }
 
@@ -341,34 +377,41 @@ impl FontSystem {
     ///
     /// This rasterizes frequently used icons at the given size to avoid
     /// runtime hitches when rendering icons for the first time.
-    pub fn precache_icons(&mut self, font_id: FontId, size: f32, icons: &[char]) {
+    pub fn precache_icons(&mut self, font_id: FontId, size: f32, scale_factor: f32, icons: &[char]) {
         for &icon in icons {
-            self.get_or_rasterize(font_id, icon, size);
+            self.get_or_rasterize(font_id, icon, size, scale_factor);
         }
     }
 
     /// Measure text dimensions without rendering.
-    pub fn measure_text(&self, font_id: FontId, text: &str, size: f32) -> Vec2 {
+    ///
+    /// Returns dimensions in logical pixels.
+    pub fn measure_text(&self, font_id: FontId, text: &str, size: f32, scale_factor: f32) -> Vec2 {
         let font = match self.fonts.get(&font_id) {
             Some(f) => f,
             None => return Vec2::new(0.0, 0.0),
         };
 
         let size_key = FontSizeKey::from_f32(size);
-        let scaled_font = font.as_scaled(PxScale::from(size));
+        let scale_key = ScaleFactorKey::from_f32(scale_factor);
+
+        // Use physical size for font scaling, then convert back to logical
+        let physical_size = size * scale_factor;
+        let scaled_font = font.as_scaled(PxScale::from(physical_size));
+
         let mut width = 0.0f32;
         let mut max_height = 0.0f32;
 
         for c in text.chars() {
-            // Check cache first
-            if let Some(cached) = self.glyph_cache.get(&(font_id, c, size_key)) {
+            // Check cache first (metrics are stored in logical pixels)
+            if let Some(cached) = self.glyph_cache.get(&(font_id, c, size_key, scale_key)) {
                 width += cached.advance;
                 max_height = max_height.max(cached.size.y());
             } else {
-                // Use font metrics directly
+                // Use font metrics directly (convert physical to logical)
                 let glyph_id = font.glyph_id(c);
-                width += scaled_font.h_advance(glyph_id);
-                max_height = max_height.max(scaled_font.height());
+                width += scaled_font.h_advance(glyph_id) / scale_factor;
+                max_height = max_height.max(scaled_font.height() / scale_factor);
             }
         }
 
