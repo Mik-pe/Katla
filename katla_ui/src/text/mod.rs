@@ -1,12 +1,11 @@
 //! Text rendering and font handling.
 //!
 //! This module provides font loading, glyph caching, and text rendering
-//! using the `fontdue` library for rasterization.
+//! using the `ab_glyph` library for rasterization.
 
+use ab_glyph::{Font, FontRef, Glyph, PxScale, ScaleFont};
 use katla_math::{Rect2D, Vec2};
 use std::collections::HashMap;
-
-pub use fontdue::Font;
 
 /// A handle to a loaded font.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -50,8 +49,6 @@ pub struct CachedGlyph {
 struct RasterizedGlyph {
     /// The character.
     pub c: char,
-    /// Font size used.
-    pub size: f32,
     /// Pixel data (8-bit alpha only).
     pub pixels: Vec<u8>,
     /// Width in pixels.
@@ -71,7 +68,7 @@ struct RasterizedGlyph {
 /// Font system managing fonts, glyph cache, and texture atlas.
 pub struct FontSystem {
     /// Loaded fonts.
-    fonts: HashMap<FontId, Font>,
+    fonts: HashMap<FontId, FontRef<'static>>,
     /// Next font ID.
     next_font_id: u32,
     /// Glyph cache: (font_id, char, size_key) -> cached glyph.
@@ -148,7 +145,12 @@ impl FontSystem {
     ///
     /// Returns the font ID for use with text rendering.
     pub fn add_font(&mut self, bytes: &[u8]) -> Result<FontId, FontError> {
-        let font = Font::from_bytes(bytes, fontdue::FontSettings::default())
+        // FontRef doesn't own the bytes, so we need to leak them for 'static lifetime.
+        // This is safe because fonts are typically loaded once and live for the
+        // duration of the application.
+        let bytes: &'static [u8] = Box::leak(bytes.to_vec().into_boxed_slice());
+
+        let font = FontRef::try_from_slice(bytes)
             .map_err(|e| FontError::LoadFailed(format!("{:?}", e)))?;
 
         let id = FontId(self.next_font_id);
@@ -160,7 +162,9 @@ impl FontSystem {
 
     /// Add a font from bytes with a specific ID.
     pub fn add_font_with_id(&mut self, bytes: &[u8], id: FontId) -> Result<(), FontError> {
-        let font = Font::from_bytes(bytes, fontdue::FontSettings::default())
+        let bytes: &'static [u8] = Box::leak(bytes.to_vec().into_boxed_slice());
+
+        let font = FontRef::try_from_slice(bytes)
             .map_err(|e| FontError::LoadFailed(format!("{:?}", e)))?;
 
         self.fonts.insert(id, font);
@@ -168,7 +172,7 @@ impl FontSystem {
     }
 
     /// Get a font by ID.
-    pub fn get_font(&self, id: FontId) -> Option<&Font> {
+    pub fn get_font(&self, id: FontId) -> Option<&FontRef<'static>> {
         self.fonts.get(&id)
     }
 
@@ -185,27 +189,55 @@ impl FontSystem {
 
         let font = self.fonts.get(&font_id)?;
 
-        // Rasterize the glyph
-        let (metrics, pixels) = font.rasterize(c, size);
+        // Rasterize the glyph using ab_glyph
+        let scaled_font = font.as_scaled(PxScale::from(size));
 
-        // Get font-level ascender for consistent baseline alignment
-        // fontdue's ymin is relative to baseline, but we want all glyphs
-        // to share the same top edge relative to the font's ascender
-        let ascender = font.horizontal_line_metrics(size)
-            .map(|m| m.ascent)
-            .unwrap_or(size); // Fallback to size if metrics unavailable
+        // Get glyph ID for character
+        let glyph_id = font.glyph_id(c);
+
+        // Get outline glyph (may be None for whitespace, control chars)
+        let glyph = Glyph {
+            id: glyph_id,
+            scale: PxScale::from(size),
+            position: ab_glyph::point(0.0, 0.0),
+        };
+        let outlined = font.outline_glyph(glyph)?;
+
+        // Get pixel bounds
+        let bounds = outlined.px_bounds();
+
+        // Get font metrics for baseline alignment
+        let ascender = scaled_font.ascent();
+
+        // Calculate advance width
+        let advance = scaled_font.h_advance(glyph_id);
+
+        // Allocate pixel buffer
+        let width = bounds.width().ceil() as usize;
+        let height = bounds.height().ceil() as usize;
+
+        // Draw glyph to pixel buffer
+        let mut pixels = vec![0u8; width * height];
+        outlined.draw(|x, y, coverage| {
+            let px = x as usize;
+            let py = y as usize;
+            if px < width && py < height {
+                pixels[py * width + px] = (coverage * 255.0) as u8;
+            }
+        });
 
         let rasterized = RasterizedGlyph {
             c,
-            size,
             pixels,
-            width: metrics.width,
-            height: metrics.height,
-            // Use metrics.xmin/ymin (whole pixel bitmap offsets), NOT bounds.xmin/ymin (outline)
-            offset_x: metrics.xmin as f32,
-            offset_y: metrics.ymin as f32,
+            width,
+            height,
+            // ab_glyph's bounds min is the top-left corner offset
+            offset_x: bounds.min.x,
+            // ab_glyph y-axis is inverted compared to fontdue:
+            // bounds.min.y is the top of the glyph relative to baseline
+            offset_y: bounds.min.y,
             ascender,
-            advance: metrics.advance_width,
+            advance,
         };
 
         // Place in atlas
@@ -323,6 +355,7 @@ impl FontSystem {
         };
 
         let size_key = FontSizeKey::from_f32(size);
+        let scaled_font = font.as_scaled(PxScale::from(size));
         let mut width = 0.0f32;
         let mut max_height = 0.0f32;
 
@@ -333,9 +366,9 @@ impl FontSystem {
                 max_height = max_height.max(cached.size.y());
             } else {
                 // Use font metrics directly
-                let metrics = font.metrics(c, size);
-                width += metrics.advance_width;
-                max_height = max_height.max(metrics.height as f32);
+                let glyph_id = font.glyph_id(c);
+                width += scaled_font.h_advance(glyph_id);
+                max_height = max_height.max(scaled_font.height());
             }
         }
 
