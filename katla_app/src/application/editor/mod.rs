@@ -199,8 +199,16 @@ pub fn render_debug_ui(app: &mut Application, dt: f32) {
     // Update font atlas texture if needed (render may have added new glyphs)
     if app.ui_context.fonts.atlas_needs_update() {
         if let Some(ref mut renderer) = app.renderer {
-            let atlas_data = app.ui_context.fonts.atlas_data().to_vec();
-            renderer.update_font_atlas(&atlas_data);
+            // Check if atlas was resized
+            if app.ui_context.fonts.atlas_was_resized() {
+                let (new_width, new_height) = app.ui_context.fonts.atlas_size();
+                let atlas_data = app.ui_context.fonts.atlas_data().to_vec();
+                renderer.resize_font_atlas(new_width, new_height, &atlas_data);
+                app.ui_context.fonts.clear_atlas_resized();
+            } else {
+                let atlas_data = app.ui_context.fonts.atlas_data().to_vec();
+                renderer.update_font_atlas(&atlas_data);
+            }
         }
         app.ui_context.fonts.mark_atlas_updated();
     }

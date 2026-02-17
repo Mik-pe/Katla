@@ -125,9 +125,18 @@ mod tests {
 
     #[test]
     fn test_attribute_type_formats() {
-        assert_eq!(AttributeType::Position.default_format(), VertexFormat::RGB32f);
+        assert_eq!(
+            AttributeType::Position.default_format(),
+            VertexFormat::RGB32f
+        );
         assert_eq!(AttributeType::Normal.default_format(), VertexFormat::RGB32f);
-        assert_eq!(AttributeType::JointIndices.default_format(), VertexFormat::RGBA16u);
-        assert_eq!(AttributeType::JointWeights.default_format(), VertexFormat::RGBA32f);
+        assert_eq!(
+            AttributeType::JointIndices.default_format(),
+            VertexFormat::RGBA16u
+        );
+        assert_eq!(
+            AttributeType::JointWeights.default_format(),
+            VertexFormat::RGBA32f
+        );
     }
 }

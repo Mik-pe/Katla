@@ -397,7 +397,8 @@ pub struct PassExecutionContext {
     /// Command buffer to record commands into
     pub command_buffer: std::rc::Rc<CommandBuffer>,
     /// Compiled resources available for this pass (wrapped in RefCell for per-frame updates)
-    pub resources: std::rc::Rc<std::cell::RefCell<std::collections::HashMap<ResourceId, CompiledResource>>>,
+    pub resources:
+        std::rc::Rc<std::cell::RefCell<std::collections::HashMap<ResourceId, CompiledResource>>>,
     /// The framebuffer for this pass (legacy render pass only)
     pub framebuffer: VkFramebuffer,
     /// The current subpass index (0 for simple passes)
@@ -414,7 +415,9 @@ impl PassExecutionContext {
     /// Create a new PassExecutionContext.
     pub fn new(
         command_buffer: CommandBuffer,
-        resources: std::rc::Rc<std::cell::RefCell<std::collections::HashMap<ResourceId, CompiledResource>>>,
+        resources: std::rc::Rc<
+            std::cell::RefCell<std::collections::HashMap<ResourceId, CompiledResource>>,
+        >,
         framebuffer: vk::Framebuffer,
         extent: Extent2D,
     ) -> Self {
@@ -432,7 +435,9 @@ impl PassExecutionContext {
     /// Create a new PassExecutionContext for dynamic rendering (Vulkan 1.3).
     pub fn new_dynamic(
         command_buffer: CommandBuffer,
-        resources: std::rc::Rc<std::cell::RefCell<std::collections::HashMap<ResourceId, CompiledResource>>>,
+        resources: std::rc::Rc<
+            std::cell::RefCell<std::collections::HashMap<ResourceId, CompiledResource>>,
+        >,
         extent: Extent2D,
     ) -> Self {
         Self {
@@ -449,7 +454,9 @@ impl PassExecutionContext {
     /// Create a new PassExecutionContext with renderer context.
     pub fn with_renderer_context(
         command_buffer: CommandBuffer,
-        resources: std::rc::Rc<std::cell::RefCell<std::collections::HashMap<ResourceId, CompiledResource>>>,
+        resources: std::rc::Rc<
+            std::cell::RefCell<std::collections::HashMap<ResourceId, CompiledResource>>,
+        >,
         extent: Extent2D,
         renderer_context: Rc<RendererContext>,
     ) -> Self {

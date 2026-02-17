@@ -102,6 +102,8 @@ pub struct FontSystem {
     atlas_data: Vec<u8>,
     /// Whether atlas needs rebuild.
     atlas_dirty: bool,
+    /// Whether atlas was resized (needs texture recreation).
+    atlas_resized: bool,
     /// Padding around glyphs in atlas.
     glyph_padding: u32,
 }
@@ -109,6 +111,8 @@ pub struct FontSystem {
 impl FontSystem {
     /// Default atlas size.
     const DEFAULT_ATLAS_SIZE: u32 = 512;
+    /// Maximum atlas size.
+    const MAX_ATLAS_SIZE: u32 = 2048;
 
     /// Create a new font system.
     pub fn new() -> Self {
@@ -133,6 +137,7 @@ impl FontSystem {
             atlas_row_height: 0,
             atlas_data,
             atlas_dirty: true, // Mark dirty so renderer uploads the white pixel
+            atlas_resized: false,
             glyph_padding: 1,
         }
     }
@@ -148,12 +153,18 @@ impl FontSystem {
         atlas_data[3] = 255;
 
         Self {
+            fonts: HashMap::new(),
+            next_font_id: 0,
+            glyph_cache: HashMap::new(),
             atlas_width: width,
             atlas_height: height,
+            atlas_cursor_x: 1,
+            atlas_cursor_y: 0,
+            atlas_row_height: 0,
             atlas_data,
-            atlas_cursor_x: 1, // Start after white pixel
             atlas_dirty: true,
-            ..Self::new()
+            atlas_resized: false,
+            glyph_padding: 1,
         }
     }
 
@@ -360,17 +371,17 @@ impl FontSystem {
             self.atlas_row_height = 0;
         }
 
-        // Check if we have space
+        // Check if we have space - grow atlas if needed
         if self.atlas_cursor_y + glyph_h > self.atlas_height {
-            // Atlas is full - need to resize or evict
-            // For now, just fail
-            log::warn!(
-                "Font atlas full! Glyph '{}' ({}x{}) doesn't fit.",
-                glyph.c,
-                glyph_w,
-                glyph_h
-            );
-            return None;
+            if !self.grow_atlas() {
+                log::warn!(
+                    "Font atlas full at max size! Glyph '{}' ({}x{}) doesn't fit.",
+                    glyph.c,
+                    glyph_w,
+                    glyph_h
+                );
+                return None;
+            }
         }
 
         let x = self.atlas_cursor_x + padding;
@@ -511,6 +522,18 @@ impl FontSystem {
         self.atlas_dirty = false;
     }
 
+    /// Check if the atlas was resized (requires texture recreation).
+    #[inline]
+    pub fn atlas_was_resized(&self) -> bool {
+        self.atlas_resized
+    }
+
+    /// Clear the resized flag after recreating the texture.
+    #[inline]
+    pub fn clear_atlas_resized(&mut self) {
+        self.atlas_resized = false;
+    }
+
     /// Get atlas dimensions.
     #[inline]
     pub fn atlas_size(&self) -> (u32, u32) {
@@ -521,6 +544,49 @@ impl FontSystem {
     #[inline]
     pub fn atlas_data(&self) -> &[u8] {
         &self.atlas_data
+    }
+
+    /// Grow the atlas to accommodate more glyphs.
+    ///
+    /// Returns true if the atlas was grown, false if already at max size.
+    fn grow_atlas(&mut self) -> bool {
+        let new_size = if self.atlas_width < Self::MAX_ATLAS_SIZE {
+            (self.atlas_width * 2).min(Self::MAX_ATLAS_SIZE)
+        } else {
+            return false;
+        };
+
+        log::info!(
+            "Growing font atlas from {}x{} to {}x{}",
+            self.atlas_width,
+            self.atlas_height,
+            new_size,
+            new_size
+        );
+
+        // Create new larger buffer
+        let mut new_data = vec![0u8; (new_size * new_size * 4) as usize];
+
+        // Copy old data to new buffer
+        for y in 0..self.atlas_height {
+            let src_start = (y * self.atlas_width * 4) as usize;
+            let src_end = src_start + (self.atlas_width * 4) as usize;
+            let dst_start = (y * new_size * 4) as usize;
+            new_data[dst_start..dst_start + (self.atlas_width * 4) as usize]
+                .copy_from_slice(&self.atlas_data[src_start..src_end]);
+        }
+
+        self.atlas_data = new_data;
+        self.atlas_width = new_size;
+        self.atlas_height = new_size;
+        self.atlas_dirty = true;
+        self.atlas_resized = true;
+
+        // Invalidate glyph cache since UV coordinates changed
+        // We need to re-rasterize everything with correct UVs
+        self.glyph_cache.clear();
+
+        true
     }
 
     /// Clear the glyph cache and atlas.

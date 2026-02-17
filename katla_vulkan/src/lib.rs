@@ -12,7 +12,10 @@ pub use render_graph::resource::{
 pub use render_graph::*;
 pub use rendering::{
     registry::AssetRegistry,
-    types::{DrawCall, DrawList, FrameUniforms, InstanceData, MaterialHandle, MeshHandle, ParticleDispatch, ParticleRender, SkeletonHandle},
+    types::{
+        DrawCall, DrawList, FrameUniforms, InstanceData, MaterialHandle, MeshHandle,
+        ParticleDispatch, ParticleRender, SkeletonHandle,
+    },
 };
 pub use sync::{
     AccessFlags2, BufferMemoryBarrier2, DependencyInfo, ImageMemoryBarrier2, PipelineStage2Flags,
@@ -192,12 +195,7 @@ impl VulkanRenderer {
     /// * `index` - Object index (0-255)
     /// * `model` - Model matrix (object-to-world)
     /// * `color` - Color tint (RGBA)
-    pub fn update_storage_object(
-        &mut self,
-        index: usize,
-        model: &[[f32; 4]; 4],
-        color: &[f32; 4],
-    ) {
+    pub fn update_storage_object(&mut self, index: usize, model: &[[f32; 4]; 4], color: &[f32; 4]) {
         if let Some(ref mut manager) = self.storage_manager {
             manager.update_object(index, model, color);
         }
@@ -281,10 +279,12 @@ impl VulkanRenderer {
             let buffers = UIBuffers::new(self.context.clone(), vertex_capacity, index_capacity);
             self.ui_buffers.push(buffers);
         }
-        info!("UI buffers initialized ({} frames, {}KB vertex, {}KB index)",
+        info!(
+            "UI buffers initialized ({} frames, {}KB vertex, {}KB index)",
             FRAMES_IN_FLIGHT,
             vertex_capacity / 1024,
-            index_capacity / 1024);
+            index_capacity / 1024
+        );
     }
 
     /// Initialize UI textures for font atlas and solid color rendering.
@@ -294,9 +294,17 @@ impl VulkanRenderer {
     /// # Arguments
     /// * `atlas_width` - Font atlas width in pixels
     /// * `atlas_height` - Font atlas height in pixels
-    pub fn init_ui_textures(&mut self, atlas_width: u32, atlas_height: u32) -> Result<(), vk::Result> {
-        let textures = UITextures::with_atlas_size(self.context.clone(), atlas_width, atlas_height)?;
-        info!("UI textures initialized ({}x{} font atlas)", atlas_width, atlas_height);
+    pub fn init_ui_textures(
+        &mut self,
+        atlas_width: u32,
+        atlas_height: u32,
+    ) -> Result<(), vk::Result> {
+        let textures =
+            UITextures::with_atlas_size(self.context.clone(), atlas_width, atlas_height)?;
+        info!(
+            "UI textures initialized ({}x{} font atlas)",
+            atlas_width, atlas_height
+        );
         self.ui_textures = Some(textures);
         Ok(())
     }
@@ -315,6 +323,7 @@ impl VulkanRenderer {
         }
     }
 
+<<<<<<< HEAD
     /// Get UI descriptor set for binding as wrapper type.
     pub fn ui_descriptor_set(&self) -> Option<VkDescriptorSet> {
         self.ui_textures.as_ref().map(|t| t.set())
@@ -323,6 +332,27 @@ impl VulkanRenderer {
     /// Get UI descriptor set as raw vk handle (for internal use).
     pub fn vk_ui_descriptor_set(&self) -> Option<vk::DescriptorSet> {
         self.ui_textures.as_ref().map(|t| t.vk_set())
+=======
+    /// Resize the font atlas texture to a new size.
+    ///
+    /// Call this when the font system's atlas has grown.
+    ///
+    /// # Arguments
+    /// * `width` - New atlas width
+    /// * `height` - New atlas height
+    /// * `pixels` - RGBA pixel data for the new atlas size
+    pub fn resize_font_atlas(&mut self, width: u32, height: u32, pixels: &[u8]) -> bool {
+        if let Some(ref mut textures) = self.ui_textures {
+            textures.resize_font_atlas(&self.context, width, height, pixels)
+        } else {
+            false
+        }
+    }
+
+    /// Get UI descriptor set for binding.
+    pub fn ui_descriptor_set(&self) -> Option<vk::DescriptorSet> {
+        self.ui_textures.as_ref().map(|t| t.descriptor_set)
+>>>>>>> ba05f67 (Add dynamic font atlas resizing)
     }
 
     /// Initialize or resize the viewport render target.
@@ -331,7 +361,9 @@ impl VulkanRenderer {
     /// the 3D scene that can be sampled by the UI viewport panel.
     /// Single-buffered is fine with proper fence synchronization.
     pub fn init_viewport_target(&mut self, width: u32, height: u32) -> Result<(), vk::Result> {
-        let needs_resize = self.viewport_targets.first()
+        let needs_resize = self
+            .viewport_targets
+            .first()
             .map(|t| t.extent.width != width || t.extent.height != height)
             .unwrap_or(true);
 
@@ -342,12 +374,16 @@ impl VulkanRenderer {
             // Create single target
             let target = ViewportRenderTarget::new(self.context.clone(), width, height)?;
             self.viewport_targets.push(target);
-            info!("Viewport render target created/resized to {}x{}", width, height);
+            info!(
+                "Viewport render target created/resized to {}x{}",
+                width, height
+            );
 
             // Update UI textures with the viewport image view
             if let Some(ref mut ui_textures) = self.ui_textures {
                 if let Some(ref viewport_target) = self.viewport_targets.first() {
-                    ui_textures.set_viewport_texture(&self.context, viewport_target.color_image_view);
+                    ui_textures
+                        .set_viewport_texture(&self.context, viewport_target.color_image_view);
                 }
             }
         }
@@ -389,7 +425,9 @@ impl VulkanRenderer {
     /// This creates a texture that the UI renders to, which is then
     /// copied to the swapchain by the present pass.
     pub fn init_output_target(&mut self, width: u32, height: u32) -> Result<(), vk::Result> {
-        let needs_resize = self.output_target.as_ref()
+        let needs_resize = self
+            .output_target
+            .as_ref()
             .map(|t| t.extent.width != width || t.extent.height != height)
             .unwrap_or(true);
 
@@ -398,7 +436,10 @@ impl VulkanRenderer {
             self.output_target = None;
             let target = OutputRenderTarget::new(self.context.clone(), width, height)?;
             self.output_target = Some(target);
-            info!("Output render target created/resized to {}x{}", width, height);
+            info!(
+                "Output render target created/resized to {}x{}",
+                width, height
+            );
         }
         Ok(())
     }
@@ -754,14 +795,13 @@ impl VulkanRenderer {
         skeleton_set_layout: vk::DescriptorSetLayout,
     ) -> Option<SkeletonHandle> {
         // Create descriptor set for skeleton
-        let descriptor = SkeletonDescriptorSet::new(
-            self.context.clone(),
-            skeleton_buffer,
-            skeleton_set_layout,
-        ).ok()?;
+        let descriptor =
+            SkeletonDescriptorSet::new(self.context.clone(), skeleton_buffer, skeleton_set_layout)
+                .ok()?;
 
         // Find an empty slot or add new one
-        let handle = if let Some(slot) = self.skeleton_descriptors.iter().position(|s| s.is_none()) {
+        let handle = if let Some(slot) = self.skeleton_descriptors.iter().position(|s| s.is_none())
+        {
             self.skeleton_descriptors[slot] = Some(descriptor);
             SkeletonHandle(slot as u32)
         } else {
@@ -774,7 +814,10 @@ impl VulkanRenderer {
     }
 
     /// Get the skeleton descriptor set for a handle.
-    pub fn get_skeleton_descriptor(&self, handle: SkeletonHandle) -> Option<&SkeletonDescriptorSet> {
+    pub fn get_skeleton_descriptor(
+        &self,
+        handle: SkeletonHandle,
+    ) -> Option<&SkeletonDescriptorSet> {
         self.skeleton_descriptors.get(handle.0 as usize)?.as_ref()
     }
 
@@ -805,29 +848,30 @@ impl VulkanRenderer {
         // Scene will render to viewport texture, then copy to swapchain for UI
         // Note: We use the first viewport texture here, but update_viewport_attachments
         // will switch to the correct texture each frame for double-buffering
-        let (viewport_resource, viewport_depth_resource, _viewport_extent) = if let Some(first_target) = self.viewport_targets.first() {
-            let color = graph_builder.add_resource(
-                "viewport_color",
-                ResourceKind::ExternalImage {
-                    vk_image: first_target.color_image,
-                    image_view: first_target.color_image_view,
-                    format: vk::Format::B8G8R8A8_SRGB,
-                    extent: first_target.extent,
-                },
-            );
-            let depth = graph_builder.add_resource(
-                "viewport_depth",
-                ResourceKind::ExternalImage {
-                    vk_image: first_target.depth_image,
-                    image_view: first_target.depth_image_view,
-                    format: vk::Format::D32_SFLOAT_S8_UINT,
-                    extent: first_target.extent,
-                },
-            );
-            (Some(color), Some(depth), Some(first_target.extent))
-        } else {
-            (None, None, None)
-        };
+        let (viewport_resource, viewport_depth_resource, _viewport_extent) =
+            if let Some(first_target) = self.viewport_targets.first() {
+                let color = graph_builder.add_resource(
+                    "viewport_color",
+                    ResourceKind::ExternalImage {
+                        vk_image: first_target.color_image,
+                        image_view: first_target.color_image_view,
+                        format: vk::Format::B8G8R8A8_SRGB,
+                        extent: first_target.extent,
+                    },
+                );
+                let depth = graph_builder.add_resource(
+                    "viewport_depth",
+                    ResourceKind::ExternalImage {
+                        vk_image: first_target.depth_image,
+                        image_view: first_target.depth_image_view,
+                        format: vk::Format::D32_SFLOAT_S8_UINT,
+                        extent: first_target.extent,
+                    },
+                );
+                (Some(color), Some(depth), Some(first_target.extent))
+            } else {
+                (None, None, None)
+            };
 
         let depth_resource = self.create_depth_resource(&mut graph_builder);
 
@@ -868,13 +912,15 @@ impl VulkanRenderer {
 
         // Store storage manager pointer for storage buffer-based uniforms
         let storage_manager_ptr = &mut self.storage_manager as *mut Option<StorageUniformManager>;
-        let storage_descriptor_ptr = &mut self.storage_descriptor_set as *mut Option<StorageDescriptorSet>;
+        let storage_descriptor_ptr =
+            &mut self.storage_descriptor_set as *mut Option<StorageDescriptorSet>;
 
         // Store sky pipeline pointer
         let sky_pipeline_ptr = &mut self.sky_pipeline as *mut Option<Rc<RefCell<MaterialPipeline>>>;
 
         // Store skeleton descriptors pointer for GPU skeletal animation
-        let skeleton_descriptors_ptr = &mut self.skeleton_descriptors as *mut Vec<Option<SkeletonDescriptorSet>>;
+        let skeleton_descriptors_ptr =
+            &mut self.skeleton_descriptors as *mut Vec<Option<SkeletonDescriptorSet>>;
 
         // Store device pointer for particle rendering
         let device_ptr = self.context.device.clone();
@@ -913,7 +959,8 @@ impl VulkanRenderer {
                             };
 
                             let depth_subresource = vk::ImageSubresourceRange {
-                                aspect_mask: vk::ImageAspectFlags::DEPTH | vk::ImageAspectFlags::STENCIL,
+                                aspect_mask: vk::ImageAspectFlags::DEPTH
+                                    | vk::ImageAspectFlags::STENCIL,
                                 base_mip_level: 0,
                                 level_count: 1,
                                 base_array_layer: 0,
@@ -1049,7 +1096,8 @@ impl VulkanRenderer {
                                 if draw.is_instanced() {
                                     // Upload all instances to consecutive indices
                                     for (i, instance) in draw.instances.iter().enumerate() {
-                                        let model: [[f32; 4]; 4] = bytemuck::cast(instance.model_matrix);
+                                        let model: [[f32; 4]; 4] =
+                                            bytemuck::cast(instance.model_matrix);
                                         manager.update_object_with_material(
                                             first_instance as usize + i,
                                             &model,
@@ -1132,7 +1180,9 @@ impl VulkanRenderer {
                             // Bind set 2: Skeleton (for skinned meshes)
                             if let Some(skeleton_handle) = draw.skeleton {
                                 let skeleton_descriptors = unsafe { &*skeleton_descriptors_ptr };
-                                if let Some(Some(skeleton_desc)) = skeleton_descriptors.get(skeleton_handle.0 as usize) {
+                                if let Some(Some(skeleton_desc)) =
+                                    skeleton_descriptors.get(skeleton_handle.0 as usize)
+                                {
                                     unsafe {
                                         pipeline_ref.context().device.cmd_bind_descriptor_sets(
                                             cmd_buf,
@@ -1162,13 +1212,24 @@ impl VulkanRenderer {
                                         &[0],
                                     );
                                     // draw_indexed(index_count, instance_count, first_index, vertex_offset, first_instance)
-                                    ctx.command_buffer.draw_indexed(index_count, instance_count, 0, 0, first_instance);
+                                    ctx.command_buffer.draw_indexed(
+                                        index_count,
+                                        instance_count,
+                                        0,
+                                        0,
+                                        first_instance,
+                                    );
                                 }
                             } else if let Some((vertex_buffer, vertex_count)) = vertex_data {
                                 ctx.command_buffer
                                     .bind_vertex_buffers(0, &[vertex_buffer], &[0]);
                                 // draw_array(vertex_count, instance_count, first_vertex, first_instance)
-                                ctx.command_buffer.draw_array(vertex_count, instance_count, 0, first_instance);
+                                ctx.command_buffer.draw_array(
+                                    vertex_count,
+                                    instance_count,
+                                    0,
+                                    first_instance,
+                                );
                             }
                         }
 
@@ -1266,11 +1327,11 @@ impl VulkanRenderer {
                                 .new_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
                                 .subresource_range(subresource);
 
-                            DependencyInfo::new()
-                                .add_image_barrier(barrier)
-                                .build(|dep_info| unsafe {
+                            DependencyInfo::new().add_image_barrier(barrier).build(
+                                |dep_info| unsafe {
                                     ui_device.cmd_pipeline_barrier2(cmd_buf, dep_info);
-                                });
+                                },
+                            );
                         }
                     }
                 })
@@ -1285,7 +1346,8 @@ impl VulkanRenderer {
                     let ui_data_ref = ui_data_cell.borrow();
 
                     if let (Some(ui_data), Some(ui_pipeline)) =
-                        (ui_data_ref.as_ref(), ui_pipeline_opt.as_ref()) {
+                        (ui_data_ref.as_ref(), ui_pipeline_opt.as_ref())
+                    {
                         if ui_data.vertex_data.is_empty() || ui_data.index_data.is_empty() {
                             return;
                         }
@@ -1326,7 +1388,10 @@ impl VulkanRenderer {
                                 min_depth: 0.0,
                                 max_depth: 1.0,
                             };
-                            pipeline_ref.context().device.cmd_set_viewport(cmd_buf, 0, &[viewport]);
+                            pipeline_ref
+                                .context()
+                                .device
+                                .cmd_set_viewport(cmd_buf, 0, &[viewport]);
 
                             // Set scissor
                             let scissor = vk::Rect2D {
@@ -1336,7 +1401,10 @@ impl VulkanRenderer {
                                     height: ui_data.screen_size[1] as u32,
                                 },
                             };
-                            pipeline_ref.context().device.cmd_set_scissor(cmd_buf, 0, &[scissor]);
+                            pipeline_ref
+                                .context()
+                                .device
+                                .cmd_set_scissor(cmd_buf, 0, &[scissor]);
 
                             let vertex_size = ui_data.vertex_data.len() as u64;
                             let index_size = ui_data.index_data.len() as u64;
@@ -1377,20 +1445,22 @@ impl VulkanRenderer {
                                     .usage(vk::BufferUsageFlags::VERTEX_BUFFER)
                                     .size(vertex_size);
 
-                                let (vertex_buffer, vertex_alloc) = pipeline_ref.context().allocate_buffer(
-                                    &vertex_create_info,
-                                    gpu_allocator::MemoryLocation::CpuToGpu,
-                                );
+                                let (vertex_buffer, vertex_alloc) =
+                                    pipeline_ref.context().allocate_buffer(
+                                        &vertex_create_info,
+                                        gpu_allocator::MemoryLocation::CpuToGpu,
+                                    );
 
                                 let index_create_info = vk::BufferCreateInfo::default()
                                     .sharing_mode(vk::SharingMode::EXCLUSIVE)
                                     .usage(vk::BufferUsageFlags::INDEX_BUFFER)
                                     .size(index_size);
 
-                                let (index_buffer, index_alloc) = pipeline_ref.context().allocate_buffer(
-                                    &index_create_info,
-                                    gpu_allocator::MemoryLocation::CpuToGpu,
-                                );
+                                let (index_buffer, index_alloc) =
+                                    pipeline_ref.context().allocate_buffer(
+                                        &index_create_info,
+                                        gpu_allocator::MemoryLocation::CpuToGpu,
+                                    );
 
                                 // Upload vertex data
                                 let vertex_ptr = pipeline_ref.context().map_buffer(&vertex_alloc);
@@ -1437,7 +1507,11 @@ impl VulkanRenderer {
                                             height: cmd.clip_rect[3] as u32,
                                         },
                                     };
-                                    pipeline_ref.context().device.cmd_set_scissor(cmd_buf, 0, &[scissor]);
+                                    pipeline_ref.context().device.cmd_set_scissor(
+                                        cmd_buf,
+                                        0,
+                                        &[scissor],
+                                    );
 
                                     // Draw this command's indices
                                     pipeline_ref.context().device.cmd_draw_indexed(
@@ -1451,8 +1525,12 @@ impl VulkanRenderer {
                                 }
 
                                 // Cleanup staging buffers
-                                pipeline_ref.context().free_buffer(vertex_buffer, vertex_alloc);
-                                pipeline_ref.context().free_buffer(index_buffer, index_alloc);
+                                pipeline_ref
+                                    .context()
+                                    .free_buffer(vertex_buffer, vertex_alloc);
+                                pipeline_ref
+                                    .context()
+                                    .free_buffer(index_buffer, index_alloc);
                                 return;
                             }
 
@@ -1469,7 +1547,11 @@ impl VulkanRenderer {
                                         height: cmd.clip_rect[3] as u32,
                                     },
                                 };
-                                pipeline_ref.context().device.cmd_set_scissor(cmd_buf, 0, &[scissor]);
+                                pipeline_ref.context().device.cmd_set_scissor(
+                                    cmd_buf,
+                                    0,
+                                    &[scissor],
+                                );
 
                                 // Draw this command's indices
                                 pipeline_ref.context().device.cmd_draw_indexed(
@@ -1648,8 +1730,7 @@ impl VulkanRenderer {
                     .collect();
 
                 // Create framebuffers for swapchain images (uses null render pass for dynamic rendering)
-                if let Err(e) = graph.create_swapchain_framebuffers(&swapchain_images)
-                {
+                if let Err(e) = graph.create_swapchain_framebuffers(&swapchain_images) {
                     error!("Failed to create swapchain framebuffers: {:?}", e);
                 } else {
                     // No passes render directly to swapchain with color attachments:
@@ -1659,7 +1740,9 @@ impl VulkanRenderer {
                     // Therefore, no swapchain attachment initialization is needed here.
 
                     // Set viewport resource IDs for double-buffering updates
-                    if let (Some(color_id), Some(depth_id)) = (viewport_resource, viewport_depth_resource) {
+                    if let (Some(color_id), Some(depth_id)) =
+                        (viewport_resource, viewport_depth_resource)
+                    {
                         graph.set_viewport_resource_ids(color_id, depth_id);
                     }
 
@@ -1764,7 +1847,10 @@ impl VulkanRenderer {
 
         // === DISPATCH PARTICLE COMPUTE SHADERS BEFORE RENDER GRAPH ===
         // This runs particle simulation on GPU before any rendering
-        debug!("render_frame: checking particle dispatches (count={})", draw_list.particle_dispatches.len());
+        debug!(
+            "render_frame: checking particle dispatches (count={})",
+            draw_list.particle_dispatches.len()
+        );
         if !draw_list.particle_dispatches.is_empty() {
             debug!("render_frame: dispatching particle compute shaders");
             for (i, particle) in draw_list.particle_dispatches.iter().enumerate() {
@@ -1796,7 +1882,10 @@ impl VulkanRenderer {
                         0,
                         bytemuck::cast_slice(&particle.frame_data),
                     );
-                    debug!("render_frame: dispatching workgroups {}", particle.workgroup_count);
+                    debug!(
+                        "render_frame: dispatching workgroups {}",
+                        particle.workgroup_count
+                    );
                     // Dispatch compute workgroups
                     self.context.device.cmd_dispatch(
                         command_buffer.vk_command_buffer(),
@@ -1923,7 +2012,13 @@ impl VulkanRenderer {
     /// * `index_data` - Index data as raw bytes (u32 indices)
     /// * `screen_size` - Screen dimensions in pixels
     /// * `commands` - Draw commands with clip rectangles (for proper Z-ordering and clipping)
-    pub fn set_ui_data(&self, vertex_data: Vec<u8>, index_data: Vec<u8>, screen_size: [f32; 2], commands: Vec<UiDrawCommand>) {
+    pub fn set_ui_data(
+        &self,
+        vertex_data: Vec<u8>,
+        index_data: Vec<u8>,
+        screen_size: [f32; 2],
+        commands: Vec<UiDrawCommand>,
+    ) {
         *self.ui_data.borrow_mut() = Some(UiDrawData {
             vertex_data,
             index_data,
@@ -1978,20 +2073,16 @@ impl UIBuffers {
             .usage(vk::BufferUsageFlags::VERTEX_BUFFER)
             .size(vertex_capacity);
 
-        let (vertex_buffer, vertex_allocation) = context.allocate_buffer(
-            &vertex_create_info,
-            gpu_allocator::MemoryLocation::CpuToGpu,
-        );
+        let (vertex_buffer, vertex_allocation) =
+            context.allocate_buffer(&vertex_create_info, gpu_allocator::MemoryLocation::CpuToGpu);
 
         let index_create_info = vk::BufferCreateInfo::default()
             .sharing_mode(vk::SharingMode::EXCLUSIVE)
             .usage(vk::BufferUsageFlags::INDEX_BUFFER)
             .size(index_capacity);
 
-        let (index_buffer, index_allocation) = context.allocate_buffer(
-            &index_create_info,
-            gpu_allocator::MemoryLocation::CpuToGpu,
-        );
+        let (index_buffer, index_allocation) =
+            context.allocate_buffer(&index_create_info, gpu_allocator::MemoryLocation::CpuToGpu);
 
         Self {
             vertex_buffer,
@@ -2147,10 +2238,12 @@ impl UITextures {
                     .stage_flags(vk::ShaderStageFlags::FRAGMENT),
             ];
 
-            let layout_create_info = vk::DescriptorSetLayoutCreateInfo::default()
-                .bindings(&bindings);
+            let layout_create_info =
+                vk::DescriptorSetLayoutCreateInfo::default().bindings(&bindings);
 
-            let descriptor_set_layout = context.device.create_descriptor_set_layout(&layout_create_info, None)?;
+            let descriptor_set_layout = context
+                .device
+                .create_descriptor_set_layout(&layout_create_info, None)?;
 
             // Create descriptor pool (2 sampled images + 1 sampler)
             let pool_sizes = [
@@ -2168,7 +2261,9 @@ impl UITextures {
                 .pool_sizes(&pool_sizes)
                 .max_sets(1);
 
-            let descriptor_pool = context.device.create_descriptor_pool(&pool_create_info, None)?;
+            let descriptor_pool = context
+                .device
+                .create_descriptor_pool(&pool_create_info, None)?;
 
             // Allocate descriptor set
             let set_layouts = [descriptor_set_layout];
@@ -2224,7 +2319,9 @@ impl UITextures {
                 .descriptor_type(vk::DescriptorType::SAMPLED_IMAGE)
                 .image_info(&viewport_infos);
 
-            context.device.update_descriptor_sets(&[font_write, sampler_write, viewport_write], &[]);
+            context
+                .device
+                .update_descriptor_sets(&[font_write, sampler_write, viewport_write], &[]);
 
             Ok(Self {
                 font_image,
@@ -2252,7 +2349,11 @@ impl UITextures {
         height: u32,
         pixels: &[u8],
     ) -> Result<(vk::Image, gpu_allocator::vulkan::Allocation, vk::ImageView), vk::Result> {
-        let extent = vk::Extent3D { width, height, depth: 1 };
+        let extent = vk::Extent3D {
+            width,
+            height,
+            depth: 1,
+        };
 
         // Create image
         let image_create_info = vk::ImageCreateInfo::default()
@@ -2267,7 +2368,8 @@ impl UITextures {
             .sharing_mode(vk::SharingMode::EXCLUSIVE)
             .samples(vk::SampleCountFlags::TYPE_1);
 
-        let (image, memory) = context.create_image(image_create_info, gpu_allocator::MemoryLocation::GpuOnly);
+        let (image, memory) =
+            context.create_image(image_create_info, gpu_allocator::MemoryLocation::GpuOnly);
 
         // Create staging buffer
         let staging_create_info = vk::BufferCreateInfo::default()
@@ -2275,8 +2377,10 @@ impl UITextures {
             .usage(vk::BufferUsageFlags::TRANSFER_SRC)
             .sharing_mode(vk::SharingMode::EXCLUSIVE);
 
-        let (staging_buffer, staging_memory) =
-            context.allocate_buffer(&staging_create_info, gpu_allocator::MemoryLocation::CpuToGpu);
+        let (staging_buffer, staging_memory) = context.allocate_buffer(
+            &staging_create_info,
+            gpu_allocator::MemoryLocation::CpuToGpu,
+        );
 
         // Copy pixels to staging buffer
         let staging_ptr = context.map_buffer(&staging_memory);
@@ -2394,8 +2498,10 @@ impl UITextures {
                 .usage(vk::BufferUsageFlags::TRANSFER_SRC)
                 .sharing_mode(vk::SharingMode::EXCLUSIVE);
 
-            let (staging_buffer, staging_memory) =
-                context.allocate_buffer(&staging_create_info, gpu_allocator::MemoryLocation::CpuToGpu);
+            let (staging_buffer, staging_memory) = context.allocate_buffer(
+                &staging_create_info,
+                gpu_allocator::MemoryLocation::CpuToGpu,
+            );
 
             // Copy pixels to staging buffer
             let staging_ptr = context.map_buffer(&staging_memory);
@@ -2491,6 +2597,69 @@ impl UITextures {
         true
     }
 
+    /// Resize the font atlas texture to a new size.
+    /// This destroys the old texture and creates a new one at the specified size.
+    /// Returns true on success.
+    pub fn resize_font_atlas(
+        &mut self,
+        context: &VulkanContext,
+        new_width: u32,
+        new_height: u32,
+        pixels: &[u8],
+    ) -> bool {
+        if pixels.len() != (new_width * new_height * 4) as usize {
+            warn!("Font atlas resize: pixel data size mismatch");
+            return false;
+        }
+
+        unsafe {
+            // Destroy old texture
+            context
+                .device
+                .destroy_image_view(self.font_image_view, None);
+            if let Some(allocation) = self.font_image_memory.take() {
+                context.allocator.borrow_mut().free(allocation).ok();
+            }
+            context.device.destroy_image(self.font_image, None);
+
+            // Create new texture at new size using the static create_texture method
+            match Self::create_texture(context, new_width, new_height, pixels) {
+                Ok((font_image, font_image_memory, font_image_view)) => {
+                    self.font_image = font_image;
+                    self.font_image_memory = Some(font_image_memory);
+                    self.font_image_view = font_image_view;
+                    self.atlas_width = new_width;
+                    self.atlas_height = new_height;
+
+                    // Update descriptor set with new image view
+                    let font_image_info = vk::DescriptorImageInfo {
+                        sampler: vk::Sampler::null(),
+                        image_view: self.font_image_view,
+                        image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+                    };
+
+                    let font_infos = [font_image_info];
+
+                    let font_write = vk::WriteDescriptorSet::default()
+                        .dst_set(self.descriptor_set)
+                        .dst_binding(0)
+                        .dst_array_element(0)
+                        .descriptor_type(vk::DescriptorType::SAMPLED_IMAGE)
+                        .image_info(&font_infos);
+
+                    context.device.update_descriptor_sets(&[font_write], &[]);
+
+                    info!("Font atlas resized to {}x{}", new_width, new_height);
+                    true
+                }
+                Err(e) => {
+                    error!("Failed to create resized font atlas: {:?}", e);
+                    false
+                }
+            }
+        }
+    }
+
     /// Update viewport texture binding in the descriptor set.
     /// Call this when the viewport render target is created or resized.
     pub fn set_viewport_texture(&mut self, context: &VulkanContext, image_view: vk::ImageView) {
@@ -2510,7 +2679,9 @@ impl UITextures {
                 .descriptor_type(vk::DescriptorType::SAMPLED_IMAGE)
                 .image_info(&viewport_infos);
 
-            context.device.update_descriptor_sets(&[viewport_write], &[]);
+            context
+                .device
+                .update_descriptor_sets(&[viewport_write], &[]);
         }
         self.viewport_image_view = Some(image_view);
     }
@@ -2520,18 +2691,26 @@ impl Drop for UITextures {
     fn drop(&mut self) {
         unsafe {
             self.context.device.destroy_sampler(self.sampler, None);
-            self.context.device.destroy_image_view(self.font_image_view, None);
+            self.context
+                .device
+                .destroy_image_view(self.font_image_view, None);
             self.context.device.destroy_image(self.font_image, None);
             if let Some(memory) = self.font_image_memory.take() {
                 self.context.allocator.borrow_mut().free(memory).ok();
             }
-            self.context.device.destroy_image_view(self.white_image_view, None);
+            self.context
+                .device
+                .destroy_image_view(self.white_image_view, None);
             self.context.device.destroy_image(self.white_image, None);
             if let Some(memory) = self.white_image_memory.take() {
                 self.context.allocator.borrow_mut().free(memory).ok();
             }
-            self.context.device.destroy_descriptor_set_layout(self.descriptor_set_layout, None);
-            self.context.device.destroy_descriptor_pool(self.descriptor_pool, None);
+            self.context
+                .device
+                .destroy_descriptor_set_layout(self.descriptor_set_layout, None);
+            self.context
+                .device
+                .destroy_descriptor_pool(self.descriptor_pool, None);
         }
     }
 }
@@ -2562,7 +2741,11 @@ impl ViewportRenderTarget {
     pub fn new(context: Rc<VulkanContext>, width: u32, height: u32) -> Result<Self, vk::Result> {
         unsafe {
             let extent = vk::Extent2D { width, height };
-            let extent3d = vk::Extent3D { width, height, depth: 1 };
+            let extent3d = vk::Extent3D {
+                width,
+                height,
+                depth: 1,
+            };
 
             // Create color image (BGRA8 to match swapchain and pipeline formats)
             let color_create_info = vk::ImageCreateInfo::default()
@@ -2573,11 +2756,16 @@ impl ViewportRenderTarget {
                 .format(vk::Format::B8G8R8A8_SRGB)
                 .tiling(vk::ImageTiling::OPTIMAL)
                 .initial_layout(vk::ImageLayout::UNDEFINED)
-                .usage(vk::ImageUsageFlags::COLOR_ATTACHMENT | vk::ImageUsageFlags::SAMPLED | vk::ImageUsageFlags::TRANSFER_SRC)
+                .usage(
+                    vk::ImageUsageFlags::COLOR_ATTACHMENT
+                        | vk::ImageUsageFlags::SAMPLED
+                        | vk::ImageUsageFlags::TRANSFER_SRC,
+                )
                 .sharing_mode(vk::SharingMode::EXCLUSIVE)
                 .samples(vk::SampleCountFlags::TYPE_1);
 
-            let (color_image, color_memory) = context.create_image(color_create_info, gpu_allocator::MemoryLocation::GpuOnly);
+            let (color_image, color_memory) =
+                context.create_image(color_create_info, gpu_allocator::MemoryLocation::GpuOnly);
 
             // Create color image view
             let color_view_create_info = vk::ImageViewCreateInfo::default()
@@ -2593,7 +2781,9 @@ impl ViewportRenderTarget {
                     layer_count: 1,
                 });
 
-            let color_image_view = context.device.create_image_view(&color_view_create_info, None)?;
+            let color_image_view = context
+                .device
+                .create_image_view(&color_view_create_info, None)?;
 
             // Create depth image (D32_SFLOAT_S8_UINT to match pipeline formats)
             let depth_create_info = vk::ImageCreateInfo::default()
@@ -2608,7 +2798,8 @@ impl ViewportRenderTarget {
                 .sharing_mode(vk::SharingMode::EXCLUSIVE)
                 .samples(vk::SampleCountFlags::TYPE_1);
 
-            let (depth_image, depth_memory) = context.create_image(depth_create_info, gpu_allocator::MemoryLocation::GpuOnly);
+            let (depth_image, depth_memory) =
+                context.create_image(depth_create_info, gpu_allocator::MemoryLocation::GpuOnly);
 
             // Create depth image view
             let depth_view_create_info = vk::ImageViewCreateInfo::default()
@@ -2624,7 +2815,9 @@ impl ViewportRenderTarget {
                     layer_count: 1,
                 });
 
-            let depth_image_view = context.device.create_image_view(&depth_view_create_info, None)?;
+            let depth_image_view = context
+                .device
+                .create_image_view(&depth_view_create_info, None)?;
 
             // Create sampler
             let sampler_create_info = vk::SamplerCreateInfo::default()
@@ -2683,12 +2876,16 @@ impl ViewportRenderTarget {
                     layer_count: 1,
                 })
                 .src_access_mask(vk::AccessFlags::empty())
-                .dst_access_mask(vk::AccessFlags::DEPTH_STENCIL_ATTACHMENT_READ | vk::AccessFlags::DEPTH_STENCIL_ATTACHMENT_WRITE);
+                .dst_access_mask(
+                    vk::AccessFlags::DEPTH_STENCIL_ATTACHMENT_READ
+                        | vk::AccessFlags::DEPTH_STENCIL_ATTACHMENT_WRITE,
+                );
 
             context.device.cmd_pipeline_barrier(
                 cmd,
                 vk::PipelineStageFlags::TOP_OF_PIPE,
-                vk::PipelineStageFlags::FRAGMENT_SHADER | vk::PipelineStageFlags::EARLY_FRAGMENT_TESTS,
+                vk::PipelineStageFlags::FRAGMENT_SHADER
+                    | vk::PipelineStageFlags::EARLY_FRAGMENT_TESTS,
                 vk::DependencyFlags::empty(),
                 &[],
                 &[],
@@ -2716,12 +2913,16 @@ impl Drop for ViewportRenderTarget {
     fn drop(&mut self) {
         unsafe {
             self.context.device.destroy_sampler(self.sampler, None);
-            self.context.device.destroy_image_view(self.color_image_view, None);
+            self.context
+                .device
+                .destroy_image_view(self.color_image_view, None);
             self.context.device.destroy_image(self.color_image, None);
             if let Some(memory) = self.color_memory.take() {
                 self.context.allocator.borrow_mut().free(memory).ok();
             }
-            self.context.device.destroy_image_view(self.depth_image_view, None);
+            self.context
+                .device
+                .destroy_image_view(self.depth_image_view, None);
             self.context.device.destroy_image(self.depth_image, None);
             if let Some(memory) = self.depth_memory.take() {
                 self.context.allocator.borrow_mut().free(memory).ok();
@@ -2749,7 +2950,11 @@ impl OutputRenderTarget {
     pub fn new(context: Rc<VulkanContext>, width: u32, height: u32) -> Result<Self, vk::Result> {
         unsafe {
             let extent = vk::Extent2D { width, height };
-            let extent3d = vk::Extent3D { width, height, depth: 1 };
+            let extent3d = vk::Extent3D {
+                width,
+                height,
+                depth: 1,
+            };
 
             // Create color image (RGBA8, can be used as color attachment and transfer source)
             let color_create_info = vk::ImageCreateInfo::default()
@@ -2764,7 +2969,8 @@ impl OutputRenderTarget {
                 .sharing_mode(vk::SharingMode::EXCLUSIVE)
                 .samples(vk::SampleCountFlags::TYPE_1);
 
-            let (color_image, color_memory) = context.create_image(color_create_info, gpu_allocator::MemoryLocation::GpuOnly);
+            let (color_image, color_memory) =
+                context.create_image(color_create_info, gpu_allocator::MemoryLocation::GpuOnly);
 
             // Create color image view
             let color_view_create_info = vk::ImageViewCreateInfo::default()
@@ -2780,7 +2986,9 @@ impl OutputRenderTarget {
                     layer_count: 1,
                 });
 
-            let color_image_view = context.device.create_image_view(&color_view_create_info, None)?;
+            let color_image_view = context
+                .device
+                .create_image_view(&color_view_create_info, None)?;
 
             // Transition image to COLOR_ATTACHMENT_OPTIMAL (ready for UI rendering)
             let cmd_buffer = context.begin_single_time_commands();
@@ -2828,7 +3036,9 @@ impl OutputRenderTarget {
 impl Drop for OutputRenderTarget {
     fn drop(&mut self) {
         unsafe {
-            self.context.device.destroy_image_view(self.color_image_view, None);
+            self.context
+                .device
+                .destroy_image_view(self.color_image_view, None);
             self.context.device.destroy_image(self.color_image, None);
             if let Some(memory) = self.color_memory.take() {
                 self.context.allocator.borrow_mut().free(memory).ok();

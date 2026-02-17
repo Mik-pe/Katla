@@ -6,10 +6,16 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
+use crate::render_graph::pass::{
+    ExecutionRegistry, Pass, PassCategory, PassExecute, PassExecutionContext,
+};
 use crate::render_graph::renderer_context::RendererContext;
-use crate::render_graph::pass::{ExecutionRegistry, Pass, PassCategory, PassExecute, PassExecutionContext};
-use crate::render_graph::resource::{CompiledResource, ResourceId, ResourceKind, ResourceLifetime, ResourceNameMap};
-use crate::render_graph::types::{ClearValue, Extent2D, ImageLayout, RenderingAttachmentInfo, RenderingInfo};
+use crate::render_graph::resource::{
+    CompiledResource, ResourceId, ResourceKind, ResourceLifetime, ResourceNameMap,
+};
+use crate::render_graph::types::{
+    ClearValue, Extent2D, ImageLayout, RenderingAttachmentInfo, RenderingInfo,
+};
 use crate::rendering::DrawList;
 use crate::sync::{VkFramebuffer, VkImage, VkImageView};
 use crate::CommandBuffer;
@@ -187,7 +193,12 @@ impl CompiledRenderGraph {
         if let Some(swapchain_id) = self.swapchain_resource_id {
             let mut resources = self.resources.borrow_mut();
             if let Some(resource) = resources.get_mut(&swapchain_id) {
-                if let CompiledResource::ExternalImage { image: res_image, image_view: res_image_view, .. } = resource {
+                if let CompiledResource::ExternalImage {
+                    image: res_image,
+                    image_view: res_image_view,
+                    ..
+                } = resource
+                {
                     *res_image = image;
                     *res_image_view = image_view;
                 }
@@ -737,9 +748,7 @@ impl CompiledRenderGraph {
             let execute = PassExecute::new(execute_name);
 
             // Get pre-execute name from the pass (for custom barriers before begin_rendering)
-            let pre_execute = pass
-                .take_pre_execute_name()
-                .map(PassExecute::new);
+            let pre_execute = pass.take_pre_execute_name().map(PassExecute::new);
 
             // Extract color and depth attachments for dynamic rendering
             // For swapchain rendering, we need ONE SET of attachments PER swapchain image
@@ -749,7 +758,9 @@ impl CompiledRenderGraph {
 
             for output_resource_id in pass.outputs() {
                 // Check the usage to determine if this is a render attachment or transfer resource
-                let usage_info = pass.usages().iter()
+                let usage_info = pass
+                    .usages()
+                    .iter()
                     .find(|u| u.resource_id == *output_resource_id);
 
                 let is_render_attachment = usage_info
@@ -761,8 +772,13 @@ impl CompiledRenderGraph {
                                 | vk::ImageLayout::DEPTH_ATTACHMENT_OPTIMAL
                                 | vk::ImageLayout::STENCIL_ATTACHMENT_OPTIMAL
                         );
-                        debug!("compile pass '{}': output {:?}, layout={:?}, is_render={}",
-                            pass.name(), output_resource_id, u.layout, is_render);
+                        debug!(
+                            "compile pass '{}': output {:?}, layout={:?}, is_render={}",
+                            pass.name(),
+                            output_resource_id,
+                            u.layout,
+                            is_render
+                        );
                         is_render
                     })
                     .unwrap_or(false);
@@ -882,7 +898,10 @@ impl CompiledRenderGraph {
         // Update viewport color resource
         if let Some(color_id) = self.viewport_color_resource_id {
             if let Some(resource) = resources.get_mut(&color_id) {
-                if let CompiledResource::ExternalImage { image, image_view, .. } = resource {
+                if let CompiledResource::ExternalImage {
+                    image, image_view, ..
+                } = resource
+                {
                     *image = color_image;
                     *image_view = color_image_view;
                 }
@@ -892,7 +911,10 @@ impl CompiledRenderGraph {
         // Update viewport depth resource
         if let Some(depth_id) = self.viewport_depth_resource_id {
             if let Some(resource) = resources.get_mut(&depth_id) {
-                if let CompiledResource::ExternalImage { image, image_view, .. } = resource {
+                if let CompiledResource::ExternalImage {
+                    image, image_view, ..
+                } = resource
+                {
                     *image = depth_image;
                     *image_view = depth_image_view;
                 }
@@ -921,13 +943,22 @@ impl CompiledRenderGraph {
             // For swapchain rendering, we always have attachments (during compile, one set is created
             // The get() returns None for missing per-image sets, but that's OK for swapchain
             // Check if any color attachment vector has actual content (not just empty inner vectors)
-        let has_color_attachments = self.passes[i].color_attachments.iter().any(|v| !v.is_empty());
+            let has_color_attachments = self.passes[i]
+                .color_attachments
+                .iter()
+                .any(|v| !v.is_empty());
             let has_depth_attachment = self.passes[i].depth_attachments.iter().any(|d| d.is_some());
             let has_render_attachments = has_color_attachments || has_depth_attachment;
             let is_last_pass = i == pass_count - 1;
 
-            debug!("execute: pass {} ({}), has_color={}, has_depth={}, is_transfer={}",
-                i, self.passes[i].name, has_color_attachments, has_depth_attachment, !has_render_attachments);
+            debug!(
+                "execute: pass {} ({}), has_color={}, has_depth={}, is_transfer={}",
+                i,
+                self.passes[i].name,
+                has_color_attachments,
+                has_depth_attachment,
+                !has_render_attachments
+            );
 
             if has_render_attachments {
                 // Use Dynamic Rendering path (Vulkan 1.3)
@@ -1002,7 +1033,8 @@ impl CompiledRenderGraph {
             attachments.clone()
         } else {
             // Fallback to first set for non-swapchain attachments (e.g., viewport texture)
-            pass.color_attachments.first()
+            pass.color_attachments
+                .first()
                 .filter(|v| !v.is_empty())
                 .cloned()
                 .unwrap_or_default()
@@ -1010,7 +1042,9 @@ impl CompiledRenderGraph {
 
         // Get depth attachment for this image index
         // Fallback to first depth attachment for non-swapchain attachments
-        let depth_attachment = pass.depth_attachments.get(image_index)
+        let depth_attachment = pass
+            .depth_attachments
+            .get(image_index)
             .copied()
             .flatten()
             .or_else(|| pass.depth_attachments.first().copied().flatten());

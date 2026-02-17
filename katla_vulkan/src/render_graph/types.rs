@@ -717,10 +717,7 @@ impl RenderingInfo {
             .collect();
 
         let depth_vk = self.depth_attachment.as_ref().map(|d| (*d).into_vk());
-        let stencil_vk = self
-            .stencil_attachment
-            .as_ref()
-            .map(|s| (*s).into_vk());
+        let stencil_vk = self.stencil_attachment.as_ref().map(|s| (*s).into_vk());
 
         let mut builder = ash::vk::RenderingInfoKHR::default()
             .render_area(self.render_area)
@@ -816,12 +813,24 @@ impl ShaderStages {
 impl From<ShaderStages> for ash::vk::ShaderStageFlags {
     fn from(stages: ShaderStages) -> Self {
         let mut flags = ash::vk::ShaderStageFlags::empty();
-        if stages.vertex { flags |= ash::vk::ShaderStageFlags::VERTEX; }
-        if stages.fragment { flags |= ash::vk::ShaderStageFlags::FRAGMENT; }
-        if stages.compute { flags |= ash::vk::ShaderStageFlags::COMPUTE; }
-        if stages.geometry { flags |= ash::vk::ShaderStageFlags::GEOMETRY; }
-        if stages.tessellation_control { flags |= ash::vk::ShaderStageFlags::TESSELLATION_CONTROL; }
-        if stages.tessellation_evaluation { flags |= ash::vk::ShaderStageFlags::TESSELLATION_EVALUATION; }
+        if stages.vertex {
+            flags |= ash::vk::ShaderStageFlags::VERTEX;
+        }
+        if stages.fragment {
+            flags |= ash::vk::ShaderStageFlags::FRAGMENT;
+        }
+        if stages.compute {
+            flags |= ash::vk::ShaderStageFlags::COMPUTE;
+        }
+        if stages.geometry {
+            flags |= ash::vk::ShaderStageFlags::GEOMETRY;
+        }
+        if stages.tessellation_control {
+            flags |= ash::vk::ShaderStageFlags::TESSELLATION_CONTROL;
+        }
+        if stages.tessellation_evaluation {
+            flags |= ash::vk::ShaderStageFlags::TESSELLATION_EVALUATION;
+        }
         flags
     }
 }

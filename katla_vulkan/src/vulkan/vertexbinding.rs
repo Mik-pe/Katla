@@ -19,12 +19,12 @@ pub fn get_pbr_vertex_binding() -> VertexBinding {
 pub fn get_skinned_vertex_binding() -> VertexBinding {
     VertexBinding {
         formats: vec![
-            VertexFormat::RGB32f,   // position (location 0)
-            VertexFormat::RGB32f,   // normal (location 1)
-            VertexFormat::RGBA32f,  // tangent (location 2)
-            VertexFormat::RG32f,    // uv (location 3)
-            VertexFormat::RGBA16u,  // joint_indices (location 4) - u16x4, 65k joints max
-            VertexFormat::RGBA32f,  // joint_weights (location 5)
+            VertexFormat::RGB32f,  // position (location 0)
+            VertexFormat::RGB32f,  // normal (location 1)
+            VertexFormat::RGBA32f, // tangent (location 2)
+            VertexFormat::RG32f,   // uv (location 3)
+            VertexFormat::RGBA16u, // joint_indices (location 4) - u16x4, 65k joints max
+            VertexFormat::RGBA32f, // joint_weights (location 5)
         ],
     }
 }
@@ -43,7 +43,7 @@ pub enum VertexFormat {
     RGBA32u,
     RGBA32i,
     RGBA32f,
-    RGBA16u,  // For joint indices (u16 x 4)
+    RGBA16u, // For joint indices (u16 x 4)
 }
 
 impl VertexFormat {
@@ -72,7 +72,7 @@ impl VertexFormat {
             RG32u | RG32i | RG32f => 8,
             RGB32u | RGB32i | RGB32f => 12,
             RGBA32u | RGBA32i | RGBA32f => 16,
-            RGBA16u => 8,  // 4 x u16 = 8 bytes
+            RGBA16u => 8, // 4 x u16 = 8 bytes
         }
     }
 }

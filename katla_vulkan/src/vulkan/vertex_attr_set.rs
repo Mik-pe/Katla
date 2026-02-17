@@ -51,14 +51,17 @@ impl VertexAttributeSet {
 
     /// Check if this set has specific attributes.
     pub fn has_attributes(&self, required: &[AttributeType]) -> bool {
-        required.iter().all(|attr| self.attributes.contains_key(attr))
+        required
+            .iter()
+            .all(|attr| self.attributes.contains_key(attr))
     }
 
     /// Get all Vulkan vertex attribute descriptions for pipeline creation.
     ///
     /// Returns descriptions sorted by binding location for consistent pipeline creation.
     pub fn get_attribute_descriptions(&self) -> Vec<ash::vk::VertexInputAttributeDescription> {
-        let mut bindings: Vec<_> = self.attributes
+        let mut bindings: Vec<_> = self
+            .attributes
             .iter()
             .map(|(attr, _)| (attr.default_location(), attr))
             .collect();
@@ -76,7 +79,8 @@ impl VertexAttributeSet {
     ///
     /// Returns descriptions sorted by binding location.
     pub fn get_binding_descriptions(&self) -> Vec<ash::vk::VertexInputBindingDescription> {
-        let mut bindings: Vec<_> = self.attributes
+        let mut bindings: Vec<_> = self
+            .attributes
             .iter()
             .map(|(attr, _)| (attr.default_location(), attr))
             .collect();

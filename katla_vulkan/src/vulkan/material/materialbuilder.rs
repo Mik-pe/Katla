@@ -5,10 +5,10 @@ use super::{
     DescriptorLayoutBuilder, ImageInfo, MaterialDescriptor, MaterialError, MaterialPipeline,
     PipelineBuilder, ShaderModule, ShaderSource,
 };
+use crate::render_graph::types::ShaderStages;
 use crate::vulkan::context::VulkanContext;
 use crate::vulkan::pipeline_state::{CullMode, CompareOp, FrontFace};
 use crate::{ImageFormat, Texture, VertexBinding};
-use crate::render_graph::types::ShaderStages;
 
 pub struct MaterialBuilder {
     context: Rc<VulkanContext>,
@@ -281,12 +281,7 @@ impl MaterialBuilder {
     /// * `stages` - Shader stages that can access this push constant range
     /// * `offset` - Offset in bytes within the push constant block
     /// * `size` - Size in bytes of the push constant range
-    pub fn with_push_constant(
-        mut self,
-        stages: ShaderStages,
-        offset: u32,
-        size: u32,
-    ) -> Self {
+    pub fn with_push_constant(mut self, stages: ShaderStages, offset: u32, size: u32) -> Self {
         self.push_constant_ranges.push(
             vk::PushConstantRange::default()
                 .stage_flags(stages.into())

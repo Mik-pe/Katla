@@ -1,8 +1,8 @@
 use super::VulkanContext;
 use crate::render_graph::types::ImageFormat;
+use crate::sync::{AccessFlags2, DependencyInfo, ImageMemoryBarrier2, PipelineStage2Flags};
 use crate::VulkanFrameCtx;
 use crate::{VkImage, VkImageView, VkSampler};
-use crate::sync::{ImageMemoryBarrier2, PipelineStage2Flags, AccessFlags2, DependencyInfo};
 
 use std::mem::ManuallyDrop;
 use std::rc::Rc;
@@ -92,7 +92,9 @@ impl Texture {
 
         let dep_info = DependencyInfo::new().add_image_barrier(barrier);
         dep_info.build(|dep_info| unsafe {
-            context.device.cmd_pipeline_barrier2(command_buffer, dep_info);
+            context
+                .device
+                .cmd_pipeline_barrier2(command_buffer, dep_info);
         });
     }
 

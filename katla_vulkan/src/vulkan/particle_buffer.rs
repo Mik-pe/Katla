@@ -295,7 +295,6 @@ mod tests {
         assert!(std::mem::size_of::<EmitterConfig>() <= 128);
     }
 
-
     #[test]
     fn test_particle_data_default() {
         let particle = ParticleData::default();
@@ -332,7 +331,8 @@ mod tests {
     #[test]
     fn test_max_particles_memory() {
         // 64K particles * 64 bytes = 4MB
-        let memory_mb = (MAX_PARTICLES * std::mem::size_of::<ParticleData>()) as f64 / (1024.0 * 1024.0);
+        let memory_mb =
+            (MAX_PARTICLES * std::mem::size_of::<ParticleData>()) as f64 / (1024.0 * 1024.0);
         assert!((memory_mb - 4.0).abs() < 0.01);
     }
 
@@ -344,5 +344,4 @@ mod tests {
         assert_eq!(config.velocity_direction, [0.0, 1.0, 0.0]);
         assert_eq!(config.base_lifetime, 5.0);
     }
-
 }

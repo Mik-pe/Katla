@@ -6,9 +6,11 @@ use std::rc::Rc;
 
 use ash::vk;
 
-use crate::rendering::DrawList;
 use crate::rendering::registry::AssetRegistry;
-use crate::vulkan::material::{MaterialPipeline, StorageDescriptorSet, StorageUniformManager, SkeletonDescriptorSet};
+use crate::rendering::DrawList;
+use crate::vulkan::material::{
+    MaterialPipeline, SkeletonDescriptorSet, StorageDescriptorSet, StorageUniformManager,
+};
 use crate::{UIBuffers, UITextures, UiDrawData};
 
 /// Trait for render frame context - provides access to per-frame data
@@ -124,4 +126,3 @@ impl RendererContext {
             .unwrap_or(false)
     }
 }
-

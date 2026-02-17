@@ -79,10 +79,7 @@ impl Default for InstanceData {
     fn default() -> Self {
         Self {
             model_matrix: [
-                1.0, 0.0, 0.0, 0.0,
-                0.0, 1.0, 0.0, 0.0,
-                0.0, 0.0, 1.0, 0.0,
-                0.0, 0.0, 0.0, 1.0,
+                1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
             ],
             color: [1.0, 1.0, 1.0, 1.0],
             metallic: 0.0,
@@ -178,7 +175,11 @@ impl DrawCall {
     ///
     /// All instances share the same mesh and material but have different
     /// transforms and material properties.
-    pub fn instanced(mesh: MeshHandle, material: MaterialHandle, instances: Vec<InstanceData>) -> Self {
+    pub fn instanced(
+        mesh: MeshHandle,
+        material: MaterialHandle,
+        instances: Vec<InstanceData>,
+    ) -> Self {
         Self {
             mesh,
             material,
@@ -278,14 +279,20 @@ impl DrawCall {
     }
 
     /// Set all matrices at once.
-    #[deprecated(since = "0.2.0", note = "Use with_transform() and renderer.set_frame_uniforms() instead")]
+    #[deprecated(
+        since = "0.2.0",
+        note = "Use with_transform() and renderer.set_frame_uniforms() instead"
+    )]
     pub fn with_matrices(mut self, model: [f32; 16], _view: [f32; 16], _proj: [f32; 16]) -> Self {
         self.model_matrix = model;
         self
     }
 
     /// Set all matrices including inverse view-projection.
-    #[deprecated(since = "0.2.0", note = "Use with_transform() and renderer.set_frame_uniforms() instead")]
+    #[deprecated(
+        since = "0.2.0",
+        note = "Use with_transform() and renderer.set_frame_uniforms() instead"
+    )]
     pub fn with_all_matrices(
         mut self,
         model: [f32; 16],
@@ -383,7 +390,8 @@ impl DrawList {
     /// Extend this list with all draws from another list.
     pub fn extend(&mut self, other: &mut DrawList) {
         self.draws.append(&mut other.draws);
-        self.particle_dispatches.append(&mut other.particle_dispatches);
+        self.particle_dispatches
+            .append(&mut other.particle_dispatches);
         self.particle_renders.append(&mut other.particle_renders);
     }
 
@@ -582,7 +590,9 @@ mod tests {
     fn test_draw_call_builder() {
         let mesh = MeshHandle(0);
         let material = MaterialHandle(0);
-        let model = [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0];
+        let model = [
+            1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
+        ];
 
         let draw = DrawCall::new(mesh, material)
             .with_transform(model)
@@ -683,10 +693,7 @@ mod tests {
     fn test_compute_distance_from_camera() {
         // Identity matrix at origin
         let model_at_origin = [
-            1.0, 0.0, 0.0, 0.0,
-            0.0, 1.0, 0.0, 0.0,
-            0.0, 0.0, 1.0, 0.0,
-            0.0, 0.0, 0.0, 1.0,
+            1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
         ];
 
         let dist = compute_distance_from_camera(&model_at_origin, [3.0, 4.0, 0.0]);
@@ -701,14 +708,15 @@ mod tests {
 
         // Identity matrix at origin
         let model = [
-            1.0, 0.0, 0.0, 0.0,
-            0.0, 1.0, 0.0, 0.0,
-            0.0, 0.0, 1.0, 0.0,
-            0.0, 0.0, 0.0, 1.0,
+            1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
         ];
 
         list.push(DrawCall::new(mesh, mat).with_transform(model));
-        list.push(DrawCall::new(mesh, mat).with_transform(model).with_transparency());
+        list.push(
+            DrawCall::new(mesh, mat)
+                .with_transform(model)
+                .with_transparency(),
+        );
 
         list.compute_sort_keys([5.0, 0.0, 0.0]);
 

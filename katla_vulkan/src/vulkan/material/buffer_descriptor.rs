@@ -276,7 +276,7 @@ impl<'a> BufferDescriptorSetBuilder<'a> {
                     .dst_set(descriptor_set)
                     .dst_binding(b.binding)
                     .dst_array_element(0)
-                    .descriptor_type(b.descriptor_type)  // Use per-binding descriptor type
+                    .descriptor_type(b.descriptor_type) // Use per-binding descriptor type
                     .buffer_info(std::slice::from_ref(&buffer_infos[i]))
             })
             .collect();
@@ -390,7 +390,12 @@ pub trait BufferDescriptorSource {
 
     /// Create a binding for a range within this buffer.
     /// Note: descriptor_type defaults to STORAGE_BUFFER; override with builder's with_descriptor_type().
-    fn as_binding_range(&self, binding: u32, offset: vk::DeviceSize, range: vk::DeviceSize) -> BufferBinding {
+    fn as_binding_range(
+        &self,
+        binding: u32,
+        offset: vk::DeviceSize,
+        range: vk::DeviceSize,
+    ) -> BufferBinding {
         BufferBinding {
             buffer: self.buffer(),
             binding,

@@ -93,7 +93,8 @@ impl SwapData {
 
         // Use per-image semaphore for finished - this prevents reuse issues
         // because each swapchain image has its own dedicated semaphore
-        let finished_semaphore = self.render_finished_semaphores[image_index as usize % self.render_finished_semaphores.len()];
+        let finished_semaphore = self.render_finished_semaphores
+            [image_index as usize % self.render_finished_semaphores.len()];
 
         Ok((
             VkSemaphore::new(available_semaphore),
