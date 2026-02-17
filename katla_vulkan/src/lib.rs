@@ -323,16 +323,6 @@ impl VulkanRenderer {
         }
     }
 
-<<<<<<< HEAD
-    /// Get UI descriptor set for binding as wrapper type.
-    pub fn ui_descriptor_set(&self) -> Option<VkDescriptorSet> {
-        self.ui_textures.as_ref().map(|t| t.set())
-    }
-
-    /// Get UI descriptor set as raw vk handle (for internal use).
-    pub fn vk_ui_descriptor_set(&self) -> Option<vk::DescriptorSet> {
-        self.ui_textures.as_ref().map(|t| t.vk_set())
-=======
     /// Resize the font atlas texture to a new size.
     ///
     /// Call this when the font system's atlas has grown.
@@ -349,10 +339,14 @@ impl VulkanRenderer {
         }
     }
 
-    /// Get UI descriptor set for binding.
-    pub fn ui_descriptor_set(&self) -> Option<vk::DescriptorSet> {
-        self.ui_textures.as_ref().map(|t| t.descriptor_set)
->>>>>>> ba05f67 (Add dynamic font atlas resizing)
+    /// Get UI descriptor set for binding as wrapper type.
+    pub fn ui_descriptor_set(&self) -> Option<VkDescriptorSet> {
+        self.ui_textures.as_ref().map(|t| t.set())
+    }
+
+    /// Get UI descriptor set as raw vk handle (for internal use).
+    pub fn vk_ui_descriptor_set(&self) -> Option<vk::DescriptorSet> {
+        self.ui_textures.as_ref().map(|t| t.vk_set())
     }
 
     /// Initialize or resize the viewport render target.
@@ -2613,28 +2607,15 @@ impl UITextures {
         }
 
         unsafe {
-            // Destroy old texture
-            context
-                .device
-                .destroy_image_view(self.font_image_view, None);
-            if let Some(allocation) = self.font_image_memory.take() {
-                context.allocator.borrow_mut().free(allocation).ok();
-            }
-            context.device.destroy_image(self.font_image, None);
+            // Create new texture FIRST before destroying old one
+            let new_texture = Self::create_texture(context, new_width, new_height, pixels);
 
-            // Create new texture at new size using the static create_texture method
-            match Self::create_texture(context, new_width, new_height, pixels) {
-                Ok((font_image, font_image_memory, font_image_view)) => {
-                    self.font_image = font_image;
-                    self.font_image_memory = Some(font_image_memory);
-                    self.font_image_view = font_image_view;
-                    self.atlas_width = new_width;
-                    self.atlas_height = new_height;
-
-                    // Update descriptor set with new image view
+            match new_texture {
+                Ok((new_font_image, new_font_image_memory, new_font_image_view)) => {
+                    // Update descriptor set with NEW image view BEFORE destroying old one
                     let font_image_info = vk::DescriptorImageInfo {
                         sampler: vk::Sampler::null(),
-                        image_view: self.font_image_view,
+                        image_view: new_font_image_view,
                         image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
                     };
 
@@ -2648,6 +2629,22 @@ impl UITextures {
                         .image_info(&font_infos);
 
                     context.device.update_descriptor_sets(&[font_write], &[]);
+
+                    // NOW safe to destroy old texture (descriptor set no longer references it)
+                    context
+                        .device
+                        .destroy_image_view(self.font_image_view, None);
+                    if let Some(allocation) = self.font_image_memory.take() {
+                        context.allocator.borrow_mut().free(allocation).ok();
+                    }
+                    context.device.destroy_image(self.font_image, None);
+
+                    // Store new texture
+                    self.font_image = new_font_image;
+                    self.font_image_memory = Some(new_font_image_memory);
+                    self.font_image_view = new_font_image_view;
+                    self.atlas_width = new_width;
+                    self.atlas_height = new_height;
 
                     info!("Font atlas resized to {}x{}", new_width, new_height);
                     true
