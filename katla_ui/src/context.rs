@@ -443,6 +443,11 @@ impl UiContext {
             .measure_text(self.current_font, text, size, self.scale_factor)
     }
 
+    /// Measure text dimensions using a predefined font size.
+    pub fn measure_text_sized(&self, text: &str, size: crate::style::FontSize) -> Vec2 {
+        self.measure_text(text, size.to_pixels())
+    }
+
     /// Get the font ascent (baseline to font top) in logical pixels.
     ///
     /// This is needed for proper text positioning.
@@ -451,6 +456,22 @@ impl UiContext {
             .get_font_metrics(self.current_font, size, self.scale_factor)
             .map(|(ascent, _, _)| ascent)
             .unwrap_or(size * 0.75) // Fallback heuristic
+    }
+
+    /// Get the font ascent using a predefined font size.
+    pub fn font_ascent_sized(&self, size: crate::style::FontSize) -> f32 {
+        self.font_ascent(size.to_pixels())
+    }
+
+    /// Draw text using a predefined font size.
+    pub fn draw_text_sized(
+        &mut self,
+        text: &str,
+        position: Vec2,
+        color: Color,
+        size: crate::style::FontSize,
+    ) {
+        self.draw_text(text, position, color, size.to_pixels())
     }
 
     /// Draw an icon from an icon font (like ForkAwesome).

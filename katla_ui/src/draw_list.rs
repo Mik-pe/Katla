@@ -85,7 +85,13 @@ pub struct DrawCommand {
 
 impl DrawCommand {
     /// Create a new draw command.
-    pub fn new(texture: TextureId, clip_rect: Rect2D, index_count: u32, index_offset: u32, z_index: u32) -> Self {
+    pub fn new(
+        texture: TextureId,
+        clip_rect: Rect2D,
+        index_count: u32,
+        index_offset: u32,
+        z_index: u32,
+    ) -> Self {
         Self {
             texture,
             clip_rect,

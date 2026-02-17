@@ -272,7 +272,8 @@ mod tests {
         let rect = Rect2D::from_origin_size(Vec2::new(0.0, 0.0), Vec2::new(100.0, 100.0));
         assert!(state.is_hovered(rect));
 
-        let outside_rect = Rect2D::from_origin_size(Vec2::new(200.0, 200.0), Vec2::new(100.0, 100.0));
+        let outside_rect =
+            Rect2D::from_origin_size(Vec2::new(200.0, 200.0), Vec2::new(100.0, 100.0));
         assert!(!state.is_hovered(outside_rect));
     }
 }

@@ -14,8 +14,8 @@
 use std::rc::Rc;
 
 use katla_math::Vec2;
-use katla_vulkan::{CommandBuffer, VulkanContext};
 use katla_vulkan::render_graph::types::ImageFormat;
+use katla_vulkan::{CommandBuffer, VulkanContext};
 
 use crate::draw_list::DrawList;
 
@@ -43,7 +43,12 @@ impl UiRenderer {
     }
 
     /// Update the font atlas texture.
-    pub fn update_atlas(&mut self, _width: u32, _height: u32, _data: &[u8]) -> Result<(), UiRenderError> {
+    pub fn update_atlas(
+        &mut self,
+        _width: u32,
+        _height: u32,
+        _data: &[u8],
+    ) -> Result<(), UiRenderError> {
         // TODO: Implement atlas update
         Ok(())
     }
@@ -51,12 +56,7 @@ impl UiRenderer {
     /// Render a draw list to the command buffer.
     ///
     /// Currently a placeholder - logs draw stats for debugging.
-    pub fn render(
-        &mut self,
-        _cmd: &CommandBuffer,
-        draw_list: &DrawList,
-        screen_size: Vec2,
-    ) {
+    pub fn render(&mut self, _cmd: &CommandBuffer, draw_list: &DrawList, screen_size: Vec2) {
         if draw_list.is_empty() {
             return;
         }
@@ -109,7 +109,9 @@ impl std::fmt::Display for UiRenderError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             UiRenderError::VulkanError(msg) => write!(f, "Vulkan error: {}", msg),
-            UiRenderError::PipelineCreationFailed(msg) => write!(f, "Pipeline creation failed: {}", msg),
+            UiRenderError::PipelineCreationFailed(msg) => {
+                write!(f, "Pipeline creation failed: {}", msg)
+            }
             UiRenderError::BufferError(msg) => write!(f, "Buffer error: {}", msg),
             UiRenderError::TextureError(msg) => write!(f, "Texture error: {}", msg),
             UiRenderError::ShaderError(msg) => write!(f, "Shader error: {}", msg),

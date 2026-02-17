@@ -341,21 +341,43 @@ impl ForkAwesome {
     pub fn common_icons() -> &'static [char] {
         &[
             // Navigation
-            Self::CHEVRON_UP, Self::CHEVRON_DOWN, Self::CHEVRON_LEFT, Self::CHEVRON_RIGHT,
-            Self::ARROW_UP, Self::ARROW_DOWN, Self::ARROW_LEFT, Self::ARROW_RIGHT,
+            Self::CHEVRON_UP,
+            Self::CHEVRON_DOWN,
+            Self::CHEVRON_LEFT,
+            Self::CHEVRON_RIGHT,
+            Self::ARROW_UP,
+            Self::ARROW_DOWN,
+            Self::ARROW_LEFT,
+            Self::ARROW_RIGHT,
             // Actions
-            Self::PLUS, Self::MINUS, Self::TIMES, Self::CHECK,
-            Self::PENCIL, Self::EDIT, Self::TRASH, Self::REFRESH,
+            Self::PLUS,
+            Self::MINUS,
+            Self::TIMES,
+            Self::CHECK,
+            Self::PENCIL,
+            Self::EDIT,
+            Self::TRASH,
+            Self::REFRESH,
             // 3D/Scene
-            Self::CUBE, Self::CUBES, Self::CAMERA,
+            Self::CUBE,
+            Self::CUBES,
+            Self::CAMERA,
             // Visibility
-            Self::EYE, Self::EYE_SLASH,
+            Self::EYE,
+            Self::EYE_SLASH,
             // Status
-            Self::INFO_CIRCLE, Self::EXCLAMATION_TRIANGLE,
+            Self::INFO_CIRCLE,
+            Self::EXCLAMATION_TRIANGLE,
             // UI
-            Self::BARS, Self::TH, Self::LIST, Self::SEARCH,
+            Self::BARS,
+            Self::TH,
+            Self::LIST,
+            Self::SEARCH,
             // Files
-            Self::FOLDER, Self::FOLDER_OPEN, Self::FILE, Self::SAVE,
+            Self::FOLDER,
+            Self::FOLDER_OPEN,
+            Self::FILE,
+            Self::SAVE,
         ]
     }
 }

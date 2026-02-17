@@ -9,7 +9,7 @@
 
 use katla_ecs::EntityId;
 use katla_math::{Color, Rect2D, Vec2, Vec3};
-use katla_ui::{input::mouse_button, DrawList, FontId, ForkAwesome, UiContext};
+use katla_ui::{input::mouse_button, DrawList, FontId, FontSize, ForkAwesome, UiContext};
 use std::collections::HashSet;
 
 use super::theme::Theme;
@@ -543,8 +543,8 @@ impl EditorUI {
 
         // Settings button on the right side
         let settings_text = " Settings";
-        let settings_text_size = ui.measure_text(settings_text, 12.0);
-        let icon_size = 14.0;
+        let settings_text_size = ui.measure_text(settings_text, FontSize::Medium.to_pixels());
+        let icon_size = FontSize::Large.to_pixels();
         let icon_padding = 4.0;
         let settings_total_width = icon_size + icon_padding + settings_text_size.x();
         let settings_bounds = Rect2D::from_origin_size(
@@ -574,22 +574,37 @@ impl EditorUI {
             FontId::DEFAULT,
         );
         let text_pos = Vec2::new(icon_pos.x() + icon_size + icon_padding, top_y);
-        ui.draw_text(settings_text, text_pos, theme.text_primary, 12.0);
+        ui.draw_text(
+            settings_text,
+            text_pos,
+            theme.text_primary,
+            FontSize::Medium.to_pixels(),
+        );
         ui.draw_icon(ForkAwesome::COG, icon_pos, icon_size, theme.text_primary);
         let text_pos = Vec2::new(
             icon_pos.x() + icon_size + icon_padding,
             settings_bounds.center().y() - settings_text_size.y() * 0.5,
         );
-        ui.draw_text(settings_text, text_pos, theme.text_primary, 12.0);
+        ui.draw_text(
+            settings_text,
+            text_pos,
+            theme.text_primary,
+            FontSize::Medium.to_pixels(),
+        );
 
         // Title in center
         let title = "Katla Engine Editor";
-        let title_size = ui.measure_text(title, 14.0);
+        let title_size = ui.measure_text(title, FontSize::Large.to_pixels());
         let title_pos = Vec2::new(
             screen_size.x() * 0.5 - title_size.x() * 0.5,
             height * 0.5 - title_size.y() * 0.5,
         );
-        ui.draw_text(title, title_pos, theme.text_muted, 14.0);
+        ui.draw_text(
+            title,
+            title_pos,
+            theme.text_muted,
+            FontSize::Large.to_pixels(),
+        );
     }
 
     fn build_hierarchy_panel(
@@ -617,7 +632,12 @@ impl EditorUI {
 
         let header_text = format!("Hierarchy ({} entities)", visible_count);
         let header_pos = Vec2::new(bounds.min.x() + 8.0, header_bounds.center().y() - 7.0);
-        ui.draw_text(&header_text, header_pos, theme.text_primary, 12.0);
+        ui.draw_text(
+            &header_text,
+            header_pos,
+            theme.text_primary,
+            FontSize::Medium.to_pixels(),
+        );
 
         // Entity list
         let mut cursor = Vec2::new(bounds.min.x(), bounds.min.y() + header_height + 4.0);
@@ -687,7 +707,13 @@ impl EditorUI {
                 };
 
                 let triangle_pos = Vec2::new(item_x + 3.0, cursor.y() + 3.0);
-                ui.draw_icon_aligned(icon, triangle_pos, 12.0, triangle_color, FontId::DEFAULT);
+                ui.draw_icon_aligned(
+                    icon,
+                    triangle_pos,
+                    FontSize::Medium.to_pixels(),
+                    triangle_color,
+                    FontId::DEFAULT,
+                );
 
                 // Click on triangle to toggle expand
                 if ui.input.mouse_clicked(mouse_button::LEFT) && triangle_hovered {
@@ -708,7 +734,12 @@ impl EditorUI {
             // Entity name
             let name_text = &entity.name;
             let name_pos = Vec2::new(text_x, cursor.y() + 3.0);
-            ui.draw_text(name_text, name_pos, theme.text_secondary, 12.0);
+            ui.draw_text(
+                name_text,
+                name_pos,
+                theme.text_secondary,
+                FontSize::Medium.to_pixels(),
+            );
 
             // Entity type badge with color coding from theme
             let badge_color = match entity.entity_type.as_str() {
@@ -718,9 +749,14 @@ impl EditorUI {
                 _ => theme.entity_empty,
             };
             let badge_text = &entity.entity_type;
-            let badge_size = ui.measure_text(badge_text, 10.0);
+            let badge_size = ui.measure_text(badge_text, FontSize::XSmall.to_pixels());
             let badge_pos = Vec2::new(item_bounds.max.x() - badge_size.x() - 8.0, cursor.y() + 5.0);
-            ui.draw_text(badge_text, badge_pos, badge_color, 10.0);
+            ui.draw_text(
+                badge_text,
+                badge_pos,
+                badge_color,
+                FontSize::XSmall.to_pixels(),
+            );
 
             // Click to select (but not on triangle)
             let triangle_width = if entity.has_children { 18.0 } else { 0.0 };
@@ -752,12 +788,17 @@ impl EditorUI {
         // Empty state
         if entities.is_empty() {
             let empty_text = "No entities in scene";
-            let empty_size = ui.measure_text(empty_text, 12.0);
+            let empty_size = ui.measure_text(empty_text, FontSize::Medium.to_pixels());
             let empty_pos = Vec2::new(
                 bounds.center().x() - empty_size.x() * 0.5,
                 bounds.center().y() - empty_size.y() * 0.5,
             );
-            ui.draw_text(empty_text, empty_pos, theme.text_muted, 12.0);
+            ui.draw_text(
+                empty_text,
+                empty_pos,
+                theme.text_muted,
+                FontSize::Medium.to_pixels(),
+            );
         }
     }
 
@@ -779,7 +820,12 @@ impl EditorUI {
         ui.draw_rect(header_bounds, theme.panel_header);
 
         let header_pos = Vec2::new(bounds.min.x() + 8.0, header_bounds.center().y() - 7.0);
-        ui.draw_text("Inspector", header_pos, theme.text_primary, 12.0);
+        ui.draw_text(
+            "Inspector",
+            header_pos,
+            theme.text_primary,
+            FontSize::Medium.to_pixels(),
+        );
 
         // Find selected entity
         let selected = self
@@ -793,7 +839,12 @@ impl EditorUI {
 
         if let Some(entity) = selected {
             // Entity name header
-            ui.draw_text(&entity.name, cursor, theme.text_primary, 14.0);
+            ui.draw_text(
+                &entity.name,
+                cursor,
+                theme.text_primary,
+                FontSize::Large.to_pixels(),
+            );
             cursor = Vec2::new(cursor.x(), cursor.y() + line_height + 8.0);
 
             // Separator
@@ -806,7 +857,12 @@ impl EditorUI {
             cursor = Vec2::new(cursor.x(), cursor.y() + 8.0);
 
             // Transform section
-            ui.draw_text("Transform", cursor, theme.text_accent, 12.0);
+            ui.draw_text(
+                "Transform",
+                cursor,
+                theme.text_accent,
+                FontSize::Medium.to_pixels(),
+            );
             cursor = Vec2::new(cursor.x(), cursor.y() + line_height);
 
             // Position
@@ -870,20 +926,40 @@ impl EditorUI {
             cursor = Vec2::new(cursor.x(), cursor.y() + 8.0);
 
             // Entity type
-            ui.draw_text("Type", cursor, theme.text_accent, 12.0);
+            ui.draw_text(
+                "Type",
+                cursor,
+                theme.text_accent,
+                FontSize::Medium.to_pixels(),
+            );
             cursor = Vec2::new(cursor.x(), cursor.y() + line_height);
 
             let type_text = format!("  {}", entity.entity_type);
-            ui.draw_text(&type_text, cursor, theme.text_secondary, 12.0);
+            ui.draw_text(
+                &type_text,
+                cursor,
+                theme.text_secondary,
+                FontSize::Medium.to_pixels(),
+            );
             cursor = Vec2::new(cursor.x(), cursor.y() + line_height + 8.0);
 
             // Components list
-            ui.draw_text("Components", cursor, theme.text_accent, 12.0);
+            ui.draw_text(
+                "Components",
+                cursor,
+                theme.text_accent,
+                FontSize::Medium.to_pixels(),
+            );
             cursor = Vec2::new(cursor.x(), cursor.y() + line_height);
 
             for component_name in &entity.components {
                 let comp_text = format!("  {}", component_name);
-                ui.draw_text(&comp_text, cursor, theme.text_secondary, 12.0);
+                ui.draw_text(
+                    &comp_text,
+                    cursor,
+                    theme.text_secondary,
+                    FontSize::Medium.to_pixels(),
+                );
                 cursor = Vec2::new(cursor.x(), cursor.y() + line_height);
             }
 
@@ -902,12 +978,17 @@ impl EditorUI {
         } else {
             // No selection
             let no_selection = "No entity selected";
-            let no_sel_size = ui.measure_text(no_selection, 12.0);
+            let no_sel_size = ui.measure_text(no_selection, FontSize::Medium.to_pixels());
             let no_sel_pos = Vec2::new(
                 bounds.center().x() - no_sel_size.x() * 0.5,
                 bounds.center().y() - no_sel_size.y() * 0.5,
             );
-            ui.draw_text(no_selection, no_sel_pos, theme.text_muted, 12.0);
+            ui.draw_text(
+                no_selection,
+                no_sel_pos,
+                theme.text_muted,
+                FontSize::Medium.to_pixels(),
+            );
         }
     }
 
@@ -957,7 +1038,12 @@ impl EditorUI {
         // Viewport label
         let vp_label = "3D View";
         let label_pos = Vec2::new(bounds.min.x() + 8.0, bounds.min.y() + 8.0);
-        ui.draw_text(vp_label, label_pos, theme.text_muted, 10.0);
+        ui.draw_text(
+            vp_label,
+            label_pos,
+            theme.text_muted,
+            FontSize::XSmall.to_pixels(),
+        );
     }
 
     fn build_status_bar(
@@ -995,25 +1081,35 @@ impl EditorUI {
         } else {
             theme.error
         };
-        ui.draw_text(&fps_text, cursor, fps_color, 11.0);
+        ui.draw_text(&fps_text, cursor, fps_color, FontSize::Small.to_pixels());
 
         // Separator
         cursor = Vec2::new(cursor.x() + 70.0, cursor.y());
-        ui.draw_text("|", cursor, theme.text_muted, 11.0);
+        ui.draw_text("|", cursor, theme.text_muted, FontSize::Small.to_pixels());
         cursor = Vec2::new(cursor.x() + 15.0, cursor.y());
 
         // Frame count
         let frame_text = format!("Frame: {}", frame_count);
-        ui.draw_text(&frame_text, cursor, theme.text_secondary, 11.0);
+        ui.draw_text(
+            &frame_text,
+            cursor,
+            theme.text_secondary,
+            FontSize::Small.to_pixels(),
+        );
 
         // Separator
         cursor = Vec2::new(cursor.x() + 100.0, cursor.y());
-        ui.draw_text("|", cursor, theme.text_muted, 11.0);
+        ui.draw_text("|", cursor, theme.text_muted, FontSize::Small.to_pixels());
         cursor = Vec2::new(cursor.x() + 15.0, cursor.y());
 
         // Entity count
         let entity_text = format!("Entities: {}", entity_count);
-        ui.draw_text(&entity_text, cursor, theme.text_secondary, 11.0);
+        ui.draw_text(
+            &entity_text,
+            cursor,
+            theme.text_secondary,
+            FontSize::Small.to_pixels(),
+        );
 
         // Play mode indicator on right side
         let mode_text = if self.is_playing {
@@ -1026,18 +1122,23 @@ impl EditorUI {
         } else {
             theme.text_secondary
         };
-        let mode_size = ui.measure_text(mode_text, 11.0);
+        let mode_size = ui.measure_text(mode_text, FontSize::Small.to_pixels());
         let mode_pos = Vec2::new(screen_size.x() - mode_size.x() - 8.0, cursor.y());
-        ui.draw_text(mode_text, mode_pos, mode_color, 11.0);
+        ui.draw_text(mode_text, mode_pos, mode_color, FontSize::Small.to_pixels());
 
         // Theme name display
         let theme_text = format!("Theme: {}", theme.name);
-        let theme_size = ui.measure_text(&theme_text, 11.0);
+        let theme_size = ui.measure_text(&theme_text, FontSize::Small.to_pixels());
         let theme_pos = Vec2::new(
             screen_size.x() - mode_size.x() - theme_size.x() - 100.0,
             cursor.y(),
         );
-        ui.draw_text(&theme_text, theme_pos, theme.text_muted, 11.0);
+        ui.draw_text(
+            &theme_text,
+            theme_pos,
+            theme.text_muted,
+            FontSize::Small.to_pixels(),
+        );
     }
 
     fn build_preferences_panel(&mut self, ui: &mut UiContext, screen_size: Vec2) {
@@ -1132,8 +1233,16 @@ impl EditorUI {
             );
         }
 
-        let title_pos = Vec2::new(panel_bounds.min.x() + 12.0, panel_bounds.min.y() + 14.0);
-        ui.draw_text("Settings", title_pos, theme.text_primary, 14.0);
+        let title_pos = Vec2::new(
+            panel_bounds.min.x() + FontSize::Medium.to_pixels(),
+            panel_bounds.min.y() + FontSize::Large.to_pixels(),
+        );
+        ui.draw_text(
+            "Settings",
+            title_pos,
+            theme.text_primary,
+            FontSize::Large.to_pixels(),
+        );
 
         // Close button
         let close_size = 24.0;
@@ -1195,9 +1304,9 @@ impl EditorUI {
 
             // Tab icon + text
             let icon = tab.icon();
-            let icon_size = 12.0;
+            let icon_size = FontSize::Medium.to_pixels();
             let text = tab.name();
-            let text_size = ui.measure_text(text, 11.0);
+            let text_size = ui.measure_text(text, FontSize::Small.to_pixels());
             let total_width = icon_size + 4.0 + text_size.x();
             let start_x = tab_bounds.center().x() - total_width * 0.5;
             let top_y = tab_bounds.center().y() - text_size.y() * 0.5;
@@ -1224,7 +1333,7 @@ impl EditorUI {
                 text,
                 Vec2::new(start_x + icon_size + 4.0, top_y),
                 text_color,
-                11.0,
+                FontSize::Small.to_pixels(),
             );
         }
 
@@ -1269,7 +1378,12 @@ impl EditorUI {
         spacing: f32,
     ) {
         // === THEME SECTION ===
-        ui.draw_text("Color Theme", cursor, theme.text_secondary, 12.0);
+        ui.draw_text(
+            "Color Theme",
+            cursor,
+            theme.text_secondary,
+            FontSize::Medium.to_pixels(),
+        );
         cursor = Vec2::new(cursor.x(), cursor.y() + 20.0);
 
         // Theme grid (2 columns)
@@ -1321,18 +1435,28 @@ impl EditorUI {
             } else {
                 theme.text_primary
             };
-            let text_size = ui.measure_text(display_name, 11.0);
+            let text_size = ui.measure_text(display_name, FontSize::Small.to_pixels());
             let text_pos = Vec2::new(
                 btn_bounds.center().x() - text_size.x() * 0.5,
                 btn_bounds.center().y() - text_size.y() * 0.5,
             );
-            ui.draw_text(display_name, text_pos, text_color, 11.0);
+            ui.draw_text(
+                display_name,
+                text_pos,
+                text_color,
+                FontSize::Small.to_pixels(),
+            );
         }
 
         cursor = Vec2::new(cursor.x(), cursor.y() + 7.0 * (row_height + 4.0) + 16.0);
 
         // === VIEW OPTIONS ===
-        ui.draw_text("View Options", cursor, theme.text_secondary, 12.0);
+        ui.draw_text(
+            "View Options",
+            cursor,
+            theme.text_secondary,
+            FontSize::Medium.to_pixels(),
+        );
         cursor = Vec2::new(cursor.x(), cursor.y() + 24.0);
 
         // Grid toggle
@@ -1360,11 +1484,11 @@ impl EditorUI {
         ui.draw_text(
             grid_text,
             Vec2::new(
-                grid_btn_bounds.min.x() + 12.0,
+                grid_btn_bounds.min.x() + FontSize::Medium.to_pixels(),
                 grid_btn_bounds.min.y() + 6.0,
             ),
             grid_text_color,
-            12.0,
+            FontSize::Medium.to_pixels(),
         );
         cursor = Vec2::new(cursor.x(), cursor.y() + row_height + 4.0);
 
@@ -1393,11 +1517,11 @@ impl EditorUI {
         ui.draw_text(
             stats_text,
             Vec2::new(
-                stats_btn_bounds.min.x() + 12.0,
+                stats_btn_bounds.min.x() + FontSize::Medium.to_pixels(),
                 stats_btn_bounds.min.y() + 6.0,
             ),
             stats_text_color,
-            12.0,
+            FontSize::Medium.to_pixels(),
         );
     }
 
@@ -1410,7 +1534,12 @@ impl EditorUI {
         row_height: f32,
         _spacing: f32,
     ) {
-        ui.draw_text("Editor Settings", cursor, theme.text_secondary, 12.0);
+        ui.draw_text(
+            "Editor Settings",
+            cursor,
+            theme.text_secondary,
+            FontSize::Medium.to_pixels(),
+        );
         cursor = Vec2::new(cursor.x(), cursor.y() + 24.0);
 
         // Snap to grid toggle
@@ -1438,16 +1567,24 @@ impl EditorUI {
         ui.draw_text(
             snap_text,
             Vec2::new(
-                snap_btn_bounds.min.x() + 12.0,
+                snap_btn_bounds.min.x() + FontSize::Medium.to_pixels(),
                 snap_btn_bounds.min.y() + 6.0,
             ),
             snap_text_color,
-            12.0,
+            FontSize::Medium.to_pixels(),
         );
-        cursor = Vec2::new(cursor.x(), cursor.y() + row_height + 12.0);
+        cursor = Vec2::new(
+            cursor.x(),
+            cursor.y() + row_height + FontSize::Medium.to_pixels(),
+        );
 
         // Camera speed
-        ui.draw_text("Camera Speed", cursor, theme.text_secondary, 12.0);
+        ui.draw_text(
+            "Camera Speed",
+            cursor,
+            theme.text_secondary,
+            FontSize::Medium.to_pixels(),
+        );
         cursor = Vec2::new(cursor.x(), cursor.y() + 20.0);
 
         let speed_text = format!("{:.0}", self.camera_speed);
@@ -1455,7 +1592,7 @@ impl EditorUI {
             &speed_text,
             Vec2::new(cursor.x(), cursor.y()),
             theme.text_primary,
-            12.0,
+            FontSize::Medium.to_pixels(),
         );
         cursor = Vec2::new(cursor.x(), cursor.y() + 20.0);
 
@@ -1464,7 +1601,7 @@ impl EditorUI {
         ui.draw_rect(slider_bounds, theme.button_bg);
 
         // Slider fill
-        let fill_percent = (self.camera_speed - 10.0) / 190.0; // 10-200 range
+        let fill_percent = (self.camera_speed - FontSize::XSmall.to_pixels()) / 190.0; // 10-200 range
         let fill_width = content_width * fill_percent;
         let fill_bounds = Rect2D::from_origin_size(cursor, Vec2::new(fill_width, 20.0));
         ui.draw_rect(fill_bounds, theme.selection);
@@ -1481,12 +1618,12 @@ impl EditorUI {
             &format!("Grid Size: {:.1}", self.grid_size),
             cursor,
             theme.text_secondary,
-            12.0,
+            FontSize::Medium.to_pixels(),
         );
         cursor = Vec2::new(cursor.x(), cursor.y() + 24.0);
 
         // Grid size buttons
-        let sizes = [0.5, 1.0, 2.0, 5.0, 10.0];
+        let sizes = [0.5, 1.0, 2.0, 5.0, FontSize::XSmall.to_pixels()];
         let btn_width = (content_width - 4.0 * 8.0) / 5.0;
         for (i, &size) in sizes.iter().enumerate() {
             let btn_bounds = Rect2D::from_origin_size(
@@ -1509,7 +1646,7 @@ impl EditorUI {
                 theme.text_primary
             };
             let text = format!("{:.1}", size);
-            let text_size = ui.measure_text(&text, 11.0);
+            let text_size = ui.measure_text(&text, FontSize::Small.to_pixels());
             ui.draw_text(
                 &text,
                 Vec2::new(
@@ -1517,7 +1654,7 @@ impl EditorUI {
                     btn_bounds.center().y() - text_size.y() * 0.5,
                 ),
                 text_color,
-                11.0,
+                FontSize::Small.to_pixels(),
             );
         }
     }
@@ -1531,7 +1668,12 @@ impl EditorUI {
         row_height: f32,
         _spacing: f32,
     ) {
-        ui.draw_text("Keyboard Shortcuts", cursor, theme.text_secondary, 12.0);
+        ui.draw_text(
+            "Keyboard Shortcuts",
+            cursor,
+            theme.text_secondary,
+            FontSize::Medium.to_pixels(),
+        );
         cursor = Vec2::new(cursor.x(), cursor.y() + 24.0);
 
         let shortcuts = [
@@ -1550,7 +1692,7 @@ impl EditorUI {
             let badge_width = 60.0;
             let badge_bounds = Rect2D::from_origin_size(cursor, Vec2::new(badge_width, row_height));
             ui.draw_rect(badge_bounds, theme.background_light);
-            let key_size = ui.measure_text(key, 11.0);
+            let key_size = ui.measure_text(key, FontSize::Small.to_pixels());
             ui.draw_text(
                 key,
                 Vec2::new(
@@ -1558,15 +1700,18 @@ impl EditorUI {
                     badge_bounds.center().y() - key_size.y() * 0.5,
                 ),
                 theme.text_accent,
-                11.0,
+                FontSize::Small.to_pixels(),
             );
 
             // Description
             ui.draw_text(
                 desc,
-                Vec2::new(cursor.x() + badge_width + 12.0, cursor.y() + 6.0),
+                Vec2::new(
+                    cursor.x() + badge_width + FontSize::Medium.to_pixels(),
+                    cursor.y() + 6.0,
+                ),
                 theme.text_primary,
-                12.0,
+                FontSize::Medium.to_pixels(),
             );
 
             cursor = Vec2::new(cursor.x(), cursor.y() + row_height + 4.0);
@@ -1577,7 +1722,7 @@ impl EditorUI {
             "(Custom keybindings coming soon)",
             cursor,
             theme.text_muted,
-            11.0,
+            FontSize::Small.to_pixels(),
         );
     }
 
@@ -1593,35 +1738,35 @@ impl EditorUI {
 
         // Logo / Title
         let title = "Katla Engine";
-        let title_size = ui.measure_text(title, 24.0);
+        let title_size = ui.measure_text(title, FontSize::Huge.to_pixels());
         ui.draw_text(
             title,
             Vec2::new(center_x - title_size.x() * 0.5, cursor.y()),
             theme.text_primary,
-            24.0,
+            FontSize::Huge.to_pixels(),
         );
         cursor = Vec2::new(cursor.x(), cursor.y() + 40.0);
 
         // Version
         let version = "Version 0.1.0";
-        let version_size = ui.measure_text(version, 14.0);
+        let version_size = ui.measure_text(version, FontSize::Large.to_pixels());
         ui.draw_text(
             version,
             Vec2::new(center_x - version_size.x() * 0.5, cursor.y()),
             theme.text_secondary,
-            14.0,
+            FontSize::Large.to_pixels(),
         );
         cursor = Vec2::new(cursor.x(), cursor.y() + 30.0);
 
         // Description
         let desc = "A Vulkan-based 3D game engine\nwritten in Rust with ECS architecture.";
         for line in desc.split('\n') {
-            let line_size = ui.measure_text(line, 12.0);
+            let line_size = ui.measure_text(line, FontSize::Medium.to_pixels());
             ui.draw_text(
                 line,
                 Vec2::new(center_x - line_size.x() * 0.5, cursor.y()),
                 theme.text_muted,
-                12.0,
+                FontSize::Medium.to_pixels(),
             );
             cursor = Vec2::new(cursor.x(), cursor.y() + 20.0);
         }
@@ -1633,7 +1778,7 @@ impl EditorUI {
             "Features",
             Vec2::new(center_x - 30.0, cursor.y()),
             theme.text_secondary,
-            12.0,
+            FontSize::Medium.to_pixels(),
         );
         cursor = Vec2::new(cursor.x(), cursor.y() + 24.0);
 
@@ -1647,18 +1792,18 @@ impl EditorUI {
         ];
 
         for feature in features {
-            let check_size = ui.measure_text("✓", 12.0);
+            let check_size = ui.measure_text("✓", FontSize::Medium.to_pixels());
             ui.draw_text(
                 "✓",
                 Vec2::new(center_x - 100.0, cursor.y()),
                 theme.success,
-                12.0,
+                FontSize::Medium.to_pixels(),
             );
             ui.draw_text(
                 feature,
                 Vec2::new(center_x - 80.0, cursor.y()),
                 theme.text_primary,
-                12.0,
+                FontSize::Medium.to_pixels(),
             );
             cursor = Vec2::new(cursor.x(), cursor.y() + 18.0);
         }

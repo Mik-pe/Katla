@@ -4,6 +4,70 @@
 
 use katla_math::Color;
 
+/// Predefined font sizes in points.
+///
+/// Points are converted to pixels using the standard 96 DPI ratio: 1pt = 4/3 px
+/// These sizes are designed to work well together in a UI hierarchy.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum FontSize {
+    /// Extra small - 7.5pt (10px) - badges, tiny labels
+    XSmall,
+    /// Small - 8.25pt (11px) - status bar, secondary text, tabs
+    Small,
+    /// Medium - 9pt (12px) - body text, labels (default)
+    Medium,
+    /// Large - 10.5pt (14px) - headings, emphasis, panel titles
+    Large,
+    /// Extra large - 12pt (16px) - window titles, important headings
+    XLarge,
+    /// Extra extra large - 15pt (20px) - large headings
+    XXLarge,
+    /// Huge - 18pt (24px) - hero text, big numbers
+    Huge,
+}
+
+impl FontSize {
+    /// Convert font size to pixels at 96 DPI.
+    ///
+    /// Formula: pixels = points * 4/3 (since 72pt = 96px at 96 DPI)
+    #[inline]
+    pub fn to_pixels(self) -> f32 {
+        self.to_points() * (4.0 / 3.0)
+    }
+
+    /// Get font size in points.
+    #[inline]
+    pub fn to_points(self) -> f32 {
+        match self {
+            FontSize::XSmall => 7.5,
+            FontSize::Small => 8.25,
+            FontSize::Medium => 9.0,
+            FontSize::Large => 10.5,
+            FontSize::XLarge => 12.0,
+            FontSize::XXLarge => 15.0,
+            FontSize::Huge => 18.0,
+        }
+    }
+
+    /// Get the default font size (Medium).
+    #[inline]
+    pub fn default_size() -> Self {
+        FontSize::Medium
+    }
+}
+
+impl Default for FontSize {
+    fn default() -> Self {
+        Self::default_size()
+    }
+}
+
+impl From<FontSize> for f32 {
+    fn from(size: FontSize) -> f32 {
+        size.to_pixels()
+    }
+}
+
 /// Style configuration for UI widgets.
 #[derive(Debug, Clone)]
 pub struct UiStyle {
@@ -51,7 +115,7 @@ pub struct UiStyle {
     pub text_color: Color,
     /// Disabled text color.
     pub text_disabled: Color,
-    /// Default font size.
+    /// Default font size (deprecated - use FontSize enum).
     pub font_size: f32,
 
     /// Background color for checkboxes.
@@ -130,7 +194,7 @@ impl UiStyle {
     /// Create a dark theme style.
     pub fn dark() -> Self {
         Self {
-            window_bg: Color::from_rgb_hex(0x2a2a2a),       // Slightly brighter for visibility
+            window_bg: Color::from_rgb_hex(0x2a2a2a), // Slightly brighter for visibility
             window_title_bg: Color::from_rgb_hex(0x3a3a3a),
             window_title_bg_active: Color::from_rgb_hex(0x4a4a4a),
             window_title_text: Color::from_rgb_hex(0xeeeeee),
@@ -153,7 +217,7 @@ impl UiStyle {
 
             text_color: Color::from_rgb_hex(0xeeeeee),
             text_disabled: Color::from_rgb_hex(0x808080),
-            font_size: 16.0,
+            font_size: FontSize::Medium.to_pixels(),
 
             checkbox_bg: Color::from_rgb_hex(0x282828),
             checkbox_check: Color::from_rgb_hex(0x4a9eff),
@@ -224,7 +288,7 @@ impl UiStyle {
 
             text_color: Color::from_rgb_hex(0x222222),
             text_disabled: Color::from_rgb_hex(0x808080),
-            font_size: 16.0,
+            font_size: FontSize::Medium.to_pixels(),
 
             checkbox_bg: Color::from_rgb_hex(0xffffff),
             checkbox_check: Color::from_rgb_hex(0x2070d0),
@@ -325,7 +389,7 @@ impl UiStyle {
 
             text_color: Color::from_rgb_hex(0xeeeeee),
             text_disabled: Color::from_rgb_hex(0x777777),
-            font_size: 13.0,
+            font_size: FontSize::Small.to_pixels(),
 
             checkbox_bg: Color::from_rgb_hex(0x3a3a3a),
             checkbox_check: Color::from_rgb_hex(0x4a9eff),
