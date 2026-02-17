@@ -18,12 +18,18 @@ use super::Application;
 
 /// Render debug UI overlay with stats and controls.
 pub fn render_debug_ui(app: &mut Application, dt: f32) {
-    let screen_size = if let Some(ref window) = app.window {
+    let scale_factor = app.scale_factor;
+
+    // Get physical window size and convert to logical for UI layout
+    let physical_size = if let Some(ref window) = app.window {
         let size = window.inner_size();
         Vec2::new(size.width as f32, size.height as f32)
     } else {
         Vec2::new(1920.0, 1080.0)
     };
+
+    // UI uses logical coordinates - convert physical to logical
+    let screen_size = physical_size / scale_factor;
 
     // Calculate stats
     let fps = if dt > 0.0 { 1.0 / dt } else { 0.0 };
@@ -158,26 +164,28 @@ pub fn render_debug_ui(app: &mut Application, dt: f32) {
         .to_vec();
 
         // Convert commands to renderer format
+        // Scale clip rects from logical to physical for Vulkan scissor testing
         let ui_commands: Vec<katla_vulkan::UiDrawCommand> = commands
             .iter()
             .map(|cmd| katla_vulkan::UiDrawCommand {
                 index_offset: cmd.index_offset,
                 index_count: cmd.index_count,
                 clip_rect: [
-                    cmd.clip_rect.min.x(),
-                    cmd.clip_rect.min.y(),
-                    cmd.clip_rect.width(),
-                    cmd.clip_rect.height(),
+                    cmd.clip_rect.min.x() * scale_factor,
+                    cmd.clip_rect.min.y() * scale_factor,
+                    cmd.clip_rect.width() * scale_factor,
+                    cmd.clip_rect.height() * scale_factor,
                 ],
             })
             .collect();
 
         // Pass to renderer
+        // Use physical size for viewport/scissor (Vulkan operates in physical pixels)
         if let Some(ref renderer) = app.renderer {
             renderer.set_ui_data(
                 vertex_bytes,
                 index_bytes,
-                [screen_size.x(), screen_size.y()],
+                [physical_size.x(), physical_size.y()],
                 ui_commands,
             );
         }
