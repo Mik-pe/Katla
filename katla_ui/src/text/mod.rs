@@ -226,26 +226,56 @@ impl FontSystem {
         // Get glyph ID for character
         let glyph_id = font.glyph_id(c);
 
-        // Get outline glyph (may be None for whitespace, control chars)
-        let glyph = Glyph {
-            id: glyph_id,
-            scale: PxScale::from(physical_size),
-            position: ab_glyph::point(0.0, 0.0),
-        };
-        let outlined = font.outline_glyph(glyph)?;
-
-        // Get pixel bounds (in physical pixels)
-        let bounds = outlined.px_bounds();
-
         // Get font metrics for baseline alignment (physical pixels)
         let ascender = scaled_font.ascent();
 
         // Calculate advance width (physical pixels)
         let advance = scaled_font.h_advance(glyph_id);
 
+        // Get outline glyph (may be None for whitespace, control chars)
+        let glyph = Glyph {
+            id: glyph_id,
+            scale: PxScale::from(physical_size),
+            position: ab_glyph::point(0.0, 0.0),
+        };
+
+        let outlined = match font.outline_glyph(glyph) {
+            Some(o) => o,
+            None => {
+                // No outline (whitespace, control chars) - still cache with advance width
+                let cached = CachedGlyph {
+                    uv_rect: Rect2D::new(Vec2::new(0.0, 0.0), Vec2::new(0.0, 0.0)),
+                    size: Vec2::new(0.0, 0.0),
+                    offset_x: 0.0,
+                    top_offset: 0.0,
+                    ascender: ascender / scale_factor,
+                    advance: advance / scale_factor,
+                };
+                self.glyph_cache.insert((font_id, c, size_key, scale_key), cached.clone());
+                return Some(cached);
+            }
+        };
+
+        // Get pixel bounds (in physical pixels)
+        let bounds = outlined.px_bounds();
+
         // Allocate pixel buffer
         let width = bounds.width().ceil() as usize;
         let height = bounds.height().ceil() as usize;
+
+        // Handle empty glyph bounds (shouldn't happen if outline exists, but be safe)
+        if width == 0 || height == 0 {
+            let cached = CachedGlyph {
+                uv_rect: Rect2D::new(Vec2::new(0.0, 0.0), Vec2::new(0.0, 0.0)),
+                size: Vec2::new(0.0, 0.0),
+                offset_x: 0.0,
+                top_offset: 0.0,
+                ascender: ascender / scale_factor,
+                advance: advance / scale_factor,
+            };
+            self.glyph_cache.insert((font_id, c, size_key, scale_key), cached.clone());
+            return Some(cached);
+        }
 
         // Draw glyph to pixel buffer
         let mut pixels = vec![0u8; width * height];
@@ -397,6 +427,23 @@ impl FontSystem {
         for &icon in icons {
             self.get_or_rasterize(font_id, icon, size, scale_factor);
         }
+    }
+
+    /// Get font metrics for a given size.
+    ///
+    /// Returns (ascent, descent, line_gap) in logical pixels.
+    /// These values are needed for proper text baseline positioning.
+    pub fn get_font_metrics(&self, font_id: FontId, size: f32, scale_factor: f32) -> Option<(f32, f32, f32)> {
+        let font = self.fonts.get(&font_id)?;
+        let physical_size = size * scale_factor;
+        let scaled_font = font.as_scaled(PxScale::from(physical_size));
+
+        // Convert from physical to logical pixels
+        Some((
+            scaled_font.ascent() / scale_factor,
+            scaled_font.descent() / scale_factor,
+            scaled_font.line_gap() / scale_factor,
+        ))
     }
 
     /// Measure text dimensions without rendering.

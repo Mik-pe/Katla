@@ -378,9 +378,11 @@ impl UiContext {
     /// This is the most intuitive API for UI work.
     pub fn draw_text(&mut self, text: &str, position: Vec2, color: Color, size: f32) {
         let mut cursor_x = position.x();
-        // Convert from top-left to baseline: baseline is at position.y + ascender
-        // The ascender is the distance from baseline to font top
-        let baseline_y = position.y() + size * 0.75;
+
+        // Get the actual font ascent for proper baseline positioning
+        // Baseline is at position.y + ascent (ascent is distance from baseline to font top)
+        let ascent = self.font_ascent(size);
+        let baseline_y = position.y() + ascent;
 
         for c in text.chars() {
             // Try to get cached glyph (scale font size by DPI factor)
@@ -430,6 +432,16 @@ impl UiContext {
     /// Measure text dimensions in logical pixels.
     pub fn measure_text(&self, text: &str, size: f32) -> Vec2 {
         self.fonts.measure_text(self.current_font, text, size, self.scale_factor)
+    }
+
+    /// Get the font ascent (baseline to font top) in logical pixels.
+    ///
+    /// This is needed for proper text positioning.
+    pub fn font_ascent(&self, size: f32) -> f32 {
+        self.fonts
+            .get_font_metrics(self.current_font, size, self.scale_factor)
+            .map(|(ascent, _, _)| ascent)
+            .unwrap_or(size * 0.75) // Fallback heuristic
     }
 
     /// Draw an icon from an icon font (like ForkAwesome).
