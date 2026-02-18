@@ -153,8 +153,8 @@ pub enum AssetAction {
     ShowInExplorer(PathBuf),
     /// Delete asset
     Delete(PathBuf),
-    /// Rename asset
-    Rename(PathBuf),
+    /// Rename asset (old_path, new_path)
+    Rename { old_path: PathBuf, new_path: PathBuf },
     /// Create new folder
     CreateFolder(PathBuf),
     /// Drag asset to viewport (spawn entity)
@@ -162,6 +162,11 @@ pub enum AssetAction {
         path: PathBuf,
         asset_type: AssetType,
         screen_pos: Vec2,
+    },
+    /// Move asset to folder
+    MoveToFolder {
+        asset_path: PathBuf,
+        folder_path: PathBuf,
     },
 }
 
@@ -1028,33 +1033,58 @@ pub fn build_asset_browser(
         state.update_drag(ui.input.mouse_pos);
     }
 
-    // Handle drag end - collect data first
-    let drag_end_data = if state.drag_asset.is_some() && ui.input.mouse_released[katla_ui::input::mouse_button::LEFT] {
-        if state.is_dragging && !bounds.contains(ui.input.mouse_pos) {
-            state.drag_asset.and_then(|idx| {
-                state.assets.get(idx).and_then(|asset| {
-                    if matches!(asset.asset_type, AssetType::Model | AssetType::Image) {
-                        Some((asset.path.clone(), asset.asset_type, ui.input.mouse_pos))
-                    } else {
-                        None
-                    }
-                })
-            })
-        } else {
-            None
-        }
-    } else {
-        None
-    };
+    // Handle drag end - check what we're dropping on
+    if state.drag_asset.is_some() && ui.input.mouse_released[katla_ui::input::mouse_button::LEFT] {
+        let drag_idx = state.drag_asset.unwrap();
+        let drag_asset = state.assets.get(drag_idx).cloned();
+        let mouse_pos = ui.input.mouse_pos;
+        let mouse_in_browser = bounds.contains(mouse_pos);
 
-    // Process drag end
-    if drag_end_data.is_some() || (state.drag_asset.is_some() && ui.input.mouse_released[katla_ui::input::mouse_button::LEFT]) {
-        if let Some((path, asset_type, pos)) = drag_end_data {
-            state.pending_actions.push(AssetAction::DragToViewport {
-                path,
-                asset_type,
-                screen_pos: pos,
-            });
+        if let Some(dragged_asset) = drag_asset {
+            if state.is_dragging {
+                // Check if dropped on a folder
+                let mut dropped_on_folder: Option<PathBuf> = None;
+
+                if mouse_in_browser {
+                    for (i, asset) in state.assets.iter().enumerate() {
+                        if i == drag_idx {
+                            continue; // Can't drop on self
+                        }
+
+                        // Calculate item bounds
+                        let col = i % col_count;
+                        let row = i / col_count;
+                        let item_x = bounds.min.x() + item_padding + col as f32 * (item_size + item_padding);
+                        let item_y = content_top + row as f32 * row_height - state.scroll_offset;
+                        let item_bounds = Rect2D::from_origin_size(
+                            Vec2::new(item_x, item_y),
+                            Vec2::new(item_size, item_size),
+                        );
+
+                        if item_bounds.contains(mouse_pos) && asset.asset_type == AssetType::Folder {
+                            dropped_on_folder = Some(asset.path.clone());
+                            break;
+                        }
+                    }
+                }
+
+                if let Some(folder_path) = dropped_on_folder {
+                    // Drop on folder - move asset
+                    state.pending_actions.push(AssetAction::MoveToFolder {
+                        asset_path: dragged_asset.path.clone(),
+                        folder_path,
+                    });
+                } else if !mouse_in_browser {
+                    // Drop outside browser - spawn in viewport
+                    if matches!(dragged_asset.asset_type, AssetType::Model | AssetType::Image) {
+                        state.pending_actions.push(AssetAction::DragToViewport {
+                            path: dragged_asset.path.clone(),
+                            asset_type: dragged_asset.asset_type,
+                            screen_pos: mouse_pos,
+                        });
+                    }
+                }
+            }
         }
         state.end_drag();
     }
@@ -1163,9 +1193,11 @@ pub fn build_asset_browser(
             if should_commit {
                 let new_name = state.rename_buffer.clone();
                 if new_name != original_name && !new_name.is_empty() {
-                    state.pending_actions.push(AssetAction::Rename(
-                        original_path.parent().unwrap().join(&new_name),
-                    ));
+                    let new_path = original_path.parent().unwrap().join(&new_name);
+                    state.pending_actions.push(AssetAction::Rename {
+                        old_path: original_path.clone(),
+                        new_path,
+                    });
                 }
                 state.cancel_rename();
             } else if should_cancel {

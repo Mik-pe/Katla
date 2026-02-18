@@ -608,8 +608,104 @@ impl EditorUI {
                         }
                     }
                 }
-                // Other actions are handled elsewhere or not implemented yet
-                _ => {}
+                super::asset_browser::AssetAction::CreateFolder(parent_path) => {
+                    // Create "New Folder" in the specified directory
+                    let mut new_folder = parent_path.join("New Folder");
+                    let mut counter = 1;
+                    while new_folder.exists() {
+                        new_folder = parent_path.join(format!("New Folder {}", counter));
+                        counter += 1;
+                    }
+                    if let Err(e) = std::fs::create_dir(&new_folder) {
+                        log::warn!("Failed to create folder: {}", e);
+                    } else {
+                        log::info!("Created folder: {:?}", new_folder);
+                        self.asset_browser.scan_directory();
+                    }
+                }
+                super::asset_browser::AssetAction::Delete(path) => {
+                    if path.is_dir() {
+                        if let Err(e) = std::fs::remove_dir_all(&path) {
+                            log::warn!("Failed to delete folder: {}", e);
+                        } else {
+                            log::info!("Deleted folder: {:?}", path);
+                            self.asset_browser.scan_directory();
+                        }
+                    } else if let Err(e) = std::fs::remove_file(&path) {
+                        log::warn!("Failed to delete file: {}", e);
+                    } else {
+                        log::info!("Deleted file: {:?}", path);
+                        self.asset_browser.scan_directory();
+                    }
+                }
+                super::asset_browser::AssetAction::Rename { old_path, new_path } => {
+                    // Rename file or folder
+                    if old_path != new_path {
+                        if let Err(e) = std::fs::rename(&old_path, &new_path) {
+                            log::warn!("Failed to rename {:?} to {:?}: {}", old_path, new_path, e);
+                        } else {
+                            log::info!("Renamed {:?} to {:?}", old_path, new_path);
+                            self.asset_browser.scan_directory();
+                        }
+                    }
+                }
+                super::asset_browser::AssetAction::Open(path) => {
+                    // Navigate into folder or open file
+                    if path.is_dir() {
+                        self.asset_browser.navigate_to(&path);
+                    } else {
+                        log::info!("Open file: {:?}", path);
+                        // TODO: Open file in appropriate editor
+                    }
+                }
+                super::asset_browser::AssetAction::CopyPath(path) => {
+                    // Copy path as string (log for now, clipboard not implemented)
+                    log::info!("Copy path: {:?}", path);
+                    // TODO: Implement clipboard when available
+                }
+                super::asset_browser::AssetAction::ShowInExplorer(path) => {
+                    // Open file manager at location
+                    #[cfg(target_os = "windows")]
+                    {
+                        if let Err(e) = std::process::Command::new("explorer")
+                            .args(["/select,", &path.to_string_lossy()])
+                            .spawn()
+                        {
+                            log::warn!("Failed to open explorer: {}", e);
+                        }
+                    }
+                    #[cfg(target_os = "macos")]
+                    {
+                        if let Err(e) = std::process::Command::new("open")
+                            .args(["-R", &path.to_string_lossy()])
+                            .spawn()
+                        {
+                            log::warn!("Failed to open finder: {}", e);
+                        }
+                    }
+                    #[cfg(target_os = "linux")]
+                    {
+                        if let Err(e) = std::process::Command::new("xdg-open")
+                            .arg(path.parent().unwrap_or(&path))
+                            .spawn()
+                        {
+                            log::warn!("Failed to open file manager: {}", e);
+                        }
+                    }
+                }
+                super::asset_browser::AssetAction::MoveToFolder { asset_path, folder_path } => {
+                    // Move file/folder to destination folder
+                    let file_name = asset_path.file_name().unwrap_or_default();
+                    let dest_path = folder_path.join(file_name);
+                    if asset_path != dest_path {
+                        if let Err(e) = std::fs::rename(&asset_path, &dest_path) {
+                            log::warn!("Failed to move {:?} to {:?}: {}", asset_path, dest_path, e);
+                        } else {
+                            log::info!("Moved {:?} to {:?}", asset_path, dest_path);
+                            self.asset_browser.scan_directory();
+                        }
+                    }
+                }
             }
         }
 
