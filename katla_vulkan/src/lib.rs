@@ -2292,6 +2292,8 @@ pub struct UITextures {
     pub viewport_image_view: Option<vk::ImageView>,
     /// Registered thumbnail textures (texture_id -> image_view).
     thumbnail_textures: std::collections::HashMap<u64, vk::ImageView>,
+    /// Thumbnail texture allocations for cleanup (texture_id -> (image, allocation)).
+    thumbnail_allocations: std::collections::HashMap<u64, (vk::Image, gpu_allocator::vulkan::Allocation)>,
     /// Context for cleanup.
     context: Rc<VulkanContext>,
 }
@@ -2519,6 +2521,7 @@ impl UITextures {
                 atlas_height,
                 viewport_image_view: None,
                 thumbnail_textures: std::collections::HashMap::new(),
+                thumbnail_allocations: std::collections::HashMap::new(),
                 context,
             })
         }
@@ -2863,13 +2866,11 @@ impl UITextures {
     ) -> Result<vk::ImageView, vk::Result> {
         unsafe {
             // Create the texture image
-            let (_image, _memory, image_view) = Self::create_texture(&self.context, width, height, pixels)?;
+            let (image, memory, image_view) = Self::create_texture(&self.context, width, height, pixels)?;
 
-            // Store in our registry
+            // Store in our registries for lookup and cleanup
             self.thumbnail_textures.insert(texture_id, image_view);
-
-            // Note: We're leaking the image and memory here.
-            // TODO: Store allocations for proper cleanup in Drop
+            self.thumbnail_allocations.insert(texture_id, (image, memory));
 
             log::debug!("Registered UI thumbnail texture {} ({}x{})", texture_id, width, height);
             Ok(image_view)
@@ -2988,6 +2989,15 @@ impl Drop for UITextures {
             self.context
                 .device
                 .destroy_descriptor_pool(self.descriptor_pool, None);
+
+            // Clean up thumbnail textures
+            for (texture_id, image_view) in self.thumbnail_textures.drain() {
+                self.context.device.destroy_image_view(image_view, None);
+                if let Some((image, memory)) = self.thumbnail_allocations.remove(&texture_id) {
+                    self.context.device.destroy_image(image, None);
+                    self.context.allocator.borrow_mut().free(memory).ok();
+                }
+            }
         }
     }
 }
