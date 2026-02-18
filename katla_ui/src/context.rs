@@ -1578,18 +1578,9 @@ impl UiContext {
         // Draw trigger button
         let hovered = self.update_hover(dropdown_id, bounds);
 
-        // Check if another dropdown is currently open
-        let other_dropdown_open = self.popup_id.is_some()
-            && self.popup_id != Some(dropdown_id)
-            && self
-                .storage
-                .get(&self.popup_id.unwrap_or(0))
-                .map(|s| matches!(s, WidgetState::DropdownOpen(true)))
-                .unwrap_or(false);
-
-        // If hovering over a different dropdown while one is open, switch to this one
-        if hovered && other_dropdown_open && !self.popup_opened_this_frame {
-            // Close the other dropdown
+        // If hovering over this dropdown while another popup is open, switch to this one
+        if hovered && self.popup_id.is_some() && self.popup_id != Some(dropdown_id) && !self.popup_opened_this_frame {
+            // Close the other popup
             if let Some(other_id) = self.popup_id {
                 self.storage
                     .insert(other_id, WidgetState::DropdownOpen(false));
@@ -1606,7 +1597,7 @@ impl UiContext {
 
         // Toggle on click
         if self.button_behavior(dropdown_id, bounds) {
-            let new_open = !is_open && !other_dropdown_open;
+            let new_open = !is_open;  // Simple toggle
             self.storage
                 .insert(dropdown_id, WidgetState::DropdownOpen(new_open));
             if new_open {
