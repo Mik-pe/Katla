@@ -49,6 +49,7 @@ pub fn render_debug_ui(app: &mut Application, dt: f32) {
             &entity_info,
             fps,
             app.frame_count,
+            &mut app.background_loader,
         );
         (
             draw_list.vertices.clone(),

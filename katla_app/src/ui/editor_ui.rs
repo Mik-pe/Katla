@@ -347,6 +347,7 @@ impl EditorUI {
         entities: &[EntityInfo],
         fps: f32,
         frame_count: usize,
+        loader: &mut crate::util::BackgroundLoader,
     ) {
         let screen_size = ui.screen_size();
 
@@ -584,6 +585,7 @@ impl EditorUI {
             &self.theme,
             asset_browser_bounds,
             &mut self.focused_panel,
+            loader,
         );
 
         // Process asset browser actions
@@ -2384,6 +2386,7 @@ impl EditorUI {
         entities: &'a [EntityInfo],
         fps: f32,
         frame_count: usize,
+        loader: &'a mut crate::util::BackgroundLoader,
     ) -> &'a DrawList {
         // Apply theme to UI style
         self.theme.apply_to_style(&mut ui.style);
@@ -2392,7 +2395,7 @@ impl EditorUI {
         ui.set_font_scale(self.font_scale);
 
         ui.begin(screen_size, scale_factor);
-        self.build(ui, entities, fps, frame_count);
+        self.build(ui, entities, fps, frame_count, loader);
         ui.end()
     }
 

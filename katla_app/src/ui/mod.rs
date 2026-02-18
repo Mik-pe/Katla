@@ -7,7 +7,7 @@ mod debug_overlay;
 mod editor_ui;
 pub mod theme;
 
-pub use asset_browser::{AssetAction, AssetBrowserState, AssetEntry, AssetType};
+pub use asset_browser::{AssetAction, AssetBrowserState, AssetEntry, AssetType, ThumbnailState};
 pub use debug_overlay::DebugOverlay;
 pub use editor_ui::{EditorAction, EditorUI, EntityInfo, FocusedPanel, SpawnableModel};
 pub use theme::Theme;

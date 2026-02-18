@@ -3,7 +3,7 @@
 //! Provides a scrollable view of assets with:
 //! - Grid layout with type icons
 //! - Folder navigation
-//! - PNG image thumbnail support
+//! - PNG image thumbnail support (loaded in background)
 //! - Auto-refresh on file changes
 
 use std::fs;
@@ -11,7 +11,7 @@ use std::path::PathBuf;
 use std::time::Instant;
 
 use katla_math::{Color, Rect2D, Vec2};
-use katla_ui::{ForkAwesome, UiContext};
+use katla_ui::{ForkAwesome, TextureId, UiContext};
 
 use super::editor_ui::FocusedPanel;
 use super::theme::Theme;
@@ -33,6 +33,25 @@ pub enum AssetType {
     Folder,
     /// Unknown/other file type
     Unknown,
+}
+
+/// Thumbnail loading state for an asset.
+#[derive(Debug, Clone)]
+pub enum ThumbnailState {
+    /// Not yet requested to load.
+    NotRequested,
+    /// Currently loading in background thread.
+    Loading,
+    /// Loaded and uploaded to GPU.
+    Loaded { texture_id: TextureId },
+    /// Failed to load.
+    Failed,
+}
+
+impl Default for ThumbnailState {
+    fn default() -> Self {
+        Self::NotRequested
+    }
 }
 
 impl AssetType {
@@ -88,6 +107,8 @@ pub struct AssetEntry {
     pub path: PathBuf,
     /// Asset type classification
     pub asset_type: AssetType,
+    /// Thumbnail loading state (for images)
+    pub thumbnail_state: ThumbnailState,
 }
 
 /// Asset browser panel state.
@@ -218,6 +239,7 @@ impl AssetBrowserState {
                 name: "..".to_string(),
                 path: self.current_path.parent().unwrap().to_path_buf(),
                 asset_type: AssetType::Folder,
+                thumbnail_state: ThumbnailState::NotRequested,
             });
         }
 
@@ -250,6 +272,7 @@ impl AssetBrowserState {
                     name,
                     path: path.clone(),
                     asset_type,
+                    thumbnail_state: ThumbnailState::NotRequested,
                 };
 
                 if asset_type == AssetType::Folder {
@@ -583,6 +606,7 @@ pub fn build_asset_browser(
     theme: &Theme,
     bounds: Rect2D,
     focused_panel: &mut FocusedPanel,
+    loader: &mut crate::util::BackgroundLoader,
 ) {
     let is_focused = *focused_panel == FocusedPanel::AssetBrowser;
     // Auto-rescan if needed
@@ -976,15 +1000,59 @@ pub fn build_asset_browser(
             ui.draw_rect(item_bounds, theme.selection_hover);
         }
 
-        // Draw icon centered in item
-        let icon = asset.asset_type.icon();
-        let icon_color = asset.asset_type.color(theme);
-        let icon_size = 28.0;
-        let icon_pos = Vec2::new(
-            item_bounds.center().x() - icon_size * 0.5,
-            item_bounds.center().y() - icon_size * 0.5,
-        );
-        ui.draw_icon(icon, icon_pos, icon_size, icon_color);
+        // Draw thumbnail or icon centered in item
+        match &asset.thumbnail_state {
+            ThumbnailState::Loaded { texture_id } => {
+                // Draw thumbnail image
+                // Note: For now, thumbnails are marked as loaded but won't display
+                // until Vulkan UITextures system supports dynamic textures.
+                // Fall back to showing a brighter icon to indicate "loaded" state.
+                let icon = asset.asset_type.icon();
+                let icon_color = theme.success; // Use success color to indicate loaded
+                let icon_size = 28.0;
+                let icon_pos = Vec2::new(
+                    item_bounds.center().x() - icon_size * 0.5,
+                    item_bounds.center().y() - icon_size * 0.5,
+                );
+                ui.draw_icon(icon, icon_pos, icon_size, icon_color);
+
+                // Future: When UITextures supports dynamic textures:
+                // ui.image(*texture_id, item_bounds, None, Some(katla_math::Color::new(1.0, 1.0, 1.0, 1.0)));
+            }
+            ThumbnailState::Loading => {
+                // Show dimmed icon while loading
+                let icon = asset.asset_type.icon();
+                let icon_color = asset.asset_type.color(theme).with_alpha(0.5);
+                let icon_size = 28.0;
+                let icon_pos = Vec2::new(
+                    item_bounds.center().x() - icon_size * 0.5,
+                    item_bounds.center().y() - icon_size * 0.5,
+                );
+                ui.draw_icon(icon, icon_pos, icon_size, icon_color);
+            }
+            ThumbnailState::Failed => {
+                // Show error icon
+                let icon = ForkAwesome::TIMES_CIRCLE;
+                let icon_color = theme.error;
+                let icon_size = 28.0;
+                let icon_pos = Vec2::new(
+                    item_bounds.center().x() - icon_size * 0.5,
+                    item_bounds.center().y() - icon_size * 0.5,
+                );
+                ui.draw_icon(icon, icon_pos, icon_size, icon_color);
+            }
+            ThumbnailState::NotRequested => {
+                // Show regular icon
+                let icon = asset.asset_type.icon();
+                let icon_color = asset.asset_type.color(theme);
+                let icon_size = 28.0;
+                let icon_pos = Vec2::new(
+                    item_bounds.center().x() - icon_size * 0.5,
+                    item_bounds.center().y() - icon_size * 0.5,
+                );
+                ui.draw_icon(icon, icon_pos, icon_size, icon_color);
+            }
+        }
 
         // Draw name below icon (truncated)
         let label_y = item_y + item_size + 2.0;
@@ -1019,6 +1087,46 @@ pub fn build_asset_browser(
         if is_hovered && ui.input.mouse_clicked(katla_ui::input::mouse_button::RIGHT) {
             right_clicked_index = Some(i);
             state.selected_index = Some(i);
+        }
+    }
+
+    // === THUMBNAIL REQUESTING ===
+    // Request thumbnails for visible images that haven't been requested yet
+    {
+        // Collect paths that need thumbnails (to avoid borrow conflicts)
+        let mut thumbs_to_request: Vec<(usize, PathBuf)> = Vec::new();
+
+        for (i, asset) in state.assets.iter().enumerate() {
+            // Only request thumbnails for images
+            if asset.asset_type != AssetType::Image {
+                continue;
+            }
+
+            // Check if visible in viewport
+            let col = i % col_count;
+            let row = i / col_count;
+            let item_y = content_top + row as f32 * row_height - state.scroll_offset;
+
+            // Skip if outside visible area
+            if item_y + row_height < content_top || item_y > bounds.max.y() {
+                continue;
+            }
+
+            // Check if thumbnail needs to be requested
+            if matches!(asset.thumbnail_state, ThumbnailState::NotRequested) {
+                // Check if already cached in loader
+                if loader.has_thumbnail(&asset.path) {
+                    // Already cached, will be handled in poll()
+                } else if !loader.is_loading(&asset.path) {
+                    thumbs_to_request.push((i, asset.path.clone()));
+                }
+            }
+        }
+
+        // Request thumbnails (limited batch per frame to avoid overload)
+        for (idx, path) in thumbs_to_request.into_iter().take(4) {
+            loader.request_thumbnail(path, item_size as u32);
+            state.assets[idx].thumbnail_state = ThumbnailState::Loading;
         }
     }
 

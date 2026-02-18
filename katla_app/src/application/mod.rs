@@ -41,7 +41,7 @@ use crate::{
         create_checkerboard_material, create_checkerboard_texture, MaterialManager, MeshBuilder,
     },
     resources::ResourceManager,
-    util::{FileCache, GLTFModel, Timer},
+    util::{BackgroundLoader, FileCache, GLTFModel, Timer},
 };
 
 struct ApplicationInfo {
@@ -85,6 +85,10 @@ pub struct Application {
     pub(crate) gizmo_resources: Option<renderer::GizmoResources>,
     /// Grid pipeline for runtime toggle
     pub(crate) grid_pipeline: Option<Rc<RefCell<MaterialPipeline>>>,
+    /// Background asset loader thread
+    pub(crate) background_loader: BackgroundLoader,
+    /// Next texture ID for thumbnails (custom IDs start at 100)
+    pub(crate) next_thumbnail_texture_id: u64,
 }
 
 impl ApplicationHandler for Application {
@@ -516,6 +520,9 @@ impl ApplicationHandler for Application {
                     renderer::upload_skeleton_transforms(self);
                     debug!("Skeleton transforms uploaded");
 
+                    // Poll background loader for completed asset loads
+                    self.poll_background_loader();
+
                     // Render using render graph
                     debug!("Rendering frame...");
                     renderer::render_frame(self);
@@ -611,6 +618,68 @@ impl ApplicationHandler for Application {
 impl Application {
     pub fn init(&mut self) {
         // Logger is now initialized in main() before building the application
+    }
+
+    /// Poll the background loader and process completed loads.
+    fn poll_background_loader(&mut self) {
+        use crate::ui::ThumbnailState;
+        use crate::util::LoadResult;
+        use katla_ui::TextureId;
+
+        let results = self.background_loader.poll();
+
+        for result in results {
+            match result {
+                LoadResult::ImageThumbnailLoaded { path, width, height, pixels, .. } => {
+                    debug!("Thumbnail loaded: {:?} ({}x{})", path, width, height);
+
+                    // Create texture ID for this thumbnail
+                    let texture_id = TextureId::custom(self.next_thumbnail_texture_id);
+                    self.next_thumbnail_texture_id += 1;
+
+                    // Update the thumbnail cache entry
+                    if let Some(entry) = self.background_loader.get_thumbnail_mut(&path) {
+                        entry.uploaded = true;
+                    }
+
+                    // TODO: Upload to Vulkan UI texture system
+                    // For now, we just store the pixels in the cache and mark as loaded.
+                    // The actual GPU upload requires extending the UITextures system
+                    // to support dynamic texture registration.
+
+                    // Update asset browser entries with this thumbnail
+                    for asset in self.editor_ui.asset_browser.assets.iter_mut() {
+                        if asset.path == path {
+                            asset.thumbnail_state = ThumbnailState::Loaded { texture_id };
+                            debug!("Updated thumbnail state for {:?}", path);
+                            break;
+                        }
+                    }
+                }
+                LoadResult::ImageLoaded { path, width, height, pixels, .. } => {
+                    debug!("Full image loaded: {:?} ({}x{})", path, width, height);
+                    // Future: Handle full image loads (e.g., for textures, skyboxes)
+                }
+                LoadResult::ModelLoaded { path, vertices, indices, .. } => {
+                    debug!("Model loaded: {:?} ({} vertices, {} indices)", path, vertices.len(), indices.len());
+                    // Future: Handle model loads (e.g., for drag-drop spawning)
+                }
+                LoadResult::ShaderSourceLoaded { path, source, .. } => {
+                    debug!("Shader source loaded: {:?} ({} bytes)", path, source.len());
+                    // Future: Handle shader loads (e.g., for hot reload)
+                }
+                LoadResult::Failed { path, error, .. } => {
+                    warn!("Failed to load {:?}: {}", path, error);
+                    // Update asset browser entry to show failed state
+                    for asset in self.editor_ui.asset_browser.assets.iter_mut() {
+                        if asset.path == path {
+                            asset.thumbnail_state = ThumbnailState::Failed;
+                            break;
+                        }
+                    }
+                }
+            }
+        }
     }
 
     /// Convert winit KeyCode to UI KeyCode.
