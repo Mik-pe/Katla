@@ -133,13 +133,13 @@ pub fn render_debug_ui(app: &mut Application, dt: f32) {
     if !vertices.is_empty() {
         use crate::rendering::ui_material::UiShaderVertex;
 
-        // Convert vertices to shader format (screen coordinates in pixels)
-        // NDC transform happens in the shader using uniform buffer
+        // Convert vertices to shader format (logical coordinates)
+        // NDC transform happens in the shader using uniform buffer with logical screen size
         let shader_vertices: Vec<UiShaderVertex> = vertices
             .iter()
             .map(|v| {
                 UiShaderVertex::new(
-                    [v.position.x(), v.position.y()],  // Screen coordinates (pixels)
+                    [v.position.x(), v.position.y()],  // Logical coordinates
                     [v.uv.x(), v.uv.y()],
                     [v.color.r, v.color.g, v.color.b, v.color.a],
                 )
@@ -182,13 +182,14 @@ pub fn render_debug_ui(app: &mut Application, dt: f32) {
 
         // Pass to renderer
         // Use physical size for viewport/scissor (Vulkan operates in physical pixels)
+        // But use logical size for UI uniform (vertices are in logical coords)
         if let Some(ref renderer) = app.renderer {
-            // Update screen size uniform for shader NDC transform
-            renderer.update_ui_screen_size(physical_size.x(), physical_size.y());
+            // Update screen size uniform for shader NDC transform (logical size!)
+            renderer.update_ui_screen_size(screen_size.x(), screen_size.y());
             renderer.set_ui_data(
                 vertex_bytes,
                 index_bytes,
-                [physical_size.x(), physical_size.y()],
+                [physical_size.x(), physical_size.y()],  // Physical size for viewport
                 ui_commands,
             );
         }
