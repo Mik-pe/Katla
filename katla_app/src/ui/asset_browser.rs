@@ -1024,16 +1024,22 @@ pub fn build_asset_browser(
         // Draw thumbnail or icon centered in item
         match &asset.thumbnail_state {
             ThumbnailState::Loaded { texture_id } => {
-                // Draw thumbnail image using push descriptors (set 1 in shader)
+                // Draw thumbnail image with inset so selection/hover background is visible
                 // UV.x >= 1.0 signals the shader to sample from the dynamic texture (set 1)
                 // Add 1.0 to UV.x to shift from 0-1 range to 1-2 range
                 let uv_offset = Rect2D::new(
                     Vec2::new(1.0, 0.0),  // UV min (offset by 1.0 in x)
                     Vec2::new(2.0, 1.0),  // UV max (offset by 1.0 in x)
                 );
+                // Inset thumbnail by 3 pixels to show selection/hover background
+                let inset = 3.0;
+                let thumb_bounds = Rect2D::from_origin_size(
+                    Vec2::new(item_bounds.min.x() + inset, item_bounds.min.y() + inset),
+                    Vec2::new(item_bounds.width() - inset * 2.0, item_bounds.height() - inset * 2.0),
+                );
                 ui.image(
                     *texture_id,
-                    item_bounds,
+                    thumb_bounds,
                     Some(uv_offset),
                     None,  // White tint
                 );
@@ -1071,6 +1077,11 @@ pub fn build_asset_browser(
                 );
                 ui.draw_icon(icon, icon_pos, icon_size, icon_color);
             }
+        }
+
+        // Draw selection border if selected
+        if is_selected {
+            ui.draw_rect_border(item_bounds, theme.selection, theme.highlight, 2.0);
         }
 
         // Draw name below icon (truncated)
