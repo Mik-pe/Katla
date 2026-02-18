@@ -120,6 +120,7 @@ pub fn render_debug_ui(app: &mut Application, dt: f32) {
             EditorAction::ToggleGrid => {
                 app.editor_ui.show_grid = !app.editor_ui.show_grid;
                 app.preferences.show_grid = app.editor_ui.show_grid;
+                // Grid visibility will be updated below after the match
             }
             EditorAction::ToggleStats => {
                 app.editor_ui.show_stats = !app.editor_ui.show_stats;
@@ -129,6 +130,17 @@ pub fn render_debug_ui(app: &mut Application, dt: f32) {
                 app.editor_ui.set_font_scale(scale);
                 app.preferences.font_scale = scale;
                 info!("Font scale changed to: {:.0}%", scale * 100.0);
+            }
+        }
+
+        // Update grid visibility based on show_grid preference
+        if let (Some(ref mut renderer), Some(ref grid_pipeline)) =
+            (&mut app.renderer, &app.grid_pipeline)
+        {
+            if app.editor_ui.show_grid {
+                renderer.set_grid_pipeline(grid_pipeline.clone());
+            } else {
+                renderer.clear_grid_pipeline();
             }
         }
     }

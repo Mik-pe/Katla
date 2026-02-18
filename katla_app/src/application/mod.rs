@@ -20,7 +20,7 @@ use winit::keyboard::ModifiersState;
 pub use builder::*;
 use katla_ecs::{input::Action, EntityId, World};
 use katla_math::{Transform, Vec2, Vec3};
-use katla_vulkan::{MaterialRegistry, SkeletonBuffer, VulkanRenderer};
+use katla_vulkan::{material::MaterialPipeline, MaterialRegistry, SkeletonBuffer, VulkanRenderer};
 use winit::{
     application::ApplicationHandler,
     dpi::LogicalSize,
@@ -83,6 +83,8 @@ pub struct Application {
     pub(crate) scale_factor: f32,
     /// Gizmo rendering resources (mesh and material handles)
     pub(crate) gizmo_resources: Option<renderer::GizmoResources>,
+    /// Grid pipeline for runtime toggle
+    pub(crate) grid_pipeline: Option<Rc<RefCell<MaterialPipeline>>>,
 }
 
 impl ApplicationHandler for Application {

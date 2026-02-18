@@ -578,7 +578,13 @@ impl EditorUI {
             Vec2::new(0.0, panel_bottom),
             Vec2::new(screen_size.x(), asset_browser_height),
         );
-        super::asset_browser::build_asset_browser(&mut self.asset_browser, ui, &self.theme, asset_browser_bounds, &mut self.focused_panel);
+        super::asset_browser::build_asset_browser(
+            &mut self.asset_browser,
+            ui,
+            &self.theme,
+            asset_browser_bounds,
+            &mut self.focused_panel,
+        );
 
         // Process asset browser actions
         for action in self.asset_browser.take_actions() {

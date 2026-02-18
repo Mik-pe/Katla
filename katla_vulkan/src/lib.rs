@@ -59,6 +59,9 @@ pub struct VulkanRenderer {
     /// Sky pipeline for procedural sky rendering.
     /// Created lazily when setup_render_graph_with_sky is called.
     pub sky_pipeline: Option<Rc<RefCell<MaterialPipeline>>>,
+    /// Grid pipeline for editor grid rendering.
+    /// Created externally and passed via set_grid_pipeline.
+    pub grid_pipeline: Option<Rc<RefCell<MaterialPipeline>>>,
     /// UI pipeline for overlay rendering.
     /// Created externally and passed via set_ui_pipeline.
     pub ui_pipeline: Option<Rc<RefCell<MaterialPipeline>>>,
@@ -127,6 +130,7 @@ impl VulkanRenderer {
             storage_manager: None,
             storage_descriptor_set: None,
             sky_pipeline: None,
+            grid_pipeline: None,
             ui_pipeline: None,
             skeleton_descriptors: Vec::new(),
             frame_uniforms: None,
@@ -482,6 +486,7 @@ impl VulkanRenderer {
 
         // Destroy pipelines (they hold descriptor set layouts)
         self.sky_pipeline = None;
+        self.grid_pipeline = None;
         self.ui_pipeline = None;
 
         // Destroy render graph (holds framebuffers and resources)
@@ -926,6 +931,9 @@ impl VulkanRenderer {
         // Store sky pipeline pointer
         let sky_pipeline_ptr = &mut self.sky_pipeline as *mut Option<Rc<RefCell<MaterialPipeline>>>;
 
+        // Store grid pipeline pointer
+        let grid_pipeline_ptr = &mut self.grid_pipeline as *mut Option<Rc<RefCell<MaterialPipeline>>>;
+
         // Store skeleton descriptors pointer for GPU skeletal animation
         let skeleton_descriptors_ptr =
             &mut self.skeleton_descriptors as *mut Vec<Option<SkeletonDescriptorSet>>;
@@ -975,7 +983,11 @@ impl VulkanRenderer {
                                 layer_count: 1,
                             };
 
-                            // Transition color: SHADER_READ_ONLY -> COLOR_ATTACHMENT_OPTIMAL
+                            // Transition color: SHADER_READ_ONLY_OPTIMAL -> COLOR_ATTACHMENT_OPTIMAL
+                            // The viewport texture is left in SHADER_READ_ONLY_OPTIMAL after the UI pass
+                            // samples from it. We need to transition it back for rendering.
+                            // Note: On the first frame, this may cause a validation warning since the
+                            // viewport starts in UNDEFINED, but the transition will still work correctly.
                             let color_barrier = ImageMemoryBarrier2::new(color_image)
                                 .src_stage(PipelineStage2Flags::FRAGMENT_SHADER)
                                 .src_access(AccessFlags2::SHADER_READ)
@@ -1018,6 +1030,54 @@ impl VulkanRenderer {
                         let pipeline_ref = sky_pipeline.borrow();
 
                         // Bind sky pipeline
+                        unsafe {
+                            pipeline_ref.context().device.cmd_bind_pipeline(
+                                cmd_buf,
+                                vk::PipelineBindPoint::GRAPHICS,
+                                pipeline_ref.vk_pipeline().vk_pipeline(),
+                            );
+
+                            // Bind storage descriptor set (set 0 = frame_data + objects)
+                            pipeline_ref.context().device.cmd_bind_descriptor_sets(
+                                cmd_buf,
+                                vk::PipelineBindPoint::GRAPHICS,
+                                pipeline_ref.vk_layout(),
+                                0,
+                                &[storage_descriptor.vk_set()],
+                                &[],
+                            );
+                        }
+
+                        drop(pipeline_ref);
+
+                        // Draw fullscreen triangle (3 vertices, no vertex buffer)
+                        ctx.command_buffer.draw_array(3, 1, 0, 0);
+                    }
+                });
+        });
+
+        // === GRID PASS ===
+        // Renders after sky, before geometry. Grid is depth-tested but doesn't write depth.
+        // Uses scene_color/scene_depth which is either viewport or output texture
+        let grid_scene_color = scene_color;
+        let grid_scene_depth = scene_depth;
+        graph_builder.add_pass("grid_pass", move |pass| {
+            pass.write(Attachment::Color(grid_scene_color))
+                .write(Attachment::DepthStencil(grid_scene_depth))
+                // NO clear - sky pass already cleared
+                .execute("grid_pass", move |ctx| {
+                    let cmd_buf = ctx.command_buffer.vk_command_buffer();
+
+                    // SAFETY: The pointers are valid for the entire lifetime of the renderer
+                    let grid_pipeline_opt = unsafe { &mut *grid_pipeline_ptr };
+                    let storage_descriptor_opt = unsafe { &mut *storage_descriptor_ptr };
+
+                    if let (Some(grid_pipeline), Some(storage_descriptor)) =
+                        (grid_pipeline_opt.as_ref(), storage_descriptor_opt.as_ref())
+                    {
+                        let pipeline_ref = grid_pipeline.borrow();
+
+                        // Bind grid pipeline
                         unsafe {
                             pipeline_ref.context().device.cmd_bind_pipeline(
                                 cmd_buf,
@@ -1773,6 +1833,21 @@ impl VulkanRenderer {
     /// The sky pipeline renders a fullscreen triangle with a procedural sky shader.
     pub fn set_sky_pipeline(&mut self, pipeline: Rc<RefCell<MaterialPipeline>>) {
         self.sky_pipeline = Some(pipeline);
+    }
+
+    /// Set the grid pipeline for editor grid rendering.
+    ///
+    /// This must be called before setup_render_graph() if grid rendering is desired.
+    /// The grid pipeline renders a fullscreen triangle with an infinite grid shader.
+    pub fn set_grid_pipeline(&mut self, pipeline: Rc<RefCell<MaterialPipeline>>) {
+        self.grid_pipeline = Some(pipeline);
+    }
+
+    /// Clear the grid pipeline to hide the grid.
+    ///
+    /// This removes the grid pipeline, causing the grid_pass to skip rendering.
+    pub fn clear_grid_pipeline(&mut self) {
+        self.grid_pipeline = None;
     }
 
     /// Set the UI overlay pipeline.

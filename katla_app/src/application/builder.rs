@@ -209,6 +209,7 @@ impl ApplicationBuilder {
             gui_state,
             scale_factor: 1.0, // Will be updated when window is created
             gizmo_resources: None,
+            grid_pipeline: None,
         };
 
         Ok((app, event_loop))

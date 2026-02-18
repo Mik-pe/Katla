@@ -55,11 +55,13 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
     if (in.uv.x >= 1.0) {
         let viewport_uv = vec2f(in.uv.x - 1.0, in.uv.y);
         tex_color = textureSample(viewport_texture, font_sampler, viewport_uv);
+        tex_color.a = 1.0;
+        return tex_color;
     } else {
         // Sample from font atlas
         tex_color = textureSample(font_atlas, font_sampler, in.uv);
+        // Multiply texture with vertex color
+        return in.color * tex_color;
     }
 
-    // Multiply texture with vertex color
-    return in.color * tex_color;
 }

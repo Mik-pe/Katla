@@ -1102,6 +1102,10 @@ impl CompiledRenderGraph {
         // IMPORTANT: Only transition swapchain if this pass is actually writing to it!
         // When viewport exists, sky_pass and geometry_pass write to viewport texture, NOT swapchain.
         // We detect this by checking if color_attachments has per-image variants (swapchain) or not (viewport).
+        //
+        // NOTE: Non-swapchain color attachments (viewport, output) are handled by their respective passes:
+        // - Viewport: sky_pass pre_execute transitions it to COLOR_ATTACHMENT_OPTIMAL
+        // - Output: present_pass post-blit transitions it back to COLOR_ATTACHMENT_OPTIMAL
         let is_writing_to_swapchain = pass.color_attachments.get(image_index).is_some();
         let swapchain_image = swapchain_images.get(image_index).map(|img| img.vk());
         if let (Some(swapchain_vk_image), true) = (swapchain_image, is_writing_to_swapchain) {
@@ -1137,14 +1141,22 @@ impl CompiledRenderGraph {
                 });
         }
 
-        // Transition depth image from UNDEFINED to DEPTH_STENCIL_ATTACHMENT_OPTIMAL before rendering
+        // Transition depth image to DEPTH_STENCIL_ATTACHMENT_OPTIMAL before rendering
+        // - First pass: From UNDEFINED (discards previous content, sky will clear)
+        // - Subsequent passes: From DEPTH_STENCIL_ATTACHMENT_OPTIMAL (preserve grid depth for geometry occlusion)
         if let Some(_depth_attachment) = depth_attachment {
+            let old_layout = if pass_index == 0 {
+                vk::ImageLayout::UNDEFINED
+            } else {
+                vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL
+            };
+
             let barrier = ImageMemoryBarrier2::new(depth_image.vk())
-                .src_stage(PipelineStage2Flags::TOP_OF_PIPE)
-                .src_access(AccessFlags2::NONE)
+                .src_stage(PipelineStage2Flags::LATE_FRAGMENT_TESTS)
+                .src_access(AccessFlags2::DEPTH_STENCIL_ATTACHMENT_WRITE)
                 .dst_stage(PipelineStage2Flags::EARLY_FRAGMENT_TESTS)
-                .dst_access(AccessFlags2::DEPTH_STENCIL_ATTACHMENT_WRITE)
-                .old_layout(vk::ImageLayout::UNDEFINED)
+                .dst_access(AccessFlags2::DEPTH_STENCIL_ATTACHMENT_READ.union(AccessFlags2::DEPTH_STENCIL_ATTACHMENT_WRITE))
+                .old_layout(old_layout)
                 .new_layout(vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL)
                 .subresource_range(vk::ImageSubresourceRange {
                     aspect_mask: vk::ImageAspectFlags::DEPTH | vk::ImageAspectFlags::STENCIL,

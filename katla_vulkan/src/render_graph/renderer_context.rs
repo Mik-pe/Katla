@@ -66,6 +66,8 @@ pub struct RendererContext {
     pub storage_descriptor_set: Option<Rc<RefCell<Option<StorageDescriptorSet>>>>,
     /// Sky rendering pipeline
     pub sky_pipeline: Option<Rc<RefCell<Option<Rc<RefCell<MaterialPipeline>>>>>>,
+    /// Grid rendering pipeline
+    pub grid_pipeline: Option<Rc<RefCell<Option<Rc<RefCell<MaterialPipeline>>>>>>,
     /// UI draw data for the current frame
     pub ui_data: Option<Rc<RefCell<Option<UiDrawData>>>>,
     /// UI rendering pipeline
@@ -121,6 +123,14 @@ impl RendererContext {
     /// Check if sky pipeline is available.
     pub fn has_sky_pipeline(&self) -> bool {
         self.sky_pipeline
+            .as_ref()
+            .map(|p| p.borrow().is_some())
+            .unwrap_or(false)
+    }
+
+    /// Check if grid pipeline is available.
+    pub fn has_grid_pipeline(&self) -> bool {
+        self.grid_pipeline
             .as_ref()
             .map(|p| p.borrow().is_some())
             .unwrap_or(false)

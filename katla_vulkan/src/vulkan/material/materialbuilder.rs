@@ -241,6 +241,22 @@ impl MaterialBuilder {
         self
     }
 
+    /// Configure for grid rendering.
+    ///
+    /// Sets up the pipeline for editor grid rendering with:
+    /// - Alpha blending enabled (grid lines have transparency for AA)
+    /// - Depth test enabled but depth write DISABLED (grid doesn't block objects behind it)
+    /// - Depth compare = LESS_OR_EQUAL (grid visible where not occluded by closer geometry)
+    /// - No backface culling
+    pub fn with_grid_rendering(mut self) -> Self {
+        self.alpha_blending = true;
+        self.depth_test = true;
+        self.depth_write = false; // Don't write depth - let alpha blending handle visibility
+        self.depth_compare_op = CompareOp::LessOrEqual;
+        self.cull_back_faces = false;
+        self
+    }
+
     pub fn with_backface_culling(mut self, enable: bool) -> Self {
         self.cull_back_faces = enable;
         self

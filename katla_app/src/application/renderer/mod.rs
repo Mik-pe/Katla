@@ -8,7 +8,7 @@ use std::rc::Rc;
 use crate::animation::Skeleton;
 use crate::components::{DrawableComponent, ParticleEmitter, TransformComponent};
 use crate::gizmo::{self, GizmoVertex};
-use crate::rendering::{GizmoMaterial, SkyMaterial};
+use crate::rendering::{GizmoMaterial, GridMaterial, SkyMaterial};
 
 use super::Application;
 
@@ -30,6 +30,16 @@ pub fn setup_render_graph(app: &mut Application) {
     // Create and set up sky material for procedural sky background
     let sky_material = SkyMaterial::new(renderer.context.clone());
     renderer.set_sky_pipeline(sky_material.pipeline());
+
+    // Create and set up grid material for editor grid
+    // Store pipeline in app for runtime toggle, set in renderer based on current visibility
+    let grid_material = GridMaterial::new(renderer.context.clone());
+    let grid_pipeline = grid_material.pipeline();
+    app.grid_pipeline = Some(grid_pipeline.clone());
+
+    if app.editor_ui.show_grid {
+        renderer.set_grid_pipeline(grid_pipeline);
+    }
 
     // Create and set up UI material for overlay rendering
     let ui_material = crate::rendering::UiMaterial::new(renderer.context.clone());
