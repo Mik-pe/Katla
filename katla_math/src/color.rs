@@ -159,6 +159,19 @@ impl Color {
         }
     }
 
+    /// Returns a new color with the specified alpha value.
+    ///
+    /// RGB components are preserved.
+    #[inline]
+    pub fn with_alpha(&self, alpha: f32) -> Color {
+        Color {
+            r: self.r,
+            g: self.g,
+            b: self.b,
+            a: alpha,
+        }
+    }
+
     /// Adjusts the saturation of the color.
     ///
     /// Factor of 0.0 produces grayscale, 1.0 preserves original,

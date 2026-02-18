@@ -1059,6 +1059,65 @@ pub fn build_asset_browser(
         state.cancel_drag();
     }
 
+    // === DRAG PREVIEW ===
+    // Render a preview of the asset being dragged
+    if state.is_dragging {
+        if let Some(drag_idx) = state.drag_asset {
+            if let Some(asset) = state.assets.get(drag_idx) {
+                let mouse_pos = ui.input.mouse_pos;
+
+                // Preview size (slightly smaller than item size for clarity)
+                let preview_size = 64.0;
+                let preview_offset = Vec2::new(preview_size * 0.5, preview_size * 0.5);
+
+                // Draw preview at cursor position with high z-index
+                ui.push_z_index(300);
+
+                // Semi-transparent background
+                let preview_bounds = Rect2D::from_origin_size(
+                    mouse_pos - preview_offset,
+                    Vec2::new(preview_size, preview_size),
+                );
+                ui.draw_rect(preview_bounds, theme.background.with_alpha(0.8));
+                ui.draw_rect_border(preview_bounds, theme.background.with_alpha(0.8), theme.highlight, 2.0);
+
+                // Draw icon
+                let icon_char = asset.asset_type.icon();
+                let icon_str = icon_char.to_string();
+                let icon_size = preview_size * 0.5;
+                let icon_offset = (preview_size - icon_size) * 0.5;
+                ui.draw_text(
+                    &icon_str,
+                    Vec2::new(
+                        preview_bounds.min.x() + icon_offset,
+                        preview_bounds.min.y() + icon_offset - 4.0,
+                    ),
+                    theme.highlight,
+                    ui.scaled_font_size(katla_ui::FontSize::Large),
+                );
+
+                // Draw name (truncated)
+                let max_chars = 12;
+                let display_name = if asset.name.len() > max_chars {
+                    format!("{}...", &asset.name[..max_chars])
+                } else {
+                    asset.name.clone()
+                };
+                ui.draw_text(
+                    &display_name,
+                    Vec2::new(
+                        preview_bounds.min.x() + 4.0,
+                        preview_bounds.min.y() + preview_size - 16.0,
+                    ),
+                    theme.text_primary,
+                    ui.scaled_font_size(katla_ui::FontSize::XSmall),
+                );
+
+                ui.pop_z_index();
+            }
+        }
+    }
+
     // === RENAME MODE HANDLING ===
     // Collect rename data first to avoid borrow conflicts
     let rename_data = if state.rename_mode {
