@@ -118,8 +118,16 @@ pub struct AssetBrowserState {
     pub current_path: PathBuf,
     /// Assets in current directory
     pub assets: Vec<AssetEntry>,
-    /// Currently selected asset index
+    /// Currently selected asset index (single selection)
     pub selected_index: Option<usize>,
+    /// Multi-selected asset indices
+    pub selected_indices: std::collections::HashSet<usize>,
+    /// Selection rectangle start position (for marquee selection)
+    selection_rect_start: Option<Vec2>,
+    /// Selection rectangle current position
+    selection_rect_current: Option<Vec2>,
+    /// Whether marquee selection is active
+    is_marquee_selecting: bool,
     /// Scroll offset in pixels
     pub scroll_offset: f32,
     /// Panel height in pixels (when not collapsed)
@@ -202,6 +210,10 @@ impl AssetBrowserState {
             current_path,
             assets: Vec::new(),
             selected_index: None,
+            selected_indices: std::collections::HashSet::new(),
+            selection_rect_start: None,
+            selection_rect_current: None,
+            is_marquee_selecting: false,
             scroll_offset: 0.0,
             panel_height: 150.0,
             collapsed: false,
@@ -1011,8 +1023,8 @@ pub fn build_asset_browser(
         let item_pos = Vec2::new(item_x, item_y);
         let item_bounds = Rect2D::from_origin_size(item_pos, Vec2::new(item_size, item_size));
 
-        // Background on hover/select
-        let is_selected = state.selected_index == Some(i);
+        // Background on hover/select (check both single and multi-select)
+        let is_selected = state.selected_index == Some(i) || state.selected_indices.contains(&i);
         let is_hovered = ui.is_hovered(item_bounds);
 
         if is_selected {
@@ -1117,6 +1129,85 @@ pub fn build_asset_browser(
         if is_hovered && ui.input.mouse_clicked(katla_ui::input::mouse_button::RIGHT) {
             right_clicked_index = Some(i);
             state.selected_index = Some(i);
+        }
+    }
+
+    // === MARQUEE SELECTION ===
+    // Handle rectangle selection in content area
+    {
+        let mouse_in_content = content_bounds.contains(ui.input.mouse_pos);
+        let mouse_down = ui.input.is_mouse_down(katla_ui::input::mouse_button::LEFT);
+
+        // Start marquee on click in content area (but not on an asset)
+        if mouse_in_content && ui.input.mouse_clicked(katla_ui::input::mouse_button::LEFT) && clicked_index.is_none() {
+            state.selection_rect_start = Some(ui.input.mouse_pos);
+            state.selection_rect_current = Some(ui.input.mouse_pos);
+            state.is_marquee_selecting = false; // Will become true on drag
+        }
+
+        // Update marquee rectangle while dragging
+        if state.selection_rect_start.is_some() && mouse_down {
+            state.selection_rect_current = Some(ui.input.mouse_pos);
+            let start = state.selection_rect_start.unwrap();
+            let current = ui.input.mouse_pos;
+            let dist = (current - start).length();
+            if dist > state.drag_threshold {
+                state.is_marquee_selecting = true;
+            }
+        }
+
+        // Draw selection rectangle and select assets on release
+        if state.is_marquee_selecting {
+            if let (Some(start), Some(current)) = (state.selection_rect_start, state.selection_rect_current) {
+                // Draw the selection rectangle
+                let rect_min = Vec2::new(start.x().min(current.x()), start.y().min(current.y()));
+                let rect_max = Vec2::new(start.x().max(current.x()), start.y().max(current.y()));
+                let sel_rect = Rect2D::new(rect_min, rect_max);
+
+                ui.draw_rect(sel_rect, Color::new(0.3, 0.5, 0.8, 0.3));
+                ui.draw_rect_border(sel_rect, Color::new(0.3, 0.5, 0.8, 0.3), Color::new(0.4, 0.6, 0.9, 0.8), 1.0);
+            }
+        }
+
+        // Finalize selection on mouse release
+        if state.selection_rect_start.is_some() && ui.input.mouse_released[katla_ui::input::mouse_button::LEFT] {
+            if state.is_marquee_selecting {
+                if let (Some(start), Some(current)) = (state.selection_rect_start, state.selection_rect_current) {
+                    // Build selection rectangle
+                    let rect_min = Vec2::new(start.x().min(current.x()), start.y().min(current.y()));
+                    let rect_max = Vec2::new(start.x().max(current.x()), start.y().max(current.y()));
+                    let sel_rect = Rect2D::new(rect_min, rect_max);
+
+                    // Clear previous selection
+                    state.selected_indices.clear();
+                    state.selected_index = None;
+
+                    // Select all assets that intersect with the rectangle
+                    for (i, _asset) in state.assets.iter().enumerate() {
+                        let col = i % col_count;
+                        let row = i / col_count;
+                        let item_x = bounds.min.x() + item_padding + col as f32 * (item_size + item_padding);
+                        let item_y = content_top + row as f32 * row_height - state.scroll_offset;
+                        let item_bounds = Rect2D::from_origin_size(Vec2::new(item_x, item_y), Vec2::new(item_size, item_size));
+
+                        // Check if item intersects with selection rectangle (AABB intersection)
+                        if item_bounds.min.x() <= sel_rect.max.x()
+                            && item_bounds.max.x() >= sel_rect.min.x()
+                            && item_bounds.min.y() <= sel_rect.max.y()
+                            && item_bounds.max.y() >= sel_rect.min.y()
+                        {
+                            state.selected_indices.insert(i);
+                            if state.selected_index.is_none() {
+                                state.selected_index = Some(i); // Set primary selection
+                            }
+                        }
+                    }
+                }
+            }
+            // Reset marquee state
+            state.selection_rect_start = None;
+            state.selection_rect_current = None;
+            state.is_marquee_selecting = false;
         }
     }
 
