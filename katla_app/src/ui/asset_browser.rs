@@ -6,6 +6,7 @@
 //! - PNG image thumbnail support (loaded in background)
 //! - Auto-refresh on file changes
 
+use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
 use std::time::Instant;
@@ -231,6 +232,13 @@ impl AssetBrowserState {
 
     /// Scan the current directory for assets.
     pub fn scan_directory(&mut self) {
+        // Preserve thumbnail states before clearing
+        let old_thumbnails: HashMap<PathBuf, ThumbnailState> = self
+            .assets
+            .iter()
+            .map(|a| (a.path.clone(), a.thumbnail_state.clone()))
+            .collect();
+
         self.assets.clear();
 
         // Add parent directory entry if not at root
@@ -268,11 +276,18 @@ impl AssetBrowserState {
                 }
 
                 let asset_type = AssetType::from_path(&path);
+
+                // Preserve thumbnail state if we had this asset before
+                let thumbnail_state = old_thumbnails
+                    .get(&path)
+                    .cloned()
+                    .unwrap_or(ThumbnailState::NotRequested);
+
                 let entry = AssetEntry {
                     name,
                     path: path.clone(),
                     asset_type,
-                    thumbnail_state: ThumbnailState::NotRequested,
+                    thumbnail_state,
                 };
 
                 if asset_type == AssetType::Folder {
