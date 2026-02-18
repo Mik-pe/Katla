@@ -644,42 +644,56 @@ impl MaterialBuilder {
             .ok_or(MaterialBuildError::MissingFragmentShader)?;
 
         // Create descriptor layout based on configuration
-        let desc_layout = if self.ui_texture_layout {
-            // UI texture layout: font atlas, sampler, viewport texture, uniforms
-            // binding 0: font atlas (SAMPLED_IMAGE)
-            // binding 1: sampler
-            // binding 2: viewport texture (SAMPLED_IMAGE)
-            // binding 3: uniforms (UNIFORM_BUFFER) - screen_size for NDC transform
-            DescriptorLayoutBuilder::new()
+        let (desc_layouts, push_set_index) = if self.ui_texture_layout {
+            // UI texture layout: Two sets for push descriptor support
+            // Set 0: static resources (font atlas, sampler, uniforms)
+            // Set 1: push descriptor for dynamic texture (viewport/thumbnails)
+
+            // Set 0: Static bindings
+            let set0_layout = DescriptorLayoutBuilder::new()
                 .add_binding(
                     0,
                     vk::DescriptorType::SAMPLED_IMAGE,
                     vk::ShaderStageFlags::FRAGMENT,
                     1,
-                )
+                ) // font atlas
                 .add_binding(
                     1,
                     vk::DescriptorType::SAMPLER,
                     vk::ShaderStageFlags::FRAGMENT,
                     1,
-                )
-                .add_binding(
-                    2,
-                    vk::DescriptorType::SAMPLED_IMAGE,
-                    vk::ShaderStageFlags::FRAGMENT,
-                    1,
-                )
+                ) // sampler
                 .add_binding(
                     3,
                     vk::DescriptorType::UNIFORM_BUFFER,
                     vk::ShaderStageFlags::VERTEX,
                     1,
-                )
+                ) // uniforms (screen_size)
                 .build(&self.context.device)
-                .map_err(|e| MaterialBuildError::DescriptorLayoutFailed(format!("{:?}", e)))?
+                .map_err(|e| MaterialBuildError::DescriptorLayoutFailed(format!("{:?}", e)))?;
+
+            // Set 1: Push descriptor for dynamic texture (with PUSH_DESCRIPTOR flag)
+            let set1_bindings = [vk::DescriptorSetLayoutBinding::default()
+                .binding(0)
+                .descriptor_type(vk::DescriptorType::SAMPLED_IMAGE)
+                .descriptor_count(1)
+                .stage_flags(vk::ShaderStageFlags::FRAGMENT)];
+
+            let set1_layout_info = vk::DescriptorSetLayoutCreateInfo::default()
+                .bindings(&set1_bindings)
+                .flags(vk::DescriptorSetLayoutCreateFlags::PUSH_DESCRIPTOR_KHR);
+
+            let set1_layout = unsafe {
+                self.context
+                    .device
+                    .create_descriptor_set_layout(&set1_layout_info, None)
+                    .map_err(|e| MaterialBuildError::DescriptorLayoutFailed(format!("{:?}", e)))?
+            };
+
+            (vec![set0_layout, set1_layout], Some(1))
         } else {
             // Legacy single-set layout with uniform buffers
-            DescriptorLayoutBuilder::new()
+            let layout = DescriptorLayoutBuilder::new()
                 .add_binding(
                     0,
                     vk::DescriptorType::UNIFORM_BUFFER,
@@ -699,7 +713,8 @@ impl MaterialBuilder {
                     1,
                 )
                 .build(&self.context.device)
-                .map_err(|e| MaterialBuildError::DescriptorLayoutFailed(format!("{:?}", e)))?
+                .map_err(|e| MaterialBuildError::DescriptorLayoutFailed(format!("{:?}", e)))?;
+            (vec![layout], None)
         };
 
         // Always use builder's formats for dynamic rendering (Vulkan 1.3)
@@ -717,7 +732,7 @@ impl MaterialBuilder {
                 vertex_binding.get_attribute_desc(0),
             )
             .with_depth_test(self.depth_test, self.depth_write, self.depth_compare_op)
-            .with_descriptor_layouts(vec![desc_layout]);
+            .with_descriptor_layouts(desc_layouts.clone());
 
         // Set rendering formats for dynamic rendering (Vulkan 1.3)
         if color_format.is_some() || depth_format.is_some() {
@@ -744,13 +759,28 @@ impl MaterialBuilder {
             .map_err(|e| MaterialBuildError::PipelineCreationFailed(format!("{:?}", e)))?;
 
         // All shaders are WGSL, which uses separate bindings
+        // For UI texture layout with push descriptors:
+        // - Set 0 (primary_layout): static resources (font atlas, sampler, uniforms)
+        // - Set 1 (additional_layouts[0]): push descriptor for dynamic texture
+        let mut layouts_iter = desc_layouts.into_iter();
+        let primary_layout = layouts_iter.next().unwrap();
+        let additional_layouts: Vec<_> = layouts_iter.collect();
+
         let mut material_pipeline = MaterialPipeline::new_with_options(
             pipeline,
-            desc_layout,
+            primary_layout,
             self.context.clone(),
             true, // separate_bindings - always true for WGSL
             self.has_color,
         );
+
+        // Store additional layouts for cleanup
+        material_pipeline.additional_layouts = additional_layouts;
+
+        // Store push descriptor set index if present (for UI textures)
+        if let Some(set_idx) = push_set_index {
+            material_pipeline.push_descriptor_set = Some(set_idx);
+        }
 
         if let Some(texture) = self.texture {
             material_pipeline

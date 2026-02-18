@@ -1002,18 +1002,20 @@ pub fn build_asset_browser(
 
         // Draw thumbnail or icon centered in item
         match &asset.thumbnail_state {
-            ThumbnailState::Loaded { texture_id: _ } => {
-                // Thumbnail loaded but texture switching during render pass not yet supported.
-                // Show success-colored icon to indicate loaded state.
-                // TODO: Implement texture array or push descriptors for proper thumbnail display.
-                let icon = asset.asset_type.icon();
-                let icon_color = theme.success;
-                let icon_size = 28.0;
-                let icon_pos = Vec2::new(
-                    item_bounds.center().x() - icon_size * 0.5,
-                    item_bounds.center().y() - icon_size * 0.5,
+            ThumbnailState::Loaded { texture_id } => {
+                // Draw thumbnail image using push descriptors (set 1 in shader)
+                // UV.x >= 1.0 signals the shader to sample from the dynamic texture (set 1)
+                // Add 1.0 to UV.x to shift from 0-1 range to 1-2 range
+                let uv_offset = Rect2D::new(
+                    Vec2::new(1.0, 0.0),  // UV min (offset by 1.0 in x)
+                    Vec2::new(2.0, 1.0),  // UV max (offset by 1.0 in x)
                 );
-                ui.draw_icon(icon, icon_pos, icon_size, icon_color);
+                ui.image(
+                    *texture_id,
+                    item_bounds,
+                    Some(uv_offset),
+                    None,  // White tint
+                );
             }
             ThumbnailState::Loading => {
                 // Show dimmed icon while loading

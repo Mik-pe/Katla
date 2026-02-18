@@ -536,6 +536,9 @@ pub struct MaterialPipeline {
     pipeline: Option<Pipeline>,
     pub uniform: UniformHandle,
     desc_layout: Option<vk::DescriptorSetLayout>,
+    /// Additional descriptor set layouts (e.g., push descriptor layouts for UI).
+    /// These need to be cleaned up on drop.
+    additional_layouts: Vec<vk::DescriptorSetLayout>,
     /// Texture descriptor set layout (set 1) for storage buffer rendering.
     /// Separated from uniform set (set 0) for efficient texture updates.
     pub texture_set_layout: Option<vk::DescriptorSetLayout>,
@@ -544,6 +547,9 @@ pub struct MaterialPipeline {
     /// Skeleton descriptor set layout (set 2) for skeletal animation.
     /// Only present on skinned pipelines.
     pub skeleton_set_layout: Option<vk::DescriptorSetLayout>,
+    /// Push descriptor set index (if this pipeline uses push descriptors).
+    /// Used by UI textures for dynamic texture switching.
+    pub push_descriptor_set: Option<u32>,
     context: Rc<VulkanContext>,
 }
 
@@ -617,9 +623,11 @@ impl MaterialPipeline {
             pipeline: Some(pipeline),
             uniform,
             desc_layout: Some(desc_layout),
+            additional_layouts: Vec::new(),
             texture_set_layout: None,
             texture_descriptor: None,
             skeleton_set_layout: None,
+            push_descriptor_set: None,
             context,
         }
     }
@@ -649,9 +657,11 @@ impl MaterialPipeline {
             pipeline: Some(pipeline),
             uniform,
             desc_layout: Some(uniform_set_layout),
+            additional_layouts: Vec::new(),
             texture_set_layout: Some(texture_set_layout),
             texture_descriptor: None,
             skeleton_set_layout: None,
+            push_descriptor_set: None,
             context,
         }
     }
@@ -677,9 +687,11 @@ impl MaterialPipeline {
             pipeline: Some(pipeline),
             uniform,
             desc_layout: Some(uniform_set_layout),
+            additional_layouts: Vec::new(),
             texture_set_layout: Some(texture_set_layout),
             texture_descriptor: None,
             skeleton_set_layout: Some(skeleton_set_layout),
+            push_descriptor_set: None,
             context,
         }
     }
@@ -909,6 +921,12 @@ impl Drop for MaterialPipeline {
                 self.context
                     .device
                     .destroy_descriptor_set_layout(desc_layout, None);
+            }
+        }
+        // Clean up additional descriptor layouts (e.g., push descriptor layouts)
+        for layout in self.additional_layouts.drain(..) {
+            unsafe {
+                self.context.device.destroy_descriptor_set_layout(layout, None);
             }
         }
         if let Some(texture_layout) = self.texture_set_layout.take() {

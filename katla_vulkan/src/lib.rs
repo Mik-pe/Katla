@@ -1564,13 +1564,11 @@ impl VulkanRenderer {
 
                                     // Draw each command with its clip rectangle
                                 for cmd in &ui_data.commands {
-                                    // Note: Texture switching during render pass is not allowed.
-                                    // All UI commands currently use the viewport texture (binding 2).
-                                    // For proper thumbnail support, we need to either:
-                                    // 1. Use push descriptors (VK_KHR_push_descriptor)
-                                    // 2. Use a texture array
-                                    // 3. Sort commands by texture and rebind between groups
-                                    // For now, custom texture IDs are registered but all UI uses viewport.
+                                    // Push texture via push descriptors (set 1)
+                                    // This allows switching textures during the render pass
+                                    if let Some(textures) = ui_textures {
+                                        textures.push_texture(cmd_buf, cmd.texture_id);
+                                    }
 
                                     // Set scissor for this command
                                     let scissor = vk::Rect2D {
@@ -1612,13 +1610,11 @@ impl VulkanRenderer {
 
                             // Draw each command with its clip rectangle (persistent buffers path)
                             for cmd in &ui_data.commands {
-                                // Note: Texture switching during render pass is not allowed.
-                                // All UI commands currently use the viewport texture (binding 2).
-                                // For proper thumbnail support, we need to either:
-                                // 1. Use push descriptors (VK_KHR_push_descriptor)
-                                // 2. Use a texture array
-                                // 3. Sort commands by texture and rebind between groups
-                                // For now, custom texture IDs are registered but all UI uses viewport.
+                                // Push texture via push descriptors (set 1)
+                                // This allows switching textures during the render pass
+                                if let Some(textures) = ui_textures {
+                                    textures.push_texture(cmd_buf, cmd.texture_id);
+                                }
 
                                 // Set scissor for this command
                                 let scissor = vk::Rect2D {
@@ -2279,21 +2275,23 @@ pub struct UITextures {
     /// Uniform buffer for UI shaders (screen_size for NDC transform).
     pub uniform_buffer: vk::Buffer,
     pub uniform_memory: Option<gpu_allocator::vulkan::Allocation>,
-    /// Descriptor set layout for UI textures.
+    /// Descriptor set layout for set 0 (static: font atlas, sampler, uniforms).
     pub descriptor_set_layout: vk::DescriptorSetLayout,
-    /// Descriptor set with bound textures.
+    /// Descriptor set layout for set 1 (push descriptors: dynamic texture).
+    pub push_descriptor_layout: vk::DescriptorSetLayout,
+    /// Pipeline layout with both descriptor set layouts.
+    pub pipeline_layout: vk::PipelineLayout,
+    /// Descriptor set 0 with static resources.
     pub descriptor_set: vk::DescriptorSet,
-    /// Descriptor pool for UI textures.
+    /// Descriptor pool for set 0.
     pub descriptor_pool: vk::DescriptorPool,
     /// Font atlas dimensions.
     pub atlas_width: u32,
     pub atlas_height: u32,
-    /// Viewport texture image view (updated externally).
+    /// Viewport texture image view (used as default for push descriptors).
     pub viewport_image_view: Option<vk::ImageView>,
     /// Registered thumbnail textures (texture_id -> image_view).
     thumbnail_textures: std::collections::HashMap<u64, vk::ImageView>,
-    /// Currently bound texture ID on binding 2 (for avoiding redundant descriptor updates).
-    current_bound_texture: std::cell::Cell<u64>,
     /// Context for cleanup.
     context: Rc<VulkanContext>,
 }
@@ -2350,8 +2348,9 @@ impl UITextures {
             let (font_image, font_memory, font_view) =
                 Self::create_texture(&context, atlas_width, atlas_height, &white_pixels)?;
 
-            // Create descriptor set layout (4 bindings: font atlas, sampler, viewport texture, uniforms)
-            let bindings = [
+            // === SET 0: Static resources (font atlas, sampler, uniforms) ===
+            // Bindings: 0 = font atlas, 1 = sampler, 3 = uniforms (skip 2, moved to set 1)
+            let static_bindings = [
                 vk::DescriptorSetLayoutBinding::default()
                     .binding(0)
                     .descriptor_type(vk::DescriptorType::SAMPLED_IMAGE)
@@ -2362,11 +2361,7 @@ impl UITextures {
                     .descriptor_type(vk::DescriptorType::SAMPLER)
                     .descriptor_count(1)
                     .stage_flags(vk::ShaderStageFlags::FRAGMENT),
-                vk::DescriptorSetLayoutBinding::default()
-                    .binding(2)
-                    .descriptor_type(vk::DescriptorType::SAMPLED_IMAGE)
-                    .descriptor_count(1)
-                    .stage_flags(vk::ShaderStageFlags::FRAGMENT),
+                // Note: binding 2 is in set 1 (push descriptors)
                 vk::DescriptorSetLayoutBinding::default()
                     .binding(3)
                     .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
@@ -2374,18 +2369,44 @@ impl UITextures {
                     .stage_flags(vk::ShaderStageFlags::VERTEX),
             ];
 
-            let layout_create_info =
-                vk::DescriptorSetLayoutCreateInfo::default().bindings(&bindings);
+            let static_layout_info =
+                vk::DescriptorSetLayoutCreateInfo::default().bindings(&static_bindings);
 
             let descriptor_set_layout = context
                 .device
-                .create_descriptor_set_layout(&layout_create_info, None)?;
+                .create_descriptor_set_layout(&static_layout_info, None)?;
 
-            // Create descriptor pool (2 sampled images + 1 sampler + 1 uniform buffer)
+            // === SET 1: Push descriptor set (dynamic texture) ===
+            // Binding 0 = dynamic texture (viewport or thumbnail)
+            let push_bindings = [vk::DescriptorSetLayoutBinding::default()
+                .binding(0)
+                .descriptor_type(vk::DescriptorType::SAMPLED_IMAGE)
+                .descriptor_count(1)
+                .stage_flags(vk::ShaderStageFlags::FRAGMENT)];
+
+            // Create with PUSH_DESCRIPTOR flag - no allocation needed
+            let push_layout_info = vk::DescriptorSetLayoutCreateInfo::default()
+                .bindings(&push_bindings)
+                .flags(vk::DescriptorSetLayoutCreateFlags::PUSH_DESCRIPTOR_KHR);
+
+            let push_descriptor_layout = context
+                .device
+                .create_descriptor_set_layout(&push_layout_info, None)?;
+
+            // === Create pipeline layout with both sets ===
+            let set_layouts = [descriptor_set_layout, push_descriptor_layout];
+            let pipeline_layout_info =
+                vk::PipelineLayoutCreateInfo::default().set_layouts(&set_layouts);
+
+            let pipeline_layout = context
+                .device
+                .create_pipeline_layout(&pipeline_layout_info, None)?;
+
+            // === Create descriptor pool and allocate set 0 ===
             let pool_sizes = [
                 vk::DescriptorPoolSize {
                     ty: vk::DescriptorType::SAMPLED_IMAGE,
-                    descriptor_count: 2,
+                    descriptor_count: 1, // Only font atlas now
                 },
                 vk::DescriptorPoolSize {
                     ty: vk::DescriptorType::SAMPLER,
@@ -2405,61 +2426,16 @@ impl UITextures {
                 .device
                 .create_descriptor_pool(&pool_create_info, None)?;
 
-            // Allocate descriptor set
-            let set_layouts = [descriptor_set_layout];
+            // Allocate set 0 (static resources)
+            let alloc_layouts = [descriptor_set_layout];
             let alloc_info = vk::DescriptorSetAllocateInfo::default()
                 .descriptor_pool(descriptor_pool)
-                .set_layouts(&set_layouts);
+                .set_layouts(&alloc_layouts);
 
             let descriptor_sets = context.device.allocate_descriptor_sets(&alloc_info)?;
             let descriptor_set = descriptor_sets[0];
 
-            // Update descriptor set with font texture, sampler, and placeholder viewport texture
-            let font_image_info = vk::DescriptorImageInfo {
-                sampler: vk::Sampler::null(),
-                image_view: font_view,
-                image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
-            };
-
-            let sampler_info = vk::DescriptorImageInfo {
-                sampler,
-                image_view: vk::ImageView::null(),
-                image_layout: vk::ImageLayout::UNDEFINED,
-            };
-
-            // Viewport texture placeholder (use white texture initially)
-            let viewport_image_info = vk::DescriptorImageInfo {
-                sampler: vk::Sampler::null(),
-                image_view: white_view, // Placeholder - will be updated when viewport is created
-                image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
-            };
-
-            let font_infos = [font_image_info];
-            let sampler_infos = [sampler_info];
-            let viewport_infos = [viewport_image_info];
-
-            let font_write = vk::WriteDescriptorSet::default()
-                .dst_set(descriptor_set)
-                .dst_binding(0)
-                .dst_array_element(0)
-                .descriptor_type(vk::DescriptorType::SAMPLED_IMAGE)
-                .image_info(&font_infos);
-
-            let sampler_write = vk::WriteDescriptorSet::default()
-                .dst_set(descriptor_set)
-                .dst_binding(1)
-                .dst_array_element(0)
-                .descriptor_type(vk::DescriptorType::SAMPLER)
-                .image_info(&sampler_infos);
-
-            let viewport_write = vk::WriteDescriptorSet::default()
-                .dst_set(descriptor_set)
-                .dst_binding(2)
-                .dst_array_element(0)
-                .descriptor_type(vk::DescriptorType::SAMPLED_IMAGE)
-                .image_info(&viewport_infos);
-
-            // Create uniform buffer for UI shaders (16 bytes: vec2 screen_size + vec2 padding)
+            // === Create uniform buffer ===
             let uniform_buffer_size = 16u64;
             let uniform_buffer_info = vk::BufferCreateInfo::default()
                 .sharing_mode(vk::SharingMode::EXCLUSIVE)
@@ -2473,12 +2449,25 @@ impl UITextures {
 
             // Initialize uniform buffer with default screen size
             let uniform_ptr = context.map_buffer(&uniform_memory);
-            let initial_data: [f32; 4] = [1920.0, 1080.0, 0.0, 0.0]; // screen_size + padding
+            let initial_data: [f32; 4] = [1920.0, 1080.0, 0.0, 0.0];
             std::ptr::copy_nonoverlapping(
                 initial_data.as_ptr() as *const u8,
                 uniform_ptr,
                 16,
             );
+
+            // === Update set 0 with static resources ===
+            let font_image_info = vk::DescriptorImageInfo {
+                sampler: vk::Sampler::null(),
+                image_view: font_view,
+                image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+            };
+
+            let sampler_info = vk::DescriptorImageInfo {
+                sampler,
+                image_view: vk::ImageView::null(),
+                image_layout: vk::ImageLayout::UNDEFINED,
+            };
 
             let uniform_buffer_info = vk::DescriptorBufferInfo {
                 buffer: uniform_buffer,
@@ -2486,18 +2475,30 @@ impl UITextures {
                 range: uniform_buffer_size,
             };
 
-            let uniform_infos = [uniform_buffer_info];
+            // Store arrays in variables to avoid temporary value issues
+            let font_image_infos = [font_image_info];
+            let sampler_infos = [sampler_info];
+            let uniform_buffer_infos = [uniform_buffer_info];
 
-            let uniform_write = vk::WriteDescriptorSet::default()
-                .dst_set(descriptor_set)
-                .dst_binding(3)
-                .dst_array_element(0)
-                .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
-                .buffer_info(&uniform_infos);
+            let writes = [
+                vk::WriteDescriptorSet::default()
+                    .dst_set(descriptor_set)
+                    .dst_binding(0)
+                    .descriptor_type(vk::DescriptorType::SAMPLED_IMAGE)
+                    .image_info(&font_image_infos),
+                vk::WriteDescriptorSet::default()
+                    .dst_set(descriptor_set)
+                    .dst_binding(1)
+                    .descriptor_type(vk::DescriptorType::SAMPLER)
+                    .image_info(&sampler_infos),
+                vk::WriteDescriptorSet::default()
+                    .dst_set(descriptor_set)
+                    .dst_binding(3)
+                    .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
+                    .buffer_info(&uniform_buffer_infos),
+            ];
 
-            context
-                .device
-                .update_descriptor_sets(&[font_write, sampler_write, viewport_write, uniform_write], &[]);
+            context.device.update_descriptor_sets(&writes, &[]);
 
             Ok(Self {
                 font_image,
@@ -2510,13 +2511,14 @@ impl UITextures {
                 uniform_buffer,
                 uniform_memory: Some(uniform_memory),
                 descriptor_set_layout,
+                push_descriptor_layout,
+                pipeline_layout,
                 descriptor_set,
                 descriptor_pool,
                 atlas_width,
                 atlas_height,
                 viewport_image_view: None,
                 thumbnail_textures: std::collections::HashMap::new(),
-                current_bound_texture: std::cell::Cell::new(0),
                 context,
             })
         }
@@ -2845,27 +2847,8 @@ impl UITextures {
 
     /// Update viewport texture binding in the descriptor set.
     /// Call this when the viewport render target is created or resized.
-    pub fn set_viewport_texture(&mut self, context: &VulkanContext, image_view: vk::ImageView) {
-        unsafe {
-            let viewport_image_info = vk::DescriptorImageInfo {
-                sampler: vk::Sampler::null(),
-                image_view,
-                image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
-            };
-
-            let viewport_infos = [viewport_image_info];
-
-            let viewport_write = vk::WriteDescriptorSet::default()
-                .dst_set(self.descriptor_set)
-                .dst_binding(2)
-                .dst_array_element(0)
-                .descriptor_type(vk::DescriptorType::SAMPLED_IMAGE)
-                .image_info(&viewport_infos);
-
-            context
-                .device
-                .update_descriptor_sets(&[viewport_write], &[]);
-        }
+    pub fn set_viewport_texture(&mut self, _context: &VulkanContext, image_view: vk::ImageView) {
+        // Just store the view - we'll push it via push descriptors during rendering
         self.viewport_image_view = Some(image_view);
     }
 
@@ -2893,28 +2876,16 @@ impl UITextures {
         }
     }
 
-    /// Bind a specific texture to binding 2 (custom texture slot).
-    /// This allows switching between viewport and thumbnail textures.
-    pub fn bind_texture(&self, texture_id: u64) {
-        // Skip if already bound
-        if self.current_bound_texture.get() == texture_id {
-            return;
-        }
+    /// Push a dynamic texture via push descriptors (set 1).
+    /// This can be called during command buffer recording to switch textures.
+    ///
+    /// # Arguments
+    /// * `cmd_buf` - Command buffer currently being recorded
+    /// * `texture_id` - Texture ID (2 = viewport, 100+ = thumbnail)
+    pub fn push_texture(&self, cmd_buf: vk::CommandBuffer, texture_id: u64) {
+        let image_view = self.get_texture_view(texture_id);
 
         unsafe {
-            let image_view = if texture_id == 0 {
-                // TextureId 0 = font atlas (shouldn't happen for custom slot, use white)
-                self.white_image_view
-            } else if texture_id == 1 || texture_id == 2 {
-                // TextureId 1 = font atlas, 2 = viewport
-                self.viewport_image_view.unwrap_or(self.white_image_view)
-            } else if let Some(&view) = self.thumbnail_textures.get(&texture_id) {
-                view
-            } else {
-                // Unknown texture, use white placeholder
-                self.white_image_view
-            };
-
             let image_info = vk::DescriptorImageInfo {
                 sampler: vk::Sampler::null(),
                 image_view,
@@ -2924,14 +2895,38 @@ impl UITextures {
             let image_infos = [image_info];
 
             let write = vk::WriteDescriptorSet::default()
-                .dst_set(self.descriptor_set)
-                .dst_binding(2)
+                .dst_set(vk::DescriptorSet::null()) // Not used for push descriptors
+                .dst_binding(0) // Binding 0 in set 1
                 .dst_array_element(0)
                 .descriptor_type(vk::DescriptorType::SAMPLED_IMAGE)
                 .image_info(&image_infos);
 
-            self.context.device.update_descriptor_sets(&[write], &[]);
-            self.current_bound_texture.set(texture_id);
+            let writes = [write];
+
+            self.context.push_descriptor_loader.cmd_push_descriptor_set(
+                cmd_buf,
+                vk::PipelineBindPoint::GRAPHICS,
+                self.pipeline_layout,
+                1, // Set 1
+                &writes,
+            );
+        }
+    }
+
+    /// Get the image view for a texture ID.
+    fn get_texture_view(&self, texture_id: u64) -> vk::ImageView {
+        if texture_id == 0 || texture_id == 1 {
+            // TextureId 0/1 = font atlas (shouldn't use dynamic slot, return white)
+            self.white_image_view
+        } else if texture_id == 2 {
+            // TextureId 2 = viewport
+            self.viewport_image_view.unwrap_or(self.white_image_view)
+        } else if let Some(&view) = self.thumbnail_textures.get(&texture_id) {
+            // Custom thumbnail
+            view
+        } else {
+            // Unknown texture, use white placeholder
+            self.white_image_view
         }
     }
 
@@ -2980,9 +2975,16 @@ impl Drop for UITextures {
             if let Some(memory) = self.uniform_memory.take() {
                 self.context.allocator.borrow_mut().free(memory).ok();
             }
+            // Destroy descriptor set layouts and pipeline layout
             self.context
                 .device
                 .destroy_descriptor_set_layout(self.descriptor_set_layout, None);
+            self.context
+                .device
+                .destroy_descriptor_set_layout(self.push_descriptor_layout, None);
+            self.context
+                .device
+                .destroy_pipeline_layout(self.pipeline_layout, None);
             self.context
                 .device
                 .destroy_descriptor_pool(self.descriptor_pool, None);

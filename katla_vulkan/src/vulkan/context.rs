@@ -1,6 +1,10 @@
 use ash::{
     ext::debug_utils::Instance as DebugInstance,
-    khr::{surface::Instance as SurfaceInstance, swapchain::Device as SwapchainDevice},
+    khr::{
+        push_descriptor::Device as PushDescriptorDevice,
+        surface::Instance as SurfaceInstance,
+        swapchain::Device as SwapchainDevice,
+    },
     vk::{self},
     Device, Entry, Instance,
 };
@@ -169,6 +173,7 @@ pub struct VulkanContext {
     pub device: Device,
     pub surface_loader: Option<SurfaceInstance>,
     pub swapchain_loader: Option<Rc<SwapchainDevice>>,
+    pub push_descriptor_loader: PushDescriptorDevice,
     pub physical_device: vk::PhysicalDevice,
     pub allocator: ManuallyDrop<RefCell<Allocator>>,
     pub surface: Option<vk::SurfaceKHR>,
@@ -583,6 +588,7 @@ impl VulkanContext {
         );
 
         let swapchain_loader = Rc::new(SwapchainDevice::new(&instance, &device));
+        let push_descriptor_loader = PushDescriptorDevice::new(&instance, &device);
 
         let graphics_queue = unsafe { device.get_device_queue(graphics_queue_idx, 0) };
 
@@ -615,6 +621,7 @@ impl VulkanContext {
             device,
             surface_loader: Some(surface_loader),
             swapchain_loader: Some(swapchain_loader),
+            push_descriptor_loader,
             physical_device,
             allocator,
             surface: Some(surface),
@@ -709,6 +716,8 @@ impl VulkanContext {
 
         let graphics_queue = unsafe { device.get_device_queue(graphics_queue_idx, 0) };
 
+        let push_descriptor_loader = PushDescriptorDevice::new(&instance, &device);
+
         let gfx_queue = super::Queue::new(device.clone(), graphics_queue_idx, 0);
         let gfx_cmdpool = super::CommandPool::new(device.clone(), graphics_queue_idx);
 
@@ -738,6 +747,7 @@ impl VulkanContext {
             device,
             surface_loader: None,
             swapchain_loader: None,
+            push_descriptor_loader,
             physical_device,
             allocator,
             surface: None, // No surface!
@@ -1128,9 +1138,12 @@ fn create_device(
     enable_swapchain: bool,
 ) -> Device {
     let device_extensions = if enable_swapchain {
-        vec![ash::khr::swapchain::NAME.as_ptr()]
+        vec![
+            ash::khr::swapchain::NAME.as_ptr(),
+            ash::khr::push_descriptor::NAME.as_ptr(), // For dynamic texture binding in UI
+        ]
     } else {
-        vec![]
+        vec![ash::khr::push_descriptor::NAME.as_ptr()] // Always enable for UI textures
     };
 
     let mut device_layers = vec![];
