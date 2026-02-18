@@ -243,7 +243,9 @@ pub fn render_frame(app: &mut Application) {
             (drawable.mesh_handle, drawable.material_handle)
         {
             let mut draw_call =
-                DrawCall::new(mesh_handle, material_handle).with_transform(model_array);
+                DrawCall::new(mesh_handle, material_handle)
+                    .with_transform(model_array)
+                    .with_pbr(drawable.metallic, drawable.roughness, drawable.ao);
 
             // Add color override if specified in DrawableComponent
             if let Some(color) = drawable.color {

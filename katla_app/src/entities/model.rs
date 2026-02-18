@@ -3,7 +3,7 @@ use std::rc::Rc;
 use katla_ecs::{EntityId, World};
 use katla_math::Transform;
 use katla_vulkan::{MaterialHandle, MaterialRegistry, MeshHandle, VulkanContext, VulkanRenderer};
-use log::{info, warn};
+use log::{debug, info, warn};
 
 use crate::{
     components::{DrawableComponent, NameComponent, TransformComponent},
@@ -55,12 +55,15 @@ impl Model {
             (MeshHandle(0), MaterialHandle(0))
         };
 
-        // Create DrawableComponent with optional color
-        let drawable = if let Some(c) = color {
-            DrawableComponent::with_handles_and_color(mesh_handle, material_handle, c)
-        } else {
-            DrawableComponent::with_handles(mesh_handle, material_handle)
-        };
+        // Create DrawableComponent with optional color and PBR values
+        let drawable = DrawableComponent::with_handles_and_material(
+            mesh_handle,
+            material_handle,
+            color,
+            0.0,   // metallic - will be overridden by GLTF loading
+            0.5,   // roughness - will be overridden by GLTF loading
+            1.0,   // ao
+        );
 
         // Spawn entity with all components
         let entity = world.spawn((
@@ -147,9 +150,75 @@ impl Model {
             Material::new(model.clone(), context.clone())
         };
 
+        // Get PBR values from material info
+        let (metallic, roughness) = model.materials.first()
+            .map(|m| (m.metallic_factor, m.roughness_factor))
+            .unwrap_or((0.0, 0.5));
+
         let mesh = Mesh::new_from_model(model, context.clone());
 
-        Self::new(world, vec![mesh], material, renderer, transform, None)
+        Self::new_with_pbr(world, vec![mesh], material, renderer, transform, None, metallic, roughness, 1.0)
+    }
+
+    /// Create a model with explicit PBR material values.
+    pub fn new_with_pbr(
+        world: &mut World,
+        mut meshes: Vec<Mesh>,
+        material: Material,
+        renderer: Option<&mut VulkanRenderer>,
+        transform: Transform,
+        color: Option<katla_math::Color>,
+        metallic: f32,
+        roughness: f32,
+        ao: f32,
+    ) -> Self {
+        // Register assets with renderer if available
+        let (mesh_handle, material_handle) = if let Some(r) = renderer {
+            // Register mesh - take buffers from first mesh
+            let mesh_h = if let Some(first_mesh) = meshes.first_mut() {
+                let vertex_buffer = first_mesh.vertex_buffer.take();
+                let index_buffer = first_mesh.index_buffer.take();
+                r.register_mesh(vertex_buffer, index_buffer)
+            } else {
+                MeshHandle(0)
+            };
+
+            // Register material with optional per-material uniform buffer
+            let (pipeline, texture, vertex_binding, uniform) = material.get_registration_data();
+            let mat_h = r.register_material_full(
+                pipeline,
+                texture,
+                vertex_binding,
+                uniform,
+            );
+
+            (mesh_h, mat_h)
+        } else {
+            (MeshHandle(0), MaterialHandle(0))
+        };
+
+        // Create DrawableComponent with PBR values
+        let drawable = DrawableComponent::with_handles_and_material(
+            mesh_handle,
+            material_handle,
+            color,
+            metallic,
+            roughness,
+            ao,
+        );
+
+        // Spawn entity with all components
+        let entity = world.spawn((
+            TransformComponent::new(transform),
+            drawable,
+            NameComponent::new("Model"),
+        ));
+
+        Self {
+            entity,
+            mesh_handle,
+            material_handle,
+        }
     }
     /// Create a GLTF model using a raw pointer to MaterialRegistry.
     ///
@@ -181,9 +250,18 @@ impl Model {
                     .and_then(|m| m.base_color_texture)
                     .unwrap_or(0);
 
+                debug!("Model has {} materials, {} images, using texture index {}",
+                    model.materials.len(), model.images.len(), texture_index);
+                if let Some(mat) = model.materials.first() {
+                    debug!("Material info: base_color_texture={:?}, metallic_roughness={:?}, normal={:?}",
+                        mat.base_color_texture, mat.metallic_roughness_texture, mat.normal_texture);
+                }
+
                 // Extract texture from the GLTF model using the correct index
                 let texture = if texture_index < model.images.len() {
                     let image = &model.images[texture_index];
+                    debug!("Loading image {}: {}x{}, format={:?}",
+                        texture_index, image.width, image.height, image.format);
                     let pixels = &image.pixels;
 
                     match image.format {
@@ -224,9 +302,16 @@ impl Model {
             }
         };
 
+        // Get PBR values from material info
+        let (metallic, roughness) = model.materials.first()
+            .map(|m| (m.metallic_factor, m.roughness_factor))
+            .unwrap_or((0.0, 0.5));
+
+        debug!("Using PBR values: metallic={}, roughness={}", metallic, roughness);
+
         let mesh = Mesh::new_from_model(model, context.clone());
 
-        Self::new(world, vec![mesh], material, renderer, transform, None)
+        Self::new_with_pbr(world, vec![mesh], material, renderer, transform, None, metallic, roughness, 1.0)
     }
 
     /// Create a skinned GLTF model with skeletal animation support.

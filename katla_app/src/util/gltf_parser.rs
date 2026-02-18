@@ -535,7 +535,7 @@ impl ParsedAttributes {
     ) -> Self {
         let mut positions = vec![];
         let mut normals = vec![];
-        let mut tangents = vec![];
+        let tangents = vec![];
         let mut tex_coords0 = vec![];
         let mut joint_indices = vec![];
         let mut joint_weights = vec![];
