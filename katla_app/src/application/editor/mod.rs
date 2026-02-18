@@ -86,6 +86,10 @@ pub fn render_debug_ui(app: &mut Application, dt: f32) {
             EditorAction::SpawnModel(model_type, position) => {
                 spawn_model(app, model_type, position);
             }
+            EditorAction::SpawnModelAtPath { path, position } => {
+                // Load model from file path
+                spawn_model_from_path(app, path, position);
+            }
             EditorAction::DeleteEntity(entity_id) => {
                 // Cascade delete: collect all children first, then delete in reverse order
                 let mut to_delete = vec![entity_id];
@@ -473,6 +477,54 @@ pub fn spawn_model(app: &mut Application, model_type: SpawnableModel, position: 
         "Spawned {} (entity {}) at {:?}",
         model_type.name(),
         spawned_id.id(),
+        position
+    );
+}
+
+/// Spawn a model from a file path (e.g., .glb file).
+pub fn spawn_model_from_path(app: &mut Application, path: std::path::PathBuf, position: Vec3) {
+    use crate::entities::Model;
+    use katla_vulkan::MaterialRegistry;
+
+    let context = match &app.renderer {
+        Some(r) => r.context.clone(),
+        None => return,
+    };
+
+    // Load the GLTF model using the file cache
+    let model = app.gltf_cache.read(path.clone());
+
+    // Create transform for the model
+    let transform = katla_math::Transform::new_from_position(position);
+
+    // Get the material registry pointer for the model creation
+    let material_registry_ptr: *const std::cell::RefCell<MaterialRegistry> =
+        &app.renderer.as_ref().unwrap().material_registry;
+
+    // Create entity with the loaded model
+    let entity = Model::new_from_gltf_with_ptr(
+        &mut app.world,
+        model.clone(),
+        context,
+        app.renderer.as_mut(),
+        transform,
+        material_registry_ptr,
+    );
+
+    // Update name with filename
+    let name = path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("Model")
+        .to_string();
+    if let Some(name_comp) = app.world.get_component_mut::<NameComponent>(entity.entity) {
+        name_comp.name = format!("{}_{}", name, entity.entity.id());
+    }
+
+    info!(
+        "Spawned model from {:?} (entity {}) at {:?}",
+        path,
+        entity.entity.id(),
         position
     );
 }

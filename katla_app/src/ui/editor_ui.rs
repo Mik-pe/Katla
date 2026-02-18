@@ -11,6 +11,7 @@ use katla_ecs::EntityId;
 use katla_math::{Color, Rect2D, Vec2, Vec3};
 use katla_ui::{input::mouse_button, DrawList, FontId, FontSize, ForkAwesome, UiContext};
 use std::collections::HashSet;
+use std::path::PathBuf;
 
 use super::asset_browser::AssetBrowserState;
 use super::theme::Theme;
@@ -113,6 +114,11 @@ impl PreferencesTab {
 pub enum EditorAction {
     /// Spawn a new model at the given position.
     SpawnModel(SpawnableModel, Vec3),
+    /// Spawn a model from a specific file path.
+    SpawnModelAtPath {
+        path: PathBuf,
+        position: Vec3,
+    },
     /// Delete an entity.
     DeleteEntity(EntityId),
     /// Select an entity.
@@ -580,12 +586,20 @@ impl EditorUI {
                 super::asset_browser::AssetAction::DragToViewport { path, asset_type, screen_pos } => {
                     // Check if dropped in viewport area (not in panels)
                     if viewport_bounds.contains(screen_pos) {
-                        // For now, spawn at origin. TODO: Raycast to find world position
-                        let model = match asset_type {
-                            super::asset_browser::AssetType::Model => SpawnableModel::Cube, // TODO: Load actual model
-                            _ => SpawnableModel::Cube,
-                        };
-                        self.pending_actions.push(EditorAction::SpawnModel(model, Vec3::new(0.0, 0.0, 0.0)));
+                        // Determine what to spawn based on asset type
+                        match asset_type {
+                            super::asset_browser::AssetType::Model => {
+                                // Store the path for model loading (will be handled by application)
+                                self.pending_actions.push(EditorAction::SpawnModelAtPath {
+                                    path: path.clone(),
+                                    position: Vec3::new(0.0, 0.0, 0.0), // TODO: Raycast for world position
+                                });
+                            }
+                            _ => {
+                                // For other asset types, spawn a cube as placeholder
+                                self.pending_actions.push(EditorAction::SpawnModel(SpawnableModel::Cube, Vec3::new(0.0, 0.0, 0.0)));
+                            }
+                        }
                     }
                 }
                 // Other actions are handled elsewhere or not implemented yet
@@ -624,6 +638,62 @@ impl EditorUI {
         // === PREFERENCES PANEL (overlay) ===
         if self.show_preferences {
             self.build_preferences_panel(ui, screen_size);
+        }
+
+        // === DRAG PREVIEW (rendered last to appear above all panels) ===
+        if self.asset_browser.is_dragging {
+            if let Some(drag_idx) = self.asset_browser.drag_asset {
+                if let Some(asset) = self.asset_browser.assets.get(drag_idx) {
+                    let mouse_pos = ui.input.mouse_pos;
+
+                    // Preview size
+                    let preview_size = 64.0;
+                    let preview_offset = Vec2::new(preview_size * 0.5, preview_size * 0.5);
+
+                    // Draw preview at cursor position with highest z-index
+                    ui.push_z_index(300); // TOOLTIP level
+
+                    // Semi-transparent background
+                    let preview_bounds = Rect2D::from_origin_size(
+                        mouse_pos - preview_offset,
+                        Vec2::new(preview_size, preview_size),
+                    );
+                    ui.draw_rect(preview_bounds, self.theme.background.with_alpha(0.9));
+                    ui.draw_rect_border(preview_bounds, self.theme.background.with_alpha(0.9), self.theme.highlight, 2.0);
+
+                    // Draw icon
+                    let icon_char = asset.asset_type.icon();
+                    let icon_size = preview_size * 0.4;
+                    ui.draw_icon(
+                        icon_char,
+                        Vec2::new(
+                            preview_bounds.center().x() - icon_size * 0.5,
+                            preview_bounds.center().y() - icon_size * 0.5 - 8.0,
+                        ),
+                        icon_size,
+                        self.theme.highlight,
+                    );
+
+                    // Draw name (truncated)
+                    let max_chars = 12;
+                    let display_name = if asset.name.len() > max_chars {
+                        format!("{}...", &asset.name[..max_chars])
+                    } else {
+                        asset.name.clone()
+                    };
+                    ui.draw_text(
+                        &display_name,
+                        Vec2::new(
+                            preview_bounds.min.x() + 4.0,
+                            preview_bounds.min.y() + preview_size - 16.0,
+                        ),
+                        self.theme.text_primary,
+                        ui.scaled_font_size(FontSize::XSmall),
+                    );
+
+                    ui.pop_z_index();
+                }
+            }
         }
     }
 

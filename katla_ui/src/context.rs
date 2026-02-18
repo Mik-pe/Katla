@@ -12,6 +12,7 @@ use crate::icons::ForkAwesome;
 use crate::input::UiInputState;
 use crate::style::UiStyle;
 use crate::text::{FontId, FontSystem};
+use crate::FontSize;
 
 /// ID type for UI elements.
 pub type WidgetId = u64;
@@ -67,6 +68,19 @@ pub struct UiContext {
     z_index: u32,
     /// Z-index stack for nested containers.
     z_stack: Vec<u32>,
+    /// Tracked height of current dropdown content (for auto-sizing).
+    dropdown_content_height: f32,
+    /// Origin Y of current dropdown (for height tracking).
+    dropdown_origin_y: f32,
+    /// Deferred draws for dropdown items (drawn after background).
+    dropdown_deferred: Vec<DeferredDraw>,
+}
+
+/// Deferred draw command for dropdown items.
+#[derive(Clone)]
+enum DeferredDraw {
+    Rect { bounds: Rect2D, color: Color },
+    Text { text: String, pos: Vec2, color: Color, font_size: f32 },
 }
 
 /// Z-index constants for UI layers.
@@ -124,6 +138,9 @@ impl UiContext {
             popup_opened_this_frame: false,
             z_index: z_index::DEFAULT,
             z_stack: Vec::new(),
+            dropdown_content_height: 0.0,
+            dropdown_origin_y: 0.0,
+            dropdown_deferred: Vec::new(),
         }
     }
 
@@ -180,9 +197,14 @@ impl UiContext {
                 let mouse_outside = self
                     .popup_bounds
                     .map_or(true, |bounds| !bounds.contains(self.input.mouse_pos));
+                log::info!(
+                    "[DROPDOWN] Click-outside check: popup_id={:?}, mouse_pressed={}, mouse_pos=({:.1}, {:.1}), outside={}",
+                    self.popup_id, true, self.input.mouse_pos.x(), self.input.mouse_pos.y(), mouse_outside
+                );
                 if mouse_outside {
                     // Close the dropdown in storage too
                     if let Some(popup_id) = self.popup_id {
+                        log::info!("[DROPDOWN] Closing popup {:?} due to click outside", popup_id);
                         self.storage.insert(popup_id, WidgetState::DropdownOpen(false));
                     }
                     self.popup_id = None;
@@ -192,12 +214,13 @@ impl UiContext {
         }
 
         // Reset the flag AFTER the check
+        if self.popup_opened_this_frame {
+            log::info!("[DROPDOWN] Resetting popup_opened_this_frame to false");
+        }
         self.popup_opened_this_frame = false;
 
-        // Clear active_id when mouse is released (allows click-to-focus on text inputs)
-        if self.input.mouse_released[crate::input::mouse_button::LEFT] {
-            self.active_id = None;
-        }
+        // NOTE: Don't clear active_id here! Widgets need to check it in button_behavior.
+        // We'll clear it in end() if it wasn't consumed by a click.
 
         // Set initial clip to full screen
         self.clip_stack.clear();
@@ -213,9 +236,9 @@ impl UiContext {
         self.draw_list.finalize();
         self.in_frame = false;
 
-        // Clear hover if mouse was released
-        if self.active_id.is_none() {
-            // Mouse released, clear active
+        // Clear active_id when mouse is released (after widgets have had a chance to process it)
+        if self.input.mouse_released[crate::input::mouse_button::LEFT] {
+            self.active_id = None;
         }
 
         &self.draw_list
@@ -717,7 +740,19 @@ impl UiContext {
     fn button_behavior(&mut self, id: WidgetId, bounds: Rect2D) -> bool {
         let hovered = self.update_hover(id, bounds);
 
+        // DEBUG: Log button state
+        if hovered || self.active_id == Some(id) {
+            log::info!(
+                "[BUTTON] id={}, hovered={}, active_id={:?}, mouse_pressed={}, mouse_released={}, mouse_pos=({:.1}, {:.1})",
+                id, hovered, self.active_id,
+                self.input.mouse_pressed[crate::input::mouse_button::LEFT],
+                self.input.mouse_released[crate::input::mouse_button::LEFT],
+                self.input.mouse_pos.x(), self.input.mouse_pos.y()
+            );
+        }
+
         if hovered && self.input.mouse_pressed[crate::input::mouse_button::LEFT] {
+            log::info!("[BUTTON] Setting active_id to {}", id);
             self.active_id = Some(id);
         }
 
@@ -726,6 +761,7 @@ impl UiContext {
 
         // Only clear active_id if we're the active widget
         if clicked {
+            log::info!("[BUTTON] CLICK detected for id={}", id);
             self.active_id = None;
         }
 
@@ -1455,6 +1491,9 @@ impl UiContext {
         let widget_id = self.generate_id(id);
         let clicked = self.button_behavior(widget_id, bounds);
 
+        // Track height for dropdown auto-sizing
+        self.track_dropdown_item(bounds);
+
         // Determine colors based on state
         let bg_color = if self.active_id == Some(widget_id) {
             self.style.menu_active
@@ -1464,18 +1503,18 @@ impl UiContext {
             Color::TRANSPARENT
         };
 
-        // Draw background
+        // Defer background draw (will be drawn after popup background)
         if bg_color != Color::TRANSPARENT {
-            self.draw_rect(bounds, bg_color);
+            self.defer_rect(bounds, bg_color);
         }
 
-        // Draw label (top-left positioning, centered vertically)
+        // Defer text draw
         let text_size = self.measure_text(label, self.style.font_size);
         let text_pos = Vec2::new(
             bounds.min.x() + self.style.menu_padding,
             bounds.center().y() - text_size.y() * 0.5,
         );
-        self.draw_text(label, text_pos, self.style.text_color, self.style.font_size);
+        self.defer_text(label, text_pos, self.style.text_color, self.style.font_size);
 
         clicked
     }
@@ -1572,8 +1611,21 @@ impl UiContext {
             .map(|s| matches!(s, WidgetState::DropdownOpen(true)))
             .unwrap_or(false);
 
+        // DEBUG: Log dropdown state
+        log::info!(
+            "[DROPDOWN] begin_dropdown('{}'): id={}, is_open={}, bounds=({:.1},{:.1})-({:.1},{:.1}), mouse=({:.1},{:.1})",
+            id, dropdown_id, is_open,
+            bounds.min.x(), bounds.min.y(), bounds.max.x(), bounds.max.y(),
+            self.input.mouse_pos.x(), self.input.mouse_pos.y()
+        );
+
         // Draw trigger button
         let hovered = self.update_hover(dropdown_id, bounds);
+
+        log::info!(
+            "[DROPDOWN] '{}' hovered={}, z_index={}, active_id={:?}",
+            id, hovered, self.z_index, self.active_id
+        );
 
         // If hovering over this dropdown while another popup is open, switch to this one
         if hovered && self.popup_id.is_some() && self.popup_id != Some(dropdown_id) && !self.popup_opened_this_frame {
@@ -1595,6 +1647,10 @@ impl UiContext {
         // Toggle on click
         if self.button_behavior(dropdown_id, bounds) {
             let new_open = !is_open;  // Simple toggle
+            log::info!(
+                "[DROPDOWN] '{}' CLICKED! Toggling from {} -> {}",
+                id, is_open, new_open
+            );
             self.storage
                 .insert(dropdown_id, WidgetState::DropdownOpen(new_open));
             if new_open {
@@ -1654,6 +1710,10 @@ impl UiContext {
 
         // If open, prepare popup area
         if is_open {
+            log::info!(
+                "[DROPDOWN] '{}' is OPEN - drawing popup at bounds.min=({:.1}, {:.1})",
+                id, bounds.min.x(), bounds.min.y()
+            );
             // Switch to popup Z-index
             self.push_z_index(z_index::POPUP);
 
@@ -1661,25 +1721,22 @@ impl UiContext {
             let popup_origin = Vec2::new(bounds.min.x(), bounds.max.y());
             let popup_width = bounds.width().max(self.style.menu_min_width);
 
-            // Use a reasonable max height (will be clipped by content)
+            log::info!(
+                "[DROPDOWN] '{}' popup_origin=({:.1}, {:.1}), popup_width={:.1}",
+                id, popup_origin.x(), popup_origin.y(), popup_width
+            );
+
+            // Initialize content height tracking
+            self.dropdown_content_height = 0.0;
+            self.dropdown_origin_y = popup_origin.y();
+            self.dropdown_deferred.clear();
+
+            // Store popup dimensions for later (background drawn in end_dropdown)
             let popup_bounds =
-                Rect2D::from_origin_size(popup_origin, Vec2::new(popup_width, 400.0));
+                Rect2D::from_origin_size(popup_origin, Vec2::new(popup_width, 500.0));
 
-            // Draw popup background with shadow
-            let shadow_offset = Vec2::new(4.0, 4.0);
-            let shadow_bounds = Rect2D::new(
-                popup_bounds.min + shadow_offset,
-                popup_bounds.max + shadow_offset,
-            );
-            self.draw_rect(shadow_bounds, self.style.popup_shadow);
-            self.draw_rect(popup_bounds, self.style.popup_bg);
-            self.draw_rect_border(
-                popup_bounds,
-                Color::TRANSPARENT,
-                self.style.popup_border,
-                1.0,
-            );
-
+            // Don't draw background yet - we'll draw it in end_dropdown at correct size
+            // Just set up clipping and state
             self.popup_bounds = Some(popup_bounds);
             self.push_clip_absolute(popup_bounds);
             self.push_id(id);
@@ -1690,8 +1747,71 @@ impl UiContext {
         false
     }
 
+    /// Track dropdown content height (call from menu_item, etc.)
+    pub fn track_dropdown_item(&mut self, item_bounds: Rect2D) {
+        let item_bottom = item_bounds.max.y() - self.dropdown_origin_y;
+        if item_bottom > self.dropdown_content_height {
+            self.dropdown_content_height = item_bottom;
+        }
+    }
+
+    /// Defer a draw for dropdown items (drawn after background)
+    fn defer_rect(&mut self, bounds: Rect2D, color: Color) {
+        self.dropdown_deferred.push(DeferredDraw::Rect { bounds, color });
+    }
+
+    fn defer_text(&mut self, text: &str, pos: Vec2, color: Color, font_size: f32) {
+        self.dropdown_deferred.push(DeferredDraw::Text {
+            text: text.to_string(),
+            pos,
+            color,
+            font_size,
+        });
+    }
+
     /// End a dropdown menu.
     pub fn end_dropdown(&mut self) {
+        // Calculate final size
+        if let Some(bounds) = self.popup_bounds {
+            let final_height = self.dropdown_content_height + self.style.menu_padding;
+            let correct_bounds = Rect2D::from_origin_size(
+                bounds.min,
+                Vec2::new(bounds.width(), final_height),
+            );
+
+            // Draw background at the correct size FIRST
+            let shadow_offset = Vec2::new(4.0, 4.0);
+            let shadow_bounds = Rect2D::new(
+                correct_bounds.min + shadow_offset,
+                correct_bounds.max + shadow_offset,
+            );
+            self.draw_rect(shadow_bounds, self.style.popup_shadow);
+            self.draw_rect(correct_bounds, self.style.popup_bg);
+            self.draw_rect_border(
+                correct_bounds,
+                Color::TRANSPARENT,
+                self.style.popup_border,
+                1.0,
+            );
+
+            // Take deferred draws to avoid borrow issues
+            let deferred = std::mem::take(&mut self.dropdown_deferred);
+
+            // Now replay deferred item draws ON TOP of background
+            for cmd in deferred {
+                match cmd {
+                    DeferredDraw::Rect { bounds, color } => {
+                        self.draw_rect(bounds, color);
+                    }
+                    DeferredDraw::Text { text, pos, color, font_size } => {
+                        self.draw_text(&text, pos, color, font_size);
+                    }
+                }
+            }
+
+            self.popup_bounds = Some(correct_bounds);
+        }
+
         self.pop_clip();
         self.pop_id();
         self.pop_z_index();
