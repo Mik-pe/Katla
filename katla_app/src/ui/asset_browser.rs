@@ -333,7 +333,8 @@ impl AssetBrowserState {
         }
 
         self.last_scan = Some(Instant::now());
-        self.selected_index = None;
+        // Don't clear selection on rescan - only clear on navigation
+        // Preserve scroll_offset only if directory hasn't changed
         self.scroll_offset = 0.0;
     }
 
@@ -361,6 +362,9 @@ impl AssetBrowserState {
             self.nav_history_pos = self.nav_history.len() - 1;
 
             self.current_path = path.clone();
+            // Clear selection when navigating to a new directory
+            self.selected_index = None;
+            self.selected_indices.clear();
             self.scan_directory(thumbnail_texture_ids);
         }
     }
@@ -1447,7 +1451,9 @@ pub fn build_asset_browser(
     // Process click actions after iteration (to avoid borrow conflicts)
     if let Some(index) = clicked_index {
         let is_double = state.is_double_click(index);
+        // Single-click selection clears multi-select
         state.selected_index = Some(index);
+        state.selected_indices.clear();
 
         if is_double {
             if let Some(path) = should_navigate {
