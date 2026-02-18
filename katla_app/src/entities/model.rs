@@ -96,9 +96,15 @@ impl Model {
             let registry = registry.borrow();
             // Try to get "gltf_default" template
             if let Some(template) = registry.get_template("gltf_default") {
-                // Extract texture from the GLTF model
-                let texture = if !model.images.is_empty() {
-                    let image = &model.images[0];
+                // Get the correct texture index from material info
+                // Fall back to image 0 if no material info or no base color texture
+                let texture_index = model.materials.first()
+                    .and_then(|m| m.base_color_texture)
+                    .unwrap_or(0);
+
+                // Extract texture from the GLTF model using the correct index
+                let texture = if texture_index < model.images.len() {
+                    let image = &model.images[texture_index];
                     let pixels = &image.pixels;
 
                     match image.format {
@@ -169,9 +175,15 @@ impl Model {
 
             // Try to get the "gltf_default" template
             if let Some(template) = registry.borrow().get_template("gltf_default") {
-                // Extract texture from the GLTF model
-                let texture = if !model.images.is_empty() {
-                    let image = &model.images[0];
+                // Get the correct texture index from material info
+                // Fall back to image 0 if no material info or no base color texture
+                let texture_index = model.materials.first()
+                    .and_then(|m| m.base_color_texture)
+                    .unwrap_or(0);
+
+                // Extract texture from the GLTF model using the correct index
+                let texture = if texture_index < model.images.len() {
+                    let image = &model.images[texture_index];
                     let pixels = &image.pixels;
 
                     match image.format {

@@ -33,10 +33,10 @@ struct VertexOutput {
     @location(0) ndc_pos: vec2f,
 }
 
-// Sky colors
-const ZENITH_COLOR = vec3f(0.2, 0.4, 0.8);
-const HORIZON_COLOR = vec3f(0.6, 0.75, 0.9);
-const GROUND_COLOR = vec3f(0.3, 0.35, 0.4);
+// Sky colors - HDR values (can go above 1.0)
+const ZENITH_COLOR = vec3f(0.3, 0.55, 1.2);      // Deep blue, slightly brighter
+const HORIZON_COLOR = vec3f(0.9, 0.95, 1.1);     // Bright horizon
+const GROUND_COLOR = vec3f(0.4, 0.45, 0.5);      // Ground fog
 
 @vertex
 fn vs_main(@builtin(vertex_index) vertex_index: u32) -> VertexOutput {
@@ -83,11 +83,11 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
         sky_color = mix(HORIZON_COLOR, GROUND_COLOR, t);
     }
 
-    // Add sun glow in the direction of the light
+    // Add sun glow in the direction of the light (HDR bright)
     let sun_dir = normalize(frame_data.light_direction.xyz);
     let sun_dot = max(0.0, dot(world_dir, -sun_dir));
-    let sun_glow = pow(sun_dot, 64.0) * 0.5;
-    let sun_halo = pow(sun_dot, 8.0) * 0.15;
+    let sun_glow = pow(sun_dot, 256.0) * 8.0;   // Bright sun disk
+    let sun_halo = pow(sun_dot, 8.0) * 0.5;     // Soft halo
     sky_color = sky_color + frame_data.light_color.rgb * (sun_glow + sun_halo) * frame_data.light_intensity.x;
 
     return vec4f(sky_color, 1.0);

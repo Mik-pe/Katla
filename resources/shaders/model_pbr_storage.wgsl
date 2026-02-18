@@ -182,14 +182,9 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
     // Ambient (simple constant ambient term)
     let ambient = vec3f(0.03) * albedo * ao;
 
-    // Final color
-    var color = ambient + Lo;
-
-    // HDR tone mapping (Reinhard)
-    color = color / (color + vec3f(1.0));
-
-    // Gamma correction
-    color = pow(color, vec3f(1.0 / 2.2));
+    // Final color - HDR LINEAR OUTPUT (no tonemapping/gamma here)
+    // Tonemapping and gamma are applied by the UI shader when displaying viewport
+    let color = ambient + Lo;
 
     return vec4f(color, alpha);
 }
