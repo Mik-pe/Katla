@@ -197,10 +197,6 @@ impl UiContext {
                 let mouse_outside = self
                     .popup_bounds
                     .map_or(true, |bounds| !bounds.contains(self.input.mouse_pos));
-                log::info!(
-                    "[DROPDOWN] Click-outside check: popup_id={:?}, mouse_pressed={}, mouse_pos=({:.1}, {:.1}), outside={}",
-                    self.popup_id, true, self.input.mouse_pos.x(), self.input.mouse_pos.y(), mouse_outside
-                );
                 if mouse_outside {
                     // Close the dropdown in storage too
                     if let Some(popup_id) = self.popup_id {
@@ -735,17 +731,6 @@ impl UiContext {
     /// Handle button behavior (returns true if clicked).
     fn button_behavior(&mut self, id: WidgetId, bounds: Rect2D) -> bool {
         let hovered = self.update_hover(id, bounds);
-
-        // DEBUG: Log button state
-        if hovered || self.active_id == Some(id) {
-            log::info!(
-                "[BUTTON] id={}, hovered={}, active_id={:?}, mouse_pressed={}, mouse_released={}, mouse_pos=({:.1}, {:.1})",
-                id, hovered, self.active_id,
-                self.input.mouse_pressed[crate::input::mouse_button::LEFT],
-                self.input.mouse_released[crate::input::mouse_button::LEFT],
-                self.input.mouse_pos.x(), self.input.mouse_pos.y()
-            );
-        }
 
         if hovered && self.input.mouse_pressed[crate::input::mouse_button::LEFT] {
             self.active_id = Some(id);
@@ -1605,21 +1590,8 @@ impl UiContext {
             .map(|s| matches!(s, WidgetState::DropdownOpen(true)))
             .unwrap_or(false);
 
-        // DEBUG: Log dropdown state
-        log::info!(
-            "[DROPDOWN] begin_dropdown('{}'): id={}, is_open={}, bounds=({:.1},{:.1})-({:.1},{:.1}), mouse=({:.1},{:.1})",
-            id, dropdown_id, is_open,
-            bounds.min.x(), bounds.min.y(), bounds.max.x(), bounds.max.y(),
-            self.input.mouse_pos.x(), self.input.mouse_pos.y()
-        );
-
         // Draw trigger button
         let hovered = self.update_hover(dropdown_id, bounds);
-
-        log::info!(
-            "[DROPDOWN] '{}' hovered={}, z_index={}, active_id={:?}",
-            id, hovered, self.z_index, self.active_id
-        );
 
         // If hovering over this dropdown while another popup is open, switch to this one
         if hovered && self.popup_id.is_some() && self.popup_id != Some(dropdown_id) && !self.popup_opened_this_frame {
@@ -1641,10 +1613,6 @@ impl UiContext {
         // Toggle on click
         if self.button_behavior(dropdown_id, bounds) {
             let new_open = !is_open;  // Simple toggle
-            log::info!(
-                "[DROPDOWN] '{}' CLICKED! Toggling from {} -> {}",
-                id, is_open, new_open
-            );
             self.storage
                 .insert(dropdown_id, WidgetState::DropdownOpen(new_open));
             if new_open {
@@ -1704,21 +1672,12 @@ impl UiContext {
 
         // If open, prepare popup area
         if is_open {
-            log::info!(
-                "[DROPDOWN] '{}' is OPEN - drawing popup at bounds.min=({:.1}, {:.1})",
-                id, bounds.min.x(), bounds.min.y()
-            );
             // Switch to popup Z-index
             self.push_z_index(z_index::POPUP);
 
             // Store popup origin for later
             let popup_origin = Vec2::new(bounds.min.x(), bounds.max.y());
             let popup_width = bounds.width().max(self.style.menu_min_width);
-
-            log::info!(
-                "[DROPDOWN] '{}' popup_origin=({:.1}, {:.1}), popup_width={:.1}",
-                id, popup_origin.x(), popup_origin.y(), popup_width
-            );
 
             // Initialize content height tracking
             self.dropdown_content_height = 0.0;

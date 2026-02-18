@@ -128,11 +128,6 @@ impl UiInputState {
         let was_down = self.mouse_down[button];
         self.mouse_down[button] = down;
 
-        log::info!(
-            "[INPUT] set_mouse_button({}, {}): was_down={}, mouse_pos=({:.1}, {:.1})",
-            button, down, was_down, self.mouse_pos.x(), self.mouse_pos.y()
-        );
-
         if down && !was_down {
             self.mouse_pressed[button] = true;
         } else if !down && was_down {
@@ -160,10 +155,6 @@ impl UiInputState {
     ///
     /// This should be called after `end()` to prepare for the next frame.
     pub fn clear_frame_state(&mut self) {
-        log::info!(
-            "[INPUT] clear_frame_state: mouse_pressed={:?}, mouse_released={:?}, mouse_down={:?}",
-            self.mouse_pressed, self.mouse_released, self.mouse_down
-        );
         self.mouse_delta = Vec2::new(0.0, 0.0);
         self.mouse_pressed = [false; 5];
         self.mouse_released = [false; 5];
