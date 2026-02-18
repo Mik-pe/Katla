@@ -72,6 +72,8 @@ pub struct UiInputState {
     pub keys_pressed: Vec<KeyCode>,
     /// Keys that were released this frame.
     pub keys_released: Vec<KeyCode>,
+    /// Keys currently being held down.
+    pub held_keys: std::collections::HashSet<KeyCode>,
     /// Whether any key is currently held down.
     pub any_key_down: bool,
 
@@ -100,6 +102,7 @@ impl UiInputState {
             characters: Vec::new(),
             keys_pressed: Vec::new(),
             keys_released: Vec::new(),
+            held_keys: std::collections::HashSet::new(),
             any_key_down: false,
             focused_id: None,
             want_capture_mouse: false,
@@ -143,12 +146,14 @@ impl UiInputState {
     /// Add a key press event.
     pub fn add_key_press(&mut self, key: KeyCode) {
         self.keys_pressed.push(key);
+        self.held_keys.insert(key);
         self.any_key_down = true;
     }
 
     /// Add a key release event.
     pub fn add_key_release(&mut self, key: KeyCode) {
         self.keys_released.push(key);
+        self.held_keys.remove(&key);
     }
 
     /// Clear per-frame state.
@@ -203,6 +208,12 @@ impl UiInputState {
     #[inline]
     pub fn key_released(&self, key: KeyCode) -> bool {
         self.keys_released.contains(&key)
+    }
+
+    /// Check if a key is currently being held down.
+    #[inline]
+    pub fn is_key_down(&self, key: KeyCode) -> bool {
+        self.held_keys.contains(&key)
     }
 
     /// Check if mouse is hovering over a rectangle.

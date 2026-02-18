@@ -1104,9 +1104,35 @@ pub fn build_asset_browser(
             }
         }
 
-        // Draw selection border if selected
+        // Draw selection border if selected (just the border, don't fill - icon already drawn)
         if is_selected {
-            ui.draw_rect_border(item_bounds, theme.selection, theme.highlight, 2.0);
+            let border_width = 2.0;
+            // Top
+            ui.draw_rect(
+                Rect2D::from_origin_size(item_bounds.min, Vec2::new(item_bounds.width(), border_width)),
+                theme.highlight,
+            );
+            // Bottom
+            ui.draw_rect(
+                Rect2D::from_origin_size(
+                    Vec2::new(item_bounds.min.x(), item_bounds.max.y() - border_width),
+                    Vec2::new(item_bounds.width(), border_width),
+                ),
+                theme.highlight,
+            );
+            // Left
+            ui.draw_rect(
+                Rect2D::from_origin_size(item_bounds.min, Vec2::new(border_width, item_bounds.height())),
+                theme.highlight,
+            );
+            // Right
+            ui.draw_rect(
+                Rect2D::from_origin_size(
+                    Vec2::new(item_bounds.max.x() - border_width, item_bounds.min.y()),
+                    Vec2::new(border_width, item_bounds.height()),
+                ),
+                theme.highlight,
+            );
         }
 
         // Draw name below icon (truncated)
@@ -1455,9 +1481,39 @@ pub fn build_asset_browser(
     // Process click actions after iteration (to avoid borrow conflicts)
     if let Some(index) = clicked_index {
         let is_double = state.is_double_click(index);
-        // Single-click selection clears multi-select
-        state.selected_index = Some(index);
-        state.selected_indices.clear();
+
+        // Check for modifier keys (Ctrl for toggle, Shift for range)
+        let ctrl_held = ui.input.is_key_down(katla_ui::input::KeyCode::Control);
+        let shift_held = ui.input.is_key_down(katla_ui::input::KeyCode::Shift);
+
+        if ctrl_held {
+            // Ctrl+Click: Toggle selection
+            if state.selected_indices.contains(&index) || state.selected_index == Some(index) {
+                // Deselect
+                state.selected_indices.remove(&index);
+                if state.selected_index == Some(index) {
+                    state.selected_index = state.selected_indices.iter().next().copied();
+                }
+            } else {
+                // Add to selection
+                state.selected_indices.insert(index);
+                state.selected_index = Some(index);
+            }
+        } else if shift_held && state.selected_index.is_some() {
+            // Shift+Click: Range selection from last selected to this
+            let start = state.selected_index.unwrap();
+            let end = index;
+            state.selected_indices.clear();
+            for i in start.min(end)..=start.max(end) {
+                if i < state.assets.len() {
+                    state.selected_indices.insert(i);
+                }
+            }
+        } else {
+            // Normal click: Single selection
+            state.selected_index = Some(index);
+            state.selected_indices.clear();
+        }
 
         if is_double {
             if let Some(path) = should_navigate {
