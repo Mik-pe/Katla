@@ -268,6 +268,64 @@ impl Texture {
             }
         }
     }
+
+    /// Create a default albedo texture (white 1x1).
+    /// Used when a material doesn't have an albedo texture.
+    pub fn create_default_albedo(context: Rc<VulkanContext>) -> Self {
+        // White pixel: RGBA (255, 255, 255, 255)
+        let pixel_data: [u8; 4] = [255, 255, 255, 255];
+        Self::create_image(
+            context,
+            1,
+            1,
+            ImageFormat::R8G8B8A8Srgb,
+            &pixel_data,
+        )
+    }
+
+    /// Create a default normal map (flat normal 1x1).
+    /// In tangent space, a flat surface normal is (0, 0, 1).
+    /// Normalized and mapped to [0,255]: (128, 128, 255, 255)
+    pub fn create_default_normal(context: Rc<VulkanContext>) -> Self {
+        // Flat normal: RGB (128, 128, 255) = tangent-space Z-up normal
+        let pixel_data: [u8; 4] = [128, 128, 255, 255];
+        Self::create_image(
+            context,
+            1,
+            1,
+            ImageFormat::R8G8B8A8Srgb,
+            &pixel_data,
+        )
+    }
+
+    /// Create a default metallic/roughness texture.
+    /// GLTF packed format: G = roughness, B = metallic
+    /// Default: roughness = 0.5 (128), metallic = 0.0 (0)
+    pub fn create_default_metallic_roughness(context: Rc<VulkanContext>) -> Self {
+        // R = unused (0), G = roughness 0.5 (128), B = metallic 0 (0), A = unused (255)
+        let pixel_data: [u8; 4] = [0, 128, 0, 255];
+        Self::create_image(
+            context,
+            1,
+            1,
+            ImageFormat::R8G8B8A8Srgb,
+            &pixel_data,
+        )
+    }
+
+    /// Create a default occlusion texture (white 1x1).
+    /// White = full visibility (no occlusion).
+    pub fn create_default_occlusion(context: Rc<VulkanContext>) -> Self {
+        // White pixel: full visibility
+        let pixel_data: [u8; 4] = [255, 255, 255, 255];
+        Self::create_image(
+            context,
+            1,
+            1,
+            ImageFormat::R8G8B8A8Srgb,
+            &pixel_data,
+        )
+    }
 }
 
 #[cfg(test)]

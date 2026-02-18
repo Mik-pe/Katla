@@ -7,6 +7,7 @@ pub enum ImageFormat {
     D24UnormS8Uint,
     D16Unorm,
     R32Sfloat,
+    R16G16B16A16Sfloat,
 }
 
 impl From<ImageFormat> for ash::vk::Format {
@@ -19,6 +20,7 @@ impl From<ImageFormat> for ash::vk::Format {
             ImageFormat::D24UnormS8Uint => ash::vk::Format::D24_UNORM_S8_UINT,
             ImageFormat::D16Unorm => ash::vk::Format::D16_UNORM,
             ImageFormat::R32Sfloat => ash::vk::Format::R32_SFLOAT,
+            ImageFormat::R16G16B16A16Sfloat => ash::vk::Format::R16G16B16A16_SFLOAT,
         }
     }
 }

@@ -257,6 +257,50 @@ impl ApplicationHandler for Application {
                 .torus()
                 .build(&mut self.world, &mut renderer);
 
+            // Load Avocado model for PBR testing
+            // Avocado.glb is a small model (~0.1 units), scale up 20x for visibility
+            let avocado_path = self.resources.model_path("Avocado.glb");
+            let avocado_transform = Transform::new_from_position(Vec3::new(-15.0, 5.0, 15.0))
+                .with_scale(Vec3::new(20.0, 20.0, 20.0));
+            let avocado_model = self.gltf_cache.read(avocado_path);
+            let _avocado = Model::new_from_gltf_with_ptr(
+                &mut self.world,
+                avocado_model.clone(),
+                renderer.context.clone(),
+                Some(&mut renderer),
+                avocado_transform,
+                material_registry_ptr,
+            );
+            if let Some(name_comp) = self.world.get_component_mut::<NameComponent>(_avocado.entity) {
+                name_comp.name = "Avocado (PBR Test)".to_string();
+            }
+            info!(
+                "Avocado model loaded for PBR testing (entity {})",
+                _avocado.entity.id()
+            );
+
+            // Load DamagedHelmet for PBR testing - classic PBR showcase model
+            // Position it next to the avocado for comparison
+            let helmet_path = self.resources.model_path("DamagedHelmet.glb");
+            let helmet_transform = Transform::new_from_position(Vec3::new(-15.0, 8.0, 20.0))
+                .with_scale(Vec3::new(3.0, 3.0, 3.0));
+            let helmet_model = self.gltf_cache.read(helmet_path);
+            let _helmet = Model::new_from_gltf_with_ptr(
+                &mut self.world,
+                helmet_model.clone(),
+                renderer.context.clone(),
+                Some(&mut renderer),
+                helmet_transform,
+                material_registry_ptr,
+            );
+            if let Some(name_comp) = self.world.get_component_mut::<NameComponent>(_helmet.entity) {
+                name_comp.name = "DamagedHelmet (PBR Test)".to_string();
+            }
+            info!(
+                "DamagedHelmet model loaded for PBR testing (entity {})",
+                _helmet.entity.id()
+            );
+
             // Setup parent-child relationships
             use crate::components::{Children, NameComponent, Parent};
 

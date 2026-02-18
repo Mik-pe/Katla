@@ -161,7 +161,7 @@ pub struct ObjectUniforms {
     pub base_color: [f32; 4],
 
     /// PBR material parameters.
-    /// x = metallic, y = roughness, z = ambient occlusion, w = padding
+    /// x = metallic, y = roughness, z = ambient occlusion, w = normal_scale
     pub material_params: [f32; 4],
 }
 
@@ -343,6 +343,30 @@ impl StorageUniformManager {
         roughness: f32,
         ao: f32,
     ) {
+        // Default normal_scale to 1.0
+        self.update_object_with_material_full(index, model, color, metallic, roughness, ao, 1.0);
+    }
+
+    /// Update object uniforms with full PBR material parameters including normal scale.
+    ///
+    /// # Arguments
+    /// * `index` - Object index (0-255)
+    /// * `model` - Model matrix (object-to-world)
+    /// * `color` - Base color tint (RGBA)
+    /// * `metallic` - Metallic factor (0.0 = dielectric, 1.0 = metal)
+    /// * `roughness` - Roughness factor (0.0 = smooth, 1.0 = rough)
+    /// * `ao` - Ambient occlusion factor (0.0 = full occlusion, 1.0 = none)
+    /// * `normal_scale` - Normal map intensity multiplier (1.0 = default)
+    pub fn update_object_with_material_full(
+        &mut self,
+        index: usize,
+        model: &[[f32; 4]; 4],
+        color: &[f32; 4],
+        metallic: f32,
+        roughness: f32,
+        ao: f32,
+        normal_scale: f32,
+    ) {
         assert!(
             index < StorageUniformLayout::MAX_OBJECTS,
             "Object index out of bounds"
@@ -358,7 +382,7 @@ impl StorageUniformManager {
             *object_ptr = ObjectUniforms {
                 model: *model,
                 base_color: *color,
-                material_params: [metallic, roughness, ao, 0.0],
+                material_params: [metallic, roughness, ao, normal_scale],
             };
         }
     }

@@ -42,7 +42,7 @@ impl GridMaterial {
             .with_vertex_binding(vertex_binding.clone())
             .with_wgsl_shader(Path::new("resources/shaders/grid.wgsl"))
             .with_grid_rendering()
-            .with_color_format(ImageFormat::B8G8R8A8Srgb)
+            .with_color_format(ImageFormat::R16G16B16A16Sfloat)
             .with_depth_format(ImageFormat::D32SfloatS8Uint)
             .build_with_storage()
             .expect("Failed to create grid pipeline");

@@ -90,7 +90,7 @@ pub fn create_checkerboard_material(
         .with_depth_write(true)
         .with_backface_culling(true)
         // Dynamic rendering: specify attachment formats
-        .with_color_format(ImageFormat::B8G8R8A8Srgb)
+        .with_color_format(ImageFormat::R16G16B16A16Sfloat)
         .with_depth_format(ImageFormat::D32SfloatS8Uint)
         .build_with_storage()
         .expect("Failed to create material pipeline");
@@ -149,7 +149,7 @@ pub fn create_colored_checkerboard_material(
         .with_depth_write(true)
         .with_backface_culling(true)
         // Dynamic rendering: specify attachment formats
-        .with_color_format(ImageFormat::B8G8R8A8Srgb)
+        .with_color_format(ImageFormat::R16G16B16A16Sfloat)
         .with_depth_format(ImageFormat::D32SfloatS8Uint)
         .build_with_storage()
         .expect("Failed to create colored material pipeline");

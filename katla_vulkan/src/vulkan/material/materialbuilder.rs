@@ -140,8 +140,9 @@ impl MaterialBuilder {
         builder.has_color = descriptor.has_color_uniform();
 
         // Set default formats for dynamic rendering (Vulkan 1.3)
-        // These match the swapchain and depth texture formats
-        builder.color_format = Some(ImageFormat::B8G8R8A8Srgb);
+        // Color format matches the HDR viewport render target (R16G16B16A16_SFLOAT)
+        // Depth format matches the depth buffer (D32_SFLOAT_S8_UINT)
+        builder.color_format = Some(ImageFormat::R16G16B16A16Sfloat);
         builder.depth_format = Some(ImageFormat::D32SfloatS8Uint);
 
         Ok(builder)

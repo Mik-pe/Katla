@@ -137,6 +137,147 @@ impl Drop for TextureDescriptorSet {
     }
 }
 
+/// PBR texture set containing all texture maps for a PBR material.
+///
+/// Contains albedo, normal, metallic/roughness, and occlusion textures.
+/// Each texture has an associated sampler.
+pub struct PbrTextureSet {
+    pub albedo: ImageInfo,
+    pub normal: ImageInfo,
+    pub metallic_roughness: ImageInfo,
+    pub occlusion: ImageInfo,
+}
+
+impl PbrTextureSet {
+    /// Create a new PBR texture set from ImageInfo structs.
+    pub fn new(
+        albedo: ImageInfo,
+        normal: ImageInfo,
+        metallic_roughness: ImageInfo,
+        occlusion: ImageInfo,
+    ) -> Self {
+        Self {
+            albedo,
+            normal,
+            metallic_roughness,
+            occlusion,
+        }
+    }
+
+    /// Create from raw Vulkan handles using a shared sampler.
+    pub fn from_handles_shared_sampler(
+        albedo_view: vk::ImageView,
+        normal_view: vk::ImageView,
+        mr_view: vk::ImageView,
+        occlusion_view: vk::ImageView,
+        sampler: vk::Sampler,
+    ) -> Self {
+        Self {
+            albedo: ImageInfo::from_raw(albedo_view, sampler),
+            normal: ImageInfo::from_raw(normal_view, sampler),
+            metallic_roughness: ImageInfo::from_raw(mr_view, sampler),
+            occlusion: ImageInfo::from_raw(occlusion_view, sampler),
+        }
+    }
+}
+
+/// PBR texture descriptor set for full PBR materials (set 1).
+///
+/// Contains bindings for 4 textures + 4 samplers:
+/// - Binding 0-1: Albedo texture + sampler
+/// - Binding 2-3: Normal map + sampler
+/// - Binding 4-5: Metallic/Roughness + sampler
+/// - Binding 6-7: Occlusion + sampler
+pub struct PbrTextureDescriptorSet {
+    /// Descriptor set containing texture bindings.
+    descriptor_set: vk::DescriptorSet,
+    /// Descriptor pool (owned, for cleanup).
+    descriptor_pool: vk::DescriptorPool,
+    /// Device for cleanup.
+    device: ash::Device,
+}
+
+impl PbrTextureDescriptorSet {
+    /// Get the descriptor set as a wrapper type.
+    pub fn set(&self) -> crate::sync::VkDescriptorSet {
+        crate::sync::VkDescriptorSet::new(self.descriptor_set)
+    }
+
+    /// Get the raw Vulkan descriptor set handle (for internal use).
+    pub fn vk_set(&self) -> vk::DescriptorSet {
+        self.descriptor_set
+    }
+
+    /// Create a new PBR texture descriptor set.
+    ///
+    /// # Arguments
+    /// * `context` - Vulkan context
+    /// * `desc_layout` - Descriptor set layout for texture set (set 1)
+    /// * `textures` - PBR texture set containing all texture maps
+    ///
+    /// # Returns
+    /// A new PbrTextureDescriptorSet with all texture bindings
+    pub fn new(
+        context: &Rc<VulkanContext>,
+        desc_layout: vk::DescriptorSetLayout,
+        textures: &PbrTextureSet,
+    ) -> Result<Self, vk::Result> {
+        // Create descriptor pool for 4 textures + 4 samplers
+        let pool_sizes = [
+            vk::DescriptorPoolSize::default()
+                .ty(vk::DescriptorType::SAMPLED_IMAGE)
+                .descriptor_count(4),
+            vk::DescriptorPoolSize::default()
+                .ty(vk::DescriptorType::SAMPLER)
+                .descriptor_count(4),
+        ];
+
+        let pool_info = vk::DescriptorPoolCreateInfo::default()
+            .pool_sizes(&pool_sizes)
+            .max_sets(1);
+
+        let descriptor_pool = unsafe { context.device.create_descriptor_pool(&pool_info, None)? };
+
+        // Allocate descriptor set
+        let layouts = [desc_layout];
+        let alloc_info = vk::DescriptorSetAllocateInfo::default()
+            .descriptor_pool(descriptor_pool)
+            .set_layouts(&layouts);
+
+        let descriptor_sets = unsafe { context.device.allocate_descriptor_sets(&alloc_info)? };
+        let descriptor_set = descriptor_sets[0];
+
+        // Write texture descriptors using separate bindings for each texture pair
+        // Binding layout: 0=albedo_img, 1=albedo_samp, 2=normal_img, 3=normal_samp, etc.
+        let (albedo_img, albedo_samp) = textures.albedo.update_once_separate(descriptor_set, 0, 1);
+        let (normal_img, normal_samp) = textures.normal.update_once_separate(descriptor_set, 2, 3);
+        let (mr_img, mr_samp) = textures.metallic_roughness.update_once_separate(descriptor_set, 4, 5);
+        let (ao_img, ao_samp) = textures.occlusion.update_once_separate(descriptor_set, 6, 7);
+
+        unsafe {
+            context.device.update_descriptor_sets(
+                &[albedo_img, albedo_samp, normal_img, normal_samp, mr_img, mr_samp, ao_img, ao_samp],
+                &[],
+            );
+        }
+
+        Ok(Self {
+            descriptor_set,
+            descriptor_pool,
+            device: context.device.clone(),
+        })
+    }
+}
+
+impl Drop for PbrTextureDescriptorSet {
+    fn drop(&mut self) {
+        unsafe {
+            self.device
+                .destroy_descriptor_pool(self.descriptor_pool, None);
+        }
+    }
+}
+
 pub struct UniformBuffer {
     allocation: Allocation,
     buffer: vk::Buffer,

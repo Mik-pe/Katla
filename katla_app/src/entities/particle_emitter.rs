@@ -115,7 +115,7 @@ pub fn create_particle_emitter(
         .with_additive_blending()
         .with_depth_test(true, false, CompareOp::Less) // depth test but no write
         .with_cull_mode(CullMode::None, FrontFace::CounterClockwise)
-        .with_rendering_formats(Some(ImageFormat::B8G8R8A8Srgb), Some(ImageFormat::D32SfloatS8Uint))
+        .with_rendering_formats(Some(ImageFormat::R16G16B16A16Sfloat), Some(ImageFormat::D32SfloatS8Uint))
         .build(VkRenderPass::default()) // Dynamic rendering
         .expect("Failed to create render pipeline");
 

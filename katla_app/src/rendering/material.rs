@@ -80,7 +80,7 @@ impl Material {
             .with_depth_test(true)
             .with_depth_write(true)
             // Dynamic rendering: specify attachment formats
-            .with_color_format(ImageFormat::B8G8R8A8Srgb)
+            .with_color_format(ImageFormat::R16G16B16A16Sfloat)
             .with_depth_format(ImageFormat::D32SfloatS8Uint);
 
         if let Some(ref tex) = texture {

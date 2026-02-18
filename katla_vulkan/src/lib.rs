@@ -868,7 +868,7 @@ impl VulkanRenderer {
                     ResourceKind::ExternalImage {
                         vk_image: first_target.color_image,
                         image_view: first_target.color_image_view,
-                        format: vk::Format::B8G8R8A8_SRGB,
+                        format: vk::Format::R16G16B16A16_SFLOAT,
                         extent: first_target.extent,
                     },
                 );
@@ -3034,13 +3034,13 @@ impl ViewportRenderTarget {
                 depth: 1,
             };
 
-            // Create color image (BGRA8 to match swapchain and pipeline formats)
+            // Create color image (HDR format for PBR rendering with tonemapping)
             let color_create_info = vk::ImageCreateInfo::default()
                 .image_type(vk::ImageType::TYPE_2D)
                 .extent(extent3d)
                 .mip_levels(1)
                 .array_layers(1)
-                .format(vk::Format::B8G8R8A8_SRGB)
+                .format(vk::Format::R16G16B16A16_SFLOAT)
                 .tiling(vk::ImageTiling::OPTIMAL)
                 .initial_layout(vk::ImageLayout::UNDEFINED)
                 .usage(
@@ -3058,7 +3058,7 @@ impl ViewportRenderTarget {
             let color_view_create_info = vk::ImageViewCreateInfo::default()
                 .image(color_image)
                 .view_type(vk::ImageViewType::TYPE_2D)
-                .format(vk::Format::B8G8R8A8_SRGB)
+                .format(vk::Format::R16G16B16A16_SFLOAT)
                 .components(vk::ComponentMapping::default())
                 .subresource_range(vk::ImageSubresourceRange {
                     aspect_mask: vk::ImageAspectFlags::COLOR,

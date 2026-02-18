@@ -7,6 +7,7 @@ use katla_math::{Sphere, Vec3};
 use log::{debug, info, warn};
 
 use crate::rendering::{VertexNormal, VertexPBR, VertexPosition, VertexSkinned};
+use crate::util::gltf_material::GltfMaterialInfo;
 use crate::util::gltf_parser::{build_skinned_vertex_data, build_vertex_data, generate_smooth_normals, AttributeParser, ParsedAttributes};
 
 #[derive(Clone)]
@@ -14,6 +15,8 @@ pub struct GLTFModel {
     pub document: Document,
     pub buffers: Vec<BufferData>,
     pub images: Vec<ImageData>,
+    /// Parsed material info for each material in the GLTF file.
+    pub materials: Vec<GltfMaterialInfo>,
     pub vertex_data: Vec<VertexPBR>,
     pub skinned_vertex_data: Vec<VertexSkinned>,
     pub has_skinning: bool,
@@ -197,10 +200,22 @@ impl GLTFModel {
     {
         let (document, buffers, images) = gltf::import(path)?;
 
+        // Parse materials from the GLTF document
+        let materials: Vec<GltfMaterialInfo> = document
+            .materials()
+            .map(|m| GltfMaterialInfo::from_gltf(&m))
+            .collect();
+
+        debug!("Parsed {} materials from GLTF", materials.len());
+        for (i, mat) in materials.iter().enumerate() {
+            debug!("  Material {}: {}", i, mat.summary());
+        }
+
         let mut model = Self {
             document,
             buffers,
             images,
+            materials,
             vertex_data: vec![],
             skinned_vertex_data: vec![],
             has_skinning: false,

@@ -38,7 +38,7 @@ impl GizmoMaterial {
             .with_vertex_binding(vertex_binding)
             .with_wgsl_shader(Path::new("resources/shaders/gizmo.wgsl"))
             .with_sky_rendering() // Always visible on top
-            .with_color_format(ImageFormat::B8G8R8A8Srgb)
+            .with_color_format(ImageFormat::R16G16B16A16Sfloat)
             .with_depth_format(ImageFormat::D32SfloatS8Uint)
             .build_with_storage()
             .expect("Failed to create gizmo pipeline");
