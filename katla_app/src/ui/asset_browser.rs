@@ -1308,50 +1308,69 @@ pub fn build_asset_browser(
     // Handle drag end - check what we're dropping on
     if state.drag_asset.is_some() && ui.input.mouse_released[katla_ui::input::mouse_button::LEFT] {
         let drag_idx = state.drag_asset.unwrap();
-        let drag_asset = state.assets.get(drag_idx).cloned();
         let mouse_pos = ui.input.mouse_pos;
         let mouse_in_browser = bounds.contains(mouse_pos);
 
-        if let Some(dragged_asset) = drag_asset {
-            if state.is_dragging {
-                // Check if dropped on a folder
-                let mut dropped_on_folder: Option<PathBuf> = None;
+        if state.is_dragging {
+            // Collect all assets to drag (single or multi-select)
+            let mut assets_to_drag: Vec<(usize, PathBuf, AssetType)> = Vec::new();
 
-                if mouse_in_browser {
-                    for (i, asset) in state.assets.iter().enumerate() {
-                        if i == drag_idx {
-                            continue; // Can't drop on self
-                        }
-
-                        // Calculate item bounds
-                        let col = i % col_count;
-                        let row = i / col_count;
-                        let item_x = bounds.min.x() + item_padding + col as f32 * (item_size + item_padding);
-                        let item_y = content_top + row as f32 * row_height - state.scroll_offset;
-                        let item_bounds = Rect2D::from_origin_size(
-                            Vec2::new(item_x, item_y),
-                            Vec2::new(item_size, item_size),
-                        );
-
-                        if item_bounds.contains(mouse_pos) && asset.asset_type == AssetType::Folder {
-                            dropped_on_folder = Some(asset.path.clone());
-                            break;
-                        }
+            if !state.selected_indices.is_empty() && state.selected_indices.contains(&drag_idx) {
+                // Drag all selected items
+                for &idx in &state.selected_indices {
+                    if let Some(asset) = state.assets.get(idx) {
+                        assets_to_drag.push((idx, asset.path.clone(), asset.asset_type));
                     }
                 }
+            } else {
+                // Drag only the clicked item
+                if let Some(asset) = state.assets.get(drag_idx) {
+                    assets_to_drag.push((drag_idx, asset.path.clone(), asset.asset_type));
+                }
+            }
 
-                if let Some(folder_path) = dropped_on_folder {
-                    // Drop on folder - move asset
+            // Check if dropped on a folder
+            let mut dropped_on_folder: Option<PathBuf> = None;
+
+            if mouse_in_browser {
+                for (i, asset) in state.assets.iter().enumerate() {
+                    // Skip if this asset is being dragged
+                    if assets_to_drag.iter().any(|(idx, _, _)| *idx == i) {
+                        continue;
+                    }
+
+                    // Calculate item bounds
+                    let col = i % col_count;
+                    let row = i / col_count;
+                    let item_x = bounds.min.x() + item_padding + col as f32 * (item_size + item_padding);
+                    let item_y = content_top + row as f32 * row_height - state.scroll_offset;
+                    let item_bounds = Rect2D::from_origin_size(
+                        Vec2::new(item_x, item_y),
+                        Vec2::new(item_size, item_size),
+                    );
+
+                    if item_bounds.contains(mouse_pos) && asset.asset_type == AssetType::Folder {
+                        dropped_on_folder = Some(asset.path.clone());
+                        break;
+                    }
+                }
+            }
+
+            if let Some(folder_path) = dropped_on_folder {
+                // Drop on folder - move all dragged assets
+                for (_, asset_path, _) in &assets_to_drag {
                     state.pending_actions.push(AssetAction::MoveToFolder {
-                        asset_path: dragged_asset.path.clone(),
-                        folder_path,
+                        asset_path: asset_path.clone(),
+                        folder_path: folder_path.clone(),
                     });
-                } else if !mouse_in_browser {
-                    // Drop outside browser - spawn in viewport
-                    if matches!(dragged_asset.asset_type, AssetType::Model | AssetType::Image) {
+                }
+            } else if !mouse_in_browser {
+                // Drop outside browser - spawn all models in viewport
+                for (_, asset_path, asset_type) in &assets_to_drag {
+                    if matches!(asset_type, AssetType::Model | AssetType::Image) {
                         state.pending_actions.push(AssetAction::DragToViewport {
-                            path: dragged_asset.path.clone(),
-                            asset_type: dragged_asset.asset_type,
+                            path: asset_path.clone(),
+                            asset_type: *asset_type,
                             screen_pos: mouse_pos,
                         });
                     }
