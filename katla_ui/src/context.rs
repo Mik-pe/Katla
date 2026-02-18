@@ -258,14 +258,11 @@ impl UiContext {
         };
 
         // Simple hash combining parent ID with label
+        // This produces consistent IDs across frames for the same widget
         let mut hash = base;
         for byte in label.bytes() {
             hash = hash.wrapping_mul(31).wrapping_add(byte as u64);
         }
-
-        // Add counter to ensure uniqueness
-        hash = hash.wrapping_add(self.id_counter as u64);
-        self.id_counter += 1;
 
         hash
     }

@@ -1081,19 +1081,17 @@ pub fn build_asset_browser(
                 ui.draw_rect(preview_bounds, theme.background.with_alpha(0.8));
                 ui.draw_rect_border(preview_bounds, theme.background.with_alpha(0.8), theme.highlight, 2.0);
 
-                // Draw icon
+                // Draw icon (use draw_icon for ForkAwesome icons)
                 let icon_char = asset.asset_type.icon();
-                let icon_str = icon_char.to_string();
-                let icon_size = preview_size * 0.5;
-                let icon_offset = (preview_size - icon_size) * 0.5;
-                ui.draw_text(
-                    &icon_str,
+                let icon_size = preview_size * 0.4;
+                ui.draw_icon(
+                    icon_char,
                     Vec2::new(
-                        preview_bounds.min.x() + icon_offset,
-                        preview_bounds.min.y() + icon_offset - 4.0,
+                        preview_bounds.center().x() - icon_size * 0.5,
+                        preview_bounds.center().y() - icon_size * 0.5 - 8.0,
                     ),
+                    icon_size,
                     theme.highlight,
-                    ui.scaled_font_size(katla_ui::FontSize::Large),
                 );
 
                 // Draw name (truncated)
