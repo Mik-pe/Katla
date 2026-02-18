@@ -170,6 +170,12 @@ pub struct AssetBrowserState {
     rename_asset: Option<usize>,
     /// New name buffer
     pub rename_buffer: String,
+    /// Confirmation dialog is open
+    pub confirm_dialog_open: bool,
+    /// Message to show in confirmation dialog
+    confirm_dialog_message: String,
+    /// Pending action to confirm (stored until user responds)
+    confirm_pending_action: Option<AssetAction>,
 }
 
 /// Action from the asset browser context menu.
@@ -235,6 +241,9 @@ impl AssetBrowserState {
             rename_mode: false,
             rename_asset: None,
             rename_buffer: String::new(),
+            confirm_dialog_open: false,
+            confirm_dialog_message: String::new(),
+            confirm_pending_action: None,
         };
 
         // Initial scan will happen in build_asset_browser when needs_rescan() returns true
@@ -1695,7 +1704,18 @@ pub fn build_asset_browser(
                     state.pending_actions.push(AssetAction::ShowInExplorer(asset_path));
                 }
                 "Delete" => {
-                    state.pending_actions.push(AssetAction::Delete(asset_path));
+                    // Show confirmation dialog instead of deleting immediately
+                    let is_folder = asset_path.is_dir();
+                    let name = asset_path.file_name()
+                        .map(|n| n.to_string_lossy().to_string())
+                        .unwrap_or_else(|| "this item".to_string());
+                    state.confirm_dialog_message = if is_folder {
+                        format!("Delete folder \"{}\" and all its contents?", name)
+                    } else {
+                        format!("Delete \"{}\"?", name)
+                    };
+                    state.confirm_pending_action = Some(AssetAction::Delete(asset_path));
+                    state.confirm_dialog_open = true;
                 }
                 "New Folder" => {
                     state.pending_actions.push(AssetAction::CreateFolder(asset_path));
@@ -1706,6 +1726,116 @@ pub fn build_asset_browser(
                 _ => {}
             }
             state.close_context_menu();
+        }
+    }
+
+    // === CONFIRMATION DIALOG ===
+    if state.confirm_dialog_open {
+        ui.push_z_index(300); // Higher than context menu
+
+        // Darken background
+        let screen_size = ui.screen_size();
+        let screen_bounds = Rect2D::new(Vec2::new(0.0, 0.0), screen_size);
+        ui.draw_rect(screen_bounds, Color::new(0.0, 0.0, 0.0, 0.5));
+
+        // Dialog box
+        let dialog_width = 320.0;
+        let dialog_height = 120.0;
+        let dialog_pos = Vec2::new(
+            (screen_size.x() - dialog_width) * 0.5,
+            (screen_size.y() - dialog_height) * 0.5,
+        );
+        let dialog_bounds = Rect2D::from_origin_size(dialog_pos, Vec2::new(dialog_width, dialog_height));
+
+        // Shadow
+        let shadow_bounds = Rect2D::new(dialog_bounds.min + Vec2::new(4.0, 4.0), dialog_bounds.max + Vec2::new(4.0, 4.0));
+        ui.draw_rect(shadow_bounds, Color::new(0.0, 0.0, 0.0, 0.5));
+
+        // Background
+        ui.draw_rect(dialog_bounds, theme.popup_bg);
+        ui.draw_rect_border(dialog_bounds, theme.popup_bg, theme.popup_border, 1.0);
+
+        // Title bar
+        let title_bounds = Rect2D::from_origin_size(dialog_pos, Vec2::new(dialog_width, 28.0));
+        ui.draw_rect(title_bounds, theme.panel_header);
+        ui.draw_text(
+            "Confirm Delete",
+            Vec2::new(dialog_pos.x() + 10.0, dialog_pos.y() + 7.0),
+            theme.text_primary,
+            ui.scaled_font_size(katla_ui::FontSize::Small),
+        );
+
+        // Message
+        ui.draw_text(
+            &state.confirm_dialog_message.clone(),
+            Vec2::new(dialog_pos.x() + 10.0, dialog_pos.y() + 40.0),
+            theme.text_secondary,
+            ui.scaled_font_size(katla_ui::FontSize::Small),
+        );
+
+        // Buttons
+        let btn_width = 80.0;
+        let btn_height = 28.0;
+        let btn_y = dialog_pos.y() + dialog_height - btn_height - 12.0;
+
+        // No button
+        let no_btn_bounds = Rect2D::from_origin_size(
+            Vec2::new(dialog_pos.x() + dialog_width - btn_width * 2.0 - 20.0, btn_y),
+            Vec2::new(btn_width, btn_height),
+        );
+        let no_hovered = ui.is_hovered(no_btn_bounds);
+        if no_hovered {
+            ui.draw_rect(no_btn_bounds, theme.button_hover);
+        }
+        ui.draw_rect_border(no_btn_bounds, theme.button_hover, theme.border, 1.0);
+        let no_text_size = ui.measure_text("No", ui.scaled_font_size(katla_ui::FontSize::Small));
+        ui.draw_text(
+            "No",
+            Vec2::new(no_btn_bounds.center().x() - no_text_size.x() * 0.5, no_btn_bounds.min.y() + 7.0),
+            if no_hovered { theme.text_primary } else { theme.text_secondary },
+            ui.scaled_font_size(katla_ui::FontSize::Small),
+        );
+
+        // Yes button
+        let yes_btn_bounds = Rect2D::from_origin_size(
+            Vec2::new(dialog_pos.x() + dialog_width - btn_width - 10.0, btn_y),
+            Vec2::new(btn_width, btn_height),
+        );
+        let yes_hovered = ui.is_hovered(yes_btn_bounds);
+        if yes_hovered {
+            ui.draw_rect(yes_btn_bounds, theme.error);
+        }
+        ui.draw_rect_border(yes_btn_bounds, if yes_hovered { theme.error } else { theme.button_hover }, theme.border, 1.0);
+        let yes_text_size = ui.measure_text("Yes", ui.scaled_font_size(katla_ui::FontSize::Small));
+        ui.draw_text(
+            "Yes",
+            Vec2::new(yes_btn_bounds.center().x() - yes_text_size.x() * 0.5, yes_btn_bounds.min.y() + 7.0),
+            theme.text_primary,
+            ui.scaled_font_size(katla_ui::FontSize::Small),
+        );
+
+        ui.pop_z_index();
+
+        // Handle button clicks
+        if no_hovered && ui.input.mouse_clicked(katla_ui::input::mouse_button::LEFT) {
+            state.confirm_dialog_open = false;
+            state.confirm_pending_action = None;
+        }
+        if yes_hovered && ui.input.mouse_clicked(katla_ui::input::mouse_button::LEFT) {
+            // Execute the pending action
+            if let Some(action) = state.confirm_pending_action.take() {
+                state.pending_actions.push(action);
+            }
+            state.confirm_dialog_open = false;
+        }
+
+        // Capture keyboard to prevent background actions
+        ui.input.want_capture_keyboard = true;
+
+        // Escape cancels
+        if ui.input.key_pressed(katla_ui::input::KeyCode::Escape) {
+            state.confirm_dialog_open = false;
+            state.confirm_pending_action = None;
         }
     }
 
