@@ -181,6 +181,10 @@ impl UiContext {
                     .popup_bounds
                     .map_or(true, |bounds| !bounds.contains(self.input.mouse_pos));
                 if mouse_outside {
+                    // Close the dropdown in storage too
+                    if let Some(popup_id) = self.popup_id {
+                        self.storage.insert(popup_id, WidgetState::DropdownOpen(false));
+                    }
                     self.popup_id = None;
                     self.popup_bounds = None;
                 }
@@ -189,6 +193,11 @@ impl UiContext {
 
         // Reset the flag AFTER the check
         self.popup_opened_this_frame = false;
+
+        // Clear active_id when mouse is released (allows click-to-focus on text inputs)
+        if self.input.mouse_released[crate::input::mouse_button::LEFT] {
+            self.active_id = None;
+        }
 
         // Set initial clip to full screen
         self.clip_stack.clear();
@@ -564,9 +573,13 @@ impl UiContext {
             .unwrap_or(size * 0.75);
 
         // Get icon's actual rendered size
-        let icon_glyph = self
-            .fonts
-            .get_or_rasterize(FontId::ICON, icon, size, self.scale_factor, crate::text::SubpixelBin::Zero);
+        let icon_glyph = self.fonts.get_or_rasterize(
+            FontId::ICON,
+            icon,
+            size,
+            self.scale_factor,
+            crate::text::SubpixelBin::Zero,
+        );
 
         if let Some(glyph) = icon_glyph {
             if glyph.size.x() > 0.0 && glyph.size.y() > 0.0 {
@@ -1565,9 +1578,35 @@ impl UiContext {
         // Draw trigger button
         let hovered = self.update_hover(dropdown_id, bounds);
 
+        // Check if another dropdown is currently open
+        let other_dropdown_open = self.popup_id.is_some()
+            && self.popup_id != Some(dropdown_id)
+            && self
+                .storage
+                .get(&self.popup_id.unwrap_or(0))
+                .map(|s| matches!(s, WidgetState::DropdownOpen(true)))
+                .unwrap_or(false);
+
+        // If hovering over a different dropdown while one is open, switch to this one
+        if hovered && other_dropdown_open && !self.popup_opened_this_frame {
+            // Close the other dropdown
+            if let Some(other_id) = self.popup_id {
+                self.storage
+                    .insert(other_id, WidgetState::DropdownOpen(false));
+            }
+            // Open this dropdown
+            self.storage
+                .insert(dropdown_id, WidgetState::DropdownOpen(true));
+            self.popup_id = Some(dropdown_id);
+            self.popup_bounds = Some(Rect2D::from_origin_size(
+                Vec2::new(bounds.min.x(), bounds.max.y()),
+                Vec2::new(bounds.width().max(self.style.menu_min_width), 200.0),
+            ));
+        }
+
         // Toggle on click
         if self.button_behavior(dropdown_id, bounds) {
-            let new_open = !is_open;
+            let new_open = !is_open && !other_dropdown_open;
             self.storage
                 .insert(dropdown_id, WidgetState::DropdownOpen(new_open));
             if new_open {
@@ -1630,13 +1669,13 @@ impl UiContext {
             // Switch to popup Z-index
             self.push_z_index(z_index::POPUP);
 
-            let popup_bounds = Rect2D::from_origin_size(
-                Vec2::new(bounds.min.x(), bounds.max.y()),
-                Vec2::new(
-                    bounds.width().max(self.style.menu_min_width),
-                    400.0, // Generous height for menu items
-                ),
-            );
+            // Store popup origin for later
+            let popup_origin = Vec2::new(bounds.min.x(), bounds.max.y());
+            let popup_width = bounds.width().max(self.style.menu_min_width);
+
+            // Use a reasonable max height (will be clipped by content)
+            let popup_bounds =
+                Rect2D::from_origin_size(popup_origin, Vec2::new(popup_width, 400.0));
 
             // Draw popup background with shadow
             let shadow_offset = Vec2::new(4.0, 4.0);
@@ -1654,7 +1693,7 @@ impl UiContext {
             );
 
             self.popup_bounds = Some(popup_bounds);
-            self.push_clip_absolute(popup_bounds); // Absolute clip - render outside parent
+            self.push_clip_absolute(popup_bounds);
             self.push_id(id);
 
             return true;
