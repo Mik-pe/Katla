@@ -622,17 +622,204 @@ impl EditorUI {
             1.0,
         );
 
-        let button_width = 80.0;
+        let menu_item_width = 50.0;
+        let dropdown_width = 120.0;
         let button_height = height - padding * 2.0;
         let mut cursor = Vec2::new(padding, padding);
 
+        // === FILE MENU ===
+        let file_bounds = Rect2D::from_origin_size(cursor, Vec2::new(menu_item_width, button_height));
+        if ui.begin_dropdown("file_menu", "File", file_bounds) {
+            let item_height = 24.0;
+            let mut item_y = file_bounds.max.y();
+
+            // New Scene (placeholder)
+            let new_bounds = Rect2D::from_origin_size(
+                Vec2::new(file_bounds.min.x(), item_y),
+                Vec2::new(dropdown_width, item_height),
+            );
+            if ui.menu_item("file_new", "New Scene", new_bounds) {
+                // TODO: Implement new scene
+                ui.close_current_popup();
+            }
+            item_y += item_height;
+
+            // Open (placeholder)
+            let open_bounds = Rect2D::from_origin_size(
+                Vec2::new(file_bounds.min.x(), item_y),
+                Vec2::new(dropdown_width, item_height),
+            );
+            if ui.menu_item("file_open", "Open...", open_bounds) {
+                // TODO: Implement open scene
+                ui.close_current_popup();
+            }
+            item_y += item_height;
+
+            // Save (placeholder)
+            let save_bounds = Rect2D::from_origin_size(
+                Vec2::new(file_bounds.min.x(), item_y),
+                Vec2::new(dropdown_width, item_height),
+            );
+            if ui.menu_item("file_save", "Save", save_bounds) {
+                // TODO: Implement save scene
+                ui.close_current_popup();
+            }
+            item_y += item_height;
+
+            // Separator
+            item_y += 4.0;
+
+            // Quit
+            let quit_bounds = Rect2D::from_origin_size(
+                Vec2::new(file_bounds.min.x(), item_y),
+                Vec2::new(dropdown_width, item_height),
+            );
+            if ui.menu_item("file_quit", "Quit", quit_bounds) {
+                // Quit is handled at application level
+                ui.close_current_popup();
+            }
+
+            ui.end_dropdown();
+        }
+        cursor = Vec2::new(cursor.x() + menu_item_width + padding, cursor.y());
+
+        // === EDIT MENU ===
+        let edit_bounds = Rect2D::from_origin_size(cursor, Vec2::new(menu_item_width, button_height));
+        if ui.begin_dropdown("edit_menu", "Edit", edit_bounds) {
+            let item_height = 24.0;
+            let mut item_y = edit_bounds.max.y();
+
+            // Undo (placeholder)
+            let undo_bounds = Rect2D::from_origin_size(
+                Vec2::new(edit_bounds.min.x(), item_y),
+                Vec2::new(dropdown_width, item_height),
+            );
+            if ui.menu_item("edit_undo", "Undo", undo_bounds) {
+                // TODO: Implement undo
+                ui.close_current_popup();
+            }
+            item_y += item_height;
+
+            // Redo (placeholder)
+            let redo_bounds = Rect2D::from_origin_size(
+                Vec2::new(edit_bounds.min.x(), item_y),
+                Vec2::new(dropdown_width, item_height),
+            );
+            if ui.menu_item("edit_redo", "Redo", redo_bounds) {
+                // TODO: Implement redo
+                ui.close_current_popup();
+            }
+            item_y += item_height;
+
+            // Separator
+            item_y += 4.0;
+
+            // Preferences
+            let prefs_bounds = Rect2D::from_origin_size(
+                Vec2::new(edit_bounds.min.x(), item_y),
+                Vec2::new(dropdown_width, item_height),
+            );
+            if ui.menu_item("edit_prefs", "Preferences...", prefs_bounds) {
+                self.show_preferences = true;
+                ui.close_current_popup();
+            }
+
+            ui.end_dropdown();
+        }
+        cursor = Vec2::new(cursor.x() + menu_item_width + padding, cursor.y());
+
+        // === VIEW MENU ===
+        let view_bounds = Rect2D::from_origin_size(cursor, Vec2::new(menu_item_width, button_height));
+        if ui.begin_dropdown("view_menu", "View", view_bounds) {
+            let item_height = 24.0;
+            let mut item_y = view_bounds.max.y();
+
+            // Grid toggle
+            let grid_bounds = Rect2D::from_origin_size(
+                Vec2::new(view_bounds.min.x(), item_y),
+                Vec2::new(dropdown_width, item_height),
+            );
+            let grid_text = if self.show_grid { "✓ Grid" } else { "  Grid" };
+            if ui.menu_item("view_grid", grid_text, grid_bounds) {
+                self.show_grid = !self.show_grid;
+                self.pending_actions.push(EditorAction::ToggleGrid);
+                ui.close_current_popup();
+            }
+            item_y += item_height;
+
+            // Stats toggle
+            let stats_bounds = Rect2D::from_origin_size(
+                Vec2::new(view_bounds.min.x(), item_y),
+                Vec2::new(dropdown_width, item_height),
+            );
+            let stats_text = if self.show_stats { "✓ Stats" } else { "  Stats" };
+            if ui.menu_item("view_stats", stats_text, stats_bounds) {
+                self.show_stats = !self.show_stats;
+                self.pending_actions.push(EditorAction::ToggleStats);
+                ui.close_current_popup();
+            }
+
+            ui.end_dropdown();
+        }
+        cursor = Vec2::new(cursor.x() + menu_item_width + padding, cursor.y());
+
+        // === CREATE MENU ===
+        let create_bounds = Rect2D::from_origin_size(cursor, Vec2::new(60.0, button_height));
+        if ui.begin_dropdown("create_menu", "Create", create_bounds) {
+            let item_height = 24.0;
+            let mut item_y = create_bounds.max.y();
+
+            for model in SpawnableModel::all() {
+                let model_bounds = Rect2D::from_origin_size(
+                    Vec2::new(create_bounds.min.x(), item_y),
+                    Vec2::new(dropdown_width, item_height),
+                );
+                if ui.menu_item(&format!("create_{}", model.name()), model.name(), model_bounds) {
+                    self.pending_actions
+                        .push(EditorAction::SpawnModel(*model, Vec3::new(0.0, 0.0, 0.0)));
+                    ui.close_current_popup();
+                }
+                item_y += item_height;
+            }
+
+            ui.end_dropdown();
+        }
+        cursor = Vec2::new(cursor.x() + 60.0 + padding, cursor.y());
+
+        // === HELP MENU ===
+        let help_bounds = Rect2D::from_origin_size(cursor, Vec2::new(menu_item_width, button_height));
+        if ui.begin_dropdown("help_menu", "Help", help_bounds) {
+            let item_height = 24.0;
+            let mut item_y = help_bounds.max.y();
+
+            // About
+            let about_bounds = Rect2D::from_origin_size(
+                Vec2::new(help_bounds.min.x(), item_y),
+                Vec2::new(dropdown_width, item_height),
+            );
+            if ui.menu_item("help_about", "About", about_bounds) {
+                // TODO: Show about dialog
+                ui.close_current_popup();
+            }
+
+            ui.end_dropdown();
+        }
+        cursor = Vec2::new(cursor.x() + menu_item_width + padding, cursor.y());
+
+        // Separator line before play controls
+        cursor = Vec2::new(cursor.x() + padding * 2.0, cursor.y());
+        ui.draw_line(
+            Vec2::new(cursor.x(), padding),
+            Vec2::new(cursor.x(), height - padding),
+            theme.separator,
+            1.0,
+        );
+        cursor = Vec2::new(cursor.x() + padding * 2.0, cursor.y());
+
         // Play/Pause button
-        let play_text = if self.is_playing {
-            "|| Pause"
-        } else {
-            "> Play"
-        };
-        let play_bounds = Rect2D::from_origin_size(cursor, Vec2::new(button_width, button_height));
+        let play_width = 70.0;
+        let play_text = if self.is_playing { "⏸ Pause" } else { "▶ Play" };
+        let play_bounds = Rect2D::from_origin_size(cursor, Vec2::new(play_width, button_height));
         let play_color = if self.is_playing {
             theme.success
         } else {
@@ -643,110 +830,11 @@ impl EditorUI {
             self.is_playing = !self.is_playing;
             self.pending_actions.push(EditorAction::TogglePlay);
         }
-        cursor = Vec2::new(cursor.x() + button_width + padding, cursor.y());
+        cursor = Vec2::new(cursor.x() + play_width + padding, cursor.y());
 
-        // Spawn dropdown
-        let spawn_bounds = Rect2D::from_origin_size(cursor, Vec2::new(button_width, button_height));
-        if ui.begin_dropdown("spawn_dropdown", "Spawn", spawn_bounds) {
-            for model in SpawnableModel::all() {
-                if ui.menu_item(
-                    &format!("spawn_{}", model.name()),
-                    model.name(),
-                    Rect2D::from_origin_size(
-                        Vec2::new(
-                            spawn_bounds.min.x(),
-                            spawn_bounds.max.y() + (*model as usize as f32) * 24.0,
-                        ),
-                        Vec2::new(spawn_bounds.width(), 24.0),
-                    ),
-                ) {
-                    self.pending_actions
-                        .push(EditorAction::SpawnModel(*model, Vec3::new(0.0, 0.0, 0.0)));
-                    ui.close_current_popup();
-                }
-            }
-            ui.end_dropdown();
-        }
-        cursor = Vec2::new(cursor.x() + button_width + padding, cursor.y());
-
-        // Grid toggle
-        let grid_text = if self.show_grid {
-            "Grid: ON"
-        } else {
-            "Grid: OFF"
-        };
-        let grid_bounds = Rect2D::from_origin_size(cursor, Vec2::new(button_width, button_height));
-        if ui.button("grid_btn", grid_text, grid_bounds) {
-            self.show_grid = !self.show_grid;
-        }
-        cursor = Vec2::new(cursor.x() + button_width + padding, cursor.y());
-
-        // Stats toggle
-        let stats_text = if self.show_stats {
-            "Stats: ON"
-        } else {
-            "Stats: OFF"
-        };
-        let stats_bounds = Rect2D::from_origin_size(cursor, Vec2::new(button_width, button_height));
-        if ui.button("stats_btn", stats_text, stats_bounds) {
-            self.show_stats = !self.show_stats;
-        }
-
-        // Settings button on the right side
-        let settings_text = " Settings";
-        let settings_text_size =
-            ui.measure_text(settings_text, ui.scaled_font_size(FontSize::Medium));
-        let icon_size = ui.scaled_font_size(FontSize::Large);
-        let icon_padding = 4.0;
-        let settings_total_width = icon_size + icon_padding + settings_text_size.x();
-        let settings_bounds = Rect2D::from_origin_size(
-            Vec2::new(
-                screen_size.x() - settings_total_width - padding * 3.0,
-                padding,
-            ),
-            Vec2::new(settings_total_width + padding * 2.0, button_height),
-        );
-        let settings_color = if self.show_preferences {
-            theme.selection
-        } else {
-            theme.button_bg
-        };
-        ui.draw_rect(settings_bounds, settings_color);
-        if ui.button("settings_btn", "", settings_bounds) {
-            self.show_preferences = !self.show_preferences;
-        }
-        // Draw icon and text aligned
-        let top_y = settings_bounds.center().y() - settings_text_size.y() * 0.5;
-        let icon_pos = Vec2::new(settings_bounds.min.x() + padding, top_y);
-        ui.draw_icon_aligned(
-            ForkAwesome::COG,
-            icon_pos,
-            icon_size,
-            theme.text_primary,
-            FontId::DEFAULT,
-        );
-        let text_pos = Vec2::new(icon_pos.x() + icon_size + icon_padding, top_y);
-        ui.draw_text(
-            settings_text,
-            text_pos,
-            theme.text_primary,
-            ui.scaled_font_size(FontSize::Medium),
-        );
-        ui.draw_icon(ForkAwesome::COG, icon_pos, icon_size, theme.text_primary);
-        let text_pos = Vec2::new(
-            icon_pos.x() + icon_size + icon_padding,
-            settings_bounds.center().y() - settings_text_size.y() * 0.5,
-        );
-        ui.draw_text(
-            settings_text,
-            text_pos,
-            theme.text_primary,
-            ui.scaled_font_size(FontSize::Medium),
-        );
-
-        // Title in center
-        let title = "Katla Engine Editor";
-        let title_size = ui.measure_text(title, ui.scaled_font_size(FontSize::Large));
+        // Title in center (only show if there's enough space)
+        let title = "Katla Engine";
+        let title_size = ui.measure_text(title, ui.scaled_font_size(FontSize::Medium));
         let title_pos = Vec2::new(
             screen_size.x() * 0.5 - title_size.x() * 0.5,
             height * 0.5 - title_size.y() * 0.5,
@@ -755,7 +843,7 @@ impl EditorUI {
             title,
             title_pos,
             theme.text_muted,
-            ui.scaled_font_size(FontSize::Large),
+            ui.scaled_font_size(FontSize::Medium),
         );
     }
 
