@@ -1002,22 +1002,18 @@ pub fn build_asset_browser(
 
         // Draw thumbnail or icon centered in item
         match &asset.thumbnail_state {
-            ThumbnailState::Loaded { texture_id } => {
-                // Draw thumbnail image
-                // Note: For now, thumbnails are marked as loaded but won't display
-                // until Vulkan UITextures system supports dynamic textures.
-                // Fall back to showing a brighter icon to indicate "loaded" state.
+            ThumbnailState::Loaded { texture_id: _ } => {
+                // Thumbnail loaded but texture switching during render pass not yet supported.
+                // Show success-colored icon to indicate loaded state.
+                // TODO: Implement texture array or push descriptors for proper thumbnail display.
                 let icon = asset.asset_type.icon();
-                let icon_color = theme.success; // Use success color to indicate loaded
+                let icon_color = theme.success;
                 let icon_size = 28.0;
                 let icon_pos = Vec2::new(
                     item_bounds.center().x() - icon_size * 0.5,
                     item_bounds.center().y() - icon_size * 0.5,
                 );
                 ui.draw_icon(icon, icon_pos, icon_size, icon_color);
-
-                // Future: When UITextures supports dynamic textures:
-                // ui.image(*texture_id, item_bounds, None, Some(katla_math::Color::new(1.0, 1.0, 1.0, 1.0)));
             }
             ThumbnailState::Loading => {
                 // Show dimmed icon while loading

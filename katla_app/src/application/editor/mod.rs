@@ -194,6 +194,7 @@ pub fn render_debug_ui(app: &mut Application, dt: f32) {
                     cmd.clip_rect.width() * scale_factor,
                     cmd.clip_rect.height() * scale_factor,
                 ],
+                texture_id: cmd.texture.0, // Pass texture ID for dynamic binding
             })
             .collect();
 

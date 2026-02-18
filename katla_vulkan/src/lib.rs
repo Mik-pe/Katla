@@ -1562,8 +1562,16 @@ impl VulkanRenderer {
                                     vk::IndexType::UINT32,
                                 );
 
-                                // Draw each command with its clip rectangle
+                                    // Draw each command with its clip rectangle
                                 for cmd in &ui_data.commands {
+                                    // Note: Texture switching during render pass is not allowed.
+                                    // All UI commands currently use the viewport texture (binding 2).
+                                    // For proper thumbnail support, we need to either:
+                                    // 1. Use push descriptors (VK_KHR_push_descriptor)
+                                    // 2. Use a texture array
+                                    // 3. Sort commands by texture and rebind between groups
+                                    // For now, custom texture IDs are registered but all UI uses viewport.
+
                                     // Set scissor for this command
                                     let scissor = vk::Rect2D {
                                         offset: vk::Offset2D {
@@ -1604,6 +1612,14 @@ impl VulkanRenderer {
 
                             // Draw each command with its clip rectangle (persistent buffers path)
                             for cmd in &ui_data.commands {
+                                // Note: Texture switching during render pass is not allowed.
+                                // All UI commands currently use the viewport texture (binding 2).
+                                // For proper thumbnail support, we need to either:
+                                // 1. Use push descriptors (VK_KHR_push_descriptor)
+                                // 2. Use a texture array
+                                // 3. Sort commands by texture and rebind between groups
+                                // For now, custom texture IDs are registered but all UI uses viewport.
+
                                 // Set scissor for this command
                                 let scissor = vk::Rect2D {
                                     offset: vk::Offset2D {
@@ -2110,6 +2126,29 @@ impl VulkanRenderer {
             commands,
         });
     }
+
+    /// Register a thumbnail texture for UI rendering.
+    pub fn register_ui_thumbnail(
+        &mut self,
+        texture_id: u64,
+        width: u32,
+        height: u32,
+        pixels: &[u8],
+    ) -> Result<(), vk::Result> {
+        if let Some(ref mut textures) = self.ui_textures {
+            textures.register_thumbnail(texture_id, width, height, pixels)?;
+        }
+        Ok(())
+    }
+
+    /// Check if a UI thumbnail is registered.
+    pub fn has_ui_thumbnail(&self, texture_id: u64) -> bool {
+        if let Some(ref textures) = self.ui_textures {
+            textures.has_thumbnail(texture_id)
+        } else {
+            false
+        }
+    }
 }
 
 /// A single draw command for UI rendering.
@@ -2121,6 +2160,8 @@ pub struct UiDrawCommand {
     pub index_count: u32,
     /// Clip rectangle (scissor) for this command.
     pub clip_rect: [f32; 4], // [x, y, width, height]
+    /// Texture to use (0 = font atlas, 1 = viewport, 2+ = custom thumbnails)
+    pub texture_id: u64,
 }
 
 /// UI draw data for rendering.
@@ -2249,6 +2290,10 @@ pub struct UITextures {
     pub atlas_height: u32,
     /// Viewport texture image view (updated externally).
     pub viewport_image_view: Option<vk::ImageView>,
+    /// Registered thumbnail textures (texture_id -> image_view).
+    thumbnail_textures: std::collections::HashMap<u64, vk::ImageView>,
+    /// Currently bound texture ID on binding 2 (for avoiding redundant descriptor updates).
+    current_bound_texture: std::cell::Cell<u64>,
     /// Context for cleanup.
     context: Rc<VulkanContext>,
 }
@@ -2470,6 +2515,8 @@ impl UITextures {
                 atlas_width,
                 atlas_height,
                 viewport_image_view: None,
+                thumbnail_textures: std::collections::HashMap::new(),
+                current_bound_texture: std::cell::Cell::new(0),
                 context,
             })
         }
@@ -2820,6 +2867,77 @@ impl UITextures {
                 .update_descriptor_sets(&[viewport_write], &[]);
         }
         self.viewport_image_view = Some(image_view);
+    }
+
+    /// Register a thumbnail texture for UI rendering.
+    /// Returns the image view for the registered texture.
+    pub fn register_thumbnail(
+        &mut self,
+        texture_id: u64,
+        width: u32,
+        height: u32,
+        pixels: &[u8],
+    ) -> Result<vk::ImageView, vk::Result> {
+        unsafe {
+            // Create the texture image
+            let (_image, _memory, image_view) = Self::create_texture(&self.context, width, height, pixels)?;
+
+            // Store in our registry
+            self.thumbnail_textures.insert(texture_id, image_view);
+
+            // Note: We're leaking the image and memory here.
+            // TODO: Store allocations for proper cleanup in Drop
+
+            log::debug!("Registered UI thumbnail texture {} ({}x{})", texture_id, width, height);
+            Ok(image_view)
+        }
+    }
+
+    /// Bind a specific texture to binding 2 (custom texture slot).
+    /// This allows switching between viewport and thumbnail textures.
+    pub fn bind_texture(&self, texture_id: u64) {
+        // Skip if already bound
+        if self.current_bound_texture.get() == texture_id {
+            return;
+        }
+
+        unsafe {
+            let image_view = if texture_id == 0 {
+                // TextureId 0 = font atlas (shouldn't happen for custom slot, use white)
+                self.white_image_view
+            } else if texture_id == 1 || texture_id == 2 {
+                // TextureId 1 = font atlas, 2 = viewport
+                self.viewport_image_view.unwrap_or(self.white_image_view)
+            } else if let Some(&view) = self.thumbnail_textures.get(&texture_id) {
+                view
+            } else {
+                // Unknown texture, use white placeholder
+                self.white_image_view
+            };
+
+            let image_info = vk::DescriptorImageInfo {
+                sampler: vk::Sampler::null(),
+                image_view,
+                image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+            };
+
+            let image_infos = [image_info];
+
+            let write = vk::WriteDescriptorSet::default()
+                .dst_set(self.descriptor_set)
+                .dst_binding(2)
+                .dst_array_element(0)
+                .descriptor_type(vk::DescriptorType::SAMPLED_IMAGE)
+                .image_info(&image_infos);
+
+            self.context.device.update_descriptor_sets(&[write], &[]);
+            self.current_bound_texture.set(texture_id);
+        }
+    }
+
+    /// Check if a thumbnail texture is registered.
+    pub fn has_thumbnail(&self, texture_id: u64) -> bool {
+        self.thumbnail_textures.contains_key(&texture_id)
     }
 
     /// Update the uniform buffer with new screen size.

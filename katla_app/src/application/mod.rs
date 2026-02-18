@@ -637,15 +637,18 @@ impl Application {
                     let texture_id = TextureId::custom(self.next_thumbnail_texture_id);
                     self.next_thumbnail_texture_id += 1;
 
+                    // Register with Vulkan renderer
+                    if let Some(ref mut renderer) = self.renderer {
+                        if let Err(e) = renderer.register_ui_thumbnail(texture_id.0, width, height, &pixels) {
+                            warn!("Failed to register thumbnail texture: {:?}", e);
+                            continue;
+                        }
+                    }
+
                     // Update the thumbnail cache entry
                     if let Some(entry) = self.background_loader.get_thumbnail_mut(&path) {
                         entry.uploaded = true;
                     }
-
-                    // TODO: Upload to Vulkan UI texture system
-                    // For now, we just store the pixels in the cache and mark as loaded.
-                    // The actual GPU upload requires extending the UITextures system
-                    // to support dynamic texture registration.
 
                     // Update asset browser entries with this thumbnail
                     for asset in self.editor_ui.asset_browser.assets.iter_mut() {
@@ -656,7 +659,7 @@ impl Application {
                         }
                     }
                 }
-                LoadResult::ImageLoaded { path, width, height, pixels, .. } => {
+                LoadResult::ImageLoaded { path, width, height, pixels: _, .. } => {
                     debug!("Full image loaded: {:?} ({}x{})", path, width, height);
                     // Future: Handle full image loads (e.g., for textures, skyboxes)
                 }
