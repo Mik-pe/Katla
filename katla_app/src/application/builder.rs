@@ -212,6 +212,8 @@ impl ApplicationBuilder {
             grid_pipeline: None,
             background_loader: BackgroundLoader::new(),
             next_thumbnail_texture_id: 100, // Custom texture IDs start at 100
+            thumbnail_texture_ids: HashMap::new(),
+            pending_model_spawns: Vec::new(),
         };
 
         Ok((app, event_loop))

@@ -12,7 +12,7 @@ pub mod builder;
 pub mod editor;
 pub mod renderer;
 
-use std::{cell::RefCell, collections::HashMap, ffi::CString, rc::Rc, time::Instant};
+use std::{cell::RefCell, collections::HashMap, ffi::CString, path::PathBuf, rc::Rc, time::Instant};
 
 use log::{debug, info, warn};
 use winit::keyboard::ModifiersState;
@@ -89,6 +89,10 @@ pub struct Application {
     pub(crate) background_loader: BackgroundLoader,
     /// Next texture ID for thumbnails (custom IDs start at 100)
     pub(crate) next_thumbnail_texture_id: u64,
+    /// Mapping of thumbnail paths to their uploaded texture IDs
+    pub(crate) thumbnail_texture_ids: HashMap<PathBuf, katla_ui::TextureId>,
+    /// Pending model spawns (path, position) waiting for background load
+    pub(crate) pending_model_spawns: Vec<(PathBuf, katla_math::Vec3)>,
 }
 
 impl ApplicationHandler for Application {
@@ -649,6 +653,9 @@ impl Application {
                     if let Some(entry) = self.background_loader.get_thumbnail_mut(&path) {
                         entry.uploaded = true;
                     }
+
+                    // Store texture ID for this path (persists across directory navigations)
+                    self.thumbnail_texture_ids.insert(path.clone(), texture_id);
 
                     // Update asset browser entries with this thumbnail
                     for asset in self.editor_ui.asset_browser.assets.iter_mut() {

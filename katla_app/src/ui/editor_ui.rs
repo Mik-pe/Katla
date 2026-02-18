@@ -9,8 +9,8 @@
 
 use katla_ecs::EntityId;
 use katla_math::{Color, Rect2D, Vec2, Vec3};
-use katla_ui::{input::mouse_button, DrawList, FontId, FontSize, ForkAwesome, UiContext};
-use std::collections::HashSet;
+use katla_ui::{input::mouse_button, DrawList, FontId, FontSize, ForkAwesome, TextureId, UiContext};
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
 use super::asset_browser::AssetBrowserState;
@@ -348,6 +348,7 @@ impl EditorUI {
         fps: f32,
         frame_count: usize,
         loader: &mut crate::util::BackgroundLoader,
+        thumbnail_texture_ids: &std::collections::HashMap<std::path::PathBuf, TextureId>,
     ) {
         let screen_size = ui.screen_size();
 
@@ -586,6 +587,7 @@ impl EditorUI {
             asset_browser_bounds,
             &mut self.focused_panel,
             loader,
+            thumbnail_texture_ids,
         );
 
         // Process asset browser actions
@@ -622,7 +624,7 @@ impl EditorUI {
                         log::warn!("Failed to create folder: {}", e);
                     } else {
                         log::info!("Created folder: {:?}", new_folder);
-                        self.asset_browser.scan_directory();
+                        self.asset_browser.scan_directory(thumbnail_texture_ids);
                     }
                 }
                 super::asset_browser::AssetAction::Delete(path) => {
@@ -631,13 +633,13 @@ impl EditorUI {
                             log::warn!("Failed to delete folder: {}", e);
                         } else {
                             log::info!("Deleted folder: {:?}", path);
-                            self.asset_browser.scan_directory();
+                            self.asset_browser.scan_directory(thumbnail_texture_ids);
                         }
                     } else if let Err(e) = std::fs::remove_file(&path) {
                         log::warn!("Failed to delete file: {}", e);
                     } else {
                         log::info!("Deleted file: {:?}", path);
-                        self.asset_browser.scan_directory();
+                        self.asset_browser.scan_directory(thumbnail_texture_ids);
                     }
                 }
                 super::asset_browser::AssetAction::Rename { old_path, new_path } => {
@@ -647,14 +649,14 @@ impl EditorUI {
                             log::warn!("Failed to rename {:?} to {:?}: {}", old_path, new_path, e);
                         } else {
                             log::info!("Renamed {:?} to {:?}", old_path, new_path);
-                            self.asset_browser.scan_directory();
+                            self.asset_browser.scan_directory(thumbnail_texture_ids);
                         }
                     }
                 }
                 super::asset_browser::AssetAction::Open(path) => {
                     // Navigate into folder or open file
                     if path.is_dir() {
-                        self.asset_browser.navigate_to(&path);
+                        self.asset_browser.navigate_to(&path, thumbnail_texture_ids);
                     } else {
                         log::info!("Open file: {:?}", path);
                         // TODO: Open file in appropriate editor
@@ -704,7 +706,7 @@ impl EditorUI {
                             log::warn!("Failed to move {:?} to {:?}: {}", asset_path, dest_path, e);
                         } else {
                             log::info!("Moved {:?} to {:?}", asset_path, dest_path);
-                            self.asset_browser.scan_directory();
+                            self.asset_browser.scan_directory(thumbnail_texture_ids);
                         }
                     }
                 }
@@ -2387,6 +2389,7 @@ impl EditorUI {
         fps: f32,
         frame_count: usize,
         loader: &'a mut crate::util::BackgroundLoader,
+        thumbnail_texture_ids: &'a std::collections::HashMap<std::path::PathBuf, TextureId>,
     ) -> &'a DrawList {
         // Apply theme to UI style
         self.theme.apply_to_style(&mut ui.style);
@@ -2395,7 +2398,7 @@ impl EditorUI {
         ui.set_font_scale(self.font_scale);
 
         ui.begin(screen_size, scale_factor);
-        self.build(ui, entities, fps, frame_count, loader);
+        self.build(ui, entities, fps, frame_count, loader, thumbnail_texture_ids);
         ui.end()
     }
 

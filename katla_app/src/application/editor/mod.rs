@@ -50,6 +50,7 @@ pub fn render_debug_ui(app: &mut Application, dt: f32) {
             fps,
             app.frame_count,
             &mut app.background_loader,
+            &app.thumbnail_texture_ids,
         );
         (
             draw_list.vertices.clone(),

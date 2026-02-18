@@ -225,13 +225,12 @@ impl AssetBrowserState {
             rename_buffer: String::new(),
         };
 
-        // Initial scan
-        state.scan_directory();
+        // Initial scan will happen in build_asset_browser when needs_rescan() returns true
         state
     }
 
     /// Scan the current directory for assets.
-    pub fn scan_directory(&mut self) {
+    pub fn scan_directory(&mut self, thumbnail_texture_ids: &HashMap<PathBuf, TextureId>) {
         // Preserve thumbnail states before clearing
         let old_thumbnails: HashMap<PathBuf, ThumbnailState> = self
             .assets
@@ -277,11 +276,17 @@ impl AssetBrowserState {
 
                 let asset_type = AssetType::from_path(&path);
 
-                // Preserve thumbnail state if we had this asset before
-                let thumbnail_state = old_thumbnails
-                    .get(&path)
-                    .cloned()
-                    .unwrap_or(ThumbnailState::NotRequested);
+                // Determine thumbnail state:
+                // 1. Check if we already have this asset in current view (old_thumbnails)
+                // 2. Check if we have a cached GPU texture for this path (thumbnail_texture_ids)
+                let thumbnail_state = if let Some(old_state) = old_thumbnails.get(&path) {
+                    old_state.clone()
+                } else if let Some(&texture_id) = thumbnail_texture_ids.get(&path) {
+                    // Already uploaded to GPU on a previous visit
+                    ThumbnailState::Loaded { texture_id }
+                } else {
+                    ThumbnailState::NotRequested
+                };
 
                 let entry = AssetEntry {
                     name,
@@ -312,9 +317,9 @@ impl AssetBrowserState {
     }
 
     /// Force a rescan (e.g., when refresh button clicked).
-    pub fn refresh(&mut self) {
+    pub fn refresh(&mut self, thumbnail_texture_ids: &HashMap<PathBuf, TextureId>) {
         self.last_scan = None;
-        self.scan_directory();
+        self.scan_directory(thumbnail_texture_ids);
     }
 
     /// Check if we should rescan the directory (every 500ms).
@@ -326,7 +331,7 @@ impl AssetBrowserState {
     }
 
     /// Navigate to a folder asset (with history).
-    pub fn navigate_to(&mut self, path: &PathBuf) {
+    pub fn navigate_to(&mut self, path: &PathBuf, thumbnail_texture_ids: &HashMap<PathBuf, TextureId>) {
         if path.is_dir() && path != &self.current_path {
             // Clear forward history
             self.nav_history.truncate(self.nav_history_pos + 1);
@@ -335,35 +340,35 @@ impl AssetBrowserState {
             self.nav_history_pos = self.nav_history.len() - 1;
 
             self.current_path = path.clone();
-            self.scan_directory();
+            self.scan_directory(thumbnail_texture_ids);
         }
     }
 
     /// Navigate to parent directory.
-    pub fn navigate_up(&mut self) {
+    pub fn navigate_up(&mut self, thumbnail_texture_ids: &HashMap<PathBuf, TextureId>) {
         if let Some(parent) = self.current_path.parent() {
             let parent_path = parent.to_path_buf();
             if parent_path != self.current_path {
-                self.navigate_to(&parent_path);
+                self.navigate_to(&parent_path, thumbnail_texture_ids);
             }
         }
     }
 
     /// Navigate back in history.
-    pub fn navigate_back(&mut self) {
+    pub fn navigate_back(&mut self, thumbnail_texture_ids: &HashMap<PathBuf, TextureId>) {
         if self.nav_history_pos > 0 {
             self.nav_history_pos -= 1;
             self.current_path = self.nav_history[self.nav_history_pos].clone();
-            self.scan_directory();
+            self.scan_directory(thumbnail_texture_ids);
         }
     }
 
     /// Navigate forward in history.
-    pub fn navigate_forward(&mut self) {
+    pub fn navigate_forward(&mut self, thumbnail_texture_ids: &HashMap<PathBuf, TextureId>) {
         if self.nav_history_pos < self.nav_history.len() - 1 {
             self.nav_history_pos += 1;
             self.current_path = self.nav_history[self.nav_history_pos].clone();
-            self.scan_directory();
+            self.scan_directory(thumbnail_texture_ids);
         }
     }
 
@@ -378,7 +383,7 @@ impl AssetBrowserState {
     }
 
     /// Navigate to a specific path segment (for breadcrumbs).
-    pub fn navigate_to_segment(&mut self, segment_index: usize) {
+    pub fn navigate_to_segment(&mut self, segment_index: usize, thumbnail_texture_ids: &HashMap<PathBuf, TextureId>) {
         let segments: Vec<&std::ffi::OsStr> = self.current_path.iter().collect();
         if segment_index < segments.len() {
             let mut new_path = PathBuf::new();
@@ -388,7 +393,7 @@ impl AssetBrowserState {
                 }
             }
             if new_path.is_dir() && new_path != self.current_path {
-                self.navigate_to(&new_path);
+                self.navigate_to(&new_path, thumbnail_texture_ids);
             }
         }
     }
@@ -509,7 +514,7 @@ impl AssetBrowserState {
     }
 
     /// Handle keyboard navigation.
-    pub fn handle_keyboard(&mut self, key: katla_ui::input::KeyCode) -> Option<AssetAction> {
+    pub fn handle_keyboard(&mut self, key: katla_ui::input::KeyCode, thumbnail_texture_ids: &HashMap<PathBuf, TextureId>) -> Option<AssetAction> {
         if self.search_focused || self.assets.is_empty() {
             return None;
         }
@@ -566,9 +571,9 @@ impl AssetBrowserState {
 
                     if asset_type == AssetType::Folder {
                         if is_parent {
-                            self.navigate_up();
+                            self.navigate_up(thumbnail_texture_ids);
                         } else {
-                            self.navigate_to(&path);
+                            self.navigate_to(&path, thumbnail_texture_ids);
                         }
                     } else {
                         return Some(AssetAction::Open(path));
@@ -576,7 +581,7 @@ impl AssetBrowserState {
                 }
             }
             katla_ui::input::KeyCode::Backspace => {
-                self.navigate_up();
+                self.navigate_up(thumbnail_texture_ids);
             }
             _ => {}
         }
@@ -622,11 +627,12 @@ pub fn build_asset_browser(
     bounds: Rect2D,
     focused_panel: &mut FocusedPanel,
     loader: &mut crate::util::BackgroundLoader,
+    thumbnail_texture_ids: &HashMap<PathBuf, TextureId>,
 ) {
     let is_focused = *focused_panel == FocusedPanel::AssetBrowser;
     // Auto-rescan if needed
     if state.needs_rescan() {
-        state.scan_directory();
+        state.scan_directory(thumbnail_texture_ids);
     }
 
     // Panel background
@@ -787,7 +793,7 @@ pub fn build_asset_browser(
 
     // Process breadcrumb click after iteration
     if let Some(idx) = clicked_segment {
-        state.navigate_to_segment(idx);
+        state.navigate_to_segment(idx, thumbnail_texture_ids);
     }
 
     // === Navigation Buttons (right side of toolbar) ===
@@ -807,7 +813,7 @@ pub fn build_asset_browser(
     }
 
     if refresh_hovered && ui.input.mouse_clicked(katla_ui::input::mouse_button::LEFT) {
-        state.refresh();
+        state.refresh(thumbnail_texture_ids);
     }
 
     ui.draw_icon_aligned(
@@ -832,7 +838,7 @@ pub fn build_asset_browser(
     }
 
     if forward_hovered && can_forward && ui.input.mouse_clicked(katla_ui::input::mouse_button::LEFT) {
-        state.navigate_forward();
+        state.navigate_forward(thumbnail_texture_ids);
     }
 
     ui.draw_icon_aligned(
@@ -861,7 +867,7 @@ pub fn build_asset_browser(
     }
 
     if back_hovered && can_back && ui.input.mouse_clicked(katla_ui::input::mouse_button::LEFT) {
-        state.navigate_back();
+        state.navigate_back(thumbnail_texture_ids);
     }
 
     ui.draw_icon_aligned(
@@ -945,7 +951,7 @@ pub fn build_asset_browser(
 
         // Rescan if filter changed
         if prev_filter != state.search_filter {
-            state.refresh();
+            state.refresh(thumbnail_texture_ids);
         }
     }
 
@@ -1335,9 +1341,9 @@ pub fn build_asset_browser(
         if is_double {
             if let Some(path) = should_navigate {
                 if path.ends_with("..") {
-                    state.navigate_up();
+                    state.navigate_up(thumbnail_texture_ids);
                 } else {
-                    state.navigate_to(&path);
+                    state.navigate_to(&path, thumbnail_texture_ids);
                 }
             }
         }
@@ -1569,9 +1575,9 @@ pub fn build_asset_browser(
                 "Open" => {
                     if asset_type == Some(AssetType::Folder) {
                         if asset_name == ".." {
-                            state.navigate_up();
+                            state.navigate_up(thumbnail_texture_ids);
                         } else {
-                            state.navigate_to(&asset_path);
+                            state.navigate_to(&asset_path, thumbnail_texture_ids);
                         }
                     } else if asset_type.is_some() {
                         state.pending_actions.push(AssetAction::Open(asset_path));
@@ -1593,7 +1599,7 @@ pub fn build_asset_browser(
                     state.pending_actions.push(AssetAction::CreateFolder(asset_path));
                 }
                 "Refresh" => {
-                    state.refresh();
+                    state.refresh(thumbnail_texture_ids);
                 }
                 _ => {}
             }
@@ -1606,24 +1612,24 @@ pub fn build_asset_browser(
         use katla_ui::input::KeyCode;
 
         if ui.input.key_pressed(KeyCode::ArrowUp) {
-            state.handle_keyboard(KeyCode::ArrowUp);
+            state.handle_keyboard(KeyCode::ArrowUp, thumbnail_texture_ids);
         }
         if ui.input.key_pressed(KeyCode::ArrowDown) {
-            state.handle_keyboard(KeyCode::ArrowDown);
+            state.handle_keyboard(KeyCode::ArrowDown, thumbnail_texture_ids);
         }
         if ui.input.key_pressed(KeyCode::ArrowLeft) {
-            state.handle_keyboard(KeyCode::ArrowLeft);
+            state.handle_keyboard(KeyCode::ArrowLeft, thumbnail_texture_ids);
         }
         if ui.input.key_pressed(KeyCode::ArrowRight) {
-            state.handle_keyboard(KeyCode::ArrowRight);
+            state.handle_keyboard(KeyCode::ArrowRight, thumbnail_texture_ids);
         }
         if ui.input.key_pressed(KeyCode::Enter) {
-            if let Some(action) = state.handle_keyboard(KeyCode::Enter) {
+            if let Some(action) = state.handle_keyboard(KeyCode::Enter, thumbnail_texture_ids) {
                 state.pending_actions.push(action);
             }
         }
         if ui.input.key_pressed(KeyCode::Backspace) {
-            state.handle_keyboard(KeyCode::Backspace);
+            state.handle_keyboard(KeyCode::Backspace, thumbnail_texture_ids);
         }
     }
 }
