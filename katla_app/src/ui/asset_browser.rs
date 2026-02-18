@@ -1216,6 +1216,10 @@ pub fn build_asset_browser(
                         }
                     }
                 }
+            } else {
+                // Simple click in empty space (not marquee) - clear selection
+                state.selected_index = None;
+                state.selected_indices.clear();
             }
             // Reset marquee state
             state.selection_rect_start = None;
