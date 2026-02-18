@@ -135,10 +135,8 @@ impl UiInputState {
 
         if down && !was_down {
             self.mouse_pressed[button] = true;
-            log::info!("[INPUT] mouse_pressed[{}] = true", button);
         } else if !down && was_down {
             self.mouse_released[button] = true;
-            log::info!("[INPUT] mouse_released[{}] = true", button);
         }
     }
 

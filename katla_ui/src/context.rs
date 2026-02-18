@@ -204,7 +204,6 @@ impl UiContext {
                 if mouse_outside {
                     // Close the dropdown in storage too
                     if let Some(popup_id) = self.popup_id {
-                        log::info!("[DROPDOWN] Closing popup {:?} due to click outside", popup_id);
                         self.storage.insert(popup_id, WidgetState::DropdownOpen(false));
                     }
                     self.popup_id = None;
@@ -214,9 +213,6 @@ impl UiContext {
         }
 
         // Reset the flag AFTER the check
-        if self.popup_opened_this_frame {
-            log::info!("[DROPDOWN] Resetting popup_opened_this_frame to false");
-        }
         self.popup_opened_this_frame = false;
 
         // NOTE: Don't clear active_id here! Widgets need to check it in button_behavior.
@@ -752,7 +748,6 @@ impl UiContext {
         }
 
         if hovered && self.input.mouse_pressed[crate::input::mouse_button::LEFT] {
-            log::info!("[BUTTON] Setting active_id to {}", id);
             self.active_id = Some(id);
         }
 
@@ -761,7 +756,6 @@ impl UiContext {
 
         // Only clear active_id if we're the active widget
         if clicked {
-            log::info!("[BUTTON] CLICK detected for id={}", id);
             self.active_id = None;
         }
 
