@@ -81,6 +81,8 @@ pub struct Application {
     pub(crate) gui_state: GuiState,
     /// DPI scale factor (physical pixels per logical pixel)
     pub(crate) scale_factor: f32,
+    /// Gizmo rendering resources (mesh and material handles)
+    pub(crate) gizmo_resources: Option<renderer::GizmoResources>,
 }
 
 impl ApplicationHandler for Application {

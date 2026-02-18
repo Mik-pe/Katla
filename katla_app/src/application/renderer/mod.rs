@@ -1,14 +1,22 @@
 //! Renderer subsystem - handles render graph setup and frame rendering.
 
-use log::{error, info};
+use log::{debug, error, info};
 
-use katla_vulkan::{DrawCall, DrawList, FrameUniforms, ParticleDispatch, ParticleRender};
+use katla_vulkan::{DrawCall, DrawList, FrameUniforms, IndexBuffer, IndexType, MaterialHandle, MeshHandle, ParticleDispatch, ParticleRender, VertexBuffer, VulkanContext};
+use std::rc::Rc;
 
 use crate::animation::Skeleton;
 use crate::components::{DrawableComponent, ParticleEmitter, TransformComponent};
-use crate::rendering::SkyMaterial;
+use crate::gizmo::{self, GizmoVertex};
+use crate::rendering::{GizmoMaterial, SkyMaterial};
 
 use super::Application;
+
+/// Gizmo rendering resources stored in the application.
+pub struct GizmoResources {
+    pub mesh_handle: MeshHandle,
+    pub material_handle: MaterialHandle,
+}
 
 /// Setup the render graph with multiple framebuffers (one per swapchain image).
 /// This creates the graph upfront during initialization to avoid
@@ -58,6 +66,99 @@ pub fn setup_render_graph(app: &mut Application) {
 
     // Setup render graph with multiple framebuffers
     renderer.setup_render_graph();
+
+    // Create and register gizmo material and mesh
+    setup_gizmo_resources(app);
+}
+
+/// Setup gizmo rendering resources.
+fn setup_gizmo_resources(app: &mut Application) {
+    let renderer = match app.renderer.as_mut() {
+        Some(r) => r,
+        None => return,
+    };
+    let context = renderer.context.clone();
+
+    // Create gizmo material
+    let gizmo_material = GizmoMaterial::new(context.clone());
+    let gizmo_pipeline = gizmo_material.pipeline();
+
+    // Create a white texture for the gizmo material (it doesn't use textures but needs the descriptor)
+    let white_pixels: Vec<u8> = vec![255, 255, 255, 255];
+    let white_texture = katla_vulkan::Texture::create_image_rgb(
+        context.clone(),
+        1,
+        1,
+        &white_pixels,
+    );
+
+    // Register material using VulkanRenderer's method
+    let vertex_binding = gizmo::gizmo_vertex_binding();
+    let material_handle = renderer.register_material_full(
+        gizmo_pipeline,
+        Some(Rc::new(white_texture)),
+        vertex_binding,
+        None, // No per-material uniforms needed
+    );
+    debug!("Registered gizmo material with handle {:?}", material_handle);
+
+    // Create gizmo mesh
+    let (vertices, indices) = gizmo::generate_translate_gizmo(1.0);
+
+    // Create vertex buffer
+    let vertex_buffer = create_gizmo_vertex_buffer(&context, vertices);
+
+    // Create index buffer
+    let index_buffer = create_gizmo_index_buffer(&context, indices);
+
+    // Register mesh using VulkanRenderer's method
+    let mesh_handle = renderer.register_mesh(Some(vertex_buffer), Some(index_buffer));
+    debug!("Registered gizmo mesh with handle {:?}", mesh_handle);
+
+    // Store in application
+    app.gizmo_resources = Some(GizmoResources {
+        mesh_handle,
+        material_handle,
+    });
+}
+
+/// Create a vertex buffer for gizmo geometry.
+fn create_gizmo_vertex_buffer(context: &Rc<VulkanContext>, vertices: Vec<GizmoVertex>) -> VertexBuffer {
+    let data_slice = unsafe {
+        std::slice::from_raw_parts(
+            vertices.as_ptr() as *const u8,
+            vertices.len() * std::mem::size_of::<GizmoVertex>(),
+        )
+    };
+
+    let count = vertices.len() as u32;
+    let mut vertex_buffer = VertexBuffer::new(
+        context.clone(),
+        data_slice.len() as u64,
+        count,
+    );
+    vertex_buffer.upload_data(data_slice);
+    vertex_buffer
+}
+
+/// Create an index buffer for gizmo geometry.
+fn create_gizmo_index_buffer(context: &Rc<VulkanContext>, indices: Vec<u32>) -> IndexBuffer {
+    let data_slice = unsafe {
+        std::slice::from_raw_parts(
+            indices.as_ptr() as *const u8,
+            indices.len() * std::mem::size_of::<u32>(),
+        )
+    };
+
+    let count = (data_slice.len() as u32) / 4; // u32 indices
+    let mut index_buffer = IndexBuffer::new(
+        context.clone(),
+        data_slice.len() as u64,
+        IndexType::Uint32,
+        count,
+    );
+    index_buffer.upload_data(data_slice);
+    index_buffer
 }
 
 /// Render using the render graph system with draw call submission.
@@ -179,6 +280,21 @@ pub fn render_frame(app: &mut Application) {
                 particle_count: emitter.particle_count(),
             };
             draw_list.push_particle_render(render);
+        }
+    }
+
+    // Render gizmo for selected entity
+    if let (Some(gizmo_res), Some(selected_entity)) = (&app.gizmo_resources, app.editor_ui.selected_entity) {
+        if let Some(transform) = app.world.get_component::<TransformComponent>(selected_entity) {
+            let model_matrix = transform.transform.make_mat4();
+            let model_array: [f32; 16] = model_matrix.to_array();
+
+            let gizmo_draw_call = DrawCall::new(gizmo_res.mesh_handle, gizmo_res.material_handle)
+                .with_transform(model_array)
+                .with_color([1.0, 1.0, 1.0, 1.0]);
+
+            draw_list.push(gizmo_draw_call);
+            debug!("Rendering gizmo for entity {:?}", selected_entity);
         }
     }
 
