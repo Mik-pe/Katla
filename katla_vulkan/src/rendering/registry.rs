@@ -28,6 +28,9 @@ pub(crate) struct MaterialAsset {
     /// Optional per-material uniform buffer (for template-based materials).
     /// When present, this material has its own uniform buffer instead of using pipeline's embedded one.
     pub uniform: Option<crate::vulkan::material::UniformHandle>,
+    /// Per-material texture descriptor set (Set 1).
+    /// Created at registration time to ensure each material has its own texture binding.
+    pub texture_descriptor: Option<crate::vulkan::material::TextureDescriptorSet>,
 }
 
 /// Registry for GPU assets.
@@ -71,7 +74,28 @@ impl AssetRegistry {
     }
 
     /// Register a material and return a handle.
-    pub(crate) fn register_material(&mut self, material: MaterialAsset) -> MaterialHandle {
+    ///
+    /// This also creates a per-material texture descriptor if the material
+    /// has texture info, ensuring each material has its own texture binding
+    /// even when sharing a pipeline from a template.
+    pub(crate) fn register_material(&mut self, mut material: MaterialAsset) -> MaterialHandle {
+        // Create texture descriptor from uniform's image info if present
+        if let Some(ref uniform) = material.uniform {
+            if let Some(ref image_info) = uniform.next_descriptor().image_info {
+                let texture_layout = material.pipeline.borrow().texture_set_layout;
+                if let Some(layout) = texture_layout {
+                    let context = material.pipeline.borrow().context().clone();
+                    if let Ok(descriptor) = crate::vulkan::material::TextureDescriptorSet::new(
+                        &context,
+                        layout,
+                        image_info,
+                    ) {
+                        material.texture_descriptor = Some(descriptor);
+                    }
+                }
+            }
+        }
+
         let id = self.next_material_id;
         self.next_material_id += 1;
 

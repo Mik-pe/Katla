@@ -255,6 +255,8 @@ impl Model {
                 if let Some(mat) = model.materials.first() {
                     debug!("Material info: base_color_texture={:?}, metallic_roughness={:?}, normal={:?}",
                         mat.base_color_texture, mat.metallic_roughness_texture, mat.normal_texture);
+                    debug!("Material factors: base_color={:?}, metallic={}, roughness={}",
+                        mat.base_color_factor, mat.metallic_factor, mat.roughness_factor);
                 }
 
                 // Extract texture from the GLTF model using the correct index
@@ -262,6 +264,15 @@ impl Model {
                     let image = &model.images[texture_index];
                     debug!("Loading image {}: {}x{}, format={:?}",
                         texture_index, image.width, image.height, image.format);
+
+                    // Debug: print first few pixels to verify data
+                    if image.pixels.len() >= 12 {
+                        debug!("First pixel RGB: {}, {}, {}",
+                            image.pixels[0], image.pixels[1], image.pixels[2]);
+                        debug!("Second pixel RGB: {}, {}, {}",
+                            image.pixels[3], image.pixels[4], image.pixels[5]);
+                    }
+
                     let pixels = &image.pixels;
 
                     match image.format {

@@ -764,6 +764,7 @@ impl VulkanRenderer {
             texture,
             vertex_binding,
             uniform,
+            texture_descriptor: None, // Will be created at registration time
         };
 
         self.asset_registry.register_material(material_asset)
@@ -1190,21 +1191,15 @@ impl VulkanRenderer {
                                 }
                             }
 
-                            // Create texture descriptor if not already done
-                            // Get image_info from material's uniform (storage mode uses material's uniform for texture info)
-                            if material.pipeline.borrow().texture_descriptor.is_none() {
-                                let image_info = material
-                                    .uniform
-                                    .as_ref()
-                                    .and_then(|u| u.next_descriptor().image_info.clone());
-
-                                if let Some(info) = image_info {
-                                    let _ = material
-                                        .pipeline
-                                        .borrow_mut()
-                                        .create_texture_descriptor_with_info(&info);
-                                }
-                            }
+                            // Bind texture descriptor (Set 1)
+                            // Use per-material texture descriptor if available, otherwise fall back to pipeline's
+                            let tex_descriptor_to_bind = if let Some(ref tex_desc) = material.texture_descriptor {
+                                Some(tex_desc.vk_set())
+                            } else if let Some(ref pipeline_desc) = material.pipeline.borrow().texture_descriptor {
+                                Some(pipeline_desc.vk_set())
+                            } else {
+                                None
+                            };
 
                             let pipeline_ref = material.pipeline.borrow();
 
@@ -1232,14 +1227,14 @@ impl VulkanRenderer {
                             }
 
                             // Bind set 1: Textures
-                            if let Some(ref tex_descriptor) = pipeline_ref.texture_descriptor {
+                            if let Some(tex_set) = tex_descriptor_to_bind {
                                 unsafe {
                                     pipeline_ref.context().device.cmd_bind_descriptor_sets(
                                         cmd_buf,
                                         vk::PipelineBindPoint::GRAPHICS,
                                         pipeline_ref.vk_layout(),
                                         1,
-                                        &[tex_descriptor.vk_set()],
+                                        &[tex_set],
                                         &[],
                                     );
                                 }
