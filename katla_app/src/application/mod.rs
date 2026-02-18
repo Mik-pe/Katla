@@ -34,6 +34,7 @@ use crate::{
     animation::{AnimationManager, Skeleton},
     components::{DirectionalLight, DrawableComponent, PointLight, TransformComponent},
     entities::{Camera, Model},
+    gui_state::GuiState,
     input::{InputBinding, InputMapper, KeyCombo, MouseCombo},
     preferences::Preferences,
     rendering::{
@@ -76,6 +77,8 @@ pub struct Application {
     pub(crate) use_editor_ui: bool,
     /// User preferences (theme, settings)
     pub(crate) preferences: Preferences,
+    /// GUI layout state (panel sizes, positions)
+    pub(crate) gui_state: GuiState,
     /// DPI scale factor (physical pixels per logical pixel)
     pub(crate) scale_factor: f32,
 }
@@ -95,6 +98,9 @@ impl ApplicationHandler for Application {
                         .with_maximized(true),
                 )
                 .unwrap();
+
+            // Enable IME for text input (required for receiving text input events)
+            window.set_ime_allowed(true);
 
             // Get initial DPI scale factor
             self.scale_factor = window.scale_factor() as f32;
@@ -476,6 +482,17 @@ impl ApplicationHandler for Application {
                 WindowEvent::ModifiersChanged(modifiers) => {
                     self.current_modifiers = modifiers.state();
                 }
+                WindowEvent::Ime(event) => {
+                    // Handle text input for UI widgets (text fields, search filters, etc.)
+                    if let winit::event::Ime::Preedit(_, _) | winit::event::Ime::Commit(_) = event {
+                        // For Commit events, add each character to the UI input
+                        if let winit::event::Ime::Commit(text) = event {
+                            for c in text.chars() {
+                                self.ui_context.input.add_char(c);
+                            }
+                        }
+                    }
+                }
                 WindowEvent::ScaleFactorChanged { scale_factor, .. } => {
                     self.scale_factor = scale_factor as f32;
                     debug!("DPI scale factor changed to {}", self.scale_factor);
@@ -562,6 +579,17 @@ impl ApplicationHandler for Application {
             warn!("Failed to save preferences: {}", e);
         } else {
             info!("Saved preferences to disk");
+        }
+
+        // Save GUI state before exit
+        self.gui_state.left_panel_width = self.editor_ui.left_panel_width;
+        self.gui_state.right_panel_width = self.editor_ui.right_panel_width;
+        self.gui_state.asset_browser_height = self.editor_ui.asset_browser.panel_height;
+
+        if let Err(e) = self.gui_state.save() {
+            warn!("Failed to save GUI state: {}", e);
+        } else {
+            info!("Saved GUI state to disk");
         }
 
         if let Some(ref mut renderer) = self.renderer {

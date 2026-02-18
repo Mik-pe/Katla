@@ -867,14 +867,20 @@ pub fn build_asset_browser(
     }
 
     // Handle search focus and input
-    if ui.is_hovered(search_bounds) && ui.input.mouse_clicked(katla_ui::input::mouse_button::LEFT) {
-        state.search_focused = true;
-        state.rename_mode = false; // Close rename if open
-    } else if ui.input.mouse_clicked(katla_ui::input::mouse_button::LEFT) && !ui.is_hovered(search_bounds) {
+    if ui.is_hovered(search_bounds) {
+        // Show text cursor when hovering over search field
+        ui.set_mouse_cursor(katla_ui::input::MouseCursor::Text);
+
+        if ui.input.mouse_clicked(katla_ui::input::mouse_button::LEFT) {
+            state.search_focused = true;
+            state.rename_mode = false; // Close rename if open
+        }
+    } else if ui.input.mouse_clicked(katla_ui::input::mouse_button::LEFT) {
         state.search_focused = false;
     }
 
-    if state.search_focused && is_focused {
+    // Check focus AFTER click handling (use focused_panel directly, not cached is_focused)
+    if state.search_focused && *focused_panel == FocusedPanel::AssetBrowser {
         // Capture keyboard so game doesn't get input
         ui.input.want_capture_keyboard = true;
 

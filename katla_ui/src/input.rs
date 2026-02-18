@@ -19,6 +19,30 @@ pub mod mouse_button {
     pub const BACK: usize = 4;
 }
 
+/// Mouse cursor types for UI.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum MouseCursor {
+    /// Default arrow cursor.
+    #[default]
+    Arrow,
+    /// Text input cursor (I-beam).
+    Text,
+    /// Resize horizontal (left-right).
+    ResizeHorizontal,
+    /// Resize vertical (up-down).
+    ResizeVertical,
+    /// Resize diagonal (top-left to bottom-right).
+    ResizeDiagonal,
+    /// Resize diagonal (top-right to bottom-left).
+    ResizeDiagonal2,
+    /// Hand cursor (for clickable elements).
+    Hand,
+    /// Crosshair cursor.
+    Crosshair,
+    /// Not allowed / forbidden.
+    NotAllowed,
+}
+
 /// Input state for the UI system.
 ///
 /// This should be updated each frame with the current mouse position,
@@ -58,6 +82,8 @@ pub struct UiInputState {
     pub want_capture_mouse: bool,
     /// Whether the UI wants to capture keyboard input.
     pub want_capture_keyboard: bool,
+    /// Requested mouse cursor type.
+    pub cursor: MouseCursor,
 }
 
 impl UiInputState {
@@ -78,6 +104,7 @@ impl UiInputState {
             focused_id: None,
             want_capture_mouse: false,
             want_capture_keyboard: false,
+            cursor: MouseCursor::Arrow,
         }
     }
 
@@ -137,6 +164,12 @@ impl UiInputState {
         self.keys_released.clear();
         self.want_capture_mouse = false;
         self.want_capture_keyboard = false;
+        self.cursor = MouseCursor::Arrow;
+    }
+
+    /// Set the mouse cursor type.
+    pub fn set_cursor(&mut self, cursor: MouseCursor) {
+        self.cursor = cursor;
     }
 
     /// Check if a mouse button was clicked this frame.

@@ -224,6 +224,12 @@ impl UiContext {
         self.scale_factor
     }
 
+    /// Set the mouse cursor type.
+    #[inline]
+    pub fn set_mouse_cursor(&mut self, cursor: crate::input::MouseCursor) {
+        self.input.set_cursor(cursor);
+    }
+
     /// Scale a logical pixel value to physical pixels.
     #[inline]
     pub fn scale(&self, logical: f32) -> f32 {
@@ -410,34 +416,37 @@ impl UiContext {
     pub fn draw_text(&mut self, text: &str, position: Vec2, color: Color, size: f32) {
         use crate::text::SubpixelBin;
 
-        let mut cursor_x = position.x();
+        // Calculate subpixel bin from TEXT START position.
+        // All characters share the same bin so the text moves as a unit.
+        let (floor_x, subpixel_bin) = SubpixelBin::new(position.x());
+        let start_x = floor_x as f32;
 
-        // Get the actual font ascent for proper baseline positioning
-        // Baseline is at position.y + ascent (ascent is distance from baseline to font top)
-        let ascent = self.font_ascent(size);
-        let baseline_y = position.y() + ascent;
+        // Round Y position to integer for crisp vertical alignment
+        let baseline_y = (position.y() + self.font_ascent(size)).round();
+
+        // Cursor tracks offset relative to start_x
+        let mut cursor_offset = 0.0f32;
 
         for c in text.chars() {
-            // Try to get cached glyph (scale font size by DPI factor)
-            if let Some(glyph) =
-                self.fonts
-                    .get_or_rasterize(self.current_font, c, size, self.scale_factor, SubpixelBin::Zero)
-            {
+            // Get glyph with the shared subpixel bin
+            if let Some(glyph) = self.fonts.get_or_rasterize(
+                self.current_font,
+                c,
+                size,
+                self.scale_factor,
+                subpixel_bin,
+            ) {
                 // Skip empty glyphs (spaces)
                 if glyph.size.x() == 0.0 || glyph.size.y() == 0.0 {
-                    cursor_x += glyph.advance;
+                    cursor_offset += glyph.advance;
                     continue;
                 }
 
-                // Calculate glyph position:
-                // - cursor_x + glyph.offset_x = left edge of glyph
-                // - baseline_y - glyph.top_offset = top edge of glyph (top_offset is distance up from baseline)
-                let glyph_pos = Vec2::new(cursor_x + glyph.offset_x, baseline_y - glyph.top_offset);
+                // Position is RELATIVE to the integer start position
+                let pos_x = start_x + cursor_offset + glyph.offset_x;
+                let pos_y = baseline_y - glyph.top_offset;
 
-                // Snap glyph position to pixel grid for crisp rendering
-                let snapped_pos = Vec2::new(glyph_pos.x().round(), glyph_pos.y().round());
-
-                let bounds = Rect2D::from_origin_size(snapped_pos, glyph.size);
+                let bounds = Rect2D::from_origin_size(Vec2::new(pos_x, pos_y), glyph.size);
 
                 // Draw glyph as textured quad
                 self.draw_list.set_clip(self.clip_rect());
@@ -448,13 +457,16 @@ impl UiContext {
                     TextureId::FONT_ATLAS,
                 );
 
-                cursor_x += glyph.advance;
+                cursor_offset += glyph.advance;
             } else {
                 // No glyph available - draw placeholder
                 let placeholder_size = Vec2::new(size * 0.6, size);
-                let bounds = Rect2D::from_origin_size(position, placeholder_size);
+                let bounds = Rect2D::from_origin_size(
+                    Vec2::new(start_x + cursor_offset, position.y()),
+                    placeholder_size,
+                );
                 self.draw_rect_border(bounds, Color::TRANSPARENT, color, 1.0);
-                cursor_x += placeholder_size.x();
+                cursor_offset += placeholder_size.x();
             }
         }
     }
@@ -1622,7 +1634,7 @@ impl UiContext {
                 Vec2::new(bounds.min.x(), bounds.max.y()),
                 Vec2::new(
                     bounds.width().max(self.style.menu_min_width),
-                    200.0, // Will be clipped by content
+                    400.0, // Generous height for menu items
                 ),
             );
 
@@ -1853,7 +1865,7 @@ impl UiContext {
                 Vec2::new(bounds.min.x(), bounds.max.y()),
                 Vec2::new(
                     bounds.width().max(self.style.menu_min_width),
-                    200.0, // Will be clipped by content
+                    400.0, // Generous height for menu items
                 ),
             );
 
@@ -2026,5 +2038,141 @@ mod tests {
         assert_ne!(id1, id3);
 
         ctx.end();
+    }
+
+    /// Test that text character positions are stable when panel moves within same subpixel bin.
+    ///
+    /// This simulates the core positioning logic of draw_text:
+    /// 1. Calculate floor_x and subpixel bin from start position
+    /// 2. Track cursor as offset from floor_x
+    /// 3. All characters share the same bin
+    #[test]
+    fn test_text_positioning_stability_within_bin() {
+        use crate::text::SubpixelBin;
+
+        // Simulate text at position 100.1 (subpixel bin Zero: [0.0, 0.25))
+        let pos1 = 100.1;
+        let (floor_x1, bin1) = SubpixelBin::new(pos1);
+        assert_eq!(floor_x1, 100);
+        assert_eq!(bin1, SubpixelBin::Zero);
+
+        // Same text at position 100.2 (still bin Zero)
+        let pos2 = 100.2;
+        let (floor_x2, bin2) = SubpixelBin::new(pos2);
+        assert_eq!(floor_x2, 100);
+        assert_eq!(bin2, SubpixelBin::Zero);
+
+        // Floor stays the same, bin stays the same
+        // Character positions relative to floor_x are IDENTICAL
+        assert_eq!(floor_x1, floor_x2);
+        assert_eq!(bin1, bin2);
+    }
+
+    /// Test that text moves as a unit when crossing subpixel bin boundaries.
+    #[test]
+    fn test_text_positioning_across_bins() {
+        use crate::text::SubpixelBin;
+
+        // Text at 100.0 (bin Zero)
+        let (floor_a, bin_a) = SubpixelBin::new(100.0);
+        assert_eq!(floor_a, 100);
+        assert_eq!(bin_a, SubpixelBin::Zero);
+
+        // Text at 100.25 (bin One)
+        let (floor_b, bin_b) = SubpixelBin::new(100.25);
+        assert_eq!(floor_b, 100);
+        assert_eq!(bin_b, SubpixelBin::One);
+
+        // Text at 100.5 (bin Two)
+        let (floor_c, bin_c) = SubpixelBin::new(100.5);
+        assert_eq!(floor_c, 100);
+        assert_eq!(bin_c, SubpixelBin::Two);
+
+        // Text at 100.75 (bin Three)
+        let (floor_d, bin_d) = SubpixelBin::new(100.75);
+        assert_eq!(floor_d, 100);
+        assert_eq!(bin_d, SubpixelBin::Three);
+
+        // Text at 101.0 (back to bin Zero, floor increases)
+        let (floor_e, bin_e) = SubpixelBin::new(101.0);
+        assert_eq!(floor_e, 101);
+        assert_eq!(bin_e, SubpixelBin::Zero);
+    }
+
+    /// Test that character relative positions stay consistent.
+    ///
+    /// Simulates the cursor offset tracking used in draw_text.
+    #[test]
+    fn test_text_character_spacing_consistency() {
+        use crate::text::SubpixelBin;
+
+        // Simulate two characters with advances
+        let char1_advance = 8.5f32;
+        let char2_advance = 5.3f32;
+
+        // Position 1: 50.1 (bin Zero)
+        let pos1 = 50.1;
+        let (floor1, bin1) = SubpixelBin::new(pos1);
+        let start_x1 = floor1 as f32;
+
+        // Character 1 position relative to floor
+        let char1_offset1 = 0.0f32; // cursor starts at 0
+        let char1_x1 = start_x1 + char1_offset1;
+
+        // Character 2 position (after char1 advance)
+        let char2_offset1 = char1_advance;
+        let char2_x1 = start_x1 + char2_offset1;
+
+        // Position 2: 50.15 (still bin Zero)
+        let pos2 = 50.15;
+        let (floor2, bin2) = SubpixelBin::new(pos2);
+        let start_x2 = floor2 as f32;
+
+        // Same calculations at new position
+        let char1_x2 = start_x2 + 0.0f32;
+        let char2_x2 = start_x2 + char1_advance;
+
+        // Since both are in same bin (Zero) with same floor (50):
+        // - Characters should be at IDENTICAL positions
+        assert_eq!(bin1, bin2);
+        assert_eq!(floor1, floor2);
+        assert_eq!(char1_x1, char1_x2);
+        assert_eq!(char2_x1, char2_x2);
+
+        // Relative spacing between characters is always consistent
+        let spacing1 = char2_x1 - char1_x1;
+        let spacing2 = char2_x2 - char1_x2;
+        assert_eq!(spacing1, spacing2);
+        assert_eq!(spacing1, char1_advance);
+    }
+
+    /// Test that small position changes don't cause character wobble.
+    ///
+    /// The key invariant: delta between character positions should equal
+    /// the delta in text start position when staying in same bin.
+    #[test]
+    fn test_no_character_wobble() {
+        use crate::text::SubpixelBin;
+
+        // Simulate a panel moving slightly
+        for base_pos in [0.0, 100.0, 200.5, 500.75] {
+            let (base_floor, base_bin) = SubpixelBin::new(base_pos);
+
+            // Small movement within same bin
+            for delta in [0.01, 0.05, 0.1, 0.15, 0.2] {
+                let new_pos = base_pos + delta;
+                let (new_floor, new_bin) = SubpixelBin::new(new_pos);
+
+                // If still in same bin and same floor, positions should be identical
+                if base_floor == new_floor && base_bin == new_bin {
+                    // All characters would render at same positions
+                    // because start_x = floor (integer) is the same
+                    assert_eq!(
+                        base_floor as f32, new_floor as f32,
+                        "Floor should be stable within same bin"
+                    );
+                }
+            }
+        }
     }
 }

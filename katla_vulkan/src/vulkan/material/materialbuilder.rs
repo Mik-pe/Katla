@@ -629,7 +629,11 @@ impl MaterialBuilder {
 
         // Create descriptor layout based on configuration
         let desc_layout = if self.ui_texture_layout {
-            // UI texture layout: font atlas (sampled image), sampler, viewport texture (sampled image)
+            // UI texture layout: font atlas, sampler, viewport texture, uniforms
+            // binding 0: font atlas (SAMPLED_IMAGE)
+            // binding 1: sampler
+            // binding 2: viewport texture (SAMPLED_IMAGE)
+            // binding 3: uniforms (UNIFORM_BUFFER) - screen_size for NDC transform
             DescriptorLayoutBuilder::new()
                 .add_binding(
                     0,
@@ -647,6 +651,12 @@ impl MaterialBuilder {
                     2,
                     vk::DescriptorType::SAMPLED_IMAGE,
                     vk::ShaderStageFlags::FRAGMENT,
+                    1,
+                )
+                .add_binding(
+                    3,
+                    vk::DescriptorType::UNIFORM_BUFFER,
+                    vk::ShaderStageFlags::VERTEX,
                     1,
                 )
                 .build(&self.context.device)

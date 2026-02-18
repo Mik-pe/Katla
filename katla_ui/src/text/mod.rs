@@ -221,12 +221,17 @@ impl FontSystem {
         let mut atlas_data =
             vec![0; (Self::DEFAULT_ATLAS_WIDTH * Self::DEFAULT_ATLAS_HEIGHT * 4) as usize];
 
-        // Reserve first pixel as white for solid color rendering
-        // UV (0,0) will sample this white pixel, so vertex color passes through
-        atlas_data[0] = 255; // R
-        atlas_data[1] = 255; // G
-        atlas_data[2] = 255; // B
-        atlas_data[3] = 255; // A
+        // Reserve first 2x2 pixels as white for solid color rendering
+        // This gives a safety margin for linear filtering
+        for y in 0..2 {
+            for x in 0..2 {
+                let idx = (y * Self::DEFAULT_ATLAS_WIDTH + x) as usize * 4;
+                atlas_data[idx] = 255;     // R
+                atlas_data[idx + 1] = 255; // G
+                atlas_data[idx + 2] = 255; // B
+                atlas_data[idx + 3] = 255; // A
+            }
+        }
 
         Self {
             fonts: HashMap::new(),
@@ -234,7 +239,7 @@ impl FontSystem {
             glyph_cache: HashMap::new(),
             atlas_width: Self::DEFAULT_ATLAS_WIDTH,
             atlas_height: Self::DEFAULT_ATLAS_HEIGHT,
-            atlas_cursor_x: 1, // Start after white pixel
+            atlas_cursor_x: 4, // Start after reserved 2x2 white pixel area + margin
             atlas_cursor_y: 0,
             atlas_row_height: 0,
             atlas_data,
@@ -248,11 +253,16 @@ impl FontSystem {
     pub fn with_atlas_size(width: u32, height: u32) -> Self {
         let mut atlas_data = vec![0; (width * height * 4) as usize];
 
-        // Reserve first pixel as white for solid color rendering
-        atlas_data[0] = 255;
-        atlas_data[1] = 255;
-        atlas_data[2] = 255;
-        atlas_data[3] = 255;
+        // Reserve first 2x2 pixels as white for solid color rendering
+        for y in 0..2 {
+            for x in 0..2 {
+                let idx = (y * width + x) as usize * 4;
+                atlas_data[idx] = 255;
+                atlas_data[idx + 1] = 255;
+                atlas_data[idx + 2] = 255;
+                atlas_data[idx + 3] = 255;
+            }
+        }
 
         Self {
             fonts: HashMap::new(),
@@ -260,7 +270,7 @@ impl FontSystem {
             glyph_cache: HashMap::new(),
             atlas_width: width,
             atlas_height: height,
-            atlas_cursor_x: 1,
+            atlas_cursor_x: 4, // Start after reserved 2x2 white pixel area + margin
             atlas_cursor_y: 0,
             atlas_row_height: 0,
             atlas_data,
@@ -533,6 +543,7 @@ impl FontSystem {
         self.atlas_dirty = true;
 
         // Calculate UV coordinates (normalized - scale-independent)
+        // The padding around glyphs prevents bleeding from neighboring glyphs
         let uv_min_x = x as f32 / self.atlas_width as f32;
         let uv_min_y = y as f32 / self.atlas_height as f32;
         let uv_max_x = (x as usize + glyph.width) as f32 / self.atlas_width as f32;
@@ -769,17 +780,10 @@ impl FontSystem {
             new_height
         );
 
-        // Create new larger buffer
-        let mut new_data = vec![0u8; (new_width * new_height * 4) as usize];
-
-        // Copy old data to new buffer (preserving existing glyphs)
-        for y in 0..self.atlas_height {
-            let src_start = (y * self.atlas_width * 4) as usize;
-            let src_end = src_start + (self.atlas_width * 4) as usize;
-            let dst_start = (y * new_width * 4) as usize;
-            new_data[dst_start..dst_start + (self.atlas_width * 4) as usize]
-                .copy_from_slice(&self.atlas_data[src_start..src_end]);
-        }
+        // Create new larger buffer (initialized to zeros - no old data)
+        // Since we're clearing the cache and re-rasterizing, there's no point
+        // copying old data. This also avoids ghost pixels from previous glyphs.
+        let new_data = vec![0u8; (new_width * new_height * 4) as usize];
 
         self.atlas_data = new_data;
         self.atlas_width = new_width;
@@ -791,8 +795,19 @@ impl FontSystem {
         // We need to re-rasterize everything with correct UVs
         self.glyph_cache.clear();
 
-        // Reset cursor to start fresh in the new space
-        self.atlas_cursor_x = 0;
+        // Re-initialize white pixel area (2x2)
+        for y in 0..2u32 {
+            for x in 0..2u32 {
+                let idx = (y * self.atlas_width + x) as usize * 4;
+                self.atlas_data[idx] = 255;
+                self.atlas_data[idx + 1] = 255;
+                self.atlas_data[idx + 2] = 255;
+                self.atlas_data[idx + 3] = 255;
+            }
+        }
+
+        // Reset cursor to start fresh after reserved white pixel area
+        self.atlas_cursor_x = 4;
         self.atlas_cursor_y = 0;
         self.atlas_row_height = 0;
 

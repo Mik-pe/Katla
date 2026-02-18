@@ -3,6 +3,7 @@ pub mod application;
 pub mod components;
 pub mod entities;
 pub mod error;
+pub mod gui_state;
 pub mod input;
 pub mod preferences;
 pub mod rendering;
@@ -12,4 +13,5 @@ mod ui;
 mod util;
 
 pub use error::{AppError, AppResult};
+pub use gui_state::GuiState;
 pub use preferences::Preferences;

@@ -9,6 +9,7 @@ use crate::{
     application::{Application, ApplicationInfo},
     entities::Camera,
     error::AppResult,
+    gui_state::GuiState,
     input::InputMapper,
     preferences::Preferences,
     rendering::MaterialManager,
@@ -92,6 +93,15 @@ impl ApplicationBuilder {
             preferences.show_grid,
             preferences.show_stats,
             preferences.font_scale
+        );
+
+        // Load GUI layout state
+        let gui_state = GuiState::load();
+        log::info!(
+            "Loaded GUI state: left_panel={}, right_panel={}, asset_browser_height={}",
+            gui_state.left_panel_width,
+            gui_state.right_panel_width,
+            gui_state.asset_browser_height
         );
 
         // Create UI context and load default font
@@ -188,10 +198,15 @@ impl ApplicationBuilder {
                 editor.show_grid = preferences.show_grid;
                 editor.show_stats = preferences.show_stats;
                 editor.set_font_scale(preferences.font_scale);
+                // Apply GUI layout state
+                editor.left_panel_width = gui_state.left_panel_width;
+                editor.right_panel_width = gui_state.right_panel_width;
+                editor.asset_browser.panel_height = gui_state.asset_browser_height;
                 editor
             },
             use_editor_ui: true, // Default to editor UI mode
             preferences,
+            gui_state,
             scale_factor: 1.0, // Will be updated when window is created
         };
 

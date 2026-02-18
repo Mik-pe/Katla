@@ -1,7 +1,8 @@
 //! UI material for immediate mode overlay rendering.
 //!
 //! Creates a pipeline for rendering UI elements with alpha blending.
-//! Vertices should be pre-transformed to NDC space.
+//! Vertices use screen coordinates (pixels) and the shader transforms to NDC
+//! using a uniform buffer containing the screen size.
 
 use katla_vulkan::{
     context::VulkanContext, material::MaterialPipeline, ImageFormat, MaterialBuilder,
@@ -12,7 +13,7 @@ use std::{cell::RefCell, path::Path, rc::Rc};
 /// Shader-compatible UI vertex with tight packing.
 ///
 /// This struct matches the shader's expected layout exactly:
-/// - position: vec2f (8 bytes)
+/// - position: vec2f (8 bytes) - screen coordinates in pixels
 /// - uv: vec2f (8 bytes)
 /// - color: vec4f (16 bytes)
 ///
@@ -20,7 +21,7 @@ use std::{cell::RefCell, path::Path, rc::Rc};
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
 pub struct UiShaderVertex {
-    /// Position in NDC coordinates (-1 to 1).
+    /// Position in screen coordinates (pixels).
     pub position: [f32; 2],
     /// Texture coordinates (0-1).
     pub uv: [f32; 2],
@@ -38,6 +39,7 @@ impl UiShaderVertex {
 /// UI material that renders immediate mode UI overlays.
 ///
 /// Uses alpha blending and no depth testing for proper overlay rendering.
+/// Screen size is passed via uniform buffer and NDC transform happens in shader.
 pub struct UiMaterial {
     pub pipeline: Rc<RefCell<MaterialPipeline>>,
 }
@@ -49,12 +51,13 @@ impl UiMaterial {
     /// - Alpha blending enabled
     /// - No depth test or write
     /// - No backface culling
-    /// - Vertex format: position[2] (NDC), uv[2], color[4]
+    /// - Vertex format: position[2] (screen pixels), uv[2], color[4]
+    /// - Uniform buffer: screen_size (vec2f) for NDC transform in shader
     pub fn new(context: Rc<VulkanContext>) -> Self {
-        // UI vertex format: position (vec2 in NDC), uv (vec2), color (vec4)
+        // UI vertex format: position (vec2 in screen pixels), uv (vec2), color (vec4)
         let vertex_binding = VertexBinding {
             formats: vec![
-                VertexFormat::RG32f,   // position (NDC coordinates)
+                VertexFormat::RG32f,   // position (screen coordinates in pixels)
                 VertexFormat::RG32f,   // uv
                 VertexFormat::RGBA32f, // color
             ],
@@ -63,7 +66,7 @@ impl UiMaterial {
         let pipeline = MaterialBuilder::new(context)
             .with_vertex_binding(vertex_binding)
             .with_wgsl_shader(Path::new("resources/shaders/ui/ui.wgsl"))
-            .with_ui_texture_layout()  // Use UI-style descriptor layout
+            .with_ui_texture_layout()  // Use UI-style descriptor layout (includes uniform buffer)
             .with_alpha_blending(true)
             .with_depth_test(false)
             .with_depth_write(false)

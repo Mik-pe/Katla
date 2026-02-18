@@ -149,6 +149,17 @@ pub enum FocusedPanel {
     Toolbar,
 }
 
+/// Panel resize edge for dragging.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PanelResizeEdge {
+    /// Left panel right edge.
+    LeftPanelRight,
+    /// Right panel left edge.
+    RightPanelLeft,
+    /// Asset browser top edge.
+    AssetBrowserTop,
+}
+
 /// Game Engine Editor UI state.
 pub struct EditorUI {
     /// Whether the editor is visible.
@@ -169,6 +180,12 @@ pub struct EditorUI {
     drag_offset: Vec2,
     /// Currently selected preferences tab.
     preferences_tab: PreferencesTab,
+    /// Left panel (hierarchy) width in pixels.
+    pub left_panel_width: f32,
+    /// Right panel (inspector) width in pixels.
+    pub right_panel_width: f32,
+    /// Which panel resize handle is being dragged (if any).
+    resizing_panel: Option<PanelResizeEdge>,
     /// Camera movement speed (for editor camera).
     pub camera_speed: f32,
     /// Snap to grid when moving entities.
@@ -213,6 +230,9 @@ impl EditorUI {
             dragging_panel: false,
             drag_offset: Vec2::new(0.0, 0.0),
             preferences_tab: PreferencesTab::default(),
+            left_panel_width: 220.0,
+            right_panel_width: 280.0,
+            resizing_panel: None,
             camera_speed: 50.0,
             snap_to_grid: true,
             grid_size: 1.0,
@@ -405,8 +425,6 @@ impl EditorUI {
         let padding = 4.0; // Inner padding for content
         let toolbar_height = 32.0;
         let status_bar_height = 24.0;
-        let left_panel_width = 220.0;
-        let right_panel_width = 280.0;
 
         // Asset browser height (0 if collapsed)
         let asset_browser_height = if self.asset_browser.collapsed {
@@ -432,27 +450,97 @@ impl EditorUI {
         let panel_bottom = screen_size.y() - status_bar_height - asset_browser_height;
         let panel_height = panel_bottom - panel_top;
 
+        // === PANEL RESIZE HANDLING ===
+        let resize_handle_width = 5.0;
+        let min_panel_width = 150.0;
+        let min_viewport_width = 200.0;
+        let min_asset_browser_height = 100.0;
+
+        // Left panel resize handle (right edge of left panel)
+        let left_resize_bounds = Rect2D::from_origin_size(
+            Vec2::new(self.left_panel_width - resize_handle_width / 2.0, panel_top),
+            Vec2::new(resize_handle_width, panel_height),
+        );
+
+        // Right panel resize handle (left edge of right panel)
+        let right_panel_x = screen_size.x() - self.right_panel_width;
+        let right_resize_bounds = Rect2D::from_origin_size(
+            Vec2::new(right_panel_x - resize_handle_width / 2.0, panel_top),
+            Vec2::new(resize_handle_width, panel_height),
+        );
+
+        // Asset browser resize handle (top edge)
+        let asset_resize_bounds = Rect2D::from_origin_size(
+            Vec2::new(0.0, panel_bottom - resize_handle_width / 2.0),
+            Vec2::new(screen_size.x(), resize_handle_width),
+        );
+
+        // Handle ongoing resize
+        if let Some(resize_edge) = self.resizing_panel {
+            if ui.input.is_mouse_down(katla_ui::input::mouse_button::LEFT) {
+                let mouse_x = ui.input.mouse_pos.x();
+                let mouse_y = ui.input.mouse_pos.y();
+
+                match resize_edge {
+                    PanelResizeEdge::LeftPanelRight => {
+                        let max_width = (screen_size.x() - self.right_panel_width - min_viewport_width).max(min_panel_width);
+                        self.left_panel_width = mouse_x.clamp(min_panel_width, max_width).round();
+                    }
+                    PanelResizeEdge::RightPanelLeft => {
+                        let min_x = self.left_panel_width + min_viewport_width;
+                        let max_width = (screen_size.x() - min_x).max(min_panel_width);
+                        self.right_panel_width = (screen_size.x() - mouse_x).clamp(min_panel_width, max_width).round();
+                    }
+                    PanelResizeEdge::AssetBrowserTop => {
+                        let max_height = (screen_size.y() - status_bar_height - toolbar_height - min_viewport_width).max(min_asset_browser_height);
+                        self.asset_browser.panel_height = (screen_size.y() - mouse_y - status_bar_height).clamp(min_asset_browser_height, max_height).round();
+                    }
+                }
+            } else {
+                self.resizing_panel = None;
+            }
+        }
+
+        // Check for resize handle hover and start dragging
+        if self.resizing_panel.is_none() {
+            if ui.is_hovered(left_resize_bounds) {
+                ui.set_mouse_cursor(katla_ui::input::MouseCursor::ResizeHorizontal);
+                if ui.input.mouse_clicked(katla_ui::input::mouse_button::LEFT) {
+                    self.resizing_panel = Some(PanelResizeEdge::LeftPanelRight);
+                }
+            } else if ui.is_hovered(right_resize_bounds) {
+                ui.set_mouse_cursor(katla_ui::input::MouseCursor::ResizeHorizontal);
+                if ui.input.mouse_clicked(katla_ui::input::mouse_button::LEFT) {
+                    self.resizing_panel = Some(PanelResizeEdge::RightPanelLeft);
+                }
+            } else if ui.is_hovered(asset_resize_bounds) && !self.asset_browser.collapsed {
+                ui.set_mouse_cursor(katla_ui::input::MouseCursor::ResizeVertical);
+                if ui.input.mouse_clicked(katla_ui::input::mouse_button::LEFT) {
+                    self.resizing_panel = Some(PanelResizeEdge::AssetBrowserTop);
+                }
+            }
+        }
+
         // === LEFT PANEL: Entity Hierarchy ===
         let left_panel_bounds = Rect2D::from_origin_size(
             Vec2::new(0.0, panel_top),
-            Vec2::new(left_panel_width, panel_height),
+            Vec2::new(self.left_panel_width, panel_height),
         );
         self.build_hierarchy_panel(ui, entities, left_panel_bounds);
 
         // Left panel right border
         ui.draw_rect(
             Rect2D::from_origin_size(
-                Vec2::new(left_panel_width, panel_top),
+                Vec2::new(self.left_panel_width, panel_top),
                 Vec2::new(1.0, panel_height),
             ),
             Color::new(0.3, 0.3, 0.3, 1.0),
         );
 
         // === RIGHT PANEL: Properties Inspector ===
-        let right_panel_x = screen_size.x() - right_panel_width;
         let right_panel_bounds = Rect2D::from_origin_size(
             Vec2::new(right_panel_x, panel_top),
-            Vec2::new(right_panel_width, panel_height),
+            Vec2::new(self.right_panel_width, panel_height),
         );
         self.build_inspector_panel(ui, entities, right_panel_bounds);
 
@@ -467,7 +555,7 @@ impl EditorUI {
 
         // === CENTER: Viewport Area ===
         let viewport_bounds = Rect2D::new(
-            Vec2::new(left_panel_width + 1.0, panel_top),
+            Vec2::new(self.left_panel_width + 1.0, panel_top),
             Vec2::new(right_panel_x - 1.0, panel_bottom),
         );
 
@@ -716,7 +804,13 @@ impl EditorUI {
             ui.scaled_font_size(FontSize::Medium),
         );
 
-        // Entity list
+        // Entity list with clipping
+        let content_bounds = Rect2D::from_origin_size(
+            Vec2::new(bounds.min.x(), bounds.min.y() + header_height),
+            Vec2::new(bounds.width(), bounds.height() - header_height),
+        );
+        ui.push_clip(content_bounds);
+
         let mut cursor = Vec2::new(bounds.min.x(), bounds.min.y() + header_height + 4.0);
         let item_height = 22.0;
         let indent_per_level = 16.0;
@@ -877,6 +971,8 @@ impl EditorUI {
                 ui.scaled_font_size(FontSize::Medium),
             );
         }
+
+        ui.pop_clip();
     }
 
     fn build_inspector_panel(
@@ -1303,13 +1399,16 @@ impl EditorUI {
                     mouse_pos.x() - self.drag_offset.x(),
                     mouse_pos.y() - self.drag_offset.y(),
                 );
-                // Clamp to screen bounds
+                // Clamp to screen bounds and round to integer pixels
+                // This ensures child UI elements stay pixel-aligned and don't wobble
                 let clamped_x = new_pos
                     .x()
-                    .clamp(0.0, (screen_size.x() - panel_width).max(0.0));
+                    .clamp(0.0, (screen_size.x() - panel_width).max(0.0))
+                    .round();
                 let clamped_y = new_pos
                     .y()
-                    .clamp(0.0, (screen_size.y() - panel_height).max(0.0));
+                    .clamp(0.0, (screen_size.y() - panel_height).max(0.0))
+                    .round();
                 self.preferences_panel_pos = Some(Vec2::new(clamped_x, clamped_y));
             } else {
                 self.dragging_panel = false;

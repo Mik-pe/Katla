@@ -323,6 +323,20 @@ impl VulkanRenderer {
         }
     }
 
+    /// Update UI screen size uniform.
+    ///
+    /// Call this each frame before rendering UI to set the screen size
+    /// for proper NDC transformation in the shader.
+    ///
+    /// # Arguments
+    /// * `width` - Screen width in pixels
+    /// * `height` - Screen height in pixels
+    pub fn update_ui_screen_size(&self, width: f32, height: f32) {
+        if let Some(ref textures) = self.ui_textures {
+            textures.update_screen_size(width, height);
+        }
+    }
+
     /// Resize the font atlas texture to a new size.
     ///
     /// Call this when the font system's atlas has grown.
@@ -2146,6 +2160,9 @@ pub struct UITextures {
     pub white_image_view: vk::ImageView,
     /// Sampler for textures.
     pub sampler: vk::Sampler,
+    /// Uniform buffer for UI shaders (screen_size for NDC transform).
+    pub uniform_buffer: vk::Buffer,
+    pub uniform_memory: Option<gpu_allocator::vulkan::Allocation>,
     /// Descriptor set layout for UI textures.
     pub descriptor_set_layout: vk::DescriptorSetLayout,
     /// Descriptor set with bound textures.
@@ -2213,7 +2230,7 @@ impl UITextures {
             let (font_image, font_memory, font_view) =
                 Self::create_texture(&context, atlas_width, atlas_height, &white_pixels)?;
 
-            // Create descriptor set layout (3 bindings: font atlas, sampler, viewport texture)
+            // Create descriptor set layout (4 bindings: font atlas, sampler, viewport texture, uniforms)
             let bindings = [
                 vk::DescriptorSetLayoutBinding::default()
                     .binding(0)
@@ -2230,6 +2247,11 @@ impl UITextures {
                     .descriptor_type(vk::DescriptorType::SAMPLED_IMAGE)
                     .descriptor_count(1)
                     .stage_flags(vk::ShaderStageFlags::FRAGMENT),
+                vk::DescriptorSetLayoutBinding::default()
+                    .binding(3)
+                    .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
+                    .descriptor_count(1)
+                    .stage_flags(vk::ShaderStageFlags::VERTEX),
             ];
 
             let layout_create_info =
@@ -2239,7 +2261,7 @@ impl UITextures {
                 .device
                 .create_descriptor_set_layout(&layout_create_info, None)?;
 
-            // Create descriptor pool (2 sampled images + 1 sampler)
+            // Create descriptor pool (2 sampled images + 1 sampler + 1 uniform buffer)
             let pool_sizes = [
                 vk::DescriptorPoolSize {
                     ty: vk::DescriptorType::SAMPLED_IMAGE,
@@ -2247,6 +2269,10 @@ impl UITextures {
                 },
                 vk::DescriptorPoolSize {
                     ty: vk::DescriptorType::SAMPLER,
+                    descriptor_count: 1,
+                },
+                vk::DescriptorPoolSize {
+                    ty: vk::DescriptorType::UNIFORM_BUFFER,
                     descriptor_count: 1,
                 },
             ];
@@ -2313,9 +2339,45 @@ impl UITextures {
                 .descriptor_type(vk::DescriptorType::SAMPLED_IMAGE)
                 .image_info(&viewport_infos);
 
+            // Create uniform buffer for UI shaders (16 bytes: vec2 screen_size + vec2 padding)
+            let uniform_buffer_size = 16u64;
+            let uniform_buffer_info = vk::BufferCreateInfo::default()
+                .sharing_mode(vk::SharingMode::EXCLUSIVE)
+                .usage(vk::BufferUsageFlags::UNIFORM_BUFFER)
+                .size(uniform_buffer_size);
+
+            let (uniform_buffer, uniform_memory) = context.allocate_buffer(
+                &uniform_buffer_info,
+                gpu_allocator::MemoryLocation::CpuToGpu,
+            );
+
+            // Initialize uniform buffer with default screen size
+            let uniform_ptr = context.map_buffer(&uniform_memory);
+            let initial_data: [f32; 4] = [1920.0, 1080.0, 0.0, 0.0]; // screen_size + padding
+            std::ptr::copy_nonoverlapping(
+                initial_data.as_ptr() as *const u8,
+                uniform_ptr,
+                16,
+            );
+
+            let uniform_buffer_info = vk::DescriptorBufferInfo {
+                buffer: uniform_buffer,
+                offset: 0,
+                range: uniform_buffer_size,
+            };
+
+            let uniform_infos = [uniform_buffer_info];
+
+            let uniform_write = vk::WriteDescriptorSet::default()
+                .dst_set(descriptor_set)
+                .dst_binding(3)
+                .dst_array_element(0)
+                .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
+                .buffer_info(&uniform_infos);
+
             context
                 .device
-                .update_descriptor_sets(&[font_write, sampler_write, viewport_write], &[]);
+                .update_descriptor_sets(&[font_write, sampler_write, viewport_write, uniform_write], &[]);
 
             Ok(Self {
                 font_image,
@@ -2325,6 +2387,8 @@ impl UITextures {
                 white_image_memory: Some(white_memory),
                 white_image_view: white_view,
                 sampler,
+                uniform_buffer,
+                uniform_memory: Some(uniform_memory),
                 descriptor_set_layout,
                 descriptor_set,
                 descriptor_pool,
@@ -2682,6 +2746,22 @@ impl UITextures {
         }
         self.viewport_image_view = Some(image_view);
     }
+
+    /// Update the uniform buffer with new screen size.
+    /// Call this each frame before rendering UI.
+    pub fn update_screen_size(&self, width: f32, height: f32) {
+        if let Some(ref memory) = self.uniform_memory {
+            let ptr = self.context.map_buffer(memory);
+            let data: [f32; 4] = [width, height, 0.0, 0.0]; // screen_size + padding
+            unsafe {
+                std::ptr::copy_nonoverlapping(
+                    data.as_ptr() as *const u8,
+                    ptr,
+                    16,
+                );
+            }
+        }
+    }
 }
 
 impl Drop for UITextures {
@@ -2700,6 +2780,11 @@ impl Drop for UITextures {
                 .destroy_image_view(self.white_image_view, None);
             self.context.device.destroy_image(self.white_image, None);
             if let Some(memory) = self.white_image_memory.take() {
+                self.context.allocator.borrow_mut().free(memory).ok();
+            }
+            // Destroy uniform buffer
+            self.context.device.destroy_buffer(self.uniform_buffer, None);
+            if let Some(memory) = self.uniform_memory.take() {
                 self.context.allocator.borrow_mut().free(memory).ok();
             }
             self.context

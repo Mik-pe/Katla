@@ -133,17 +133,13 @@ pub fn render_debug_ui(app: &mut Application, dt: f32) {
     if !vertices.is_empty() {
         use crate::rendering::ui_material::UiShaderVertex;
 
-        // Transform vertices from screen space to NDC
-        // Screen: (0,0) = top-left, Y increases downward
-        // Standard viewport: NDC y=-1 is top, y=+1 is bottom
+        // Convert vertices to shader format (screen coordinates in pixels)
+        // NDC transform happens in the shader using uniform buffer
         let shader_vertices: Vec<UiShaderVertex> = vertices
             .iter()
             .map(|v| {
-                let ndc_x = (v.position.x() / screen_size.x()) * 2.0 - 1.0;
-                let ndc_y = (v.position.y() / screen_size.y()) * 2.0 - 1.0;
-
                 UiShaderVertex::new(
-                    [ndc_x, ndc_y],
+                    [v.position.x(), v.position.y()],  // Screen coordinates (pixels)
                     [v.uv.x(), v.uv.y()],
                     [v.color.r, v.color.g, v.color.b, v.color.a],
                 )
@@ -187,6 +183,8 @@ pub fn render_debug_ui(app: &mut Application, dt: f32) {
         // Pass to renderer
         // Use physical size for viewport/scissor (Vulkan operates in physical pixels)
         if let Some(ref renderer) = app.renderer {
+            // Update screen size uniform for shader NDC transform
+            renderer.update_ui_screen_size(physical_size.x(), physical_size.y());
             renderer.set_ui_data(
                 vertex_bytes,
                 index_bytes,
@@ -211,6 +209,23 @@ pub fn render_debug_ui(app: &mut Application, dt: f32) {
             }
         }
         app.ui_context.fonts.mark_atlas_updated();
+    }
+
+    // Update OS cursor based on UI request
+    if let Some(ref window) = app.window {
+        use winit::window::CursorIcon;
+        let cursor_icon = match app.ui_context.input.cursor {
+            katla_ui::input::MouseCursor::Arrow => CursorIcon::Default,
+            katla_ui::input::MouseCursor::Text => CursorIcon::Text,
+            katla_ui::input::MouseCursor::ResizeHorizontal => CursorIcon::EwResize,
+            katla_ui::input::MouseCursor::ResizeVertical => CursorIcon::NsResize,
+            katla_ui::input::MouseCursor::ResizeDiagonal => CursorIcon::NwseResize,
+            katla_ui::input::MouseCursor::ResizeDiagonal2 => CursorIcon::NeswResize,
+            katla_ui::input::MouseCursor::Hand => CursorIcon::Pointer,
+            katla_ui::input::MouseCursor::Crosshair => CursorIcon::Crosshair,
+            katla_ui::input::MouseCursor::NotAllowed => CursorIcon::NotAllowed,
+        };
+        window.set_cursor(cursor_icon);
     }
 
     // Clear input state for next frame
