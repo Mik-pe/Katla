@@ -460,6 +460,11 @@ impl AssetBrowserState {
         self.rename_buffer.clear();
     }
 
+    /// Take pending actions, clearing the list.
+    pub fn take_actions(&mut self) -> Vec<AssetAction> {
+        std::mem::take(&mut self.pending_actions)
+    }
+
     /// Handle keyboard navigation.
     pub fn handle_keyboard(&mut self, key: katla_ui::input::KeyCode) -> Option<AssetAction> {
         if self.search_focused || self.assets.is_empty() {

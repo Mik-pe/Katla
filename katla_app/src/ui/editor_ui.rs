@@ -574,6 +574,25 @@ impl EditorUI {
         );
         super::asset_browser::build_asset_browser(&mut self.asset_browser, ui, &self.theme, asset_browser_bounds, &mut self.focused_panel);
 
+        // Process asset browser actions
+        for action in self.asset_browser.take_actions() {
+            match action {
+                super::asset_browser::AssetAction::DragToViewport { path, asset_type, screen_pos } => {
+                    // Check if dropped in viewport area (not in panels)
+                    if viewport_bounds.contains(screen_pos) {
+                        // For now, spawn at origin. TODO: Raycast to find world position
+                        let model = match asset_type {
+                            super::asset_browser::AssetType::Model => SpawnableModel::Cube, // TODO: Load actual model
+                            _ => SpawnableModel::Cube,
+                        };
+                        self.pending_actions.push(EditorAction::SpawnModel(model, Vec3::new(0.0, 0.0, 0.0)));
+                    }
+                }
+                // Other actions are handled elsewhere or not implemented yet
+                _ => {}
+            }
+        }
+
         // Asset browser top border
         ui.draw_rect(
             Rect2D::from_origin_size(
