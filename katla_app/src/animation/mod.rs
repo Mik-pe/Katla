@@ -54,6 +54,7 @@ pub use skin::{JointWeights, Skeleton, Skin};
 pub use systems::{AnimationUpdateSystem, MorphTargetSystem, SkeletalAnimationSystem};
 
 use katla_ecs::World;
+use crate::util::gltf_parser::AttributeParser;
 
 /// Animation system manager
 ///
@@ -100,6 +101,7 @@ impl AnimationManager {
         }
 
         // Load animations into AnimatedModel component
+        let parser = AttributeParser::new(&model.buffers);
         let mut animated_model = AnimatedModel {
             animations: std::collections::HashMap::new(),
             sequences: std::collections::HashMap::new(),
@@ -113,7 +115,7 @@ impl AnimationManager {
 
             log::debug!("Loading animation '{}' for entity {:?}", name, entity);
 
-            let clip = gltf_loader::load_animation_clip(&model.buffers, gltf_animation);
+            let clip = gltf_loader::load_animation_clip(&parser, gltf_animation);
             animated_model.animations.insert(name, clip);
         }
 

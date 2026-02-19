@@ -155,15 +155,21 @@ impl ApplicationHandler for Application {
             let context = renderer.context.clone();
             let fox_model = self.gltf_cache.read(fox_path);
 
-            let material_registry_ptr: *const std::cell::RefCell<MaterialRegistry> =
+            // Get material registry reference before mutable borrow of renderer
+            // This is safe: we only read the RefCell's address, not its contents
+            let material_registry: *const std::cell::RefCell<MaterialRegistry> =
                 &renderer.material_registry;
+
             let fox = Model::from_gltf(
                 &mut self.world,
                 fox_model.clone(),
                 context,
                 Some(&mut renderer),
                 fox_transform,
-                material_registry_ptr,
+                // SAFETY: We're passing a valid reference to the material_registry.
+                // The renderer's mutable borrow is only used for registration,
+                // not for accessing material_registry during material creation.
+                unsafe { &*material_registry },
             );
 
             info!(
@@ -269,7 +275,8 @@ impl ApplicationHandler for Application {
                 renderer.context.clone(),
                 Some(&mut renderer),
                 avocado_transform,
-                material_registry_ptr,
+                // SAFETY: Same as above - registry is only used for reading templates
+                unsafe { &*material_registry },
             );
             if let Some(name_comp) = self.world.get_component_mut::<NameComponent>(_avocado.entity) {
                 name_comp.name = "Avocado (PBR Test)".to_string();
@@ -292,7 +299,8 @@ impl ApplicationHandler for Application {
                 renderer.context.clone(),
                 Some(&mut renderer),
                 helmet_transform,
-                material_registry_ptr,
+                // SAFETY: Same as above - registry is only used for reading templates
+                unsafe { &*material_registry },
             );
             if let Some(name_comp) = self.world.get_component_mut::<NameComponent>(_helmet.entity) {
                 name_comp.name = "DamagedHelmet (Full PBR)".to_string();

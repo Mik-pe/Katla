@@ -4,7 +4,7 @@
 
 use byteorder::{ByteOrder, LittleEndian};
 use gltf::buffer::Data as BufferData;
-use katla_math::{Sphere, Vec3};
+use katla_math::{Mat4, Quat, Sphere, Vec3, Vec4};
 
 use crate::rendering::{VertexPBR, VertexSkinned};
 
@@ -16,6 +16,15 @@ pub struct AttributeParser<'a> {
 impl<'a> AttributeParser<'a> {
     pub fn new(buffers: &'a [BufferData]) -> Self {
         Self { buffers }
+    }
+
+    /// Parse scalar f32 values from an accessor.
+    /// Used for animation keyframe times and other scalar data.
+    pub fn parse_scalars(&self, accessor: gltf::Accessor<'a>) -> Vec<f32> {
+        accessor
+            .view()
+            .and_then(|view| self.parse_scalar_accessor(accessor, view))
+            .unwrap_or_default()
     }
 
     /// Parse position data from an accessor.
@@ -289,6 +298,137 @@ impl<'a> AttributeParser<'a> {
         } else {
             None
         }
+    }
+
+    /// Helper to parse scalar f32 values from an accessor with its view.
+    /// Used for animation keyframe times.
+    fn parse_scalar_accessor(
+        &self,
+        accessor: gltf::Accessor<'a>,
+        view: gltf::buffer::View<'a>,
+    ) -> Option<Vec<f32>> {
+        let buf_index = view.buffer().index();
+        let buf_stride = view.stride();
+        let attr_buf = &self.buffers[buf_index];
+
+        let start_index = accessor.offset() + view.offset();
+        let stride = buf_stride.unwrap_or(accessor.size());
+        let total_size = accessor.size() * accessor.count();
+        let end_index = start_index + total_size;
+
+        let attr_arr = &attr_buf[start_index..end_index];
+
+        if accessor.data_type() == gltf::accessor::DataType::F32 {
+            Some(
+                attr_arr
+                    .chunks(stride)
+                    .map(|bytes| LittleEndian::read_f32(&bytes[0..4]))
+                    .collect(),
+            )
+        } else {
+            None
+        }
+    }
+
+    /// Parse 4x4 matrices from an accessor.
+    /// Used for inverse bind matrices in skinning.
+    pub fn parse_matrices(&self, accessor: gltf::Accessor<'a>) -> Vec<Mat4> {
+        accessor
+            .view()
+            .and_then(|view| self.parse_mat4_accessor(accessor, view))
+            .unwrap_or_default()
+    }
+
+    /// Helper to parse Mat4 data from an accessor with its view.
+    fn parse_mat4_accessor(
+        &self,
+        accessor: gltf::Accessor<'a>,
+        view: gltf::buffer::View<'a>,
+    ) -> Option<Vec<Mat4>> {
+        let buf_index = view.buffer().index();
+        let buf_stride = view.stride();
+        let attr_buf = &self.buffers[buf_index];
+
+        let start_index = accessor.offset() + view.offset();
+        let stride = buf_stride.unwrap_or(accessor.size());
+        let total_size = accessor.size() * accessor.count();
+        let end_index = start_index + total_size;
+
+        let attr_arr = &attr_buf[start_index..end_index];
+
+        // Mat4 is 16 x F32 = 64 bytes
+        if accessor.data_type() == gltf::accessor::DataType::F32
+            && accessor.dimensions() == gltf::accessor::Dimensions::Mat4
+        {
+            Some(
+                attr_arr
+                    .chunks(stride)
+                    .map(|bytes| {
+                        // GLTF stores matrices in column-major order
+                        let cols: [[f32; 4]; 4] = [
+                            [
+                                LittleEndian::read_f32(&bytes[0..4]),
+                                LittleEndian::read_f32(&bytes[4..8]),
+                                LittleEndian::read_f32(&bytes[8..12]),
+                                LittleEndian::read_f32(&bytes[12..16]),
+                            ],
+                            [
+                                LittleEndian::read_f32(&bytes[16..20]),
+                                LittleEndian::read_f32(&bytes[20..24]),
+                                LittleEndian::read_f32(&bytes[24..28]),
+                                LittleEndian::read_f32(&bytes[28..32]),
+                            ],
+                            [
+                                LittleEndian::read_f32(&bytes[32..36]),
+                                LittleEndian::read_f32(&bytes[36..40]),
+                                LittleEndian::read_f32(&bytes[40..44]),
+                                LittleEndian::read_f32(&bytes[44..48]),
+                            ],
+                            [
+                                LittleEndian::read_f32(&bytes[48..52]),
+                                LittleEndian::read_f32(&bytes[52..56]),
+                                LittleEndian::read_f32(&bytes[56..60]),
+                                LittleEndian::read_f32(&bytes[60..64]),
+                            ],
+                        ];
+                        // Convert to our Mat4 format (array of Vec4 rows)
+                        Mat4([
+                            Vec4::new(cols[0][0], cols[1][0], cols[2][0], cols[3][0]),
+                            Vec4::new(cols[0][1], cols[1][1], cols[2][1], cols[3][1]),
+                            Vec4::new(cols[0][2], cols[1][2], cols[2][2], cols[3][2]),
+                            Vec4::new(cols[0][3], cols[1][3], cols[2][3], cols[3][3]),
+                        ])
+                    })
+                    .collect(),
+            )
+        } else {
+            None
+        }
+    }
+
+    /// Parse quaternion rotations from an accessor.
+    /// Used for animation rotation keyframes.
+    pub fn parse_quaternions(&self, accessor: gltf::Accessor<'a>) -> Vec<Quat> {
+        accessor
+            .view()
+            .and_then(|view| self.parse_quat_accessor(accessor, view))
+            .unwrap_or_default()
+    }
+
+    /// Helper to parse quaternion data from an accessor.
+    fn parse_quat_accessor(
+        &self,
+        accessor: gltf::Accessor<'a>,
+        view: gltf::buffer::View<'a>,
+    ) -> Option<Vec<Quat>> {
+        let vec4s = self.parse_vec4_accessor(accessor, view)?;
+        // GLTF stores quaternions as [x, y, z, w], our Quat uses (x, y, z, w)
+        Some(
+            vec4s
+                .into_iter()
+                .map(|v| Quat::new_from_xyzw(v[0], v[1], v[2], v[3]))
+                .collect(),
+        )
     }
 }
 

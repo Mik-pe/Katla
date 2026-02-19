@@ -516,8 +516,10 @@ pub fn spawn_model_from_path(app: &mut Application, path: std::path::PathBuf, po
     // Create transform for the model
     let transform = katla_math::Transform::new_from_position(position);
 
-    // Get the material registry pointer for the model creation
-    let material_registry_ptr: *const std::cell::RefCell<MaterialRegistry> =
+    // Get material registry pointer before mutable borrow
+    // SAFETY: We only read the RefCell's address. The mutable borrow of renderer
+    // is used for registration only, not for accessing material_registry.
+    let material_registry: *const std::cell::RefCell<katla_vulkan::MaterialRegistry> =
         &app.renderer.as_ref().unwrap().material_registry;
 
     // Create entity with the loaded model using the smart unified importer
@@ -527,7 +529,7 @@ pub fn spawn_model_from_path(app: &mut Application, path: std::path::PathBuf, po
         context,
         app.renderer.as_mut(),
         transform,
-        material_registry_ptr,
+        unsafe { &*material_registry },
     );
 
     // Update name with filename

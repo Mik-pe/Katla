@@ -2,13 +2,14 @@ use crate::animation::samplers::Interpolation;
 use crate::animation::{
     AnimatedModel, AnimationChannel, AnimationClip, AnimationSampler, ChannelPath,
 };
+use crate::util::gltf_parser::AttributeParser;
 use crate::util::GLTFModel;
-use byteorder::{ByteOrder, LittleEndian};
 use gltf::buffer::Data as BufferData;
 use katla_ecs::World;
 
 pub fn load_animations(world: &mut World, model: &GLTFModel) {
     let document = &model.document;
+    let parser = AttributeParser::new(&model.buffers);
 
     let animations: Vec<_> = document.animations().collect();
     if animations.is_empty() {
@@ -31,7 +32,7 @@ pub fn load_animations(world: &mut World, model: &GLTFModel) {
 
         log::debug!("  Parsing animation '{}'", name);
 
-        let clip = load_animation_clip(&model.buffers, gltf_animation);
+        let clip = load_animation_clip(&parser, gltf_animation);
         animated_model.animations.insert(name, clip);
     }
 
@@ -49,7 +50,7 @@ pub fn load_animations(world: &mut World, model: &GLTFModel) {
 ///
 /// This is exposed for `AnimationManager::setup_animated_model`.
 pub fn load_animation_clip(
-    buffers: &[BufferData],
+    parser: &AttributeParser,
     gltf_animation: &gltf::Animation,
 ) -> AnimationClip {
     let name = gltf_animation
@@ -80,7 +81,7 @@ pub fn load_animation_clip(
         let output_accessor = sampler.output();
 
         let animation_sampler = parse_sampler(
-            buffers,
+            parser,
             input_accessor,
             output_accessor,
             property,
@@ -104,118 +105,37 @@ pub fn load_animation_clip(
 }
 
 fn parse_sampler(
-    buffers: &[BufferData],
+    parser: &AttributeParser,
     input_accessor: gltf::Accessor,
     output_accessor: gltf::Accessor,
     path: ChannelPath,
     interpolation: Interpolation,
 ) -> AnimationSampler {
-    let inputs = parse_accessor_f32(buffers, input_accessor);
+    let inputs = parser.parse_scalars(input_accessor);
 
     match path {
         ChannelPath::Translation => {
-            let translations = parse_accessor_vec3(buffers, output_accessor);
+            let translations = parser.parse_positions(output_accessor);
             AnimationSampler::new_translation(inputs, translations, interpolation)
         }
         ChannelPath::Rotation => {
-            let rotations = parse_accessor_vec4(buffers, output_accessor);
+            let rotations = parser.parse_tangents(output_accessor); // Vec4 quaternions
             AnimationSampler::new_rotation(inputs, rotations, interpolation)
         }
         ChannelPath::Scale => {
-            let scales = parse_accessor_vec3(buffers, output_accessor);
+            let scales = parser.parse_positions(output_accessor); // Vec3 scales
             AnimationSampler::new_scale(inputs, scales, interpolation)
         }
         ChannelPath::Weights => {
-            let weights = parse_accessor_f32(buffers, output_accessor);
+            let weights = parser.parse_scalars(output_accessor);
             AnimationSampler::new_weights(inputs, weights, interpolation)
         }
     }
 }
 
-fn parse_accessor_f32(buffers: &[BufferData], accessor: gltf::Accessor) -> Vec<f32> {
-    let view = match accessor.view() {
-        Some(v) => v,
-        None => return vec![],
-    };
-
-    let buf_index = view.buffer().index();
-    let buf_stride = view.stride();
-    let attr_buf = &buffers[buf_index];
-
-    let start_index = accessor.offset() + view.offset();
-    let stride = buf_stride.unwrap_or(accessor.size());
-    let total_size = accessor.size() * accessor.count();
-    let end_index = start_index + total_size;
-
-    let attr_arr = &attr_buf[start_index..end_index];
-
-    attr_arr
-        .chunks(stride)
-        .map(|bytes| LittleEndian::read_f32(&bytes[0..4]))
-        .collect()
-}
-
-fn parse_accessor_vec3(buffers: &[BufferData], accessor: gltf::Accessor) -> Vec<[f32; 3]> {
-    let view = match accessor.view() {
-        Some(v) => v,
-        None => return vec![],
-    };
-
-    let buf_index = view.buffer().index();
-    let buf_stride = view.stride();
-    let attr_buf = &buffers[buf_index];
-
-    let start_index = accessor.offset() + view.offset();
-    let stride = buf_stride.unwrap_or(accessor.size());
-    let total_size = accessor.size() * accessor.count();
-    let end_index = start_index + total_size;
-
-    let attr_arr = &attr_buf[start_index..end_index];
-
-    attr_arr
-        .chunks(stride)
-        .map(|bytes| {
-            [
-                LittleEndian::read_f32(&bytes[0..4]),
-                LittleEndian::read_f32(&bytes[4..8]),
-                LittleEndian::read_f32(&bytes[8..12]),
-            ]
-        })
-        .collect()
-}
-
-fn parse_accessor_vec4(buffers: &[BufferData], accessor: gltf::Accessor) -> Vec<[f32; 4]> {
-    let view = match accessor.view() {
-        Some(v) => v,
-        None => return vec![],
-    };
-
-    let buf_index = view.buffer().index();
-    let buf_stride = view.stride();
-    let attr_buf = &buffers[buf_index];
-
-    let start_index = accessor.offset() + view.offset();
-    let stride = buf_stride.unwrap_or(accessor.size());
-    let total_size = accessor.size() * accessor.count();
-    let end_index = start_index + total_size;
-
-    let attr_arr = &attr_buf[start_index..end_index];
-
-    attr_arr
-        .chunks(stride)
-        .map(|bytes| {
-            [
-                LittleEndian::read_f32(&bytes[0..4]),
-                LittleEndian::read_f32(&bytes[4..8]),
-                LittleEndian::read_f32(&bytes[8..12]),
-                LittleEndian::read_f32(&bytes[12..16]),
-            ]
-        })
-        .collect()
-}
-
 pub fn load_skins(world: &mut World, model: &GLTFModel) {
     let document = &model.document;
+    let parser = AttributeParser::new(&model.buffers);
 
     let skins: Vec<_> = document.skins().collect();
     if skins.is_empty() {
@@ -239,7 +159,7 @@ pub fn load_skins(world: &mut World, model: &GLTFModel) {
         log::debug!("    - Found {} joints", joints_count);
 
         let inverse_bind_matrices = if let Some(accessor) = gltf_skin.inverse_bind_matrices() {
-            parse_accessor_mat4(&model.buffers, accessor)
+            parser.parse_matrices(accessor)
         } else {
             log::debug!("    - No inverse bind matrices, using identity");
             vec![katla_math::Mat4::identity(); joints_count]
@@ -264,58 +184,8 @@ pub fn load_skins(world: &mut World, model: &GLTFModel) {
 ///
 /// This is exposed for `AnimationManager::setup_animated_model`.
 pub fn parse_mat4_from_accessor(buffers: &[BufferData], accessor: gltf::Accessor) -> Vec<katla_math::Mat4> {
-    parse_accessor_mat4(buffers, accessor)
-}
-
-fn parse_accessor_mat4(buffers: &[BufferData], accessor: gltf::Accessor) -> Vec<katla_math::Mat4> {
-    let view = match accessor.view() {
-        Some(v) => v,
-        None => return vec![],
-    };
-
-    let buf_index = view.buffer().index();
-    let buf_stride = view.stride();
-    let attr_buf = &buffers[buf_index];
-
-    let start_index = accessor.offset() + view.offset();
-    let stride = buf_stride.unwrap_or(accessor.size());
-    let total_size = accessor.size() * accessor.count();
-    let end_index = start_index + total_size;
-
-    let attr_arr = &attr_buf[start_index..end_index];
-
-    attr_arr
-        .chunks(stride)
-        .map(|bytes| {
-            // GLTF stores matrices in COLUMN-MAJOR order
-            // katla_math::Mat4 is also COLUMN-MAJOR (Vec4 array is columns)
-            // So we can read directly without transposing!
-            let c0r0 = LittleEndian::read_f32(&bytes[0..4]);
-            let c0r1 = LittleEndian::read_f32(&bytes[4..8]);
-            let c0r2 = LittleEndian::read_f32(&bytes[8..12]);
-            let c0r3 = LittleEndian::read_f32(&bytes[12..16]);
-            let c1r0 = LittleEndian::read_f32(&bytes[16..20]);
-            let c1r1 = LittleEndian::read_f32(&bytes[20..24]);
-            let c1r2 = LittleEndian::read_f32(&bytes[24..28]);
-            let c1r3 = LittleEndian::read_f32(&bytes[28..32]);
-            let c2r0 = LittleEndian::read_f32(&bytes[32..36]);
-            let c2r1 = LittleEndian::read_f32(&bytes[36..40]);
-            let c2r2 = LittleEndian::read_f32(&bytes[40..44]);
-            let c2r3 = LittleEndian::read_f32(&bytes[44..48]);
-            let c3r0 = LittleEndian::read_f32(&bytes[48..52]);
-            let c3r1 = LittleEndian::read_f32(&bytes[52..56]);
-            let c3r2 = LittleEndian::read_f32(&bytes[56..60]);
-            let c3r3 = LittleEndian::read_f32(&bytes[60..64]);
-
-            // Mat4 stores columns as Vec4 - direct mapping from GLTF
-            katla_math::Mat4([
-                katla_math::Vec4::new(c0r0, c0r1, c0r2, c0r3),  // Column 0
-                katla_math::Vec4::new(c1r0, c1r1, c1r2, c1r3),  // Column 1
-                katla_math::Vec4::new(c2r0, c2r1, c2r2, c2r3),  // Column 2
-                katla_math::Vec4::new(c3r0, c3r1, c3r2, c3r3),  // Column 3
-            ])
-        })
-        .collect()
+    let parser = AttributeParser::new(buffers);
+    parser.parse_matrices(accessor)
 }
 
 pub fn build_skeleton(model: &GLTFModel, skin_joints: &[usize]) -> Vec<katla_math::Mat4> {

@@ -231,17 +231,13 @@ impl Model {
     /// - Detecting if the model has skinning (skeletal animation)
     /// - Always using full PBR with default textures for missing maps
     /// - Selecting the appropriate shader template automatically
-    ///
-    /// # Safety
-    /// The registry_ptr must point to a valid MaterialRegistry that outlives
-    /// this function call.
     pub fn from_gltf(
         world: &mut World,
         model: Rc<GLTFModel>,
         context: Rc<VulkanContext>,
         renderer: Option<&mut VulkanRenderer>,
         transform: Transform,
-        material_registry_ptr: *const std::cell::RefCell<MaterialRegistry>,
+        material_registry: &std::cell::RefCell<MaterialRegistry>,
     ) -> Self {
         use katla_vulkan::material::PbrTextureSet;
 
@@ -354,18 +350,16 @@ impl Model {
         ];
 
         // Create material based on skinning detection
-        let material = unsafe {
-            let registry = &*material_registry_ptr;
-
+        let material = {
             if has_skinning {
                 // Use skinned shader template (currently only supports albedo texture)
                 // TODO: Create a gltf_skinned_pbr_full template for full PBR on skinned models
-                if let Some(template) = registry.borrow().get_template("gltf_skinned") {
+                if let Some(template) = material_registry.borrow().get_template("gltf_skinned") {
                     info!("  Using gltf_skinned template");
                     Material::from_template_skinned(template, Some(albedo_tex), None)
                 } else {
                     warn!("  Template 'gltf_skinned' not found, falling back to gltf_default");
-                    if let Some(template) = registry.borrow().get_template("gltf_default") {
+                    if let Some(template) = material_registry.borrow().get_template("gltf_default") {
                         Material::from_template(template, Some(albedo_tex), None)
                     } else {
                         Material::new(model.clone(), context.clone())
@@ -373,12 +367,12 @@ impl Model {
                 }
             } else {
                 // Use full PBR template for static models
-                if let Some(template) = registry.borrow().get_template("gltf_pbr_full") {
+                if let Some(template) = material_registry.borrow().get_template("gltf_pbr_full") {
                     info!("  Using gltf_pbr_full template");
                     Material::from_template_pbr(template, pbr_textures, texture_refs, None)
                 } else {
                     warn!("  Template 'gltf_pbr_full' not found, falling back to gltf_default");
-                    if let Some(template) = registry.borrow().get_template("gltf_default") {
+                    if let Some(template) = material_registry.borrow().get_template("gltf_default") {
                         Material::from_template(template, Some(albedo_tex), None)
                     } else {
                         Material::new(model.clone(), context.clone())
