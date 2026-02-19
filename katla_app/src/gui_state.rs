@@ -33,14 +33,9 @@ impl Default for GuiState {
 }
 
 impl GuiState {
-    /// Get the config directory path for the current OS.
-    pub fn config_dir() -> Option<PathBuf> {
-        dirs::config_dir().map(|p| p.join("katla"))
-    }
-
     /// Get the GUI state file path.
     pub fn file_path() -> Option<PathBuf> {
-        Self::config_dir().map(|p| p.join("gui_state.toml"))
+        crate::util::katla_config_file("gui_state.toml")
     }
 
     /// Load GUI state from disk, or return defaults if not found.
@@ -69,7 +64,7 @@ impl GuiState {
 
     /// Save GUI state to disk.
     pub fn save(&self) -> io::Result<()> {
-        let config_dir = Self::config_dir().ok_or_else(|| {
+        let config_dir = crate::util::katla_config_dir().ok_or_else(|| {
             io::Error::new(
                 io::ErrorKind::NotFound,
                 "Could not determine config directory",

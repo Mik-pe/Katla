@@ -97,14 +97,14 @@ impl Model {
         context: Rc<VulkanContext>,
         renderer: Option<&mut VulkanRenderer>,
         transform: Transform,
-        material_registry: Option<&std::cell::RefCell<MaterialRegistry>>,
+        material_registry: Option<&std::rc::Rc<std::cell::RefCell<MaterialRegistry>>>,
     ) -> Self {
         // Try to create material from template first
         // Use provided registry, or get from renderer
         let registry_ref = if let Some(registry) = material_registry {
-            Some(registry)
+            Some(Rc::clone(registry))
         } else {
-            renderer.as_ref().map(|r| &r.material_registry)
+            renderer.as_ref().map(|r| Rc::clone(&r.material_registry))
         };
 
         let material = if let Some(registry) = registry_ref {

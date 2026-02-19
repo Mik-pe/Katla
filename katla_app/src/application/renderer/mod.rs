@@ -12,6 +12,13 @@ use crate::rendering::{GizmoMaterial, GridMaterial, SkyMaterial};
 
 use super::Application;
 
+/// UI vertex buffer size in bytes (256KB - enough for complex UIs)
+const UI_VERTEX_BUFFER_SIZE: usize = 256 * 1024;
+/// UI index buffer size in bytes (128KB - enough for complex UIs)
+const UI_INDEX_BUFFER_SIZE: usize = 128 * 1024;
+/// Font atlas texture size (width and height in pixels)
+const FONT_ATLAS_SIZE: u32 = 512;
+
 /// Gizmo rendering resources stored in the application.
 pub struct GizmoResources {
     pub mesh_handle: MeshHandle,
@@ -46,11 +53,11 @@ pub fn setup_render_graph(app: &mut Application) {
     renderer.set_ui_pipeline(ui_material.pipeline());
 
     // Initialize UI buffers (256KB vertex, 128KB index - enough for complex UIs)
-    renderer.init_ui_buffers(256 * 1024, 128 * 1024);
+    renderer.init_ui_buffers(UI_VERTEX_BUFFER_SIZE as u64, UI_INDEX_BUFFER_SIZE as u64);
 
     // Initialize UI textures (512x512 font atlas)
     renderer
-        .init_ui_textures(512, 512)
+        .init_ui_textures(FONT_ATLAS_SIZE, FONT_ATLAS_SIZE)
         .expect("Failed to initialize UI textures");
 
     // Initialize viewport render target for game engine editor

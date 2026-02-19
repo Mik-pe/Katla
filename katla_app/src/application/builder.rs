@@ -18,6 +18,9 @@ use crate::{
     util::{BackgroundLoader, FileCache, GLTFModel, Timer},
 };
 
+/// Default font sizes for UI text (in pixels)
+const DEFAULT_UI_FONT_SIZES: &[f32] = &[14.0, 16.0];
+
 #[derive(Default)]
 pub struct ApplicationBuilder {
     app_name: String,
@@ -57,10 +60,13 @@ impl ApplicationBuilder {
         self
     }
 
-    pub fn with_systems(mut self, systems: Vec<Box<dyn System>>) -> Self {
-        for system in systems {
-            self.world
-                .register_system(system, SystemExecutionOrder::default());
+    /// Add multiple systems with their execution orders.
+    ///
+    /// # Arguments
+    /// * `systems` - Vector of (system, order) tuples
+    pub fn with_systems(mut self, systems: Vec<(Box<dyn System>, SystemExecutionOrder)>) -> Self {
+        for (system, order) in systems {
+            self.world.register_system(system, order);
         }
         self
     }
@@ -117,8 +123,9 @@ impl ApplicationBuilder {
                             // Precache common ASCII characters at typical UI sizes
                             // Note: Using scale_factor 1.0 for initial cache; will re-rasterize at
                             // actual DPI scale on first use if different
-                            ui_context.fonts.precache_ascii(font_id, 14.0, 1.0);
-                            ui_context.fonts.precache_ascii(font_id, 16.0, 1.0);
+                            for &size in DEFAULT_UI_FONT_SIZES {
+                                ui_context.fonts.precache_ascii(font_id, size, 1.0);
+                            }
                             ui_context.set_font(font_id);
                             log::info!("Loaded default font from {}", font_path.display());
                         }
@@ -145,18 +152,14 @@ impl ApplicationBuilder {
                             // Precache common icons at typical UI sizes
                             // Note: Using scale_factor 1.0 for initial cache; will re-rasterize at
                             // actual DPI scale on first use if different
-                            ui_context.fonts.precache_icons(
-                                FontId::ICON,
-                                14.0,
-                                1.0,
-                                ForkAwesome::common_icons(),
-                            );
-                            ui_context.fonts.precache_icons(
-                                FontId::ICON,
-                                16.0,
-                                1.0,
-                                ForkAwesome::common_icons(),
-                            );
+                            for &size in DEFAULT_UI_FONT_SIZES {
+                                ui_context.fonts.precache_icons(
+                                    FontId::ICON,
+                                    size,
+                                    1.0,
+                                    ForkAwesome::common_icons(),
+                                );
+                            }
                             log::info!("Loaded icon font from {}", icon_font_path.display());
                         }
                         Err(e) => {

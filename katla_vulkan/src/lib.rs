@@ -47,7 +47,8 @@ pub struct VulkanRenderer {
     pub asset_registry: AssetRegistry,
     /// Material registry for template-based materials with hot reload.
     /// Loads materials from TOML files and supports runtime shader reloading.
-    pub material_registry: RefCell<MaterialRegistry>,
+    /// Wrapped in Rc to allow cloning for safe access during model loading.
+    pub material_registry: Rc<RefCell<MaterialRegistry>>,
     /// The render graph - single graph with multiple framebuffers (one per swapchain image)
     pub render_graph: Option<CompiledRenderGraph>,
     /// Storage uniform manager for storage buffer-based uniforms.
@@ -125,7 +126,7 @@ impl VulkanRenderer {
             swap_data,
             current_framedata: None,
             asset_registry: AssetRegistry::new(),
-            material_registry: RefCell::new(MaterialRegistry::new()),
+            material_registry: Rc::new(RefCell::new(MaterialRegistry::new())),
             render_graph: None,
             storage_manager: None,
             storage_descriptor_set: None,
