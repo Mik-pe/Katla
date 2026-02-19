@@ -1088,14 +1088,7 @@ impl EditorUI {
 
         // Panel background
         ui.draw_rect(bounds, theme.panel_bg);
-
-        // Draw focus indicator border if focused
-        let is_focused = self.focused_panel == FocusedPanel::Hierarchy;
-        if is_focused {
-            ui.draw_rect_border(bounds, theme.panel_bg, theme.highlight, 2.0);
-        } else {
-            ui.draw_rect_border(bounds, theme.panel_bg, theme.panel_border, 1.0);
-        }
+        ui.draw_rect_border(bounds, theme.panel_bg, theme.panel_border, 1.0);
 
         // Panel header
         let header_height = 24.0;
@@ -1463,14 +1456,7 @@ impl EditorUI {
 
         // Panel background
         ui.draw_rect(bounds, theme.panel_bg);
-
-        // Draw focus indicator border if focused
-        let is_focused = self.focused_panel == FocusedPanel::Inspector;
-        if is_focused {
-            ui.draw_rect_border(bounds, theme.panel_bg, theme.highlight, 2.0);
-        } else {
-            ui.draw_rect_border(bounds, theme.panel_bg, theme.panel_border, 1.0);
-        }
+        ui.draw_rect_border(bounds, theme.panel_bg, theme.panel_border, 1.0);
 
         // Panel header
         let header_height = 24.0;
@@ -1657,13 +1643,6 @@ impl EditorUI {
         // Focus this panel when clicked
         if ui.is_hovered(bounds) && ui.input.mouse_clicked(katla_ui::input::mouse_button::LEFT) {
             self.focused_panel = FocusedPanel::Viewport;
-        }
-
-        // Draw focus indicator border if focused
-        let is_focused = self.focused_panel == FocusedPanel::Viewport;
-        if is_focused {
-            // Draw highlight border
-            ui.draw_rect_border(bounds, Color::TRANSPARENT, theme.highlight, 2.0);
         }
 
         // Draw the viewport texture (rendered 3D scene)
