@@ -962,8 +962,7 @@ impl EditorUI {
                 Vec2::new(view_bounds.min.x(), item_y),
                 Vec2::new(dropdown_width, item_height),
             );
-            let grid_text = if self.show_grid { "✓ Grid" } else { "  Grid" };
-            if ui.menu_item("view_grid", grid_text, grid_bounds) {
+            if ui.toggle_menu_item("view_grid", "Grid", self.show_grid, grid_bounds) {
                 self.show_grid = !self.show_grid;
                 self.pending_actions.push(EditorAction::ToggleGrid);
                 ui.close_current_popup();
@@ -975,8 +974,7 @@ impl EditorUI {
                 Vec2::new(view_bounds.min.x(), item_y),
                 Vec2::new(dropdown_width, item_height),
             );
-            let stats_text = if self.show_stats { "✓ Stats" } else { "  Stats" };
-            if ui.menu_item("view_stats", stats_text, stats_bounds) {
+            if ui.toggle_menu_item("view_stats", "Stats", self.show_stats, stats_bounds) {
                 self.show_stats = !self.show_stats;
                 self.pending_actions.push(EditorAction::ToggleStats);
                 ui.close_current_popup();
@@ -1039,9 +1037,8 @@ impl EditorUI {
         );
         cursor = Vec2::new(cursor.x() + padding * 2.0, cursor.y());
 
-        // Play/Pause button
+        // Play/Pause button with icon
         let play_width = 70.0;
-        let play_text = if self.is_playing { "⏸ Pause" } else { "▶ Play" };
         let play_bounds = Rect2D::from_origin_size(cursor, Vec2::new(play_width, button_height));
         let play_color = if self.is_playing {
             theme.success
@@ -1049,7 +1046,24 @@ impl EditorUI {
             theme.button_bg
         };
         ui.draw_rect(play_bounds, play_color);
-        if ui.button("play_btn", play_text, play_bounds) {
+
+        // Draw play/pause icon and text (centered)
+        let (play_icon, play_text) = if self.is_playing {
+            (ForkAwesome::PAUSE, "Pause")
+        } else {
+            (ForkAwesome::PLAY, "Play")
+        };
+        let icon_size = 14.0;
+        ui.draw_icon_text_centered(
+            play_icon,
+            play_text,
+            play_bounds,
+            icon_size,
+            ui.scaled_font_size(FontSize::Small),
+            theme.button_text,
+        );
+
+        if ui.button("play_btn", "", play_bounds) {
             self.is_playing = !self.is_playing;
             self.pending_actions.push(EditorAction::TogglePlay);
         }
@@ -2161,67 +2175,17 @@ impl EditorUI {
         // Grid toggle
         let grid_btn_bounds =
             Rect2D::from_origin_size(cursor, Vec2::new(content_width, row_height));
-        if ui.button("pref_grid_toggle", "", grid_btn_bounds) {
+        if ui.toggle_button("pref_grid_toggle", "Show Grid", self.show_grid, grid_btn_bounds, theme.success, theme.button_bg, theme.button_text) {
             self.pending_actions.push(EditorAction::ToggleGrid);
         }
-        let grid_color = if self.show_grid {
-            theme.success
-        } else {
-            theme.button_bg
-        };
-        ui.draw_rect(grid_btn_bounds, grid_color);
-        let grid_text = if self.show_grid {
-            "✓ Show Grid"
-        } else {
-            "  Show Grid"
-        };
-        let grid_text_color = if self.show_grid {
-            theme.button_text
-        } else {
-            theme.text_primary
-        };
-        ui.draw_text(
-            grid_text,
-            Vec2::new(
-                grid_btn_bounds.min.x() + ui.scaled_font_size(FontSize::Medium),
-                grid_btn_bounds.min.y() + 6.0,
-            ),
-            grid_text_color,
-            ui.scaled_font_size(FontSize::Medium),
-        );
         cursor = Vec2::new(cursor.x(), cursor.y() + row_height + 4.0);
 
         // Stats toggle
         let stats_btn_bounds =
             Rect2D::from_origin_size(cursor, Vec2::new(content_width, row_height));
-        if ui.button("pref_stats_toggle", "", stats_btn_bounds) {
+        if ui.toggle_button("pref_stats_toggle", "Show Stats Panel", self.show_stats, stats_btn_bounds, theme.success, theme.button_bg, theme.button_text) {
             self.pending_actions.push(EditorAction::ToggleStats);
         }
-        let stats_color = if self.show_stats {
-            theme.success
-        } else {
-            theme.button_bg
-        };
-        ui.draw_rect(stats_btn_bounds, stats_color);
-        let stats_text = if self.show_stats {
-            "✓ Show Stats Panel"
-        } else {
-            "  Show Stats Panel"
-        };
-        let stats_text_color = if self.show_stats {
-            theme.button_text
-        } else {
-            theme.text_primary
-        };
-        ui.draw_text(
-            stats_text,
-            Vec2::new(
-                stats_btn_bounds.min.x() + ui.scaled_font_size(FontSize::Medium),
-                stats_btn_bounds.min.y() + 6.0,
-            ),
-            stats_text_color,
-            ui.scaled_font_size(FontSize::Medium),
-        );
         cursor = Vec2::new(cursor.x(), cursor.y() + row_height + 16.0);
 
         // === FONT SCALE ===
@@ -2309,34 +2273,9 @@ impl EditorUI {
         // Snap to grid toggle
         let snap_btn_bounds =
             Rect2D::from_origin_size(cursor, Vec2::new(content_width, row_height));
-        if ui.button("pref_snap_toggle", "", snap_btn_bounds) {
+        if ui.toggle_button("pref_snap_toggle", "Snap to Grid", self.snap_to_grid, snap_btn_bounds, theme.success, theme.button_bg, theme.button_text) {
             self.snap_to_grid = !self.snap_to_grid;
         }
-        let snap_color = if self.snap_to_grid {
-            theme.success
-        } else {
-            theme.button_bg
-        };
-        ui.draw_rect(snap_btn_bounds, snap_color);
-        let snap_text = if self.snap_to_grid {
-            "✓ Snap to Grid"
-        } else {
-            "  Snap to Grid"
-        };
-        let snap_text_color = if self.snap_to_grid {
-            theme.button_text
-        } else {
-            theme.text_primary
-        };
-        ui.draw_text(
-            snap_text,
-            Vec2::new(
-                snap_btn_bounds.min.x() + ui.scaled_font_size(FontSize::Medium),
-                snap_btn_bounds.min.y() + 6.0,
-            ),
-            snap_text_color,
-            ui.scaled_font_size(FontSize::Medium),
-        );
         cursor = Vec2::new(
             cursor.x(),
             cursor.y() + row_height + ui.scaled_font_size(FontSize::Medium),
@@ -2555,19 +2494,16 @@ impl EditorUI {
             "Immediate Mode UI",
         ];
 
+        let check_icon = ForkAwesome::CHECK;
+        let font_size = ui.scaled_font_size(FontSize::Medium);
         for feature in features {
-            let check_size = ui.measure_text("✓", ui.scaled_font_size(FontSize::Medium));
-            ui.draw_text(
-                "✓",
-                Vec2::new(center_x - 100.0, cursor.y()),
-                theme.success,
-                ui.scaled_font_size(FontSize::Medium),
-            );
-            ui.draw_text(
+            ui.draw_icon_label(
+                check_icon,
                 feature,
-                Vec2::new(center_x - 80.0, cursor.y()),
-                theme.text_primary,
-                ui.scaled_font_size(FontSize::Medium),
+                Vec2::new(center_x - 100.0, cursor.y()),
+                font_size,
+                font_size,
+                theme.success,
             );
             cursor = Vec2::new(cursor.x(), cursor.y() + 18.0);
         }

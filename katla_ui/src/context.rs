@@ -1498,6 +1498,110 @@ impl UiContext {
         clicked
     }
 
+    /// Draw a toggle menu item that shows a checkmark when enabled.
+    ///
+    /// Returns true if clicked this frame.
+    pub fn toggle_menu_item(&mut self, id: &str, label: &str, checked: bool, bounds: Rect2D) -> bool {
+        let widget_id = self.generate_id(id);
+        let clicked = self.button_behavior(widget_id, bounds);
+
+        // Track height for dropdown auto-sizing
+        self.track_dropdown_item(bounds);
+
+        // Determine colors based on state
+        let bg_color = if self.active_id == Some(widget_id) {
+            self.style.menu_active
+        } else if self.hovered_id == Some(widget_id) || self.is_hovered(bounds) {
+            self.style.menu_hovered
+        } else {
+            Color::TRANSPARENT
+        };
+
+        // Defer background draw (will be drawn after popup background)
+        if bg_color != Color::TRANSPARENT {
+            self.defer_rect(bounds, bg_color);
+        }
+
+        // Draw checkmark icon if checked
+        let icon_size = self.style.font_size;
+        let check_icon = crate::icons::ForkAwesome::CHECK;
+        let mut text_x = bounds.min.x() + self.style.menu_padding;
+
+        if checked {
+            let icon_y = bounds.center().y() - icon_size * 0.5;
+            // Use defer_text with single char for icon
+            self.defer_text(&check_icon.to_string(), Vec2::new(text_x, icon_y), self.style.text_color, icon_size);
+            text_x += icon_size + 4.0; // Icon + spacing
+        } else {
+            text_x += icon_size + 4.0; // Reserve space for alignment when unchecked
+        }
+
+        // Defer text draw
+        let text_size = self.measure_text(label, self.style.font_size);
+        let text_pos = Vec2::new(
+            text_x,
+            bounds.center().y() - text_size.y() * 0.5,
+        );
+        self.defer_text(label, text_pos, self.style.text_color, self.style.font_size);
+
+        clicked
+    }
+
+    /// Draw an icon followed by text at the specified position.
+    ///
+    /// Returns the x position after the text (for chaining).
+    pub fn draw_icon_label(&mut self, icon: char, text: &str, position: Vec2, icon_size: f32, text_size: f32, color: Color) -> f32 {
+        let icon_y = position.y();
+        self.draw_icon(icon, position, icon_size, color);
+        let text_x = position.x() + icon_size + 4.0;
+        self.draw_text(text, Vec2::new(text_x, icon_y), color, text_size);
+        text_x + self.measure_text(text, text_size).x()
+    }
+
+    /// Draw an icon with text centered horizontally within bounds.
+    ///
+    /// Returns the y position after the content (for chaining vertically).
+    pub fn draw_icon_text_centered(&mut self, icon: char, text: &str, bounds: Rect2D, icon_size: f32, font_size: f32, color: Color) -> f32 {
+        let text_measure = self.measure_text(text, font_size);
+        let total_width = icon_size + 4.0 + text_measure.x();
+        let start_x = bounds.center().x() - total_width * 0.5;
+        let text_y = bounds.center().y() - text_measure.y() * 0.5;
+
+        self.draw_icon(icon, Vec2::new(start_x, text_y), icon_size, color);
+        self.draw_text(text, Vec2::new(start_x + icon_size + 4.0, text_y), color, font_size);
+
+        text_y + text_measure.y()
+    }
+
+    /// Draw a toggle button with an optional check icon when enabled.
+    ///
+    /// Returns true if clicked this frame.
+    /// Colors are passed as parameters to allow theme customization.
+    pub fn toggle_button(&mut self, id: &str, label: &str, checked: bool, bounds: Rect2D, checked_color: Color, unchecked_color: Color, text_color: Color) -> bool {
+        let clicked = self.button(id, "", bounds);
+
+        let bg_color = if checked { checked_color } else { unchecked_color };
+        self.draw_rect(bounds, bg_color);
+
+        // Draw check icon and label
+        let font_size = self.style.font_size;
+        let icon_size = font_size;
+        let padding = font_size;
+        let text_x = bounds.min.x() + padding;
+        let text_y = bounds.min.y() + 6.0;
+
+        if checked {
+            let check_icon = crate::icons::ForkAwesome::CHECK;
+            self.draw_icon(check_icon, Vec2::new(text_x, text_y), icon_size, text_color);
+            self.draw_text(label, Vec2::new(text_x + icon_size + 4.0, text_y), text_color, font_size);
+        } else {
+            // Reserve space for alignment
+            self.draw_text(label, Vec2::new(text_x + icon_size + 4.0, text_y), text_color, font_size);
+        }
+
+        clicked
+    }
+
     /// Draw a selectable item with selection state.
     ///
     /// Returns true if clicked this frame.
