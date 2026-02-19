@@ -46,7 +46,7 @@ pub fn create_particle_emitter(
         .add_entire_buffer(&particle_buffer, 0)
         .with_descriptor_type_wrapped(DescriptorType::UniformBuffer)
         .add_entire_buffer(&frame_data_buffer, 1)
-        .build(compute_descriptor_layout.vk())
+        .build(compute_descriptor_layout)
         .expect("Failed to create compute descriptor set");
 
     // Load and compile compute shader
@@ -63,7 +63,7 @@ pub fn create_particle_emitter(
     // Push constants: delta_time, emit_count, max_particles, random_seed (4 x f32 = 16 bytes)
     let compute_pipeline = ComputePipelineBuilder::new(context.clone())
         .with_shader(compute_shader.module)
-        .with_descriptor_layouts(vec![compute_descriptor_layout.vk()])
+        .with_descriptor_layouts_wrapped(vec![compute_descriptor_layout])
         .add_push_constant_range_wrapped(ShaderStages::COMPUTE, 0, 16)
         .build()
         .expect("Failed to create compute pipeline");
@@ -111,7 +111,7 @@ pub fn create_particle_emitter(
     // Note: Pipeline borrows the layouts, but MaterialPipeline will own frame_descriptor_layout
     let render_pipeline = PipelineBuilder::new(context.clone())
         .with_shaders(vertex_shader.module, fragment_shader.module)
-        .with_descriptor_layouts(vec![frame_descriptor_layout.vk(), render_particle_descriptor_layout.vk()])
+        .with_descriptor_layouts_wrapped(vec![frame_descriptor_layout, render_particle_descriptor_layout])
         .with_additive_blending()
         .with_depth_test(true, false, CompareOp::Less) // depth test but no write
         .with_cull_mode(CullMode::None, FrontFace::CounterClockwise)
@@ -120,13 +120,13 @@ pub fn create_particle_emitter(
         .expect("Failed to create render pipeline");
 
     // MaterialPipeline takes ownership of frame_descriptor_layout
-    let render_pipeline = MaterialPipeline::new(render_pipeline, frame_descriptor_layout.vk(), context.clone());
+    let render_pipeline = MaterialPipeline::new_wrapped(render_pipeline, frame_descriptor_layout, context.clone());
 
     // Create render particle descriptor set - takes ownership of render_particle_descriptor_layout
     // This must happen AFTER pipeline creation since pipeline builder borrows the layout
     let render_particle_descriptor = BufferDescriptorSetBuilder::new(&context)
         .add_entire_buffer(&particle_buffer, 0)
-        .build_with_owned_layout(render_particle_descriptor_layout.vk())
+        .build_with_owned_layout(render_particle_descriptor_layout)
         .expect("Failed to create render particle descriptor set");
 
     // Create emitter config

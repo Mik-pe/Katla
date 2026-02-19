@@ -2,7 +2,7 @@ use std::{ffi::CString, rc::Rc};
 
 use ash::vk;
 
-use crate::sync::{VkPipeline, VkPipelineLayout};
+use crate::sync::{VkDescriptorSetLayout, VkPipeline, VkPipelineLayout};
 use crate::vulkan::pipeline_state::{
     BlendFactor, BlendOp, CompareOp, CullMode, DynamicState, FrontFace, PolygonMode,
     PrimitiveTopology,
@@ -182,6 +182,12 @@ impl PipelineBuilder {
 
     pub fn with_descriptor_layouts(mut self, layouts: Vec<vk::DescriptorSetLayout>) -> Self {
         self.descriptor_layouts = layouts;
+        self
+    }
+
+    /// Set the descriptor set layouts using wrapper types.
+    pub fn with_descriptor_layouts_wrapped(mut self, layouts: Vec<VkDescriptorSetLayout>) -> Self {
+        self.descriptor_layouts = layouts.into_iter().map(|l| l.into()).collect();
         self
     }
 

@@ -201,10 +201,10 @@ impl AssetRegistry {
     pub fn get_skeleton_set_layout(
         &self,
         handle: MaterialHandle,
-    ) -> Option<ash::vk::DescriptorSetLayout> {
+    ) -> Option<crate::sync::VkDescriptorSetLayout> {
         self.materials.get(handle.0)?.as_ref()?;
         let material = self.materials.get(handle.0)?.as_ref()?;
-        material.pipeline.borrow().skeleton_set_layout
+        material.pipeline.borrow().skeleton_set_layout.map(crate::sync::VkDescriptorSetLayout::new)
     }
 
     /// Clear all assets from the registry.

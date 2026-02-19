@@ -263,13 +263,13 @@ impl Model {
         );
 
         // Create PbrTextureSet
-        let pbr_textures = PbrTextureSet::from_handles_shared_sampler(
-            albedo_tex.image_view.vk(),
-            normal_tex.image_view.vk(),
-            mr_tex.image_view.vk(),
-            occlusion_tex.image_view.vk(),
-            emission_tex.image_view.vk(),
-            albedo_tex.image_sampler.vk(),
+        let pbr_textures = PbrTextureSet::from_wrapped_shared_sampler(
+            albedo_tex.image_view,
+            normal_tex.image_view,
+            mr_tex.image_view,
+            occlusion_tex.image_view,
+            emission_tex.image_view,
+            albedo_tex.image_sampler,
         );
 
         // Keep texture refs alive

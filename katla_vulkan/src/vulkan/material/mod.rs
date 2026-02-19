@@ -184,6 +184,25 @@ impl PbrTextureSet {
             emission: ImageInfo::from_raw(emission_view, sampler),
         }
     }
+
+    /// Create from wrapper types using a shared sampler.
+    pub fn from_wrapped_shared_sampler(
+        albedo_view: crate::sync::VkImageView,
+        normal_view: crate::sync::VkImageView,
+        mr_view: crate::sync::VkImageView,
+        occlusion_view: crate::sync::VkImageView,
+        emission_view: crate::sync::VkImageView,
+        sampler: crate::sync::VkSampler,
+    ) -> Self {
+        Self::from_handles_shared_sampler(
+            albedo_view.into(),
+            normal_view.into(),
+            mr_view.into(),
+            occlusion_view.into(),
+            emission_view.into(),
+            sampler.into(),
+        )
+    }
 }
 
 /// PBR texture descriptor set for full PBR materials (set 1).
@@ -712,6 +731,15 @@ impl MaterialPipeline {
             context,
             UniformLayout::matrices_only(),
         )
+    }
+
+    /// Create a MaterialPipeline using wrapper types.
+    pub fn new_wrapped(
+        pipeline: Pipeline,
+        desc_layout: crate::sync::VkDescriptorSetLayout,
+        context: Rc<VulkanContext>,
+    ) -> Self {
+        Self::new(pipeline, desc_layout.into(), context)
     }
 
     pub fn new_with_bindings(

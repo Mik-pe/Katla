@@ -157,7 +157,7 @@ impl VulkanRenderer {
     /// Ok(()) on success, or an error if initialization fails
     pub fn init_storage(
         &mut self,
-        uniform_desc_layout: vk::DescriptorSetLayout,
+        uniform_desc_layout: crate::sync::VkDescriptorSetLayout,
     ) -> Result<(), vk::Result> {
         let manager = StorageUniformManager::new(self.context.clone())?;
         let descriptor_set = manager.create_descriptor_set(&self.context, uniform_desc_layout)?;
@@ -253,7 +253,7 @@ impl VulkanRenderer {
 
         // Initialize storage manager and descriptor set
         let manager = StorageUniformManager::new(self.context.clone())?;
-        let descriptor_set = manager.create_descriptor_set(&self.context, uniform_set_layout)?;
+        let descriptor_set = manager.create_descriptor_set(&self.context, crate::sync::VkDescriptorSetLayout::new(uniform_set_layout))?;
 
         self.storage_manager = Some(manager);
         self.storage_descriptor_set = Some(descriptor_set);
@@ -854,7 +854,7 @@ impl VulkanRenderer {
     pub fn register_skeleton(
         &mut self,
         skeleton_buffer: Rc<RefCell<SkeletonBuffer>>,
-        skeleton_set_layout: vk::DescriptorSetLayout,
+        skeleton_set_layout: crate::sync::VkDescriptorSetLayout,
     ) -> Option<SkeletonHandle> {
         // Create descriptor set for skeleton
         let descriptor =
