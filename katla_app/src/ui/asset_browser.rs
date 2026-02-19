@@ -17,6 +17,15 @@ use katla_ui::{ForkAwesome, TextureId, UiContext};
 use super::editor_ui::FocusedPanel;
 use super::theme::Theme;
 
+/// Build a rectangle from two corner points (handles any ordering).
+#[inline]
+fn rect_from_points(a: Vec2, b: Vec2) -> Rect2D {
+    Rect2D::new(
+        Vec2::new(a.x().min(b.x()), a.y().min(b.y())),
+        Vec2::new(a.x().max(b.x()), a.y().max(b.y())),
+    )
+}
+
 /// Asset type classification for icons and filtering.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AssetType {
@@ -39,8 +48,8 @@ pub enum AssetType {
 /// Thumbnail loading state for an asset.
 #[derive(Debug, Clone)]
 pub enum ThumbnailState {
-    /// Not yet requested to load.
-    NotRequested,
+    /// Thumbnail not yet loaded or requested.
+    Pending,
     /// Currently loading in background thread.
     Loading,
     /// Loaded and uploaded to GPU.
@@ -51,7 +60,7 @@ pub enum ThumbnailState {
 
 impl Default for ThumbnailState {
     fn default() -> Self {
-        Self::NotRequested
+        Self::Pending
     }
 }
 
@@ -268,7 +277,7 @@ impl AssetBrowserState {
                     name: "..".to_string(),
                     path: parent.to_path_buf(),
                     asset_type: AssetType::Folder,
-                    thumbnail_state: ThumbnailState::NotRequested,
+                    thumbnail_state: ThumbnailState::Pending,
                 });
             }
         }
@@ -308,7 +317,7 @@ impl AssetBrowserState {
                     // Already uploaded to GPU on a previous visit
                     ThumbnailState::Loaded { texture_id }
                 } else {
-                    ThumbnailState::NotRequested
+                    ThumbnailState::Pending
                 };
 
                 let entry = AssetEntry {
@@ -968,11 +977,11 @@ pub fn build_asset_browser(
 
         // Handle text input
         let prev_filter = state.search_filter.clone();
-        for c in &ui.input.characters.clone() {
-            if *c == '\x08' {
+        for &c in &ui.input.characters {
+            if c == '\x08' {
                 state.search_filter.pop();
-            } else if *c >= ' ' && state.search_filter.len() < 32 {
-                state.search_filter.push(*c);
+            } else if c >= ' ' && state.search_filter.len() < 32 {
+                state.search_filter.push(c);
             }
         }
 
@@ -1104,7 +1113,7 @@ pub fn build_asset_browser(
                 );
                 ui.draw_icon(icon, icon_pos, icon_size, icon_color);
             }
-            ThumbnailState::NotRequested => {
+            ThumbnailState::Pending => {
                 // Show regular icon
                 let icon = asset.asset_type.icon();
                 let icon_color = asset.asset_type.color(theme);
@@ -1119,33 +1128,7 @@ pub fn build_asset_browser(
 
         // Draw selection border if selected (just the border, don't fill - icon already drawn)
         if is_selected {
-            let border_width = 2.0;
-            // Top
-            ui.draw_rect(
-                Rect2D::from_origin_size(item_bounds.min, Vec2::new(item_bounds.width(), border_width)),
-                theme.highlight,
-            );
-            // Bottom
-            ui.draw_rect(
-                Rect2D::from_origin_size(
-                    Vec2::new(item_bounds.min.x(), item_bounds.max.y() - border_width),
-                    Vec2::new(item_bounds.width(), border_width),
-                ),
-                theme.highlight,
-            );
-            // Left
-            ui.draw_rect(
-                Rect2D::from_origin_size(item_bounds.min, Vec2::new(border_width, item_bounds.height())),
-                theme.highlight,
-            );
-            // Right
-            ui.draw_rect(
-                Rect2D::from_origin_size(
-                    Vec2::new(item_bounds.max.x() - border_width, item_bounds.min.y()),
-                    Vec2::new(border_width, item_bounds.height()),
-                ),
-                theme.highlight,
-            );
+            ui.draw_selection_border(item_bounds, theme.highlight, 2.0);
         }
 
         // Draw name below icon (truncated)
@@ -1232,10 +1215,7 @@ pub fn build_asset_browser(
         // Draw selection rectangle and preview highlight
         if state.is_marquee_selecting {
             if let (Some(start), Some(current)) = (state.selection_rect_start, state.selection_rect_current) {
-                // Build selection rectangle
-                let rect_min = Vec2::new(start.x().min(current.x()), start.y().min(current.y()));
-                let rect_max = Vec2::new(start.x().max(current.x()), start.y().max(current.y()));
-                let sel_rect = Rect2D::new(rect_min, rect_max);
+                let sel_rect = rect_from_points(start, current);
 
                 // Preview highlight for items that will be selected
                 for (i, _asset) in state.assets.iter().enumerate() {
@@ -1257,11 +1237,6 @@ pub fn build_asset_browser(
                 }
 
                 // Draw the selection rectangle on top
-                // Draw the selection rectangle
-                let rect_min = Vec2::new(start.x().min(current.x()), start.y().min(current.y()));
-                let rect_max = Vec2::new(start.x().max(current.x()), start.y().max(current.y()));
-                let sel_rect = Rect2D::new(rect_min, rect_max);
-
                 ui.draw_rect(sel_rect, Color::new(0.3, 0.5, 0.8, 0.3));
                 ui.draw_rect_border(sel_rect, Color::new(0.3, 0.5, 0.8, 0.3), Color::new(0.4, 0.6, 0.9, 0.8), 1.0);
             }
@@ -1271,10 +1246,7 @@ pub fn build_asset_browser(
         if state.selection_rect_start.is_some() && ui.input.mouse_released[katla_ui::input::mouse_button::LEFT] {
             if state.is_marquee_selecting {
                 if let (Some(start), Some(current)) = (state.selection_rect_start, state.selection_rect_current) {
-                    // Build selection rectangle
-                    let rect_min = Vec2::new(start.x().min(current.x()), start.y().min(current.y()));
-                    let rect_max = Vec2::new(start.x().max(current.x()), start.y().max(current.y()));
-                    let sel_rect = Rect2D::new(rect_min, rect_max);
+                    let sel_rect = rect_from_points(start, current);
 
                     // Clear previous selection
                     state.selected_indices.clear();
@@ -1336,7 +1308,7 @@ pub fn build_asset_browser(
             }
 
             // Check if thumbnail needs to be requested
-            if matches!(asset.thumbnail_state, ThumbnailState::NotRequested) {
+            if matches!(asset.thumbnail_state, ThumbnailState::Pending) {
                 // Check if already cached in loader
                 if loader.has_thumbnail(&asset.path) {
                     // Already cached, will be handled in poll()
@@ -1501,13 +1473,13 @@ pub fn build_asset_browser(
         ui.pop_z_index();
 
         // Handle text input
-        for c in &ui.input.characters.clone() {
-            if *c == '\x08' {
+        for &c in &ui.input.characters {
+            if c == '\x08' {
                 state.rename_buffer.pop();
-            } else if *c >= ' ' && state.rename_buffer.len() < 64 {
+            } else if c >= ' ' && state.rename_buffer.len() < 64 {
                 // Filter out invalid filename characters
-                if !matches!(*c, '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|') {
-                    state.rename_buffer.push(*c);
+                if !matches!(c, '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|') {
+                    state.rename_buffer.push(c);
                 }
             }
         }

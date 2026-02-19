@@ -38,15 +38,6 @@ fn coverage_to_alpha(coverage: f32) -> f32 {
     coverage.powf(1.0 / GAMMA_FACTOR)
 }
 
-/// Convert perceptually uniform alpha back to coverage (inverse of above).
-///
-/// Used when reading back alpha values for calculations.
-#[inline]
-#[allow(dead_code)]
-fn alpha_to_coverage(alpha: f32) -> f32 {
-    alpha.powf(GAMMA_FACTOR)
-}
-
 /// A handle to a loaded font.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct FontId(pub u32);
@@ -117,6 +108,9 @@ impl SubpixelBin {
 }
 
 /// Font size stored as fixed-point for hashing.
+///
+/// Uses 16.16 fixed point format. Valid font sizes are 0.0 to ~65535.0.
+/// Negative values or values > 65535 will produce incorrect keys.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 struct FontSizeKey(u32);
 
@@ -128,6 +122,9 @@ impl FontSizeKey {
 }
 
 /// Scale factor stored as fixed-point for hashing.
+///
+/// Uses 8.24 fixed point format. Valid scale factors are 0.0 to ~255.0.
+/// Negative values or values > 255 will produce incorrect keys.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 struct ScaleFactorKey(u32);
 
@@ -139,7 +136,7 @@ impl ScaleFactorKey {
 }
 
 /// A cached glyph's render data.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct CachedGlyph {
     /// UV rectangle in the texture atlas (normalized 0-1).
     pub uv_rect: Rect2D,
