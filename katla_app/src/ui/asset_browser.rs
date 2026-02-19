@@ -1181,8 +1181,9 @@ pub fn build_asset_browser(
             state.selected_index = Some(i);
         }
 
-        // Show tooltip on hover
+        // Show tooltip on hover (rendered last with high z-index)
         if is_hovered && !state.context_menu_open && !state.is_dragging {
+            ui.push_z_index(250); // Above icons and selection borders
             let tooltip_text = format!(
                 "{}\nType: {}\nPath: {}",
                 asset.name,
@@ -1198,6 +1199,7 @@ pub fn build_asset_browser(
                 asset.path.display()
             );
             ui.tooltip(&tooltip_text);
+            ui.pop_z_index();
         }
     }
 
@@ -1538,13 +1540,18 @@ pub fn build_asset_browser(
         if ctrl_held {
             // Ctrl+Click: Toggle selection
             if state.selected_indices.contains(&index) || state.selected_index == Some(index) {
-                // Deselect
+                // Deselect this item
                 state.selected_indices.remove(&index);
                 if state.selected_index == Some(index) {
                     state.selected_index = state.selected_indices.iter().next().copied();
                 }
             } else {
-                // Add to selection
+                // Add to selection - first move existing single selection to multi-select
+                if let Some(prev) = state.selected_index {
+                    if !state.selected_indices.contains(&prev) {
+                        state.selected_indices.insert(prev);
+                    }
+                }
                 state.selected_indices.insert(index);
                 state.selected_index = Some(index);
             }

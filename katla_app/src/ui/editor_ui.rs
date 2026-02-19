@@ -743,8 +743,9 @@ impl EditorUI {
         );
 
         // === STATUS BAR (bottom) ===
-        let selected_count = if self.asset_browser.selected_index.is_some() {
-            1 + self.asset_browser.selected_indices.len()
+        // Count selected items (selected_index is the primary, selected_indices are multi-select)
+        let selected_count = if self.asset_browser.selected_indices.is_empty() {
+            if self.asset_browser.selected_index.is_some() { 1 } else { 0 }
         } else {
             self.asset_browser.selected_indices.len()
         };
