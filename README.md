@@ -31,3 +31,7 @@ cargo run        # Run the demo 🎮
 cargo run -- -s  # Limited frames (validation) ✅
 cargo test       # Run tests 🧪
 ```
+
+## Is this vibecoded? 🤖
+**It sure is, I ain't got to write all of this**
+This repo has become my playground for vibecoding to see how good or bad it can be.
