@@ -79,14 +79,14 @@ impl StorageDescriptorSet {
     /// # Arguments
     /// * `context` - Vulkan context
     /// * `storage_buffer` - The storage buffer to create descriptors for
-    /// * `desc_layout` - Descriptor set layout for uniform set (set 0)
+    /// * `desc_layout` - Descriptor set layout for uniform set (set 0, wrapper type)
     ///
     /// # Returns
     /// A new StorageDescriptorSet with storage buffer bindings
     pub fn new(
         context: &Rc<VulkanContext>,
         storage_buffer: &DeviceAddressBuffer,
-        desc_layout: vk::DescriptorSetLayout,
+        desc_layout: crate::sync::VkDescriptorSetLayout,
     ) -> Result<Self, vk::Result> {
         // Use the generic builder with two bindings to the same buffer
         let inner = BufferDescriptorSetBuilder::new(context)
@@ -420,14 +420,14 @@ impl StorageUniformManager {
     ///
     /// # Arguments
     /// * `context` - Vulkan context
-    /// * `desc_layout` - Descriptor set layout for uniform set (set 0)
+    /// * `desc_layout` - Descriptor set layout for uniform set (set 0, wrapper type)
     ///
     /// # Returns
     /// A StorageDescriptorSet that can be bound to a pipeline
     pub fn create_descriptor_set(
         &self,
         context: &Rc<VulkanContext>,
-        desc_layout: vk::DescriptorSetLayout,
+        desc_layout: crate::sync::VkDescriptorSetLayout,
     ) -> Result<StorageDescriptorSet, vk::Result> {
         StorageDescriptorSet::new(context, &self.buffer, desc_layout)
     }

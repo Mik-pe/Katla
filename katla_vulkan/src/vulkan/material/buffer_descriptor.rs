@@ -204,11 +204,11 @@ impl<'a> BufferDescriptorSetBuilder<'a> {
     /// and writes all configured buffer bindings.
     ///
     /// # Arguments
-    /// * `layout` - The descriptor set layout to allocate from
+    /// * `layout` - The descriptor set layout to allocate from (wrapper type)
     ///
     /// # Returns
     /// A `BufferDescriptorSet` containing the allocated and written descriptor set.
-    pub fn build(self, layout: vk::DescriptorSetLayout) -> Result<BufferDescriptorSet, vk::Result> {
+    pub fn build(self, layout: crate::sync::VkDescriptorSetLayout) -> Result<BufferDescriptorSet, vk::Result> {
         if self.bindings.is_empty() {
             panic!("BufferDescriptorSetBuilder requires at least one binding");
         }
@@ -247,7 +247,8 @@ impl<'a> BufferDescriptorSetBuilder<'a> {
         let descriptor_pool = unsafe { device.create_descriptor_pool(&pool_info, None)? };
 
         // Allocate descriptor set
-        let layouts = [layout];
+        let layout_vk: vk::DescriptorSetLayout = layout.into();
+        let layouts = [layout_vk];
         let alloc_info = vk::DescriptorSetAllocateInfo::default()
             .descriptor_pool(descriptor_pool)
             .set_layouts(&layouts);
@@ -300,10 +301,11 @@ impl<'a> BufferDescriptorSetBuilder<'a> {
     /// and not shared with other resources.
     pub fn build_with_owned_layout(
         self,
-        layout: vk::DescriptorSetLayout,
+        layout: crate::sync::VkDescriptorSetLayout,
     ) -> Result<BufferDescriptorSet, vk::Result> {
+        let layout_vk: vk::DescriptorSetLayout = layout.into();
         let mut descriptor_set = self.build(layout)?;
-        descriptor_set.owned_layout = Some(layout);
+        descriptor_set.owned_layout = Some(layout_vk);
         Ok(descriptor_set)
     }
 

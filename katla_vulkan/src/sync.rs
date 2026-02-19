@@ -19,7 +19,7 @@ impl VkSemaphore {
     }
 
     /// Returns the underlying `vk::Semaphore`.
-    pub fn vk(&self) -> vk::Semaphore {
+    pub(crate) fn vk(&self) -> vk::Semaphore {
         self.0
     }
 }
@@ -56,7 +56,7 @@ impl VkFence {
     }
 
     /// Returns the underlying `vk::Fence`.
-    pub fn vk(&self) -> vk::Fence {
+    pub(crate) fn vk(&self) -> vk::Fence {
         self.0
     }
 }
@@ -93,7 +93,7 @@ impl VkImageView {
     }
 
     /// Returns the underlying `vk::ImageView`.
-    pub fn vk(&self) -> vk::ImageView {
+    pub(crate) fn vk(&self) -> vk::ImageView {
         self.0
     }
 }
@@ -130,7 +130,7 @@ impl VkSampler {
     }
 
     /// Returns the underlying `vk::Sampler`.
-    pub fn vk(&self) -> vk::Sampler {
+    pub(crate) fn vk(&self) -> vk::Sampler {
         self.0
     }
 }
@@ -167,7 +167,7 @@ impl VkImage {
     }
 
     /// Returns the underlying `vk::Image`.
-    pub fn vk(&self) -> vk::Image {
+    pub(crate) fn vk(&self) -> vk::Image {
         self.0
     }
 }
@@ -204,7 +204,7 @@ impl VkRenderPass {
     }
 
     /// Returns the underlying `vk::RenderPass`.
-    pub fn vk(&self) -> vk::RenderPass {
+    pub(crate) fn vk(&self) -> vk::RenderPass {
         self.0
     }
 }
@@ -247,7 +247,7 @@ impl VkFramebuffer {
     }
 
     /// Returns the underlying `vk::Framebuffer`.
-    pub fn vk(&self) -> vk::Framebuffer {
+    pub(crate) fn vk(&self) -> vk::Framebuffer {
         self.0
     }
 }
@@ -284,7 +284,7 @@ impl VkDescriptorSet {
     }
 
     /// Returns the underlying `vk::DescriptorSet`.
-    pub fn vk(&self) -> vk::DescriptorSet {
+    pub(crate) fn vk(&self) -> vk::DescriptorSet {
         self.0
     }
 }
@@ -321,7 +321,7 @@ impl VkDescriptorSetLayout {
     }
 
     /// Returns the underlying `vk::DescriptorSetLayout`.
-    pub fn vk(&self) -> vk::DescriptorSetLayout {
+    pub(crate) fn vk(&self) -> vk::DescriptorSetLayout {
         self.0
     }
 }
@@ -358,7 +358,7 @@ impl VkDescriptorPool {
     }
 
     /// Returns the underlying `vk::DescriptorPool`.
-    pub fn vk(&self) -> vk::DescriptorPool {
+    pub(crate) fn vk(&self) -> vk::DescriptorPool {
         self.0
     }
 }
@@ -395,7 +395,7 @@ impl VkPipeline {
     }
 
     /// Returns the underlying `vk::Pipeline`.
-    pub fn vk(&self) -> vk::Pipeline {
+    pub(crate) fn vk(&self) -> vk::Pipeline {
         self.0
     }
 }
@@ -438,7 +438,7 @@ impl VkPipelineLayout {
     }
 
     /// Returns the underlying `vk::PipelineLayout`.
-    pub fn vk(&self) -> vk::PipelineLayout {
+    pub(crate) fn vk(&self) -> vk::PipelineLayout {
         self.0
     }
 }
@@ -481,7 +481,7 @@ impl VkBuffer {
     }
 
     /// Returns the underlying `vk::Buffer`.
-    pub fn vk(&self) -> vk::Buffer {
+    pub(crate) fn vk(&self) -> vk::Buffer {
         self.0
     }
 }
@@ -1031,7 +1031,7 @@ impl VkCommandBuffer {
     }
 
     /// Returns the underlying `vk::CommandBuffer`.
-    pub fn vk(&self) -> vk::CommandBuffer {
+    pub(crate) fn vk(&self) -> vk::CommandBuffer {
         self.0
     }
 }

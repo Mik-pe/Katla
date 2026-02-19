@@ -42,11 +42,11 @@ impl SkeletonDescriptorSet {
     /// # Arguments
     /// * `context` - Vulkan context
     /// * `skeleton_buffer` - The skeleton buffer containing joint matrices (wrapped in RefCell for mutation)
-    /// * `layout` - The skeleton descriptor set layout from the pipeline
+    /// * `layout` - The skeleton descriptor set layout from the pipeline (wrapper type)
     pub fn new(
         context: Rc<VulkanContext>,
         skeleton_buffer: Rc<RefCell<SkeletonBuffer>>,
-        layout: vk::DescriptorSetLayout,
+        layout: crate::sync::VkDescriptorSetLayout,
     ) -> Result<Self, vk::Result> {
         // Get buffer info while holding the borrow
         let (buffer, size) = {

@@ -22,7 +22,7 @@ use std::{ffi::CString, rc::Rc};
 
 use ash::vk;
 
-use crate::sync::{VkPipeline, VkPipelineLayout};
+use crate::sync::{VkDescriptorSetLayout, VkPipeline, VkPipelineLayout};
 use crate::VulkanContext;
 
 /// Builder for creating compute pipelines.
@@ -67,9 +67,21 @@ impl ComputePipelineBuilder {
         self
     }
 
+    /// Set the descriptor set layouts using wrapper types.
+    pub fn with_descriptor_layouts_wrapped(mut self, layouts: Vec<VkDescriptorSetLayout>) -> Self {
+        self.descriptor_layouts = layouts.into_iter().map(|l| l.into()).collect();
+        self
+    }
+
     /// Add a descriptor set layout.
     pub fn add_descriptor_layout(mut self, layout: vk::DescriptorSetLayout) -> Self {
         self.descriptor_layouts.push(layout);
+        self
+    }
+
+    /// Add a descriptor set layout using wrapper type.
+    pub fn add_descriptor_layout_wrapped(mut self, layout: VkDescriptorSetLayout) -> Self {
+        self.descriptor_layouts.push(layout.into());
         self
     }
 
