@@ -732,6 +732,12 @@ impl EditorUI {
         );
 
         // === STATUS BAR (bottom) ===
+        let selected_count = if self.asset_browser.selected_index.is_some() {
+            1 + self.asset_browser.selected_indices.len()
+        } else {
+            self.asset_browser.selected_indices.len()
+        };
+        let total_assets = self.asset_browser.assets.len();
         self.build_status_bar(
             ui,
             screen_size,
@@ -739,6 +745,8 @@ impl EditorUI {
             fps,
             frame_count,
             entities.len(),
+            selected_count,
+            total_assets,
         );
 
         // === PREFERENCES PANEL (overlay) ===
@@ -1536,6 +1544,8 @@ impl EditorUI {
         fps: f32,
         frame_count: usize,
         entity_count: usize,
+        selected_count: usize,
+        total_assets: usize,
     ) {
         let theme = &self.theme;
         let bar_bounds = Rect2D::from_origin_size(
@@ -1605,6 +1615,29 @@ impl EditorUI {
             &entity_text,
             cursor,
             theme.text_secondary,
+            ui.scaled_font_size(FontSize::Small),
+        );
+
+        // Separator
+        cursor = Vec2::new(cursor.x() + 100.0, cursor.y());
+        ui.draw_text(
+            "|",
+            cursor,
+            theme.text_muted,
+            ui.scaled_font_size(FontSize::Small),
+        );
+        cursor = Vec2::new(cursor.x() + 15.0, cursor.y());
+
+        // Selected items count
+        let selection_text = if selected_count > 0 {
+            format!("Selected: {} / {}", selected_count, total_assets)
+        } else {
+            format!("Assets: {}", total_assets)
+        };
+        ui.draw_text(
+            &selection_text,
+            cursor,
+            if selected_count > 0 { theme.highlight } else { theme.text_secondary },
             ui.scaled_font_size(FontSize::Small),
         );
 
