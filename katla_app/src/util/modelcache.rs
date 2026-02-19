@@ -267,14 +267,32 @@ impl GLTFModel {
             .collect::<Vec<VertexNormal>>()
     }
 
-    pub fn vertpbr(&self) -> Vec<VertexPBR> {
+    /// Get PBR vertex data (borrowed slice).
+    pub fn vertpbr(&self) -> &[VertexPBR] {
+        &self.vertex_data
+    }
+
+    /// Get PBR vertex data (owned copy).
+    pub fn vertpbr_owned(&self) -> Vec<VertexPBR> {
         self.vertex_data.clone()
     }
 
-    pub fn vertskinned(&self) -> Vec<VertexSkinned> {
+    /// Get skinned vertex data (borrowed slice).
+    pub fn vertskinned(&self) -> &[VertexSkinned] {
+        &self.skinned_vertex_data
+    }
+
+    /// Get skinned vertex data (owned copy).
+    pub fn vertskinned_owned(&self) -> Vec<VertexSkinned> {
         self.skinned_vertex_data.clone()
     }
 
+    /// Get index data (borrowed slice).
+    pub fn indices(&self) -> &[u8] {
+        &self.index_data
+    }
+
+    /// Get index data (owned copy).
     pub fn index_data(&self) -> Vec<u8> {
         self.index_data.clone()
     }

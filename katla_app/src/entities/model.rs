@@ -29,33 +29,7 @@ impl Model {
         color: Option<katla_math::Color>,
     ) -> Self {
         // Register assets with renderer if available
-        let (mesh_handle, material_handle) = if let Some(r) = renderer {
-            // Register mesh - take buffers from first mesh
-            // Note: For now we only support single-mesh models
-            let mesh_h = if let Some(first_mesh) = meshes.first_mut() {
-                let vertex_buffer = first_mesh.vertex_buffer.take();
-                let index_buffer = first_mesh.index_buffer.take();
-                r.register_mesh(vertex_buffer, index_buffer)
-            } else {
-                MeshHandle(0) // Dummy handle if no meshes
-            };
-
-            // Register material with optional per-material uniform buffer
-            let (pipeline, texture, vertex_binding, uniform, pbr_textures, pbr_texture_refs) = material.get_registration_data();
-
-            // Use PBR registration if PBR textures are present
-            let mat_h = if let Some(pbr) = pbr_textures {
-                let tex_refs = pbr_texture_refs.unwrap_or_default();
-                r.register_material_pbr(pipeline, texture, vertex_binding, uniform, pbr, tex_refs)
-            } else {
-                r.register_material_full(pipeline, texture, vertex_binding, uniform)
-            };
-
-            (mesh_h, mat_h)
-        } else {
-            // Use dummy handles when no renderer provided
-            (MeshHandle(0), MaterialHandle(0))
-        };
+        let (mesh_handle, material_handle) = Self::register_with_renderer(meshes.first_mut(), material, renderer);
 
         // Create DrawableComponent with optional color and PBR values
         let drawable = DrawableComponent::with_handles_and_material(
@@ -78,6 +52,42 @@ impl Model {
             entity,
             mesh_handle,
             material_handle,
+        }
+    }
+
+    /// Register mesh and material with the renderer.
+    ///
+    /// Returns (MeshHandle, MaterialHandle) - uses dummy handles if no renderer.
+    fn register_with_renderer(
+        first_mesh: Option<&mut Mesh>,
+        material: Material,
+        renderer: Option<&mut VulkanRenderer>,
+    ) -> (MeshHandle, MaterialHandle) {
+        if let Some(r) = renderer {
+            // Register mesh - take buffers from first mesh
+            let mesh_h = if let Some(mesh) = first_mesh {
+                let vertex_buffer = mesh.vertex_buffer.take();
+                let index_buffer = mesh.index_buffer.take();
+                r.register_mesh(vertex_buffer, index_buffer)
+            } else {
+                MeshHandle(0)
+            };
+
+            // Register material with optional per-material uniform buffer
+            let (pipeline, texture, vertex_binding, uniform, pbr_textures, pbr_texture_refs) =
+                material.get_registration_data();
+
+            // Use PBR registration if PBR textures are present
+            let mat_h = if let Some(pbr) = pbr_textures {
+                let tex_refs = pbr_texture_refs.unwrap_or_default();
+                r.register_material_pbr(pipeline, texture, vertex_binding, uniform, pbr, tex_refs)
+            } else {
+                r.register_material_full(pipeline, texture, vertex_binding, uniform)
+            };
+
+            (mesh_h, mat_h)
+        } else {
+            (MeshHandle(0), MaterialHandle(0))
         }
     }
 
@@ -108,38 +118,8 @@ impl Model {
                     .unwrap_or(0);
 
                 // Extract texture from the GLTF model using the correct index
-                let texture = if texture_index < model.images.len() {
-                    let image = &model.images[texture_index];
-                    let pixels = &image.pixels;
-
-                    match image.format {
-                        gltf::image::Format::R8G8B8 => {
-                            let tex = katla_vulkan::Texture::create_image_rgb(
-                                context.clone(),
-                                image.width,
-                                image.height,
-                                pixels.as_slice(),
-                            );
-                            Some(Rc::new(tex))
-                        }
-                        gltf::image::Format::R8G8B8A8 => {
-                            let tex = katla_vulkan::Texture::create_image(
-                                context.clone(),
-                                image.width,
-                                image.height,
-                                katla_vulkan::ImageFormat::R8G8B8A8Srgb,
-                                pixels.as_slice(),
-                            );
-                            Some(Rc::new(tex))
-                        }
-                        _ => {
-                            info!("Unsupported texture format: {:?}", image.format);
-                            None
-                        }
-                    }
-                } else {
-                    None
-                };
+                let texture = model.images.get(texture_index)
+                    .and_then(|image| Self::load_texture_from_gltf(image, &context));
 
                 // Create material from template
                 Material::from_template(template, texture, None)
@@ -175,31 +155,7 @@ impl Model {
         ao: f32,
     ) -> Self {
         // Register assets with renderer if available
-        let (mesh_handle, material_handle) = if let Some(r) = renderer {
-            // Register mesh - take buffers from first mesh
-            let mesh_h = if let Some(first_mesh) = meshes.first_mut() {
-                let vertex_buffer = first_mesh.vertex_buffer.take();
-                let index_buffer = first_mesh.index_buffer.take();
-                r.register_mesh(vertex_buffer, index_buffer)
-            } else {
-                MeshHandle(0)
-            };
-
-            // Register material with optional per-material uniform buffer
-            let (pipeline, texture, vertex_binding, uniform, pbr_textures, pbr_texture_refs) = material.get_registration_data();
-
-            // Use PBR registration if PBR textures are present
-            let mat_h = if let Some(pbr) = pbr_textures {
-                let tex_refs = pbr_texture_refs.unwrap_or_default();
-                r.register_material_pbr(pipeline, texture, vertex_binding, uniform, pbr, tex_refs)
-            } else {
-                r.register_material_full(pipeline, texture, vertex_binding, uniform)
-            };
-
-            (mesh_h, mat_h)
-        } else {
-            (MeshHandle(0), MaterialHandle(0))
-        };
+        let (mesh_handle, material_handle) = Self::register_with_renderer(meshes.first_mut(), material, renderer);
 
         // Create DrawableComponent with PBR values
         let drawable = DrawableComponent::with_handles_and_material(
@@ -247,33 +203,9 @@ impl Model {
         // Helper to load a texture from a GLTF image index
         let load_texture = |image_index: Option<usize>, default_texture: &Rc<katla_vulkan::Texture>| -> Rc<katla_vulkan::Texture> {
             if let Some(idx) = image_index {
-                if idx < model.images.len() {
-                    let image = &model.images[idx];
-                    let tex = match image.format {
-                        gltf::image::Format::R8G8B8 => {
-                            Some(katla_vulkan::Texture::create_image_rgb(
-                                context.clone(),
-                                image.width,
-                                image.height,
-                                &image.pixels,
-                            ))
-                        }
-                        gltf::image::Format::R8G8B8A8 => {
-                            Some(katla_vulkan::Texture::create_image(
-                                context.clone(),
-                                image.width,
-                                image.height,
-                                katla_vulkan::ImageFormat::R8G8B8A8Srgb,
-                                &image.pixels,
-                            ))
-                        }
-                        _ => {
-                            debug!("Unsupported texture format for image {}: {:?}", idx, image.format);
-                            None
-                        }
-                    };
-                    if let Some(t) = tex {
-                        return Rc::new(t);
+                if let Some(image) = model.images.get(idx) {
+                    if let Some(tex) = Self::load_texture_from_gltf(image, &context) {
+                        return tex;
                     }
                 }
             }
@@ -397,5 +329,37 @@ impl Model {
         let final_transform = combined_matrix.decompose();
 
         Self::new_with_pbr(world, vec![mesh], material, renderer, final_transform, None, metallic, roughness, 1.0)
+    }
+
+    /// Load a texture from GLTF image data.
+    ///
+    /// Returns None if the format is unsupported.
+    pub fn load_texture_from_gltf(
+        image: &gltf::image::Data,
+        context: &Rc<VulkanContext>,
+    ) -> Option<Rc<katla_vulkan::Texture>> {
+        match image.format {
+            gltf::image::Format::R8G8B8 => Some(Rc::new(
+                katla_vulkan::Texture::create_image_rgb(
+                    context.clone(),
+                    image.width,
+                    image.height,
+                    &image.pixels,
+                ),
+            )),
+            gltf::image::Format::R8G8B8A8 => Some(Rc::new(
+                katla_vulkan::Texture::create_image(
+                    context.clone(),
+                    image.width,
+                    image.height,
+                    katla_vulkan::ImageFormat::R8G8B8A8Srgb,
+                    &image.pixels,
+                ),
+            )),
+            _ => {
+                debug!("Unsupported texture format: {:?}", image.format);
+                None
+            }
+        }
     }
 }

@@ -65,7 +65,7 @@ impl Mesh {
             _ => IndexType::None,
         };
         let index_buffer = Self::create_index_buffer(&context, model.index_data(), index_type);
-        let vertex_buffer = Self::create_vertex_buffer(&context, model.vertpbr());
+        let vertex_buffer = Self::create_vertex_buffer(&context, model.vertpbr_owned());
 
         Self {
             vertex_buffer,
@@ -84,7 +84,7 @@ impl Mesh {
             _ => IndexType::None,
         };
         let index_buffer = Self::create_index_buffer(&context, model.index_data(), index_type);
-        let vertex_buffer = Self::create_vertex_buffer(&context, model.vertskinned());
+        let vertex_buffer = Self::create_vertex_buffer(&context, model.vertskinned_owned());
 
         Self {
             vertex_buffer,
