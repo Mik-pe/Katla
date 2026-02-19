@@ -28,16 +28,23 @@ pub(crate) struct MaterialAsset {
     /// Optional per-material uniform buffer (for template-based materials).
     /// When present, this material has its own uniform buffer instead of using pipeline's embedded one.
     pub uniform: Option<crate::vulkan::material::UniformHandle>,
-    /// Per-material texture descriptor set (Set 1).
+    /// Per-material texture descriptor set (Set 1) - LEGACY, use bindless instead.
     /// Created at registration time to ensure each material has its own texture binding.
+    #[deprecated(note = "Use texture_indices for bindless textures")]
     pub texture_descriptor: Option<crate::vulkan::material::TextureDescriptorSet>,
-    /// PBR texture descriptor set for full PBR materials (Set 1).
+    /// PBR texture descriptor set for full PBR materials (Set 1) - LEGACY, use bindless instead.
     /// Used when material has albedo, normal, metallic/roughness, occlusion, emission textures.
+    #[deprecated(note = "Use texture_indices for bindless textures")]
     pub pbr_texture_descriptor: Option<crate::vulkan::material::PbrTextureDescriptorSet>,
     /// PBR textures kept alive for the lifetime of the material.
     /// These must be stored to prevent the textures from being destroyed while in use.
     #[allow(dead_code)]
     pub pbr_textures: Option<Vec<Rc<Texture>>>,
+    /// Bindless texture indices: [albedo, normal, metallic_roughness, ao]
+    /// Used when bindless textures are enabled.
+    pub texture_indices: [u32; 4],
+    /// Emission texture index for bindless.
+    pub emission_index: u32,
 }
 
 /// Registry for GPU assets.

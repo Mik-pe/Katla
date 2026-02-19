@@ -19,7 +19,8 @@ struct FrameUniforms {
 struct ObjectUniforms {
     model: mat4x4f,
     base_color: vec4f,
-    material_params: vec4f,  // Not used by gizmos
+    material_params: vec4f,      // Not used by gizmos
+    texture_indices: vec4<u32>,  // bindless indices (unused)
 }
 
 @group(0) @binding(0)

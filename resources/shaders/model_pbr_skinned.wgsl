@@ -26,7 +26,8 @@ struct FrameUniforms {
 struct ObjectUniforms {
     model: mat4x4f,
     base_color: vec4f,
-    material_params: vec4f,  // x=metallic, y=roughness, z=ao, w=padding
+    material_params: vec4f,      // x=metallic, y=roughness, z=ao, w=emission_idx
+    texture_indices: vec4<u32>,  // bindless indices (unused in legacy mode)
 }
 
 // Set 0: Uniforms (storage buffers)

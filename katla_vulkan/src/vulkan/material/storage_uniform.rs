@@ -149,9 +149,9 @@ pub struct FrameUniforms {
     pub light_intensity: [f32; 4], // single f32 + padding
 }
 
-/// Per-object uniforms (model matrix, color, and PBR material params).
+/// Per-object uniforms (model matrix, color, PBR params, and bindless texture indices).
 ///
-/// Total: 96 bytes (1 × mat4x4 + 2 × vec4).
+/// Total: 112 bytes (1 × mat4x4 + 3 × vec4).
 #[derive(Debug, Clone, Copy)]
 pub struct ObjectUniforms {
     /// Model matrix (object-to-world transform).
@@ -161,8 +161,12 @@ pub struct ObjectUniforms {
     pub base_color: [f32; 4],
 
     /// PBR material parameters.
-    /// x = metallic, y = roughness, z = ambient occlusion, w = normal_scale
+    /// x = metallic, y = roughness, z = ambient occlusion, w = emission texture index
     pub material_params: [f32; 4],
+
+    /// Bindless texture indices (stored as u32, interpreted as vec4<u32> in WGSL).
+    /// x = albedo index, y = normal index, z = metallic/roughness index, w = ao index
+    pub texture_indices: [u32; 4],
 }
 
 /// Storage uniform buffer layout constants.
@@ -181,14 +185,14 @@ impl StorageUniformLayout {
     /// Object array starts after frame uniforms (offset 256).
     pub const OBJECT_ARRAY_OFFSET: usize = 256;
 
-    /// Size per object (1 × mat4x4 + 2 × vec4 = 96 bytes).
+    /// Size per object (1 × mat4x4 + 3 × vec4 = 112 bytes).
     pub const OBJECT_STRIDE: usize = std::mem::size_of::<ObjectUniforms>();
 
     /// Maximum number of objects supported.
     pub const MAX_OBJECTS: usize = 256;
 
     /// Total buffer size for max objects.
-    /// 256 + (96 * 256) = 256 + 24576 = 24832 bytes (~24 KB)
+    /// 256 + (112 * 256) = 256 + 28672 = 28928 bytes (~28 KB)
     pub const MAX_BUFFER_SIZE: usize =
         Self::OBJECT_ARRAY_OFFSET + (Self::OBJECT_STRIDE * Self::MAX_OBJECTS);
 }
@@ -357,7 +361,7 @@ impl StorageUniformManager {
     /// * `metallic` - Metallic factor (0.0 = dielectric, 1.0 = metal)
     /// * `roughness` - Roughness factor (0.0 = smooth, 1.0 = rough)
     /// * `ao` - Ambient occlusion factor (0.0 = full occlusion, 1.0 = none)
-    /// * `normal_scale` - Normal map intensity multiplier (1.0 = default)
+    /// * `emission_idx` - Emission texture index for bindless (0 = no emission)
     pub fn update_object_with_material_full(
         &mut self,
         index: usize,
@@ -366,7 +370,42 @@ impl StorageUniformManager {
         metallic: f32,
         roughness: f32,
         ao: f32,
-        normal_scale: f32,
+        emission_idx: f32,
+    ) {
+        // Default texture indices (0 = no texture / use default)
+        self.update_object_bindless(
+            index,
+            model,
+            color,
+            metallic,
+            roughness,
+            ao,
+            emission_idx,
+            [0, 0, 0, 0], // albedo, normal, mr, ao indices
+        );
+    }
+
+    /// Update object uniforms with bindless texture indices.
+    ///
+    /// # Arguments
+    /// * `index` - Object index (0-255)
+    /// * `model` - Model matrix (object-to-world)
+    /// * `color` - Base color tint (RGBA)
+    /// * `metallic` - Metallic factor (0.0 = dielectric, 1.0 = metal)
+    /// * `roughness` - Roughness factor (0.0 = smooth, 1.0 = rough)
+    /// * `ao` - Ambient occlusion factor (0.0 = full occlusion, 1.0 = none)
+    /// * `emission_idx` - Emission texture index for bindless (0 = no emission)
+    /// * `texture_indices` - [albedo_idx, normal_idx, mr_idx, ao_idx]
+    pub fn update_object_bindless(
+        &mut self,
+        index: usize,
+        model: &[[f32; 4]; 4],
+        color: &[f32; 4],
+        metallic: f32,
+        roughness: f32,
+        ao: f32,
+        emission_idx: f32,
+        texture_indices: [u32; 4],
     ) {
         assert!(
             index < StorageUniformLayout::MAX_OBJECTS,
@@ -383,7 +422,8 @@ impl StorageUniformManager {
             *object_ptr = ObjectUniforms {
                 model: *model,
                 base_color: *color,
-                material_params: [metallic, roughness, ao, normal_scale],
+                material_params: [metallic, roughness, ao, emission_idx],
+                texture_indices,
             };
         }
     }
@@ -445,7 +485,8 @@ mod tests {
 
     #[test]
     fn test_object_uniforms_size() {
-        assert_eq!(std::mem::size_of::<ObjectUniforms>(), 96);
+        // 1 mat4x4 (64 bytes) + 3 vec4 (48 bytes) = 112 bytes
+        assert_eq!(std::mem::size_of::<ObjectUniforms>(), 112);
     }
 
     #[test]
@@ -453,30 +494,31 @@ mod tests {
         assert_eq!(StorageUniformLayout::FRAME_OFFSET, 0);
         assert_eq!(StorageUniformLayout::FRAME_SIZE, 256);
         assert_eq!(StorageUniformLayout::OBJECT_ARRAY_OFFSET, 256);
-        assert_eq!(StorageUniformLayout::OBJECT_STRIDE, 96);
+        assert_eq!(StorageUniformLayout::OBJECT_STRIDE, 112);
         assert_eq!(StorageUniformLayout::MAX_OBJECTS, 256);
-        assert_eq!(StorageUniformLayout::MAX_BUFFER_SIZE, 24832);
+        // 256 + (112 * 256) = 256 + 28672 = 28928
+        assert_eq!(StorageUniformLayout::MAX_BUFFER_SIZE, 28928);
     }
 
     #[test]
     fn test_aligned_object_slots() {
-        // 96 bytes / 16 = 6 slots
-        assert_eq!(StorageUniformLayout::aligned_slots(), 6);
+        // 112 bytes / 16 = 7 slots
+        assert_eq!(StorageUniformLayout::aligned_slots(), 7);
     }
 
     #[test]
     fn test_object_offset_calculation() {
         // Object 0: offset 256
         assert_eq!(StorageUniformLayout::object_offset(0), 256);
-        // Object 1: offset 256 + 96 = 352
-        assert_eq!(StorageUniformLayout::object_offset(1), 352);
-        // Object 255: offset 256 + (96 * 255) = 256 + 24480 = 24736
-        assert_eq!(StorageUniformLayout::object_offset(255), 24736);
+        // Object 1: offset 256 + 112 = 368
+        assert_eq!(StorageUniformLayout::object_offset(1), 368);
+        // Object 255: offset 256 + (112 * 255) = 256 + 28560 = 28816
+        assert_eq!(StorageUniformLayout::object_offset(255), 28816);
     }
 
     #[test]
     fn test_max_buffer_size() {
-        // Frame (256) + objects (96 * 256) = 24832
-        assert_eq!(StorageUniformLayout::total_size(), 24832);
+        // Frame (256) + objects (112 * 256) = 28928
+        assert_eq!(StorageUniformLayout::total_size(), 28928);
     }
 }

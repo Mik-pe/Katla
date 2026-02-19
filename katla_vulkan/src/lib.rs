@@ -49,6 +49,10 @@ pub struct VulkanRenderer {
     /// Loads materials from TOML files and supports runtime shader reloading.
     /// Wrapped in Rc to allow cloning for safe access during model loading.
     pub material_registry: Rc<RefCell<MaterialRegistry>>,
+    /// Bindless texture manager for efficient texture binding.
+    /// When enabled, all textures are stored in a single array accessed by index.
+    /// Textures indices are passed via ObjectUniforms.texture_indices.
+    pub bindless_manager: Option<BindlessTextureManager>,
     /// The render graph - single graph with multiple framebuffers (one per swapchain image)
     pub render_graph: Option<CompiledRenderGraph>,
     /// Storage uniform manager for storage buffer-based uniforms.
@@ -127,6 +131,7 @@ impl VulkanRenderer {
             current_framedata: None,
             asset_registry: AssetRegistry::new(),
             material_registry: Rc::new(RefCell::new(MaterialRegistry::new())),
+            bindless_manager: None,
             render_graph: None,
             storage_manager: None,
             storage_descriptor_set: None,
@@ -143,6 +148,30 @@ impl VulkanRenderer {
             output_target: None,
             viewport_render_graph: None,
         }
+    }
+
+    /// Initialize bindless texture system.
+    ///
+    /// This creates the bindless texture manager for efficient texture binding.
+    /// All textures are stored in a single array and accessed by index.
+    ///
+    /// # Returns
+    /// Ok(()) on success, or an error if initialization fails
+    pub fn init_bindless(&mut self) -> Result<(), vk::Result> {
+        let manager = BindlessTextureManager::new(self.context.clone())?;
+        self.bindless_manager = Some(manager);
+        info!("Bindless texture system initialized (max {} textures)", MAX_BINDLESS_TEXTURES);
+        Ok(())
+    }
+
+    /// Get the bindless texture manager.
+    pub fn bindless_manager(&self) -> Option<&BindlessTextureManager> {
+        self.bindless_manager.as_ref()
+    }
+
+    /// Get the bindless texture manager mutably.
+    pub fn bindless_manager_mut(&mut self) -> Option<&mut BindlessTextureManager> {
+        self.bindless_manager.as_mut()
     }
 
     /// Initialize storage uniform system.
@@ -766,6 +795,32 @@ impl VulkanRenderer {
         vertex_binding: VertexBinding,
         uniform: Option<crate::vulkan::material::UniformHandle>,
     ) -> MaterialHandle {
+        self.create_material_with_indices(pipeline, texture, vertex_binding, uniform, [0; 4], 0)
+    }
+
+    /// Create a material with bindless texture indices.
+    ///
+    /// This is the preferred method when using bindless textures.
+    ///
+    /// # Arguments
+    /// * `pipeline` - The material pipeline (shaders, descriptors, etc.)
+    /// * `texture` - Optional texture bound to the material
+    /// * `vertex_binding` - Vertex binding description for the pipeline
+    /// * `uniform` - Optional per-material uniform buffer (for template-based materials)
+    /// * `texture_indices` - Bindless texture indices [albedo, normal, mr, ao]
+    /// * `emission_index` - Bindless emission texture index
+    ///
+    /// # Returns
+    /// A `MaterialHandle` that references the registered material.
+    pub fn create_material_with_indices(
+        &mut self,
+        pipeline: Rc<RefCell<MaterialPipeline>>,
+        texture: Option<Rc<Texture>>,
+        vertex_binding: VertexBinding,
+        uniform: Option<crate::vulkan::material::UniformHandle>,
+        texture_indices: [u32; 4],
+        emission_index: u32,
+    ) -> MaterialHandle {
         use crate::rendering::registry::MaterialAsset;
 
         let material_asset = MaterialAsset {
@@ -776,6 +831,8 @@ impl VulkanRenderer {
             texture_descriptor: None, // Will be created at registration time
             pbr_texture_descriptor: None,
             pbr_textures: None,
+            texture_indices,
+            emission_index,
         };
 
         self.asset_registry.register_material(material_asset)
@@ -790,6 +847,8 @@ impl VulkanRenderer {
     /// * `texture` - Optional texture
     /// * `vertex_binding` - Vertex binding description
     /// * `uniform` - Optional per-material uniform buffer
+    /// * `texture_indices` - Bindless texture indices [albedo, normal, mr, ao]
+    /// * `emission_index` - Bindless emission texture index
     ///
     /// # Returns
     /// A `MaterialHandle` that references the registered material.
@@ -799,8 +858,10 @@ impl VulkanRenderer {
         texture: Option<Rc<Texture>>,
         vertex_binding: VertexBinding,
         uniform: Option<crate::vulkan::material::UniformHandle>,
+        texture_indices: [u32; 4],
+        emission_index: u32,
     ) -> MaterialHandle {
-        self.create_material(pipeline, texture, vertex_binding, uniform)
+        self.create_material_with_indices(pipeline, texture, vertex_binding, uniform, texture_indices, emission_index)
     }
 
     /// Register a material with PBR textures.
@@ -814,6 +875,8 @@ impl VulkanRenderer {
     /// * `uniform` - Optional per-material uniform buffer
     /// * `pbr_textures` - PBR texture set containing all texture maps
     /// * `textures` - Vector of texture Rc references to keep alive
+    /// * `texture_indices` - Bindless texture indices [albedo, normal, mr, ao]
+    /// * `emission_index` - Bindless emission texture index
     ///
     /// # Returns
     /// A `MaterialHandle` that references the registered material.
@@ -825,6 +888,8 @@ impl VulkanRenderer {
         uniform: Option<crate::vulkan::material::UniformHandle>,
         pbr_textures: crate::vulkan::material::PbrTextureSet,
         textures: Vec<Rc<Texture>>,
+        texture_indices: [u32; 4],
+        emission_index: u32,
     ) -> MaterialHandle {
         use crate::rendering::registry::MaterialAsset;
 
@@ -836,6 +901,8 @@ impl VulkanRenderer {
             texture_descriptor: None,
             pbr_texture_descriptor: None, // Will be created at registration time
             pbr_textures: None, // Will be set at registration time
+            texture_indices,
+            emission_index,
         };
 
         self.asset_registry.register_material_pbr(material_asset, pbr_textures, textures)
@@ -982,6 +1049,9 @@ impl VulkanRenderer {
         let storage_manager_ptr = &mut self.storage_manager as *mut Option<StorageUniformManager>;
         let storage_descriptor_ptr =
             &mut self.storage_descriptor_set as *mut Option<StorageDescriptorSet>;
+
+        // Store bindless texture manager pointer for bindless textures
+        let bindless_manager_ptr = &mut self.bindless_manager as *mut Option<BindlessTextureManager>;
 
         // Store sky pipeline pointer
         let sky_pipeline_ptr = &mut self.sky_pipeline as *mut Option<Rc<RefCell<MaterialPipeline>>>;
@@ -1175,12 +1245,18 @@ impl VulkanRenderer {
                         let registry = unsafe { &mut *asset_registry_ptr };
                         let storage_manager = unsafe { &mut *storage_manager_ptr };
                         let storage_descriptor = unsafe { &mut *storage_descriptor_ptr };
+                        let bindless_manager = unsafe { &mut *bindless_manager_ptr };
 
                         // Frame uniforms are now updated in render_frame() before the graph executes
                         // This ensures sky pass has valid data
 
                         // Track object index for storage mode
                         let mut next_object_index: u32 = 0;
+
+                        // === BINDLESS TEXTURES: Bind once per frame ===
+                        // Get the bindless descriptor set if available
+                        let bindless_descriptor_set = bindless_manager.as_ref().map(|m| m.vk_descriptor_set());
+                        let mut bindless_bound = false; // Track if we've bound bindless this frame
 
                         // Process each draw call
                         for draw in &draw_list.draws {
@@ -1215,40 +1291,51 @@ impl VulkanRenderer {
 
                             // === Storage Buffer Mode: Upload instance data ===
                             // The shader uses @builtin(instance_index) to access objects[index]
+                            // Get texture indices from material for bindless mode
+                            let tex_indices = material.texture_indices;
+                            let emission_idx = material.emission_index;
+
                             if let Some(ref mut manager) = storage_manager.as_mut() {
                                 if draw.is_instanced() {
                                     // Upload all instances to consecutive indices
                                     for (i, instance) in draw.instances.iter().enumerate() {
                                         let model: [[f32; 4]; 4] =
                                             bytemuck::cast(instance.model_matrix);
-                                        manager.update_object_with_material(
+                                        manager.update_object_bindless(
                                             first_instance as usize + i,
                                             &model,
                                             &instance.color,
                                             instance.metallic,
                                             instance.roughness,
                                             instance.ao,
+                                            emission_idx as f32,
+                                            tex_indices,
                                         );
                                     }
                                 } else {
                                     // Single instance mode
                                     let model: [[f32; 4]; 4] = bytemuck::cast(draw.model_matrix);
                                     let color = draw.color.unwrap_or([1.0, 1.0, 1.0, 1.0]);
-                                    manager.update_object_with_material(
+                                    manager.update_object_bindless(
                                         first_instance as usize,
                                         &model,
                                         &color,
                                         draw.metallic,
                                         draw.roughness,
                                         draw.ao,
+                                        emission_idx as f32,
+                                        tex_indices,
                                     );
                                 }
                             }
 
                             // Bind texture descriptor (Set 1)
-                            // Use per-material texture descriptor if available, otherwise fall back to pipeline's
-                            // Check PBR texture descriptor first (for full PBR materials)
-                            let tex_descriptor_to_bind = if let Some(ref pbr_desc) = material.pbr_texture_descriptor {
+                            // BINDLESS MODE: Bind once per frame, skip per-draw binding
+                            // LEGACY MODE: Bind per-material texture descriptor
+                            let tex_descriptor_to_bind = if bindless_descriptor_set.is_some() {
+                                // Bindless mode - already bound before loop, skip per-draw binding
+                                None
+                            } else if let Some(ref pbr_desc) = material.pbr_texture_descriptor {
                                 Some(pbr_desc.vk_set())
                             } else if let Some(ref tex_desc) = material.texture_descriptor {
                                 Some(tex_desc.vk_set())
@@ -1284,7 +1371,25 @@ impl VulkanRenderer {
                             }
 
                             // Bind set 1: Textures
-                            if let Some(tex_set) = tex_descriptor_to_bind {
+                            // BINDLESS: Bind once per frame (use first pipeline's layout)
+                            // LEGACY: Bind per-material texture descriptor
+                            if let Some(bindless_set) = bindless_descriptor_set {
+                                if !bindless_bound {
+                                    unsafe {
+                                        pipeline_ref.context().device.cmd_bind_descriptor_sets(
+                                            cmd_buf,
+                                            vk::PipelineBindPoint::GRAPHICS,
+                                            pipeline_ref.vk_layout(),
+                                            1,
+                                            &[bindless_set],
+                                            &[],
+                                        );
+                                    }
+                                    bindless_bound = true;
+                                }
+                                // Skip per-draw texture binding in bindless mode
+                            } else if let Some(tex_set) = tex_descriptor_to_bind {
+                                // Legacy mode: bind per-material texture descriptor
                                 unsafe {
                                     pipeline_ref.context().device.cmd_bind_descriptor_sets(
                                         cmd_buf,
