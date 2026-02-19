@@ -61,6 +61,15 @@ impl<'a> AttributeParser<'a> {
             .unwrap_or_default()
     }
 
+    /// Parse tangent data from an accessor.
+    /// GLTF stores tangents as VEC4 of F32 (xyz + handedness w).
+    pub fn parse_tangents(&self, accessor: gltf::Accessor<'a>) -> Vec<[f32; 4]> {
+        accessor
+            .view()
+            .and_then(|view| self.parse_vec4_accessor(accessor, view))
+            .unwrap_or_default()
+    }
+
     /// Parse index data from an accessor.
     pub fn parse_indices(&self, accessor: gltf::Accessor<'a>) -> (Vec<u8>, u8) {
         let view = accessor
@@ -140,6 +149,46 @@ impl<'a> AttributeParser<'a> {
                         [
                             LittleEndian::read_f32(&bytes[0..4]),
                             LittleEndian::read_f32(&bytes[4..8]),
+                        ]
+                    })
+                    .collect(),
+            )
+        } else {
+            // Unsupported data type
+            None
+        }
+    }
+
+    /// Helper to parse Vec4 data from an accessor with its view.
+    /// Used for tangents (xyz + handedness w).
+    fn parse_vec4_accessor(
+        &self,
+        accessor: gltf::Accessor<'a>,
+        view: gltf::buffer::View<'a>,
+    ) -> Option<Vec<[f32; 4]>> {
+        let buf_index = view.buffer().index();
+        let buf_stride = view.stride();
+        let attr_buf = &self.buffers[buf_index];
+
+        // Calculate indices
+        let start_index = accessor.offset() + view.offset();
+        let stride = buf_stride.unwrap_or(accessor.size());
+        let total_size = accessor.size() * accessor.count();
+        let end_index = start_index + total_size;
+
+        let attr_arr = &attr_buf[start_index..end_index];
+
+        // Parse based on data type
+        if accessor.data_type() == gltf::accessor::DataType::F32 {
+            Some(
+                attr_arr
+                    .chunks(stride)
+                    .map(|bytes| {
+                        [
+                            LittleEndian::read_f32(&bytes[0..4]),
+                            LittleEndian::read_f32(&bytes[4..8]),
+                            LittleEndian::read_f32(&bytes[8..12]),
+                            LittleEndian::read_f32(&bytes[12..16]),
                         ]
                     })
                     .collect(),
@@ -360,16 +409,18 @@ pub fn generate_smooth_normals(
     normals.iter().map(|n| n.to_array()).collect()
 }
 
-/// Build vertex data from position, normal, and tex coord arrays.
+/// Build vertex data from position, normal, tangent, and tex coord arrays.
 pub fn build_vertex_data(
     positions: Vec<[f32; 3]>,
     normals: Vec<[f32; 3]>,
+    tangents: Vec<[f32; 4]>,
     tex_coords: Vec<[f32; 2]>,
 ) -> (Vec<VertexPBR>, Sphere) {
     use itertools::izip;
 
     let has_pos = !positions.is_empty();
     let has_norm = !normals.is_empty();
+    let has_tangents = !tangents.is_empty();
     let has_tex_coords = !tex_coords.is_empty();
 
     let sphere = if has_pos {
@@ -378,12 +429,25 @@ pub fn build_vertex_data(
         Sphere::new(Vec3::new(0.0, 0.0, 0.0), 0.0)
     };
 
-    let vertex_data = if has_pos && has_norm && has_tex_coords {
+    // Default tangent if missing
+    let default_tangent = [1.0, 0.0, 0.0, 1.0];
+
+    let vertex_data = if has_pos && has_norm && has_tangents && has_tex_coords {
+        izip!(positions, normals, tangents, tex_coords)
+            .map(|(position, normal, tangent, tex_coord)| VertexPBR {
+                position,
+                normal,
+                tangent,
+                tex_coord0: tex_coord,
+            })
+            .collect()
+    } else if has_pos && has_norm && has_tex_coords {
+        // No tangents - use default
         izip!(positions, normals, tex_coords)
             .map(|(position, normal, tex_coord)| VertexPBR {
                 position,
                 normal,
-                tangent: [0.0, 0.0, 0.0, 0.0],
+                tangent: default_tangent,
                 tex_coord0: tex_coord,
             })
             .collect()
@@ -394,7 +458,7 @@ pub fn build_vertex_data(
             .map(|(position, normal)| VertexPBR {
                 position,
                 normal,
-                tangent: [0.0, 0.0, 0.0, 0.0],
+                tangent: default_tangent,
                 tex_coord0: [0.0, 0.0],
             })
             .collect()
@@ -405,7 +469,7 @@ pub fn build_vertex_data(
             .map(|(position, tex_coord0)| VertexPBR {
                 position,
                 normal: [0.0, 0.0, 0.0],
-                tangent: [0.0, 0.0, 0.0, 0.0],
+                tangent: default_tangent,
                 tex_coord0,
             })
             .collect()
@@ -420,7 +484,7 @@ pub fn build_vertex_data(
                 VertexPBR {
                     position,
                     normal: norm0.to_array(),
-                    tangent: [0.0, 0.0, 0.0, 0.0],
+                    tangent: default_tangent,
                     tex_coord0: [0.0, 0.0],
                 }
             })
@@ -615,55 +679,6 @@ impl ParsedAttributes {
     }
 }
 
-/// Extension to AttributeParser for tangent parsing.
-impl AttributeParser<'_> {
-    /// Parse tangent data from an accessor.
-    pub fn parse_tangents(&self, accessor: gltf::Accessor) -> Option<Vec<[f32; 4]>> {
-        accessor
-            .view()
-            .and_then(|view| self.parse_vec4_accessor(accessor, view))
-    }
-
-    /// Helper to parse Vec4 data from an accessor with its view.
-    fn parse_vec4_accessor(
-        &self,
-        accessor: gltf::Accessor,
-        view: gltf::buffer::View,
-    ) -> Option<Vec<[f32; 4]>> {
-        let buf_index = view.buffer().index();
-        let buf_stride = view.stride();
-        let attr_buf = &self.buffers[buf_index];
-
-        // Calculate indices
-        let start_index = accessor.offset() + view.offset();
-        let stride = buf_stride.unwrap_or(accessor.size());
-        let total_size = accessor.size() * accessor.count();
-        let end_index = start_index + total_size;
-
-        let attr_arr = &attr_buf[start_index..end_index];
-
-        // Parse based on data type
-        if accessor.data_type() == gltf::accessor::DataType::F32 {
-            Some(
-                attr_arr
-                    .chunks(stride)
-                    .map(|bytes| {
-                        [
-                            byteorder::LittleEndian::read_f32(&bytes[0..4]),
-                            byteorder::LittleEndian::read_f32(&bytes[4..8]),
-                            byteorder::LittleEndian::read_f32(&bytes[8..12]),
-                            byteorder::LittleEndian::read_f32(&bytes[12..16]),
-                        ]
-                    })
-                    .collect(),
-            )
-        } else {
-            // Unsupported data type
-            None
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -672,13 +687,15 @@ mod tests {
     fn test_build_vertex_data_complete() {
         let positions = vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]];
         let normals = vec![[0.0, 0.0, 1.0], [0.0, 0.0, 1.0], [0.0, 0.0, 1.0]];
+        let tangents = vec![[1.0, 0.0, 0.0, 1.0], [1.0, 0.0, 0.0, 1.0], [1.0, 0.0, 0.0, 1.0]];
         let tex_coords = vec![[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]];
 
-        let (vertices, sphere) = build_vertex_data(positions, normals, tex_coords);
+        let (vertices, sphere) = build_vertex_data(positions, normals, tangents, tex_coords);
 
         assert_eq!(vertices.len(), 3);
         assert_eq!(vertices[0].position, [0.0, 0.0, 0.0]);
         assert_eq!(vertices[0].normal, [0.0, 0.0, 1.0]);
+        assert_eq!(vertices[0].tangent, [1.0, 0.0, 0.0, 1.0]);
         assert_eq!(vertices[0].tex_coord0, [0.0, 0.0]);
         // Sphere should have a non-zero radius
         assert!(sphere.radius > 0.0);
@@ -688,9 +705,10 @@ mod tests {
     fn test_build_vertex_data_positions_only() {
         let positions = vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]];
         let normals = vec![];
+        let tangents = vec![];
         let tex_coords = vec![];
 
-        let (vertices, sphere) = build_vertex_data(positions, normals, tex_coords);
+        let (vertices, sphere) = build_vertex_data(positions, normals, tangents, tex_coords);
 
         assert_eq!(vertices.len(), 3);
         // Normals should be normalized positions
@@ -702,9 +720,10 @@ mod tests {
     fn test_build_vertex_data_empty() {
         let positions = vec![];
         let normals = vec![];
+        let tangents = vec![];
         let tex_coords = vec![];
 
-        let (vertices, sphere) = build_vertex_data(positions, normals, tex_coords);
+        let (vertices, sphere) = build_vertex_data(positions, normals, tangents, tex_coords);
 
         assert_eq!(vertices.len(), 0);
         assert_eq!(sphere.radius, 0.0);

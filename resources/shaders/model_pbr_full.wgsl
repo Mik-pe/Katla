@@ -68,6 +68,12 @@ var ao_texture: texture_2d<f32>;
 @group(1) @binding(7)
 var ao_sampler: sampler;
 
+// Emission
+@group(1) @binding(8)
+var emission_texture: texture_2d<f32>;
+@group(1) @binding(9)
+var emission_sampler: sampler;
+
 struct VertexInput {
     @location(0) position: vec3f,
     @location(1) normal: vec3f,
@@ -197,7 +203,8 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
 
     // Sample metallic/roughness (GLTF packed: G=roughness, B=metallic)
     let mr_sample = textureSample(mr_texture, mr_sampler, in.tex_coords);
-    let roughness = mr_sample.g * obj.material_params.y;  // G = roughness
+    // Clamp roughness to avoid division by zero in PBR calculations
+    let roughness = max(mr_sample.g * obj.material_params.y, 0.04);  // G = roughness, minimum 0.04
     let metallic = mr_sample.b * obj.material_params.x;   // B = metallic
 
     // Sample ambient occlusion
@@ -240,8 +247,12 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
     // Ambient (simple constant ambient term with AO)
     let ambient = vec3f(0.03) * albedo * ao;
 
+    // Emission - self-illuminated areas
+    let emission_sample = textureSample(emission_texture, emission_sampler, in.tex_coords);
+    let emission = emission_sample.rgb;  // Emission is additive, goes straight to output
+
     // Final color - HDR LINEAR OUTPUT (no tonemapping)
-    let color = ambient + Lo;
+    let color = ambient + Lo + emission;
 
     return vec4f(color, alpha);
 }

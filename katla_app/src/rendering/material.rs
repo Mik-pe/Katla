@@ -2,7 +2,7 @@ use crate::{rendering::vertextypes::*, util::GLTFModel};
 
 use katla_math::{Color, Mat4};
 use katla_vulkan::{
-    context::VulkanContext, material::UniformHandle, ImageFormat, MaterialBuilder, MaterialHandle,
+    context::VulkanContext, material::{UniformHandle, PbrTextureSet}, ImageFormat, MaterialBuilder, MaterialHandle,
     MaterialPipeline, MaterialTemplate, Texture, VertexBinding,
 };
 use log::warn;
@@ -22,6 +22,12 @@ pub struct Material {
     /// This allows multiple materials to share a pipeline while having different uniforms
     /// Note: This is NOT cloneable - when cloning a Material, you must create a new uniform buffer
     uniform: Option<UniformHandle>,
+    /// Optional PBR texture set for full PBR materials
+    /// Contains albedo, normal, metallic/roughness, occlusion, emission textures
+    pub pbr_textures: Option<PbrTextureSet>,
+    /// Texture Rc references to keep alive for PBR materials
+    /// These must be stored to prevent the textures from being destroyed while in use
+    pub pbr_texture_refs: Option<Vec<Rc<Texture>>>,
 }
 
 impl Clone for Material {
@@ -33,6 +39,8 @@ impl Clone for Material {
             handle: None, // Cloned materials need re-registration
             color: self.color,
             uniform: None, // Cloned materials lose their uniform buffer (must re-upload data)
+            pbr_textures: None, // Cloned materials lose PBR texture set
+            pbr_texture_refs: None, // Cloned materials lose texture refs
         }
     }
 }
@@ -96,6 +104,8 @@ impl Material {
             handle: None,
             color: None,
             uniform: None, // Non-template materials have embedded uniform in pipeline
+            pbr_textures: None,
+            pbr_texture_refs: None,
         }
     }
 
@@ -157,6 +167,42 @@ impl Material {
             handle: None,
             color,
             uniform,
+            pbr_textures: None,
+            pbr_texture_refs: None,
+        }
+    }
+
+    /// Create a full PBR material from a MaterialTemplate with all texture maps.
+    ///
+    /// This is used for GLTF models with complete PBR materials (albedo, normal,
+    /// metallic/roughness, occlusion, emission).
+    ///
+    /// # Arguments
+    /// * `template` - The material template containing the shared pipeline
+    /// * `pbr_textures` - PBR texture set containing all texture maps
+    /// * `texture_refs` - Rc references to textures to keep them alive
+    /// * `color` - Optional color override for this material instance
+    pub fn from_template_pbr(
+        template: &MaterialTemplate,
+        pbr_textures: PbrTextureSet,
+        texture_refs: Vec<Rc<Texture>>,
+        color: Option<Color>,
+    ) -> Self {
+        use katla_vulkan::vertexbinding::get_pbr_vertex_binding;
+
+        // Storage mode: Create minimal uniform handle
+        // The actual uniform data comes from StorageUniformManager
+        let uniform = template.create_uniform();
+
+        Self {
+            material_pipeline: template.pipeline(),
+            texture: None, // Texture is part of PbrTextureSet now
+            vertex_binding: get_pbr_vertex_binding(),
+            handle: None,
+            color,
+            uniform: Some(uniform),
+            pbr_textures: Some(pbr_textures),
+            pbr_texture_refs: Some(texture_refs),
         }
     }
 
@@ -201,6 +247,8 @@ impl Material {
             handle: None,
             color,
             uniform,
+            pbr_textures: None,
+            pbr_texture_refs: None,
         }
     }
 
@@ -227,6 +275,8 @@ impl Material {
             handle: None,
             color,
             uniform: None, // Non-template materials have embedded uniform in pipeline
+            pbr_textures: None,
+            pbr_texture_refs: None,
         }
     }
 
@@ -288,12 +338,16 @@ impl Material {
         Option<Rc<Texture>>,
         VertexBinding,
         Option<UniformHandle>,
+        Option<PbrTextureSet>,
+        Option<Vec<Rc<Texture>>>,
     ) {
         (
             self.material_pipeline,
             self.texture,
             self.vertex_binding,
             self.uniform,
+            self.pbr_textures,
+            self.pbr_texture_refs,
         )
     }
 

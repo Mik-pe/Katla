@@ -32,6 +32,7 @@ impl GLTFModel {
     fn parse_node(&self, node: &gltf::Node) -> (Vec<VertexPBR>, Vec<u8>, u8, Sphere) {
         let mut positions = vec![];
         let mut normals = vec![];
+        let mut tangents = vec![];
         let mut tex_coords = vec![];
         let mut index_data = vec![];
         let mut index_stride = 0u8;
@@ -56,6 +57,10 @@ impl GLTFModel {
                         gltf::mesh::Semantic::Normals => {
                             normals = parser.parse_normals(accessor);
                             debug!("    Parsed {} normals", normals.len());
+                        }
+                        gltf::mesh::Semantic::Tangents => {
+                            tangents = parser.parse_tangents(accessor);
+                            debug!("    Parsed {} tangents", tangents.len());
                         }
                         gltf::mesh::Semantic::TexCoords(0) => {
                             tex_coords = parser.parse_tex_coords(accessor);
@@ -85,7 +90,7 @@ impl GLTFModel {
             }
 
             // Build vertex data from parsed attributes
-            let (vertex_data, sphere) = build_vertex_data(positions, normals, tex_coords);
+            let (vertex_data, sphere) = build_vertex_data(positions, normals, tangents, tex_coords);
             (vertex_data, index_data, index_stride, sphere)
         } else {
             // No mesh - return empty data

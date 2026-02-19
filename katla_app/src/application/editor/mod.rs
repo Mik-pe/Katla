@@ -520,8 +520,8 @@ pub fn spawn_model_from_path(app: &mut Application, path: std::path::PathBuf, po
     let material_registry_ptr: *const std::cell::RefCell<MaterialRegistry> =
         &app.renderer.as_ref().unwrap().material_registry;
 
-    // Create entity with the loaded model
-    let entity = Model::new_from_gltf_with_ptr(
+    // Create entity with the loaded model using the smart unified importer
+    let entity = Model::from_gltf(
         &mut app.world,
         model.clone(),
         context,

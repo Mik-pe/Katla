@@ -262,14 +262,15 @@ impl StorageUniformManager {
         let default_inv_vp = [[0.0f32; 4]; 4];
 
         // Use default lighting when only view/proj provided
+        // Light direction points TO the light (upward for sun/sky)
         self.update_frame_with_lighting(
             view,
             proj,
             &default_inv_vp,
             &[0.0, 0.0, 0.0, 0.0], // camera_position (will be computed from view inverse)
-            &[-0.3, -1.0, -0.2, 0.0], // light_direction (default)
-            &[1.0, 0.95, 0.9, 0.0], // light_color (warm white)
-            1.0,                   // light_intensity
+            &[0.3, 1.0, 0.2, 0.0], // light_direction (upward toward sun)
+            &[1.0, 0.98, 0.95, 0.0], // light_color (slightly warm white)
+            3.0,                   // light_intensity (HDR - brighter for PBR)
         );
     }
 

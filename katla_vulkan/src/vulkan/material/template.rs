@@ -380,6 +380,7 @@ pub struct MaterialTemplateBuilder {
     vertex_binding: Option<crate::VertexBinding>,
     use_storage: bool,
     use_skinned: bool,
+    use_pbr: bool,
 }
 
 impl MaterialTemplateBuilder {
@@ -392,6 +393,7 @@ impl MaterialTemplateBuilder {
             vertex_binding: None,
             use_storage: false,
             use_skinned: false,
+            use_pbr: false,
         }
     }
 
@@ -425,25 +427,37 @@ impl MaterialTemplateBuilder {
         self
     }
 
+    /// Enable full PBR textures (requires storage buffers)
+    pub fn with_pbr(mut self, enable: bool) -> Self {
+        self.use_pbr = enable;
+        self
+    }
+
     /// Build the template with legacy uniform buffers
     pub fn build(self) -> Result<MaterialTemplate, MaterialError> {
-        self.build_internal(false, false)
+        self.build_internal(false, false, false)
     }
 
     /// Build the template with storage buffers and instance indexing
     pub fn build_storage(self) -> Result<MaterialTemplate, MaterialError> {
-        self.build_internal(true, false)
+        self.build_internal(true, false, false)
+    }
+
+    /// Build the template with storage buffers and full PBR textures
+    pub fn build_storage_pbr(self) -> Result<MaterialTemplate, MaterialError> {
+        self.build_internal(true, false, true)
     }
 
     /// Build the template with storage buffers and skeletal animation
     pub fn build_storage_skinned(self) -> Result<MaterialTemplate, MaterialError> {
-        self.build_internal(true, true)
+        self.build_internal(true, true, false)
     }
 
     fn build_internal(
         self,
         use_storage: bool,
         use_skinned: bool,
+        use_pbr: bool,
     ) -> Result<MaterialTemplate, MaterialError> {
         let descriptor = self.descriptor.ok_or_else(|| {
             MaterialError::InvalidDescriptor("No descriptor provided".to_string())
@@ -486,6 +500,11 @@ impl MaterialTemplateBuilder {
             // Skinned mode requires storage buffers
             builder.build_with_storage_skinned().map_err(|e| {
                 MaterialError::InvalidDescriptor(format!("Skinned Pipeline build failed: {:?}", e))
+            })?
+        } else if use_pbr || self.use_pbr {
+            // Full PBR mode requires storage buffers with 10 texture bindings
+            builder.build_with_storage_pbr().map_err(|e| {
+                MaterialError::InvalidDescriptor(format!("PBR Pipeline build failed: {:?}", e))
             })?
         } else if use_storage || self.use_storage {
             builder.build_with_storage().map_err(|e| {

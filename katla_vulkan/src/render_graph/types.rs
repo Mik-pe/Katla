@@ -1,6 +1,7 @@
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ImageFormat {
     R8G8B8A8Srgb,
+    R8G8B8A8Unorm,
     B8G8R8A8Srgb,
     D32Sfloat,
     D32SfloatS8Uint,
@@ -14,6 +15,7 @@ impl From<ImageFormat> for ash::vk::Format {
     fn from(format: ImageFormat) -> Self {
         match format {
             ImageFormat::R8G8B8A8Srgb => ash::vk::Format::R8G8B8A8_SRGB,
+            ImageFormat::R8G8B8A8Unorm => ash::vk::Format::R8G8B8A8_UNORM,
             ImageFormat::B8G8R8A8Srgb => ash::vk::Format::B8G8R8A8_SRGB,
             ImageFormat::D32Sfloat => ash::vk::Format::D32_SFLOAT,
             ImageFormat::D32SfloatS8Uint => ash::vk::Format::D32_SFLOAT_S8_UINT,

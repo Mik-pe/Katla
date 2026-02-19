@@ -210,9 +210,9 @@ pub fn render_frame(app: &mut Application) {
         proj_matrix: proj.to_array(),
         inv_view_proj_matrix: inv_view_proj.to_array(),
         camera_position: [cam_x, cam_y, cam_z, 0.0],
-        light_direction: [-0.3, -1.0, -0.2, 0.0],
-        light_color: [1.0, 0.95, 0.9, 0.0],
-        light_intensity: 1.5,
+        light_direction: [0.3, 1.0, 0.2, 0.0],  // Points UP toward sun (not down!)
+        light_color: [1.0, 0.98, 0.95, 0.0],   // Warm white sunlight
+        light_intensity: 3.0,                   // HDR intensity for PBR
     });
 
     // Check for material hot reload

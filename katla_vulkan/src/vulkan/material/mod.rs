@@ -146,6 +146,7 @@ pub struct PbrTextureSet {
     pub normal: ImageInfo,
     pub metallic_roughness: ImageInfo,
     pub occlusion: ImageInfo,
+    pub emission: ImageInfo,
 }
 
 impl PbrTextureSet {
@@ -155,12 +156,14 @@ impl PbrTextureSet {
         normal: ImageInfo,
         metallic_roughness: ImageInfo,
         occlusion: ImageInfo,
+        emission: ImageInfo,
     ) -> Self {
         Self {
             albedo,
             normal,
             metallic_roughness,
             occlusion,
+            emission,
         }
     }
 
@@ -170,6 +173,7 @@ impl PbrTextureSet {
         normal_view: vk::ImageView,
         mr_view: vk::ImageView,
         occlusion_view: vk::ImageView,
+        emission_view: vk::ImageView,
         sampler: vk::Sampler,
     ) -> Self {
         Self {
@@ -177,6 +181,7 @@ impl PbrTextureSet {
             normal: ImageInfo::from_raw(normal_view, sampler),
             metallic_roughness: ImageInfo::from_raw(mr_view, sampler),
             occlusion: ImageInfo::from_raw(occlusion_view, sampler),
+            emission: ImageInfo::from_raw(emission_view, sampler),
         }
     }
 }
@@ -222,14 +227,14 @@ impl PbrTextureDescriptorSet {
         desc_layout: vk::DescriptorSetLayout,
         textures: &PbrTextureSet,
     ) -> Result<Self, vk::Result> {
-        // Create descriptor pool for 4 textures + 4 samplers
+        // Create descriptor pool for 5 textures + 5 samplers (including emission)
         let pool_sizes = [
             vk::DescriptorPoolSize::default()
                 .ty(vk::DescriptorType::SAMPLED_IMAGE)
-                .descriptor_count(4),
+                .descriptor_count(5),
             vk::DescriptorPoolSize::default()
                 .ty(vk::DescriptorType::SAMPLER)
-                .descriptor_count(4),
+                .descriptor_count(5),
         ];
 
         let pool_info = vk::DescriptorPoolCreateInfo::default()
@@ -253,10 +258,11 @@ impl PbrTextureDescriptorSet {
         let (normal_img, normal_samp) = textures.normal.update_once_separate(descriptor_set, 2, 3);
         let (mr_img, mr_samp) = textures.metallic_roughness.update_once_separate(descriptor_set, 4, 5);
         let (ao_img, ao_samp) = textures.occlusion.update_once_separate(descriptor_set, 6, 7);
+        let (emission_img, emission_samp) = textures.emission.update_once_separate(descriptor_set, 8, 9);
 
         unsafe {
             context.device.update_descriptor_sets(
-                &[albedo_img, albedo_samp, normal_img, normal_samp, mr_img, mr_samp, ao_img, ao_samp],
+                &[albedo_img, albedo_samp, normal_img, normal_samp, mr_img, mr_samp, ao_img, ao_samp, emission_img, emission_samp],
                 &[],
             );
         }

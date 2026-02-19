@@ -1,0 +1,67 @@
+# Full PBR Material Template
+#
+# Supports all PBR texture maps for proper GLTF rendering:
+# - Albedo (base color)
+# - Normal map
+# - Metallic/Roughness (G=roughness, B=metallic)
+# - Ambient Occlusion
+# - Emission
+
+name = "gltf_pbr_full"
+
+[shaders]
+vertex = "../shaders/model_pbr_full.wgsl"
+fragment = "../shaders/model_pbr_full.wgsl"
+
+# Texture bindings (set 1):
+# 0-1: Albedo texture + sampler
+# 2-3: Normal map + sampler
+# 4-5: Metallic/Roughness + sampler
+# 6-7: Occlusion + sampler
+# 8-9: Emission + sampler
+
+[bindings.textures.albedo]
+binding = 0
+name = "albedo_texture"
+
+[bindings.textures.albedo_sampler]
+binding = 1
+name = "albedo_sampler"
+
+[bindings.textures.normal]
+binding = 2
+name = "normal_texture"
+
+[bindings.textures.normal_sampler]
+binding = 3
+name = "normal_sampler"
+
+[bindings.textures.metallic_roughness]
+binding = 4
+name = "mr_texture"
+
+[bindings.textures.mr_sampler]
+binding = 5
+name = "mr_sampler"
+
+[bindings.textures.occlusion]
+binding = 6
+name = "ao_texture"
+
+[bindings.textures.occlusion_sampler]
+binding = 7
+name = "ao_sampler"
+
+[bindings.textures.emission]
+binding = 8
+name = "emission_texture"
+
+[bindings.textures.emission_sampler]
+binding = 9
+name = "emission_sampler"
+
+[render_state]
+depth_test = true
+depth_write = true
+cull_backfaces = true
+alpha_blending = false

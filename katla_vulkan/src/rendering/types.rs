@@ -50,9 +50,9 @@ impl Default for FrameUniforms {
             proj_matrix: [0.0; 16],
             inv_view_proj_matrix: [0.0; 16],
             camera_position: [0.0, 0.0, 0.0, 0.0],
-            light_direction: [-0.3, -1.0, -0.2, 0.0],
-            light_color: [1.0, 0.95, 0.9, 0.0],
-            light_intensity: 1.0,
+            light_direction: [0.3, 1.0, 0.2, 0.0], // Upward toward sun
+            light_color: [1.0, 0.98, 0.95, 0.0],  // Slightly warm white
+            light_intensity: 3.0,                  // HDR intensity for PBR
         }
     }
 }

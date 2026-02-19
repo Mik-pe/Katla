@@ -208,6 +208,18 @@ impl MaterialRegistry {
                 _ => false,
             };
 
+            // Detect if this is a full PBR material by checking shader filename
+            let is_pbr_full = match &descriptor.vertex_shader {
+                crate::vulkan::material::ShaderSource::WgslFile(path) => {
+                    let path_str = path.to_string_lossy().to_lowercase();
+                    log::debug!("Checking shader path for PBR detection: {}", path_str);
+                    path_str.contains("pbr_full")
+                }
+                _ => false,
+            };
+
+            log::debug!("Template '{}' detection: is_skinned={}, is_pbr_full={}", name, is_skinned, is_pbr_full);
+
             // Build template with appropriate vertex binding
             let vertex_binding = if is_skinned {
                 crate::vulkan::vertexbinding::get_skinned_vertex_binding()
@@ -222,6 +234,13 @@ impl MaterialRegistry {
                     .with_context(context.clone())
                     .with_vertex_binding(vertex_binding)
                     .build_storage_skinned()?
+            } else if is_pbr_full {
+                // Full PBR materials use storage mode with 10 texture bindings
+                MaterialTemplateBuilder::new(name.clone())
+                    .with_descriptor(descriptor)
+                    .with_context(context.clone())
+                    .with_vertex_binding(vertex_binding)
+                    .build_storage_pbr()?
             } else if use_storage {
                 MaterialTemplateBuilder::new(name.clone())
                     .with_descriptor(descriptor)

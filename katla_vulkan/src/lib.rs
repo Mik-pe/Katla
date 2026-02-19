@@ -765,6 +765,8 @@ impl VulkanRenderer {
             vertex_binding,
             uniform,
             texture_descriptor: None, // Will be created at registration time
+            pbr_texture_descriptor: None,
+            pbr_textures: None,
         };
 
         self.asset_registry.register_material(material_asset)
@@ -790,6 +792,44 @@ impl VulkanRenderer {
         uniform: Option<crate::vulkan::material::UniformHandle>,
     ) -> MaterialHandle {
         self.create_material(pipeline, texture, vertex_binding, uniform)
+    }
+
+    /// Register a material with PBR textures.
+    ///
+    /// This is used for GLTF models with full PBR materials.
+    ///
+    /// # Arguments
+    /// * `pipeline` - The material pipeline
+    /// * `texture` - Optional single texture (for fallback)
+    /// * `vertex_binding` - Vertex binding description
+    /// * `uniform` - Optional per-material uniform buffer
+    /// * `pbr_textures` - PBR texture set containing all texture maps
+    /// * `textures` - Vector of texture Rc references to keep alive
+    ///
+    /// # Returns
+    /// A `MaterialHandle` that references the registered material.
+    pub fn register_material_pbr(
+        &mut self,
+        pipeline: Rc<RefCell<MaterialPipeline>>,
+        texture: Option<Rc<Texture>>,
+        vertex_binding: VertexBinding,
+        uniform: Option<crate::vulkan::material::UniformHandle>,
+        pbr_textures: crate::vulkan::material::PbrTextureSet,
+        textures: Vec<Rc<Texture>>,
+    ) -> MaterialHandle {
+        use crate::rendering::registry::MaterialAsset;
+
+        let material_asset = MaterialAsset {
+            pipeline,
+            texture,
+            vertex_binding,
+            uniform,
+            texture_descriptor: None,
+            pbr_texture_descriptor: None, // Will be created at registration time
+            pbr_textures: None, // Will be set at registration time
+        };
+
+        self.asset_registry.register_material_pbr(material_asset, pbr_textures, textures)
     }
 
     /// Register a skeleton buffer for GPU skeletal animation.
@@ -1193,7 +1233,10 @@ impl VulkanRenderer {
 
                             // Bind texture descriptor (Set 1)
                             // Use per-material texture descriptor if available, otherwise fall back to pipeline's
-                            let tex_descriptor_to_bind = if let Some(ref tex_desc) = material.texture_descriptor {
+                            // Check PBR texture descriptor first (for full PBR materials)
+                            let tex_descriptor_to_bind = if let Some(ref pbr_desc) = material.pbr_texture_descriptor {
+                                Some(pbr_desc.vk_set())
+                            } else if let Some(ref tex_desc) = material.texture_descriptor {
                                 Some(tex_desc.vk_set())
                             } else if let Some(ref pipeline_desc) = material.pipeline.borrow().texture_descriptor {
                                 Some(pipeline_desc.vk_set())

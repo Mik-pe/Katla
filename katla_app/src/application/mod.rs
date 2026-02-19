@@ -157,7 +157,7 @@ impl ApplicationHandler for Application {
 
             let material_registry_ptr: *const std::cell::RefCell<MaterialRegistry> =
                 &renderer.material_registry;
-            let fox = Model::new_skinned_from_gltf_with_ptr(
+            let fox = Model::from_gltf(
                 &mut self.world,
                 fox_model.clone(),
                 context,
@@ -263,7 +263,7 @@ impl ApplicationHandler for Application {
             let avocado_transform = Transform::new_from_position(Vec3::new(-15.0, 5.0, 15.0))
                 .with_scale(Vec3::new(20.0, 20.0, 20.0));
             let avocado_model = self.gltf_cache.read(avocado_path);
-            let _avocado = Model::new_from_gltf_with_ptr(
+            let _avocado = Model::from_gltf(
                 &mut self.world,
                 avocado_model.clone(),
                 renderer.context.clone(),
@@ -281,11 +281,12 @@ impl ApplicationHandler for Application {
 
             // Load DamagedHelmet for PBR testing - classic PBR showcase model
             // Position it next to the avocado for comparison
+            // The unified importer will automatically detect full PBR textures
             let helmet_path = self.resources.model_path("DamagedHelmet.glb");
-            let helmet_transform = Transform::new_from_position(Vec3::new(-15.0, 8.0, 20.0))
+            let helmet_transform = Transform::new_from_position(Vec3::new(-10.0, 5.0, 15.0))
                 .with_scale(Vec3::new(3.0, 3.0, 3.0));
             let helmet_model = self.gltf_cache.read(helmet_path);
-            let _helmet = Model::new_from_gltf_with_ptr(
+            let _helmet = Model::from_gltf(
                 &mut self.world,
                 helmet_model.clone(),
                 renderer.context.clone(),
@@ -294,10 +295,10 @@ impl ApplicationHandler for Application {
                 material_registry_ptr,
             );
             if let Some(name_comp) = self.world.get_component_mut::<NameComponent>(_helmet.entity) {
-                name_comp.name = "DamagedHelmet (PBR Test)".to_string();
+                name_comp.name = "DamagedHelmet (Full PBR)".to_string();
             }
             info!(
-                "DamagedHelmet model loaded for PBR testing (entity {})",
+                "DamagedHelmet model loaded with full PBR textures (entity {})",
                 _helmet.entity.id()
             );
 

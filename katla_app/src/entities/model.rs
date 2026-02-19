@@ -41,13 +41,15 @@ impl Model {
             };
 
             // Register material with optional per-material uniform buffer
-            let (pipeline, texture, vertex_binding, uniform) = material.get_registration_data();
-            let mat_h = r.register_material_full(
-                pipeline,
-                texture,
-                vertex_binding,
-                uniform, // Move ownership to renderer
-            );
+            let (pipeline, texture, vertex_binding, uniform, pbr_textures, pbr_texture_refs) = material.get_registration_data();
+
+            // Use PBR registration if PBR textures are present
+            let mat_h = if let Some(pbr) = pbr_textures {
+                let tex_refs = pbr_texture_refs.unwrap_or_default();
+                r.register_material_pbr(pipeline, texture, vertex_binding, uniform, pbr, tex_refs)
+            } else {
+                r.register_material_full(pipeline, texture, vertex_binding, uniform)
+            };
 
             (mesh_h, mat_h)
         } else {
@@ -184,13 +186,15 @@ impl Model {
             };
 
             // Register material with optional per-material uniform buffer
-            let (pipeline, texture, vertex_binding, uniform) = material.get_registration_data();
-            let mat_h = r.register_material_full(
-                pipeline,
-                texture,
-                vertex_binding,
-                uniform,
-            );
+            let (pipeline, texture, vertex_binding, uniform, pbr_textures, pbr_texture_refs) = material.get_registration_data();
+
+            // Use PBR registration if PBR textures are present
+            let mat_h = if let Some(pbr) = pbr_textures {
+                let tex_refs = pbr_texture_refs.unwrap_or_default();
+                r.register_material_pbr(pipeline, texture, vertex_binding, uniform, pbr, tex_refs)
+            } else {
+                r.register_material_full(pipeline, texture, vertex_binding, uniform)
+            };
 
             (mesh_h, mat_h)
         } else {
@@ -220,15 +224,18 @@ impl Model {
             material_handle,
         }
     }
-    /// Create a GLTF model using a raw pointer to MaterialRegistry.
+
+    /// Smart GLTF importer that automatically detects the best material type.
     ///
-    /// This version avoids borrow checker issues by using a raw pointer,
-    /// similar to the MeshBuilder approach.
+    /// This unified importer handles all GLTF models by:
+    /// - Detecting if the model has skinning (skeletal animation)
+    /// - Always using full PBR with default textures for missing maps
+    /// - Selecting the appropriate shader template automatically
     ///
     /// # Safety
     /// The registry_ptr must point to a valid MaterialRegistry that outlives
     /// this function call.
-    pub(crate) fn new_from_gltf_with_ptr(
+    pub fn from_gltf(
         world: &mut World,
         model: Rc<GLTFModel>,
         context: Rc<VulkanContext>,
@@ -236,195 +243,157 @@ impl Model {
         transform: Transform,
         material_registry_ptr: *const std::cell::RefCell<MaterialRegistry>,
     ) -> Self {
-        // SAFETY: The raw pointer points to the MaterialRegistry in VulkanRenderer
-        // which is guaranteed to be valid for the lifetime of the application.
-        // We only access it during this function call.
-        let material = unsafe {
-            let registry = &*material_registry_ptr;
+        use katla_vulkan::material::PbrTextureSet;
 
-            // Try to get the "gltf_default" template
-            if let Some(template) = registry.borrow().get_template("gltf_default") {
-                // Get the correct texture index from material info
-                // Fall back to image 0 if no material info or no base color texture
-                let texture_index = model.materials.first()
-                    .and_then(|m| m.base_color_texture)
-                    .unwrap_or(0);
+        // Check if model has skinning
+        let has_skinning = model.has_skinning;
 
-                debug!("Model has {} materials, {} images, using texture index {}",
-                    model.materials.len(), model.images.len(), texture_index);
-                if let Some(mat) = model.materials.first() {
-                    debug!("Material info: base_color_texture={:?}, metallic_roughness={:?}, normal={:?}",
-                        mat.base_color_texture, mat.metallic_roughness_texture, mat.normal_texture);
-                    debug!("Material factors: base_color={:?}, metallic={}, roughness={}",
-                        mat.base_color_factor, mat.metallic_factor, mat.roughness_factor);
-                }
-
-                // Extract texture from the GLTF model using the correct index
-                let texture = if texture_index < model.images.len() {
-                    let image = &model.images[texture_index];
-                    debug!("Loading image {}: {}x{}, format={:?}",
-                        texture_index, image.width, image.height, image.format);
-
-                    // Debug: print first few pixels to verify data
-                    if image.pixels.len() >= 12 {
-                        debug!("First pixel RGB: {}, {}, {}",
-                            image.pixels[0], image.pixels[1], image.pixels[2]);
-                        debug!("Second pixel RGB: {}, {}, {}",
-                            image.pixels[3], image.pixels[4], image.pixels[5]);
-                    }
-
-                    let pixels = &image.pixels;
-
-                    match image.format {
+        // Helper to load a texture from a GLTF image index
+        let load_texture = |image_index: Option<usize>, default_texture: &Rc<katla_vulkan::Texture>| -> Rc<katla_vulkan::Texture> {
+            if let Some(idx) = image_index {
+                if idx < model.images.len() {
+                    let image = &model.images[idx];
+                    let tex = match image.format {
                         gltf::image::Format::R8G8B8 => {
-                            let tex = katla_vulkan::Texture::create_image_rgb(
+                            Some(katla_vulkan::Texture::create_image_rgb(
                                 context.clone(),
                                 image.width,
                                 image.height,
-                                pixels.as_slice(),
-                            );
-                            Some(Rc::new(tex))
+                                &image.pixels,
+                            ))
                         }
                         gltf::image::Format::R8G8B8A8 => {
-                            let tex = katla_vulkan::Texture::create_image(
+                            Some(katla_vulkan::Texture::create_image(
                                 context.clone(),
                                 image.width,
                                 image.height,
                                 katla_vulkan::ImageFormat::R8G8B8A8Srgb,
-                                pixels.as_slice(),
-                            );
-                            Some(Rc::new(tex))
+                                &image.pixels,
+                            ))
                         }
                         _ => {
-                            info!("Unsupported texture format: {:?}", image.format);
+                            debug!("Unsupported texture format for image {}: {:?}", idx, image.format);
                             None
                         }
+                    };
+                    if let Some(t) = tex {
+                        return Rc::new(t);
                     }
-                } else {
-                    None
-                };
-
-                // Create material from template
-                Material::from_template(template, texture, None)
-            } else {
-                info!("  Model: Template 'gltf_default' not found, creating directly");
-                // Fall back to direct creation if template not found
-                Material::new(model.clone(), context.clone())
+                }
             }
+            Rc::clone(default_texture)
         };
 
-        // Get PBR values from material info
-        let (metallic, roughness) = model.materials.first()
+        // Create default textures for missing maps
+        let default_albedo = Rc::new(katla_vulkan::Texture::create_default_albedo(context.clone()));
+        let default_normal = Rc::new(katla_vulkan::Texture::create_default_normal(context.clone()));
+        let default_mr = Rc::new(katla_vulkan::Texture::create_default_metallic_roughness(context.clone()));
+        let default_occlusion = Rc::new(katla_vulkan::Texture::create_default_occlusion(context.clone()));
+        let default_emission = Rc::new(katla_vulkan::Texture::create_default_emission(context.clone()));
+
+        // Get material info from GLTF
+        let mat_info = model.materials.first();
+        let (metallic, roughness) = mat_info
             .map(|m| (m.metallic_factor, m.roughness_factor))
             .unwrap_or((0.0, 0.5));
 
-        debug!("Using PBR values: metallic={}, roughness={}", metallic, roughness);
+        // Log material detection
+        if let Some(mat) = mat_info {
+            info!(
+                "GLTF import: {} skinning, material: {}",
+                if has_skinning { "with" } else { "no" },
+                mat.summary()
+            );
+        } else {
+            info!(
+                "GLTF import: {} skinning, no material info (using defaults: M={:.2}, R={:.2})",
+                if has_skinning { "with" } else { "no" },
+                metallic, roughness
+            );
+        }
 
-        let mesh = Mesh::new_from_model(model, context.clone());
+        // Load all textures (use defaults for missing maps)
+        let albedo_tex = load_texture(
+            mat_info.and_then(|m| m.base_color_texture),
+            &default_albedo,
+        );
+        let normal_tex = load_texture(
+            mat_info.and_then(|m| m.normal_texture),
+            &default_normal,
+        );
+        let mr_tex = load_texture(
+            mat_info.and_then(|m| m.metallic_roughness_texture),
+            &default_mr,
+        );
+        let occlusion_tex = load_texture(
+            mat_info.and_then(|m| m.occlusion_texture),
+            &default_occlusion,
+        );
+        let emission_tex = load_texture(
+            mat_info.and_then(|m| m.emission_texture),
+            &default_emission,
+        );
 
-        Self::new_with_pbr(world, vec![mesh], material, renderer, transform, None, metallic, roughness, 1.0)
-    }
+        // Create PbrTextureSet
+        let pbr_textures = PbrTextureSet::from_handles_shared_sampler(
+            albedo_tex.image_view.vk(),
+            normal_tex.image_view.vk(),
+            mr_tex.image_view.vk(),
+            occlusion_tex.image_view.vk(),
+            emission_tex.image_view.vk(),
+            albedo_tex.image_sampler.vk(),
+        );
 
-    /// Create a skinned GLTF model with skeletal animation support.
-    ///
-    /// This uses the skinned shader and vertex format for GPU skeletal animation.
-    ///
-    /// # Safety
-    /// The registry_ptr must point to a valid MaterialRegistry that outlives
-    /// this function call.
-    pub(crate) fn new_skinned_from_gltf_with_ptr(
-        world: &mut World,
-        model: Rc<GLTFModel>,
-        context: Rc<VulkanContext>,
-        renderer: Option<&mut VulkanRenderer>,
-        transform: Transform,
-        material_registry_ptr: *const std::cell::RefCell<MaterialRegistry>,
-    ) -> Self {
-        // SAFETY: The raw pointer points to the MaterialRegistry in VulkanRenderer
-        // which is guaranteed to be valid for the lifetime of the application.
+        // Keep texture refs alive
+        let texture_refs = vec![
+            Rc::clone(&albedo_tex),
+            Rc::clone(&normal_tex),
+            Rc::clone(&mr_tex),
+            Rc::clone(&occlusion_tex),
+            Rc::clone(&emission_tex),
+        ];
+
+        // Create material based on skinning detection
         let material = unsafe {
             let registry = &*material_registry_ptr;
 
-            // Try to get the "gltf_skinned" template for animated models
-            if let Some(template) = registry.borrow().get_template("gltf_skinned") {
-                info!("  Model: Using skinned material template");
-
-                // Extract texture from the GLTF model
-                let texture = if !model.images.is_empty() {
-                    let image = &model.images[0];
-                    let pixels = &image.pixels;
-
-                    match image.format {
-                        gltf::image::Format::R8G8B8 => {
-                            let tex = katla_vulkan::Texture::create_image_rgb(
-                                context.clone(),
-                                image.width,
-                                image.height,
-                                pixels.as_slice(),
-                            );
-                            Some(Rc::new(tex))
-                        }
-                        gltf::image::Format::R8G8B8A8 => {
-                            let tex = katla_vulkan::Texture::create_image(
-                                context.clone(),
-                                image.width,
-                                image.height,
-                                katla_vulkan::ImageFormat::R8G8B8A8Srgb,
-                                pixels.as_slice(),
-                            );
-                            Some(Rc::new(tex))
-                        }
-                        _ => None,
-                    }
+            if has_skinning {
+                // Use skinned shader template (currently only supports albedo texture)
+                // TODO: Create a gltf_skinned_pbr_full template for full PBR on skinned models
+                if let Some(template) = registry.borrow().get_template("gltf_skinned") {
+                    info!("  Using gltf_skinned template");
+                    Material::from_template_skinned(template, Some(albedo_tex), None)
                 } else {
-                    None
-                };
-
-                // Create material from template with skinned vertex binding
-                Material::from_template_skinned(template, texture, None)
-            } else {
-                info!("  Model: Template 'gltf_skinned' not found, falling back to default");
-                // Fall back to default template
-                if let Some(template) = registry.borrow().get_template("gltf_default") {
-                    let texture = if !model.images.is_empty() {
-                        let image = &model.images[0];
-                        let pixels = &image.pixels;
-
-                        match image.format {
-                            gltf::image::Format::R8G8B8 => {
-                                let tex = katla_vulkan::Texture::create_image_rgb(
-                                    context.clone(),
-                                    image.width,
-                                    image.height,
-                                    pixels.as_slice(),
-                                );
-                                Some(Rc::new(tex))
-                            }
-                            gltf::image::Format::R8G8B8A8 => {
-                                let tex = katla_vulkan::Texture::create_image(
-                                    context.clone(),
-                                    image.width,
-                                    image.height,
-                                    katla_vulkan::ImageFormat::R8G8B8A8Srgb,
-                                    pixels.as_slice(),
-                                );
-                                Some(Rc::new(tex))
-                            }
-                            _ => None,
-                        }
+                    warn!("  Template 'gltf_skinned' not found, falling back to gltf_default");
+                    if let Some(template) = registry.borrow().get_template("gltf_default") {
+                        Material::from_template(template, Some(albedo_tex), None)
                     } else {
-                        None
-                    };
-                    Material::from_template(template, texture, None)
+                        Material::new(model.clone(), context.clone())
+                    }
+                }
+            } else {
+                // Use full PBR template for static models
+                if let Some(template) = registry.borrow().get_template("gltf_pbr_full") {
+                    info!("  Using gltf_pbr_full template");
+                    Material::from_template_pbr(template, pbr_textures, texture_refs, None)
                 } else {
-                    Material::new(model.clone(), context.clone())
+                    warn!("  Template 'gltf_pbr_full' not found, falling back to gltf_default");
+                    if let Some(template) = registry.borrow().get_template("gltf_default") {
+                        Material::from_template(template, Some(albedo_tex), None)
+                    } else {
+                        Material::new(model.clone(), context.clone())
+                    }
                 }
             }
         };
 
-        // Create skinned mesh with joint indices and weights
-        let mesh = Mesh::new_skinned_from_model(model, context.clone());
+        // Create appropriate mesh type
+        let mesh = if has_skinning {
+            Mesh::new_skinned_from_model(model, context.clone())
+        } else {
+            Mesh::new_from_model(model, context.clone())
+        };
 
-        Self::new(world, vec![mesh], material, renderer, transform, None)
+        Self::new_with_pbr(world, vec![mesh], material, renderer, transform, None, metallic, roughness, 1.0)
     }
 }

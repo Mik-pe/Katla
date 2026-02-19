@@ -24,6 +24,9 @@ pub struct GltfMaterialInfo {
     /// Roughness factor (0.0 = smooth, 1.0 = rough).
     pub roughness_factor: f32,
 
+    /// Emission factor (RGB multiplier for emission texture).
+    pub emission_factor: [f32; 3],
+
     /// Base color (albedo) texture index in GLTF images array.
     pub base_color_texture: Option<usize>,
 
@@ -36,6 +39,9 @@ pub struct GltfMaterialInfo {
 
     /// Occlusion texture index in GLTF images array.
     pub occlusion_texture: Option<usize>,
+
+    /// Emission texture index in GLTF images array.
+    pub emission_texture: Option<usize>,
 }
 
 impl GltfMaterialInfo {
@@ -50,6 +56,7 @@ impl GltfMaterialInfo {
         let base_color_factor = pbr.base_color_factor();
         let metallic_factor = pbr.metallic_factor();
         let roughness_factor = pbr.roughness_factor();
+        let emission_factor = material.emissive_factor();
 
         // Get texture indices
         // Note: gltf crate returns texture index, we need to convert to image index
@@ -69,14 +76,20 @@ impl GltfMaterialInfo {
             info.texture().source().index()
         });
 
+        let emission_texture = material.emissive_texture().map(|info| {
+            info.texture().source().index()
+        });
+
         Self {
             base_color_factor,
             metallic_factor,
             roughness_factor,
+            emission_factor,
             base_color_texture,
             normal_texture,
             metallic_roughness_texture,
             occlusion_texture,
+            emission_texture,
         }
     }
 
@@ -86,6 +99,15 @@ impl GltfMaterialInfo {
             || self.normal_texture.is_some()
             || self.metallic_roughness_texture.is_some()
             || self.occlusion_texture.is_some()
+    }
+
+    /// Check if this material has "enhanced" PBR textures beyond just albedo.
+    /// Returns true if it has normal, MR, or AO textures.
+    pub fn has_enhanced_pbr(&self) -> bool {
+        self.normal_texture.is_some()
+            || self.metallic_roughness_texture.is_some()
+            || self.occlusion_texture.is_some()
+            || self.emission_texture.is_some()
     }
 
     /// Get a summary of the material for logging.
@@ -103,6 +125,9 @@ impl GltfMaterialInfo {
         }
         if let Some(idx) = self.occlusion_texture {
             parts.push(format!("AO[{}]", idx));
+        }
+        if let Some(idx) = self.emission_texture {
+            parts.push(format!("emiss[{}]", idx));
         }
 
         if parts.is_empty() {
