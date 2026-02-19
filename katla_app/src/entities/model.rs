@@ -1,7 +1,7 @@
 use std::rc::Rc;
 
 use katla_ecs::{EntityId, World};
-use katla_math::Transform;
+use katla_math::{Mat4, Transform};
 use katla_vulkan::{MaterialHandle, MaterialRegistry, MeshHandle, VulkanContext, VulkanRenderer};
 use log::{debug, info, warn};
 
@@ -387,6 +387,9 @@ impl Model {
             }
         };
 
+        // Get root transform before moving model to mesh creation
+        let root_transform = model.root_transform.clone();
+
         // Create appropriate mesh type
         let mesh = if has_skinning {
             Mesh::new_skinned_from_model(model, context.clone())
@@ -394,6 +397,11 @@ impl Model {
             Mesh::new_from_model(model, context.clone())
         };
 
-        Self::new_with_pbr(world, vec![mesh], material, renderer, transform, None, metallic, roughness, 1.0)
+        // Combine user transform with model's root transform from GLTF
+        // Root transform is applied first (model space), then user transform
+        let combined_matrix = transform.make_mat4() * root_transform;
+        let final_transform = combined_matrix.decompose();
+
+        Self::new_with_pbr(world, vec![mesh], material, renderer, final_transform, None, metallic, roughness, 1.0)
     }
 }

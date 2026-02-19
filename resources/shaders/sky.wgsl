@@ -85,7 +85,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
 
     // Add sun glow in the direction of the light (HDR bright)
     let sun_dir = normalize(frame_data.light_direction.xyz);
-    let sun_dot = max(0.0, dot(world_dir, -sun_dir));
+    let sun_dot = max(0.0, dot(world_dir, sun_dir));
     let sun_glow = pow(sun_dot, 256.0) * 8.0;   // Bright sun disk
     let sun_halo = pow(sun_dot, 8.0) * 0.5;     // Soft halo
     sky_color = sky_color + frame_data.light_color.rgb * (sun_glow + sun_halo) * frame_data.light_intensity.x;

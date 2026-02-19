@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use gltf::buffer::Data as BufferData;
 use gltf::image::Data as ImageData;
 use gltf::Document;
-use katla_math::{Sphere, Vec3};
+use katla_math::{Mat4, Quat, Sphere, Vec3};
 use log::{debug, info, warn};
 
 use crate::rendering::{VertexNormal, VertexPBR, VertexPosition, VertexSkinned};
@@ -25,6 +25,8 @@ pub struct GLTFModel {
     pub bounds: Sphere,
     /// SoA (Structure of Arrays) vertex attributes for flexible rendering
     pub parsed_attributes: Option<ParsedAttributes>,
+    /// Root node transform from GLTF (combined transform of first scene's root nodes)
+    pub root_transform: Mat4,
 }
 
 impl GLTFModel {
@@ -172,14 +174,26 @@ impl GLTFModel {
 
     fn parse_gltf(&mut self) {
         let mut used_nodes = vec![];
-        for scene in self.document.scenes() {
+
+        // Extract root transform from first scene's root nodes
+        // Combine all root node transforms into a single transform
+        let mut root_transform = Mat4::identity();
+        if let Some(scene) = self.document.default_scene().or_else(|| self.document.scenes().next()) {
             for node in scene.nodes() {
+                let transform = node.transform();
+                let (t, r, s) = transform.decomposed();
+                let translation = Vec3::new(t[0], t[1], t[2]);
+                let rotation = Quat::new_from_xyzw(r[0], r[1], r[2], r[3]);
+                let scale = Vec3::new(s[0], s[1], s[2]);
+                root_transform = root_transform * Mat4::from_trs(translation, rotation, scale);
+
                 used_nodes.push(node.index());
                 for child in node.children() {
                     used_nodes.push(child.index());
                 }
             }
         }
+        self.root_transform = root_transform;
 
         for node in self.document.nodes() {
             if used_nodes.contains(&node.index()) {
@@ -228,6 +242,7 @@ impl GLTFModel {
             index_stride: 0,
             bounds: Sphere::new(Vec3::new(0.0, 0.0, 0.0), 0.0),
             parsed_attributes: None,
+            root_transform: Mat4::identity(),
         };
         model.parse_gltf();
         Ok(model)
