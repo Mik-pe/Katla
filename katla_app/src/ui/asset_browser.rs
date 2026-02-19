@@ -1070,15 +1070,26 @@ pub fn build_asset_browser(
                 );
             }
             ThumbnailState::Loading => {
-                // Show dimmed icon while loading
-                let icon = asset.asset_type.icon();
-                let icon_color = asset.asset_type.color(theme).with_alpha(0.5);
+                // Show animated spinner while loading
                 let icon_size = 28.0;
                 let icon_pos = Vec2::new(
                     item_bounds.center().x() - icon_size * 0.5,
                     item_bounds.center().y() - icon_size * 0.5,
                 );
-                ui.draw_icon(icon, icon_pos, icon_size, icon_color);
+
+                // Use a rotating spinner icon
+                // Rotation based on time (we can approximate with frame count)
+                let rotation = (std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_millis() % 1000) as f32 / 1000.0 * std::f32::consts::TAU;
+
+                // Draw spinner with rotation effect (we'll simulate rotation by changing icons)
+                let spinner_chars = ['|', '/', '—', '\\'];
+                let spinner_idx = ((rotation / std::f32::consts::FRAC_PI_2) as usize) % 4;
+                let spinner_char = spinner_chars[spinner_idx];
+
+                ui.draw_icon(spinner_char, icon_pos, icon_size, theme.text_secondary);
             }
             ThumbnailState::Failed => {
                 // Show error icon
