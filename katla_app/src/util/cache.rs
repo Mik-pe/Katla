@@ -1,24 +1,34 @@
 use std::{collections::HashMap, path::PathBuf, rc::Rc};
 
-pub struct FileCache<T> {
+/// A cache for loaded files that avoids reloading the same file multiple times.
+///
+/// Uses a loader function instead of `From<PathBuf>` to support fallible loading.
+pub struct FileCache<T, F>
+where
+    F: Fn(&PathBuf) -> T,
+{
     objects: HashMap<PathBuf, Rc<T>>,
+    loader: F,
 }
 
-impl<T> FileCache<T>
+impl<T, F> FileCache<T, F>
 where
-    T: From<PathBuf>,
+    F: Fn(&PathBuf) -> T,
 {
-    pub fn new() -> Self {
+    /// Create a new cache with the given loader function.
+    pub fn new(loader: F) -> Self {
         Self {
             objects: HashMap::new(),
+            loader,
         }
     }
 
+    /// Get a cached object or load it using the loader function.
     pub fn read(&mut self, path: PathBuf) -> Rc<T> {
         match self.objects.get(&path) {
             Some(file) => file.clone(),
             None => {
-                let cached_object = Rc::new(T::from(path.clone()));
+                let cached_object = Rc::new((self.loader)(&path));
                 self.objects.insert(path, cached_object.clone());
                 cached_object
             }

@@ -15,7 +15,7 @@ use crate::{
     rendering::MaterialManager,
     resources::ResourceManager,
     ui::Theme,
-    util::{BackgroundLoader, FileCache, Timer},
+    util::{BackgroundLoader, FileCache, GLTFModel, Timer},
 };
 
 #[derive(Default)]
@@ -176,11 +176,18 @@ impl ApplicationBuilder {
             log::warn!("Icon font file not found: {}", icon_font_path.display());
         }
 
+        // Create GLTF cache with loader that panics on error (same as old From<PathBuf> impl)
+        let gltf_loader = Box::new(|path: &std::path::PathBuf| {
+            GLTFModel::new(path).unwrap_or_else(|e| {
+                panic!("Failed to load GLTF model from {:?}: {}", path, e)
+            })
+        });
+
         let app = Application {
             window: None,
             renderer: None,
             camera,
-            gltf_cache: FileCache::new(),
+            gltf_cache: FileCache::new(gltf_loader),
             material_manager: MaterialManager::new(),
             stage_upload: false,
             timer: Timer::new(100),

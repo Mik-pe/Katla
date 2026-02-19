@@ -55,7 +55,7 @@ pub struct Application {
     pub(crate) window: Option<Window>,
     pub(crate) renderer: Option<VulkanRenderer>,
     pub(crate) camera: Rc<RefCell<Camera>>,
-    pub(crate) gltf_cache: FileCache<GLTFModel>,
+    pub(crate) gltf_cache: FileCache<GLTFModel, Box<dyn Fn(&PathBuf) -> GLTFModel>>,
     pub(crate) material_manager: MaterialManager,
     pub(crate) stage_upload: bool,
     pub(crate) timer: Timer,

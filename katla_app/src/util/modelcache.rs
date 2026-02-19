@@ -305,14 +305,6 @@ impl GLTFModel {
     }
 }
 
-impl From<PathBuf> for GLTFModel {
-    fn from(pathbuf: PathBuf) -> Self {
-        GLTFModel::new(&pathbuf).unwrap_or_else(|e| {
-            panic!("Failed to load GLTF model from {:?}: {}", pathbuf, e);
-        })
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
