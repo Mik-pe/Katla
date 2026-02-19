@@ -80,17 +80,17 @@ impl<'a> AttributeParser<'a> {
     }
 
     /// Parse index data from an accessor.
-    pub fn parse_indices(&self, accessor: gltf::Accessor<'a>) -> (Vec<u8>, u8) {
-        let view = accessor
-            .view()
-            .expect("Index accessor must have a buffer view");
+    ///
+    /// Returns None if the accessor has no buffer view (invalid GLTF).
+    pub fn parse_indices(&self, accessor: gltf::Accessor<'a>) -> Option<(Vec<u8>, u8)> {
+        let view = accessor.view()?;
         let buf_index = view.buffer().index();
         let ind_offset = view.offset() + accessor.offset();
         let ind_size = view.length();
         let ind_buf = &self.buffers[buf_index];
         let index_data = ind_buf[ind_offset..ind_offset + ind_size].to_vec();
         let index_stride = accessor.size() as u8;
-        (index_data, index_stride)
+        Some((index_data, index_stride))
     }
 
     /// Helper to parse Vec3 data from an accessor with its view.
@@ -364,39 +364,34 @@ impl<'a> AttributeParser<'a> {
                 attr_arr
                     .chunks(stride)
                     .map(|bytes| {
-                        // GLTF stores matrices in column-major order
-                        let cols: [[f32; 4]; 4] = [
-                            [
+                        // GLTF stores matrices in column-major order as 16 consecutive floats.
+                        // Our Mat4 is also column-major: Mat4.0[i] = i-th column as Vec4.
+                        // So we read directly without transposing.
+                        Mat4([
+                            Vec4::new(
                                 LittleEndian::read_f32(&bytes[0..4]),
                                 LittleEndian::read_f32(&bytes[4..8]),
                                 LittleEndian::read_f32(&bytes[8..12]),
                                 LittleEndian::read_f32(&bytes[12..16]),
-                            ],
-                            [
+                            ),
+                            Vec4::new(
                                 LittleEndian::read_f32(&bytes[16..20]),
                                 LittleEndian::read_f32(&bytes[20..24]),
                                 LittleEndian::read_f32(&bytes[24..28]),
                                 LittleEndian::read_f32(&bytes[28..32]),
-                            ],
-                            [
+                            ),
+                            Vec4::new(
                                 LittleEndian::read_f32(&bytes[32..36]),
                                 LittleEndian::read_f32(&bytes[36..40]),
                                 LittleEndian::read_f32(&bytes[40..44]),
                                 LittleEndian::read_f32(&bytes[44..48]),
-                            ],
-                            [
+                            ),
+                            Vec4::new(
                                 LittleEndian::read_f32(&bytes[48..52]),
                                 LittleEndian::read_f32(&bytes[52..56]),
                                 LittleEndian::read_f32(&bytes[56..60]),
                                 LittleEndian::read_f32(&bytes[60..64]),
-                            ],
-                        ];
-                        // Convert to our Mat4 format (array of Vec4 rows)
-                        Mat4([
-                            Vec4::new(cols[0][0], cols[1][0], cols[2][0], cols[3][0]),
-                            Vec4::new(cols[0][1], cols[1][1], cols[2][1], cols[3][1]),
-                            Vec4::new(cols[0][2], cols[1][2], cols[2][2], cols[3][2]),
-                            Vec4::new(cols[0][3], cols[1][3], cols[2][3], cols[3][3]),
+                            ),
                         ])
                     })
                     .collect(),

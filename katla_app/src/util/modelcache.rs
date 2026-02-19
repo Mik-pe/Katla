@@ -76,9 +76,10 @@ impl GLTFModel {
 
                 // Parse indices
                 if let Some(indices) = primitive.indices() {
-                    let (indices_data, stride) = parser.parse_indices(indices);
-                    index_data = indices_data;
-                    index_stride = stride;
+                    if let Some((indices_data, stride)) = parser.parse_indices(indices) {
+                        index_data = indices_data;
+                        index_stride = stride;
+                    }
                 }
             }
 
@@ -145,9 +146,10 @@ impl GLTFModel {
 
                 // Parse indices
                 if let Some(indices) = primitive.indices() {
-                    let (indices_data, stride) = parser.parse_indices(indices);
-                    index_data = indices_data;
-                    index_stride = stride;
+                    if let Some((indices_data, stride)) = parser.parse_indices(indices) {
+                        index_data = indices_data;
+                        index_stride = stride;
+                    }
                 }
             }
 
@@ -375,9 +377,10 @@ mod tests {
     fn test_empty_vertex_data() {
         let positions: Vec<[f32; 3]> = vec![];
         let normals: Vec<[f32; 3]> = vec![];
+        let tangents: Vec<[f32; 4]> = vec![];
         let tex_coords: Vec<[f32; 2]> = vec![];
 
-        let (vertices, sphere) = build_vertex_data(positions, normals, tex_coords);
+        let (vertices, sphere) = build_vertex_data(positions, normals, tangents, tex_coords);
         assert!(vertices.is_empty());
         assert_eq!(sphere.radius, 0.0);
     }
