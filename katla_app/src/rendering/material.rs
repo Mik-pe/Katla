@@ -28,6 +28,11 @@ pub struct Material {
     /// Texture Rc references to keep alive for PBR materials
     /// These must be stored to prevent the textures from being destroyed while in use
     pub pbr_texture_refs: Option<Vec<Rc<Texture>>>,
+    /// Bindless texture indices: [albedo, normal, metallic_roughness, ao]
+    /// Used when bindless textures are enabled in the renderer.
+    pub texture_indices: [u32; 4],
+    /// Emission texture index for bindless.
+    pub emission_index: u32,
 }
 
 impl Clone for Material {
@@ -41,6 +46,8 @@ impl Clone for Material {
             uniform: None, // Cloned materials lose their uniform buffer (must re-upload data)
             pbr_textures: None, // Cloned materials lose PBR texture set
             pbr_texture_refs: None, // Cloned materials lose texture refs
+            texture_indices: self.texture_indices, // Bindless indices are Copy
+            emission_index: self.emission_index,
         }
     }
 }
@@ -106,6 +113,8 @@ impl Material {
             uniform: None, // Non-template materials have embedded uniform in pipeline
             pbr_textures: None,
             pbr_texture_refs: None,
+            texture_indices: [0; 4], // Default to slot 0 (white texture)
+            emission_index: 0,
         }
     }
 
@@ -169,6 +178,8 @@ impl Material {
             uniform,
             pbr_textures: None,
             pbr_texture_refs: None,
+            texture_indices: [0; 4],
+            emission_index: 0,
         }
     }
 
@@ -203,6 +214,8 @@ impl Material {
             uniform: Some(uniform),
             pbr_textures: Some(pbr_textures),
             pbr_texture_refs: Some(texture_refs),
+            texture_indices: [0; 4],
+            emission_index: 0,
         }
     }
 
@@ -249,6 +262,67 @@ impl Material {
             uniform,
             pbr_textures: None,
             pbr_texture_refs: None,
+            texture_indices: [0; 4],
+            emission_index: 0,
+        }
+    }
+
+    /// Create a skinned material with bindless texture indices.
+    ///
+    /// This is used for skeletal animation with bindless textures.
+    /// Textures are accessed by index from the bindless texture array.
+    pub fn from_template_skinned_with_bindless(
+        template: &MaterialTemplate,
+        texture: Option<Rc<Texture>>,
+        color: Option<Color>,
+        texture_indices: [u32; 4],
+        emission_index: u32,
+    ) -> Self {
+        use katla_vulkan::vertexbinding::get_skinned_vertex_binding;
+
+        let uniform = template.create_uniform();
+
+        Self {
+            material_pipeline: template.pipeline(),
+            texture,
+            vertex_binding: get_skinned_vertex_binding(),
+            handle: None,
+            color,
+            uniform: Some(uniform),
+            pbr_textures: None,
+            pbr_texture_refs: None,
+            texture_indices,
+            emission_index,
+        }
+    }
+
+    /// Create a full PBR material with bindless texture indices.
+    ///
+    /// This is used for GLTF models with bindless textures enabled.
+    /// Textures are accessed by index from the bindless texture array.
+    pub fn from_template_pbr_bindless(
+        template: &MaterialTemplate,
+        pbr_textures: PbrTextureSet,
+        texture_refs: Vec<Rc<Texture>>,
+        color: Option<Color>,
+        texture_indices: [u32; 4],
+        emission_index: u32,
+    ) -> Self {
+        use katla_vulkan::vertexbinding::get_pbr_vertex_binding;
+
+        let uniform = template.create_uniform();
+
+        Self {
+            material_pipeline: template.pipeline(),
+            texture: None,
+            vertex_binding: get_pbr_vertex_binding(),
+            handle: None,
+            color,
+            uniform: Some(uniform),
+            pbr_textures: Some(pbr_textures),
+            pbr_texture_refs: Some(texture_refs),
+            texture_indices,
+            emission_index,
         }
     }
 
@@ -277,6 +351,8 @@ impl Material {
             uniform: None, // Non-template materials have embedded uniform in pipeline
             pbr_textures: None,
             pbr_texture_refs: None,
+            texture_indices: [0; 4],
+            emission_index: 0,
         }
     }
 
@@ -340,6 +416,8 @@ impl Material {
         Option<UniformHandle>,
         Option<PbrTextureSet>,
         Option<Vec<Rc<Texture>>>,
+        [u32; 4], // texture_indices
+        u32,      // emission_index
     ) {
         (
             self.material_pipeline,
@@ -348,6 +426,8 @@ impl Material {
             self.uniform,
             self.pbr_textures,
             self.pbr_texture_refs,
+            self.texture_indices,
+            self.emission_index,
         )
     }
 

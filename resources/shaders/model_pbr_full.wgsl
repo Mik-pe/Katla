@@ -29,11 +29,12 @@ struct FrameUniforms {
     light_intensity: vec4f,
 }
 
-// Per-object uniforms
+// Per-object uniforms (must match Rust ObjectUniforms struct - 112 bytes)
 struct ObjectUniforms {
     model: mat4x4f,
     base_color: vec4f,
-    material_params: vec4f,  // x=metallic, y=roughness, z=ao, w=normal_scale
+    material_params: vec4f,      // x=metallic, y=roughness, z=ao, w=emission_idx (unused in legacy)
+    texture_indices: vec4<u32>,  // bindless indices (unused in legacy mode)
 }
 
 // Set 0: Uniforms (storage buffers)

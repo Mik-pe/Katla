@@ -20,7 +20,8 @@ struct FrameUniforms {
 struct ObjectUniforms {
     model: mat4x4f,
     base_color: vec4f,
-    material_params: vec4f,  // metallic, roughness, ao, padding (not used by this shader)
+    material_params: vec4f,      // metallic, roughness, ao, padding (not used by this shader)
+    texture_indices: vec4<u32>,  // bindless indices (unused in legacy mode)
 }
 
 // Set 0: Uniforms (storage buffers)

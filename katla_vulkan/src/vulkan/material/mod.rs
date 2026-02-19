@@ -871,6 +871,37 @@ impl MaterialPipeline {
         }
     }
 
+    /// Create a MaterialPipeline for bindless texture rendering.
+    ///
+    /// This is like `new_storage` but for bindless textures:
+    /// - Set 0 (uniform_set_layout): Storage buffers for frame_data and objects
+    /// - Set 1: Bindless texture array + shared sampler (owned by BindlessTextureManager)
+    ///
+    /// Textures are NOT managed per-material. Instead:
+    /// - Register textures with BindlessTextureManager to get indices
+    /// - Pass texture indices via ObjectUniforms.texture_indices
+    /// - Bind the BindlessTextureManager's descriptor set once per frame
+    pub fn new_bindless(
+        pipeline: Pipeline,
+        uniform_set_layout: vk::DescriptorSetLayout,
+        context: Rc<VulkanContext>,
+    ) -> Self {
+        // Create a minimal UniformHandle - no texture descriptors needed
+        let uniform = UniformHandle::new_storage(&context, &vk::DescriptorSetLayout::null());
+
+        Self {
+            pipeline: Some(pipeline),
+            uniform,
+            desc_layout: Some(uniform_set_layout),
+            additional_layouts: Vec::new(),
+            texture_set_layout: None, // No per-material texture layout for bindless
+            texture_descriptor: None, // No per-material texture descriptor for bindless
+            skeleton_set_layout: None,
+            push_descriptor_set: None,
+            context,
+        }
+    }
+
     /// Get the Vulkan context for this pipeline.
     pub fn context(&self) -> &Rc<VulkanContext> {
         &self.context
