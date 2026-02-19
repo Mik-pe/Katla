@@ -656,3 +656,52 @@ fn vs_main(@builtin(vertex_index) vi: u32) -> @builtin(position) vec4<f32> {
 - **Reflection** - naga parses shader structure for automatic uniform buffer layout
 - **Error messages** - Better integration with Rust error handling
 - **No build step** - Shaders compile on load, no separate SPIR-V generation needed
+
+## Matrix Layout and GLTF Parsing
+
+### Matrix Storage Convention
+
+Katla's `Mat4` uses **column-major** storage: `Mat4.0[i]` is the i-th column as a `Vec4`.
+
+```rust
+// Identity matrix - each Vec4 is a COLUMN
+Mat4([
+    Vec4::new(1.0, 0.0, 0.0, 0.0),  // Column 0
+    Vec4::new(0.0, 1.0, 0.0, 0.0),  // Column 1
+    Vec4::new(0.0, 0.0, 1.0, 0.0),  // Column 2
+    Vec4::new(tx, ty, tz, 1.0),      // Column 3 (translation)
+])
+```
+
+### GLTF Matrix Parsing
+
+GLTF stores matrices as 16 consecutive floats in **column-major order**. When parsing:
+- bytes[0..15] = column 0
+- bytes[16..31] = column 1
+- etc.
+
+**CRITICAL**: Do NOT transpose when reading! The data is already column-major.
+
+```rust
+// CORRECT: Read directly into Vec4 columns
+Mat4([
+    Vec4::new(read_f32(&bytes[0..4]), read_f32(&bytes[4..8]), ...),   // Column 0
+    Vec4::new(read_f32(&bytes[16..20]), read_f32(&bytes[20..24]), ...), // Column 1
+    ...
+])
+
+// WRONG: This transposes the matrix!
+Mat4([
+    Vec4::new(cols[0][0], cols[1][0], cols[2][0], cols[3][0]), // Creates ROWS!
+    ...
+])
+```
+
+### Common Pitfall: "Values Look Fine But Animation Breaks"
+
+When matrices are transposed:
+- Translations end up in the wrong column → bones appear at origin
+- Rotations get corrupted → vertices stretch to infinity
+- Values are technically "finite and reasonable" → tests pass but animation fails
+
+**Testing Tip**: Check that inverse bind matrices have **non-zero translations**. If all IBMs show `(0, 0, 0)` translation, the matrices are likely transposed.
