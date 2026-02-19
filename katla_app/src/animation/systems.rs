@@ -153,74 +153,55 @@ impl System for SkeletalAnimationSystem {
             .collect();
 
         for entity in entities {
-            let has_components = world.get_component::<AnimatedModel>(entity).is_some()
-                && world.get_component::<Skin>(entity).is_some()
-                && world.get_component::<AnimationPlayer>(entity).is_some();
+            // Fetch all components once to avoid repeated lookups
+            let (player_info, skin_info, model_info) = {
+                let player = world.get_component::<AnimationPlayer>(entity);
+                let skin = world.get_component::<Skin>(entity);
+                let model = world.get_component::<AnimatedModel>(entity);
 
-            if !has_components {
-                continue;
-            }
+                // Check if all components exist
+                if player.is_none() || skin.is_none() || model.is_none() {
+                    continue;
+                }
 
-            let playing = world
-                .get_component::<AnimationPlayer>(entity)
-                .map(|p| p.playing)
-                .unwrap_or(false);
+                let player = player.unwrap();
+                let skin = skin.unwrap();
+                let model = model.unwrap();
 
-            if !playing {
-                continue;
-            }
+                // Early exit if not playing
+                if !player.playing {
+                    continue;
+                }
 
-            let clip_name = world
-                .get_component::<AnimationPlayer>(entity)
-                .and_then(|p| p.current_clip.clone());
+                // Get clip name
+                let clip_name = match &player.current_clip {
+                    Some(name) => name.clone(),
+                    None => continue,
+                };
 
-            let clip_name = match clip_name {
-                Some(name) => name,
-                None => continue,
+                // Check if clip exists
+                if !model.animations.contains_key(&clip_name) {
+                    continue;
+                }
+
+                // Sample the animation before moving clip_name into the tuple
+                let sampled = model.animations.get(&clip_name).map(|c| c.sample(player.time));
+
+                (
+                    (player.time, clip_name),
+                    (skin.joint_count(), skin.joints.clone(), skin.inverse_bind_matrices.clone()),
+                    sampled,
+                )
             };
 
-            let clip_exists = world
-                .get_component::<AnimatedModel>(entity)
-                .map(|m| m.animations.contains_key(&clip_name))
-                .unwrap_or(false);
+            let (player_time, clip_name) = player_info;
+            let (joint_count, skin_joints, inverse_bind_matrices) = skin_info;
+            let sampled_values = model_info.unwrap_or_default();
 
-            if !clip_exists {
-                continue;
-            }
-
-            let player_time = world
-                .get_component::<AnimationPlayer>(entity)
-                .map(|p| p.time)
-                .unwrap_or(0.0);
-
-            let joint_count = world
-                .get_component::<Skin>(entity)
-                .map(|s| s.joint_count())
-                .unwrap_or(0);
-
+            // Ensure skeleton component exists
             if world.get_component::<Skeleton>(entity).is_none() {
                 world.add_component(entity, Skeleton::new("skeleton", joint_count));
             }
-
-            let sampled_values: Vec<(usize, ChannelPath, SampledValue)> = world
-                .get_component::<AnimatedModel>(entity)
-                .and_then(|model| {
-                    model
-                        .animations
-                        .get(&clip_name)
-                        .map(|clip| clip.sample(player_time))
-                })
-                .unwrap_or_default();
-
-            let skin_joints: Vec<usize> = world
-                .get_component::<Skin>(entity)
-                .map(|s| s.joints.clone())
-                .unwrap_or_default();
-
-            let inverse_bind_matrices: Vec<Mat4> = world
-                .get_component::<Skin>(entity)
-                .map(|s| s.inverse_bind_matrices.clone())
-                .unwrap_or_default();
 
             if let Some(skeleton) = world.get_component_mut::<Skeleton>(entity) {
                 // Step 1: Update LOCAL transforms from animation samples
@@ -276,38 +257,31 @@ impl System for MorphTargetSystem {
             .collect();
 
         for entity in entities {
-            let playing = world
-                .get_component::<AnimationPlayer>(entity)
-                .map(|p| p.playing)
-                .unwrap_or(false);
+            // Fetch components once and extract needed data
+            let sampled_values = {
+                let player = world.get_component::<AnimationPlayer>(entity);
+                let model = world.get_component::<AnimatedModel>(entity);
 
-            if !playing {
-                continue;
-            }
+                match (player, model) {
+                    (Some(player), Some(model)) => {
+                        // Early exit if not playing
+                        if !player.playing {
+                            continue;
+                        }
 
-            let clip_name = world
-                .get_component::<AnimationPlayer>(entity)
-                .and_then(|p| p.current_clip.clone());
-
-            let clip_name = match clip_name {
-                Some(name) => name,
-                None => continue,
+                        // Get clip name and sample
+                        match &player.current_clip {
+                            Some(clip_name) => model
+                                .animations
+                                .get(clip_name)
+                                .map(|clip| clip.sample(player.time))
+                                .unwrap_or_default(),
+                            None => continue,
+                        }
+                    }
+                    _ => continue,
+                }
             };
-
-            let player_time = world
-                .get_component::<AnimationPlayer>(entity)
-                .map(|p| p.time)
-                .unwrap_or(0.0);
-
-            let sampled_values: Vec<(usize, ChannelPath, SampledValue)> = world
-                .get_component::<AnimatedModel>(entity)
-                .and_then(|model| {
-                    model
-                        .animations
-                        .get(&clip_name)
-                        .map(|clip| clip.sample(player_time))
-                })
-                .unwrap_or_default();
 
             if let Some(morph_weights) = world.get_component_mut::<MorphTargetWeights>(entity) {
                 for (_node_index, path, value) in sampled_values {

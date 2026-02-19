@@ -38,14 +38,9 @@ impl Default for Preferences {
 }
 
 impl Preferences {
-    /// Get the preferences directory path for the current OS.
-    pub fn config_dir() -> Option<PathBuf> {
-        dirs::config_dir().map(|p| p.join("katla"))
-    }
-
     /// Get the preferences file path.
     pub fn file_path() -> Option<PathBuf> {
-        Self::config_dir().map(|p| p.join("preferences.toml"))
+        crate::util::katla_config_file("preferences.toml")
     }
 
     /// Load preferences from disk, or return defaults if not found.
@@ -74,7 +69,7 @@ impl Preferences {
 
     /// Save preferences to disk.
     pub fn save(&self) -> io::Result<()> {
-        let config_dir = Self::config_dir().ok_or_else(|| {
+        let config_dir = crate::util::katla_config_dir().ok_or_else(|| {
             io::Error::new(
                 io::ErrorKind::NotFound,
                 "Could not determine config directory",

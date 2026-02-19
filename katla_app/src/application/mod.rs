@@ -20,7 +20,7 @@ use winit::keyboard::ModifiersState;
 pub use builder::*;
 use katla_ecs::{input::Action, EntityId, World};
 use katla_math::{Transform, Vec2, Vec3};
-use katla_vulkan::{material::MaterialPipeline, MaterialRegistry, SkeletonBuffer, VulkanRenderer};
+use katla_vulkan::{material::MaterialPipeline, SkeletonBuffer, VulkanRenderer};
 use winit::{
     application::ApplicationHandler,
     dpi::LogicalSize,
@@ -98,6 +98,7 @@ pub struct Application {
 impl ApplicationHandler for Application {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         if self.window.is_none() {
+            // Create window
             let window = event_loop
                 .create_window(
                     Window::default_attributes()
@@ -117,286 +118,17 @@ impl ApplicationHandler for Application {
             // Get initial DPI scale factor
             self.scale_factor = window.scale_factor() as f32;
 
-            let engine_name = CString::new("Katla Engine").unwrap();
-            let mut renderer = VulkanRenderer::init(
-                &event_loop,
-                &window,
-                self.info.validation_layer_enabled,
-                CString::new(self.info.name.as_str()).unwrap(),
-                engine_name,
-            );
+            // Initialize renderer
+            let mut renderer = self.init_renderer(event_loop, &window);
 
-            renderer
-                .init_storage_standard()
-                .expect("Failed to initialize storage uniform system");
+            // Clone Rc before any mutable borrows
+            let material_registry = Rc::clone(&renderer.material_registry);
 
-            let loaded_count = renderer
-                .material_registry
-                .borrow_mut()
-                .load_directory_storage(&self.resources.materials, renderer.context.clone())
-                .expect("Failed to load materials directory");
-            info!(
-                "Loaded {} material templates from {}",
-                loaded_count,
-                self.resources.materials.display()
-            );
-
-            renderer
-                .material_registry
-                .borrow_mut()
-                .enable_hot_reload(&self.resources.root, 100)
-                .expect("Failed to enable hot reload");
-            info!("Hot reload enabled for materials and shaders");
-
-            // Load Fox model with skeletal animation
-            let fox_path = self.resources.model_path("Fox.glb");
-            let fox_transform = Transform::new_from_position(Vec3::new(0.0, 5.0, 0.0))
-                .with_scale(Vec3::new(0.05, 0.05, 0.05));
-            let context = renderer.context.clone();
-            let fox_model = self.gltf_cache.read(fox_path);
-
-            // Get material registry reference before mutable borrow of renderer
-            // This is safe: we only read the RefCell's address, not its contents
-            let material_registry: *const std::cell::RefCell<MaterialRegistry> =
-                &renderer.material_registry;
-
-            let fox = Model::from_gltf(
-                &mut self.world,
-                fox_model.clone(),
-                context,
-                Some(&mut renderer),
-                fox_transform,
-                // SAFETY: We're passing a valid reference to the material_registry.
-                // The renderer's mutable borrow is only used for registration,
-                // not for accessing material_registry during material creation.
-                unsafe { &*material_registry },
-            );
-
-            info!(
-                "Fox model entity: {:?} loaded, setting up animation...",
-                fox.entity
-            );
-
-            AnimationManager::setup_animated_model(
-                &mut self.world,
-                fox.entity,
-                &fox_model,
-                Some("Run"),
-            );
-
-            debug!("Fox animation setup complete for entity {:?}", fox.entity);
-
-            // Setup GPU skeleton buffer
-            if let Some(skeleton) = self.world.get_component::<Skeleton>(fox.entity) {
-                let joint_count = skeleton.joint_transforms.len();
-                debug!("Fox has {} joints, creating skeleton buffer", joint_count);
-
-                let skeleton_buffer = Rc::new(RefCell::new(SkeletonBuffer::new(
-                    renderer.context.clone(),
-                    joint_count,
-                )));
-
-                if let Some(drawable) = self.world.get_component::<DrawableComponent>(fox.entity) {
-                    if let Some(material_handle) = drawable.material_handle {
-                        if let Some(skeleton_layout) = renderer
-                            .asset_registry
-                            .get_skeleton_set_layout(material_handle)
-                        {
-                            if let Some(skeleton_handle) =
-                                renderer.register_skeleton(skeleton_buffer.clone(), skeleton_layout)
-                            {
-                                debug!("Registered skeleton with handle {:?}", skeleton_handle);
-
-                                if let Some(drawable) = self
-                                    .world
-                                    .get_component_mut::<DrawableComponent>(fox.entity)
-                                {
-                                    drawable.skeleton_handle = Some(skeleton_handle);
-                                }
-
-                                self.skeleton_buffers.insert(fox.entity, skeleton_buffer);
-                            } else {
-                                warn!("Failed to register skeleton with renderer");
-                            }
-                        } else {
-                            warn!("Material does not have skeleton_set_layout");
-                        }
-                    }
-                }
-            } else {
-                warn!("Fox entity has no Skeleton component");
-            }
-
-            // Create scene meshes
-            let _cube = MeshBuilder::new(renderer.context.clone())
-                .position(Vec3::new(15.0, 5.0, -15.0))
-                .color([1.0, 0.3, 0.3])
-                .with_shared_material("Checkerboard")
-                .build(&mut self.world, &mut renderer);
-
-            let _sphere = MeshBuilder::new(renderer.context.clone())
-                .position(Vec3::new(30.0, 5.0, 0.0))
-                .color([0.3, 1.0, 0.3])
-                .with_shared_material("Checkerboard")
-                .sphere()
-                .build(&mut self.world, &mut renderer);
-
-            let _cylinder = MeshBuilder::new(renderer.context.clone())
-                .position(Vec3::new(-30.0, 5.0, 0.0))
-                .color([0.3, 0.3, 1.0])
-                .with_shared_material("Checkerboard")
-                .cylinder()
-                .build(&mut self.world, &mut renderer);
-
-            let _plane = MeshBuilder::new(renderer.context.clone())
-                .position(Vec3::new(0.0, -5.0, 0.0))
-                .color([0.8, 0.8, 0.8])
-                .with_shared_material("Checkerboard")
-                .plane()
-                .size(Vec3::new(10.0, 10.0, 1.0))
-                .build(&mut self.world, &mut renderer);
-
-            let _torus = MeshBuilder::new(renderer.context.clone())
-                .position(Vec3::new(0.0, 15.0, 0.0))
-                .color([1.0, 0.8, 0.3])
-                .with_shared_material("Checkerboard")
-                .torus()
-                .build(&mut self.world, &mut renderer);
-
-            // Load Avocado model for PBR testing
-            // Avocado.glb is a small model (~0.1 units), scale up 20x for visibility
-            let avocado_path = self.resources.model_path("Avocado.glb");
-            let avocado_transform = Transform::new_from_position(Vec3::new(-15.0, 5.0, 15.0))
-                .with_scale(Vec3::new(20.0, 20.0, 20.0));
-            let avocado_model = self.gltf_cache.read(avocado_path);
-            let _avocado = Model::from_gltf(
-                &mut self.world,
-                avocado_model.clone(),
-                renderer.context.clone(),
-                Some(&mut renderer),
-                avocado_transform,
-                // SAFETY: Same as above - registry is only used for reading templates
-                unsafe { &*material_registry },
-            );
-            if let Some(name_comp) = self.world.get_component_mut::<NameComponent>(_avocado.entity) {
-                name_comp.name = "Avocado (PBR Test)".to_string();
-            }
-            info!(
-                "Avocado model loaded for PBR testing (entity {})",
-                _avocado.entity.id()
-            );
-
-            // Load DamagedHelmet for PBR testing - classic PBR showcase model
-            // Position it next to the avocado for comparison
-            // The unified importer will automatically detect full PBR textures
-            let helmet_path = self.resources.model_path("DamagedHelmet.glb");
-            let helmet_transform = Transform::new_from_position(Vec3::new(-10.0, 5.0, 15.0))
-                .with_scale(Vec3::new(3.0, 3.0, 3.0));
-            let helmet_model = self.gltf_cache.read(helmet_path);
-            let _helmet = Model::from_gltf(
-                &mut self.world,
-                helmet_model.clone(),
-                renderer.context.clone(),
-                Some(&mut renderer),
-                helmet_transform,
-                // SAFETY: Same as above - registry is only used for reading templates
-                unsafe { &*material_registry },
-            );
-            if let Some(name_comp) = self.world.get_component_mut::<NameComponent>(_helmet.entity) {
-                name_comp.name = "DamagedHelmet (Full PBR)".to_string();
-            }
-            info!(
-                "DamagedHelmet model loaded with full PBR textures (entity {})",
-                _helmet.entity.id()
-            );
-
-            // Setup parent-child relationships
-            use crate::components::{Children, NameComponent, Parent};
-
-            if let Some(torus_name) = self.world.get_component_mut::<NameComponent>(_torus) {
-                torus_name.name = "Torus (Fox child)".to_string();
-            }
-            self.world.add_component(_torus, Parent::new(fox.entity));
-
-            let existing_children = self
-                .world
-                .get_component::<Children>(fox.entity)
-                .map(|c| c.children.clone())
-                .unwrap_or_default();
-            let mut children = existing_children;
-            children.push(_torus);
-            self.world
-                .add_component(fox.entity, Children::new(children));
-
-            // Add lighting
-            let _sun = self.world.spawn((
-                DirectionalLight::new(Vec3::new(-0.3, -1.0, -0.2), [1.0, 0.95, 0.8], 1.0),
-                NameComponent::new("Sun Light"),
-            ));
-
-            let _red_light = self.world.spawn((
-                TransformComponent {
-                    transform: Transform::new_from_position(Vec3::new(10.0, 10.0, 10.0)),
-                },
-                PointLight::new([1.0, 0.3, 0.3], 5.0, 20.0),
-                NameComponent::new("Red Point Light"),
-            ));
-
-            let _blue_light = self.world.spawn((
-                TransformComponent {
-                    transform: Transform::new_from_position(Vec3::new(-10.0, 8.0, 10.0)),
-                },
-                PointLight::new([0.3, 0.5, 1.0], 4.0, 25.0),
-                NameComponent::new("Blue Point Light"),
-            ));
-
-            self.world.add_component(_blue_light, Parent::new(_cube));
-            let existing_children = self
-                .world
-                .get_component::<Children>(_cube)
-                .map(|c| c.children.clone())
-                .unwrap_or_default();
-            let mut cube_children = existing_children;
-            cube_children.push(_blue_light);
-            self.world
-                .add_component(_cube, Children::new(cube_children));
-
-            self.world
-                .insert_resource(crate::components::AmbientLight::gray(0.15));
-
-            // Create particle emitter
-            let _particle_emitter = crate::entities::create_particle_emitter(
-                &mut self.world,
-                renderer.context.clone(),
-                Vec3::new(0.0, 10.0, 0.0),
-                100.0,
-            );
-            debug!("Created particle emitter entity");
+            // Load demo scene
+            self.load_demo_scene(&mut renderer, &material_registry);
 
             self.window = Some(window);
-
-            // Setup checkerboard material
-            let checkerboard_texture = create_checkerboard_texture(renderer.context.clone());
-            if self
-                .material_manager
-                .register_from_template(
-                    "Checkerboard",
-                    &renderer.material_registry.borrow(),
-                    Some(Rc::new(checkerboard_texture)),
-                    None,
-                )
-                .is_some()
-            {
-                debug!("Registered checkerboard material from template");
-            } else {
-                warn!("Checkerboard template not found, using fallback");
-                let checkerboard = create_checkerboard_material(renderer.context.clone());
-                self.material_manager
-                    .register_material("checkerboard", checkerboard);
-            }
-
             self.material_manager.set_context(renderer.context.clone());
-
             self.renderer = Some(renderer);
 
             // Setup render graph
@@ -684,6 +416,333 @@ impl ApplicationHandler for Application {
 impl Application {
     pub fn init(&mut self) {
         // Logger is now initialized in main() before building the application
+    }
+
+    /// Initialize the Vulkan renderer and load materials.
+    fn init_renderer(
+        &mut self,
+        event_loop: &ActiveEventLoop,
+        window: &Window,
+    ) -> VulkanRenderer {
+        let engine_name = CString::new("Katla Engine").unwrap();
+        let mut renderer = VulkanRenderer::init(
+            event_loop,
+            window,
+            self.info.validation_layer_enabled,
+            CString::new(self.info.name.as_str()).unwrap(),
+            engine_name,
+        );
+
+        renderer
+            .init_storage_standard()
+            .expect("Failed to initialize storage uniform system");
+
+        let loaded_count = renderer
+            .material_registry
+            .borrow_mut()
+            .load_directory_storage(&self.resources.materials, renderer.context.clone())
+            .expect("Failed to load materials directory");
+        info!(
+            "Loaded {} material templates from {}",
+            loaded_count,
+            self.resources.materials.display()
+        );
+
+        renderer
+            .material_registry
+            .borrow_mut()
+            .enable_hot_reload(&self.resources.root, 100)
+            .expect("Failed to enable hot reload");
+        info!("Hot reload enabled for materials and shaders");
+
+        renderer
+    }
+
+    /// Load the demo scene with models, lights, and particles.
+    fn load_demo_scene(
+        &mut self,
+        renderer: &mut VulkanRenderer,
+        material_registry: &Rc<RefCell<katla_vulkan::MaterialRegistry>>,
+    ) {
+        use crate::components::{Children, NameComponent, Parent};
+
+        // Load Fox model with skeletal animation
+        let fox_entity = self.load_fox_model(renderer, material_registry);
+
+        // Create scene meshes
+        let cube = MeshBuilder::new(renderer.context.clone())
+            .position(Vec3::new(15.0, 5.0, -15.0))
+            .color([1.0, 0.3, 0.3])
+            .with_shared_material("Checkerboard")
+            .build(&mut self.world, renderer);
+
+        let sphere = MeshBuilder::new(renderer.context.clone())
+            .position(Vec3::new(30.0, 5.0, 0.0))
+            .color([0.3, 1.0, 0.3])
+            .with_shared_material("Checkerboard")
+            .sphere()
+            .build(&mut self.world, renderer);
+
+        let cylinder = MeshBuilder::new(renderer.context.clone())
+            .position(Vec3::new(-30.0, 5.0, 0.0))
+            .color([0.3, 0.3, 1.0])
+            .with_shared_material("Checkerboard")
+            .cylinder()
+            .build(&mut self.world, renderer);
+
+        let plane = MeshBuilder::new(renderer.context.clone())
+            .position(Vec3::new(0.0, -5.0, 0.0))
+            .color([0.8, 0.8, 0.8])
+            .with_shared_material("Checkerboard")
+            .plane()
+            .size(Vec3::new(10.0, 10.0, 1.0))
+            .build(&mut self.world, renderer);
+
+        let torus = MeshBuilder::new(renderer.context.clone())
+            .position(Vec3::new(0.0, 15.0, 0.0))
+            .color([1.0, 0.8, 0.3])
+            .with_shared_material("Checkerboard")
+            .torus()
+            .build(&mut self.world, renderer);
+
+        // Load PBR test models
+        self.load_pbr_models(renderer, material_registry);
+
+        // Setup parent-child relationships
+        self.setup_entity_hierarchy(fox_entity, torus, cube);
+
+        // Add lighting
+        self.setup_lighting(cube);
+
+        // Add ambient light resource
+        self.world
+            .insert_resource(crate::components::AmbientLight::gray(0.15));
+
+        // Create particle emitter
+        let _particle_emitter = crate::entities::create_particle_emitter(
+            &mut self.world,
+            renderer.context.clone(),
+            Vec3::new(0.0, 10.0, 0.0),
+            100.0,
+        );
+        debug!("Created particle emitter entity");
+
+        // Setup checkerboard material
+        self.setup_checkerboard_material(renderer);
+    }
+
+    /// Load Fox model with skeletal animation.
+    fn load_fox_model(
+        &mut self,
+        renderer: &mut VulkanRenderer,
+        material_registry: &Rc<RefCell<katla_vulkan::MaterialRegistry>>,
+    ) -> EntityId {
+        let fox_path = self.resources.model_path("Fox.glb");
+        let fox_transform = Transform::new_from_position(Vec3::new(0.0, 5.0, 0.0))
+            .with_scale(Vec3::new(0.05, 0.05, 0.05));
+        let context = renderer.context.clone();
+        let fox_model = self.gltf_cache.read(fox_path);
+
+        let fox = Model::from_gltf(
+            &mut self.world,
+            fox_model.clone(),
+            context,
+            Some(renderer),
+            fox_transform,
+            material_registry,
+        );
+
+        info!(
+            "Fox model entity: {:?} loaded, setting up animation...",
+            fox.entity
+        );
+
+        AnimationManager::setup_animated_model(
+            &mut self.world,
+            fox.entity,
+            &fox_model,
+            Some("Run"),
+        );
+
+        debug!("Fox animation setup complete for entity {:?}", fox.entity);
+
+        // Setup GPU skeleton buffer
+        if let Some(skeleton) = self.world.get_component::<Skeleton>(fox.entity) {
+            let joint_count = skeleton.joint_transforms.len();
+            debug!("Fox has {} joints, creating skeleton buffer", joint_count);
+
+            let skeleton_buffer = Rc::new(RefCell::new(SkeletonBuffer::new(
+                renderer.context.clone(),
+                joint_count,
+            )));
+
+            if let Some(drawable) = self.world.get_component::<DrawableComponent>(fox.entity) {
+                if let Some(material_handle) = drawable.material_handle {
+                    if let Some(skeleton_layout) = renderer
+                        .asset_registry
+                        .get_skeleton_set_layout(material_handle)
+                    {
+                        if let Some(skeleton_handle) =
+                            renderer.register_skeleton(skeleton_buffer.clone(), skeleton_layout)
+                        {
+                            debug!("Registered skeleton with handle {:?}", skeleton_handle);
+
+                            if let Some(drawable) = self
+                                .world
+                                .get_component_mut::<DrawableComponent>(fox.entity)
+                            {
+                                drawable.skeleton_handle = Some(skeleton_handle);
+                            }
+
+                            self.skeleton_buffers.insert(fox.entity, skeleton_buffer);
+                        } else {
+                            warn!("Failed to register skeleton with renderer");
+                        }
+                    } else {
+                        warn!("Material does not have skeleton_set_layout");
+                    }
+                }
+            }
+        } else {
+            warn!("Fox entity has no Skeleton component");
+        }
+
+        fox.entity
+    }
+
+    /// Load PBR test models (Avocado and DamagedHelmet).
+    fn load_pbr_models(
+        &mut self,
+        renderer: &mut VulkanRenderer,
+        material_registry: &Rc<RefCell<katla_vulkan::MaterialRegistry>>,
+    ) {
+        use crate::components::NameComponent;
+
+        // Load Avocado model for PBR testing
+        let avocado_path = self.resources.model_path("Avocado.glb");
+        let avocado_transform = Transform::new_from_position(Vec3::new(-15.0, 5.0, 15.0))
+            .with_scale(Vec3::new(20.0, 20.0, 20.0));
+        let avocado_model = self.gltf_cache.read(avocado_path);
+        let avocado = Model::from_gltf(
+            &mut self.world,
+            avocado_model.clone(),
+            renderer.context.clone(),
+            Some(renderer),
+            avocado_transform,
+            material_registry,
+        );
+        if let Some(name_comp) = self.world.get_component_mut::<NameComponent>(avocado.entity) {
+            name_comp.name = "Avocado (PBR Test)".to_string();
+        }
+        info!(
+            "Avocado model loaded for PBR testing (entity {})",
+            avocado.entity.id()
+        );
+
+        // Load DamagedHelmet for PBR testing
+        let helmet_path = self.resources.model_path("DamagedHelmet.glb");
+        let helmet_transform = Transform::new_from_position(Vec3::new(-10.0, 5.0, 15.0))
+            .with_scale(Vec3::new(3.0, 3.0, 3.0));
+        let helmet_model = self.gltf_cache.read(helmet_path);
+        let helmet = Model::from_gltf(
+            &mut self.world,
+            helmet_model.clone(),
+            renderer.context.clone(),
+            Some(renderer),
+            helmet_transform,
+            material_registry,
+        );
+        if let Some(name_comp) = self.world.get_component_mut::<NameComponent>(helmet.entity) {
+            name_comp.name = "DamagedHelmet (Full PBR)".to_string();
+        }
+        info!(
+            "DamagedHelmet model loaded with full PBR textures (entity {})",
+            helmet.entity.id()
+        );
+    }
+
+    /// Setup entity parent-child relationships.
+    fn setup_entity_hierarchy(
+        &mut self,
+        fox_entity: EntityId,
+        torus: EntityId,
+        cube: EntityId,
+    ) {
+        use crate::components::{Children, NameComponent, Parent};
+
+        // Make torus a child of fox
+        if let Some(torus_name) = self.world.get_component_mut::<NameComponent>(torus) {
+            torus_name.name = "Torus (Fox child)".to_string();
+        }
+        self.world.add_component(torus, Parent::new(fox_entity));
+
+        let existing_children = self
+            .world
+            .get_component::<Children>(fox_entity)
+            .map(|c| c.children.clone())
+            .unwrap_or_default();
+        let mut children = existing_children;
+        children.push(torus);
+        self.world.add_component(fox_entity, Children::new(children));
+    }
+
+    /// Setup scene lighting.
+    fn setup_lighting(&mut self, cube: EntityId) {
+        use crate::components::{Children, NameComponent, Parent};
+
+        let _sun = self.world.spawn((
+            DirectionalLight::new(Vec3::new(-0.3, -1.0, -0.2), [1.0, 0.95, 0.8], 1.0),
+            NameComponent::new("Sun Light"),
+        ));
+
+        let _red_light = self.world.spawn((
+            TransformComponent {
+                transform: Transform::new_from_position(Vec3::new(10.0, 10.0, 10.0)),
+            },
+            PointLight::new([1.0, 0.3, 0.3], 5.0, 20.0),
+            NameComponent::new("Red Point Light"),
+        ));
+
+        let blue_light = self.world.spawn((
+            TransformComponent {
+                transform: Transform::new_from_position(Vec3::new(-10.0, 8.0, 10.0)),
+            },
+            PointLight::new([0.3, 0.5, 1.0], 4.0, 25.0),
+            NameComponent::new("Blue Point Light"),
+        ));
+
+        // Make blue light a child of cube
+        self.world.add_component(blue_light, Parent::new(cube));
+        let existing_children = self
+            .world
+            .get_component::<Children>(cube)
+            .map(|c| c.children.clone())
+            .unwrap_or_default();
+        let mut cube_children = existing_children;
+        cube_children.push(blue_light);
+        self.world.add_component(cube, Children::new(cube_children));
+    }
+
+    /// Setup checkerboard material.
+    fn setup_checkerboard_material(&mut self, renderer: &mut VulkanRenderer) {
+        let checkerboard_texture = create_checkerboard_texture(renderer.context.clone());
+        if self
+            .material_manager
+            .register_from_template(
+                "Checkerboard",
+                &renderer.material_registry.borrow(),
+                Some(Rc::new(checkerboard_texture)),
+                None,
+            )
+            .is_some()
+        {
+            debug!("Registered checkerboard material from template");
+        } else {
+            warn!("Checkerboard template not found, using fallback");
+            let checkerboard = create_checkerboard_material(renderer.context.clone());
+            self.material_manager
+                .register_material("checkerboard", checkerboard);
+        }
     }
 
     /// Poll the background loader and process completed loads.

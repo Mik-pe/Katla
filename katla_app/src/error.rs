@@ -65,7 +65,10 @@ impl fmt::Display for AppError {
 
 impl std::error::Error for AppError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        None
+        match self {
+            Self::Io { source } => Some(source),
+            _ => None,
+        }
     }
 }
 

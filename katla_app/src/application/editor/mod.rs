@@ -503,24 +503,21 @@ pub fn spawn_model(app: &mut Application, model_type: SpawnableModel, position: 
 /// Spawn a model from a file path (e.g., .glb file).
 pub fn spawn_model_from_path(app: &mut Application, path: std::path::PathBuf, position: Vec3) {
     use crate::entities::Model;
-    use katla_vulkan::MaterialRegistry;
+    use std::rc::Rc;
 
     let context = match &app.renderer {
         Some(r) => r.context.clone(),
         None => return,
     };
 
+    // Clone material registry Rc before mutable borrow
+    let material_registry = Rc::clone(&app.renderer.as_ref().unwrap().material_registry);
+
     // Load the GLTF model using the file cache
     let model = app.gltf_cache.read(path.clone());
 
     // Create transform for the model
     let transform = katla_math::Transform::new_from_position(position);
-
-    // Get material registry pointer before mutable borrow
-    // SAFETY: We only read the RefCell's address. The mutable borrow of renderer
-    // is used for registration only, not for accessing material_registry.
-    let material_registry: *const std::cell::RefCell<katla_vulkan::MaterialRegistry> =
-        &app.renderer.as_ref().unwrap().material_registry;
 
     // Create entity with the loaded model using the smart unified importer
     let entity = Model::from_gltf(
@@ -529,7 +526,7 @@ pub fn spawn_model_from_path(app: &mut Application, path: std::path::PathBuf, po
         context,
         app.renderer.as_mut(),
         transform,
-        unsafe { &*material_registry },
+        &material_registry,
     );
 
     // Update name with filename
