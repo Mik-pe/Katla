@@ -76,7 +76,7 @@ pub mod text;
 pub mod widgets;
 
 // Re-exports for convenience
-pub use context::{GraphOptions, UiContext};
+pub use context::{z_index, GraphOptions, UiContext};
 pub use draw_list::{DrawCommand, DrawList, TextureId, UiVertex};
 pub use icons::ForkAwesome;
 pub use input::UiInputState;

@@ -1150,8 +1150,8 @@ pub fn build_asset_browser(
             ui.scaled_font_size(katla_ui::FontSize::XSmall),
         );
 
-        // Handle click - just record the click for now
-        if is_hovered && ui.input.mouse_clicked(katla_ui::input::mouse_button::LEFT) {
+        // Handle click - skip if mouse is over a popup (context menu)
+        if is_hovered && !ui.is_mouse_over_popup() && ui.input.mouse_clicked(katla_ui::input::mouse_button::LEFT) {
             clicked_index = Some(i);
             if asset.asset_type == AssetType::Folder {
                 should_navigate = Some(asset.path.clone());
@@ -1160,13 +1160,13 @@ pub fn build_asset_browser(
             drag_start_index = Some(i);
         }
 
-        // Handle right-click for context menu
-        if is_hovered && ui.input.mouse_clicked(katla_ui::input::mouse_button::RIGHT) {
+        // Handle right-click for context menu (skip if popup already open)
+        if is_hovered && !ui.has_open_popup() && ui.input.mouse_clicked(katla_ui::input::mouse_button::RIGHT) {
             right_clicked_index = Some(i);
             state.selected_index = Some(i);
         }
 
-        // Show tooltip on hover (rendered last with high z-index)
+        // Show tooltip on hover (skip if context menu open or dragging)
         if is_hovered && !state.context_menu_open && !state.is_dragging {
             ui.push_z_index(250); // Above icons and selection borders
             let tooltip_text = format!(
@@ -1194,8 +1194,8 @@ pub fn build_asset_browser(
         let mouse_in_content = content_bounds.contains(ui.input.mouse_pos);
         let mouse_down = ui.input.is_mouse_down(katla_ui::input::mouse_button::LEFT);
 
-        // Start marquee on click in content area (but not on an asset)
-        if mouse_in_content && ui.input.mouse_clicked(katla_ui::input::mouse_button::LEFT) && clicked_index.is_none() {
+        // Start marquee on click in content area (but not on an asset or popup)
+        if mouse_in_content && !ui.is_mouse_over_popup() && ui.input.mouse_clicked(katla_ui::input::mouse_button::LEFT) && clicked_index.is_none() {
             state.selection_rect_start = Some(ui.input.mouse_pos);
             state.selection_rect_current = Some(ui.input.mouse_pos);
             state.is_marquee_selecting = false; // Will become true on drag
@@ -1625,7 +1625,7 @@ pub fn build_asset_browser(
     // === CONTEXT MENU ===
     // Also handle empty space context menu (for creating folders, etc.)
     let mut empty_space_context_menu = false;
-    if !state.context_menu_open && ui.is_hovered(content_bounds) {
+    if !ui.has_open_popup() && ui.is_hovered(content_bounds) {
         // Check if right-click was on empty space (not on any asset)
         let mut clicked_on_asset = false;
         for (i, asset) in state.assets.iter().enumerate() {
@@ -1713,7 +1713,8 @@ pub fn build_asset_browser(
         // Filter out separators for height calculation
         let visible_items = menu_items.iter().filter(|(l, _, _, _)| *l != "separator").count();
         let separator_count = menu_items.iter().filter(|(l, _, _, _)| *l == "separator").count();
-        let menu_height = (visible_items as f32 * item_height) + 8.0 + (separator_count as f32 * 4.0);
+        // Small padding (2px top + 2px bottom) for visual breathing room
+        let menu_height = (visible_items as f32 * item_height) + (separator_count as f32 * 4.0) + 4.0;
 
         // Clamp menu position to screen
         let menu_pos = Vec2::new(
@@ -1722,8 +1723,8 @@ pub fn build_asset_browser(
         );
         let menu_bounds = Rect2D::from_origin_size(menu_pos, Vec2::new(menu_width, menu_height));
 
-        // Push higher Z-index for menu
-        ui.push_z_index(200); // z_index::POPUP
+        // Push higher Z-index for menu (use TOOLTIP level to be above all panel content)
+        ui.push_z_index(katla_ui::z_index::TOOLTIP);
 
         // Shadow
         let shadow_bounds = Rect2D::new(
@@ -1739,8 +1740,8 @@ pub fn build_asset_browser(
         // Track which action was clicked
         let mut clicked_action: Option<&str> = None;
 
-        // Menu items
-        let mut current_y = menu_pos.y() + 4.0;
+        // Menu items (start with 2px top padding)
+        let mut current_y = menu_pos.y() + 2.0;
         for (label, icon, enabled, shortcut) in menu_items.iter() {
             if *label == "separator" {
                 // Draw separator line
@@ -1813,6 +1814,9 @@ pub fn build_asset_browser(
         }
 
         ui.pop_z_index();
+
+        // Block input for popup (captures mouse/keyboard, prevents underlying widgets from responding)
+        ui.block_input_for_popup(menu_bounds);
 
         // Process action after rendering (to avoid borrow conflicts)
         if let Some(action) = clicked_action {
@@ -1974,7 +1978,7 @@ pub fn build_asset_browser(
     }
 
     // === KEYBOARD NAVIGATION ===
-    if !state.search_focused && !state.context_menu_open {
+    if !state.search_focused && !state.context_menu_open && !state.rename_mode {
         use katla_ui::input::KeyCode;
 
         if ui.input.key_pressed(KeyCode::ArrowUp) {
