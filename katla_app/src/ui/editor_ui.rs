@@ -852,7 +852,7 @@ impl EditorUI {
 
         // === FILE MENU ===
         let file_bounds = Rect2D::from_origin_size(cursor, Vec2::new(menu_item_width, button_height));
-        if ui.begin_dropdown("file_menu", "File", file_bounds) {
+        if ui.begin_menu_item("file_menu", "File", file_bounds) {
             let item_height = 24.0;
             let mut item_y = file_bounds.max.y();
 
@@ -908,7 +908,7 @@ impl EditorUI {
 
         // === EDIT MENU ===
         let edit_bounds = Rect2D::from_origin_size(cursor, Vec2::new(menu_item_width, button_height));
-        if ui.begin_dropdown("edit_menu", "Edit", edit_bounds) {
+        if ui.begin_menu_item("edit_menu", "Edit", edit_bounds) {
             let item_height = 24.0;
             let mut item_y = edit_bounds.max.y();
 
@@ -953,7 +953,7 @@ impl EditorUI {
 
         // === VIEW MENU ===
         let view_bounds = Rect2D::from_origin_size(cursor, Vec2::new(menu_item_width, button_height));
-        if ui.begin_dropdown("view_menu", "View", view_bounds) {
+        if ui.begin_menu_item("view_menu", "View", view_bounds) {
             let item_height = 24.0;
             let mut item_y = view_bounds.max.y();
 
@@ -988,7 +988,7 @@ impl EditorUI {
 
         // === CREATE MENU ===
         let create_bounds = Rect2D::from_origin_size(cursor, Vec2::new(60.0, button_height));
-        if ui.begin_dropdown("create_menu", "Create", create_bounds) {
+        if ui.begin_menu_item("create_menu", "Create", create_bounds) {
             let item_height = 24.0;
             let mut item_y = create_bounds.max.y();
 
@@ -1011,7 +1011,7 @@ impl EditorUI {
 
         // === HELP MENU ===
         let help_bounds = Rect2D::from_origin_size(cursor, Vec2::new(menu_item_width, button_height));
-        if ui.begin_dropdown("help_menu", "Help", help_bounds) {
+        if ui.begin_menu_item("help_menu", "Help", help_bounds) {
             let item_height = 24.0;
             let mut item_y = help_bounds.max.y();
 

@@ -261,14 +261,16 @@ impl AssetBrowserState {
 
         self.assets.clear();
 
-        // Add parent directory entry if not at root
-        if self.current_path.parent().is_some() {
-            self.assets.push(AssetEntry {
-                name: "..".to_string(),
-                path: self.current_path.parent().unwrap().to_path_buf(),
-                asset_type: AssetType::Folder,
-                thumbnail_state: ThumbnailState::NotRequested,
-            });
+        // Add parent directory entry if not at root (parent must be different from current)
+        if let Some(parent) = self.current_path.parent() {
+            if parent != self.current_path && !parent.as_os_str().is_empty() {
+                self.assets.push(AssetEntry {
+                    name: "..".to_string(),
+                    path: parent.to_path_buf(),
+                    asset_type: AssetType::Folder,
+                    thumbnail_state: ThumbnailState::NotRequested,
+                });
+            }
         }
 
         // Read directory entries
@@ -1596,7 +1598,8 @@ pub fn build_asset_browser(
             state.selected_indices.clear();
         }
 
-        if is_double {
+        // Only navigate on double-click if no modifier keys were held
+        if is_double && !ctrl_held && !shift_held {
             if let Some(path) = should_navigate {
                 if path.ends_with("..") {
                     state.navigate_up(thumbnail_texture_ids);

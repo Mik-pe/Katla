@@ -1575,12 +1575,27 @@ impl UiContext {
         self.pop_z_index();
     }
 
-    /// Begin a dropdown menu.
+    /// Begin a menu bar item (dropdown without caret icon).
+    ///
+    /// Like `begin_dropdown` but styled for top-level menu bar items:
+    /// - No caret/down arrow icon
+    /// - Label centered in bounds
+    /// Returns true if the menu is open and should have items drawn.
+    pub fn begin_menu_item(&mut self, id: &str, label: &str, bounds: Rect2D) -> bool {
+        self.begin_dropdown_ex(id, label, bounds, false)
+    }
+
+    /// Begin a dropdown menu with optional caret.
     ///
     /// Returns true if the dropdown is open and should have menu items drawn.
     /// Call `end_dropdown()` after adding contents.
     /// The `bounds` is the trigger button area; popup appears below it.
     pub fn begin_dropdown(&mut self, id: &str, label: &str, bounds: Rect2D) -> bool {
+        self.begin_dropdown_ex(id, label, bounds, true)
+    }
+
+    /// Internal implementation with show_caret option.
+    fn begin_dropdown_ex(&mut self, id: &str, label: &str, bounds: Rect2D, show_caret: bool) -> bool {
         let dropdown_id = self.generate_id(id);
 
         // Get or initialize open state
@@ -1644,8 +1659,9 @@ impl UiContext {
 
         // Draw label centered
         let text_size = self.measure_text(label, self.style.font_size);
+        let text_offset = if show_caret { 10.0 } else { 0.0 };
         let text_pos = Vec2::new(
-            bounds.center().x() - text_size.x() * 0.5 - 10.0,
+            bounds.center().x() - text_size.x() * 0.5 - text_offset,
             bounds.center().y() - text_size.y() * 0.5,
         );
         self.draw_text(
@@ -1655,20 +1671,22 @@ impl UiContext {
             self.style.font_size,
         );
 
-        // Draw dropdown icon
-        let icon = ForkAwesome::CARET_DOWN;
-        let icon_size = self.style.font_size;
-        let icon_pos = Vec2::new(
-            bounds.center().x() + text_size.x() * 0.5 + 2.0,
-            bounds.center().y() - icon_size * 0.5,
-        );
-        self.draw_icon_aligned(
-            icon,
-            icon_pos,
-            icon_size,
-            self.style.button_text,
-            FontId::DEFAULT,
-        );
+        // Draw dropdown icon (only if show_caret is true)
+        if show_caret {
+            let icon = ForkAwesome::CARET_DOWN;
+            let icon_size = self.style.font_size;
+            let icon_pos = Vec2::new(
+                bounds.center().x() + text_size.x() * 0.5 + 2.0,
+                bounds.center().y() - icon_size * 0.5,
+            );
+            self.draw_icon_aligned(
+                icon,
+                icon_pos,
+                icon_size,
+                self.style.button_text,
+                FontId::DEFAULT,
+            );
+        }
 
         // If open, prepare popup area
         if is_open {
