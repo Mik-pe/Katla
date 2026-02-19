@@ -823,7 +823,7 @@ impl EditorUI {
         }
     }
 
-    fn build_toolbar(&mut self, ui: &mut UiContext, screen_size: Vec2, height: f32, padding: f32) {
+    fn build_toolbar(&mut self, ui: &mut UiContext, screen_size: Vec2, height: f32, _padding_arg: f32) {
         let theme = &self.theme;
         let toolbar_bounds =
             Rect2D::from_origin_size(Vec2::new(0.0, 0.0), Vec2::new(screen_size.x(), height));
@@ -837,10 +837,18 @@ impl EditorUI {
             1.0,
         );
 
+        // Make menu bar items not have background by default (only on hover/active)
+        let original_button_normal = ui.style.button_normal;
+        ui.style.button_normal = Color::TRANSPARENT;
+
+        // Internal padding for non-menu items
+        let padding = 4.0;
+
+        // No padding between menu items - menu bar should be tight
         let menu_item_width = 50.0;
         let dropdown_width = 120.0;
-        let button_height = height - padding * 2.0;
-        let mut cursor = Vec2::new(padding, padding);
+        let button_height = height;
+        let mut cursor = Vec2::new(0.0, 0.0);  // Start from left edge
 
         // === FILE MENU ===
         let file_bounds = Rect2D::from_origin_size(cursor, Vec2::new(menu_item_width, button_height));
@@ -896,7 +904,7 @@ impl EditorUI {
 
             ui.end_dropdown();
         }
-        cursor = Vec2::new(cursor.x() + menu_item_width + padding, cursor.y());
+        cursor = Vec2::new(cursor.x() + menu_item_width, cursor.y());  // No padding
 
         // === EDIT MENU ===
         let edit_bounds = Rect2D::from_origin_size(cursor, Vec2::new(menu_item_width, button_height));
@@ -941,7 +949,7 @@ impl EditorUI {
 
             ui.end_dropdown();
         }
-        cursor = Vec2::new(cursor.x() + menu_item_width + padding, cursor.y());
+        cursor = Vec2::new(cursor.x() + menu_item_width, cursor.y());  // No padding
 
         // === VIEW MENU ===
         let view_bounds = Rect2D::from_origin_size(cursor, Vec2::new(menu_item_width, button_height));
@@ -976,7 +984,7 @@ impl EditorUI {
 
             ui.end_dropdown();
         }
-        cursor = Vec2::new(cursor.x() + menu_item_width + padding, cursor.y());
+        cursor = Vec2::new(cursor.x() + menu_item_width, cursor.y());  // No padding
 
         // === CREATE MENU ===
         let create_bounds = Rect2D::from_origin_size(cursor, Vec2::new(60.0, button_height));
@@ -1019,7 +1027,7 @@ impl EditorUI {
 
             ui.end_dropdown();
         }
-        cursor = Vec2::new(cursor.x() + menu_item_width + padding, cursor.y());
+        cursor = Vec2::new(cursor.x() + menu_item_width, cursor.y());  // No padding
 
         // Separator line before play controls
         cursor = Vec2::new(cursor.x() + padding * 2.0, cursor.y());
@@ -1060,6 +1068,9 @@ impl EditorUI {
             theme.text_muted,
             ui.scaled_font_size(FontSize::Medium),
         );
+
+        // Restore original button style
+        ui.style.button_normal = original_button_normal;
     }
 
     fn build_hierarchy_panel(

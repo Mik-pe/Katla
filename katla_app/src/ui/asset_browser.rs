@@ -1227,9 +1227,34 @@ pub fn build_asset_browser(
             }
         }
 
-        // Draw selection rectangle and select assets on release
+        // Draw selection rectangle and preview highlight
         if state.is_marquee_selecting {
             if let (Some(start), Some(current)) = (state.selection_rect_start, state.selection_rect_current) {
+                // Build selection rectangle
+                let rect_min = Vec2::new(start.x().min(current.x()), start.y().min(current.y()));
+                let rect_max = Vec2::new(start.x().max(current.x()), start.y().max(current.y()));
+                let sel_rect = Rect2D::new(rect_min, rect_max);
+
+                // Preview highlight for items that will be selected
+                for (i, _asset) in state.assets.iter().enumerate() {
+                    let col = i % col_count;
+                    let row = i / col_count;
+                    let item_x = bounds.min.x() + item_padding + col as f32 * (item_size + item_padding);
+                    let item_y = content_top + row as f32 * row_height - state.scroll_offset;
+                    let item_bounds = Rect2D::from_origin_size(Vec2::new(item_x, item_y), Vec2::new(item_size, item_size));
+
+                    // Check if item intersects with selection rectangle
+                    if item_bounds.min.x() <= sel_rect.max.x()
+                        && item_bounds.max.x() >= sel_rect.min.x()
+                        && item_bounds.min.y() <= sel_rect.max.y()
+                        && item_bounds.max.y() >= sel_rect.min.y()
+                    {
+                        // Draw preview highlight
+                        ui.draw_rect(item_bounds, Color::new(0.3, 0.5, 0.8, 0.4));
+                    }
+                }
+
+                // Draw the selection rectangle on top
                 // Draw the selection rectangle
                 let rect_min = Vec2::new(start.x().min(current.x()), start.y().min(current.y()));
                 let rect_max = Vec2::new(start.x().max(current.x()), start.y().max(current.y()));
