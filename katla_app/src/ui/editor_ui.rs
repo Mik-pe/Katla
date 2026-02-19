@@ -1193,9 +1193,35 @@ impl EditorUI {
                 item_x + 18.0
             };
 
-            // Entity name
+            // Entity name with type icon
+            let entity_icon = match entity.entity_type.as_str() {
+                "Mesh" => ForkAwesome::CUBE,
+                "Particle Emitter" => ForkAwesome::STAR,
+                "Directional Light" => ForkAwesome::SUN,
+                "Point Light" => ForkAwesome::LIGHTBULB,
+                "Camera" => ForkAwesome::CAMERA,
+                "Empty" => ForkAwesome::CIRCLE,
+                _ => ForkAwesome::CUBE,
+            };
+            let entity_icon_color = match entity.entity_type.as_str() {
+                "Mesh" => theme.entity_mesh,
+                "Particle Emitter" => theme.entity_particle,
+                "Directional Light" | "Point Light" => theme.entity_light,
+                _ => theme.text_secondary,
+            };
+
+            // Draw entity type icon
+            ui.draw_icon_aligned(
+                entity_icon,
+                Vec2::new(text_x, cursor.y() + 3.0),
+                ui.scaled_font_size(FontSize::Medium),
+                entity_icon_color,
+                FontId::DEFAULT,
+            );
+
+            // Entity name (shifted right for icon)
             let name_text = &entity.name;
-            let name_pos = Vec2::new(text_x, cursor.y() + 3.0);
+            let name_pos = Vec2::new(text_x + 16.0, cursor.y() + 3.0);
             ui.draw_text(
                 name_text,
                 name_pos,
