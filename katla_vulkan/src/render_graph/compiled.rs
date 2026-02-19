@@ -199,8 +199,8 @@ impl CompiledRenderGraph {
                     ..
                 } = resource
                 {
-                    *res_image = image;
-                    *res_image_view = image_view;
+                    *res_image = image.into();
+                    *res_image_view = image_view.into();
                 }
             }
         }
@@ -287,8 +287,9 @@ impl CompiledRenderGraph {
 
                 // Check the layout to determine attachment type
                 let is_depth_stencil = usage.layout
-                    == vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL
-                    || usage.layout == vk::ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL;
+                    == crate::render_graph::types::ImageLayout::DepthStencilAttachmentOptimal
+                    || usage.layout
+                        == crate::render_graph::types::ImageLayout::DepthStencilReadOnlyOptimal;
 
                 if let Some(subpass) = group.subpasses.first_mut() {
                     if is_depth_stencil {
@@ -307,7 +308,7 @@ impl CompiledRenderGraph {
             for resource_id in pass.outputs() {
                 if let Some(resource) = graph.resources.get(resource_id) {
                     if let ResourceKind::Image { format, .. } = &resource.kind {
-                        let is_depth = is_depth_or_stencil(*format);
+                        let is_depth = is_depth_or_stencil_format(*format);
                         if is_depth {
                             if let Some(subpass) = group.subpasses.first_mut() {
                                 let attachment_index = group
@@ -386,6 +387,11 @@ impl CompiledRenderGraph {
                         final_layout,
                         ..
                     } => {
+                        let vk_format: vk::Format = (*format).into();
+                        let vk_samples: vk::SampleCountFlags = (*samples).into();
+                        let vk_initial_layout: vk::ImageLayout = (*initial_layout).into();
+                        let vk_final_layout: vk::ImageLayout = (*final_layout).into();
+
                         // Find the usage for this attachment
                         let mut load_op = vk::AttachmentLoadOp::DONT_CARE;
                         let mut store_op = vk::AttachmentStoreOp::DONT_CARE;
@@ -395,8 +401,8 @@ impl CompiledRenderGraph {
                             if let Some(pass) = graph.passes.get(*pass_idx) {
                                 for usage in pass.usages() {
                                     if usage.resource_id == *resource_id {
-                                        load_op = usage.load_op;
-                                        store_op = usage.store_op;
+                                        load_op = usage.load_op.into();
+                                        store_op = usage.store_op.into();
                                         break;
                                     }
                                 }
@@ -404,9 +410,9 @@ impl CompiledRenderGraph {
                         }
 
                         let (_final_layout_stencil, stencil_load_op, stencil_store_op) = {
-                            if is_depth_or_stencil(*format) {
+                            if is_depth_or_stencil_format(*format) {
                                 (
-                                    *final_layout,
+                                    vk_final_layout,
                                     vk::AttachmentLoadOp::DONT_CARE,
                                     vk::AttachmentStoreOp::DONT_CARE,
                                 )
@@ -416,16 +422,18 @@ impl CompiledRenderGraph {
                         };
 
                         vk::AttachmentDescription::default()
-                            .format(*format)
-                            .samples(*samples)
+                            .format(vk_format)
+                            .samples(vk_samples)
                             .load_op(load_op)
                             .store_op(store_op)
                             .stencil_load_op(stencil_load_op)
                             .stencil_store_op(stencil_store_op)
-                            .initial_layout(*initial_layout)
-                            .final_layout(*final_layout)
+                            .initial_layout(vk_initial_layout)
+                            .final_layout(vk_final_layout)
                     }
                     ResourceKind::ExternalImage { format, .. } => {
+                        let vk_format: vk::Format = (*format).into();
+
                         // Find the usage for this attachment (same as Image case)
                         let mut load_op = vk::AttachmentLoadOp::DONT_CARE;
                         let mut store_op = vk::AttachmentStoreOp::DONT_CARE;
@@ -435,8 +443,8 @@ impl CompiledRenderGraph {
                             if let Some(pass) = graph.passes.get(*pass_idx) {
                                 for usage in pass.usages() {
                                     if usage.resource_id == *resource_id {
-                                        load_op = usage.load_op;
-                                        store_op = usage.store_op;
+                                        load_op = usage.load_op.into();
+                                        store_op = usage.store_op.into();
                                         break;
                                     }
                                 }
@@ -444,7 +452,7 @@ impl CompiledRenderGraph {
                         }
 
                         // Determine final layout based on format (swapchain vs depth)
-                        let is_depth = is_depth_or_stencil(*format);
+                        let is_depth = is_depth_or_stencil_format(*format);
                         let final_layout = if is_depth {
                             vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL
                         } else {
@@ -455,7 +463,7 @@ impl CompiledRenderGraph {
                             format, load_op, store_op, final_layout);
 
                         vk::AttachmentDescription::default()
-                            .format(*format)
+                            .format(vk_format)
                             .samples(vk::SampleCountFlags::TYPE_1)
                             .load_op(load_op)
                             .store_op(store_op)
@@ -559,14 +567,14 @@ impl CompiledRenderGraph {
 
         for (resource_id, resource) in &graph.resources {
             match &resource.kind {
-                ResourceKind::ExternalBuffer { vk_buffer } => {
+                ResourceKind::ExternalBuffer { buffer } => {
                     resources.insert(
                         *resource_id,
-                        CompiledResource::ExternalBuffer { buffer: *vk_buffer },
+                        CompiledResource::ExternalBuffer { buffer: *buffer },
                     );
                 }
                 ResourceKind::ExternalImage {
-                    vk_image,
+                    image,
                     image_view,
                     format,
                     extent,
@@ -575,7 +583,7 @@ impl CompiledRenderGraph {
                     resources.insert(
                         *resource_id,
                         CompiledResource::ExternalImage {
-                            image: *vk_image,
+                            image: *image,
                             image_view: *image_view,
                             format: *format,
                             extent: *extent,
@@ -587,13 +595,17 @@ impl CompiledRenderGraph {
                     usage,
                     memory_properties,
                 } => {
+                    let vk_usage = crate::render_graph::types::BufferUsage::all(usage.clone());
+                    let vk_memory_props =
+                        crate::render_graph::types::MemoryProperty::all(memory_properties.clone());
+
                     let buffer_info = vk::BufferCreateInfo::default()
                         .size(*size)
-                        .usage(*usage)
+                        .usage(vk_usage)
                         .sharing_mode(vk::SharingMode::EXCLUSIVE);
 
                     let location =
-                        if memory_properties.contains(vk::MemoryPropertyFlags::DEVICE_LOCAL) {
+                        if vk_memory_props.contains(vk::MemoryPropertyFlags::DEVICE_LOCAL) {
                             gpu_allocator::MemoryLocation::GpuOnly
                         } else {
                             gpu_allocator::MemoryLocation::CpuToGpu
@@ -604,7 +616,7 @@ impl CompiledRenderGraph {
                     resources.insert(
                         *resource_id,
                         CompiledResource::Buffer {
-                            buffer,
+                            buffer: buffer.into(),
                             allocation,
                             size: *size,
                         },
@@ -617,15 +629,20 @@ impl CompiledRenderGraph {
                     tiling,
                     ..
                 } => {
+                    let vk_usage = crate::render_graph::types::ImageUsage::all(usage.clone());
+                    let vk_format: vk::Format = (*format).into();
+                    let vk_tiling: vk::ImageTiling = (*tiling).into();
+                    let vk_extent: vk::Extent3D = (*extent).into();
+
                     let image_info = vk::ImageCreateInfo::default()
                         .image_type(vk::ImageType::TYPE_2D)
-                        .extent(*extent)
+                        .extent(vk_extent)
                         .mip_levels(1)
                         .array_layers(1)
-                        .format(*format)
-                        .tiling(*tiling)
+                        .format(vk_format)
+                        .tiling(vk_tiling)
                         .initial_layout(vk::ImageLayout::UNDEFINED)
-                        .usage(*usage)
+                        .usage(vk_usage)
                         .samples(vk::SampleCountFlags::TYPE_1)
                         .sharing_mode(vk::SharingMode::EXCLUSIVE);
 
@@ -634,22 +651,22 @@ impl CompiledRenderGraph {
 
                     // Create image view
                     // Determine aspect mask based on format (depth/stencil vs color)
-                    let aspect_mask = if is_depth_or_stencil(*format) {
+                    let aspect_mask = if is_depth_or_stencil_format(*format) {
                         vk::ImageAspectFlags::DEPTH
                     } else {
                         vk::ImageAspectFlags::COLOR
                     };
-                    let image_view = context.create_image_view(image, *format, aspect_mask);
+                    let image_view = context.create_image_view(image, vk_format, aspect_mask);
 
                     resources.insert(
                         *resource_id,
                         CompiledResource::Image {
-                            image,
-                            image_view,
+                            image: image.into(),
+                            image_view: image_view.into(),
                             allocation,
                             extent: *extent,
                             format: *format,
-                            layout: vk::ImageLayout::UNDEFINED,
+                            layout: crate::render_graph::types::ImageLayout::Undefined,
                         },
                     );
                 }
@@ -767,10 +784,8 @@ impl CompiledRenderGraph {
                     .map(|u| {
                         let is_render = matches!(
                             u.layout,
-                            vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL
-                                | vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL
-                                | vk::ImageLayout::DEPTH_ATTACHMENT_OPTIMAL
-                                | vk::ImageLayout::STENCIL_ATTACHMENT_OPTIMAL
+                            crate::render_graph::types::ImageLayout::ColorAttachmentOptimal
+                                | crate::render_graph::types::ImageLayout::DepthStencilAttachmentOptimal
                         );
                         debug!(
                             "compile pass '{}': output {:?}, layout={:?}, is_render={}",
@@ -793,23 +808,23 @@ impl CompiledRenderGraph {
                         CompiledResource::ExternalImage {
                             image_view, format, ..
                         } => {
-                            if is_depth_or_stencil(*format) {
+                            if is_depth_or_stencil_format(*format) {
                                 // Depth attachment
-                                depth_attachments.push(Some(*image_view));
+                                depth_attachments.push(Some(image_view.vk()));
                             } else {
                                 // Color attachment
-                                color_attachments.push(vec![*image_view]);
+                                color_attachments.push(vec![image_view.vk()]);
                             }
                         }
                         CompiledResource::Image {
                             image_view, format, ..
                         } => {
-                            if is_depth_or_stencil(*format) {
+                            if is_depth_or_stencil_format(*format) {
                                 // Depth attachment
-                                depth_attachments.push(Some(*image_view));
+                                depth_attachments.push(Some(image_view.vk()));
                             } else {
                                 // Color attachment
-                                color_attachments.push(vec![*image_view]);
+                                color_attachments.push(vec![image_view.vk()]);
                             }
                         }
                         _ => {}
@@ -902,8 +917,8 @@ impl CompiledRenderGraph {
                     image, image_view, ..
                 } = resource
                 {
-                    *image = color_image;
-                    *image_view = color_image_view;
+                    *image = color_image.into();
+                    *image_view = color_image_view.into();
                 }
             }
         }
@@ -915,8 +930,8 @@ impl CompiledRenderGraph {
                     image, image_view, ..
                 } = resource
                 {
-                    *image = depth_image;
-                    *image_view = depth_image_view;
+                    *image = depth_image.into();
+                    *image_view = depth_image_view.into();
                 }
             }
         }
@@ -1428,7 +1443,7 @@ impl Drop for CompiledRenderGraph {
                         CompiledResource::Buffer {
                             buffer, allocation, ..
                         } => {
-                            self.context.free_buffer(buffer, allocation);
+                            self.context.free_buffer(buffer.vk(), allocation);
                         }
                         CompiledResource::Image {
                             image,
@@ -1436,8 +1451,8 @@ impl Drop for CompiledRenderGraph {
                             allocation,
                             ..
                         } => {
-                            self.context.device.destroy_image_view(image_view, None);
-                            self.context.free_image(image, allocation);
+                            self.context.device.destroy_image_view(image_view.vk(), None);
+                            self.context.free_image(image.vk(), allocation);
                         }
                         CompiledResource::ExternalBuffer { .. }
                         | CompiledResource::ExternalImage { .. } => {
@@ -1452,7 +1467,18 @@ impl Drop for CompiledRenderGraph {
     }
 }
 
-/// Helper function to check if a format is depth or stencil.
+/// Helper function to check if a format is depth or stencil (wrapper type).
+fn is_depth_or_stencil_format(format: crate::render_graph::types::ImageFormat) -> bool {
+    matches!(
+        format,
+        crate::render_graph::types::ImageFormat::D16Unorm
+            | crate::render_graph::types::ImageFormat::D32Sfloat
+            | crate::render_graph::types::ImageFormat::D32SfloatS8Uint
+            | crate::render_graph::types::ImageFormat::D24UnormS8Uint
+    )
+}
+
+/// Helper function to check if a format is depth or stencil (raw vk type for internal use).
 fn is_depth_or_stencil(format: vk::Format) -> bool {
     matches!(
         format,
@@ -1470,6 +1496,9 @@ fn is_depth_or_stencil(format: vk::Format) -> bool {
 mod tests {
     use super::*;
     use crate::pass::Attachment;
+    use crate::render_graph::types::{
+        Extent3D, ImageFormat, ImageLayout, ImageTiling, ImageUsage, SampleCount,
+    };
     use crate::RenderGraphBuilder;
 
     #[test]
@@ -1506,34 +1535,26 @@ mod tests {
         let _depth_target = builder.add_resource(
             "depth_target",
             ResourceKind::Image {
-                extent: vk::Extent3D {
-                    width: 1920,
-                    height: 1080,
-                    depth: 1,
-                },
-                format: vk::Format::D32_SFLOAT,
-                usage: vk::ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT,
-                samples: vk::SampleCountFlags::TYPE_1,
-                tiling: vk::ImageTiling::OPTIMAL,
-                initial_layout: vk::ImageLayout::UNDEFINED,
-                final_layout: vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+                extent: Extent3D::new(1920, 1080, 1),
+                format: ImageFormat::D32Sfloat,
+                usage: vec![ImageUsage::DepthStencilAttachment],
+                samples: SampleCount::Sample1,
+                tiling: ImageTiling::Optimal,
+                initial_layout: ImageLayout::Undefined,
+                final_layout: ImageLayout::DepthStencilAttachmentOptimal,
             },
         );
 
         let _geometry_color = builder.add_resource(
             "geometry_color",
             ResourceKind::Image {
-                extent: vk::Extent3D {
-                    width: 1920,
-                    height: 1080,
-                    depth: 1,
-                },
-                format: vk::Format::B8G8R8A8_SRGB,
-                usage: vk::ImageUsageFlags::COLOR_ATTACHMENT | vk::ImageUsageFlags::SAMPLED,
-                samples: vk::SampleCountFlags::TYPE_1,
-                tiling: vk::ImageTiling::OPTIMAL,
-                initial_layout: vk::ImageLayout::UNDEFINED,
-                final_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+                extent: Extent3D::new(1920, 1080, 1),
+                format: ImageFormat::B8G8R8A8Srgb,
+                usage: vec![ImageUsage::ColorAttachment, ImageUsage::Sampled],
+                samples: SampleCount::Sample1,
+                tiling: ImageTiling::Optimal,
+                initial_layout: ImageLayout::Undefined,
+                final_layout: ImageLayout::ShaderReadOnlyOptimal,
             },
         );
 
@@ -1581,7 +1602,8 @@ mod tests {
 
         // Step 6: Verify resource lifetimes
         assert!(geometry_pass.usages().iter().any(|u| {
-            u.resource_id == ResourceId(1) && u.load_op == vk::AttachmentLoadOp::CLEAR
+            u.resource_id == ResourceId(1)
+                && u.load_op == crate::render_graph::types::AttachmentLoadOp::Clear
         }));
 
         // The builder flow is complete and validated!

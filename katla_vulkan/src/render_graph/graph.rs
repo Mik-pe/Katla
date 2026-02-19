@@ -119,6 +119,10 @@ impl Default for RenderGraphBuilder {
 mod tests {
     use super::*;
     use crate::pass::Attachment;
+    use crate::render_graph::types::{
+        BufferUsage, Extent3D, ImageFormat, ImageLayout, ImageTiling, ImageUsage, MemoryProperty,
+        SampleCount,
+    };
 
     #[test]
     fn test_render_graph_builder_creation() {
@@ -136,12 +140,8 @@ mod tests {
             "buffer",
             ResourceKind::Buffer {
                 size: 1024,
-                usage: crate::render_graph::types::BufferUsage::all(vec![
-                    crate::render_graph::types::BufferUsage::VertexBuffer,
-                ]),
-                memory_properties: crate::render_graph::types::MemoryProperty::all(vec![
-                    crate::render_graph::types::MemoryProperty::DeviceLocal,
-                ]),
+                usage: vec![BufferUsage::VertexBuffer],
+                memory_properties: vec![MemoryProperty::DeviceLocal],
             },
         );
 
@@ -157,21 +157,13 @@ mod tests {
         let resource_id = builder.add_resource(
             "color_target",
             ResourceKind::Image {
-                extent: crate::render_graph::types::Extent3D {
-                    width: 1920,
-                    height: 1080,
-                    depth: 1,
-                }
-                .into(),
-                format: crate::render_graph::types::ImageFormat::R8G8B8A8Srgb.into(),
-                usage: crate::render_graph::types::ImageUsage::all(vec![
-                    crate::render_graph::types::ImageUsage::ColorAttachment,
-                ]),
-                samples: crate::render_graph::types::SampleCount::Sample1.into(),
-                tiling: crate::render_graph::types::ImageTiling::Optimal.into(),
-                initial_layout: crate::render_graph::types::ImageLayout::Undefined.into(),
-                final_layout: crate::render_graph::types::ImageLayout::ColorAttachmentOptimal
-                    .into(),
+                extent: Extent3D::new(1920, 1080, 1),
+                format: ImageFormat::R8G8B8A8Srgb,
+                usage: vec![ImageUsage::ColorAttachment],
+                samples: SampleCount::Sample1,
+                tiling: ImageTiling::Optimal,
+                initial_layout: ImageLayout::Undefined,
+                final_layout: ImageLayout::ColorAttachmentOptimal,
             },
         );
 
@@ -192,21 +184,13 @@ mod tests {
         let resource_id = builder.add_resource(
             "color_target",
             ResourceKind::Image {
-                extent: crate::render_graph::types::Extent3D {
-                    width: 1920,
-                    height: 1080,
-                    depth: 1,
-                }
-                .into(),
-                format: crate::render_graph::types::ImageFormat::R8G8B8A8Srgb.into(),
-                usage: crate::render_graph::types::ImageUsage::all(vec![
-                    crate::render_graph::types::ImageUsage::ColorAttachment,
-                    crate::render_graph::types::ImageUsage::Sampled,
-                ]),
-                samples: crate::render_graph::types::SampleCount::Sample1.into(),
-                tiling: crate::render_graph::types::ImageTiling::Optimal.into(),
-                initial_layout: crate::render_graph::types::ImageLayout::Undefined.into(),
-                final_layout: crate::render_graph::types::ImageLayout::ShaderReadOnlyOptimal.into(),
+                extent: Extent3D::new(1920, 1080, 1),
+                format: ImageFormat::R8G8B8A8Srgb,
+                usage: vec![ImageUsage::ColorAttachment, ImageUsage::Sampled],
+                samples: SampleCount::Sample1,
+                tiling: ImageTiling::Optimal,
+                initial_layout: ImageLayout::Undefined,
+                final_layout: ImageLayout::ShaderReadOnlyOptimal,
             },
         );
 
@@ -232,12 +216,8 @@ mod tests {
             "buffer",
             ResourceKind::Buffer {
                 size: 1024,
-                usage: crate::render_graph::types::BufferUsage::all(vec![
-                    crate::render_graph::types::BufferUsage::VertexBuffer,
-                ]),
-                memory_properties: crate::render_graph::types::MemoryProperty::all(vec![
-                    crate::render_graph::types::MemoryProperty::DeviceLocal,
-                ]),
+                usage: vec![BufferUsage::VertexBuffer],
+                memory_properties: vec![MemoryProperty::DeviceLocal],
             },
         );
 
@@ -264,12 +244,8 @@ mod tests {
             "buffer",
             ResourceKind::Buffer {
                 size: 1024,
-                usage: crate::render_graph::types::BufferUsage::all(vec![
-                    crate::render_graph::types::BufferUsage::VertexBuffer,
-                ]),
-                memory_properties: crate::render_graph::types::MemoryProperty::all(vec![
-                    crate::render_graph::types::MemoryProperty::DeviceLocal,
-                ]),
+                usage: vec![BufferUsage::VertexBuffer],
+                memory_properties: vec![MemoryProperty::DeviceLocal],
             },
         );
         assert_eq!(graph.resources.len(), 1);

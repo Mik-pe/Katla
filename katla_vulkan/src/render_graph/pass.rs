@@ -482,23 +482,25 @@ impl PassExecutionContext {
     }
 
     /// Get a compiled image resource by ID (works for both Image and ExternalImage)
+    /// Returns raw Vulkan handles for use with Vulkan API calls.
     pub fn get_image(&self, resource_id: ResourceId) -> Option<(vk::Image, vk::ImageView)> {
         match self.resources.borrow().get(&resource_id) {
             Some(CompiledResource::Image {
                 image, image_view, ..
-            }) => Some((*image, *image_view)),
+            }) => Some((image.vk(), image_view.vk())),
             Some(CompiledResource::ExternalImage {
                 image, image_view, ..
-            }) => Some((*image, *image_view)),
+            }) => Some((image.vk(), image_view.vk())),
             _ => None,
         }
     }
 
     /// Get a compiled buffer resource by ID (works for both Buffer and ExternalBuffer)
+    /// Returns raw Vulkan handle for use with Vulkan API calls.
     pub fn get_buffer(&self, resource_id: ResourceId) -> Option<vk::Buffer> {
         match self.resources.borrow().get(&resource_id) {
-            Some(CompiledResource::Buffer { buffer, .. }) => Some(*buffer),
-            Some(CompiledResource::ExternalBuffer { buffer }) => Some(*buffer),
+            Some(CompiledResource::Buffer { buffer, .. }) => Some(buffer.vk()),
+            Some(CompiledResource::ExternalBuffer { buffer }) => Some(buffer.vk()),
             _ => None,
         }
     }

@@ -1,52 +1,34 @@
-use ash::vk;
-
 use super::types::*;
 use super::{RenderGraphBuilder, ResourceId, ResourceKind};
 
 pub struct SwapchainImageResourceBuilder {
-    image: vk::Image,
-    image_view: vk::ImageView,
+    image: VkImage,
+    image_view: VkImageView,
     format: ImageFormat,
     extent: Extent2D,
 }
 
 impl SwapchainImageResourceBuilder {
     pub fn new(
-        image: vk::Image,
-        image_view: vk::ImageView,
-        format: vk::Format,
-        extent: vk::Extent2D,
+        image: VkImage,
+        image_view: VkImageView,
+        format: ImageFormat,
+        extent: Extent2D,
     ) -> Self {
         Self {
             image,
             image_view,
-            format: Self::vk_to_image_format(format),
-            extent: Extent2D {
-                width: extent.width,
-                height: extent.height,
-            },
-        }
-    }
-
-    fn vk_to_image_format(format: vk::Format) -> ImageFormat {
-        match format {
-            vk::Format::R8G8B8A8_SRGB => ImageFormat::R8G8B8A8Srgb,
-            vk::Format::B8G8R8A8_SRGB => ImageFormat::B8G8R8A8Srgb,
-            vk::Format::D32_SFLOAT => ImageFormat::D32Sfloat,
-            vk::Format::D32_SFLOAT_S8_UINT => ImageFormat::D32SfloatS8Uint,
-            vk::Format::D24_UNORM_S8_UINT => ImageFormat::D24UnormS8Uint,
-            vk::Format::D16_UNORM => ImageFormat::D16Unorm,
-            vk::Format::R32_SFLOAT => ImageFormat::R32Sfloat,
-            _ => ImageFormat::B8G8R8A8Srgb,
+            format,
+            extent,
         }
     }
 
     pub fn build(self) -> ResourceKind {
         ResourceKind::ExternalImage {
-            vk_image: self.image,
+            image: self.image,
             image_view: self.image_view,
-            format: self.format.into(),
-            extent: self.extent.into(),
+            format: self.format,
+            extent: self.extent,
         }
     }
 }
@@ -127,26 +109,21 @@ impl OffscreenImageResourceBuilder {
     }
 
     pub fn build(self) -> ResourceKind {
-        let mut usage_flags = vk::ImageUsageFlags::empty();
-        for usage in self.usages {
-            usage_flags |= usage.to_vk_flags();
-        }
-
         ResourceKind::Image {
-            extent: self.extent.into(),
-            format: self.format.into(),
-            usage: usage_flags,
-            samples: self.samples.into(),
-            tiling: self.tiling.into(),
-            initial_layout: self.initial_layout.into(),
-            final_layout: self.final_layout.into(),
+            extent: self.extent,
+            format: self.format,
+            usage: self.usages,
+            samples: self.samples,
+            tiling: self.tiling,
+            initial_layout: self.initial_layout,
+            final_layout: self.final_layout,
         }
     }
 }
 
 pub struct BufferResourceBuilder {
     size: u64,
-    usages: Vec<vk::BufferUsageFlags>,
+    usages: Vec<BufferUsage>,
     device_local: bool,
 }
 
@@ -160,32 +137,32 @@ impl BufferResourceBuilder {
     }
 
     pub fn vertex_buffer(mut self) -> Self {
-        self.usages.push(vk::BufferUsageFlags::VERTEX_BUFFER);
+        self.usages.push(BufferUsage::VertexBuffer);
         self
     }
 
     pub fn index_buffer(mut self) -> Self {
-        self.usages.push(vk::BufferUsageFlags::INDEX_BUFFER);
+        self.usages.push(BufferUsage::IndexBuffer);
         self
     }
 
     pub fn uniform_buffer(mut self) -> Self {
-        self.usages.push(vk::BufferUsageFlags::UNIFORM_BUFFER);
+        self.usages.push(BufferUsage::UniformBuffer);
         self
     }
 
     pub fn storage_buffer(mut self) -> Self {
-        self.usages.push(vk::BufferUsageFlags::STORAGE_BUFFER);
+        self.usages.push(BufferUsage::StorageBuffer);
         self
     }
 
     pub fn transfer_src(mut self) -> Self {
-        self.usages.push(vk::BufferUsageFlags::TRANSFER_SRC);
+        self.usages.push(BufferUsage::TransferSrc);
         self
     }
 
     pub fn transfer_dst(mut self) -> Self {
-        self.usages.push(vk::BufferUsageFlags::TRANSFER_DST);
+        self.usages.push(BufferUsage::TransferDst);
         self
     }
 
@@ -195,20 +172,15 @@ impl BufferResourceBuilder {
     }
 
     pub fn build(self) -> ResourceKind {
-        let mut usage_flags = vk::BufferUsageFlags::empty();
-        for usage in self.usages {
-            usage_flags |= usage;
-        }
-
         let memory_properties = if self.device_local {
-            vk::MemoryPropertyFlags::DEVICE_LOCAL
+            vec![MemoryProperty::DeviceLocal]
         } else {
-            vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT
+            vec![MemoryProperty::HostVisible, MemoryProperty::HostCoherent]
         };
 
         ResourceKind::Buffer {
             size: self.size,
-            usage: usage_flags,
+            usage: self.usages,
             memory_properties,
         }
     }
@@ -233,10 +205,10 @@ impl RenderGraphHelper for RenderGraphBuilder {
         self.add_resource(
             name,
             ResourceKind::ExternalImage {
-                vk_image: vk::Image::null(),
-                image_view: vk::ImageView::null(),
-                format: format.into(),
-                extent: extent.into(),
+                image: VkImage::from(ash::vk::Image::null()),
+                image_view: VkImageView::from(ash::vk::ImageView::null()),
+                format,
+                extent,
             },
         )
     }
@@ -259,15 +231,11 @@ mod tests {
 
         match resource {
             ResourceKind::Image {
-                usage,
-                samples,
-                format,
-                ..
+                usage, format, ..
             } => {
-                assert!(usage.contains(vk::ImageUsageFlags::COLOR_ATTACHMENT));
-                assert!(usage.contains(vk::ImageUsageFlags::SAMPLED));
-                assert_eq!(samples, vk::SampleCountFlags::TYPE_1);
-                assert_eq!(format, ImageFormat::B8G8R8A8Srgb.into());
+                assert!(usage.contains(&ImageUsage::ColorAttachment));
+                assert!(usage.contains(&ImageUsage::Sampled));
+                assert_eq!(format, ImageFormat::B8G8R8A8Srgb);
             }
             _ => panic!("Expected Image resource"),
         }
@@ -285,8 +253,8 @@ mod tests {
 
         match resource {
             ResourceKind::Image { usage, format, .. } => {
-                assert!(usage.contains(vk::ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT));
-                assert_eq!(format, ImageFormat::D32Sfloat.into());
+                assert!(usage.contains(&ImageUsage::DepthStencilAttachment));
+                assert_eq!(format, ImageFormat::D32Sfloat);
             }
             _ => panic!("Expected Image resource"),
         }
@@ -307,8 +275,8 @@ mod tests {
                 memory_properties,
             } => {
                 assert_eq!(size, 1024);
-                assert!(usage.contains(vk::BufferUsageFlags::VERTEX_BUFFER));
-                assert!(memory_properties.contains(vk::MemoryPropertyFlags::DEVICE_LOCAL));
+                assert!(usage.contains(&BufferUsage::VertexBuffer));
+                assert!(memory_properties.contains(&MemoryProperty::DeviceLocal));
             }
             _ => panic!("Expected Buffer resource"),
         }

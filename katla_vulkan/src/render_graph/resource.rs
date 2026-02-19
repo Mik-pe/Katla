@@ -81,26 +81,26 @@ impl Resource {
 pub enum ResourceKind {
     Buffer {
         size: u64,
-        usage: vk::BufferUsageFlags,
-        memory_properties: vk::MemoryPropertyFlags,
+        usage: Vec<super::types::BufferUsage>,
+        memory_properties: Vec<super::types::MemoryProperty>,
     },
     Image {
-        extent: vk::Extent3D,
-        format: vk::Format,
-        usage: vk::ImageUsageFlags,
-        samples: vk::SampleCountFlags,
-        tiling: vk::ImageTiling,
-        initial_layout: vk::ImageLayout,
-        final_layout: vk::ImageLayout,
+        extent: super::types::Extent3D,
+        format: super::types::ImageFormat,
+        usage: Vec<super::types::ImageUsage>,
+        samples: super::types::SampleCount,
+        tiling: super::types::ImageTiling,
+        initial_layout: super::types::ImageLayout,
+        final_layout: super::types::ImageLayout,
     },
     ExternalBuffer {
-        vk_buffer: vk::Buffer,
+        buffer: super::types::VkBuffer,
     },
     ExternalImage {
-        vk_image: vk::Image,
-        image_view: vk::ImageView,
-        format: vk::Format,
-        extent: vk::Extent2D,
+        image: super::types::VkImage,
+        image_view: super::types::VkImageView,
+        format: super::types::ImageFormat,
+        extent: super::types::Extent2D,
     },
 }
 
@@ -110,11 +110,11 @@ pub enum ResourceKind {
 #[derive(Clone)]
 pub struct ResourceUsage {
     pub(crate) resource_id: ResourceId,
-    pub(crate) access: vk::AccessFlags,
-    pub(crate) stage: vk::PipelineStageFlags,
-    pub(crate) layout: vk::ImageLayout,
-    pub(crate) load_op: vk::AttachmentLoadOp,
-    pub(crate) store_op: vk::AttachmentStoreOp,
+    pub(crate) access: Vec<super::types::Access>,
+    pub(crate) stage: Vec<super::types::PipelineStage>,
+    pub(crate) layout: super::types::ImageLayout,
+    pub(crate) load_op: super::types::AttachmentLoadOp,
+    pub(crate) store_op: super::types::AttachmentStoreOp,
     pub clear_value: Option<super::types::ClearValue>,
 }
 
@@ -122,11 +122,11 @@ impl ResourceUsage {
     pub fn new(resource_id: ResourceId) -> Self {
         Self {
             resource_id,
-            access: vk::AccessFlags::empty(),
-            stage: vk::PipelineStageFlags::empty(),
-            layout: vk::ImageLayout::UNDEFINED,
-            load_op: vk::AttachmentLoadOp::DONT_CARE,
-            store_op: vk::AttachmentStoreOp::DONT_CARE,
+            access: Vec::new(),
+            stage: Vec::new(),
+            layout: super::types::ImageLayout::Undefined,
+            load_op: super::types::AttachmentLoadOp::DontCare,
+            store_op: super::types::AttachmentStoreOp::DontCare,
             clear_value: None,
         }
     }
@@ -136,8 +136,12 @@ impl ResourceUsage {
         access: super::types::Access,
         stage: super::types::PipelineStage,
     ) -> Self {
-        self.access |= access.to_vk_flags();
-        self.stage |= stage.to_vk_flags();
+        if !self.access.contains(&access) {
+            self.access.push(access);
+        }
+        if !self.stage.contains(&stage) {
+            self.stage.push(stage);
+        }
         self
     }
 
@@ -146,23 +150,27 @@ impl ResourceUsage {
         access: super::types::Access,
         stage: super::types::PipelineStage,
     ) -> Self {
-        self.access |= access.to_vk_flags();
-        self.stage |= stage.to_vk_flags();
+        if !self.access.contains(&access) {
+            self.access.push(access);
+        }
+        if !self.stage.contains(&stage) {
+            self.stage.push(stage);
+        }
         self
     }
 
     pub fn with_layout(mut self, layout: super::types::ImageLayout) -> Self {
-        self.layout = layout.into();
+        self.layout = layout;
         self
     }
 
     pub fn with_load_op(mut self, load_op: super::types::AttachmentLoadOp) -> Self {
-        self.load_op = load_op.into();
+        self.load_op = load_op;
         self
     }
 
     pub fn with_store_op(mut self, store_op: super::types::AttachmentStoreOp) -> Self {
-        self.store_op = store_op.into();
+        self.store_op = store_op;
         self
     }
 
@@ -177,27 +185,27 @@ impl ResourceUsage {
     }
 
     /// Get the access flags.
-    pub fn access(&self) -> vk::AccessFlags {
-        self.access
+    pub fn access(&self) -> &[super::types::Access] {
+        &self.access
     }
 
     /// Get the pipeline stage flags.
-    pub fn stage(&self) -> vk::PipelineStageFlags {
-        self.stage
+    pub fn stage(&self) -> &[super::types::PipelineStage] {
+        &self.stage
     }
 
     /// Get the image layout.
-    pub fn layout(&self) -> vk::ImageLayout {
+    pub fn layout(&self) -> super::types::ImageLayout {
         self.layout
     }
 
     /// Get the attachment load operation.
-    pub fn load_op(&self) -> vk::AttachmentLoadOp {
+    pub fn load_op(&self) -> super::types::AttachmentLoadOp {
         self.load_op
     }
 
     /// Get the attachment store operation.
-    pub fn store_op(&self) -> vk::AttachmentStoreOp {
+    pub fn store_op(&self) -> super::types::AttachmentStoreOp {
         self.store_op
     }
 
@@ -234,7 +242,7 @@ impl std::fmt::Debug for ResourceUsage {
             .field("layout", &self.layout)
             .field("load_op", &self.load_op)
             .field("store_op", &self.store_op)
-            .field("clear_value", &self.clear_value.is_some())
+            .field("has_clear_value", &self.clear_value.is_some())
             .finish()
     }
 }
@@ -261,30 +269,57 @@ impl ResourceLifetime {
 
 /// CompiledResource represents a fully allocated Vulkan resource.
 /// These are created during graph compilation and used during execution.
-#[derive(Debug)]
 pub enum CompiledResource {
     Buffer {
-        buffer: vk::Buffer,
+        buffer: super::types::VkBuffer,
         allocation: gpu_allocator::vulkan::Allocation,
         size: u64,
     },
     Image {
-        image: vk::Image,
-        image_view: vk::ImageView,
+        image: super::types::VkImage,
+        image_view: super::types::VkImageView,
         allocation: gpu_allocator::vulkan::Allocation,
-        extent: vk::Extent3D,
-        format: vk::Format,
-        layout: vk::ImageLayout,
+        extent: super::types::Extent3D,
+        format: super::types::ImageFormat,
+        layout: super::types::ImageLayout,
     },
     ExternalBuffer {
-        buffer: vk::Buffer,
+        buffer: super::types::VkBuffer,
     },
     ExternalImage {
-        image: vk::Image,
-        image_view: vk::ImageView,
-        format: vk::Format,
-        extent: vk::Extent2D,
+        image: super::types::VkImage,
+        image_view: super::types::VkImageView,
+        format: super::types::ImageFormat,
+        extent: super::types::Extent2D,
     },
+}
+
+impl std::fmt::Debug for CompiledResource {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            CompiledResource::Buffer { size, .. } => f
+                .debug_struct("CompiledResource::Buffer")
+                .field("size", size)
+                .finish(),
+            CompiledResource::Image {
+                extent, format, ..
+            } => f
+                .debug_struct("CompiledResource::Image")
+                .field("extent", extent)
+                .field("format", format)
+                .finish(),
+            CompiledResource::ExternalBuffer { .. } => {
+                f.debug_struct("CompiledResource::ExternalBuffer").finish()
+            }
+            CompiledResource::ExternalImage {
+                format, extent, ..
+            } => f
+                .debug_struct("CompiledResource::ExternalImage")
+                .field("format", format)
+                .field("extent", extent)
+                .finish(),
+        }
+    }
 }
 
 impl ResourceId {
@@ -317,8 +352,8 @@ mod tests {
     fn test_resource_creation() {
         let kind = ResourceKind::Buffer {
             size: 1024,
-            usage: vk::BufferUsageFlags::VERTEX_BUFFER,
-            memory_properties: vk::MemoryPropertyFlags::DEVICE_LOCAL,
+            usage: vec![crate::types::BufferUsage::VertexBuffer],
+            memory_properties: vec![crate::types::MemoryProperty::DeviceLocal],
         };
         let resource = Resource::new(ResourceId(0), "test_buffer", kind);
         assert_eq!(resource.id.0, 0);
@@ -334,11 +369,9 @@ mod tests {
             )
             .with_layout(crate::types::ImageLayout::ShaderReadOnlyOptimal);
 
-        assert!(usage
-            .access
-            .contains(vk::AccessFlags::VERTEX_ATTRIBUTE_READ));
-        assert!(usage.stage.contains(vk::PipelineStageFlags::VERTEX_INPUT));
-        assert_eq!(usage.layout, vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL);
+        assert!(usage.access().contains(&crate::types::Access::VertexAttributeRead));
+        assert!(usage.stage().contains(&crate::types::PipelineStage::VertexInput));
+        assert_eq!(usage.layout(), crate::types::ImageLayout::ShaderReadOnlyOptimal);
     }
 
     #[test]
