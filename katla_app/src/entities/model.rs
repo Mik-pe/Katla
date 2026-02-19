@@ -332,7 +332,11 @@ impl Model {
                 // TODO: Create a gltf_skinned_pbr_full template for full PBR on skinned models
                 if let Some(template) = material_registry.borrow().get_template("gltf_skinned") {
                     info!("  Using gltf_skinned template");
-                    Material::from_template_skinned_with_bindless(template, Some(albedo_tex), None, texture_indices, emission_index)
+                    if use_bindless {
+                        Material::from_template_skinned_with_bindless(template, Some(albedo_tex), None, texture_indices, emission_index)
+                    } else {
+                        Material::from_template_skinned(template, Some(albedo_tex), None)
+                    }
                 } else {
                     warn!("  Template 'gltf_skinned' not found, falling back to gltf_default");
                     if let Some(template) = material_registry.borrow().get_template("gltf_default") {

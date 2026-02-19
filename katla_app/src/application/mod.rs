@@ -437,6 +437,12 @@ impl Application {
             .init_storage_standard()
             .expect("Failed to initialize storage uniform system");
 
+        // TODO: Enable bindless once bindless pipeline templates are created
+        // The bindless descriptor set layout is incompatible with legacy pipelines
+        // renderer
+        //     .init_bindless()
+        //     .expect("Failed to initialize bindless texture system");
+
         let loaded_count = renderer
             .material_registry
             .borrow_mut()
