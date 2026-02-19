@@ -189,6 +189,12 @@ impl UiContext {
         self.cursor = Vec2::new(0.0, 0.0);
         self.row_height = 0.0;
 
+        // Clear custom popup bounds at start of frame (they'll be re-registered if still open)
+        // Built-in popups (with popup_id) keep their bounds for click-outside detection
+        if self.popup_id.is_none() {
+            self.popup_bounds = None;
+        }
+
         // Check for click outside popup to close it
         // NOTE: We check BEFORE resetting popup_opened_this_frame so that
         // popups opened in the previous frame don't get closed immediately
@@ -252,6 +258,65 @@ impl UiContext {
     #[inline]
     pub fn set_mouse_cursor(&mut self, cursor: crate::input::MouseCursor) {
         self.input.set_cursor(cursor);
+    }
+
+    // -------------------------------------------------------------------------
+    // Popup Input Blocking
+    // -------------------------------------------------------------------------
+
+    /// Check if a popup is currently open (built-in or custom).
+    #[inline]
+    pub fn is_popup_open(&self) -> bool {
+        self.popup_id.is_some() || self.popup_bounds.is_some()
+    }
+
+    /// Register custom popup bounds for input blocking.
+    ///
+    /// Call this when rendering custom popups (like context menus) that aren't
+    /// using the built-in begin_popup/end_popup system. This ensures that
+    /// mouse clicks are captured and don't pass through to underlying widgets.
+    pub fn set_custom_popup_bounds(&mut self, bounds: Rect2D) {
+        self.popup_bounds = Some(bounds);
+    }
+
+    /// Clear custom popup bounds.
+    pub fn clear_custom_popup_bounds(&mut self) {
+        // Only clear if there's no popup_id (i.e., it was a custom popup)
+        if self.popup_id.is_none() {
+            self.popup_bounds = None;
+        }
+    }
+
+    /// Block input for the current popup.
+    ///
+    /// Call this AFTER rendering your popup content. This registers the popup
+    /// bounds so that subsequent frames can check if clicks should be blocked.
+    pub fn block_input_for_popup(&mut self, popup_bounds: Rect2D) {
+        // Register the bounds for click-outside detection
+        self.set_custom_popup_bounds(popup_bounds);
+
+        // Capture mouse when hovering over popup (tells application to not process game input)
+        if popup_bounds.contains(self.input.mouse_pos) {
+            self.input.want_capture_mouse = true;
+        }
+    }
+
+    /// Check if mouse is over any registered popup bounds.
+    ///
+    /// Widgets should call this before processing clicks to avoid
+    /// responding when a popup is covering them.
+    pub fn is_mouse_over_popup(&self) -> bool {
+        self.popup_bounds
+            .map(|bounds| bounds.contains(self.input.mouse_pos))
+            .unwrap_or(false)
+    }
+
+    /// Check if a popup is currently open.
+    ///
+    /// Widgets should check this before processing right-clicks to avoid
+    /// opening new popups when one is already open.
+    pub fn has_open_popup(&self) -> bool {
+        self.popup_bounds.is_some()
     }
 
     /// Scale a logical pixel value to physical pixels.
@@ -439,6 +504,8 @@ impl UiContext {
     ///
     /// `position` is the TOP-LEFT of the text bounding box.
     /// This is the most intuitive API for UI work.
+    ///
+    /// Supports multiline text with `\n` characters.
     pub fn draw_text(&mut self, text: &str, position: Vec2, color: Color, size: f32) {
         use crate::text::SubpixelBin;
 
@@ -447,13 +514,23 @@ impl UiContext {
         let (floor_x, subpixel_bin) = SubpixelBin::new(position.x());
         let start_x = floor_x as f32;
 
+        // Get line height for multiline support
+        let line_height = self.line_height(size);
+
         // Round Y position to integer for crisp vertical alignment
-        let baseline_y = (position.y() + self.font_ascent(size)).round();
+        let mut baseline_y = (position.y() + self.font_ascent(size)).round();
 
         // Cursor tracks offset relative to start_x
         let mut cursor_offset = 0.0f32;
 
         for c in text.chars() {
+            // Handle newlines - move to next line
+            if c == '\n' {
+                cursor_offset = 0.0;
+                baseline_y += line_height;
+                continue;
+            }
+
             // Get glyph with the shared subpixel bin
             if let Some(glyph) = self.fonts.get_or_rasterize(
                 self.current_font,
@@ -488,7 +565,7 @@ impl UiContext {
                 // No glyph available - draw placeholder
                 let placeholder_size = Vec2::new(size * 0.6, size);
                 let bounds = Rect2D::from_origin_size(
-                    Vec2::new(start_x + cursor_offset, position.y()),
+                    Vec2::new(start_x + cursor_offset, baseline_y - self.font_ascent(size)),
                     placeholder_size,
                 );
                 self.draw_rect_border(bounds, Color::TRANSPARENT, color, 1.0);
@@ -521,6 +598,16 @@ impl UiContext {
     /// Get the font ascent using a predefined font size.
     pub fn font_ascent_sized(&self, size: crate::style::FontSize) -> f32 {
         self.font_ascent(size.to_pixels())
+    }
+
+    /// Get the line height for a font size (ascent - descent + small gap).
+    ///
+    /// This is used for multiline text spacing.
+    pub fn line_height(&self, size: f32) -> f32 {
+        self.fonts
+            .get_font_metrics(self.current_font, size, self.scale_factor)
+            .map(|(ascent, descent, line_gap)| ascent - descent + line_gap)
+            .unwrap_or(size * 1.2) // Fallback heuristic
     }
 
     /// Draw text using a predefined font size.
@@ -1853,7 +1940,7 @@ impl UiContext {
     pub fn end_dropdown(&mut self) {
         // Calculate final size
         if let Some(bounds) = self.popup_bounds {
-            let final_height = self.dropdown_content_height + self.style.menu_padding;
+            let final_height = self.dropdown_content_height;
             let correct_bounds = Rect2D::from_origin_size(
                 bounds.min,
                 Vec2::new(bounds.width(), final_height),
@@ -1890,6 +1977,12 @@ impl UiContext {
             }
 
             self.popup_bounds = Some(correct_bounds);
+
+            // Block input for this popup
+            if correct_bounds.contains(self.input.mouse_pos) {
+                self.input.want_capture_mouse = true;
+            }
+            self.input.want_capture_keyboard = true;
         }
 
         self.pop_clip();

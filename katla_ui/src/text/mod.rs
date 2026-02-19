@@ -38,6 +38,11 @@ fn coverage_to_alpha(coverage: f32) -> f32 {
     coverage.powf(1.0 / GAMMA_FACTOR)
 }
 
+/// Convert alpha value back to coverage (inverse of gamma correction).
+fn alpha_to_coverage(alpha: f32) -> f32 {
+    alpha.powf(GAMMA_FACTOR)
+}
+
 /// A handle to a loaded font.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct FontId(pub u32);
@@ -674,14 +679,27 @@ impl FontSystem {
         let physical_size = size * scale_factor;
         let scaled_font = font.as_scaled(PxScale::from(physical_size));
 
-        let mut width = 0.0f32;
-        let mut max_height = 0.0f32;
+        // Get line height (font height for consistent line spacing)
+        let line_height = scaled_font.height() / scale_factor;
+
+        let mut line_width = 0.0f32;
+        let mut max_width = 0.0f32;
+        let mut line_count = 1u32;
         let mut prev_char: Option<char> = None;
 
         for c in text.chars() {
+            // Handle newlines
+            if c == '\n' {
+                max_width = max_width.max(line_width);
+                line_count += 1;
+                line_width = 0.0;
+                prev_char = None;
+                continue;
+            }
+
             // Apply kerning between previous and current character
             if let Some(prev) = prev_char {
-                width += self.get_kerning(font_id, prev, c, size, scale_factor);
+                line_width += self.get_kerning(font_id, prev, c, size, scale_factor);
             }
 
             // Check cache first (metrics are stored in logical pixels)
@@ -690,19 +708,23 @@ impl FontSystem {
                 .glyph_cache
                 .get(&(font_id, c, size_key, scale_key, SubpixelBin::Zero))
             {
-                width += cached.advance;
-                max_height = max_height.max(cached.size.y());
+                line_width += cached.advance;
             } else {
                 // Use font metrics directly (convert physical to logical)
                 let glyph_id = font.glyph_id(c);
-                width += scaled_font.h_advance(glyph_id) / scale_factor;
-                max_height = max_height.max(scaled_font.height() / scale_factor);
+                line_width += scaled_font.h_advance(glyph_id) / scale_factor;
             }
 
             prev_char = Some(c);
         }
 
-        Vec2::new(width, max_height)
+        // Account for the last line
+        max_width = max_width.max(line_width);
+
+        // Total height is line count * line height
+        let total_height = line_count as f32 * line_height;
+
+        Vec2::new(max_width, total_height)
     }
 
     /// Check if the atlas needs to be uploaded to GPU.

@@ -1276,7 +1276,7 @@ impl EditorUI {
                 ui.scaled_font_size(FontSize::XSmall),
             );
 
-            // Click to select (but not on triangle)
+            // Click to select (but not on triangle or popup)
             let triangle_width = if entity.has_children { 18.0 } else { 0.0 };
             let select_bounds = Rect2D::from_origin_size(
                 Vec2::new(item_x + triangle_width, cursor.y()),
@@ -1284,14 +1284,14 @@ impl EditorUI {
             );
             let select_hovered = ui.is_hovered(select_bounds);
 
-            if ui.input.mouse_clicked(mouse_button::LEFT) && select_hovered {
+            if ui.input.mouse_clicked(mouse_button::LEFT) && select_hovered && !ui.is_mouse_over_popup() {
                 self.selected_entity = Some(entity.id);
                 self.pending_actions
                     .push(EditorAction::SelectEntity(entity.id));
             }
 
-            // Right-click for context menu
-            if ui.input.mouse_clicked(mouse_button::RIGHT) && is_hovered {
+            // Right-click for context menu (skip if popup already open)
+            if ui.input.mouse_clicked(mouse_button::RIGHT) && is_hovered && !ui.has_open_popup() {
                 self.selected_entity = Some(entity.id);
                 self.hierarchy_context_menu_open = true;
                 self.hierarchy_context_menu_pos = ui.input.mouse_pos;
@@ -1324,7 +1324,7 @@ impl EditorUI {
 
         // === HIERARCHY CONTEXT MENU ===
         if self.hierarchy_context_menu_open {
-            ui.push_z_index(200);
+            ui.push_z_index(katla_ui::z_index::TOOLTIP);
 
             let menu_width = 140.0;
             let item_height = 24.0;
@@ -1336,7 +1336,8 @@ impl EditorUI {
             ];
 
             let visible_items = menu_items.iter().filter(|(l, _, _, _)| *l != "separator").count();
-            let menu_height = (visible_items as f32 * item_height) + 8.0;
+            // Small padding (2px top + 2px bottom) for visual breathing room
+            let menu_height = (visible_items as f32 * item_height) + 4.0;
 
             let menu_bounds = Rect2D::from_origin_size(
                 self.hierarchy_context_menu_pos,
@@ -1354,7 +1355,8 @@ impl EditorUI {
             ui.draw_rect(menu_bounds, theme.popup_bg);
             ui.draw_rect_border(menu_bounds, theme.popup_bg, theme.popup_border, 1.0);
 
-            let mut current_y = self.hierarchy_context_menu_pos.y() + 4.0;
+            // Menu items (start with 2px top padding)
+            let mut current_y = self.hierarchy_context_menu_pos.y() + 2.0;
             let mut clicked_action: Option<&str> = None;
 
             for (label, icon, enabled, shortcut) in menu_items.iter() {
@@ -1419,6 +1421,9 @@ impl EditorUI {
             }
 
             ui.pop_z_index();
+
+            // Block input for popup (captures mouse/keyboard, prevents underlying widgets from responding)
+            ui.block_input_for_popup(menu_bounds);
 
             // Process action
             if let Some(action) = clicked_action {
