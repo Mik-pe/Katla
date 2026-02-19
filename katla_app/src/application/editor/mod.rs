@@ -103,6 +103,10 @@ pub fn render_debug_ui(app: &mut Application, dt: f32) {
                 }
                 info!("Deleted entity {:?} and its children", entity_id);
             }
+            EditorAction::DuplicateEntity(entity_id) => {
+                // TODO: Implement entity duplication with all components
+                info!("Duplicate entity {:?} - not yet implemented", entity_id);
+            }
             EditorAction::SelectEntity(entity_id) => {
                 info!("Selected entity {:?}", entity_id);
             }
