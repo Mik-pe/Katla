@@ -1657,43 +1657,44 @@ pub fn build_asset_browser(
         let item_height = 24.0;
 
         // Different menu items based on whether it's an asset or empty space
-        let menu_items = if let Some(at) = asset_type {
+        // (label, icon, enabled, shortcut hint)
+        let menu_items: Vec<(&str, char, bool, &str)> = if let Some(at) = asset_type {
             // Asset context menu
             if at == AssetType::Folder {
                 vec![
-                    ("Open", ForkAwesome::FOLDER_OPEN, true),
-                    ("Rename", ForkAwesome::PENCIL, true),
-                    ("separator", '\0', false),
-                    ("Copy Path", ForkAwesome::COPY, true),
-                    ("Show in Explorer", ForkAwesome::EXTERNAL_LINK, true),
-                    ("separator", '\0', false),
-                    ("Delete", ForkAwesome::TRASH, true),
+                    ("Open", ForkAwesome::FOLDER_OPEN, true, "Enter"),
+                    ("Rename", ForkAwesome::PENCIL, true, "F2"),
+                    ("separator", '\0', false, ""),
+                    ("Copy Path", ForkAwesome::COPY, true, ""),
+                    ("Show in Explorer", ForkAwesome::EXTERNAL_LINK, true, ""),
+                    ("separator", '\0', false, ""),
+                    ("Delete", ForkAwesome::TRASH, true, "Del"),
                 ]
             } else {
                 vec![
-                    ("Open", ForkAwesome::FILE, true),
-                    ("Rename", ForkAwesome::PENCIL, true),
-                    ("separator", '\0', false),
-                    ("Copy Path", ForkAwesome::COPY, true),
-                    ("Show in Explorer", ForkAwesome::EXTERNAL_LINK, true),
-                    ("separator", '\0', false),
-                    ("Delete", ForkAwesome::TRASH, true),
+                    ("Open", ForkAwesome::FILE, true, "Enter"),
+                    ("Rename", ForkAwesome::PENCIL, true, "F2"),
+                    ("separator", '\0', false, ""),
+                    ("Copy Path", ForkAwesome::COPY, true, ""),
+                    ("Show in Explorer", ForkAwesome::EXTERNAL_LINK, true, ""),
+                    ("separator", '\0', false, ""),
+                    ("Delete", ForkAwesome::TRASH, true, "Del"),
                 ]
             }
         } else {
             // Empty space context menu
             vec![
-                ("New Folder", ForkAwesome::FOLDER, true),
-                ("separator", '\0', false),
-                ("Refresh", ForkAwesome::REFRESH, true),
-                ("separator", '\0', false),
-                ("Show in Explorer", ForkAwesome::EXTERNAL_LINK, true),
+                ("New Folder", ForkAwesome::FOLDER, true, ""),
+                ("separator", '\0', false, ""),
+                ("Refresh", ForkAwesome::REFRESH, true, "F5"),
+                ("separator", '\0', false, ""),
+                ("Show in Explorer", ForkAwesome::EXTERNAL_LINK, true, ""),
             ]
         };
 
         // Filter out separators for height calculation
-        let visible_items = menu_items.iter().filter(|(l, _, _)| *l != "separator").count();
-        let separator_count = menu_items.iter().filter(|(l, _, _)| *l == "separator").count();
+        let visible_items = menu_items.iter().filter(|(l, _, _, _)| *l != "separator").count();
+        let separator_count = menu_items.iter().filter(|(l, _, _, _)| *l == "separator").count();
         let menu_height = (visible_items as f32 * item_height) + 8.0 + (separator_count as f32 * 4.0);
 
         // Clamp menu position to screen
@@ -1722,7 +1723,7 @@ pub fn build_asset_browser(
 
         // Menu items
         let mut current_y = menu_pos.y() + 4.0;
-        for (label, icon, enabled) in menu_items.iter() {
+        for (label, icon, enabled, shortcut) in menu_items.iter() {
             if *label == "separator" {
                 // Draw separator line
                 ui.draw_line(
@@ -1773,6 +1774,17 @@ pub fn build_asset_browser(
                 },
                 text_size,
             );
+
+            // Shortcut hint (right-aligned)
+            if !shortcut.is_empty() {
+                let shortcut_size = ui.measure_text(shortcut, text_size);
+                ui.draw_text(
+                    shortcut,
+                    Vec2::new(menu_pos.x() + menu_width - shortcut_size.x() - 8.0, text_y),
+                    theme.text_muted,
+                    text_size,
+                );
+            }
 
             // Track click
             if *enabled && item_hovered && ui.input.mouse_clicked(katla_ui::input::mouse_button::LEFT) {
