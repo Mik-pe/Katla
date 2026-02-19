@@ -11,6 +11,25 @@ pub enum ImageFormat {
     R16G16B16A16Sfloat,
 }
 
+impl ImageFormat {
+    /// Convert from a raw vk::Format (for backward compatibility).
+    /// Returns None if the format is not supported.
+    pub fn from_vk(format: ash::vk::Format) -> Option<Self> {
+        match format {
+            ash::vk::Format::R8G8B8A8_SRGB => Some(ImageFormat::R8G8B8A8Srgb),
+            ash::vk::Format::R8G8B8A8_UNORM => Some(ImageFormat::R8G8B8A8Unorm),
+            ash::vk::Format::B8G8R8A8_SRGB => Some(ImageFormat::B8G8R8A8Srgb),
+            ash::vk::Format::D32_SFLOAT => Some(ImageFormat::D32Sfloat),
+            ash::vk::Format::D32_SFLOAT_S8_UINT => Some(ImageFormat::D32SfloatS8Uint),
+            ash::vk::Format::D24_UNORM_S8_UINT => Some(ImageFormat::D24UnormS8Uint),
+            ash::vk::Format::D16_UNORM => Some(ImageFormat::D16Unorm),
+            ash::vk::Format::R32_SFLOAT => Some(ImageFormat::R32Sfloat),
+            ash::vk::Format::R16G16B16A16_SFLOAT => Some(ImageFormat::R16G16B16A16Sfloat),
+            _ => None,
+        }
+    }
+}
+
 impl From<ImageFormat> for ash::vk::Format {
     fn from(format: ImageFormat) -> Self {
         match format {
@@ -115,36 +134,11 @@ impl From<AttachmentStoreOp> for ash::vk::AttachmentStoreOp {
 }
 
 //=============================================================================
-// Vulkan Handle Wrappers (for type safety in render graph API)
+// Vulkan Handle Wrappers - Re-export from sync module
 //=============================================================================
 
-/// Wrapper for vk::ImageView to avoid exposing ash types in public API.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct VkImageView(pub(crate) ash::vk::ImageView);
-
-impl VkImageView {
-    /// Create a new VkImageView wrapper.
-    pub fn new(view: ash::vk::ImageView) -> Self {
-        Self(view)
-    }
-
-    /// Get the underlying Vulkan image view handle.
-    pub fn vk(&self) -> ash::vk::ImageView {
-        self.0
-    }
-}
-
-impl From<ash::vk::ImageView> for VkImageView {
-    fn from(view: ash::vk::ImageView) -> Self {
-        Self(view)
-    }
-}
-
-impl From<VkImageView> for ash::vk::ImageView {
-    fn from(view: VkImageView) -> Self {
-        view.0
-    }
-}
+// Re-export wrapper types from sync module for render graph API
+pub use crate::sync::{VkBuffer, VkFramebuffer, VkImage, VkImageView};
 
 //=============================================================================
 // Extent Types

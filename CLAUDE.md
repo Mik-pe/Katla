@@ -705,3 +705,36 @@ When matrices are transposed:
 - Values are technically "finite and reasonable" → tests pass but animation fails
 
 **Testing Tip**: Check that inverse bind matrices have **non-zero translations**. If all IBMs show `(0, 0, 0)` translation, the matrices are likely transposed.
+
+## Code Review Guidelines
+
+### Performance Patterns
+
+1. **Make small structs `Copy`** - If a struct only contains primitives, derive `Copy` to eliminate clone overhead in hot paths (e.g., `CachedGlyph` for text rendering)
+
+2. **Avoid `.clone()` before iteration** - Use `for &x in &collection` instead of `for x in collection.clone()`
+
+3. **Use helper functions for repeated patterns** - If you draw 4 border rects in multiple places, create `draw_selection_border()` helper
+
+4. **Prefer macros for repetitive struct initialization** - Theme definitions reduced 41% by using a macro
+
+### RHI Abstraction Principles
+
+The katla_vulkan crate should maintain proper RHI (Render Hardware Interface) abstraction:
+
+1. **No raw `ash::vk` types in public API** - All Vulkan types must be wrapped
+2. **`vk()` methods should be `pub(crate)`** - Internal access only
+3. **Opaque handles for resources** - Use `MeshHandle(usize)` not `&Mesh`
+4. **Consistent abstraction levels** - High-level (DrawCall), Mid-level (RenderGraph), Low-level (Context)
+
+See `.claude/skills/vulkan-rhi-validator/` for detailed guidelines.
+
+### Common Code Smells
+
+| Smell | Fix |
+|-------|-----|
+| 25+ fields in a struct | Split into focused components |
+| `Rc<RefCell<>>` everywhere | Consider explicit ownership |
+| Panics in public API | Return `Result<T, E>` |
+| Magic numbers | Extract to named constants |
+| Duplicate code blocks | Extract helper functions |

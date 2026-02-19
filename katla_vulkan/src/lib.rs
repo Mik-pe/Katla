@@ -598,14 +598,18 @@ impl VulkanRenderer {
         image_index: u32,
     ) -> ResourceId {
         // Get the actual format from the swapchain to ensure correctness
+        use crate::render_graph::types::{Extent2D, ImageFormat};
+
         let swapchain_format = self.frame_context.swapchain.format.format;
+        let extent = self.frame_context.swapchain.get_extent();
         builder.add_resource(
             format!("swapchain_{}", image_index),
             ResourceKind::ExternalImage {
-                vk_image: self.frame_context.swapchain_images[image_index as usize].vk(),
-                image_view: self.frame_context.swapchain_image_views[image_index as usize].vk(),
-                format: swapchain_format,
-                extent: self.frame_context.swapchain.get_extent(),
+                image: self.frame_context.swapchain_images[image_index as usize],
+                image_view: self.frame_context.swapchain_image_views[image_index as usize],
+                format: ImageFormat::from_vk(swapchain_format)
+                    .expect("Unsupported swapchain format"),
+                extent: Extent2D::new(extent.width, extent.height),
             },
         )
     }
@@ -614,14 +618,18 @@ impl VulkanRenderer {
     /// Returns a ResourceId for the depth texture that can be used in render graph passes.
     pub fn create_depth_resource(&self, builder: &mut RenderGraphBuilder) -> ResourceId {
         // Use the actual depth texture format to ensure compatibility
+        use crate::render_graph::types::{Extent2D, ImageFormat};
+
         let depth_format = self.frame_context.depth_render_texture.format;
+        let extent = self.frame_context.swapchain.get_extent();
         builder.add_resource(
             "depth",
             ResourceKind::ExternalImage {
-                vk_image: self.frame_context.depth_render_texture.image.vk(),
-                image_view: self.frame_context.depth_render_texture.image_view.vk(),
-                format: depth_format,
-                extent: self.frame_context.swapchain.get_extent(),
+                image: self.frame_context.depth_render_texture.image,
+                image_view: self.frame_context.depth_render_texture.image_view,
+                format: ImageFormat::from_vk(depth_format)
+                    .expect("Unsupported depth format"),
+                extent: Extent2D::new(extent.width, extent.height),
             },
         )
     }
@@ -884,17 +892,22 @@ impl VulkanRenderer {
     /// When a viewport target exists, scene renders to viewport texture first,
     /// then copies to swapchain before UI rendering. This prevents UI recursion.
     pub fn setup_render_graph(&mut self) {
+        use crate::render_graph::types::{Extent2D, ImageFormat, VkImage, VkImageView};
+
         // Build a single render graph
         let mut graph_builder = RenderGraphBuilder::new();
 
         // Create a placeholder swapchain resource (will be updated for each image)
+        let swapchain_format = self.frame_context.swapchain.format.format;
+        let swapchain_extent = self.frame_context.swapchain.get_extent();
         let swapchain_resource = graph_builder.add_resource(
             "swapchain",
             ResourceKind::ExternalImage {
-                vk_image: self.frame_context.swapchain_images[0].vk(),
-                image_view: self.frame_context.swapchain_image_views[0].vk(),
-                format: self.frame_context.swapchain.format.format,
-                extent: self.frame_context.swapchain.get_extent(),
+                image: self.frame_context.swapchain_images[0],
+                image_view: self.frame_context.swapchain_image_views[0],
+                format: ImageFormat::from_vk(swapchain_format)
+                    .expect("Unsupported swapchain format"),
+                extent: Extent2D::new(swapchain_extent.width, swapchain_extent.height),
             },
         );
 
@@ -907,19 +920,19 @@ impl VulkanRenderer {
                 let color = graph_builder.add_resource(
                     "viewport_color",
                     ResourceKind::ExternalImage {
-                        vk_image: first_target.color_image,
-                        image_view: first_target.color_image_view,
-                        format: vk::Format::R16G16B16A16_SFLOAT,
-                        extent: first_target.extent,
+                        image: first_target.color_image.into(),
+                        image_view: first_target.color_image_view.into(),
+                        format: ImageFormat::R16G16B16A16Sfloat,
+                        extent: Extent2D::new(first_target.extent.width, first_target.extent.height),
                     },
                 );
                 let depth = graph_builder.add_resource(
                     "viewport_depth",
                     ResourceKind::ExternalImage {
-                        vk_image: first_target.depth_image,
-                        image_view: first_target.depth_image_view,
-                        format: vk::Format::D32_SFLOAT_S8_UINT,
-                        extent: first_target.extent,
+                        image: first_target.depth_image.into(),
+                        image_view: first_target.depth_image_view.into(),
+                        format: ImageFormat::D32SfloatS8Uint,
+                        extent: Extent2D::new(first_target.extent.width, first_target.extent.height),
                     },
                 );
                 (Some(color), Some(depth), Some(first_target.extent))
@@ -936,10 +949,10 @@ impl VulkanRenderer {
             Some(graph_builder.add_resource(
                 "output_color",
                 ResourceKind::ExternalImage {
-                    vk_image: output_target.color_image,
-                    image_view: output_target.color_image_view,
-                    format: vk::Format::B8G8R8A8_SRGB,
-                    extent: output_target.extent,
+                    image: output_target.color_image.into(),
+                    image_view: output_target.color_image_view.into(),
+                    format: ImageFormat::B8G8R8A8Srgb,
+                    extent: Extent2D::new(output_target.extent.width, output_target.extent.height),
                 },
             ))
         } else {

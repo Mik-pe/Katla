@@ -609,7 +609,7 @@ mod tests {
     #[test]
     fn test_frame_uniforms_default() {
         let frame = FrameUniforms::default();
-        assert_eq!(frame.light_intensity, 1.0);
+        assert_eq!(frame.light_intensity, 3.0); // HDR intensity for PBR
     }
 
     #[test]
