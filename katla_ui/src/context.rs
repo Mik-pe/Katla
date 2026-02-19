@@ -382,32 +382,37 @@ impl UiContext {
         border_width: f32,
     ) {
         self.draw_rect(bounds, fill);
+        self.draw_selection_border(bounds, border, border_width);
+    }
 
+    /// Draw only a selection border (no fill).
+    /// Useful for highlighting already-drawn content like selected items.
+    pub fn draw_selection_border(&mut self, bounds: Rect2D, color: Color, width: f32) {
         // Top
         self.draw_rect(
-            Rect2D::from_origin_size(bounds.min, Vec2::new(bounds.width(), border_width)),
-            border,
+            Rect2D::from_origin_size(bounds.min, Vec2::new(bounds.width(), width)),
+            color,
         );
         // Bottom
         self.draw_rect(
             Rect2D::from_origin_size(
-                Vec2::new(bounds.min.x(), bounds.max.y() - border_width),
-                Vec2::new(bounds.width(), border_width),
+                Vec2::new(bounds.min.x(), bounds.max.y() - width),
+                Vec2::new(bounds.width(), width),
             ),
-            border,
+            color,
         );
         // Left
         self.draw_rect(
-            Rect2D::from_origin_size(bounds.min, Vec2::new(border_width, bounds.height())),
-            border,
+            Rect2D::from_origin_size(bounds.min, Vec2::new(width, bounds.height())),
+            color,
         );
         // Right
         self.draw_rect(
             Rect2D::from_origin_size(
-                Vec2::new(bounds.max.x() - border_width, bounds.min.y()),
-                Vec2::new(border_width, bounds.height()),
+                Vec2::new(bounds.max.x() - width, bounds.min.y()),
+                Vec2::new(width, bounds.height()),
             ),
-            border,
+            color,
         );
     }
 
