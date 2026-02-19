@@ -1169,6 +1169,25 @@ pub fn build_asset_browser(
             right_clicked_index = Some(i);
             state.selected_index = Some(i);
         }
+
+        // Show tooltip on hover
+        if is_hovered && !state.context_menu_open && !state.is_dragging {
+            let tooltip_text = format!(
+                "{}\nType: {}\nPath: {}",
+                asset.name,
+                match asset.asset_type {
+                    AssetType::Folder => "Folder",
+                    AssetType::Model => "Model",
+                    AssetType::Image => "Image",
+                    AssetType::Shader => "Shader",
+                    AssetType::Material => "Material",
+                    AssetType::Font => "Font",
+                    AssetType::Unknown => "File",
+                },
+                asset.path.display()
+            );
+            ui.tooltip(&tooltip_text);
+        }
     }
 
     // === MARQUEE SELECTION ===
