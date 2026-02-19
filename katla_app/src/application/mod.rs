@@ -479,6 +479,15 @@ impl ApplicationHandler for Application {
                             }
                         }
 
+                        // Handle text input from key event (for UI text fields)
+                        if event.state == ElementState::Pressed {
+                            if let Some(text) = &event.text {
+                                for c in text.chars() {
+                                    self.ui_context.input.add_char(c);
+                                }
+                            }
+                        }
+
                         if event.state == ElementState::Pressed {
                             // Only process game-specific keys when viewport is focused
                             if self.editor_ui.focused_panel == crate::ui::FocusedPanel::Viewport {
