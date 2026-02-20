@@ -220,8 +220,6 @@ pub struct EditorUI {
     expanded_entities: HashSet<EntityId>,
     /// Hierarchy context menu open.
     hierarchy_context_menu_open: bool,
-    /// Hierarchy context menu position.
-    hierarchy_context_menu_pos: Vec2,
     /// Entity for hierarchy context menu.
     hierarchy_context_entity: Option<EntityId>,
     /// Current color theme.
@@ -260,7 +258,6 @@ impl EditorUI {
             last_viewport_size: (800, 600), // Default size
             expanded_entities: HashSet::new(),
             hierarchy_context_menu_open: false,
-            hierarchy_context_menu_pos: Vec2::new(0.0, 0.0),
             hierarchy_context_entity: None,
             theme: Theme::catppuccin(), // Default to Catppuccin because it's sick
             asset_browser: AssetBrowserState::new(),
@@ -1293,9 +1290,9 @@ impl EditorUI {
             // Right-click for context menu (skip if popup already open)
             if ui.input.mouse_clicked(mouse_button::RIGHT) && is_hovered && !ui.has_open_popup() {
                 self.selected_entity = Some(entity.id);
-                self.hierarchy_context_menu_open = true;
-                self.hierarchy_context_menu_pos = ui.input.mouse_pos;
                 self.hierarchy_context_entity = Some(entity.id);
+                self.hierarchy_context_menu_open = true;
+                ui.open_context_menu("hierarchy_context");
             }
 
             cursor = Vec2::new(cursor.x(), cursor.y() + item_height);
@@ -1322,112 +1319,55 @@ impl EditorUI {
             );
         }
 
-        // === HIERARCHY CONTEXT MENU ===
-        if self.hierarchy_context_menu_open {
-            ui.push_z_index(katla_ui::z_index::TOOLTIP);
+        // === HIERARCHY CONTEXT MENU using popup system ===
+        let hierarchy_menu_open = ui.begin_context_menu("hierarchy_context");
 
+        // Clean up state if menu was closed (click outside or Escape)
+        if self.hierarchy_context_menu_open && !hierarchy_menu_open {
+            self.hierarchy_context_menu_open = false;
+            self.hierarchy_context_entity = None;
+        }
+
+        if hierarchy_menu_open {
+            let menu_pos = ui.get_popup_bounds().min;
             let menu_width = 140.0;
             let item_height = 24.0;
-            let menu_items: Vec<(&str, char, bool, &str)> = vec![
+            let mut current_y = menu_pos.y() + 2.0;
+            let mut clicked_action: Option<String> = None;
+
+            let items: Vec<(&str, char, bool, &str)> = vec![
                 ("Duplicate", ForkAwesome::COPY, true, "Ctrl+D"),
                 ("Rename", ForkAwesome::PENCIL, true, "F2"),
-                ("separator", '\0', false, ""),
+                ("---", '\0', false, ""),
                 ("Delete", ForkAwesome::TRASH, true, "Del"),
             ];
 
-            let visible_items = menu_items.iter().filter(|(l, _, _, _)| *l != "separator").count();
-            // Small padding (2px top + 2px bottom) for visual breathing room
-            let menu_height = (visible_items as f32 * item_height) + 4.0;
-
-            let menu_bounds = Rect2D::from_origin_size(
-                self.hierarchy_context_menu_pos,
-                Vec2::new(menu_width, menu_height),
-            );
-
-            // Shadow
-            let shadow_bounds = Rect2D::new(
-                menu_bounds.min + Vec2::new(3.0, 3.0),
-                menu_bounds.max + Vec2::new(3.0, 3.0),
-            );
-            ui.draw_rect(shadow_bounds, Color::new(0.0, 0.0, 0.0, 0.5));
-
-            // Background
-            ui.draw_rect(menu_bounds, theme.popup_bg);
-            ui.draw_rect_border(menu_bounds, theme.popup_bg, theme.popup_border, 1.0);
-
-            // Menu items (start with 2px top padding)
-            let mut current_y = self.hierarchy_context_menu_pos.y() + 2.0;
-            let mut clicked_action: Option<&str> = None;
-
-            for (label, icon, enabled, shortcut) in menu_items.iter() {
-                if *label == "separator" {
-                    ui.draw_line(
-                        Vec2::new(self.hierarchy_context_menu_pos.x() + 8.0, current_y + 2.0),
-                        Vec2::new(self.hierarchy_context_menu_pos.x() + menu_width - 8.0, current_y + 2.0),
-                        theme.separator,
-                        1.0,
+            for (label, icon, enabled, shortcut) in &items {
+                if *label == "---" {
+                    // Draw separator
+                    let sep_bounds = Rect2D::from_origin_size(
+                        Vec2::new(menu_pos.x(), current_y),
+                        Vec2::new(menu_width, 8.0),
                     );
+                    ui.menu_separator(sep_bounds);
                     current_y += 8.0;
                     continue;
                 }
-
                 let item_bounds = Rect2D::from_origin_size(
-                    Vec2::new(self.hierarchy_context_menu_pos.x(), current_y),
+                    Vec2::new(menu_pos.x(), current_y),
                     Vec2::new(menu_width, item_height),
                 );
-                let item_hovered = ui.is_hovered(item_bounds);
-
-                if *enabled && item_hovered {
-                    ui.draw_rect(item_bounds, theme.selection_hover);
+                if ui.popup_menu_item(label, *icon, *enabled, shortcut, item_bounds) {
+                    clicked_action = Some(label.to_string());
                 }
-
-                let text_y = current_y + 6.0;
-                let text_size = ui.scaled_font_size(FontSize::Small);
-
-                ui.draw_icon_aligned(
-                    *icon,
-                    Vec2::new(self.hierarchy_context_menu_pos.x() + 8.0, text_y),
-                    12.0,
-                    if *enabled {
-                        if item_hovered { theme.text_primary } else { theme.text_secondary }
-                    } else {
-                        theme.text_muted
-                    },
-                    FontId::DEFAULT,
-                );
-
-                ui.draw_text(
-                    label,
-                    Vec2::new(self.hierarchy_context_menu_pos.x() + 28.0, text_y),
-                    if *enabled { theme.text_secondary } else { theme.text_muted },
-                    text_size,
-                );
-
-                if !shortcut.is_empty() {
-                    let shortcut_size = ui.measure_text(shortcut, text_size);
-                    ui.draw_text(
-                        shortcut,
-                        Vec2::new(self.hierarchy_context_menu_pos.x() + menu_width - shortcut_size.x() - 8.0, text_y),
-                        theme.text_muted,
-                        text_size,
-                    );
-                }
-
-                if *enabled && item_hovered && ui.input.mouse_clicked(mouse_button::LEFT) {
-                    clicked_action = Some(*label);
-                }
-
                 current_y += item_height;
             }
 
-            ui.pop_z_index();
-
-            // Block input for popup (captures mouse/keyboard, prevents underlying widgets from responding)
-            ui.block_input_for_popup(menu_bounds);
+            ui.end_context_menu();
 
             // Process action
             if let Some(action) = clicked_action {
-                match action {
+                match action.as_str() {
                     "Duplicate" => {
                         if let Some(entity_id) = self.hierarchy_context_entity {
                             self.pending_actions.push(EditorAction::DuplicateEntity(entity_id));
@@ -1443,16 +1383,6 @@ impl EditorUI {
                     }
                     _ => {}
                 }
-                self.hierarchy_context_menu_open = false;
-            }
-
-            // Close on click outside
-            if ui.input.mouse_clicked(mouse_button::LEFT) && !ui.is_hovered(menu_bounds) {
-                self.hierarchy_context_menu_open = false;
-            }
-
-            // Close on escape
-            if ui.input.key_pressed(katla_ui::input::KeyCode::Escape) {
                 self.hierarchy_context_menu_open = false;
             }
         }
