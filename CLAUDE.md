@@ -604,12 +604,14 @@ Katla's UI uses a closure-based popup API with automatic layout and sizing.
 ### Basic Usage
 
 ```rust
+use katla_ui::icons::ForkAwesome;
+
 // Simple popup with items
 let action = ui.popup("my_popup", |ui| {
-    if ui.popup_item("Open", '📁', true) { return Some("open"); }
-    if ui.popup_item("Rename", '✏️', true) { return Some("rename"); }
+    if ui.popup_item("Open", ForkAwesome::FOLDER_OPEN, true) { return Some("open"); }
+    if ui.popup_item("Rename", ForkAwesome::PENCIL, true) { return Some("rename"); }
     ui.popup_separator();
-    if ui.popup_item("Delete", '🗑️', true) { return Some("delete"); }
+    if ui.popup_item("Delete", ForkAwesome::TRASH, true) { return Some("delete"); }
     None
 });
 
@@ -643,6 +645,21 @@ if ui.input.mouse_clicked(mouse_button::RIGHT) && is_hovered {
 | `popup_item_with_shortcut(label, icon, enabled, shortcut)` | Same with keyboard hint |
 | `popup_separator()` | Draw separator line |
 | `open_context_menu_at(id, pos)` | Open popup at position |
+
+### Common ForkAwesome Icons
+
+```rust
+use katla_ui::icons::ForkAwesome;
+
+ForkAwesome::FOLDER        // Folder icon
+ForkAwesome::FOLDER_OPEN   // Open folder
+ForkAwesome::FILE          // File icon
+ForkAwesome::PENCIL        // Edit/rename
+ForkAwesome::TRASH         // Delete
+ForkAwesome::COPY          // Copy/duplicate
+ForkAwesome::REFRESH       // Refresh
+ForkAwesome::EXTERNAL_LINK // Open in explorer
+```
 
 ### Future Enhancements (Optional)
 
