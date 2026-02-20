@@ -62,9 +62,9 @@ pub struct CompiledPass {
     /// Pre-execute callback runs BEFORE begin_rendering() for custom barrier setup
     pre_execute: Option<PassExecute>,
     /// Color attachment image views for dynamic rendering (one set per swapchain image)
-    pub color_attachments: Vec<Vec<vk::ImageView>>,
+    pub color_attachments: Vec<Vec<VkImageView>>,
     /// Depth attachment image view for dynamic rendering (one per swapchain image)
-    pub depth_attachments: Vec<Option<vk::ImageView>>,
+    pub depth_attachments: Vec<Option<VkImageView>>,
 }
 
 /// RenderPassGroup groups passes that share a Vulkan render pass.
@@ -189,7 +189,7 @@ impl CompiledRenderGraph {
 
     /// Update the swapchain image for the current frame.
     /// This must be called before execute() to ensure present_pass blits to the correct image.
-    pub fn update_swapchain_image(&mut self, image: vk::Image, image_view: vk::ImageView) {
+    pub fn update_swapchain_image(&mut self, image: VkImage, image_view: VkImageView) {
         if let Some(swapchain_id) = self.swapchain_resource_id {
             let mut resources = self.resources.borrow_mut();
             if let Some(resource) = resources.get_mut(&swapchain_id) {
@@ -199,8 +199,8 @@ impl CompiledRenderGraph {
                     ..
                 } = resource
                 {
-                    *res_image = image.into();
-                    *res_image_view = image_view.into();
+                    *res_image = image;
+                    *res_image_view = image_view;
                 }
             }
         }
@@ -770,8 +770,8 @@ impl CompiledRenderGraph {
             // Extract color and depth attachments for dynamic rendering
             // For swapchain rendering, we need ONE SET of attachments PER swapchain image
             // IMPORTANT: Only include render attachments, NOT transfer resources
-            let mut color_attachments: Vec<Vec<vk::ImageView>> = Vec::new();
-            let mut depth_attachments: Vec<Option<vk::ImageView>> = Vec::new();
+            let mut color_attachments: Vec<Vec<VkImageView>> = Vec::new();
+            let mut depth_attachments: Vec<Option<VkImageView>> = Vec::new();
 
             for output_resource_id in pass.outputs() {
                 // Check the usage to determine if this is a render attachment or transfer resource
@@ -810,10 +810,10 @@ impl CompiledRenderGraph {
                         } => {
                             if is_depth_or_stencil_format(*format) {
                                 // Depth attachment
-                                depth_attachments.push(Some(image_view.vk()));
+                                depth_attachments.push(Some(*image_view));
                             } else {
                                 // Color attachment
-                                color_attachments.push(vec![image_view.vk()]);
+                                color_attachments.push(vec![*image_view]);
                             }
                         }
                         CompiledResource::Image {
@@ -821,10 +821,10 @@ impl CompiledRenderGraph {
                         } => {
                             if is_depth_or_stencil_format(*format) {
                                 // Depth attachment
-                                depth_attachments.push(Some(image_view.vk()));
+                                depth_attachments.push(Some(*image_view));
                             } else {
                                 // Color attachment
-                                color_attachments.push(vec![image_view.vk()]);
+                                color_attachments.push(vec![*image_view]);
                             }
                         }
                         _ => {}
@@ -883,10 +883,10 @@ impl CompiledRenderGraph {
     /// This prevents race conditions when frames overlap (frames in flight > 1).
     pub fn update_viewport_attachments(
         &mut self,
-        color_image_view: vk::ImageView,
-        depth_image_view: vk::ImageView,
-        color_image: vk::Image,
-        depth_image: vk::Image,
+        color_image_view: VkImageView,
+        depth_image_view: VkImageView,
+        color_image: VkImage,
+        depth_image: VkImage,
     ) {
         // Update color_attachments for viewport passes (sky_pass, geometry_pass, particle_pass)
         for pass in &mut self.passes {
@@ -917,8 +917,8 @@ impl CompiledRenderGraph {
                     image, image_view, ..
                 } = resource
                 {
-                    *image = color_image.into();
-                    *image_view = color_image_view.into();
+                    *image = color_image;
+                    *image_view = color_image_view;
                 }
             }
         }
@@ -930,8 +930,8 @@ impl CompiledRenderGraph {
                     image, image_view, ..
                 } = resource
                 {
-                    *image = depth_image.into();
-                    *image_view = depth_image_view.into();
+                    *image = depth_image;
+                    *image_view = depth_image_view;
                 }
             }
         }
@@ -1081,7 +1081,7 @@ impl CompiledRenderGraph {
             .collect();
 
         for (i, image_view) in color_attachments.iter().enumerate() {
-            let mut attachment = RenderingAttachmentInfo::from_vk(*image_view)
+            let mut attachment = RenderingAttachmentInfo::new(*image_view)
                 .layout(ImageLayout::ColorAttachmentOptimal);
 
             // Use filtered color clears, indexed by color attachment position
@@ -1100,7 +1100,7 @@ impl CompiledRenderGraph {
                 .iter()
                 .find(|cv| matches!(cv, ClearValue::DepthStencil(_)));
 
-            let mut attachment = RenderingAttachmentInfo::from_vk(depth_view)
+            let mut attachment = RenderingAttachmentInfo::new(depth_view)
                 .layout(ImageLayout::DepthStencilAttachmentOptimal);
 
             if let Some(&cv) = depth_clear {
@@ -1122,7 +1122,7 @@ impl CompiledRenderGraph {
         // - Viewport: sky_pass pre_execute transitions it to COLOR_ATTACHMENT_OPTIMAL
         // - Output: present_pass post-blit transitions it back to COLOR_ATTACHMENT_OPTIMAL
         let is_writing_to_swapchain = pass.color_attachments.get(image_index).is_some();
-        let swapchain_image = swapchain_images.get(image_index).map(|img| img.vk());
+        let swapchain_image = swapchain_images.get(image_index).cloned();
         if let (Some(swapchain_vk_image), true) = (swapchain_image, is_writing_to_swapchain) {
             // For the first pass using swapchain, use UNDEFINED which discards previous content
             // For subsequent passes, use COLOR_ATTACHMENT_OPTIMAL to preserve the previous pass's output
@@ -1166,7 +1166,7 @@ impl CompiledRenderGraph {
                 vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL
             };
 
-            let barrier = ImageMemoryBarrier2::new(depth_image.vk())
+            let barrier = ImageMemoryBarrier2::new(depth_image)
                 .src_stage(PipelineStage2Flags::LATE_FRAGMENT_TESTS)
                 .src_access(AccessFlags2::DEPTH_STENCIL_ATTACHMENT_WRITE)
                 .dst_stage(PipelineStage2Flags::EARLY_FRAGMENT_TESTS)
@@ -1310,7 +1310,7 @@ impl CompiledRenderGraph {
             // Add color attachments with clear values
             for (i, image_view) in color_attachments.iter().enumerate() {
                 let clear_value = pass.clear_values.get(i).copied();
-                let mut attachment = RenderingAttachmentInfo::from_vk(*image_view)
+                let mut attachment = RenderingAttachmentInfo::new(*image_view)
                     .layout(ImageLayout::ColorAttachmentOptimal);
 
                 if let Some(cv) = clear_value {
@@ -1333,7 +1333,7 @@ impl CompiledRenderGraph {
                         .iter()
                         .find(|cv| matches!(cv, ClearValue::DepthStencil(_)));
 
-                    let mut attachment = RenderingAttachmentInfo::from_vk(*depth_view)
+                    let mut attachment = RenderingAttachmentInfo::new(*depth_view)
                         .layout(ImageLayout::DepthStencilAttachmentOptimal);
 
                     if let Some(cv) = depth_clear {

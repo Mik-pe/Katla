@@ -106,8 +106,8 @@ impl RendererContext {
             .map(|ds| ds.set())
     }
 
-    /// Get storage descriptor set as raw vk handle (for internal use).
-    pub fn vk_storage_descriptor(&self) -> Option<vk::DescriptorSet> {
+    /// Get storage descriptor set as raw vk handle (internal use).
+    pub(crate) fn vk_storage_descriptor(&self) -> Option<vk::DescriptorSet> {
         self.storage_descriptor_set
             .as_ref()?
             .borrow()

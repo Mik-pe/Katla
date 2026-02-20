@@ -188,11 +188,11 @@ impl CommandBuffer {
     ///
     /// # Example
     /// ```no_run
-    /// use katla_vulkan::sync::{ImageMemoryBarrier2, PipelineStage2Flags, AccessFlags2, DependencyInfo};
+    /// use katla_vulkan::sync::{ImageMemoryBarrier2, PipelineStage2Flags, AccessFlags2, DependencyInfo, VkImage};
     /// # use ash::vk;
     ///
     /// # let command_buffer: katla_vulkan::CommandBuffer = unsafe { std::mem::zeroed() };
-    /// # let image: vk::Image = unsafe { std::mem::zeroed() };
+    /// # let image: VkImage = VkImage::new(unsafe { std::mem::zeroed() });
     /// let barrier = ImageMemoryBarrier2::new(image)
     ///     .src_stage(PipelineStage2Flags::TRANSFER)
     ///     .dst_stage(PipelineStage2Flags::FRAGMENT_SHADER)

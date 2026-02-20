@@ -81,7 +81,7 @@ impl Texture {
         }
 
         // Modern Vulkan 1.3 barrier using Synchronization2
-        let barrier = ImageMemoryBarrier2::new(image)
+        let barrier = ImageMemoryBarrier2::new(VkImage::new(image))
             .src_stage(PipelineStage2Flags::from(src_stage_mask))
             .dst_stage(PipelineStage2Flags::from(dst_stage_mask))
             .src_access(AccessFlags2::from(barrier_default.src_access_mask))

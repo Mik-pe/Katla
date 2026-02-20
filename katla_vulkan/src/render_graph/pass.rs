@@ -2,7 +2,7 @@ use ash::vk;
 
 use crate::render_graph::renderer_context::RendererContext;
 use crate::resource::CompiledResource;
-use crate::sync::VkFramebuffer;
+use crate::sync::{VkBuffer, VkFramebuffer, VkImage, VkImageView};
 use crate::types::{ClearValue, Extent2D, PipelineBindPoint};
 use crate::{CommandBuffer, ResourceId, ResourceUsage};
 use std::collections::HashMap;
@@ -482,25 +482,25 @@ impl PassExecutionContext {
     }
 
     /// Get a compiled image resource by ID (works for both Image and ExternalImage)
-    /// Returns raw Vulkan handles for use with Vulkan API calls.
-    pub fn get_image(&self, resource_id: ResourceId) -> Option<(vk::Image, vk::ImageView)> {
+    /// Returns wrapper types for the image and image view.
+    pub fn get_image(&self, resource_id: ResourceId) -> Option<(VkImage, VkImageView)> {
         match self.resources.borrow().get(&resource_id) {
             Some(CompiledResource::Image {
                 image, image_view, ..
-            }) => Some((image.vk(), image_view.vk())),
+            }) => Some((*image, *image_view)),
             Some(CompiledResource::ExternalImage {
                 image, image_view, ..
-            }) => Some((image.vk(), image_view.vk())),
+            }) => Some((*image, *image_view)),
             _ => None,
         }
     }
 
     /// Get a compiled buffer resource by ID (works for both Buffer and ExternalBuffer)
-    /// Returns raw Vulkan handle for use with Vulkan API calls.
-    pub fn get_buffer(&self, resource_id: ResourceId) -> Option<vk::Buffer> {
+    /// Returns wrapper type for the buffer.
+    pub fn get_buffer(&self, resource_id: ResourceId) -> Option<VkBuffer> {
         match self.resources.borrow().get(&resource_id) {
-            Some(CompiledResource::Buffer { buffer, .. }) => Some(buffer.vk()),
-            Some(CompiledResource::ExternalBuffer { buffer }) => Some(buffer.vk()),
+            Some(CompiledResource::Buffer { buffer, .. }) => Some(*buffer),
+            Some(CompiledResource::ExternalBuffer { buffer }) => Some(*buffer),
             _ => None,
         }
     }
