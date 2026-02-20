@@ -66,6 +66,8 @@ pub struct UiContext {
     popup_opened_this_frame: bool,
     /// Whether a popup consumed the click this frame (prevents click-through).
     popup_consume_click: bool,
+    /// Content height for current context menu (set by caller before end_context_menu).
+    context_menu_content_height: f32,
     /// Current Z-index for rendering (higher = on top).
     z_index: u32,
     /// Z-index stack for nested containers.
@@ -139,6 +141,7 @@ impl UiContext {
             popup_bounds: None,
             popup_opened_this_frame: false,
             popup_consume_click: false,
+            context_menu_content_height: 0.0,
             z_index: z_index::DEFAULT,
             z_stack: Vec::new(),
             dropdown_content_height: 0.0,
@@ -2302,8 +2305,7 @@ impl UiContext {
     /// Begin a context menu (right-click popup).
     ///
     /// Returns true if the context menu is open and should have items drawn.
-    /// Call `end_context_menu()` after adding contents.
-    /// Typically called after checking `is_context_menu_open()` or unconditionally.
+    /// Call `set_context_menu_content_height()` before `end_context_menu()` to size the background.
     pub fn begin_context_menu(&mut self, id: &str) -> bool {
         let context_id = self.generate_id(id);
 
@@ -2324,40 +2326,27 @@ impl UiContext {
         let is_open = self.popup_id == Some(context_id);
 
         if is_open {
+            // Reset content height - caller must set it before end_context_menu()
+            self.context_menu_content_height = 0.0;
+
+            // Set up initial popup bounds for get_popup_bounds() to work
+            // Use minimum size initially, will be updated in end_context_menu()
+            let initial_size = Vec2::new(self.style.menu_min_width, self.style.menu_item_height);
+            let mut adjusted_pos = pos;
+            if adjusted_pos.x() + initial_size.x() > self.screen_size.x() {
+                adjusted_pos = Vec2::new(self.screen_size.x() - initial_size.x() - 5.0, adjusted_pos.y());
+            }
+            if adjusted_pos.y() + initial_size.y() > self.screen_size.y() {
+                adjusted_pos = Vec2::new(adjusted_pos.x(), self.screen_size.y() - initial_size.y() - 5.0);
+            }
+            self.popup_bounds = Some(Rect2D::from_origin_size(adjusted_pos, initial_size));
+
             // Switch to popup Z-index
             self.push_z_index(z_index::POPUP);
 
-            // Calculate popup bounds
-            let popup_size = Vec2::new(self.style.menu_min_width, 200.0); // Height will be clipped
-
-            // Keep on screen
-            let mut popup_pos = pos;
-            if popup_pos.x() + popup_size.x() > self.screen_size.x() {
-                popup_pos = Vec2::new(self.screen_size.x() - popup_size.x() - 5.0, popup_pos.y());
-            }
-            if popup_pos.y() + popup_size.y() > self.screen_size.y() {
-                popup_pos = Vec2::new(popup_pos.x(), self.screen_size.y() - popup_size.y() - 5.0);
-            }
-
-            let popup_bounds = Rect2D::from_origin_size(popup_pos, popup_size);
-
-            // Draw popup background with shadow
-            let shadow_offset = Vec2::new(4.0, 4.0);
-            let shadow_bounds = Rect2D::new(
-                popup_bounds.min + shadow_offset,
-                popup_bounds.max + shadow_offset,
-            );
-            self.draw_rect(shadow_bounds, self.style.popup_shadow);
-            self.draw_rect(popup_bounds, self.style.popup_bg);
-            self.draw_rect_border(
-                popup_bounds,
-                Color::TRANSPARENT,
-                self.style.popup_border,
-                1.0,
-            );
-
-            self.popup_bounds = Some(popup_bounds);
-            self.push_clip_absolute(popup_bounds); // Absolute clip - render outside parent
+            // Use full screen clip - content can render anywhere
+            let screen_bounds = Rect2D::new(Vec2::new(0.0, 0.0), self.screen_size);
+            self.push_clip_absolute(screen_bounds);
             self.push_id(id);
 
             return true;
@@ -2366,8 +2355,66 @@ impl UiContext {
         false
     }
 
-    /// End a context menu.
+    /// Set the content height for the current context menu.
+    ///
+    /// Call this before `end_context_menu()` to properly size the background.
+    pub fn set_context_menu_content_height(&mut self, height: f32) {
+        self.context_menu_content_height = height;
+    }
+
+    /// End a context menu and draw the background based on content height.
     pub fn end_context_menu(&mut self) {
+        // Get content height (default to minimum if not set)
+        let content_height = if self.context_menu_content_height > 0.0 {
+            self.context_menu_content_height
+        } else {
+            self.style.menu_item_height
+        };
+
+        // Get context menu position from current popup bounds
+        let popup_pos = if let Some(bounds) = self.popup_bounds {
+            bounds.min
+        } else {
+            self.input.mouse_pos
+        };
+
+        // Calculate final popup bounds with actual content height
+        let popup_size = Vec2::new(self.style.menu_min_width, content_height + self.style.menu_padding * 2.0);
+
+        // Keep on screen
+        let mut adjusted_pos = popup_pos;
+        if adjusted_pos.x() + popup_size.x() > self.screen_size.x() {
+            adjusted_pos = Vec2::new(self.screen_size.x() - popup_size.x() - 5.0, adjusted_pos.y());
+        }
+        if adjusted_pos.y() + popup_size.y() > self.screen_size.y() {
+            adjusted_pos = Vec2::new(adjusted_pos.x(), self.screen_size.y() - popup_size.y() - 5.0);
+        }
+
+        let popup_bounds = Rect2D::from_origin_size(adjusted_pos, popup_size);
+
+        // Draw popup background with shadow at lower z-index
+        self.pop_z_index(); // Pop to get back to previous z
+        self.push_z_index(z_index::POPUP - 1); // Draw background below content
+
+        let shadow_offset = Vec2::new(4.0, 4.0);
+        let shadow_bounds = Rect2D::new(
+            popup_bounds.min + shadow_offset,
+            popup_bounds.max + shadow_offset,
+        );
+        self.draw_rect(shadow_bounds, self.style.popup_shadow);
+        self.draw_rect(popup_bounds, self.style.popup_bg);
+        self.draw_rect_border(
+            popup_bounds,
+            Color::TRANSPARENT,
+            self.style.popup_border,
+            1.0,
+        );
+
+        self.pop_z_index(); // Pop the background z
+        self.push_z_index(z_index::POPUP); // Restore popup z
+
+        self.popup_bounds = Some(popup_bounds);
+
         self.pop_clip();
         self.pop_id();
         self.pop_z_index();
@@ -2392,6 +2439,22 @@ impl UiContext {
         }
 
         false
+    }
+
+    /// Open a context menu at a specific position without checking for input.
+    ///
+    /// Use this when you've already checked for right-click and just want to open the menu.
+    /// Returns true always (menu was opened).
+    pub fn open_context_menu_at(&mut self, id: &str, pos: Vec2) -> bool {
+        let context_id = self.generate_id(id);
+
+        self.storage.insert(
+            context_id,
+            WidgetState::ContextMenuPos(pos),
+        );
+        self.popup_id = Some(context_id);
+        self.popup_opened_this_frame = true;
+        true
     }
 
     /// Check if a context menu is currently open.

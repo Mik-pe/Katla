@@ -1590,7 +1590,7 @@ pub fn build_asset_browser(
     if let Some(index) = right_clicked_index {
         state.context_menu_asset = Some(index);
         state.context_menu_open = true;
-        ui.open_context_menu("asset_context");
+        ui.open_context_menu_at("asset_context", ui.input.mouse_pos);
     }
 
     // Empty state
@@ -1635,7 +1635,7 @@ pub fn build_asset_browser(
         if !clicked_on_asset && ui.input.mouse_clicked(katla_ui::input::mouse_button::RIGHT) {
             state.context_menu_asset = None;
             state.context_menu_open = true;
-            ui.open_context_menu("asset_context");
+            ui.open_context_menu_at("asset_context", ui.input.mouse_pos);
         }
     }
 
@@ -1724,6 +1724,9 @@ pub fn build_asset_browser(
             current_y += item_height;
         }
 
+        // Calculate actual content height for background sizing
+        let content_height = current_y - menu_pos.y();
+        ui.set_context_menu_content_height(content_height);
         ui.end_context_menu();
 
         // Process action
