@@ -11,6 +11,7 @@ fragment = "../shaders/model_simple.wgsl"
 
 # Bindless materials don't have per-material texture bindings
 # Textures are accessed via ObjectUniforms.texture_indices
+[bindings]
 
 [render_state]
 depth_test = true

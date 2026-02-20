@@ -210,20 +210,6 @@ impl MaterialRegistry {
             // Get template name from descriptor
             let name = descriptor.name.clone();
 
-            // Detect if this is a bindless shader by checking shader filename
-            let is_bindless = match &descriptor.vertex_shader {
-                crate::vulkan::material::ShaderSource::WgslFile(path) => {
-                    path.to_string_lossy().to_lowercase().contains("bindless")
-                }
-                _ => false,
-            };
-
-            // Skip non-bindless shaders in bindless mode
-            if !is_bindless {
-                log::debug!("Skipping non-bindless material '{}' in bindless mode", name);
-                continue;
-            }
-
             // Skip if template already exists (e.g., loaded by another pass)
             if self.has_template(&name) {
                 log::debug!("Template '{}' already exists, skipping", name);
