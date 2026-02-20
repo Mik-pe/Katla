@@ -66,16 +66,16 @@ pub struct UiContext {
     popup_opened_this_frame: bool,
     /// Whether a popup consumed the click this frame (prevents click-through).
     popup_consume_click: bool,
-    /// Content size for current context menu (set by caller before end_context_menu).
-    context_menu_content_size: Option<Vec2>,
     /// Current Z-index for rendering (higher = on top).
     z_index: u32,
     /// Z-index stack for nested containers.
     z_stack: Vec<u32>,
-    /// Tracked height of current dropdown content (for auto-sizing).
+    /// Tracked height of current dropdown/context menu content (for auto-sizing).
     dropdown_content_height: f32,
-    /// Origin Y of current dropdown (for height tracking).
-    dropdown_origin_y: f32,
+    /// Tracked width of current dropdown/context menu content (for auto-sizing).
+    dropdown_content_width: f32,
+    /// Origin position of current dropdown/context menu (for relative tracking).
+    dropdown_origin: Vec2,
     /// Deferred draws for dropdown items (drawn after background).
     dropdown_deferred: Vec<DeferredDraw>,
 }
@@ -141,11 +141,11 @@ impl UiContext {
             popup_bounds: None,
             popup_opened_this_frame: false,
             popup_consume_click: false,
-            context_menu_content_size: None,
             z_index: z_index::DEFAULT,
             z_stack: Vec::new(),
             dropdown_content_height: 0.0,
-            dropdown_origin_y: 0.0,
+            dropdown_content_width: 0.0,
+            dropdown_origin: Vec2::new(0.0, 0.0),
             dropdown_deferred: Vec::new(),
         }
     }
@@ -1610,7 +1610,7 @@ impl UiContext {
         let clicked = self.button_behavior(widget_id, bounds);
 
         // Track height for dropdown auto-sizing
-        self.track_dropdown_item(bounds);
+        self.track_popup_item(bounds);
 
         // Determine colors based on state
         let bg_color = if self.active_id == Some(widget_id) {
@@ -1645,7 +1645,7 @@ impl UiContext {
         let clicked = self.button_behavior(widget_id, bounds);
 
         // Track height for dropdown auto-sizing
-        self.track_dropdown_item(bounds);
+        self.track_popup_item(bounds);
 
         // Determine colors based on state
         let bg_color = if self.active_id == Some(widget_id) {
@@ -1906,6 +1906,9 @@ impl UiContext {
     /// - `shortcut`: Optional keyboard shortcut hint (e.g., "Ctrl+S")
     /// - `bounds`: Item bounds (position and size)
     pub fn popup_menu_item(&mut self, label: &str, icon: char, enabled: bool, shortcut: &str, bounds: Rect2D) -> bool {
+        // Track this item for auto-sizing the popup background
+        self.track_popup_item(bounds);
+
         let hovered = self.is_hovered(bounds);
 
         // Hover background
@@ -1956,6 +1959,9 @@ impl UiContext {
     ///
     /// Use this inside a popup/context menu to separate groups of items.
     pub fn menu_separator(&mut self, bounds: Rect2D) {
+        // Track this separator for auto-sizing the popup background
+        self.track_popup_item(bounds);
+
         self.draw_line(
             Vec2::new(bounds.min.x() + 8.0, bounds.center().y()),
             Vec2::new(bounds.max.x() - 8.0, bounds.center().y()),
@@ -2203,16 +2209,17 @@ impl UiContext {
 
             // Store popup origin for later
             let popup_origin = Vec2::new(bounds.min.x(), bounds.max.y());
-            let popup_width = bounds.width().max(self.style.menu_min_width);
 
-            // Initialize content height tracking
+            // Initialize content size tracking
             self.dropdown_content_height = 0.0;
-            self.dropdown_origin_y = popup_origin.y();
+            self.dropdown_content_width = 0.0;
+            self.dropdown_origin = popup_origin;
             self.dropdown_deferred.clear();
 
             // Store popup dimensions for later (background drawn in end_dropdown)
+            // Use large initial size, will be clamped to content in end_dropdown
             let popup_bounds =
-                Rect2D::from_origin_size(popup_origin, Vec2::new(popup_width, 500.0));
+                Rect2D::from_origin_size(popup_origin, Vec2::new(self.style.menu_min_width, 500.0));
 
             // Don't draw background yet - we'll draw it in end_dropdown at correct size
             // Just set up clipping and state
@@ -2226,11 +2233,18 @@ impl UiContext {
         false
     }
 
-    /// Track dropdown content height (call from menu_item, etc.)
-    pub fn track_dropdown_item(&mut self, item_bounds: Rect2D) {
-        let item_bottom = item_bounds.max.y() - self.dropdown_origin_y;
+    /// Track popup content size (call from menu_item, etc.)
+    /// Tracks both width and height relative to popup origin.
+    pub fn track_popup_item(&mut self, item_bounds: Rect2D) {
+        // Track height (bottom relative to origin)
+        let item_bottom = item_bounds.max.y() - self.dropdown_origin.y();
         if item_bottom > self.dropdown_content_height {
             self.dropdown_content_height = item_bottom;
+        }
+        // Track width (right relative to origin)
+        let item_right = item_bounds.max.x() - self.dropdown_origin.x();
+        if item_right > self.dropdown_content_width {
+            self.dropdown_content_width = item_right;
         }
     }
 
@@ -2250,12 +2264,14 @@ impl UiContext {
 
     /// End a dropdown menu.
     pub fn end_dropdown(&mut self) {
-        // Calculate final size
+        // Calculate final size from tracked content
         if let Some(bounds) = self.popup_bounds {
-            let final_height = self.dropdown_content_height;
+            // Use tracked width/height, with minimums
+            let final_width = self.dropdown_content_width.max(self.style.menu_min_width);
+            let final_height = self.dropdown_content_height.max(self.style.menu_item_height);
             let correct_bounds = Rect2D::from_origin_size(
                 bounds.min,
-                Vec2::new(bounds.width(), final_height),
+                Vec2::new(final_width, final_height),
             );
 
             // Draw background at the correct size FIRST
@@ -2305,7 +2321,7 @@ impl UiContext {
     /// Begin a context menu (right-click popup).
     ///
     /// Returns true if the context menu is open and should have items drawn.
-    /// Call `set_context_menu_content_height()` before `end_context_menu()` to size the background.
+    /// Items drawn inside will automatically size the background.
     pub fn begin_context_menu(&mut self, id: &str) -> bool {
         let context_id = self.generate_id(id);
 
@@ -2326,20 +2342,16 @@ impl UiContext {
         let is_open = self.popup_id == Some(context_id);
 
         if is_open {
-            // Reset content size - caller must set it before end_context_menu()
-            self.context_menu_content_size = None;
+            // Initialize content size tracking (shared with dropdown)
+            self.dropdown_content_height = 0.0;
+            self.dropdown_content_width = 0.0;
+            self.dropdown_origin = pos;
+            self.dropdown_deferred.clear();
 
             // Set up initial popup bounds for get_popup_bounds() to work
-            // Use minimum size initially, will be updated in end_context_menu()
+            // Will be updated with correct size in end_context_menu()
             let initial_size = Vec2::new(self.style.menu_min_width, self.style.menu_item_height);
-            let mut adjusted_pos = pos;
-            if adjusted_pos.x() + initial_size.x() > self.screen_size.x() {
-                adjusted_pos = Vec2::new(self.screen_size.x() - initial_size.x() - 5.0, adjusted_pos.y());
-            }
-            if adjusted_pos.y() + initial_size.y() > self.screen_size.y() {
-                adjusted_pos = Vec2::new(adjusted_pos.x(), self.screen_size.y() - initial_size.y() - 5.0);
-            }
-            self.popup_bounds = Some(Rect2D::from_origin_size(adjusted_pos, initial_size));
+            self.popup_bounds = Some(Rect2D::from_origin_size(pos, initial_size));
 
             // Switch to popup Z-index
             self.push_z_index(z_index::POPUP);
@@ -2355,18 +2367,11 @@ impl UiContext {
         false
     }
 
-    /// Set the content size for the current context menu.
-    ///
-    /// Call this before `end_context_menu()` to properly size the background.
-    pub fn set_context_menu_content_size(&mut self, width: f32, height: f32) {
-        self.context_menu_content_size = Some(Vec2::new(width, height));
-    }
-
-    /// End a context menu and draw the background based on content size.
+    /// End a context menu and draw the background based on tracked content size.
     pub fn end_context_menu(&mut self) {
-        // Get content size (default to minimum if not set)
-        let content_size = self.context_menu_content_size
-            .unwrap_or(Vec2::new(self.style.menu_min_width, self.style.menu_item_height));
+        // Get tracked content size (shared with dropdown tracking)
+        let content_width = self.dropdown_content_width.max(self.style.menu_min_width);
+        let content_height = self.dropdown_content_height.max(self.style.menu_item_height);
 
         // Get context menu position from current popup bounds
         let popup_pos = if let Some(bounds) = self.popup_bounds {
@@ -2375,10 +2380,8 @@ impl UiContext {
             self.input.mouse_pos
         };
 
-        // Calculate final popup bounds with actual content size
-        // Add small padding around content
-        let padding = self.style.menu_padding;
-        let popup_size = Vec2::new(content_size.x() + padding, content_size.y());
+        // Calculate final popup bounds with tracked content size
+        let popup_size = Vec2::new(content_width, content_height);
 
         // Keep on screen
         let mut adjusted_pos = popup_pos;
