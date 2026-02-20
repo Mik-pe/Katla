@@ -779,13 +779,13 @@ pub struct ImageMemoryBarrier2 {
     pub new_layout: vk::ImageLayout,
     pub src_queue_family_index: u32,
     pub dst_queue_family_index: u32,
-    pub image: vk::Image,
+    pub image: VkImage,
     pub subresource_range: vk::ImageSubresourceRange,
 }
 
 impl ImageMemoryBarrier2 {
     /// Create a new image memory barrier 2.
-    pub fn new(image: vk::Image) -> Self {
+    pub fn new(image: VkImage) -> Self {
         Self {
             src_stage_mask: PipelineStage2Flags::TOP_OF_PIPE,
             dst_stage_mask: PipelineStage2Flags::BOTTOM_OF_PIPE,
@@ -853,7 +853,7 @@ impl ImageMemoryBarrier2 {
             .new_layout(self.new_layout)
             .src_queue_family_index(self.src_queue_family_index)
             .dst_queue_family_index(self.dst_queue_family_index)
-            .image(self.image)
+            .image(self.image.vk())
             .subresource_range(self.subresource_range)
     }
 }
@@ -871,14 +871,14 @@ pub struct BufferMemoryBarrier2 {
     pub dst_access_mask: AccessFlags2,
     pub src_queue_family_index: u32,
     pub dst_queue_family_index: u32,
-    pub buffer: vk::Buffer,
+    pub buffer: VkBuffer,
     pub offset: vk::DeviceSize,
     pub size: vk::DeviceSize,
 }
 
 impl BufferMemoryBarrier2 {
     /// Create a new buffer memory barrier 2.
-    pub fn new(buffer: vk::Buffer) -> Self {
+    pub fn new(buffer: VkBuffer) -> Self {
         Self {
             src_stage_mask: PipelineStage2Flags::TOP_OF_PIPE,
             dst_stage_mask: PipelineStage2Flags::BOTTOM_OF_PIPE,
@@ -937,7 +937,7 @@ impl BufferMemoryBarrier2 {
             .dst_access_mask(self.dst_access_mask.into_vk())
             .src_queue_family_index(self.src_queue_family_index)
             .dst_queue_family_index(self.dst_queue_family_index)
-            .buffer(self.buffer)
+            .buffer(self.buffer.vk())
             .offset(self.offset)
             .size(self.size)
     }
@@ -1152,7 +1152,7 @@ mod tests {
 
     #[test]
     fn test_image_memory_barrier2_builder() {
-        let image = vk::Image::null();
+        let image = VkImage::new(vk::Image::null());
         let barrier = ImageMemoryBarrier2::new(image)
             .src_stage(PipelineStage2Flags::TRANSFER)
             .dst_stage(PipelineStage2Flags::FRAGMENT_SHADER)
@@ -1171,7 +1171,7 @@ mod tests {
 
     #[test]
     fn test_dependency_info() {
-        let image = vk::Image::null();
+        let image = VkImage::new(vk::Image::null());
         let barrier = ImageMemoryBarrier2::new(image)
             .src_stage(PipelineStage2Flags::TRANSFER)
             .dst_stage(PipelineStage2Flags::FRAGMENT_SHADER);
@@ -1191,7 +1191,7 @@ mod tests {
 
     #[test]
     fn test_buffer_memory_barrier2_builder() {
-        let buffer = vk::Buffer::null();
+        let buffer = VkBuffer::new(vk::Buffer::null());
         let barrier = BufferMemoryBarrier2::new(buffer)
             .src_stage(PipelineStage2Flags::COMPUTE_SHADER)
             .dst_stage(PipelineStage2Flags::VERTEX_SHADER)
@@ -1207,18 +1207,18 @@ mod tests {
 
     #[test]
     fn test_buffer_memory_barrier2_into_vk() {
-        let buffer = vk::Buffer::null();
+        let buffer = VkBuffer::new(vk::Buffer::null());
         let barrier = BufferMemoryBarrier2::new(buffer)
             .src_stage(PipelineStage2Flags::COMPUTE_SHADER)
             .dst_stage(PipelineStage2Flags::VERTEX_INPUT);
 
         let vk_barrier = barrier.into_vk();
-        assert_eq!(vk_barrier.buffer, buffer);
+        assert_eq!(vk_barrier.buffer, buffer.vk());
     }
 
     #[test]
     fn test_dependency_info_with_buffer_barrier2() {
-        let buffer = vk::Buffer::null();
+        let buffer = VkBuffer::new(vk::Buffer::null());
         let barrier = BufferMemoryBarrier2::new(buffer)
             .src_stage(PipelineStage2Flags::COMPUTE_SHADER)
             .dst_stage(PipelineStage2Flags::VERTEX_SHADER);

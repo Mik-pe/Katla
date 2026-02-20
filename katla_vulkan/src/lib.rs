@@ -242,8 +242,8 @@ impl VulkanRenderer {
         self.storage_descriptor_set.as_ref().map(|ds| ds.set())
     }
 
-    /// Get storage descriptor set as raw vk handle (for internal use).
-    pub fn vk_storage_descriptor(&self) -> Option<vk::DescriptorSet> {
+    /// Get storage descriptor set as raw vk handle (internal use).
+    pub(crate) fn vk_storage_descriptor(&self) -> Option<vk::DescriptorSet> {
         self.storage_descriptor_set.as_ref().map(|ds| ds.vk_set())
     }
 
@@ -392,8 +392,8 @@ impl VulkanRenderer {
         self.ui_textures.as_ref().map(|t| t.set())
     }
 
-    /// Get UI descriptor set as raw vk handle (for internal use).
-    pub fn vk_ui_descriptor_set(&self) -> Option<vk::DescriptorSet> {
+    /// Get UI descriptor set as raw vk handle (internal use).
+    pub(crate) fn vk_ui_descriptor_set(&self) -> Option<vk::DescriptorSet> {
         self.ui_textures.as_ref().map(|t| t.vk_set())
     }
 
@@ -425,7 +425,7 @@ impl VulkanRenderer {
             if let Some(ref mut ui_textures) = self.ui_textures {
                 if let Some(ref viewport_target) = self.viewport_targets.first() {
                     ui_textures
-                        .set_viewport_texture(&self.context, viewport_target.color_image_view);
+                        .set_viewport_texture(&self.context, VkImageView::new(viewport_target.color_image_view));
                 }
             }
         }
@@ -433,33 +433,33 @@ impl VulkanRenderer {
     }
 
     /// Get the viewport color image view (for rendering).
-    pub fn viewport_color_view(&self) -> Option<vk::ImageView> {
-        self.viewport_targets.first().map(|t| t.color_image_view)
+    pub fn viewport_color_view(&self) -> Option<VkImageView> {
+        self.viewport_targets.first().map(|t| VkImageView::new(t.color_image_view))
     }
 
     /// Get the viewport depth image (for rendering).
-    pub fn viewport_depth_image(&self) -> Option<vk::Image> {
-        self.viewport_targets.first().map(|t| t.depth_image)
+    pub fn viewport_depth_image(&self) -> Option<VkImage> {
+        self.viewport_targets.first().map(|t| VkImage::new(t.depth_image))
     }
 
     /// Get the viewport color image (for rendering).
-    pub fn viewport_color_image(&self) -> Option<vk::Image> {
-        self.viewport_targets.first().map(|t| t.color_image)
+    pub fn viewport_color_image(&self) -> Option<VkImage> {
+        self.viewport_targets.first().map(|t| VkImage::new(t.color_image))
     }
 
     /// Get the viewport depth image view (for rendering).
-    pub fn viewport_depth_view(&self) -> Option<vk::ImageView> {
-        self.viewport_targets.first().map(|t| t.depth_image_view)
+    pub fn viewport_depth_view(&self) -> Option<VkImageView> {
+        self.viewport_targets.first().map(|t| VkImageView::new(t.depth_image_view))
     }
 
     /// Get the viewport sampler.
-    pub fn viewport_sampler(&self) -> Option<vk::Sampler> {
-        self.viewport_targets.first().map(|t| t.sampler)
+    pub fn viewport_sampler(&self) -> Option<VkSampler> {
+        self.viewport_targets.first().map(|t| VkSampler::new(t.sampler))
     }
 
     /// Get viewport dimensions.
-    pub fn viewport_extent(&self) -> Option<vk::Extent2D> {
-        self.viewport_targets.first().map(|t| t.extent)
+    pub fn viewport_extent(&self) -> Option<render_graph::types::Extent2D> {
+        self.viewport_targets.first().map(|t| render_graph::types::Extent2D::from(t.extent))
     }
 
     /// Initialize or resize the output render target.
@@ -487,18 +487,18 @@ impl VulkanRenderer {
     }
 
     /// Get the output color image view (for rendering UI).
-    pub fn output_color_view(&self) -> Option<vk::ImageView> {
-        self.output_target.as_ref().map(|t| t.color_image_view)
+    pub fn output_color_view(&self) -> Option<VkImageView> {
+        self.output_target.as_ref().map(|t| VkImageView::new(t.color_image_view))
     }
 
     /// Get the output color image (for present pass blit).
-    pub fn output_color_image(&self) -> Option<vk::Image> {
-        self.output_target.as_ref().map(|t| t.color_image)
+    pub fn output_color_image(&self) -> Option<VkImage> {
+        self.output_target.as_ref().map(|t| VkImage::new(t.color_image))
     }
 
     /// Get output dimensions.
-    pub fn output_extent(&self) -> Option<vk::Extent2D> {
-        self.output_target.as_ref().map(|t| t.extent)
+    pub fn output_extent(&self) -> Option<render_graph::types::Extent2D> {
+        self.output_target.as_ref().map(|t| render_graph::types::Extent2D::from(t.extent))
     }
 
     pub fn destroy(&mut self) {
@@ -1707,7 +1707,7 @@ impl VulkanRenderer {
                                     // Push texture via push descriptors (set 1)
                                     // This allows switching textures during the render pass
                                     if let Some(textures) = ui_textures {
-                                        textures.push_texture(cmd_buf, cmd.texture_id);
+                                        textures.push_texture(VkCommandBuffer::new(cmd_buf), cmd.texture_id);
                                     }
 
                                     // Set scissor for this command
@@ -1753,7 +1753,7 @@ impl VulkanRenderer {
                                 // Push texture via push descriptors (set 1)
                                 // This allows switching textures during the render pass
                                 if let Some(textures) = ui_textures {
-                                    textures.push_texture(cmd_buf, cmd.texture_id);
+                                    textures.push_texture(VkCommandBuffer::new(cmd_buf), cmd.texture_id);
                                 }
 
                                 // Set scissor for this command
@@ -1883,9 +1883,9 @@ impl VulkanRenderer {
                             unsafe {
                                 device_for_present.cmd_blit_image(
                                     cmd_buf,
-                                    src_image,
+                                    src_image.vk(),
                                     vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
-                                    dst_image,
+                                    dst_image.vk(),
                                     vk::ImageLayout::TRANSFER_DST_OPTIMAL,
                                     &[blit_region],
                                     vk::Filter::LINEAR,
@@ -2161,8 +2161,8 @@ impl VulkanRenderer {
         // This ensures present_pass blits to the correct swapchain image
         debug!("render_frame: updating swapchain image");
         graph.update_swapchain_image(
-            self.frame_context.swapchain_images[image_index].vk(),
-            self.frame_context.swapchain_image_views[image_index].vk(),
+            self.frame_context.swapchain_images[image_index],
+            self.frame_context.swapchain_image_views[image_index],
         );
         debug!("render_frame: calling graph.execute");
         graph.execute(
@@ -2403,35 +2403,35 @@ impl Drop for UIBuffers {
 /// UI texture resources for font atlas and fallback.
 pub struct UITextures {
     /// Font atlas texture image.
-    pub font_image: vk::Image,
-    pub font_image_memory: Option<gpu_allocator::vulkan::Allocation>,
-    pub font_image_view: vk::ImageView,
+    font_image: vk::Image,
+    font_image_memory: Option<gpu_allocator::vulkan::Allocation>,
+    font_image_view: vk::ImageView,
     /// White 1x1 texture for solid color elements.
-    pub white_image: vk::Image,
-    pub white_image_memory: Option<gpu_allocator::vulkan::Allocation>,
-    pub white_image_view: vk::ImageView,
+    white_image: vk::Image,
+    white_image_memory: Option<gpu_allocator::vulkan::Allocation>,
+    white_image_view: vk::ImageView,
     /// Sampler for textures.
-    pub sampler: vk::Sampler,
+    sampler: vk::Sampler,
     /// Uniform buffer for UI shaders (screen_size for NDC transform).
-    pub uniform_buffer: vk::Buffer,
-    pub uniform_memory: Option<gpu_allocator::vulkan::Allocation>,
+    uniform_buffer: vk::Buffer,
+    uniform_memory: Option<gpu_allocator::vulkan::Allocation>,
     /// Descriptor set layout for set 0 (static: font atlas, sampler, uniforms).
-    pub descriptor_set_layout: vk::DescriptorSetLayout,
+    descriptor_set_layout: vk::DescriptorSetLayout,
     /// Descriptor set layout for set 1 (push descriptors: dynamic texture).
-    pub push_descriptor_layout: vk::DescriptorSetLayout,
+    push_descriptor_layout: vk::DescriptorSetLayout,
     /// Pipeline layout with both descriptor set layouts.
-    pub pipeline_layout: vk::PipelineLayout,
+    pipeline_layout: vk::PipelineLayout,
     /// Descriptor set 0 with static resources.
-    pub descriptor_set: vk::DescriptorSet,
+    descriptor_set: vk::DescriptorSet,
     /// Descriptor pool for set 0.
-    pub descriptor_pool: vk::DescriptorPool,
+    descriptor_pool: vk::DescriptorPool,
     /// Font atlas dimensions.
     pub atlas_width: u32,
     pub atlas_height: u32,
     /// Viewport texture image view (used as default for push descriptors).
-    pub viewport_image_view: Option<vk::ImageView>,
+    viewport_image_view: Option<vk::ImageView>,
     /// Model preview texture image view (for 3D model preview panel).
-    pub model_preview_image_view: Option<vk::ImageView>,
+    model_preview_image_view: Option<vk::ImageView>,
     /// Registered thumbnail textures (texture_id -> image_view).
     thumbnail_textures: std::collections::HashMap<u64, vk::ImageView>,
     /// Thumbnail texture allocations for cleanup (texture_id -> (image, allocation)).
@@ -2446,8 +2446,8 @@ impl UITextures {
         VkDescriptorSet::new(self.descriptor_set)
     }
 
-    /// Get the raw Vulkan descriptor set handle (for internal use).
-    pub fn vk_set(&self) -> vk::DescriptorSet {
+    /// Get the raw Vulkan descriptor set handle (internal use).
+    pub(crate) fn vk_set(&self) -> vk::DescriptorSet {
         self.descriptor_set
     }
 
@@ -2993,15 +2993,15 @@ impl UITextures {
 
     /// Update viewport texture binding in the descriptor set.
     /// Call this when the viewport render target is created or resized.
-    pub fn set_viewport_texture(&mut self, _context: &VulkanContext, image_view: vk::ImageView) {
+    pub fn set_viewport_texture(&mut self, _context: &VulkanContext, image_view: VkImageView) {
         // Just store the view - we'll push it via push descriptors during rendering
-        self.viewport_image_view = Some(image_view);
+        self.viewport_image_view = Some(image_view.vk());
     }
 
     /// Set the model preview texture for the 3D preview panel.
     /// Call this when the model preview render target is created or updated.
-    pub fn set_model_preview_texture(&mut self, image_view: vk::ImageView) {
-        self.model_preview_image_view = Some(image_view);
+    pub fn set_model_preview_texture(&mut self, image_view: VkImageView) {
+        self.model_preview_image_view = Some(image_view.vk());
     }
 
     /// Clear the model preview texture (when preview panel is closed).
@@ -3017,7 +3017,7 @@ impl UITextures {
         width: u32,
         height: u32,
         pixels: &[u8],
-    ) -> Result<vk::ImageView, vk::Result> {
+    ) -> Result<VkImageView, vk::Result> {
         unsafe {
             // Create the texture image
             let (image, memory, image_view) = Self::create_texture(&self.context, width, height, pixels)?;
@@ -3027,7 +3027,7 @@ impl UITextures {
             self.thumbnail_allocations.insert(texture_id, (image, memory));
 
             log::debug!("Registered UI thumbnail texture {} ({}x{})", texture_id, width, height);
-            Ok(image_view)
+            Ok(VkImageView::new(image_view))
         }
     }
 
@@ -3037,7 +3037,8 @@ impl UITextures {
     /// # Arguments
     /// * `cmd_buf` - Command buffer currently being recorded
     /// * `texture_id` - Texture ID (2 = viewport, 100+ = thumbnail)
-    pub fn push_texture(&self, cmd_buf: vk::CommandBuffer, texture_id: u64) {
+    pub fn push_texture(&self, cmd_buf: VkCommandBuffer, texture_id: u64) {
+        let cmd = cmd_buf.vk();
         let image_view = self.get_texture_view(texture_id);
 
         unsafe {
@@ -3059,7 +3060,7 @@ impl UITextures {
             let writes = [write];
 
             self.context.push_descriptor_loader.cmd_push_descriptor_set(
-                cmd_buf,
+                cmd,
                 vk::PipelineBindPoint::GRAPHICS,
                 self.pipeline_layout,
                 1, // Set 1
@@ -3165,17 +3166,18 @@ impl Drop for UITextures {
 /// to a texture that can be sampled by the UI viewport panel.
 pub struct ViewportRenderTarget {
     /// Color attachment image.
-    pub color_image: vk::Image,
-    pub color_memory: Option<gpu_allocator::vulkan::Allocation>,
-    pub color_image_view: vk::ImageView,
+    color_image: vk::Image,
+    color_memory: Option<gpu_allocator::vulkan::Allocation>,
+    /// Color attachment image view (exposed for render graph).
+    pub(crate) color_image_view: vk::ImageView,
     /// Depth attachment image.
-    pub depth_image: vk::Image,
-    pub depth_memory: Option<gpu_allocator::vulkan::Allocation>,
-    pub depth_image_view: vk::ImageView,
+    depth_image: vk::Image,
+    depth_memory: Option<gpu_allocator::vulkan::Allocation>,
+    depth_image_view: vk::ImageView,
     /// Render extent.
     pub extent: vk::Extent2D,
     /// Sampler for sampling the color texture.
-    pub sampler: vk::Sampler,
+    sampler: vk::Sampler,
     /// Context for cleanup.
     context: Rc<VulkanContext>,
 }
@@ -3380,9 +3382,9 @@ impl Drop for ViewportRenderTarget {
 /// This decouples rendering from presentation for a cleaner architecture.
 pub struct OutputRenderTarget {
     /// Color attachment image.
-    pub color_image: vk::Image,
-    pub color_memory: Option<gpu_allocator::vulkan::Allocation>,
-    pub color_image_view: vk::ImageView,
+    pub(crate) color_image: vk::Image,
+    color_memory: Option<gpu_allocator::vulkan::Allocation>,
+    pub(crate) color_image_view: vk::ImageView,
     /// Render extent (matches swapchain size).
     pub extent: vk::Extent2D,
     /// Context for cleanup.
