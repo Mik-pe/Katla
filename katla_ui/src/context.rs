@@ -64,6 +64,8 @@ pub struct UiContext {
     popup_bounds: Option<Rect2D>,
     /// Whether a popup was opened this frame (prevents immediate close).
     popup_opened_this_frame: bool,
+    /// Whether a popup consumed the click this frame (prevents click-through).
+    popup_consume_click: bool,
     /// Current Z-index for rendering (higher = on top).
     z_index: u32,
     /// Z-index stack for nested containers.
@@ -136,6 +138,7 @@ impl UiContext {
             popup_id: None,
             popup_bounds: None,
             popup_opened_this_frame: false,
+            popup_consume_click: false,
             z_index: z_index::DEFAULT,
             z_stack: Vec::new(),
             dropdown_content_height: 0.0,
@@ -195,6 +198,9 @@ impl UiContext {
             self.popup_bounds = None;
         }
 
+        // Reset popup click consumption flag from previous frame
+        self.popup_consume_click = false;
+
         // Check for click outside popup to close it
         // NOTE: We check BEFORE resetting popup_opened_this_frame so that
         // popups opened in the previous frame don't get closed immediately
@@ -210,6 +216,8 @@ impl UiContext {
                     }
                     self.popup_id = None;
                     self.popup_bounds = None;
+                    // CONSUME the click to prevent click-through to underlying widgets
+                    self.popup_consume_click = true;
                 }
             }
         }
@@ -319,6 +327,38 @@ impl UiContext {
         self.popup_bounds.is_some()
     }
 
+    /// Pre-register popup bounds BEFORE rendering regular widgets.
+    ///
+    /// Call this at the START of your UI rendering if you know a popup will be open.
+    /// This ensures hover/click blocking works on the SAME frame the popup opens.
+    pub fn preregister_popup(&mut self, bounds: Rect2D) {
+        self.popup_bounds = Some(bounds);
+    }
+
+    /// Open a popup programmatically by ID.
+    ///
+    /// Use this for modal dialogs, alerts, or custom popups that aren't
+    /// triggered by clicking a dropdown button or right-clicking.
+    pub fn open_popup(&mut self, id: &str) {
+        let popup_id = self.generate_id(id);
+        self.popup_id = Some(popup_id);
+        self.popup_opened_this_frame = true;
+        self.active_id = None;
+        self.input.focused_id = None;
+    }
+
+    /// Open a popup with known bounds (preregisters for same-frame blocking).
+    pub fn open_popup_with_bounds(&mut self, id: &str, bounds: Rect2D) {
+        self.open_popup(id);
+        self.popup_bounds = Some(bounds);
+    }
+
+    /// Check if a specific popup is currently open.
+    pub fn is_popup_open_with_id(&self, id: &str) -> bool {
+        let popup_id = self.generate_id(id);
+        self.popup_id == Some(popup_id)
+    }
+
     /// Scale a logical pixel value to physical pixels.
     #[inline]
     pub fn scale(&self, logical: f32) -> f32 {
@@ -330,7 +370,7 @@ impl UiContext {
     // -------------------------------------------------------------------------
 
     /// Generate a unique ID for a widget.
-    fn generate_id(&mut self, label: &str) -> WidgetId {
+    fn generate_id(&self, label: &str) -> WidgetId {
         let base = if let Some(&parent) = self.id_stack.last() {
             parent
         } else {
@@ -800,6 +840,10 @@ impl UiContext {
     /// This allows clicking outside popups to work correctly while still
     /// blocking hover for widgets covered by the popup.
     pub fn is_hovered(&self, bounds: Rect2D) -> bool {
+        // Block hover if a popup consumed the click this frame (prevents click-through)
+        if self.popup_consume_click {
+            return false;
+        }
         // If a popup is open and cursor is inside popup bounds,
         // block hover for widgets at lower Z levels
         if let Some(popup_bounds) = self.popup_bounds {
@@ -1771,6 +1815,271 @@ impl UiContext {
         self.pop_z_index();
     }
 
+    // -------------------------------------------------------------------------
+    // Modal Dialogs
+    // -------------------------------------------------------------------------
+
+    /// Begin a modal dialog (centered overlay with dark background).
+    ///
+    /// Unlike regular popups, modal dialogs:
+    /// - Have a semi-transparent background overlay
+    /// - Don't close when clicking outside
+    /// - Use TOOLTIP z-index (300) to appear above all other UI
+    ///
+    /// Returns true if the dialog is open and should have contents drawn.
+    /// Call `end_modal_dialog()` after adding contents.
+    ///
+    /// Use `open_popup("dialog_id")` or `open_popup_with_bounds()` to show the dialog.
+    pub fn begin_modal_dialog(&mut self, id: &str, width: f32, height: f32) -> bool {
+        let popup_id = self.generate_id(id);
+
+        let is_open = self.popup_id == Some(popup_id);
+
+        if is_open {
+            self.push_z_index(z_index::TOOLTIP);
+
+            // Dark background overlay
+            let screen_bounds = Rect2D::from_size(self.screen_size);
+            self.draw_rect(screen_bounds, Color::new(0.0, 0.0, 0.0, 0.5));
+
+            // Centered dialog
+            let dialog_pos = Vec2::new(
+                (self.screen_size.x() - width) * 0.5,
+                (self.screen_size.y() - height) * 0.5,
+            );
+            let dialog_bounds = Rect2D::from_origin_size(dialog_pos, Vec2::new(width, height));
+
+            // Shadow
+            let shadow_bounds = Rect2D::new(
+                dialog_bounds.min + Vec2::new(4.0, 4.0),
+                dialog_bounds.max + Vec2::new(4.0, 4.0),
+            );
+            self.draw_rect(shadow_bounds, Color::new(0.0, 0.0, 0.0, 0.5));
+
+            // Background
+            self.draw_rect(dialog_bounds, self.style.popup_bg);
+            self.draw_rect_border(dialog_bounds, Color::TRANSPARENT, self.style.popup_border, 1.0);
+
+            self.popup_bounds = Some(dialog_bounds);
+            self.push_clip_absolute(dialog_bounds);
+            self.push_id(id);
+
+            return true;
+        }
+
+        false
+    }
+
+    /// Get the bounds of the current modal dialog.
+    pub fn modal_dialog_bounds(&self) -> Rect2D {
+        self.popup_bounds.unwrap_or_else(|| Rect2D::from_size(Vec2::new(0.0, 0.0)))
+    }
+
+    /// Get the bounds of the current popup (for context menus, etc).
+    pub fn get_popup_bounds(&self) -> Rect2D {
+        self.popup_bounds.unwrap_or_else(|| Rect2D::from_size(Vec2::new(0.0, 0.0)))
+    }
+
+    /// End a modal dialog container.
+    pub fn end_modal_dialog(&mut self) {
+        self.pop_clip();
+        self.pop_id();
+        self.pop_z_index();
+    }
+
+    // -------------------------------------------------------------------------
+    // Menu Item Helpers (for context menus and dropdowns)
+    // -------------------------------------------------------------------------
+
+    /// Draw a popup menu item with icon, label, and optional shortcut.
+    ///
+    /// Returns true if the item was clicked.
+    /// Use this inside a popup/context menu after calling begin_popup() or begin_context_menu().
+    ///
+    /// # Arguments
+    /// - `label`: Display text
+    /// - `icon`: Icon character (ForkAwesome)
+    /// - `enabled`: Whether the item is clickable
+    /// - `shortcut`: Optional keyboard shortcut hint (e.g., "Ctrl+S")
+    /// - `bounds`: Item bounds (position and size)
+    pub fn popup_menu_item(&mut self, label: &str, icon: char, enabled: bool, shortcut: &str, bounds: Rect2D) -> bool {
+        let hovered = self.is_hovered(bounds);
+
+        // Hover background
+        if enabled && hovered {
+            self.draw_rect(bounds, self.style.menu_hovered);
+        }
+
+        let text_size = self.scaled_font_size(FontSize::Small);
+        let text_y = bounds.min.y() + 6.0;
+
+        // Colors: enabled uses text_color, disabled uses text_disabled
+        let icon_color = if enabled { self.style.text_color } else { self.style.text_disabled };
+        let label_color = if enabled { self.style.text_color } else { self.style.text_disabled };
+
+        // Icon
+        self.draw_icon_aligned(
+            icon,
+            Vec2::new(bounds.min.x() + 8.0, text_y),
+            12.0,
+            icon_color,
+            FontId::DEFAULT,
+        );
+
+        // Label
+        self.draw_text(
+            label,
+            Vec2::new(bounds.min.x() + 28.0, text_y),
+            label_color,
+            text_size,
+        );
+
+        // Shortcut (right-aligned)
+        if !shortcut.is_empty() {
+            let shortcut_size = self.measure_text(shortcut, text_size);
+            self.draw_text(
+                shortcut,
+                Vec2::new(bounds.max.x() - shortcut_size.x() - 8.0, text_y),
+                self.style.text_disabled,
+                text_size,
+            );
+        }
+
+        // Click detection
+        enabled && hovered && self.input.mouse_clicked(crate::input::mouse_button::LEFT)
+    }
+
+    /// Draw a menu separator line.
+    ///
+    /// Use this inside a popup/context menu to separate groups of items.
+    pub fn menu_separator(&mut self, bounds: Rect2D) {
+        self.draw_line(
+            Vec2::new(bounds.min.x() + 8.0, bounds.center().y()),
+            Vec2::new(bounds.max.x() - 8.0, bounds.center().y()),
+            self.style.separator,
+            1.0,
+        );
+    }
+
+    /// Draw a context menu from a list of items.
+    ///
+    /// This is a convenience function that handles the entire context menu rendering:
+    /// - Shadow and background
+    /// - Item iteration with consistent styling
+    /// - Click and hover handling
+    /// - Click-outside and Escape-to-close
+    ///
+    /// Returns the label of the clicked item, if any.
+    ///
+    /// # Arguments
+    /// - `pos`: Menu position (top-left corner)
+    /// - `items`: Slice of (label, icon, enabled, shortcut) tuples
+    ///
+    /// # Example
+    /// ```ignore
+    /// let items = [
+    ///     ("Open", ForkAwesome::FOLDER_OPEN, true, "Enter"),
+    ///     ("Rename", ForkAwesome::PENCIL, true, "F2"),
+    ///     ("---", '\0', false, ""), // Separator
+    ///     ("Delete", ForkAwesome::TRASH, true, "Del"),
+    /// ];
+    /// if let Some(action) = ui.context_menu(pos, &items) {
+    ///     match action {
+    ///         "Open" => { /* ... */ }
+    ///         "Delete" => { /* ... */ }
+    ///         _ => {}
+    ///     }
+    /// }
+    /// ```
+    pub fn context_menu(&mut self, pos: Vec2, items: &[(&str, char, bool, &str)]) -> Option<String> {
+        let item_height = 24.0;
+        let separator_height = 8.0;
+        let padding = 4.0;
+
+        // Count items and separators
+        let item_count = items.iter().filter(|(l, _, _, _)| *l != "---").count();
+        let separator_count = items.iter().filter(|(l, _, _, _)| *l == "---").count();
+
+        // Calculate menu dimensions
+        let menu_width = self.style.menu_min_width.max(150.0);
+        let menu_height = (item_count as f32 * item_height) + (separator_count as f32 * separator_height) + padding;
+
+        // Clamp to screen bounds
+        let clamped_x = pos.x().min(self.screen_size.x() - menu_width - 10.0).max(10.0);
+        let clamped_y = pos.y().min(self.screen_size.y() - menu_height - 10.0).max(10.0);
+        let menu_pos = Vec2::new(clamped_x, clamped_y);
+        let menu_bounds = Rect2D::from_origin_size(menu_pos, Vec2::new(menu_width, menu_height));
+
+        // Push z-index and draw background
+        self.push_z_index(z_index::POPUP);
+
+        // Shadow
+        let shadow_bounds = Rect2D::new(
+            menu_bounds.min + Vec2::new(3.0, 3.0),
+            menu_bounds.max + Vec2::new(3.0, 3.0),
+        );
+        self.draw_rect(shadow_bounds, Color::new(0.0, 0.0, 0.0, 0.5));
+
+        // Background
+        self.draw_rect(menu_bounds, self.style.popup_bg);
+        self.draw_rect_border(menu_bounds, Color::TRANSPARENT, self.style.popup_border, 1.0);
+
+        // Store bounds for input blocking
+        let old_popup_bounds = self.popup_bounds;
+        self.popup_bounds = Some(menu_bounds);
+
+        // Render items
+        let mut clicked_action: Option<String> = None;
+        let mut current_y = menu_pos.y() + 2.0;
+
+        for (label, icon, enabled, shortcut) in items.iter() {
+            if *label == "---" {
+                // Separator
+                let sep_bounds = Rect2D::from_origin_size(
+                    Vec2::new(menu_pos.x(), current_y),
+                    Vec2::new(menu_width, separator_height),
+                );
+                self.menu_separator(sep_bounds);
+                current_y += separator_height;
+            } else {
+                // Regular item
+                let item_bounds = Rect2D::from_origin_size(
+                    Vec2::new(menu_pos.x(), current_y),
+                    Vec2::new(menu_width, item_height),
+                );
+
+                if self.popup_menu_item(label, *icon, *enabled, shortcut, item_bounds) {
+                    clicked_action = Some(label.to_string());
+                }
+                current_y += item_height;
+            }
+        }
+
+        // Pop z-index
+        self.pop_z_index();
+
+        // Block input for this popup
+        self.block_input_for_popup(menu_bounds);
+
+        // Handle click-outside-to-close
+        if self.input.mouse_clicked(crate::input::mouse_button::LEFT) && !menu_bounds.contains(self.input.mouse_pos) {
+            // Restore old bounds and close
+            self.popup_bounds = old_popup_bounds;
+            return clicked_action;
+        }
+
+        // Handle Escape-to-close
+        if self.input.key_pressed(crate::input::KeyCode::Escape) {
+            self.popup_bounds = old_popup_bounds;
+            return None;
+        }
+
+        // Restore old popup bounds
+        self.popup_bounds = old_popup_bounds;
+
+        clicked_action
+    }
+
     /// Begin a menu bar item (dropdown without caret icon).
     ///
     /// Like `begin_dropdown` but styled for top-level menu bar items:
@@ -2342,6 +2651,23 @@ mod tests {
         let draw_list = ctx.end();
         assert_eq!(draw_list.vertex_count(), 4);
         assert_eq!(draw_list.index_count(), 6);
+    }
+
+    #[test]
+    fn test_id_generation() {
+        let mut ctx = UiContext::new();
+        ctx.begin(Vec2::new(800.0, 600.0), 1.0);
+
+        let id1 = ctx.generate_id("test");
+        let id2 = ctx.generate_id("test");
+        let id3 = ctx.generate_id("other");
+
+        // Same label produces same ID (hash-based, deterministic)
+        assert_eq!(id1, id2);
+        // Different labels produce different IDs
+        assert_ne!(id1, id3);
+
+        ctx.end();
     }
 
     /// Test that text character positions are stable when panel moves within same subpixel bin.

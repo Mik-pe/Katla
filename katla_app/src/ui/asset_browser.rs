@@ -155,8 +155,6 @@ pub struct AssetBrowserState {
     pub search_focused: bool,
     /// Context menu is open
     pub context_menu_open: bool,
-    /// Context menu position
-    context_menu_pos: Vec2,
     /// Context menu for asset index (None = empty space context menu)
     context_menu_asset: Option<usize>,
     /// Navigation history (for back button)
@@ -238,7 +236,6 @@ impl AssetBrowserState {
             search_filter: String::new(),
             search_focused: false,
             context_menu_open: false,
-            context_menu_pos: Vec2::new(0.0, 0.0),
             context_menu_asset: None,
             nav_history,
             nav_history_pos: 0,
@@ -463,13 +460,6 @@ impl AssetBrowserState {
         (content_height - visible_height).max(0.0)
     }
 
-    /// Open context menu for an asset.
-    pub fn open_context_menu(&mut self, asset_index: usize, pos: Vec2) {
-        self.context_menu_open = true;
-        self.context_menu_pos = pos;
-        self.context_menu_asset = Some(asset_index);
-    }
-
     /// Close context menu.
     pub fn close_context_menu(&mut self) {
         self.context_menu_open = false;
@@ -665,6 +655,20 @@ pub fn build_asset_browser(
     loader: &mut crate::util::BackgroundLoader,
     thumbnail_texture_ids: &HashMap<PathBuf, TextureId>,
 ) {
+    // Open confirmation dialog popup if needed
+    // Use open_popup_with_bounds to preregister bounds for same-frame hover blocking
+    if state.confirm_dialog_open && !ui.is_popup_open_with_id("confirm_dialog") {
+        let screen_size = ui.screen_size();
+        let dialog_width = 320.0;
+        let dialog_height = 120.0;
+        let dialog_pos = Vec2::new(
+            (screen_size.x() - dialog_width) * 0.5,
+            (screen_size.y() - dialog_height) * 0.5,
+        );
+        let dialog_bounds = Rect2D::from_origin_size(dialog_pos, Vec2::new(dialog_width, dialog_height));
+        ui.open_popup_with_bounds("confirm_dialog", dialog_bounds);
+    }
+
     let is_focused = *focused_panel == FocusedPanel::AssetBrowser;
     // Auto-rescan if needed
     if state.needs_rescan() {
@@ -1584,20 +1588,9 @@ pub fn build_asset_browser(
 
     // Process right-click to open context menu
     if let Some(index) = right_clicked_index {
-        state.open_context_menu(index, ui.input.mouse_pos);
-    }
-
-    // Close context menu on click outside
-    if state.context_menu_open {
-        if ui.input.mouse_clicked(katla_ui::input::mouse_button::LEFT) {
-            let menu_bounds = Rect2D::from_origin_size(
-                state.context_menu_pos,
-                Vec2::new(160.0, 120.0),
-            );
-            if !ui.is_hovered(menu_bounds) {
-                state.close_context_menu();
-            }
-        }
+        state.context_menu_asset = Some(index);
+        state.context_menu_open = true;
+        ui.open_context_menu("asset_context");
     }
 
     // Empty state
@@ -1623,8 +1616,7 @@ pub fn build_asset_browser(
     ui.pop_clip();
 
     // === CONTEXT MENU ===
-    // Also handle empty space context menu (for creating folders, etc.)
-    let mut empty_space_context_menu = false;
+    // Handle empty space context menu (for creating folders, etc.)
     if !ui.has_open_popup() && ui.is_hovered(content_bounds) {
         // Check if right-click was on empty space (not on any asset)
         let mut clicked_on_asset = false;
@@ -1641,186 +1633,102 @@ pub fn build_asset_browser(
         }
 
         if !clicked_on_asset && ui.input.mouse_clicked(katla_ui::input::mouse_button::RIGHT) {
-            empty_space_context_menu = true;
-            state.context_menu_pos = ui.input.mouse_pos;
-            state.context_menu_asset = None; // None = empty space menu
+            state.context_menu_asset = None;
             state.context_menu_open = true;
+            ui.open_context_menu("asset_context");
         }
     }
 
-    // === ASSET CONTEXT MENU (or empty space menu) ===
-    // Collect context menu data first to avoid borrow conflicts
-    let context_menu_data = if state.context_menu_open {
-        if let Some(asset_idx) = state.context_menu_asset {
-            // Asset context menu
-            state.assets.get(asset_idx).map(|asset| {
-                (
-                    Some(asset.asset_type),
-                    asset.name.clone(),
-                    asset.path.clone(),
-                    state.context_menu_pos,
-                    asset_idx,
-                )
-            })
-        } else {
-            // Empty space context menu
-            Some((None, String::new(), state.current_path.clone(), state.context_menu_pos, 0))
-        }
-    } else {
-        None
-    };
+    // === RENDER CONTEXT MENU using popup system ===
+    let asset_context_menu_open = ui.begin_context_menu("asset_context");
 
-    if let Some((asset_type, asset_name, asset_path, menu_pos, asset_idx)) = context_menu_data {
+    // Clean up state if menu was closed (click outside or Escape)
+    if state.context_menu_open && !asset_context_menu_open {
+        state.context_menu_open = false;
+        state.context_menu_asset = None;
+    }
+
+    if asset_context_menu_open {
+        // Get context data
+        let (asset_type, asset_name, asset_path, asset_idx) = if let Some(asset_idx) = state.context_menu_asset {
+            if let Some(asset) = state.assets.get(asset_idx) {
+                (Some(asset.asset_type), asset.name.clone(), asset.path.clone(), asset_idx)
+            } else {
+                ui.end_context_menu();
+                state.context_menu_open = false;
+                return;
+            }
+        } else {
+            (None, String::new(), state.current_path.clone(), 0)
+        };
+
         let menu_width = 180.0;
         let item_height = 24.0;
+        let menu_pos = ui.get_popup_bounds().min;
 
-        // Different menu items based on whether it's an asset or empty space
-        // (label, icon, enabled, shortcut hint)
-        let menu_items: Vec<(&str, char, bool, &str)> = if let Some(at) = asset_type {
-            // Asset context menu
+        // Render items based on context
+        let mut current_y = menu_pos.y() + 2.0;
+        let mut clicked_action: Option<String> = None;
+
+        // Build items based on asset type
+        let items: Vec<(&str, char, bool, &str)> = if let Some(at) = asset_type {
             if at == AssetType::Folder {
                 vec![
                     ("Open", ForkAwesome::FOLDER_OPEN, true, "Enter"),
                     ("Rename", ForkAwesome::PENCIL, true, "F2"),
-                    ("separator", '\0', false, ""),
+                    ("---", '\0', false, ""),
                     ("Copy Path", ForkAwesome::COPY, true, ""),
                     ("Show in Explorer", ForkAwesome::EXTERNAL_LINK, true, ""),
-                    ("separator", '\0', false, ""),
+                    ("---", '\0', false, ""),
                     ("Delete", ForkAwesome::TRASH, true, "Del"),
                 ]
             } else {
                 vec![
                     ("Open", ForkAwesome::FILE, true, "Enter"),
                     ("Rename", ForkAwesome::PENCIL, true, "F2"),
-                    ("separator", '\0', false, ""),
+                    ("---", '\0', false, ""),
                     ("Copy Path", ForkAwesome::COPY, true, ""),
                     ("Show in Explorer", ForkAwesome::EXTERNAL_LINK, true, ""),
-                    ("separator", '\0', false, ""),
+                    ("---", '\0', false, ""),
                     ("Delete", ForkAwesome::TRASH, true, "Del"),
                 ]
             }
         } else {
-            // Empty space context menu
             vec![
                 ("New Folder", ForkAwesome::FOLDER, true, ""),
-                ("separator", '\0', false, ""),
+                ("---", '\0', false, ""),
                 ("Refresh", ForkAwesome::REFRESH, true, "F5"),
-                ("separator", '\0', false, ""),
+                ("---", '\0', false, ""),
                 ("Show in Explorer", ForkAwesome::EXTERNAL_LINK, true, ""),
             ]
         };
 
-        // Filter out separators for height calculation
-        let visible_items = menu_items.iter().filter(|(l, _, _, _)| *l != "separator").count();
-        let separator_count = menu_items.iter().filter(|(l, _, _, _)| *l == "separator").count();
-        // Small padding (2px top + 2px bottom) for visual breathing room
-        let menu_height = (visible_items as f32 * item_height) + (separator_count as f32 * 4.0) + 4.0;
-
-        // Clamp menu position to screen
-        let menu_pos = Vec2::new(
-            menu_pos.x().min(bounds.max.x() - menu_width - 10.0).max(10.0),
-            menu_pos.y().min(bounds.max.y() - menu_height - 10.0).max(10.0),
-        );
-        let menu_bounds = Rect2D::from_origin_size(menu_pos, Vec2::new(menu_width, menu_height));
-
-        // Push higher Z-index for menu (use TOOLTIP level to be above all panel content)
-        ui.push_z_index(katla_ui::z_index::TOOLTIP);
-
-        // Shadow
-        let shadow_bounds = Rect2D::new(
-            menu_bounds.min + Vec2::new(3.0, 3.0),
-            menu_bounds.max + Vec2::new(3.0, 3.0),
-        );
-        ui.draw_rect(shadow_bounds, Color::new(0.0, 0.0, 0.0, 0.5));
-
-        // Background
-        ui.draw_rect(menu_bounds, theme.popup_bg);
-        ui.draw_rect_border(menu_bounds, theme.popup_bg, theme.popup_border, 1.0);
-
-        // Track which action was clicked
-        let mut clicked_action: Option<&str> = None;
-
-        // Menu items (start with 2px top padding)
-        let mut current_y = menu_pos.y() + 2.0;
-        for (label, icon, enabled, shortcut) in menu_items.iter() {
-            if *label == "separator" {
-                // Draw separator line
-                ui.draw_line(
-                    Vec2::new(menu_pos.x() + 8.0, current_y + 2.0),
-                    Vec2::new(menu_pos.x() + menu_width - 8.0, current_y + 2.0),
-                    theme.separator,
-                    1.0,
+        for (label, icon, enabled, shortcut) in &items {
+            if *label == "---" {
+                // Draw separator
+                let sep_bounds = Rect2D::from_origin_size(
+                    Vec2::new(menu_pos.x(), current_y),
+                    Vec2::new(menu_width, 8.0),
                 );
+                ui.menu_separator(sep_bounds);
                 current_y += 8.0;
                 continue;
             }
-
             let item_bounds = Rect2D::from_origin_size(
                 Vec2::new(menu_pos.x(), current_y),
                 Vec2::new(menu_width, item_height),
             );
-            let item_hovered = ui.is_hovered(item_bounds);
-
-            if *enabled && item_hovered {
-                ui.draw_rect(item_bounds, theme.selection_hover);
+            if ui.popup_menu_item(label, *icon, *enabled, shortcut, item_bounds) {
+                clicked_action = Some(label.to_string());
             }
-
-            // Text position (baseline)
-            let text_y = current_y + 6.0;
-            let text_size = ui.scaled_font_size(katla_ui::FontSize::Small);
-
-            // Icon - use same Y as text so they align
-            ui.draw_icon_aligned(
-                *icon,
-                Vec2::new(menu_pos.x() + 8.0, text_y),
-                12.0,
-                if *enabled {
-                    if item_hovered { theme.text_primary } else { theme.text_secondary }
-                } else {
-                    theme.text_muted
-                },
-                katla_ui::FontId::DEFAULT,
-            );
-
-            // Label
-            ui.draw_text(
-                label,
-                Vec2::new(menu_pos.x() + 28.0, text_y),
-                if *enabled {
-                    if item_hovered { theme.text_primary } else { theme.text_secondary }
-                } else {
-                    theme.text_muted
-                },
-                text_size,
-            );
-
-            // Shortcut hint (right-aligned)
-            if !shortcut.is_empty() {
-                let shortcut_size = ui.measure_text(shortcut, text_size);
-                ui.draw_text(
-                    shortcut,
-                    Vec2::new(menu_pos.x() + menu_width - shortcut_size.x() - 8.0, text_y),
-                    theme.text_muted,
-                    text_size,
-                );
-            }
-
-            // Track click
-            if *enabled && item_hovered && ui.input.mouse_clicked(katla_ui::input::mouse_button::LEFT) {
-                clicked_action = Some(*label);
-            }
-
             current_y += item_height;
         }
 
-        ui.pop_z_index();
+        ui.end_context_menu();
 
-        // Block input for popup (captures mouse/keyboard, prevents underlying widgets from responding)
-        ui.block_input_for_popup(menu_bounds);
-
-        // Process action after rendering (to avoid borrow conflicts)
+        // Process action
         if let Some(action) = clicked_action {
-            match action {
+            match action.as_str() {
                 "Open" => {
                     if asset_type == Some(AssetType::Folder) {
                         if asset_name == ".." {
@@ -1842,7 +1750,6 @@ pub fn build_asset_browser(
                     state.pending_actions.push(AssetAction::ShowInExplorer(asset_path));
                 }
                 "Delete" => {
-                    // Show confirmation dialog instead of deleting immediately
                     let is_folder = asset_path.is_dir();
                     let name = asset_path.file_name()
                         .map(|n| n.to_string_lossy().to_string())
@@ -1863,35 +1770,15 @@ pub fn build_asset_browser(
                 }
                 _ => {}
             }
-            state.close_context_menu();
+            state.context_menu_open = false;
         }
     }
 
     // === CONFIRMATION DIALOG ===
-    if state.confirm_dialog_open {
-        ui.push_z_index(300); // Higher than context menu
-
-        // Darken background
-        let screen_size = ui.screen_size();
-        let screen_bounds = Rect2D::new(Vec2::new(0.0, 0.0), screen_size);
-        ui.draw_rect(screen_bounds, Color::new(0.0, 0.0, 0.0, 0.5));
-
-        // Dialog box
-        let dialog_width = 320.0;
-        let dialog_height = 120.0;
-        let dialog_pos = Vec2::new(
-            (screen_size.x() - dialog_width) * 0.5,
-            (screen_size.y() - dialog_height) * 0.5,
-        );
-        let dialog_bounds = Rect2D::from_origin_size(dialog_pos, Vec2::new(dialog_width, dialog_height));
-
-        // Shadow
-        let shadow_bounds = Rect2D::new(dialog_bounds.min + Vec2::new(4.0, 4.0), dialog_bounds.max + Vec2::new(4.0, 4.0));
-        ui.draw_rect(shadow_bounds, Color::new(0.0, 0.0, 0.0, 0.5));
-
-        // Background
-        ui.draw_rect(dialog_bounds, theme.popup_bg);
-        ui.draw_rect_border(dialog_bounds, theme.popup_bg, theme.popup_border, 1.0);
+    if ui.begin_modal_dialog("confirm_dialog", 320.0, 120.0) {
+        let dialog_bounds = ui.modal_dialog_bounds();
+        let dialog_pos = dialog_bounds.min;
+        let dialog_width = dialog_bounds.width();
 
         // Title bar
         let title_bounds = Rect2D::from_origin_size(dialog_pos, Vec2::new(dialog_width, 28.0));
@@ -1905,7 +1792,7 @@ pub fn build_asset_browser(
 
         // Message
         ui.draw_text(
-            &state.confirm_dialog_message.clone(),
+            &state.confirm_dialog_message,
             Vec2::new(dialog_pos.x() + 10.0, dialog_pos.y() + 40.0),
             theme.text_secondary,
             ui.scaled_font_size(katla_ui::FontSize::Small),
@@ -1914,7 +1801,7 @@ pub fn build_asset_browser(
         // Buttons
         let btn_width = 80.0;
         let btn_height = 28.0;
-        let btn_y = dialog_pos.y() + dialog_height - btn_height - 12.0;
+        let btn_y = dialog_pos.y() + 120.0 - btn_height - 12.0;
 
         // No button
         let no_btn_bounds = Rect2D::from_origin_size(
@@ -1952,12 +1839,11 @@ pub fn build_asset_browser(
             ui.scaled_font_size(katla_ui::FontSize::Small),
         );
 
-        ui.pop_z_index();
-
         // Handle button clicks
         if no_hovered && ui.input.mouse_clicked(katla_ui::input::mouse_button::LEFT) {
             state.confirm_dialog_open = false;
             state.confirm_pending_action = None;
+            ui.close_current_popup();
         }
         if yes_hovered && ui.input.mouse_clicked(katla_ui::input::mouse_button::LEFT) {
             // Execute the pending action
@@ -1965,6 +1851,7 @@ pub fn build_asset_browser(
                 state.pending_actions.push(action);
             }
             state.confirm_dialog_open = false;
+            ui.close_current_popup();
         }
 
         // Capture keyboard to prevent background actions
@@ -1974,7 +1861,10 @@ pub fn build_asset_browser(
         if ui.input.key_pressed(katla_ui::input::KeyCode::Escape) {
             state.confirm_dialog_open = false;
             state.confirm_pending_action = None;
+            ui.close_current_popup();
         }
+
+        ui.end_modal_dialog();
     }
 
     // === KEYBOARD NAVIGATION ===
