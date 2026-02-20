@@ -327,7 +327,7 @@ impl UiContext {
     /// Widgets should check this before processing right-clicks to avoid
     /// opening new popups when one is already open.
     pub fn has_open_popup(&self) -> bool {
-        self.popup_bounds.is_some()
+        self.popup_id.is_some()
     }
 
     /// Pre-register popup bounds BEFORE rendering regular widgets.
