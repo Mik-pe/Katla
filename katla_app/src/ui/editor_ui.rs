@@ -1292,7 +1292,7 @@ impl EditorUI {
                 self.selected_entity = Some(entity.id);
                 self.hierarchy_context_entity = Some(entity.id);
                 self.hierarchy_context_menu_open = true;
-                ui.open_context_menu("hierarchy_context");
+                ui.open_context_menu_at("hierarchy_context", ui.input.mouse_pos);
             }
 
             cursor = Vec2::new(cursor.x(), cursor.y() + item_height);
@@ -1363,6 +1363,9 @@ impl EditorUI {
                 current_y += item_height;
             }
 
+            // Calculate actual content height for background sizing
+            let content_height = current_y - menu_pos.y();
+            ui.set_context_menu_content_height(content_height);
             ui.end_context_menu();
 
             // Process action
