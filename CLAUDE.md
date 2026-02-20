@@ -597,6 +597,53 @@ Materials use template-based configuration with hot reload:
 - **Per-material uniforms** - optional uniform buffers for material parameters
 - **Hot reload** - modify TOML files and reload at runtime
 
+## UI Popup System
+
+Katla's UI uses a closure-based popup API with automatic layout and sizing.
+
+### Basic Usage
+
+```rust
+// Simple popup with items
+let action = ui.popup("my_popup", |ui| {
+    if ui.popup_item("Open", '📁', true) { return Some("open"); }
+    if ui.popup_item("Rename", '✏️', true) { return Some("rename"); }
+    ui.popup_separator();
+    if ui.popup_item("Delete", '🗑️', true) { return Some("delete"); }
+    None
+});
+
+if let Some(action) = action.flatten() {
+    // Handle action
+}
+```
+
+### Opening a Popup
+
+```rust
+// Open at mouse position (call on right-click detection)
+if ui.input.mouse_clicked(mouse_button::RIGHT) && is_hovered {
+    ui.open_context_menu_at("my_popup", ui.input.mouse_pos);
+}
+```
+
+### Key Principles
+
+1. **Closure-based API** - `popup(id, |ui| { ... })` encapsulates popup content
+2. **Automatic layout** - Items position vertically, no manual `current_y` tracking
+3. **Automatic sizing** - Background fits content exactly (width + height)
+4. **Return values** - Closures can return clicked actions for clean handling
+
+### Available Methods
+
+| Method | Description |
+|--------|-------------|
+| `popup(id, f)` | Show popup with closure, returns `Option<R>` |
+| `popup_item(label, icon, enabled)` | Draw menu item, returns true if clicked |
+| `popup_item_with_shortcut(label, icon, enabled, shortcut)` | Same with keyboard hint |
+| `popup_separator()` | Draw separator line |
+| `open_context_menu_at(id, pos)` | Open popup at position |
+
 ### Future Enhancements (Optional)
 
 These are **not required** for Vulkan 1.3 compliance but recommended:

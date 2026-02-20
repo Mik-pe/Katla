@@ -1640,138 +1640,101 @@ pub fn build_asset_browser(
     }
 
     // === RENDER CONTEXT MENU using popup system ===
-    let asset_context_menu_open = ui.begin_context_menu("asset_context");
-
-    // Clean up state if menu was closed (click outside or Escape)
+    // Clean up state if menu was closed
+    let asset_context_menu_open = ui.is_context_menu_open("asset_context");
     if state.context_menu_open && !asset_context_menu_open {
         state.context_menu_open = false;
         state.context_menu_asset = None;
     }
 
-    if asset_context_menu_open {
-        // Get context data
-        let (asset_type, asset_name, asset_path, asset_idx) = if let Some(asset_idx) = state.context_menu_asset {
-            if let Some(asset) = state.assets.get(asset_idx) {
-                (Some(asset.asset_type), asset.name.clone(), asset.path.clone(), asset_idx)
-            } else {
-                ui.end_context_menu();
-                state.context_menu_open = false;
-                return;
-            }
+    // Get context data for the popup
+    let (asset_type, asset_name, asset_path, asset_idx) = if let Some(asset_idx) = state.context_menu_asset {
+        if let Some(asset) = state.assets.get(asset_idx) {
+            (Some(asset.asset_type), asset.name.clone(), asset.path.clone(), asset_idx)
         } else {
             (None, String::new(), state.current_path.clone(), 0)
-        };
-
-        let menu_width = 180.0;
-        let item_height = 24.0;
-        let menu_pos = ui.get_popup_bounds().min;
-
-        // Render items based on context
-        let mut current_y = menu_pos.y() + 2.0;
-        let mut clicked_action: Option<String> = None;
-
-        // Build items based on asset type
-        let items: Vec<(&str, char, bool, &str)> = if let Some(at) = asset_type {
-            if at == AssetType::Folder {
-                vec![
-                    ("Open", ForkAwesome::FOLDER_OPEN, true, "Enter"),
-                    ("Rename", ForkAwesome::PENCIL, true, "F2"),
-                    ("---", '\0', false, ""),
-                    ("Copy Path", ForkAwesome::COPY, true, ""),
-                    ("Show in Explorer", ForkAwesome::EXTERNAL_LINK, true, ""),
-                    ("---", '\0', false, ""),
-                    ("Delete", ForkAwesome::TRASH, true, "Del"),
-                ]
-            } else {
-                vec![
-                    ("Open", ForkAwesome::FILE, true, "Enter"),
-                    ("Rename", ForkAwesome::PENCIL, true, "F2"),
-                    ("---", '\0', false, ""),
-                    ("Copy Path", ForkAwesome::COPY, true, ""),
-                    ("Show in Explorer", ForkAwesome::EXTERNAL_LINK, true, ""),
-                    ("---", '\0', false, ""),
-                    ("Delete", ForkAwesome::TRASH, true, "Del"),
-                ]
-            }
-        } else {
-            vec![
-                ("New Folder", ForkAwesome::FOLDER, true, ""),
-                ("---", '\0', false, ""),
-                ("Refresh", ForkAwesome::REFRESH, true, "F5"),
-                ("---", '\0', false, ""),
-                ("Show in Explorer", ForkAwesome::EXTERNAL_LINK, true, ""),
-            ]
-        };
-
-        for (label, icon, enabled, shortcut) in &items {
-            if *label == "---" {
-                // Draw separator
-                let sep_bounds = Rect2D::from_origin_size(
-                    Vec2::new(menu_pos.x(), current_y),
-                    Vec2::new(menu_width, 8.0),
-                );
-                ui.menu_separator(sep_bounds);
-                current_y += 8.0;
-                continue;
-            }
-            let item_bounds = Rect2D::from_origin_size(
-                Vec2::new(menu_pos.x(), current_y),
-                Vec2::new(menu_width, item_height),
-            );
-            if ui.popup_menu_item(label, *icon, *enabled, shortcut, item_bounds) {
-                clicked_action = Some(label.to_string());
-            }
-            current_y += item_height;
         }
+    } else {
+        (None, String::new(), state.current_path.clone(), 0)
+    };
 
-        ui.end_context_menu();
+    // Render popup with automatic layout
+    let clicked_action = ui.popup("asset_context", |ui| {
+        match asset_type {
+            Some(AssetType::Folder) => {
+                if ui.popup_item_with_shortcut("Open", ForkAwesome::FOLDER_OPEN, true, "Enter") { return Some("Open"); }
+                if ui.popup_item_with_shortcut("Rename", ForkAwesome::PENCIL, true, "F2") { return Some("Rename"); }
+                ui.popup_separator();
+                if ui.popup_item_with_shortcut("Copy Path", ForkAwesome::COPY, true, "") { return Some("Copy Path"); }
+                if ui.popup_item_with_shortcut("Show in Explorer", ForkAwesome::EXTERNAL_LINK, true, "") { return Some("Show in Explorer"); }
+                ui.popup_separator();
+                if ui.popup_item_with_shortcut("Delete", ForkAwesome::TRASH, true, "Del") { return Some("Delete"); }
+            }
+            Some(_) => {
+                if ui.popup_item_with_shortcut("Open", ForkAwesome::FILE, true, "Enter") { return Some("Open"); }
+                if ui.popup_item_with_shortcut("Rename", ForkAwesome::PENCIL, true, "F2") { return Some("Rename"); }
+                ui.popup_separator();
+                if ui.popup_item_with_shortcut("Copy Path", ForkAwesome::COPY, true, "") { return Some("Copy Path"); }
+                if ui.popup_item_with_shortcut("Show in Explorer", ForkAwesome::EXTERNAL_LINK, true, "") { return Some("Show in Explorer"); }
+                ui.popup_separator();
+                if ui.popup_item_with_shortcut("Delete", ForkAwesome::TRASH, true, "Del") { return Some("Delete"); }
+            }
+            None => {
+                if ui.popup_item_with_shortcut("New Folder", ForkAwesome::FOLDER, true, "") { return Some("New Folder"); }
+                ui.popup_separator();
+                if ui.popup_item_with_shortcut("Refresh", ForkAwesome::REFRESH, true, "F5") { return Some("Refresh"); }
+                ui.popup_separator();
+                if ui.popup_item_with_shortcut("Show in Explorer", ForkAwesome::EXTERNAL_LINK, true, "") { return Some("Show in Explorer"); }
+            }
+        }
+        None::<&str>
+    });
 
-        // Process action
-        if let Some(action) = clicked_action {
-            match action.as_str() {
-                "Open" => {
-                    if asset_type == Some(AssetType::Folder) {
-                        if asset_name == ".." {
-                            state.navigate_up(thumbnail_texture_ids);
-                        } else {
-                            state.navigate_to(&asset_path, thumbnail_texture_ids);
-                        }
-                    } else if asset_type.is_some() {
-                        state.pending_actions.push(AssetAction::Open(asset_path));
-                    }
-                }
-                "Rename" => {
-                    state.start_rename(asset_idx);
-                }
-                "Copy Path" => {
-                    state.pending_actions.push(AssetAction::CopyPath(asset_path));
-                }
-                "Show in Explorer" => {
-                    state.pending_actions.push(AssetAction::ShowInExplorer(asset_path));
-                }
-                "Delete" => {
-                    let is_folder = asset_path.is_dir();
-                    let name = asset_path.file_name()
-                        .map(|n| n.to_string_lossy().to_string())
-                        .unwrap_or_else(|| "this item".to_string());
-                    state.confirm_dialog_message = if is_folder {
-                        format!("Delete folder \"{}\" and all its contents?", name)
+    // Process action
+    if let Some(action) = clicked_action.flatten() {
+        match action {
+            "Open" => {
+                if asset_type == Some(AssetType::Folder) {
+                    if asset_name == ".." {
+                        state.navigate_up(thumbnail_texture_ids);
                     } else {
-                        format!("Delete \"{}\"?", name)
-                    };
-                    state.confirm_pending_action = Some(AssetAction::Delete(asset_path));
-                    state.confirm_dialog_open = true;
+                        state.navigate_to(&asset_path, thumbnail_texture_ids);
+                    }
+                } else if asset_type.is_some() {
+                    state.pending_actions.push(AssetAction::Open(asset_path));
                 }
-                "New Folder" => {
-                    state.pending_actions.push(AssetAction::CreateFolder(asset_path));
-                }
-                "Refresh" => {
-                    state.refresh(thumbnail_texture_ids);
-                }
-                _ => {}
             }
-            state.context_menu_open = false;
+            "Rename" => {
+                state.start_rename(asset_idx);
+            }
+            "Copy Path" => {
+                state.pending_actions.push(AssetAction::CopyPath(asset_path));
+            }
+            "Show in Explorer" => {
+                state.pending_actions.push(AssetAction::ShowInExplorer(asset_path));
+            }
+            "Delete" => {
+                let is_folder = asset_path.is_dir();
+                let name = asset_path.file_name()
+                    .map(|n| n.to_string_lossy().to_string())
+                    .unwrap_or_else(|| "this item".to_string());
+                state.confirm_dialog_message = if is_folder {
+                    format!("Delete folder \"{}\" and all its contents?", name)
+                } else {
+                    format!("Delete \"{}\"?", name)
+                };
+                state.confirm_pending_action = Some(AssetAction::Delete(asset_path));
+                state.confirm_dialog_open = true;
+            }
+            "New Folder" => {
+                state.pending_actions.push(AssetAction::CreateFolder(asset_path));
+            }
+            "Refresh" => {
+                state.refresh(thumbnail_texture_ids);
+            }
+            _ => {}
         }
+        state.context_menu_open = false;
     }
 
     // === CONFIRMATION DIALOG ===
