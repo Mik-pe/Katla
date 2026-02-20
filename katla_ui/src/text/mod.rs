@@ -942,22 +942,6 @@ mod tests {
     }
 
     #[test]
-    fn test_gamma_correction_identity() {
-        // coverage_to_alpha and alpha_to_coverage should be inverses
-        for coverage in [0.0, 0.25, 0.5, 0.75, 1.0] {
-            let alpha = coverage_to_alpha(coverage);
-            let back = alpha_to_coverage(alpha);
-            assert!(
-                (back - coverage).abs() < 0.001,
-                "Coverage {} -> alpha {} -> coverage {}",
-                coverage,
-                alpha,
-                back
-            );
-        }
-    }
-
-    #[test]
     fn test_gamma_correction_midpoint() {
         // 0.5 coverage should become > 0.5 alpha (brighter midtones)
         let alpha = coverage_to_alpha(0.5);

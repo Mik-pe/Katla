@@ -2,26 +2,41 @@
 
 ## Status
 
-### Bindless Textures: ✅ FULLY INTEGRATED (2026-02-19)
+### Bindless Textures: ✅ FULLY INTEGRATED (2026-02-20)
 
-Bindless textures are now the default rendering mode:
+Bindless textures are now the ONLY rendering mode (legacy mode removed):
 - ✅ Feature detection (already enabled in `context.rs`)
 - ✅ `BindlessTextureManager` - texture slot allocation, descriptor management, default textures
 - ✅ `ObjectUniforms.texture_indices` - per-object texture index storage (112 bytes)
 - ✅ `MaterialBuilder::build_bindless()` - bindless pipeline creation
+- ✅ `MaterialBuilder::build_bindless_skinned()` - bindless pipeline for skeletal animation
 - ✅ `MaterialPipeline::new_bindless()` - bindless material pipeline
+- ✅ `MaterialPipeline::new_bindless_skinned()` - bindless skinned pipeline
 - ✅ `VulkanRenderer::init_bindless()` - renderer integration
-- ✅ `model_pbr_bindless.wgsl` - bindless PBR shader
+- ✅ `model_pbr_bindless.wgsl` - bindless PBR shader for static meshes
+- ✅ `model_pbr_skinned_bindless.wgsl` - bindless PBR shader for skinned meshes
 - ✅ `model_simple_bindless.wgsl` - simple bindless shader
 - ✅ `MaterialAsset.texture_indices` - stores bindless indices
 - ✅ `Material.texture_indices` - application-layer texture indices
 - ✅ Render loop binds bindless once per frame
 - ✅ Default textures at reserved slots 0-4 (white, normal, MR, AO, emission)
-- ✅ Fallback to legacy mode when bindless not initialized
+- ✅ GLTF loader uses bindless shaders for both static and skinned meshes
+- ✅ `gltf_pbr_bindless.toml` template for static PBR bindless
+- ✅ `gltf_skinned_pbr_bindless.toml` template for skinned PBR bindless
+- ✅ Skinned meshes support full PBR textures in bindless mode
+- ✅ Removed legacy `TextureDescriptorSet` and `PbrTextureDescriptorSet` types
+- ✅ Removed legacy per-material texture binding code
+- ✅ Simplified render loop to bindless-only
+- ✅ Non-bindless materials are skipped in render loop (bindless-only enforcement)
 
-**Remaining (optional):**
-- Update GLTF loader to use bindless shaders
-- Remove deprecated `TextureDescriptorSet` and `PbrTextureDescriptorSet` code
+**Architecture:**
+- Set 0: Storage buffer uniforms (frame_data + objects)
+- Set 1: Bindless texture array (4096 textures) + shared sampler
+- Set 2: Skeleton joint matrices (for skinned meshes only)
+
+**Known Limitation:**
+Non-bindless helper materials (like procedural checkerboard) are currently skipped.
+They need to be converted to bindless in a future update.
 
 ### GPU Culling: 🔲 Not Started
 

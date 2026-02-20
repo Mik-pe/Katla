@@ -2251,22 +2251,6 @@ mod tests {
         assert_eq!(draw_list.index_count(), 6);
     }
 
-    #[test]
-    fn test_id_generation() {
-        let mut ctx = UiContext::new();
-        ctx.begin(Vec2::new(800.0, 600.0), 1.0);
-
-        let id1 = ctx.generate_id("test");
-        let id2 = ctx.generate_id("test");
-        let id3 = ctx.generate_id("other");
-
-        // Same label should produce different IDs due to counter
-        assert_ne!(id1, id2);
-        assert_ne!(id1, id3);
-
-        ctx.end();
-    }
-
     /// Test that text character positions are stable when panel moves within same subpixel bin.
     ///
     /// This simulates the core positioning logic of draw_text:

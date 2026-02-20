@@ -8,7 +8,12 @@ mod common;
 use ash::vk;
 use common::create_headless_context;
 use katla_vulkan::{
-    render_graph::{Attachment, RenderGraphBuilder, ResourceKind},
+    render_graph::{
+        types::{
+            Extent3D, ImageFormat, ImageLayout, ImageTiling, ImageUsage, SampleCount,
+        },
+        Attachment, RenderGraphBuilder, ResourceKind,
+    },
     CommandBuffer,
 };
 use std::rc::Rc;
@@ -28,17 +33,17 @@ fn test_render_graph_compilation_headless() {
     let color_target = graph_builder.add_resource(
         "color_target",
         ResourceKind::Image {
-            extent: vk::Extent3D {
+            extent: Extent3D {
                 width: 512,
                 height: 512,
                 depth: 1,
             },
-            format: vk::Format::R8G8B8A8_SRGB,
-            usage: vk::ImageUsageFlags::COLOR_ATTACHMENT,
-            samples: vk::SampleCountFlags::TYPE_1,
-            tiling: vk::ImageTiling::OPTIMAL,
-            initial_layout: vk::ImageLayout::UNDEFINED,
-            final_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+            format: ImageFormat::R8G8B8A8Srgb,
+            usage: vec![ImageUsage::ColorAttachment],
+            samples: SampleCount::Sample1,
+            tiling: ImageTiling::Optimal,
+            initial_layout: ImageLayout::Undefined,
+            final_layout: ImageLayout::ShaderReadOnlyOptimal,
         },
     );
 
@@ -46,17 +51,17 @@ fn test_render_graph_compilation_headless() {
     let depth_target = graph_builder.add_resource(
         "depth_target",
         ResourceKind::Image {
-            extent: vk::Extent3D {
+            extent: Extent3D {
                 width: 512,
                 height: 512,
                 depth: 1,
             },
-            format: vk::Format::D32_SFLOAT,
-            usage: vk::ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT,
-            samples: vk::SampleCountFlags::TYPE_1,
-            tiling: vk::ImageTiling::OPTIMAL,
-            initial_layout: vk::ImageLayout::UNDEFINED,
-            final_layout: vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+            format: ImageFormat::D32Sfloat,
+            usage: vec![ImageUsage::DepthStencilAttachment],
+            samples: SampleCount::Sample1,
+            tiling: ImageTiling::Optimal,
+            initial_layout: ImageLayout::Undefined,
+            final_layout: ImageLayout::DepthStencilAttachmentOptimal,
         },
     );
 
@@ -97,19 +102,21 @@ fn test_render_graph_multiple_passes_headless() {
     let intermediate_texture = graph_builder.add_resource(
         "intermediate",
         ResourceKind::Image {
-            extent: vk::Extent3D {
+            extent: Extent3D {
                 width: 256,
                 height: 256,
                 depth: 1,
             },
-            format: vk::Format::R8G8B8A8_SRGB,
-            usage: vk::ImageUsageFlags::COLOR_ATTACHMENT
-                | vk::ImageUsageFlags::SAMPLED
-                | vk::ImageUsageFlags::INPUT_ATTACHMENT,
-            samples: vk::SampleCountFlags::TYPE_1,
-            tiling: vk::ImageTiling::OPTIMAL,
-            initial_layout: vk::ImageLayout::UNDEFINED,
-            final_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+            format: ImageFormat::R8G8B8A8Srgb,
+            usage: vec![
+                ImageUsage::ColorAttachment,
+                ImageUsage::Sampled,
+                ImageUsage::InputAttachment,
+            ],
+            samples: SampleCount::Sample1,
+            tiling: ImageTiling::Optimal,
+            initial_layout: ImageLayout::Undefined,
+            final_layout: ImageLayout::ShaderReadOnlyOptimal,
         },
     );
 
@@ -117,17 +124,17 @@ fn test_render_graph_multiple_passes_headless() {
     let final_output = graph_builder.add_resource(
         "final_output",
         ResourceKind::Image {
-            extent: vk::Extent3D {
+            extent: Extent3D {
                 width: 256,
                 height: 256,
                 depth: 1,
             },
-            format: vk::Format::R8G8B8A8_SRGB,
-            usage: vk::ImageUsageFlags::COLOR_ATTACHMENT | vk::ImageUsageFlags::TRANSFER_SRC,
-            samples: vk::SampleCountFlags::TYPE_1,
-            tiling: vk::ImageTiling::OPTIMAL,
-            initial_layout: vk::ImageLayout::UNDEFINED,
-            final_layout: vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
+            format: ImageFormat::R8G8B8A8Srgb,
+            usage: vec![ImageUsage::ColorAttachment, ImageUsage::TransferSrc],
+            samples: SampleCount::Sample1,
+            tiling: ImageTiling::Optimal,
+            initial_layout: ImageLayout::Undefined,
+            final_layout: ImageLayout::TransferSrcOptimal,
         },
     );
 
@@ -180,17 +187,17 @@ fn test_render_graph_lifetime_analysis_headless() {
     let color_target = graph_builder.add_resource(
         "color_target",
         ResourceKind::Image {
-            extent: vk::Extent3D {
+            extent: Extent3D {
                 width: 128,
                 height: 128,
                 depth: 1,
             },
-            format: vk::Format::R8G8B8A8_SRGB,
-            usage: vk::ImageUsageFlags::COLOR_ATTACHMENT | vk::ImageUsageFlags::SAMPLED,
-            samples: vk::SampleCountFlags::TYPE_1,
-            tiling: vk::ImageTiling::OPTIMAL,
-            initial_layout: vk::ImageLayout::UNDEFINED,
-            final_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+            format: ImageFormat::R8G8B8A8Srgb,
+            usage: vec![ImageUsage::ColorAttachment, ImageUsage::Sampled],
+            samples: SampleCount::Sample1,
+            tiling: ImageTiling::Optimal,
+            initial_layout: ImageLayout::Undefined,
+            final_layout: ImageLayout::ShaderReadOnlyOptimal,
         },
     );
 
@@ -253,4 +260,3 @@ fn test_headless_command_buffer_recording() {
 
     println!("Command buffer recorded successfully in headless mode");
 }
-

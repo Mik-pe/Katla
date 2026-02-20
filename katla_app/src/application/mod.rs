@@ -37,9 +37,7 @@ use crate::{
     gui_state::GuiState,
     input::{InputBinding, InputMapper, KeyCombo, MouseCombo},
     preferences::Preferences,
-    rendering::{
-        create_checkerboard_material, create_checkerboard_texture, MaterialManager, MeshBuilder,
-    },
+    rendering::{create_checkerboard_material, MaterialManager, MeshBuilder},
     resources::ResourceManager,
     util::{BackgroundLoader, FileCache, GLTFModel, Timer},
 };
@@ -348,7 +346,6 @@ impl ApplicationHandler for Application {
                         let _sphere = MeshBuilder::new(renderer.context.clone())
                             .position(Vec3::new(0.0, 5.0, 0.0))
                             .color([0.8, 0.2, 0.2])
-                            .with_shared_material("Checkerboard")
                             .sphere()
                             .build(&mut self.world, renderer);
 
@@ -356,14 +353,12 @@ impl ApplicationHandler for Application {
                         let _cube = MeshBuilder::new(renderer.context.clone())
                             .position(Vec3::new(20.0, 5.0, 0.0))
                             .color([0.2, 0.8, 0.2])
-                            .with_shared_material("Checkerboard")
                             .build(&mut self.world, renderer);
 
                         let renderer = self.renderer.as_mut().expect("Renderer not initialized");
                         let _plane = MeshBuilder::new(renderer.context.clone())
                             .position(Vec3::new(0.0, -5.0, 0.0))
                             .color([0.5, 0.5, 0.5])
-                            .with_shared_material("Checkerboard")
                             .plane()
                             .size(Vec3::new(100.0, 100.0, 1.0))
                             .build(&mut self.world, renderer);
@@ -437,20 +432,22 @@ impl Application {
             .init_storage_standard()
             .expect("Failed to initialize storage uniform system");
 
-        // TODO: Enable bindless once bindless pipeline templates are created
-        // The bindless descriptor set layout is incompatible with legacy pipelines
-        // renderer
-        //     .init_bindless()
-        //     .expect("Failed to initialize bindless texture system");
+        // Initialize bindless textures BEFORE loading materials
+        renderer
+            .init_bindless()
+            .expect("Failed to initialize bindless texture system");
 
-        let loaded_count = renderer
+        // Load bindless material templates (bindless-only now)
+        let bindless_layout = renderer.bindless_manager().unwrap().vk_descriptor_layout();
+        let bindless_count = renderer
             .material_registry
             .borrow_mut()
-            .load_directory_storage(&self.resources.materials, renderer.context.clone())
-            .expect("Failed to load materials directory");
+            .load_directory_bindless(&self.resources.materials, renderer.context.clone(), bindless_layout)
+            .expect("Failed to load bindless materials");
+
         info!(
-            "Loaded {} material templates from {}",
-            loaded_count,
+            "Loaded {} bindless material templates from {}",
+            bindless_count,
             self.resources.materials.display()
         );
 
@@ -479,27 +476,23 @@ impl Application {
         let cube = MeshBuilder::new(renderer.context.clone())
             .position(Vec3::new(15.0, 5.0, -15.0))
             .color([1.0, 0.3, 0.3])
-            .with_shared_material("Checkerboard")
             .build(&mut self.world, renderer);
 
         let sphere = MeshBuilder::new(renderer.context.clone())
             .position(Vec3::new(30.0, 5.0, 0.0))
             .color([0.3, 1.0, 0.3])
-            .with_shared_material("Checkerboard")
             .sphere()
             .build(&mut self.world, renderer);
 
         let cylinder = MeshBuilder::new(renderer.context.clone())
             .position(Vec3::new(-30.0, 5.0, 0.0))
             .color([0.3, 0.3, 1.0])
-            .with_shared_material("Checkerboard")
             .cylinder()
             .build(&mut self.world, renderer);
 
         let plane = MeshBuilder::new(renderer.context.clone())
             .position(Vec3::new(0.0, -5.0, 0.0))
             .color([0.8, 0.8, 0.8])
-            .with_shared_material("Checkerboard")
             .plane()
             .size(Vec3::new(10.0, 10.0, 1.0))
             .build(&mut self.world, renderer);
@@ -507,7 +500,6 @@ impl Application {
         let torus = MeshBuilder::new(renderer.context.clone())
             .position(Vec3::new(0.0, 15.0, 0.0))
             .color([1.0, 0.8, 0.3])
-            .with_shared_material("Checkerboard")
             .torus()
             .build(&mut self.world, renderer);
 
@@ -731,24 +723,13 @@ impl Application {
 
     /// Setup checkerboard material.
     fn setup_checkerboard_material(&mut self, renderer: &mut VulkanRenderer) {
-        let checkerboard_texture = create_checkerboard_texture(renderer.context.clone());
-        if self
-            .material_manager
-            .register_from_template(
-                "Checkerboard",
-                &renderer.material_registry.borrow(),
-                Some(Rc::new(checkerboard_texture)),
-                None,
-            )
-            .is_some()
-        {
-            debug!("Registered checkerboard material from template");
-        } else {
-            warn!("Checkerboard template not found, using fallback");
-            let checkerboard = create_checkerboard_material(renderer.context.clone());
-            self.material_manager
-                .register_material("checkerboard", checkerboard);
-        }
+        let checkerboard = create_checkerboard_material(
+            renderer.context.clone(),
+            renderer.bindless_manager_mut().unwrap(),
+        );
+        self.material_manager
+            .register_material("checkerboard", checkerboard);
+        debug!("Registered checkerboard material");
     }
 
     /// Poll the background loader and process completed loads.

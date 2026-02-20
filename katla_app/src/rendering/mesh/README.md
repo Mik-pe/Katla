@@ -109,16 +109,6 @@ let mesh = MeshBuilder::new(context.clone())
     .create_sphere(&mut world, &mut renderer);
 ```
 
-## Using Material Templates
-
-You can use shared material templates for consistent styling:
-
-```rust
-let mesh = MeshBuilder::new(context.clone())
-    .with_shared_material("Checkerboard")
-    .create_cube(&mut world, &mut renderer);
-```
-
 ## Available Mesh Types
 
 - **Cube**: 3D box shape
@@ -138,4 +128,3 @@ All mesh types share the following builder methods:
 - `rings(rings: u32)`: Set vertex rings for sphere and torus
 - `position(position: Vec3)`: Set mesh position in world
 - `color(color: [f32; 3])`: Set mesh color (RGB)
-- `with_shared_material(name: impl Into<String>)`: Use material from template registry

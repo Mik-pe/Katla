@@ -1,0 +1,24 @@
+# Full PBR Material Template with Bindless Textures
+#
+# Uses bindless texture array for efficient rendering.
+# Texture indices come from ObjectUniforms.texture_indices.
+#
+# Set 1 Bindings:
+# - Binding 0: texture_2d array (4096 textures)
+# - Binding 1: shared sampler
+
+name = "gltf_pbr_bindless"
+
+[shaders]
+vertex = "../shaders/model_pbr_bindless.wgsl"
+fragment = "../shaders/model_pbr_bindless.wgsl"
+
+# Bindless materials don't have per-material texture bindings
+# Textures are accessed via ObjectUniforms.texture_indices
+[bindings]
+
+[render_state]
+depth_test = true
+depth_write = true
+cull_backfaces = true
+alpha_blending = false
