@@ -374,12 +374,12 @@ impl Model {
                         }
                     }
                 } else {
-                    // Legacy mode - use per-material texture descriptors
-                    if let Some(template) = material_registry.borrow().get_template("gltf_pbr_full") {
-                        info!("  Using gltf_pbr_full template");
-                        Material::from_template_pbr(template, pbr_textures, texture_refs, None)
+                    // Legacy mode - now also uses bindless (all materials are bindless)
+                    if let Some(template) = material_registry.borrow().get_template("gltf_pbr_bindless") {
+                        info!("  Using gltf_pbr_bindless template");
+                        Material::from_template_pbr_bindless(template, pbr_textures, texture_refs, None, texture_indices, emission_index)
                     } else {
-                        warn!("  Template 'gltf_pbr_full' not found, falling back to gltf_default");
+                        warn!("  Template 'gltf_pbr_bindless' not found, falling back to gltf_default");
                         if let Some(template) = material_registry.borrow().get_template("gltf_default") {
                             Material::from_template(template, Some(albedo_tex), None)
                         } else {

@@ -10,8 +10,8 @@
 name = "gltf_pbr_bindless"
 
 [shaders]
-vertex = "../shaders/model_pbr_bindless.wgsl"
-fragment = "../shaders/model_pbr_bindless.wgsl"
+vertex = "../shaders/model_pbr.wgsl"
+fragment = "../shaders/model_pbr.wgsl"
 
 # Bindless materials don't have per-material texture bindings
 # Textures are accessed via ObjectUniforms.texture_indices

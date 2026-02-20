@@ -1,33 +1,16 @@
-# GLTF Default Material
+# GLTF Default Material (Bindless)
 #
-# Default material for GLTF models. Uses storage buffers with
-# instance indexing for modern rendering.
+# Default material for GLTF models using bindless textures.
+# Simple albedo-only rendering with bindless texture array.
 
 name = "gltf_default"
 
 [shaders]
-vertex = "../shaders/model_pbr_storage.wgsl"
-fragment = "../shaders/model_pbr_storage.wgsl"
+vertex = "../shaders/model_simple.wgsl"
+fragment = "../shaders/model_simple.wgsl"
 
-[bindings.uniforms.transform]
-type = "mat4"
-count = 3
-name = "transform"
-
-[bindings.uniforms.color]
-type = "vec4"
-name = "color"
-
-[bindings.textures.albedo]
-binding = 0
-name = "albedo_texture"
-
-[bindings.textures.sampler]
-binding = 1
-name = "albedo_sampler"
-
-[parameters]
-color = [1.0, 1.0, 1.0, 1.0]  # White - no tint by default
+# Bindless materials don't have per-material texture bindings
+# Textures are accessed via ObjectUniforms.texture_indices
 
 [render_state]
 depth_test = true
