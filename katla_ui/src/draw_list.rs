@@ -263,19 +263,15 @@ impl DrawList {
         ]);
     }
 
-    /// Add an image with custom UV coordinates.
+    /// Add an image with custom UV coordinates and explicit texture.
     ///
-    /// UV encoding for texture selection:
-    /// - uv_min.x < 1.0: Sample from font atlas
-    /// - uv_min.x >= 1.0: Sample from viewport texture (1.0 is subtracted from x)
-    pub fn add_image(&mut self, bounds: Rect2D, uv_min: Vec2, uv_max: Vec2, color: Color) {
-        // Use VIEWPORT texture ID if UV indicates viewport (x >= 1.0)
-        let texture = if uv_min.x() >= 1.0 {
-            TextureId::VIEWPORT
-        } else {
-            TextureId::FONT_ATLAS
-        };
-
+    /// # Arguments
+    /// * `bounds` - Screen position and size
+    /// * `uv_min` - Top-left UV coordinate (0-1 for atlas, any range for viewport)
+    /// * `uv_max` - Bottom-right UV coordinate
+    /// * `color` - Tint color (use Color::WHITE for no tint)
+    /// * `texture` - Texture to sample from
+    pub fn add_image(&mut self, bounds: Rect2D, uv_min: Vec2, uv_max: Vec2, color: Color, texture: TextureId) {
         self.set_texture(texture);
 
         let vertex_offset = self.vertices.len() as u32;

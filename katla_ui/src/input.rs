@@ -43,6 +43,12 @@ pub enum MouseCursor {
     NotAllowed,
 }
 
+/// Maximum time between clicks for a double-click (in seconds).
+pub const DOUBLE_CLICK_TIME: f64 = 0.5;
+
+/// Maximum distance between clicks for a double-click (in pixels).
+pub const DOUBLE_CLICK_MAX_DISTANCE: f32 = 5.0;
+
 /// Input state for the UI system.
 ///
 /// This should be updated each frame with the current mouse position,
@@ -64,6 +70,14 @@ pub struct UiInputState {
     pub mouse_released: [bool; 5],
     /// Mouse scroll wheel delta this frame.
     pub scroll_delta: Vec2,
+
+    // Double-click detection
+    /// Time of last click for each button (seconds since some epoch).
+    pub last_click_time: [f64; 5],
+    /// Position of last click for each button.
+    pub last_click_pos: [Vec2; 5],
+    /// Whether a double-click occurred this frame for each button.
+    mouse_double_clicked: [bool; 5],
 
     // Keyboard state
     /// Characters typed this frame (for text input).
@@ -99,6 +113,9 @@ impl UiInputState {
             mouse_pressed: [false; 5],
             mouse_released: [false; 5],
             scroll_delta: Vec2::new(0.0, 0.0),
+            last_click_time: [0.0; 5],
+            last_click_pos: [Vec2::new(0.0, 0.0); 5],
+            mouse_double_clicked: [false; 5],
             characters: Vec::new(),
             keys_pressed: Vec::new(),
             keys_released: Vec::new(),
@@ -123,6 +140,7 @@ impl UiInputState {
     /// Update mouse button state.
     ///
     /// Call this when a mouse button is pressed or released.
+    /// Note: For double-click detection, use `set_mouse_button_with_time` instead.
     pub fn set_mouse_button(&mut self, button: usize, down: bool) {
         if button >= 5 {
             return;
@@ -133,6 +151,37 @@ impl UiInputState {
 
         if down && !was_down {
             self.mouse_pressed[button] = true;
+        } else if !down && was_down {
+            self.mouse_released[button] = true;
+        }
+    }
+
+    /// Update mouse button state with timestamp for double-click detection.
+    ///
+    /// Call this when a mouse button is pressed or released.
+    /// `time` should be in seconds (e.g., from `instant.elapsed().as_secs_f64()`).
+    pub fn set_mouse_button_with_time(&mut self, button: usize, down: bool, time: f64) {
+        if button >= 5 {
+            return;
+        }
+
+        let was_down = self.mouse_down[button];
+        self.mouse_down[button] = down;
+
+        if down && !was_down {
+            self.mouse_pressed[button] = true;
+
+            // Check for double-click
+            let time_since_last = time - self.last_click_time[button];
+            let distance = (self.mouse_pos - self.last_click_pos[button]).length();
+
+            if time_since_last < DOUBLE_CLICK_TIME && distance < DOUBLE_CLICK_MAX_DISTANCE {
+                self.mouse_double_clicked[button] = true;
+            }
+
+            // Update last click info
+            self.last_click_time[button] = time;
+            self.last_click_pos[button] = self.mouse_pos;
         } else if !down && was_down {
             self.mouse_released[button] = true;
         }
@@ -163,6 +212,7 @@ impl UiInputState {
         self.mouse_delta = Vec2::new(0.0, 0.0);
         self.mouse_pressed = [false; 5];
         self.mouse_released = [false; 5];
+        self.mouse_double_clicked = [false; 5];
         self.scroll_delta = Vec2::new(0.0, 0.0);
         self.characters.clear();
         self.keys_pressed.clear();
@@ -183,13 +233,13 @@ impl UiInputState {
         button < 5 && self.mouse_pressed[button] && !self.mouse_released[button]
     }
 
-    /// Check if a mouse button was double-clicked.
+    /// Check if a mouse button was double-clicked this frame.
     ///
-    /// This requires tracking click times, which is not yet implemented.
+    /// A double-click is detected when the same button is pressed twice
+    /// within `DOUBLE_CLICK_TIME` seconds and within `DOUBLE_CLICK_MAX_DISTANCE` pixels.
     #[inline]
-    pub fn mouse_double_clicked(&self, _button: usize) -> bool {
-        // TODO: Implement double-click detection
-        false
+    pub fn mouse_double_clicked(&self, button: usize) -> bool {
+        button < 5 && self.mouse_double_clicked[button]
     }
 
     /// Check if a mouse button is currently down.

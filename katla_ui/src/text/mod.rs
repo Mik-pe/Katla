@@ -114,29 +114,55 @@ impl SubpixelBin {
 
 /// Font size stored as fixed-point for hashing.
 ///
-/// Uses 16.16 fixed point format. Valid font sizes are 0.0 to ~65535.0.
-/// Negative values or values > 65535 will produce incorrect keys.
+/// Uses 16.16 fixed point format. Sizes are clamped to valid range.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 struct FontSizeKey(u32);
 
 impl FontSizeKey {
+    /// Minimum valid font size in pixels.
+    const MIN_SIZE: f32 = 1.0;
+    /// Maximum valid font size in pixels.
+    const MAX_SIZE: f32 = 1000.0;
+
     fn from_f32(size: f32) -> Self {
+        let clamped = size.clamp(Self::MIN_SIZE, Self::MAX_SIZE);
+        if clamped != size {
+            log::warn!(
+                "Font size {} clamped to valid range [{}, {}]",
+                size,
+                Self::MIN_SIZE,
+                Self::MAX_SIZE
+            );
+        }
         // Store as 16.16 fixed point for hashing
-        FontSizeKey((size * 65536.0) as u32)
+        FontSizeKey((clamped * 65536.0) as u32)
     }
 }
 
 /// Scale factor stored as fixed-point for hashing.
 ///
-/// Uses 8.24 fixed point format. Valid scale factors are 0.0 to ~255.0.
-/// Negative values or values > 255 will produce incorrect keys.
+/// Uses 8.24 fixed point format. Scale factors are clamped to valid range.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 struct ScaleFactorKey(u32);
 
 impl ScaleFactorKey {
+    /// Minimum valid scale factor.
+    const MIN_SCALE: f32 = 0.1;
+    /// Maximum valid scale factor.
+    const MAX_SCALE: f32 = 10.0;
+
     fn from_f32(scale: f32) -> Self {
+        let clamped = scale.clamp(Self::MIN_SCALE, Self::MAX_SCALE);
+        if clamped != scale {
+            log::warn!(
+                "Scale factor {} clamped to valid range [{}, {}]",
+                scale,
+                Self::MIN_SCALE,
+                Self::MAX_SCALE
+            );
+        }
         // Store as 8.24 fixed point for hashing
-        ScaleFactorKey((scale * 16777216.0) as u32)
+        ScaleFactorKey((clamped * 16777216.0) as u32)
     }
 }
 
@@ -182,7 +208,7 @@ struct RasterizedGlyph {
 
 /// Font system managing fonts, glyph cache, and texture atlas.
 pub struct FontSystem {
-    /// Loaded fonts.
+    /// Loaded fonts (leaked for 'static lifetime - fonts live for app lifetime).
     fonts: HashMap<FontId, FontRef<'static>>,
     /// Next font ID.
     next_font_id: u32,
@@ -285,10 +311,13 @@ impl FontSystem {
     /// Add a font from bytes (TTF/OTF data).
     ///
     /// Returns the font ID for use with text rendering.
+    ///
+    /// Note: Font data is leaked with `Box::leak` to satisfy `'static` lifetime.
+    /// This is intentional - fonts are typically loaded once and live for the
+    /// application lifetime, so the leak is acceptable.
     pub fn add_font(&mut self, bytes: &[u8]) -> Result<FontId, FontError> {
-        // FontRef doesn't own the bytes, so we need to leak them for 'static lifetime.
-        // This is safe because fonts are typically loaded once and live for the
-        // duration of the application.
+        // FontRef requires 'static lifetime. We leak the bytes since fonts
+        // are expected to live for the entire application lifetime.
         let bytes: &'static [u8] = Box::leak(bytes.to_vec().into_boxed_slice());
 
         let font = FontRef::try_from_slice(bytes)
@@ -302,6 +331,8 @@ impl FontSystem {
     }
 
     /// Add a font from bytes with a specific ID.
+    ///
+    /// See [`add_font`](Self::add_font) for lifetime notes.
     pub fn add_font_with_id(&mut self, bytes: &[u8], id: FontId) -> Result<(), FontError> {
         let bytes: &'static [u8] = Box::leak(bytes.to_vec().into_boxed_slice());
 

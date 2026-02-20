@@ -135,9 +135,11 @@ pub struct UiStyle {
 
     /// Slider track color.
     pub slider_track: Color,
-    /// Slider grab color.
+    /// Slider grab color (normal state).
     pub slider_grab: Color,
-    /// Slider grab color when active.
+    /// Slider grab color when hovered.
+    pub slider_grab_hovered: Color,
+    /// Slider grab color when active (dragging).
     pub slider_grab_active: Color,
 
     /// Separator line color.
@@ -189,6 +191,12 @@ pub struct UiStyle {
     /// Combo box preview text color.
     pub combo_text: Color,
 
+    // Text input limits
+    /// Maximum characters for single-line text input.
+    pub text_input_max_length: usize,
+    /// Maximum characters for multi-line text area.
+    pub text_area_max_length: usize,
+
     // Spacing
     /// Default spacing between items.
     pub item_spacing: f32,
@@ -233,6 +241,7 @@ impl UiStyle {
 
             slider_track: Color::from_rgb_hex(0x404040),
             slider_grab: Color::from_rgb_hex(0x4a9eff),
+            slider_grab_hovered: Color::from_rgb_hex(0x5aa5ff),
             slider_grab_active: Color::from_rgb_hex(0x6ab0ff),
 
             separator: Color::from_rgb_hex(0x404040),
@@ -263,6 +272,9 @@ impl UiStyle {
             combo_border: Color::from_rgb_hex(0x404040),
             combo_hovered: Color::from_rgb_hex(0x404040),
             combo_text: Color::from_rgb_hex(0xeeeeee),
+
+            text_input_max_length: 256,
+            text_area_max_length: 4096,
 
             item_spacing: 8.0,
             item_inner_spacing: 4.0,
@@ -304,6 +316,7 @@ impl UiStyle {
 
             slider_track: Color::from_rgb_hex(0xc0c0c0),
             slider_grab: Color::from_rgb_hex(0x2070d0),
+            slider_grab_hovered: Color::from_rgb_hex(0x2880e0),
             slider_grab_active: Color::from_rgb_hex(0x3090f0),
 
             separator: Color::from_rgb_hex(0xc0c0c0),
@@ -334,6 +347,9 @@ impl UiStyle {
             combo_border: Color::from_rgb_hex(0xc0c0c0),
             combo_hovered: Color::from_rgb_hex(0xe0e0e0),
             combo_text: Color::from_rgb_hex(0x222222),
+
+            text_input_max_length: 256,
+            text_area_max_length: 4096,
 
             item_spacing: 8.0,
             item_inner_spacing: 4.0,
@@ -405,6 +421,7 @@ impl UiStyle {
 
             slider_track: Color::from_rgb_hex(0x3a3a3a),
             slider_grab: Color::from_rgb_hex(0x4a9eff),
+            slider_grab_hovered: Color::from_rgb_hex(0x5aa5ff),
             slider_grab_active: Color::from_rgb_hex(0x6ab0ff),
 
             separator: Color::from_rgb_hex(0x555555),
@@ -435,6 +452,9 @@ impl UiStyle {
             combo_border: Color::from_rgb_hex(0x555555),
             combo_hovered: Color::from_rgb_hex(0x4a4a4a),
             combo_text: Color::from_rgb_hex(0xeeeeee),
+
+            text_input_max_length: 256,
+            text_area_max_length: 4096,
 
             item_spacing: 6.0,
             item_inner_spacing: 3.0,

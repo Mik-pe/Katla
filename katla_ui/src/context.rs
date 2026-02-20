@@ -494,7 +494,10 @@ impl UiContext {
     }
 
     /// Draw only a selection border (no fill).
+    ///
     /// Useful for highlighting already-drawn content like selected items.
+    /// Internally draws 4 rectangles, but these are batched into a single
+    /// draw command by the draw list (same texture/color/z-index/clip).
     pub fn draw_selection_border(&mut self, bounds: Rect2D, color: Color, width: f32) {
         // Top
         self.draw_rect(
@@ -524,14 +527,17 @@ impl UiContext {
         );
     }
 
-    /// Draw a textured image.
+    /// Draw a textured image with explicit texture.
     ///
-    /// The texture is specified via UV coordinates. For viewport texture,
-    /// use uv_min with x >= 1.0 (e.g., (1.0, 0.0) to (2.0, 1.0)).
-    /// For font atlas, use uv_min with x < 1.0.
-    pub fn draw_image(&mut self, bounds: Rect2D, uv_min: Vec2, uv_max: Vec2, color: Color) {
+    /// # Arguments
+    /// * `bounds` - Screen position and size
+    /// * `uv_min` - Top-left UV coordinate
+    /// * `uv_max` - Bottom-right UV coordinate
+    /// * `color` - Tint color (use Color::WHITE for no tint)
+    /// * `texture` - Texture to sample from (TextureId::FONT_ATLAS, VIEWPORT, or custom)
+    pub fn draw_image(&mut self, bounds: Rect2D, uv_min: Vec2, uv_max: Vec2, color: Color, texture: TextureId) {
         self.draw_list.set_clip(self.clip_rect());
-        self.draw_list.add_image(bounds, uv_min, uv_max, color);
+        self.draw_list.add_image(bounds, uv_min, uv_max, color, texture);
     }
 
     /// Draw a line.
@@ -953,18 +959,10 @@ impl UiContext {
         };
         self.draw_rect_border(check_bounds, bg_color, self.style.checkbox_border, 1.0);
 
-        // Draw check mark if checked
+        // Draw check icon if checked
         if *checked {
-            // Simple X mark
-            let pad = check_size * 0.25;
-            let inner = check_bounds.contract(pad);
-            self.draw_line(inner.min, inner.max, Color::WHITE, 2.0);
-            self.draw_line(
-                Vec2::new(inner.min.x(), inner.max.y()),
-                Vec2::new(inner.max.x(), inner.min.y()),
-                Color::WHITE,
-                2.0,
-            );
+            let icon_size = check_size * 0.7;
+            self.draw_icon_centered(ForkAwesome::CHECK, check_bounds, icon_size, Color::WHITE);
         }
 
         // Draw label (top-left positioning, vertically centered)
@@ -1035,7 +1033,7 @@ impl UiContext {
         let grab_color = if active {
             self.style.slider_grab_active
         } else if hovered {
-            self.style.slider_grab
+            self.style.slider_grab_hovered
         } else {
             self.style.slider_grab
         };
@@ -1076,16 +1074,16 @@ impl UiContext {
             self.input.want_capture_keyboard = true;
 
             // Process character input
-            for c in &self.input.characters.clone() {
-                if *c == '\x08' {
+            for &c in &self.input.characters {
+                if c == '\x08' {
                     // Backspace
                     if !text.is_empty() {
                         text.pop();
                         changed = true;
                     }
-                } else if *c >= ' ' && text.len() < 256 {
+                } else if c >= ' ' && text.len() < self.style.text_input_max_length {
                     // Printable character
-                    text.push(*c);
+                    text.push(c);
                     changed = true;
                 }
             }
@@ -1154,15 +1152,15 @@ impl UiContext {
         if focused {
             self.input.want_capture_keyboard = true;
 
-            for c in &self.input.characters.clone() {
-                if *c == '\x08' {
+            for &c in &self.input.characters {
+                if c == '\x08' {
                     if !text.is_empty() {
                         text.pop();
                         changed = true;
                     }
-                } else if *c >= ' ' || *c == '\n' {
-                    if text.len() < 4096 {
-                        text.push(*c);
+                } else if c >= ' ' || c == '\n' {
+                    if text.len() < self.style.text_area_max_length {
+                        text.push(c);
                         changed = true;
                     }
                 }
@@ -1908,51 +1906,8 @@ impl UiContext {
     pub fn popup_menu_item(&mut self, label: &str, icon: char, enabled: bool, shortcut: &str, bounds: Rect2D) -> bool {
         // Track this item for auto-sizing the popup background
         self.track_popup_item(bounds);
-
-        let hovered = self.is_hovered(bounds);
-
-        // Hover background
-        if enabled && hovered {
-            self.draw_rect(bounds, self.style.menu_hovered);
-        }
-
-        let text_size = self.scaled_font_size(FontSize::Small);
-        let text_y = bounds.min.y() + 6.0;
-
-        // Colors: enabled uses text_color, disabled uses text_disabled
-        let icon_color = if enabled { self.style.text_color } else { self.style.text_disabled };
-        let label_color = if enabled { self.style.text_color } else { self.style.text_disabled };
-
-        // Icon
-        self.draw_icon_aligned(
-            icon,
-            Vec2::new(bounds.min.x() + 8.0, text_y),
-            12.0,
-            icon_color,
-            FontId::DEFAULT,
-        );
-
-        // Label
-        self.draw_text(
-            label,
-            Vec2::new(bounds.min.x() + 28.0, text_y),
-            label_color,
-            text_size,
-        );
-
-        // Shortcut (right-aligned)
-        if !shortcut.is_empty() {
-            let shortcut_size = self.measure_text(shortcut, text_size);
-            self.draw_text(
-                shortcut,
-                Vec2::new(bounds.max.x() - shortcut_size.x() - 8.0, text_y),
-                self.style.text_disabled,
-                text_size,
-            );
-        }
-
-        // Click detection
-        enabled && hovered && self.input.mouse_clicked(crate::input::mouse_button::LEFT)
+        // Delegate to internal helper
+        self.draw_popup_item_contents(label, icon, enabled, bounds, shortcut)
     }
 
     /// Draw a menu separator line.
