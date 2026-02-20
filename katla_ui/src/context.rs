@@ -70,12 +70,8 @@ pub struct UiContext {
     z_index: u32,
     /// Z-index stack for nested containers.
     z_stack: Vec<u32>,
-    /// Tracked height of current dropdown/context menu content (for auto-sizing).
-    dropdown_content_height: f32,
-    /// Tracked width of current dropdown/context menu content (for auto-sizing).
-    dropdown_content_width: f32,
-    /// Origin position of current dropdown/context menu (for relative tracking).
-    dropdown_origin: Vec2,
+    /// Tracked bounding box of all popup content (auto-expanded as items are drawn).
+    popup_content_bounds: Option<Rect2D>,
     /// Deferred draws for dropdown items (drawn after background).
     dropdown_deferred: Vec<DeferredDraw>,
 }
@@ -143,9 +139,7 @@ impl UiContext {
             popup_consume_click: false,
             z_index: z_index::DEFAULT,
             z_stack: Vec::new(),
-            dropdown_content_height: 0.0,
-            dropdown_content_width: 0.0,
-            dropdown_origin: Vec2::new(0.0, 0.0),
+            popup_content_bounds: None,
             dropdown_deferred: Vec::new(),
         }
     }
@@ -2207,17 +2201,15 @@ impl UiContext {
             // Switch to popup Z-index
             self.push_z_index(z_index::POPUP);
 
-            // Store popup origin for later
+            // Store popup origin for get_popup_bounds()
             let popup_origin = Vec2::new(bounds.min.x(), bounds.max.y());
 
-            // Initialize content size tracking
-            self.dropdown_content_height = 0.0;
-            self.dropdown_content_width = 0.0;
-            self.dropdown_origin = popup_origin;
+            // Initialize content bounds tracking
+            self.popup_content_bounds = None;
             self.dropdown_deferred.clear();
 
             // Store popup dimensions for later (background drawn in end_dropdown)
-            // Use large initial size, will be clamped to content in end_dropdown
+            // Use large initial size for clipping, will be clamped to content in end_dropdown
             let popup_bounds =
                 Rect2D::from_origin_size(popup_origin, Vec2::new(self.style.menu_min_width, 500.0));
 
@@ -2233,19 +2225,16 @@ impl UiContext {
         false
     }
 
-    /// Track popup content size (call from menu_item, etc.)
-    /// Tracks both width and height relative to popup origin.
+    /// Track popup content bounds (call from menu_item, etc.)
+    /// Expands the tracked bounding box to include this item.
     pub fn track_popup_item(&mut self, item_bounds: Rect2D) {
-        // Track height (bottom relative to origin)
-        let item_bottom = item_bounds.max.y() - self.dropdown_origin.y();
-        if item_bottom > self.dropdown_content_height {
-            self.dropdown_content_height = item_bottom;
-        }
-        // Track width (right relative to origin)
-        let item_right = item_bounds.max.x() - self.dropdown_origin.x();
-        if item_right > self.dropdown_content_width {
-            self.dropdown_content_width = item_right;
-        }
+        self.popup_content_bounds = Some(match self.popup_content_bounds {
+            None => item_bounds,
+            Some(existing) => Rect2D::new(
+                Vec2::new(existing.min.x().min(item_bounds.min.x()), existing.min.y().min(item_bounds.min.y())),
+                Vec2::new(existing.max.x().max(item_bounds.max.x()), existing.max.y().max(item_bounds.max.y())),
+            ),
+        });
     }
 
     /// Defer a draw for dropdown items (drawn after background)
@@ -2264,54 +2253,60 @@ impl UiContext {
 
     /// End a dropdown menu.
     pub fn end_dropdown(&mut self) {
-        // Calculate final size from tracked content
-        if let Some(bounds) = self.popup_bounds {
-            // Use tracked width/height, with minimums
-            let final_width = self.dropdown_content_width.max(self.style.menu_min_width);
-            let final_height = self.dropdown_content_height.max(self.style.menu_item_height);
-            let correct_bounds = Rect2D::from_origin_size(
-                bounds.min,
-                Vec2::new(final_width, final_height),
-            );
+        // Get tracked content bounds, or use initial popup bounds as fallback
+        let content_bounds = self.popup_content_bounds.unwrap_or_else(|| {
+            self.popup_bounds.unwrap_or(Rect2D::from_origin_size(
+                Vec2::new(0.0, 0.0),
+                Vec2::new(self.style.menu_min_width, self.style.menu_item_height),
+            ))
+        });
 
-            // Draw background at the correct size FIRST
-            let shadow_offset = Vec2::new(4.0, 4.0);
-            let shadow_bounds = Rect2D::new(
-                correct_bounds.min + shadow_offset,
-                correct_bounds.max + shadow_offset,
-            );
-            self.draw_rect(shadow_bounds, self.style.popup_shadow);
-            self.draw_rect(correct_bounds, self.style.popup_bg);
-            self.draw_rect_border(
-                correct_bounds,
-                Color::TRANSPARENT,
-                self.style.popup_border,
-                1.0,
-            );
+        // Ensure minimum size
+        let min_width = self.style.menu_min_width;
+        let min_height = self.style.menu_item_height;
+        let final_width = content_bounds.width().max(min_width);
+        let final_height = content_bounds.height().max(min_height);
 
-            // Take deferred draws to avoid borrow issues
-            let deferred = std::mem::take(&mut self.dropdown_deferred);
+        // Use the tracked content position as the background position
+        let correct_bounds = Rect2D::from_origin_size(content_bounds.min, Vec2::new(final_width, final_height));
 
-            // Now replay deferred item draws ON TOP of background
-            for cmd in deferred {
-                match cmd {
-                    DeferredDraw::Rect { bounds, color } => {
-                        self.draw_rect(bounds, color);
-                    }
-                    DeferredDraw::Text { text, pos, color, font_size } => {
-                        self.draw_text(&text, pos, color, font_size);
-                    }
+        // Draw background at the correct size FIRST
+        let shadow_offset = Vec2::new(4.0, 4.0);
+        let shadow_bounds = Rect2D::new(
+            correct_bounds.min + shadow_offset,
+            correct_bounds.max + shadow_offset,
+        );
+        self.draw_rect(shadow_bounds, self.style.popup_shadow);
+        self.draw_rect(correct_bounds, self.style.popup_bg);
+        self.draw_rect_border(
+            correct_bounds,
+            Color::TRANSPARENT,
+            self.style.popup_border,
+            1.0,
+        );
+
+        // Take deferred draws to avoid borrow issues
+        let deferred = std::mem::take(&mut self.dropdown_deferred);
+
+        // Now replay deferred item draws ON TOP of background
+        for cmd in deferred {
+            match cmd {
+                DeferredDraw::Rect { bounds, color } => {
+                    self.draw_rect(bounds, color);
+                }
+                DeferredDraw::Text { text, pos, color, font_size } => {
+                    self.draw_text(&text, pos, color, font_size);
                 }
             }
-
-            self.popup_bounds = Some(correct_bounds);
-
-            // Block input for this popup
-            if correct_bounds.contains(self.input.mouse_pos) {
-                self.input.want_capture_mouse = true;
-            }
-            self.input.want_capture_keyboard = true;
         }
+
+        self.popup_bounds = Some(correct_bounds);
+
+        // Block input for this popup
+        if correct_bounds.contains(self.input.mouse_pos) {
+            self.input.want_capture_mouse = true;
+        }
+        self.input.want_capture_keyboard = true;
 
         self.pop_clip();
         self.pop_id();
@@ -2342,10 +2337,8 @@ impl UiContext {
         let is_open = self.popup_id == Some(context_id);
 
         if is_open {
-            // Initialize content size tracking (shared with dropdown)
-            self.dropdown_content_height = 0.0;
-            self.dropdown_content_width = 0.0;
-            self.dropdown_origin = pos;
+            // Initialize content bounds tracking
+            self.popup_content_bounds = None;
             self.dropdown_deferred.clear();
 
             // Set up initial popup bounds for get_popup_bounds() to work
@@ -2367,32 +2360,24 @@ impl UiContext {
         false
     }
 
-    /// End a context menu and draw the background based on tracked content size.
+    /// End a context menu and draw the background based on tracked content bounds.
     pub fn end_context_menu(&mut self) {
-        // Get tracked content size (shared with dropdown tracking)
-        let content_width = self.dropdown_content_width.max(self.style.menu_min_width);
-        let content_height = self.dropdown_content_height.max(self.style.menu_item_height);
+        // Get tracked content bounds, or use initial popup bounds as fallback
+        let content_bounds = self.popup_content_bounds.unwrap_or_else(|| {
+            self.popup_bounds.unwrap_or(Rect2D::from_origin_size(
+                Vec2::new(0.0, 0.0),
+                Vec2::new(self.style.menu_min_width, self.style.menu_item_height),
+            ))
+        });
 
-        // Get context menu position from current popup bounds
-        let popup_pos = if let Some(bounds) = self.popup_bounds {
-            bounds.min
-        } else {
-            self.input.mouse_pos
-        };
+        // Ensure minimum size
+        let min_width = self.style.menu_min_width;
+        let min_height = self.style.menu_item_height;
+        let final_width = content_bounds.width().max(min_width);
+        let final_height = content_bounds.height().max(min_height);
 
-        // Calculate final popup bounds with tracked content size
-        let popup_size = Vec2::new(content_width, content_height);
-
-        // Keep on screen
-        let mut adjusted_pos = popup_pos;
-        if adjusted_pos.x() + popup_size.x() > self.screen_size.x() {
-            adjusted_pos = Vec2::new(self.screen_size.x() - popup_size.x() - 5.0, adjusted_pos.y());
-        }
-        if adjusted_pos.y() + popup_size.y() > self.screen_size.y() {
-            adjusted_pos = Vec2::new(adjusted_pos.x(), self.screen_size.y() - popup_size.y() - 5.0);
-        }
-
-        let popup_bounds = Rect2D::from_origin_size(adjusted_pos, popup_size);
+        // Use the tracked content position as the background position
+        let popup_bounds = Rect2D::from_origin_size(content_bounds.min, Vec2::new(final_width, final_height));
 
         // Draw popup background with shadow at lower z-index
         self.pop_z_index(); // Pop to get back to previous z
@@ -2869,5 +2854,155 @@ mod tests {
                 }
             }
         }
+    }
+
+    // === Popup Content Bounds Tracking Tests ===
+
+    /// Test that track_popup_item correctly expands bounds for a single item.
+    #[test]
+    fn test_track_popup_item_single() {
+        let mut ctx = UiContext::new();
+        ctx.begin(Vec2::new(800.0, 600.0), 1.0);
+
+        // Initially no bounds tracked
+        assert!(ctx.popup_content_bounds.is_none());
+
+        // Track a single item
+        let item_bounds = Rect2D::from_origin_size(Vec2::new(100.0, 50.0), Vec2::new(150.0, 24.0));
+        ctx.track_popup_item(item_bounds);
+
+        // Bounds should match the item exactly
+        let tracked = ctx.popup_content_bounds.unwrap();
+        assert_eq!(tracked.min, Vec2::new(100.0, 50.0));
+        assert_eq!(tracked.max, Vec2::new(250.0, 74.0));
+
+        ctx.end();
+    }
+
+    /// Test that track_popup_item correctly expands bounds for multiple items.
+    #[test]
+    fn test_track_popup_item_multiple() {
+        let mut ctx = UiContext::new();
+        ctx.begin(Vec2::new(800.0, 600.0), 1.0);
+
+        // Track first item at (100, 50)
+        let item1 = Rect2D::from_origin_size(Vec2::new(100.0, 50.0), Vec2::new(150.0, 24.0));
+        ctx.track_popup_item(item1);
+
+        // Track second item below first at (100, 74)
+        let item2 = Rect2D::from_origin_size(Vec2::new(100.0, 74.0), Vec2::new(150.0, 24.0));
+        ctx.track_popup_item(item2);
+
+        // Track third item below second at (100, 98)
+        let item3 = Rect2D::from_origin_size(Vec2::new(100.0, 98.0), Vec2::new(150.0, 24.0));
+        ctx.track_popup_item(item3);
+
+        // Bounds should encompass all items
+        let tracked = ctx.popup_content_bounds.unwrap();
+        assert_eq!(tracked.min, Vec2::new(100.0, 50.0), "Top should be at first item top");
+        assert_eq!(tracked.max, Vec2::new(250.0, 122.0), "Bottom should be at last item bottom");
+
+        ctx.end();
+    }
+
+    /// Test that track_popup_item correctly handles separators (different heights).
+    #[test]
+    fn test_track_popup_item_with_separators() {
+        let mut ctx = UiContext::new();
+        ctx.begin(Vec2::new(800.0, 600.0), 1.0);
+
+        // Track first item at (100, 50)
+        let item1 = Rect2D::from_origin_size(Vec2::new(100.0, 50.0), Vec2::new(150.0, 24.0));
+        ctx.track_popup_item(item1);
+
+        // Track separator at (100, 74) - only 8px tall
+        let separator = Rect2D::from_origin_size(Vec2::new(100.0, 74.0), Vec2::new(150.0, 8.0));
+        ctx.track_popup_item(separator);
+
+        // Track second item at (100, 82)
+        let item2 = Rect2D::from_origin_size(Vec2::new(100.0, 82.0), Vec2::new(150.0, 24.0));
+        ctx.track_popup_item(item2);
+
+        // Bounds should encompass all elements
+        let tracked = ctx.popup_content_bounds.unwrap();
+        assert_eq!(tracked.min, Vec2::new(100.0, 50.0), "Top should be at first item top");
+        assert_eq!(tracked.max, Vec2::new(250.0, 106.0), "Bottom should be at last item bottom (82 + 24)");
+
+        ctx.end();
+    }
+
+    /// Test that popup background matches item bounds - simulating the full flow.
+    #[test]
+    fn test_popup_background_matches_items() {
+        let mut ctx = UiContext::new();
+        ctx.begin(Vec2::new(800.0, 600.0), 1.0);
+
+        // Simulate a popup at position (200, 100) with 3 items and a separator
+        let popup_pos = Vec2::new(200.0, 100.0);
+        let item_width = 150.0;
+        let item_height = 24.0;
+        let separator_height = 8.0;
+        let padding = 2.0;
+
+        let mut current_y = popup_pos.y() + padding;
+
+        // Item 1
+        let item1 = Rect2D::from_origin_size(Vec2::new(popup_pos.x(), current_y), Vec2::new(item_width, item_height));
+        ctx.track_popup_item(item1);
+        current_y += item_height;
+
+        // Separator
+        let sep = Rect2D::from_origin_size(Vec2::new(popup_pos.x(), current_y), Vec2::new(item_width, separator_height));
+        ctx.track_popup_item(sep);
+        current_y += separator_height;
+
+        // Item 2
+        let item2 = Rect2D::from_origin_size(Vec2::new(popup_pos.x(), current_y), Vec2::new(item_width, item_height));
+        ctx.track_popup_item(item2);
+        current_y += item_height;
+
+        // Get tracked bounds
+        let content_bounds = ctx.popup_content_bounds.unwrap();
+
+        // Verify background top matches first item top
+        assert_eq!(content_bounds.min.y(), popup_pos.y() + padding, "Background top should match first item top");
+
+        // Verify background bottom matches last item bottom
+        let expected_bottom = popup_pos.y() + padding + item_height + separator_height + item_height;
+        assert_eq!(content_bounds.max.y(), expected_bottom, "Background bottom should match last item bottom");
+
+        // Verify background left matches items
+        assert_eq!(content_bounds.min.x(), popup_pos.x(), "Background left should match items");
+
+        // Verify background right matches items
+        assert_eq!(content_bounds.max.x(), popup_pos.x() + item_width, "Background right should match items");
+
+        ctx.end();
+    }
+
+    /// Test that wider items expand the tracked bounds.
+    #[test]
+    fn test_track_popup_item_varying_widths() {
+        let mut ctx = UiContext::new();
+        ctx.begin(Vec2::new(800.0, 600.0), 1.0);
+
+        // First item: 100px wide
+        let item1 = Rect2D::from_origin_size(Vec2::new(50.0, 10.0), Vec2::new(100.0, 24.0));
+        ctx.track_popup_item(item1);
+
+        // Second item: 200px wide (should expand the bounds)
+        let item2 = Rect2D::from_origin_size(Vec2::new(50.0, 34.0), Vec2::new(200.0, 24.0));
+        ctx.track_popup_item(item2);
+
+        // Third item: 150px wide (should not shrink the bounds)
+        let item3 = Rect2D::from_origin_size(Vec2::new(50.0, 58.0), Vec2::new(150.0, 24.0));
+        ctx.track_popup_item(item3);
+
+        let tracked = ctx.popup_content_bounds.unwrap();
+
+        // Width should be 200px (from the widest item)
+        assert_eq!(tracked.max.x(), 250.0, "Right edge should be at widest item");
+
+        ctx.end();
     }
 }
