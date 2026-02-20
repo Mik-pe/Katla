@@ -1724,9 +1724,9 @@ pub fn build_asset_browser(
             current_y += item_height;
         }
 
-        // Calculate actual content height for background sizing
+        // Calculate actual content size for background sizing
         let content_height = current_y - menu_pos.y();
-        ui.set_context_menu_content_height(content_height);
+        ui.set_context_menu_content_size(menu_width, content_height);
         ui.end_context_menu();
 
         // Process action

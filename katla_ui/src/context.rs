@@ -66,8 +66,8 @@ pub struct UiContext {
     popup_opened_this_frame: bool,
     /// Whether a popup consumed the click this frame (prevents click-through).
     popup_consume_click: bool,
-    /// Content height for current context menu (set by caller before end_context_menu).
-    context_menu_content_height: f32,
+    /// Content size for current context menu (set by caller before end_context_menu).
+    context_menu_content_size: Option<Vec2>,
     /// Current Z-index for rendering (higher = on top).
     z_index: u32,
     /// Z-index stack for nested containers.
@@ -141,7 +141,7 @@ impl UiContext {
             popup_bounds: None,
             popup_opened_this_frame: false,
             popup_consume_click: false,
-            context_menu_content_height: 0.0,
+            context_menu_content_size: None,
             z_index: z_index::DEFAULT,
             z_stack: Vec::new(),
             dropdown_content_height: 0.0,
@@ -2326,8 +2326,8 @@ impl UiContext {
         let is_open = self.popup_id == Some(context_id);
 
         if is_open {
-            // Reset content height - caller must set it before end_context_menu()
-            self.context_menu_content_height = 0.0;
+            // Reset content size - caller must set it before end_context_menu()
+            self.context_menu_content_size = None;
 
             // Set up initial popup bounds for get_popup_bounds() to work
             // Use minimum size initially, will be updated in end_context_menu()
@@ -2355,21 +2355,18 @@ impl UiContext {
         false
     }
 
-    /// Set the content height for the current context menu.
+    /// Set the content size for the current context menu.
     ///
     /// Call this before `end_context_menu()` to properly size the background.
-    pub fn set_context_menu_content_height(&mut self, height: f32) {
-        self.context_menu_content_height = height;
+    pub fn set_context_menu_content_size(&mut self, width: f32, height: f32) {
+        self.context_menu_content_size = Some(Vec2::new(width, height));
     }
 
-    /// End a context menu and draw the background based on content height.
+    /// End a context menu and draw the background based on content size.
     pub fn end_context_menu(&mut self) {
-        // Get content height (default to minimum if not set)
-        let content_height = if self.context_menu_content_height > 0.0 {
-            self.context_menu_content_height
-        } else {
-            self.style.menu_item_height
-        };
+        // Get content size (default to minimum if not set)
+        let content_size = self.context_menu_content_size
+            .unwrap_or(Vec2::new(self.style.menu_min_width, self.style.menu_item_height));
 
         // Get context menu position from current popup bounds
         let popup_pos = if let Some(bounds) = self.popup_bounds {
@@ -2378,8 +2375,10 @@ impl UiContext {
             self.input.mouse_pos
         };
 
-        // Calculate final popup bounds with actual content height
-        let popup_size = Vec2::new(self.style.menu_min_width, content_height + self.style.menu_padding * 2.0);
+        // Calculate final popup bounds with actual content size
+        // Add small padding around content
+        let padding = self.style.menu_padding;
+        let popup_size = Vec2::new(content_size.x() + padding, content_size.y());
 
         // Keep on screen
         let mut adjusted_pos = popup_pos;
