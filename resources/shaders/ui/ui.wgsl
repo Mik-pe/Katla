@@ -1,5 +1,10 @@
 // UI shader for screen-space rendering
 // Supports font atlas and dynamic texture sampling via push descriptors
+//
+// Texture modes (signaled by color.a):
+// - color.a >= 0: Font/text mode - samples from font_atlas, multiplies with color
+// - color.a < 0: Opaque image mode - samples from dynamic_texture, forces alpha = 1.0
+//   This is used for viewport, thumbnails, and other images that should not blend.
 
 struct UiVertex {
     @location(0) position: vec2f,  // Screen coordinates (pixels)
@@ -23,7 +28,6 @@ struct UiUniforms {
 // binding 0: font atlas (SAMPLED_IMAGE)
 // binding 1: sampler
 // binding 3: uniforms (UNIFORM_BUFFER)
-// Note: binding 2 removed - moved to set 1 for push descriptors
 @group(0) @binding(0) var font_atlas: texture_2d<f32>;
 @group(0) @binding(1) var font_sampler: sampler;
 @group(0) @binding(3) var<uniform> uniforms: UiUniforms;
@@ -31,6 +35,9 @@ struct UiUniforms {
 // Set 1: Dynamic texture (push descriptors)
 // This set is pushed per-draw-call to switch between viewport and thumbnails
 @group(1) @binding(0) var dynamic_texture: texture_2d<f32>;
+
+// Sentinel value for opaque image mode (matches Color::OPAQUE_IMAGE_ALPHA in Rust)
+const OPAQUE_IMAGE_ALPHA: f32 = -1.0;
 
 @vertex
 fn vs_main(in: UiVertex) -> VertexOutput {
@@ -51,20 +58,18 @@ fn vs_main(in: UiVertex) -> VertexOutput {
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4f {
-    var tex_color: vec4f;
-
-    // UV.x >= 1.0 signals dynamic texture sampling (viewport or thumbnail)
-    // The actual UV is (uv.x - 1.0, uv.y)
-    if (in.uv.x >= 1.0) {
-        let dynamic_uv = vec2f(in.uv.x - 1.0, in.uv.y);
-        tex_color = textureSample(dynamic_texture, font_sampler, dynamic_uv);
-        tex_color.a = 1.0;
-        return tex_color;
+    // Check for opaque image mode (negative alpha signals this)
+    if (in.color.a < 0.0) {
+        // Opaque image mode - sample from dynamic texture, force alpha = 1.0
+        // Used for viewport, thumbnails, and other textures that should not blend
+        let tex_color = textureSample(dynamic_texture, font_sampler, in.uv);
+        // Use the absolute value of alpha for any tinting (usually 1.0 anyway)
+        let tint = vec4f(in.color.rgb, 1.0);
+        // Force output alpha to 1.0 to disable blending
+        return vec4f(tex_color.rgb * tint.rgb, 1.0);
     } else {
-        // Sample from font atlas
-        tex_color = textureSample(font_atlas, font_sampler, in.uv);
-        // Multiply texture with vertex color
+        // Font/text mode - sample from font atlas and multiply with vertex color
+        let tex_color = textureSample(font_atlas, font_sampler, in.uv);
         return in.color * tex_color;
     }
-
 }

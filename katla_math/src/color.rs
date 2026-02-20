@@ -329,6 +329,19 @@ impl Color {
         b: 1.0,
         a: 1.0,
     };
+    /// Special alpha value that signals "opaque image" mode in shaders.
+    /// When a vertex has this alpha value, the shader forces output alpha to 1.0
+    /// regardless of texture alpha. Used for viewport and thumbnail rendering.
+    pub const OPAQUE_IMAGE_ALPHA: f32 = -1.0;
+    /// Opaque white color for rendering images without blending.
+    /// The negative alpha signals the shader to force output alpha = 1.0.
+    /// Use this for viewport, thumbnails, and other textures that should not blend.
+    pub const OPAQUE_IMAGE: Color = Color {
+        r: 1.0,
+        g: 1.0,
+        b: 1.0,
+        a: Self::OPAQUE_IMAGE_ALPHA,
+    };
     pub const RED: Color = Color {
         r: 1.0,
         g: 0.0,

@@ -1067,24 +1067,18 @@ pub fn build_asset_browser(
         // Draw thumbnail or icon centered in item
         match &asset.thumbnail_state {
             ThumbnailState::Loaded { texture_id } => {
-                // Draw thumbnail image with inset so selection/hover background is visible
-                // UV.x >= 1.0 signals the shader to sample from the dynamic texture (set 1)
-                // Add 1.0 to UV.x to shift from 0-1 range to 1-2 range
-                let uv_offset = Rect2D::new(
-                    Vec2::new(1.0, 0.0),  // UV min (offset by 1.0 in x)
-                    Vec2::new(2.0, 1.0),  // UV max (offset by 1.0 in x)
-                );
                 // Inset thumbnail by 3 pixels to show selection/hover background
                 let inset = 3.0;
                 let thumb_bounds = Rect2D::from_origin_size(
                     Vec2::new(item_bounds.min.x() + inset, item_bounds.min.y() + inset),
                     Vec2::new(item_bounds.width() - inset * 2.0, item_bounds.height() - inset * 2.0),
                 );
+                // Use OPAQUE_IMAGE to force alpha = 1.0 (thumbnails should not blend)
                 ui.image(
                     *texture_id,
                     thumb_bounds,
-                    Some(uv_offset),
-                    None,  // White tint
+                    None,  // Use default UVs (0-1)
+                    Some(Color::OPAQUE_IMAGE),  // Force opaque output
                 );
             }
             ThumbnailState::Loading => {
