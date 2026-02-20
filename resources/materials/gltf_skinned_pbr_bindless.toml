@@ -1,0 +1,30 @@
+# Skinned PBR Material Template with Bindless Textures
+#
+# Material for GLTF models with skeletal animation and bindless textures.
+# Uses the skinned shader with GPU skeletal deformation and bindless texture array.
+#
+# Bindless architecture:
+# - Set 1 Bindings:
+#   - Binding 0: texture_2d array (4096 textures)
+#   - Binding 1: shared sampler
+# - Texture indices come from ObjectUniforms.texture_indices.
+# - Set 2: Skeleton joint matrices
+
+name = "gltf_skinned_pbr_bindless"
+
+[shaders]
+vertex = "../shaders/model_pbr_skinned_bindless.wgsl"
+fragment = "../shaders/model_pbr_skinned_bindless.wgsl"
+
+# Bindless materials don't have per-material texture bindings
+# Textures are accessed via ObjectUniforms.texture_indices
+
+[bindings.skeleton.joints]
+binding = 0
+name = "joint_matrices"
+
+[render_state]
+depth_test = true
+depth_write = true
+cull_backfaces = true
+alpha_blending = false

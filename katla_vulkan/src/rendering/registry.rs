@@ -28,20 +28,12 @@ pub(crate) struct MaterialAsset {
     /// Optional per-material uniform buffer (for template-based materials).
     /// When present, this material has its own uniform buffer instead of using pipeline's embedded one.
     pub uniform: Option<crate::vulkan::material::UniformHandle>,
-    /// Per-material texture descriptor set (Set 1) - LEGACY, use bindless instead.
-    /// Created at registration time to ensure each material has its own texture binding.
-    #[deprecated(note = "Use texture_indices for bindless textures")]
-    pub texture_descriptor: Option<crate::vulkan::material::TextureDescriptorSet>,
-    /// PBR texture descriptor set for full PBR materials (Set 1) - LEGACY, use bindless instead.
-    /// Used when material has albedo, normal, metallic/roughness, occlusion, emission textures.
-    #[deprecated(note = "Use texture_indices for bindless textures")]
-    pub pbr_texture_descriptor: Option<crate::vulkan::material::PbrTextureDescriptorSet>,
     /// PBR textures kept alive for the lifetime of the material.
     /// These must be stored to prevent the textures from being destroyed while in use.
     #[allow(dead_code)]
     pub pbr_textures: Option<Vec<Rc<Texture>>>,
     /// Bindless texture indices: [albedo, normal, metallic_roughness, ao]
-    /// Used when bindless textures are enabled.
+    /// Textures are accessed via the bindless texture array using these indices.
     pub texture_indices: [u32; 4],
     /// Emission texture index for bindless.
     pub emission_index: u32,
@@ -89,27 +81,8 @@ impl AssetRegistry {
 
     /// Register a material and return a handle.
     ///
-    /// This also creates a per-material texture descriptor if the material
-    /// has texture info, ensuring each material has its own texture binding
-    /// even when sharing a pipeline from a template.
-    pub(crate) fn register_material(&mut self, mut material: MaterialAsset) -> MaterialHandle {
-        // Create texture descriptor from uniform's image info if present
-        if let Some(ref uniform) = material.uniform {
-            if let Some(ref image_info) = uniform.next_descriptor().image_info {
-                let texture_layout = material.pipeline.borrow().texture_set_layout;
-                if let Some(layout) = texture_layout {
-                    let context = material.pipeline.borrow().context().clone();
-                    if let Ok(descriptor) = crate::vulkan::material::TextureDescriptorSet::new(
-                        &context,
-                        layout,
-                        image_info,
-                    ) {
-                        material.texture_descriptor = Some(descriptor);
-                    }
-                }
-            }
-        }
-
+    /// Materials use bindless textures - texture indices should be set in MaterialAsset.
+    pub(crate) fn register_material(&mut self, material: MaterialAsset) -> MaterialHandle {
         let id = self.next_material_id;
         self.next_material_id += 1;
 
@@ -124,27 +97,14 @@ impl AssetRegistry {
 
     /// Register a material with PBR textures and return a handle.
     ///
-    /// This creates a PBR texture descriptor set for materials with full PBR textures.
     /// The textures are stored to keep them alive for the lifetime of the material.
+    /// Materials use bindless textures - texture indices should be set in MaterialAsset.
     pub(crate) fn register_material_pbr(
         &mut self,
         mut material: MaterialAsset,
-        pbr_textures: crate::vulkan::material::PbrTextureSet,
+        _pbr_textures: crate::vulkan::material::PbrTextureSet,
         textures: Vec<Rc<Texture>>,
     ) -> MaterialHandle {
-        // Create PBR texture descriptor from the texture set
-        let texture_layout = material.pipeline.borrow().texture_set_layout;
-        if let Some(layout) = texture_layout {
-            let context = material.pipeline.borrow().context().clone();
-            if let Ok(descriptor) = crate::vulkan::material::PbrTextureDescriptorSet::new(
-                &context,
-                layout,
-                &pbr_textures,
-            ) {
-                material.pbr_texture_descriptor = Some(descriptor);
-            }
-        }
-
         // Store textures to keep them alive
         material.pbr_textures = Some(textures);
 

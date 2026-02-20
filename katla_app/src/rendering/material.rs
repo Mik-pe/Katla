@@ -326,6 +326,37 @@ impl Material {
         }
     }
 
+    /// Create a skinned PBR material with bindless texture indices.
+    ///
+    /// This is used for GLTF models with skeletal animation and bindless textures.
+    /// Combines full PBR textures with skeletal animation support.
+    /// Textures are accessed by index from the bindless texture array.
+    pub fn from_template_skinned_pbr_bindless(
+        template: &MaterialTemplate,
+        pbr_textures: PbrTextureSet,
+        texture_refs: Vec<Rc<Texture>>,
+        color: Option<Color>,
+        texture_indices: [u32; 4],
+        emission_index: u32,
+    ) -> Self {
+        use katla_vulkan::vertexbinding::get_skinned_vertex_binding;
+
+        let uniform = template.create_uniform();
+
+        Self {
+            material_pipeline: template.pipeline(),
+            texture: None,
+            vertex_binding: get_skinned_vertex_binding(),
+            handle: None,
+            color,
+            uniform: Some(uniform),
+            pbr_textures: Some(pbr_textures),
+            pbr_texture_refs: Some(texture_refs),
+            texture_indices,
+            emission_index,
+        }
+    }
+
     /// Create a material from a MaterialPipeline directly (non-template).
     ///
     /// This is used for materials that don't use templates and have their
@@ -353,6 +384,40 @@ impl Material {
             pbr_texture_refs: None,
             texture_indices: [0; 4],
             emission_index: 0,
+        }
+    }
+
+    /// Create a bindless material from a MaterialPipeline.
+    ///
+    /// This is used for materials that use texture indices
+    /// instead of per-material descriptor sets.
+    ///
+    /// # Arguments
+    /// * `material_pipeline` - The material pipeline
+    /// * `texture` - Optional texture (kept alive for the material lifetime)
+    /// * `vertex_binding` - Vertex binding description
+    /// * `color` - Optional color
+    /// * `texture_indices` - Texture indices [albedo, normal, mr, ao]
+    /// * `emission_index` - Emission texture index
+    pub fn from_pipeline_with_textures(
+        material_pipeline: MaterialPipeline,
+        texture: Option<Rc<Texture>>,
+        vertex_binding: VertexBinding,
+        color: Option<Color>,
+        texture_indices: [u32; 4],
+        emission_index: u32,
+    ) -> Self {
+        Self {
+            material_pipeline: Rc::new(RefCell::new(material_pipeline)),
+            texture,
+            vertex_binding,
+            handle: None,
+            color,
+            uniform: None,
+            pbr_textures: None,
+            pbr_texture_refs: None,
+            texture_indices,
+            emission_index,
         }
     }
 

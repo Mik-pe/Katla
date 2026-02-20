@@ -328,40 +328,63 @@ impl Model {
         // Create material based on skinning detection and bindless mode
         let material = {
             if has_skinning {
-                // Use skinned shader template (currently only supports albedo texture)
-                // TODO: Create a gltf_skinned_pbr_full template for full PBR on skinned models
-                if let Some(template) = material_registry.borrow().get_template("gltf_skinned") {
-                    info!("  Using gltf_skinned template");
-                    if use_bindless {
-                        Material::from_template_skinned_with_bindless(template, Some(albedo_tex), None, texture_indices, emission_index)
+                // Skinned mesh material selection
+                if use_bindless {
+                    // Bindless mode - use bindless skinned template with full PBR
+                    if let Some(template) = material_registry.borrow().get_template("gltf_skinned_pbr_bindless") {
+                        info!("  Using gltf_skinned_pbr_bindless template");
+                        Material::from_template_skinned_pbr_bindless(template, pbr_textures, texture_refs, None, texture_indices, emission_index)
                     } else {
-                        Material::from_template_skinned(template, Some(albedo_tex), None)
+                        warn!("  Template 'gltf_skinned_pbr_bindless' not found, falling back to gltf_skinned");
+                        // Fallback to albedo-only skinned template
+                        if let Some(template) = material_registry.borrow().get_template("gltf_skinned") {
+                            Material::from_template_skinned_with_bindless(template, Some(albedo_tex), None, texture_indices, emission_index)
+                        } else {
+                            Material::new(model.clone(), context.clone())
+                        }
                     }
                 } else {
-                    warn!("  Template 'gltf_skinned' not found, falling back to gltf_default");
-                    if let Some(template) = material_registry.borrow().get_template("gltf_default") {
-                        Material::from_template(template, Some(albedo_tex), None)
+                    // Legacy mode - use per-material texture descriptors
+                    // TODO: Create a gltf_skinned_pbr_full template for full PBR on skinned models
+                    if let Some(template) = material_registry.borrow().get_template("gltf_skinned") {
+                        info!("  Using gltf_skinned template (albedo only)");
+                        Material::from_template_skinned(template, Some(albedo_tex), None)
                     } else {
-                        Material::new(model.clone(), context.clone())
+                        warn!("  Template 'gltf_skinned' not found, falling back to gltf_default");
+                        if let Some(template) = material_registry.borrow().get_template("gltf_default") {
+                            Material::from_template(template, Some(albedo_tex), None)
+                        } else {
+                            Material::new(model.clone(), context.clone())
+                        }
                     }
                 }
             } else {
                 // Use full PBR template for static models
-                if let Some(template) = material_registry.borrow().get_template("gltf_pbr_full") {
-                    info!("  Using gltf_pbr_full template");
-                    if use_bindless {
-                        // Bindless mode - texture indices passed to material
+                if use_bindless {
+                    // Bindless mode - use bindless templates
+                    if let Some(template) = material_registry.borrow().get_template("gltf_pbr_bindless") {
+                        info!("  Using gltf_pbr_bindless template");
                         Material::from_template_pbr_bindless(template, pbr_textures, texture_refs, None, texture_indices, emission_index)
                     } else {
-                        // Legacy mode - use per-material texture descriptors
-                        Material::from_template_pbr(template, pbr_textures, texture_refs, None)
+                        warn!("  Template 'gltf_pbr_bindless' not found, falling back to gltf_default");
+                        if let Some(template) = material_registry.borrow().get_template("gltf_default") {
+                            Material::from_template(template, Some(albedo_tex), None)
+                        } else {
+                            Material::new(model.clone(), context.clone())
+                        }
                     }
                 } else {
-                    warn!("  Template 'gltf_pbr_full' not found, falling back to gltf_default");
-                    if let Some(template) = material_registry.borrow().get_template("gltf_default") {
-                        Material::from_template(template, Some(albedo_tex), None)
+                    // Legacy mode - use per-material texture descriptors
+                    if let Some(template) = material_registry.borrow().get_template("gltf_pbr_full") {
+                        info!("  Using gltf_pbr_full template");
+                        Material::from_template_pbr(template, pbr_textures, texture_refs, None)
                     } else {
-                        Material::new(model.clone(), context.clone())
+                        warn!("  Template 'gltf_pbr_full' not found, falling back to gltf_default");
+                        if let Some(template) = material_registry.borrow().get_template("gltf_default") {
+                            Material::from_template(template, Some(albedo_tex), None)
+                        } else {
+                            Material::new(model.clone(), context.clone())
+                        }
                     }
                 }
             }

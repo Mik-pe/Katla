@@ -196,17 +196,11 @@ impl MaterialTemplate {
     ///
     /// Uses separate texture and sampler bindings for WGSL shaders.
     pub fn create_uniform(&self) -> super::UniformHandle {
-        let (desc_layout, context, layout) = self.get_uniform_layout_info();
+        let (desc_layout, context, _layout) = self.get_uniform_layout_info();
 
-        // Check if this is storage mode (has separate texture set layout)
-        if self.texture_set_layout.is_some() {
-            // Storage mode: create minimal handle without buffer
-            // Uniform data comes from StorageUniformManager
-            super::UniformHandle::new_storage(&context, &desc_layout)
-        } else {
-            // Legacy mode: create full uniform buffer
-            super::UniformHandle::with_layout_and_bindings(&context, &desc_layout, layout, true)
-        }
+        // Always use storage mode for bindless - uniform data comes from StorageUniformManager
+        // Textures are accessed via ObjectUniforms.texture_indices
+        super::UniformHandle::new_storage(&context, &desc_layout)
     }
 
     /// Destroy the template's resources.
@@ -381,6 +375,8 @@ pub struct MaterialTemplateBuilder {
     use_storage: bool,
     use_skinned: bool,
     use_pbr: bool,
+    /// Bindless texture layout from BindlessTextureManager
+    bindless_layout: Option<ash::vk::DescriptorSetLayout>,
 }
 
 impl MaterialTemplateBuilder {
@@ -394,6 +390,7 @@ impl MaterialTemplateBuilder {
             use_storage: false,
             use_skinned: false,
             use_pbr: false,
+            bindless_layout: None,
         }
     }
 
@@ -433,6 +430,15 @@ impl MaterialTemplateBuilder {
         self
     }
 
+    /// Set the bindless texture layout from BindlessTextureManager.
+    ///
+    /// When set, the template will use bindless textures instead of
+    /// per-material texture descriptors.
+    pub fn with_bindless_layout(mut self, layout: ash::vk::DescriptorSetLayout) -> Self {
+        self.bindless_layout = Some(layout);
+        self
+    }
+
     /// Build the template with legacy uniform buffers
     pub fn build(self) -> Result<MaterialTemplate, MaterialError> {
         self.build_internal(false, false, false)
@@ -451,6 +457,32 @@ impl MaterialTemplateBuilder {
     /// Build the template with storage buffers and skeletal animation
     pub fn build_storage_skinned(self) -> Result<MaterialTemplate, MaterialError> {
         self.build_internal(true, true, false)
+    }
+
+    /// Build the template with bindless textures.
+    ///
+    /// This creates a pipeline that uses the bindless texture array
+    /// instead of per-material texture descriptors.
+    /// Requires `with_bindless_layout()` to be called first.
+    pub fn build_bindless(self) -> Result<MaterialTemplate, MaterialError> {
+        let bindless_layout = self.bindless_layout.ok_or_else(|| {
+            MaterialError::InvalidDescriptor("Bindless layout not provided. Call with_bindless_layout() first.".to_string())
+        })?;
+        self.build_internal_bindless(bindless_layout, false)
+    }
+
+    /// Build the template with bindless textures and skeletal animation.
+    ///
+    /// This creates a pipeline with three descriptor sets:
+    /// - Set 0: Storage buffers for uniforms
+    /// - Set 1: Bindless texture array + shared sampler
+    /// - Set 2: Skeleton joint matrices
+    /// Requires `with_bindless_layout()` to be called first.
+    pub fn build_bindless_skinned(self) -> Result<MaterialTemplate, MaterialError> {
+        let bindless_layout = self.bindless_layout.ok_or_else(|| {
+            MaterialError::InvalidDescriptor("Bindless layout not provided. Call with_bindless_layout() first.".to_string())
+        })?;
+        self.build_internal_bindless(bindless_layout, true)
     }
 
     fn build_internal(
@@ -513,6 +545,60 @@ impl MaterialTemplateBuilder {
         } else {
             builder.build().map_err(|e| {
                 MaterialError::InvalidDescriptor(format!("Pipeline build failed: {:?}", e))
+            })?
+        };
+
+        Ok(MaterialTemplate::new(
+            self.name, descriptor, reflection, pipeline,
+        ))
+    }
+
+    /// Build the template with bindless textures.
+    fn build_internal_bindless(
+        self,
+        bindless_layout: ash::vk::DescriptorSetLayout,
+        is_skinned: bool,
+    ) -> Result<MaterialTemplate, MaterialError> {
+        let descriptor = self.descriptor.ok_or_else(|| {
+            MaterialError::InvalidDescriptor("No descriptor provided".to_string())
+        })?;
+
+        let context = self
+            .context
+            .ok_or_else(|| MaterialError::InvalidDescriptor("No context provided".to_string()))?;
+
+        // Generate reflection from WGSL if possible
+        let reflection = if let ShaderSource::WgslFile(ref path) = &descriptor.vertex_shader {
+            let wgsl = std::fs::read_to_string(path)
+                .map_err(|e| MaterialError::ShaderLoadFailed(path.clone(), e))?;
+            super::ShaderReflection::from_wgsl(&wgsl).map_err(|e| {
+                MaterialError::InvalidDescriptor(format!("Reflection failed: {:?}", e))
+            })?
+        } else {
+            super::ShaderReflection {
+                structs: HashMap::new(),
+                has_color_uniform: false,
+                needs_separate_bindings: false,
+                uniform_buffer_size: 192,
+            }
+        };
+
+        // Build the pipeline
+        let mut builder =
+            super::MaterialBuilder::from_descriptor(descriptor.clone(), context.clone())?;
+
+        if let Some(binding) = self.vertex_binding {
+            builder = builder.with_vertex_binding(binding);
+        }
+
+        // Use appropriate bindless build method based on skinning
+        let pipeline = if is_skinned {
+            builder.build_bindless_skinned(bindless_layout).map_err(|e| {
+                MaterialError::InvalidDescriptor(format!("Bindless Skinned Pipeline build failed: {:?}", e))
+            })?
+        } else {
+            builder.build_bindless(bindless_layout).map_err(|e| {
+                MaterialError::InvalidDescriptor(format!("Bindless Pipeline build failed: {:?}", e))
             })?
         };
 

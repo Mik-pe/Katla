@@ -2,8 +2,7 @@ use std::rc::Rc;
 
 use katla_ecs::{EntityId, World};
 use katla_math::{Transform, Vec3};
-use katla_vulkan::{MaterialRegistry, Texture, VulkanContext, VulkanRenderer};
-use log::info;
+use katla_vulkan::{VulkanContext, VulkanRenderer};
 
 use crate::{
     entities::Model,
@@ -15,9 +14,6 @@ pub struct MeshBuilder {
     context: Rc<VulkanContext>,
     position: Option<Vec3>,
     color: Option<[f32; 3]>,
-    shared_material_name: Option<String>,
-    /// Cached checkerboard texture (created once and reused for all checkerboard materials)
-    checkerboard_texture: Option<Rc<Texture>>,
 }
 
 impl MeshBuilder {
@@ -26,14 +22,7 @@ impl MeshBuilder {
             context,
             position: None,
             color: None,
-            shared_material_name: None,
-            checkerboard_texture: None,
         }
-    }
-
-    pub fn with_shared_material(mut self, name: impl Into<String>) -> Self {
-        self.shared_material_name = Some(name.into());
-        self
     }
 
     pub fn position(mut self, position: Vec3) -> Self {
@@ -108,11 +97,6 @@ impl MeshBuilder {
 macro_rules! impl_common_builder {
     ($builder:ident) => {
         impl $builder {
-            pub fn with_shared_material(mut self, name: impl Into<String>) -> Self {
-                self.base.shared_material_name = Some(name.into());
-                self
-            }
-
             pub fn position(mut self, position: Vec3) -> Self {
                 self.base.position = Some(position);
                 self
@@ -123,37 +107,12 @@ macro_rules! impl_common_builder {
                 self
             }
 
-            fn get_material(&mut self, registry: &MaterialRegistry) -> Material {
-                // Try to get material from template in the registry
-                if let Some(ref name) = &self.base.shared_material_name {
-                    if let Some(template) = registry.get_template(name) {
-                        info!("  MeshBuilder: Using material from template '{}'", name);
-
-                        // Check if this template needs a texture (Checkerboard uses procedural texture)
-                        // Create and cache the texture on first use
-                        let texture = if name == "Checkerboard" {
-                            if self.base.checkerboard_texture.is_none() {
-                                self.base.checkerboard_texture = Some(std::rc::Rc::new(
-                                    crate::rendering::create_checkerboard_texture(
-                                        self.base.context.clone(),
-                                    ),
-                                ));
-                            }
-                            self.base.checkerboard_texture.clone()
-                        } else {
-                            None
-                        };
-
-                        return Material::from_template(template, texture, None);
-                    }
-                    info!(
-                        "  MeshBuilder: Template '{}' not found, creating directly",
-                        name
-                    );
-                }
-
-                // Fallback to creating material directly
-                create_checkerboard_material(self.base.context.clone())
+            fn get_material(&mut self, renderer: &mut VulkanRenderer) -> Material {
+                // Create checkerboard material (bindless-only)
+                create_checkerboard_material(
+                    self.base.context.clone(),
+                    renderer.bindless_manager_mut().unwrap(),
+                )
             }
 
             fn create_entity(
@@ -162,7 +121,7 @@ macro_rules! impl_common_builder {
                 renderer: &mut VulkanRenderer,
                 mesh: crate::rendering::mesh::Mesh,
             ) -> EntityId {
-                let material = self.get_material(&renderer.material_registry.borrow());
+                let material = self.get_material(renderer);
                 let position = self.base.position.unwrap_or(Vec3::new(0.0, 0.0, 0.0));
                 let transform = Transform {
                     position,

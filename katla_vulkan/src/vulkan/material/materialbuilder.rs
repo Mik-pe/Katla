@@ -849,6 +849,114 @@ impl MaterialBuilder {
         Ok(material_pipeline)
     }
 
+    /// Build the material pipeline with bindless textures and skeletal animation.
+    ///
+    /// This creates a pipeline with three descriptor sets:
+    /// - Set 0: Storage buffers for frame_data and objects
+    /// - Set 1: Bindless texture array + shared sampler (layout provided by caller)
+    /// - Set 2: Skeleton joint matrices storage buffer
+    ///
+    /// # Arguments
+    /// * `bindless_layout` - The descriptor set layout for bindless textures
+    ///                       (owned by BindlessTextureManager)
+    ///
+    /// # Returns
+    /// A MaterialPipeline configured for bindless rendering with skeletal animation
+    pub fn build_bindless_skinned(
+        self,
+        bindless_layout: vk::DescriptorSetLayout,
+    ) -> Result<MaterialPipeline, MaterialBuildError> {
+        let vertex_binding = self
+            .vertex_binding
+            .ok_or(MaterialBuildError::MissingVertexBinding)?;
+
+        let vert_shader = self
+            .vertex_shader
+            .ok_or(MaterialBuildError::MissingVertexShader)?;
+        let frag_shader = self
+            .fragment_shader
+            .ok_or(MaterialBuildError::MissingFragmentShader)?;
+
+        // Set 0: Storage buffers for uniforms
+        let uniform_set_layout = DescriptorLayoutBuilder::new()
+            .add_binding(
+                0,
+                vk::DescriptorType::STORAGE_BUFFER,
+                vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT,
+                1, // frame_data
+            )
+            .add_binding(
+                1,
+                vk::DescriptorType::STORAGE_BUFFER,
+                vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT,
+                1, // objects array
+            )
+            .build(&self.context.device)
+            .map_err(|e| MaterialBuildError::DescriptorLayoutFailed(format!("{:?}", e)))?;
+
+        // Set 2: Skeleton joint matrices
+        let skeleton_set_layout = DescriptorLayoutBuilder::new()
+            .add_binding(
+                0,
+                vk::DescriptorType::STORAGE_BUFFER,
+                vk::ShaderStageFlags::VERTEX,
+                1, // joint_matrices
+            )
+            .build(&self.context.device)
+            .map_err(|e| MaterialBuildError::DescriptorLayoutFailed(format!("{:?}", e)))?;
+
+        let color_format = self.color_format;
+        let depth_format = self.depth_format;
+
+        // Build pipeline with 3 descriptor sets: uniform, bindless, skeleton
+        let mut pipeline_builder = PipelineBuilder::new(self.context.clone())
+            .with_shaders(vert_shader.module, frag_shader.module)
+            .with_entry_points(
+                vert_shader.entry_point.clone(),
+                frag_shader.entry_point.clone(),
+            )
+            .with_vertex_input(
+                vec![vertex_binding.get_binding_desc(0)],
+                vertex_binding.get_attribute_desc(0),
+            )
+            .with_depth_test(self.depth_test, self.depth_write, self.depth_compare_op)
+            .with_descriptor_layouts(vec![uniform_set_layout, bindless_layout, skeleton_set_layout]);
+
+        // Set rendering formats for dynamic rendering (Vulkan 1.3)
+        if color_format.is_some() || depth_format.is_some() {
+            pipeline_builder = pipeline_builder.with_rendering_formats(color_format, depth_format);
+        }
+
+        if self.cull_back_faces {
+            pipeline_builder = pipeline_builder
+                .with_cull_mode(CullMode::Back, FrontFace::CounterClockwise);
+        } else {
+            pipeline_builder = pipeline_builder
+                .with_cull_mode(CullMode::None, FrontFace::CounterClockwise);
+        }
+
+        if self.alpha_blending {
+            pipeline_builder = pipeline_builder.with_alpha_blending();
+        }
+
+        // Always use null render pass for dynamic rendering (Vulkan 1.3)
+        let vk_render_pass = vk::RenderPass::null();
+
+        let pipeline = pipeline_builder
+            .build(crate::sync::VkRenderPass::from(vk_render_pass))
+            .map_err(|e| MaterialBuildError::PipelineCreationFailed(format!("{:?}", e)))?;
+
+        // Create MaterialPipeline for bindless rendering with skeleton support
+        let material_pipeline = MaterialPipeline::new_bindless_skinned(
+            pipeline,
+            uniform_set_layout,
+            skeleton_set_layout,
+            self.context.clone(),
+        );
+
+        Ok(material_pipeline)
+    }
+
     /// Build the material pipeline with legacy uniform buffers.
     ///
     /// Uses single descriptor set with UNIFORM_BUFFER, SAMPLED_IMAGE, and SAMPLER.

@@ -1167,6 +1167,8 @@ fn create_device(
         buffer_device_address: vk::TRUE,
         descriptor_indexing: vk::TRUE,
         shader_sampled_image_array_non_uniform_indexing: vk::TRUE,
+        descriptor_binding_sampled_image_update_after_bind: vk::TRUE,
+        descriptor_binding_partially_bound: vk::TRUE,
         descriptor_binding_variable_descriptor_count: vk::TRUE,
         runtime_descriptor_array: vk::TRUE,
         ..Default::default()

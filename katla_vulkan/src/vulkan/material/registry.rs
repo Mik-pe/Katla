@@ -160,6 +160,112 @@ impl MaterialRegistry {
         self.load_directory_internal(dir, context, true)
     }
 
+    /// Load all material templates using bindless textures.
+    ///
+    /// This creates pipelines that use the bindless texture array instead of
+    /// per-material texture descriptors. Texture indices are passed via
+    /// ObjectUniforms.texture_indices.
+    ///
+    /// # Arguments
+    /// * `dir` - Directory containing .toml material files
+    /// * `context` - Vulkan context
+    /// * `bindless_layout` - Descriptor set layout from BindlessTextureManager
+    pub fn load_directory_bindless(
+        &mut self,
+        dir: &Path,
+        context: Rc<VulkanContext>,
+        bindless_layout: ash::vk::DescriptorSetLayout,
+    ) -> Result<usize, MaterialError> {
+        use crate::vulkan::vertexbinding::get_pbr_vertex_binding;
+
+        let dir_entries = fs::read_dir(dir).map_err(|e| {
+            MaterialError::InvalidDescriptor(format!(
+                "Failed to read directory {}: {}",
+                dir.display(),
+                e
+            ))
+        })?;
+
+        let mut loaded = 0;
+        for entry in dir_entries {
+            let entry = entry.map_err(|e| {
+                MaterialError::InvalidDescriptor(format!("Failed to read directory entry: {}", e))
+            })?;
+            let path = entry.path();
+
+            // Only load .toml files
+            if path.extension() != Some(OsStr::new("toml")) {
+                continue;
+            }
+
+            // Load the descriptor from the TOML file
+            let descriptor = load_material_from_file(&path).map_err(|e| {
+                MaterialError::InvalidDescriptor(format!(
+                    "Failed to load {}: {}",
+                    path.display(),
+                    e
+                ))
+            })?;
+
+            // Get template name from descriptor
+            let name = descriptor.name.clone();
+
+            // Detect if this is a bindless shader by checking shader filename
+            let is_bindless = match &descriptor.vertex_shader {
+                crate::vulkan::material::ShaderSource::WgslFile(path) => {
+                    path.to_string_lossy().to_lowercase().contains("bindless")
+                }
+                _ => false,
+            };
+
+            // Skip non-bindless shaders in bindless mode
+            if !is_bindless {
+                log::debug!("Skipping non-bindless material '{}' in bindless mode", name);
+                continue;
+            }
+
+            // Skip if template already exists (e.g., loaded by another pass)
+            if self.has_template(&name) {
+                log::debug!("Template '{}' already exists, skipping", name);
+                continue;
+            }
+
+            // Detect if this is a skinned material by checking shader filename
+            let is_skinned = match &descriptor.vertex_shader {
+                crate::vulkan::material::ShaderSource::WgslFile(path) => {
+                    path.to_string_lossy().to_lowercase().contains("skinned")
+                }
+                _ => false,
+            };
+
+            // Build template with appropriate vertex binding
+            let vertex_binding = if is_skinned {
+                crate::vulkan::vertexbinding::get_skinned_vertex_binding()
+            } else {
+                get_pbr_vertex_binding()
+            };
+
+            // Build bindless template (skinned or not)
+            let template_builder = MaterialTemplateBuilder::new(name.clone())
+                .with_descriptor(descriptor)
+                .with_context(context.clone())
+                .with_vertex_binding(vertex_binding)
+                .with_bindless_layout(bindless_layout);
+
+            let template = if is_skinned {
+                template_builder.build_bindless_skinned()?
+            } else {
+                template_builder.build_bindless()?
+            };
+
+            // Register template with path for hot reload tracking
+            self.register_template_with_path(template, &path);
+            loaded += 1;
+        }
+
+        Ok(loaded)
+    }
+
     fn load_directory_internal(
         &mut self,
         dir: &Path,
@@ -199,6 +305,12 @@ impl MaterialRegistry {
 
             // Get template name from descriptor
             let name = descriptor.name.clone();
+
+            // Skip if template already exists (e.g., loaded by bindless pass)
+            if self.has_template(&name) {
+                log::debug!("Template '{}' already exists, skipping legacy load", name);
+                continue;
+            }
 
             // Detect if this is a skinned material by checking shader filename
             let is_skinned = match &descriptor.vertex_shader {
