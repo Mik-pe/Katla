@@ -2430,6 +2430,8 @@ pub struct UITextures {
     pub atlas_height: u32,
     /// Viewport texture image view (used as default for push descriptors).
     pub viewport_image_view: Option<vk::ImageView>,
+    /// Model preview texture image view (for 3D model preview panel).
+    pub model_preview_image_view: Option<vk::ImageView>,
     /// Registered thumbnail textures (texture_id -> image_view).
     thumbnail_textures: std::collections::HashMap<u64, vk::ImageView>,
     /// Thumbnail texture allocations for cleanup (texture_id -> (image, allocation)).
@@ -2660,6 +2662,7 @@ impl UITextures {
                 atlas_width,
                 atlas_height,
                 viewport_image_view: None,
+                model_preview_image_view: None,
                 thumbnail_textures: std::collections::HashMap::new(),
                 thumbnail_allocations: std::collections::HashMap::new(),
                 context,
@@ -2995,6 +2998,17 @@ impl UITextures {
         self.viewport_image_view = Some(image_view);
     }
 
+    /// Set the model preview texture for the 3D preview panel.
+    /// Call this when the model preview render target is created or updated.
+    pub fn set_model_preview_texture(&mut self, image_view: vk::ImageView) {
+        self.model_preview_image_view = Some(image_view);
+    }
+
+    /// Clear the model preview texture (when preview panel is closed).
+    pub fn clear_model_preview_texture(&mut self) {
+        self.model_preview_image_view = None;
+    }
+
     /// Register a thumbnail texture for UI rendering.
     /// Returns the image view for the registered texture.
     pub fn register_thumbnail(
@@ -3062,6 +3076,9 @@ impl UITextures {
         } else if texture_id == 2 {
             // TextureId 2 = viewport
             self.viewport_image_view.unwrap_or(self.white_image_view)
+        } else if texture_id == 101 {
+            // TextureId 101 = model preview
+            self.model_preview_image_view.unwrap_or(self.white_image_view)
         } else if let Some(&view) = self.thumbnail_textures.get(&texture_id) {
             // Custom thumbnail
             view

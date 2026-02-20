@@ -778,9 +778,18 @@ impl Application {
                     debug!("Full image loaded: {:?} ({}x{})", path, width, height);
                     // Future: Handle full image loads (e.g., for textures, skyboxes)
                 }
-                LoadResult::ModelLoaded { path, vertices, indices, .. } => {
-                    debug!("Model loaded: {:?} ({} vertices, {} indices)", path, vertices.len(), indices.len());
-                    // Future: Handle model loads (e.g., for drag-drop spawning)
+                LoadResult::ModelLoaded { path, vertices: _, indices: _, .. } => {
+                    debug!("Model loaded: {:?}", path);
+
+                    // Check if this is for the model preview
+                    if self.editor_ui.model_preview.model_path.as_ref() == Some(&path) {
+                        // Load the model via FileCache (main thread, ensures proper data ownership)
+                        let model = self.gltf_cache.read(path.clone());
+                        // Update model preview with loaded model
+                        use std::rc::Rc;
+                        self.editor_ui.model_preview.on_model_loaded(model);
+                        info!("Model preview loaded: {:?}", path);
+                    }
                 }
                 LoadResult::ShaderSourceLoaded { path, source, .. } => {
                     debug!("Shader source loaded: {:?} ({} bytes)", path, source.len());
@@ -788,6 +797,12 @@ impl Application {
                 }
                 LoadResult::Failed { path, error, .. } => {
                     warn!("Failed to load {:?}: {}", path, error);
+
+                    // Check if this is for the model preview
+                    if self.editor_ui.model_preview.model_path.as_ref() == Some(&path) {
+                        self.editor_ui.model_preview.on_model_failed(error.clone());
+                    }
+
                     // Update asset browser entry to show failed state
                     for asset in self.editor_ui.asset_browser.assets.iter_mut() {
                         if asset.path == path {

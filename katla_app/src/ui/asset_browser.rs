@@ -190,6 +190,8 @@ pub struct AssetBrowserState {
 pub enum AssetAction {
     /// Open asset (double-click equivalent)
     Open(PathBuf),
+    /// Request model preview (double-click on model file)
+    ModelPreviewRequested(PathBuf),
     /// Copy path to clipboard
     CopyPath(PathBuf),
     /// Show in Explorer/Finder
@@ -1035,6 +1037,7 @@ pub fn build_asset_browser(
     let mut right_clicked_index: Option<usize> = None;
     let mut drag_start_index: Option<usize> = None;
     let mut should_navigate: Option<PathBuf> = None;
+    let mut should_preview_model: Option<PathBuf> = None;
 
     for (i, asset) in state.assets.iter().enumerate() {
         let col = i % col_count;
@@ -1159,6 +1162,8 @@ pub fn build_asset_browser(
             clicked_index = Some(i);
             if asset.asset_type == AssetType::Folder {
                 should_navigate = Some(asset.path.clone());
+            } else if asset.asset_type == AssetType::Model {
+                should_preview_model = Some(asset.path.clone());
             }
             // Track potential drag start
             drag_start_index = Some(i);
@@ -1582,6 +1587,9 @@ pub fn build_asset_browser(
                 } else {
                     state.navigate_to(&path, thumbnail_texture_ids);
                 }
+            } else if let Some(path) = should_preview_model {
+                // Double-click on model - open preview panel
+                state.pending_actions.push(AssetAction::ModelPreviewRequested(path));
             }
         }
     }
