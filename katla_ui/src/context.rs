@@ -72,6 +72,10 @@ pub struct UiContext {
     z_stack: Vec<u32>,
     /// Tracked bounding box of all popup content (auto-expanded as items are drawn).
     popup_content_bounds: Option<Rect2D>,
+    /// Current popup cursor position for automatic layout.
+    popup_cursor: Vec2,
+    /// Popup width for automatic layout.
+    popup_width: f32,
     /// Deferred draws for dropdown items (drawn after background).
     dropdown_deferred: Vec<DeferredDraw>,
 }
@@ -140,6 +144,8 @@ impl UiContext {
             z_index: z_index::DEFAULT,
             z_stack: Vec::new(),
             popup_content_bounds: None,
+            popup_cursor: Vec2::new(0.0, 0.0),
+            popup_width: 0.0,
             dropdown_deferred: Vec::new(),
         }
     }
@@ -2399,6 +2405,237 @@ impl UiContext {
 
         self.pop_z_index(); // Pop the background z
         self.push_z_index(z_index::POPUP); // Restore popup z
+
+        self.popup_bounds = Some(popup_bounds);
+
+        self.pop_clip();
+        self.pop_id();
+        self.pop_z_index();
+    }
+
+    // === Clean Popup API ===
+
+    /// Show a popup menu with automatic layout and sizing.
+    ///
+    /// Returns the value from the closure if the popup was shown.
+    ///
+    /// # Example
+    /// ```ignore
+    /// let action = ui.popup("context", |ui| {
+    ///     if ui.popup_item("Open", '📁', true) { return Some("open"); }
+    ///     if ui.popup_item("Rename", '✏️', true) { return Some("rename"); }
+    ///     ui.popup_separator();
+    ///     if ui.popup_item("Delete", '🗑️', true) { return Some("delete"); }
+    ///     None
+    /// });
+    /// if let Some(action) = action {
+    ///     // handle action
+    /// }
+    /// ```
+    ///
+    /// The popup automatically:
+    /// - Positions items vertically
+    /// - Tracks content bounds
+    /// - Draws background that fits content exactly
+    pub fn popup<F, R>(&mut self, id: &str, f: F) -> Option<R>
+    where
+        F: FnOnce(&mut Self) -> R,
+    {
+        if self.begin_auto_popup(id) {
+            let result = f(self);
+            self.end_auto_popup();
+            Some(result)
+        } else {
+            None
+        }
+    }
+
+    /// Begin an auto-sizing popup (internal).
+    fn begin_auto_popup(&mut self, id: &str) -> bool {
+        let popup_id = self.generate_id(id);
+
+        // Get stored position
+        let pos = self
+            .storage
+            .get(&popup_id)
+            .and_then(|s| {
+                if let WidgetState::ContextMenuPos(p) = s {
+                    Some(*p)
+                } else {
+                    None
+                }
+            })
+            .unwrap_or(self.input.mouse_pos);
+
+        // Check if popup is open
+        let is_open = self.popup_id == Some(popup_id);
+
+        if is_open {
+            // Initialize popup state
+            self.popup_content_bounds = None;
+            self.popup_cursor = pos;
+            self.popup_width = self.style.menu_min_width;
+
+            // Set up for drawing
+            self.popup_bounds = Some(Rect2D::from_origin_size(pos, Vec2::new(self.popup_width, 0.0)));
+            self.push_z_index(z_index::POPUP);
+            let screen_bounds = Rect2D::new(Vec2::new(0.0, 0.0), self.screen_size);
+            self.push_clip_absolute(screen_bounds);
+            self.push_id(id);
+
+            return true;
+        }
+
+        false
+    }
+
+    /// Draw a popup menu item with automatic positioning.
+    ///
+    /// Returns true if the item was clicked.
+    pub fn popup_item(&mut self, label: &str, icon: char, enabled: bool) -> bool {
+        let item_height = self.style.menu_item_height;
+        let padding = 4.0;
+
+        let item_bounds = Rect2D::from_origin_size(
+            self.popup_cursor,
+            Vec2::new(self.popup_width, item_height),
+        );
+
+        // Track this item for background sizing
+        self.track_popup_item(item_bounds);
+
+        // Draw the item
+        let clicked = self.draw_popup_item_contents(label, icon, enabled, item_bounds, "");
+
+        // Advance cursor
+        self.popup_cursor = Vec2::new(self.popup_cursor.x(), self.popup_cursor.y() + item_height);
+
+        clicked
+    }
+
+    /// Draw a popup menu item with a keyboard shortcut hint.
+    ///
+    /// Returns true if the item was clicked.
+    pub fn popup_item_with_shortcut(&mut self, label: &str, icon: char, enabled: bool, shortcut: &str) -> bool {
+        let item_height = self.style.menu_item_height;
+
+        let item_bounds = Rect2D::from_origin_size(
+            self.popup_cursor,
+            Vec2::new(self.popup_width, item_height),
+        );
+
+        // Track this item for background sizing
+        self.track_popup_item(item_bounds);
+
+        // Draw the item
+        let clicked = self.draw_popup_item_contents(label, icon, enabled, item_bounds, shortcut);
+
+        // Advance cursor
+        self.popup_cursor = Vec2::new(self.popup_cursor.x(), self.popup_cursor.y() + item_height);
+
+        clicked
+    }
+
+    /// Draw a popup separator with automatic positioning.
+    pub fn popup_separator(&mut self) {
+        let separator_height = 8.0;
+
+        let sep_bounds = Rect2D::from_origin_size(
+            self.popup_cursor,
+            Vec2::new(self.popup_width, separator_height),
+        );
+
+        // Track this separator for background sizing
+        self.track_popup_item(sep_bounds);
+
+        // Draw the separator line
+        self.draw_line(
+            Vec2::new(sep_bounds.min.x() + 8.0, sep_bounds.center().y()),
+            Vec2::new(sep_bounds.max.x() - 8.0, sep_bounds.center().y()),
+            self.style.separator,
+            1.0,
+        );
+
+        // Advance cursor
+        self.popup_cursor = Vec2::new(self.popup_cursor.x(), self.popup_cursor.y() + separator_height);
+    }
+
+    /// Internal: draw popup item contents (hover, icon, label, shortcut).
+    fn draw_popup_item_contents(&mut self, label: &str, icon: char, enabled: bool, bounds: Rect2D, shortcut: &str) -> bool {
+        let hovered = self.is_hovered(bounds);
+
+        // Hover background
+        if enabled && hovered {
+            self.draw_rect(bounds, self.style.menu_hovered);
+        }
+
+        let text_size = self.scaled_font_size(FontSize::Small);
+        let text_y = bounds.min.y() + 6.0;
+
+        // Colors
+        let icon_color = if enabled { self.style.text_color } else { self.style.text_disabled };
+        let label_color = if enabled { self.style.text_color } else { self.style.text_disabled };
+
+        // Icon
+        self.draw_icon_aligned(
+            icon,
+            Vec2::new(bounds.min.x() + 8.0, text_y),
+            12.0,
+            icon_color,
+            FontId::DEFAULT,
+        );
+
+        // Label
+        self.draw_text(
+            label,
+            Vec2::new(bounds.min.x() + 28.0, text_y),
+            label_color,
+            text_size,
+        );
+
+        // Shortcut (right-aligned)
+        if !shortcut.is_empty() {
+            let shortcut_size = self.measure_text(shortcut, text_size);
+            self.draw_text(
+                shortcut,
+                Vec2::new(bounds.max.x() - shortcut_size.x() - 8.0, text_y),
+                self.style.text_disabled,
+                text_size,
+            );
+        }
+
+        // Click detection
+        enabled && hovered && self.input.mouse_clicked(crate::input::mouse_button::LEFT)
+    }
+
+    /// End an auto-sizing popup and draw the background.
+    fn end_auto_popup(&mut self) {
+        // Get tracked content bounds
+        let content_bounds = self.popup_content_bounds.unwrap_or_else(|| {
+            Rect2D::from_origin_size(self.popup_cursor, Vec2::new(self.style.menu_min_width, self.style.menu_item_height))
+        });
+
+        // Ensure minimum size
+        let final_width = content_bounds.width().max(self.style.menu_min_width);
+        let final_height = content_bounds.height().max(self.style.menu_item_height);
+
+        let popup_bounds = Rect2D::from_origin_size(content_bounds.min, Vec2::new(final_width, final_height));
+
+        // Draw background at lower z-index
+        self.pop_z_index();
+        self.push_z_index(z_index::POPUP - 1);
+
+        let shadow_offset = Vec2::new(4.0, 4.0);
+        let shadow_bounds = Rect2D::new(
+            popup_bounds.min + shadow_offset,
+            popup_bounds.max + shadow_offset,
+        );
+        self.draw_rect(shadow_bounds, self.style.popup_shadow);
+        self.draw_rect(popup_bounds, self.style.popup_bg);
+        self.draw_rect_border(popup_bounds, Color::TRANSPARENT, self.style.popup_border, 1.0);
+
+        self.pop_z_index();
+        self.push_z_index(z_index::POPUP);
 
         self.popup_bounds = Some(popup_bounds);
 

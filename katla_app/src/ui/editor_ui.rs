@@ -1320,71 +1320,40 @@ impl EditorUI {
         }
 
         // === HIERARCHY CONTEXT MENU using popup system ===
-        let hierarchy_menu_open = ui.begin_context_menu("hierarchy_context");
-
-        // Clean up state if menu was closed (click outside or Escape)
+        let hierarchy_menu_open = ui.is_context_menu_open("hierarchy_context");
         if self.hierarchy_context_menu_open && !hierarchy_menu_open {
             self.hierarchy_context_menu_open = false;
             self.hierarchy_context_entity = None;
         }
 
-        if hierarchy_menu_open {
-            let menu_pos = ui.get_popup_bounds().min;
-            let menu_width = 140.0;
-            let item_height = 24.0;
-            let mut current_y = menu_pos.y() + 2.0;
-            let mut clicked_action: Option<String> = None;
+        // Render popup with automatic layout
+        let clicked_action = ui.popup("hierarchy_context", |ui| {
+            if ui.popup_item_with_shortcut("Duplicate", ForkAwesome::COPY, true, "Ctrl+D") { return Some("Duplicate"); }
+            if ui.popup_item_with_shortcut("Rename", ForkAwesome::PENCIL, true, "F2") { return Some("Rename"); }
+            ui.popup_separator();
+            if ui.popup_item_with_shortcut("Delete", ForkAwesome::TRASH, true, "Del") { return Some("Delete"); }
+            None::<&str>
+        });
 
-            let items: Vec<(&str, char, bool, &str)> = vec![
-                ("Duplicate", ForkAwesome::COPY, true, "Ctrl+D"),
-                ("Rename", ForkAwesome::PENCIL, true, "F2"),
-                ("---", '\0', false, ""),
-                ("Delete", ForkAwesome::TRASH, true, "Del"),
-            ];
-
-            for (label, icon, enabled, shortcut) in &items {
-                if *label == "---" {
-                    // Draw separator
-                    let sep_bounds = Rect2D::from_origin_size(
-                        Vec2::new(menu_pos.x(), current_y),
-                        Vec2::new(menu_width, 8.0),
-                    );
-                    ui.menu_separator(sep_bounds);
-                    current_y += 8.0;
-                    continue;
+        // Process action
+        if let Some(action) = clicked_action.flatten() {
+            match action {
+                "Duplicate" => {
+                    if let Some(entity_id) = self.hierarchy_context_entity {
+                        self.pending_actions.push(EditorAction::DuplicateEntity(entity_id));
+                    }
                 }
-                let item_bounds = Rect2D::from_origin_size(
-                    Vec2::new(menu_pos.x(), current_y),
-                    Vec2::new(menu_width, item_height),
-                );
-                if ui.popup_menu_item(label, *icon, *enabled, shortcut, item_bounds) {
-                    clicked_action = Some(label.to_string());
+                "Rename" => {
+                    // TODO: Implement rename mode
                 }
-                current_y += item_height;
+                "Delete" => {
+                    if let Some(entity_id) = self.hierarchy_context_entity {
+                        self.pending_actions.push(EditorAction::DeleteEntity(entity_id));
+                    }
+                }
+                _ => {}
             }
-
-            ui.end_context_menu();
-
-            // Process action
-            if let Some(action) = clicked_action {
-                match action.as_str() {
-                    "Duplicate" => {
-                        if let Some(entity_id) = self.hierarchy_context_entity {
-                            self.pending_actions.push(EditorAction::DuplicateEntity(entity_id));
-                        }
-                    }
-                    "Rename" => {
-                        // TODO: Implement rename mode
-                    }
-                    "Delete" => {
-                        if let Some(entity_id) = self.hierarchy_context_entity {
-                            self.pending_actions.push(EditorAction::DeleteEntity(entity_id));
-                        }
-                    }
-                    _ => {}
-                }
-                self.hierarchy_context_menu_open = false;
-            }
+            self.hierarchy_context_menu_open = false;
         }
 
         ui.pop_clip();
