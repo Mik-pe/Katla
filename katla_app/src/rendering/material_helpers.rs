@@ -7,7 +7,7 @@ use log::warn;
 use crate::rendering::{Material, VertexPBR};
 
 /// Shader path for PBR materials
-const PBR_SHADER_PATH: &str = "resources/shaders/model_pbr_bindless.wgsl";
+const PBR_SHADER_PATH: &str = "resources/shaders/model_pbr.wgsl";
 
 /// Generate checkerboard pixel data.
 fn generate_checkerboard_pixels(texture_size: u32, checker_size: u32) -> Vec<u8> {
