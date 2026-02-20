@@ -14,6 +14,7 @@ use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
 use super::asset_browser::AssetBrowserState;
+use super::model_preview::ModelPreviewState;
 use super::theme::Theme;
 
 /// Model types that can be spawned.
@@ -226,6 +227,8 @@ pub struct EditorUI {
     pub theme: Theme,
     /// Asset browser panel state.
     pub asset_browser: AssetBrowserState,
+    /// Model preview panel state.
+    pub model_preview: ModelPreviewState,
     /// Currently focused panel (receives keyboard input).
     pub focused_panel: FocusedPanel,
 }
@@ -261,6 +264,7 @@ impl EditorUI {
             hierarchy_context_entity: None,
             theme: Theme::catppuccin(), // Default to Catppuccin because it's sick
             asset_browser: AssetBrowserState::new(),
+            model_preview: ModelPreviewState::new(),
             focused_panel: FocusedPanel::Viewport, // Default to viewport
         }
     }
@@ -670,6 +674,17 @@ impl EditorUI {
                         // TODO: Open file in appropriate editor
                     }
                 }
+                super::asset_browser::AssetAction::ModelPreviewRequested(path) => {
+                    // Request model preview in the preview panel
+                    log::info!("Model preview requested: {:?}", path);
+                    let load_id = loader.request_model(path.clone());
+                    self.model_preview.model_path = Some(path);
+                    self.model_preview.load_state = super::model_preview::LoadState::Loading;
+                    self.model_preview.load_id = Some(load_id);
+                    self.model_preview.visible = true;
+                    self.model_preview.model = None;
+                    self.model_preview.stats = None;
+                }
                 super::asset_browser::AssetAction::CopyPath(path) => {
                     // Copy path as string (log for now, clipboard not implemented)
                     log::info!("Copy path: {:?}", path);
@@ -761,6 +776,11 @@ impl EditorUI {
         // === PREFERENCES PANEL (overlay) ===
         if self.show_preferences {
             self.build_preferences_panel(ui, screen_size);
+        }
+
+        // === MODEL PREVIEW PANEL (overlay) ===
+        if self.model_preview.visible {
+            self.build_model_preview_panel(ui, screen_size);
         }
 
         // === DRAG PREVIEW (rendered last to appear above all panels) ===
@@ -2411,6 +2431,342 @@ impl EditorUI {
             );
             cursor = Vec2::new(cursor.x(), cursor.y() + 18.0);
         }
+    }
+
+    /// Build the model preview panel (shown when a model is double-clicked).
+    fn build_model_preview_panel(&mut self, ui: &mut UiContext, screen_size: Vec2) {
+        let theme = &self.theme;
+        let panel_width = self.model_preview.panel_width;
+        let panel_height = 400.0;
+        let title_bar_height = 28.0;
+        let padding = 8.0;
+
+        // Position on right side of screen
+        let panel_x = screen_size.x() - panel_width - padding;
+        let panel_y = 60.0; // Below toolbar
+
+        let panel_bounds = Rect2D::from_origin_size(
+            Vec2::new(panel_x, panel_y),
+            Vec2::new(panel_width, panel_height),
+        );
+
+        // Draw panel with high z-index (above other panels)
+        ui.push_z_index(200);
+
+        // Panel background
+        ui.draw_rect(panel_bounds, theme.panel_bg);
+        ui.draw_rect_border(panel_bounds, theme.panel_bg, theme.panel_border, 1.0);
+
+        // Title bar
+        let title_bounds = Rect2D::from_origin_size(
+            Vec2::new(panel_x, panel_y),
+            Vec2::new(panel_width, title_bar_height),
+        );
+        ui.draw_rect(title_bounds, theme.panel_header);
+
+        // Title text
+        let model_name = self.model_preview.model_path
+            .as_ref()
+            .and_then(|p| p.file_name())
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_else(|| "Model Preview".to_string());
+        ui.draw_text(
+            &model_name,
+            Vec2::new(panel_x + padding, panel_y + 7.0),
+            theme.text_primary,
+            ui.scaled_font_size(FontSize::Small),
+        );
+
+        // Close button (X)
+        let close_btn_size = 20.0;
+        let close_bounds = Rect2D::from_origin_size(
+            Vec2::new(panel_x + panel_width - close_btn_size - 4.0, panel_y + 4.0),
+            Vec2::new(close_btn_size, close_btn_size),
+        );
+        let close_hovered = ui.is_hovered(close_bounds);
+        if close_hovered {
+            ui.draw_rect(close_bounds, theme.button_hover);
+        }
+        ui.draw_icon(
+            ForkAwesome::TIMES,
+            Vec2::new(close_bounds.min.x() + 3.0, close_bounds.min.y() + 2.0),
+            14.0,
+            if close_hovered { theme.text_primary } else { theme.text_secondary },
+        );
+        if close_hovered && ui.input.mouse_clicked(mouse_button::LEFT) {
+            self.model_preview.close();
+        }
+
+        // Content area
+        let content_y = panel_y + title_bar_height + padding;
+        let content_width = panel_width - padding * 2.0;
+        let preview_height = 200.0;
+
+        // === PREVIEW RENDER AREA ===
+        let preview_bounds = Rect2D::from_origin_size(
+            Vec2::new(panel_x + padding, content_y),
+            Vec2::new(content_width, preview_height),
+        );
+
+        match &self.model_preview.load_state {
+            super::model_preview::LoadState::Idle => {
+                // Show placeholder
+                ui.draw_rect(preview_bounds, theme.background_dark);
+                let text = "No model loaded";
+                let text_size = ui.measure_text(text, ui.scaled_font_size(FontSize::Medium));
+                ui.draw_text(
+                    text,
+                    Vec2::new(
+                        preview_bounds.center().x() - text_size.x() * 0.5,
+                        preview_bounds.center().y() - text_size.y() * 0.5,
+                    ),
+                    theme.text_muted,
+                    ui.scaled_font_size(FontSize::Medium),
+                );
+            }
+            super::model_preview::LoadState::Loading => {
+                // Show loading indicator
+                ui.draw_rect(preview_bounds, theme.background_dark);
+
+                // Animated spinner
+                let rotation = (std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_millis() % 1000) as f32 / 1000.0 * std::f32::consts::TAU;
+                let spinner_chars = ['|', '/', '—', '\\'];
+                let spinner_idx = ((rotation / std::f32::consts::FRAC_PI_2) as usize) % 4;
+                let spinner_char = spinner_chars[spinner_idx];
+
+                let text = format!("Loading {}", spinner_char);
+                let text_size = ui.measure_text(&text, ui.scaled_font_size(FontSize::Large));
+                ui.draw_text(
+                    &text,
+                    Vec2::new(
+                        preview_bounds.center().x() - text_size.x() * 0.5,
+                        preview_bounds.center().y() - text_size.y() * 0.5,
+                    ),
+                    theme.text_secondary,
+                    ui.scaled_font_size(FontSize::Large),
+                );
+
+                // Progress bar (indeterminate for now)
+                let bar_width = content_width * 0.6;
+                let bar_height = 4.0;
+                let bar_x = preview_bounds.center().x() - bar_width * 0.5;
+                let bar_y = preview_bounds.center().y() + 20.0;
+                let bar_bounds = Rect2D::from_origin_size(
+                    Vec2::new(bar_x, bar_y),
+                    Vec2::new(bar_width, bar_height),
+                );
+                ui.draw_rect(bar_bounds, theme.background);
+                // Animated progress segment
+                let progress = (rotation / std::f32::consts::TAU) * bar_width;
+                let seg_width = bar_width * 0.3;
+                let seg_x = bar_x + (progress * 0.7);
+                ui.draw_rect(
+                    Rect2D::from_origin_size(
+                        Vec2::new(seg_x.min(bar_x + bar_width - seg_width), bar_y),
+                        Vec2::new(seg_width, bar_height),
+                    ),
+                    theme.highlight,
+                );
+            }
+            super::model_preview::LoadState::Loaded => {
+                // Show preview texture (rendered by Vulkan backend)
+                ui.draw_rect(preview_bounds, theme.background_dark);
+
+                // Draw the preview texture using UV offset (x >= 1.0 for dynamic texture)
+                let uv_offset = Rect2D::new(
+                    Vec2::new(1.0, 0.0),  // UV min (offset by 1.0 in x for texture 101)
+                    Vec2::new(2.0, 1.0),  // UV max
+                );
+
+                // Check if we have a texture to display
+                if self.model_preview.model.is_some() {
+                    ui.image(
+                        self.model_preview.texture_id,
+                        preview_bounds,
+                        Some(uv_offset),
+                        None,
+                    );
+                } else {
+                    // Fallback text
+                    let text = "Preview Ready";
+                    let text_size = ui.measure_text(text, ui.scaled_font_size(FontSize::Medium));
+                    ui.draw_text(
+                        text,
+                        Vec2::new(
+                            preview_bounds.center().x() - text_size.x() * 0.5,
+                            preview_bounds.center().y() - text_size.y() * 0.5,
+                        ),
+                        theme.text_secondary,
+                        ui.scaled_font_size(FontSize::Medium),
+                    );
+                }
+
+                // Handle orbit camera drag
+                if ui.is_hovered(preview_bounds) {
+                    if ui.input.mouse_clicked(mouse_button::LEFT) {
+                        self.model_preview.camera.begin_drag(ui.input.mouse_pos);
+                    }
+
+                    // Zoom with scroll
+                    let scroll = ui.input.scroll_delta.y();
+                    if scroll != 0.0 {
+                        self.model_preview.camera.zoom(scroll * 0.5);
+                    }
+                }
+
+                if ui.input.is_mouse_down(mouse_button::LEFT) {
+                    self.model_preview.camera.update_drag(ui.input.mouse_pos);
+                }
+
+                if ui.input.mouse_released[mouse_button::LEFT] {
+                    self.model_preview.camera.end_drag();
+                }
+            }
+            super::model_preview::LoadState::Failed(error) => {
+                // Show error message
+                ui.draw_rect(preview_bounds, theme.background_dark);
+                let text = format!("Failed to load");
+                let text_size = ui.measure_text(&text, ui.scaled_font_size(FontSize::Medium));
+                ui.draw_text(
+                    &text,
+                    Vec2::new(
+                        preview_bounds.center().x() - text_size.x() * 0.5,
+                        preview_bounds.center().y() - 30.0,
+                    ),
+                    theme.error,
+                    ui.scaled_font_size(FontSize::Medium),
+                );
+
+                // Show error details (truncated)
+                let error_display = if error.len() > 40 {
+                    format!("{}...", &error[..40])
+                } else {
+                    error.clone()
+                };
+                let error_size = ui.measure_text(&error_display, ui.scaled_font_size(FontSize::XSmall));
+                ui.draw_text(
+                    &error_display,
+                    Vec2::new(
+                        preview_bounds.center().x() - error_size.x() * 0.5,
+                        preview_bounds.center().y() + 5.0,
+                    ),
+                    theme.text_muted,
+                    ui.scaled_font_size(FontSize::XSmall),
+                );
+            }
+        }
+
+        // === STATS SECTION ===
+        let stats_y = content_y + preview_height + padding;
+        let mut cursor = Vec2::new(panel_x + padding, stats_y);
+
+        ui.draw_text(
+            "Model Statistics",
+            cursor,
+            theme.text_secondary,
+            ui.scaled_font_size(FontSize::Small),
+        );
+        cursor = Vec2::new(cursor.x(), cursor.y() + 20.0);
+
+        if let Some(stats) = &self.model_preview.stats {
+            let stat_items = [
+                ("Vertices", format!("{}", stats.vertex_count)),
+                ("Triangles", format!("{}", stats.triangle_count)),
+                ("Meshes", stats.mesh_count.to_string()),
+                ("Primitives", stats.primitive_count.to_string()),
+            ];
+
+            for (label, value) in stat_items {
+                ui.draw_text(
+                    label,
+                    cursor,
+                    theme.text_muted,
+                    ui.scaled_font_size(FontSize::XSmall),
+                );
+                let value_x = panel_x + panel_width - padding - ui.measure_text(&value, ui.scaled_font_size(FontSize::XSmall)).x();
+                ui.draw_text(
+                    &value,
+                    Vec2::new(value_x, cursor.y()),
+                    theme.text_primary,
+                    ui.scaled_font_size(FontSize::XSmall),
+                );
+                cursor = Vec2::new(cursor.x(), cursor.y() + 16.0);
+            }
+
+            // Animation info
+            if stats.has_animations {
+                cursor = Vec2::new(cursor.x(), cursor.y() + 4.0);
+                ui.draw_text(
+                    "Animations",
+                    cursor,
+                    theme.text_secondary,
+                    ui.scaled_font_size(FontSize::XSmall),
+                );
+                cursor = Vec2::new(cursor.x(), cursor.y() + 14.0);
+
+                for anim_name in &stats.animation_names {
+                    ui.draw_icon_label(
+                        ForkAwesome::VIDEO_CAMERA,
+                        anim_name,
+                        cursor,
+                        ui.scaled_font_size(FontSize::XSmall),
+                        ui.scaled_font_size(FontSize::XSmall),
+                        theme.text_muted,
+                    );
+                    cursor = Vec2::new(cursor.x(), cursor.y() + 14.0);
+                }
+
+                // Play/Pause button (future: animation controls)
+                cursor = Vec2::new(cursor.x(), cursor.y() + 4.0);
+                let btn_width = 80.0;
+                let btn_height = 24.0;
+                let btn_bounds = Rect2D::from_origin_size(
+                    cursor,
+                    Vec2::new(btn_width, btn_height),
+                );
+                let btn_hovered = ui.is_hovered(btn_bounds);
+                if btn_hovered {
+                    ui.draw_rect(btn_bounds, theme.button_hover);
+                } else {
+                    ui.draw_rect(btn_bounds, theme.button_bg);
+                }
+                ui.draw_rect_border(btn_bounds, theme.button_bg, theme.border, 1.0);
+
+                let btn_text = if self.model_preview.animation.playing { "Pause" } else { "Play" };
+                let btn_text_size = ui.measure_text(btn_text, ui.scaled_font_size(FontSize::XSmall));
+                ui.draw_text(
+                    btn_text,
+                    Vec2::new(
+                        btn_bounds.center().x() - btn_text_size.x() * 0.5,
+                        btn_bounds.center().y() - btn_text_size.y() * 0.5,
+                    ),
+                    if btn_hovered { theme.text_primary } else { theme.text_secondary },
+                    ui.scaled_font_size(FontSize::XSmall),
+                );
+
+                if btn_hovered && ui.input.mouse_clicked(mouse_button::LEFT) {
+                    self.model_preview.animation.playing = !self.model_preview.animation.playing;
+                }
+            }
+
+            // Skinning indicator
+            if stats.has_skinning {
+                cursor = Vec2::new(cursor.x(), cursor.y() + 8.0);
+                ui.draw_icon_label(
+                    ForkAwesome::USER,
+                    "Has Skeleton",
+                    cursor,
+                    ui.scaled_font_size(FontSize::XSmall),
+                    ui.scaled_font_size(FontSize::XSmall),
+                    theme.info,
+                );
+            }
+        }
+
+        ui.pop_z_index();
     }
 
     /// Render the editor UI and return the draw list.
