@@ -1584,11 +1584,12 @@ impl EditorUI {
         }
 
         // Draw the viewport texture (rendered 3D scene)
+        // Use OPAQUE_IMAGE to force alpha = 1.0 (viewport may have 0 alpha from HDR)
         ui.draw_image(
             bounds,
             Vec2::new(0.0, 0.0), // uv_min
             Vec2::new(1.0, 1.0), // uv_max
-            Color::WHITE,
+            Color::OPAQUE_IMAGE,
             katla_ui::TextureId::VIEWPORT,
         );
 
@@ -2574,19 +2575,14 @@ impl EditorUI {
                 // Show preview texture (rendered by Vulkan backend)
                 ui.draw_rect(preview_bounds, theme.background_dark);
 
-                // Draw the preview texture using UV offset (x >= 1.0 for dynamic texture)
-                let uv_offset = Rect2D::new(
-                    Vec2::new(1.0, 0.0),  // UV min (offset by 1.0 in x for texture 101)
-                    Vec2::new(2.0, 1.0),  // UV max
-                );
-
-                // Check if we have a texture to display
+                // Draw the preview texture
+                // Use OPAQUE_IMAGE to force alpha = 1.0 (model preview may have 0 alpha)
                 if self.model_preview.model.is_some() {
                     ui.image(
                         self.model_preview.texture_id,
                         preview_bounds,
-                        Some(uv_offset),
-                        None,
+                        None,  // Use default UVs (0-1)
+                        Some(Color::OPAQUE_IMAGE),  // Force opaque output
                     );
                 } else {
                     // Fallback text
