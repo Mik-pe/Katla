@@ -655,6 +655,8 @@ pub fn build_skinned_vertex_data(
     // Default skinning: all vertices bound to joint 0 with full weight
     let default_joints = [0u16, 0, 0, 0];
     let default_weights = [1.0f32, 0.0, 0.0, 0.0];
+    // Default tangent: +X direction with positive handedness (for models without tangent data)
+    let default_tangent = [1.0f32, 0.0, 0.0, 1.0];
 
     let vertex_count = positions.len();
     let vertex_data: Vec<VertexSkinned> = if has_pos && has_skinning {
@@ -662,7 +664,7 @@ pub fn build_skinned_vertex_data(
             .map(|(position, normal, tex_coord, joints, weights)| VertexSkinned {
                 position,
                 normal,
-                tangent: [0.0, 0.0, 0.0, 0.0],
+                tangent: default_tangent,
                 tex_coord0: tex_coord,
                 joint_indices: joints,
                 joint_weights: weights,
@@ -680,7 +682,7 @@ pub fn build_skinned_vertex_data(
                 VertexSkinned {
                     position,
                     normal,
-                    tangent: [0.0, 0.0, 0.0, 0.0],
+                    tangent: default_tangent,
                     tex_coord0: tex_coord,
                     joint_indices: joints,
                     joint_weights: weights,
