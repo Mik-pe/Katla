@@ -1584,13 +1584,12 @@ impl EditorUI {
         }
 
         // Draw the viewport texture (rendered 3D scene)
-        // UV x >= 1.0 signals viewport texture sampling in the shader
-        // The shader subtracts 1.0 from x, so (1.0, 0.0) to (2.0, 1.0) maps to full texture
         ui.draw_image(
             bounds,
-            Vec2::new(1.0, 0.0), // uv_min: viewport texture starts at (0, 0) after -1.0 offset
-            Vec2::new(2.0, 1.0), // uv_max: viewport texture ends at (1, 1) after -1.0 offset
+            Vec2::new(0.0, 0.0), // uv_min
+            Vec2::new(1.0, 1.0), // uv_max
             Color::WHITE,
+            katla_ui::TextureId::VIEWPORT,
         );
 
         // Viewport border - draw ONLY the border lines, not a filled rect
