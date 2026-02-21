@@ -313,6 +313,30 @@ impl StorageUniformManager {
         }
     }
 
+    /// Update frame uniforms from a FrameUniforms struct.
+    ///
+    /// This is a convenience method that handles the matrix format conversion
+    /// from `[f32; 16]` (used by rendering::FrameUniforms) to `[[f32; 4]; 4]`
+    /// (used by the GPU buffer layout).
+    ///
+    /// # Arguments
+    /// * `frame` - Frame uniforms from the rendering module
+    pub fn update_from_frame_uniforms(&mut self, frame: &crate::rendering::FrameUniforms) {
+        let view: [[f32; 4]; 4] = bytemuck::cast(frame.view_matrix);
+        let proj: [[f32; 4]; 4] = bytemuck::cast(frame.proj_matrix);
+        let inv_view_proj: [[f32; 4]; 4] = bytemuck::cast(frame.inv_view_proj_matrix);
+
+        self.update_frame_with_lighting(
+            &view,
+            &proj,
+            &inv_view_proj,
+            &frame.camera_position,
+            &frame.light_direction,
+            &frame.light_color,
+            frame.light_intensity,
+        );
+    }
+
     /// Update object uniforms at specific index.
     ///
     /// Writes per-object data (model matrix + color) to the object array.

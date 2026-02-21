@@ -9,6 +9,7 @@ use crate::render_graph::types::{Extent2D, ImageFormat};
 use crate::render_graph::{ResourceId, ResourceKind};
 use crate::rendering::DrawList;
 use crate::sync::{
+    color_attachment_to_read_barrier, COLOR_SUBRESOURCE_RANGE,
     AccessFlags2, DependencyInfo, ImageMemoryBarrier2, PipelineStage2Flags, VkImage,
 };
 use crate::{FrameData, RenderGraphError, VulkanRenderer};
@@ -112,19 +113,7 @@ impl VulkanRenderer {
         // Update frame uniforms
         if let Some(ref frame) = self.frame_uniforms {
             if let Some(ref mut manager) = self.storage_manager {
-                let view: [[f32; 4]; 4] = bytemuck::cast(frame.view_matrix);
-                let proj: [[f32; 4]; 4] = bytemuck::cast(frame.proj_matrix);
-                let inv_view_proj: [[f32; 4]; 4] = bytemuck::cast(frame.inv_view_proj_matrix);
-
-                manager.update_frame_with_lighting(
-                    &view,
-                    &proj,
-                    &inv_view_proj,
-                    &frame.camera_position,
-                    &frame.light_direction,
-                    &frame.light_color,
-                    frame.light_intensity,
-                );
+                manager.update_from_frame_uniforms(frame);
             }
         }
         debug!("render_frame: frame uniforms updated");
@@ -149,20 +138,19 @@ impl VulkanRenderer {
                 draw_list.particle_dispatches.len()
             );
             for (i, particle) in draw_list.particle_dispatches.iter().enumerate() {
+                // Bind compute pipeline and descriptors
+                command_buffer.bind_pipeline(
+                    particle.pipeline.vk(),
+                    vk::PipelineBindPoint::COMPUTE,
+                );
+                command_buffer.bind_descriptor_sets(
+                    vk::PipelineBindPoint::COMPUTE,
+                    particle.pipeline_layout.vk(),
+                    &[particle.descriptor_set.vk()],
+                );
+
+                // Push constants and dispatch
                 unsafe {
-                    self.context.device.cmd_bind_pipeline(
-                        command_buffer.vk_command_buffer(),
-                        vk::PipelineBindPoint::COMPUTE,
-                        particle.pipeline.vk(),
-                    );
-                    self.context.device.cmd_bind_descriptor_sets(
-                        command_buffer.vk_command_buffer(),
-                        vk::PipelineBindPoint::COMPUTE,
-                        particle.pipeline_layout.vk(),
-                        0,
-                        &[particle.descriptor_set.vk()],
-                        &[],
-                    );
                     self.context.device.cmd_push_constants(
                         command_buffer.vk_command_buffer(),
                         particle.pipeline_layout.vk(),
@@ -212,19 +200,7 @@ impl VulkanRenderer {
 
             if let Some(ref frame) = viewport.frame_uniforms {
                 if let Some(ref mut manager) = viewport.storage_manager {
-                    let view: [[f32; 4]; 4] = bytemuck::cast(frame.view_matrix);
-                    let proj: [[f32; 4]; 4] = bytemuck::cast(frame.proj_matrix);
-                    let inv_view_proj: [[f32; 4]; 4] = bytemuck::cast(frame.inv_view_proj_matrix);
-
-                    manager.update_frame_with_lighting(
-                        &view,
-                        &proj,
-                        &inv_view_proj,
-                        &frame.camera_position,
-                        &frame.light_direction,
-                        &frame.light_color,
-                        frame.light_intensity,
-                    );
+                    manager.update_from_frame_uniforms(frame);
                 }
             }
 
@@ -246,19 +222,7 @@ impl VulkanRenderer {
 
             if let Some(ref frame) = self.preview_frame_uniforms {
                 if let Some(ref mut manager) = self.preview_storage_manager {
-                    let view: [[f32; 4]; 4] = bytemuck::cast(frame.view_matrix);
-                    let proj: [[f32; 4]; 4] = bytemuck::cast(frame.proj_matrix);
-                    let inv_view_proj: [[f32; 4]; 4] = bytemuck::cast(frame.inv_view_proj_matrix);
-
-                    manager.update_frame_with_lighting(
-                        &view,
-                        &proj,
-                        &inv_view_proj,
-                        &frame.camera_position,
-                        &frame.light_direction,
-                        &frame.light_color,
-                        frame.light_intensity,
-                    );
+                    manager.update_from_frame_uniforms(frame);
                 }
             }
 
@@ -269,20 +233,7 @@ impl VulkanRenderer {
                 if let Some(preview_img) = preview_image_for_barrier {
                     let cmd_buf = command_buffer.vk_command_buffer();
 
-                    let barrier = ImageMemoryBarrier2::new(preview_img)
-                        .src_stage(PipelineStage2Flags::COLOR_ATTACHMENT_OUTPUT)
-                        .src_access(AccessFlags2::COLOR_ATTACHMENT_WRITE)
-                        .dst_stage(PipelineStage2Flags::FRAGMENT_SHADER)
-                        .dst_access(AccessFlags2::SHADER_READ)
-                        .old_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
-                        .new_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
-                        .subresource_range(vk::ImageSubresourceRange {
-                            aspect_mask: vk::ImageAspectFlags::COLOR,
-                            base_mip_level: 0,
-                            level_count: 1,
-                            base_array_layer: 0,
-                            layer_count: 1,
-                        });
+                    let barrier = color_attachment_to_read_barrier(preview_img);
 
                     DependencyInfo::new()
                         .add_image_barrier(barrier)

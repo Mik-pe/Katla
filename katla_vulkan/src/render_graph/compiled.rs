@@ -1,4 +1,7 @@
-use crate::sync::{AccessFlags2, DependencyInfo, ImageMemoryBarrier2, PipelineStage2Flags};
+use crate::sync::{
+    AccessFlags2, DependencyInfo, ImageMemoryBarrier2, PipelineStage2Flags,
+    COLOR_SUBRESOURCE_RANGE, DEPTH_SUBRESOURCE_RANGE,
+};
 use ash::vk;
 use log::{debug, info, warn};
 
@@ -1195,13 +1198,7 @@ impl CompiledRenderGraph {
                 .dst_access(AccessFlags2::COLOR_ATTACHMENT_WRITE)
                 .old_layout(old_layout)
                 .new_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
-                .subresource_range(vk::ImageSubresourceRange {
-                    aspect_mask: vk::ImageAspectFlags::COLOR,
-                    base_mip_level: 0,
-                    level_count: 1,
-                    base_array_layer: 0,
-                    layer_count: 1,
-                });
+                .subresource_range(COLOR_SUBRESOURCE_RANGE);
 
             DependencyInfo::new()
                 .add_image_barrier(barrier)
@@ -1234,13 +1231,7 @@ impl CompiledRenderGraph {
                     .dst_access(AccessFlags2::DEPTH_STENCIL_ATTACHMENT_READ.union(AccessFlags2::DEPTH_STENCIL_ATTACHMENT_WRITE))
                     .old_layout(old_layout)
                     .new_layout(vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL)
-                    .subresource_range(vk::ImageSubresourceRange {
-                        aspect_mask: vk::ImageAspectFlags::DEPTH | vk::ImageAspectFlags::STENCIL,
-                        base_mip_level: 0,
-                        level_count: 1,
-                        base_array_layer: 0,
-                        layer_count: 1,
-                    });
+                    .subresource_range(DEPTH_SUBRESOURCE_RANGE);
 
                 DependencyInfo::new()
                     .add_image_barrier(barrier)
@@ -1311,13 +1302,7 @@ impl CompiledRenderGraph {
                     .dst_access(AccessFlags2::NONE)
                     .old_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
                     .new_layout(vk::ImageLayout::PRESENT_SRC_KHR)
-                    .subresource_range(vk::ImageSubresourceRange {
-                        aspect_mask: vk::ImageAspectFlags::COLOR,
-                        base_mip_level: 0,
-                        level_count: 1,
-                        base_array_layer: 0,
-                        layer_count: 1,
-                    });
+                    .subresource_range(COLOR_SUBRESOURCE_RANGE);
 
                 DependencyInfo::new()
                     .add_image_barrier(barrier)

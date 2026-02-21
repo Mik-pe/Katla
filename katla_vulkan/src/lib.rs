@@ -1,9 +1,12 @@
+pub mod error;
 pub mod render_graph;
 pub mod rendering;
 pub mod renderer;
 pub mod sync;
 pub mod viewport;
 pub mod vulkan;
+
+pub use error::RendererError;
 use log::{debug, error, info, warn};
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 pub use render_graph::errors::RenderGraphError;
@@ -20,7 +23,6 @@ pub use rendering::{
     },
 };
 pub use sync::{
-    AccessFlags2, BufferMemoryBarrier2, DependencyInfo, ImageMemoryBarrier2, PipelineStage2Flags,
     VkBuffer, VkCommandBuffer, VkDescriptorPool, VkDescriptorSet, VkDescriptorSetLayout, VkFence, VkFramebuffer, VkImage,
     VkImageView, VkPipeline, VkPipelineLayout, VkRenderPass, VkSampler, VkSemaphore,
 };
@@ -32,6 +34,13 @@ pub use viewport::{DepthFormat, OutputMode, ViewportBuilder, ViewportHandle};
 use ash::vk;
 use std::{cell::RefCell, ffi::CString, rc::Rc};
 use viewport::Viewport;
+
+// Internal imports (not re-exported)
+use sync::{
+    color_attachment_to_read_barrier, color_read_to_attachment_barrier, depth_attachment_barrier,
+    COLOR_SUBRESOURCE_RANGE, DEPTH_SUBRESOURCE_RANGE, DependencyInfo, ImageMemoryBarrier2,
+    AccessFlags2, PipelineStage2Flags,
+};
 
 pub struct FrameData {
     pub available_sem: VkSemaphore,
@@ -822,35 +831,8 @@ impl VulkanRenderer {
                     if let (Some((color_image, _)), Some((depth_image, _))) =
                         (ctx.get_image(p_color), ctx.get_image(p_depth))
                     {
-                        let color_barrier = ImageMemoryBarrier2::new(color_image)
-                            .src_stage(PipelineStage2Flags::FRAGMENT_SHADER)
-                            .src_access(AccessFlags2::SHADER_READ)
-                            .dst_stage(PipelineStage2Flags::COLOR_ATTACHMENT_OUTPUT)
-                            .dst_access(AccessFlags2::COLOR_ATTACHMENT_WRITE)
-                            .old_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
-                            .new_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
-                            .subresource_range(vk::ImageSubresourceRange {
-                                aspect_mask: vk::ImageAspectFlags::COLOR,
-                                base_mip_level: 0,
-                                level_count: 1,
-                                base_array_layer: 0,
-                                layer_count: 1,
-                            });
-
-                        let depth_barrier = ImageMemoryBarrier2::new(depth_image)
-                            .src_stage(PipelineStage2Flags::LATE_FRAGMENT_TESTS)
-                            .src_access(AccessFlags2::DEPTH_STENCIL_ATTACHMENT_WRITE)
-                            .dst_stage(PipelineStage2Flags::EARLY_FRAGMENT_TESTS)
-                            .dst_access(AccessFlags2::DEPTH_STENCIL_ATTACHMENT_READ.union(AccessFlags2::DEPTH_STENCIL_ATTACHMENT_WRITE))
-                            .old_layout(vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL)
-                            .new_layout(vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL)
-                            .subresource_range(vk::ImageSubresourceRange {
-                                aspect_mask: vk::ImageAspectFlags::DEPTH | vk::ImageAspectFlags::STENCIL,
-                                base_mip_level: 0,
-                                level_count: 1,
-                                base_array_layer: 0,
-                                layer_count: 1,
-                            });
+                        let color_barrier = color_read_to_attachment_barrier(color_image);
+                        let depth_barrier = depth_attachment_barrier(depth_image);
 
                         unsafe {
                             DependencyInfo::new()
@@ -1579,47 +1561,15 @@ impl VulkanRenderer {
                         if let (Some((color_image, _)), Some((depth_image, _))) =
                             (ctx.get_image(scene_color), ctx.get_image(scene_depth))
                         {
-                            let color_subresource = vk::ImageSubresourceRange {
-                                aspect_mask: vk::ImageAspectFlags::COLOR,
-                                base_mip_level: 0,
-                                level_count: 1,
-                                base_array_layer: 0,
-                                layer_count: 1,
-                            };
-
-                            let depth_subresource = vk::ImageSubresourceRange {
-                                aspect_mask: vk::ImageAspectFlags::DEPTH
-                                    | vk::ImageAspectFlags::STENCIL,
-                                base_mip_level: 0,
-                                level_count: 1,
-                                base_array_layer: 0,
-                                layer_count: 1,
-                            };
-
                             // Transition color: SHADER_READ_ONLY_OPTIMAL -> COLOR_ATTACHMENT_OPTIMAL
                             // The viewport texture is left in SHADER_READ_ONLY_OPTIMAL after the UI pass
                             // samples from it. We need to transition it back for rendering.
                             // Note: On the first frame, this may cause a validation warning since the
                             // viewport starts in UNDEFINED, but the transition will still work correctly.
-                            let color_barrier = ImageMemoryBarrier2::new(color_image)
-                                .src_stage(PipelineStage2Flags::FRAGMENT_SHADER)
-                                .src_access(AccessFlags2::SHADER_READ)
-                                .dst_stage(PipelineStage2Flags::COLOR_ATTACHMENT_OUTPUT)
-                                .dst_access(AccessFlags2::COLOR_ATTACHMENT_WRITE)
-                                .old_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
-                                .new_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
-                                .subresource_range(color_subresource);
+                            let color_barrier = color_read_to_attachment_barrier(color_image);
 
-                            // Transition depth: DEPTH_STENCIL_ATTACHMENT -> DEPTH_STENCIL_ATTACHMENT_OPTIMAL
-                            // (depth stays in attachment format, just need proper stage sync)
-                            let depth_barrier = ImageMemoryBarrier2::new(depth_image)
-                                .src_stage(PipelineStage2Flags::LATE_FRAGMENT_TESTS)
-                                .src_access(AccessFlags2::DEPTH_STENCIL_ATTACHMENT_WRITE)
-                                .dst_stage(PipelineStage2Flags::EARLY_FRAGMENT_TESTS)
-                                .dst_access(AccessFlags2::DEPTH_STENCIL_ATTACHMENT_WRITE)
-                                .old_layout(vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL)
-                                .new_layout(vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL)
-                                .subresource_range(depth_subresource);
+                            // Transition depth: sync between passes (stays in DEPTH_ATTACHMENT_OPTIMAL)
+                            let depth_barrier = depth_attachment_barrier(depth_image);
 
                             DependencyInfo::new()
                                 .add_image_barrier(color_barrier)
@@ -1642,24 +1592,11 @@ impl VulkanRenderer {
                     {
                         let pipeline_ref = sky_pipeline.borrow();
 
-                        // Bind sky pipeline
-                        unsafe {
-                            pipeline_ref.context().device.cmd_bind_pipeline(
-                                cmd_buf,
-                                vk::PipelineBindPoint::GRAPHICS,
-                                pipeline_ref.vk_pipeline().vk_pipeline(),
-                            );
-
-                            // Bind storage descriptor set (set 0 = frame_data + objects)
-                            pipeline_ref.context().device.cmd_bind_descriptor_sets(
-                                cmd_buf,
-                                vk::PipelineBindPoint::GRAPHICS,
-                                pipeline_ref.vk_layout(),
-                                0,
-                                &[storage_descriptor.vk_set()],
-                                &[],
-                            );
-                        }
+                        // Bind sky pipeline and descriptors using helper
+                        ctx.command_buffer.bind_graphics_pipeline_with_descriptors(
+                            &pipeline_ref,
+                            storage_descriptor.vk_set(),
+                        );
 
                         drop(pipeline_ref);
 
@@ -1690,24 +1627,11 @@ impl VulkanRenderer {
                     {
                         let pipeline_ref = grid_pipeline.borrow();
 
-                        // Bind grid pipeline
-                        unsafe {
-                            pipeline_ref.context().device.cmd_bind_pipeline(
-                                cmd_buf,
-                                vk::PipelineBindPoint::GRAPHICS,
-                                pipeline_ref.vk_pipeline().vk_pipeline(),
-                            );
-
-                            // Bind storage descriptor set (set 0 = frame_data + objects)
-                            pipeline_ref.context().device.cmd_bind_descriptor_sets(
-                                cmd_buf,
-                                vk::PipelineBindPoint::GRAPHICS,
-                                pipeline_ref.vk_layout(),
-                                0,
-                                &[storage_descriptor.vk_set()],
-                                &[],
-                            );
-                        }
+                        // Bind grid pipeline and descriptors using helper
+                        ctx.command_buffer.bind_graphics_pipeline_with_descriptors(
+                            &pipeline_ref,
+                            storage_descriptor.vk_set(),
+                        );
 
                         drop(pipeline_ref);
 
@@ -1830,27 +1754,15 @@ impl VulkanRenderer {
 
                             let pipeline_ref = material.pipeline.borrow();
 
-                            // Bind pipeline
-                            unsafe {
-                                pipeline_ref.context().device.cmd_bind_pipeline(
-                                    cmd_buf,
-                                    vk::PipelineBindPoint::GRAPHICS,
-                                    pipeline_ref.vk_pipeline().vk_pipeline(),
-                                );
-                            }
+                            // Bind pipeline using helper
+                            ctx.command_buffer.bind_graphics_pipeline(&pipeline_ref);
 
                             // Bind set 0: Storage uniforms (frame_data + objects)
                             if let Some(descriptor) = storage_descriptor.as_ref() {
-                                unsafe {
-                                    pipeline_ref.context().device.cmd_bind_descriptor_sets(
-                                        cmd_buf,
-                                        vk::PipelineBindPoint::GRAPHICS,
-                                        pipeline_ref.vk_layout(),
-                                        0,
-                                        &[descriptor.vk_set()],
-                                        &[],
-                                    );
-                                }
+                                ctx.command_buffer.bind_graphics_descriptors(
+                                    pipeline_ref.vk_layout(),
+                                    &[descriptor.vk_set()],
+                                );
                             }
 
                             // Bind set 1: Bindless textures (only for bindless pipelines)
@@ -1859,16 +1771,12 @@ impl VulkanRenderer {
                             if is_bindless_pipeline {
                                 if let Some(bindless_set) = bindless_descriptor_set {
                                     if !bindless_bound {
-                                        unsafe {
-                                            pipeline_ref.context().device.cmd_bind_descriptor_sets(
-                                                cmd_buf,
-                                                vk::PipelineBindPoint::GRAPHICS,
-                                                pipeline_ref.vk_layout(),
-                                                1,
-                                                &[bindless_set],
-                                                &[],
-                                            );
-                                        }
+                                        ctx.command_buffer.bind_descriptor_sets_with_offset(
+                                            vk::PipelineBindPoint::GRAPHICS,
+                                            pipeline_ref.vk_layout(),
+                                            1,  // set 1 for bindless textures
+                                            &[bindless_set],
+                                        );
                                         bindless_bound = true;
                                     }
                                 }
@@ -1883,16 +1791,12 @@ impl VulkanRenderer {
                                 if let Some(Some(skeleton_desc)) =
                                     skeleton_descriptors.get(skeleton_handle.0 as usize)
                                 {
-                                    unsafe {
-                                        pipeline_ref.context().device.cmd_bind_descriptor_sets(
-                                            cmd_buf,
-                                            vk::PipelineBindPoint::GRAPHICS,
-                                            pipeline_ref.vk_layout(),
-                                            2,
-                                            &[skeleton_desc.vk_set()],
-                                            &[],
-                                        );
-                                    }
+                                    ctx.command_buffer.bind_descriptor_sets_with_offset(
+                                        vk::PipelineBindPoint::GRAPHICS,
+                                        pipeline_ref.vk_layout(),
+                                        2,
+                                        &[skeleton_desc.vk_set()],
+                                    );
                                 }
                             }
 
@@ -1936,46 +1840,35 @@ impl VulkanRenderer {
                         // === PARTICLE RENDERING ===
                         // Render particles as billboard quads after all geometry
                         for particle_render in &draw_list.particle_renders {
-                            let cmd_buf = ctx.command_buffer.vk_command_buffer();
+                            // Bind particle graphics pipeline
+                            ctx.command_buffer.bind_pipeline(
+                                particle_render.pipeline.vk(),
+                                vk::PipelineBindPoint::GRAPHICS,
+                            );
 
-                            unsafe {
-                                // Bind particle graphics pipeline
-                                device_ptr.cmd_bind_pipeline(
-                                    cmd_buf,
-                                    vk::PipelineBindPoint::GRAPHICS,
-                                    particle_render.pipeline.vk(),
-                                );
+                            // Bind set 0: Frame uniforms (storage buffer with view/proj)
+                            ctx.command_buffer.bind_descriptor_sets(
+                                vk::PipelineBindPoint::GRAPHICS,
+                                particle_render.pipeline_layout.vk(),
+                                &[particle_render.frame_descriptor_set.vk()],
+                            );
 
-                                // Bind set 0: Frame uniforms (storage buffer with view/proj)
-                                device_ptr.cmd_bind_descriptor_sets(
-                                    cmd_buf,
-                                    vk::PipelineBindPoint::GRAPHICS,
-                                    particle_render.pipeline_layout.vk(),
-                                    0,
-                                    &[particle_render.frame_descriptor_set.vk()],
-                                    &[],
-                                );
+                            // Bind set 1: Particle buffer
+                            ctx.command_buffer.bind_descriptor_sets_with_offset(
+                                vk::PipelineBindPoint::GRAPHICS,
+                                particle_render.pipeline_layout.vk(),
+                                1,
+                                &[particle_render.particle_descriptor_set.vk()],
+                            );
 
-                                // Bind set 1: Particle buffer
-                                device_ptr.cmd_bind_descriptor_sets(
-                                    cmd_buf,
-                                    vk::PipelineBindPoint::GRAPHICS,
-                                    particle_render.pipeline_layout.vk(),
-                                    1,
-                                    &[particle_render.particle_descriptor_set.vk()],
-                                    &[],
-                                );
-
-                                // Draw instanced quads (6 vertices per quad, one instance per particle)
-                                // No vertex buffer - vertices generated in shader from vertex_id
-                                device_ptr.cmd_draw(
-                                    cmd_buf,
-                                    6, // 6 vertices per quad (2 triangles)
-                                    particle_render.particle_count, // One instance per particle
-                                    0,
-                                    0,
-                                );
-                            }
+                            // Draw instanced quads (6 vertices per quad, one instance per particle)
+                            // No vertex buffer - vertices generated in shader from vertex_id
+                            ctx.command_buffer.draw_array(
+                                6, // 6 vertices per quad (2 triangles)
+                                particle_render.particle_count, // One instance per particle
+                                0,
+                                0,
+                            );
                         }
                     }
                 });
@@ -2032,41 +1925,34 @@ impl VulkanRenderer {
                         }
 
                         let pipeline_ref = ui_pipeline.borrow();
-                        let cmd_buf = ctx.command_buffer.vk_command_buffer();
 
                         // Get the current frame's buffers using frame index
                         let frame_idx = ui_frame_index.get();
                         let buffers = ui_buffers.get(frame_idx);
 
-                        unsafe {
-                            // Bind UI pipeline
-                            pipeline_ref.context().device.cmd_bind_pipeline(
-                                cmd_buf,
-                                vk::PipelineBindPoint::GRAPHICS,
-                                pipeline_ref.vk_pipeline().vk_pipeline(),
+                        // Bind UI pipeline
+                        ctx.command_buffer.bind_graphics_pipeline(&pipeline_ref);
+
+                        // Bind UI texture descriptor set (set 0)
+                        if let Some(textures) = ui_textures {
+                            ctx.command_buffer.bind_graphics_descriptors(
+                                pipeline_ref.vk_layout(),
+                                &[textures.vk_set()],
                             );
+                        }
 
-                            // Bind UI texture descriptor set (set 0)
-                            if let Some(textures) = ui_textures {
-                                pipeline_ref.context().device.cmd_bind_descriptor_sets(
-                                    cmd_buf,
-                                    vk::PipelineBindPoint::GRAPHICS,
-                                    pipeline_ref.vk_layout(),
-                                    0,
-                                    &[textures.vk_set()],
-                                    &[],
-                                );
-                            }
+                        // Set viewport
+                        let cmd_buf = ctx.command_buffer.vk_command_buffer();
+                        let viewport = vk::Viewport {
+                            x: 0.0,
+                            y: 0.0,
+                            width: ui_data.screen_size[0],
+                            height: ui_data.screen_size[1],
+                            min_depth: 0.0,
+                            max_depth: 1.0,
+                        };
 
-                            // Set viewport
-                            let viewport = vk::Viewport {
-                                x: 0.0,
-                                y: 0.0,
-                                width: ui_data.screen_size[0],
-                                height: ui_data.screen_size[1],
-                                min_depth: 0.0,
-                                max_depth: 1.0,
-                            };
+                        unsafe {
                             pipeline_ref
                                 .context()
                                 .device
@@ -2279,14 +2165,6 @@ impl VulkanRenderer {
                         let (dst_image, _) = ctx.get_image(swapchain_dst).expect("swapchain image");
 
                         if let Some(extent) = output_extent_for_present {
-                            let subresource_range = vk::ImageSubresourceRange {
-                                aspect_mask: vk::ImageAspectFlags::COLOR,
-                                base_mip_level: 0,
-                                level_count: 1,
-                                base_array_layer: 0,
-                                layer_count: 1,
-                            };
-
                             // === PRE-BLIT BARRIERS ===
                             // Transition output: COLOR_ATTACHMENT_OPTIMAL -> TRANSFER_SRC_OPTIMAL
                             let src_barrier = ImageMemoryBarrier2::new(src_image)
@@ -2296,7 +2174,7 @@ impl VulkanRenderer {
                                 .dst_access(AccessFlags2::TRANSFER_READ)
                                 .old_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
                                 .new_layout(vk::ImageLayout::TRANSFER_SRC_OPTIMAL)
-                                .subresource_range(subresource_range);
+                                .subresource_range(COLOR_SUBRESOURCE_RANGE);
 
                             // Transition swapchain: UNDEFINED -> TRANSFER_DST_OPTIMAL
                             // Using UNDEFINED because swapchain image layout is unpredictable
@@ -2309,7 +2187,7 @@ impl VulkanRenderer {
                                 .dst_access(AccessFlags2::TRANSFER_WRITE)
                                 .old_layout(vk::ImageLayout::UNDEFINED)
                                 .new_layout(vk::ImageLayout::TRANSFER_DST_OPTIMAL)
-                                .subresource_range(subresource_range);
+                                .subresource_range(COLOR_SUBRESOURCE_RANGE);
 
                             DependencyInfo::new()
                                 .add_image_barrier(src_barrier)
@@ -2372,7 +2250,7 @@ impl VulkanRenderer {
                                 .dst_access(AccessFlags2::COLOR_ATTACHMENT_WRITE)
                                 .old_layout(vk::ImageLayout::TRANSFER_SRC_OPTIMAL)
                                 .new_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
-                                .subresource_range(subresource_range);
+                                .subresource_range(COLOR_SUBRESOURCE_RANGE);
 
                             // Transition swapchain: TRANSFER_DST_OPTIMAL -> PRESENT_SRC_KHR
                             // Note: The render graph will handle the final transition for the last pass
@@ -2384,7 +2262,7 @@ impl VulkanRenderer {
                                 .dst_access(AccessFlags2::NONE)
                                 .old_layout(vk::ImageLayout::TRANSFER_DST_OPTIMAL)
                                 .new_layout(vk::ImageLayout::PRESENT_SRC_KHR)
-                                .subresource_range(subresource_range);
+                                .subresource_range(COLOR_SUBRESOURCE_RANGE);
 
                             DependencyInfo::new()
                                 .add_image_barrier(src_barrier_back)
@@ -2562,44 +2440,14 @@ impl VulkanRenderer {
                     if let (Some((color_image, _)), Some((depth_image, _))) =
                         (ctx.get_image(p_color), ctx.get_image(p_depth))
                     {
-                        let color_subresource = vk::ImageSubresourceRange {
-                            aspect_mask: vk::ImageAspectFlags::COLOR,
-                            base_mip_level: 0,
-                            level_count: 1,
-                            base_array_layer: 0,
-                            layer_count: 1,
-                        };
-
-                        let depth_subresource = vk::ImageSubresourceRange {
-                            aspect_mask: vk::ImageAspectFlags::DEPTH | vk::ImageAspectFlags::STENCIL,
-                            base_mip_level: 0,
-                            level_count: 1,
-                            base_array_layer: 0,
-                            layer_count: 1,
-                        };
-
                         // Transition color: SHADER_READ_ONLY_OPTIMAL -> COLOR_ATTACHMENT_OPTIMAL
                         // The preview color texture is sampled by UI, so it may be in SHADER_READ_ONLY
-                        let color_barrier = ImageMemoryBarrier2::new(color_image)
-                            .src_stage(PipelineStage2Flags::FRAGMENT_SHADER)
-                            .src_access(AccessFlags2::SHADER_READ)
-                            .dst_stage(PipelineStage2Flags::COLOR_ATTACHMENT_OUTPUT)
-                            .dst_access(AccessFlags2::COLOR_ATTACHMENT_WRITE)
-                            .old_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
-                            .new_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
-                            .subresource_range(color_subresource);
+                        let color_barrier = color_read_to_attachment_barrier(color_image);
 
-                        // Transition depth: DEPTH_STENCIL_ATTACHMENT_OPTIMAL -> DEPTH_STENCIL_ATTACHMENT_OPTIMAL
+                        // Transition depth: sync between passes (stays in DEPTH_ATTACHMENT_OPTIMAL)
                         // The depth buffer is NEVER sampled by UI (only color is), so it stays in attachment layout.
                         // This barrier is just for stage synchronization.
-                        let depth_barrier = ImageMemoryBarrier2::new(depth_image)
-                            .src_stage(PipelineStage2Flags::LATE_FRAGMENT_TESTS)
-                            .src_access(AccessFlags2::DEPTH_STENCIL_ATTACHMENT_WRITE)
-                            .dst_stage(PipelineStage2Flags::EARLY_FRAGMENT_TESTS)
-                            .dst_access(AccessFlags2::DEPTH_STENCIL_ATTACHMENT_READ.union(AccessFlags2::DEPTH_STENCIL_ATTACHMENT_WRITE))
-                            .old_layout(vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL)
-                            .new_layout(vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL)
-                            .subresource_range(depth_subresource);
+                        let depth_barrier = depth_attachment_barrier(depth_image);
 
                         DependencyInfo::new()
                             .add_image_barrier(color_barrier)
@@ -2620,22 +2468,11 @@ impl VulkanRenderer {
                     {
                         let pipeline_ref = sky_pipeline.borrow();
 
-                        unsafe {
-                            pipeline_ref.context().device.cmd_bind_pipeline(
-                                cmd_buf,
-                                vk::PipelineBindPoint::GRAPHICS,
-                                pipeline_ref.vk_pipeline().vk_pipeline(),
-                            );
-
-                            pipeline_ref.context().device.cmd_bind_descriptor_sets(
-                                cmd_buf,
-                                vk::PipelineBindPoint::GRAPHICS,
-                                pipeline_ref.vk_layout(),
-                                0,
-                                &[storage_descriptor.vk_set()],
-                                &[],
-                            );
-                        }
+                        // Bind sky pipeline and descriptors using helper
+                        ctx.command_buffer.bind_graphics_pipeline_with_descriptors(
+                            &pipeline_ref,
+                            storage_descriptor.vk_set(),
+                        );
 
                         drop(pipeline_ref);
                         ctx.command_buffer.draw_array(3, 1, 0, 0);
@@ -2741,27 +2578,15 @@ impl VulkanRenderer {
 
                             let pipeline_ref = material.pipeline.borrow();
 
-                            // Bind pipeline
-                            unsafe {
-                                pipeline_ref.context().device.cmd_bind_pipeline(
-                                    cmd_buf,
-                                    vk::PipelineBindPoint::GRAPHICS,
-                                    pipeline_ref.vk_pipeline().vk_pipeline(),
-                                );
-                            }
+                            // Bind pipeline using helper
+                            ctx.command_buffer.bind_graphics_pipeline(&pipeline_ref);
 
                             // Bind storage descriptor set (set 0)
                             if let Some(descriptor) = storage_descriptor.as_ref() {
-                                unsafe {
-                                    pipeline_ref.context().device.cmd_bind_descriptor_sets(
-                                        cmd_buf,
-                                        vk::PipelineBindPoint::GRAPHICS,
-                                        pipeline_ref.vk_layout(),
-                                        0,
-                                        &[descriptor.vk_set()],
-                                        &[],
-                                    );
-                                }
+                                ctx.command_buffer.bind_graphics_descriptors(
+                                    pipeline_ref.vk_layout(),
+                                    &[descriptor.vk_set()],
+                                );
                             }
 
                             // Bind bindless descriptor set (set 1)
@@ -2769,16 +2594,12 @@ impl VulkanRenderer {
                             if is_bindless_pipeline {
                                 if let Some(bindless_set) = bindless_descriptor_set {
                                     if !bindless_bound {
-                                        unsafe {
-                                            geometry_device.cmd_bind_descriptor_sets(
-                                                cmd_buf,
-                                                vk::PipelineBindPoint::GRAPHICS,
-                                                pipeline_ref.vk_layout(),
-                                                1,
-                                                &[bindless_set],
-                                                &[],
-                                            );
-                                        }
+                                        ctx.command_buffer.bind_descriptor_sets_with_offset(
+                                            vk::PipelineBindPoint::GRAPHICS,
+                                            pipeline_ref.vk_layout(),
+                                            1,
+                                            &[bindless_set],
+                                        );
                                         bindless_bound = true;
                                     }
                                 }
@@ -2792,16 +2613,12 @@ impl VulkanRenderer {
                                 if let Some(Some(skeleton_desc)) =
                                     skeleton_descs.get(skeleton_handle.0 as usize)
                                 {
-                                    unsafe {
-                                        geometry_device.cmd_bind_descriptor_sets(
-                                            cmd_buf,
-                                            vk::PipelineBindPoint::GRAPHICS,
-                                            pipeline_ref.vk_layout(),
-                                            2,
-                                            &[skeleton_desc.vk_set()],
-                                            &[],
-                                        );
-                                    }
+                                    ctx.command_buffer.bind_descriptor_sets_with_offset(
+                                        vk::PipelineBindPoint::GRAPHICS,
+                                        pipeline_ref.vk_layout(),
+                                        2,
+                                        &[skeleton_desc.vk_set()],
+                                    );
                                 }
                             }
 
@@ -3417,13 +3234,7 @@ impl UITextures {
             .image(image)
             .view_type(vk::ImageViewType::TYPE_2D)
             .format(vk::Format::R8G8B8A8_SRGB)
-            .subresource_range(vk::ImageSubresourceRange {
-                aspect_mask: vk::ImageAspectFlags::COLOR,
-                base_mip_level: 0,
-                level_count: 1,
-                base_array_layer: 0,
-                layer_count: 1,
-            });
+            .subresource_range(COLOR_SUBRESOURCE_RANGE);
 
         let image_view = context.device.create_image_view(&view_create_info, None)?;
 
@@ -3854,13 +3665,7 @@ impl ViewportRenderTarget {
                 .view_type(vk::ImageViewType::TYPE_2D)
                 .format(vk::Format::R16G16B16A16_SFLOAT)
                 .components(vk::ComponentMapping::default())
-                .subresource_range(vk::ImageSubresourceRange {
-                    aspect_mask: vk::ImageAspectFlags::COLOR,
-                    base_mip_level: 0,
-                    level_count: 1,
-                    base_array_layer: 0,
-                    layer_count: 1,
-                });
+                .subresource_range(COLOR_SUBRESOURCE_RANGE);
 
             let color_image_view = context
                 .device
@@ -3888,13 +3693,7 @@ impl ViewportRenderTarget {
                 .view_type(vk::ImageViewType::TYPE_2D)
                 .format(vk::Format::D32_SFLOAT_S8_UINT)
                 .components(vk::ComponentMapping::default())
-                .subresource_range(vk::ImageSubresourceRange {
-                    aspect_mask: vk::ImageAspectFlags::DEPTH | vk::ImageAspectFlags::STENCIL,
-                    base_mip_level: 0,
-                    level_count: 1,
-                    base_array_layer: 0,
-                    layer_count: 1,
-                });
+                .subresource_range(DEPTH_SUBRESOURCE_RANGE);
 
             let depth_image_view = context
                 .device
@@ -3932,13 +3731,7 @@ impl ViewportRenderTarget {
                 .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
                 .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
                 .image(color_image)
-                .subresource_range(vk::ImageSubresourceRange {
-                    aspect_mask: vk::ImageAspectFlags::COLOR,
-                    base_mip_level: 0,
-                    level_count: 1,
-                    base_array_layer: 0,
-                    layer_count: 1,
-                })
+                .subresource_range(COLOR_SUBRESOURCE_RANGE)
                 .src_access_mask(vk::AccessFlags::empty())
                 .dst_access_mask(vk::AccessFlags::SHADER_READ);
 
@@ -3949,13 +3742,7 @@ impl ViewportRenderTarget {
                 .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
                 .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
                 .image(depth_image)
-                .subresource_range(vk::ImageSubresourceRange {
-                    aspect_mask: vk::ImageAspectFlags::DEPTH | vk::ImageAspectFlags::STENCIL,
-                    base_mip_level: 0,
-                    level_count: 1,
-                    base_array_layer: 0,
-                    layer_count: 1,
-                })
+                .subresource_range(DEPTH_SUBRESOURCE_RANGE)
                 .src_access_mask(vk::AccessFlags::empty())
                 .dst_access_mask(
                     vk::AccessFlags::DEPTH_STENCIL_ATTACHMENT_READ
@@ -4084,13 +3871,7 @@ impl OutputRenderTarget {
                 .view_type(vk::ImageViewType::TYPE_2D)
                 .format(vk::Format::B8G8R8A8_SRGB)
                 .components(vk::ComponentMapping::default())
-                .subresource_range(vk::ImageSubresourceRange {
-                    aspect_mask: vk::ImageAspectFlags::COLOR,
-                    base_mip_level: 0,
-                    level_count: 1,
-                    base_array_layer: 0,
-                    layer_count: 1,
-                });
+                .subresource_range(COLOR_SUBRESOURCE_RANGE);
 
             let color_image_view = context
                 .device
@@ -4106,13 +3887,7 @@ impl OutputRenderTarget {
                 .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
                 .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
                 .image(color_image)
-                .subresource_range(vk::ImageSubresourceRange {
-                    aspect_mask: vk::ImageAspectFlags::COLOR,
-                    base_mip_level: 0,
-                    level_count: 1,
-                    base_array_layer: 0,
-                    layer_count: 1,
-                })
+                .subresource_range(COLOR_SUBRESOURCE_RANGE)
                 .src_access_mask(vk::AccessFlags::empty())
                 .dst_access_mask(vk::AccessFlags::COLOR_ATTACHMENT_WRITE);
 
