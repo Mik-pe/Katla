@@ -60,12 +60,24 @@ pub fn setup_render_graph(app: &mut Application) {
         .init_ui_textures(FONT_ATLAS_SIZE, FONT_ATLAS_SIZE)
         .expect("Failed to initialize UI textures");
 
-    // Initialize viewport render target for game engine editor
-    // This creates an offscreen texture the UI can sample for the viewport panel
+    // Get window size for main viewport
     let viewport_size = app.window.as_ref().unwrap().inner_size();
-    renderer
-        .init_viewport_target(viewport_size.width, viewport_size.height)
-        .expect("Failed to initialize viewport render target");
+
+    // Initialize main viewport using new unified ViewportBuilder API
+    let main_builder = renderer.create_viewport()
+        .size(viewport_size.width, viewport_size.height)
+        .with_depth(katla_vulkan::DepthFormat::D32SfloatS8Uint)
+        .clear_color(0.3, 0.5, 0.3, 1.0)  // Dark green
+        .label("main");
+
+    let main_viewport = renderer.build_viewport(main_builder)
+        .expect("Failed to create main viewport");
+
+    // Store viewport handle in app for later use
+    app.main_viewport = Some(main_viewport);
+
+    // Register main viewport texture with UI system
+    renderer.register_viewport_texture(main_viewport);
 
     // Initialize output render target for final UI composition
     // This is where UI renders, then present_pass copies to swapchain
@@ -74,14 +86,14 @@ pub fn setup_render_graph(app: &mut Application) {
         .expect("Failed to initialize output render target");
 
     // Set camera aspect ratio based on viewport texture size (not window size!)
-    if let Some(viewport_extent) = renderer.viewport_extent() {
-        let aspect = viewport_extent.width as f32 / viewport_extent.height as f32;
+    if let Some(extent) = renderer.get_viewport_extent(main_viewport) {
+        let aspect = extent.width as f32 / extent.height as f32;
         app.camera
             .borrow_mut()
             .aspect_ratio_changed(&mut app.world, aspect);
     }
 
-    // Setup render graph with multiple framebuffers
+    // Setup render graph (will use the new viewport at index 0)
     renderer.setup_render_graph();
 
     // Initialize preview viewport using new unified ViewportBuilder API

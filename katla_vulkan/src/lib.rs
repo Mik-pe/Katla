@@ -107,7 +107,7 @@ pub struct VulkanRenderer {
     /// Preview draw list (models to render in preview).
     preview_draw_list: RefCell<Option<DrawList>>,
     /// Viewport system (new unified API).
-    /// Eventually replaces render_targets, viewport_render_graph, preview_* fields.
+    /// Application layer manages which handle is "main" vs "preview".
     viewports: Vec<Viewport>,
 }
 
@@ -1486,7 +1486,30 @@ impl VulkanRenderer {
         // Note: We use the first viewport texture here, but update_viewport_attachments
         // will switch to the correct texture each frame for double-buffering
         let (viewport_resource, viewport_depth_resource, _viewport_extent) =
-            if let Some(first_target) = self.get_render_target_first(Self::VIEWPORT_TEXTURE_ID) {
+            // First check new viewport system (index 0 = main viewport)
+            if let Some(viewport) = self.viewports.first() {
+                let color = graph_builder.add_resource(
+                    "viewport_color",
+                    ResourceKind::ExternalImage {
+                        image: viewport.color_image(),
+                        image_view: viewport.color_view(),
+                        format: ImageFormat::R16G16B16A16Sfloat,
+                        extent: viewport.extent,
+                    },
+                );
+                let depth = graph_builder.add_resource(
+                    "viewport_depth",
+                    ResourceKind::ExternalImage {
+                        image: viewport.depth_image(),
+                        image_view: viewport.depth_view(),
+                        format: ImageFormat::D32SfloatS8Uint,
+                        extent: viewport.extent,
+                    },
+                );
+                (Some(color), Some(depth), Some(viewport.extent))
+            }
+            // Fall back to old render_targets system
+            else if let Some(first_target) = self.get_render_target_first(Self::VIEWPORT_TEXTURE_ID) {
                 let color = graph_builder.add_resource(
                     "viewport_color",
                     ResourceKind::ExternalImage {
@@ -1505,7 +1528,7 @@ impl VulkanRenderer {
                         extent: Extent2D::new(first_target.extent.width, first_target.extent.height),
                     },
                 );
-                (Some(color), Some(depth), Some(first_target.extent))
+                (Some(color), Some(depth), Some(Extent2D::new(first_target.extent.width, first_target.extent.height)))
             } else {
                 (None, None, None)
             };

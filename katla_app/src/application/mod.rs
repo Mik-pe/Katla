@@ -83,6 +83,8 @@ pub struct Application {
     pub(crate) gizmo_resources: Option<renderer::GizmoResources>,
     /// Grid pipeline for runtime toggle
     pub(crate) grid_pipeline: Option<Rc<RefCell<MaterialPipeline>>>,
+    /// Main scene viewport handle
+    pub(crate) main_viewport: Option<katla_vulkan::ViewportHandle>,
     /// Preview viewport handle (for model preview panel)
     pub(crate) preview_viewport: Option<katla_vulkan::ViewportHandle>,
     /// Background asset loader thread
