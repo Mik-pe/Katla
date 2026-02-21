@@ -1867,6 +1867,7 @@ pub struct UiDrawCommand {
 }
 
 /// UI draw data for rendering.
+#[derive(Clone, Debug)]
 pub struct UiDrawData {
     pub vertex_data: Vec<u8>,
     pub index_data: Vec<u8>,

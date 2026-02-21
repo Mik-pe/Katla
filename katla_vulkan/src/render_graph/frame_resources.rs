@@ -22,8 +22,7 @@ impl RenderTarget {
     }
 
     /// Get the underlying resource ID.
-    /// This is only for internal use within katla_vulkan.
-    pub(crate) fn resource_id(&self) -> ResourceId {
+    pub fn resource_id(&self) -> ResourceId {
         self.0
     }
 }

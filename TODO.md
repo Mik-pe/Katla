@@ -3,75 +3,81 @@ TODO
 
 ## VulkanRenderer Cleanup (IN PROGRESS)
 
+### Architectural Rules
+
+#### katla_vulkan Responsibilities (RHI Layer)
+- **GENERIC drawing primitives only** - doesn't know about "sky", "grid", "ui", "geometry"
+- **NO application concepts** - just draws what it's given
+- **NO ash::vk types in public API** - all Vulkan types must be wrapped
+- **Provides infrastructure, not features** - pipelines, textures, buffers, render graphs
+- **Clean primitives:**
+  - `draw_draw_list()` - draws whatever meshes are in the list
+  - `draw_fullscreen_with_material()` - draws a fullscreen quad
+  - `draw_2d(...)` - draws 2D geometry (future)
+  - `blit_images()` - copies images
+
+#### katla_app Responsibilities (Application Layer)
+- **Owns application concepts** - sky, grid, ui, geometry
+- **Owns pipelines** - created from materials, passed to render graph
+- **Defines render passes** - using the generic primitives from katla_vulkan
+- **Sets draw lists** - tells katla_vulkan what to draw
+- **NO direct Vulkan knowledge** - no ash::vk, no descriptor sets, no pipeline layouts
+
+#### API Design Principles
+1. **Application says WHAT to draw, not HOW**
+   - ❌ `ctx.bind_descriptor_set(...)` - application knows about descriptors
+   - ✅ `ctx.draw_fullscreen_with_material(&material)` - just draw it
+
+2. **katla_vulkan is a tool, not a framework**
+   - ❌ `ctx.draw_geometry()` - implies katla_vulkan knows what "geometry" is
+   - ✅ `ctx.draw_draw_list()` - draws whatever is in the list
+
+3. **Clear ownership boundaries**
+   - katla_vulkan: GPU resources (buffers, textures, pipelines)
+   - katla_app: Game concepts (entities, components, draw lists)
+
 ### Completed ✅
 - [x] Added `PassExecutionContext` wrapper methods for cleaner API
-  - `bind_graphics_pipeline()`, `bind_graphics_pipeline_with_descriptors()`
-  - `bind_index_buffer()`, `bind_vertex_buffers()`
-  - `draw_indexed()`, `draw_array()`, `draw_fullscreen()`
 - [x] Created `FrameResources` and `RenderTarget` abstractions
-  - Opaque handles for resources (no ResourceId exposure)
-  - Semantic names (swapchain, viewport_color, viewport_depth, output_color)
 - [x] Added `PassBuilder` convenience methods
-  - `write_color()`, `write_depth()` - accept `&RenderTarget`
-  - `clear_color_target()`, `clear_depth_target()`
-  - `blit()` - for present pass setup
 - [x] Added new render graph API
-  - `create_render_graph_with_resources()` - builder with pre-registered resources
-  - `compile_render_graph()` - compile a builder
 - [x] Made AssetRegistry methods public
-  - `get_mesh()`, `get_material()`, `get_material_mut()`
-  - `MeshAsset`, `MaterialAsset` structs now public
 - [x] Made `vk_layout()`, `vk_set()` methods public
-  - `MaterialPipeline::vk_layout()`
-  - `StorageDescriptorSet::vk_set()`
-  - `SkeletonDescriptorSet::vk_set()`
-  - `UITextures::vk_set()`
 - [x] Created `render_graph` module in katla_app
 - [x] Removed pipeline storage from VulkanRenderer
-  - Removed `sky_pipeline`, `grid_pipeline`, `ui_pipeline` fields
-  - Removed `set_sky()`, `set_grid()`, `set_ui()` methods
-  - `setup_render_graph()` passes pipelines to render graph builder
+- [x] Added `draw_fullscreen_with_material()` - generic fullscreen drawing
+- [x] Added `draw_draw_list()` - generic mesh drawing from list
+- [x] Added `draw_ui()` - 2D UI drawing helper
+- [x] Removed `ash::vk` usage from application render_graph.rs
 
 ### Remaining Work
 
-#### Phase 1: Migrate application to new render graph API
-- [ ] Add proper `get_renderer_context()` method that works with Rc<RefCell<>> types
-- [ ] Make `UiDrawData`, `UIBuffers`, `UITextures` Clone or use Rc<RefCell<>>
-- [ ] Update `render_graph.rs` to use new API instead of legacy `setup_render_graph()`
+#### Phase 1: Complete Application Migration
+- [ ] Ensure `compile_render_graph()` properly passes RendererContext to passes
 - [ ] Test that everything still renders
+- [ ] Fix any compilation errors
 
-#### Phase 2: Remove legacy render graph code
+#### Phase 2: Clean Up RendererContext
+- [ ] Review RendererContext fields - remove application-specific stuff
+- [ ] RendererContext should only have GENERIC renderer state:
+  - asset_registry, draw_list, storage_manager, bindless_manager
+  - NOT: ui_data, ui_buffers, ui_textures, sky_pipeline, etc.
+- [ ] Move UI-specific rendering to application layer
+
+#### Phase 3: Remove Legacy Code
 - [ ] Remove `rebuild_render_graph_internal()` method
 - [ ] Remove `setup_render_graph()` method
 - [ ] All render graph building happens in application layer
 
-#### Phase 3: Fix pre-existing issues
+#### Phase 4: Fix Pre-existing Issues
 - [ ] Fix image layout transitions in present pass
 - [ ] Fix descriptor set binding issues
 - [ ] Unified "RenderTarget" concept (single type for swapchain/viewport/texture)
 
-## Architecture Goals
-
-The VulkanRenderer should be GENERIC:
-- Holds HIGH-LEVEL constructs or PRIVATE objects for book-keeping
-- Supports multiple rendergraphs outputting to swapchain or viewports
-- Does NOT hold application-specific pipelines (sky, grid, ui)
-- Provides infrastructure, not feature implementations
-
-The Application layer should:
-- Own pipelines (sky, grid, ui, materials)
-- Define passes via render graph API
-- Call renderer.compile_render_graph(builder)
-
 ## Current State
 
 - ✅ Infrastructure for new API is in place
-- ✅ Application builds and runs
-- ✅ Pipeline ownership moved to application (passed to setup_render_graph)
-- ⚠️ Application still uses legacy `setup_render_graph()` API internally
+- ✅ Application uses clean API without ash::vk
+- ✅ Pipeline ownership moved to application
+- ⚠️ RendererContext still has UI-specific fields (needs cleanup)
 - ⚠️ Pre-existing validation errors remain
-
-## Pre-existing Issues
-
-- Preview system is too specific (preview_render_graph, preview_storage_manager, etc.)
-- Output vs Viewport RenderTarget should use unified type
