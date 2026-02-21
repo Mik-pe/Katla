@@ -946,10 +946,15 @@ impl VulkanRenderer {
         if let Some(viewport) = self.viewports.get(handle.0) {
             let color_view = viewport.color_view();
             if let Some(ref mut ui_textures) = self.ui_textures {
-                // Use viewport index + 200 as the texture ID
-                let texture_id = 200 + handle.0 as u64;
+                // For main viewport (index 0), use TextureId 2 for backwards compatibility
+                // with existing UI code that expects TextureId::VIEWPORT
+                let texture_id = if handle.0 == 0 {
+                    2  // TextureId::VIEWPORT
+                } else {
+                    200 + handle.0 as u64  // Custom IDs for additional viewports
+                };
                 ui_textures.set_external_texture(texture_id, color_view);
-                info!("Viewport '{}' texture registered with UI system", viewport.label);
+                info!("Viewport '{}' texture registered with UI system (ID={})", viewport.label, texture_id);
             }
         }
     }
