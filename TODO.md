@@ -49,6 +49,8 @@ TODO
 - [x] Added `draw_draw_list()` - generic mesh drawing from list
 - [x] Added `draw_ui()` - 2D UI drawing helper
 - [x] Removed `ash::vk` usage from application render_graph.rs
+- [x] Created `RendererContext` with raw pointers for GPU resources
+- [x] Added `compile_render_graph()` that sets up RendererContext
 
 ### Remaining Work
 

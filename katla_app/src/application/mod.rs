@@ -213,7 +213,8 @@ impl ApplicationHandler for Application {
                             } else {
                                 None
                             };
-                            renderer.setup_render_graph(
+                            renderer::render_graph::build_render_graph(
+                                renderer,
                                 self.sky_pipeline.clone(),
                                 grid_to_use,
                                 self.ui_pipeline.clone(),
