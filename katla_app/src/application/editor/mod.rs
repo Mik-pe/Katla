@@ -149,7 +149,8 @@ pub fn render_debug_ui(app: &mut Application, dt: f32) {
             } else {
                 None
             };
-            renderer.setup_render_graph(
+            super::renderer::render_graph::build_render_graph(
+                renderer,
                 Some(sky_pipeline.clone()),
                 grid_to_use,
                 Some(ui_pipeline.clone()),

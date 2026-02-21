@@ -103,9 +103,10 @@ pub fn setup_render_graph(app: &mut Application) {
             .aspect_ratio_changed(&mut app.world, aspect);
     }
 
-    // Setup render graph (will use the new viewport at index 0)
+    // Setup render graph using the new application-layer API
     // Pass all pipelines at setup time - render graph stores them internally
-    renderer.setup_render_graph(
+    render_graph::build_render_graph(
+        renderer,
         Some(sky_pipeline),
         grid_pipeline_to_use,
         Some(ui_pipeline),
