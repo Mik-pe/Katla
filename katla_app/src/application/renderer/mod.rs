@@ -84,21 +84,21 @@ pub fn setup_render_graph(app: &mut Application) {
     // Setup render graph with multiple framebuffers
     renderer.setup_render_graph();
 
-    // Initialize preview render target for model preview panel (512x512)
-    renderer
-        .init_preview_target(512, 512)
-        .expect("Failed to initialize preview render target");
+    // Initialize preview viewport using new unified ViewportBuilder API
+    let preview_builder = renderer.create_viewport()
+        .size(512, 512)
+        .with_depth(katla_vulkan::DepthFormat::D32SfloatS8Uint)
+        .clear_color(0.15, 0.15, 0.18, 1.0)  // Dark gray
+        .label("preview");
 
-    // Initialize preview storage system (separate camera from main scene)
-    renderer
-        .init_preview_storage()
-        .expect("Failed to initialize preview storage");
+    let preview_viewport = renderer.build_viewport(preview_builder)
+        .expect("Failed to create preview viewport");
 
-    // Setup preview render graph
-    renderer.setup_preview_render_graph();
+    // Store viewport handle in app for later use
+    app.preview_viewport = Some(preview_viewport);
 
     // Register preview texture with UI system
-    renderer.register_preview_texture();
+    renderer.register_viewport_texture(preview_viewport);
 
     // Create and register gizmo material and mesh
     setup_gizmo_resources(app);
@@ -375,30 +375,39 @@ pub fn render_frame(app: &mut Application) {
             // Extract camera position
             let cam_pos = preview.camera.position();
 
-            // Set preview uniforms
-            renderer.set_preview_uniforms(FrameUniforms {
-                view_matrix: view.to_array(),
-                proj_matrix: proj.to_array(),
-                inv_view_proj_matrix: inv_view_proj.to_array(),
-                camera_position: [cam_pos.x(), cam_pos.y(), cam_pos.z(), 0.0],
-                light_direction: [0.3, 1.0, 0.2, 0.0],
-                light_color: [1.0, 0.98, 0.95, 0.0],
-                light_intensity: 3.0,
-            });
+            // Update viewport camera using new unified API
+            if let Some(viewport_handle) = app.preview_viewport {
+                // Convert matrices to column-major arrays
+                let view_arr: [[f32; 4]; 4] = bytemuck::cast(view.to_array());
+                let proj_arr: [[f32; 4]; 4] = bytemuck::cast(proj.to_array());
+                let inv_view_proj_arr: [[f32; 4]; 4] = bytemuck::cast(inv_view_proj.to_array());
 
-            // Create preview draw list
-            let preview_draw = DrawCall::new(mesh_handle, material_handle)
-                .with_transform(katla_math::Mat4::identity().to_array());
+                renderer.update_viewport_camera(
+                    viewport_handle,
+                    &view_arr,
+                    &proj_arr,
+                    &inv_view_proj_arr,
+                    &[cam_pos.x(), cam_pos.y(), cam_pos.z(), 0.0],
+                    &[0.3, 1.0, 0.2, 0.0],
+                    &[1.0, 0.98, 0.95, 0.0],
+                    3.0,
+                );
 
-            let mut preview_draw_list = DrawList::new();
-            preview_draw_list.push(preview_draw);
+                // Create preview draw list
+                let preview_draw = DrawCall::new(mesh_handle, material_handle)
+                    .with_transform(katla_math::Mat4::identity().to_array());
 
-            renderer.set_preview_draw_list(preview_draw_list);
+                let mut preview_draw_list = DrawList::new();
+                preview_draw_list.push(preview_draw);
+
+                renderer.set_viewport_draw_list(viewport_handle, preview_draw_list);
+            }
         }
     } else {
-        // Clear preview resources when not active
-        renderer.clear_preview_uniforms();
-        renderer.clear_preview_draw_list();
+        // Clear preview draw list when not active
+        if let Some(viewport_handle) = app.preview_viewport {
+            renderer.clear_viewport_draw_list(viewport_handle);
+        }
     }
 
     // Render using the draw list

@@ -4114,9 +4114,13 @@ impl Drop for UITextures {
                 .device
                 .destroy_descriptor_pool(self.descriptor_pool, None);
 
-            // Clean up thumbnail textures
+            // Clean up thumbnail textures (only those we own)
             for (texture_id, image_view) in self.thumbnail_textures.drain() {
-                self.context.device.destroy_image_view(image_view, None);
+                // Only destroy image views for textures we own (in thumbnail_allocations)
+                // External textures (viewports) manage their own lifecycle
+                if self.thumbnail_allocations.contains_key(&texture_id) {
+                    self.context.device.destroy_image_view(image_view, None);
+                }
                 if let Some((image, memory)) = self.thumbnail_allocations.remove(&texture_id) {
                     self.context.device.destroy_image(image, None);
                     self.context.allocator.borrow_mut().free(memory).ok();

@@ -83,6 +83,8 @@ pub struct Application {
     pub(crate) gizmo_resources: Option<renderer::GizmoResources>,
     /// Grid pipeline for runtime toggle
     pub(crate) grid_pipeline: Option<Rc<RefCell<MaterialPipeline>>>,
+    /// Preview viewport handle (for model preview panel)
+    pub(crate) preview_viewport: Option<katla_vulkan::ViewportHandle>,
     /// Background asset loader thread
     pub(crate) background_loader: BackgroundLoader,
     /// Next texture ID for thumbnails (custom IDs start at 100)
