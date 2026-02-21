@@ -793,6 +793,135 @@ impl VulkanRenderer {
         }
     }
 
+    /// Initialize storage uniform system for a viewport.
+    ///
+    /// This creates a separate storage manager for the viewport's camera
+    /// to avoid conflicting with the main scene's frame uniforms.
+    pub fn init_viewport_storage(&mut self, handle: ViewportHandle) -> Result<(), vk::Result> {
+        let viewport = match self.viewports.get_mut(handle.0) {
+            Some(v) => v,
+            None => {
+                warn!("Cannot init viewport storage: viewport not found");
+                return Err(vk::Result::ERROR_INITIALIZATION_FAILED);
+            }
+        };
+
+        // Reuse the same descriptor set layout pattern as the main scene
+        // Create a new storage manager for the viewport
+        let manager = StorageUniformManager::new(self.context.clone())?;
+
+        // Create descriptor set layout (same as main scene)
+        use vulkan::material::DescriptorLayoutBuilder;
+
+        let uniform_set_layout = DescriptorLayoutBuilder::new()
+            .add_binding(
+                0,
+                vk::DescriptorType::STORAGE_BUFFER,
+                vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT,
+                1,
+            )
+            .add_binding(
+                1,
+                vk::DescriptorType::STORAGE_BUFFER,
+                vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT,
+                1,
+            )
+            .build(&self.context.device)
+            .map_err(|e| {
+                error!("Failed to create viewport storage layout: {:?}", e);
+                vk::Result::ERROR_INITIALIZATION_FAILED
+            })?;
+
+        let descriptor_set = manager.create_descriptor_set(
+            &self.context,
+            crate::sync::VkDescriptorSetLayout::new(uniform_set_layout),
+        )?;
+
+        // Clean up the layout
+        unsafe {
+            self.context
+                .device
+                .destroy_descriptor_set_layout(uniform_set_layout, None);
+        }
+
+        viewport.storage_manager = Some(manager);
+        viewport.storage_descriptor = Some(descriptor_set);
+        info!("Viewport '{}' storage initialized", viewport.label);
+        Ok(())
+    }
+
+    /// Check if a viewport has storage initialized.
+    pub fn is_viewport_active(&self, handle: ViewportHandle) -> bool {
+        self.viewports.get(handle.0).map_or(false, |v| {
+            v.storage_manager.is_some() && v.storage_descriptor.is_some()
+        })
+    }
+
+    /// Update viewport frame uniforms with lighting data.
+    pub fn update_viewport_frame(
+        &mut self,
+        handle: ViewportHandle,
+        view_matrix: &[[f32; 4]; 4],
+        proj_matrix: &[[f32; 4]; 4],
+        inv_view_proj: &[[f32; 4]; 4],
+        camera_position: &[f32; 4],
+        light_direction: &[f32; 4],
+        light_color: &[f32; 4],
+        light_intensity: f32,
+    ) {
+        if let Some(viewport) = self.viewports.get_mut(handle.0) {
+            if let Some(ref mut manager) = viewport.storage_manager {
+                manager.update_frame_with_lighting(
+                    view_matrix,
+                    proj_matrix,
+                    inv_view_proj,
+                    camera_position,
+                    light_direction,
+                    light_color,
+                    light_intensity,
+                );
+            }
+        }
+    }
+
+    /// Set up the render graph for a viewport.
+    ///
+    /// This creates a render graph with sky and geometry passes
+    /// that renders to the viewport's offscreen texture.
+    ///
+    /// # Prerequisites
+    /// - Viewport must be created with `build_viewport()`
+    /// - `init_viewport_storage()` must be called first
+    /// - `sky_pipeline` should be set if sky rendering is desired
+    ///
+    /// # Note
+    /// This is currently a placeholder. Full render graph setup requires
+    /// access to internal APIs that aren't publicly exposed.
+    /// Use the existing preview render graph setup for now.
+    pub fn setup_viewport_render_graph(&mut self, handle: ViewportHandle) {
+        let viewport = match self.viewports.get(handle.0) {
+            Some(v) => v,
+            None => {
+                warn!("Cannot setup viewport render graph: viewport not found");
+                return;
+            }
+        };
+
+        // Check prerequisites
+        if viewport.storage_manager.is_none() {
+            warn!("Cannot setup viewport render graph: viewport storage not initialized");
+            return;
+        }
+
+        // TODO: Full render graph setup requires access to internal APIs
+        // For now, this method validates prerequisites but doesn't create the graph
+        // Use the existing preview render graph setup methods instead
+        info!(
+            "Viewport '{}' ready for render graph (use existing setup methods)",
+            viewport.label
+        );
+    }
+
     pub fn destroy(&mut self) {
         // Destroy output render target (Drop handles cleanup)
         self.output_target = None;
