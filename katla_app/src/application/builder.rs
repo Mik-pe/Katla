@@ -219,7 +219,9 @@ impl ApplicationBuilder {
             gui_state,
             scale_factor: 1.0, // Will be updated when window is created
             gizmo_resources: None,
+            sky_pipeline: None,
             grid_pipeline: None,
+            ui_pipeline: None,
             main_viewport: None,
             preview_viewport: None,
             background_loader: BackgroundLoader::new(),

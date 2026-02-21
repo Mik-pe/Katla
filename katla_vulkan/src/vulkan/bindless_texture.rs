@@ -55,6 +55,7 @@ use std::rc::Rc;
 use crate::sync::{VkDescriptorSet, VkDescriptorSetLayout, VkImageView, VkSampler};
 use crate::vulkan::context::VulkanContext;
 use crate::vulkan::texture::Texture;
+use crate::RendererError;
 
 /// Maximum number of textures in the bindless array.
 pub const MAX_BINDLESS_TEXTURES: u32 = 4096;
@@ -107,7 +108,7 @@ impl BindlessTextureManager {
     ///
     /// # Returns
     /// A new BindlessTextureManager, or an error if creation fails
-    pub fn new(context: Rc<VulkanContext>) -> Result<Self, vk::Result> {
+    pub fn new(context: Rc<VulkanContext>) -> Result<Self, RendererError> {
         // Create shared sampler with reasonable defaults
         let sampler_info = vk::SamplerCreateInfo::default()
             .mag_filter(vk::Filter::LINEAR)

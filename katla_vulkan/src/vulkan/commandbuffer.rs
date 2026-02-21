@@ -4,8 +4,8 @@ use super::{
     vertex_attr_set::VertexAttributeSet, vertex_attribute::AttributeType, vertexbuffer::IndexType,
     CommandPool,
 };
-use crate::render_graph::types::RenderingInfo;
-use crate::sync::DependencyInfo;
+use crate::render_graph::types::{Rect2D, RenderingInfo, Viewport};
+use crate::sync::{DependencyInfo, VkCommandBuffer};
 
 #[derive(Clone)]
 pub struct CommandBuffer {
@@ -33,7 +33,13 @@ impl CommandBuffer {
         }
     }
 
-    pub fn vk_command_buffer(&self) -> vk::CommandBuffer {
+    /// Get the command buffer handle as a wrapper type.
+    pub fn command_buffer(&self) -> VkCommandBuffer {
+        VkCommandBuffer::new(self.command_buffer)
+    }
+
+    /// Get the raw Vulkan command buffer handle (for internal use).
+    pub(crate) fn vk_command_buffer(&self) -> vk::CommandBuffer {
         self.command_buffer
     }
 
@@ -401,22 +407,24 @@ impl CommandBuffer {
     /// Set the viewport for this command buffer.
     ///
     /// # Arguments
-    /// * `viewports` - Slice of viewport structures to set
-    pub fn set_viewport(&self, viewports: &[vk::Viewport]) {
+    /// * `viewports` - Slice of viewport structures to set (wrapper type)
+    pub fn set_viewport(&self, viewports: &[Viewport]) {
+        let vk_viewports: Vec<vk::Viewport> = viewports.iter().map(|v| (*v).into()).collect();
         unsafe {
             self.device
-                .cmd_set_viewport(self.command_buffer, 0, viewports);
+                .cmd_set_viewport(self.command_buffer, 0, &vk_viewports);
         }
     }
 
     /// Set the scissor rectangle for this command buffer.
     ///
     /// # Arguments
-    /// * `scissors` - Slice of scissor rectangles to set
-    pub fn set_scissor(&self, scissors: &[vk::Rect2D]) {
+    /// * `scissors` - Slice of scissor rectangles to set (wrapper type)
+    pub fn set_scissor(&self, scissors: &[Rect2D]) {
+        let vk_scissors: Vec<vk::Rect2D> = scissors.iter().map(|s| (*s).into()).collect();
         unsafe {
             self.device
-                .cmd_set_scissor(self.command_buffer, 0, scissors);
+                .cmd_set_scissor(self.command_buffer, 0, &vk_scissors);
         }
     }
 

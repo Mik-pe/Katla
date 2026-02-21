@@ -70,7 +70,7 @@ impl SkeletonDescriptorSet {
         self.inner.set()
     }
 
-    /// Get the raw Vulkan descriptor set handle (for internal use).
+    /// Get the raw Vulkan descriptor set handle.
     pub fn vk_set(&self) -> vk::DescriptorSet {
         self.inner.vk_set()
     }

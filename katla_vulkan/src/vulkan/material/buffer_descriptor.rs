@@ -62,7 +62,7 @@ impl BufferDescriptorSet {
     }
 
     /// Get the raw Vulkan descriptor set handle (for internal use).
-    pub fn vk_set(&self) -> vk::DescriptorSet {
+    pub(crate) fn vk_set(&self) -> vk::DescriptorSet {
         self.descriptor_set
     }
 }

@@ -344,6 +344,60 @@ impl PassBuilder {
         self
     }
 
+    // ========================================================================
+    // Convenience Methods for RenderTarget (high-level API)
+    // These methods accept &RenderTarget instead of raw ResourceId
+    // ========================================================================
+
+    /// Write to a color attachment using a RenderTarget.
+    ///
+    /// This is a convenience method that wraps `write(Attachment::Color(...))`.
+    pub fn write_color(&mut self, target: &super::frame_resources::RenderTarget) -> &mut Self {
+        self.write(Attachment::Color(target.resource_id()))
+    }
+
+    /// Write to a depth attachment using a RenderTarget.
+    ///
+    /// This is a convenience method that wraps `write(Attachment::DepthStencil(...))`.
+    pub fn write_depth(&mut self, target: &super::frame_resources::RenderTarget) -> &mut Self {
+        self.write(Attachment::DepthStencil(target.resource_id()))
+    }
+
+    /// Clear a color attachment using a RenderTarget.
+    ///
+    /// This should be called after `write_color()` for the target you want to clear.
+    pub fn clear_color_target(
+        &mut self,
+        target: &super::frame_resources::RenderTarget,
+        color: [f32; 4],
+    ) -> &mut Self {
+        self.clear_color(target.resource_id(), color)
+    }
+
+    /// Clear a depth attachment using a RenderTarget.
+    ///
+    /// This should be called after `write_depth()` for the target you want to clear.
+    pub fn clear_depth_target(
+        &mut self,
+        target: &super::frame_resources::RenderTarget,
+        depth: f32,
+    ) -> &mut Self {
+        self.clear_depth_stencil(target.resource_id(), depth, 0)
+    }
+
+    /// Set up a blit operation from one target to another.
+    ///
+    /// This configures the pass for a transfer blit (commonly used for present passes).
+    /// The source is read as transfer source, the destination is written as transfer destination.
+    pub fn blit(
+        &mut self,
+        src: &super::frame_resources::RenderTarget,
+        dst: &super::frame_resources::RenderTarget,
+    ) -> &mut Self {
+        self.read_transfer(src.resource_id())
+            .write_transfer(dst.resource_id())
+    }
+
     /// Set the extent (dimensions) for this pass.
     /// If not set, it will be derived from the resources used in the pass.
     pub fn extent(&mut self, width: u32, height: u32) -> &mut Self {
@@ -503,6 +557,96 @@ impl PassExecutionContext {
             Some(CompiledResource::ExternalBuffer { buffer }) => Some(*buffer),
             _ => None,
         }
+    }
+
+    // ========================================================================
+    // Convenience Drawing Methods
+    // These wrap common command buffer operations for cleaner pass execution
+    // ========================================================================
+
+    /// Bind a graphics pipeline for rendering.
+    ///
+    /// This is a convenience method that wraps command_buffer.bind_graphics_pipeline().
+    pub fn bind_graphics_pipeline(&self, pipeline: &crate::vulkan::material::MaterialPipeline) {
+        self.command_buffer.bind_graphics_pipeline(pipeline);
+    }
+
+    /// Bind a graphics pipeline with its primary descriptor set.
+    ///
+    /// This combines pipeline binding and descriptor binding in one call,
+    /// which is the most common pattern.
+    pub fn bind_graphics_pipeline_with_descriptors(
+        &self,
+        pipeline: &crate::vulkan::material::MaterialPipeline,
+        descriptor_set: crate::sync::VkDescriptorSet,
+    ) {
+        self.command_buffer
+            .bind_graphics_pipeline_with_descriptors(pipeline, descriptor_set.into());
+    }
+
+    /// Bind an index buffer for indexed drawing.
+    ///
+    /// Uses the IndexType wrapper instead of raw vk::IndexType.
+    pub fn bind_index_buffer(
+        &self,
+        buffer: VkBuffer,
+        offset: u64,
+        index_type: crate::IndexType,
+    ) {
+        self.command_buffer
+            .bind_index_buffer(buffer.into(), offset, index_type);
+    }
+
+    /// Bind vertex buffers for rendering.
+    ///
+    /// Uses VkBuffer wrapper instead of raw vk::Buffer.
+    pub fn bind_vertex_buffers(&self, first_binding: u32, buffers: &[VkBuffer], offsets: &[u64]) {
+        let raw_buffers: Vec<vk::Buffer> = buffers.iter().map(|b| (*b).into()).collect();
+        self.command_buffer
+            .bind_vertex_buffers(first_binding, &raw_buffers, offsets);
+    }
+
+    /// Draw indexed geometry.
+    ///
+    /// This is the primary draw call for mesh rendering with an index buffer.
+    pub fn draw_indexed(
+        &self,
+        index_count: u32,
+        instance_count: u32,
+        first_index: u32,
+        vertex_offset: i32,
+        first_instance: u32,
+    ) {
+        self.command_buffer
+            .draw_indexed(index_count, instance_count, first_index, vertex_offset, first_instance);
+    }
+
+    /// Draw geometry without an index buffer (array drawing).
+    ///
+    /// This is used for fullscreen passes (sky, grid, post-processing).
+    pub fn draw_array(
+        &self,
+        vertex_count: u32,
+        instance_count: u32,
+        first_vertex: u32,
+        first_instance: u32,
+    ) {
+        self.command_buffer
+            .draw_array(vertex_count, instance_count, first_vertex, first_instance);
+    }
+
+    /// Draw a fullscreen triangle (3 vertices, 1 instance).
+    ///
+    /// Convenience method for sky, grid, and post-processing passes.
+    pub fn draw_fullscreen(&self) {
+        self.draw_array(3, 1, 0, 0);
+    }
+
+    /// Get the render extent for this pass.
+    ///
+    /// Returns (width, height) for viewport/scissor setup.
+    pub fn extent(&self) -> (u32, u32) {
+        (self.extent.width, self.extent.height)
     }
 }
 

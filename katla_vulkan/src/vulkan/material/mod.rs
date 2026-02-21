@@ -745,8 +745,22 @@ impl MaterialPipeline {
         self.pipeline.as_ref()
     }
 
+    /// Get the pipeline handle as a wrapper type.
+    ///
+    /// Panics if the pipeline was destroyed.
+    pub fn pipeline(&self) -> crate::sync::VkPipeline {
+        self.vk_pipeline().pipeline()
+    }
+
+    /// Get the pipeline layout as a wrapper type.
+    ///
+    /// Panics if the pipeline was destroyed.
+    pub fn pipeline_layout(&self) -> crate::sync::VkPipelineLayout {
+        self.vk_pipeline().pipeline_layout()
+    }
+
     /// Get the pipeline handle (panics if pipeline was destroyed)
-    pub fn vk_pipeline(&self) -> &Pipeline {
+    pub(crate) fn vk_pipeline(&self) -> &Pipeline {
         self.pipeline
             .as_ref()
             .expect("Pipeline accessed after destruction")

@@ -789,6 +789,62 @@ impl From<Rect2D> for ash::vk::Rect2D {
     }
 }
 
+/// Viewport wrapper for viewport specification.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Viewport {
+    /// X coordinate of the viewport's upper-left corner.
+    pub x: f32,
+    /// Y coordinate of the viewport's upper-left corner.
+    pub y: f32,
+    /// Width of the viewport.
+    pub width: f32,
+    /// Height of the viewport.
+    pub height: f32,
+    /// Minimum depth of the viewport.
+    pub min_depth: f32,
+    /// Maximum depth of the viewport.
+    pub max_depth: f32,
+}
+
+impl Viewport {
+    /// Create a new viewport.
+    pub fn new(x: f32, y: f32, width: f32, height: f32, min_depth: f32, max_depth: f32) -> Self {
+        Self {
+            x,
+            y,
+            width,
+            height,
+            min_depth,
+            max_depth,
+        }
+    }
+
+    /// Create a viewport from position and extent (default depth range 0.0-1.0).
+    pub fn from_extent(x: f32, y: f32, width: f32, height: f32) -> Self {
+        Self {
+            x,
+            y,
+            width,
+            height,
+            min_depth: 0.0,
+            max_depth: 1.0,
+        }
+    }
+}
+
+impl From<Viewport> for ash::vk::Viewport {
+    fn from(viewport: Viewport) -> Self {
+        ash::vk::Viewport {
+            x: viewport.x,
+            y: viewport.y,
+            width: viewport.width,
+            height: viewport.height,
+            min_depth: viewport.min_depth,
+            max_depth: viewport.max_depth,
+        }
+    }
+}
+
 /// Shader stage flags for pipeline creation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct ShaderStages {

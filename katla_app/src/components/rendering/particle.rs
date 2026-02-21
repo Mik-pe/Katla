@@ -157,11 +157,11 @@ impl ParticleEmitter {
 
     // Render shader bindings
     pub fn render_pipeline(&self) -> VkPipeline {
-        self.render_pipeline.vk_pipeline().pipeline()
+        self.render_pipeline.pipeline()
     }
 
     pub fn render_layout(&self) -> VkPipelineLayout {
-        self.render_pipeline.vk_layout().into()
+        self.render_pipeline.pipeline_layout()
     }
 
     pub fn render_particle_descriptor(&self) -> VkDescriptorSet {

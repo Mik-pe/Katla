@@ -1,5 +1,7 @@
 //! Renderer subsystem - handles render graph setup and frame rendering.
 
+pub mod render_graph;
+
 use log::{debug, error, info};
 
 use katla_vulkan::{DrawCall, DrawList, FrameUniforms, IndexBuffer, IndexType, MaterialHandle, MeshHandle, ParticleDispatch, ParticleRender, VertexBuffer, VulkanContext};
@@ -36,21 +38,26 @@ pub fn setup_render_graph(app: &mut Application) {
 
     // Create and set up sky material for procedural sky background
     let sky_material = SkyMaterial::new(renderer.context.clone());
-    renderer.set_sky_pipeline(sky_material.pipeline());
+    let sky_pipeline = sky_material.pipeline();
+    app.sky_pipeline = Some(sky_pipeline.clone());
 
     // Create and set up grid material for editor grid
-    // Store pipeline in app for runtime toggle, set in renderer based on current visibility
+    // Store pipeline in app for runtime toggle via render graph rebuild
     let grid_material = GridMaterial::new(renderer.context.clone());
     let grid_pipeline = grid_material.pipeline();
     app.grid_pipeline = Some(grid_pipeline.clone());
 
-    if app.editor_ui.show_grid {
-        renderer.set_grid_pipeline(grid_pipeline);
-    }
+    // Only pass grid pipeline if grid should be visible
+    let grid_pipeline_to_use = if app.editor_ui.show_grid {
+        Some(grid_pipeline)
+    } else {
+        None
+    };
 
     // Create and set up UI material for overlay rendering
     let ui_material = crate::rendering::UiMaterial::new(renderer.context.clone());
-    renderer.set_ui_pipeline(ui_material.pipeline());
+    let ui_pipeline = ui_material.pipeline();
+    app.ui_pipeline = Some(ui_pipeline.clone());
 
     // Initialize UI buffers (256KB vertex, 128KB index - enough for complex UIs)
     renderer.init_ui_buffers(UI_VERTEX_BUFFER_SIZE as u64, UI_INDEX_BUFFER_SIZE as u64);
@@ -97,7 +104,12 @@ pub fn setup_render_graph(app: &mut Application) {
     }
 
     // Setup render graph (will use the new viewport at index 0)
-    renderer.setup_render_graph();
+    // Pass all pipelines at setup time - render graph stores them internally
+    renderer.setup_render_graph(
+        Some(sky_pipeline),
+        grid_pipeline_to_use,
+        Some(ui_pipeline),
+    );
 
     // Initialize preview viewport using new unified ViewportBuilder API
     let preview_builder = renderer.create_viewport()

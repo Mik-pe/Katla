@@ -7,16 +7,16 @@ use super::types::*;
 use crate::vulkan::*;
 use std::{cell::RefCell, rc::Rc};
 
-/// Internal mesh representation containing actual Vulkan buffers.
-pub(crate) struct MeshAsset {
+/// Mesh representation containing Vulkan buffers.
+pub struct MeshAsset {
     /// Vertex buffer with geometry data.
     pub vertex_buffer: Option<VertexBuffer>,
     /// Index buffer for indexed drawing.
     pub index_buffer: Option<IndexBuffer>,
 }
 
-/// Internal material representation.
-pub(crate) struct MaterialAsset {
+/// Material representation.
+pub struct MaterialAsset {
     /// Graphics pipeline and descriptor sets (shared ownership with interior mutability).
     pub pipeline: Rc<RefCell<MaterialPipeline>>,
     #[allow(dead_code)] // Needed for resource cleanup
@@ -120,13 +120,18 @@ impl AssetRegistry {
         MaterialHandle(id)
     }
 
-    /// Get a mesh by handle (internal use only).
-    pub(crate) fn get_mesh(&self, handle: MeshHandle) -> Option<&MeshAsset> {
+    /// Get a mesh by handle.
+    pub fn get_mesh(&self, handle: MeshHandle) -> Option<&MeshAsset> {
         self.meshes.get(handle.0)?.as_ref()
     }
 
-    /// Get a mutable material by handle (for hot reload).
-    pub(crate) fn get_material_mut(
+    /// Get a material by handle (immutable).
+    pub fn get_material(&self, handle: MaterialHandle) -> Option<&MaterialAsset> {
+        self.materials.get(handle.0)?.as_ref()
+    }
+
+    /// Get a mutable material by handle (for rendering updates).
+    pub fn get_material_mut(
         &mut self,
         handle: MaterialHandle,
     ) -> Option<&mut MaterialAsset> {

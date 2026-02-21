@@ -245,7 +245,7 @@ fn test_headless_command_buffer_recording() {
 
     unsafe {
         context.device.cmd_pipeline_barrier(
-            command_buffer.vk_command_buffer(),
+            command_buffer.command_buffer().into(),
             vk::PipelineStageFlags::TRANSFER,
             vk::PipelineStageFlags::TRANSFER,
             vk::DependencyFlags::empty(),

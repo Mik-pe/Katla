@@ -94,15 +94,6 @@ impl VulkanRenderer {
         let image_index = frame_data.image_index as usize;
         debug!("render_frame: image_index={}", image_index);
 
-        // Check preview active BEFORE borrowing the graph
-        let preview_active = self.has_render_target(Self::PREVIEW_TEXTURE_ID)
-            && self.preview_storage_manager.is_some()
-            && self.preview_frame_uniforms.is_some();
-
-        let preview_image_for_barrier = self.get_render_target_first(Self::PREVIEW_TEXTURE_ID)
-            .map(|t| VkImage::new(t.color_image()));
-        let device_for_barrier = self.context.device.clone();
-
         // Borrow the render graph
         let graph = self
             .render_graph
@@ -213,34 +204,6 @@ impl VulkanRenderer {
                     &self.context.device,
                 );
                 debug!("render_frame: viewport {} texture transitioned", idx);
-            }
-        }
-
-        // === LEGACY PREVIEW RENDER GRAPH ===
-        if preview_active {
-            debug!("render_frame: executing legacy preview render graph");
-
-            if let Some(ref frame) = self.preview_frame_uniforms {
-                if let Some(ref mut manager) = self.preview_storage_manager {
-                    manager.update_from_frame_uniforms(frame);
-                }
-            }
-
-            if let Some(ref mut preview_graph) = self.preview_render_graph {
-                preview_graph.execute_no_swapchain(&mut command_buffer)?;
-                debug!("render_frame: preview graph.execute complete");
-
-                if let Some(preview_img) = preview_image_for_barrier {
-                    let cmd_buf = command_buffer.vk_command_buffer();
-
-                    let barrier = color_attachment_to_read_barrier(preview_img);
-
-                    DependencyInfo::new()
-                        .add_image_barrier(barrier)
-                        .build(|dep_info| unsafe {
-                            device_for_barrier.cmd_pipeline_barrier2(cmd_buf, dep_info);
-                        });
-                }
             }
         }
 
