@@ -18,27 +18,35 @@ TODO
 - [x] Added new render graph API
   - `create_render_graph_with_resources()` - builder with pre-registered resources
   - `compile_render_graph()` - compile a builder
-- [x] Added `bindless_manager` field to `RendererContext`
+- [x] Made AssetRegistry methods public
+  - `get_mesh()`, `get_material()`, `get_material_mut()`
+  - `MeshAsset`, `MaterialAsset` structs now public
+- [x] Made `vk_layout()`, `vk_set()` methods public
+  - `MaterialPipeline::vk_layout()`
+  - `StorageDescriptorSet::vk_set()`
+  - `SkeletonDescriptorSet::vk_set()`
+  - `UITextures::vk_set()`
 - [x] Created `render_graph` module in katla_app (compatibility layer)
 
 ### Remaining Work
-- [ ] Make `AssetRegistry::get_mesh()` and `get_material_mut()` public
-  - Or add wrapper methods that return safe types
-- [ ] Make `vk_layout()`, `vk_set()` methods public
-  - Or add wrapper methods for descriptor binding
-- [ ] Complete the application-layer render graph building
-  - Fix `render_graph.rs` to use public APIs
-  - Remove dependency on internal `vk::` types
-- [ ] Remove application-specific code from VulkanRenderer
-  - Remove `sky_pipeline`, `grid_pipeline`, `ui_pipeline` fields
-  - Remove `set_sky()`, `set_grid()`, `set_ui()` methods
-  - Remove `rebuild_render_graph_internal()` method
-- [ ] Fix pre-existing validation errors
-  - Image layout transitions in present pass
-  - Descriptor set binding issues
-- [ ] Unified "RenderTarget" concept
-  - Single type that can output to swapchain or texture/viewport
-  - Remove OutputRenderTarget vs ViewportRenderTarget distinction
+
+#### Phase 1: Make application use new API
+- [ ] Add public accessor for `draw_list_cell` in VulkanRenderer
+- [ ] Make `ui_data`, `ui_buffers`, `ui_textures`, `ui_frame_index` public
+- [ ] Add `get_renderer_context()` method to VulkanRenderer
+- [ ] Update application to use `build_render_graph()` from render_graph module
+- [ ] Test that everything still renders
+
+#### Phase 2: Remove application-specific code from VulkanRenderer
+- [ ] Remove `sky_pipeline`, `grid_pipeline`, `ui_pipeline` fields
+- [ ] Remove `set_sky()`, `set_grid()`, `set_ui()` methods
+- [ ] Remove `setup_render_graph()` method
+- [ ] Remove `rebuild_render_graph_internal()` method
+
+#### Phase 3: Fix pre-existing issues
+- [ ] Fix image layout transitions in present pass
+- [ ] Fix descriptor set binding issues
+- [ ] Unified "RenderTarget" concept (single type for swapchain/viewport/texture)
 
 ## Architecture Goals
 
@@ -52,6 +60,13 @@ The Application layer should:
 - Own pipelines (sky, grid, ui, materials)
 - Define passes via render graph API
 - Call renderer.compile_render_graph(builder)
+
+## Current State
+
+- ✅ Infrastructure for new API is in place
+- ✅ Application builds and runs
+- ⚠️ Application still uses legacy `setup_render_graph()` API
+- ⚠️ Pre-existing validation errors remain
 
 ## Pre-existing Issues
 
