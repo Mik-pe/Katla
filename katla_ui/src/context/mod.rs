@@ -405,6 +405,27 @@ impl UiContext {
         self.push_z_index(z);
         ZGuard { ctx: self }
     }
+
+    /// Execute a closure with a temporary Z-index, automatically restoring afterward.
+    ///
+    /// This is the preferred way to use Z-index for drawing as it avoids borrow checker issues.
+    ///
+    /// # Example
+    /// ```ignore
+    /// ui.with_z_index(z_index::POPUP, |ui| {
+    ///     ui.draw_rect(bounds, color);
+    ///     ui.tooltip("Hello");
+    /// }); // Auto-pops z-index
+    /// ```
+    pub fn with_z_index<F, R>(&mut self, z: u32, f: F) -> R
+    where
+        F: FnOnce(&mut UiContext) -> R,
+    {
+        self.push_z_index(z);
+        let result = f(self);
+        self.pop_z_index();
+        result
+    }
 }
 
 impl Default for UiContext {

@@ -620,7 +620,7 @@ impl AssetBrowserState {
     /// Scroll to ensure selected item is visible.
     fn scroll_to_selected(&mut self) {
         // Approximate calculation - actual values depend on draw-time grid
-        let item_size = 64.0;
+        let item_size = 64.0; // TODO: Use ui.style.thumbnail_size when accessible
         let row_height = item_size + 24.0;
         let col_count = 8;
 
@@ -691,8 +691,8 @@ pub fn build_asset_browser(
     }
 
     // Header with breadcrumbs and controls
-    let header_height = 24.0;
-    let toolbar_height = 28.0;
+    let header_height = ui.style.button_height_small;
+    let toolbar_height = ui.style.toolbar_height;
     let header_bounds =
         Rect2D::from_origin_size(bounds.min, Vec2::new(bounds.width(), header_height));
     ui.draw_rect(header_bounds, theme.panel_header);
@@ -839,8 +839,8 @@ pub fn build_asset_browser(
     }
 
     // === Navigation Buttons (right side of toolbar) ===
-    let nav_btn_size = 24.0;
-    let nav_icon_size = 12.0;
+    let nav_btn_size = ui.style.button_height_small;
+    let nav_icon_size = ui.style.icon_size_small;
     let mut nav_x = bounds.max.x() - nav_btn_size - 4.0;
 
     // Refresh button
@@ -940,7 +940,7 @@ pub fn build_asset_browser(
     ui.draw_icon_aligned(
         ForkAwesome::SEARCH,
         Vec2::new(search_bounds.min.x() + 4.0, search_bounds.center().y() - 7.0),
-        12.0,
+        ui.style.icon_size_small,
         theme.text_muted,
         katla_ui::FontId::DEFAULT,
     );
@@ -1016,7 +1016,7 @@ pub fn build_asset_browser(
     ui.push_clip(content_bounds);
 
     // Grid layout parameters
-    let item_size = 64.0;
+    let item_size = ui.style.thumbnail_size;
     let item_padding = 8.0;
     let col_count = ((bounds.width() - item_padding) / (item_size + item_padding)).max(1.0) as usize;
     let row_height = item_size + 24.0; // Item + label
@@ -1083,7 +1083,7 @@ pub fn build_asset_browser(
             }
             ThumbnailState::Loading => {
                 // Show animated spinner while loading
-                let icon_size = 28.0;
+                let icon_size = ui.style.icon_size_large;
                 let icon_pos = Vec2::new(
                     item_bounds.center().x() - icon_size * 0.5,
                     item_bounds.center().y() - icon_size * 0.5,
@@ -1107,7 +1107,7 @@ pub fn build_asset_browser(
                 // Show error icon
                 let icon = ForkAwesome::TIMES_CIRCLE;
                 let icon_color = theme.error;
-                let icon_size = 28.0;
+                let icon_size = ui.style.icon_size_large;
                 let icon_pos = Vec2::new(
                     item_bounds.center().x() - icon_size * 0.5,
                     item_bounds.center().y() - icon_size * 0.5,
@@ -1118,7 +1118,7 @@ pub fn build_asset_browser(
                 // Show regular icon
                 let icon = asset.asset_type.icon();
                 let icon_color = asset.asset_type.color(theme);
-                let icon_size = 28.0;
+                let icon_size = ui.style.icon_size_large;
                 let icon_pos = Vec2::new(
                     item_bounds.center().x() - icon_size * 0.5,
                     item_bounds.center().y() - icon_size * 0.5,
@@ -1171,7 +1171,6 @@ pub fn build_asset_browser(
 
         // Show tooltip on hover (skip if context menu open or dragging)
         if is_hovered && !state.context_menu_open && !state.is_dragging {
-            ui.push_z_index(250); // Above icons and selection borders
             let tooltip_text = format!(
                 "{}\nType: {}\nPath: {}",
                 asset.name,
@@ -1186,8 +1185,9 @@ pub fn build_asset_browser(
                 },
                 asset.path.display()
             );
-            ui.tooltip(&tooltip_text);
-            ui.pop_z_index();
+            ui.with_z_index(katla_ui::z_index::POPUP, |ui| {
+                ui.tooltip(&tooltip_text);
+            });
         }
     }
 
@@ -1451,29 +1451,29 @@ pub fn build_asset_browser(
             Vec2::new(item_size, 18.0),
         );
 
-        ui.push_z_index(250);
-        ui.draw_rect(input_bounds, theme.background);
-        ui.draw_rect_border(input_bounds, theme.background, theme.highlight, 1.0);
+        ui.with_z_index(katla_ui::z_index::POPUP, |ui| {
+            ui.draw_rect(input_bounds, theme.background);
+            ui.draw_rect_border(input_bounds, theme.background, theme.highlight, 1.0);
 
-        // Draw rename text with cursor
-        let text = &state.rename_buffer;
-        ui.draw_text(
-            text,
-            Vec2::new(input_bounds.min.x() + 4.0, input_bounds.min.y() + 3.0),
-            theme.text_primary,
-            ui.scaled_font_size(katla_ui::FontSize::XSmall),
-        );
+            // Draw rename text with cursor
+            let text = &state.rename_buffer;
+            ui.draw_text(
+                text,
+                Vec2::new(input_bounds.min.x() + 4.0, input_bounds.min.y() + 3.0),
+                theme.text_primary,
+                ui.scaled_font_size(katla_ui::FontSize::XSmall),
+            );
 
-        // Cursor (blink effect could be added)
-        let text_width = ui.measure_text(text, ui.scaled_font_size(katla_ui::FontSize::XSmall)).x();
-        ui.draw_rect(
-            Rect2D::from_origin_size(
-                Vec2::new(input_bounds.min.x() + 4.0 + text_width, input_bounds.min.y() + 2.0),
-                Vec2::new(1.0, 14.0),
-            ),
-            theme.text_primary,
-        );
-        ui.pop_z_index();
+            // Cursor (blink effect could be added)
+            let text_width = ui.measure_text(text, ui.scaled_font_size(katla_ui::FontSize::XSmall)).x();
+            ui.draw_rect(
+                Rect2D::from_origin_size(
+                    Vec2::new(input_bounds.min.x() + 4.0 + text_width, input_bounds.min.y() + 2.0),
+                    Vec2::new(1.0, 14.0),
+                ),
+                theme.text_primary,
+            );
+        });
 
         // Handle text input
         for &c in &ui.input.characters {

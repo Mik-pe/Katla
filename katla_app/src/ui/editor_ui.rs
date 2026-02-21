@@ -797,47 +797,45 @@ impl EditorUI {
                     let preview_offset = Vec2::new(preview_size * 0.5, preview_size * 0.5);
 
                     // Draw preview at cursor position with highest z-index
-                    ui.push_z_index(300); // TOOLTIP level
+                    ui.with_z_index(katla_ui::z_index::TOOLTIP, |ui| {
+                        // Semi-transparent background
+                        let preview_bounds = Rect2D::from_origin_size(
+                            mouse_pos - preview_offset,
+                            Vec2::new(preview_size, preview_size),
+                        );
+                        ui.draw_rect(preview_bounds, self.theme.background.with_alpha(0.9));
+                        ui.draw_rect_border(preview_bounds, self.theme.background.with_alpha(0.9), self.theme.highlight, 2.0);
 
-                    // Semi-transparent background
-                    let preview_bounds = Rect2D::from_origin_size(
-                        mouse_pos - preview_offset,
-                        Vec2::new(preview_size, preview_size),
-                    );
-                    ui.draw_rect(preview_bounds, self.theme.background.with_alpha(0.9));
-                    ui.draw_rect_border(preview_bounds, self.theme.background.with_alpha(0.9), self.theme.highlight, 2.0);
+                        // Draw icon
+                        let icon_char = asset.asset_type.icon();
+                        let icon_size = preview_size * 0.4;
+                        ui.draw_icon(
+                            icon_char,
+                            Vec2::new(
+                                preview_bounds.center().x() - icon_size * 0.5,
+                                preview_bounds.center().y() - icon_size * 0.5 - 8.0,
+                            ),
+                            icon_size,
+                            self.theme.highlight,
+                        );
 
-                    // Draw icon
-                    let icon_char = asset.asset_type.icon();
-                    let icon_size = preview_size * 0.4;
-                    ui.draw_icon(
-                        icon_char,
-                        Vec2::new(
-                            preview_bounds.center().x() - icon_size * 0.5,
-                            preview_bounds.center().y() - icon_size * 0.5 - 8.0,
-                        ),
-                        icon_size,
-                        self.theme.highlight,
-                    );
-
-                    // Draw name (truncated)
-                    let max_chars = 12;
-                    let display_name = if asset.name.len() > max_chars {
-                        format!("{}...", &asset.name[..max_chars])
-                    } else {
-                        asset.name.clone()
-                    };
-                    ui.draw_text(
-                        &display_name,
-                        Vec2::new(
-                            preview_bounds.min.x() + 4.0,
-                            preview_bounds.min.y() + preview_size - 16.0,
-                        ),
-                        self.theme.text_primary,
-                        ui.scaled_font_size(FontSize::XSmall),
-                    );
-
-                    ui.pop_z_index();
+                        // Draw name (truncated)
+                        let max_chars = 12;
+                        let display_name = if asset.name.len() > max_chars {
+                            format!("{}...", &asset.name[..max_chars])
+                        } else {
+                            asset.name.clone()
+                        };
+                        ui.draw_text(
+                            &display_name,
+                            Vec2::new(
+                                preview_bounds.min.x() + 4.0,
+                                preview_bounds.min.y() + preview_size - 16.0,
+                            ),
+                            self.theme.text_primary,
+                            ui.scaled_font_size(FontSize::XSmall),
+                        );
+                    });
                 }
             }
         }
@@ -2454,142 +2452,67 @@ impl EditorUI {
         );
 
         // Draw panel with high z-index (above other panels)
-        ui.push_z_index(200);
+        ui.with_z_index(katla_ui::z_index::POPUP, |ui| {
+            // Panel background
+            ui.draw_rect(panel_bounds, theme.panel_bg);
+            ui.draw_rect_border(panel_bounds, theme.panel_bg, theme.panel_border, 1.0);
 
-        // Panel background
-        ui.draw_rect(panel_bounds, theme.panel_bg);
-        ui.draw_rect_border(panel_bounds, theme.panel_bg, theme.panel_border, 1.0);
+            // Title bar
+            let title_bounds = Rect2D::from_origin_size(
+                Vec2::new(panel_x, panel_y),
+                Vec2::new(panel_width, title_bar_height),
+            );
+            ui.draw_rect(title_bounds, theme.panel_header);
 
-        // Title bar
-        let title_bounds = Rect2D::from_origin_size(
-            Vec2::new(panel_x, panel_y),
-            Vec2::new(panel_width, title_bar_height),
-        );
-        ui.draw_rect(title_bounds, theme.panel_header);
+            // Title text
+            let model_name = self.model_preview.model_path
+                .as_ref()
+                .and_then(|p| p.file_name())
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_else(|| "Model Preview".to_string());
+            ui.draw_text(
+                &model_name,
+                Vec2::new(panel_x + padding, panel_y + 7.0),
+                theme.text_primary,
+                ui.scaled_font_size(FontSize::Small),
+            );
 
-        // Title text
-        let model_name = self.model_preview.model_path
-            .as_ref()
-            .and_then(|p| p.file_name())
-            .map(|n| n.to_string_lossy().to_string())
-            .unwrap_or_else(|| "Model Preview".to_string());
-        ui.draw_text(
-            &model_name,
-            Vec2::new(panel_x + padding, panel_y + 7.0),
-            theme.text_primary,
-            ui.scaled_font_size(FontSize::Small),
-        );
-
-        // Close button (X)
-        let close_btn_size = 20.0;
-        let close_bounds = Rect2D::from_origin_size(
-            Vec2::new(panel_x + panel_width - close_btn_size - 4.0, panel_y + 4.0),
-            Vec2::new(close_btn_size, close_btn_size),
-        );
-        let close_hovered = ui.is_hovered(close_bounds);
-        if close_hovered {
-            ui.draw_rect(close_bounds, theme.button_hover);
-        }
-        ui.draw_icon(
-            ForkAwesome::TIMES,
-            Vec2::new(close_bounds.min.x() + 3.0, close_bounds.min.y() + 2.0),
-            14.0,
-            if close_hovered { theme.text_primary } else { theme.text_secondary },
-        );
-        if close_hovered && ui.input.mouse_clicked(mouse_button::LEFT) {
-            self.model_preview.close();
-        }
-
-        // Content area
-        let content_y = panel_y + title_bar_height + padding;
-        let content_width = panel_width - padding * 2.0;
-        let preview_height = 200.0;
-
-        // === PREVIEW RENDER AREA ===
-        let preview_bounds = Rect2D::from_origin_size(
-            Vec2::new(panel_x + padding, content_y),
-            Vec2::new(content_width, preview_height),
-        );
-
-        match &self.model_preview.load_state {
-            super::model_preview::LoadState::Idle => {
-                // Show placeholder
-                ui.draw_rect(preview_bounds, theme.background_dark);
-                let text = "No model loaded";
-                let text_size = ui.measure_text(text, ui.scaled_font_size(FontSize::Medium));
-                ui.draw_text(
-                    text,
-                    Vec2::new(
-                        preview_bounds.center().x() - text_size.x() * 0.5,
-                        preview_bounds.center().y() - text_size.y() * 0.5,
-                    ),
-                    theme.text_muted,
-                    ui.scaled_font_size(FontSize::Medium),
-                );
+            // Close button (X)
+            let close_btn_size = 20.0;
+            let close_bounds = Rect2D::from_origin_size(
+                Vec2::new(panel_x + panel_width - close_btn_size - 4.0, panel_y + 4.0),
+                Vec2::new(close_btn_size, close_btn_size),
+            );
+            let close_hovered = ui.is_hovered(close_bounds);
+            if close_hovered {
+                ui.draw_rect(close_bounds, theme.button_hover);
             }
-            super::model_preview::LoadState::Loading => {
-                // Show loading indicator
-                ui.draw_rect(preview_bounds, theme.background_dark);
-
-                // Animated spinner
-                let rotation = (std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap_or_default()
-                    .as_millis() % 1000) as f32 / 1000.0 * std::f32::consts::TAU;
-                let spinner_chars = ['|', '/', '—', '\\'];
-                let spinner_idx = ((rotation / std::f32::consts::FRAC_PI_2) as usize) % 4;
-                let spinner_char = spinner_chars[spinner_idx];
-
-                let text = format!("Loading {}", spinner_char);
-                let text_size = ui.measure_text(&text, ui.scaled_font_size(FontSize::Large));
-                ui.draw_text(
-                    &text,
-                    Vec2::new(
-                        preview_bounds.center().x() - text_size.x() * 0.5,
-                        preview_bounds.center().y() - text_size.y() * 0.5,
-                    ),
-                    theme.text_secondary,
-                    ui.scaled_font_size(FontSize::Large),
-                );
-
-                // Progress bar (indeterminate for now)
-                let bar_width = content_width * 0.6;
-                let bar_height = 4.0;
-                let bar_x = preview_bounds.center().x() - bar_width * 0.5;
-                let bar_y = preview_bounds.center().y() + 20.0;
-                let bar_bounds = Rect2D::from_origin_size(
-                    Vec2::new(bar_x, bar_y),
-                    Vec2::new(bar_width, bar_height),
-                );
-                ui.draw_rect(bar_bounds, theme.background);
-                // Animated progress segment
-                let progress = (rotation / std::f32::consts::TAU) * bar_width;
-                let seg_width = bar_width * 0.3;
-                let seg_x = bar_x + (progress * 0.7);
-                ui.draw_rect(
-                    Rect2D::from_origin_size(
-                        Vec2::new(seg_x.min(bar_x + bar_width - seg_width), bar_y),
-                        Vec2::new(seg_width, bar_height),
-                    ),
-                    theme.highlight,
-                );
+            ui.draw_icon(
+                ForkAwesome::TIMES,
+                Vec2::new(close_bounds.min.x() + 3.0, close_bounds.min.y() + 2.0),
+                14.0,
+                if close_hovered { theme.text_primary } else { theme.text_secondary },
+            );
+            if close_hovered && ui.input.mouse_clicked(mouse_button::LEFT) {
+                self.model_preview.close();
             }
-            super::model_preview::LoadState::Loaded => {
-                // Show preview texture (rendered by Vulkan backend)
-                ui.draw_rect(preview_bounds, theme.background_dark);
 
-                // Draw the preview texture
-                // Use OPAQUE_IMAGE to force alpha = 1.0 (model preview may have 0 alpha)
-                if self.model_preview.model.is_some() {
-                    ui.image(
-                        self.model_preview.texture_id,
-                        preview_bounds,
-                        None,  // Use default UVs (0-1)
-                        Some(Color::OPAQUE_IMAGE),  // Force opaque output
-                    );
-                } else {
-                    // Fallback text
-                    let text = "Preview Ready";
+            // Content area
+            let content_y = panel_y + title_bar_height + padding;
+            let content_width = panel_width - padding * 2.0;
+            let preview_height = 200.0;
+
+            // === PREVIEW RENDER AREA ===
+            let preview_bounds = Rect2D::from_origin_size(
+                Vec2::new(panel_x + padding, content_y),
+                Vec2::new(content_width, preview_height),
+            );
+
+            match &self.model_preview.load_state {
+                super::model_preview::LoadState::Idle => {
+                    // Show placeholder
+                    ui.draw_rect(preview_bounds, theme.background_dark);
+                    let text = "No model loaded";
                     let text_size = ui.measure_text(text, ui.scaled_font_size(FontSize::Medium));
                     ui.draw_text(
                         text,
@@ -2597,174 +2520,247 @@ impl EditorUI {
                             preview_bounds.center().x() - text_size.x() * 0.5,
                             preview_bounds.center().y() - text_size.y() * 0.5,
                         ),
-                        theme.text_secondary,
+                        theme.text_muted,
                         ui.scaled_font_size(FontSize::Medium),
                     );
                 }
+                super::model_preview::LoadState::Loading => {
+                    // Show loading indicator
+                    ui.draw_rect(preview_bounds, theme.background_dark);
 
-                // Handle orbit camera drag
-                if ui.is_hovered(preview_bounds) {
-                    if ui.input.mouse_clicked(mouse_button::LEFT) {
-                        self.model_preview.camera.begin_drag(ui.input.mouse_pos);
+                    // Animated spinner
+                    let rotation = (std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_millis() % 1000) as f32 / 1000.0 * std::f32::consts::TAU;
+                    let spinner_chars = ['|', '/', '—', '\\'];
+                    let spinner_idx = ((rotation / std::f32::consts::FRAC_PI_2) as usize) % 4;
+                    let spinner_char = spinner_chars[spinner_idx];
+
+                    let text = format!("Loading {}", spinner_char);
+                    let text_size = ui.measure_text(&text, ui.scaled_font_size(FontSize::Large));
+                    ui.draw_text(
+                        &text,
+                        Vec2::new(
+                            preview_bounds.center().x() - text_size.x() * 0.5,
+                            preview_bounds.center().y() - text_size.y() * 0.5,
+                        ),
+                        theme.text_secondary,
+                        ui.scaled_font_size(FontSize::Large),
+                    );
+
+                    // Progress bar (indeterminate for now)
+                    let bar_width = content_width * 0.6;
+                    let bar_height = 4.0;
+                    let bar_x = preview_bounds.center().x() - bar_width * 0.5;
+                    let bar_y = preview_bounds.center().y() + 20.0;
+                    let bar_bounds = Rect2D::from_origin_size(
+                        Vec2::new(bar_x, bar_y),
+                        Vec2::new(bar_width, bar_height),
+                    );
+                    ui.draw_rect(bar_bounds, theme.background);
+                    // Animated progress segment
+                    let progress = (rotation / std::f32::consts::TAU) * bar_width;
+                    let seg_width = bar_width * 0.3;
+                    let seg_x = bar_x + (progress * 0.7);
+                    ui.draw_rect(
+                        Rect2D::from_origin_size(
+                            Vec2::new(seg_x.min(bar_x + bar_width - seg_width), bar_y),
+                            Vec2::new(seg_width, bar_height),
+                        ),
+                        theme.highlight,
+                    );
+                }
+                super::model_preview::LoadState::Loaded => {
+                    // Show preview texture (rendered by Vulkan backend)
+                    ui.draw_rect(preview_bounds, theme.background_dark);
+
+                    // Draw the preview texture
+                    // Use OPAQUE_IMAGE to force alpha = 1.0 (model preview may have 0 alpha)
+                    if self.model_preview.model.is_some() {
+                        ui.image(
+                            self.model_preview.texture_id,
+                            preview_bounds,
+                            None,  // Use default UVs (0-1)
+                            Some(Color::OPAQUE_IMAGE),  // Force opaque output
+                        );
+                    } else {
+                        // Fallback text
+                        let text = "Preview Ready";
+                        let text_size = ui.measure_text(text, ui.scaled_font_size(FontSize::Medium));
+                        ui.draw_text(
+                            text,
+                            Vec2::new(
+                                preview_bounds.center().x() - text_size.x() * 0.5,
+                                preview_bounds.center().y() - text_size.y() * 0.5,
+                            ),
+                            theme.text_secondary,
+                            ui.scaled_font_size(FontSize::Medium),
+                        );
                     }
 
-                    // Zoom with scroll
-                    let scroll = ui.input.scroll_delta.y();
-                    if scroll != 0.0 {
-                        self.model_preview.camera.zoom(scroll * 0.5);
+                    // Handle orbit camera drag
+                    if ui.is_hovered(preview_bounds) {
+                        if ui.input.mouse_clicked(mouse_button::LEFT) {
+                            self.model_preview.camera.begin_drag(ui.input.mouse_pos);
+                        }
+
+                        // Zoom with scroll
+                        let scroll = ui.input.scroll_delta.y();
+                        if scroll != 0.0 {
+                            self.model_preview.camera.zoom(scroll * 0.5);
+                        }
+                    }
+
+                    if ui.input.is_mouse_down(mouse_button::LEFT) {
+                        self.model_preview.camera.update_drag(ui.input.mouse_pos);
+                    }
+
+                    if ui.input.mouse_released[mouse_button::LEFT] {
+                        self.model_preview.camera.end_drag();
+                    }
+                }
+                super::model_preview::LoadState::Failed(error) => {
+                    // Show error message
+                    ui.draw_rect(preview_bounds, theme.background_dark);
+                    let text = format!("Failed to load");
+                    let text_size = ui.measure_text(&text, ui.scaled_font_size(FontSize::Medium));
+                    ui.draw_text(
+                        &text,
+                        Vec2::new(
+                            preview_bounds.center().x() - text_size.x() * 0.5,
+                            preview_bounds.center().y() - 30.0,
+                        ),
+                        theme.error,
+                        ui.scaled_font_size(FontSize::Medium),
+                    );
+
+                    // Show error details (truncated)
+                    let error_display = if error.len() > 40 {
+                        format!("{}...", &error[..40])
+                    } else {
+                        error.clone()
+                    };
+                    let error_size = ui.measure_text(&error_display, ui.scaled_font_size(FontSize::XSmall));
+                    ui.draw_text(
+                        &error_display,
+                        Vec2::new(
+                            preview_bounds.center().x() - error_size.x() * 0.5,
+                            preview_bounds.center().y() + 5.0,
+                        ),
+                        theme.text_muted,
+                        ui.scaled_font_size(FontSize::XSmall),
+                    );
+                }
+            }
+
+            // === STATS SECTION ===
+            let stats_y = content_y + preview_height + padding;
+            let mut cursor = Vec2::new(panel_x + padding, stats_y);
+
+            ui.draw_text(
+                "Model Statistics",
+                cursor,
+                theme.text_secondary,
+                ui.scaled_font_size(FontSize::Small),
+            );
+            cursor = Vec2::new(cursor.x(), cursor.y() + 20.0);
+
+            if let Some(stats) = &self.model_preview.stats {
+                let stat_items = [
+                    ("Vertices", format!("{}", stats.vertex_count)),
+                    ("Triangles", format!("{}", stats.triangle_count)),
+                    ("Meshes", stats.mesh_count.to_string()),
+                    ("Primitives", stats.primitive_count.to_string()),
+                ];
+
+                for (label, value) in stat_items {
+                    ui.draw_text(
+                        label,
+                        cursor,
+                        theme.text_muted,
+                        ui.scaled_font_size(FontSize::XSmall),
+                    );
+                    let value_x = panel_x + panel_width - padding - ui.measure_text(&value, ui.scaled_font_size(FontSize::XSmall)).x();
+                    ui.draw_text(
+                        &value,
+                        Vec2::new(value_x, cursor.y()),
+                        theme.text_primary,
+                        ui.scaled_font_size(FontSize::XSmall),
+                    );
+                    cursor = Vec2::new(cursor.x(), cursor.y() + 16.0);
+                }
+
+                // Animation info
+                if stats.has_animations {
+                    cursor = Vec2::new(cursor.x(), cursor.y() + 4.0);
+                    ui.draw_text(
+                        "Animations",
+                        cursor,
+                        theme.text_secondary,
+                        ui.scaled_font_size(FontSize::XSmall),
+                    );
+                    cursor = Vec2::new(cursor.x(), cursor.y() + 14.0);
+
+                    for anim_name in &stats.animation_names {
+                        ui.draw_icon_label(
+                            ForkAwesome::VIDEO_CAMERA,
+                            anim_name,
+                            cursor,
+                            ui.scaled_font_size(FontSize::XSmall),
+                            ui.scaled_font_size(FontSize::XSmall),
+                            theme.text_muted,
+                        );
+                        cursor = Vec2::new(cursor.x(), cursor.y() + 14.0);
+                    }
+
+                    // Play/Pause button (future: animation controls)
+                    cursor = Vec2::new(cursor.x(), cursor.y() + 4.0);
+                    let btn_width = 80.0;
+                    let btn_height = 24.0;
+                    let btn_bounds = Rect2D::from_origin_size(
+                        cursor,
+                        Vec2::new(btn_width, btn_height),
+                    );
+                    let btn_hovered = ui.is_hovered(btn_bounds);
+                    if btn_hovered {
+                        ui.draw_rect(btn_bounds, theme.button_hover);
+                    } else {
+                        ui.draw_rect(btn_bounds, theme.button_bg);
+                    }
+                    ui.draw_rect_border(btn_bounds, theme.button_bg, theme.border, 1.0);
+
+                    let btn_text = if self.model_preview.animation.playing { "Pause" } else { "Play" };
+                    let btn_text_size = ui.measure_text(btn_text, ui.scaled_font_size(FontSize::XSmall));
+                    ui.draw_text(
+                        btn_text,
+                        Vec2::new(
+                            btn_bounds.center().x() - btn_text_size.x() * 0.5,
+                            btn_bounds.center().y() - btn_text_size.y() * 0.5,
+                        ),
+                        if btn_hovered { theme.text_primary } else { theme.text_secondary },
+                        ui.scaled_font_size(FontSize::XSmall),
+                    );
+
+                    if btn_hovered && ui.input.mouse_clicked(mouse_button::LEFT) {
+                        self.model_preview.animation.playing = !self.model_preview.animation.playing;
                     }
                 }
 
-                if ui.input.is_mouse_down(mouse_button::LEFT) {
-                    self.model_preview.camera.update_drag(ui.input.mouse_pos);
-                }
-
-                if ui.input.mouse_released[mouse_button::LEFT] {
-                    self.model_preview.camera.end_drag();
-                }
-            }
-            super::model_preview::LoadState::Failed(error) => {
-                // Show error message
-                ui.draw_rect(preview_bounds, theme.background_dark);
-                let text = format!("Failed to load");
-                let text_size = ui.measure_text(&text, ui.scaled_font_size(FontSize::Medium));
-                ui.draw_text(
-                    &text,
-                    Vec2::new(
-                        preview_bounds.center().x() - text_size.x() * 0.5,
-                        preview_bounds.center().y() - 30.0,
-                    ),
-                    theme.error,
-                    ui.scaled_font_size(FontSize::Medium),
-                );
-
-                // Show error details (truncated)
-                let error_display = if error.len() > 40 {
-                    format!("{}...", &error[..40])
-                } else {
-                    error.clone()
-                };
-                let error_size = ui.measure_text(&error_display, ui.scaled_font_size(FontSize::XSmall));
-                ui.draw_text(
-                    &error_display,
-                    Vec2::new(
-                        preview_bounds.center().x() - error_size.x() * 0.5,
-                        preview_bounds.center().y() + 5.0,
-                    ),
-                    theme.text_muted,
-                    ui.scaled_font_size(FontSize::XSmall),
-                );
-            }
-        }
-
-        // === STATS SECTION ===
-        let stats_y = content_y + preview_height + padding;
-        let mut cursor = Vec2::new(panel_x + padding, stats_y);
-
-        ui.draw_text(
-            "Model Statistics",
-            cursor,
-            theme.text_secondary,
-            ui.scaled_font_size(FontSize::Small),
-        );
-        cursor = Vec2::new(cursor.x(), cursor.y() + 20.0);
-
-        if let Some(stats) = &self.model_preview.stats {
-            let stat_items = [
-                ("Vertices", format!("{}", stats.vertex_count)),
-                ("Triangles", format!("{}", stats.triangle_count)),
-                ("Meshes", stats.mesh_count.to_string()),
-                ("Primitives", stats.primitive_count.to_string()),
-            ];
-
-            for (label, value) in stat_items {
-                ui.draw_text(
-                    label,
-                    cursor,
-                    theme.text_muted,
-                    ui.scaled_font_size(FontSize::XSmall),
-                );
-                let value_x = panel_x + panel_width - padding - ui.measure_text(&value, ui.scaled_font_size(FontSize::XSmall)).x();
-                ui.draw_text(
-                    &value,
-                    Vec2::new(value_x, cursor.y()),
-                    theme.text_primary,
-                    ui.scaled_font_size(FontSize::XSmall),
-                );
-                cursor = Vec2::new(cursor.x(), cursor.y() + 16.0);
-            }
-
-            // Animation info
-            if stats.has_animations {
-                cursor = Vec2::new(cursor.x(), cursor.y() + 4.0);
-                ui.draw_text(
-                    "Animations",
-                    cursor,
-                    theme.text_secondary,
-                    ui.scaled_font_size(FontSize::XSmall),
-                );
-                cursor = Vec2::new(cursor.x(), cursor.y() + 14.0);
-
-                for anim_name in &stats.animation_names {
+                // Skinning indicator
+                if stats.has_skinning {
+                    cursor = Vec2::new(cursor.x(), cursor.y() + 8.0);
                     ui.draw_icon_label(
-                        ForkAwesome::VIDEO_CAMERA,
-                        anim_name,
+                        ForkAwesome::USER,
+                        "Has Skeleton",
                         cursor,
                         ui.scaled_font_size(FontSize::XSmall),
                         ui.scaled_font_size(FontSize::XSmall),
-                        theme.text_muted,
+                        theme.info,
                     );
-                    cursor = Vec2::new(cursor.x(), cursor.y() + 14.0);
-                }
-
-                // Play/Pause button (future: animation controls)
-                cursor = Vec2::new(cursor.x(), cursor.y() + 4.0);
-                let btn_width = 80.0;
-                let btn_height = 24.0;
-                let btn_bounds = Rect2D::from_origin_size(
-                    cursor,
-                    Vec2::new(btn_width, btn_height),
-                );
-                let btn_hovered = ui.is_hovered(btn_bounds);
-                if btn_hovered {
-                    ui.draw_rect(btn_bounds, theme.button_hover);
-                } else {
-                    ui.draw_rect(btn_bounds, theme.button_bg);
-                }
-                ui.draw_rect_border(btn_bounds, theme.button_bg, theme.border, 1.0);
-
-                let btn_text = if self.model_preview.animation.playing { "Pause" } else { "Play" };
-                let btn_text_size = ui.measure_text(btn_text, ui.scaled_font_size(FontSize::XSmall));
-                ui.draw_text(
-                    btn_text,
-                    Vec2::new(
-                        btn_bounds.center().x() - btn_text_size.x() * 0.5,
-                        btn_bounds.center().y() - btn_text_size.y() * 0.5,
-                    ),
-                    if btn_hovered { theme.text_primary } else { theme.text_secondary },
-                    ui.scaled_font_size(FontSize::XSmall),
-                );
-
-                if btn_hovered && ui.input.mouse_clicked(mouse_button::LEFT) {
-                    self.model_preview.animation.playing = !self.model_preview.animation.playing;
                 }
             }
-
-            // Skinning indicator
-            if stats.has_skinning {
-                cursor = Vec2::new(cursor.x(), cursor.y() + 8.0);
-                ui.draw_icon_label(
-                    ForkAwesome::USER,
-                    "Has Skeleton",
-                    cursor,
-                    ui.scaled_font_size(FontSize::XSmall),
-                    ui.scaled_font_size(FontSize::XSmall),
-                    theme.info,
-                );
-            }
-        }
-
-        ui.pop_z_index();
+        });
     }
 
     /// Render the editor UI and return the draw list.
