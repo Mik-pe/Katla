@@ -84,6 +84,22 @@ pub fn setup_render_graph(app: &mut Application) {
     // Setup render graph with multiple framebuffers
     renderer.setup_render_graph();
 
+    // Initialize preview render target for model preview panel (512x512)
+    renderer
+        .init_preview_target(512, 512)
+        .expect("Failed to initialize preview render target");
+
+    // Initialize preview storage system (separate camera from main scene)
+    renderer
+        .init_preview_storage()
+        .expect("Failed to initialize preview storage");
+
+    // Setup preview render graph
+    renderer.setup_preview_render_graph();
+
+    // Register preview texture with UI system
+    renderer.register_preview_texture();
+
     // Create and register gizmo material and mesh
     setup_gizmo_resources(app);
 }
@@ -317,6 +333,72 @@ pub fn render_frame(app: &mut Application) {
             draw_list.push(gizmo_draw_call);
             debug!("Rendering gizmo for entity {:?}", selected_entity);
         }
+    }
+
+    // === PREVIEW RENDERING ===
+    // Render model preview if active
+    if app.editor_ui.model_preview.is_ready() {
+        // Upload model to GPU if not already done (needs mutable borrow)
+        {
+            let preview = &app.editor_ui.model_preview;
+            let needs_upload = !preview.has_gpu_resources();
+            // Drop immutable borrow by exiting the block
+            if needs_upload {
+                let preview = &mut app.editor_ui.model_preview;
+                preview.upload_to_gpu(
+                    &renderer.context.clone(),
+                    renderer,
+                    &renderer.material_registry.clone(),
+                );
+            }
+        }
+
+        // Get preview state (immutable borrow is fine now)
+        let preview = &app.editor_ui.model_preview;
+
+        // Get handles
+        if let (Some(mesh_handle), Some(material_handle)) =
+            (preview.mesh_handle, preview.material_handle)
+        {
+            // Compute preview camera matrices
+            let view = preview.camera.view_matrix();
+            let proj = katla_math::Mat4::create_proj(
+                45.0,   // 45 degree FOV (in degrees)
+                1.0,    // Square aspect ratio for preview
+                0.1,
+                100.0,
+            );
+
+            let view_proj = &proj * &view;
+            let inv_view_proj = view_proj.inverse();
+
+            // Extract camera position
+            let cam_pos = preview.camera.position();
+
+            // Set preview uniforms
+            renderer.set_preview_uniforms(FrameUniforms {
+                view_matrix: view.to_array(),
+                proj_matrix: proj.to_array(),
+                inv_view_proj_matrix: inv_view_proj.to_array(),
+                camera_position: [cam_pos.x(), cam_pos.y(), cam_pos.z(), 0.0],
+                light_direction: [0.3, 1.0, 0.2, 0.0],
+                light_color: [1.0, 0.98, 0.95, 0.0],
+                light_intensity: 3.0,
+            });
+
+            // Create preview draw list
+            let preview_draw = DrawCall::new(mesh_handle, material_handle)
+                .with_transform(katla_math::Mat4::identity().to_array());
+
+            let mut preview_draw_list = DrawList::new();
+            preview_draw_list.push(preview_draw);
+
+            renderer.set_preview_draw_list(preview_draw_list);
+        }
+    } else {
+        // Clear preview resources when not active
+        renderer.clear_preview_uniforms();
+        renderer.clear_preview_draw_list();
     }
 
     // Render using the draw list

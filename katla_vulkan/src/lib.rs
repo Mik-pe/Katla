@@ -1,6 +1,7 @@
 pub mod render_graph;
 pub mod rendering;
 pub mod sync;
+pub mod viewport;
 pub mod vulkan;
 use log::{debug, error, info, warn};
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
@@ -25,9 +26,11 @@ pub use sync::{
 pub use vulkan::context::{ValidationMessage, ValidationMessageType, ValidationSeverity};
 pub use vulkan::material::storage_uniform::*;
 pub use vulkan::*;
+pub use viewport::{DepthFormat, OutputMode, ViewportBuilder, ViewportHandle};
 
 use ash::vk;
 use std::{cell::RefCell, ffi::CString, rc::Rc};
+use viewport::Viewport;
 
 pub struct FrameData {
     pub available_sem: VkSemaphore,
@@ -84,12 +87,28 @@ pub struct VulkanRenderer {
     ui_frame_index: std::cell::Cell<usize>,
     /// UI textures (font atlas, white texture, descriptor set).
     ui_textures: Option<UITextures>,
-    /// Offscreen render targets for viewport rendering (one per frame in flight to avoid races).
-    viewport_targets: Vec<ViewportRenderTarget>,
+    /// Offscreen render targets as (texture_id, target) pairs.
+    /// Simple Vec since we only have a few targets (viewport + preview).
+    /// - TextureId 2 = viewport
+    /// - TextureId 101 = preview
+    render_targets: Vec<(u64, ViewportRenderTarget)>,
     /// Output render target for final composition (UI renders here, then present_pass copies to swapchain).
     output_target: Option<OutputRenderTarget>,
     /// Viewport render graph (renders scene to viewport texture).
     viewport_render_graph: Option<CompiledRenderGraph>,
+    /// Preview render graph (renders model to preview texture).
+    preview_render_graph: Option<CompiledRenderGraph>,
+    /// Preview storage manager for separate camera view.
+    preview_storage_manager: Option<StorageUniformManager>,
+    /// Preview descriptor set for preview camera.
+    preview_storage_descriptor_set: Option<StorageDescriptorSet>,
+    /// Preview frame uniforms (set via set_preview_uniforms).
+    preview_frame_uniforms: Option<FrameUniforms>,
+    /// Preview draw list (models to render in preview).
+    preview_draw_list: RefCell<Option<DrawList>>,
+    /// Viewport system (new unified API).
+    /// Eventually replaces render_targets, viewport_render_graph, preview_* fields.
+    viewports: Vec<Viewport>,
 }
 
 const FRAMES_IN_FLIGHT: usize = 2;
@@ -144,9 +163,15 @@ impl VulkanRenderer {
             ui_buffers: Vec::new(),
             ui_frame_index: std::cell::Cell::new(0),
             ui_textures: None,
-            viewport_targets: Vec::new(),
+            render_targets: Vec::new(),
             output_target: None,
             viewport_render_graph: None,
+            preview_render_graph: None,
+            preview_storage_manager: None,
+            preview_storage_descriptor_set: None,
+            preview_frame_uniforms: None,
+            preview_draw_list: RefCell::new(None),
+            viewports: Vec::new(),
         }
     }
 
@@ -397,71 +422,6 @@ impl VulkanRenderer {
         self.ui_textures.as_ref().map(|t| t.vk_set())
     }
 
-    /// Initialize or resize the viewport render target.
-    ///
-    /// This creates a single offscreen render target for rendering
-    /// the 3D scene that can be sampled by the UI viewport panel.
-    /// Single-buffered is fine with proper fence synchronization.
-    pub fn init_viewport_target(&mut self, width: u32, height: u32) -> Result<(), vk::Result> {
-        let needs_resize = self
-            .viewport_targets
-            .first()
-            .map(|t| t.extent.width != width || t.extent.height != height)
-            .unwrap_or(true);
-
-        if needs_resize {
-            // Destroy old target (Drop handles cleanup)
-            self.viewport_targets.clear();
-
-            // Create single target
-            let target = ViewportRenderTarget::new(self.context.clone(), width, height)?;
-            self.viewport_targets.push(target);
-            info!(
-                "Viewport render target created/resized to {}x{}",
-                width, height
-            );
-
-            // Update UI textures with the viewport image view
-            if let Some(ref mut ui_textures) = self.ui_textures {
-                if let Some(ref viewport_target) = self.viewport_targets.first() {
-                    ui_textures
-                        .set_viewport_texture(&self.context, VkImageView::new(viewport_target.color_image_view));
-                }
-            }
-        }
-        Ok(())
-    }
-
-    /// Get the viewport color image view (for rendering).
-    pub fn viewport_color_view(&self) -> Option<VkImageView> {
-        self.viewport_targets.first().map(|t| VkImageView::new(t.color_image_view))
-    }
-
-    /// Get the viewport depth image (for rendering).
-    pub fn viewport_depth_image(&self) -> Option<VkImage> {
-        self.viewport_targets.first().map(|t| VkImage::new(t.depth_image))
-    }
-
-    /// Get the viewport color image (for rendering).
-    pub fn viewport_color_image(&self) -> Option<VkImage> {
-        self.viewport_targets.first().map(|t| VkImage::new(t.color_image))
-    }
-
-    /// Get the viewport depth image view (for rendering).
-    pub fn viewport_depth_view(&self) -> Option<VkImageView> {
-        self.viewport_targets.first().map(|t| VkImageView::new(t.depth_image_view))
-    }
-
-    /// Get the viewport sampler.
-    pub fn viewport_sampler(&self) -> Option<VkSampler> {
-        self.viewport_targets.first().map(|t| VkSampler::new(t.sampler))
-    }
-
-    /// Get viewport dimensions.
-    pub fn viewport_extent(&self) -> Option<render_graph::types::Extent2D> {
-        self.viewport_targets.first().map(|t| render_graph::types::Extent2D::from(t.extent))
-    }
-
     /// Initialize or resize the output render target.
     ///
     /// This creates a texture that the UI renders to, which is then
@@ -501,12 +461,351 @@ impl VulkanRenderer {
         self.output_target.as_ref().map(|t| render_graph::types::Extent2D::from(t.extent))
     }
 
+    // ========================================================================
+    // Render Target Management (Unified)
+    // ========================================================================
+
+    /// Texture IDs for built-in render targets.
+    pub const VIEWPORT_TEXTURE_ID: u64 = 2;
+    pub const PREVIEW_TEXTURE_ID: u64 = 101;
+
+    /// Create or resize a render target for the given texture ID.
+    ///
+    /// # Arguments
+    /// * `texture_id` - Unique ID for this render target (e.g., 2 for viewport, 101 for preview)
+    /// * `width` - Width in pixels
+    /// * `height` - Height in pixels
+    /// * `count` - Number of targets to create (1 for single-buffered, FRAMES_IN_FLIGHT for double-buffered)
+    pub fn init_render_target(
+        &mut self,
+        texture_id: u64,
+        width: u32,
+        height: u32,
+        _count: usize, // Ignored - we only need one target per texture_id
+    ) -> Result<(), vk::Result> {
+        // Check if we need to resize
+        let needs_resize = self
+            .render_targets
+            .iter()
+            .find(|(id, _)| *id == texture_id)
+            .map(|(_, t)| t.extent.width != width || t.extent.height != height)
+            .unwrap_or(true);
+
+        if needs_resize {
+            // Remove old target if exists
+            self.render_targets.retain(|(id, _)| *id != texture_id);
+
+            // Create new target
+            let target = ViewportRenderTarget::new(self.context.clone(), width, height)?;
+            self.render_targets.push((texture_id, target));
+
+            info!("Render target {} created/resized to {}x{}", texture_id, width, height);
+        }
+        Ok(())
+    }
+
+    /// Get a render target by texture ID.
+    pub fn get_render_target(&self, texture_id: u64) -> Option<&ViewportRenderTarget> {
+        self.render_targets.iter()
+            .find(|(id, _)| *id == texture_id)
+            .map(|(_, t)| t)
+    }
+
+    /// Get the first render target for a texture ID (alias for get_render_target).
+    pub fn get_render_target_first(&self, texture_id: u64) -> Option<&ViewportRenderTarget> {
+        self.get_render_target(texture_id)
+    }
+
+    /// Check if a render target exists for the given texture ID.
+    pub fn has_render_target(&self, texture_id: u64) -> bool {
+        self.render_targets.iter().any(|(id, _)| *id == texture_id)
+    }
+
+    /// Remove a render target.
+    pub fn remove_render_target(&mut self, texture_id: u64) {
+        self.render_targets.retain(|(id, _)| *id != texture_id);
+    }
+
+    // ========================================================================
+    // Viewport Render Target (Convenience Methods)
+    // ========================================================================
+
+    /// Initialize viewport render target (double-buffered for frames in flight).
+    pub fn init_viewport_target(&mut self, width: u32, height: u32) -> Result<(), vk::Result> {
+        self.init_render_target(Self::VIEWPORT_TEXTURE_ID, width, height, 1)?;
+
+        // Get the color view first, then update UI textures
+        let color_view = self.get_render_target_first(Self::VIEWPORT_TEXTURE_ID)
+            .map(|t| t.color_view());
+
+        if let (Some(ref mut ui_textures), Some(view)) = (&mut self.ui_textures, color_view) {
+            ui_textures.set_viewport_texture(&self.context, view);
+        }
+        Ok(())
+    }
+
+    /// Get the viewport color image view.
+    pub fn viewport_color_view(&self) -> Option<VkImageView> {
+        self.get_render_target_first(Self::VIEWPORT_TEXTURE_ID).map(|t| t.color_view())
+    }
+
+    /// Get the viewport depth image.
+    pub fn viewport_depth_image(&self) -> Option<VkImage> {
+        self.get_render_target_first(Self::VIEWPORT_TEXTURE_ID).map(|t| VkImage::new(t.depth_image()))
+    }
+
+    /// Get the viewport color image.
+    pub fn viewport_color_image(&self) -> Option<VkImage> {
+        self.get_render_target_first(Self::VIEWPORT_TEXTURE_ID).map(|t| VkImage::new(t.color_image()))
+    }
+
+    /// Get viewport dimensions.
+    pub fn viewport_extent(&self) -> Option<render_graph::types::Extent2D> {
+        self.get_render_target_first(Self::VIEWPORT_TEXTURE_ID)
+            .map(|t| render_graph::types::Extent2D::from(t.extent))
+    }
+
+    // ========================================================================
+    // Preview Rendering (Model Preview Panel)
+    // ========================================================================
+
+    /// Initialize the preview render target (single-buffered).
+    pub fn init_preview_target(&mut self, width: u32, height: u32) -> Result<(), vk::Result> {
+        self.init_render_target(Self::PREVIEW_TEXTURE_ID, width, height, 1)
+    }
+
+    /// Get the preview color image view (for UI sampling).
+    pub fn preview_color_view(&self) -> Option<VkImageView> {
+        self.get_render_target_first(Self::PREVIEW_TEXTURE_ID).map(|t| t.color_view())
+    }
+
+    /// Get preview dimensions.
+    pub fn preview_extent(&self) -> Option<render_graph::types::Extent2D> {
+        self.get_render_target_first(Self::PREVIEW_TEXTURE_ID)
+            .map(|t| render_graph::types::Extent2D::from(t.extent))
+    }
+
+    /// Initialize preview storage uniform system.
+    ///
+    /// Creates a separate storage manager for preview camera to avoid
+    /// conflicting with the main scene's frame uniforms.
+    pub fn init_preview_storage(&mut self) -> Result<(), vk::Result> {
+        // Reuse the same descriptor set layout as the main scene
+        // The preview storage uses the same shader bindings
+        if let Some(ref main_desc_set) = self.storage_descriptor_set {
+            // Create a new storage manager for preview
+            let manager = StorageUniformManager::new(self.context.clone())?;
+
+            // We need the layout - create a temporary one to get the format
+            // In practice, both main and preview use the same layout
+            use vulkan::material::DescriptorLayoutBuilder;
+
+            let uniform_set_layout = DescriptorLayoutBuilder::new()
+                .add_binding(
+                    0,
+                    vk::DescriptorType::STORAGE_BUFFER,
+                    vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT,
+                    1,
+                )
+                .add_binding(
+                    1,
+                    vk::DescriptorType::STORAGE_BUFFER,
+                    vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT,
+                    1,
+                )
+                .build(&self.context.device)
+                .map_err(|e| {
+                    error!("Failed to create preview storage layout: {:?}", e);
+                    vk::Result::ERROR_INITIALIZATION_FAILED
+                })?;
+
+            let descriptor_set = manager.create_descriptor_set(
+                &self.context,
+                crate::sync::VkDescriptorSetLayout::new(uniform_set_layout),
+            )?;
+
+            // Clean up the layout
+            unsafe {
+                self.context
+                    .device
+                    .destroy_descriptor_set_layout(uniform_set_layout, None);
+            }
+
+            self.preview_storage_manager = Some(manager);
+            self.preview_storage_descriptor_set = Some(descriptor_set);
+
+            info!("Preview storage uniform system initialized");
+        }
+        Ok(())
+    }
+
+    /// Set frame-level uniforms for preview rendering.
+    ///
+    /// This should be called when the preview panel is visible,
+    /// before calling `render_frame()`.
+    pub fn set_preview_uniforms(&mut self, uniforms: FrameUniforms) {
+        self.preview_frame_uniforms = Some(uniforms);
+    }
+
+    /// Clear preview uniforms (when preview panel is closed).
+    pub fn clear_preview_uniforms(&mut self) {
+        self.preview_frame_uniforms = None;
+    }
+
+    /// Set the draw list for preview rendering.
+    ///
+    /// Contains the model(s) to render in the preview panel.
+    pub fn set_preview_draw_list(&self, draw_list: DrawList) {
+        *self.preview_draw_list.borrow_mut() = Some(draw_list);
+    }
+
+    /// Clear the preview draw list.
+    pub fn clear_preview_draw_list(&self) {
+        *self.preview_draw_list.borrow_mut() = None;
+    }
+
+    /// Check if preview rendering is active.
+    pub fn is_preview_active(&self) -> bool {
+        self.has_render_target(Self::PREVIEW_TEXTURE_ID)
+            && self.preview_storage_manager.is_some()
+            && self.preview_frame_uniforms.is_some()
+    }
+
+    /// Register the preview texture with the UI system for sampling.
+    ///
+    /// Call this after init_preview_target() to enable the UI to display
+    /// the preview render output.
+    pub fn register_preview_texture(&mut self) {
+        // Get the color view first, then update UI textures
+        let color_view = self.get_render_target_first(Self::PREVIEW_TEXTURE_ID)
+            .map(|t| t.color_view());
+
+        if let (Some(ref mut ui_textures), Some(view)) = (&mut self.ui_textures, color_view) {
+            ui_textures.set_model_preview_texture(view);
+            info!("Preview texture registered with UI system");
+        }
+    }
+
+    // ========================================================================
+    // Viewport System (New Unified API)
+    // ========================================================================
+
+    /// Create a viewport builder for configuring a new viewport.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// let viewport = renderer.create_viewport()
+    ///     .size(512, 512)
+    ///     .with_depth(DepthFormat::D32SfloatS8Uint)
+    ///     .output_mode(OutputMode::Offscreen)
+    ///     .label("preview")
+    ///     .build(&mut renderer)?;
+    /// ```
+    pub fn create_viewport(&self) -> ViewportBuilder {
+        ViewportBuilder::new()
+    }
+
+    /// Build a viewport from a builder configuration.
+    /// Returns a handle for referencing the viewport.
+    pub fn build_viewport(&mut self, builder: ViewportBuilder) -> Result<ViewportHandle, RenderGraphError> {
+        let viewport = Viewport::new(&builder, &self.context)?;
+        let handle = ViewportHandle::new(self.viewports.len());
+        self.viewports.push(viewport);
+        Ok(handle)
+    }
+
+    /// Get the number of viewports.
+    pub fn viewport_count(&self) -> usize {
+        self.viewports.len()
+    }
+
+    /// Get viewport by handle.
+    pub fn get_viewport(&self, handle: ViewportHandle) -> Option<&Viewport> {
+        self.viewports.get(handle.0)
+    }
+
+    /// Get mutable viewport by handle.
+    pub fn get_viewport_mut(&mut self, handle: ViewportHandle) -> Option<&mut Viewport> {
+        self.viewports.get_mut(handle.0)
+    }
+
+    /// Get the texture ID for a viewport (for UI sampling).
+    /// Returns a u64 that can be used with katla_ui::TextureId::custom(id).
+    pub fn viewport_texture_id(&self, handle: ViewportHandle) -> Option<u64> {
+        self.viewports.get(handle.0).map(|_| {
+            // Generate a unique texture ID based on viewport index
+            // Using range 200+ to avoid conflicts with existing texture IDs
+            200 + handle.0 as u64
+        })
+    }
+
+    /// Get the color image view for a viewport (by handle).
+    pub fn get_viewport_color_view(&self, handle: ViewportHandle) -> Option<VkImageView> {
+        self.viewports.get(handle.0).map(|v| v.color_view())
+    }
+
+    /// Get the viewport extent (by handle).
+    pub fn get_viewport_extent(&self, handle: ViewportHandle) -> Option<crate::render_graph::types::Extent2D> {
+        self.viewports.get(handle.0).map(|v| v.get_extent())
+    }
+
+    /// Set frame uniforms for a viewport.
+    pub fn set_viewport_uniforms(&mut self, handle: ViewportHandle, uniforms: FrameUniforms) {
+        if let Some(viewport) = self.viewports.get_mut(handle.0) {
+            viewport.set_frame_uniforms(uniforms);
+        }
+    }
+
+    /// Set the draw list for a viewport.
+    pub fn set_viewport_draw_list(&self, handle: ViewportHandle, draw_list: DrawList) {
+        if let Some(viewport) = self.viewports.get(handle.0) {
+            viewport.set_draw_list(draw_list);
+        }
+    }
+
+    /// Clear the draw list for a viewport.
+    pub fn clear_viewport_draw_list(&self, handle: ViewportHandle) {
+        if let Some(viewport) = self.viewports.get(handle.0) {
+            viewport.clear_draw_list();
+        }
+    }
+
+    /// Register a viewport texture with the UI system for sampling.
+    pub fn register_viewport_texture(&mut self, handle: ViewportHandle) {
+        if let Some(viewport) = self.viewports.get(handle.0) {
+            let color_view = viewport.color_view();
+            if let Some(ref mut ui_textures) = self.ui_textures {
+                // Use viewport index + 200 as the texture ID
+                let texture_id = 200 + handle.0 as u64;
+                ui_textures.set_external_texture(texture_id, color_view);
+                info!("Viewport '{}' texture registered with UI system", viewport.label);
+            }
+        }
+    }
+
+    /// Destroy a viewport by handle.
+    pub fn destroy_viewport(&mut self, handle: ViewportHandle) {
+        if handle.0 < self.viewports.len() {
+            // Remove the viewport (Drop handles cleanup)
+            self.viewports.remove(handle.0);
+            info!("Viewport {} destroyed", handle.0);
+        }
+    }
+
     pub fn destroy(&mut self) {
         // Destroy output render target (Drop handles cleanup)
         self.output_target = None;
 
-        // Destroy viewport render targets (Drop handles cleanup)
-        self.viewport_targets.clear();
+        // Destroy all render targets (Drop handles cleanup)
+        self.render_targets.clear();
+
+        // Destroy preview render graph
+        self.preview_render_graph = None;
+
+        // Destroy preview storage
+        self.preview_storage_descriptor_set = None;
+        self.preview_storage_manager = None;
 
         // Destroy UI textures (Drop handles cleanup)
         self.ui_textures = None;
@@ -980,12 +1279,12 @@ impl VulkanRenderer {
         // Note: We use the first viewport texture here, but update_viewport_attachments
         // will switch to the correct texture each frame for double-buffering
         let (viewport_resource, viewport_depth_resource, _viewport_extent) =
-            if let Some(first_target) = self.viewport_targets.first() {
+            if let Some(first_target) = self.get_render_target_first(Self::VIEWPORT_TEXTURE_ID) {
                 let color = graph_builder.add_resource(
                     "viewport_color",
                     ResourceKind::ExternalImage {
-                        image: first_target.color_image.into(),
-                        image_view: first_target.color_image_view.into(),
+                        image: first_target.color_image().into(),
+                        image_view: first_target.color_view(),
                         format: ImageFormat::R16G16B16A16Sfloat,
                         extent: Extent2D::new(first_target.extent.width, first_target.extent.height),
                     },
@@ -993,8 +1292,8 @@ impl VulkanRenderer {
                 let depth = graph_builder.add_resource(
                     "viewport_depth",
                     ResourceKind::ExternalImage {
-                        image: first_target.depth_image.into(),
-                        image_view: first_target.depth_image_view.into(),
+                        image: first_target.depth_image().into(),
+                        image_view: first_target.depth_view().into(),
                         format: ImageFormat::D32SfloatS8Uint,
                         extent: Extent2D::new(first_target.extent.width, first_target.extent.height),
                     },
@@ -2009,6 +2308,381 @@ impl VulkanRenderer {
         self.ui_pipeline = Some(pipeline);
     }
 
+    /// Set up the preview render graph for model preview rendering.
+    ///
+    /// This creates a separate render graph that renders a single model
+    /// to an offscreen texture for the model preview panel.
+    ///
+    /// # Prerequisites
+    /// - `init_preview_target()` must be called first
+    /// - `init_preview_storage()` must be called first
+    /// - `sky_pipeline` should be set if sky rendering is desired
+    pub fn setup_preview_render_graph(&mut self) {
+        use crate::render_graph::types::{Extent2D, ImageFormat};
+
+        // Check prerequisites
+        if !self.has_render_target(Self::PREVIEW_TEXTURE_ID) {
+            warn!("Cannot setup preview render graph: preview target not initialized");
+            return;
+        }
+        if self.preview_storage_manager.is_none() {
+            warn!("Cannot setup preview render graph: preview storage not initialized");
+            return;
+        }
+
+        let mut graph_builder = RenderGraphBuilder::new();
+        let preview_target = self.get_render_target_first(Self::PREVIEW_TEXTURE_ID).unwrap();
+
+        // Add preview color resource
+        let preview_color = graph_builder.add_resource(
+            "preview_color",
+            ResourceKind::ExternalImage {
+                image: preview_target.color_image().into(),
+                image_view: preview_target.color_view(),
+                format: ImageFormat::R16G16B16A16Sfloat, // Match main scene pipelines
+                extent: Extent2D::new(preview_target.extent.width, preview_target.extent.height),
+            },
+        );
+
+        // Add preview depth resource
+        let preview_depth = graph_builder.add_resource(
+            "preview_depth",
+            ResourceKind::ExternalImage {
+                image: preview_target.depth_image().into(),
+                image_view: preview_target.depth_view().into(),
+                format: ImageFormat::D32SfloatS8Uint, // Match main scene pipelines
+                extent: Extent2D::new(preview_target.extent.width, preview_target.extent.height),
+            },
+        );
+
+        // Store pointers for capture in closures
+        let sky_pipeline_ptr = &mut self.sky_pipeline as *mut Option<Rc<RefCell<MaterialPipeline>>>;
+        let preview_storage_descriptor_ptr =
+            &mut self.preview_storage_descriptor_set as *mut Option<StorageDescriptorSet>;
+        let preview_storage_manager_ptr =
+            &mut self.preview_storage_manager as *mut Option<StorageUniformManager>;
+        let asset_registry_ptr = &mut self.asset_registry as *mut AssetRegistry;
+        let bindless_manager_ptr = &mut self.bindless_manager as *mut Option<BindlessTextureManager>;
+        let skeleton_descriptors_ptr =
+            &mut self.skeleton_descriptors as *mut Vec<Option<SkeletonDescriptorSet>>;
+        let preview_draw_list_cell = Rc::new(RefCell::new(None::<DrawList>));
+
+        // Store the draw list cell for later access
+        let draw_list_clone = preview_draw_list_cell.clone();
+
+        // Clone devices for closures (each closure needs its own clone)
+        let pre_execute_device = self.context.device.clone();
+        let geometry_device = self.context.device.clone();
+
+        // === PREVIEW SKY PASS ===
+        let p_color = preview_color;
+        let p_depth = preview_depth;
+        graph_builder.add_pass("preview_sky_pass", move |pass| {
+            pass.write(Attachment::Color(p_color))
+                .write(Attachment::DepthStencil(p_depth))
+                .clear_color(p_color, [0.15, 0.15, 0.18, 1.0]) // Dark gray for preview
+                .clear_depth_stencil(p_depth, 1.0, 0)
+                // Pre-execute: transition preview textures from SHADER_READ_ONLY to attachment layouts
+                // This is needed because UI samples from preview texture, leaving it in SHADER_READ_ONLY
+                .pre_execute("preview_sky_pass", move |ctx| {
+                    let cmd_buf = ctx.command_buffer.vk_command_buffer();
+
+                    if let (Some((color_image, _)), Some((depth_image, _))) =
+                        (ctx.get_image(p_color), ctx.get_image(p_depth))
+                    {
+                        let color_subresource = vk::ImageSubresourceRange {
+                            aspect_mask: vk::ImageAspectFlags::COLOR,
+                            base_mip_level: 0,
+                            level_count: 1,
+                            base_array_layer: 0,
+                            layer_count: 1,
+                        };
+
+                        let depth_subresource = vk::ImageSubresourceRange {
+                            aspect_mask: vk::ImageAspectFlags::DEPTH | vk::ImageAspectFlags::STENCIL,
+                            base_mip_level: 0,
+                            level_count: 1,
+                            base_array_layer: 0,
+                            layer_count: 1,
+                        };
+
+                        // Transition color: SHADER_READ_ONLY_OPTIMAL -> COLOR_ATTACHMENT_OPTIMAL
+                        // The preview color texture is sampled by UI, so it may be in SHADER_READ_ONLY
+                        let color_barrier = ImageMemoryBarrier2::new(color_image)
+                            .src_stage(PipelineStage2Flags::FRAGMENT_SHADER)
+                            .src_access(AccessFlags2::SHADER_READ)
+                            .dst_stage(PipelineStage2Flags::COLOR_ATTACHMENT_OUTPUT)
+                            .dst_access(AccessFlags2::COLOR_ATTACHMENT_WRITE)
+                            .old_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
+                            .new_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
+                            .subresource_range(color_subresource);
+
+                        // Transition depth: DEPTH_STENCIL_ATTACHMENT_OPTIMAL -> DEPTH_STENCIL_ATTACHMENT_OPTIMAL
+                        // The depth buffer is NEVER sampled by UI (only color is), so it stays in attachment layout.
+                        // This barrier is just for stage synchronization.
+                        let depth_barrier = ImageMemoryBarrier2::new(depth_image)
+                            .src_stage(PipelineStage2Flags::LATE_FRAGMENT_TESTS)
+                            .src_access(AccessFlags2::DEPTH_STENCIL_ATTACHMENT_WRITE)
+                            .dst_stage(PipelineStage2Flags::EARLY_FRAGMENT_TESTS)
+                            .dst_access(AccessFlags2::DEPTH_STENCIL_ATTACHMENT_READ.union(AccessFlags2::DEPTH_STENCIL_ATTACHMENT_WRITE))
+                            .old_layout(vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL)
+                            .new_layout(vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL)
+                            .subresource_range(depth_subresource);
+
+                        DependencyInfo::new()
+                            .add_image_barrier(color_barrier)
+                            .add_image_barrier(depth_barrier)
+                            .build(|dep_info| unsafe {
+                                pre_execute_device.cmd_pipeline_barrier2(cmd_buf, dep_info);
+                            });
+                    }
+                })
+                .execute("preview_sky_pass", move |ctx| {
+                    let cmd_buf = ctx.command_buffer.vk_command_buffer();
+
+                    let sky_pipeline_opt = unsafe { &mut *sky_pipeline_ptr };
+                    let preview_storage_descriptor_opt = unsafe { &mut *preview_storage_descriptor_ptr };
+
+                    if let (Some(sky_pipeline), Some(storage_descriptor)) =
+                        (sky_pipeline_opt.as_ref(), preview_storage_descriptor_opt.as_ref())
+                    {
+                        let pipeline_ref = sky_pipeline.borrow();
+
+                        unsafe {
+                            pipeline_ref.context().device.cmd_bind_pipeline(
+                                cmd_buf,
+                                vk::PipelineBindPoint::GRAPHICS,
+                                pipeline_ref.vk_pipeline().vk_pipeline(),
+                            );
+
+                            pipeline_ref.context().device.cmd_bind_descriptor_sets(
+                                cmd_buf,
+                                vk::PipelineBindPoint::GRAPHICS,
+                                pipeline_ref.vk_layout(),
+                                0,
+                                &[storage_descriptor.vk_set()],
+                                &[],
+                            );
+                        }
+
+                        drop(pipeline_ref);
+                        ctx.command_buffer.draw_array(3, 1, 0, 0);
+                    }
+                });
+        });
+
+        // === PREVIEW GEOMETRY PASS ===
+        let g_color = preview_color;
+        let g_depth = preview_depth;
+        let draw_list_for_pass = draw_list_clone;
+        graph_builder.add_pass("preview_geometry_pass", move |pass| {
+            pass.write(Attachment::Color(g_color))
+                .write(Attachment::DepthStencil(g_depth))
+                .execute("preview_geometry_pass", move |ctx| {
+                    let draw_list_opt = draw_list_for_pass.borrow_mut().take();
+                    if let Some(draw_list) = draw_list_opt {
+                        let registry = unsafe { &mut *asset_registry_ptr };
+                        let storage_manager = unsafe { &mut *preview_storage_manager_ptr };
+                        let storage_descriptor = unsafe { &mut *preview_storage_descriptor_ptr };
+                        let bindless_manager = unsafe { &mut *bindless_manager_ptr };
+                        let skeleton_descriptors = unsafe { &mut *skeleton_descriptors_ptr };
+
+                        let mut next_object_index: u32 = 0;
+
+                        // Get bindless descriptor set if available
+                        let bindless_descriptor_set = bindless_manager.as_ref().map(|m| m.vk_descriptor_set());
+                        let mut bindless_bound = false;
+
+                        for draw in &draw_list.draws {
+                            // Get mesh data first (immutable borrow)
+                            let mesh_data = registry.get_mesh(draw.mesh).map(|m| {
+                                (
+                                    m.index_buffer
+                                        .as_ref()
+                                        .map(|ib| (ib.object(), ib.index_type, ib.count())),
+                                    m.vertex_buffer.as_ref().map(|vb| (vb.object(), vb.count())),
+                                )
+                            });
+
+                            // Then get material for mutable access
+                            let material = match registry.get_material_mut(draw.material) {
+                                Some(m) => m,
+                                None => continue,
+                            };
+
+                            // Skip non-bindless materials
+                            {
+                                let pipeline = material.pipeline.borrow();
+                                if pipeline.texture_set_layout.is_some() {
+                                    continue;
+                                }
+                            }
+
+                            // Skip if mesh doesn't exist
+                            let (index_data, vertex_data) = match mesh_data {
+                                Some(data) => data,
+                                None => continue,
+                            };
+
+                            // Auto-assign object index
+                            let first_instance = next_object_index;
+                            let instance_count = draw.instance_count();
+                            next_object_index += instance_count;
+
+                            let cmd_buf = ctx.command_buffer.vk_command_buffer();
+
+                            // Get texture indices from material
+                            let tex_indices = material.texture_indices;
+                            let emission_idx = material.emission_index;
+
+                            // Update object uniforms
+                            if let Some(ref mut manager) = storage_manager {
+                                if draw.is_instanced() {
+                                    for (i, instance) in draw.instances.iter().enumerate() {
+                                        let model: [[f32; 4]; 4] = bytemuck::cast(instance.model_matrix);
+                                        manager.update_object_bindless(
+                                            first_instance as usize + i,
+                                            &model,
+                                            &instance.color,
+                                            instance.metallic,
+                                            instance.roughness,
+                                            instance.ao,
+                                            emission_idx as f32,
+                                            tex_indices,
+                                        );
+                                    }
+                                } else {
+                                    let model: [[f32; 4]; 4] = bytemuck::cast(draw.model_matrix);
+                                    let color = draw.color.unwrap_or([1.0, 1.0, 1.0, 1.0]);
+                                    manager.update_object_bindless(
+                                        first_instance as usize,
+                                        &model,
+                                        &color,
+                                        draw.metallic,
+                                        draw.roughness,
+                                        draw.ao,
+                                        emission_idx as f32,
+                                        tex_indices,
+                                    );
+                                }
+                            }
+
+                            let pipeline_ref = material.pipeline.borrow();
+
+                            // Bind pipeline
+                            unsafe {
+                                pipeline_ref.context().device.cmd_bind_pipeline(
+                                    cmd_buf,
+                                    vk::PipelineBindPoint::GRAPHICS,
+                                    pipeline_ref.vk_pipeline().vk_pipeline(),
+                                );
+                            }
+
+                            // Bind storage descriptor set (set 0)
+                            if let Some(descriptor) = storage_descriptor.as_ref() {
+                                unsafe {
+                                    pipeline_ref.context().device.cmd_bind_descriptor_sets(
+                                        cmd_buf,
+                                        vk::PipelineBindPoint::GRAPHICS,
+                                        pipeline_ref.vk_layout(),
+                                        0,
+                                        &[descriptor.vk_set()],
+                                        &[],
+                                    );
+                                }
+                            }
+
+                            // Bind bindless descriptor set (set 1)
+                            let is_bindless_pipeline = pipeline_ref.texture_set_layout.is_none();
+                            if is_bindless_pipeline {
+                                if let Some(bindless_set) = bindless_descriptor_set {
+                                    if !bindless_bound {
+                                        unsafe {
+                                            geometry_device.cmd_bind_descriptor_sets(
+                                                cmd_buf,
+                                                vk::PipelineBindPoint::GRAPHICS,
+                                                pipeline_ref.vk_layout(),
+                                                1,
+                                                &[bindless_set],
+                                                &[],
+                                            );
+                                        }
+                                        bindless_bound = true;
+                                    }
+                                }
+                            } else {
+                                bindless_bound = false;
+                            }
+
+                            // Bind skeleton descriptor set (set 2)
+                            if let Some(skeleton_handle) = draw.skeleton {
+                                let skeleton_descs = unsafe { &*skeleton_descriptors };
+                                if let Some(Some(skeleton_desc)) =
+                                    skeleton_descs.get(skeleton_handle.0 as usize)
+                                {
+                                    unsafe {
+                                        geometry_device.cmd_bind_descriptor_sets(
+                                            cmd_buf,
+                                            vk::PipelineBindPoint::GRAPHICS,
+                                            pipeline_ref.vk_layout(),
+                                            2,
+                                            &[skeleton_desc.vk_set()],
+                                            &[],
+                                        );
+                                    }
+                                }
+                            }
+
+                            drop(pipeline_ref);
+
+                            // Bind buffers and draw
+                            if let Some((index_buffer, index_type, index_count)) = index_data {
+                                ctx.command_buffer
+                                    .bind_index_buffer(index_buffer, 0, index_type);
+
+                                if let Some((vertex_buffer, _)) = vertex_data {
+                                    ctx.command_buffer.bind_vertex_buffers(
+                                        0,
+                                        &[vertex_buffer],
+                                        &[0],
+                                    );
+                                    ctx.command_buffer.draw_indexed(
+                                        index_count,
+                                        instance_count,
+                                        0,
+                                        0,
+                                        first_instance,
+                                    );
+                                }
+                            } else if let Some((vertex_buffer, vertex_count)) = vertex_data {
+                                ctx.command_buffer
+                                    .bind_vertex_buffers(0, &[vertex_buffer], &[0]);
+                                ctx.command_buffer.draw_array(
+                                    vertex_count,
+                                    instance_count,
+                                    0,
+                                    first_instance,
+                                );
+                            }
+                        }
+                    }
+                });
+        });
+
+        // Build the preview render graph
+        match graph_builder.build(&self.context) {
+            Ok(mut graph) => {
+                // Set the draw list cell for the graph
+                graph.set_draw_list_cell(preview_draw_list_cell);
+                self.preview_render_graph = Some(graph);
+                info!("Preview render graph initialized");
+            }
+            Err(e) => {
+                error!("Failed to build preview render graph: {:?}", e);
+            }
+        }
+    }
+
     pub fn render_frame(&mut self, draw_list: DrawList) -> Result<(), RenderGraphError> {
         debug!("render_frame: start");
 
@@ -2035,6 +2709,16 @@ impl VulkanRenderer {
 
         let image_index = frame_data.image_index as usize;
         debug!("render_frame: image_index={}", image_index);
+
+        // Check preview active BEFORE borrowing the graph (to avoid borrow conflicts)
+        let preview_active = self.has_render_target(Self::PREVIEW_TEXTURE_ID)
+            && self.preview_storage_manager.is_some()
+            && self.preview_frame_uniforms.is_some();
+
+        // Extract preview image and device BEFORE borrowing the graph (to avoid borrow conflicts)
+        let preview_image_for_barrier = self.get_render_target_first(Self::PREVIEW_TEXTURE_ID)
+            .map(|t| VkImage::new(t.color_image()));
+        let device_for_barrier = self.context.device.clone();
 
         // Now we can safely borrow the graph
         let graph = self
@@ -2148,6 +2832,68 @@ impl VulkanRenderer {
                     .cmd_pipeline_barrier2(command_buffer.vk_command_buffer(), &dep_info);
             }
             debug!("render_frame: compute barrier inserted");
+        }
+
+        // === EXECUTE PREVIEW RENDER GRAPH (if active) ===
+        // This renders the model preview to an offscreen texture before the main scene
+        if preview_active {
+            debug!("render_frame: executing preview render graph");
+
+            // Update preview frame uniforms
+            if let Some(ref frame) = self.preview_frame_uniforms {
+                if let Some(ref mut manager) = self.preview_storage_manager {
+                    let view: [[f32; 4]; 4] = bytemuck::cast(frame.view_matrix);
+                    let proj: [[f32; 4]; 4] = bytemuck::cast(frame.proj_matrix);
+                    let inv_view_proj: [[f32; 4]; 4] = bytemuck::cast(frame.inv_view_proj_matrix);
+
+                    manager.update_frame_with_lighting(
+                        &view,
+                        &proj,
+                        &inv_view_proj,
+                        &frame.camera_position,
+                        &frame.light_direction,
+                        &frame.light_color,
+                        frame.light_intensity,
+                    );
+                }
+            }
+
+            // Execute preview render graph
+            // Execute preview render graph
+            if let Some(ref mut preview_graph) = self.preview_render_graph {
+                // Preview graph has no swapchain dependencies
+                preview_graph.execute_no_swapchain(&mut command_buffer)?;
+                debug!("render_frame: preview graph.execute complete");
+
+                // Transition preview texture from COLOR_ATTACHMENT_OPTIMAL to SHADER_READ_ONLY_OPTIMAL
+                // so the UI can sample from it in the main render graph's ui_pass
+                if let Some(preview_img) = preview_image_for_barrier {
+                    let cmd_buf = command_buffer.vk_command_buffer();
+
+                    let barrier = ImageMemoryBarrier2::new(preview_img)
+                        .src_stage(PipelineStage2Flags::COLOR_ATTACHMENT_OUTPUT)
+                        .src_access(AccessFlags2::COLOR_ATTACHMENT_WRITE)
+                        .dst_stage(PipelineStage2Flags::FRAGMENT_SHADER)
+                        .dst_access(AccessFlags2::SHADER_READ)
+                        .old_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
+                        .new_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
+                        .subresource_range(vk::ImageSubresourceRange {
+                            aspect_mask: vk::ImageAspectFlags::COLOR,
+                            base_mip_level: 0,
+                            level_count: 1,
+                            base_array_layer: 0,
+                            layer_count: 1,
+                        });
+
+                    DependencyInfo::new()
+                        .add_image_barrier(barrier)
+                        .build(|dep_info| unsafe {
+                            device_for_barrier.cmd_pipeline_barrier2(cmd_buf, dep_info);
+                        });
+
+                    debug!("render_frame: preview texture transitioned to SHADER_READ_ONLY_OPTIMAL");
+                }
+            }
         }
 
         debug!("render_frame: executing render graph");
@@ -3009,6 +3755,19 @@ impl UITextures {
         self.model_preview_image_view = None;
     }
 
+    /// Register an external texture reference for UI rendering.
+    /// Unlike thumbnail textures, this doesn't take ownership - the caller owns the texture.
+    /// Use this for viewports and other render targets that manage their own lifecycle.
+    pub fn set_external_texture(&mut self, texture_id: u64, image_view: VkImageView) {
+        self.thumbnail_textures.insert(texture_id, image_view.vk());
+        log::debug!("Registered external UI texture {}", texture_id);
+    }
+
+    /// Clear an external texture reference.
+    pub fn clear_external_texture(&mut self, texture_id: u64) {
+        self.thumbnail_textures.remove(&texture_id);
+    }
+
     /// Register a thumbnail texture for UI rendering.
     /// Returns the image view for the registered texture.
     pub fn register_thumbnail(
@@ -3352,6 +4111,31 @@ impl ViewportRenderTarget {
                 context,
             })
         }
+    }
+
+    /// Get the color image view for render graph and UI sampling.
+    pub fn color_view(&self) -> VkImageView {
+        VkImageView::new(self.color_image_view)
+    }
+
+    /// Get the depth image view for render graph.
+    pub(crate) fn depth_view(&self) -> vk::ImageView {
+        self.depth_image_view
+    }
+
+    /// Get the color image handle.
+    pub(crate) fn color_image(&self) -> vk::Image {
+        self.color_image
+    }
+
+    /// Get the depth image handle.
+    pub(crate) fn depth_image(&self) -> vk::Image {
+        self.depth_image
+    }
+
+    /// Get the sampler for this render target.
+    pub fn vk_sampler(&self) -> vk::Sampler {
+        self.sampler
     }
 }
 
