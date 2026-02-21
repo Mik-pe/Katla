@@ -50,7 +50,7 @@ impl System for ParticleSimulationSystem {
                 });
 
             // Update emitter
-            if let Some(mut emitter) = world.get_component_mut::<ParticleEmitter>(entity) {
+            if let Some(emitter) = world.get_component_mut::<ParticleEmitter>(entity) {
                 // Sync emitter position with transform if present
                 if let Some(pos) = position {
                     emitter.set_position(pos);

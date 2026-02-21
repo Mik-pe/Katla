@@ -821,7 +821,7 @@ impl MaterialPipeline {
     /// preserved and owned by the MaterialTemplate.
     pub fn destroy_preserving_layout(&mut self) {
         self.uniform.destroy(&self.context);
-        if let Some(mut pipeline) = self.pipeline.take() {
+        if let Some(pipeline) = self.pipeline.take() {
             pipeline.destroy();
         }
         // Remove descriptor set layouts - they're owned by MaterialTemplate and will be destroyed there
@@ -831,7 +831,7 @@ impl MaterialPipeline {
 
     pub fn destroy(&mut self) {
         self.uniform.destroy(&self.context);
-        if let Some(mut pipeline) = self.pipeline.take() {
+        if let Some(pipeline) = self.pipeline.take() {
             pipeline.destroy();
         }
         if let Some(desc_layout) = self.desc_layout.take() {
@@ -856,7 +856,7 @@ impl Drop for MaterialPipeline {
         // Clean up any remaining resources
         // Note: If destroy_preserving_layout() was called, these will already be None
         self.uniform.destroy(&self.context);
-        if let Some(mut pipeline) = self.pipeline.take() {
+        if let Some(pipeline) = self.pipeline.take() {
             pipeline.destroy();
         }
         if let Some(desc_layout) = self.desc_layout.take() {

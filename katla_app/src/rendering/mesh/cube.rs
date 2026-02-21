@@ -1,7 +1,6 @@
 use crate::rendering::{Mesh, VertexPBR};
 use katla_math::Vec3;
 use katla_vulkan::VulkanContext;
-use log::info;
 
 pub fn create_cube_vertices(size: Vec3) -> Vec<VertexPBR> {
     let half_size = size / 2.0;

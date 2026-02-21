@@ -277,7 +277,7 @@ impl BindlessTextureManager {
                 context.device.update_descriptor_sets(&[write], &[]);
             }
 
-            views.push(texture.image_view.clone());
+            views.push(texture.image_view);
             textures.push(texture);
         }
 
@@ -355,7 +355,7 @@ impl BindlessTextureManager {
     ///
     /// Use this when creating pipelines that will use bindless textures.
     pub fn descriptor_layout(&self) -> VkDescriptorSetLayout {
-        self.descriptor_layout.clone()
+        self.descriptor_layout
     }
 
     /// Get the raw Vulkan descriptor set layout handle.

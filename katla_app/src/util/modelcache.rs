@@ -1,10 +1,10 @@
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use gltf::buffer::Data as BufferData;
 use gltf::image::Data as ImageData;
 use gltf::Document;
 use katla_math::{Mat4, Quat, Sphere, Vec3};
-use log::{debug, info, warn};
+use log::{debug, warn};
 
 use crate::rendering::{VertexNormal, VertexPBR, VertexPosition, VertexSkinned};
 use crate::util::gltf_material::GltfMaterialInfo;
@@ -187,7 +187,7 @@ impl GLTFModel {
                 let translation = Vec3::new(t[0], t[1], t[2]);
                 let rotation = Quat::new_from_xyzw(r[0], r[1], r[2], r[3]);
                 let scale = Vec3::new(s[0], s[1], s[2]);
-                root_transform = root_transform * Mat4::from_trs(translation, rotation, scale);
+                root_transform *= Mat4::from_trs(translation, rotation, scale);
 
                 used_nodes.push(node.index());
                 for child in node.children() {
@@ -310,7 +310,7 @@ impl GLTFModel {
         for node in self.document.nodes() {
             if let Some(mesh) = node.mesh() {
                 // Get the first primitive
-                for primitive in mesh.primitives() {
+                if let Some(primitive) = mesh.primitives().next() {
                     let parser = AttributeParser::new(&self.buffers);
                     return Some(ParsedAttributes::from_gltf(&primitive, &parser));
                 }

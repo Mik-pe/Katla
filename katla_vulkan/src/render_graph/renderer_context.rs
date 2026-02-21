@@ -102,14 +102,18 @@ impl RendererContext {
     /// Get storage descriptor set for binding (set 0).
     pub fn storage_descriptor(&self) -> Option<crate::sync::VkDescriptorSet> {
         unsafe {
-            (*self.pointers.storage_descriptor_set).as_ref().map(|ds| ds.set())
+            (*self.pointers.storage_descriptor_set)
+                .as_ref()
+                .map(|ds| ds.set())
         }
     }
 
     /// Get storage descriptor set as raw vk handle (internal use).
     pub(crate) fn vk_storage_descriptor(&self) -> Option<vk::DescriptorSet> {
         unsafe {
-            (*self.pointers.storage_descriptor_set).as_ref().map(|ds| ds.vk_set())
+            (*self.pointers.storage_descriptor_set)
+                .as_ref()
+                .map(|ds| ds.vk_set())
         }
     }
 

@@ -94,8 +94,6 @@ pub struct VulkanRenderer {
     render_targets: Vec<(u64, ViewportRenderTarget)>,
     /// Output render target for final composition (UI renders here, then present_pass copies to swapchain).
     output_target: Option<OutputRenderTarget>,
-    /// Viewport render graph (renders scene to viewport texture).
-    viewport_render_graph: Option<CompiledRenderGraph>,
     /// Viewport system (new unified API).
     /// Application layer manages which handle is "main" vs "preview".
     viewports: Vec<Viewport>,
@@ -153,7 +151,6 @@ impl VulkanRenderer {
             ui_textures: None,
             render_targets: Vec::new(),
             output_target: None,
-            viewport_render_graph: None,
             viewports: Vec::new(),
         }
     }
@@ -251,11 +248,6 @@ impl VulkanRenderer {
     /// Returns None if storage system not initialized.
     pub fn storage_descriptor(&self) -> Option<VkDescriptorSet> {
         self.storage_descriptor_set.as_ref().map(|ds| ds.set())
-    }
-
-    /// Get storage descriptor set as raw vk handle (internal use).
-    pub(crate) fn vk_storage_descriptor(&self) -> Option<vk::DescriptorSet> {
-        self.storage_descriptor_set.as_ref().map(|ds| ds.vk_set())
     }
 
     /// Check if storage uniform system is initialized.
@@ -406,11 +398,6 @@ impl VulkanRenderer {
     /// Get UI descriptor set for binding as wrapper type.
     pub fn ui_descriptor_set(&self) -> Option<VkDescriptorSet> {
         self.ui_textures.as_ref().map(|t| t.set())
-    }
-
-    /// Get UI descriptor set as raw vk handle (internal use).
-    pub(crate) fn vk_ui_descriptor_set(&self) -> Option<vk::DescriptorSet> {
-        self.ui_textures.as_ref().map(|t| t.vk_set())
     }
 
     /// Initialize or resize the output render target.
@@ -678,7 +665,7 @@ impl VulkanRenderer {
 
         // Add viewport color resource
         let viewport_color = graph_builder.add_resource(
-            &format!("{}_color", viewport.label),
+            format!("{}_color", viewport.label),
             ResourceKind::ExternalImage {
                 image: viewport.color_image(),
                 image_view: viewport.color_view(),
@@ -689,7 +676,7 @@ impl VulkanRenderer {
 
         // Add viewport depth resource
         let viewport_depth = graph_builder.add_resource(
-            &format!("{}_depth", viewport.label),
+            format!("{}_depth", viewport.label),
             ResourceKind::ExternalImage {
                 image: viewport.depth_image(),
                 image_view: viewport.depth_view(),
@@ -828,7 +815,7 @@ impl VulkanRenderer {
 
     /// Check if a viewport is ready for rendering.
     pub fn is_viewport_ready(&self, handle: ViewportHandle) -> bool {
-        self.viewports.get(handle.0).map_or(false, |v| {
+        self.viewports.get(handle.0).is_some_and(|v| {
             v.storage_manager.is_some() && v.storage_descriptor.is_some()
         })
     }
@@ -1434,11 +1421,11 @@ impl VulkanRenderer {
         // The render graph is stored in VulkanRenderer and will not outlive it.
         render_graph::RendererContext {
             pointers: render_graph::RendererContextPointers {
-                asset_registry: unsafe { std::ptr::addr_of!(self.asset_registry) as *mut _ },
-                storage_manager: unsafe { std::ptr::addr_of!(self.storage_manager) as *mut _ },
+                asset_registry: std::ptr::addr_of!(self.asset_registry) as *mut _,
+                storage_manager: std::ptr::addr_of!(self.storage_manager) as *mut _,
                 storage_descriptor_set: std::ptr::addr_of!(self.storage_descriptor_set),
                 skeleton_descriptors: std::ptr::addr_of!(self.skeleton_descriptors),
-                bindless_manager: unsafe { std::ptr::addr_of!(self.bindless_manager) as *mut _ },
+                bindless_manager: std::ptr::addr_of!(self.bindless_manager) as *mut _,
                 vk_device: Some(self.context.device.clone()),
                 ui_data: std::ptr::addr_of!(self.ui_data),
                 ui_buffers: std::ptr::addr_of!(self.ui_buffers),

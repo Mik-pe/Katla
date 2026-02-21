@@ -8,10 +8,6 @@ use log::debug;
 use crate::render_graph::types::{Extent2D, ImageFormat};
 use crate::render_graph::{ResourceId, ResourceKind};
 use crate::rendering::DrawList;
-use crate::sync::{
-    color_attachment_to_read_barrier, COLOR_SUBRESOURCE_RANGE,
-    AccessFlags2, DependencyInfo, ImageMemoryBarrier2, PipelineStage2Flags, VkImage,
-};
 use crate::{FrameData, RenderGraphError, VulkanRenderer};
 
 impl VulkanRenderer {

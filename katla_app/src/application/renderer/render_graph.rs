@@ -6,7 +6,7 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use katla_vulkan::{FrameResources, MaterialPipeline, RenderGraphBuilder, VulkanRenderer};
+use katla_vulkan::{MaterialPipeline, VulkanRenderer};
 
 /// Build the render graph with all application passes.
 ///

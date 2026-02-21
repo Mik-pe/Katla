@@ -276,7 +276,7 @@ impl BufferDescriptorSource for EmitterConfigBuffer {
 /// Number of workgroups needed to process all particles.
 #[inline]
 pub fn calculate_workgroup_count(particle_count: u32, workgroup_size: u32) -> u32 {
-    (particle_count + workgroup_size - 1) / workgroup_size
+    particle_count.div_ceil(workgroup_size)
 }
 
 #[cfg(test)]

@@ -17,7 +17,7 @@ fn generate_checkerboard_pixels(texture_size: u32, checker_size: u32) -> Vec<u8>
         for x in 0..texture_size {
             let checker_x = x / checker_size;
             let checker_y = y / checker_size;
-            let is_white = (checker_x + checker_y) % 2 == 0;
+            let is_white = (checker_x + checker_y).is_multiple_of(2);
 
             let pixel = if is_white {
                 Color::WHITE.to_bytes()

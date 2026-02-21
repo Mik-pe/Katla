@@ -250,16 +250,15 @@ Located in `katla_vulkan/src/render_graph/`, this is a high-level abstraction fo
 - **graph.rs** - RenderGraph builder and resource management
 - **pass.rs** - PassBuilder, Pass, PassExecutionContext, ExecutionRegistry
 - **compiled.rs** - CompiledRenderGraph, compilation pipeline (lifetime analysis, render pass generation)
-- **builders.rs** - RenderGraphBuilder API
+- **frame_resources.rs** - FrameResources struct with pre-registered render targets
 
 ### Execution Flow
 
-1. User builds graph with `RenderGraphBuilder::new()`
-2. Add resources: `add_resource(name, ResourceKind)` → returns `ResourceId`
-3. Add passes: `add_pass(name, |builder| { ... })`
-4. Builder stores closures in `ExecutionRegistry` (avoids trait object lifetime issues)
-5. `build(context)` → `CompiledRenderGraph` (transfers registry ownership)
-6. `execute(command_buffer)` runs all passes with closure lookup
+1. Get builder with `renderer.create_render_graph_with_resources()` → returns `(RenderGraphBuilder, FrameResources)`
+2. Add passes: `builder.add_pass(name, |pass| { ... })`
+3. Each pass declares what it reads/writes via `pass.write_color()`, `pass.blit()`, etc.
+4. Compile with `renderer.compile_render_graph(builder, swapchain_resource_id)`
+5. Each frame, `render_frame()` executes the compiled graph
 
 ### Wrapper Types Pattern
 
@@ -284,13 +283,7 @@ impl From<ImageFormat> for ash::vk::Format { ... }
 - **Synchronization2 (VK_KHR_synchronization2)** - All pipeline barriers use `vkCmdPipelineBarrier2` with modern barrier types
 - **VMA Integration** - Uses `gpu_allocator` for Vulkan Memory Allocator integration
 - **Frames In-Flight** - Proper per-frame synchronization with fences and semaphores
-
-### Legacy Patterns Removed
-
-- ❌ Legacy `vk::CmdBeginRenderPass`/`vk::CmdEndRenderPass` - replaced with dynamic rendering
-- ❌ Legacy `vk::CmdPipelineBarrier` - replaced with Synchronization2's `vkCmdPipelineBarrier2`
-- ❌ RenderPass struct - only null render passes used for dynamic rendering
-- ❌ Traditional framebuffer objects - not needed with dynamic rendering
+- **Bindless Textures** - Single texture array descriptor instead of per-texture descriptors
 
 ### Synchronization Pattern
 
@@ -358,7 +351,6 @@ Main renderer struct in `katla_vulkan/src/lib.rs`:
 - `swap_data: SwapData` - Swapchain synchronization (semaphores, fences)
 - `asset_registry: AssetRegistry` - GPU asset management (meshes, materials)
 - `material_registry: MaterialRegistry` - Template-based materials with hot reload
-- `render_graph: Option<CompiledRenderGraph>` - Compiled render graph with dynamic rendering
 
 ### Rendering Flow
 
@@ -366,8 +358,6 @@ Main renderer struct in `katla_vulkan/src/lib.rs`:
 2. **Render Graph Execution**: `render_frame()` executes the compiled render graph with dynamic rendering
 3. **Synchronization**: Proper semaphores/fences for frames-in-flight
 4. **Presentation**: Queue present to swapchain
-
-See `docs/vulkan-1.3-migration-plan.md` for complete migration details.
 
 ## Application Layer
 
@@ -501,78 +491,68 @@ world.register_system(Box::new(MySystem), SystemExecutionOrder::NORMAL);
 
 The render graph uses **dynamic rendering** by default. Passes execute with `vkCmdBeginRendering`/`vkCmdEndRendering`.
 
-**Architecture:** Scene and UI passes render to an intermediate `output_texture`. Only the `present_pass` touches the swapchain, using transfer operations (blit) to copy the output texture to the swapchain image.
+**Architecture:** Scene passes render to `viewport_color`, UI renders to `output_color`. The `present_pass` blits `output_color` to the swapchain.
 
 ```rust
-let mut graph_builder = RenderGraphBuilder::new();
+// Get builder with pre-registered resources (swapchain, viewport, output)
+let (mut builder, resources) = renderer.create_render_graph_with_resources();
 
-// Add swapchain resource (placeholder - updated per-frame)
-let swapchain_resource = graph_builder.add_resource(
-    "swapchain",
-    ResourceKind::ExternalImage {
-        vk_image: swapchain_images[0],  // Placeholder, updated each frame
-        image_view: swapchain_image_views[0],
-        format: vk::Format::B8G8R8A8_SRGB,
-        extent: vk::Extent2D { width: 1920, height: 1080 },
-    },
-);
+// Sky pass - fullscreen quad with sky material
+builder.add_pass("sky_pass", |pass| {
+    pass.write_color(&resources.viewport_color)
+        .write_depth(&resources.viewport_depth)
+        .clear_color_target(&resources.viewport_color, [0.4, 0.6, 0.9, 1.0])
+        .clear_depth_target(&resources.viewport_depth, 1.0)
+        .execute("sky_pass", |ctx| {
+            ctx.draw_fullscreen_with_material(&sky_pipeline);
+        });
+});
 
-// Add output texture (scene + UI render here)
-let output_resource = graph_builder.add_resource(
-    "output_color",
-    ResourceKind::ExternalImage {
-        vk_image: output_image,
-        image_view: output_image_view,
-        format: vk::Format::B8G8R8A8_SRGB,
-        extent: vk::Extent2D { width: 1920, height: 1080 },
-    },
-);
-
-// Scene pass renders to output texture (NOT swapchain!)
-graph_builder.add_pass("geometry_pass", |pass| {
-    pass.write(Attachment::Color(output_resource))
-        .clear_color(output_resource, [0.3, 0.5, 0.3, 1.0])
+// Geometry pass - draw meshes from draw list
+builder.add_pass("geometry_pass", |pass| {
+    pass.write_color(&resources.viewport_color)
+        .write_depth(&resources.viewport_depth)
         .execute("geometry_pass", |ctx| {
-            // Record rendering commands
+            ctx.draw_draw_list();
         });
 });
 
-// UI pass composites on top of output texture
-graph_builder.add_pass("ui_pass", |pass| {
-    pass.write(Attachment::Color(output_resource))
+// UI pass - 2D overlay
+builder.add_pass("ui_pass", |pass| {
+    pass.write_color(&resources.output_color)
         .execute("ui_pass", |ctx| {
-            // Record UI commands (no clear - loading existing content)
+            ctx.draw_ui(&ui_pipeline);
         });
 });
 
-// Present pass copies output to swapchain using transfer (blit)
-graph_builder.add_pass("present_pass", |pass| {
-    pass.read_transfer(output_resource)
-        .write_transfer(swapchain_resource)
+// Present pass - blit output to swapchain
+builder.add_pass("present_pass", |pass| {
+    pass.blit(&resources.output_color, &resources.swapchain)
         .execute("present_pass", |ctx| {
-            // vkCmdBlitImage from output to swapchain
+            if let (Some((src_img, _)), Some((dst_img, _))) = (
+                ctx.get_image(resources.output_color.resource_id()),
+                ctx.get_image(resources.swapchain.resource_id()),
+            ) {
+                let (width, height) = ctx.extent();
+                ctx.blit_images(src_img, dst_img, width, height);
+            }
         });
 });
 
-let mut graph = graph_builder.build(&vulkan_context)?;
-
-// IMPORTANT: Set swapchain resource ID for per-frame updates
-graph.set_swapchain_resource_id(swapchain_resource);
-
-// Each frame before execute: update swapchain to current acquired image
-graph.update_swapchain_image(
-    swapchain_images[frame_index],
-    swapchain_image_views[frame_index],
-);
-
-graph.execute(&mut command_buffer, image_index, &swapchain_images, depth_image)?;
+// Compile with swapchain resource ID for proper layout transitions
+renderer.compile_render_graph(builder, Some(resources.swapchain.resource_id()))?;
 ```
 
+**FrameResources (pre-registered by VulkanRenderer):**
+- `swapchain` - Current swapchain image (changes each frame)
+- `viewport_color` - Offscreen render target for 3D scene
+- `viewport_depth` - Depth buffer for viewport
+- `output_color` - Final composition target (scene + UI)
+
 **Key Points:**
-- **Only present_pass touches swapchain** - Uses `read_transfer()`/`write_transfer()` for blit, NOT color attachments
-- **Scene/UI render to output_texture** - Intermediate texture allows compositing before presentation
-- **Per-frame swapchain update** - Call `update_swapchain_image()` before execute() to use the correct acquired image
-- **Use `ExternalImage` ResourceKind** for swapchain and resources created externally
+- Use `create_render_graph_with_resources()` for pre-registered targets
+- Use `write_color()`/`write_depth()` for render targets
+- Use `blit()` for transfer operations between images
 - The graph automatically uses dynamic rendering (no traditional render passes)
 - Synchronization2 barriers inserted automatically for layout transitions
 
@@ -580,12 +560,9 @@ graph.execute(&mut command_buffer, image_index, &swapchain_images, depth_image)?
 
 When integrating render graph with application layer:
 
-- **Use `ExternalImage` ResourceKind** for swapchain and depth resources created externally
 - **Dynamic rendering is automatic** - passes use `vkCmdBeginRendering`/`vkCmdEndRendering`
 - **Synchronization is automatic** - barriers inserted for layout transitions using Synchronization2
 - **No framebuffer management** - dynamic rendering doesn't require traditional framebuffers
-- **Per-swapchain image support** - graph supports multiple swapchain images via `color_attachments`/`depth_attachments` arrays
-- **Call `renderer.render_frame(draw_list)`** in RedrawRequested handler with draw calls
 - **Hot reload support** - materials can be reloaded at runtime via `MaterialRegistry`
 
 ### Material System
@@ -661,14 +638,6 @@ ForkAwesome::REFRESH       // Refresh
 ForkAwesome::EXTERNAL_LINK // Open in explorer
 ```
 
-### Future Enhancements (Optional)
-
-These are **not required** for Vulkan 1.3 compliance but recommended:
-
-1. **Bindless Textures** - Single texture array descriptor instead of per-texture descriptors
-
-See `docs/vulkan-1.3-migration-plan.md` for details.
-
 ## Shader System (WGSL + naga)
 
 Katla uses **WGSL shaders** compiled to SPIR-V via the **naga library** (not the naga CLI binary).
@@ -689,7 +658,8 @@ vk::ShaderModule
 
 - `katla_vulkan/src/vulkan/material/shadermodule.rs` - `ShaderModule::from_wgsl()` and `from_wgsl_string()`
 - `katla_vulkan/src/vulkan/material/reflection.rs` - naga-based shader reflection for uniform layouts
-- `resources/shaders/*.wgsl` - All shader source files
+- `resources/shaders/*.wgsl` - All shader source files 
+- `resources/materials/*.toml` - All material source files (references shaders)
 
 ### Example Shader Structure
 
@@ -745,21 +715,6 @@ GLTF stores matrices as 16 consecutive floats in **column-major order**. When pa
 - etc.
 
 **CRITICAL**: Do NOT transpose when reading! The data is already column-major.
-
-```rust
-// CORRECT: Read directly into Vec4 columns
-Mat4([
-    Vec4::new(read_f32(&bytes[0..4]), read_f32(&bytes[4..8]), ...),   // Column 0
-    Vec4::new(read_f32(&bytes[16..20]), read_f32(&bytes[20..24]), ...), // Column 1
-    ...
-])
-
-// WRONG: This transposes the matrix!
-Mat4([
-    Vec4::new(cols[0][0], cols[1][0], cols[2][0], cols[3][0]), // Creates ROWS!
-    ...
-])
-```
 
 ### Common Pitfall: "Values Look Fine But Animation Breaks"
 

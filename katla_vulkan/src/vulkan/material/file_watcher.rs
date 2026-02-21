@@ -4,7 +4,7 @@
 //! allowing materials to be reloaded immediately when shader files change
 //! without polling in the render loop.
 
-use log::{error, info, warn};
+use log::{error, info};
 use std::{
     path::{Path, PathBuf},
     sync::mpsc::{self, Receiver, Sender},
