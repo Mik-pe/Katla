@@ -1,0 +1,371 @@
+//! Frame rendering implementation.
+//!
+//! Contains frame acquisition, rendering, and presentation methods.
+
+use ash::vk;
+use log::debug;
+
+use crate::render_graph::types::{Extent2D, ImageFormat};
+use crate::render_graph::{ResourceId, ResourceKind};
+use crate::rendering::DrawList;
+use crate::sync::{
+    AccessFlags2, DependencyInfo, ImageMemoryBarrier2, PipelineStage2Flags, VkImage,
+};
+use crate::{FrameData, RenderGraphError, VulkanRenderer};
+
+impl VulkanRenderer {
+    /// Acquire the next swapchain image for rendering.
+    pub fn swap_frames(&mut self) -> Result<(), RenderGraphError> {
+        debug!("swap_frames: waiting for fence");
+        self.swap_data.wait_for_fence(&self.context.device);
+        debug!("swap_frames: fence waited");
+
+        let (available_sem, finished_sem, in_flight_fence, image_index) =
+            self.swap_data.swap_images(
+                &self.context.device,
+                self.context
+                    .swapchain_loader
+                    .as_ref()
+                    .expect("Swapchain loader required"),
+                self.frame_context.swapchain.swapchain,
+            )?;
+        debug!("swap_frames: got image_index={}", image_index);
+
+        self.current_framedata = Some(FrameData {
+            available_sem,
+            finished_sem,
+            in_flight_fence,
+            image_index,
+        });
+        debug!("swap_frames: done");
+        Ok(())
+    }
+
+    /// Create a swapchain resource for the render graph.
+    pub fn create_swapchain_resource(
+        &self,
+        builder: &mut crate::RenderGraphBuilder,
+        image_index: u32,
+    ) -> ResourceId {
+        let swapchain_format = self.frame_context.swapchain.format.format;
+        let extent = self.frame_context.swapchain.get_extent();
+        builder.add_resource(
+            format!("swapchain_{}", image_index),
+            ResourceKind::ExternalImage {
+                image: self.frame_context.swapchain_images[image_index as usize],
+                image_view: self.frame_context.swapchain_image_views[image_index as usize],
+                format: ImageFormat::from_vk(swapchain_format)
+                    .expect("Unsupported swapchain format"),
+                extent: Extent2D::new(extent.width, extent.height),
+            },
+        )
+    }
+
+    /// Render a frame using the render graph system.
+    ///
+    /// This is the main entry point for rendering. It:
+    /// 1. Acquires a swapchain image
+    /// 2. Executes all viewport render graphs
+    /// 3. Executes the main render graph (UI + present)
+    /// 4. Submits the command buffer and presents
+    pub fn render_frame(&mut self, draw_list: DrawList) -> Result<(), RenderGraphError> {
+        debug!("render_frame: start");
+
+        // Acquire swapchain image
+        if self.current_framedata.is_none() {
+            debug!("render_frame: acquiring swapchain image");
+            match self.swap_frames() {
+                Ok(()) => {}
+                Err(RenderGraphError::SwapchainOutOfDate) => {
+                    self.recreate_swapchain();
+                    return Err(RenderGraphError::SwapchainOutOfDate);
+                }
+                Err(e) => return Err(e),
+            }
+            debug!("render_frame: swapchain image acquired");
+        }
+
+        let frame_data = self
+            .current_framedata
+            .as_ref()
+            .ok_or(RenderGraphError::NoFrameData)?;
+
+        let image_index = frame_data.image_index as usize;
+        debug!("render_frame: image_index={}", image_index);
+
+        // Check preview active BEFORE borrowing the graph
+        let preview_active = self.has_render_target(Self::PREVIEW_TEXTURE_ID)
+            && self.preview_storage_manager.is_some()
+            && self.preview_frame_uniforms.is_some();
+
+        let preview_image_for_barrier = self.get_render_target_first(Self::PREVIEW_TEXTURE_ID)
+            .map(|t| VkImage::new(t.color_image()));
+        let device_for_barrier = self.context.device.clone();
+
+        // Borrow the render graph
+        let graph = self
+            .render_graph
+            .as_mut()
+            .ok_or(RenderGraphError::CompilationError("No render graph".into()))?;
+        debug!("render_frame: got render graph");
+
+        // Update frame uniforms
+        if let Some(ref frame) = self.frame_uniforms {
+            if let Some(ref mut manager) = self.storage_manager {
+                let view: [[f32; 4]; 4] = bytemuck::cast(frame.view_matrix);
+                let proj: [[f32; 4]; 4] = bytemuck::cast(frame.proj_matrix);
+                let inv_view_proj: [[f32; 4]; 4] = bytemuck::cast(frame.inv_view_proj_matrix);
+
+                manager.update_frame_with_lighting(
+                    &view,
+                    &proj,
+                    &inv_view_proj,
+                    &frame.camera_position,
+                    &frame.light_direction,
+                    &frame.light_color,
+                    frame.light_intensity,
+                );
+            }
+        }
+        debug!("render_frame: frame uniforms updated");
+
+        // Set the draw list for this frame
+        graph.set_draw_list(draw_list.clone());
+        debug!("render_frame: draw list set");
+
+        let mut command_buffer = self.frame_context.command_buffers[image_index].clone();
+        command_buffer.begin_command(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT);
+        debug!("render_frame: command buffer begun");
+
+        // Set frame index for UI buffer selection
+        let frame_idx = self.swap_data.current_frame();
+        self.ui_frame_index.set(frame_idx);
+        debug!("render_frame: frame_idx={}", frame_idx);
+
+        // === DISPATCH PARTICLE COMPUTE SHADERS ===
+        if !draw_list.particle_dispatches.is_empty() {
+            debug!(
+                "render_frame: dispatching particle compute shaders (count={})",
+                draw_list.particle_dispatches.len()
+            );
+            for (i, particle) in draw_list.particle_dispatches.iter().enumerate() {
+                unsafe {
+                    self.context.device.cmd_bind_pipeline(
+                        command_buffer.vk_command_buffer(),
+                        vk::PipelineBindPoint::COMPUTE,
+                        particle.pipeline.vk(),
+                    );
+                    self.context.device.cmd_bind_descriptor_sets(
+                        command_buffer.vk_command_buffer(),
+                        vk::PipelineBindPoint::COMPUTE,
+                        particle.pipeline_layout.vk(),
+                        0,
+                        &[particle.descriptor_set.vk()],
+                        &[],
+                    );
+                    self.context.device.cmd_push_constants(
+                        command_buffer.vk_command_buffer(),
+                        particle.pipeline_layout.vk(),
+                        vk::ShaderStageFlags::COMPUTE,
+                        0,
+                        bytemuck::cast_slice(&particle.frame_data),
+                    );
+                    self.context.device.cmd_dispatch(
+                        command_buffer.vk_command_buffer(),
+                        particle.workgroup_count,
+                        1,
+                        1,
+                    );
+                }
+                debug!("render_frame: particle {} dispatched", i);
+            }
+
+            // Barrier: compute write -> vertex read
+            let memory_barriers = [vk::MemoryBarrier2KHR::default()
+                .src_stage_mask(vk::PipelineStageFlags2::COMPUTE_SHADER)
+                .src_access_mask(vk::AccessFlags2::SHADER_WRITE)
+                .dst_stage_mask(vk::PipelineStageFlags2::VERTEX_SHADER)
+                .dst_access_mask(vk::AccessFlags2::SHADER_READ)];
+
+            let dep_info = vk::DependencyInfoKHR::default().memory_barriers(&memory_barriers);
+
+            unsafe {
+                self.context
+                    .device
+                    .cmd_pipeline_barrier2(command_buffer.vk_command_buffer(), &dep_info);
+            }
+            debug!("render_frame: compute barrier inserted");
+        }
+
+        // === EXECUTE ALL VIEWPORT RENDER GRAPHS ===
+        for (idx, viewport) in self.viewports.iter_mut().enumerate() {
+            if viewport.render_graph.is_none() {
+                continue;
+            }
+
+            let has_draw_list = viewport.draw_list_cell.borrow().is_some();
+            if !has_draw_list {
+                continue;
+            }
+
+            debug!("render_frame: executing viewport {} render graph", idx);
+
+            if let Some(ref frame) = viewport.frame_uniforms {
+                if let Some(ref mut manager) = viewport.storage_manager {
+                    let view: [[f32; 4]; 4] = bytemuck::cast(frame.view_matrix);
+                    let proj: [[f32; 4]; 4] = bytemuck::cast(frame.proj_matrix);
+                    let inv_view_proj: [[f32; 4]; 4] = bytemuck::cast(frame.inv_view_proj_matrix);
+
+                    manager.update_frame_with_lighting(
+                        &view,
+                        &proj,
+                        &inv_view_proj,
+                        &frame.camera_position,
+                        &frame.light_direction,
+                        &frame.light_color,
+                        frame.light_intensity,
+                    );
+                }
+            }
+
+            if let Some(ref mut viewport_graph) = viewport.render_graph {
+                viewport_graph.execute_no_swapchain(&mut command_buffer)?;
+                debug!("render_frame: viewport {} graph.execute complete", idx);
+
+                viewport.transition_to_sample(
+                    command_buffer.vk_command_buffer(),
+                    &self.context.device,
+                );
+                debug!("render_frame: viewport {} texture transitioned", idx);
+            }
+        }
+
+        // === LEGACY PREVIEW RENDER GRAPH ===
+        if preview_active {
+            debug!("render_frame: executing legacy preview render graph");
+
+            if let Some(ref frame) = self.preview_frame_uniforms {
+                if let Some(ref mut manager) = self.preview_storage_manager {
+                    let view: [[f32; 4]; 4] = bytemuck::cast(frame.view_matrix);
+                    let proj: [[f32; 4]; 4] = bytemuck::cast(frame.proj_matrix);
+                    let inv_view_proj: [[f32; 4]; 4] = bytemuck::cast(frame.inv_view_proj_matrix);
+
+                    manager.update_frame_with_lighting(
+                        &view,
+                        &proj,
+                        &inv_view_proj,
+                        &frame.camera_position,
+                        &frame.light_direction,
+                        &frame.light_color,
+                        frame.light_intensity,
+                    );
+                }
+            }
+
+            if let Some(ref mut preview_graph) = self.preview_render_graph {
+                preview_graph.execute_no_swapchain(&mut command_buffer)?;
+                debug!("render_frame: preview graph.execute complete");
+
+                if let Some(preview_img) = preview_image_for_barrier {
+                    let cmd_buf = command_buffer.vk_command_buffer();
+
+                    let barrier = ImageMemoryBarrier2::new(preview_img)
+                        .src_stage(PipelineStage2Flags::COLOR_ATTACHMENT_OUTPUT)
+                        .src_access(AccessFlags2::COLOR_ATTACHMENT_WRITE)
+                        .dst_stage(PipelineStage2Flags::FRAGMENT_SHADER)
+                        .dst_access(AccessFlags2::SHADER_READ)
+                        .old_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
+                        .new_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
+                        .subresource_range(vk::ImageSubresourceRange {
+                            aspect_mask: vk::ImageAspectFlags::COLOR,
+                            base_mip_level: 0,
+                            level_count: 1,
+                            base_array_layer: 0,
+                            layer_count: 1,
+                        });
+
+                    DependencyInfo::new()
+                        .add_image_barrier(barrier)
+                        .build(|dep_info| unsafe {
+                            device_for_barrier.cmd_pipeline_barrier2(cmd_buf, dep_info);
+                        });
+                }
+            }
+        }
+
+        // === EXECUTE MAIN RENDER GRAPH ===
+        debug!("render_frame: executing main render graph (UI + present)");
+        graph.update_swapchain_image(
+            self.frame_context.swapchain_images[image_index],
+            self.frame_context.swapchain_image_views[image_index],
+        );
+        debug!("render_frame: calling graph.execute");
+        graph.execute(
+            &mut command_buffer,
+            image_index,
+            &self.frame_context.swapchain_images,
+            self.frame_context.depth_render_texture.image,
+        )?;
+        debug!("render_frame: graph.execute complete");
+
+        command_buffer.end_command();
+
+        // Submit and present
+        let frame_data = self.current_framedata.take().unwrap();
+        let wait_semaphores = vec![frame_data.available_sem.vk()];
+        let wait_dst_stage_mask = vec![vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT];
+        let signal_semaphores = vec![frame_data.finished_sem.vk()];
+        let in_flight_fence = frame_data.in_flight_fence.vk();
+
+        unsafe {
+            self.context
+                .device
+                .reset_fences(&[in_flight_fence])
+                .unwrap();
+        }
+
+        let command_buffer = &self.frame_context.command_buffers[frame_data.image_index as usize];
+        let vk_command_buffers = vec![command_buffer.vk_command_buffer()];
+
+        let submit_info = vk::SubmitInfo::default()
+            .wait_semaphores(&wait_semaphores)
+            .wait_dst_stage_mask(&wait_dst_stage_mask)
+            .signal_semaphores(&signal_semaphores)
+            .command_buffers(&vk_command_buffers);
+
+        unsafe {
+            self.context
+                .device
+                .queue_submit(self.context.graphics_queue, &[submit_info], in_flight_fence)
+                .map_err(RenderGraphError::VulkanError)?;
+        }
+
+        let swapchains = vec![self.frame_context.swapchain.swapchain];
+        let image_indices = vec![frame_data.image_index];
+        let present_info = vk::PresentInfoKHR::default()
+            .wait_semaphores(&signal_semaphores)
+            .swapchains(&swapchains)
+            .image_indices(&image_indices);
+
+        let present_result = unsafe {
+            self.context
+                .swapchain_loader
+                .as_ref()
+                .expect("Swapchain loader required")
+                .queue_present(self.context.graphics_queue, &present_info)
+        };
+
+        if let Err(e) = present_result {
+            if e == vk::Result::ERROR_OUT_OF_DATE_KHR || e == vk::Result::SUBOPTIMAL_KHR {
+                self.recreate_swapchain();
+                return Err(RenderGraphError::SwapchainOutOfDate);
+            } else {
+                return Err(RenderGraphError::VulkanError(e));
+            }
+        }
+
+        self.swap_data.step_frame();
+
+        Ok(())
+    }
+}
