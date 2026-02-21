@@ -76,8 +76,11 @@ pub fn setup_render_graph(app: &mut Application) {
     // Store viewport handle in app for later use
     app.main_viewport = Some(main_viewport);
 
-    // Register main viewport texture with UI system
+    // Register main viewport texture with UI system and get texture ID
     renderer.register_viewport_texture(main_viewport);
+    if let Some(tex_id) = renderer.viewport_texture_id(main_viewport) {
+        app.editor_ui.main_viewport_texture_id = katla_ui::TextureId::custom(tex_id);
+    }
 
     // Initialize output render target for final UI composition
     // This is where UI renders, then present_pass copies to swapchain
