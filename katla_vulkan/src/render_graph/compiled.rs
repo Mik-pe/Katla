@@ -997,6 +997,62 @@ impl CompiledRenderGraph {
         Ok(())
     }
 
+    /// Execute the render graph without swapchain dependencies.
+    ///
+    /// This is used for offscreen rendering (e.g., model preview) where
+    /// the graph doesn't need to interact with the swapchain.
+    ///
+    /// Uses image_index 0 for all attachments (single set of attachments).
+    pub fn execute_no_swapchain(
+        &mut self,
+        command_buffer: &mut CommandBuffer,
+    ) -> Result<(), RenderGraphError> {
+        let pass_count = self.passes.len();
+        debug!("execute_no_swapchain: starting {} passes", pass_count);
+
+        // Use image_index 0 for all passes (offscreen rendering has single attachment set)
+        let image_index = 0;
+        let empty_swapchain: [VkImage; 0] = [];
+        // Null depth image - preview graphs handle their own depth barriers in pre_execute
+        let no_depth = VkImage::new(vk::Image::null());
+
+        for i in 0..pass_count {
+            let has_color_attachments = self.passes[i]
+                .color_attachments
+                .iter()
+                .any(|v| !v.is_empty());
+            let has_depth_attachment = self.passes[i].depth_attachments.iter().any(|d| d.is_some());
+            let has_render_attachments = has_color_attachments || has_depth_attachment;
+            let is_last_pass = i == pass_count - 1;
+
+            debug!(
+                "execute_no_swapchain: pass {} ({}), has_color={}, has_depth={}",
+                i,
+                self.passes[i].name,
+                has_color_attachments,
+                has_depth_attachment,
+            );
+
+            if has_render_attachments {
+                debug!("execute_no_swapchain: calling execute_pass_dynamic for pass {}", i);
+                self.execute_pass_dynamic(
+                    command_buffer,
+                    i,
+                    image_index,
+                    &empty_swapchain,
+                    no_depth,
+                    is_last_pass,
+                )?;
+                debug!("execute_no_swapchain: execute_pass_dynamic for pass {} complete", i);
+            } else {
+                debug!("execute_no_swapchain: calling execute_pass_transfer for pass {}", i);
+                self.execute_pass_transfer(command_buffer, i)?;
+                debug!("execute_no_swapchain: execute_pass_transfer for pass {} complete", i);
+            }
+        }
+        Ok(())
+    }
+
     /// Execute a transfer-only pass (no render pass, just command recording).
     /// Used for vkCmdBlitImage, vkCmdCopyImage, compute dispatches, etc.
     fn execute_pass_transfer(
@@ -1159,35 +1215,41 @@ impl CompiledRenderGraph {
         // Transition depth image to DEPTH_STENCIL_ATTACHMENT_OPTIMAL before rendering
         // - First pass: From UNDEFINED (discards previous content, sky will clear)
         // - Subsequent passes: From DEPTH_STENCIL_ATTACHMENT_OPTIMAL (preserve grid depth for geometry occlusion)
+        // Only transition if we have both a depth attachment AND a valid depth image
+        // (For preview graphs, depth_image may be null - they handle their own barriers)
         if let Some(_depth_attachment) = depth_attachment {
-            let old_layout = if pass_index == 0 {
-                vk::ImageLayout::UNDEFINED
-            } else {
-                vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL
-            };
+            // Check if depth_image is valid (not null handle)
+            let depth_is_valid = depth_image.vk() != vk::Image::null();
+            if depth_is_valid {
+                let old_layout = if pass_index == 0 {
+                    vk::ImageLayout::UNDEFINED
+                } else {
+                    vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL
+                };
 
-            let barrier = ImageMemoryBarrier2::new(depth_image)
-                .src_stage(PipelineStage2Flags::LATE_FRAGMENT_TESTS)
-                .src_access(AccessFlags2::DEPTH_STENCIL_ATTACHMENT_WRITE)
-                .dst_stage(PipelineStage2Flags::EARLY_FRAGMENT_TESTS)
-                .dst_access(AccessFlags2::DEPTH_STENCIL_ATTACHMENT_READ.union(AccessFlags2::DEPTH_STENCIL_ATTACHMENT_WRITE))
-                .old_layout(old_layout)
-                .new_layout(vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL)
-                .subresource_range(vk::ImageSubresourceRange {
-                    aspect_mask: vk::ImageAspectFlags::DEPTH | vk::ImageAspectFlags::STENCIL,
-                    base_mip_level: 0,
-                    level_count: 1,
-                    base_array_layer: 0,
-                    layer_count: 1,
-                });
+                let barrier = ImageMemoryBarrier2::new(depth_image)
+                    .src_stage(PipelineStage2Flags::LATE_FRAGMENT_TESTS)
+                    .src_access(AccessFlags2::DEPTH_STENCIL_ATTACHMENT_WRITE)
+                    .dst_stage(PipelineStage2Flags::EARLY_FRAGMENT_TESTS)
+                    .dst_access(AccessFlags2::DEPTH_STENCIL_ATTACHMENT_READ.union(AccessFlags2::DEPTH_STENCIL_ATTACHMENT_WRITE))
+                    .old_layout(old_layout)
+                    .new_layout(vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL)
+                    .subresource_range(vk::ImageSubresourceRange {
+                        aspect_mask: vk::ImageAspectFlags::DEPTH | vk::ImageAspectFlags::STENCIL,
+                        base_mip_level: 0,
+                        level_count: 1,
+                        base_array_layer: 0,
+                        layer_count: 1,
+                    });
 
-            DependencyInfo::new()
-                .add_image_barrier(barrier)
-                .build(|dep_info| unsafe {
-                    self.context
-                        .device
-                        .cmd_pipeline_barrier2(command_buffer.vk_command_buffer(), dep_info);
-                });
+                DependencyInfo::new()
+                    .add_image_barrier(barrier)
+                    .build(|dep_info| unsafe {
+                        self.context
+                            .device
+                            .cmd_pipeline_barrier2(command_buffer.vk_command_buffer(), dep_info);
+                    });
+            }
         }
 
         // Create execution context early so pre_execute can use it

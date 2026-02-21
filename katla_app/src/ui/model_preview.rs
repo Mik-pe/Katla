@@ -14,12 +14,15 @@
 //! not by adding model-specific code to katla_vulkan. The render graph
 //! can support multiple cameras/viewports for different purposes.
 
+use std::cell::RefCell;
 use std::path::PathBuf;
 use std::rc::Rc;
 
 use katla_math::{Mat4, Vec2, Vec3};
 use katla_ui::TextureId;
+use katla_vulkan::{MaterialHandle, MaterialRegistry, MeshHandle, VulkanContext, VulkanRenderer};
 
+use crate::rendering::{Material, Mesh};
 use crate::util::{GLTFModel, LoadId};
 
 /// Loading state for model preview.
@@ -259,6 +262,10 @@ pub struct ModelPreviewState {
     pub load_id: Option<LoadId>,
     /// Panel width in pixels (when visible).
     pub panel_width: f32,
+    /// GPU mesh handle (uploaded to renderer).
+    pub mesh_handle: Option<MeshHandle>,
+    /// GPU material handle (uploaded to renderer).
+    pub material_handle: Option<MaterialHandle>,
 }
 
 impl ModelPreviewState {
@@ -278,7 +285,152 @@ impl ModelPreviewState {
             load_state: LoadState::Idle,
             load_id: None,
             panel_width: 300.0,
+            mesh_handle: None,
+            material_handle: None,
         }
+    }
+
+    /// Upload the model to GPU for preview rendering.
+    ///
+    /// This creates mesh and material handles that can be used for draw calls.
+    /// Should be called after model is loaded and before the first render frame.
+    ///
+    /// Uses the MaterialRegistry to create a template-based material that's
+    /// compatible with the storage buffer system used by the preview render graph.
+    pub fn upload_to_gpu(
+        &mut self,
+        context: &Rc<VulkanContext>,
+        renderer: &mut VulkanRenderer,
+        material_registry: &Rc<RefCell<MaterialRegistry>>,
+    ) {
+        if let Some(model) = &self.model {
+            // Create mesh from model
+            let mut mesh = Mesh::new_from_model(Rc::clone(model), context.clone());
+
+            // Create material using template (compatible with storage buffers)
+            let material = self.create_template_material(model, context, material_registry);
+
+            // Register mesh with renderer
+            let vertex_buffer = mesh.vertex_buffer.take();
+            let index_buffer = mesh.index_buffer.take();
+            let mesh_handle = renderer.register_mesh(vertex_buffer, index_buffer);
+
+            // Register material with renderer using get_registration_data()
+            let (pipeline, texture, vertex_binding, uniform, pbr_textures, pbr_refs, texture_indices, emission_index) =
+                material.get_registration_data();
+
+            let material_handle = if let Some(pbr) = pbr_textures {
+                // Use PBR registration for materials with PBR textures
+                renderer.register_material_pbr(
+                    pipeline,
+                    texture,
+                    vertex_binding,
+                    uniform,
+                    pbr,
+                    pbr_refs.unwrap_or_default(),
+                    texture_indices,
+                    emission_index,
+                )
+            } else {
+                // Use full registration for other materials
+                renderer.register_material_full(
+                    pipeline,
+                    texture,
+                    vertex_binding,
+                    uniform,
+                    texture_indices,
+                    emission_index,
+                )
+            };
+
+            self.mesh_handle = Some(mesh_handle);
+            self.material_handle = Some(material_handle);
+
+            log::debug!(
+                "Preview model uploaded: mesh={:?}, material={:?}",
+                mesh_handle,
+                material_handle
+            );
+        }
+    }
+
+    /// Create a template-based material for preview rendering.
+    ///
+    /// Uses the MaterialRegistry to get a template that's compatible with
+    /// the storage buffer system.
+    fn create_template_material(
+        &self,
+        model: &Rc<GLTFModel>,
+        context: &Rc<VulkanContext>,
+        material_registry: &Rc<RefCell<MaterialRegistry>>,
+    ) -> Material {
+        let registry = material_registry.borrow();
+
+        // Determine which template to use based on whether model has skinning
+        let template_name = if model.has_skinning {
+            "gltf_skinned_pbr_bindless"
+        } else {
+            "gltf_default"
+        };
+
+        if let Some(template) = registry.get_template(template_name) {
+            // Get the correct texture index from material info
+            let texture_index = model.materials.first()
+                .and_then(|m| m.base_color_texture)
+                .unwrap_or(0);
+
+            // Extract texture from the GLTF model
+            let texture = model.images.get(texture_index)
+                .and_then(|image| Self::load_texture_from_gltf(image, context));
+
+            Material::from_template(template, texture, None)
+        } else {
+            log::warn!("Template '{}' not found, falling back to direct material creation", template_name);
+            drop(registry);
+            Material::new(Rc::clone(model), context.clone())
+        }
+    }
+
+    /// Load a texture from a GLTF image.
+    fn load_texture_from_gltf(image: &gltf::image::Data, context: &Rc<VulkanContext>) -> Option<Rc<katla_vulkan::Texture>> {
+        use katla_vulkan::ImageFormat;
+
+        match image.format {
+            gltf::image::Format::R8G8B8 => {
+                let tex = katla_vulkan::Texture::create_image_rgb(
+                    context.clone(),
+                    image.width,
+                    image.height,
+                    image.pixels.as_slice(),
+                );
+                Some(Rc::new(tex))
+            }
+            gltf::image::Format::R8G8B8A8 => {
+                let tex = katla_vulkan::Texture::create_image(
+                    context.clone(),
+                    image.width,
+                    image.height,
+                    ImageFormat::R8G8B8A8Srgb,
+                    image.pixels.as_slice(),
+                );
+                Some(Rc::new(tex))
+            }
+            _ => {
+                log::warn!("Unsupported texture format: {:?}", image.format);
+                None
+            }
+        }
+    }
+
+    /// Check if the preview has valid GPU resources.
+    pub fn has_gpu_resources(&self) -> bool {
+        self.mesh_handle.is_some() && self.material_handle.is_some()
+    }
+
+    /// Clear GPU resources (call when closing preview).
+    pub fn clear_gpu_resources(&mut self) {
+        self.mesh_handle = None;
+        self.material_handle = None;
     }
 
     /// Request to preview a model.
@@ -330,6 +482,7 @@ impl ModelPreviewState {
         self.stats = None;
         self.load_state = LoadState::Idle;
         self.load_id = None;
+        self.clear_gpu_resources();
     }
 
     /// Check if currently loading a model.
