@@ -39,6 +39,9 @@ fn coverage_to_alpha(coverage: f32) -> f32 {
 }
 
 /// Convert alpha value back to coverage (inverse of gamma correction).
+///
+/// This is kept for completeness but not currently used.
+#[allow(dead_code)]
 fn alpha_to_coverage(alpha: f32) -> f32 {
     alpha.powf(GAMMA_FACTOR)
 }
@@ -374,7 +377,7 @@ impl FontSystem {
             .glyph_cache
             .get(&(font_id, c, size_key, scale_key, subpixel_bin))
         {
-            return Some(cached.clone());
+            return Some(*cached);
         }
 
         let font = self.fonts.get(&font_id)?;
@@ -419,7 +422,7 @@ impl FontSystem {
                 };
                 self.glyph_cache.insert(
                     (font_id, c, size_key, scale_key, subpixel_bin),
-                    cached.clone(),
+                    cached,
                 );
                 return Some(cached);
             }
@@ -460,7 +463,7 @@ impl FontSystem {
             };
             self.glyph_cache.insert(
                 (font_id, c, size_key, scale_key, subpixel_bin),
-                cached.clone(),
+                cached,
             );
             return Some(cached);
         }
@@ -498,7 +501,7 @@ impl FontSystem {
         // Cache the result (includes subpixel bin in key)
         self.glyph_cache.insert(
             (font_id, c, size_key, scale_key, subpixel_bin),
-            cached.clone(),
+            cached,
         );
 
         Some(cached)
@@ -538,16 +541,14 @@ impl FontSystem {
         }
 
         // Check if we have space - grow atlas if needed
-        if self.atlas_cursor_y + glyph_h > self.atlas_height {
-            if !self.grow_atlas() {
-                log::warn!(
-                    "Font atlas full at max size! Glyph '{}' ({}x{}) doesn't fit.",
-                    glyph.c,
-                    glyph_w,
-                    glyph_h
-                );
-                return None;
-            }
+        if self.atlas_cursor_y + glyph_h > self.atlas_height && !self.grow_atlas() {
+            log::warn!(
+                "Font atlas full at max size! Glyph '{}' ({}x{}) doesn't fit.",
+                glyph.c,
+                glyph_w,
+                glyph_h
+            );
+            return None;
         }
 
         let x = self.atlas_cursor_x + padding;

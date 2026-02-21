@@ -204,6 +204,30 @@ pub struct UiStyle {
     pub item_inner_spacing: f32,
     /// Indent for nested items.
     pub indent_spacing: f32,
+
+    // Widget dimensions
+    /// Slider track height.
+    pub slider_track_height: f32,
+    /// Slider grab handle size.
+    pub slider_grab_size: f32,
+    /// Default checkbox size.
+    pub checkbox_size: f32,
+    /// Text input cursor width.
+    pub text_input_cursor_width: f32,
+    /// Text input padding.
+    pub text_input_padding: f32,
+    /// Panel padding.
+    pub panel_padding: f32,
+    /// Window title bar height.
+    pub title_bar_height: f32,
+    /// Graph label area height.
+    pub graph_label_height: f32,
+    /// Graph padding.
+    pub graph_padding: f32,
+    /// Separator height.
+    pub separator_height: f32,
+    /// Tooltip padding.
+    pub tooltip_padding: f32,
 }
 
 impl UiStyle {
@@ -279,6 +303,19 @@ impl UiStyle {
             item_spacing: 8.0,
             item_inner_spacing: 4.0,
             indent_spacing: 20.0,
+
+            // Widget dimensions (dark theme)
+            slider_track_height: 4.0,
+            slider_grab_size: 12.0,
+            checkbox_size: 20.0,
+            text_input_cursor_width: 1.0,
+            text_input_padding: 4.0,
+            panel_padding: 8.0,
+            title_bar_height: 25.0,
+            graph_label_height: 18.0,
+            graph_padding: 3.0,
+            separator_height: 8.0,
+            tooltip_padding: 4.0,
         }
     }
 
@@ -354,6 +391,19 @@ impl UiStyle {
             item_spacing: 8.0,
             item_inner_spacing: 4.0,
             indent_spacing: 20.0,
+
+            // Widget dimensions (light theme)
+            slider_track_height: 4.0,
+            slider_grab_size: 12.0,
+            checkbox_size: 20.0,
+            text_input_cursor_width: 1.0,
+            text_input_padding: 4.0,
+            panel_padding: 8.0,
+            title_bar_height: 25.0,
+            graph_label_height: 18.0,
+            graph_padding: 3.0,
+            separator_height: 8.0,
+            tooltip_padding: 4.0,
         }
     }
 }
@@ -459,6 +509,19 @@ impl UiStyle {
             item_spacing: 6.0,
             item_inner_spacing: 3.0,
             indent_spacing: 18.0,
+
+            // Widget dimensions (classic theme)
+            slider_track_height: 4.0,
+            slider_grab_size: 12.0,
+            checkbox_size: 18.0,
+            text_input_cursor_width: 1.0,
+            text_input_padding: 4.0,
+            panel_padding: 6.0,
+            title_bar_height: 22.0,
+            graph_label_height: 16.0,
+            graph_padding: 3.0,
+            separator_height: 6.0,
+            tooltip_padding: 4.0,
         }
     }
 }
