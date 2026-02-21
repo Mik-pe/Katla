@@ -15,7 +15,7 @@ pub use errors::RenderGraphError;
 pub use frame_resources::{FrameResources, RenderTarget};
 pub use graph::*;
 pub use pass::{Attachment, Pass, PassBuilder, PassCategory, PassExecutionContext};
-pub use renderer_context::{EmptyRenderFrameContext, RenderFrameContext, RendererContext};
+pub use renderer_context::{EmptyRenderFrameContext, RenderFrameContext, RendererContext, RendererContextPointers};
 pub use resource::{
     CompiledResource, Resource, ResourceAccessType, ResourceId, ResourceKind, ResourceLifetime,
     ResourceNameMap, ResourceUsage,

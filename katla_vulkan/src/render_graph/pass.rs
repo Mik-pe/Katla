@@ -687,7 +687,7 @@ impl PassExecutionContext {
 
         // Get device from renderer context
         if let Some(ctx) = &self.renderer_context {
-            if let Some(device) = &ctx.device {
+            if let Some(device) = ctx.vk_device() {
                 unsafe {
                     device.cmd_blit_image(
                         self.command_buffer.vk_command_buffer(),
@@ -768,31 +768,21 @@ impl PassExecutionContext {
             return;
         };
 
-        // Get asset registry
-        let registry = match &ctx.asset_registry {
-            Some(cell) => cell.borrow(),
-            None => return,
-        };
-
-        // Get storage manager
-        let mut storage_manager = match &ctx.storage_manager {
-            Some(cell) => cell.borrow_mut(),
-            None => return,
+        // Get asset registry via pointer accessor
+        let Some(registry) = ctx.asset_registry() else {
+            return;
         };
 
         // Get storage descriptor set
         let storage_descriptor = ctx.storage_descriptor();
 
-        // Get bindless manager
-        let bindless_descriptor = match &ctx.bindless_manager {
-            Some(cell) => cell.borrow().as_ref().map(|m| m.vk_descriptor_set()),
-            None => None,
-        };
+        // Get bindless manager via pointer accessor
+        let bindless_descriptor = ctx.bindless_manager()
+            .and_then(|bm| bm.as_ref().map(|m| m.vk_descriptor_set()));
 
-        // Get skeleton descriptors
-        let skeleton_descriptors = match &ctx.skeleton_descriptors {
-            Some(cell) => cell.borrow(),
-            None => return,
+        // Get skeleton descriptors via pointer accessor
+        let Some(skeleton_descriptors) = ctx.skeleton_descriptors() else {
+            return;
         };
 
         let mut next_object_index: u32 = 0;
@@ -803,21 +793,23 @@ impl PassExecutionContext {
             let first_instance = next_object_index;
             next_object_index += instance_count;
 
-            // Update uniforms first
+            // Update uniforms first - get storage_manager fresh for each iteration
             if let Some(material) = registry.get_material(draw.material) {
-                if let Some(ref mut manager) = *storage_manager {
-                    let model: [[f32; 4]; 4] = bytemuck::cast(draw.model_matrix);
-                    let color = draw.color.unwrap_or([1.0, 1.0, 1.0, 1.0]);
-                    manager.update_object_bindless(
-                        first_instance as usize,
-                        &model,
-                        &color,
-                        draw.metallic,
-                        draw.roughness,
-                        draw.ao,
-                        material.emission_index as f32,
-                        material.texture_indices,
-                    );
+                if let Some(storage_manager_opt) = ctx.storage_manager() {
+                    if let Some(manager) = storage_manager_opt.as_mut() {
+                        let model: [[f32; 4]; 4] = bytemuck::cast(draw.model_matrix);
+                        let color = draw.color.unwrap_or([1.0, 1.0, 1.0, 1.0]);
+                        manager.update_object_bindless(
+                            first_instance as usize,
+                            &model,
+                            &color,
+                            draw.metallic,
+                            draw.roughness,
+                            draw.ao,
+                            material.emission_index as f32,
+                            material.texture_indices,
+                        );
+                    }
                 }
             }
 
@@ -888,21 +880,20 @@ impl PassExecutionContext {
             return;
         };
 
-        // Get UI data
-        let ui_data = match &ctx.ui_data {
-            Some(cell) => cell.borrow(),
-            None => return,
+        // Get UI data via pointer accessor
+        let Some(ui_data_cell) = ctx.ui_data() else {
+            return;
         };
+        let ui_data = ui_data_cell.borrow();
         let Some(ui_data) = ui_data.as_ref() else {
             return;
         };
 
-        // Get UI textures
-        let ui_textures = match &ctx.ui_textures {
-            Some(cell) => cell.borrow(),
-            None => return,
+        // Get UI textures via pointer accessor
+        let Some(ui_textures_opt) = ctx.ui_textures() else {
+            return;
         };
-        let Some(ui_textures) = ui_textures.as_ref() else {
+        let Some(ui_textures) = ui_textures_opt.as_ref() else {
             return;
         };
 
@@ -910,16 +901,14 @@ impl PassExecutionContext {
             return;
         }
 
-        // Get frame index
-        let frame_idx = match &ctx.ui_frame_index {
-            Some(cell) => *cell.borrow(),
-            None => return,
+        // Get frame index via pointer accessor
+        let Some(frame_idx) = ctx.ui_frame_index() else {
+            return;
         };
 
-        // Get UI buffers
-        let ui_buffers = match &ctx.ui_buffers {
-            Some(cell) => cell.borrow(),
-            None => return,
+        // Get UI buffers via pointer accessor
+        let Some(ui_buffers) = ctx.ui_buffers() else {
+            return;
         };
 
         // Bind pipeline

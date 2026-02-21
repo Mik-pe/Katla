@@ -1385,12 +1385,42 @@ impl VulkanRenderer {
     pub fn compile_render_graph(&mut self, builder: RenderGraphBuilder) -> Result<(), render_graph::RenderGraphError> {
         let mut graph = builder.build(&self.context)?;
 
-        // Set up resource IDs for viewport updates
-        // (These are set from the FrameResources that was created alongside the builder)
-        // Note: The caller should ensure viewport resources match
+        // Set up renderer context for safe access to renderer state
+        let renderer_context = self.create_renderer_context();
+        graph.set_renderer_context(Rc::new(renderer_context));
 
         self.render_graph = Some(graph);
         Ok(())
+    }
+
+    /// Create a RendererContext for the current renderer state.
+    ///
+    /// This is used to safely pass renderer state to render graph passes
+    /// without requiring unsafe pointer patterns.
+    fn create_renderer_context(&self) -> render_graph::RendererContext {
+        use std::ptr;
+
+        // SAFETY: These pointers are valid for the lifetime of VulkanRenderer.
+        // The render graph is stored in VulkanRenderer and will not outlive it.
+        render_graph::RendererContext {
+            pointers: render_graph::RendererContextPointers {
+                asset_registry: unsafe { std::ptr::addr_of!(self.asset_registry) as *mut _ },
+                storage_manager: unsafe { std::ptr::addr_of!(self.storage_manager) as *mut _ },
+                storage_descriptor_set: std::ptr::addr_of!(self.storage_descriptor_set),
+                skeleton_descriptors: std::ptr::addr_of!(self.skeleton_descriptors),
+                bindless_manager: unsafe { std::ptr::addr_of!(self.bindless_manager) as *mut _ },
+                vk_device: Some(self.context.device.clone()),
+                ui_data: std::ptr::addr_of!(self.ui_data),
+                ui_buffers: std::ptr::addr_of!(self.ui_buffers),
+                ui_textures: std::ptr::addr_of!(self.ui_textures),
+                ui_frame_index: std::ptr::addr_of!(self.ui_frame_index),
+            },
+            draw_list: self.draw_list_cell.clone(),
+            // Application-specific pipelines (not used by generic RHI)
+            sky_pipeline: None,
+            grid_pipeline: None,
+            ui_pipeline: None,
+        }
     }
 
     // ========================================================================
