@@ -231,6 +231,8 @@ pub struct EditorUI {
     pub model_preview: ModelPreviewState,
     /// Currently focused panel (receives keyboard input).
     pub focused_panel: FocusedPanel,
+    /// Main viewport texture ID (set by application during setup).
+    pub main_viewport_texture_id: katla_ui::TextureId,
 }
 
 impl EditorUI {
@@ -266,6 +268,7 @@ impl EditorUI {
             asset_browser: AssetBrowserState::new(),
             model_preview: ModelPreviewState::new(),
             focused_panel: FocusedPanel::Viewport, // Default to viewport
+            main_viewport_texture_id: katla_ui::TextureId::VIEWPORT, // Will be updated during setup
         }
     }
 
@@ -1590,7 +1593,7 @@ impl EditorUI {
             Vec2::new(0.0, 0.0), // uv_min
             Vec2::new(1.0, 1.0), // uv_max
             Color::OPAQUE_IMAGE,
-            katla_ui::TextureId::VIEWPORT,
+            self.main_viewport_texture_id,
         );
 
         // Viewport border - draw ONLY the border lines, not a filled rect
