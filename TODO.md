@@ -54,11 +54,6 @@ TODO
 
 ### Remaining Work
 
-#### Phase 1: Complete Application Migration
-- [ ] Ensure `compile_render_graph()` properly passes RendererContext to passes
-- [ ] Test that everything still renders
-- [ ] Fix any compilation errors
-
 #### Phase 2: Clean Up RendererContext
 - [ ] Review RendererContext fields - remove application-specific stuff
 - [ ] RendererContext should only have GENERIC renderer state:
@@ -66,12 +61,7 @@ TODO
   - NOT: ui_data, ui_buffers, ui_textures, sky_pipeline, etc.
 - [ ] Move UI-specific rendering to application layer
 
-#### Phase 3: Remove Legacy Code
-- [ ] Remove `rebuild_render_graph_internal()` method
-- [ ] Remove `setup_render_graph()` method
-- [ ] All render graph building happens in application layer
-
-#### Phase 4: Fix Pre-existing Issues
+#### Phase 3: Fix Pre-existing Issues
 - [ ] Fix image layout transitions in present pass
 - [ ] Fix descriptor set binding issues
 - [ ] Unified "RenderTarget" concept (single type for swapchain/viewport/texture)
@@ -81,5 +71,6 @@ TODO
 - ✅ Infrastructure for new API is in place
 - ✅ Application uses clean API without ash::vk
 - ✅ Pipeline ownership moved to application
+- ✅ Legacy render graph code removed from VulkanRenderer
 - ⚠️ RendererContext still has UI-specific fields (needs cleanup)
 - ⚠️ Pre-existing validation errors remain
