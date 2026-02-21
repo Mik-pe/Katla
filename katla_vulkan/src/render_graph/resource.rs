@@ -2,7 +2,6 @@ use std::collections::HashMap;
 use std::fmt;
 use std::ops::AddAssign;
 
-use ash::vk;
 
 /// Unique identifier for a render graph resource.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]

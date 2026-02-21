@@ -203,9 +203,9 @@ impl ApplicationHandler for Application {
                             renderer.wait_for_device();
                             renderer.recreate_swapchain();
                             let _ =
-                                renderer.init_viewport_target(new_width as u32, new_height as u32);
+                                renderer.init_viewport_target(new_width, new_height as u32);
                             let _ =
-                                renderer.init_output_target(new_width as u32, new_height as u32);
+                                renderer.init_output_target(new_width, new_height as u32);
 
                             // Rebuild render graph with existing pipelines
                             let grid_to_use = if self.editor_ui.show_grid {
@@ -485,7 +485,7 @@ impl Application {
         renderer: &mut VulkanRenderer,
         material_registry: &Rc<RefCell<katla_vulkan::MaterialRegistry>>,
     ) {
-        use crate::components::{Children, NameComponent, Parent};
+        
 
         // Load Fox model with skeletal animation
         let fox_entity = self.load_fox_model(renderer, material_registry);
@@ -496,19 +496,19 @@ impl Application {
             .color([1.0, 0.3, 0.3])
             .build(&mut self.world, renderer);
 
-        let sphere = MeshBuilder::new(renderer.context.clone())
+        let _sphere = MeshBuilder::new(renderer.context.clone())
             .position(Vec3::new(30.0, 5.0, 0.0))
             .color([0.3, 1.0, 0.3])
             .sphere()
             .build(&mut self.world, renderer);
 
-        let cylinder = MeshBuilder::new(renderer.context.clone())
+        let _cylinder = MeshBuilder::new(renderer.context.clone())
             .position(Vec3::new(-30.0, 5.0, 0.0))
             .color([0.3, 0.3, 1.0])
             .cylinder()
             .build(&mut self.world, renderer);
 
-        let plane = MeshBuilder::new(renderer.context.clone())
+        let _plane = MeshBuilder::new(renderer.context.clone())
             .position(Vec3::new(0.0, -5.0, 0.0))
             .color([0.8, 0.8, 0.8])
             .plane()
@@ -682,7 +682,7 @@ impl Application {
         &mut self,
         fox_entity: EntityId,
         torus: EntityId,
-        cube: EntityId,
+        _cube: EntityId,
     ) {
         use crate::components::{Children, NameComponent, Parent};
 
@@ -804,7 +804,7 @@ impl Application {
                         // Load the model via FileCache (main thread, ensures proper data ownership)
                         let model = self.gltf_cache.read(path.clone());
                         // Update model preview with loaded model
-                        use std::rc::Rc;
+                        
                         self.editor_ui.model_preview.on_model_loaded(model);
                         info!("Model preview loaded: {:?}", path);
                     }

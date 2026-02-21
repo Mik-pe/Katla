@@ -10,7 +10,7 @@
 use katla_ecs::EntityId;
 use katla_math::{Color, Rect2D, Vec2, Vec3};
 use katla_ui::{input::mouse_button, DrawList, FontId, FontSize, ForkAwesome, TextureId, UiContext};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::path::PathBuf;
 
 use super::asset_browser::AssetBrowserState;
@@ -1029,7 +1029,7 @@ impl EditorUI {
         let help_bounds = Rect2D::from_origin_size(cursor, Vec2::new(menu_item_width, button_height));
         if ui.begin_menu_item("help_menu", "Help", help_bounds) {
             let item_height = 24.0;
-            let mut item_y = help_bounds.max.y();
+            let item_y = help_bounds.max.y();
 
             // About
             let about_bounds = Rect2D::from_origin_size(
@@ -1977,7 +1977,7 @@ impl EditorUI {
 
         // === TAB CONTENT ===
         let content_start_y = panel_bounds.min.y() + title_bar_height + tab_bar_height + 8.0;
-        let mut cursor = Vec2::new(panel_bounds.min.x() + 16.0, content_start_y);
+        let cursor = Vec2::new(panel_bounds.min.x() + 16.0, content_start_y);
         let content_width = panel_width - 32.0;
         let row_height = 28.0;
         let spacing = 8.0;
@@ -2623,7 +2623,7 @@ impl EditorUI {
                 super::model_preview::LoadState::Failed(error) => {
                     // Show error message
                     ui.draw_rect(preview_bounds, theme.background_dark);
-                    let text = format!("Failed to load");
+                    let text = "Failed to load".to_string();
                     let text_size = ui.measure_text(&text, ui.scaled_font_size(FontSize::Medium));
                     ui.draw_text(
                         &text,

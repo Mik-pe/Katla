@@ -3,7 +3,7 @@ use crate::sync::{
     COLOR_SUBRESOURCE_RANGE, DEPTH_SUBRESOURCE_RANGE,
 };
 use ash::vk;
-use log::{debug, info, warn};
+use log::{debug, info};
 
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -758,7 +758,7 @@ impl CompiledRenderGraph {
                 } else if let Some(CompiledResource::ExternalImage { extent, .. }) =
                     resources.get(resource_id)
                 {
-                    (*extent).into()
+                    (*extent)
                 } else {
                     return Err(RenderGraphError::CompilationError(format!(
                         "Cannot determine extent for resource {:?} - no explicit extent set",
@@ -868,11 +868,10 @@ impl CompiledRenderGraph {
                     .find(|u| u.resource_id == *input_resource_id);
 
                 if let Some(usage) = usage_info {
-                    if usage.layout == ImageLayout::TransferSrcOptimal {
-                        if !transfer_src_resources.contains(input_resource_id) {
+                    if usage.layout == ImageLayout::TransferSrcOptimal
+                        && !transfer_src_resources.contains(input_resource_id) {
                             transfer_src_resources.push(*input_resource_id);
                         }
-                    }
                 }
             }
 
@@ -1088,7 +1087,7 @@ impl CompiledRenderGraph {
         &mut self,
         command_buffer: &mut CommandBuffer,
         pass_index: usize,
-        is_last_pass: bool,
+        _is_last_pass: bool,
     ) -> Result<(), RenderGraphError> {
         let pass = &self.passes[pass_index];
 
@@ -1219,8 +1218,8 @@ impl CompiledRenderGraph {
         pass_index: usize,
         _image_index: usize,
         _swapchain_images: &[VkImage],
-        depth_image: VkImage,
-        is_last_pass: bool,
+        _depth_image: VkImage,
+        _is_last_pass: bool,
     ) -> Result<(), RenderGraphError> {
         let pass = &self.passes[pass_index];
 

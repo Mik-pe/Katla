@@ -1,7 +1,7 @@
 use std::rc::Rc;
 
 use katla_ecs::{EntityId, World};
-use katla_math::{Mat4, Transform};
+use katla_math::Transform;
 use katla_vulkan::{MaterialHandle, MaterialRegistry, MeshHandle, VulkanContext, VulkanRenderer};
 use log::{debug, info, warn};
 
@@ -286,11 +286,11 @@ impl Model {
             if let Some(ref mut r) = renderer {
                 if let Some(manager) = r.bindless_manager_mut() {
                     // Register textures with bindless manager
-                    let albedo_idx = manager.register_texture(albedo_tex.image_view.clone()).unwrap_or(DEFAULT_ALBEDO_SLOT);
-                    let normal_idx = manager.register_texture(normal_tex.image_view.clone()).unwrap_or(DEFAULT_NORMAL_SLOT);
-                    let mr_idx = manager.register_texture(mr_tex.image_view.clone()).unwrap_or(DEFAULT_MR_SLOT);
-                    let ao_idx = manager.register_texture(occlusion_tex.image_view.clone()).unwrap_or(DEFAULT_AO_SLOT);
-                    let emiss_idx = manager.register_texture(emission_tex.image_view.clone()).unwrap_or(DEFAULT_EMISSION_SLOT);
+                    let albedo_idx = manager.register_texture(albedo_tex.image_view).unwrap_or(DEFAULT_ALBEDO_SLOT);
+                    let normal_idx = manager.register_texture(normal_tex.image_view).unwrap_or(DEFAULT_NORMAL_SLOT);
+                    let mr_idx = manager.register_texture(mr_tex.image_view).unwrap_or(DEFAULT_MR_SLOT);
+                    let ao_idx = manager.register_texture(occlusion_tex.image_view).unwrap_or(DEFAULT_AO_SLOT);
+                    let emiss_idx = manager.register_texture(emission_tex.image_view).unwrap_or(DEFAULT_EMISSION_SLOT);
 
                     debug!("  Bindless texture slots: albedo={}, normal={}, mr={}, ao={}, emission={}",
                         albedo_idx, normal_idx, mr_idx, ao_idx, emiss_idx);
@@ -308,12 +308,12 @@ impl Model {
 
         // Create PbrTextureSet for legacy mode (also needed to keep texture refs)
         let pbr_textures = PbrTextureSet::from_wrapped_shared_sampler(
-            albedo_tex.image_view.clone(),
-            normal_tex.image_view.clone(),
-            mr_tex.image_view.clone(),
-            occlusion_tex.image_view.clone(),
-            emission_tex.image_view.clone(),
-            albedo_tex.image_sampler.clone(),
+            albedo_tex.image_view,
+            normal_tex.image_view,
+            mr_tex.image_view,
+            occlusion_tex.image_view,
+            emission_tex.image_view,
+            albedo_tex.image_sampler,
         );
 
         // Keep texture refs alive

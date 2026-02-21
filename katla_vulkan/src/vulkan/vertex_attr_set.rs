@@ -61,9 +61,7 @@ impl VertexAttributeSet {
     /// Returns descriptions sorted by binding location for consistent pipeline creation.
     pub fn get_attribute_descriptions(&self) -> Vec<ash::vk::VertexInputAttributeDescription> {
         let mut bindings: Vec<_> = self
-            .attributes
-            .iter()
-            .map(|(attr, _)| (attr.default_location(), attr))
+            .attributes.keys().map(|attr| (attr.default_location(), attr))
             .collect();
 
         bindings.sort_by_key(|(location, _)| *location);
@@ -80,9 +78,7 @@ impl VertexAttributeSet {
     /// Returns descriptions sorted by binding location.
     pub fn get_binding_descriptions(&self) -> Vec<ash::vk::VertexInputBindingDescription> {
         let mut bindings: Vec<_> = self
-            .attributes
-            .iter()
-            .map(|(attr, _)| (attr.default_location(), attr))
+            .attributes.keys().map(|attr| (attr.default_location(), attr))
             .collect();
 
         bindings.sort_by_key(|(location, _)| *location);

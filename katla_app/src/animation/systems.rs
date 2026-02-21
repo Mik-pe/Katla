@@ -133,17 +133,11 @@ impl AnimationUpdateSystem {
     }
 }
 
+#[derive(Default)]
 pub struct SkeletalAnimationSystem {
     sample_buffer: SampleBuffer,
 }
 
-impl Default for SkeletalAnimationSystem {
-    fn default() -> Self {
-        Self {
-            sample_buffer: SampleBuffer::new(),
-        }
-    }
-}
 
 impl System for SkeletalAnimationSystem {
     fn update(&mut self, world: &mut World, _delta_time: f32) {
@@ -194,7 +188,7 @@ impl System for SkeletalAnimationSystem {
                 )
             };
 
-            let (player_time, clip_name) = player_info;
+            let (_player_time, _clip_name) = player_info;
             let (joint_count, skin_joints, inverse_bind_matrices) = skin_info;
             let sampled_values = model_info.unwrap_or_default();
 

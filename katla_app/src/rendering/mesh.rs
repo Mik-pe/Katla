@@ -5,7 +5,7 @@ pub mod plane;
 pub mod sphere;
 pub mod torus;
 
-use crate::rendering::{VertexPBR, VertexSkinned};
+use crate::rendering::VertexPBR;
 use crate::util::GLTFModel;
 pub use builder::*;
 pub use cube::*;
@@ -103,7 +103,7 @@ impl Mesh {
     /// * `model` - GLTF model with parsed attributes
     /// * `context` - Vulkan context
     pub fn new_from_model_soa(model: Rc<GLTFModel>, context: Rc<VulkanContext>) -> Self {
-        use crate::util::gltf_parser::ParsedAttributes;
+        
 
         let index_type = match model.index_stride {
             1 => IndexType::Uint8,
@@ -432,7 +432,7 @@ impl Mesh {
         let data_slice = unsafe {
             std::slice::from_raw_parts(
                 data.as_ptr() as *const u8,
-                data.len() * std::mem::size_of::<T>(),
+                std::mem::size_of_val(data),
             )
         };
 

@@ -47,8 +47,10 @@ pub enum AssetType {
 
 /// Thumbnail loading state for an asset.
 #[derive(Debug, Clone)]
+#[derive(Default)]
 pub enum ThumbnailState {
     /// Thumbnail not yet loaded or requested.
+    #[default]
     Pending,
     /// Currently loading in background thread.
     Loading,
@@ -58,11 +60,6 @@ pub enum ThumbnailState {
     Failed,
 }
 
-impl Default for ThumbnailState {
-    fn default() -> Self {
-        Self::Pending
-    }
-}
 
 impl AssetType {
     /// Determine asset type from file extension.
@@ -221,7 +218,10 @@ impl AssetBrowserState {
         let current_path = PathBuf::from("resources");
         let nav_history = vec![current_path.clone()];
 
-        let mut state = Self {
+        
+
+        // Initial scan will happen in build_asset_browser when needs_rescan() returns true
+        Self {
             current_path,
             assets: Vec::new(),
             selected_index: None,
@@ -252,10 +252,7 @@ impl AssetBrowserState {
             confirm_dialog_open: false,
             confirm_dialog_message: String::new(),
             confirm_pending_action: None,
-        };
-
-        // Initial scan will happen in build_asset_browser when needs_rescan() returns true
-        state
+        }
     }
 
     /// Scan the current directory for assets.
@@ -299,11 +296,10 @@ impl AssetBrowserState {
                 }
 
                 // Apply search filter
-                if !self.search_filter.is_empty() {
-                    if !name.to_lowercase().contains(&self.search_filter.to_lowercase()) {
+                if !self.search_filter.is_empty()
+                    && !name.to_lowercase().contains(&self.search_filter.to_lowercase()) {
                         continue;
                     }
-                }
 
                 let asset_type = AssetType::from_path(&path);
 
@@ -1022,7 +1018,7 @@ pub fn build_asset_browser(
     let row_height = item_size + 24.0; // Item + label
 
     // Handle scrolling
-    let total_rows = (state.assets.len() + col_count - 1) / col_count;
+    let total_rows = state.assets.len().div_ceil(col_count);
     let content_height = total_rows as f32 * row_height;
     let max_scroll = state.max_scroll(content_height, content_bounds.height());
 
@@ -1301,7 +1297,7 @@ pub fn build_asset_browser(
             }
 
             // Check if visible in viewport
-            let col = i % col_count;
+            let _col = i % col_count;
             let row = i / col_count;
             let item_y = content_top + row as f32 * row_height - state.scroll_offset;
 
@@ -1507,11 +1503,10 @@ pub fn build_asset_browser(
         }
 
         // Commit on click outside
-        if ui.input.mouse_clicked(katla_ui::input::mouse_button::LEFT) {
-            if !ui.is_hovered(input_bounds) {
+        if ui.input.mouse_clicked(katla_ui::input::mouse_button::LEFT)
+            && !ui.is_hovered(input_bounds) {
                 should_commit = true;
             }
-        }
 
         // Process actions (only when focused)
         if is_focused {
@@ -1622,7 +1617,7 @@ pub fn build_asset_browser(
     if !ui.has_open_popup() && ui.is_hovered(content_bounds) {
         // Check if right-click was on empty space (not on any asset)
         let mut clicked_on_asset = false;
-        for (i, asset) in state.assets.iter().enumerate() {
+        for (i, _asset) in state.assets.iter().enumerate() {
             let col = i % col_count;
             let row = i / col_count;
             let item_x = bounds.min.x() + item_padding + col as f32 * (item_size + item_padding);

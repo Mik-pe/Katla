@@ -7,7 +7,7 @@ use std::{
 
 use crate::rendering::Material;
 use katla_vulkan::{MaterialHandle, VulkanContext, VulkanRenderer, MaterialRegistry};
-use log::{debug, error, info, warn};
+use log::{debug, error, info};
 use notify::{Watcher, RecursiveMode};
 
 /// ID for referencing a shared material.

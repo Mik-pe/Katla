@@ -266,7 +266,7 @@ pub fn render_debug_ui(app: &mut Application, dt: f32) {
 /// Collect entity information for the editor UI in tree order.
 pub fn collect_entity_info(app: &Application) -> Vec<EntityInfo> {
     use crate::animation::Skeleton;
-    use crate::components::AmbientLight;
+    
 
     // First pass: collect all entities with transforms and their relationships
     // EntityData: (name, position, rotation, scale, entity_type, components)

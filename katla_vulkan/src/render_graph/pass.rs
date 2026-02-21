@@ -318,7 +318,7 @@ impl PassBuilder {
             .find(|u| u.resource_id == resource_id)
         {
             usage.clear_value = Some(ClearValue::color(color[0], color[1], color[2], color[3]));
-            usage.load_op = crate::types::AttachmentLoadOp::Clear.into();
+            usage.load_op = crate::types::AttachmentLoadOp::Clear;
         }
         self
     }
@@ -337,9 +337,9 @@ impl PassBuilder {
             .find(|u| u.resource_id == resource_id)
         {
             usage.clear_value = Some(ClearValue::depth(depth, stencil));
-            usage.load_op = crate::types::AttachmentLoadOp::Clear.into();
+            usage.load_op = crate::types::AttachmentLoadOp::Clear;
             // Depth attachments typically don't need to store, so use DONT_CARE
-            usage.store_op = crate::types::AttachmentStoreOp::DontCare.into();
+            usage.store_op = crate::types::AttachmentStoreOp::DontCare;
         }
         self
     }
