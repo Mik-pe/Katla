@@ -101,6 +101,133 @@ impl CommandBuffer {
         }
     }
 
+    /// Bind descriptor sets with a specific first set index.
+    ///
+    /// This allows binding to set 1, 2, etc. for pipelines with multiple descriptor sets.
+    pub fn bind_descriptor_sets_with_offset(
+        &self,
+        pipeline_bind_point: vk::PipelineBindPoint,
+        pipeline_layout: vk::PipelineLayout,
+        first_set: u32,
+        descriptor_sets: &[vk::DescriptorSet],
+    ) {
+        unsafe {
+            self.device.cmd_bind_descriptor_sets(
+                self.command_buffer,
+                pipeline_bind_point,
+                pipeline_layout,
+                first_set,
+                descriptor_sets,
+                &[],
+            );
+        }
+    }
+
+    // ========================================================================
+    // Convenience Methods for Wrapper Types
+    // ========================================================================
+
+    /// Bind a graphics pipeline using wrapper types.
+    ///
+    /// This is a convenience method that wraps `cmd_bind_pipeline` with the
+    /// GRAPHICS bind point, eliminating repetitive unsafe blocks.
+    pub fn bind_graphics_pipeline(&self, pipeline: &super::material::MaterialPipeline) {
+        unsafe {
+            self.device.cmd_bind_pipeline(
+                self.command_buffer,
+                vk::PipelineBindPoint::GRAPHICS,
+                pipeline.vk_pipeline().vk_pipeline(),
+            );
+        }
+    }
+
+    /// Bind a graphics pipeline using a raw Pipeline.
+    pub fn bind_graphics_pipeline_raw(&self, pipeline: &super::material::Pipeline) {
+        unsafe {
+            self.device.cmd_bind_pipeline(
+                self.command_buffer,
+                vk::PipelineBindPoint::GRAPHICS,
+                pipeline.vk_pipeline(),
+            );
+        }
+    }
+
+    /// Bind a compute pipeline using wrapper types.
+    pub fn bind_compute_pipeline(&self, pipeline: &super::material::MaterialPipeline) {
+        unsafe {
+            self.device.cmd_bind_pipeline(
+                self.command_buffer,
+                vk::PipelineBindPoint::COMPUTE,
+                pipeline.vk_pipeline().vk_pipeline(),
+            );
+        }
+    }
+
+    /// Bind graphics descriptor sets using wrapper types.
+    ///
+    /// This is a convenience method that wraps `cmd_bind_descriptor_sets` with the
+    /// GRAPHICS bind point, eliminating repetitive unsafe blocks.
+    pub fn bind_graphics_descriptors(
+        &self,
+        pipeline_layout: vk::PipelineLayout,
+        descriptor_sets: &[vk::DescriptorSet],
+    ) {
+        unsafe {
+            self.device.cmd_bind_descriptor_sets(
+                self.command_buffer,
+                vk::PipelineBindPoint::GRAPHICS,
+                pipeline_layout,
+                0,
+                descriptor_sets,
+                &[],
+            );
+        }
+    }
+
+    /// Bind compute descriptor sets using wrapper types.
+    pub fn bind_compute_descriptors(
+        &self,
+        pipeline_layout: vk::PipelineLayout,
+        descriptor_sets: &[vk::DescriptorSet],
+    ) {
+        unsafe {
+            self.device.cmd_bind_descriptor_sets(
+                self.command_buffer,
+                vk::PipelineBindPoint::COMPUTE,
+                pipeline_layout,
+                0,
+                descriptor_sets,
+                &[],
+            );
+        }
+    }
+
+    /// Bind graphics pipeline and descriptors together.
+    ///
+    /// This is the most common pattern - bind a pipeline and its primary
+    /// descriptor set in one call.
+    pub fn bind_graphics_pipeline_with_descriptors(
+        &self,
+        pipeline: &super::material::MaterialPipeline,
+        descriptor_set: vk::DescriptorSet,
+    ) {
+        unsafe {
+            self.device.cmd_bind_pipeline(
+                self.command_buffer,
+                vk::PipelineBindPoint::GRAPHICS,
+                pipeline.vk_pipeline().vk_pipeline(),
+            );
+            self.device.cmd_bind_descriptor_sets(
+                self.command_buffer,
+                vk::PipelineBindPoint::GRAPHICS,
+                pipeline.vk_layout(),
+                0,
+                &[descriptor_set],
+                &[],
+            );
+        }
+    }
+
     pub fn bind_index_buffer(&self, buffer: vk::Buffer, offset: u64, index_type: IndexType) {
         let vk_index_type: vk::IndexType = index_type.into();
         unsafe {
