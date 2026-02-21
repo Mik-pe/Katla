@@ -1,13 +1,13 @@
 pub mod error;
 pub mod render_graph;
-pub mod rendering;
 pub mod renderer;
+pub mod rendering;
 pub mod sync;
 pub mod viewport;
 pub mod vulkan;
 
 pub use error::RendererError;
-use log::{debug, error, info, warn};
+use log::{error, info, warn};
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 pub use render_graph::errors::RenderGraphError;
 pub use render_graph::pass::{PassBuilder, PassExecutionContext};
@@ -23,24 +23,21 @@ pub use rendering::{
     },
 };
 pub use sync::{
-    VkBuffer, VkCommandBuffer, VkDescriptorPool, VkDescriptorSet, VkDescriptorSetLayout, VkFence, VkFramebuffer, VkImage,
-    VkImageView, VkPipeline, VkPipelineLayout, VkRenderPass, VkSampler, VkSemaphore,
+    VkBuffer, VkCommandBuffer, VkDescriptorPool, VkDescriptorSet, VkDescriptorSetLayout, VkFence,
+    VkFramebuffer, VkImage, VkImageView, VkPipeline, VkPipelineLayout, VkRenderPass, VkSampler,
+    VkSemaphore,
 };
+pub use viewport::{DepthFormat, OutputMode, ViewportBuilder, ViewportHandle};
 pub use vulkan::context::{ValidationMessage, ValidationMessageType, ValidationSeverity};
 pub use vulkan::material::storage_uniform::*;
 pub use vulkan::*;
-pub use viewport::{DepthFormat, OutputMode, ViewportBuilder, ViewportHandle};
 
 use ash::vk;
 use std::{cell::RefCell, ffi::CString, rc::Rc};
 use viewport::Viewport;
 
 // Internal imports (not re-exported)
-use sync::{
-    color_attachment_to_read_barrier, color_read_to_attachment_barrier, depth_attachment_barrier,
-    COLOR_SUBRESOURCE_RANGE, DEPTH_SUBRESOURCE_RANGE, DependencyInfo, ImageMemoryBarrier2,
-    AccessFlags2, PipelineStage2Flags,
-};
+use sync::{COLOR_SUBRESOURCE_RANGE, DEPTH_SUBRESOURCE_RANGE};
 
 pub struct FrameData {
     pub available_sem: VkSemaphore,
@@ -171,7 +168,10 @@ impl VulkanRenderer {
     pub fn init_bindless(&mut self) -> Result<(), RendererError> {
         let manager = BindlessTextureManager::new(self.context.clone())?;
         self.bindless_manager = Some(manager);
-        info!("Bindless texture system initialized (max {} textures)", MAX_BINDLESS_TEXTURES);
+        info!(
+            "Bindless texture system initialized (max {} textures)",
+            MAX_BINDLESS_TEXTURES
+        );
         Ok(())
     }
 
@@ -289,12 +289,17 @@ impl VulkanRenderer {
             .build(&self.context.device)
             .map_err(|e| {
                 error!("Failed to create storage uniform layout: {:?}", e);
-                RendererError::InitializationFailed("Failed to create storage uniform layout".to_string())
+                RendererError::InitializationFailed(
+                    "Failed to create storage uniform layout".to_string(),
+                )
             })?;
 
         // Initialize storage manager and descriptor set
         let manager = StorageUniformManager::new(self.context.clone())?;
-        let descriptor_set = manager.create_descriptor_set(&self.context, crate::sync::VkDescriptorSetLayout::new(uniform_set_layout))?;
+        let descriptor_set = manager.create_descriptor_set(
+            &self.context,
+            crate::sync::VkDescriptorSetLayout::new(uniform_set_layout),
+        )?;
 
         self.storage_manager = Some(manager);
         self.storage_descriptor_set = Some(descriptor_set);
@@ -434,17 +439,23 @@ impl VulkanRenderer {
 
     /// Get the output color image view (for rendering UI).
     pub fn output_color_view(&self) -> Option<VkImageView> {
-        self.output_target.as_ref().map(|t| VkImageView::new(t.color_image_view))
+        self.output_target
+            .as_ref()
+            .map(|t| VkImageView::new(t.color_image_view))
     }
 
     /// Get the output color image (for present pass blit).
     pub fn output_color_image(&self) -> Option<VkImage> {
-        self.output_target.as_ref().map(|t| VkImage::new(t.color_image))
+        self.output_target
+            .as_ref()
+            .map(|t| VkImage::new(t.color_image))
     }
 
     /// Get output dimensions.
     pub fn output_extent(&self) -> Option<render_graph::types::Extent2D> {
-        self.output_target.as_ref().map(|t| render_graph::types::Extent2D::from(t.extent))
+        self.output_target
+            .as_ref()
+            .map(|t| render_graph::types::Extent2D::from(t.extent))
     }
 
     // ========================================================================
@@ -485,14 +496,18 @@ impl VulkanRenderer {
             let target = ViewportRenderTarget::new(self.context.clone(), width, height)?;
             self.render_targets.push((texture_id, target));
 
-            info!("Render target {} created/resized to {}x{}", texture_id, width, height);
+            info!(
+                "Render target {} created/resized to {}x{}",
+                texture_id, width, height
+            );
         }
         Ok(())
     }
 
     /// Get a render target by texture ID.
     pub fn get_render_target(&self, texture_id: u64) -> Option<&ViewportRenderTarget> {
-        self.render_targets.iter()
+        self.render_targets
+            .iter()
             .find(|(id, _)| *id == texture_id)
             .map(|(_, t)| t)
     }
@@ -521,7 +536,8 @@ impl VulkanRenderer {
         self.init_render_target(Self::VIEWPORT_TEXTURE_ID, width, height, 1)?;
 
         // Get the color view first, then update UI textures
-        let color_view = self.get_render_target_first(Self::VIEWPORT_TEXTURE_ID)
+        let color_view = self
+            .get_render_target_first(Self::VIEWPORT_TEXTURE_ID)
             .map(|t| t.color_view());
 
         if let (Some(ref mut ui_textures), Some(view)) = (&mut self.ui_textures, color_view) {
@@ -532,17 +548,20 @@ impl VulkanRenderer {
 
     /// Get the viewport color image view.
     pub fn viewport_color_view(&self) -> Option<VkImageView> {
-        self.get_render_target_first(Self::VIEWPORT_TEXTURE_ID).map(|t| t.color_view())
+        self.get_render_target_first(Self::VIEWPORT_TEXTURE_ID)
+            .map(|t| t.color_view())
     }
 
     /// Get the viewport depth image.
     pub fn viewport_depth_image(&self) -> Option<VkImage> {
-        self.get_render_target_first(Self::VIEWPORT_TEXTURE_ID).map(|t| VkImage::new(t.depth_image()))
+        self.get_render_target_first(Self::VIEWPORT_TEXTURE_ID)
+            .map(|t| VkImage::new(t.depth_image()))
     }
 
     /// Get the viewport color image.
     pub fn viewport_color_image(&self) -> Option<VkImage> {
-        self.get_render_target_first(Self::VIEWPORT_TEXTURE_ID).map(|t| VkImage::new(t.color_image()))
+        self.get_render_target_first(Self::VIEWPORT_TEXTURE_ID)
+            .map(|t| VkImage::new(t.color_image()))
     }
 
     /// Get viewport dimensions.
@@ -582,14 +601,18 @@ impl VulkanRenderer {
     /// - `set_viewport_camera()` to set the view/projection
     /// - `set_viewport_draw_list()` to set what to render
     /// - `viewport_texture_id()` to get the texture for UI display
-    pub fn build_viewport(&mut self, builder: ViewportBuilder) -> Result<ViewportHandle, RenderGraphError> {
+    pub fn build_viewport(
+        &mut self,
+        builder: ViewportBuilder,
+    ) -> Result<ViewportHandle, RenderGraphError> {
         // 1. Create the render target
         let mut viewport = Viewport::new(&builder, &self.context)?;
         let handle = ViewportHandle::new(self.viewports.len());
 
         // 2. Initialize storage manager for independent camera
-        let manager = StorageUniformManager::new(self.context.clone())
-            .map_err(|e| RenderGraphError::CompilationError(format!("Failed to create storage: {:?}", e)))?;
+        let manager = StorageUniformManager::new(self.context.clone()).map_err(|e| {
+            RenderGraphError::CompilationError(format!("Failed to create storage: {:?}", e))
+        })?;
 
         // Create descriptor set layout (same as main scene)
         use vulkan::material::DescriptorLayoutBuilder;
@@ -608,16 +631,24 @@ impl VulkanRenderer {
                 1,
             )
             .build(&self.context.device)
-            .map_err(|e| RenderGraphError::CompilationError(format!("Failed to create layout: {:?}", e)))?;
+            .map_err(|e| {
+                RenderGraphError::CompilationError(format!("Failed to create layout: {:?}", e))
+            })?;
 
-        let descriptor_set = manager.create_descriptor_set(
-            &self.context,
-            crate::sync::VkDescriptorSetLayout::new(uniform_set_layout),
-        ).map_err(|e| RenderGraphError::CompilationError(format!("Failed to create descriptor: {:?}", e)))?;
+        let descriptor_set = manager
+            .create_descriptor_set(
+                &self.context,
+                crate::sync::VkDescriptorSetLayout::new(uniform_set_layout),
+            )
+            .map_err(|e| {
+                RenderGraphError::CompilationError(format!("Failed to create descriptor: {:?}", e))
+            })?;
 
         // Clean up the layout (descriptor set holds a reference)
         unsafe {
-            self.context.device.destroy_descriptor_set_layout(uniform_set_layout, None);
+            self.context
+                .device
+                .destroy_descriptor_set_layout(uniform_set_layout, None);
         }
 
         viewport.storage_manager = Some(manager);
@@ -669,10 +700,11 @@ impl VulkanRenderer {
 
         // Store pointers for closures
         let viewport_index = handle.0;
-        let pre_execute_device = self.context.device.clone();
         let clear_color = viewport.clear_color;
 
         // === SKY PASS ===
+        // Note: Layout transitions are handled automatically by execute_pass_dynamic
+        // No pre_execute callback needed - the render graph manages barriers
         let p_color = viewport_color;
         let p_depth = viewport_depth;
         graph_builder.add_pass("viewport_sky_pass", move |pass| {
@@ -680,25 +712,6 @@ impl VulkanRenderer {
                 .write(Attachment::DepthStencil(p_depth))
                 .clear_color(p_color, clear_color)
                 .clear_depth_stencil(p_depth, 1.0, 0)
-                .pre_execute("viewport_sky_pass", move |ctx| {
-                    let cmd_buf = ctx.command_buffer.vk_command_buffer();
-
-                    if let (Some((color_image, _)), Some((depth_image, _))) =
-                        (ctx.get_image(p_color), ctx.get_image(p_depth))
-                    {
-                        let color_barrier = color_read_to_attachment_barrier(color_image);
-                        let depth_barrier = depth_attachment_barrier(depth_image);
-
-                        unsafe {
-                            DependencyInfo::new()
-                                .add_image_barrier(color_barrier)
-                                .add_image_barrier(depth_barrier)
-                                .build(|dep_info| {
-                                    pre_execute_device.cmd_pipeline_barrier2(cmd_buf, dep_info);
-                                });
-                        }
-                    }
-                })
                 .execute("viewport_sky_pass", move |ctx| {
                     // Sky rendering handled by geometry pass for now
                     // (simplified - just clear and move on)
@@ -755,7 +768,10 @@ impl VulkanRenderer {
     }
 
     /// Get the viewport extent (by handle).
-    pub fn get_viewport_extent(&self, handle: ViewportHandle) -> Option<crate::render_graph::types::Extent2D> {
+    pub fn get_viewport_extent(
+        &self,
+        handle: ViewportHandle,
+    ) -> Option<crate::render_graph::types::Extent2D> {
         self.viewports.get(handle.0).map(|v| v.get_extent())
     }
 
@@ -788,12 +804,15 @@ impl VulkanRenderer {
                 // For main viewport (index 0), use TextureId 2 for backwards compatibility
                 // with existing UI code that expects TextureId::VIEWPORT
                 let texture_id = if handle.0 == 0 {
-                    2  // TextureId::VIEWPORT
+                    2 // TextureId::VIEWPORT
                 } else {
-                    200 + handle.0 as u64  // Custom IDs for additional viewports
+                    200 + handle.0 as u64 // Custom IDs for additional viewports
                 };
                 ui_textures.set_external_texture(texture_id, color_view);
-                info!("Viewport '{}' texture registered with UI system (ID={})", viewport.label, texture_id);
+                info!(
+                    "Viewport '{}' texture registered with UI system (ID={})",
+                    viewport.label, texture_id
+                );
             }
         }
     }
@@ -947,8 +966,7 @@ impl VulkanRenderer {
             ResourceKind::ExternalImage {
                 image: self.frame_context.depth_render_texture.image,
                 image_view: self.frame_context.depth_render_texture.image_view,
-                format: ImageFormat::from_vk(depth_format)
-                    .expect("Unsupported depth format"),
+                format: ImageFormat::from_vk(depth_format).expect("Unsupported depth format"),
                 extent: Extent2D::new(extent.width, extent.height),
             },
         )
@@ -1121,6 +1139,7 @@ impl VulkanRenderer {
             pbr_textures: None,
             texture_indices,
             emission_index,
+            uses_bindless: true, // Materials with texture indices use bindless
         };
 
         self.asset_registry.register_material(material_asset)
@@ -1149,7 +1168,14 @@ impl VulkanRenderer {
         texture_indices: [u32; 4],
         emission_index: u32,
     ) -> MaterialHandle {
-        self.create_material_with_indices(pipeline, texture, vertex_binding, uniform, texture_indices, emission_index)
+        self.create_material_with_indices(
+            pipeline,
+            texture,
+            vertex_binding,
+            uniform,
+            texture_indices,
+            emission_index,
+        )
     }
 
     /// Register a material with PBR textures.
@@ -1189,9 +1215,11 @@ impl VulkanRenderer {
             pbr_textures: None, // Will be set at registration time
             texture_indices,
             emission_index,
+            uses_bindless: true, // PBR materials use bindless textures
         };
 
-        self.asset_registry.register_material_pbr(material_asset, pbr_textures, textures)
+        self.asset_registry
+            .register_material_pbr(material_asset, pbr_textures, textures)
     }
 
     /// Register a skeleton buffer for GPU skeletal animation.
@@ -1247,7 +1275,7 @@ impl VulkanRenderer {
     /// then passes it here. VulkanRenderer executes it during `render_frame()`.
     ///
     /// This makes the render graph generic - VulkanRenderer doesn't know about
-    /// sky, grid, geometry, UI, or any application-specific passes.
+    /// any application-specific passes.
     pub fn set_render_graph(&mut self, graph: CompiledRenderGraph) {
         self.render_graph = Some(graph);
     }
@@ -1288,10 +1316,12 @@ impl VulkanRenderer {
     ///         .clear_color([0.4, 0.6, 0.9, 1.0]);
     /// });
     ///
-    /// // Compile the graph
-    /// renderer.compile_render_graph(builder)?;
+    /// // Compile the graph with swapchain ID for proper layout transitions
+    /// renderer.compile_render_graph(builder, Some(resources.swapchain.resource_id()))?;
     /// ```
-    pub fn create_render_graph_with_resources(&self) -> (RenderGraphBuilder, render_graph::FrameResources) {
+    pub fn create_render_graph_with_resources(
+        &self,
+    ) -> (RenderGraphBuilder, render_graph::FrameResources) {
         use crate::render_graph::types::{Extent2D, ImageFormat};
 
         let mut builder = RenderGraphBuilder::new();
@@ -1313,7 +1343,8 @@ impl VulkanRenderer {
         );
 
         // Add viewport resources if available
-        let (viewport_color_id, viewport_depth_id) = if let Some(viewport) = self.viewports.first() {
+        let (viewport_color_id, viewport_depth_id) = if let Some(viewport) = self.viewports.first()
+        {
             let color = builder.add_resource(
                 "viewport_color",
                 ResourceKind::ExternalImage {
@@ -1370,12 +1401,25 @@ impl VulkanRenderer {
     ///
     /// This builds the render graph and stores it internally for execution.
     /// After calling this, the graph can be executed each frame via `render_frame()`.
-    pub fn compile_render_graph(&mut self, builder: RenderGraphBuilder) -> Result<(), render_graph::RenderGraphError> {
+    ///
+    /// # Arguments
+    /// * `builder` - The render graph builder containing passes and resources
+    /// * `swapchain_resource_id` - Optional ResourceId of the swapchain for proper layout transitions
+    pub fn compile_render_graph(
+        &mut self,
+        builder: RenderGraphBuilder,
+        swapchain_resource_id: Option<render_graph::ResourceId>,
+    ) -> Result<(), render_graph::RenderGraphError> {
         let mut graph = builder.build(&self.context)?;
 
         // Set up renderer context for safe access to renderer state
         let renderer_context = self.create_renderer_context();
         graph.set_renderer_context(Rc::new(renderer_context));
+
+        // Set swapchain resource ID for proper layout transitions during present
+        if let Some(id) = swapchain_resource_id {
+            graph.set_swapchain_resource_id(id);
+        }
 
         self.render_graph = Some(graph);
         Ok(())
@@ -1386,8 +1430,6 @@ impl VulkanRenderer {
     /// This is used to safely pass renderer state to render graph passes
     /// without requiring unsafe pointer patterns.
     fn create_renderer_context(&self) -> render_graph::RendererContext {
-        use std::ptr;
-
         // SAFETY: These pointers are valid for the lifetime of VulkanRenderer.
         // The render graph is stored in VulkanRenderer and will not outlive it.
         render_graph::RendererContext {
@@ -1610,7 +1652,8 @@ pub struct UITextures {
     /// Registered thumbnail textures (texture_id -> image_view).
     thumbnail_textures: std::collections::HashMap<u64, vk::ImageView>,
     /// Thumbnail texture allocations for cleanup (texture_id -> (image, allocation)).
-    thumbnail_allocations: std::collections::HashMap<u64, (vk::Image, gpu_allocator::vulkan::Allocation)>,
+    thumbnail_allocations:
+        std::collections::HashMap<u64, (vk::Image, gpu_allocator::vulkan::Allocation)>,
     /// Context for cleanup.
     context: Rc<VulkanContext>,
 }
@@ -1769,11 +1812,7 @@ impl UITextures {
             // Initialize uniform buffer with default screen size
             let uniform_ptr = context.map_buffer(&uniform_memory);
             let initial_data: [f32; 4] = [1920.0, 1080.0, 0.0, 0.0];
-            std::ptr::copy_nonoverlapping(
-                initial_data.as_ptr() as *const u8,
-                uniform_ptr,
-                16,
-            );
+            std::ptr::copy_nonoverlapping(initial_data.as_ptr() as *const u8, uniform_ptr, 16);
 
             // === Update set 0 with static resources ===
             let font_image_info = vk::DescriptorImageInfo {
@@ -2202,13 +2241,20 @@ impl UITextures {
     ) -> Result<VkImageView, vk::Result> {
         unsafe {
             // Create the texture image
-            let (image, memory, image_view) = Self::create_texture(&self.context, width, height, pixels)?;
+            let (image, memory, image_view) =
+                Self::create_texture(&self.context, width, height, pixels)?;
 
             // Store in our registries for lookup and cleanup
             self.thumbnail_textures.insert(texture_id, image_view);
-            self.thumbnail_allocations.insert(texture_id, (image, memory));
+            self.thumbnail_allocations
+                .insert(texture_id, (image, memory));
 
-            log::debug!("Registered UI thumbnail texture {} ({}x{})", texture_id, width, height);
+            log::debug!(
+                "Registered UI thumbnail texture {} ({}x{})",
+                texture_id,
+                width,
+                height
+            );
             Ok(VkImageView::new(image_view))
         }
     }
@@ -2261,7 +2307,8 @@ impl UITextures {
             self.viewport_image_view.unwrap_or(self.white_image_view)
         } else if texture_id == 101 {
             // TextureId 101 = model preview
-            self.model_preview_image_view.unwrap_or(self.white_image_view)
+            self.model_preview_image_view
+                .unwrap_or(self.white_image_view)
         } else if let Some(&view) = self.thumbnail_textures.get(&texture_id) {
             // Custom thumbnail
             view
@@ -2283,11 +2330,7 @@ impl UITextures {
             let ptr = self.context.map_buffer(memory);
             let data: [f32; 4] = [width, height, 0.0, 0.0]; // screen_size + padding
             unsafe {
-                std::ptr::copy_nonoverlapping(
-                    data.as_ptr() as *const u8,
-                    ptr,
-                    16,
-                );
+                std::ptr::copy_nonoverlapping(data.as_ptr() as *const u8, ptr, 16);
             }
         }
     }
@@ -2312,7 +2355,9 @@ impl Drop for UITextures {
                 self.context.allocator.borrow_mut().free(memory).ok();
             }
             // Destroy uniform buffer
-            self.context.device.destroy_buffer(self.uniform_buffer, None);
+            self.context
+                .device
+                .destroy_buffer(self.uniform_buffer, None);
             if let Some(memory) = self.uniform_memory.take() {
                 self.context.allocator.borrow_mut().free(memory).ok();
             }

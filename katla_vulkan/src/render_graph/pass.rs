@@ -786,7 +786,6 @@ impl PassExecutionContext {
         };
 
         let mut next_object_index: u32 = 0;
-        let mut bindless_bound = false;
 
         for draw in &draw_list.draws {
             let instance_count = draw.instance_count();
@@ -821,23 +820,31 @@ impl PassExecutionContext {
                 let pipeline_ref = material.pipeline.borrow();
                 self.command_buffer.bind_graphics_pipeline(&pipeline_ref);
 
-                // Bind storage descriptor (set 0)
+                // Bind descriptor sets based on what the material needs
+                // Materials created with build_bindless() have 2 sets, others have 1
                 if let Some(desc_set) = storage_descriptor {
-                    self.command_buffer.bind_graphics_descriptors(
-                        pipeline_ref.vk_layout(),
-                        &[desc_set.into()],
-                    );
-                }
-
-                // Bind bindless textures (set 1) - only once
-                if let Some(bindless_set) = bindless_descriptor {
-                    if !bindless_bound {
-                        self.command_buffer.bind_graphics_descriptors_at(
+                    // Check if this material uses bindless textures
+                    // Materials that use bindless have a second descriptor set layout
+                    if material.uses_bindless {
+                        if let Some(bindless_set) = bindless_descriptor {
+                            // Bind both sets at once (sets 0 and 1)
+                            self.command_buffer.bind_graphics_descriptors(
+                                pipeline_ref.vk_layout(),
+                                &[desc_set.into(), bindless_set],
+                            );
+                        } else {
+                            // Bindless material but no bindless set available - just bind set 0
+                            self.command_buffer.bind_graphics_descriptors(
+                                pipeline_ref.vk_layout(),
+                                &[desc_set.into()],
+                            );
+                        }
+                    } else {
+                        // Non-bindless material - only bind set 0
+                        self.command_buffer.bind_graphics_descriptors(
                             pipeline_ref.vk_layout(),
-                            1,
-                            &[bindless_set],
+                            &[desc_set.into()],
                         );
-                        bindless_bound = true;
                     }
                 }
 
@@ -872,7 +879,7 @@ impl PassExecutionContext {
     /// - Binding the UI pipeline
     /// - Binding font atlas textures
     /// - Updating vertex/index buffers
-    /// - Drawing indexed geometry
+    /// - Drawing indexed geometry with per-command textures via push descriptors
     ///
     /// The application just needs to have set UI data via `renderer.set_ui_data()`.
     pub fn draw_ui(&self, ui_pipeline: &std::rc::Rc<std::cell::RefCell<crate::vulkan::material::MaterialPipeline>>) {
@@ -913,16 +920,17 @@ impl PassExecutionContext {
 
         // Bind pipeline
         let pipeline = ui_pipeline.borrow();
+        let pipeline_layout = pipeline.vk_layout();
         self.bind_graphics_pipeline(&pipeline);
-
-        // Bind UI descriptor set (font atlas)
-        self.command_buffer.bind_graphics_descriptors(
-            pipeline.vk_layout(),
-            &[ui_textures.vk_set()],
-        );
         drop(pipeline);
 
-        // Update and draw
+        // Bind UI descriptor set (set 0: font atlas, sampler, uniforms)
+        self.command_buffer.bind_graphics_descriptors(
+            pipeline_layout,
+            &[ui_textures.vk_set()],
+        );
+
+        // Update buffers
         if let Some(ui_buffer) = ui_buffers.get(frame_idx) {
             ui_buffer.update_vertices(&ui_data.vertex_data);
             ui_buffer.update_indices(&ui_data.index_data);
@@ -930,10 +938,33 @@ impl PassExecutionContext {
             self.command_buffer.bind_vertex_buffers(0, &[ui_buffer.vertex_buffer], &[0]);
             self.command_buffer.bind_index_buffer(ui_buffer.index_buffer, 0, crate::IndexType::Uint32);
 
-            self.command_buffer.draw_indexed(
-                (ui_data.index_data.len() / 4) as u32,
-                1, 0, 0, 0,
-            );
+            // Draw each command with its texture via push descriptors
+            for cmd in &ui_data.commands {
+                // Set scissor for clip rect
+                use crate::render_graph::types::{Extent2D, Offset2D, Rect2D};
+                self.command_buffer.set_scissor(&[Rect2D {
+                    offset: Offset2D {
+                        x: cmd.clip_rect[0] as i32,
+                        y: cmd.clip_rect[1] as i32,
+                    },
+                    extent: Extent2D {
+                        width: cmd.clip_rect[2] as u32,
+                        height: cmd.clip_rect[3] as u32,
+                    },
+                }]);
+
+                // Push texture descriptor (set 1) for this command
+                ui_textures.push_texture(self.command_buffer.command_buffer(), cmd.texture_id);
+
+                // Draw this command's indices
+                self.command_buffer.draw_indexed(
+                    cmd.index_count,
+                    1,
+                    cmd.index_offset,
+                    0,
+                    0,
+                );
+            }
         }
     }
 
@@ -943,7 +974,10 @@ impl PassExecutionContext {
     /// using the given material. Commonly used for sky, grid, and post-processing passes.
     ///
     /// The descriptor set binding is handled automatically if the RendererContext
-    /// has a storage descriptor set available.
+    /// has storage descriptor sets available.
+    ///
+    /// Note: This only binds set 0 (storage uniforms). For materials that need
+    /// bindless textures, use draw_fullscreen_with_material_bindless().
     pub fn draw_fullscreen_with_material(&self, material: &std::rc::Rc<std::cell::RefCell<crate::vulkan::material::MaterialPipeline>>) {
         let pipeline = material.borrow();
         self.bind_graphics_pipeline(&pipeline);

@@ -87,8 +87,8 @@ pub fn build_render_graph(
             });
     });
 
-    // Compile the render graph
-    if let Err(e) = renderer.compile_render_graph(builder) {
+    // Compile the render graph with swapchain resource ID for proper layout transitions
+    if let Err(e) = renderer.compile_render_graph(builder, Some(resources.swapchain.resource_id())) {
         log::error!("Failed to compile render graph: {:?}", e);
     }
 }

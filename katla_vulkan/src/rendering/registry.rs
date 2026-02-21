@@ -37,6 +37,9 @@ pub struct MaterialAsset {
     pub texture_indices: [u32; 4],
     /// Emission texture index for bindless.
     pub emission_index: u32,
+    /// Whether this material uses bindless textures (has 2 descriptor sets).
+    /// Non-bindless materials only have set 0 (storage uniforms).
+    pub uses_bindless: bool,
 }
 
 /// Registry for GPU assets.

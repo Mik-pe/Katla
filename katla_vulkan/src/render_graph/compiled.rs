@@ -68,6 +68,10 @@ pub struct CompiledPass {
     pub color_attachments: Vec<(VkImageView, ResourceId)>,
     /// Depth attachment as (image_view, resource_id) tuple for dynamic rendering
     pub depth_attachment: Option<(VkImageView, ResourceId)>,
+    /// Transfer source resources (need transition to TRANSFER_SRC_OPTIMAL)
+    pub transfer_src_resources: Vec<ResourceId>,
+    /// Transfer destination resources (need transition to TRANSFER_DST_OPTIMAL)
+    pub transfer_dst_resources: Vec<ResourceId>,
 }
 
 /// RenderPassGroup groups passes that share a Vulkan render pass.
@@ -787,6 +791,8 @@ impl CompiledRenderGraph {
             // Store as (image_view, resource_id) tuples for easy layout transitions
             let mut color_attachments: Vec<(VkImageView, ResourceId)> = Vec::new();
             let mut depth_attachment: Option<(VkImageView, ResourceId)> = None;
+            let mut transfer_src_resources: Vec<ResourceId> = Vec::new();
+            let mut transfer_dst_resources: Vec<ResourceId> = Vec::new();
 
             for output_resource_id in pass.outputs() {
                 // Check the usage to determine if this is a render attachment or transfer resource
@@ -795,25 +801,36 @@ impl CompiledRenderGraph {
                     .iter()
                     .find(|u| u.resource_id == *output_resource_id);
 
-                let is_render_attachment = usage_info
-                    .map(|u| {
-                        let is_render = matches!(
-                            u.layout,
-                            crate::render_graph::types::ImageLayout::ColorAttachmentOptimal
-                                | crate::render_graph::types::ImageLayout::DepthStencilAttachmentOptimal
-                        );
-                        debug!(
-                            "compile pass '{}': output {:?}, layout={:?}, is_render={}",
-                            pass.name(),
-                            output_resource_id,
-                            u.layout,
-                            is_render
-                        );
-                        is_render
-                    })
-                    .unwrap_or(false);
+                let layout = usage_info.map(|u| u.layout).unwrap_or(ImageLayout::Undefined);
 
-                // Skip transfer resources - they don't need render pass attachments
+                let is_render_attachment = matches!(
+                    layout,
+                    ImageLayout::ColorAttachmentOptimal | ImageLayout::DepthStencilAttachmentOptimal
+                );
+
+                let is_transfer_src = layout == ImageLayout::TransferSrcOptimal;
+                let is_transfer_dst = layout == ImageLayout::TransferDstOptimal;
+
+                debug!(
+                    "compile pass '{}': output {:?}, layout={:?}, is_render={}, is_transfer_src={}, is_transfer_dst={}",
+                    pass.name(),
+                    output_resource_id,
+                    layout,
+                    is_render_attachment,
+                    is_transfer_src,
+                    is_transfer_dst
+                );
+
+                if is_transfer_src {
+                    transfer_src_resources.push(*output_resource_id);
+                    continue;
+                }
+                if is_transfer_dst {
+                    transfer_dst_resources.push(*output_resource_id);
+                    continue;
+                }
+
+                // Skip other non-render resources
                 if !is_render_attachment {
                     continue;
                 }
@@ -843,6 +860,22 @@ impl CompiledRenderGraph {
                 }
             }
 
+            // Also check inputs for transfer reads
+            for input_resource_id in pass.inputs() {
+                let usage_info = pass
+                    .usages()
+                    .iter()
+                    .find(|u| u.resource_id == *input_resource_id);
+
+                if let Some(usage) = usage_info {
+                    if usage.layout == ImageLayout::TransferSrcOptimal {
+                        if !transfer_src_resources.contains(input_resource_id) {
+                            transfer_src_resources.push(*input_resource_id);
+                        }
+                    }
+                }
+            }
+
             let compiled = CompiledPass {
                 name: pass.name().to_string(),
                 vk_framebuffers,
@@ -853,6 +886,8 @@ impl CompiledRenderGraph {
                 pre_execute,
                 color_attachments,
                 depth_attachment,
+                transfer_src_resources,
+                transfer_dst_resources,
             };
 
             compiled_passes.push(compiled);
@@ -987,7 +1022,7 @@ impl CompiledRenderGraph {
             } else {
                 // Transfer/compute pass - no render pass needed
                 debug!("execute: calling execute_pass_transfer for pass {}", i);
-                self.execute_pass_transfer(command_buffer, i)?;
+                self.execute_pass_transfer(command_buffer, i, is_last_pass)?;
                 debug!("execute: execute_pass_transfer for pass {} complete", i);
             }
         }
@@ -1040,7 +1075,7 @@ impl CompiledRenderGraph {
                 debug!("execute_no_swapchain: execute_pass_dynamic for pass {} complete", i);
             } else {
                 debug!("execute_no_swapchain: calling execute_pass_transfer for pass {}", i);
-                self.execute_pass_transfer(command_buffer, i)?;
+                self.execute_pass_transfer(command_buffer, i, is_last_pass)?;
                 debug!("execute_no_swapchain: execute_pass_transfer for pass {} complete", i);
             }
         }
@@ -1053,8 +1088,53 @@ impl CompiledRenderGraph {
         &mut self,
         command_buffer: &mut CommandBuffer,
         pass_index: usize,
+        is_last_pass: bool,
     ) -> Result<(), RenderGraphError> {
         let pass = &self.passes[pass_index];
+
+        // Transition transfer source images to TRANSFER_SRC_OPTIMAL
+        for resource_id in &pass.transfer_src_resources {
+            if let Some(image) = self.get_image(*resource_id) {
+                let barrier = ImageMemoryBarrier2::new(image)
+                    .src_stage(PipelineStage2Flags::COLOR_ATTACHMENT_OUTPUT)
+                    .src_access(AccessFlags2::COLOR_ATTACHMENT_WRITE)
+                    .dst_stage(PipelineStage2Flags::TRANSFER)
+                    .dst_access(AccessFlags2::TRANSFER_READ)
+                    .old_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
+                    .new_layout(vk::ImageLayout::TRANSFER_SRC_OPTIMAL)
+                    .subresource_range(COLOR_SUBRESOURCE_RANGE);
+
+                DependencyInfo::new()
+                    .add_image_barrier(barrier)
+                    .build(|dep_info| unsafe {
+                        self.context
+                            .device
+                            .cmd_pipeline_barrier2(command_buffer.vk_command_buffer(), dep_info);
+                    });
+            }
+        }
+
+        // Transition transfer destination images to TRANSFER_DST_OPTIMAL
+        for resource_id in &pass.transfer_dst_resources {
+            if let Some(image) = self.get_image(*resource_id) {
+                let barrier = ImageMemoryBarrier2::new(image)
+                    .src_stage(PipelineStage2Flags::BOTTOM_OF_PIPE)
+                    .src_access(AccessFlags2::NONE)
+                    .dst_stage(PipelineStage2Flags::TRANSFER)
+                    .dst_access(AccessFlags2::TRANSFER_WRITE)
+                    .old_layout(vk::ImageLayout::UNDEFINED)
+                    .new_layout(vk::ImageLayout::TRANSFER_DST_OPTIMAL)
+                    .subresource_range(COLOR_SUBRESOURCE_RANGE);
+
+                DependencyInfo::new()
+                    .add_image_barrier(barrier)
+                    .build(|dep_info| unsafe {
+                        self.context
+                            .device
+                            .cmd_pipeline_barrier2(command_buffer.vk_command_buffer(), dep_info);
+                    });
+            }
+        }
 
         // Create execution context with optional renderer context
         let ctx = if let Some(ref rc) = self.renderer_context {
@@ -1073,7 +1153,61 @@ impl CompiledRenderGraph {
         };
 
         // Execute the pass closure directly (no begin_rendering/end_rendering)
-        pass.execute.execute(ctx, &mut self.registry);
+        pass.execute(ctx, &mut self.registry);
+
+        // After blit: transition transfer destinations to final layout
+        for resource_id in &pass.transfer_dst_resources {
+            if let Some(image) = self.get_image(*resource_id) {
+                // Check if this is the swapchain - transition to PRESENT_SRC
+                let is_swapchain = self.swapchain_resource_id == Some(*resource_id);
+
+                let (new_layout, dst_stage, dst_access) = if is_swapchain {
+                    (vk::ImageLayout::PRESENT_SRC_KHR, PipelineStage2Flags::BOTTOM_OF_PIPE, AccessFlags2::NONE)
+                } else {
+                    // For other textures, transition back to COLOR_ATTACHMENT for next frame
+                    (vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL, PipelineStage2Flags::COLOR_ATTACHMENT_OUTPUT, AccessFlags2::COLOR_ATTACHMENT_WRITE)
+                };
+
+                let barrier = ImageMemoryBarrier2::new(image)
+                    .src_stage(PipelineStage2Flags::TRANSFER)
+                    .src_access(AccessFlags2::TRANSFER_WRITE)
+                    .dst_stage(dst_stage)
+                    .dst_access(dst_access)
+                    .old_layout(vk::ImageLayout::TRANSFER_DST_OPTIMAL)
+                    .new_layout(new_layout)
+                    .subresource_range(COLOR_SUBRESOURCE_RANGE);
+
+                DependencyInfo::new()
+                    .add_image_barrier(barrier)
+                    .build(|dep_info| unsafe {
+                        self.context
+                            .device
+                            .cmd_pipeline_barrier2(command_buffer.vk_command_buffer(), dep_info);
+                    });
+            }
+        }
+
+        // Transition transfer sources back to COLOR_ATTACHMENT_OPTIMAL for next frame
+        for resource_id in &pass.transfer_src_resources {
+            if let Some(image) = self.get_image(*resource_id) {
+                let barrier = ImageMemoryBarrier2::new(image)
+                    .src_stage(PipelineStage2Flags::TRANSFER)
+                    .src_access(AccessFlags2::TRANSFER_READ)
+                    .dst_stage(PipelineStage2Flags::COLOR_ATTACHMENT_OUTPUT)
+                    .dst_access(AccessFlags2::COLOR_ATTACHMENT_WRITE)
+                    .old_layout(vk::ImageLayout::TRANSFER_SRC_OPTIMAL)
+                    .new_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
+                    .subresource_range(COLOR_SUBRESOURCE_RANGE);
+
+                DependencyInfo::new()
+                    .add_image_barrier(barrier)
+                    .build(|dep_info| unsafe {
+                        self.context
+                            .device
+                            .cmd_pipeline_barrier2(command_buffer.vk_command_buffer(), dep_info);
+                    });
+            }
+        }
 
         Ok(())
     }
