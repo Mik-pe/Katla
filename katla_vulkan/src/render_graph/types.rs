@@ -836,9 +836,9 @@ impl From<Viewport> for ash::vk::Viewport {
     fn from(viewport: Viewport) -> Self {
         ash::vk::Viewport {
             x: viewport.x,
-            y: viewport.y,
+            y: viewport.y + viewport.height, // NB: Allows for +Y being upwards
             width: viewport.width,
-            height: viewport.height,
+            height: -viewport.height, // NB: Negative to flip +Y being upwards
             min_depth: viewport.min_depth,
             max_depth: viewport.max_depth,
         }
@@ -857,11 +857,46 @@ pub struct ShaderStages {
 }
 
 impl ShaderStages {
-    pub const VERTEX: Self = Self { vertex: true, fragment: false, compute: false, geometry: false, tessellation_control: false, tessellation_evaluation: false };
-    pub const FRAGMENT: Self = Self { vertex: false, fragment: true, compute: false, geometry: false, tessellation_control: false, tessellation_evaluation: false };
-    pub const COMPUTE: Self = Self { vertex: false, fragment: false, compute: true, geometry: false, tessellation_control: false, tessellation_evaluation: false };
-    pub const VERTEX_FRAGMENT: Self = Self { vertex: true, fragment: true, compute: false, geometry: false, tessellation_control: false, tessellation_evaluation: false };
-    pub const ALL_GRAPHICS: Self = Self { vertex: true, fragment: true, compute: false, geometry: true, tessellation_control: true, tessellation_evaluation: true };
+    pub const VERTEX: Self = Self {
+        vertex: true,
+        fragment: false,
+        compute: false,
+        geometry: false,
+        tessellation_control: false,
+        tessellation_evaluation: false,
+    };
+    pub const FRAGMENT: Self = Self {
+        vertex: false,
+        fragment: true,
+        compute: false,
+        geometry: false,
+        tessellation_control: false,
+        tessellation_evaluation: false,
+    };
+    pub const COMPUTE: Self = Self {
+        vertex: false,
+        fragment: false,
+        compute: true,
+        geometry: false,
+        tessellation_control: false,
+        tessellation_evaluation: false,
+    };
+    pub const VERTEX_FRAGMENT: Self = Self {
+        vertex: true,
+        fragment: true,
+        compute: false,
+        geometry: false,
+        tessellation_control: false,
+        tessellation_evaluation: false,
+    };
+    pub const ALL_GRAPHICS: Self = Self {
+        vertex: true,
+        fragment: true,
+        compute: false,
+        geometry: true,
+        tessellation_control: true,
+        tessellation_evaluation: true,
+    };
 }
 
 impl From<ShaderStages> for ash::vk::ShaderStageFlags {
