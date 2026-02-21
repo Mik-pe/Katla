@@ -1,5 +1,6 @@
 pub mod render_graph;
 pub mod rendering;
+pub mod renderer;
 pub mod sync;
 pub mod viewport;
 pub mod vulkan;
