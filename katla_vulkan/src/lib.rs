@@ -74,31 +74,22 @@ pub struct VulkanRenderer {
     pub storage_manager: Option<StorageUniformManager>,
     /// Storage descriptor set for binding storage buffers to shaders (set 0).
     pub storage_descriptor_set: Option<StorageDescriptorSet>,
-    /// Sky pipeline for procedural sky rendering.
-    /// Created lazily when setup_render_graph_with_sky is called.
-    pub sky_pipeline: Option<Rc<RefCell<MaterialPipeline>>>,
-    /// Grid pipeline for editor grid rendering.
-    /// Created externally and passed via set_grid_pipeline.
-    pub grid_pipeline: Option<Rc<RefCell<MaterialPipeline>>>,
-    /// UI pipeline for overlay rendering.
-    /// Created externally and passed via set_ui_pipeline.
-    pub ui_pipeline: Option<Rc<RefCell<MaterialPipeline>>>,
     /// Draw list cell for geometry pass (shared with render graph).
-    draw_list_cell: Option<Rc<RefCell<Option<DrawList>>>>,
+    pub draw_list_cell: Option<Rc<RefCell<Option<DrawList>>>>,
     /// Skeleton descriptor sets for GPU skeletal animation.
     /// Indexed by SkeletonHandle.
-    skeleton_descriptors: Vec<Option<SkeletonDescriptorSet>>,
+    pub skeleton_descriptors: Vec<Option<SkeletonDescriptorSet>>,
     /// Frame-level uniforms set once per frame via set_frame_uniforms().
-    frame_uniforms: Option<FrameUniforms>,
+    pub frame_uniforms: Option<FrameUniforms>,
     /// UI overlay data for immediate mode UI rendering.
     /// Set each frame via set_ui_data() and rendered in ui_pass.
-    ui_data: RefCell<Option<UiDrawData>>,
+    pub ui_data: RefCell<Option<UiDrawData>>,
     /// Persistent UI buffers (one set per frame in flight).
-    ui_buffers: Vec<UIBuffers>,
+    pub ui_buffers: Vec<UIBuffers>,
     /// Current frame index for UI buffer selection.
-    ui_frame_index: std::cell::Cell<usize>,
+    pub ui_frame_index: std::cell::Cell<usize>,
     /// UI textures (font atlas, white texture, descriptor set).
-    ui_textures: Option<UITextures>,
+    pub ui_textures: Option<UITextures>,
     /// Offscreen render targets as (texture_id, target) pairs.
     /// Simple Vec since we only have a few targets (viewport + preview).
     /// - TextureId 2 = viewport
@@ -156,9 +147,6 @@ impl VulkanRenderer {
             render_graph: None,
             storage_manager: None,
             storage_descriptor_set: None,
-            sky_pipeline: None,
-            grid_pipeline: None,
-            ui_pipeline: None,
             draw_list_cell: None,
             skeleton_descriptors: Vec::new(),
             frame_uniforms: None,
@@ -1278,30 +1266,9 @@ impl VulkanRenderer {
     // Rendering Configuration (High-level API - application doesn't deal with Vulkan)
     // ========================================================================
 
-    /// Configure sky rendering.
-    ///
-    /// Pass None to disable sky rendering.
-    pub fn set_sky(&mut self, pipeline: Option<Rc<RefCell<MaterialPipeline>>>) {
-        self.sky_pipeline = pipeline;
-    }
-
-    /// Configure grid rendering.
-    ///
-    /// Pass None to disable grid rendering.
-    pub fn set_grid(&mut self, pipeline: Option<Rc<RefCell<MaterialPipeline>>>) {
-        self.grid_pipeline = pipeline;
-    }
-
-    /// Configure UI rendering.
-    ///
-    /// Pass None to disable UI rendering.
-    pub fn set_ui(&mut self, pipeline: Option<Rc<RefCell<MaterialPipeline>>>) {
-        self.ui_pipeline = pipeline;
-    }
-
     /// Setup render graph with pipelines.
     ///
-    /// This is the legacy API that sets all pipelines at once and rebuilds the render graph.
+    /// This rebuilds the render graph with the given pipelines.
     /// Pass None for pipelines you want to disable.
     pub fn setup_render_graph(
         &mut self,
@@ -1309,10 +1276,7 @@ impl VulkanRenderer {
         grid_pipeline: Option<Rc<RefCell<MaterialPipeline>>>,
         ui_pipeline: Option<Rc<RefCell<MaterialPipeline>>>,
     ) {
-        self.sky_pipeline = sky_pipeline;
-        self.grid_pipeline = grid_pipeline;
-        self.ui_pipeline = ui_pipeline;
-        self.rebuild_render_graph_internal();
+        self.rebuild_render_graph_internal(sky_pipeline, grid_pipeline, ui_pipeline);
     }
 
     // ========================================================================
@@ -1430,19 +1394,28 @@ impl VulkanRenderer {
     }
 
     // ========================================================================
-    // Legacy Render Graph API (deprecated - will be removed)
+    // Render Graph API
     // ========================================================================
 
-    /// Rebuild the internal render graph based on current configuration.
+    /// Rebuild the internal render graph with new pipelines.
     ///
-    /// Call this after changing sky/grid/UI configuration.
-    /// The render graph is rebuilt with the appropriate passes.
-    pub fn rebuild_render_graph(&mut self) {
-        self.rebuild_render_graph_internal();
+    /// Call this to update the render graph with new pipeline configuration.
+    pub fn rebuild_render_graph(
+        &mut self,
+        sky_pipeline: Option<Rc<RefCell<MaterialPipeline>>>,
+        grid_pipeline: Option<Rc<RefCell<MaterialPipeline>>>,
+        ui_pipeline: Option<Rc<RefCell<MaterialPipeline>>>,
+    ) {
+        self.rebuild_render_graph_internal(sky_pipeline, grid_pipeline, ui_pipeline);
     }
 
     /// Internal: rebuild render graph with configured passes.
-    fn rebuild_render_graph_internal(&mut self) {
+    fn rebuild_render_graph_internal(
+        &mut self,
+        sky_pipeline: Option<Rc<RefCell<MaterialPipeline>>>,
+        grid_pipeline: Option<Rc<RefCell<MaterialPipeline>>>,
+        ui_pipeline: Option<Rc<RefCell<MaterialPipeline>>>,
+    ) {
         use crate::render_graph::types::{Extent2D, ImageFormat, VkImage, VkImageView};
 
         // Check if we have a viewport (new system) or legacy render targets
@@ -1519,10 +1492,10 @@ impl VulkanRenderer {
         let skeleton_descriptors_ptr = &mut self.skeleton_descriptors as *mut Vec<Option<SkeletonDescriptorSet>>;
         let device = self.context.device.clone();
 
-        // Clone pipelines for closures
-        let sky_pipeline_clone = self.sky_pipeline.clone();
-        let grid_pipeline_clone = self.grid_pipeline.clone();
-        let ui_pipeline_clone = self.ui_pipeline.clone();
+        // Clone pipelines for closures (use parameters, not self fields)
+        let sky_pipeline_clone = sky_pipeline.clone();
+        let grid_pipeline_clone = grid_pipeline.clone();
+        let ui_pipeline_clone = ui_pipeline.clone();
 
         // UI data pointers
         let ui_data_ptr = &self.ui_data as *const RefCell<Option<UiDrawData>>;
