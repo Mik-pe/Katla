@@ -139,15 +139,21 @@ pub fn render_debug_ui(app: &mut Application, dt: f32) {
             }
         }
 
-        // Update grid visibility based on show_grid preference
-        if let (Some(ref mut renderer), Some(ref grid_pipeline)) =
-            (&mut app.renderer, &app.grid_pipeline)
+        // Update grid visibility by rebuilding render graph
+        // Grid toggle requires render graph rebuild since passes own their pipelines
+        if let (Some(ref mut renderer), Some(ref sky_pipeline), Some(ref grid_pipeline), Some(ref ui_pipeline)) =
+            (&mut app.renderer, &app.sky_pipeline, &app.grid_pipeline, &app.ui_pipeline)
         {
-            if app.editor_ui.show_grid {
-                renderer.set_grid_pipeline(grid_pipeline.clone());
+            let grid_to_use = if app.editor_ui.show_grid {
+                Some(grid_pipeline.clone())
             } else {
-                renderer.clear_grid_pipeline();
-            }
+                None
+            };
+            renderer.setup_render_graph(
+                Some(sky_pipeline.clone()),
+                grid_to_use,
+                Some(ui_pipeline.clone()),
+            );
         }
     }
 

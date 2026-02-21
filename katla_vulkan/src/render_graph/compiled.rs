@@ -17,7 +17,7 @@ use crate::render_graph::resource::{
     CompiledResource, ResourceId, ResourceKind, ResourceLifetime, ResourceNameMap,
 };
 use crate::render_graph::types::{
-    ClearValue, Extent2D, ImageLayout, RenderingAttachmentInfo, RenderingInfo,
+    ClearValue, Extent2D, ImageLayout, Offset2D, Rect2D, RenderingAttachmentInfo, RenderingInfo, Viewport,
 };
 use crate::rendering::DrawList;
 use crate::sync::{VkFramebuffer, VkImage, VkImageView};
@@ -1268,7 +1268,7 @@ impl CompiledRenderGraph {
         command_buffer.begin_rendering(rendering_info);
 
         // Set viewport and scissor for this pass
-        let viewport = vk::Viewport {
+        let viewport = Viewport {
             x: 0.0,
             y: pass.extent.height as f32,
             width: pass.extent.width as f32,
@@ -1277,9 +1277,9 @@ impl CompiledRenderGraph {
             max_depth: 1.0,
         };
 
-        let scissor = vk::Rect2D {
-            offset: vk::Offset2D { x: 0, y: 0 },
-            extent: pass.extent.into(),
+        let scissor = Rect2D {
+            offset: Offset2D { x: 0, y: 0 },
+            extent: pass.extent,
         };
 
         command_buffer.set_viewport(&[viewport]);
@@ -1396,7 +1396,7 @@ impl CompiledRenderGraph {
         command_buffer.begin_rendering(rendering_info);
 
         // Set viewport and scissor for this pass
-        let viewport = vk::Viewport {
+        let viewport = Viewport {
             x: 0.0,
             y: 0.0,
             width: pass.extent.width as f32,
@@ -1405,9 +1405,9 @@ impl CompiledRenderGraph {
             max_depth: 1.0,
         };
 
-        let scissor = vk::Rect2D {
-            offset: vk::Offset2D { x: 0, y: 0 },
-            extent: pass.extent.into(),
+        let scissor = Rect2D {
+            offset: Offset2D { x: 0, y: 0 },
+            extent: pass.extent,
         };
 
         command_buffer.set_viewport(&[viewport]);

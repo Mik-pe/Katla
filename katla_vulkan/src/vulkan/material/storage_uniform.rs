@@ -61,6 +61,7 @@ use std::rc::Rc;
 
 use super::BufferDescriptorSetBuilder;
 use crate::vulkan::{bda::DeviceAddressBuffer, VulkanContext};
+use crate::RendererError;
 
 /// Storage buffer descriptor set for uniform buffers.
 ///
@@ -87,7 +88,7 @@ impl StorageDescriptorSet {
         context: &Rc<VulkanContext>,
         storage_buffer: &DeviceAddressBuffer,
         desc_layout: crate::sync::VkDescriptorSetLayout,
-    ) -> Result<Self, vk::Result> {
+    ) -> Result<Self, RendererError> {
         // Use the generic builder with two bindings to the same buffer
         let inner = BufferDescriptorSetBuilder::new(context)
             // Binding 0: frame_data (offset 0, size = FrameUniforms)
@@ -114,7 +115,7 @@ impl StorageDescriptorSet {
         self.inner.set()
     }
 
-    /// Get the raw Vulkan descriptor set handle (for internal use).
+    /// Get the raw Vulkan descriptor set handle.
     pub fn vk_set(&self) -> vk::DescriptorSet {
         self.inner.vk_set()
     }
@@ -238,8 +239,8 @@ impl StorageUniformManager {
     /// A new StorageUniformManager, or an error if buffer creation fails
     ///
     /// # Errors
-    /// Returns `vk::Result::ERROR_OUT_OF_DEVICE_MEMORY` if allocation fails
-    pub fn new(context: Rc<VulkanContext>) -> Result<Self, vk::Result> {
+    /// Returns `RendererError::VulkanError` if allocation fails
+    pub fn new(context: Rc<VulkanContext>) -> Result<Self, RendererError> {
         let buffer = DeviceAddressBuffer::new_persistent(
             context,
             StorageUniformLayout::MAX_BUFFER_SIZE as u64,
@@ -492,7 +493,7 @@ impl StorageUniformManager {
         &self,
         context: &Rc<VulkanContext>,
         desc_layout: crate::sync::VkDescriptorSetLayout,
-    ) -> Result<StorageDescriptorSet, vk::Result> {
+    ) -> Result<StorageDescriptorSet, RendererError> {
         StorageDescriptorSet::new(context, &self.buffer, desc_layout)
     }
 }

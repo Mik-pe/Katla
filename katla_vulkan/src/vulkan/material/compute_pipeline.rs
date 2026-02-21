@@ -199,12 +199,12 @@ impl ComputePipeline {
     }
 
     /// Get the raw Vulkan pipeline handle (for internal use).
-    pub fn vk_pipeline(&self) -> vk::Pipeline {
+    pub(crate) fn vk_pipeline(&self) -> vk::Pipeline {
         self.handle
     }
 
     /// Get the raw Vulkan pipeline layout handle (for internal use).
-    pub fn vk_layout(&self) -> vk::PipelineLayout {
+    pub(crate) fn vk_layout(&self) -> vk::PipelineLayout {
         self.layout
     }
 

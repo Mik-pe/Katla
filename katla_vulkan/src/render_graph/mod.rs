@@ -1,5 +1,6 @@
 pub mod builders;
 pub mod compiled;
+pub mod frame_resources;
 pub mod graph;
 pub mod pass;
 pub mod renderer_context;
@@ -11,6 +12,7 @@ pub mod errors;
 pub use builders::RenderGraphHelper;
 pub use compiled::{CompiledPass, CompiledRenderGraph, RenderPassGroup, SubpassDescriptor};
 pub use errors::RenderGraphError;
+pub use frame_resources::{FrameResources, RenderTarget};
 pub use graph::*;
 pub use pass::{Attachment, Pass, PassBuilder, PassCategory, PassExecutionContext};
 pub use renderer_context::{EmptyRenderFrameContext, RenderFrameContext, RendererContext};

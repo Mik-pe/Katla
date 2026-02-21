@@ -11,6 +11,7 @@ use crate::rendering::DrawList;
 use crate::vulkan::material::{
     MaterialPipeline, SkeletonDescriptorSet, StorageDescriptorSet, StorageUniformManager,
 };
+use crate::vulkan::BindlessTextureManager;
 use crate::{UIBuffers, UITextures, UiDrawData};
 
 /// Trait for render frame context - provides access to per-frame data
@@ -82,6 +83,8 @@ pub struct RendererContext {
     pub skeleton_descriptors: Option<Rc<RefCell<Vec<Option<SkeletonDescriptorSet>>>>>,
     /// Draw list for the current frame
     pub draw_list: Option<Rc<RefCell<Option<DrawList>>>>,
+    /// Bindless texture manager for efficient texture binding
+    pub bindless_manager: Option<Rc<RefCell<Option<BindlessTextureManager>>>>,
     /// Device handle for Vulkan commands
     pub device: Option<ash::Device>,
 }

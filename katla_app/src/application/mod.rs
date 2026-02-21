@@ -81,8 +81,10 @@ pub struct Application {
     pub(crate) scale_factor: f32,
     /// Gizmo rendering resources (mesh and material handles)
     pub(crate) gizmo_resources: Option<renderer::GizmoResources>,
-    /// Grid pipeline for runtime toggle
+    /// Pipelines for render graph (stored for rebuild on config change)
+    pub(crate) sky_pipeline: Option<Rc<RefCell<MaterialPipeline>>>,
     pub(crate) grid_pipeline: Option<Rc<RefCell<MaterialPipeline>>>,
+    pub(crate) ui_pipeline: Option<Rc<RefCell<MaterialPipeline>>>,
     /// Main scene viewport handle
     pub(crate) main_viewport: Option<katla_vulkan::ViewportHandle>,
     /// Preview viewport handle (for model preview panel)
@@ -204,7 +206,18 @@ impl ApplicationHandler for Application {
                                 renderer.init_viewport_target(new_width as u32, new_height as u32);
                             let _ =
                                 renderer.init_output_target(new_width as u32, new_height as u32);
-                            renderer.setup_render_graph();
+
+                            // Rebuild render graph with existing pipelines
+                            let grid_to_use = if self.editor_ui.show_grid {
+                                self.grid_pipeline.clone()
+                            } else {
+                                None
+                            };
+                            renderer.setup_render_graph(
+                                self.sky_pipeline.clone(),
+                                grid_to_use,
+                                self.ui_pipeline.clone(),
+                            );
 
                             if let Some(viewport_extent) = renderer.viewport_extent() {
                                 let aspect =
