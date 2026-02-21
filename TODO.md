@@ -26,22 +26,24 @@ TODO
   - `StorageDescriptorSet::vk_set()`
   - `SkeletonDescriptorSet::vk_set()`
   - `UITextures::vk_set()`
-- [x] Created `render_graph` module in katla_app (compatibility layer)
+- [x] Created `render_graph` module in katla_app
+- [x] Removed pipeline storage from VulkanRenderer
+  - Removed `sky_pipeline`, `grid_pipeline`, `ui_pipeline` fields
+  - Removed `set_sky()`, `set_grid()`, `set_ui()` methods
+  - `setup_render_graph()` passes pipelines to render graph builder
 
 ### Remaining Work
 
-#### Phase 1: Make application use new API
-- [ ] Add public accessor for `draw_list_cell` in VulkanRenderer
-- [ ] Make `ui_data`, `ui_buffers`, `ui_textures`, `ui_frame_index` public
-- [ ] Add `get_renderer_context()` method to VulkanRenderer
-- [ ] Update application to use `build_render_graph()` from render_graph module
+#### Phase 1: Migrate application to new render graph API
+- [ ] Add proper `get_renderer_context()` method that works with Rc<RefCell<>> types
+- [ ] Make `UiDrawData`, `UIBuffers`, `UITextures` Clone or use Rc<RefCell<>>
+- [ ] Update `render_graph.rs` to use new API instead of legacy `setup_render_graph()`
 - [ ] Test that everything still renders
 
-#### Phase 2: Remove application-specific code from VulkanRenderer
-- [ ] Remove `sky_pipeline`, `grid_pipeline`, `ui_pipeline` fields
-- [ ] Remove `set_sky()`, `set_grid()`, `set_ui()` methods
-- [ ] Remove `setup_render_graph()` method
+#### Phase 2: Remove legacy render graph code
 - [ ] Remove `rebuild_render_graph_internal()` method
+- [ ] Remove `setup_render_graph()` method
+- [ ] All render graph building happens in application layer
 
 #### Phase 3: Fix pre-existing issues
 - [ ] Fix image layout transitions in present pass
@@ -65,7 +67,8 @@ The Application layer should:
 
 - ✅ Infrastructure for new API is in place
 - ✅ Application builds and runs
-- ⚠️ Application still uses legacy `setup_render_graph()` API
+- ✅ Pipeline ownership moved to application (passed to setup_render_graph)
+- ⚠️ Application still uses legacy `setup_render_graph()` API internally
 - ⚠️ Pre-existing validation errors remain
 
 ## Pre-existing Issues
