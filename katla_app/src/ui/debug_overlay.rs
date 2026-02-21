@@ -116,7 +116,7 @@ impl DebugOverlay {
         let padding = 10.0;
         let line_height = 22.0;
         let title_height = 25.0;
-        let button_height = 24.0;
+        let button_height = ui.style.button_height_small;
         let graph_height = 50.0;
         let graph_spacing = 5.0;
         let window_width = 300.0;
@@ -318,7 +318,7 @@ impl DebugOverlay {
             ui.label(&format!("Volume: {:.0}%", self.volume * 100.0), label_bounds);
             cursor = Vec2::new(cursor.x(), cursor.y() + line_height + 2.0);
 
-            let slider_bounds = Rect2D::from_origin_size(cursor, Vec2::new(panel_width - padding * 2.0, 20.0));
+            let slider_bounds = Rect2D::from_origin_size(cursor, Vec2::new(panel_width - padding * 2.0, ui.style.checkbox_size));
             ui.slider("volume_slider", &mut self.volume, 0.0, 1.0, slider_bounds);
             cursor = Vec2::new(cursor.x(), cursor.y() + 28.0);
         }
@@ -329,7 +329,7 @@ impl DebugOverlay {
             ui.label(&format!("Sensitivity: {:.1}", self.sensitivity), label_bounds);
             cursor = Vec2::new(cursor.x(), cursor.y() + line_height + 2.0);
 
-            let slider_bounds = Rect2D::from_origin_size(cursor, Vec2::new(panel_width - padding * 2.0, 20.0));
+            let slider_bounds = Rect2D::from_origin_size(cursor, Vec2::new(panel_width - padding * 2.0, ui.style.checkbox_size));
             ui.slider("sens_slider", &mut self.sensitivity, 0.1, 3.0, slider_bounds);
             cursor = Vec2::new(cursor.x(), cursor.y() + 28.0);
         }
@@ -340,7 +340,7 @@ impl DebugOverlay {
             ui.label(&format!("Ambient: {:.2}", self.ambient_intensity), label_bounds);
             cursor = Vec2::new(cursor.x(), cursor.y() + line_height + 2.0);
 
-            let slider_bounds = Rect2D::from_origin_size(cursor, Vec2::new(panel_width - padding * 2.0, 20.0));
+            let slider_bounds = Rect2D::from_origin_size(cursor, Vec2::new(panel_width - padding * 2.0, ui.style.checkbox_size));
             ui.slider("ambient_slider", &mut self.ambient_intensity, 0.0, 1.0, slider_bounds);
             cursor = Vec2::new(cursor.x(), cursor.y() + 28.0);
         }

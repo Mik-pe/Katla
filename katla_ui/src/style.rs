@@ -228,6 +228,26 @@ pub struct UiStyle {
     pub separator_height: f32,
     /// Tooltip padding.
     pub tooltip_padding: f32,
+
+    // Button heights
+    /// Small button height (compact UI).
+    pub button_height_small: f32,
+    /// Medium button height (standard).
+    pub button_height_medium: f32,
+    /// Toolbar height.
+    pub toolbar_height: f32,
+
+    // Icon sizes
+    /// Small icon size (12px) - navigation, inline icons.
+    pub icon_size_small: f32,
+    /// Medium icon size (16px) - standard icons.
+    pub icon_size_medium: f32,
+    /// Large icon size (28px) - asset icons, emphasis.
+    pub icon_size_large: f32,
+
+    // Asset browser
+    /// Thumbnail size for asset grid items.
+    pub thumbnail_size: f32,
 }
 
 impl UiStyle {
@@ -316,6 +336,19 @@ impl UiStyle {
             graph_padding: 3.0,
             separator_height: 8.0,
             tooltip_padding: 4.0,
+
+            // Button heights (dark theme)
+            button_height_small: 24.0,
+            button_height_medium: 28.0,
+            toolbar_height: 32.0,
+
+            // Icon sizes (dark theme)
+            icon_size_small: 12.0,
+            icon_size_medium: 16.0,
+            icon_size_large: 28.0,
+
+            // Asset browser (dark theme)
+            thumbnail_size: 64.0,
         }
     }
 
@@ -404,6 +437,19 @@ impl UiStyle {
             graph_padding: 3.0,
             separator_height: 8.0,
             tooltip_padding: 4.0,
+
+            // Button heights (light theme)
+            button_height_small: 24.0,
+            button_height_medium: 28.0,
+            toolbar_height: 32.0,
+
+            // Icon sizes (light theme)
+            icon_size_small: 12.0,
+            icon_size_medium: 16.0,
+            icon_size_large: 28.0,
+
+            // Asset browser (light theme)
+            thumbnail_size: 64.0,
         }
     }
 }
@@ -522,6 +568,19 @@ impl UiStyle {
             graph_padding: 3.0,
             separator_height: 6.0,
             tooltip_padding: 4.0,
+
+            // Button heights (classic theme)
+            button_height_small: 22.0,
+            button_height_medium: 26.0,
+            toolbar_height: 28.0,
+
+            // Icon sizes (classic theme)
+            icon_size_small: 12.0,
+            icon_size_medium: 16.0,
+            icon_size_large: 26.0,
+
+            // Asset browser (classic theme)
+            thumbnail_size: 64.0,
         }
     }
 }
