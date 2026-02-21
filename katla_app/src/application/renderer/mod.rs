@@ -425,8 +425,22 @@ pub fn render_frame(app: &mut Application) {
         }
     }
 
-    // Render using the draw list
-    if let Err(e) = renderer.render_frame(draw_list) {
+    // === MAIN VIEWPORT RENDERING ===
+    // Set draw list for main viewport (index 0) if we have a viewport system
+    // The draw list contains all scene objects + particles + gizmos
+    // This enables the new viewport-based rendering where each viewport renders to its texture
+    let result = if let Some(main_viewport) = app.main_viewport {
+        renderer.set_viewport_draw_list(main_viewport, draw_list);
+        // Pass empty draw list to render_frame - the main render graph just does UI + present
+        let empty_draw_list = DrawList::new();
+        renderer.render_frame(empty_draw_list)
+    } else {
+        // Fallback to legacy rendering (draw list passed to main render graph)
+        renderer.render_frame(draw_list)
+    };
+
+    // Handle render errors
+    if let Err(e) = result {
         match e {
             katla_vulkan::RenderGraphError::SwapchainOutOfDate => {
                 // Swapchain is out of date (e.g., window resize), skip this frame

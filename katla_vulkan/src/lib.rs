@@ -758,19 +758,20 @@ impl VulkanRenderer {
         viewport.storage_manager = Some(manager);
         viewport.storage_descriptor = Some(descriptor_set);
 
-        // 3. Build render graph (internal - user doesn't need to know about this)
-        let render_graph = self.build_viewport_render_graph_internal(&viewport, handle);
+        // 3. Build render graph for this viewport (sky + geometry → viewport texture)
+        // All viewports use the same simple render graph that renders to their texture
+        let render_graph = self.build_viewport_render_graph(&viewport, handle);
         viewport.render_graph = render_graph;
 
         // 4. Store viewport
         self.viewports.push(viewport);
 
-        info!("Viewport '{}' created with full setup", builder.get_label());
+        info!("Viewport '{}' created", builder.get_label());
         Ok(handle)
     }
 
-    /// Internal: Build render graph for a viewport.
-    fn build_viewport_render_graph_internal(
+    /// Build render graph for a viewport (sky + geometry passes → viewport texture).
+    fn build_viewport_render_graph(
         &mut self,
         viewport: &Viewport,
         handle: ViewportHandle,
@@ -1601,10 +1602,14 @@ impl VulkanRenderer {
         let uses_viewport = has_viewport;
         let device = self.context.device.clone();
 
-        // === SKY PASS ===
-        // Renders first, clears color and depth, writes sky to color only
-        // Uses scene_color/scene_depth which is either viewport or output texture
-        graph_builder.add_pass("sky_pass", move |pass| {
+        // === SCENE PASSES (sky + geometry) ===
+        // When using the viewport system, these passes are in each viewport's render graph
+        // The main render graph only handles UI composition + presentation
+        if !uses_viewport {
+            // === SKY PASS ===
+            // Renders first, clears color and depth, writes sky to color only
+            // Uses scene_color/scene_depth which is either viewport or output texture
+            graph_builder.add_pass("sky_pass", move |pass| {
             pass.write(Attachment::Color(scene_color))
                 .write(Attachment::DepthStencil(scene_depth))
                 .clear_color(scene_color, [0.4, 0.6, 0.9, 1.0]) // Sky blue fallback
@@ -2022,6 +2027,7 @@ impl VulkanRenderer {
                     }
                 });
         });
+        } // !uses_viewport - scene passes only when NOT using viewport system
 
         // === UI PASS ===
         // Renders UI overlay to the output texture
@@ -2042,40 +2048,18 @@ impl VulkanRenderer {
         graph_builder.add_pass("ui_pass", move |pass| {
             pass.write(Attachment::Color(ui_target_res))
                 .clear_color(ui_target_res, [0.1, 0.1, 0.1, 1.0])
-                // Pre-execute: transition viewport texture to SHADER_READ_ONLY before sampling
-                .pre_execute("ui_pass", move |ctx| {
-                    let cmd_buf = ctx.command_buffer.vk_command_buffer();
-
-                    // When using viewport, transition viewport texture from COLOR_ATTACHMENT to SHADER_READ_ONLY
-                    // This is needed because sky_pass/geometry_pass write to it as a render target,
-                    // but ui_pass samples from it via a descriptor set
-                    if uses_viewport {
-                        if let Some((viewport_image, _)) = ctx.get_image(scene_color) {
-                            let subresource = vk::ImageSubresourceRange {
-                                aspect_mask: vk::ImageAspectFlags::COLOR,
-                                base_mip_level: 0,
-                                level_count: 1,
-                                base_array_layer: 0,
-                                layer_count: 1,
-                            };
-
-                            // Transition: COLOR_ATTACHMENT_OPTIMAL -> SHADER_READ_ONLY_OPTIMAL
-                            let barrier = ImageMemoryBarrier2::new(viewport_image)
-                                .src_stage(PipelineStage2Flags::COLOR_ATTACHMENT_OUTPUT)
-                                .src_access(AccessFlags2::COLOR_ATTACHMENT_WRITE)
-                                .dst_stage(PipelineStage2Flags::FRAGMENT_SHADER)
-                                .dst_access(AccessFlags2::SHADER_READ)
-                                .old_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
-                                .new_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
-                                .subresource_range(subresource);
-
-                            DependencyInfo::new().add_image_barrier(barrier).build(
-                                |dep_info| unsafe {
-                                    ui_device.cmd_pipeline_barrier2(cmd_buf, dep_info);
-                                },
-                            );
-                        }
-                    }
+                // Pre-execute: viewport textures already in SHADER_READ_ONLY (transitioned in render_frame)
+                // No transition needed here - viewports handle their own layout transitions
+                .pre_execute("ui_pass", move |_ctx| {
+                    // When using viewport system:
+                    // - Viewport render graphs execute first and transition their textures to SHADER_READ_ONLY
+                    // - UI pass can directly sample viewport textures without any layout transition
+                    //
+                    // When NOT using viewport system (legacy):
+                    // - Scene renders directly to output texture
+                    // - No viewport texture to transition
+                    //
+                    // Either way, no action needed here.
                 })
                 .execute("ui_pass", move |ctx| {
                     // SAFETY: Pointers are valid for the renderer's lifetime
@@ -3069,10 +3053,59 @@ impl VulkanRenderer {
             debug!("render_frame: compute barrier inserted");
         }
 
-        // === EXECUTE PREVIEW RENDER GRAPH (if active) ===
-        // This renders the model preview to an offscreen texture before the main scene
+        // === EXECUTE ALL VIEWPORT RENDER GRAPHS ===
+        // Each viewport renders to its own texture, then UI samples all textures
+        for (idx, viewport) in self.viewports.iter_mut().enumerate() {
+            // Skip viewports without render graphs or draw lists
+            if viewport.render_graph.is_none() {
+                continue;
+            }
+
+            // Check if viewport has a draw list
+            let has_draw_list = viewport.draw_list_cell.borrow().is_some();
+            if !has_draw_list {
+                continue;
+            }
+
+            debug!("render_frame: executing viewport {} render graph", idx);
+
+            // Update viewport frame uniforms if set
+            if let Some(ref frame) = viewport.frame_uniforms {
+                if let Some(ref mut manager) = viewport.storage_manager {
+                    let view: [[f32; 4]; 4] = bytemuck::cast(frame.view_matrix);
+                    let proj: [[f32; 4]; 4] = bytemuck::cast(frame.proj_matrix);
+                    let inv_view_proj: [[f32; 4]; 4] = bytemuck::cast(frame.inv_view_proj_matrix);
+
+                    manager.update_frame_with_lighting(
+                        &view,
+                        &proj,
+                        &inv_view_proj,
+                        &frame.camera_position,
+                        &frame.light_direction,
+                        &frame.light_color,
+                        frame.light_intensity,
+                    );
+                }
+            }
+
+            // Execute viewport render graph
+            if let Some(ref mut viewport_graph) = viewport.render_graph {
+                viewport_graph.execute_no_swapchain(&mut command_buffer)?;
+                debug!("render_frame: viewport {} graph.execute complete", idx);
+
+                // Transition viewport texture to SHADER_READ_ONLY for UI sampling
+                viewport.transition_to_sample(
+                    command_buffer.vk_command_buffer(),
+                    &self.context.device,
+                );
+                debug!("render_frame: viewport {} texture transitioned to SHADER_READ_ONLY", idx);
+            }
+        }
+
+        // === LEGACY PREVIEW RENDER GRAPH (deprecated - will be removed) ===
+        // This handles the old preview system for backwards compatibility
         if preview_active {
-            debug!("render_frame: executing preview render graph");
+            debug!("render_frame: executing legacy preview render graph");
 
             // Update preview frame uniforms
             if let Some(ref frame) = self.preview_frame_uniforms {
@@ -3094,14 +3127,10 @@ impl VulkanRenderer {
             }
 
             // Execute preview render graph
-            // Execute preview render graph
             if let Some(ref mut preview_graph) = self.preview_render_graph {
-                // Preview graph has no swapchain dependencies
                 preview_graph.execute_no_swapchain(&mut command_buffer)?;
                 debug!("render_frame: preview graph.execute complete");
 
-                // Transition preview texture from COLOR_ATTACHMENT_OPTIMAL to SHADER_READ_ONLY_OPTIMAL
-                // so the UI can sample from it in the main render graph's ui_pass
                 if let Some(preview_img) = preview_image_for_barrier {
                     let cmd_buf = command_buffer.vk_command_buffer();
 
@@ -3131,7 +3160,7 @@ impl VulkanRenderer {
             }
         }
 
-        debug!("render_frame: executing render graph");
+        debug!("render_frame: executing main render graph (UI + present)");
         // Execute the render graph with the current image index
         // The render graph handles:
         // 1. Rendering 3D scene to viewport/output texture (geometry_pass, sky_pass)
