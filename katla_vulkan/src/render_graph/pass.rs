@@ -648,6 +648,332 @@ impl PassExecutionContext {
     pub fn extent(&self) -> (u32, u32) {
         (self.extent.width, self.extent.height)
     }
+
+    /// Blit from one image to another.
+    ///
+    /// This is a convenience method for the present pass.
+    /// Performs a linear-filtered blit from src to dst covering the full images.
+    pub fn blit_images(
+        &self,
+        src_image: VkImage,
+        dst_image: VkImage,
+        width: u32,
+        height: u32,
+    ) {
+        let src: vk::Image = src_image.into();
+        let dst: vk::Image = dst_image.into();
+
+        let blit_region = vk::ImageBlit::default()
+            .src_subresource(vk::ImageSubresourceLayers {
+                aspect_mask: vk::ImageAspectFlags::COLOR,
+                mip_level: 0,
+                base_array_layer: 0,
+                layer_count: 1,
+            })
+            .src_offsets([
+                vk::Offset3D { x: 0, y: 0, z: 0 },
+                vk::Offset3D { x: width as i32, y: height as i32, z: 1 },
+            ])
+            .dst_subresource(vk::ImageSubresourceLayers {
+                aspect_mask: vk::ImageAspectFlags::COLOR,
+                mip_level: 0,
+                base_array_layer: 0,
+                layer_count: 1,
+            })
+            .dst_offsets([
+                vk::Offset3D { x: 0, y: 0, z: 0 },
+                vk::Offset3D { x: width as i32, y: height as i32, z: 1 },
+            ]);
+
+        // Get device from renderer context
+        if let Some(ctx) = &self.renderer_context {
+            if let Some(device) = &ctx.device {
+                unsafe {
+                    device.cmd_blit_image(
+                        self.command_buffer.vk_command_buffer(),
+                        src,
+                        vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
+                        dst,
+                        vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+                        &[blit_region],
+                        vk::Filter::LINEAR,
+                    );
+                }
+            }
+        }
+    }
+
+    // ========================================================================
+    // Descriptor Set Binding Methods (no ash::vk exposure)
+    // ========================================================================
+
+    /// Bind a descriptor set at set index 0 for graphics pipelines.
+    ///
+    /// This is the most common pattern - bind a single descriptor set at set 0.
+    pub fn bind_graphics_descriptor_set(
+        &self,
+        pipeline: &crate::vulkan::material::MaterialPipeline,
+        descriptor_set: crate::sync::VkDescriptorSet,
+    ) {
+        self.command_buffer.bind_graphics_descriptors(
+            pipeline.vk_layout(),
+            &[descriptor_set.into()],
+        );
+    }
+
+    /// Bind a descriptor set at a specific set index for graphics pipelines.
+    ///
+    /// This allows binding to set 1, 2, etc. for pipelines with multiple descriptor sets.
+    /// Use this for bindless textures (set 1), skeleton data (set 2), etc.
+    pub fn bind_graphics_descriptor_set_at(
+        &self,
+        pipeline: &crate::vulkan::material::MaterialPipeline,
+        descriptor_set: crate::sync::VkDescriptorSet,
+        first_set: u32,
+    ) {
+        self.command_buffer.bind_graphics_descriptors_at(
+            pipeline.vk_layout(),
+            first_set,
+            &[descriptor_set.into()],
+        );
+    }
+
+    // ========================================================================
+    // High-Level Drawing API - Application-friendly methods
+    // ========================================================================
+
+    /// Draw all meshes from the draw list.
+    ///
+    /// This is a generic drawing method - it draws whatever is in the draw list.
+    /// The application must have set a draw list via `renderer.set_draw_list()`.
+    /// Katla_vulkan doesn't know or care what "geometry" means - it just draws
+    /// the meshes it's given.
+    ///
+    /// Handles all the complexity internally:
+    /// - Binding pipelines and descriptor sets
+    /// - Updating storage uniforms
+    /// - Binding vertex/index buffers
+    /// - Issuing draw calls
+    pub fn draw_draw_list(&self) {
+        let Some(ctx) = &self.renderer_context else {
+            return;
+        };
+
+        // Get draw list
+        let draw_list = match &ctx.draw_list {
+            Some(cell) => cell.borrow_mut().take(),
+            None => return,
+        };
+        let Some(draw_list) = draw_list else {
+            return;
+        };
+
+        // Get asset registry
+        let registry = match &ctx.asset_registry {
+            Some(cell) => cell.borrow(),
+            None => return,
+        };
+
+        // Get storage manager
+        let mut storage_manager = match &ctx.storage_manager {
+            Some(cell) => cell.borrow_mut(),
+            None => return,
+        };
+
+        // Get storage descriptor set
+        let storage_descriptor = ctx.storage_descriptor();
+
+        // Get bindless manager
+        let bindless_descriptor = match &ctx.bindless_manager {
+            Some(cell) => cell.borrow().as_ref().map(|m| m.vk_descriptor_set()),
+            None => None,
+        };
+
+        // Get skeleton descriptors
+        let skeleton_descriptors = match &ctx.skeleton_descriptors {
+            Some(cell) => cell.borrow(),
+            None => return,
+        };
+
+        let mut next_object_index: u32 = 0;
+        let mut bindless_bound = false;
+
+        for draw in &draw_list.draws {
+            let instance_count = draw.instance_count();
+            let first_instance = next_object_index;
+            next_object_index += instance_count;
+
+            // Update uniforms first
+            if let Some(material) = registry.get_material(draw.material) {
+                if let Some(ref mut manager) = *storage_manager {
+                    let model: [[f32; 4]; 4] = bytemuck::cast(draw.model_matrix);
+                    let color = draw.color.unwrap_or([1.0, 1.0, 1.0, 1.0]);
+                    manager.update_object_bindless(
+                        first_instance as usize,
+                        &model,
+                        &color,
+                        draw.metallic,
+                        draw.roughness,
+                        draw.ao,
+                        material.emission_index as f32,
+                        material.texture_indices,
+                    );
+                }
+            }
+
+            // Get mesh and material for drawing
+            let mesh = registry.get_mesh(draw.mesh);
+            let material = registry.get_material(draw.material);
+
+            if let (Some(mesh), Some(material)) = (mesh, material) {
+                let pipeline_ref = material.pipeline.borrow();
+                self.command_buffer.bind_graphics_pipeline(&pipeline_ref);
+
+                // Bind storage descriptor (set 0)
+                if let Some(desc_set) = storage_descriptor {
+                    self.command_buffer.bind_graphics_descriptors(
+                        pipeline_ref.vk_layout(),
+                        &[desc_set.into()],
+                    );
+                }
+
+                // Bind bindless textures (set 1) - only once
+                if let Some(bindless_set) = bindless_descriptor {
+                    if !bindless_bound {
+                        self.command_buffer.bind_graphics_descriptors_at(
+                            pipeline_ref.vk_layout(),
+                            1,
+                            &[bindless_set],
+                        );
+                        bindless_bound = true;
+                    }
+                }
+
+                // Bind skeleton descriptor (set 2) if present
+                if let Some(skeleton_handle) = draw.skeleton {
+                    if let Some(Some(skeleton_desc)) = skeleton_descriptors.get(skeleton_handle.0 as usize) {
+                        self.command_buffer.bind_graphics_descriptors_at(
+                            pipeline_ref.vk_layout(),
+                            2,
+                            &[skeleton_desc.vk_set()],
+                        );
+                    }
+                }
+
+                drop(pipeline_ref);
+
+                // Draw
+                if let Some(ref ib) = mesh.index_buffer {
+                    self.command_buffer.bind_index_buffer(ib.object(), 0, ib.index_type);
+                    if let Some(ref vb) = mesh.vertex_buffer {
+                        self.command_buffer.bind_vertex_buffers(0, &[vb.object()], &[0]);
+                        self.command_buffer.draw_indexed(ib.count(), instance_count, 0, 0, first_instance);
+                    }
+                }
+            }
+        }
+    }
+
+    /// Draw UI from the renderer's UI data.
+    ///
+    /// This handles all UI rendering internally:
+    /// - Binding the UI pipeline
+    /// - Binding font atlas textures
+    /// - Updating vertex/index buffers
+    /// - Drawing indexed geometry
+    ///
+    /// The application just needs to have set UI data via `renderer.set_ui_data()`.
+    pub fn draw_ui(&self, ui_pipeline: &std::rc::Rc<std::cell::RefCell<crate::vulkan::material::MaterialPipeline>>) {
+        let Some(ctx) = &self.renderer_context else {
+            return;
+        };
+
+        // Get UI data
+        let ui_data = match &ctx.ui_data {
+            Some(cell) => cell.borrow(),
+            None => return,
+        };
+        let Some(ui_data) = ui_data.as_ref() else {
+            return;
+        };
+
+        // Get UI textures
+        let ui_textures = match &ctx.ui_textures {
+            Some(cell) => cell.borrow(),
+            None => return,
+        };
+        let Some(ui_textures) = ui_textures.as_ref() else {
+            return;
+        };
+
+        if ui_data.vertex_data.is_empty() || ui_data.index_data.is_empty() {
+            return;
+        }
+
+        // Get frame index
+        let frame_idx = match &ctx.ui_frame_index {
+            Some(cell) => *cell.borrow(),
+            None => return,
+        };
+
+        // Get UI buffers
+        let ui_buffers = match &ctx.ui_buffers {
+            Some(cell) => cell.borrow(),
+            None => return,
+        };
+
+        // Bind pipeline
+        let pipeline = ui_pipeline.borrow();
+        self.bind_graphics_pipeline(&pipeline);
+
+        // Bind UI descriptor set (font atlas)
+        self.command_buffer.bind_graphics_descriptors(
+            pipeline.vk_layout(),
+            &[ui_textures.vk_set()],
+        );
+        drop(pipeline);
+
+        // Update and draw
+        if let Some(ui_buffer) = ui_buffers.get(frame_idx) {
+            ui_buffer.update_vertices(&ui_data.vertex_data);
+            ui_buffer.update_indices(&ui_data.index_data);
+
+            self.command_buffer.bind_vertex_buffers(0, &[ui_buffer.vertex_buffer], &[0]);
+            self.command_buffer.bind_index_buffer(ui_buffer.index_buffer, 0, crate::IndexType::Uint32);
+
+            self.command_buffer.draw_indexed(
+                (ui_data.index_data.len() / 4) as u32,
+                1, 0, 0, 0,
+            );
+        }
+    }
+
+    /// Draw a fullscreen quad with a material.
+    ///
+    /// This is the simplest drawing method - just renders a fullscreen triangle
+    /// using the given material. Commonly used for sky, grid, and post-processing passes.
+    ///
+    /// The descriptor set binding is handled automatically if the RendererContext
+    /// has a storage descriptor set available.
+    pub fn draw_fullscreen_with_material(&self, material: &std::rc::Rc<std::cell::RefCell<crate::vulkan::material::MaterialPipeline>>) {
+        let pipeline = material.borrow();
+        self.bind_graphics_pipeline(&pipeline);
+
+        // Bind storage descriptor if available (for frame uniforms)
+        if let Some(ctx) = &self.renderer_context {
+            if let Some(desc_set) = ctx.storage_descriptor() {
+                self.command_buffer.bind_graphics_descriptors(
+                    pipeline.vk_layout(),
+                    &[desc_set.into()],
+                );
+            }
+        }
+
+        drop(pipeline);
+
+        // Draw fullscreen triangle (3 vertices)
+        self.draw_fullscreen();
+    }
 }
 
 /// Represents a render pass in the render graph.

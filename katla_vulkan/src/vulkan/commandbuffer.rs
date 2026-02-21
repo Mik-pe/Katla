@@ -38,8 +38,8 @@ impl CommandBuffer {
         VkCommandBuffer::new(self.command_buffer)
     }
 
-    /// Get the raw Vulkan command buffer handle (for internal use).
-    pub(crate) fn vk_command_buffer(&self) -> vk::CommandBuffer {
+    /// Get the raw Vulkan command buffer handle.
+    pub fn vk_command_buffer(&self) -> vk::CommandBuffer {
         self.command_buffer
     }
 
@@ -184,6 +184,31 @@ impl CommandBuffer {
                 vk::PipelineBindPoint::GRAPHICS,
                 pipeline_layout,
                 0,
+                descriptor_sets,
+                &[],
+            );
+        }
+    }
+
+    /// Bind graphics descriptor sets at a specific first set index.
+    ///
+    /// This allows binding to set 1, 2, etc. for pipelines with multiple descriptor sets.
+    /// Common use cases:
+    /// - Set 0: Storage uniforms / frame data
+    /// - Set 1: Bindless textures
+    /// - Set 2: Skeleton data for animation
+    pub fn bind_graphics_descriptors_at(
+        &self,
+        pipeline_layout: vk::PipelineLayout,
+        first_set: u32,
+        descriptor_sets: &[vk::DescriptorSet],
+    ) {
+        unsafe {
+            self.device.cmd_bind_descriptor_sets(
+                self.command_buffer,
+                vk::PipelineBindPoint::GRAPHICS,
+                pipeline_layout,
+                first_set,
                 descriptor_sets,
                 &[],
             );
