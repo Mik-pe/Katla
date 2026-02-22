@@ -86,9 +86,9 @@ pub struct Application {
     pub(crate) grid_pipeline: Option<Rc<RefCell<MaterialPipeline>>>,
     pub(crate) ui_pipeline: Option<Rc<RefCell<MaterialPipeline>>>,
     /// UI renderer (owns UI buffers, textures, descriptors)
-    pub(crate) ui_renderer: Option<katla_vulkan::UIRenderer>,
+    pub(crate) ui_renderer: Option<crate::rendering::UIRenderer>,
     /// UI draw data for current frame (shared with render graph)
-    pub(crate) ui_draw_data: Rc<RefCell<Option<katla_vulkan::UiDrawData>>>,
+    pub(crate) ui_draw_data: Rc<RefCell<Option<crate::rendering::UiDrawData>>>,
     /// Main scene viewport handle
     pub(crate) main_viewport: Option<katla_vulkan::ViewportHandle>,
     /// Preview viewport handle (for model preview panel)

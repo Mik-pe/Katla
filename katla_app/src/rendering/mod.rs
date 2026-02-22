@@ -6,6 +6,7 @@ pub mod material_manager;
 pub mod mesh;
 pub mod sky_material;
 pub mod ui_material;
+pub mod ui_renderer;
 pub mod vertextypes;
 
 pub use gizmo_material::GizmoMaterial;
@@ -16,7 +17,5 @@ pub use material_manager::MaterialManager;
 pub use mesh::*;
 pub use sky_material::SkyMaterial;
 pub use ui_material::UiMaterial;
+pub use ui_renderer::{UiDrawCommand, UiDrawData, UIRenderer};
 pub use vertextypes::*;
-
-// Re-export UI types from katla_vulkan
-pub use katla_vulkan::{UiDrawCommand, UiDrawData, UIRenderer};

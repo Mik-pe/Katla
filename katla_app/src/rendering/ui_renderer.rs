@@ -7,17 +7,12 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use ash::vk;
-
-use crate::context::VulkanContext;
-use crate::material::MaterialPipeline;
-use crate::render_graph::types::{Extent2D, Offset2D, Rect2D, ShaderStages};
-use crate::render_graph::PassExecutionContext;
-use crate::sync::{VkBuffer, VkDescriptorSet, VkImageView, VkSampler};
-use crate::texture::Texture;
-use crate::vulkan::descriptor::DescriptorSetLayoutBuilder;
-use crate::vulkan::material::buffer_descriptor::{MixedDescriptorSetBuilder, UniformBuffer};
-use crate::vulkan::pipeline_state::DescriptorType;
-use crate::{IndexBuffer, IndexType, VertexBuffer};
+use katla_vulkan::{
+    DescriptorSetLayoutBuilder, DescriptorType, IndexBuffer, IndexType, MaterialPipeline,
+    MixedDescriptorSetBuilder, PassExecutionContext, Rect2D, ShaderStages, Texture,
+    UniformBuffer, VertexBuffer, VkBuffer, VkDescriptorSet, VkImageView, VkSampler,
+    VulkanContext,
+};
 
 /// A single draw command for UI rendering.
 #[derive(Debug, Clone)]
@@ -87,7 +82,7 @@ struct UITextures {
     descriptor_set_layout: vk::DescriptorSetLayout,
     push_descriptor_layout: vk::DescriptorSetLayout,
     pipeline_layout: vk::PipelineLayout,
-    mixed_descriptor_set: crate::vulkan::material::buffer_descriptor::MixedDescriptorSet,
+    mixed_descriptor_set: katla_vulkan::MixedDescriptorSet,
     atlas_width: u32,
     atlas_height: u32,
     external_textures: HashMap<u64, vk::ImageView>,
@@ -320,6 +315,8 @@ impl UIRenderer {
 
     /// Draw UI using the render context.
     pub fn draw(&self, ctx: &PassExecutionContext, draw_data: &UiDrawData) {
+        use katla_vulkan::{Extent2D, Offset2D};
+
         if draw_data.vertex_data.is_empty() || draw_data.index_data.is_empty() {
             return;
         }

@@ -196,9 +196,9 @@ pub fn render_debug_ui(app: &mut Application, dt: f32) {
 
         // Convert commands to renderer format
         // Scale clip rects from logical to physical for Vulkan scissor testing
-        let ui_commands: Vec<katla_vulkan::UiDrawCommand> = commands
+        let ui_commands: Vec<crate::rendering::UiDrawCommand> = commands
             .iter()
-            .map(|cmd| katla_vulkan::UiDrawCommand {
+            .map(|cmd| crate::rendering::UiDrawCommand {
                 index_offset: cmd.index_offset,
                 index_count: cmd.index_count,
                 clip_rect: [
@@ -219,7 +219,7 @@ pub fn render_debug_ui(app: &mut Application, dt: f32) {
             ui_renderer.update_screen_size(screen_size.x(), screen_size.y());
 
             // Store UI data for render graph to pick up
-            *app.ui_draw_data.borrow_mut() = Some(katla_vulkan::UiDrawData {
+            *app.ui_draw_data.borrow_mut() = Some(crate::rendering::UiDrawData {
                 vertex_data: vertex_bytes,
                 index_data: index_bytes,
                 screen_size: [physical_size.x(), physical_size.y()],

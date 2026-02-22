@@ -18,6 +18,7 @@ pub mod uniform_layout;
 pub use asset::*;
 pub use buffer_descriptor::{
     BufferBinding, BufferDescriptorSet, BufferDescriptorSetBuilder, BufferDescriptorSource,
+    ImageBinding, MixedDescriptorSet, MixedDescriptorSetBuilder, SamplerBinding, UniformBuffer,
 };
 pub use builder::*;
 pub use compute_pipeline::{ComputePipeline, ComputePipelineBuilder, ComputePipelineError};
@@ -115,7 +116,9 @@ impl PbrTextureSet {
     }
 }
 
-pub struct UniformBuffer {
+/// Legacy uniform buffer for internal material use.
+/// Use `buffer_descriptor::UniformBuffer<T>` for new code.
+pub struct LegacyUniformBuffer {
     allocation: Allocation,
     buffer: vk::Buffer,
     buf_size: vk::DeviceSize,
@@ -144,7 +147,7 @@ pub struct UniformHandle {
 pub struct UniformDescriptor {
     pub desc_set: vk::DescriptorSet,
     desc_pool: Option<vk::DescriptorPool>, // Option to prevent double-free
-    pub uniform_buffer: Option<UniformBuffer>,
+    pub uniform_buffer: Option<LegacyUniformBuffer>,
     pub image_info: Option<ImageInfo>,
     pub separate_bindings: bool,
 }
@@ -358,7 +361,7 @@ impl UniformHandle {
 
         let (buffer, allocation) =
             context.allocate_buffer(&create_info, gpu_allocator::MemoryLocation::CpuToGpu);
-        let uniform_buffer = Some(UniformBuffer {
+        let uniform_buffer = Some(LegacyUniformBuffer {
             allocation,
             buffer,
             buf_size: data_size as vk::DeviceSize,
