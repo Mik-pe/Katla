@@ -1396,24 +1396,7 @@ impl ViewportRenderTarget {
                 .create_image_view(&depth_view_create_info, None)?;
 
             // Create sampler
-            let sampler_create_info = vk::SamplerCreateInfo::default()
-                .mag_filter(vk::Filter::LINEAR)
-                .min_filter(vk::Filter::LINEAR)
-                .address_mode_u(vk::SamplerAddressMode::CLAMP_TO_EDGE)
-                .address_mode_v(vk::SamplerAddressMode::CLAMP_TO_EDGE)
-                .address_mode_w(vk::SamplerAddressMode::CLAMP_TO_EDGE)
-                .anisotropy_enable(false)
-                .max_anisotropy(1.0)
-                .border_color(vk::BorderColor::INT_OPAQUE_BLACK)
-                .unnormalized_coordinates(false)
-                .compare_enable(false)
-                .compare_op(vk::CompareOp::ALWAYS)
-                .mipmap_mode(vk::SamplerMipmapMode::LINEAR)
-                .mip_lod_bias(0.0)
-                .min_lod(0.0)
-                .max_lod(0.0);
-
-            let sampler = context.device.create_sampler(&sampler_create_info, None)?;
+            let sampler = context.create_sampler_clamp_to_edge()?;
 
             // Transition images to their initial layouts
             let cmd_buffer = context.begin_single_time_commands();
@@ -1466,7 +1449,7 @@ impl ViewportRenderTarget {
                 depth_memory: Some(depth_memory),
                 depth_image_view,
                 extent,
-                sampler,
+                sampler: sampler.into(),
                 context,
             })
         }

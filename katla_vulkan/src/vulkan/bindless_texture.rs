@@ -110,25 +110,7 @@ impl BindlessTextureManager {
     /// A new BindlessTextureManager, or an error if creation fails
     pub fn new(context: Rc<VulkanContext>) -> Result<Self, RendererError> {
         // Create shared sampler with reasonable defaults
-        let sampler_info = vk::SamplerCreateInfo::default()
-            .mag_filter(vk::Filter::LINEAR)
-            .min_filter(vk::Filter::LINEAR)
-            .mipmap_mode(vk::SamplerMipmapMode::LINEAR)
-            .address_mode_u(vk::SamplerAddressMode::REPEAT)
-            .address_mode_v(vk::SamplerAddressMode::REPEAT)
-            .address_mode_w(vk::SamplerAddressMode::REPEAT)
-            .anisotropy_enable(true)
-            .max_anisotropy(16.0)
-            .border_color(vk::BorderColor::INT_OPAQUE_WHITE)
-            .compare_enable(false)
-            .compare_op(vk::CompareOp::NEVER)
-            .min_lod(0.0)
-            .max_lod(vk::LOD_CLAMP_NONE)
-            .mipmap_mode(vk::SamplerMipmapMode::LINEAR);
-
-        let shared_sampler = unsafe {
-            context.device.create_sampler(&sampler_info, None)?
-        };
+        let shared_sampler = context.create_sampler_repeat_anisotropic()?;
 
         // Create descriptor set layout
         // Binding 0: texture_2d array (SAMPLED_IMAGE, count = MAX_BINDLESS_TEXTURES)
@@ -197,7 +179,7 @@ impl BindlessTextureManager {
 
         // Write the shared sampler to binding 1 (static, done once)
         let sampler_info = [vk::DescriptorImageInfo::default()
-            .sampler(shared_sampler)];
+            .sampler(shared_sampler.vk())];
 
         let sampler_write = vk::WriteDescriptorSet::default()
             .dst_set(descriptor_set)
@@ -227,7 +209,7 @@ impl BindlessTextureManager {
             descriptor_pool,
             descriptor_layout: VkDescriptorSetLayout::new(descriptor_layout),
             descriptor_set: VkDescriptorSet::new(descriptor_set),
-            shared_sampler: VkSampler::new(shared_sampler),
+            shared_sampler,
             slots,
             free_slots,
             device: context.device.clone(),
