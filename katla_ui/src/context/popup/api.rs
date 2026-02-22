@@ -92,15 +92,13 @@ impl UiContext {
 
     /// Context menu at cursor position (closure-based).
     ///
-    /// Opens when right-click is detected anywhere.
+    /// Renders the popup if already open. Call `open_context_menu_at()` to open it.
+    /// Does NOT auto-open - caller must detect right-click and call open explicitly.
     pub fn context_menu<F, R>(&mut self, id: &str, content: F) -> Option<R>
     where
         F: FnOnce(&mut Self) -> R,
     {
-        // Auto-open on right-click
-        self.open_context_menu(id);
-
-        // Show popup if open
+        // Just render if already open - no auto-open
         self.popup(Popup::new(id).at_cursor(), content)
     }
 

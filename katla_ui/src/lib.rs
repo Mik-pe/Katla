@@ -86,7 +86,8 @@ pub mod widgets {
 
 // Re-exports for convenience
 pub use context::{
-    z_index, GraphOptions, LayoutDirection, LayoutState, UiContext, WindowState, ZGuard,
+    CloseBehavior, Popup, PopupPosition, PopupStyle, z_index, GraphOptions, LayoutDirection,
+    LayoutState, UiContext, WindowState, ZGuard,
 };
 pub use draw_list::{DrawCommand, DrawList, TextureId, UiVertex};
 pub use icons::ForkAwesome;

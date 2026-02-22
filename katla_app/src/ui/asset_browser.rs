@@ -12,7 +12,7 @@ use std::path::PathBuf;
 use std::time::Instant;
 
 use katla_math::{Color, Rect2D, Vec2};
-use katla_ui::{ForkAwesome, TextureId, UiContext};
+use katla_ui::{ForkAwesome, Popup, TextureId, UiContext};
 
 use super::editor_ui::FocusedPanel;
 use super::theme::Theme;
@@ -1655,8 +1655,8 @@ pub fn build_asset_browser(
         (None, String::new(), state.current_path.clone(), 0)
     };
 
-    // Render popup
-    let clicked_action = ui.context_menu("asset_context", |ui| {
+    // Render popup - use popup() directly since we manually opened with open_context_menu_at()
+    let clicked_action = ui.popup(Popup::new("asset_context").at_cursor(), |ui| {
         match asset_type {
             Some(AssetType::Folder) => {
                 if ui.menu_item_clicked_with_icon_and_shortcut("Open", ForkAwesome::FOLDER_OPEN, true, "Enter") { return Some("Open"); }

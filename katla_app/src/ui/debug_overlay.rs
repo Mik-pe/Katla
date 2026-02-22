@@ -196,7 +196,12 @@ impl DebugOverlay {
             self.build_settings_panel(ui, padding, line_height, title_height, button_height);
         }
 
-        // === Context Menu (right-click anywhere) ===
+        // === Context Menu (right-click anywhere in debug area) ===
+        // Open on right-click if no popup already open
+        if ui.input.mouse_clicked(katla_ui::input::mouse_button::RIGHT) && !ui.has_open_popup() {
+            ui.open_context_menu_at("main_context", ui.input.mouse_pos);
+        }
+
         ui.context_menu("main_context", |ui| {
             if ui.menu_item_clicked("Solid Mode") {
                 self.render_mode = RenderMode::Solid;
