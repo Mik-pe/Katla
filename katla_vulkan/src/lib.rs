@@ -218,6 +218,25 @@ impl VulkanRenderer {
         self.frame_uniforms = Some(uniforms);
     }
 
+    /// Set UI draw callback for the render graph.
+    ///
+    /// This should be called each frame before render_frame() to provide
+    /// a callback that will draw the UI during the UI pass.
+    pub fn set_ui_callback(&mut self, callback: Rc<dyn Fn(&render_graph::PassExecutionContext)>) {
+        if let Some(ref mut graph) = self.render_graph {
+            graph.set_ui_callback(callback);
+        }
+    }
+
+    /// Clear the UI draw callback.
+    ///
+    /// Call this when there's no UI to render to prevent stale callbacks.
+    pub fn clear_ui_callback(&mut self) {
+        if let Some(ref mut graph) = self.render_graph {
+            graph.clear_ui_callback();
+        }
+    }
+
     /// Update frame uniforms in storage buffer.
     ///
     /// Should be called once per frame before rendering.
@@ -1504,7 +1523,7 @@ impl OutputRenderTarget {
                 depth: 1,
             };
 
-            // Create color image (RGBA8, can be used as color attachment and transfer source)
+            // Create color image (RGBA8, can be used as color attachment and transfer source/dest)
             let color_create_info = vk::ImageCreateInfo::default()
                 .image_type(vk::ImageType::TYPE_2D)
                 .extent(extent3d)
@@ -1513,7 +1532,7 @@ impl OutputRenderTarget {
                 .format(vk::Format::B8G8R8A8_SRGB) // Match swapchain format
                 .tiling(vk::ImageTiling::OPTIMAL)
                 .initial_layout(vk::ImageLayout::UNDEFINED)
-                .usage(vk::ImageUsageFlags::COLOR_ATTACHMENT | vk::ImageUsageFlags::TRANSFER_SRC)
+                .usage(vk::ImageUsageFlags::COLOR_ATTACHMENT | vk::ImageUsageFlags::TRANSFER_SRC | vk::ImageUsageFlags::TRANSFER_DST)
                 .sharing_mode(vk::SharingMode::EXCLUSIVE)
                 .samples(vk::SampleCountFlags::TYPE_1);
 

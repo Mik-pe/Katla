@@ -222,8 +222,6 @@ impl ApplicationHandler for Application {
                                 renderer,
                                 self.sky_pipeline.clone(),
                                 grid_to_use,
-                                self.ui_renderer.as_ref(),
-                                self.ui_draw_data.clone(),
                             );
 
                             if let Some(viewport_extent) = renderer.viewport_extent() {

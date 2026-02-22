@@ -465,6 +465,8 @@ pub struct PassExecutionContext {
     renderer_context: Option<Rc<RendererContext>>,
     /// Current frame index for double-buffered resource access
     frame_index: usize,
+    /// UI draw callback for UI pass
+    ui_draw_callback: Option<Rc<dyn Fn(&PassExecutionContext)>>,
 }
 
 impl PassExecutionContext {
@@ -486,6 +488,7 @@ impl PassExecutionContext {
             uses_dynamic_rendering: false,
             renderer_context: None,
             frame_index: 0,
+            ui_draw_callback: None,
         }
     }
 
@@ -506,6 +509,7 @@ impl PassExecutionContext {
             uses_dynamic_rendering: true,
             renderer_context: None,
             frame_index: 0,
+            ui_draw_callback: None,
         }
     }
 
@@ -527,12 +531,18 @@ impl PassExecutionContext {
             uses_dynamic_rendering: true,
             renderer_context: Some(renderer_context),
             frame_index: 0,
+            ui_draw_callback: None,
         }
     }
 
     /// Set the renderer context after creation.
     pub fn set_renderer_context(&mut self, ctx: Rc<RendererContext>) {
         self.renderer_context = Some(ctx);
+    }
+
+    /// Set UI draw callback for the context.
+    pub fn set_ui_callback(&mut self, callback: Rc<dyn Fn(&PassExecutionContext)>) {
+        self.ui_draw_callback = Some(callback);
     }
 
     /// Get the renderer context for accessing renderer state safely.
@@ -978,6 +988,15 @@ impl PassExecutionContext {
 
         // Draw fullscreen triangle (3 vertices)
         self.draw_fullscreen();
+    }
+
+    /// Draw UI overlay using the stored callback.
+    ///
+    /// This method invokes the UI draw callback set via `set_ui_callback()`.
+    pub fn draw_ui(&self) {
+        if let Some(callback) = &self.ui_draw_callback {
+            callback(self);
+        }
     }
 }
 

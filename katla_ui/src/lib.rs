@@ -95,7 +95,7 @@ pub use renderer::{UiRenderError, UiRenderer};
 pub use style::{FontSize, UiStyle, UiTheme};
 pub use text::{CachedGlyph, FontError, FontId, FontSystem};
 
-use katla_math::Rect2D;
+use katla_math::{Rect2D, Vec2};
 
 /// Response from a widget interaction.
 ///
@@ -124,6 +124,10 @@ pub struct Response {
     pub changed: bool,
     /// Widget bounds.
     pub bounds: Rect2D,
+    /// Mouse delta while dragging (only valid when active).
+    pub drag_delta: Vec2,
+    /// Widget was double-clicked this frame.
+    pub double_clicked: bool,
 }
 
 impl Response {
@@ -135,6 +139,8 @@ impl Response {
             active: false,
             changed: false,
             bounds,
+            drag_delta: Vec2::new(0.0, 0.0),
+            double_clicked: false,
         }
     }
 
@@ -146,6 +152,8 @@ impl Response {
             active: false,
             changed: true,
             bounds,
+            drag_delta: Vec2::new(0.0, 0.0),
+            double_clicked: false,
         }
     }
 
@@ -157,6 +165,8 @@ impl Response {
             active: false,
             changed: false,
             bounds,
+            drag_delta: Vec2::new(0.0, 0.0),
+            double_clicked: false,
         }
     }
 
@@ -168,6 +178,8 @@ impl Response {
             active: true,
             changed: false,
             bounds,
+            drag_delta: Vec2::new(0.0, 0.0),
+            double_clicked: false,
         }
     }
 
@@ -179,7 +191,7 @@ impl Response {
 
 impl Default for Response {
     fn default() -> Self {
-        Self::new(Rect2D::from_size(katla_math::Vec2::new(0.0, 0.0)))
+        Self::new(Rect2D::from_size(Vec2::new(0.0, 0.0)))
     }
 }
 

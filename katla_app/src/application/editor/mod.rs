@@ -153,8 +153,6 @@ pub fn render_debug_ui(app: &mut Application, dt: f32) {
                 renderer,
                 Some(sky_pipeline.clone()),
                 grid_to_use,
-                app.ui_renderer.as_ref(),
-                app.ui_draw_data.clone(),
             );
         }
     }

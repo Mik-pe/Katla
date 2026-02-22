@@ -43,6 +43,9 @@ pub struct CompiledRenderGraph {
     /// Cell for storing the draw list that will be processed during execution.
     /// This is set each frame before calling execute().
     draw_list_cell: Option<Rc<RefCell<Option<DrawList>>>>,
+    /// UI draw callback for UI pass execution.
+    /// Set each frame via set_ui_callback().
+    ui_draw_callback: Option<Rc<dyn Fn(&PassExecutionContext)>>,
     /// Viewport color resource ID (for double-buffering updates)
     viewport_color_resource_id: Option<ResourceId>,
     /// Viewport depth resource ID (for double-buffering updates)
@@ -178,6 +181,7 @@ impl CompiledRenderGraph {
             framebuffers,
             registry,
             draw_list_cell: None,
+            ui_draw_callback: None,
             viewport_color_resource_id: None,
             viewport_depth_resource_id: None,
             swapchain_resource_id: None,
@@ -913,6 +917,21 @@ impl CompiledRenderGraph {
         }
     }
 
+    /// Set the UI draw callback for this frame.
+    ///
+    /// This should be called before execute() to provide UI rendering callback.
+    /// The callback will be invoked during the UI pass with the execution context.
+    pub fn set_ui_callback(&mut self, callback: Rc<dyn Fn(&PassExecutionContext)>) {
+        self.ui_draw_callback = Some(callback);
+    }
+
+    /// Clear the UI draw callback.
+    ///
+    /// Call this when there's no UI to render to prevent stale callbacks.
+    pub fn clear_ui_callback(&mut self) {
+        self.ui_draw_callback = None;
+    }
+
     /// Update viewport texture attachments for double-buffering support.
     ///
     /// This should be called before execute() to update the viewport color and depth
@@ -1142,23 +1161,25 @@ impl CompiledRenderGraph {
 
         // Create execution context with optional renderer context
         let mut ctx = if let Some(ref rc) = self.renderer_context {
-            PassExecutionContext::with_renderer_context(
+            Rc::new(PassExecutionContext::with_renderer_context(
                 command_buffer.clone(),
                 Rc::clone(&self.resources),
                 pass.extent,
                 Rc::clone(rc),
-            )
+            ))
         } else {
-            PassExecutionContext::new_dynamic(
+            Rc::new(PassExecutionContext::new_dynamic(
                 command_buffer.clone(),
                 Rc::clone(&self.resources),
                 pass.extent,
-            )
+            ))
         };
 
-        // Set frame index before wrapping in Rc
-        ctx.set_frame_index(frame_index);
-        let ctx = Rc::new(ctx);
+        // Set frame index and UI callback on the context
+        Rc::get_mut(&mut ctx).unwrap().set_frame_index(frame_index);
+        if let Some(ref callback) = self.ui_draw_callback {
+            Rc::get_mut(&mut ctx).unwrap().set_ui_callback(Rc::clone(callback));
+        }
 
         // Execute the pass closure directly (no begin_rendering/end_rendering)
         pass.execute(ctx, &mut self.registry);
@@ -1340,23 +1361,25 @@ impl CompiledRenderGraph {
 
         // Create execution context early so pre_execute can use it
         let mut ctx = if let Some(ref rc) = self.renderer_context {
-            PassExecutionContext::with_renderer_context(
+            Rc::new(PassExecutionContext::with_renderer_context(
                 (*command_buffer).clone(),
                 self.resources.clone(),
                 pass.extent,
                 Rc::clone(rc),
-            )
+            ))
         } else {
-            PassExecutionContext::new_dynamic(
+            Rc::new(PassExecutionContext::new_dynamic(
                 (*command_buffer).clone(),
                 self.resources.clone(),
                 pass.extent,
-            )
+            ))
         };
 
-        // Set frame index before wrapping in Rc
-        ctx.set_frame_index(frame_index);
-        let ctx = Rc::new(ctx);
+        // Set frame index and UI callback on the context
+        Rc::get_mut(&mut ctx).unwrap().set_frame_index(frame_index);
+        if let Some(ref callback) = self.ui_draw_callback {
+            Rc::get_mut(&mut ctx).unwrap().set_ui_callback(Rc::clone(callback));
+        }
 
         // Execute pre-rendering callback (for custom barriers BEFORE begin_rendering)
         // This is needed because pipeline barriers with image transitions cannot be called
@@ -1474,7 +1497,7 @@ impl CompiledRenderGraph {
         command_buffer.set_scissor(&[scissor]);
 
         // Create execution context with optional renderer context
-        let ctx = if let Some(ref rc) = self.renderer_context {
+        let mut ctx = if let Some(ref rc) = self.renderer_context {
             Rc::new(PassExecutionContext::with_renderer_context(
                 (*command_buffer).clone(),
                 self.resources.clone(),
@@ -1488,6 +1511,11 @@ impl CompiledRenderGraph {
                 pass.extent,
             ))
         };
+
+        // Set UI callback on the context
+        if let Some(ref callback) = self.ui_draw_callback {
+            Rc::get_mut(&mut ctx).unwrap().set_ui_callback(Rc::clone(callback));
+        }
 
         // Execute pass-specific commands using ExecutionRegistry
         pass.execute(ctx, &mut self.registry);
