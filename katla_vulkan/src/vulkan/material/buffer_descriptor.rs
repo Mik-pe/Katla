@@ -430,6 +430,84 @@ impl BufferDescriptorSource for crate::vulkan::skeleton_buffer::SkeletonBuffer {
     }
 }
 
+/// Type-safe uniform buffer for shader uniforms.
+///
+/// Provides a simple API for creating and updating uniform buffers.
+/// Automatically handles memory allocation and mapping.
+///
+/// # Example
+///
+/// ```ignore
+/// // Create a uniform buffer for screen size
+/// let mut screen_uniform = UniformBuffer::<[f32; 4]>::new(context)?;
+///
+/// // Update the data
+/// screen_uniform.write(&[width, height, 0.0, 0.0]);
+///
+/// // Use with descriptor set builder
+/// let desc_set = BufferDescriptorSetBuilder::new(&context)
+///     .with_descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
+///     .add_entire_buffer(&screen_uniform, 0)
+///     .build(layout)?;
+/// ```
+pub struct UniformBuffer<T: Copy> {
+    buffer: vk::Buffer,
+    allocation: gpu_allocator::vulkan::Allocation,
+    _marker: std::marker::PhantomData<T>,
+    context: Rc<VulkanContext>,
+}
+
+impl<T: Copy> UniformBuffer<T> {
+    /// Create a new uniform buffer with space for type T.
+    pub fn new(context: Rc<VulkanContext>) -> Result<Self, vk::Result> {
+        let size = std::mem::size_of::<T>() as vk::DeviceSize;
+
+        let buffer_info = vk::BufferCreateInfo::default()
+            .sharing_mode(vk::SharingMode::EXCLUSIVE)
+            .usage(vk::BufferUsageFlags::UNIFORM_BUFFER)
+            .size(size);
+
+        let (buffer, allocation) =
+            context.allocate_buffer(&buffer_info, gpu_allocator::MemoryLocation::CpuToGpu);
+
+        Ok(Self {
+            buffer,
+            allocation,
+            _marker: std::marker::PhantomData,
+            context,
+        })
+    }
+
+    /// Write data to the uniform buffer.
+    pub fn write(&self, data: &T) {
+        let ptr = self.allocation.mapped_ptr().unwrap().cast::<T>().as_ptr();
+        unsafe {
+            std::ptr::write_unaligned(ptr, *data);
+        }
+    }
+
+    /// Get the buffer size in bytes.
+    pub fn size(&self) -> vk::DeviceSize {
+        std::mem::size_of::<T>() as vk::DeviceSize
+    }
+}
+
+impl<T: Copy> BufferDescriptorSource for UniformBuffer<T> {
+    fn buffer(&self) -> vk::Buffer {
+        self.buffer
+    }
+
+    fn buffer_size(&self) -> vk::DeviceSize {
+        self.size()
+    }
+}
+
+impl<T: Copy> Drop for UniformBuffer<T> {
+    fn drop(&mut self) {
+        self.context.free_buffer(self.buffer, std::mem::take(&mut self.allocation));
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
