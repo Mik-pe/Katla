@@ -3,7 +3,6 @@ pub mod render_graph;
 pub mod renderer;
 pub mod rendering;
 pub mod sync;
-pub mod ui;
 pub mod viewport;
 pub mod vulkan;
 
@@ -32,7 +31,6 @@ pub use viewport::{DepthFormat, OutputMode, ViewportBuilder, ViewportHandle};
 pub use vulkan::context::{ValidationMessage, ValidationMessageType, ValidationSeverity};
 pub use vulkan::material::storage_uniform::*;
 pub use vulkan::*;
-pub use ui::{UiDrawCommand, UiDrawData, UIRenderer};
 
 use ash::vk;
 use std::{cell::RefCell, ffi::CString, rc::Rc};

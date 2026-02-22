@@ -60,7 +60,7 @@ pub fn setup_render_graph(app: &mut Application) {
     app.ui_pipeline = Some(ui_pipeline.clone());
 
     // Create UI renderer (owns UI buffers, textures, descriptors)
-    let ui_renderer = katla_vulkan::UIRenderer::new(
+    let ui_renderer = crate::rendering::UIRenderer::new(
         renderer.context.clone(),
         ui_pipeline.clone(),
         UI_VERTEX_BUFFER_SIZE as u64,

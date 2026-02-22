@@ -23,6 +23,6 @@ pub use resource::{
 pub use types::{
     Access, AttachmentLoadOp, AttachmentStoreOp, BufferUsage, ClearColor, ClearDepthStencil,
     ClearValue, Extent2D, Extent3D, ImageFormat, ImageLayout, ImageTiling, ImageUsage,
-    MemoryProperty, PipelineBindPoint, PipelineStage, Rect2D, RenderingAttachmentInfo,
+    MemoryProperty, Offset2D, PipelineBindPoint, PipelineStage, Rect2D, RenderingAttachmentInfo,
     RenderingInfo, SampleCount, ShaderStages, VkImageView,
 };
