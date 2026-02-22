@@ -316,26 +316,6 @@ impl CommandBuffer {
         }
     }
 
-    /// **Deprecated:** Use `pipeline_barrier2()` for Vulkan 1.3 synchronization.
-    ///
-    /// This method is a no-op. The legacy `vkCmdPipelineBarrier` has been
-    /// replaced by `vkCmdPipelineBarrier2` via the `pipeline_barrier2()` method.
-    #[deprecated(
-        since = "0.1.0",
-        note = "Use pipeline_barrier2() with DependencyInfo for Vulkan 1.3 synchronization"
-    )]
-    pub fn pipeline_barrier(
-        &self,
-        _src_stage_mask: vk::PipelineStageFlags,
-        _dst_stage_mask: vk::PipelineStageFlags,
-        _dependency_flags: vk::DependencyFlags,
-        _memory_barriers: &[vk::MemoryBarrier],
-        _buffer_memory_barriers: &[vk::BufferMemoryBarrier],
-        _image_memory_barriers: &[vk::ImageMemoryBarrier],
-    ) {
-        // Legacy barrier removed - use pipeline_barrier2() instead
-    }
-
     /// Vulkan 1.3: Pipeline barrier 2 command using modern synchronization.
     ///
     /// This method uses `vkCmdPipelineBarrier2` which provides more flexible

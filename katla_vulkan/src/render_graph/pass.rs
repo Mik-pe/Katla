@@ -463,6 +463,8 @@ pub struct PassExecutionContext {
     pub uses_dynamic_rendering: bool,
     /// Optional renderer context for accessing renderer state (eliminates unsafe pointers)
     renderer_context: Option<Rc<RendererContext>>,
+    /// Current frame index for double-buffered resource access
+    frame_index: usize,
 }
 
 impl PassExecutionContext {
@@ -483,6 +485,7 @@ impl PassExecutionContext {
             extent,
             uses_dynamic_rendering: false,
             renderer_context: None,
+            frame_index: 0,
         }
     }
 
@@ -502,6 +505,7 @@ impl PassExecutionContext {
             extent,
             uses_dynamic_rendering: true,
             renderer_context: None,
+            frame_index: 0,
         }
     }
 
@@ -522,6 +526,7 @@ impl PassExecutionContext {
             extent,
             uses_dynamic_rendering: true,
             renderer_context: Some(renderer_context),
+            frame_index: 0,
         }
     }
 
@@ -533,6 +538,19 @@ impl PassExecutionContext {
     /// Get the renderer context for accessing renderer state safely.
     pub fn renderer_context(&self) -> Option<&RendererContext> {
         self.renderer_context.as_deref()
+    }
+
+    /// Get the current frame index for double-buffered resource access.
+    ///
+    /// Use this with `FrameBuffer::current()` or `FrameBuffer::current_mut()`
+    /// to access the correct per-frame resources.
+    pub fn frame_index(&self) -> usize {
+        self.frame_index
+    }
+
+    /// Set the frame index (called internally by render graph execution).
+    pub(crate) fn set_frame_index(&mut self, frame_index: usize) {
+        self.frame_index = frame_index;
     }
 
     /// Get a compiled image resource by ID (works for both Image and ExternalImage)

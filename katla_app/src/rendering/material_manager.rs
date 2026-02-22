@@ -342,14 +342,9 @@ impl MaterialManager {
     /// the GPU is not using any resources.
     ///
     /// Note: Old pipelines from hot reload are not destroyed here to avoid
-    /// double-destruction. They will leak, but this is acceptable for development.
     pub fn destroy(&mut self) {
         // Destroy active materials
         for material in &mut self.materials {
-            // Destroy per-material uniform buffers (template-based materials)
-            if let Some(ref context) = self.context {
-                material.destroy_uniform(context);
-            }
             // Destroy the pipeline
             if let Ok(mut pipeline) = material.material_pipeline.try_borrow_mut() {
                 pipeline.destroy();

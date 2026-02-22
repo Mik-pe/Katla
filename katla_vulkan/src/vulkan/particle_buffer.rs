@@ -10,6 +10,7 @@
 //!
 //! ```ignore
 //! use katla_vulkan::vulkan::particle_buffer::{ParticleBuffer, ParticleData, MAX_PARTICLES};
+//! use katla_vulkan::DescriptorSetBuilder;
 //!
 //! // Create a particle buffer for 64K particles
 //! let particle_buffer = ParticleBuffer::new(context.clone(), MAX_PARTICLES)?;
@@ -17,9 +18,9 @@
 //! // Get device address for compute shader access
 //! let address = particle_buffer.device_address();
 //!
-//! // Create descriptor set using BufferDescriptorSetBuilder
-//! let descriptor_set = BufferDescriptorSetBuilder::new(&context)
-//!     .add_entire_buffer(&particle_buffer, 0)
+//! // Create descriptor set using DescriptorSetBuilder
+//! let descriptor_set = DescriptorSetBuilder::new(&context)
+//!     .storage_buffer(0, &particle_buffer)
 //!     .build(layout)?;
 //! ```
 

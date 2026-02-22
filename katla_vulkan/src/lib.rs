@@ -90,7 +90,9 @@ pub struct VulkanRenderer {
     viewports: Vec<Viewport>,
 }
 
-const FRAMES_IN_FLIGHT: usize = 2;
+/// Number of frames that can be in flight on the GPU at once.
+/// Used for double-buffering of per-frame resources.
+pub const FRAMES_IN_FLIGHT: usize = 2;
 
 impl VulkanRenderer {
     pub fn init(
@@ -953,31 +955,16 @@ impl VulkanRenderer {
         pipeline: Rc<RefCell<MaterialPipeline>>,
         texture: Option<Rc<Texture>>,
         vertex_binding: VertexBinding,
-        uniform: Option<crate::vulkan::material::UniformHandle>,
     ) -> MaterialHandle {
-        self.create_material_with_indices(pipeline, texture, vertex_binding, uniform, [0; 4], 0)
+        self.create_material_with_indices(pipeline, texture, vertex_binding, [0; 4], 0)
     }
 
     /// Create a material with bindless texture indices.
-    ///
-    /// This is the preferred method when using bindless textures.
-    ///
-    /// # Arguments
-    /// * `pipeline` - The material pipeline (shaders, descriptors, etc.)
-    /// * `texture` - Optional texture bound to the material
-    /// * `vertex_binding` - Vertex binding description for the pipeline
-    /// * `uniform` - Optional per-material uniform buffer (for template-based materials)
-    /// * `texture_indices` - Bindless texture indices [albedo, normal, mr, ao]
-    /// * `emission_index` - Bindless emission texture index
-    ///
-    /// # Returns
-    /// A `MaterialHandle` that references the registered material.
     pub fn create_material_with_indices(
         &mut self,
         pipeline: Rc<RefCell<MaterialPipeline>>,
         texture: Option<Rc<Texture>>,
         vertex_binding: VertexBinding,
-        uniform: Option<crate::vulkan::material::UniformHandle>,
         texture_indices: [u32; 4],
         emission_index: u32,
     ) -> MaterialHandle {
@@ -987,11 +974,10 @@ impl VulkanRenderer {
             pipeline,
             texture,
             vertex_binding,
-            uniform,
             pbr_textures: None,
             texture_indices,
             emission_index,
-            uses_bindless: true, // Materials with texture indices use bindless
+            uses_bindless: true,
         };
 
         self.asset_registry.register_material(material_asset)
@@ -1016,7 +1002,6 @@ impl VulkanRenderer {
         pipeline: Rc<RefCell<MaterialPipeline>>,
         texture: Option<Rc<Texture>>,
         vertex_binding: VertexBinding,
-        uniform: Option<crate::vulkan::material::UniformHandle>,
         texture_indices: [u32; 4],
         emission_index: u32,
     ) -> MaterialHandle {
@@ -1024,34 +1009,17 @@ impl VulkanRenderer {
             pipeline,
             texture,
             vertex_binding,
-            uniform,
             texture_indices,
             emission_index,
         )
     }
 
     /// Register a material with PBR textures.
-    ///
-    /// This is used for GLTF models with full PBR materials.
-    ///
-    /// # Arguments
-    /// * `pipeline` - The material pipeline
-    /// * `texture` - Optional single texture (for fallback)
-    /// * `vertex_binding` - Vertex binding description
-    /// * `uniform` - Optional per-material uniform buffer
-    /// * `pbr_textures` - PBR texture set containing all texture maps
-    /// * `textures` - Vector of texture Rc references to keep alive
-    /// * `texture_indices` - Bindless texture indices [albedo, normal, mr, ao]
-    /// * `emission_index` - Bindless emission texture index
-    ///
-    /// # Returns
-    /// A `MaterialHandle` that references the registered material.
     pub fn register_material_pbr(
         &mut self,
         pipeline: Rc<RefCell<MaterialPipeline>>,
         texture: Option<Rc<Texture>>,
         vertex_binding: VertexBinding,
-        uniform: Option<crate::vulkan::material::UniformHandle>,
         pbr_textures: crate::vulkan::material::PbrTextureSet,
         textures: Vec<Rc<Texture>>,
         texture_indices: [u32; 4],
@@ -1063,11 +1031,10 @@ impl VulkanRenderer {
             pipeline,
             texture,
             vertex_binding,
-            uniform,
-            pbr_textures: None, // Will be set at registration time
+            pbr_textures: None,
             texture_indices,
             emission_index,
-            uses_bindless: true, // PBR materials use bindless textures
+            uses_bindless: true,
         };
 
         self.asset_registry

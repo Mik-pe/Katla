@@ -268,48 +268,6 @@ impl DrawCall {
         self.skeleton = Some(skeleton);
         self
     }
-
-    // === Deprecated backward-compat methods ===
-
-    /// Set the camera matrices (view and projection).
-    #[deprecated(since = "0.2.0", note = "Use renderer.set_frame_uniforms() instead")]
-    pub fn with_camera(self, _view: [f32; 16], _proj: [f32; 16]) -> Self {
-        // No-op: view/proj are now set via set_frame_uniforms()
-        self
-    }
-
-    /// Set all matrices at once.
-    #[deprecated(
-        since = "0.2.0",
-        note = "Use with_transform() and renderer.set_frame_uniforms() instead"
-    )]
-    pub fn with_matrices(mut self, model: [f32; 16], _view: [f32; 16], _proj: [f32; 16]) -> Self {
-        self.model_matrix = model;
-        self
-    }
-
-    /// Set all matrices including inverse view-projection.
-    #[deprecated(
-        since = "0.2.0",
-        note = "Use with_transform() and renderer.set_frame_uniforms() instead"
-    )]
-    pub fn with_all_matrices(
-        mut self,
-        model: [f32; 16],
-        _view: [f32; 16],
-        _proj: [f32; 16],
-        _inv_view_proj: [f32; 16],
-    ) -> Self {
-        self.model_matrix = model;
-        self
-    }
-
-    /// Set the object index for storage buffer access.
-    #[deprecated(since = "0.2.0", note = "Object index is now auto-assigned")]
-    pub fn with_object_index(self, _index: u32) -> Self {
-        // No-op: object index is auto-assigned
-        self
-    }
 }
 
 /// A collection of draw calls to be submitted together.

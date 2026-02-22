@@ -365,19 +365,11 @@ impl MaterialBuilder {
             .map_err(|e| MaterialBuildError::PipelineCreationFailed(format!("{:?}", e)))?;
 
         // All shaders are WGSL, which uses separate bindings
-        let mut material_pipeline = MaterialPipeline::new_with_options(
+        let material_pipeline = MaterialPipeline::new_custom(
             pipeline,
             existing_desc_layout,
             self.context.clone(),
-            true, // separate_bindings - always true for WGSL
-            self.has_color,
         );
-
-        if let Some(texture) = self.texture {
-            material_pipeline
-                .uniform
-                .add_image_info(ImageInfo::new(texture.image_view, texture.image_sampler));
-        }
 
         Ok(material_pipeline)
     }
@@ -1096,12 +1088,10 @@ impl MaterialBuilder {
         let primary_layout = layouts_iter.next().unwrap();
         let additional_layouts: Vec<_> = layouts_iter.collect();
 
-        let mut material_pipeline = MaterialPipeline::new_with_options(
+        let mut material_pipeline = MaterialPipeline::new_custom(
             pipeline,
             primary_layout,
             self.context.clone(),
-            true, // separate_bindings - always true for WGSL
-            self.has_color,
         );
 
         // Store additional layouts for cleanup
@@ -1110,12 +1100,6 @@ impl MaterialBuilder {
         // Store push descriptor set index if present (for UI textures)
         if let Some(set_idx) = push_set_index {
             material_pipeline.push_descriptor_set = Some(set_idx);
-        }
-
-        if let Some(texture) = self.texture {
-            material_pipeline
-                .uniform
-                .add_image_info(ImageInfo::new(texture.image_view, texture.image_sampler));
         }
 
         Ok(material_pipeline)

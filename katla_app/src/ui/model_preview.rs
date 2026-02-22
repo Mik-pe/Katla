@@ -316,7 +316,7 @@ impl ModelPreviewState {
             let mesh_handle = renderer.register_mesh(vertex_buffer, index_buffer);
 
             // Register material with renderer using get_registration_data()
-            let (pipeline, texture, vertex_binding, uniform, pbr_textures, pbr_refs, texture_indices, emission_index) =
+            let (pipeline, texture, vertex_binding, pbr_textures, pbr_refs, texture_indices, emission_index) =
                 material.get_registration_data();
 
             let material_handle = if let Some(pbr) = pbr_textures {
@@ -325,7 +325,6 @@ impl ModelPreviewState {
                     pipeline,
                     texture,
                     vertex_binding,
-                    uniform,
                     pbr,
                     pbr_refs.unwrap_or_default(),
                     texture_indices,
@@ -337,7 +336,6 @@ impl ModelPreviewState {
                     pipeline,
                     texture,
                     vertex_binding,
-                    uniform,
                     texture_indices,
                     emission_index,
                 )
