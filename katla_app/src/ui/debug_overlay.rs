@@ -196,35 +196,24 @@ impl DebugOverlay {
             self.build_settings_panel(ui, padding, line_height, title_height, button_height);
         }
 
-        // === Context Menu Demo (right-click) ===
-        ui.open_context_menu("main_context");
-
-        if ui.begin_context_menu("main_context") {
-            let item_height = ui.menu_item_height();
-
-            let item1_bounds = Rect2D::from_origin_size(Vec2::new(0.0, 0.0), Vec2::new(150.0, item_height));
-            if ui.menu_item("ctx_solid", "Solid Mode", item1_bounds) {
+        // === Context Menu (right-click anywhere) ===
+        ui.context_menu("main_context", |ui| {
+            if ui.menu_item_clicked("Solid Mode") {
                 self.render_mode = RenderMode::Solid;
                 self.context_message = "Switched to Solid!".to_string();
                 ui.close_current_popup();
             }
-
-            let item2_bounds = Rect2D::from_origin_size(Vec2::new(0.0, item_height), Vec2::new(150.0, item_height));
-            if ui.menu_item("ctx_wire", "Wireframe", item2_bounds) {
+            if ui.menu_item_clicked("Wireframe") {
                 self.render_mode = RenderMode::Wireframe;
                 self.context_message = "Switched to Wireframe!".to_string();
                 ui.close_current_popup();
             }
-
-            let item3_bounds = Rect2D::from_origin_size(Vec2::new(0.0, item_height * 2.0), Vec2::new(150.0, item_height));
-            if ui.menu_item("ctx_points", "Points", item3_bounds) {
+            if ui.menu_item_clicked("Points") {
                 self.render_mode = RenderMode::Points;
                 self.context_message = "Switched to Points!".to_string();
                 ui.close_current_popup();
             }
-
-            ui.end_context_menu();
-        }
+        });
 
         // === Toast Message ===
         if !self.context_message.is_empty() {

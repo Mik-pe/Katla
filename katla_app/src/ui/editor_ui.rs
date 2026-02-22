@@ -864,186 +864,89 @@ impl EditorUI {
 
         // No padding between menu items - menu bar should be tight
         let menu_item_width = 50.0;
-        let dropdown_width = 120.0;
         let button_height = height;
         let mut cursor = Vec2::new(0.0, 0.0);  // Start from left edge
 
         // === FILE MENU ===
         let file_bounds = Rect2D::from_origin_size(cursor, Vec2::new(menu_item_width, button_height));
-        if ui.begin_menu_item("file_menu", "File", file_bounds) {
-            let item_height = 24.0;
-            let mut item_y = file_bounds.max.y();
-
-            // New Scene (placeholder)
-            let new_bounds = Rect2D::from_origin_size(
-                Vec2::new(file_bounds.min.x(), item_y),
-                Vec2::new(dropdown_width, item_height),
-            );
-            if ui.menu_item("file_new", "New Scene", new_bounds) {
+        ui.menu_bar_dropdown("file_menu", "File", file_bounds, |ui| {
+            if ui.menu_item_clicked("New Scene") {
                 // TODO: Implement new scene
                 ui.close_current_popup();
             }
-            item_y += item_height;
-
-            // Open (placeholder)
-            let open_bounds = Rect2D::from_origin_size(
-                Vec2::new(file_bounds.min.x(), item_y),
-                Vec2::new(dropdown_width, item_height),
-            );
-            if ui.menu_item("file_open", "Open...", open_bounds) {
+            if ui.menu_item_clicked("Open...") {
                 // TODO: Implement open scene
                 ui.close_current_popup();
             }
-            item_y += item_height;
-
-            // Save (placeholder)
-            let save_bounds = Rect2D::from_origin_size(
-                Vec2::new(file_bounds.min.x(), item_y),
-                Vec2::new(dropdown_width, item_height),
-            );
-            if ui.menu_item("file_save", "Save", save_bounds) {
+            if ui.menu_item_clicked("Save") {
                 // TODO: Implement save scene
                 ui.close_current_popup();
             }
-            item_y += item_height;
-
-            // Separator
-            item_y += 4.0;
-
-            // Quit
-            let quit_bounds = Rect2D::from_origin_size(
-                Vec2::new(file_bounds.min.x(), item_y),
-                Vec2::new(dropdown_width, item_height),
-            );
-            if ui.menu_item("file_quit", "Quit", quit_bounds) {
-                // Quit is handled at application level
+            ui.menu_separator();
+            if ui.menu_item_clicked("Quit") {
                 ui.close_current_popup();
             }
-
-            ui.end_dropdown();
-        }
-        cursor = Vec2::new(cursor.x() + menu_item_width, cursor.y());  // No padding
+        });
+        cursor = Vec2::new(cursor.x() + menu_item_width, cursor.y());
 
         // === EDIT MENU ===
         let edit_bounds = Rect2D::from_origin_size(cursor, Vec2::new(menu_item_width, button_height));
-        if ui.begin_menu_item("edit_menu", "Edit", edit_bounds) {
-            let item_height = 24.0;
-            let mut item_y = edit_bounds.max.y();
-
-            // Undo (placeholder)
-            let undo_bounds = Rect2D::from_origin_size(
-                Vec2::new(edit_bounds.min.x(), item_y),
-                Vec2::new(dropdown_width, item_height),
-            );
-            if ui.menu_item("edit_undo", "Undo", undo_bounds) {
+        ui.menu_bar_dropdown("edit_menu", "Edit", edit_bounds, |ui| {
+            if ui.menu_item_clicked("Undo") {
                 // TODO: Implement undo
                 ui.close_current_popup();
             }
-            item_y += item_height;
-
-            // Redo (placeholder)
-            let redo_bounds = Rect2D::from_origin_size(
-                Vec2::new(edit_bounds.min.x(), item_y),
-                Vec2::new(dropdown_width, item_height),
-            );
-            if ui.menu_item("edit_redo", "Redo", redo_bounds) {
+            if ui.menu_item_clicked("Redo") {
                 // TODO: Implement redo
                 ui.close_current_popup();
             }
-            item_y += item_height;
-
-            // Separator
-            item_y += 4.0;
-
-            // Preferences
-            let prefs_bounds = Rect2D::from_origin_size(
-                Vec2::new(edit_bounds.min.x(), item_y),
-                Vec2::new(dropdown_width, item_height),
-            );
-            if ui.menu_item("edit_prefs", "Preferences...", prefs_bounds) {
+            ui.menu_separator();
+            if ui.menu_item_clicked("Preferences...") {
                 self.show_preferences = true;
                 ui.close_current_popup();
             }
-
-            ui.end_dropdown();
-        }
-        cursor = Vec2::new(cursor.x() + menu_item_width, cursor.y());  // No padding
+        });
+        cursor = Vec2::new(cursor.x() + menu_item_width, cursor.y());
 
         // === VIEW MENU ===
         let view_bounds = Rect2D::from_origin_size(cursor, Vec2::new(menu_item_width, button_height));
-        if ui.begin_menu_item("view_menu", "View", view_bounds) {
-            let item_height = 24.0;
-            let mut item_y = view_bounds.max.y();
-
-            // Grid toggle
-            let grid_bounds = Rect2D::from_origin_size(
-                Vec2::new(view_bounds.min.x(), item_y),
-                Vec2::new(dropdown_width, item_height),
-            );
-            if ui.toggle_menu_item("view_grid", "Grid", self.show_grid, grid_bounds) {
+        let show_grid = self.show_grid;
+        let show_stats = self.show_stats;
+        ui.menu_bar_dropdown("view_menu", "View", view_bounds, |ui| {
+            if ui.toggle_menu_item_clicked("Grid", show_grid) {
                 self.show_grid = !self.show_grid;
                 self.pending_actions.push(EditorAction::ToggleGrid);
                 ui.close_current_popup();
             }
-            item_y += item_height;
-
-            // Stats toggle
-            let stats_bounds = Rect2D::from_origin_size(
-                Vec2::new(view_bounds.min.x(), item_y),
-                Vec2::new(dropdown_width, item_height),
-            );
-            if ui.toggle_menu_item("view_stats", "Stats", self.show_stats, stats_bounds) {
+            if ui.toggle_menu_item_clicked("Stats", show_stats) {
                 self.show_stats = !self.show_stats;
                 self.pending_actions.push(EditorAction::ToggleStats);
                 ui.close_current_popup();
             }
-
-            ui.end_dropdown();
-        }
-        cursor = Vec2::new(cursor.x() + menu_item_width, cursor.y());  // No padding
+        });
+        cursor = Vec2::new(cursor.x() + menu_item_width, cursor.y());
 
         // === CREATE MENU ===
         let create_bounds = Rect2D::from_origin_size(cursor, Vec2::new(60.0, button_height));
-        if ui.begin_menu_item("create_menu", "Create", create_bounds) {
-            let item_height = 24.0;
-            let mut item_y = create_bounds.max.y();
-
+        ui.menu_bar_dropdown("create_menu", "Create", create_bounds, |ui| {
             for model in SpawnableModel::all() {
-                let model_bounds = Rect2D::from_origin_size(
-                    Vec2::new(create_bounds.min.x(), item_y),
-                    Vec2::new(dropdown_width, item_height),
-                );
-                if ui.menu_item(&format!("create_{}", model.name()), model.name(), model_bounds) {
+                if ui.menu_item_clicked(model.name()) {
                     self.pending_actions
                         .push(EditorAction::SpawnModel(*model, Vec3::new(0.0, 0.0, 0.0)));
                     ui.close_current_popup();
                 }
-                item_y += item_height;
             }
-
-            ui.end_dropdown();
-        }
+        });
         cursor = Vec2::new(cursor.x() + 60.0 + padding, cursor.y());
 
         // === HELP MENU ===
         let help_bounds = Rect2D::from_origin_size(cursor, Vec2::new(menu_item_width, button_height));
-        if ui.begin_menu_item("help_menu", "Help", help_bounds) {
-            let item_height = 24.0;
-            let item_y = help_bounds.max.y();
-
-            // About
-            let about_bounds = Rect2D::from_origin_size(
-                Vec2::new(help_bounds.min.x(), item_y),
-                Vec2::new(dropdown_width, item_height),
-            );
-            if ui.menu_item("help_about", "About", about_bounds) {
-                // TODO: Show about dialog
+        ui.menu_bar_dropdown("help_menu", "Help", help_bounds, |ui| {
+            if ui.menu_item_clicked("About") {
                 ui.close_current_popup();
             }
-
-            ui.end_dropdown();
-        }
-        cursor = Vec2::new(cursor.x() + menu_item_width, cursor.y());  // No padding
+        });
+        cursor = Vec2::new(cursor.x() + menu_item_width, cursor.y());
 
         // Separator line before play controls
         cursor = Vec2::new(cursor.x() + padding * 2.0, cursor.y());
@@ -1340,19 +1243,19 @@ impl EditorUI {
             );
         }
 
-        // === HIERARCHY CONTEXT MENU using popup system ===
+        // === HIERARCHY CONTEXT MENU ===
         let hierarchy_menu_open = ui.is_context_menu_open("hierarchy_context");
         if self.hierarchy_context_menu_open && !hierarchy_menu_open {
             self.hierarchy_context_menu_open = false;
             self.hierarchy_context_entity = None;
         }
 
-        // Render popup with automatic layout
-        let clicked_action = ui.popup("hierarchy_context", |ui| {
-            if ui.popup_item_with_shortcut("Duplicate", ForkAwesome::COPY, true, "Ctrl+D") { return Some("Duplicate"); }
-            if ui.popup_item_with_shortcut("Rename", ForkAwesome::PENCIL, true, "F2") { return Some("Rename"); }
-            ui.popup_separator();
-            if ui.popup_item_with_shortcut("Delete", ForkAwesome::TRASH, true, "Del") { return Some("Delete"); }
+        // Render popup
+        let clicked_action = ui.context_menu("hierarchy_context", |ui| {
+            if ui.menu_item_clicked_with_icon_and_shortcut("Duplicate", ForkAwesome::COPY, true, "Ctrl+D") { return Some("Duplicate"); }
+            if ui.menu_item_clicked_with_icon_and_shortcut("Rename", ForkAwesome::PENCIL, true, "F2") { return Some("Rename"); }
+            ui.menu_separator();
+            if ui.menu_item_clicked_with_icon_and_shortcut("Delete", ForkAwesome::TRASH, true, "Del") { return Some("Delete"); }
             None::<&str>
         });
 

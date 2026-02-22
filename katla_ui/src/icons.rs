@@ -92,6 +92,8 @@ impl ForkAwesome {
     pub const CARET_LEFT: char = '\u{F0D9}';
     /// Caret Right icon ()
     pub const CARET_RIGHT: char = '\u{F0DA}';
+    /// Angle Right icon () - for submenu indicators
+    pub const ANGLE_RIGHT: char = '\u{F105}';
     /// Expand/Arrows Alt icon ()
     pub const EXPAND: char = '\u{F0B2}';
     /// Compress icon ()
