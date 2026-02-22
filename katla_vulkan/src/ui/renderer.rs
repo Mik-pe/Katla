@@ -7,7 +7,6 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use ash::vk;
-use gpu_allocator::MemoryLocation;
 
 use crate::context::VulkanContext;
 use crate::material::MaterialPipeline;
@@ -16,6 +15,7 @@ use crate::render_graph::PassExecutionContext;
 use crate::sync::{VkBuffer, VkDescriptorSet, VkImageView, VkSampler};
 use crate::texture::Texture;
 use crate::vulkan::descriptor::DescriptorSetLayoutBuilder;
+use crate::vulkan::material::buffer_descriptor::{BufferDescriptorSource, UniformBuffer};
 use crate::vulkan::pipeline_state::DescriptorType;
 use crate::{IndexBuffer, IndexType, VertexBuffer};
 
@@ -83,8 +83,7 @@ struct UITextures {
     font_texture: Rc<Texture>,
     white_texture: Rc<Texture>,
     sampler: VkSampler,
-    uniform_buffer: VkBuffer,
-    uniform_allocation: Option<gpu_allocator::vulkan::Allocation>,
+    uniform_buffer: UniformBuffer<[f32; 4]>,
     descriptor_set_layout: vk::DescriptorSetLayout,
     push_descriptor_layout: vk::DescriptorSetLayout,
     pipeline_layout: vk::PipelineLayout,
@@ -154,17 +153,9 @@ impl UITextures {
             let descriptor_sets = context.device.allocate_descriptor_sets(&alloc_info)?;
             let descriptor_set = descriptor_sets[0];
 
-            let uniform_buffer_size = 16u64;
-            let uniform_buffer_info = vk::BufferCreateInfo::default()
-                .sharing_mode(vk::SharingMode::EXCLUSIVE)
-                .usage(vk::BufferUsageFlags::UNIFORM_BUFFER)
-                .size(uniform_buffer_size);
-            let (uniform_buffer, uniform_allocation) =
-                context.allocate_buffer(&uniform_buffer_info, MemoryLocation::CpuToGpu);
-
-            let uniform_ptr = context.map_buffer(&uniform_allocation);
-            let initial_data: [f32; 4] = [1920.0, 1080.0, 0.0, 0.0];
-            std::ptr::copy_nonoverlapping(initial_data.as_ptr() as *const u8, uniform_ptr, 16);
+            // Create uniform buffer for screen size
+            let uniform_buffer = UniformBuffer::<[f32; 4]>::new(context.clone())?;
+            uniform_buffer.write(&[1920.0, 1080.0, 0.0, 0.0]);
 
             let font_image_info = vk::DescriptorImageInfo {
                 sampler: vk::Sampler::null(),
@@ -177,9 +168,9 @@ impl UITextures {
                 image_layout: vk::ImageLayout::UNDEFINED,
             };
             let uniform_buffer_info = vk::DescriptorBufferInfo {
-                buffer: uniform_buffer,
+                buffer: uniform_buffer.buffer(),
                 offset: 0,
-                range: uniform_buffer_size,
+                range: uniform_buffer.size(),
             };
 
             let font_image_infos = [font_image_info];
@@ -218,8 +209,7 @@ impl UITextures {
                 font_texture,
                 white_texture,
                 sampler,
-                uniform_buffer: VkBuffer::new(uniform_buffer),
-                uniform_allocation: Some(uniform_allocation),
+                uniform_buffer,
                 descriptor_set_layout: descriptor_set_layout_raw,
                 push_descriptor_layout: push_descriptor_layout_raw,
                 pipeline_layout,
@@ -242,13 +232,7 @@ impl UITextures {
     }
 
     fn update_screen_size(&self, width: f32, height: f32) {
-        if let Some(ref allocation) = self.uniform_allocation {
-            let ptr = self.context.map_buffer(allocation);
-            let data: [f32; 4] = [width, height, 0.0, 0.0];
-            unsafe {
-                std::ptr::copy_nonoverlapping(data.as_ptr() as *const u8, ptr, 16);
-            }
-        }
+        self.uniform_buffer.write(&[width, height, 0.0, 0.0]);
     }
 
     fn update_font_atlas(&mut self, pixels: &[u8]) -> bool {
@@ -312,11 +296,8 @@ impl UITextures {
 impl Drop for UITextures {
     fn drop(&mut self) {
         unsafe {
-            self.context.device.destroy_sampler(self.sampler.into(), None);
-            self.context.device.destroy_buffer(self.uniform_buffer.into(), None);
-            if let Some(allocation) = self.uniform_allocation.take() {
-                self.context.allocator.borrow_mut().free(allocation).ok();
-            }
+            self.context.destroy_sampler(self.sampler);
+            // uniform_buffer is dropped automatically with its own Drop impl
             self.context.device.destroy_descriptor_set_layout(self.descriptor_set_layout, None);
             self.context.device.destroy_descriptor_set_layout(self.push_descriptor_layout, None);
             self.context.device.destroy_pipeline_layout(self.pipeline_layout, None);
