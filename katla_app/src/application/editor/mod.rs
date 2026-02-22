@@ -153,7 +153,8 @@ pub fn render_debug_ui(app: &mut Application, dt: f32) {
                 renderer,
                 Some(sky_pipeline.clone()),
                 grid_to_use,
-                Some(ui_pipeline.clone()),
+                app.ui_renderer.as_ref(),
+                app.ui_draw_data.clone(),
             );
         }
     }
@@ -213,30 +214,32 @@ pub fn render_debug_ui(app: &mut Application, dt: f32) {
         // Pass to renderer
         // Use physical size for viewport/scissor (Vulkan operates in physical pixels)
         // But use logical size for UI uniform (vertices are in logical coords)
-        if let Some(ref renderer) = app.renderer {
+        if let Some(ref ui_renderer) = app.ui_renderer {
             // Update screen size uniform for shader NDC transform (logical size!)
-            renderer.update_ui_screen_size(screen_size.x(), screen_size.y());
-            renderer.set_ui_data(
-                vertex_bytes,
-                index_bytes,
-                [physical_size.x(), physical_size.y()],  // Physical size for viewport
-                ui_commands,
-            );
+            ui_renderer.update_screen_size(screen_size.x(), screen_size.y());
+
+            // Store UI data for render graph to pick up
+            *app.ui_draw_data.borrow_mut() = Some(katla_vulkan::UiDrawData {
+                vertex_data: vertex_bytes,
+                index_data: index_bytes,
+                screen_size: [physical_size.x(), physical_size.y()],
+                commands: ui_commands,
+            });
         }
     }
 
     // Update font atlas texture if needed (render may have added new glyphs)
     if app.ui_context.fonts.atlas_needs_update() {
-        if let Some(ref mut renderer) = app.renderer {
+        if let Some(ref mut ui_renderer) = app.ui_renderer {
             // Check if atlas was resized
             if app.ui_context.fonts.atlas_was_resized() {
                 let (new_width, new_height) = app.ui_context.fonts.atlas_size();
                 let atlas_data = app.ui_context.fonts.atlas_data().to_vec();
-                renderer.resize_font_atlas(new_width, new_height, &atlas_data);
+                ui_renderer.resize_font_atlas(new_width, new_height, &atlas_data);
                 app.ui_context.fonts.clear_atlas_resized();
             } else {
                 let atlas_data = app.ui_context.fonts.atlas_data().to_vec();
-                renderer.update_font_atlas(&atlas_data);
+                ui_renderer.update_font_atlas(&atlas_data);
             }
         }
         app.ui_context.fonts.mark_atlas_updated();

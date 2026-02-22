@@ -59,13 +59,16 @@ pub fn setup_render_graph(app: &mut Application) {
     let ui_pipeline = ui_material.pipeline();
     app.ui_pipeline = Some(ui_pipeline.clone());
 
-    // Initialize UI buffers (256KB vertex, 128KB index - enough for complex UIs)
-    renderer.init_ui_buffers(UI_VERTEX_BUFFER_SIZE as u64, UI_INDEX_BUFFER_SIZE as u64);
-
-    // Initialize UI textures (512x512 font atlas)
-    renderer
-        .init_ui_textures(FONT_ATLAS_SIZE, FONT_ATLAS_SIZE)
-        .expect("Failed to initialize UI textures");
+    // Create UI renderer (owns UI buffers, textures, descriptors)
+    let ui_renderer = katla_vulkan::UIRenderer::new(
+        renderer.context.clone(),
+        ui_pipeline.clone(),
+        UI_VERTEX_BUFFER_SIZE as u64,
+        UI_INDEX_BUFFER_SIZE as u64,
+        FONT_ATLAS_SIZE,
+        FONT_ATLAS_SIZE,
+    ).expect("Failed to create UI renderer");
+    app.ui_renderer = Some(ui_renderer);
 
     // Get window size for main viewport
     let viewport_size = app.window.as_ref().unwrap().inner_size();
@@ -109,7 +112,8 @@ pub fn setup_render_graph(app: &mut Application) {
         renderer,
         Some(sky_pipeline),
         grid_pipeline_to_use,
-        Some(ui_pipeline),
+        app.ui_renderer.as_ref(),
+        app.ui_draw_data.clone(),
     );
 
     // Initialize preview viewport using new unified ViewportBuilder API
