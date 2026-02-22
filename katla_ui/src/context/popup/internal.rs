@@ -1,0 +1,111 @@
+//! Internal popup helpers: position calculation, background drawing, close handling.
+
+use katla_math::{Color, Rect2D, Vec2};
+
+use super::super::state::WidgetState;
+use super::super::UiContext;
+use super::{Popup, PopupPosition, PopupStyle};
+
+impl UiContext {
+    /// Calculate popup position based on config.
+    pub(super) fn calculate_popup_position(&self, config: &Popup) -> Vec2 {
+        match config.position {
+            PopupPosition::AtCursor => {
+                // Get stored position or use current mouse position
+                let popup_id = self.generate_id(&config.id);
+                self.storage
+                    .get(&popup_id)
+                    .and_then(|s| {
+                        if let WidgetState::ContextMenuPos(p) = s {
+                            Some(*p)
+                        } else {
+                            None
+                        }
+                    })
+                    .unwrap_or(self.input.mouse_pos)
+            }
+            PopupPosition::AtPosition(pos) => pos,
+            PopupPosition::BelowButton(trigger) => Vec2::new(trigger.min.x(), trigger.max.y()),
+            PopupPosition::Fixed(bounds) => bounds.min,
+            PopupPosition::Centered { width, height } => {
+                Vec2::new(
+                    (self.screen_size.x() - width) * 0.5,
+                    (self.screen_size.y() - height) * 0.5,
+                )
+            }
+        }
+    }
+
+    /// Calculate final popup bounds from tracked content.
+    pub(super) fn calculate_final_popup_bounds(
+        &self,
+        config: &Popup,
+        position: Vec2,
+    ) -> Rect2D {
+        match config.position {
+            PopupPosition::Fixed(bounds) => bounds,
+            PopupPosition::Centered { width, height } => {
+                Rect2D::from_origin_size(position, Vec2::new(width, height))
+            }
+            _ => {
+                // Auto-size from tracked content
+                let content_bounds = self.popup_content_bounds.unwrap_or_else(|| {
+                    Rect2D::from_origin_size(
+                        position,
+                        Vec2::new(self.style.menu_min_width, self.style.menu_item_height),
+                    )
+                });
+
+                let min_width = self.style.menu_min_width;
+                let min_height = self.style.menu_item_height;
+                let final_width = content_bounds.width().max(min_width);
+                let final_height = content_bounds.height().max(min_height);
+
+                Rect2D::from_origin_size(content_bounds.min, Vec2::new(final_width, final_height))
+            }
+        }
+    }
+
+    /// Draw popup background (shadow + bg + border).
+    pub(super) fn draw_popup_background(&mut self, bounds: Rect2D, style: &PopupStyle) {
+        // Shadow (not for tooltips)
+        if *style != PopupStyle::Tooltip {
+            let shadow_offset = Vec2::new(4.0, 4.0);
+            let shadow_bounds = Rect2D::new(bounds.min + shadow_offset, bounds.max + shadow_offset);
+            self.draw_rect(shadow_bounds, self.style.popup_shadow);
+        }
+
+        // Background
+        self.draw_rect(bounds, self.style.popup_bg);
+
+        // Border
+        self.draw_rect_border(bounds, Color::TRANSPARENT, self.style.popup_border, 1.0);
+    }
+
+    /// Handle popup close behavior.
+    pub(super) fn handle_popup_close(&mut self, config: &Popup, bounds: Rect2D) {
+        // Capture mouse when over popup
+        if bounds.contains(self.input.mouse_pos) {
+            self.input.want_capture_mouse = true;
+        }
+
+        // Handle click-outside-to-close
+        if config.close_behavior == super::CloseBehavior::ClickOutside {
+            if self.input.mouse_clicked(crate::input::mouse_button::LEFT)
+                && !bounds.contains(self.input.mouse_pos)
+            {
+                self.close_current_popup();
+            }
+        }
+
+        // Handle Escape-to-close
+        if self.input.key_pressed(crate::input::KeyCode::Escape) {
+            self.close_current_popup();
+        }
+
+        // Capture keyboard for modals
+        if config.style == PopupStyle::Modal {
+            self.input.want_capture_keyboard = true;
+        }
+    }
+}
