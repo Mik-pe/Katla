@@ -129,20 +129,8 @@ impl Texture {
     }
 
     fn create_texture_sampler(context: &VulkanContext) -> vk::Sampler {
-        let create_info = vk::SamplerCreateInfo::default()
-            .anisotropy_enable(true)
-            .max_anisotropy(16.0)
-            .border_color(vk::BorderColor::INT_OPAQUE_BLACK)
-            .unnormalized_coordinates(false)
-            .min_filter(vk::Filter::LINEAR)
-            .mag_filter(vk::Filter::LINEAR)
-            .compare_enable(false)
-            .compare_op(vk::CompareOp::ALWAYS)
-            .mipmap_mode(vk::SamplerMipmapMode::LINEAR)
-            .mip_lod_bias(0.0)
-            .min_lod(0.0)
-            .max_lod(0.0);
-        unsafe { context.device.create_sampler(&create_info, None).unwrap() }
+        // Use the shared sampler factory for consistency
+        context.create_sampler_repeat_anisotropic().unwrap().into()
     }
 
     fn convert_rgb_to_rgba(rgb_data: &[u8], width: u32, height: u32) -> Vec<u8> {

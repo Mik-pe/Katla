@@ -103,24 +103,7 @@ impl UITextures {
         atlas_height: u32,
     ) -> Result<Self, vk::Result> {
         unsafe {
-            let sampler_create_info = vk::SamplerCreateInfo::default()
-                .mag_filter(vk::Filter::LINEAR)
-                .min_filter(vk::Filter::LINEAR)
-                .address_mode_u(vk::SamplerAddressMode::CLAMP_TO_EDGE)
-                .address_mode_v(vk::SamplerAddressMode::CLAMP_TO_EDGE)
-                .address_mode_w(vk::SamplerAddressMode::CLAMP_TO_EDGE)
-                .anisotropy_enable(false)
-                .max_anisotropy(1.0)
-                .border_color(vk::BorderColor::INT_TRANSPARENT_BLACK)
-                .unnormalized_coordinates(false)
-                .compare_enable(false)
-                .compare_op(vk::CompareOp::ALWAYS)
-                .mipmap_mode(vk::SamplerMipmapMode::LINEAR)
-                .mip_lod_bias(0.0)
-                .min_lod(0.0)
-                .max_lod(0.0);
-
-            let sampler = context.device.create_sampler(&sampler_create_info, None)?;
+            let sampler = context.create_sampler_clamp_to_edge()?;
 
             let white_pixels = [255u8, 255, 255, 255];
             let white_texture = Rc::new(Texture::create_image_rgb(context.clone(), 1, 1, &white_pixels));
@@ -189,7 +172,7 @@ impl UITextures {
                 image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
             };
             let sampler_info = vk::DescriptorImageInfo {
-                sampler,
+                sampler: sampler.into(),
                 image_view: vk::ImageView::null(),
                 image_layout: vk::ImageLayout::UNDEFINED,
             };
@@ -234,7 +217,7 @@ impl UITextures {
             Ok(Self {
                 font_texture,
                 white_texture,
-                sampler: VkSampler::new(sampler),
+                sampler,
                 uniform_buffer: VkBuffer::new(uniform_buffer),
                 uniform_allocation: Some(uniform_allocation),
                 descriptor_set_layout: descriptor_set_layout_raw,
