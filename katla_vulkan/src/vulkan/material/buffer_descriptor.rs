@@ -508,6 +508,238 @@ impl<T: Copy> Drop for UniformBuffer<T> {
     }
 }
 
+// ============================================================================
+// MixedDescriptorSetBuilder - handles images, samplers, and buffers
+// ============================================================================
+
+/// Info for a single image binding in a descriptor set.
+#[derive(Clone, Debug)]
+pub struct ImageBinding {
+    /// The image view.
+    pub image_view: crate::sync::VkImageView,
+    /// Binding number in the shader.
+    pub binding: u32,
+    /// Image layout (default: SHADER_READ_ONLY_OPTIMAL).
+    pub layout: vk::ImageLayout,
+}
+
+/// Info for a single sampler binding in a descriptor set.
+#[derive(Clone, Debug)]
+pub struct SamplerBinding {
+    /// The sampler.
+    pub sampler: crate::sync::VkSampler,
+    /// Binding number in the shader.
+    pub binding: u32,
+}
+
+/// Builder for creating descriptor sets with mixed binding types.
+///
+/// Supports SAMPLED_IMAGE, SAMPLER, and UNIFORM_BUFFER bindings.
+/// This is useful for UI and other cases that need multiple descriptor types.
+///
+/// # Example
+///
+/// ```ignore
+/// let desc_set = MixedDescriptorSetBuilder::new(&context)
+///     .add_image_binding(font_texture.image_view(), 0)
+///     .add_sampler_binding(sampler, 1)
+///     .add_uniform_binding(&uniform_buffer, 3)
+///     .build(&layout)?;
+/// ```
+pub struct MixedDescriptorSetBuilder<'a> {
+    context: &'a Rc<VulkanContext>,
+    image_bindings: Vec<ImageBinding>,
+    sampler_bindings: Vec<SamplerBinding>,
+    buffer_bindings: Vec<BufferBinding>,
+}
+
+impl<'a> MixedDescriptorSetBuilder<'a> {
+    /// Create a new builder.
+    pub fn new(context: &'a Rc<VulkanContext>) -> Self {
+        Self {
+            context,
+            image_bindings: Vec::new(),
+            sampler_bindings: Vec::new(),
+            buffer_bindings: Vec::new(),
+        }
+    }
+
+    /// Add a sampled image binding.
+    pub fn add_image_binding(mut self, image_view: crate::sync::VkImageView, binding: u32) -> Self {
+        self.image_bindings.push(ImageBinding {
+            image_view,
+            binding,
+            layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+        });
+        self
+    }
+
+    /// Add a sampler binding.
+    pub fn add_sampler_binding(mut self, sampler: crate::sync::VkSampler, binding: u32) -> Self {
+        self.sampler_bindings.push(SamplerBinding { sampler, binding });
+        self
+    }
+
+    /// Add a uniform buffer binding.
+    pub fn add_uniform_binding(mut self, buffer: &impl BufferDescriptorSource, binding: u32) -> Self {
+        self.buffer_bindings.push(BufferBinding {
+            buffer: buffer.buffer(),
+            binding,
+            offset: 0,
+            range: buffer.buffer_size(),
+            descriptor_type: vk::DescriptorType::UNIFORM_BUFFER,
+        });
+        self
+    }
+
+    /// Build the descriptor set.
+    ///
+    /// Allocates a descriptor set from a new pool and writes all bindings.
+    pub fn build(self, layout: &crate::sync::VkDescriptorSetLayout) -> Result<MixedDescriptorSet, vk::Result> {
+        let device = &self.context.device;
+
+        // Calculate pool sizes
+        let mut pool_sizes = Vec::new();
+        if !self.image_bindings.is_empty() {
+            pool_sizes.push(vk::DescriptorPoolSize {
+                ty: vk::DescriptorType::SAMPLED_IMAGE,
+                descriptor_count: self.image_bindings.len() as u32,
+            });
+        }
+        if !self.sampler_bindings.is_empty() {
+            pool_sizes.push(vk::DescriptorPoolSize {
+                ty: vk::DescriptorType::SAMPLER,
+                descriptor_count: self.sampler_bindings.len() as u32,
+            });
+        }
+        if !self.buffer_bindings.is_empty() {
+            pool_sizes.push(vk::DescriptorPoolSize {
+                ty: vk::DescriptorType::UNIFORM_BUFFER,
+                descriptor_count: self.buffer_bindings.len() as u32,
+            });
+        }
+
+        let pool_create_info = vk::DescriptorPoolCreateInfo::default()
+            .pool_sizes(&pool_sizes)
+            .max_sets(1);
+
+        let descriptor_pool = unsafe { device.create_descriptor_pool(&pool_create_info, None)? };
+
+        let layouts = [layout.vk()];
+        let alloc_info = vk::DescriptorSetAllocateInfo::default()
+            .descriptor_pool(descriptor_pool)
+            .set_layouts(&layouts);
+
+        let descriptor_sets = unsafe { device.allocate_descriptor_sets(&alloc_info)? };
+        let descriptor_set = descriptor_sets[0];
+
+        // Prepare descriptor infos
+        let image_infos: Vec<vk::DescriptorImageInfo> = self
+            .image_bindings
+            .iter()
+            .map(|b| {
+                vk::DescriptorImageInfo::default()
+                    .sampler(vk::Sampler::null())
+                    .image_view(b.image_view.vk())
+                    .image_layout(b.layout)
+            })
+            .collect();
+
+        let sampler_infos: Vec<vk::DescriptorImageInfo> = self
+            .sampler_bindings
+            .iter()
+            .map(|b| {
+                vk::DescriptorImageInfo::default()
+                    .sampler(b.sampler.vk())
+                    .image_view(vk::ImageView::null())
+                    .image_layout(vk::ImageLayout::UNDEFINED)
+            })
+            .collect();
+
+        let buffer_infos: Vec<vk::DescriptorBufferInfo> = self
+            .buffer_bindings
+            .iter()
+            .map(|b| vk::DescriptorBufferInfo::default().buffer(b.buffer).offset(b.offset).range(b.range))
+            .collect();
+
+        // Build writes
+        let mut writes = Vec::new();
+
+        for (i, binding) in self.image_bindings.iter().enumerate() {
+            writes.push(
+                vk::WriteDescriptorSet::default()
+                    .dst_set(descriptor_set)
+                    .dst_binding(binding.binding)
+                    .dst_array_element(0)
+                    .descriptor_type(vk::DescriptorType::SAMPLED_IMAGE)
+                    .image_info(std::slice::from_ref(&image_infos[i])),
+            );
+        }
+
+        for (i, binding) in self.sampler_bindings.iter().enumerate() {
+            writes.push(
+                vk::WriteDescriptorSet::default()
+                    .dst_set(descriptor_set)
+                    .dst_binding(binding.binding)
+                    .dst_array_element(0)
+                    .descriptor_type(vk::DescriptorType::SAMPLER)
+                    .image_info(std::slice::from_ref(&sampler_infos[i])),
+            );
+        }
+
+        for (i, binding) in self.buffer_bindings.iter().enumerate() {
+            writes.push(
+                vk::WriteDescriptorSet::default()
+                    .dst_set(descriptor_set)
+                    .dst_binding(binding.binding)
+                    .dst_array_element(0)
+                    .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
+                    .buffer_info(std::slice::from_ref(&buffer_infos[i])),
+            );
+        }
+
+        unsafe {
+            device.update_descriptor_sets(&writes, &[]);
+        }
+
+        Ok(MixedDescriptorSet {
+            descriptor_set,
+            descriptor_pool,
+            device: device.clone(),
+        })
+    }
+}
+
+/// Descriptor set with mixed binding types.
+///
+/// Contains the descriptor set and pool, with automatic cleanup on drop.
+pub struct MixedDescriptorSet {
+    descriptor_set: vk::DescriptorSet,
+    descriptor_pool: vk::DescriptorPool,
+    device: ash::Device,
+}
+
+impl MixedDescriptorSet {
+    /// Get the descriptor set handle as a wrapper type.
+    pub fn set(&self) -> crate::sync::VkDescriptorSet {
+        crate::sync::VkDescriptorSet::new(self.descriptor_set)
+    }
+
+    /// Get the raw Vulkan descriptor set handle.
+    pub fn vk_set(&self) -> vk::DescriptorSet {
+        self.descriptor_set
+    }
+}
+
+impl Drop for MixedDescriptorSet {
+    fn drop(&mut self) {
+        unsafe {
+            // Destroying the pool automatically frees all descriptor sets in it
+            self.device.destroy_descriptor_pool(self.descriptor_pool, None);
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

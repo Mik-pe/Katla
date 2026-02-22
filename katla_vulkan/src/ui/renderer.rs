@@ -15,7 +15,7 @@ use crate::render_graph::PassExecutionContext;
 use crate::sync::{VkBuffer, VkDescriptorSet, VkImageView, VkSampler};
 use crate::texture::Texture;
 use crate::vulkan::descriptor::DescriptorSetLayoutBuilder;
-use crate::vulkan::material::buffer_descriptor::{BufferDescriptorSource, UniformBuffer};
+use crate::vulkan::material::buffer_descriptor::{MixedDescriptorSetBuilder, UniformBuffer};
 use crate::vulkan::pipeline_state::DescriptorType;
 use crate::{IndexBuffer, IndexType, VertexBuffer};
 
@@ -87,8 +87,7 @@ struct UITextures {
     descriptor_set_layout: vk::DescriptorSetLayout,
     push_descriptor_layout: vk::DescriptorSetLayout,
     pipeline_layout: vk::PipelineLayout,
-    descriptor_set: VkDescriptorSet,
-    descriptor_pool: vk::DescriptorPool,
+    mixed_descriptor_set: crate::vulkan::material::buffer_descriptor::MixedDescriptorSet,
     atlas_width: u32,
     atlas_height: u32,
     external_textures: HashMap<u64, vk::ImageView>,
@@ -135,70 +134,20 @@ impl UITextures {
             let pipeline_layout_info = vk::PipelineLayoutCreateInfo::default().set_layouts(&set_layouts);
             let pipeline_layout = context.device.create_pipeline_layout(&pipeline_layout_info, None)?;
 
-            let pool_sizes = [
-                vk::DescriptorPoolSize { ty: vk::DescriptorType::SAMPLED_IMAGE, descriptor_count: 1 },
-                vk::DescriptorPoolSize { ty: vk::DescriptorType::SAMPLER, descriptor_count: 1 },
-                vk::DescriptorPoolSize { ty: vk::DescriptorType::UNIFORM_BUFFER, descriptor_count: 1 },
-            ];
-
-            let pool_create_info = vk::DescriptorPoolCreateInfo::default()
-                .pool_sizes(&pool_sizes)
-                .max_sets(1);
-            let descriptor_pool = context.device.create_descriptor_pool(&pool_create_info, None)?;
-
-            let alloc_layouts: Vec<vk::DescriptorSetLayout> = vec![descriptor_set_layout.into()];
-            let alloc_info = vk::DescriptorSetAllocateInfo::default()
-                .descriptor_pool(descriptor_pool)
-                .set_layouts(&alloc_layouts);
-            let descriptor_sets = context.device.allocate_descriptor_sets(&alloc_info)?;
-            let descriptor_set = descriptor_sets[0];
-
             // Create uniform buffer for screen size
             let uniform_buffer = UniformBuffer::<[f32; 4]>::new(context.clone())?;
             uniform_buffer.write(&[1920.0, 1080.0, 0.0, 0.0]);
 
-            let font_image_info = vk::DescriptorImageInfo {
-                sampler: vk::Sampler::null(),
-                image_view: font_texture.image_view.into(),
-                image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
-            };
-            let sampler_info = vk::DescriptorImageInfo {
-                sampler: sampler.into(),
-                image_view: vk::ImageView::null(),
-                image_layout: vk::ImageLayout::UNDEFINED,
-            };
-            let uniform_buffer_info = vk::DescriptorBufferInfo {
-                buffer: uniform_buffer.buffer(),
-                offset: 0,
-                range: uniform_buffer.size(),
-            };
-
-            let font_image_infos = [font_image_info];
-            let sampler_infos = [sampler_info];
-            let uniform_buffer_infos = [uniform_buffer_info];
-
-            let writes = [
-                vk::WriteDescriptorSet::default()
-                    .dst_set(descriptor_set)
-                    .dst_binding(0)
-                    .descriptor_type(vk::DescriptorType::SAMPLED_IMAGE)
-                    .image_info(&font_image_infos),
-                vk::WriteDescriptorSet::default()
-                    .dst_set(descriptor_set)
-                    .dst_binding(1)
-                    .descriptor_type(vk::DescriptorType::SAMPLER)
-                    .image_info(&sampler_infos),
-                vk::WriteDescriptorSet::default()
-                    .dst_set(descriptor_set)
-                    .dst_binding(3)
-                    .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
-                    .buffer_info(&uniform_buffer_infos),
-            ];
-            context.device.update_descriptor_sets(&writes, &[]);
+            // Build descriptor set with mixed bindings
+            let mixed_descriptor_set = MixedDescriptorSetBuilder::new(&context)
+                .add_image_binding(font_texture.image_view, 0)
+                .add_sampler_binding(sampler, 1)
+                .add_uniform_binding(&uniform_buffer, 3)
+                .build(&descriptor_set_layout)?;
 
             // Register the font texture with the descriptor set for auto-updates
             if let Some(texture) = Rc::get_mut(&mut font_texture) {
-                texture.register_for_descriptor(VkDescriptorSet::new(descriptor_set), 0);
+                texture.register_for_descriptor(mixed_descriptor_set.set(), 0);
             }
 
             // Convert wrapper layouts to raw for storage (needed for Drop cleanup)
@@ -213,8 +162,7 @@ impl UITextures {
                 descriptor_set_layout: descriptor_set_layout_raw,
                 push_descriptor_layout: push_descriptor_layout_raw,
                 pipeline_layout,
-                descriptor_set: VkDescriptorSet::new(descriptor_set),
-                descriptor_pool,
+                mixed_descriptor_set,
                 atlas_width,
                 atlas_height,
                 external_textures: HashMap::new(),
@@ -224,7 +172,7 @@ impl UITextures {
     }
 
     fn descriptor_set(&self) -> VkDescriptorSet {
-        self.descriptor_set
+        self.mixed_descriptor_set.set()
     }
 
     fn pipeline_layout(&self) -> vk::PipelineLayout {
@@ -251,7 +199,7 @@ impl UITextures {
                 self.atlas_height,
                 pixels,
             );
-            new_texture.register_for_descriptor(self.descriptor_set, 0);
+            new_texture.register_for_descriptor(self.descriptor_set(), 0);
             self.font_texture = Rc::new(new_texture);
         }
         true
@@ -272,7 +220,7 @@ impl UITextures {
                 height,
                 pixels,
             );
-            new_texture.register_for_descriptor(self.descriptor_set, 0);
+            new_texture.register_for_descriptor(self.descriptor_set(), 0);
             self.font_texture = Rc::new(new_texture);
         }
         true
@@ -297,11 +245,10 @@ impl Drop for UITextures {
     fn drop(&mut self) {
         unsafe {
             self.context.destroy_sampler(self.sampler);
-            // uniform_buffer is dropped automatically with its own Drop impl
+            // uniform_buffer and mixed_descriptor_set are dropped automatically
             self.context.device.destroy_descriptor_set_layout(self.descriptor_set_layout, None);
             self.context.device.destroy_descriptor_set_layout(self.push_descriptor_layout, None);
             self.context.device.destroy_pipeline_layout(self.pipeline_layout, None);
-            self.context.device.destroy_descriptor_pool(self.descriptor_pool, None);
         }
     }
 }
