@@ -7,10 +7,9 @@ use std::rc::Rc;
 use katla_ecs::World;
 use katla_math::{Transform, Vec3};
 use katla_vulkan::{
-    BufferDescriptorSetBuilder, CompareOp, ComputePipelineBuilder, CullMode,
-    DescriptorSetLayoutBuilder, DescriptorType, DeviceAddressBuffer, EmitterConfig,
-    FrontFace, ImageFormat, MaterialPipeline, ParticleBuffer, PipelineBuilder,
-    ShaderModule, ShaderStages, VkRenderPass, VulkanContext,
+    CompareOp, ComputePipelineBuilder, CullMode, DescriptorSetBuilder, DescriptorSetLayoutBuilder,
+    DescriptorType, DeviceAddressBuffer, EmitterConfig, FrontFace, ImageFormat, MaterialPipeline,
+    ParticleBuffer, PipelineBuilder, ShaderModule, ShaderStages, VkRenderPass, VulkanContext,
 };
 
 use crate::components::{NameComponent, ParticleEmitter, TransformComponent};
@@ -42,10 +41,9 @@ pub fn create_particle_emitter(
         .expect("Failed to create compute descriptor layout");
 
     // Create compute descriptor set
-    let compute_descriptor_set = BufferDescriptorSetBuilder::new(&context)
-        .add_entire_buffer(&particle_buffer, 0)
-        .with_descriptor_type_wrapped(DescriptorType::UniformBuffer)
-        .add_entire_buffer(&frame_data_buffer, 1)
+    let compute_descriptor_set = DescriptorSetBuilder::new(&context)
+        .storage_buffer(0, &particle_buffer)
+        .uniform_buffer(1, &frame_data_buffer)
         .build(compute_descriptor_layout)
         .expect("Failed to create compute descriptor set");
 
@@ -120,12 +118,12 @@ pub fn create_particle_emitter(
         .expect("Failed to create render pipeline");
 
     // MaterialPipeline takes ownership of frame_descriptor_layout
-    let render_pipeline = MaterialPipeline::new_wrapped(render_pipeline, frame_descriptor_layout, context.clone());
+    let render_pipeline = MaterialPipeline::new_custom(render_pipeline, frame_descriptor_layout.into(), context.clone());
 
     // Create render particle descriptor set - takes ownership of render_particle_descriptor_layout
     // This must happen AFTER pipeline creation since pipeline builder borrows the layout
-    let render_particle_descriptor = BufferDescriptorSetBuilder::new(&context)
-        .add_entire_buffer(&particle_buffer, 0)
+    let render_particle_descriptor = DescriptorSetBuilder::new(&context)
+        .storage_buffer(0, &particle_buffer)
         .build_with_owned_layout(render_particle_descriptor_layout)
         .expect("Failed to create render particle descriptor set");
 

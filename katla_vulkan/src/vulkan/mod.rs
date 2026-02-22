@@ -4,6 +4,8 @@ pub mod commandbuffer;
 pub mod commandpool;
 pub mod context;
 pub mod descriptor;
+pub mod descriptor_set;
+pub mod frame_buffer;
 pub mod framebuffer;
 pub mod material;
 pub mod particle_buffer;
@@ -24,6 +26,8 @@ pub use commandbuffer::*;
 pub use commandpool::*;
 pub use context::*;
 pub use descriptor::*;
+pub use descriptor_set::*;
+pub use frame_buffer::*;
 pub use framebuffer::*;
 #[allow(deprecated)]
 pub use material::storage_uniform::*;

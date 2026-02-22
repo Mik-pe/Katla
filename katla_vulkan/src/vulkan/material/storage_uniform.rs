@@ -59,8 +59,7 @@
 use ash::vk;
 use std::rc::Rc;
 
-use super::BufferDescriptorSetBuilder;
-use crate::vulkan::{bda::DeviceAddressBuffer, VulkanContext};
+use crate::vulkan::{bda::DeviceAddressBuffer, DescriptorSetBuilder, VulkanContext};
 use crate::RendererError;
 
 /// Storage buffer descriptor set for uniform buffers.
@@ -68,10 +67,10 @@ use crate::RendererError;
 /// Contains descriptor set and pool for binding the storage buffer
 /// to shaders as storage buffers (set 0).
 ///
-/// This is a convenience wrapper around [`BufferDescriptorSetBuilder`]
+/// This is a convenience wrapper around [`DescriptorSetBuilder`]
 /// for the common storage uniform pattern with frame_data and objects.
 pub struct StorageDescriptorSet {
-    inner: super::BufferDescriptorSet,
+    inner: crate::vulkan::DescriptorSet,
 }
 
 impl StorageDescriptorSet {
@@ -89,19 +88,19 @@ impl StorageDescriptorSet {
         storage_buffer: &DeviceAddressBuffer,
         desc_layout: crate::sync::VkDescriptorSetLayout,
     ) -> Result<Self, RendererError> {
-        // Use the generic builder with two bindings to the same buffer
-        let inner = BufferDescriptorSetBuilder::new(context)
+        // Use the unified builder with two bindings to the same buffer
+        let inner = DescriptorSetBuilder::new(context)
             // Binding 0: frame_data (offset 0, size = FrameUniforms)
-            .add_binding(
-                storage_buffer.buffer,
+            .storage_buffer_range(
                 0,
+                storage_buffer,
                 0,
                 StorageUniformLayout::FRAME_SIZE as u64,
             )
             // Binding 1: objects array (offset 256, size = ObjectUniforms * MAX_OBJECTS)
-            .add_binding(
-                storage_buffer.buffer,
+            .storage_buffer_range(
                 1,
+                storage_buffer,
                 StorageUniformLayout::OBJECT_ARRAY_OFFSET as u64,
                 (StorageUniformLayout::OBJECT_STRIDE * StorageUniformLayout::MAX_OBJECTS) as u64,
             )
@@ -112,12 +111,12 @@ impl StorageDescriptorSet {
 
     /// Get the descriptor set for binding as a wrapper type.
     pub fn set(&self) -> crate::sync::VkDescriptorSet {
-        self.inner.set()
+        self.inner.wrapped()
     }
 
     /// Get the raw Vulkan descriptor set handle.
     pub fn vk_set(&self) -> vk::DescriptorSet {
-        self.inner.vk_set()
+        self.inner.vk()
     }
 }
 

@@ -25,20 +25,14 @@ pub struct MaterialAsset {
     #[allow(dead_code)] // Needed for resource cleanup
     /// Vertex binding description.
     pub vertex_binding: VertexBinding,
-    /// Optional per-material uniform buffer (for template-based materials).
-    /// When present, this material has its own uniform buffer instead of using pipeline's embedded one.
-    pub uniform: Option<crate::vulkan::material::UniformHandle>,
     /// PBR textures kept alive for the lifetime of the material.
-    /// These must be stored to prevent the textures from being destroyed while in use.
     #[allow(dead_code)]
     pub pbr_textures: Option<Vec<Rc<Texture>>>,
     /// Bindless texture indices: [albedo, normal, metallic_roughness, ao]
-    /// Textures are accessed via the bindless texture array using these indices.
     pub texture_indices: [u32; 4],
     /// Emission texture index for bindless.
     pub emission_index: u32,
     /// Whether this material uses bindless textures (has 2 descriptor sets).
-    /// Non-bindless materials only have set 0 (storage uniforms).
     pub uses_bindless: bool,
 }
 
@@ -199,28 +193,9 @@ impl Default for AssetRegistry {
 
 impl AssetRegistry {
     /// Destroy all registered assets and free GPU resources.
-    ///
-    /// This must be called before the renderer is destroyed to avoid Vulkan validation errors.
-    ///
-    /// Note: This only destroys per-material uniform buffers, not the pipelines themselves.
-    /// Pipelines are shared via Rc<RefCell<>> and are managed by MaterialRegistry.
     pub fn destroy(&mut self) {
-        // Destroy per-material uniform buffers
-        // Each material has its own uniform buffer with descriptor pools that need cleanup
-        for material in self.materials.iter_mut().flatten() {
-            if let Some(mut uniform) = material.uniform.take() {
-                if let Ok(pipeline) = material.pipeline.try_borrow() {
-                    uniform.destroy(pipeline.context());
-                }
-            }
-        }
-
-        // Clear materials and meshes
-        // Pipelines will be dropped naturally (they're managed by MaterialRegistry)
         self.materials.clear();
         self.meshes.clear();
-
-        // Reset counters
         self.next_mesh_id = 0;
         self.next_material_id = 0;
     }

@@ -191,7 +191,7 @@ impl VulkanRenderer {
             }
 
             if let Some(ref mut viewport_graph) = viewport.render_graph {
-                viewport_graph.execute_no_swapchain(&mut command_buffer)?;
+                viewport_graph.execute_no_swapchain(&mut command_buffer, frame_idx)?;
                 debug!("render_frame: viewport {} graph.execute complete", idx);
 
                 viewport.transition_to_sample(
@@ -214,6 +214,7 @@ impl VulkanRenderer {
             image_index,
             &self.frame_context.swapchain_images,
             self.frame_context.depth_render_texture.image,
+            frame_idx,
         )?;
         debug!("render_frame: graph.execute complete");
 

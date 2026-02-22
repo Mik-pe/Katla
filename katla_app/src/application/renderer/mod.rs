@@ -163,9 +163,8 @@ fn setup_gizmo_resources(app: &mut Application) {
         gizmo_pipeline,
         Some(Rc::new(white_texture)),
         vertex_binding,
-        None, // No per-material uniforms needed
-        [0; 4], // Default texture indices (slot 0 = white texture)
-        0,      // No emission
+        [0; 4],
+        0,
     );
     debug!("Registered gizmo material with handle {:?}", material_handle);
 

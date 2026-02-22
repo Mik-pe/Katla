@@ -5,7 +5,7 @@
 
 use katla_ecs::Component;
 use katla_vulkan::{
-    BufferDescriptorSet, ComputePipeline, DeviceAddressBuffer, EmitterConfig, MaterialPipeline,
+    ComputePipeline, DescriptorSet, DeviceAddressBuffer, EmitterConfig, MaterialPipeline,
     ParticleBuffer, VkDescriptorSet, VkPipeline, VkPipelineLayout,
 };
 
@@ -38,11 +38,11 @@ pub struct ParticleEmitter {
     /// Compute pipeline for particle simulation
     pub compute_pipeline: ComputePipeline,
     /// Compute descriptor set for buffers
-    pub compute_descriptor_set: BufferDescriptorSet,
+    pub compute_descriptor_set: DescriptorSet,
     /// Graphics pipeline for particle rendering
     pub render_pipeline: MaterialPipeline,
     /// Render descriptor set for particle buffer (set 1)
-    pub render_particle_descriptor: BufferDescriptorSet,
+    pub render_particle_descriptor: DescriptorSet,
     /// Emitter configuration
     pub config: EmitterConfig,
     /// Accumulated time for particle emission
@@ -64,9 +64,9 @@ impl ParticleEmitter {
         particle_buffer: ParticleBuffer,
         frame_data_buffer: DeviceAddressBuffer,
         compute_pipeline: ComputePipeline,
-        compute_descriptor_set: BufferDescriptorSet,
+        compute_descriptor_set: DescriptorSet,
         render_pipeline: MaterialPipeline,
-        render_particle_descriptor: BufferDescriptorSet,
+        render_particle_descriptor: DescriptorSet,
         config: EmitterConfig,
         emit_rate: f32,
     ) -> Self {
@@ -152,7 +152,7 @@ impl ParticleEmitter {
     }
 
     pub fn compute_descriptor(&self) -> VkDescriptorSet {
-        self.compute_descriptor_set.set()
+        self.compute_descriptor_set.wrapped()
     }
 
     // Render shader bindings
@@ -165,7 +165,7 @@ impl ParticleEmitter {
     }
 
     pub fn render_particle_descriptor(&self) -> VkDescriptorSet {
-        self.render_particle_descriptor.set()
+        self.render_particle_descriptor.wrapped()
     }
 }
 

@@ -3,15 +3,14 @@
 //! Provides a descriptor set that binds a SkeletonBuffer to Set 2
 //! for use with skinned shaders.
 //!
-//! This is a convenience wrapper around [`BufferDescriptorSetBuilder`]
+//! This is a convenience wrapper around [`DescriptorSetBuilder`]
 //! for the common case of binding a single skeleton buffer.
 
 use ash::vk;
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use super::{BufferDescriptorSetBuilder, VulkanContext};
-use crate::vulkan::skeleton_buffer::SkeletonBuffer;
+use crate::vulkan::{skeleton_buffer::SkeletonBuffer, DescriptorSetBuilder, VulkanContext};
 
 /// Descriptor set for binding skeleton joint matrices to the GPU.
 ///
@@ -31,7 +30,7 @@ use crate::vulkan::skeleton_buffer::SkeletonBuffer;
 /// device.cmd_bind_descriptor_sets(cmd, GRAPHICS, layout, 2, &[descriptor_set.set()], &[]);
 /// ```
 pub struct SkeletonDescriptorSet {
-    inner: super::BufferDescriptorSet,
+    inner: crate::vulkan::DescriptorSet,
     #[allow(dead_code)]
     skeleton_buffer: Rc<RefCell<SkeletonBuffer>>,
 }
@@ -48,15 +47,9 @@ impl SkeletonDescriptorSet {
         skeleton_buffer: Rc<RefCell<SkeletonBuffer>>,
         layout: crate::sync::VkDescriptorSetLayout,
     ) -> Result<Self, vk::Result> {
-        // Get buffer info while holding the borrow
-        let (buffer, size) = {
-            let buf = skeleton_buffer.borrow();
-            (buf.buffer(), buf.size())
-        };
-
-        // Use the generic builder
-        let inner = BufferDescriptorSetBuilder::new(&context)
-            .add_binding(buffer, 0, 0, size)
+        // Use the unified builder
+        let inner = DescriptorSetBuilder::new(&context)
+            .storage_buffer(0, &*skeleton_buffer.borrow())
             .build(layout)?;
 
         Ok(Self {
@@ -67,11 +60,11 @@ impl SkeletonDescriptorSet {
 
     /// Get the descriptor set handle as a wrapper type.
     pub fn set(&self) -> crate::sync::VkDescriptorSet {
-        self.inner.set()
+        self.inner.wrapped()
     }
 
     /// Get the raw Vulkan descriptor set handle.
     pub fn vk_set(&self) -> vk::DescriptorSet {
-        self.inner.vk_set()
+        self.inner.vk()
     }
 }

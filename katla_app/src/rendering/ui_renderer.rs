@@ -2,14 +2,14 @@
 //!
 //! Provides a complete UI rendering solution that owns all UI-specific GPU resources.
 
-use std::cell::{Cell, RefCell};
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
 use ash::vk;
 use katla_vulkan::{
-    DescriptorSetLayoutBuilder, DescriptorType, Extent2D, IndexBuffer, IndexType,
-    MaterialPipeline, MixedDescriptorSetBuilder, Offset2D, PassExecutionContext, Rect2D,
+    DescriptorSetBuilder, DescriptorSetLayoutBuilder, DescriptorType, Extent2D, FrameBuffer,
+    IndexBuffer, IndexType, MaterialPipeline, Offset2D, PassExecutionContext, Rect2D,
     ShaderStages, Texture, UniformBuffer, VertexBuffer, VkBuffer, VkDescriptorSet, VkImageView,
     VkSampler, VulkanContext,
 };
@@ -104,7 +104,7 @@ struct UITextures {
     descriptor_set_layout: vk::DescriptorSetLayout,
     push_descriptor_layout: vk::DescriptorSetLayout,
     pipeline_layout: vk::PipelineLayout,
-    mixed_descriptor_set: katla_vulkan::MixedDescriptorSet,
+    descriptor_set: katla_vulkan::DescriptorSet,
     atlas_width: u32,
     atlas_height: u32,
     external_textures: HashMap<u64, vk::ImageView>,
@@ -163,16 +163,16 @@ impl UITextures {
         let uniform_buffer = UniformBuffer::<[f32; 4]>::new(context.clone())?;
         uniform_buffer.write(&[1920.0, 1080.0, 0.0, 0.0]);
 
-        // Build descriptor set with mixed bindings
-        let mixed_descriptor_set = MixedDescriptorSetBuilder::new(&context)
-            .add_image_binding(font_texture.image_view, 0)
-            .add_sampler_binding(sampler, 1)
-            .add_uniform_binding(&uniform_buffer, 3)
-            .build(&descriptor_set_layout)?;
+        // Build descriptor set with mixed bindings using unified builder
+        let descriptor_set = DescriptorSetBuilder::new(&context)
+            .sampled_image(0, font_texture.image_view)
+            .sampler(1, sampler)
+            .uniform_buffer(3, &uniform_buffer)
+            .build(descriptor_set_layout)?;
 
         // Register the font texture with the descriptor set for auto-updates
         if let Some(texture) = Rc::get_mut(&mut font_texture) {
-            texture.register_for_descriptor(mixed_descriptor_set.set(), 0);
+            texture.register_for_descriptor(descriptor_set.wrapped(), 0);
         }
 
         Ok(Self {
@@ -183,7 +183,7 @@ impl UITextures {
             descriptor_set_layout: descriptor_set_layout_raw,
             push_descriptor_layout: push_descriptor_layout_raw,
             pipeline_layout,
-            mixed_descriptor_set,
+            descriptor_set,
             atlas_width,
             atlas_height,
             external_textures: HashMap::new(),
@@ -192,7 +192,7 @@ impl UITextures {
     }
 
     fn descriptor_set(&self) -> VkDescriptorSet {
-        self.mixed_descriptor_set.set()
+        self.descriptor_set.wrapped()
     }
 
     fn pipeline_layout(&self) -> vk::PipelineLayout {
@@ -274,15 +274,10 @@ impl Drop for UITextures {
 }
 
 /// UI Renderer that owns all UI-specific GPU resources.
-///
-/// This is created by the application and used with PassExecutionContext to draw UI.
-/// VulkanRenderer does NOT own this - the application owns it.
 pub struct UIRenderer {
-    buffers: Vec<UIBuffers>,
+    buffers: FrameBuffer<UIBuffers>,
     textures: UITextures,
     pipeline: Rc<RefCell<MaterialPipeline>>,
-    frame_index: Cell<usize>,
-    frames_in_flight: usize,
 }
 
 impl UIRenderer {
@@ -295,11 +290,9 @@ impl UIRenderer {
         atlas_width: u32,
         atlas_height: u32,
     ) -> Result<Self, vk::Result> {
-        let frames_in_flight = 2;
-
-        let buffers = (0..frames_in_flight)
-            .map(|_| UIBuffers::new(context.clone(), vertex_capacity, index_capacity))
-            .collect();
+        let buffers = FrameBuffer::new(|_| {
+            UIBuffers::new(context.clone(), vertex_capacity, index_capacity)
+        });
 
         let textures = UITextures::new(context, atlas_width, atlas_height)?;
 
@@ -307,15 +300,7 @@ impl UIRenderer {
             buffers,
             textures,
             pipeline,
-            frame_index: Cell::new(0),
-            frames_in_flight,
         })
-    }
-
-    /// Advance frame index (call after each frame).
-    pub fn advance_frame(&self) {
-        let next = (self.frame_index.get() + 1) % self.frames_in_flight;
-        self.frame_index.set(next);
     }
 
     /// Update font atlas texture.
@@ -339,17 +324,14 @@ impl UIRenderer {
     }
 
     /// Draw UI using the render context.
-    ///
-    /// Returns false if the data couldn't be uploaded (buffer capacity exceeded).
+    /// Returns false if buffer capacity is exceeded.
     pub fn draw(&self, ctx: &PassExecutionContext, draw_data: &UiDrawData) -> bool {
         if draw_data.vertex_data.is_empty() || draw_data.index_data.is_empty() {
             return true; // Empty data is valid, just nothing to draw
         }
 
-        let frame_idx = self.frame_index.get();
-        let Some(ui_buffer) = self.buffers.get(frame_idx) else {
-            return false;
-        };
+        // Get frame index from context (passed through render graph)
+        let ui_buffer = self.buffers.current_mut(ctx.frame_index());
 
         if !ui_buffer.update_vertices(&draw_data.vertex_data) {
             return false;

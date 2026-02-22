@@ -73,16 +73,16 @@ impl Model {
                 MeshHandle(0)
             };
 
-            // Register material with optional per-material uniform buffer
-            let (pipeline, texture, vertex_binding, uniform, pbr_textures, pbr_texture_refs, texture_indices, emission_index) =
+            // Register material with optional PBR textures
+            let (pipeline, texture, vertex_binding, pbr_textures, pbr_texture_refs, texture_indices, emission_index) =
                 material.get_registration_data();
 
             // Use PBR registration if PBR textures are present
             let mat_h = if let Some(pbr) = pbr_textures {
                 let tex_refs = pbr_texture_refs.unwrap_or_default();
-                r.register_material_pbr(pipeline, texture, vertex_binding, uniform, pbr, tex_refs, texture_indices, emission_index)
+                r.register_material_pbr(pipeline, texture, vertex_binding, pbr, tex_refs, texture_indices, emission_index)
             } else {
-                r.register_material_full(pipeline, texture, vertex_binding, uniform, texture_indices, emission_index)
+                r.register_material_full(pipeline, texture, vertex_binding, texture_indices, emission_index)
             };
 
             (mesh_h, mat_h)

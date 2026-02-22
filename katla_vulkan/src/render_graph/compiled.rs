@@ -987,9 +987,10 @@ impl CompiledRenderGraph {
         image_index: usize,
         swapchain_images: &[VkImage],
         depth_image: VkImage,
+        frame_index: usize,
     ) -> Result<(), RenderGraphError> {
         let pass_count = self.passes.len();
-        debug!("execute: starting {} passes", pass_count);
+        debug!("execute: starting {} passes (frame_index={})", pass_count, frame_index);
         for i in 0..pass_count {
             // Check if we have dynamic rendering attachments
             let has_color_attachments = !self.passes[i].color_attachments.is_empty();
@@ -1016,12 +1017,13 @@ impl CompiledRenderGraph {
                     swapchain_images,
                     depth_image,
                     is_last_pass,
+                    frame_index,
                 )?;
                 debug!("execute: execute_pass_dynamic for pass {} complete", i);
             } else {
                 // Transfer/compute pass - no render pass needed
                 debug!("execute: calling execute_pass_transfer for pass {}", i);
-                self.execute_pass_transfer(command_buffer, i, is_last_pass)?;
+                self.execute_pass_transfer(command_buffer, i, is_last_pass, frame_index)?;
                 debug!("execute: execute_pass_transfer for pass {} complete", i);
             }
         }
@@ -1037,9 +1039,10 @@ impl CompiledRenderGraph {
     pub fn execute_no_swapchain(
         &mut self,
         command_buffer: &mut CommandBuffer,
+        frame_index: usize,
     ) -> Result<(), RenderGraphError> {
         let pass_count = self.passes.len();
-        debug!("execute_no_swapchain: starting {} passes", pass_count);
+        debug!("execute_no_swapchain: starting {} passes (frame_index={})", pass_count, frame_index);
 
         // Use image_index 0 for all passes (offscreen rendering has single attachment set)
         let image_index = 0;
@@ -1070,11 +1073,12 @@ impl CompiledRenderGraph {
                     &empty_swapchain,
                     no_depth,
                     is_last_pass,
+                    frame_index,
                 )?;
                 debug!("execute_no_swapchain: execute_pass_dynamic for pass {} complete", i);
             } else {
                 debug!("execute_no_swapchain: calling execute_pass_transfer for pass {}", i);
-                self.execute_pass_transfer(command_buffer, i, is_last_pass)?;
+                self.execute_pass_transfer(command_buffer, i, is_last_pass, frame_index)?;
                 debug!("execute_no_swapchain: execute_pass_transfer for pass {} complete", i);
             }
         }
@@ -1088,6 +1092,7 @@ impl CompiledRenderGraph {
         command_buffer: &mut CommandBuffer,
         pass_index: usize,
         _is_last_pass: bool,
+        frame_index: usize,
     ) -> Result<(), RenderGraphError> {
         let pass = &self.passes[pass_index];
 
@@ -1136,20 +1141,24 @@ impl CompiledRenderGraph {
         }
 
         // Create execution context with optional renderer context
-        let ctx = if let Some(ref rc) = self.renderer_context {
-            Rc::new(PassExecutionContext::with_renderer_context(
+        let mut ctx = if let Some(ref rc) = self.renderer_context {
+            PassExecutionContext::with_renderer_context(
                 command_buffer.clone(),
                 Rc::clone(&self.resources),
                 pass.extent,
                 Rc::clone(rc),
-            ))
+            )
         } else {
-            Rc::new(PassExecutionContext::new_dynamic(
+            PassExecutionContext::new_dynamic(
                 command_buffer.clone(),
                 Rc::clone(&self.resources),
                 pass.extent,
-            ))
+            )
         };
+
+        // Set frame index before wrapping in Rc
+        ctx.set_frame_index(frame_index);
+        let ctx = Rc::new(ctx);
 
         // Execute the pass closure directly (no begin_rendering/end_rendering)
         pass.execute(ctx, &mut self.registry);
@@ -1220,6 +1229,7 @@ impl CompiledRenderGraph {
         _swapchain_images: &[VkImage],
         _depth_image: VkImage,
         _is_last_pass: bool,
+        frame_index: usize,
     ) -> Result<(), RenderGraphError> {
         let pass = &self.passes[pass_index];
 
@@ -1329,20 +1339,24 @@ impl CompiledRenderGraph {
         }
 
         // Create execution context early so pre_execute can use it
-        let ctx = if let Some(ref rc) = self.renderer_context {
-            Rc::new(PassExecutionContext::with_renderer_context(
+        let mut ctx = if let Some(ref rc) = self.renderer_context {
+            PassExecutionContext::with_renderer_context(
                 (*command_buffer).clone(),
                 self.resources.clone(),
                 pass.extent,
                 Rc::clone(rc),
-            ))
+            )
         } else {
-            Rc::new(PassExecutionContext::new_dynamic(
+            PassExecutionContext::new_dynamic(
                 (*command_buffer).clone(),
                 self.resources.clone(),
                 pass.extent,
-            ))
+            )
         };
+
+        // Set frame index before wrapping in Rc
+        ctx.set_frame_index(frame_index);
+        let ctx = Rc::new(ctx);
 
         // Execute pre-rendering callback (for custom barriers BEFORE begin_rendering)
         // This is needed because pipeline barriers with image transitions cannot be called
