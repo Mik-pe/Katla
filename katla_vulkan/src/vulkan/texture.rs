@@ -266,13 +266,42 @@ impl Texture {
     ///
     /// Call this after creating a texture to enable automatic descriptor updates
     /// when `resize()` is called. Useful for dynamic textures like font atlases.
+    ///
+    /// # Arguments
+    ///
+    /// * `descriptor_set` - The descriptor set containing a SAMPLED_IMAGE binding for this texture
+    /// * `binding` - The binding number within the descriptor set
+    ///
+    /// # Safety Invariants
+    ///
+    /// - The descriptor set must remain valid for the lifetime of this texture
+    /// - The binding must be a SAMPLED_IMAGE type in the descriptor set layout
+    /// - If the descriptor set is destroyed, this registration becomes invalid (but won't cause UB)
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// let mut texture = Texture::create_image_rgb(context, width, height, pixels);
+    /// texture.register_for_descriptor(descriptor_set, 0);
+    /// // Later, resize() will automatically update the descriptor
+    /// texture.resize(new_width, new_height, new_pixels);
+    /// ```
     pub fn register_for_descriptor(&mut self, descriptor_set: VkDescriptorSet, binding: u32) {
         self.registered_descriptors.push((descriptor_set, binding));
     }
 
     /// Update all registered descriptors with the current image view.
+    ///
+    /// Called automatically by `resize()` after the image view is recreated.
+    ///
+    /// # Safety
+    ///
+    /// All registered descriptor sets must still be valid. This is ensured by the
+    /// caller's obligation to only register descriptors that outlive the texture.
     fn update_registered_descriptors(&self) {
         for (descriptor_set, binding) in &self.registered_descriptors {
+            // SAFETY: The descriptor set is valid (caller's obligation via register_for_descriptor).
+            // The image_view is valid (invariant of Self). The binding matches the layout.
             unsafe {
                 let image_info = vk::DescriptorImageInfo {
                     sampler: vk::Sampler::null(),

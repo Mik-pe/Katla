@@ -8,10 +8,10 @@ use std::rc::Rc;
 
 use ash::vk;
 use katla_vulkan::{
-    DescriptorSetLayoutBuilder, DescriptorType, IndexBuffer, IndexType, MaterialPipeline,
-    MixedDescriptorSetBuilder, PassExecutionContext, Rect2D, ShaderStages, Texture,
-    UniformBuffer, VertexBuffer, VkBuffer, VkDescriptorSet, VkImageView, VkSampler,
-    VulkanContext,
+    DescriptorSetLayoutBuilder, DescriptorType, Extent2D, IndexBuffer, IndexType,
+    MaterialPipeline, MixedDescriptorSetBuilder, Offset2D, PassExecutionContext, Rect2D,
+    ShaderStages, Texture, UniformBuffer, VertexBuffer, VkBuffer, VkDescriptorSet, VkImageView,
+    VkSampler, VulkanContext,
 };
 
 /// A single draw command for UI rendering.
@@ -41,6 +41,8 @@ pub struct UiDrawData {
 struct UIBuffers {
     vertex_buffer: RefCell<VertexBuffer>,
     index_buffer: RefCell<IndexBuffer>,
+    vertex_capacity: u64,
+    index_capacity: u64,
 }
 
 impl UIBuffers {
@@ -51,15 +53,35 @@ impl UIBuffers {
         Self {
             vertex_buffer: RefCell::new(vertex_buffer),
             index_buffer: RefCell::new(index_buffer),
+            vertex_capacity,
+            index_capacity,
         }
     }
 
+    /// Update vertex data. Returns false if data exceeds capacity.
     fn update_vertices(&self, data: &[u8]) -> bool {
+        if data.len() as u64 > self.vertex_capacity {
+            log::warn!(
+                "UIBuffers: vertex data ({}) exceeds capacity ({})",
+                data.len(),
+                self.vertex_capacity
+            );
+            return false;
+        }
         self.vertex_buffer.borrow_mut().upload_data(data);
         true
     }
 
+    /// Update index data. Returns false if data exceeds capacity.
     fn update_indices(&self, data: &[u8]) -> bool {
+        if data.len() as u64 > self.index_capacity {
+            log::warn!(
+                "UIBuffers: index data ({}) exceeds capacity ({})",
+                data.len(),
+                self.index_capacity
+            );
+            return false;
+        }
         self.index_buffer.borrow_mut().upload_data(data);
         true
     }
@@ -95,33 +117,35 @@ impl UITextures {
         atlas_width: u32,
         atlas_height: u32,
     ) -> Result<Self, vk::Result> {
-        unsafe {
-            let sampler = context.create_sampler_clamp_to_edge()?;
+        let sampler = context.create_sampler_clamp_to_edge()?;
 
-            let white_pixels = [255u8, 255, 255, 255];
-            let white_texture = Rc::new(Texture::create_image_rgb(context.clone(), 1, 1, &white_pixels));
+        let white_pixels = [255u8, 255, 255, 255];
+        let white_texture = Rc::new(Texture::create_image_rgb(context.clone(), 1, 1, &white_pixels));
 
-            let white_atlas = vec![255u8; (atlas_width * atlas_height * 4) as usize];
-            let mut font_texture = Rc::new(Texture::create_image_rgb(
-                context.clone(),
-                atlas_width,
-                atlas_height,
-                &white_atlas,
-            ));
+        let white_atlas = vec![255u8; (atlas_width * atlas_height * 4) as usize];
+        let mut font_texture = Rc::new(Texture::create_image_rgb(
+            context.clone(),
+            atlas_width,
+            atlas_height,
+            &white_atlas,
+        ));
 
-            // Create static descriptor set layout (font texture + sampler + uniform)
-            let descriptor_set_layout = DescriptorSetLayoutBuilder::new()
-                .add_binding(0, DescriptorType::SampledImage, ShaderStages::FRAGMENT)
-                .add_binding(1, DescriptorType::Sampler, ShaderStages::FRAGMENT)
-                .add_binding(3, DescriptorType::UniformBuffer, ShaderStages::VERTEX)
-                .build(&context)?;
+        // Create static descriptor set layout (font texture + sampler + uniform)
+        let descriptor_set_layout = DescriptorSetLayoutBuilder::new()
+            .add_binding(0, DescriptorType::SampledImage, ShaderStages::FRAGMENT)
+            .add_binding(1, DescriptorType::Sampler, ShaderStages::FRAGMENT)
+            .add_binding(3, DescriptorType::UniformBuffer, ShaderStages::VERTEX)
+            .build(&context)?;
 
-            // Create push descriptor layout for dynamic textures
-            let push_descriptor_layout = DescriptorSetLayoutBuilder::new()
-                .add_binding(0, DescriptorType::SampledImage, ShaderStages::FRAGMENT)
-                .with_push_descriptor(true)
-                .build(&context)?;
+        // Create push descriptor layout for dynamic textures
+        let push_descriptor_layout = DescriptorSetLayoutBuilder::new()
+            .add_binding(0, DescriptorType::SampledImage, ShaderStages::FRAGMENT)
+            .with_push_descriptor(true)
+            .build(&context)?;
 
+        // SAFETY: Vulkan pipeline layout creation requires unsafe due to raw vk types.
+        // The layouts are valid and have been created successfully above.
+        let (pipeline_layout, descriptor_set_layout_raw, push_descriptor_layout_raw) = unsafe {
             let set_layouts: Vec<vk::DescriptorSetLayout> = vec![
                 descriptor_set_layout.into(),
                 push_descriptor_layout.into(),
@@ -129,41 +153,42 @@ impl UITextures {
             let pipeline_layout_info = vk::PipelineLayoutCreateInfo::default().set_layouts(&set_layouts);
             let pipeline_layout = context.device.create_pipeline_layout(&pipeline_layout_info, None)?;
 
-            // Create uniform buffer for screen size
-            let uniform_buffer = UniformBuffer::<[f32; 4]>::new(context.clone())?;
-            uniform_buffer.write(&[1920.0, 1080.0, 0.0, 0.0]);
-
-            // Build descriptor set with mixed bindings
-            let mixed_descriptor_set = MixedDescriptorSetBuilder::new(&context)
-                .add_image_binding(font_texture.image_view, 0)
-                .add_sampler_binding(sampler, 1)
-                .add_uniform_binding(&uniform_buffer, 3)
-                .build(&descriptor_set_layout)?;
-
-            // Register the font texture with the descriptor set for auto-updates
-            if let Some(texture) = Rc::get_mut(&mut font_texture) {
-                texture.register_for_descriptor(mixed_descriptor_set.set(), 0);
-            }
-
-            // Convert wrapper layouts to raw for storage (needed for Drop cleanup)
             let descriptor_set_layout_raw: vk::DescriptorSetLayout = descriptor_set_layout.into();
             let push_descriptor_layout_raw: vk::DescriptorSetLayout = push_descriptor_layout.into();
 
-            Ok(Self {
-                font_texture,
-                white_texture,
-                sampler,
-                uniform_buffer,
-                descriptor_set_layout: descriptor_set_layout_raw,
-                push_descriptor_layout: push_descriptor_layout_raw,
-                pipeline_layout,
-                mixed_descriptor_set,
-                atlas_width,
-                atlas_height,
-                external_textures: HashMap::new(),
-                context,
-            })
+            (pipeline_layout, descriptor_set_layout_raw, push_descriptor_layout_raw)
+        };
+
+        // Create uniform buffer for screen size
+        let uniform_buffer = UniformBuffer::<[f32; 4]>::new(context.clone())?;
+        uniform_buffer.write(&[1920.0, 1080.0, 0.0, 0.0]);
+
+        // Build descriptor set with mixed bindings
+        let mixed_descriptor_set = MixedDescriptorSetBuilder::new(&context)
+            .add_image_binding(font_texture.image_view, 0)
+            .add_sampler_binding(sampler, 1)
+            .add_uniform_binding(&uniform_buffer, 3)
+            .build(&descriptor_set_layout)?;
+
+        // Register the font texture with the descriptor set for auto-updates
+        if let Some(texture) = Rc::get_mut(&mut font_texture) {
+            texture.register_for_descriptor(mixed_descriptor_set.set(), 0);
         }
+
+        Ok(Self {
+            font_texture,
+            white_texture,
+            sampler,
+            uniform_buffer,
+            descriptor_set_layout: descriptor_set_layout_raw,
+            push_descriptor_layout: push_descriptor_layout_raw,
+            pipeline_layout,
+            mixed_descriptor_set,
+            atlas_width,
+            atlas_height,
+            external_textures: HashMap::new(),
+            context,
+        })
     }
 
     fn descriptor_set(&self) -> VkDescriptorSet {
@@ -314,20 +339,24 @@ impl UIRenderer {
     }
 
     /// Draw UI using the render context.
-    pub fn draw(&self, ctx: &PassExecutionContext, draw_data: &UiDrawData) {
-        use katla_vulkan::{Extent2D, Offset2D};
-
+    ///
+    /// Returns false if the data couldn't be uploaded (buffer capacity exceeded).
+    pub fn draw(&self, ctx: &PassExecutionContext, draw_data: &UiDrawData) -> bool {
         if draw_data.vertex_data.is_empty() || draw_data.index_data.is_empty() {
-            return;
+            return true; // Empty data is valid, just nothing to draw
         }
 
         let frame_idx = self.frame_index.get();
         let Some(ui_buffer) = self.buffers.get(frame_idx) else {
-            return;
+            return false;
         };
 
-        ui_buffer.update_vertices(&draw_data.vertex_data);
-        ui_buffer.update_indices(&draw_data.index_data);
+        if !ui_buffer.update_vertices(&draw_data.vertex_data) {
+            return false;
+        }
+        if !ui_buffer.update_indices(&draw_data.index_data) {
+            return false;
+        }
 
         let pipeline = self.pipeline.borrow();
         ctx.bind_graphics_pipeline(&pipeline);
@@ -344,6 +373,9 @@ impl UIRenderer {
                 extent: Extent2D { width: cmd.clip_rect[2] as u32, height: cmd.clip_rect[3] as u32 },
             });
 
+            // SAFETY: push_texture_descriptor requires a valid pipeline_layout created
+            // with push descriptor support, and a valid image_view. Both invariants
+            // are maintained by UITextures.
             unsafe {
                 let image_view = self.textures.get_image_view(cmd.texture_id);
                 ctx.push_texture_descriptor(pipeline_layout, image_view);
@@ -351,5 +383,7 @@ impl UIRenderer {
 
             ctx.draw_indexed(cmd.index_count, 1, cmd.index_offset, 0, 0);
         }
+
+        true
     }
 }

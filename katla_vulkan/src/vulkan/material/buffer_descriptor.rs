@@ -459,6 +459,9 @@ pub struct UniformBuffer<T: Copy> {
 
 impl<T: Copy> UniformBuffer<T> {
     /// Create a new uniform buffer with space for type T.
+    ///
+    /// The buffer is allocated with CpuToGpu memory, which guarantees
+    /// a persistent mapped pointer for efficient writes via [`write`](Self::write).
     pub fn new(context: Rc<VulkanContext>) -> Result<Self, vk::Result> {
         let size = std::mem::size_of::<T>() as vk::DeviceSize;
 
@@ -479,8 +482,18 @@ impl<T: Copy> UniformBuffer<T> {
     }
 
     /// Write data to the uniform buffer.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the allocation is not mapped. This should never happen
+    /// for buffers allocated with `CpuToGpu` memory location.
     pub fn write(&self, data: &T) {
-        let ptr = self.allocation.mapped_ptr().unwrap().cast::<T>().as_ptr();
+        let ptr = self
+            .allocation
+            .mapped_ptr()
+            .expect("UniformBuffer: allocation should be mapped (CpuToGpu guarantees this)")
+            .cast::<T>()
+            .as_ptr();
         unsafe {
             std::ptr::write_unaligned(ptr, *data);
         }
