@@ -7,18 +7,17 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use katla_vulkan::{MaterialPipeline, VulkanRenderer};
-use crate::rendering::{UiDrawData, UIRenderer};
 
 /// Build the render graph with all application passes.
 ///
-/// This function creates the render graph with sky, grid, geometry, UI, and present passes.
+/// This function creates the render graph with sky, grid, geometry, composite, UI, and present passes.
 /// The API is simple - just tell each pass what to draw.
+///
+/// UI rendering is handled via callback set at runtime via `renderer.set_ui_callback()`.
 pub fn build_render_graph(
     renderer: &mut VulkanRenderer,
     sky_pipeline: Option<Rc<RefCell<MaterialPipeline>>>,
     grid_pipeline: Option<Rc<RefCell<MaterialPipeline>>>,
-    ui_renderer: Option<&UIRenderer>,
-    ui_draw_data: Rc<RefCell<Option<UiDrawData>>>,
 ) {
     // Get builder with resources pre-registered
     let (mut builder, resources) = renderer.create_render_graph_with_resources();
@@ -61,15 +60,31 @@ pub fn build_render_graph(
             });
     });
 
+    // === COMPOSITE PASS ===
+    // Copy viewport_color to output_color for final composition
+    // This is needed because scene renders to viewport_color, but UI needs output_color
+    builder.add_pass("composite_pass", move |pass| {
+        pass.blit(&resources.viewport_color, &resources.output_color)
+            .execute("composite_pass", move |ctx| {
+                if let (Some((src_img, _)), Some((dst_img, _))) = (
+                    ctx.get_image(resources.viewport_color.resource_id()),
+                    ctx.get_image(resources.output_color.resource_id()),
+                ) {
+                    let (width, height) = ctx.extent();
+                    ctx.blit_images(src_img, dst_img, width, height);
+                }
+            });
+    });
+
     // === UI PASS ===
-    // Draw the UI overlay using the UIRenderer
-    if let Some(ui_renderer) = ui_renderer {
-        // Note: We can't pass &UIRenderer to the closure because it's not Clone.
-        // The UIRenderer needs to be accessible from the render graph pass.
-        // For now, we'll skip the UI pass in the static render graph.
-        // The application will need to render UI dynamically each frame.
-        // TODO: Refactor to pass UIRenderer reference through RendererContext
-    }
+    // Draw the UI overlay on top of output_color
+    // UI callback is set at runtime via renderer.set_ui_callback()
+    builder.add_pass("ui_pass", move |pass| {
+        pass.write_color(&resources.output_color)
+            .execute("ui_pass", move |ctx| {
+                ctx.draw_ui();
+            });
+    });
 
     // === PRESENT PASS ===
     // Copy the output to the swapchain

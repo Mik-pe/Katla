@@ -118,12 +118,11 @@ pub fn setup_render_graph(app: &mut Application) {
 
     // Setup render graph using the new application-layer API
     // Pass all pipelines at setup time - render graph stores them internally
+    // UI callback is set at runtime via set_ui_callback() before each frame
     render_graph::build_render_graph(
         renderer,
         Some(sky_pipeline),
         grid_pipeline_to_use,
-        app.ui_renderer.as_ref(),
-        app.ui_draw_data.clone(),
     );
 
     // Initialize preview viewport using new unified ViewportBuilder API
@@ -456,18 +455,28 @@ pub fn render_frame(app: &mut Application) {
     }
 
     // === MAIN VIEWPORT RENDERING ===
-    // Set draw list for main viewport (index 0) if we have a viewport system
-    // The draw list contains all scene objects + particles + gizmos
-    // This enables the new viewport-based rendering where each viewport renders to its texture
-    let result = if let Some(main_viewport) = app.main_viewport {
-        renderer.set_viewport_draw_list(main_viewport, draw_list);
-        // Pass empty draw list to render_frame - the main render graph just does UI + present
-        let empty_draw_list = DrawList::new();
-        renderer.render_frame(empty_draw_list)
-    } else {
-        // Fallback to legacy rendering (draw list passed to main render graph)
-        renderer.render_frame(draw_list)
-    };
+    // The main render graph renders the scene (sky/grid/geometry) to viewport_color,
+    // then composites to output_color, renders UI on top, and presents to swapchain.
+
+    // Set UI callback for the render graph (UI pass will invoke this)
+    if let Some(ref ui_renderer) = app.ui_renderer {
+        let draw_data = app.ui_draw_data.borrow().clone();
+        if let Some(draw_data) = draw_data {
+            // Create a raw pointer to the UI renderer for the callback
+            let ui_renderer_ptr: *const crate::rendering::UIRenderer = ui_renderer as *const _;
+            let callback = std::rc::Rc::new(move |ctx: &katla_vulkan::PassExecutionContext| {
+                // SAFETY: The UI renderer is valid for the lifetime of the frame
+                unsafe { (*ui_renderer_ptr).draw(ctx, &draw_data); }
+            });
+            renderer.set_ui_callback(callback);
+        } else {
+            // No UI data this frame - clear the callback to prevent stale rendering
+            renderer.clear_ui_callback();
+        }
+    }
+
+    // Pass the draw list and render
+    let result = renderer.render_frame(draw_list);
 
     // Handle render errors
     if let Err(e) = result {
