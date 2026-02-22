@@ -293,7 +293,7 @@ enum WidgetState { Checkbox(bool), Slider(f32), TextInput(String), ... }
 ### Phase 1: Foundation
 - [x] Unify popup API into closure-based pattern (commit 4815923)
 - [x] Extract common helpers (`draw_popup_background`, `menu_item_clicked_*`)
-- [ ] Split `widgets.rs` into widget-specific files (optional)
+- [x] Split `widgets.rs` and `popup.rs` into focused submodules (commit cae8c9a)
 
 ### Phase 2: Response Enhancement
 - [ ] Add `drag_delta()` and `total_drag_delta()`
