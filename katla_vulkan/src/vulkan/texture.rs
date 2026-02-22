@@ -2,7 +2,7 @@ use super::VulkanContext;
 use crate::render_graph::types::ImageFormat;
 use crate::sync::{AccessFlags2, DependencyInfo, ImageMemoryBarrier2, PipelineStage2Flags};
 use crate::VulkanFrameCtx;
-use crate::{VkImage, VkImageView, VkSampler};
+use crate::{VkDescriptorSet, VkImage, VkImageView, VkSampler};
 
 use std::mem::ManuallyDrop;
 use std::rc::Rc;
@@ -14,10 +14,13 @@ pub struct Texture {
     pub width: u32,
     pub height: u32,
     pub channels: u32,
+    format: ImageFormat,
     image_memory: ManuallyDrop<Allocation>,
     image: VkImage,
     pub image_view: VkImageView,
     pub image_sampler: VkSampler,
+    /// Descriptors that should be auto-updated when the image view changes.
+    registered_descriptors: Vec<(VkDescriptorSet, u32)>,
     context: Rc<VulkanContext>,
 }
 
@@ -260,13 +263,233 @@ impl Texture {
                 width,
                 height,
                 channels,
+                format,
                 image_memory: ManuallyDrop::new(image_memory),
                 image: VkImage::new(image_object),
                 image_view: VkImageView::new(image_view),
                 image_sampler: VkSampler::new(image_sampler),
+                registered_descriptors: Vec::new(),
                 context,
             }
         }
+    }
+
+    /// Register a descriptor set to be auto-updated when the image view changes.
+    ///
+    /// Call this after creating a texture to enable automatic descriptor updates
+    /// when `resize()` is called. Useful for dynamic textures like font atlases.
+    pub fn register_for_descriptor(&mut self, descriptor_set: VkDescriptorSet, binding: u32) {
+        self.registered_descriptors.push((descriptor_set, binding));
+    }
+
+    /// Update all registered descriptors with the current image view.
+    fn update_registered_descriptors(&self) {
+        for (descriptor_set, binding) in &self.registered_descriptors {
+            unsafe {
+                let image_info = vk::DescriptorImageInfo {
+                    sampler: vk::Sampler::null(),
+                    image_view: self.image_view.into(),
+                    image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+                };
+                let image_infos = [image_info];
+                let write = vk::WriteDescriptorSet::default()
+                    .dst_set((*descriptor_set).into())
+                    .dst_binding(*binding)
+                    .descriptor_type(vk::DescriptorType::SAMPLED_IMAGE)
+                    .image_info(&image_infos);
+                let writes = [write];
+                self.context.device.update_descriptor_sets(&writes, &[]);
+            }
+        }
+    }
+
+    /// Update texture data in-place using a staging buffer.
+    ///
+    /// Dimensions must match current texture size.
+    /// Uses staging buffer for transfer with proper synchronization.
+    pub fn update_data(&self, pixel_data: &[u8]) {
+        let expected_size = (self.width * self.height * self.channels) as usize;
+        if pixel_data.len() != expected_size {
+            log::warn!(
+                "Texture::update_data: size mismatch (expected {}, got {})",
+                expected_size,
+                pixel_data.len()
+            );
+            return;
+        }
+
+        let total_size = pixel_data.len() as u64;
+        let (staging_buffer, staging_allocation) =
+            Self::create_staging_buffer(&self.context, total_size);
+
+        let map = self.context.map_buffer(&staging_allocation);
+
+        unsafe {
+            std::ptr::copy_nonoverlapping(pixel_data.as_ptr(), map, total_size as usize);
+
+            let command_buffer = self.context.begin_single_time_commands();
+
+            // Transition from SHADER_READ_ONLY to TRANSFER_DST
+            let subresource_range = vk::ImageSubresourceRange::default()
+                .aspect_mask(vk::ImageAspectFlags::COLOR)
+                .base_mip_level(0)
+                .level_count(1)
+                .base_array_layer(0)
+                .layer_count(1);
+
+            let barrier = ImageMemoryBarrier2::new(self.image)
+                .src_stage(PipelineStage2Flags::FRAGMENT_SHADER)
+                .dst_stage(PipelineStage2Flags::TRANSFER)
+                .src_access(AccessFlags2::SHADER_READ)
+                .dst_access(AccessFlags2::TRANSFER_WRITE)
+                .old_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
+                .new_layout(vk::ImageLayout::TRANSFER_DST_OPTIMAL)
+                .subresource_range(subresource_range);
+
+            let dep_info = DependencyInfo::new().add_image_barrier(barrier);
+            dep_info.build(|dep_info| {
+                self.context
+                    .device
+                    .cmd_pipeline_barrier2(command_buffer.vk_command_buffer(), dep_info);
+            });
+
+            // Copy buffer to image
+            let extent = vk::Extent3D {
+                width: self.width,
+                height: self.height,
+                depth: 1,
+            };
+            Self::copy_buffer_to_image(
+                &self.context,
+                command_buffer.vk_command_buffer(),
+                staging_buffer,
+                self.image.vk(),
+                vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+                extent,
+            );
+
+            // Transition from TRANSFER_DST to SHADER_READ_ONLY
+            let barrier = ImageMemoryBarrier2::new(self.image)
+                .src_stage(PipelineStage2Flags::TRANSFER)
+                .dst_stage(PipelineStage2Flags::FRAGMENT_SHADER)
+                .src_access(AccessFlags2::TRANSFER_WRITE)
+                .dst_access(AccessFlags2::SHADER_READ)
+                .old_layout(vk::ImageLayout::TRANSFER_DST_OPTIMAL)
+                .new_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
+                .subresource_range(subresource_range);
+
+            let dep_info = DependencyInfo::new().add_image_barrier(barrier);
+            dep_info.build(|dep_info| {
+                self.context
+                    .device
+                    .cmd_pipeline_barrier2(command_buffer.vk_command_buffer(), dep_info);
+            });
+
+            self.context.end_single_time_commands(command_buffer);
+            self.context.free_buffer(staging_buffer, staging_allocation);
+        }
+    }
+
+    /// Resize the texture, recreating the internal image.
+    ///
+    /// The image view and sampler are updated to the new image.
+    /// Returns false if dimensions are 0.
+    pub fn resize(&mut self, width: u32, height: u32, pixel_data: &[u8]) -> bool {
+        if width == 0 || height == 0 {
+            return false;
+        }
+
+        // Store old handles to clean up after creating new resources
+        let old_image = self.image;
+        let old_image_view = self.image_view;
+        let old_allocation = unsafe { ManuallyDrop::take(&mut self.image_memory) };
+
+        // Create new image at new size
+        let extent = vk::Extent3D {
+            width,
+            height,
+            depth: 1,
+        };
+
+        let vk_format: ash::vk::Format = self.format.into();
+
+        let create_info = vk::ImageCreateInfo::default()
+            .extent(extent)
+            .image_type(vk::ImageType::TYPE_2D)
+            .mip_levels(1)
+            .array_layers(1)
+            .format(vk_format)
+            .usage(vk::ImageUsageFlags::TRANSFER_DST | vk::ImageUsageFlags::SAMPLED)
+            .initial_layout(vk::ImageLayout::UNDEFINED)
+            .tiling(vk::ImageTiling::OPTIMAL)
+            .samples(vk::SampleCountFlags::TYPE_1)
+            .sharing_mode(vk::SharingMode::EXCLUSIVE);
+
+        let (new_image, new_memory) =
+            self.context.create_image(create_info, gpu_allocator::MemoryLocation::GpuOnly);
+
+        let total_size = pixel_data.len() as u64;
+        let (staging_buffer, staging_allocation) =
+            Self::create_staging_buffer(&self.context, total_size);
+
+        let map = self.context.map_buffer(&staging_allocation);
+
+        unsafe {
+            std::ptr::copy_nonoverlapping(pixel_data.as_ptr(), map, total_size as usize);
+
+            let command_buffer = self.context.begin_single_time_commands();
+            Self::transition_image_layout(
+                &self.context,
+                command_buffer.vk_command_buffer(),
+                new_image,
+                vk::ImageLayout::UNDEFINED,
+                vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+            );
+            Self::copy_buffer_to_image(
+                &self.context,
+                command_buffer.vk_command_buffer(),
+                staging_buffer,
+                new_image,
+                vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+                extent,
+            );
+            Self::transition_image_layout(
+                &self.context,
+                command_buffer.vk_command_buffer(),
+                new_image,
+                vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+                vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+            );
+
+            self.context.end_single_time_commands(command_buffer);
+            self.context.free_buffer(staging_buffer, staging_allocation);
+
+            // Create new image view
+            let new_image_view = VulkanFrameCtx::create_image_view(
+                &self.context.device,
+                new_image,
+                vk_format,
+                vk::ImageAspectFlags::COLOR,
+            );
+
+            // Clean up old resources
+            self.context
+                .device
+                .destroy_image_view(old_image_view.vk(), None);
+            self.context.free_image(old_image.vk(), old_allocation);
+
+            // Update self with new resources
+            self.width = width;
+            self.height = height;
+            self.image_memory = ManuallyDrop::new(new_memory);
+            self.image = VkImage::new(new_image);
+            self.image_view = VkImageView::new(new_image_view);
+
+            // Update any registered descriptors with the new image view
+            self.update_registered_descriptors();
+        }
+
+        true
     }
 
     /// Create a default albedo texture (white 1x1).
