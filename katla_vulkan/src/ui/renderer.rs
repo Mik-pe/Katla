@@ -11,11 +11,13 @@ use gpu_allocator::MemoryLocation;
 
 use crate::context::VulkanContext;
 use crate::material::MaterialPipeline;
-use crate::render_graph::types::{Extent2D, Offset2D, Rect2D};
+use crate::render_graph::types::{Extent2D, Offset2D, Rect2D, ShaderStages};
 use crate::render_graph::PassExecutionContext;
 use crate::sync::{VkBuffer, VkDescriptorSet, VkImageView, VkSampler};
 use crate::texture::Texture;
-use crate::IndexType;
+use crate::vulkan::descriptor::DescriptorSetLayoutBuilder;
+use crate::vulkan::pipeline_state::DescriptorType;
+use crate::{IndexBuffer, IndexType, VertexBuffer};
 
 /// A single draw command for UI rendering.
 #[derive(Debug, Clone)]
@@ -42,83 +44,37 @@ pub struct UiDrawData {
 /// Persistent buffers for UI rendering.
 /// One set per frame in flight to avoid synchronization issues.
 struct UIBuffers {
-    vertex_buffer: VkBuffer,
-    vertex_allocation: Option<gpu_allocator::vulkan::Allocation>,
-    vertex_capacity: u64,
-    index_buffer: VkBuffer,
-    index_allocation: Option<gpu_allocator::vulkan::Allocation>,
-    index_capacity: u64,
-    context: Rc<VulkanContext>,
+    vertex_buffer: RefCell<VertexBuffer>,
+    index_buffer: RefCell<IndexBuffer>,
 }
 
 impl UIBuffers {
     fn new(context: Rc<VulkanContext>, vertex_capacity: u64, index_capacity: u64) -> Self {
-        let vertex_create_info = vk::BufferCreateInfo::default()
-            .sharing_mode(vk::SharingMode::EXCLUSIVE)
-            .usage(vk::BufferUsageFlags::VERTEX_BUFFER)
-            .size(vertex_capacity);
-
-        let (vertex_buffer, vertex_allocation) =
-            context.allocate_buffer(&vertex_create_info, MemoryLocation::CpuToGpu);
-
-        let index_create_info = vk::BufferCreateInfo::default()
-            .sharing_mode(vk::SharingMode::EXCLUSIVE)
-            .usage(vk::BufferUsageFlags::INDEX_BUFFER)
-            .size(index_capacity);
-
-        let (index_buffer, index_allocation) =
-            context.allocate_buffer(&index_create_info, MemoryLocation::CpuToGpu);
+        let vertex_buffer = VertexBuffer::new(context.clone(), vertex_capacity, 0);
+        let index_buffer = IndexBuffer::new(context, index_capacity, IndexType::Uint32, 0);
 
         Self {
-            vertex_buffer: VkBuffer::new(vertex_buffer),
-            vertex_allocation: Some(vertex_allocation),
-            vertex_capacity,
-            index_buffer: VkBuffer::new(index_buffer),
-            index_allocation: Some(index_allocation),
-            index_capacity,
-            context,
+            vertex_buffer: RefCell::new(vertex_buffer),
+            index_buffer: RefCell::new(index_buffer),
         }
     }
 
     fn update_vertices(&self, data: &[u8]) -> bool {
-        if data.len() as u64 > self.vertex_capacity {
-            return false;
-        }
-        if let Some(ref allocation) = self.vertex_allocation {
-            let ptr = self.context.map_buffer(allocation);
-            unsafe {
-                std::ptr::copy_nonoverlapping(data.as_ptr(), ptr, data.len());
-            }
-        }
+        self.vertex_buffer.borrow_mut().upload_data(data);
         true
     }
 
     fn update_indices(&self, data: &[u8]) -> bool {
-        if data.len() as u64 > self.index_capacity {
-            return false;
-        }
-        if let Some(ref allocation) = self.index_allocation {
-            let ptr = self.context.map_buffer(allocation);
-            unsafe {
-                std::ptr::copy_nonoverlapping(data.as_ptr(), ptr, data.len());
-            }
-        }
+        self.index_buffer.borrow_mut().upload_data(data);
         true
     }
-}
 
-impl Drop for UIBuffers {
-    fn drop(&mut self) {
-        unsafe {
-            self.context.device.destroy_buffer(self.vertex_buffer.into(), None);
-            self.context.device.destroy_buffer(self.index_buffer.into(), None);
-        }
-        if let Some(allocation) = self.vertex_allocation.take() {
-            self.context.allocator.borrow_mut().free(allocation).ok();
-        }
-        if let Some(allocation) = self.index_allocation.take() {
-            self.context.allocator.borrow_mut().free(allocation).ok();
-        }
+    fn vertex_buffer(&self) -> VkBuffer {
+        VkBuffer::new(self.vertex_buffer.borrow().object())
+    }
+
+    fn index_buffer(&self) -> VkBuffer {
+        VkBuffer::new(self.index_buffer.borrow().object())
     }
 }
 
@@ -170,46 +126,30 @@ impl UITextures {
             let white_texture = Rc::new(Texture::create_image_rgb(context.clone(), 1, 1, &white_pixels));
 
             let white_atlas = vec![255u8; (atlas_width * atlas_height * 4) as usize];
-            let font_texture = Rc::new(Texture::create_image_rgb(
+            let mut font_texture = Rc::new(Texture::create_image_rgb(
                 context.clone(),
                 atlas_width,
                 atlas_height,
                 &white_atlas,
             ));
 
-            let static_bindings = [
-                vk::DescriptorSetLayoutBinding::default()
-                    .binding(0)
-                    .descriptor_type(vk::DescriptorType::SAMPLED_IMAGE)
-                    .descriptor_count(1)
-                    .stage_flags(vk::ShaderStageFlags::FRAGMENT),
-                vk::DescriptorSetLayoutBinding::default()
-                    .binding(1)
-                    .descriptor_type(vk::DescriptorType::SAMPLER)
-                    .descriptor_count(1)
-                    .stage_flags(vk::ShaderStageFlags::FRAGMENT),
-                vk::DescriptorSetLayoutBinding::default()
-                    .binding(3)
-                    .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
-                    .descriptor_count(1)
-                    .stage_flags(vk::ShaderStageFlags::VERTEX),
+            // Create static descriptor set layout (font texture + sampler + uniform)
+            let descriptor_set_layout = DescriptorSetLayoutBuilder::new()
+                .add_binding(0, DescriptorType::SampledImage, ShaderStages::FRAGMENT)
+                .add_binding(1, DescriptorType::Sampler, ShaderStages::FRAGMENT)
+                .add_binding(3, DescriptorType::UniformBuffer, ShaderStages::VERTEX)
+                .build(&context)?;
+
+            // Create push descriptor layout for dynamic textures
+            let push_descriptor_layout = DescriptorSetLayoutBuilder::new()
+                .add_binding(0, DescriptorType::SampledImage, ShaderStages::FRAGMENT)
+                .with_push_descriptor(true)
+                .build(&context)?;
+
+            let set_layouts: Vec<vk::DescriptorSetLayout> = vec![
+                descriptor_set_layout.into(),
+                push_descriptor_layout.into(),
             ];
-
-            let static_layout_info = vk::DescriptorSetLayoutCreateInfo::default().bindings(&static_bindings);
-            let descriptor_set_layout = context.device.create_descriptor_set_layout(&static_layout_info, None)?;
-
-            let push_bindings = [vk::DescriptorSetLayoutBinding::default()
-                .binding(0)
-                .descriptor_type(vk::DescriptorType::SAMPLED_IMAGE)
-                .descriptor_count(1)
-                .stage_flags(vk::ShaderStageFlags::FRAGMENT)];
-
-            let push_layout_info = vk::DescriptorSetLayoutCreateInfo::default()
-                .bindings(&push_bindings)
-                .flags(vk::DescriptorSetLayoutCreateFlags::PUSH_DESCRIPTOR_KHR);
-            let push_descriptor_layout = context.device.create_descriptor_set_layout(&push_layout_info, None)?;
-
-            let set_layouts = [descriptor_set_layout, push_descriptor_layout];
             let pipeline_layout_info = vk::PipelineLayoutCreateInfo::default().set_layouts(&set_layouts);
             let pipeline_layout = context.device.create_pipeline_layout(&pipeline_layout_info, None)?;
 
@@ -224,7 +164,7 @@ impl UITextures {
                 .max_sets(1);
             let descriptor_pool = context.device.create_descriptor_pool(&pool_create_info, None)?;
 
-            let alloc_layouts = [descriptor_set_layout];
+            let alloc_layouts: Vec<vk::DescriptorSetLayout> = vec![descriptor_set_layout.into()];
             let alloc_info = vk::DescriptorSetAllocateInfo::default()
                 .descriptor_pool(descriptor_pool)
                 .set_layouts(&alloc_layouts);
@@ -282,14 +222,23 @@ impl UITextures {
             ];
             context.device.update_descriptor_sets(&writes, &[]);
 
+            // Register the font texture with the descriptor set for auto-updates
+            if let Some(texture) = Rc::get_mut(&mut font_texture) {
+                texture.register_for_descriptor(VkDescriptorSet::new(descriptor_set), 0);
+            }
+
+            // Convert wrapper layouts to raw for storage (needed for Drop cleanup)
+            let descriptor_set_layout_raw: vk::DescriptorSetLayout = descriptor_set_layout.into();
+            let push_descriptor_layout_raw: vk::DescriptorSetLayout = push_descriptor_layout.into();
+
             Ok(Self {
                 font_texture,
                 white_texture,
                 sampler: VkSampler::new(sampler),
                 uniform_buffer: VkBuffer::new(uniform_buffer),
                 uniform_allocation: Some(uniform_allocation),
-                descriptor_set_layout,
-                push_descriptor_layout,
+                descriptor_set_layout: descriptor_set_layout_raw,
+                push_descriptor_layout: push_descriptor_layout_raw,
                 pipeline_layout,
                 descriptor_set: VkDescriptorSet::new(descriptor_set),
                 descriptor_pool,
@@ -323,26 +272,20 @@ impl UITextures {
         if pixels.len() != (self.atlas_width * self.atlas_height * 4) as usize {
             return false;
         }
-        self.font_texture = Rc::new(Texture::create_image_rgb(
-            self.context.clone(),
-            self.atlas_width,
-            self.atlas_height,
-            pixels,
-        ));
-        unsafe {
-            let font_image_info = vk::DescriptorImageInfo {
-                sampler: vk::Sampler::null(),
-                image_view: self.font_texture.image_view.into(),
-                image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
-            };
-            let font_image_infos = [font_image_info];
-            let write = vk::WriteDescriptorSet::default()
-                .dst_set(self.descriptor_set.into())
-                .dst_binding(0)
-                .descriptor_type(vk::DescriptorType::SAMPLED_IMAGE)
-                .image_info(&font_image_infos);
-            let writes = [write];
-            self.context.device.update_descriptor_sets(&writes, &[]);
+        // Try to update in-place (no descriptor update needed - same image view)
+        if let Some(texture) = Rc::get_mut(&mut self.font_texture) {
+            texture.update_data(pixels);
+        } else {
+            // Multiple references exist, need to recreate and update descriptor
+            log::debug!("UITextures: font texture has multiple refs, recreating");
+            let mut new_texture = Texture::create_image_rgb(
+                self.context.clone(),
+                self.atlas_width,
+                self.atlas_height,
+                pixels,
+            );
+            new_texture.register_for_descriptor(self.descriptor_set, 0);
+            self.font_texture = Rc::new(new_texture);
         }
         true
     }
@@ -350,7 +293,22 @@ impl UITextures {
     fn resize_font_atlas(&mut self, width: u32, height: u32, pixels: &[u8]) -> bool {
         self.atlas_width = width;
         self.atlas_height = height;
-        self.update_font_atlas(pixels)
+        // Try to resize in-place (auto-updates registered descriptors)
+        if let Some(texture) = Rc::get_mut(&mut self.font_texture) {
+            texture.resize(width, height, pixels);
+        } else {
+            // Multiple references exist, need to recreate and update descriptor
+            log::debug!("UITextures: font texture has multiple refs, recreating for resize");
+            let mut new_texture = Texture::create_image_rgb(
+                self.context.clone(),
+                width,
+                height,
+                pixels,
+            );
+            new_texture.register_for_descriptor(self.descriptor_set, 0);
+            self.font_texture = Rc::new(new_texture);
+        }
+        true
     }
 
     fn set_external_texture(&mut self, texture_id: u64, image_view: VkImageView) {
@@ -466,8 +424,8 @@ impl UIRenderer {
         let pipeline = self.pipeline.borrow();
         ctx.bind_graphics_pipeline(&pipeline);
         ctx.bind_graphics_descriptor_set_at(&pipeline, self.textures.descriptor_set(), 0);
-        ctx.bind_vertex_buffers(0, &[ui_buffer.vertex_buffer], &[0]);
-        ctx.bind_index_buffer(ui_buffer.index_buffer, 0, IndexType::Uint32);
+        ctx.bind_vertex_buffers(0, &[ui_buffer.vertex_buffer()], &[0]);
+        ctx.bind_index_buffer(ui_buffer.index_buffer(), 0, IndexType::Uint32);
 
         let pipeline_layout = self.textures.pipeline_layout();
         drop(pipeline);

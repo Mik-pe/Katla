@@ -58,6 +58,7 @@ impl DescriptorBinding {
 #[derive(Debug, Clone, Default)]
 pub struct DescriptorSetLayoutBuilder {
     bindings: Vec<DescriptorBinding>,
+    push_descriptor: bool,
 }
 
 impl DescriptorSetLayoutBuilder {
@@ -98,12 +99,27 @@ impl DescriptorSetLayoutBuilder {
         self
     }
 
+    /// Enable push descriptor mode for this layout.
+    ///
+    /// Push descriptors don't require descriptor set allocation - they're
+    /// updated via vkCmdPushDescriptorSetKHR during command buffer recording.
+    pub fn with_push_descriptor(mut self, enabled: bool) -> Self {
+        self.push_descriptor = enabled;
+        self
+    }
+
     /// Build the descriptor set layout.
     pub fn build(self, context: &VulkanContext) -> Result<VkDescriptorSetLayout, vk::Result> {
         let vk_bindings: Vec<vk::DescriptorSetLayoutBinding> =
             self.bindings.into_iter().map(|b| b.into_vk()).collect();
 
+        let mut flags = vk::DescriptorSetLayoutCreateFlags::empty();
+        if self.push_descriptor {
+            flags |= vk::DescriptorSetLayoutCreateFlags::PUSH_DESCRIPTOR_KHR;
+        }
+
         let create_info = vk::DescriptorSetLayoutCreateInfo::default()
+            .flags(flags)
             .bindings(&vk_bindings);
 
         let layout = unsafe {
