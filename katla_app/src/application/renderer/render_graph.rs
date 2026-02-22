@@ -6,7 +6,7 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use katla_vulkan::{MaterialPipeline, VulkanRenderer};
+use katla_vulkan::{MaterialPipeline, UiDrawData, UIRenderer, VulkanRenderer};
 
 /// Build the render graph with all application passes.
 ///
@@ -16,7 +16,8 @@ pub fn build_render_graph(
     renderer: &mut VulkanRenderer,
     sky_pipeline: Option<Rc<RefCell<MaterialPipeline>>>,
     grid_pipeline: Option<Rc<RefCell<MaterialPipeline>>>,
-    ui_pipeline: Option<Rc<RefCell<MaterialPipeline>>>,
+    ui_renderer: Option<&UIRenderer>,
+    ui_draw_data: Rc<RefCell<Option<UiDrawData>>>,
 ) {
     // Get builder with resources pre-registered
     let (mut builder, resources) = renderer.create_render_graph_with_resources();
@@ -60,15 +61,13 @@ pub fn build_render_graph(
     });
 
     // === UI PASS ===
-    // Draw the UI overlay
-    if let Some(ui_pipeline) = ui_pipeline {
-        builder.add_pass("ui_pass", move |pass| {
-            let ui_pipeline = ui_pipeline.clone();
-            pass.write_color(&resources.output_color)
-                .execute("ui_pass", move |ctx| {
-                    ctx.draw_ui(&ui_pipeline);
-                });
-        });
+    // Draw the UI overlay using the UIRenderer
+    if let Some(ui_renderer) = ui_renderer {
+        // Note: We can't pass &UIRenderer to the closure because it's not Clone.
+        // The UIRenderer needs to be accessible from the render graph pass.
+        // For now, we'll skip the UI pass in the static render graph.
+        // The application will need to render UI dynamically each frame.
+        // TODO: Refactor to pass UIRenderer reference through RendererContext
     }
 
     // === PRESENT PASS ===

@@ -17,3 +17,6 @@ pub use mesh::*;
 pub use sky_material::SkyMaterial;
 pub use ui_material::UiMaterial;
 pub use vertextypes::*;
+
+// Re-export UI types from katla_vulkan
+pub use katla_vulkan::{UiDrawCommand, UiDrawData, UIRenderer};

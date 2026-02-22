@@ -222,6 +222,8 @@ impl ApplicationBuilder {
             sky_pipeline: None,
             grid_pipeline: None,
             ui_pipeline: None,
+            ui_renderer: None,
+            ui_draw_data: Rc::new(RefCell::new(None)),
             main_viewport: None,
             preview_viewport: None,
             background_loader: BackgroundLoader::new(),

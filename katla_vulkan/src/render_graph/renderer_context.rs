@@ -5,14 +5,14 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use ash::vk;
+use ash::khr::push_descriptor::Device as PushDescriptorDevice;
 
 use crate::rendering::registry::AssetRegistry;
 use crate::rendering::DrawList;
 use crate::vulkan::material::{
-    MaterialPipeline, SkeletonDescriptorSet, StorageDescriptorSet, StorageUniformManager,
+    SkeletonDescriptorSet, StorageDescriptorSet, StorageUniformManager,
 };
 use crate::vulkan::BindlessTextureManager;
-use crate::{UIBuffers, UITextures, UiDrawData};
 
 /// Trait for render frame context - provides access to per-frame data
 /// without coupling katla_vulkan to application types.
@@ -63,14 +63,8 @@ pub struct RendererContextPointers {
     pub bindless_manager: *mut Option<BindlessTextureManager>,
     /// Device handle for Vulkan commands (cloned, not a pointer)
     pub vk_device: Option<ash::Device>,
-    /// UI data pointer
-    pub ui_data: *const std::cell::RefCell<Option<UiDrawData>>,
-    /// UI buffers pointer
-    pub ui_buffers: *const Vec<UIBuffers>,
-    /// UI textures pointer
-    pub ui_textures: *const Option<UITextures>,
-    /// UI frame index pointer
-    pub ui_frame_index: *const std::cell::Cell<usize>,
+    /// Push descriptor loader for dynamic descriptor updates
+    pub push_descriptor_loader: Option<PushDescriptorDevice>,
 }
 
 /// Container for renderer state accessible from render graph passes.
@@ -82,10 +76,6 @@ pub struct RendererContext {
     pub pointers: RendererContextPointers,
     /// Draw list for the current frame (already Rc<RefCell<>>)
     pub draw_list: Option<Rc<RefCell<Option<DrawList>>>>,
-    /// Application-specific pipelines (owned by application, not used here)
-    pub sky_pipeline: Option<Rc<RefCell<Option<Rc<RefCell<MaterialPipeline>>>>>>,
-    pub grid_pipeline: Option<Rc<RefCell<Option<Rc<RefCell<MaterialPipeline>>>>>>,
-    pub ui_pipeline: Option<Rc<RefCell<Option<Rc<RefCell<MaterialPipeline>>>>>>,
 }
 
 impl RendererContext {
@@ -172,39 +162,8 @@ impl RendererContext {
         self.pointers.vk_device.as_ref()
     }
 
-    /// Get UI data.
-    pub fn ui_data(&self) -> Option<&std::cell::RefCell<Option<UiDrawData>>> {
-        if self.pointers.ui_data.is_null() {
-            None
-        } else {
-            unsafe { Some(&*self.pointers.ui_data) }
-        }
-    }
-
-    /// Get UI buffers.
-    pub fn ui_buffers(&self) -> Option<&Vec<UIBuffers>> {
-        if self.pointers.ui_buffers.is_null() {
-            None
-        } else {
-            unsafe { Some(&*self.pointers.ui_buffers) }
-        }
-    }
-
-    /// Get UI textures.
-    pub fn ui_textures(&self) -> Option<&Option<UITextures>> {
-        if self.pointers.ui_textures.is_null() {
-            None
-        } else {
-            unsafe { Some(&*self.pointers.ui_textures) }
-        }
-    }
-
-    /// Get UI frame index.
-    pub fn ui_frame_index(&self) -> Option<usize> {
-        if self.pointers.ui_frame_index.is_null() {
-            None
-        } else {
-            unsafe { Some((*self.pointers.ui_frame_index).get()) }
-        }
+    /// Get the push descriptor loader.
+    pub fn push_descriptor_loader(&self) -> Option<&PushDescriptorDevice> {
+        self.pointers.push_descriptor_loader.as_ref()
     }
 }

@@ -738,6 +738,65 @@ impl PassExecutionContext {
         );
     }
 
+    /// Set scissor rectangle for clipping.
+    ///
+    /// This is used for UI rendering to clip content within panels/regions.
+    pub fn set_scissor(&self, rect: &crate::render_graph::types::Rect2D) {
+        self.command_buffer.set_scissor(&[*rect]);
+    }
+
+    /// Push a texture descriptor for dynamic texture binding.
+    ///
+    /// This is used for UI rendering to bind different textures per draw call.
+    /// The texture is bound at set 1, binding 0 using push descriptors.
+    ///
+    /// # Safety
+    /// The pipeline layout must have a push descriptor set at set 1 with a
+    /// SAMPLED_IMAGE binding at binding 0.
+    pub unsafe fn push_texture_descriptor(
+        &self,
+        pipeline_layout: vk::PipelineLayout,
+        image_view: vk::ImageView,
+    ) {
+        let image_info = vk::DescriptorImageInfo {
+            sampler: vk::Sampler::null(),
+            image_view,
+            image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+        };
+
+        let image_infos = [image_info];
+
+        let write = vk::WriteDescriptorSet::default()
+            .dst_set(vk::DescriptorSet::null()) // Push descriptor
+            .dst_binding(0)
+            .dst_array_element(0)
+            .descriptor_type(vk::DescriptorType::SAMPLED_IMAGE)
+            .image_info(&image_infos);
+
+        let writes = [write];
+
+        // Get push descriptor loader from renderer context
+        if let Some(ctx) = &self.renderer_context {
+            if let Some(loader) = ctx.push_descriptor_loader() {
+                loader.cmd_push_descriptor_set(
+                    self.command_buffer.vk_command_buffer(),
+                    vk::PipelineBindPoint::GRAPHICS,
+                    pipeline_layout,
+                    1, // Set 1
+                    &writes,
+                );
+            }
+        }
+    }
+
+    /// Get access to the underlying command buffer for advanced operations.
+    ///
+    /// This provides access to the raw command buffer for operations not
+    /// exposed by PassExecutionContext. Use with caution.
+    pub fn vk_command_buffer(&self) -> vk::CommandBuffer {
+        self.command_buffer.vk_command_buffer()
+    }
+
     // ========================================================================
     // High-Level Drawing API - Application-friendly methods
     // ========================================================================
@@ -869,101 +928,6 @@ impl PassExecutionContext {
                         self.command_buffer.draw_indexed(ib.count(), instance_count, 0, 0, first_instance);
                     }
                 }
-            }
-        }
-    }
-
-    /// Draw UI from the renderer's UI data.
-    ///
-    /// This handles all UI rendering internally:
-    /// - Binding the UI pipeline
-    /// - Binding font atlas textures
-    /// - Updating vertex/index buffers
-    /// - Drawing indexed geometry with per-command textures via push descriptors
-    ///
-    /// The application just needs to have set UI data via `renderer.set_ui_data()`.
-    pub fn draw_ui(&self, ui_pipeline: &std::rc::Rc<std::cell::RefCell<crate::vulkan::material::MaterialPipeline>>) {
-        let Some(ctx) = &self.renderer_context else {
-            return;
-        };
-
-        // Get UI data via pointer accessor
-        let Some(ui_data_cell) = ctx.ui_data() else {
-            return;
-        };
-        let ui_data = ui_data_cell.borrow();
-        let Some(ui_data) = ui_data.as_ref() else {
-            return;
-        };
-
-        // Get UI textures via pointer accessor
-        let Some(ui_textures_opt) = ctx.ui_textures() else {
-            return;
-        };
-        let Some(ui_textures) = ui_textures_opt.as_ref() else {
-            return;
-        };
-
-        if ui_data.vertex_data.is_empty() || ui_data.index_data.is_empty() {
-            return;
-        }
-
-        // Get frame index via pointer accessor
-        let Some(frame_idx) = ctx.ui_frame_index() else {
-            return;
-        };
-
-        // Get UI buffers via pointer accessor
-        let Some(ui_buffers) = ctx.ui_buffers() else {
-            return;
-        };
-
-        // Bind pipeline
-        let pipeline = ui_pipeline.borrow();
-        let pipeline_layout = pipeline.vk_layout();
-        self.bind_graphics_pipeline(&pipeline);
-        drop(pipeline);
-
-        // Bind UI descriptor set (set 0: font atlas, sampler, uniforms)
-        self.command_buffer.bind_graphics_descriptors(
-            pipeline_layout,
-            &[ui_textures.vk_set()],
-        );
-
-        // Update buffers
-        if let Some(ui_buffer) = ui_buffers.get(frame_idx) {
-            ui_buffer.update_vertices(&ui_data.vertex_data);
-            ui_buffer.update_indices(&ui_data.index_data);
-
-            self.command_buffer.bind_vertex_buffers(0, &[ui_buffer.vertex_buffer], &[0]);
-            self.command_buffer.bind_index_buffer(ui_buffer.index_buffer, 0, crate::IndexType::Uint32);
-
-            // Draw each command with its texture via push descriptors
-            for cmd in &ui_data.commands {
-                // Set scissor for clip rect
-                use crate::render_graph::types::{Extent2D, Offset2D, Rect2D};
-                self.command_buffer.set_scissor(&[Rect2D {
-                    offset: Offset2D {
-                        x: cmd.clip_rect[0] as i32,
-                        y: cmd.clip_rect[1] as i32,
-                    },
-                    extent: Extent2D {
-                        width: cmd.clip_rect[2] as u32,
-                        height: cmd.clip_rect[3] as u32,
-                    },
-                }]);
-
-                // Push texture descriptor (set 1) for this command
-                ui_textures.push_texture(self.command_buffer.command_buffer(), cmd.texture_id);
-
-                // Draw this command's indices
-                self.command_buffer.draw_indexed(
-                    cmd.index_count,
-                    1,
-                    cmd.index_offset,
-                    0,
-                    0,
-                );
             }
         }
     }

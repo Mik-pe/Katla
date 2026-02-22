@@ -85,6 +85,10 @@ pub struct Application {
     pub(crate) sky_pipeline: Option<Rc<RefCell<MaterialPipeline>>>,
     pub(crate) grid_pipeline: Option<Rc<RefCell<MaterialPipeline>>>,
     pub(crate) ui_pipeline: Option<Rc<RefCell<MaterialPipeline>>>,
+    /// UI renderer (owns UI buffers, textures, descriptors)
+    pub(crate) ui_renderer: Option<katla_vulkan::UIRenderer>,
+    /// UI draw data for current frame (shared with render graph)
+    pub(crate) ui_draw_data: Rc<RefCell<Option<katla_vulkan::UiDrawData>>>,
     /// Main scene viewport handle
     pub(crate) main_viewport: Option<katla_vulkan::ViewportHandle>,
     /// Preview viewport handle (for model preview panel)
@@ -217,7 +221,8 @@ impl ApplicationHandler for Application {
                                 renderer,
                                 self.sky_pipeline.clone(),
                                 grid_to_use,
-                                self.ui_pipeline.clone(),
+                                self.ui_renderer.as_ref(),
+                                self.ui_draw_data.clone(),
                             );
 
                             if let Some(viewport_extent) = renderer.viewport_extent() {
@@ -767,11 +772,18 @@ impl Application {
                     let texture_id = TextureId::custom(self.next_thumbnail_texture_id);
                     self.next_thumbnail_texture_id += 1;
 
-                    // Register with Vulkan renderer
-                    if let Some(ref mut renderer) = self.renderer {
-                        if let Err(e) = renderer.register_ui_thumbnail(texture_id.0, width, height, &pixels) {
-                            warn!("Failed to register thumbnail texture: {:?}", e);
-                            continue;
+                    // Register with UI renderer
+                    if let Some(ref mut ui_renderer) = self.ui_renderer {
+                        // Create texture from pixels
+                        if let Some(ref renderer) = self.renderer {
+                            let texture = katla_vulkan::Texture::create_image(
+                                renderer.context.clone(),
+                                width,
+                                height,
+                                katla_vulkan::ImageFormat::R8G8B8A8Srgb,
+                                &pixels,
+                            );
+                            ui_renderer.register_texture(texture_id.0, texture.image_view);
                         }
                     }
 

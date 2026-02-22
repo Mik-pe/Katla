@@ -115,7 +115,6 @@ impl VulkanRenderer {
 
         // Set frame index for UI buffer selection
         let frame_idx = self.swap_data.current_frame();
-        self.ui_frame_index.set(frame_idx);
         debug!("render_frame: frame_idx={}", frame_idx);
 
         // === DISPATCH PARTICLE COMPUTE SHADERS ===

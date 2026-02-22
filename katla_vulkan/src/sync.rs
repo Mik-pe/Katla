@@ -1186,6 +1186,13 @@ impl VkCommandBuffer {
     pub(crate) fn vk(&self) -> vk::CommandBuffer {
         self.0
     }
+
+    /// Returns the raw Vulkan command buffer handle.
+    ///
+    /// This is needed for advanced operations like push descriptors.
+    pub fn vk_command_buffer(&self) -> vk::CommandBuffer {
+        self.0
+    }
 }
 
 impl Default for VkCommandBuffer {
