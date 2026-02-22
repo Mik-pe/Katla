@@ -1655,33 +1655,33 @@ pub fn build_asset_browser(
         (None, String::new(), state.current_path.clone(), 0)
     };
 
-    // Render popup with automatic layout
-    let clicked_action = ui.popup("asset_context", |ui| {
+    // Render popup
+    let clicked_action = ui.context_menu("asset_context", |ui| {
         match asset_type {
             Some(AssetType::Folder) => {
-                if ui.popup_item_with_shortcut("Open", ForkAwesome::FOLDER_OPEN, true, "Enter") { return Some("Open"); }
-                if ui.popup_item_with_shortcut("Rename", ForkAwesome::PENCIL, true, "F2") { return Some("Rename"); }
-                ui.popup_separator();
-                if ui.popup_item_with_shortcut("Copy Path", ForkAwesome::COPY, true, "") { return Some("Copy Path"); }
-                if ui.popup_item_with_shortcut("Show in Explorer", ForkAwesome::EXTERNAL_LINK, true, "") { return Some("Show in Explorer"); }
-                ui.popup_separator();
-                if ui.popup_item_with_shortcut("Delete", ForkAwesome::TRASH, true, "Del") { return Some("Delete"); }
+                if ui.menu_item_clicked_with_icon_and_shortcut("Open", ForkAwesome::FOLDER_OPEN, true, "Enter") { return Some("Open"); }
+                if ui.menu_item_clicked_with_icon_and_shortcut("Rename", ForkAwesome::PENCIL, true, "F2") { return Some("Rename"); }
+                ui.menu_separator();
+                if ui.menu_item_clicked_with_icon_and_shortcut("Copy Path", ForkAwesome::COPY, true, "") { return Some("Copy Path"); }
+                if ui.menu_item_clicked_with_icon_and_shortcut("Show in Explorer", ForkAwesome::EXTERNAL_LINK, true, "") { return Some("Show in Explorer"); }
+                ui.menu_separator();
+                if ui.menu_item_clicked_with_icon_and_shortcut("Delete", ForkAwesome::TRASH, true, "Del") { return Some("Delete"); }
             }
             Some(_) => {
-                if ui.popup_item_with_shortcut("Open", ForkAwesome::FILE, true, "Enter") { return Some("Open"); }
-                if ui.popup_item_with_shortcut("Rename", ForkAwesome::PENCIL, true, "F2") { return Some("Rename"); }
-                ui.popup_separator();
-                if ui.popup_item_with_shortcut("Copy Path", ForkAwesome::COPY, true, "") { return Some("Copy Path"); }
-                if ui.popup_item_with_shortcut("Show in Explorer", ForkAwesome::EXTERNAL_LINK, true, "") { return Some("Show in Explorer"); }
-                ui.popup_separator();
-                if ui.popup_item_with_shortcut("Delete", ForkAwesome::TRASH, true, "Del") { return Some("Delete"); }
+                if ui.menu_item_clicked_with_icon_and_shortcut("Open", ForkAwesome::FILE, true, "Enter") { return Some("Open"); }
+                if ui.menu_item_clicked_with_icon_and_shortcut("Rename", ForkAwesome::PENCIL, true, "F2") { return Some("Rename"); }
+                ui.menu_separator();
+                if ui.menu_item_clicked_with_icon_and_shortcut("Copy Path", ForkAwesome::COPY, true, "") { return Some("Copy Path"); }
+                if ui.menu_item_clicked_with_icon_and_shortcut("Show in Explorer", ForkAwesome::EXTERNAL_LINK, true, "") { return Some("Show in Explorer"); }
+                ui.menu_separator();
+                if ui.menu_item_clicked_with_icon_and_shortcut("Delete", ForkAwesome::TRASH, true, "Del") { return Some("Delete"); }
             }
             None => {
-                if ui.popup_item_with_shortcut("New Folder", ForkAwesome::FOLDER, true, "") { return Some("New Folder"); }
-                ui.popup_separator();
-                if ui.popup_item_with_shortcut("Refresh", ForkAwesome::REFRESH, true, "F5") { return Some("Refresh"); }
-                ui.popup_separator();
-                if ui.popup_item_with_shortcut("Show in Explorer", ForkAwesome::EXTERNAL_LINK, true, "") { return Some("Show in Explorer"); }
+                if ui.menu_item_clicked_with_icon_and_shortcut("New Folder", ForkAwesome::FOLDER, true, "") { return Some("New Folder"); }
+                ui.menu_separator();
+                if ui.menu_item_clicked_with_icon_and_shortcut("Refresh", ForkAwesome::REFRESH, true, "F5") { return Some("Refresh"); }
+                ui.menu_separator();
+                if ui.menu_item_clicked_with_icon_and_shortcut("Show in Explorer", ForkAwesome::EXTERNAL_LINK, true, "") { return Some("Show in Explorer"); }
             }
         }
         None::<&str>
@@ -1735,8 +1735,8 @@ pub fn build_asset_browser(
     }
 
     // === CONFIRMATION DIALOG ===
-    if ui.begin_modal_dialog("confirm_dialog", 320.0, 120.0) {
-        let dialog_bounds = ui.modal_dialog_bounds();
+    ui.modal("confirm_dialog", 320.0, 120.0, |ui| {
+        let dialog_bounds = ui.get_popup_bounds();
         let dialog_pos = dialog_bounds.min;
         let dialog_width = dialog_bounds.width();
 
@@ -1806,7 +1806,6 @@ pub fn build_asset_browser(
             ui.close_current_popup();
         }
         if yes_hovered && ui.input.mouse_clicked(katla_ui::input::mouse_button::LEFT) {
-            // Execute the pending action
             if let Some(action) = state.confirm_pending_action.take() {
                 state.pending_actions.push(action);
             }
@@ -1814,18 +1813,13 @@ pub fn build_asset_browser(
             ui.close_current_popup();
         }
 
-        // Capture keyboard to prevent background actions
-        ui.input.want_capture_keyboard = true;
-
-        // Escape cancels
+        // Escape cancels (modal handles keyboard capture)
         if ui.input.key_pressed(katla_ui::input::KeyCode::Escape) {
             state.confirm_dialog_open = false;
             state.confirm_pending_action = None;
             ui.close_current_popup();
         }
-
-        ui.end_modal_dialog();
-    }
+    });
 
     // === KEYBOARD NAVIGATION ===
     if !state.search_focused && !state.context_menu_open && !state.rename_mode {

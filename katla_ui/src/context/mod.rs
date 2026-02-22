@@ -19,7 +19,7 @@ use crate::style::UiStyle;
 use crate::text::{FontId, FontSystem};
 
 pub use layout::{LayoutDirection, LayoutState};
-pub use popup::DeferredDraw;
+pub use popup::{CloseBehavior, Popup, PopupPosition, PopupStyle};
 pub use state::{StateAccess, WidgetState, WidgetStorage};
 
 /// ID type for UI elements.
@@ -119,8 +119,6 @@ pub struct UiContext {
     popup_cursor: Vec2,
     /// Popup width for automatic layout.
     popup_width: f32,
-    /// Deferred draws for dropdown items (drawn after background).
-    pub(crate) dropdown_deferred: Vec<DeferredDraw>,
 }
 
 impl UiContext {
@@ -154,7 +152,6 @@ impl UiContext {
             popup_content_bounds: None,
             popup_cursor: Vec2::new(0.0, 0.0),
             popup_width: 0.0,
-            dropdown_deferred: Vec::new(),
         }
     }
 
