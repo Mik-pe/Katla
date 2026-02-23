@@ -331,6 +331,31 @@ impl UiContext {
     }
 
     // -------------------------------------------------------------------------
+    // Widget Trait
+    // -------------------------------------------------------------------------
+
+    /// Add a widget to the UI.
+    ///
+    /// This method accepts any type implementing `Widget` and renders it.
+    /// This enables custom widgets and composition patterns.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// // Using a closure as a widget
+    /// ui.add(|ui: &mut UiContext| {
+    ///     ui.label("Hello", bounds);
+    ///     Response::new(bounds)
+    /// });
+    ///
+    /// // Using a custom widget type
+    /// ui.add(MyCustomWidget::new("label"));
+    /// ```
+    pub fn add<W: crate::Widget>(&mut self, widget: W) -> crate::Response {
+        widget.ui(self)
+    }
+
+    // -------------------------------------------------------------------------
     // Clipping
     // -------------------------------------------------------------------------
 

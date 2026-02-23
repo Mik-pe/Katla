@@ -47,8 +47,11 @@ mod draw_list;
 mod icons;
 pub mod input;
 mod renderer;
+mod sense;
 mod style;
 mod text;
+pub mod widgets;
+mod widget;
 
 use katla_math::{Rect2D, Vec2};
 
@@ -60,8 +63,10 @@ pub use draw_list::{DrawCommand, DrawList, TextureId, UiVertex};
 pub use icons::ForkAwesome;
 pub use input::{mouse_button, KeyCode, MouseCursor, UiInputState};
 pub use renderer::{UiRenderError, UiRenderer};
+pub use sense::Sense;
 pub use style::{FontSize, UiStyle, UiTheme};
 pub use text::{CachedGlyph, FontError, FontId, FontSystem};
+pub use widget::Widget;
 
 /// Response from a widget interaction.
 ///
