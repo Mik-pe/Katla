@@ -78,9 +78,11 @@ pub fn build_render_graph(
 
     // === UI PASS ===
     // Draw the UI overlay on top of output_color
-    // UI callback is set at runtime via renderer.set_ui_callback()
+    // UI samples viewport_color as a texture (via push descriptors)
+    // We must declare the read dependency so the render graph inserts proper barriers
     builder.add_pass("ui_pass", move |pass| {
         pass.write_color(&resources.output_color)
+            .read(resources.viewport_color.resource_id())  // UI samples viewport texture
             .execute("ui_pass", move |ctx| {
                 ctx.draw_ui();
             });
