@@ -17,10 +17,8 @@
 //! ui.add(Button::new("Submit").style(MyStyle::Primary));
 //! ```
 
-use crate::input::{mouse_button, KeyCode};
 use crate::{Response, UiContext};
 use katla_math::{Color, Rect2D, Vec2};
-use crate::icons::ForkAwesome;
 
 // =============================================================================
 // Button Widget

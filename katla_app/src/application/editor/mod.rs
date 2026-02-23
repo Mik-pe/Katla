@@ -141,7 +141,7 @@ pub fn render_debug_ui(app: &mut Application, dt: f32) {
 
         // Update grid visibility by rebuilding render graph
         // Grid toggle requires render graph rebuild since passes own their pipelines
-        if let (Some(ref mut renderer), Some(ref sky_pipeline), Some(ref grid_pipeline), Some(ref ui_pipeline)) =
+        if let (Some(ref mut renderer), Some(ref sky_pipeline), Some(ref grid_pipeline), Some(_ui_pipeline)) =
             (&mut app.renderer, &app.sky_pipeline, &app.grid_pipeline, &app.ui_pipeline)
         {
             let grid_to_use = if app.editor_ui.show_grid {

@@ -5,10 +5,10 @@
 //! parameters and textures.
 
 use super::{
-    MaterialDescriptor, MaterialError, MaterialParameters, MaterialPipeline, MaterialValue,
-    ShaderReflection, ShaderSource,
+    MaterialDescriptor, MaterialParameters, MaterialPipeline, MaterialValue,
+    ShaderReflection,
 };
-use crate::{Texture, VulkanContext};
+use crate::Texture;
 use ash::vk;
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
