@@ -1,3 +1,4 @@
+pub mod fullscreen_renderer;
 pub mod gizmo_material;
 pub mod grid_material;
 pub mod material;
@@ -9,6 +10,7 @@ pub mod ui_material;
 pub mod ui_renderer;
 pub mod vertextypes;
 
+pub use fullscreen_renderer::FullscreenRenderer;
 pub use gizmo_material::GizmoMaterial;
 pub use grid_material::GridMaterial;
 pub use material::*;

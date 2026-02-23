@@ -1,16 +1,15 @@
 //! Gizmo material for 3D transform manipulation.
 //!
-//! Creates a pipeline for rendering gizmos (translate/rotate/scale handles)
+//! Pure configuration for a pipeline that renders gizmos (translate/rotate/scale handles)
 //! with unlit rendering and always-on-top depth behavior.
 
-use katla_vulkan::{
-    material::MaterialPipeline,
-    DescriptorSetLayoutBuilder, DescriptorType,
-    MaterialPipelineCache, ShaderStages, VertexBinding, VertexFormat,
-};
-use std::{cell::RefCell, path::PathBuf, rc::Rc};
+use katla_vulkan::{DescriptorSetLayoutBuilder, DescriptorType, ShaderStages, VertexBinding, VertexFormat};
+use std::path::PathBuf;
 
 /// Gizmo material that renders 3D manipulation handles.
+///
+/// This is a pure configuration struct. Pipelines are created by the renderer
+/// using `MaterialPipelineCache::get_or_create()`.
 #[derive(katla_derive::Material)]
 #[material(shader = "resources/shaders/gizmo.wgsl")]
 #[material(domain = "Surface")]
@@ -19,14 +18,11 @@ pub struct GizmoMaterial {
     pub vertex_binding: VertexBinding,
     pub shader_path: PathBuf,
     pub descriptor_layouts: Vec<DescriptorSetLayoutBuilder>,
-    #[material(skip)]
-    pub pipeline: Option<Rc<RefCell<MaterialPipeline>>>,
 }
 
-impl GizmoMaterial {
-    /// Create a gizmo material using the pipeline cache.
-    pub fn new(cache: &mut MaterialPipelineCache) -> Self {
-        let mut material = Self {
+impl Default for GizmoMaterial {
+    fn default() -> Self {
+        Self {
             vertex_binding: VertexBinding {
                 formats: vec![VertexFormat::RGB32f, VertexFormat::RGB32f],
             },
@@ -36,16 +32,6 @@ impl GizmoMaterial {
                     .add_binding(0, DescriptorType::StorageBuffer, ShaderStages::VERTEX_FRAGMENT)
                     .add_binding(1, DescriptorType::StorageBuffer, ShaderStages::VERTEX_FRAGMENT),
             ],
-            pipeline: None,
-        };
-
-        let pipeline = cache.get_or_create(&material).expect("Failed to create gizmo pipeline");
-        material.pipeline = Some(pipeline);
-        material
-    }
-
-    /// Get the pipeline.
-    pub fn pipeline(&self) -> Rc<RefCell<MaterialPipeline>> {
-        self.pipeline.as_ref().expect("Pipeline not initialized").clone()
+        }
     }
 }

@@ -9,10 +9,12 @@ use std::rc::Rc;
 use ash::vk;
 use katla_vulkan::{
     DescriptorSetBuilder, DescriptorSetLayoutBuilder, DescriptorType, Extent2D, FrameBuffer,
-    IndexBuffer, IndexType, MaterialPipeline, Offset2D, PassExecutionContext, Rect2D,
+    IndexBuffer, IndexType, MaterialPipeline, MaterialPipelineCache, Offset2D, PassExecutionContext, Rect2D,
     ShaderStages, Texture, UniformBuffer, VertexBuffer, VkBuffer, VkDescriptorSet, VkImageView,
     VkSampler, VulkanContext,
 };
+
+use super::ui_material::UiMaterial;
 
 /// A single draw command for UI rendering.
 #[derive(Debug, Clone)]
@@ -252,9 +254,12 @@ pub struct UIRenderer {
 
 impl UIRenderer {
     /// Create a new UI renderer.
+    ///
+    /// The renderer owns its pipeline internally, created from UiMaterial::default()
+    /// using the provided material cache.
     pub fn new(
         context: Rc<VulkanContext>,
-        pipeline: Rc<RefCell<MaterialPipeline>>,
+        material_cache: Rc<RefCell<MaterialPipelineCache>>,
         vertex_capacity: u64,
         index_capacity: u64,
         atlas_width: u32,
@@ -265,6 +270,13 @@ impl UIRenderer {
         });
 
         let textures = UITextures::new(context, atlas_width, atlas_height)?;
+
+        // Create pipeline internally from UiMaterial config
+        let ui_material = UiMaterial::default();
+        let pipeline = material_cache
+            .borrow_mut()
+            .get_or_create(&ui_material)
+            .expect("Failed to create UI pipeline");
 
         Ok(Self {
             buffers,

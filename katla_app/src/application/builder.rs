@@ -219,9 +219,7 @@ impl ApplicationBuilder {
             gui_state,
             scale_factor: 1.0, // Will be updated when window is created
             gizmo_resources: None,
-            sky_pipeline: None,
-            grid_pipeline: None,
-            ui_pipeline: None,
+            fullscreen_renderer: None,
             ui_renderer: None,
             ui_draw_data: Rc::new(RefCell::new(None)),
             main_viewport: None,
