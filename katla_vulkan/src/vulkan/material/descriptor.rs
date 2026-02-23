@@ -2,7 +2,7 @@ use ash::vk;
 use std::{collections::HashMap, path::PathBuf};
 
 /// Source for shader code
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Hash)]
 pub enum ShaderSource {
     /// WGSL shader loaded from a file
     WgslFile(PathBuf),
@@ -108,7 +108,7 @@ impl UniformType {
 }
 
 /// Render state configuration
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, Hash)]
 pub struct RenderState {
     pub depth_test: bool,
     pub depth_write: bool,
@@ -248,6 +248,14 @@ pub enum MaterialError {
         stage: ShaderStage,
         error: String,
     },
+    /// Asset loading error (from TOML parsing, etc.)
+    AssetLoadFailed(String),
+}
+
+impl From<super::asset::AssetError> for MaterialError {
+    fn from(err: super::asset::AssetError) -> Self {
+        MaterialError::AssetLoadFailed(err.to_string())
+    }
 }
 
 impl std::fmt::Display for MaterialError {
@@ -282,6 +290,9 @@ impl std::fmt::Display for MaterialError {
                     "Shader compilation failed in {:?} stage: {}",
                     stage, error
                 )
+            }
+            MaterialError::AssetLoadFailed(msg) => {
+                write!(f, "Failed to load material asset: {}", msg)
             }
         }
     }

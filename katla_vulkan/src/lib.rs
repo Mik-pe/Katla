@@ -1,4 +1,5 @@
 pub mod error;
+pub mod material;
 pub mod render_graph;
 pub mod renderer;
 pub mod rendering;
@@ -8,6 +9,12 @@ pub mod vulkan;
 
 pub use error::RendererError;
 use log::{error, info, warn};
+pub use material::{
+    Material, MaterialCacheError, MaterialCacheStats, MaterialDomain, MaterialKey, MaterialPipelineCache,
+    PbrMaterialConfig, SkinnedPbrMaterialConfig, FullPbrMaterialConfig,
+    BindlessPbrMaterialConfig, BindlessSkinnedPbrMaterialConfig,
+    DynamicMaterialConfig,
+};
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 pub use render_graph::errors::RenderGraphError;
 pub use render_graph::pass::{PassBuilder, PassExecutionContext};
@@ -59,6 +66,9 @@ pub struct VulkanRenderer {
     /// Loads materials from TOML files and supports runtime shader reloading.
     /// Wrapped in Rc to allow cloning for safe access during model loading.
     pub material_registry: Rc<RefCell<MaterialRegistry>>,
+    /// Material pipeline cache for unified material system.
+    /// Caches pipelines by MaterialKey for deduplication.
+    pub material_cache: RefCell<MaterialPipelineCache>,
     /// Bindless texture manager for efficient texture binding.
     /// When enabled, all textures are stored in a single array accessed by index.
     /// Textures indices are passed via ObjectUniforms.texture_indices.
@@ -125,12 +135,13 @@ impl VulkanRenderer {
         let swap_data = SwapData::new(&context.device, &swapchain_images_raw, FRAMES_IN_FLIGHT);
 
         Self {
-            context,
+            context: context.clone(),
             frame_context,
             swap_data,
             current_framedata: None,
             asset_registry: AssetRegistry::new(),
             material_registry: Rc::new(RefCell::new(MaterialRegistry::new())),
+            material_cache: RefCell::new(MaterialPipelineCache::new(context)),
             bindless_manager: None,
             render_graph: None,
             storage_manager: None,

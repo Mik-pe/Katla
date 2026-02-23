@@ -5,56 +5,68 @@
 //! for anti-aliased, perspective-correct grid lines.
 
 use katla_vulkan::{
-    context::VulkanContext, material::MaterialPipeline, ImageFormat, MaterialBuilder,
-    VertexBinding,
+    context::VulkanContext,
+    material::{MaterialPipeline, RenderState, ShaderSource},
+    DescriptorSetLayoutBuilder, DescriptorType, ImageFormat,
+    MaterialDomain, MaterialPipelineCache, ShaderStages, VertexBinding,
 };
-use std::{cell::RefCell, path::Path, rc::Rc};
+use std::{cell::RefCell, path::PathBuf, rc::Rc};
+
+/// Grid material configuration (lightweight, implements Material for cache lookup).
+#[derive(katla_derive::Material)]
+#[material(domain = "PostProcess")]
+#[material(depth_test = true, depth_write = false, cull_backfaces = false, alpha_blending = true)]
+struct GridMaterialConfig {
+    vertex_binding: VertexBinding,
+    shader_path: PathBuf,
+    descriptor_layouts: Vec<DescriptorSetLayoutBuilder>,
+}
 
 /// Grid material that renders an infinite editor grid.
-///
-/// Uses a fullscreen triangle (no vertex input) with ray-plane intersection
-/// to determine world position on the XZ plane at Y=0.
-///
-/// The grid:
-/// - Renders after sky but before geometry
-/// - Is depth-tested but doesn't write depth (geometry can occlude grid)
-/// - Fades out at distance and when camera is high above the plane
 pub struct GridMaterial {
     pub pipeline: Rc<RefCell<MaterialPipeline>>,
-    /// Empty vertex binding - grid shader uses @builtin(vertex_index)
     pub vertex_binding: VertexBinding,
+    shader_path: PathBuf,
+    descriptor_layouts: Vec<DescriptorSetLayoutBuilder>,
 }
 
 impl GridMaterial {
-    /// Create a new grid material with the given Vulkan context.
-    ///
-    /// The grid pipeline is configured with:
-    /// - Depth test enabled, depth write disabled
-    /// - Depth compare = LESS (grid occluded by closer geometry)
-    /// - No backface culling (fullscreen quad)
-    /// - Storage buffer mode for camera-relative grid
-    pub fn new(context: Rc<VulkanContext>) -> Self {
-        // Empty vertex binding - shader generates vertices from vertex_index
+    /// Create a grid material using the pipeline cache.
+    pub fn new_cached(_context: Rc<VulkanContext>, cache: &mut MaterialPipelineCache) -> Self {
         let vertex_binding = VertexBinding { formats: vec![] };
+        let shader_path = PathBuf::from("resources/shaders/grid.wgsl");
 
-        // Use storage buffer mode for camera-relative grid
-        let pipeline = MaterialBuilder::new(context)
-            .with_vertex_binding(vertex_binding.clone())
-            .with_wgsl_shader(Path::new("resources/shaders/grid.wgsl"))
-            .with_grid_rendering()
-            .with_color_format(ImageFormat::R16G16B16A16Sfloat)
-            .with_depth_format(ImageFormat::D32SfloatS8Uint)
-            .build_with_storage()
-            .expect("Failed to create grid pipeline");
+        let descriptor_layouts = vec![
+            DescriptorSetLayoutBuilder::new()
+                .add_binding(0, DescriptorType::StorageBuffer, ShaderStages::VERTEX_FRAGMENT)
+                .add_binding(1, DescriptorType::StorageBuffer, ShaderStages::VERTEX_FRAGMENT),
+        ];
 
-        Self {
-            pipeline: Rc::new(RefCell::new(pipeline)),
-            vertex_binding,
-        }
+        let config = GridMaterialConfig {
+            vertex_binding: vertex_binding.clone(),
+            shader_path: shader_path.clone(),
+            descriptor_layouts: descriptor_layouts.clone(),
+        };
+
+        let pipeline = cache.get_or_create(&config).expect("Failed to create grid pipeline");
+
+        Self { pipeline, vertex_binding, shader_path, descriptor_layouts }
     }
 
-    /// Get the pipeline as a cloned Rc<RefCell<>> for registration.
     pub fn pipeline(&self) -> Rc<RefCell<MaterialPipeline>> {
         Rc::clone(&self.pipeline)
     }
+}
+
+impl katla_vulkan::Material for GridMaterial {
+    fn vertex_shader(&self) -> ShaderSource { ShaderSource::WgslFile(self.shader_path.clone()) }
+    fn fragment_shader(&self) -> ShaderSource { ShaderSource::WgslFile(self.shader_path.clone()) }
+    fn vertex_binding(&self) -> VertexBinding { self.vertex_binding.clone() }
+    fn render_state(&self) -> RenderState {
+        RenderState { depth_test: true, depth_write: false, cull_backfaces: false, alpha_blending: true }
+    }
+    fn descriptor_layouts(&self) -> Vec<DescriptorSetLayoutBuilder> { self.descriptor_layouts.clone() }
+    fn color_format(&self) -> ImageFormat { ImageFormat::R16G16B16A16Sfloat }
+    fn depth_format(&self) -> ImageFormat { ImageFormat::D32SfloatS8Uint }
+    fn domain(&self) -> MaterialDomain { MaterialDomain::PostProcess }
 }

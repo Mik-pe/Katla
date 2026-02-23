@@ -108,7 +108,7 @@ impl StructLayout {
 }
 
 /// Information extracted from shader reflection
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct ShaderReflection {
     pub structs: HashMap<String, StructLayout>,
     pub has_color_uniform: bool,

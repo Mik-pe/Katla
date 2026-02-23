@@ -6,7 +6,7 @@
 use ash::vk;
 
 /// Descriptor type for descriptor set layout bindings.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum DescriptorType {
     /// Uniform buffer.
     UniformBuffer,

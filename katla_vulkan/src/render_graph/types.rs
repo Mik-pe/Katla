@@ -846,7 +846,7 @@ impl From<Viewport> for ash::vk::Viewport {
 }
 
 /// Shader stage flags for pipeline creation.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Hash)]
 pub struct ShaderStages {
     pub vertex: bool,
     pub fragment: bool,

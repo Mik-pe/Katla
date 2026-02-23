@@ -5,10 +5,22 @@
 //! all geometry (depth write disabled, depth compare = always).
 
 use katla_vulkan::{
-    context::VulkanContext, material::MaterialPipeline, ImageFormat, MaterialBuilder,
-    VertexBinding,
+    context::VulkanContext,
+    material::{MaterialPipeline, RenderState, ShaderSource},
+    DescriptorSetLayoutBuilder, DescriptorType, ImageFormat,
+    MaterialDomain, MaterialPipelineCache, ShaderStages, VertexBinding,
 };
-use std::{cell::RefCell, path::Path, rc::Rc};
+use std::{cell::RefCell, path::PathBuf, rc::Rc};
+
+/// Sky material configuration (lightweight, implements Material for cache lookup).
+#[derive(katla_derive::Material)]
+#[material(domain = "PostProcess")]
+#[material(depth_test = true, depth_write = false, cull_backfaces = false)]
+struct SkyMaterialConfig {
+    vertex_binding: VertexBinding,
+    shader_path: PathBuf,
+    descriptor_layouts: Vec<DescriptorSetLayoutBuilder>,
+}
 
 /// Sky material that renders a procedural sky background.
 ///
@@ -16,40 +28,48 @@ use std::{cell::RefCell, path::Path, rc::Rc};
 /// sky gradient using inverse view-projection matrix.
 pub struct SkyMaterial {
     pub pipeline: Rc<RefCell<MaterialPipeline>>,
-    /// Empty vertex binding - sky shader uses @builtin(vertex_index)
     pub vertex_binding: VertexBinding,
+    shader_path: PathBuf,
+    descriptor_layouts: Vec<DescriptorSetLayoutBuilder>,
 }
 
 impl SkyMaterial {
-    /// Create a new sky material with the given Vulkan context.
-    ///
-    /// The sky pipeline is configured with:
-    /// - Depth test enabled but depth write disabled
-    /// - Depth compare = ALWAYS (sky always behind geometry)
-    /// - No backface culling (fullscreen quad)
-    /// - Storage buffer mode for camera-relative sky
-    pub fn new(context: Rc<VulkanContext>) -> Self {
-        // Empty vertex binding - shader generates vertices from vertex_index
+    /// Create a sky material using the pipeline cache.
+    pub fn new_cached(_context: Rc<VulkanContext>, cache: &mut MaterialPipelineCache) -> Self {
         let vertex_binding = VertexBinding { formats: vec![] };
+        let shader_path = PathBuf::from("resources/shaders/sky.wgsl");
 
-        // Use storage buffer mode for camera-relative sky
-        let pipeline = MaterialBuilder::new(context)
-            .with_vertex_binding(vertex_binding.clone())
-            .with_wgsl_shader(Path::new("resources/shaders/sky.wgsl"))
-            .with_sky_rendering()
-            .with_color_format(ImageFormat::R16G16B16A16Sfloat)
-            .with_depth_format(ImageFormat::D32SfloatS8Uint)
-            .build_with_storage()
-            .expect("Failed to create sky pipeline");
+        let descriptor_layouts = vec![
+            DescriptorSetLayoutBuilder::new()
+                .add_binding(0, DescriptorType::StorageBuffer, ShaderStages::VERTEX_FRAGMENT)
+                .add_binding(1, DescriptorType::StorageBuffer, ShaderStages::VERTEX_FRAGMENT),
+        ];
 
-        Self {
-            pipeline: Rc::new(RefCell::new(pipeline)),
-            vertex_binding,
-        }
+        let config = SkyMaterialConfig {
+            vertex_binding: vertex_binding.clone(),
+            shader_path: shader_path.clone(),
+            descriptor_layouts: descriptor_layouts.clone(),
+        };
+
+        let pipeline = cache.get_or_create(&config).expect("Failed to create sky pipeline");
+
+        Self { pipeline, vertex_binding, shader_path, descriptor_layouts }
     }
 
-    /// Get the pipeline as a cloned Rc<RefCell<>> for registration.
     pub fn pipeline(&self) -> Rc<RefCell<MaterialPipeline>> {
         Rc::clone(&self.pipeline)
     }
+}
+
+impl katla_vulkan::Material for SkyMaterial {
+    fn vertex_shader(&self) -> ShaderSource { ShaderSource::WgslFile(self.shader_path.clone()) }
+    fn fragment_shader(&self) -> ShaderSource { ShaderSource::WgslFile(self.shader_path.clone()) }
+    fn vertex_binding(&self) -> VertexBinding { self.vertex_binding.clone() }
+    fn render_state(&self) -> RenderState {
+        RenderState { depth_test: true, depth_write: false, cull_backfaces: false, alpha_blending: false }
+    }
+    fn descriptor_layouts(&self) -> Vec<DescriptorSetLayoutBuilder> { self.descriptor_layouts.clone() }
+    fn color_format(&self) -> ImageFormat { ImageFormat::R16G16B16A16Sfloat }
+    fn depth_format(&self) -> ImageFormat { ImageFormat::D32SfloatS8Uint }
+    fn domain(&self) -> MaterialDomain { MaterialDomain::PostProcess }
 }

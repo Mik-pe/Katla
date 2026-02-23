@@ -137,6 +137,7 @@ impl ApplicationHandler for Application {
 
             self.window = Some(window);
             self.material_manager.set_context(renderer.context.clone());
+
             self.renderer = Some(renderer);
 
             // Setup render graph
@@ -462,11 +463,15 @@ impl Application {
 
         // Load bindless material templates (bindless-only now)
         let bindless_layout = renderer.bindless_manager().unwrap().vk_descriptor_layout();
-        let bindless_count = renderer
-            .material_registry
-            .borrow_mut()
-            .load_directory_bindless(&self.resources.materials, renderer.context.clone(), bindless_layout)
-            .expect("Failed to load bindless materials");
+
+        // Need to scope borrows to avoid conflicts
+        let bindless_count = {
+            let mut registry = renderer.material_registry.borrow_mut();
+            let mut cache = renderer.material_cache.borrow_mut();
+            registry
+                .load_directory_bindless(&self.resources.materials, &renderer.context, &mut cache, bindless_layout)
+                .expect("Failed to load bindless materials")
+        };
 
         info!(
             "Loaded {} bindless material templates from {}",
@@ -748,7 +753,7 @@ impl Application {
     fn setup_checkerboard_material(&mut self, renderer: &mut VulkanRenderer) {
         let checkerboard = create_checkerboard_material(
             renderer.context.clone(),
-            renderer.bindless_manager_mut().unwrap(),
+            renderer,
         );
         self.material_manager
             .register_material("checkerboard", checkerboard);

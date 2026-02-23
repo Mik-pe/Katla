@@ -4,7 +4,6 @@ pub mod builder;
 pub mod compute_pipeline;
 pub mod descriptor;
 pub mod file_watcher;
-pub mod hot_reload;
 pub mod materialbuilder;
 pub mod parameters;
 pub mod reflection;
@@ -24,7 +23,6 @@ pub use descriptor::{
     ShaderStage, UniformType,
 };
 pub use file_watcher::*;
-pub use hot_reload::*;
 pub use materialbuilder::*;
 pub use parameters::*;
 pub use reflection::*;
