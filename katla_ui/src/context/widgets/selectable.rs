@@ -3,24 +3,38 @@
 use katla_math::{Color, Rect2D, Vec2};
 
 use crate::icons::ForkAwesome;
+use crate::input::mouse_button;
+use crate::Response;
 
 use super::super::UiContext;
 
 impl UiContext {
     /// Draw a selectable item with selection state.
     ///
-    /// Returns true if clicked this frame.
+    /// Returns a Response. Check `response.clicked` for click.
     /// The `selected` parameter controls whether the item is highlighted as selected.
-    pub fn selectable(&mut self, id: &str, label: &str, selected: bool, bounds: Rect2D) -> bool {
+    pub fn selectable(&mut self, id: &str, label: &str, selected: bool, bounds: Rect2D) -> Response {
         let widget_id = self.generate_id(id);
-        let clicked = self.button_behavior(widget_id, bounds);
+
+        let hovered = self.update_hover(widget_id, bounds);
+        let active = self.active_id == Some(widget_id);
+
+        let clicked = if hovered && self.input.mouse_pressed[mouse_button::LEFT] {
+            self.active_id = Some(widget_id);
+            false
+        } else if active && self.input.mouse_released[mouse_button::LEFT] {
+            self.active_id = None;
+            hovered
+        } else {
+            false
+        };
 
         // Determine colors based on state
         let bg_color = if selected {
             self.style.selectable_selected
-        } else if self.active_id == Some(widget_id) {
+        } else if active {
             self.style.menu_active
-        } else if self.hovered_id == Some(widget_id) || self.is_hovered(bounds) {
+        } else if hovered {
             self.style.selectable_hovered
         } else {
             Color::TRANSPARENT
@@ -39,12 +53,18 @@ impl UiContext {
         );
         self.draw_text(label, text_pos, self.style.text_color, self.style.font_size);
 
-        clicked
+        Response {
+            clicked,
+            hovered,
+            active,
+            changed: clicked,
+            bounds,
+        }
     }
 
     /// Draw a toggle button with an optional check icon when enabled.
     ///
-    /// Returns true if clicked this frame.
+    /// Returns a Response. Check `response.clicked` for click.
     /// Colors are passed as parameters to allow theme customization.
     #[allow(clippy::too_many_arguments)]
     pub fn toggle_button(
@@ -56,9 +76,23 @@ impl UiContext {
         checked_color: Color,
         unchecked_color: Color,
         text_color: Color,
-    ) -> bool {
-        let clicked = self.button(id, "", bounds);
+    ) -> Response {
+        let widget_id = self.generate_id(id);
 
+        let hovered = self.update_hover(widget_id, bounds);
+        let active = self.active_id == Some(widget_id);
+
+        let clicked = if hovered && self.input.mouse_pressed[mouse_button::LEFT] {
+            self.active_id = Some(widget_id);
+            false
+        } else if active && self.input.mouse_released[mouse_button::LEFT] {
+            self.active_id = None;
+            hovered
+        } else {
+            false
+        };
+
+        // Draw background
         let bg_color = if checked { checked_color } else { unchecked_color };
         self.draw_rect(bounds, bg_color);
 
@@ -78,6 +112,12 @@ impl UiContext {
             self.draw_text(label, Vec2::new(text_x + icon_size + 4.0, text_y), text_color, font_size);
         }
 
-        clicked
+        Response {
+            clicked,
+            hovered,
+            active,
+            changed: clicked,
+            bounds,
+        }
     }
 }
