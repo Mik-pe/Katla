@@ -1315,6 +1315,7 @@ dependencies = [
  "gltf",
  "image",
  "itertools 0.14.0",
+ "katla_derive",
  "katla_ecs",
  "katla_math",
  "katla_ui",

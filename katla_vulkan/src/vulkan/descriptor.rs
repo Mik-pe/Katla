@@ -11,7 +11,7 @@ use crate::vulkan::context::VulkanContext;
 use crate::vulkan::pipeline_state::DescriptorType;
 
 /// A single descriptor binding in a descriptor set layout.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Hash)]
 pub struct DescriptorBinding {
     /// Binding number.
     pub binding: u32,
@@ -127,6 +127,16 @@ impl DescriptorSetLayoutBuilder {
         };
 
         Ok(VkDescriptorSetLayout::new(layout))
+    }
+
+    /// Get the bindings for this layout (for hashing/caching).
+    pub fn bindings(&self) -> &[DescriptorBinding] {
+        &self.bindings
+    }
+
+    /// Check if this layout uses push descriptors.
+    pub fn is_push_descriptor(&self) -> bool {
+        self.push_descriptor
     }
 }
 

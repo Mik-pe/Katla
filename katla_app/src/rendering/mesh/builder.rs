@@ -111,7 +111,7 @@ macro_rules! impl_common_builder {
                 // Create checkerboard material (bindless-only)
                 create_checkerboard_material(
                     self.base.context.clone(),
-                    renderer.bindless_manager_mut().unwrap(),
+                    renderer,
                 )
             }
 

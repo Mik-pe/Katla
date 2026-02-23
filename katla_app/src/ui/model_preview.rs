@@ -383,9 +383,7 @@ impl ModelPreviewState {
 
             Material::from_template(template, texture, None)
         } else {
-            log::warn!("Template '{}' not found, falling back to direct material creation", template_name);
-            drop(registry);
-            Material::new(Rc::clone(model), context.clone())
+            panic!("Material template '{}' not found for model preview. Ensure materials are loaded.", template_name);
         }
     }
 

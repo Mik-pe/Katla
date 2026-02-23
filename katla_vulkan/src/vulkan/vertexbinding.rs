@@ -29,7 +29,7 @@ pub fn get_skinned_vertex_binding() -> VertexBinding {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Debug)]
+#[derive(Clone, Copy, PartialEq, Debug, Hash)]
 pub enum VertexFormat {
     R32u,
     R32i,
@@ -76,16 +76,9 @@ impl VertexFormat {
         }
     }
 }
+#[derive(Clone, Debug, Hash)]
 pub struct VertexBinding {
     pub formats: Vec<VertexFormat>,
-}
-
-impl Clone for VertexBinding {
-    fn clone(&self) -> Self {
-        Self {
-            formats: self.formats.clone(),
-        }
-    }
 }
 
 impl VertexBinding {

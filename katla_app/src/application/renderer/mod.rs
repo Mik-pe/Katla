@@ -36,15 +36,22 @@ pub fn setup_render_graph(app: &mut Application) {
         None => return,
     };
 
-    // Create and set up sky material for procedural sky background
-    let sky_material = SkyMaterial::new(renderer.context.clone());
-    let sky_pipeline = sky_material.pipeline();
-    app.sky_pipeline = Some(sky_pipeline.clone());
+    // Create materials using the renderer's cache (scoped to release borrow)
+    let (sky_pipeline, grid_pipeline) = {
+        let mut material_cache = renderer.material_cache.borrow_mut();
 
-    // Create and set up grid material for editor grid
-    // Store pipeline in app for runtime toggle via render graph rebuild
-    let grid_material = GridMaterial::new(renderer.context.clone());
-    let grid_pipeline = grid_material.pipeline();
+        // Create and set up sky material for procedural sky background (using cache)
+        let sky_material = SkyMaterial::new_cached(renderer.context.clone(), &mut material_cache);
+        let sky_pipeline = sky_material.pipeline();
+
+        // Create and set up grid material for editor grid (using cache)
+        let grid_material = GridMaterial::new_cached(renderer.context.clone(), &mut material_cache);
+        let grid_pipeline = grid_material.pipeline();
+
+        (sky_pipeline, grid_pipeline)
+    };
+
+    app.sky_pipeline = Some(sky_pipeline.clone());
     app.grid_pipeline = Some(grid_pipeline.clone());
 
     // Only pass grid pipeline if grid should be visible
@@ -55,7 +62,10 @@ pub fn setup_render_graph(app: &mut Application) {
     };
 
     // Create and set up UI material for overlay rendering
-    let ui_material = crate::rendering::UiMaterial::new(renderer.context.clone());
+    let ui_material = {
+        let mut cache = renderer.material_cache.borrow_mut();
+        crate::rendering::UiMaterial::new(&mut cache)
+    };
     let ui_pipeline = ui_material.pipeline();
     app.ui_pipeline = Some(ui_pipeline.clone());
 
@@ -144,9 +154,12 @@ fn setup_gizmo_resources(app: &mut Application) {
     };
     let context = renderer.context.clone();
 
-    // Create gizmo material
-    let gizmo_material = GizmoMaterial::new(context.clone());
-    let gizmo_pipeline = gizmo_material.pipeline();
+    // Create gizmo material using the renderer's cache (scoped to release borrow)
+    let gizmo_pipeline = {
+        let mut material_cache = renderer.material_cache.borrow_mut();
+        let gizmo_material = GizmoMaterial::new_cached(context.clone(), &mut material_cache);
+        gizmo_material.pipeline()
+    };
 
     // Create a white texture for the gizmo material (it doesn't use textures but needs the descriptor)
     let white_pixels: Vec<u8> = vec![255, 255, 255, 255];
@@ -272,13 +285,14 @@ pub fn render_frame(app: &mut Application) {
     });
 
     // Check for material hot reload
-    if let Ok(reloaded) = renderer
-        .material_registry
-        .borrow_mut()
-        .check_hot_reload(renderer.context.clone())
     {
-        if reloaded > 0 {
-            info!("Hot reloaded {} material template(s)", reloaded);
+        let mut registry = renderer.material_registry.borrow_mut();
+        let mut cache = renderer.material_cache.borrow_mut();
+        if let Ok(reloaded) = registry.check_hot_reload(&renderer.context, &mut cache)
+        {
+            if reloaded > 0 {
+                info!("Hot reloaded {} material template(s)", reloaded);
+            }
         }
     }
 

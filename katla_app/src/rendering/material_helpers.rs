@@ -1,7 +1,10 @@
-use std::{path::Path, rc::Rc};
+use std::{path::PathBuf, rc::Rc};
 
 use katla_math::Color;
-use katla_vulkan::{BindlessTextureManager, ImageFormat, MaterialBuilder, Texture, VulkanContext};
+use katla_vulkan::{
+    DescriptorSetLayoutBuilder, DescriptorType, ImageFormat,
+    MaterialPipelineCache, ShaderStages, Texture, VertexBinding, VulkanContext, VulkanRenderer,
+};
 use log::warn;
 
 use crate::rendering::{Material, VertexPBR};
@@ -30,15 +33,26 @@ fn generate_checkerboard_pixels(texture_size: u32, checker_size: u32) -> Vec<u8>
     pixels
 }
 
+/// Material configuration for bindless PBR materials.
+#[derive(katla_derive::Material)]
+#[material(shader = "resources/shaders/model_pbr.wgsl", domain = "Surface")]
+#[material(depth_test = true, depth_write = true, cull_backfaces = true)]
+#[material(uses_bindless = true)]
+struct BindlessPbrMaterialConfig {
+    vertex_binding: VertexBinding,
+    shader_path: PathBuf,
+    descriptor_layouts: Vec<DescriptorSetLayoutBuilder>,
+}
+
 /// Create a checkerboard material.
 ///
 /// This function creates a material with a procedurally generated checkerboard texture.
 /// The texture is registered with the bindless manager.
 pub fn create_checkerboard_material(
     context: Rc<VulkanContext>,
-    bindless_manager: &mut BindlessTextureManager,
+    renderer: &mut VulkanRenderer,
 ) -> Material {
-    create_checkerboard_material_with_color(context, bindless_manager, None)
+    create_checkerboard_material_with_color(context, renderer, None)
 }
 
 /// Create a colored checkerboard material.
@@ -47,16 +61,16 @@ pub fn create_checkerboard_material(
 /// that is blended with a material color.
 pub fn create_colored_checkerboard_material(
     context: Rc<VulkanContext>,
-    bindless_manager: &mut BindlessTextureManager,
+    renderer: &mut VulkanRenderer,
     color: Color,
 ) -> Material {
-    create_checkerboard_material_with_color(context, bindless_manager, Some(color))
+    create_checkerboard_material_with_color(context, renderer, Some(color))
 }
 
 /// Internal helper to create checkerboard material with optional color.
 fn create_checkerboard_material_with_color(
     context: Rc<VulkanContext>,
-    bindless_manager: &mut BindlessTextureManager,
+    renderer: &mut VulkanRenderer,
     color: Option<Color>,
 ) -> Material {
     // Generate checkerboard pixels
@@ -71,6 +85,7 @@ fn create_checkerboard_material_with_color(
     ));
 
     // Register texture with bindless manager
+    let bindless_manager = renderer.bindless_manager.as_mut().expect("Bindless manager not initialized");
     let albedo_idx = match bindless_manager.register_texture(texture.image_view) {
         Some(idx) => idx,
         None => {
@@ -88,21 +103,26 @@ fn create_checkerboard_material_with_color(
     ];
     let emission_idx = katla_vulkan::bindless_texture::DEFAULT_EMISSION_SLOT;
 
-    // Build material pipeline
+    // Create material config and get pipeline from cache
     let vertex_binding = VertexPBR::get_vertex_binding();
     let bindless_layout = bindless_manager.vk_descriptor_layout();
-    let material_pipeline = MaterialBuilder::new(context)
-        .with_vertex_binding(vertex_binding.clone())
-        .with_wgsl_shader(Path::new(PBR_SHADER_PATH))
-        .with_depth_test(true)
-        .with_depth_write(true)
-        .with_backface_culling(true)
-        .with_color_format(ImageFormat::R16G16B16A16Sfloat)
-        .with_depth_format(ImageFormat::D32SfloatS8Uint)
-        .build_bindless(bindless_layout)
-        .expect("Failed to create material pipeline");
 
-    Material::from_pipeline_with_textures(
+    let config = BindlessPbrMaterialConfig {
+        vertex_binding: vertex_binding.clone(),
+        shader_path: PathBuf::from(PBR_SHADER_PATH),
+        descriptor_layouts: vec![
+            DescriptorSetLayoutBuilder::new()
+                .add_binding(0, DescriptorType::StorageBuffer, ShaderStages::VERTEX_FRAGMENT)
+                .add_binding(1, DescriptorType::StorageBuffer, ShaderStages::VERTEX_FRAGMENT),
+        ],
+    };
+
+    let material_pipeline = renderer.material_cache
+        .borrow_mut()
+        .get_or_create_bindless(&config, bindless_layout)
+        .expect("Failed to create bindless pipeline");
+
+    Material::from_cached_pipeline_with_textures(
         material_pipeline,
         Some(texture),
         vertex_binding,

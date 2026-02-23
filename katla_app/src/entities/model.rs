@@ -124,12 +124,12 @@ impl Model {
                 // Create material from template
                 Material::from_template(template, texture, None)
             } else {
-                // Fallback to direct creation if template not found
-                Material::new(model.clone(), context.clone())
+                // Template not found - this is a configuration error
+                panic!("Material template 'gltf_default' not found. Ensure materials are loaded before creating models.");
             }
         } else {
-            // No registry provided, use direct creation
-            Material::new(model.clone(), context.clone())
+            // No registry provided - this is a configuration error
+            panic!("No material registry provided. Ensure VulkanRenderer has material_registry initialized.");
         };
 
         // Get PBR values from material info
@@ -340,7 +340,7 @@ impl Model {
                         if let Some(template) = material_registry.borrow().get_template("gltf_skinned") {
                             Material::from_template_skinned_with_bindless(template, Some(albedo_tex), None, texture_indices, emission_index)
                         } else {
-                            Material::new(model.clone(), context.clone())
+                            panic!("Neither 'gltf_skinned_pbr_bindless' nor 'gltf_skinned' templates found. Ensure materials are loaded.");
                         }
                     }
                 } else {
@@ -354,7 +354,7 @@ impl Model {
                         if let Some(template) = material_registry.borrow().get_template("gltf_default") {
                             Material::from_template(template, Some(albedo_tex), None)
                         } else {
-                            Material::new(model.clone(), context.clone())
+                            panic!("Neither 'gltf_skinned' nor 'gltf_default' templates found. Ensure materials are loaded.");
                         }
                     }
                 }
@@ -370,7 +370,7 @@ impl Model {
                         if let Some(template) = material_registry.borrow().get_template("gltf_default") {
                             Material::from_template(template, Some(albedo_tex), None)
                         } else {
-                            Material::new(model.clone(), context.clone())
+                            panic!("Neither 'gltf_pbr_bindless' nor 'gltf_default' templates found. Ensure materials are loaded.");
                         }
                     }
                 } else {
@@ -383,7 +383,7 @@ impl Model {
                         if let Some(template) = material_registry.borrow().get_template("gltf_default") {
                             Material::from_template(template, Some(albedo_tex), None)
                         } else {
-                            Material::new(model.clone(), context.clone())
+                            panic!("Neither 'gltf_pbr_bindless' nor 'gltf_default' templates found. Ensure materials are loaded.");
                         }
                     }
                 }

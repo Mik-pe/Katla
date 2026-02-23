@@ -4,52 +4,70 @@
 //! with unlit rendering and always-on-top depth behavior.
 
 use katla_vulkan::{
-    context::VulkanContext, material::MaterialPipeline, ImageFormat, MaterialBuilder,
-    VertexBinding, VertexFormat,
+    context::VulkanContext,
+    material::{MaterialPipeline, RenderState, ShaderSource},
+    DescriptorSetLayoutBuilder, DescriptorType, ImageFormat,
+    MaterialDomain, MaterialPipelineCache, ShaderStages, VertexBinding, VertexFormat,
 };
-use std::{cell::RefCell, path::Path, rc::Rc};
+use std::{cell::RefCell, path::PathBuf, rc::Rc};
+
+/// Gizmo material configuration (lightweight, implements Material for cache lookup).
+#[derive(katla_derive::Material)]
+#[material(domain = "Surface")]
+#[material(depth_test = true, depth_write = false, cull_backfaces = false)]
+struct GizmoMaterialConfig {
+    vertex_binding: VertexBinding,
+    shader_path: PathBuf,
+    descriptor_layouts: Vec<DescriptorSetLayoutBuilder>,
+}
 
 /// Gizmo material that renders 3D manipulation handles.
-///
-/// Uses unlit rendering with depth test set to ALWAYS so gizmos
-/// are always visible on top of scene geometry.
 pub struct GizmoMaterial {
     pub pipeline: Rc<RefCell<MaterialPipeline>>,
+    vertex_binding: VertexBinding,
+    shader_path: PathBuf,
+    descriptor_layouts: Vec<DescriptorSetLayoutBuilder>,
 }
 
 impl GizmoMaterial {
-    /// Create a new gizmo material with the given Vulkan context.
-    ///
-    /// The gizmo pipeline is configured with:
-    /// - Depth test enabled but depth write disabled
-    /// - Depth compare = ALWAYS (gizmos always visible on top)
-    /// - No backface culling (gizmos visible from any angle)
-    /// - Storage buffer mode for transform uniforms
-    pub fn new(context: Rc<VulkanContext>) -> Self {
-        // Gizmo vertex format: position (vec3), color (vec3)
+    /// Create a gizmo material using the pipeline cache.
+    pub fn new_cached(_context: Rc<VulkanContext>, cache: &mut MaterialPipelineCache) -> Self {
         let vertex_binding = VertexBinding {
-            formats: vec![
-                VertexFormat::RGB32f, // position
-                VertexFormat::RGB32f, // color
-            ],
+            formats: vec![VertexFormat::RGB32f, VertexFormat::RGB32f],
+        };
+        let shader_path = PathBuf::from("resources/shaders/gizmo.wgsl");
+
+        let descriptor_layouts = vec![
+            DescriptorSetLayoutBuilder::new()
+                .add_binding(0, DescriptorType::StorageBuffer, ShaderStages::VERTEX_FRAGMENT)
+                .add_binding(1, DescriptorType::StorageBuffer, ShaderStages::VERTEX_FRAGMENT),
+        ];
+
+        let config = GizmoMaterialConfig {
+            vertex_binding: vertex_binding.clone(),
+            shader_path: shader_path.clone(),
+            descriptor_layouts: descriptor_layouts.clone(),
         };
 
-        let pipeline = MaterialBuilder::new(context)
-            .with_vertex_binding(vertex_binding)
-            .with_wgsl_shader(Path::new("resources/shaders/gizmo.wgsl"))
-            .with_sky_rendering() // Always visible on top
-            .with_color_format(ImageFormat::R16G16B16A16Sfloat)
-            .with_depth_format(ImageFormat::D32SfloatS8Uint)
-            .build_with_storage()
-            .expect("Failed to create gizmo pipeline");
+        let pipeline = cache.get_or_create(&config).expect("Failed to create gizmo pipeline");
 
-        Self {
-            pipeline: Rc::new(RefCell::new(pipeline)),
-        }
+        Self { pipeline, vertex_binding, shader_path, descriptor_layouts }
     }
 
-    /// Get the pipeline as a cloned Rc<RefCell<>> for registration.
     pub fn pipeline(&self) -> Rc<RefCell<MaterialPipeline>> {
         Rc::clone(&self.pipeline)
     }
+}
+
+impl katla_vulkan::Material for GizmoMaterial {
+    fn vertex_shader(&self) -> ShaderSource { ShaderSource::WgslFile(self.shader_path.clone()) }
+    fn fragment_shader(&self) -> ShaderSource { ShaderSource::WgslFile(self.shader_path.clone()) }
+    fn vertex_binding(&self) -> VertexBinding { self.vertex_binding.clone() }
+    fn render_state(&self) -> RenderState {
+        RenderState { depth_test: true, depth_write: false, cull_backfaces: false, alpha_blending: false }
+    }
+    fn descriptor_layouts(&self) -> Vec<DescriptorSetLayoutBuilder> { self.descriptor_layouts.clone() }
+    fn color_format(&self) -> ImageFormat { ImageFormat::R16G16B16A16Sfloat }
+    fn depth_format(&self) -> ImageFormat { ImageFormat::D32SfloatS8Uint }
+    fn domain(&self) -> MaterialDomain { MaterialDomain::Surface }
 }
