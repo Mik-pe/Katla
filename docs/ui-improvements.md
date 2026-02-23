@@ -296,11 +296,12 @@ enum WidgetState { Checkbox(bool), Slider(f32), TextInput(String), ... }
 - [x] Split `widgets.rs` and `popup.rs` into focused submodules (commit cae8c9a)
 
 ### Phase 2: Response Enhancement
-- [ ] Add `drag_delta()` and `total_drag_delta()`
-- [ ] Add `on_hover_text()` and `on_hover_ui()`
-- [ ] Add `double_clicked()` detection
-- [ ] Add `union()` / `|` operator
-- [ ] Add `InnerResponse<R>` type
+- [x] Migrate all widgets to return Response (commit ef4cd02)
+- [x] Add `on_hover_text()` chainable tooltip
+- [x] Add `union()` / `|` operator
+- [ ] Add `drag_delta()` and `total_drag_delta()` (future)
+- [ ] Add `double_clicked()` detection (future)
+- [ ] Add `InnerResponse<R>` type (future)
 
 ### Phase 3: Container Widgets
 - [ ] Implement `ScrollArea` with:
