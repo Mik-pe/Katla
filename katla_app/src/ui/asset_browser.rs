@@ -12,7 +12,7 @@ use std::path::PathBuf;
 use std::time::Instant;
 
 use katla_math::{Color, Rect2D, Vec2};
-use katla_ui::{ForkAwesome, Popup, TextureId, UiContext};
+use katla_ui::{ForkAwesome, Popup, ScrollArea, ScrollAreaState, TextureId, UiContext};
 
 use super::editor_ui::FocusedPanel;
 use super::theme::Theme;
@@ -134,8 +134,8 @@ pub struct AssetBrowserState {
     selection_rect_current: Option<Vec2>,
     /// Whether marquee selection is active
     is_marquee_selecting: bool,
-    /// Scroll offset in pixels
-    pub scroll_offset: f32,
+    /// Scroll state for the content area
+    pub scroll_state: ScrollAreaState,
     /// Panel height in pixels (when not collapsed)
     pub panel_height: f32,
     /// Whether panel is collapsed
@@ -229,7 +229,7 @@ impl AssetBrowserState {
             selection_rect_start: None,
             selection_rect_current: None,
             is_marquee_selecting: false,
-            scroll_offset: 0.0,
+            scroll_state: ScrollAreaState::default(),
             panel_height: 150.0,
             collapsed: false,
             last_scan: None,
@@ -340,8 +340,8 @@ impl AssetBrowserState {
 
         self.last_scan = Some(Instant::now());
         // Don't clear selection on rescan - only clear on navigation
-        // Preserve scroll_offset only if directory hasn't changed
-        self.scroll_offset = 0.0;
+        // Reset scroll on rescan
+        self.scroll_state.scroll_offset = 0.0;
     }
 
     /// Force a rescan (e.g., when refresh button clicked).
@@ -625,13 +625,13 @@ impl AssetBrowserState {
             let item_y = row as f32 * row_height;
 
             // Scroll to make item visible (with some padding)
-            let visible_top = self.scroll_offset;
-            let visible_bottom = self.scroll_offset + 100.0; // Approximate visible height
+            let visible_top = self.scroll_state.scroll_offset;
+            let visible_bottom = self.scroll_state.scroll_offset + 100.0; // Approximate visible height
 
             if item_y < visible_top {
-                self.scroll_offset = item_y;
+                self.scroll_state.scroll_offset = item_y;
             } else if item_y + row_height > visible_bottom {
-                self.scroll_offset = item_y + row_height - 100.0;
+                self.scroll_state.scroll_offset = item_y + row_height - 100.0;
             }
         }
     }
@@ -1024,7 +1024,7 @@ pub fn build_asset_browser(
 
     if ui.is_hovered(content_bounds) {
         let scroll_delta = ui.input.scroll_delta.y() * 30.0;
-        state.scroll_offset = (state.scroll_offset - scroll_delta).clamp(0.0, max_scroll);
+        state.scroll_state.scroll_offset = (state.scroll_state.scroll_offset - scroll_delta).clamp(0.0, max_scroll);
     }
 
     // Draw assets in grid
@@ -1040,7 +1040,7 @@ pub fn build_asset_browser(
         let row = i / col_count;
 
         let item_x = bounds.min.x() + item_padding + col as f32 * (item_size + item_padding);
-        let item_y = content_top + row as f32 * row_height - state.scroll_offset;
+        let item_y = content_top + row as f32 * row_height - state.scroll_state.scroll_offset;
 
         // Skip items that are outside the visible area
         if item_y + row_height < content_top || item_y > bounds.max.y() {
@@ -1221,7 +1221,7 @@ pub fn build_asset_browser(
                     let col = i % col_count;
                     let row = i / col_count;
                     let item_x = bounds.min.x() + item_padding + col as f32 * (item_size + item_padding);
-                    let item_y = content_top + row as f32 * row_height - state.scroll_offset;
+                    let item_y = content_top + row as f32 * row_height - state.scroll_state.scroll_offset;
                     let item_bounds = Rect2D::from_origin_size(Vec2::new(item_x, item_y), Vec2::new(item_size, item_size));
 
                     // Check if item intersects with selection rectangle
@@ -1256,7 +1256,7 @@ pub fn build_asset_browser(
                         let col = i % col_count;
                         let row = i / col_count;
                         let item_x = bounds.min.x() + item_padding + col as f32 * (item_size + item_padding);
-                        let item_y = content_top + row as f32 * row_height - state.scroll_offset;
+                        let item_y = content_top + row as f32 * row_height - state.scroll_state.scroll_offset;
                         let item_bounds = Rect2D::from_origin_size(Vec2::new(item_x, item_y), Vec2::new(item_size, item_size));
 
                         // Check if item intersects with selection rectangle (AABB intersection)
@@ -1299,7 +1299,7 @@ pub fn build_asset_browser(
             // Check if visible in viewport
             let _col = i % col_count;
             let row = i / col_count;
-            let item_y = content_top + row as f32 * row_height - state.scroll_offset;
+            let item_y = content_top + row as f32 * row_height - state.scroll_state.scroll_offset;
 
             // Skip if outside visible area
             if item_y + row_height < content_top || item_y > bounds.max.y() {
@@ -1373,7 +1373,7 @@ pub fn build_asset_browser(
                     let col = i % col_count;
                     let row = i / col_count;
                     let item_x = bounds.min.x() + item_padding + col as f32 * (item_size + item_padding);
-                    let item_y = content_top + row as f32 * row_height - state.scroll_offset;
+                    let item_y = content_top + row as f32 * row_height - state.scroll_state.scroll_offset;
                     let item_bounds = Rect2D::from_origin_size(
                         Vec2::new(item_x, item_y),
                         Vec2::new(item_size, item_size),
@@ -1440,7 +1440,7 @@ pub fn build_asset_browser(
         let col = rename_idx % col_count;
         let row = rename_idx / col_count;
         let item_x = bounds.min.x() + item_padding + col as f32 * (item_size + item_padding);
-        let item_y = content_top + row as f32 * row_height - state.scroll_offset;
+        let item_y = content_top + row as f32 * row_height - state.scroll_state.scroll_offset;
 
         let input_bounds = Rect2D::from_origin_size(
             Vec2::new(item_x, item_y + item_size + 2.0),
@@ -1621,7 +1621,7 @@ pub fn build_asset_browser(
             let col = i % col_count;
             let row = i / col_count;
             let item_x = bounds.min.x() + item_padding + col as f32 * (item_size + item_padding);
-            let item_y = content_top + row as f32 * row_height - state.scroll_offset;
+            let item_y = content_top + row as f32 * row_height - state.scroll_state.scroll_offset;
             let item_bounds = Rect2D::from_origin_size(Vec2::new(item_x, item_y), Vec2::new(item_size, item_size + 16.0));
             if ui.is_hovered(item_bounds) {
                 clicked_on_asset = true;

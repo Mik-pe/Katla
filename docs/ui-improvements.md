@@ -310,6 +310,9 @@ enum WidgetState { Checkbox(bool), Slider(f32), TextInput(String), ... }
   - [x] Scrollbar rendering with drag support
   - [x] `stick_to_bottom` option
   - [x] `scroll_to_y()` method
+- [x] Integrate `ScrollArea` into:
+  - [x] Preferences panel (editor_ui.rs)
+  - [x] Asset browser (using `ScrollAreaState` for scroll tracking)
 - [ ] Horizontal scrolling (future)
 - [ ] `scroll_to_cursor()` for auto-scroll to focused item (future)
 
