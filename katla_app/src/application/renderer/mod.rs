@@ -42,11 +42,11 @@ pub fn setup_render_graph(app: &mut Application) {
 
         // Create and set up sky material for procedural sky background (using cache)
         let sky_material = SkyMaterial::new(&mut material_cache);
-        let sky_pipeline = sky_material.pipeline.clone();
+        let sky_pipeline = sky_material.pipeline();
 
         // Create and set up grid material for editor grid (using cache)
         let grid_material = GridMaterial::new(&mut material_cache);
-        let grid_pipeline = grid_material.pipeline.clone();
+        let grid_pipeline = grid_material.pipeline();
 
         (sky_pipeline, grid_pipeline)
     };
@@ -66,7 +66,7 @@ pub fn setup_render_graph(app: &mut Application) {
         let mut cache = renderer.material_cache.borrow_mut();
         crate::rendering::UiMaterial::new(&mut cache)
     };
-    let ui_pipeline = ui_material.pipeline.clone();
+    let ui_pipeline = ui_material.pipeline();
     app.ui_pipeline = Some(ui_pipeline.clone());
 
     // Create UI renderer (owns UI buffers, textures, descriptors)
@@ -157,7 +157,7 @@ fn setup_gizmo_resources(app: &mut Application) {
     let gizmo_pipeline = {
         let mut material_cache = renderer.material_cache.borrow_mut();
         let gizmo_material = GizmoMaterial::new(&mut material_cache);
-        gizmo_material.pipeline.clone()
+        gizmo_material.pipeline()
     };
 
     // Create a white texture for the gizmo material (it doesn't use textures but needs the descriptor)

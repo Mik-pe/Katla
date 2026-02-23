@@ -5,9 +5,9 @@
 //! using a uniform buffer containing the screen size.
 
 use katla_vulkan::{
-    material::{MaterialPipeline, RenderState, ShaderSource},
-    DescriptorSetLayoutBuilder, DescriptorType, ImageFormat,
-    MaterialDomain, MaterialPipelineCache, ShaderStages, VertexBinding, VertexFormat,
+    material::MaterialPipeline,
+    DescriptorSetLayoutBuilder, DescriptorType,
+    MaterialPipelineCache, ShaderStages, VertexBinding, VertexFormat,
 };
 use std::{cell::RefCell, path::PathBuf, rc::Rc};
 
@@ -31,72 +31,51 @@ impl UiShaderVertex {
 /// Uses two descriptor sets:
 /// - Set 0: Static resources (font atlas, sampler, uniforms)
 /// - Set 1: Dynamic texture via push descriptors
+#[derive(katla_derive::Material)]
+#[material(shader = "resources/shaders/ui/ui.wgsl")]
+#[material(domain = "Ui")]
+#[material(depth_test = false, depth_write = false, cull_backfaces = false, alpha_blending = true)]
+#[material(color_format = "B8G8R8A8Srgb")]
 pub struct UiMaterial {
-    pub pipeline: Rc<RefCell<MaterialPipeline>>,
+    pub vertex_binding: VertexBinding,
+    pub shader_path: PathBuf,
+    pub descriptor_layouts: Vec<DescriptorSetLayoutBuilder>,
+    #[material(skip)]
+    pub pipeline: Option<Rc<RefCell<MaterialPipeline>>>,
 }
 
 impl UiMaterial {
     /// Create a new UI material and its pipeline.
     pub fn new(cache: &mut MaterialPipelineCache) -> Self {
-        let config = UiMaterialConfig;
+        let mut material = Self {
+            vertex_binding: VertexBinding {
+                formats: vec![VertexFormat::RG32f, VertexFormat::RG32f, VertexFormat::RGBA32f],
+            },
+            shader_path: PathBuf::from("resources/shaders/ui/ui.wgsl"),
+            descriptor_layouts: vec![
+                // Set 0: Static UI resources (font atlas, sampler, uniforms)
+                DescriptorSetLayoutBuilder::new()
+                    .add_binding(0, DescriptorType::SampledImage, ShaderStages::FRAGMENT)
+                    .add_binding(1, DescriptorType::Sampler, ShaderStages::FRAGMENT)
+                    .add_binding(3, DescriptorType::UniformBuffer, ShaderStages::VERTEX),
+                // Set 1: Dynamic texture via push descriptors
+                DescriptorSetLayoutBuilder::new()
+                    .add_binding(0, DescriptorType::SampledImage, ShaderStages::FRAGMENT)
+                    .with_push_descriptor(true),
+            ],
+            pipeline: None,
+        };
+
         let pipeline = cache
-            .get_or_create(&config)
+            .get_or_create(&material)
             .expect("Failed to create UI pipeline");
 
-        Self { pipeline }
-    }
-}
-
-/// Config struct for pipeline cache lookup (internal).
-struct UiMaterialConfig;
-
-impl katla_vulkan::Material for UiMaterialConfig {
-    fn vertex_shader(&self) -> ShaderSource {
-        ShaderSource::WgslFile(PathBuf::from("resources/shaders/ui/ui.wgsl"))
+        material.pipeline = Some(pipeline);
+        material
     }
 
-    fn fragment_shader(&self) -> ShaderSource {
-        ShaderSource::WgslFile(PathBuf::from("resources/shaders/ui/ui.wgsl"))
-    }
-
-    fn vertex_binding(&self) -> VertexBinding {
-        VertexBinding {
-            formats: vec![VertexFormat::RG32f, VertexFormat::RG32f, VertexFormat::RGBA32f],
-        }
-    }
-
-    fn render_state(&self) -> RenderState {
-        RenderState {
-            depth_test: false,
-            depth_write: false,
-            cull_backfaces: false,
-            alpha_blending: true,
-        }
-    }
-
-    fn descriptor_layouts(&self) -> Vec<DescriptorSetLayoutBuilder> {
-        vec![
-            // Set 0: Static UI resources (font atlas, sampler, uniforms)
-            DescriptorSetLayoutBuilder::new()
-                .add_binding(0, DescriptorType::SampledImage, ShaderStages::FRAGMENT)
-                .add_binding(1, DescriptorType::Sampler, ShaderStages::FRAGMENT)
-                .add_binding(3, DescriptorType::UniformBuffer, ShaderStages::VERTEX),
-            // Set 1: Dynamic texture via push descriptors (for viewport/thumbnails)
-            DescriptorSetLayoutBuilder::new()
-                .add_binding(0, DescriptorType::SampledImage, ShaderStages::FRAGMENT)
-                .with_push_descriptor(true),
-        ]
-    }
-
-    fn domain(&self) -> MaterialDomain {
-        MaterialDomain::Ui
-    }
-
-    fn color_format(&self) -> ImageFormat {
-        ImageFormat::B8G8R8A8Srgb
-    }
-
-    fn depth_format(&self) -> ImageFormat {
-        ImageFormat::D32SfloatS8Uint
+    /// Get the pipeline.
+    pub fn pipeline(&self) -> Rc<RefCell<MaterialPipeline>> {
+        self.pipeline.as_ref().expect("Pipeline not initialized").clone()
     }
 }
