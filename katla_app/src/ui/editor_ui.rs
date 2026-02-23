@@ -984,7 +984,7 @@ impl EditorUI {
             theme.button_text,
         );
 
-        if ui.button("play_btn", "", play_bounds) {
+        if ui.button("play_btn", "", play_bounds).clicked {
             self.is_playing = !self.is_playing;
             self.pending_actions.push(EditorAction::TogglePlay);
         }
@@ -1457,7 +1457,7 @@ impl EditorUI {
                 Vec2::new(bounds.min.x() + 8.0, cursor.y()),
                 Vec2::new(bounds.width() - 16.0, 28.0),
             );
-            if ui.button("delete_entity", "Delete Entity", delete_bounds) {
+            if ui.button("delete_entity", "Delete Entity", delete_bounds).clicked {
                 self.pending_actions
                     .push(EditorAction::DeleteEntity(entity.id));
                 self.selected_entity = None;
@@ -1794,7 +1794,7 @@ impl EditorUI {
             ),
             Vec2::new(close_size, close_size),
         );
-        if ui.button("close_prefs", "×", close_bounds) {
+        if ui.button("close_prefs", "×", close_bounds).clicked {
             self.show_preferences = false;
             self.preferences_panel_pos = None;
         }
@@ -1839,7 +1839,7 @@ impl EditorUI {
             }
 
             // Tab click
-            if ui.button(&format!("tab_{:?}", tab), "", tab_bounds) && !is_selected {
+            if ui.button(&format!("tab_{:?}", tab), "", tab_bounds).clicked && !is_selected {
                 self.preferences_tab = *tab;
             }
 
@@ -1959,7 +1959,7 @@ impl EditorUI {
 
             let is_selected = *key == current_theme_key;
 
-            if ui.button(&format!("theme_{}", key), "", btn_bounds) {
+            if ui.button(&format!("theme_{}", key), "", btn_bounds).clicked {
                 self.pending_actions
                     .push(EditorAction::SetTheme(key.to_string()));
             }
@@ -2003,7 +2003,7 @@ impl EditorUI {
         // Grid toggle
         let grid_btn_bounds =
             Rect2D::from_origin_size(cursor, Vec2::new(content_width, row_height));
-        if ui.toggle_button("pref_grid_toggle", "Show Grid", self.show_grid, grid_btn_bounds, theme.success, theme.button_bg, theme.button_text) {
+        if ui.toggle_button("pref_grid_toggle", "Show Grid", self.show_grid, grid_btn_bounds, theme.success, theme.button_bg, theme.button_text).clicked {
             self.pending_actions.push(EditorAction::ToggleGrid);
         }
         cursor = Vec2::new(cursor.x(), cursor.y() + row_height + 4.0);
@@ -2011,7 +2011,7 @@ impl EditorUI {
         // Stats toggle
         let stats_btn_bounds =
             Rect2D::from_origin_size(cursor, Vec2::new(content_width, row_height));
-        if ui.toggle_button("pref_stats_toggle", "Show Stats Panel", self.show_stats, stats_btn_bounds, theme.success, theme.button_bg, theme.button_text) {
+        if ui.toggle_button("pref_stats_toggle", "Show Stats Panel", self.show_stats, stats_btn_bounds, theme.success, theme.button_bg, theme.button_text).clicked {
             self.pending_actions.push(EditorAction::ToggleStats);
         }
         cursor = Vec2::new(cursor.x(), cursor.y() + row_height + 16.0);
@@ -2050,7 +2050,7 @@ impl EditorUI {
 
             let is_selected = (self.font_scale - scale).abs() < 0.01;
 
-            if ui.button(&format!("font_scale_{}", scale), "", btn_bounds) {
+            if ui.button(&format!("font_scale_{}", scale), "", btn_bounds).clicked {
                 self.pending_actions
                     .push(EditorAction::SetFontScale(*scale));
             }
@@ -2101,7 +2101,7 @@ impl EditorUI {
         // Snap to grid toggle
         let snap_btn_bounds =
             Rect2D::from_origin_size(cursor, Vec2::new(content_width, row_height));
-        if ui.toggle_button("pref_snap_toggle", "Snap to Grid", self.snap_to_grid, snap_btn_bounds, theme.success, theme.button_bg, theme.button_text) {
+        if ui.toggle_button("pref_snap_toggle", "Snap to Grid", self.snap_to_grid, snap_btn_bounds, theme.success, theme.button_bg, theme.button_text).clicked {
             self.snap_to_grid = !self.snap_to_grid;
         }
         cursor = Vec2::new(
@@ -2138,7 +2138,7 @@ impl EditorUI {
         ui.draw_rect(fill_bounds, theme.selection);
 
         // Slider handle
-        if ui.button("camera_speed_slider", "", slider_bounds) {
+        if ui.button("camera_speed_slider", "", slider_bounds).clicked {
             // Click to set value
         }
 
@@ -2162,7 +2162,7 @@ impl EditorUI {
                 Vec2::new(btn_width, row_height),
             );
             let is_selected = (self.grid_size - size).abs() < 0.01;
-            if ui.button(&format!("grid_size_{}", size), "", btn_bounds) {
+            if ui.button(&format!("grid_size_{}", size), "", btn_bounds).clicked {
                 self.grid_size = size;
             }
             let btn_color = if is_selected {

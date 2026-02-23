@@ -185,7 +185,7 @@ impl DebugOverlay {
         cursor = Vec2::new(cursor.x(), cursor.y() + graph_height + padding);
         let button_bounds = Rect2D::from_origin_size(cursor, Vec2::new(window_width - padding * 2.0, button_height));
         let btn_text = if self.settings_visible { "[Close Settings]" } else { "[Settings]" };
-        if ui.button("settings_btn", btn_text, button_bounds) {
+        if ui.button("settings_btn", btn_text, button_bounds).clicked {
             self.settings_visible = !self.settings_visible;
         }
 
@@ -279,7 +279,7 @@ impl DebugOverlay {
                     Vec2::new(btn_width, button_height),
                 );
                 let is_selected = *mode == self.render_mode;
-                if ui.selectable(&format!("render_{}", i), mode.as_str(), is_selected, btn_bounds) {
+                if ui.selectable(&format!("render_{}", i), mode.as_str(), is_selected, btn_bounds).clicked {
                     self.render_mode = *mode;
                 }
             }
@@ -299,7 +299,7 @@ impl DebugOverlay {
                     Vec2::new(btn_width, button_height),
                 );
                 let is_selected = *quality == self.quality;
-                if ui.selectable(&format!("qual_{}", i), quality.as_str(), is_selected, btn_bounds) {
+                if ui.selectable(&format!("qual_{}", i), quality.as_str(), is_selected, btn_bounds).clicked {
                     self.quality = *quality;
                 }
             }
@@ -353,7 +353,7 @@ impl DebugOverlay {
         // === Close Button ===
         {
             let button_bounds = Rect2D::from_origin_size(cursor, Vec2::new(panel_width - padding * 2.0, button_height));
-            if ui.button("close_settings", "Close Panel", button_bounds) {
+            if ui.button("close_settings", "Close Panel", button_bounds).clicked {
                 self.settings_visible = false;
             }
         }

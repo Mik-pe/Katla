@@ -4,6 +4,7 @@ use katla_math::{Color, Rect2D, Vec2};
 
 use crate::icons::ForkAwesome;
 use crate::input::{mouse_button, KeyCode};
+use crate::Response;
 
 use super::super::UiContext;
 
@@ -19,19 +20,33 @@ impl UiContext {
         self.draw_text(text, text_pos, self.style.text_color, self.style.font_size);
     }
 
-    /// Draw a button. Returns true if clicked this frame.
-    pub fn button(&mut self, id: &str, text: &str, bounds: Rect2D) -> bool {
+    /// Draw a button.
+    ///
+    /// Returns a Response with interaction info. Check `response.clicked` for click.
+    pub fn button(&mut self, id: &str, text: &str, bounds: Rect2D) -> Response {
         let widget_id = self.generate_id(id);
 
-        let clicked = self.button_behavior(widget_id, bounds);
+        let hovered = self.update_hover(widget_id, bounds);
+        let active = self.active_id == Some(widget_id);
+
+        // Handle click
+        let clicked = if hovered && self.input.mouse_pressed[mouse_button::LEFT] {
+            self.active_id = Some(widget_id);
+            false
+        } else if active && self.input.mouse_released[mouse_button::LEFT] {
+            self.active_id = None;
+            hovered
+        } else {
+            false
+        };
 
         // Determine colors based on state
-        let (bg_color, text_color) = if self.active_id == Some(widget_id) {
-            (self.style.button_active, self.style.button_text)
-        } else if self.hovered_id == Some(widget_id) || self.is_hovered(bounds) {
-            (self.style.button_hovered, self.style.button_text)
+        let bg_color = if active {
+            self.style.button_active
+        } else if hovered {
+            self.style.button_hovered
         } else {
-            (self.style.button_normal, self.style.button_text)
+            self.style.button_normal
         };
 
         // Draw button background
@@ -43,15 +58,35 @@ impl UiContext {
             bounds.center().x() - text_size.x() * 0.5,
             bounds.center().y() - text_size.y() * 0.5,
         );
-        self.draw_text(text, text_pos, text_color, self.style.font_size);
+        self.draw_text(text, text_pos, self.style.button_text, self.style.font_size);
 
-        clicked
+        Response {
+            clicked,
+            hovered,
+            active,
+            changed: clicked,
+            bounds,
+        }
     }
 
-    /// Draw a checkbox. Returns true if value changed.
-    pub fn checkbox(&mut self, id: &str, label: &str, checked: &mut bool, bounds: Rect2D) -> bool {
+    /// Draw a checkbox.
+    ///
+    /// Returns a Response. Check `response.changed` for value change.
+    pub fn checkbox(&mut self, id: &str, label: &str, checked: &mut bool, bounds: Rect2D) -> Response {
         let widget_id = self.generate_id(id);
-        let clicked = self.button_behavior(widget_id, bounds);
+
+        let hovered = self.update_hover(widget_id, bounds);
+        let active = self.active_id == Some(widget_id);
+
+        let clicked = if hovered && self.input.mouse_pressed[mouse_button::LEFT] {
+            self.active_id = Some(widget_id);
+            false
+        } else if active && self.input.mouse_released[mouse_button::LEFT] {
+            self.active_id = None;
+            hovered
+        } else {
+            false
+        };
 
         if clicked {
             *checked = !*checked;
@@ -90,10 +125,18 @@ impl UiContext {
             self.style.font_size,
         );
 
-        clicked
+        Response {
+            clicked,
+            hovered,
+            active,
+            changed: clicked,
+            bounds,
+        }
     }
 
-    /// Draw a slider. Returns true if value changed.
+    /// Draw a slider.
+    ///
+    /// Returns a Response. Check `response.changed` for value change.
     pub fn slider(
         &mut self,
         id: &str,
@@ -101,7 +144,7 @@ impl UiContext {
         min: f32,
         max: f32,
         bounds: Rect2D,
-    ) -> bool {
+    ) -> Response {
         let widget_id = self.generate_id(id);
 
         let hovered = self.update_hover(widget_id, bounds);
@@ -151,7 +194,13 @@ impl UiContext {
         };
         self.draw_rect(grab_bounds, grab_color);
 
-        changed
+        Response {
+            clicked: false,
+            hovered,
+            active,
+            changed,
+            bounds,
+        }
     }
 
     /// Draw a separator line.
@@ -167,9 +216,8 @@ impl UiContext {
 
     /// Draw a text input field.
     ///
-    /// Returns true if the text was modified this frame.
-    /// Handles keyboard input, cursor positioning, and selection.
-    pub fn text_input(&mut self, id: &str, text: &mut String, bounds: Rect2D) -> bool {
+    /// Returns a Response. Check `response.changed` for text modification.
+    pub fn text_input(&mut self, id: &str, text: &mut String, bounds: Rect2D) -> Response {
         let widget_id = self.generate_id(id);
         let hovered = self.update_hover(widget_id, bounds);
 
@@ -238,13 +286,19 @@ impl UiContext {
 
         self.pop_clip();
 
-        changed
+        Response {
+            clicked: false,
+            hovered,
+            active: focused,
+            changed,
+            bounds,
+        }
     }
 
     /// Draw a multiline text area.
     ///
-    /// Returns true if the text was modified this frame.
-    pub fn text_area(&mut self, id: &str, text: &mut String, bounds: Rect2D) -> bool {
+    /// Returns a Response. Check `response.changed` for text modification.
+    pub fn text_area(&mut self, id: &str, text: &mut String, bounds: Rect2D) -> Response {
         let widget_id = self.generate_id(id);
         let hovered = self.update_hover(widget_id, bounds);
 
@@ -294,6 +348,12 @@ impl UiContext {
 
         self.pop_clip();
 
-        changed
+        Response {
+            clicked: false,
+            hovered,
+            active: focused,
+            changed,
+            bounds,
+        }
     }
 }
