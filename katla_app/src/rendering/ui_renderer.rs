@@ -102,8 +102,6 @@ struct UITextures {
     sampler: VkSampler,
     uniform_buffer: UniformBuffer<[f32; 4]>,
     descriptor_set_layout: vk::DescriptorSetLayout,
-    push_descriptor_layout: vk::DescriptorSetLayout,
-    pipeline_layout: vk::PipelineLayout,
     descriptor_set: katla_vulkan::DescriptorSet,
     atlas_width: u32,
     atlas_height: u32,
@@ -137,27 +135,7 @@ impl UITextures {
             .add_binding(3, DescriptorType::UniformBuffer, ShaderStages::VERTEX)
             .build(&context)?;
 
-        // Create push descriptor layout for dynamic textures
-        let push_descriptor_layout = DescriptorSetLayoutBuilder::new()
-            .add_binding(0, DescriptorType::SampledImage, ShaderStages::FRAGMENT)
-            .with_push_descriptor(true)
-            .build(&context)?;
-
-        // SAFETY: Vulkan pipeline layout creation requires unsafe due to raw vk types.
-        // The layouts are valid and have been created successfully above.
-        let (pipeline_layout, descriptor_set_layout_raw, push_descriptor_layout_raw) = unsafe {
-            let set_layouts: Vec<vk::DescriptorSetLayout> = vec![
-                descriptor_set_layout.into(),
-                push_descriptor_layout.into(),
-            ];
-            let pipeline_layout_info = vk::PipelineLayoutCreateInfo::default().set_layouts(&set_layouts);
-            let pipeline_layout = context.device.create_pipeline_layout(&pipeline_layout_info, None)?;
-
-            let descriptor_set_layout_raw: vk::DescriptorSetLayout = descriptor_set_layout.into();
-            let push_descriptor_layout_raw: vk::DescriptorSetLayout = push_descriptor_layout.into();
-
-            (pipeline_layout, descriptor_set_layout_raw, push_descriptor_layout_raw)
-        };
+        let descriptor_set_layout_raw: vk::DescriptorSetLayout = descriptor_set_layout.into();
 
         // Create uniform buffer for screen size
         let uniform_buffer = UniformBuffer::<[f32; 4]>::new(context.clone())?;
@@ -181,8 +159,6 @@ impl UITextures {
             sampler,
             uniform_buffer,
             descriptor_set_layout: descriptor_set_layout_raw,
-            push_descriptor_layout: push_descriptor_layout_raw,
-            pipeline_layout,
             descriptor_set,
             atlas_width,
             atlas_height,
@@ -193,10 +169,6 @@ impl UITextures {
 
     fn descriptor_set(&self) -> VkDescriptorSet {
         self.descriptor_set.wrapped()
-    }
-
-    fn pipeline_layout(&self) -> vk::PipelineLayout {
-        self.pipeline_layout
     }
 
     fn update_screen_size(&self, width: f32, height: f32) {
@@ -265,10 +237,8 @@ impl Drop for UITextures {
     fn drop(&mut self) {
         unsafe {
             self.context.destroy_sampler(self.sampler);
-            // uniform_buffer and mixed_descriptor_set are dropped automatically
+            // uniform_buffer and descriptor_set are dropped automatically
             self.context.device.destroy_descriptor_set_layout(self.descriptor_set_layout, None);
-            self.context.device.destroy_descriptor_set_layout(self.push_descriptor_layout, None);
-            self.context.device.destroy_pipeline_layout(self.pipeline_layout, None);
         }
     }
 }
@@ -346,7 +316,8 @@ impl UIRenderer {
         ctx.bind_vertex_buffers(0, &[ui_buffer.vertex_buffer()], &[0]);
         ctx.bind_index_buffer(ui_buffer.index_buffer(), 0, IndexType::Uint32);
 
-        let pipeline_layout = self.textures.pipeline_layout();
+        // Use the pipeline's layout (created with both set 0 and set 1)
+        let pipeline_layout = pipeline.vk_layout();
         drop(pipeline);
 
         for cmd in &draw_data.commands {

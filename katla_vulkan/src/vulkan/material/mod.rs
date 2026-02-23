@@ -250,6 +250,29 @@ impl MaterialPipeline {
         }
     }
 
+    /// Create a MaterialPipeline for UI rendering with push descriptors.
+    ///
+    /// UI materials use two descriptor sets:
+    /// - Set 0: Uniform/sampler/font atlas (static)
+    /// - Set 1: Dynamic texture via push descriptors
+    pub fn new_ui(
+        pipeline: Pipeline,
+        uniform_set_layout: vk::DescriptorSetLayout,
+        push_descriptor_layout: vk::DescriptorSetLayout,
+        context: Rc<VulkanContext>,
+    ) -> Self {
+        Self {
+            pipeline: Some(pipeline),
+            uniform: UniformHandle::new_storage(&context, &vk::DescriptorSetLayout::null()),
+            desc_layout: Some(uniform_set_layout),
+            additional_layouts: vec![push_descriptor_layout],
+            texture_set_layout: None,
+            skeleton_set_layout: None,
+            push_descriptor_set: Some(1), // Set 1 is the push descriptor set
+            context,
+        }
+    }
+
     /// Create a MaterialPipeline for storage buffer-based rendering.
     pub fn new_storage(
         pipeline: Pipeline,

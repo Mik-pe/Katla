@@ -1229,8 +1229,9 @@ impl MaterialPipelineCache {
         // Create appropriate MaterialPipeline based on configuration
         match domain {
             MaterialDomain::Ui => {
-                // UI materials use custom layout with push descriptors potentially
-                MaterialPipeline::new_custom(pipeline, uniform_set_layout, self.context.clone())
+                // UI materials use two sets: uniform (set 0) and push descriptor (set 1)
+                let push_descriptor_layout = vk_layouts.get(1).copied().unwrap_or(ash::vk::DescriptorSetLayout::null());
+                MaterialPipeline::new_ui(pipeline, uniform_set_layout, push_descriptor_layout, self.context.clone())
             }
             _ => {
                 // Standard surface/post-process/particle materials
