@@ -299,9 +299,9 @@ enum WidgetState { Checkbox(bool), Slider(f32), TextInput(String), ... }
 - [x] Migrate all widgets to return Response (commit ef4cd02)
 - [x] Add `on_hover_text()` chainable tooltip
 - [x] Add `union()` / `|` operator
-- [ ] Add `drag_delta()` and `total_drag_delta()` (future)
-- [ ] Add `double_clicked()` detection (future)
-- [ ] Add `InnerResponse<R>` type (future)
+- [x] Add `drag_delta` field and `is_dragging()` method
+- [x] Add `double_clicked` field and method
+- [x] Add `InnerResponse<R>` type for container return values
 
 ### Phase 3: Container Widgets
 - [x] Implement `ScrollArea` with:
