@@ -21,6 +21,7 @@ use crate::text::{FontId, FontSystem};
 pub use layout::{LayoutDirection, LayoutState};
 pub use popup::{CloseBehavior, Popup, PopupPosition, PopupStyle};
 pub use state::{StateAccess, WidgetState, WidgetStorage};
+pub use widgets::{ScrollArea, ScrollAreaState};
 
 /// ID type for UI elements.
 pub type WidgetId = u64;
@@ -119,6 +120,14 @@ pub struct UiContext {
     popup_cursor: Vec2,
     /// Popup width for automatic layout.
     popup_width: f32,
+    /// Scroll area bounds (for end_scroll_area).
+    scroll_area_bounds: Option<Rect2D>,
+    /// Scroll area content bounds.
+    scroll_area_content_bounds: Option<Rect2D>,
+    /// Scroll area state (temporary copy).
+    scroll_area_state: Option<widgets::ScrollAreaState>,
+    /// Whether to show scrollbar for current scroll area.
+    scroll_area_show_scrollbar: bool,
 }
 
 impl UiContext {
@@ -152,6 +161,10 @@ impl UiContext {
             popup_content_bounds: None,
             popup_cursor: Vec2::new(0.0, 0.0),
             popup_width: 0.0,
+            scroll_area_bounds: None,
+            scroll_area_content_bounds: None,
+            scroll_area_state: None,
+            scroll_area_show_scrollbar: false,
         }
     }
 

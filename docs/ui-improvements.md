@@ -304,12 +304,14 @@ enum WidgetState { Checkbox(bool), Slider(f32), TextInput(String), ... }
 - [ ] Add `InnerResponse<R>` type (future)
 
 ### Phase 3: Container Widgets
-- [ ] Implement `ScrollArea` with:
-  - [ ] Vertical/horizontal scrolling
-  - [ ] Mouse wheel support
-  - [ ] Auto-hiding scrollbars
-  - [ ] `stick_to_bottom` option
-  - [ ] `scroll_to_cursor()` method
+- [x] Implement `ScrollArea` with:
+  - [x] Vertical scrolling
+  - [x] Mouse wheel support
+  - [x] Scrollbar rendering with drag support
+  - [x] `stick_to_bottom` option
+  - [x] `scroll_to_y()` method
+- [ ] Horizontal scrolling (future)
+- [ ] `scroll_to_cursor()` for auto-scroll to focused item (future)
 
 ### Phase 4: Widget Trait System
 - [ ] Define `Widget` trait

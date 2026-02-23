@@ -248,6 +248,14 @@ pub struct UiStyle {
     // Asset browser
     /// Thumbnail size for asset grid items.
     pub thumbnail_size: f32,
+
+    // Scrollbar styling
+    /// Scrollbar track background color.
+    pub scrollbar_track: Color,
+    /// Scrollbar handle color.
+    pub scrollbar_handle: Color,
+    /// Scrollbar handle color when hovered.
+    pub scrollbar_handle_hovered: Color,
 }
 
 impl UiStyle {
@@ -349,6 +357,11 @@ impl UiStyle {
 
             // Asset browser (dark theme)
             thumbnail_size: 64.0,
+
+            // Scrollbar (dark theme)
+            scrollbar_track: Color::from_rgb_hex(0x1a1a1a),
+            scrollbar_handle: Color::from_rgb_hex(0x505050),
+            scrollbar_handle_hovered: Color::from_rgb_hex(0x606060),
         }
     }
 
@@ -450,6 +463,11 @@ impl UiStyle {
 
             // Asset browser (light theme)
             thumbnail_size: 64.0,
+
+            // Scrollbar (light theme)
+            scrollbar_track: Color::from_rgb_hex(0xe0e0e0),
+            scrollbar_handle: Color::from_rgb_hex(0xa0a0a0),
+            scrollbar_handle_hovered: Color::from_rgb_hex(0x808080),
         }
     }
 }
@@ -581,6 +599,11 @@ impl UiStyle {
 
             // Asset browser (classic theme)
             thumbnail_size: 64.0,
+
+            // Scrollbar (classic theme)
+            scrollbar_track: Color::from_rgb_hex(0x1f1f1f),
+            scrollbar_handle: Color::from_rgb_hex(0x555555),
+            scrollbar_handle_hovered: Color::from_rgb_hex(0x666666),
         }
     }
 }
