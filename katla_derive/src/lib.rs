@@ -5,7 +5,7 @@
 
 use proc_macro::TokenStream;
 use quote::quote;
-use syn::{parse_macro_input, DeriveInput, Meta, Expr, Lit};
+use syn::{parse_macro_input, DeriveInput, Meta, Expr, Lit, Field, punctuated::Punctuated, Token};
 
 /// Derive macro for the Component trait.
 ///
@@ -54,16 +54,21 @@ pub fn derive_component(input: TokenStream) -> TokenStream {
 /// Derive macro for the Material trait.
 ///
 /// This macro automatically implements the `Material` trait for your struct
-/// using field values and helper attributes.
+/// using field values and/or helper attributes.
+///
+/// # Field Attributes
+///
+/// Use `#[material(skip)]` on fields that should not be used by the macro
+/// (e.g., `pipeline: Rc<RefCell<MaterialPipeline>>`).
 ///
 /// # Required Fields
 ///
-/// The struct must have these fields (or use attributes to override):
+/// The struct must have these fields (unless overridden by attributes):
 /// - `vertex_binding: VertexBinding` - Vertex format description
 /// - `descriptor_layouts: Vec<DescriptorSetLayoutBuilder>` - Descriptor layouts
 /// - `shader_path: PathBuf` - Shader path (if no shader attribute)
 ///
-/// # Attributes
+/// # Struct Attributes
 ///
 /// The following helper attributes are supported on the struct:
 ///
@@ -87,19 +92,21 @@ pub fn derive_component(input: TokenStream) -> TokenStream {
 /// use katla_vulkan::{
 ///     Material, VertexBinding, ShaderSource, RenderState,
 ///     DescriptorSetLayoutBuilder, DescriptorType, ShaderStages,
-///     MaterialDomain, ImageFormat,
+///     MaterialDomain, ImageFormat, MaterialPipeline,
 /// };
 /// use katla_derive::Material;
-/// use std::path::PathBuf;
+/// use std::{cell::RefCell, path::PathBuf, rc::Rc};
 ///
 /// #[derive(Material)]
 /// #[material(shader = "resources/shaders/sky.wgsl")]
 /// #[material(domain = "PostProcess")]
 /// #[material(depth_test = true, depth_write = false)]
-/// pub struct SkyMaterialConfig {
+/// pub struct SkyMaterial {
 ///     pub vertex_binding: VertexBinding,
 ///     pub shader_path: PathBuf,
 ///     pub descriptor_layouts: Vec<DescriptorSetLayoutBuilder>,
+///     #[material(skip)]
+///     pub pipeline: Option<Rc<RefCell<MaterialPipeline>>>,
 /// }
 /// ```
 #[proc_macro_derive(Material, attributes(material))]
@@ -110,7 +117,7 @@ pub fn derive_material(input: TokenStream) -> TokenStream {
     let generics = &input.generics;
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
 
-    // Parse material attributes
+    // Parse material attributes from struct
     let mut shader: Option<String> = None;
     let mut vertex_shader: Option<String> = None;
     let mut fragment_shader: Option<String> = None;
@@ -127,9 +134,10 @@ pub fn derive_material(input: TokenStream) -> TokenStream {
 
     for attr in &input.attrs {
         if attr.path().is_ident("material") {
-            if let Ok(meta) = attr.parse_args::<Meta>() {
-                match meta {
-                    Meta::NameValue(nv) => {
+            // Try to parse as a list of meta items (for multiple attributes in one)
+            if let Ok(meta_list) = attr.parse_args_with(Punctuated::<Meta, Token![,]>::parse_terminated) {
+                for meta in meta_list {
+                    if let Meta::NameValue(nv) = &meta {
                         if let Some(ident) = nv.path.get_ident() {
                             let key = ident.to_string();
                             if let Expr::Lit(expr_lit) = &nv.value {
@@ -158,11 +166,15 @@ pub fn derive_material(input: TokenStream) -> TokenStream {
                             }
                         }
                     }
-                    _ => {}
                 }
             }
         }
     }
+
+    // Check if required fields exist and are not skipped
+    let has_vertex_binding = has_field(&input, "vertex_binding");
+    let has_descriptor_layouts = has_field(&input, "descriptor_layouts");
+    let has_shader_path = has_field(&input, "shader_path");
 
     // shader attribute sets both vertex and fragment
     if let Some(ref s) = shader {
@@ -175,25 +187,49 @@ pub fn derive_material(input: TokenStream) -> TokenStream {
     }
 
     // Generate shader source expressions
-    let vertex_shader_expr = match vertex_shader {
+    let vertex_shader_expr = match &vertex_shader {
         Some(path) => quote! {
             katla_vulkan::material::ShaderSource::WgslFile(::std::path::PathBuf::from(#path))
         },
-        None => quote! {
+        None if has_shader_path => quote! {
             katla_vulkan::material::ShaderSource::WgslFile(self.shader_path.clone())
+        },
+        None => quote! {
+            compile_error!("Material requires either #[material(shader = \"path\")] or a shader_path field")
         },
     };
 
-    let fragment_shader_expr = match fragment_shader {
+    let fragment_shader_expr = match &fragment_shader {
         Some(path) => quote! {
             katla_vulkan::material::ShaderSource::WgslFile(::std::path::PathBuf::from(#path))
         },
-        None => quote! {
+        None if has_shader_path => quote! {
             katla_vulkan::material::ShaderSource::WgslFile(self.shader_path.clone())
+        },
+        None => quote! {
+            compile_error!("Material requires either #[material(shader = \"path\")] or a shader_path field")
         },
     };
 
-    // Generate domain expression (only 4 valid domains now)
+    // Generate vertex_binding expression
+    let vertex_binding_expr = if has_vertex_binding {
+        quote! { self.vertex_binding.clone() }
+    } else {
+        quote! {
+            compile_error!("Material requires a vertex_binding field (use VertexBinding { formats: vec![] } for fullscreen quads)")
+        }
+    };
+
+    // Generate descriptor_layouts expression
+    let descriptor_layouts_expr = if has_descriptor_layouts {
+        quote! { self.descriptor_layouts.clone() }
+    } else {
+        quote! {
+            compile_error!("Material requires a descriptor_layouts field (use vec![] for no descriptors)")
+        }
+    };
+
+    // Generate domain expression
     let domain_expr = match domain.as_deref() {
         Some("Surface") => quote! { katla_vulkan::MaterialDomain::Surface },
         Some("Ui") => quote! { katla_vulkan::MaterialDomain::Ui },
@@ -247,26 +283,23 @@ pub fn derive_material(input: TokenStream) -> TokenStream {
         _ => quote! { katla_vulkan::ImageFormat::D32SfloatS8Uint },
     };
 
-    // Generate uses_pbr_textures method
+    // Generate uses methods
     let uses_pbr_expr = match uses_pbr {
         Some(v) => quote! { #v },
         None => quote! { false },
     };
 
-    // Generate uses_skeleton method
     let uses_skeleton_expr = match uses_skeleton {
         Some(v) => quote! { #v },
         None => quote! { false },
     };
 
-    // Generate uses_bindless method
     let uses_bindless_expr = match uses_bindless {
         Some(v) => quote! { #v },
         None => quote! { false },
     };
 
     // Generate the implementation
-    // Note: Uses katla_vulkan:: prefixed types so users don't need to import them
     let expanded = quote! {
         impl #impl_generics katla_vulkan::Material for #name #ty_generics #where_clause {
             fn vertex_shader(&self) -> katla_vulkan::material::ShaderSource {
@@ -278,7 +311,7 @@ pub fn derive_material(input: TokenStream) -> TokenStream {
             }
 
             fn vertex_binding(&self) -> katla_vulkan::VertexBinding {
-                self.vertex_binding.clone()
+                #vertex_binding_expr
             }
 
             fn render_state(&self) -> katla_vulkan::material::RenderState {
@@ -286,7 +319,7 @@ pub fn derive_material(input: TokenStream) -> TokenStream {
             }
 
             fn descriptor_layouts(&self) -> ::std::vec::Vec<katla_vulkan::DescriptorSetLayoutBuilder> {
-                self.descriptor_layouts.clone()
+                #descriptor_layouts_expr
             }
 
             fn domain(&self) -> katla_vulkan::MaterialDomain {
@@ -316,4 +349,34 @@ pub fn derive_material(input: TokenStream) -> TokenStream {
     };
 
     TokenStream::from(expanded)
+}
+
+/// Check if a struct has a field with the given name that is NOT marked with #[material(skip)]
+fn has_field(input: &DeriveInput, field_name: &str) -> bool {
+    if let syn::Data::Struct(data) = &input.data {
+        for field in &data.fields {
+            if let Some(ident) = &field.ident {
+                if ident == field_name && !is_field_skipped(field) {
+                    return true;
+                }
+            }
+        }
+    }
+    false
+}
+
+/// Check if a field has #[material(skip)] attribute
+fn is_field_skipped(field: &Field) -> bool {
+    for attr in &field.attrs {
+        if attr.path().is_ident("material") {
+            if let Ok(meta) = attr.parse_args::<Meta>() {
+                if let Meta::Path(path) = &meta {
+                    if path.is_ident("skip") {
+                        return true;
+                    }
+                }
+            }
+        }
+    }
+    false
 }
