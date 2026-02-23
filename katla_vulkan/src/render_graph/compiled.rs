@@ -75,6 +75,8 @@ pub struct CompiledPass {
     pub transfer_src_resources: Vec<ResourceId>,
     /// Transfer destination resources (need transition to TRANSFER_DST_OPTIMAL)
     pub transfer_dst_resources: Vec<ResourceId>,
+    /// Shader read resources (need transition to SHADER_READ_ONLY_OPTIMAL)
+    pub shader_read_resources: Vec<ResourceId>,
 }
 
 /// RenderPassGroup groups passes that share a Vulkan render pass.
@@ -879,6 +881,22 @@ impl CompiledRenderGraph {
                 }
             }
 
+            // Collect shader read resources (images that will be sampled)
+            let mut shader_read_resources: Vec<ResourceId> = Vec::new();
+            for input_resource_id in pass.inputs() {
+                let usage_info = pass
+                    .usages()
+                    .iter()
+                    .find(|u| u.resource_id == *input_resource_id);
+
+                if let Some(usage) = usage_info {
+                    if usage.layout == ImageLayout::ShaderReadOnlyOptimal
+                        && !shader_read_resources.contains(input_resource_id) {
+                            shader_read_resources.push(*input_resource_id);
+                        }
+                }
+            }
+
             let compiled = CompiledPass {
                 name: pass.name().to_string(),
                 vk_framebuffers,
@@ -891,6 +909,7 @@ impl CompiledRenderGraph {
                 depth_attachment,
                 transfer_src_resources,
                 transfer_dst_resources,
+                shader_read_resources,
             };
 
             compiled_passes.push(compiled);
@@ -1348,6 +1367,29 @@ impl CompiledRenderGraph {
                     .old_layout(old_layout)
                     .new_layout(vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL)
                     .subresource_range(DEPTH_SUBRESOURCE_RANGE);
+
+                DependencyInfo::new()
+                    .add_image_barrier(barrier)
+                    .build(|dep_info| unsafe {
+                        self.context
+                            .device
+                            .cmd_pipeline_barrier2(command_buffer.vk_command_buffer(), dep_info);
+                    });
+            }
+        }
+
+        // Transition shader read resources to SHADER_READ_ONLY_OPTIMAL
+        // This is needed for passes that sample textures (e.g., UI sampling viewport)
+        for resource_id in &pass.shader_read_resources {
+            if let Some(image) = self.get_image(*resource_id) {
+                let barrier = ImageMemoryBarrier2::new(image)
+                    .src_stage(PipelineStage2Flags::COLOR_ATTACHMENT_OUTPUT)
+                    .src_access(AccessFlags2::COLOR_ATTACHMENT_WRITE)
+                    .dst_stage(PipelineStage2Flags::FRAGMENT_SHADER)
+                    .dst_access(AccessFlags2::SHADER_READ)
+                    .old_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
+                    .new_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
+                    .subresource_range(COLOR_SUBRESOURCE_RANGE);
 
                 DependencyInfo::new()
                     .add_image_barrier(barrier)

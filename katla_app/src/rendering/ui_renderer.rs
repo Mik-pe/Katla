@@ -25,7 +25,7 @@ pub struct UiDrawCommand {
     pub index_count: u32,
     /// Clip rectangle (scissor) for this command.
     pub clip_rect: [f32; 4], // [x, y, width, height]
-    /// Texture to use (0 = font atlas, 1 = viewport, 2+ = custom thumbnails)
+    /// Texture to use (see katla_ui::TextureId: 0=NONE, 1=FONT_ATLAS, 2=VIEWPORT, 100+=custom)
     pub texture_id: u64,
 }
 
@@ -225,11 +225,18 @@ impl UITextures {
     }
 
     fn get_image_view(&self, texture_id: u64) -> vk::ImageView {
-        if texture_id == 0 {
+        // Texture ID 0 = NONE (solid color), 1 = FONT_ATLAS
+        // See katla_ui::TextureId enum
+        if texture_id == katla_ui::TextureId::FONT_ATLAS.0 {
             self.font_texture.image_view.into()
+        } else if texture_id == katla_ui::TextureId::NONE.0 {
+            // Solid color rendering - use white texture
+            self.white_texture.image_view.into()
         } else if let Some(&view) = self.external_textures.get(&texture_id) {
+            log::trace!("UI found external texture {}", texture_id);
             view
         } else {
+            log::warn!("UI texture {} not found, using white fallback", texture_id);
             self.white_texture.image_view.into()
         }
     }
