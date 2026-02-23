@@ -147,7 +147,7 @@ impl VulkanRenderer {
             render_graph: None,
             storage_manager: None,
             storage_descriptor_set: None,
-            draw_list_cell: None,
+            draw_list_cell: Some(Rc::new(RefCell::new(None))),
             skeleton_descriptors: Vec::new(),
             frame_uniforms: None,
             render_targets: Vec::new(),
@@ -1265,6 +1265,11 @@ impl VulkanRenderer {
         // Set up renderer context for safe access to renderer state
         let renderer_context = self.create_renderer_context();
         graph.set_renderer_context(Rc::new(renderer_context));
+
+        // Share draw list cell with compiled render graph
+        if let Some(ref cell) = self.draw_list_cell {
+            graph.set_draw_list_cell(cell.clone());
+        }
 
         // Set swapchain resource ID for proper layout transitions during present
         if let Some(id) = swapchain_resource_id {
