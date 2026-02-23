@@ -320,9 +320,15 @@ enum WidgetState { Checkbox(bool), Slider(f32), TextInput(String), ... }
 - [x] Define `Widget` trait
 - [x] Implement `Sense` type for interaction intent
 - [x] Add `ui.add()` method for custom widgets
-- [x] Add example builder widgets (`Separator`, `Badge`, `Spacer`)
-- [ ] Create builder structs for existing widgets (optional)
-- [ ] Migrate existing widgets to builder pattern (optional)
+- [x] Create builder widgets:
+  - [x] `Button` - clickable button with text
+  - [x] `Checkbox` - toggle with label
+  - [x] `Slider` - numeric range control
+  - [x] `TextInput` - text entry field with placeholder
+  - [x] `Label` - text display
+  - [x] `Separator` - section divider with optional label
+  - [x] `Badge` - colored label/tag
+  - [x] `Spacer` - layout gap
 
 ### Phase 5: Advanced Features
 - [ ] Implement drag-and-drop

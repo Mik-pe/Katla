@@ -2,9 +2,314 @@
 //!
 //! This module contains widget implementations that build on top of
 //! the core UI primitives and implement the `Widget` trait.
+//!
+//! # Using Builder Widgets
+//!
+//! ```ignore
+//! use katla_ui::widgets::Button;
+//!
+//! // Builder pattern
+//! if ui.add(Button::new("Click Me")).clicked {
+//!     // handle click
+//! }
+//!
+//! // With options
+//! ui.add(Button::new("Submit").style(MyStyle::Primary));
+//! ```
 
+use crate::input::{mouse_button, KeyCode};
 use crate::{Response, UiContext};
-use katla_math::{Color, Rect2D};
+use katla_math::{Color, Rect2D, Vec2};
+use crate::icons::ForkAwesome;
+
+// =============================================================================
+// Button Widget
+// =============================================================================
+
+/// A clickable button widget.
+///
+/// # Example
+///
+/// ```ignore
+/// use katla_ui::widgets::Button;
+///
+/// if ui.add(Button::new("Click Me").bounds(my_bounds)).clicked {
+///     println!("Clicked!");
+/// }
+/// ```
+pub struct Button<'a> {
+    text: &'a str,
+    bounds: Rect2D,
+    id: Option<&'a str>,
+}
+
+impl<'a> Button<'a> {
+    /// Create a new button with text.
+    pub fn new(text: &'a str) -> Self {
+        Self {
+            text,
+            bounds: Rect2D::from_size(Vec2::new(100.0, 30.0)),
+            id: None,
+        }
+    }
+
+    /// Set the button bounds.
+    pub fn bounds(mut self, bounds: Rect2D) -> Self {
+        self.bounds = bounds;
+        self
+    }
+
+    /// Set a custom ID (for unique identification).
+    pub fn id(mut self, id: &'a str) -> Self {
+        self.id = Some(id);
+        self
+    }
+}
+
+impl<'a> crate::Widget for Button<'a> {
+    fn ui(self, ui: &mut UiContext) -> Response {
+        let id = self.id.unwrap_or(self.text);
+        ui.button(id, self.text, self.bounds)
+    }
+}
+
+// =============================================================================
+// Checkbox Widget
+// =============================================================================
+
+/// A checkbox widget with label.
+///
+/// # Example
+///
+/// ```ignore
+/// use katla_ui::widgets::Checkbox;
+///
+/// let mut checked = false;
+/// if ui.add(Checkbox::new(&mut checked, "Enable feature")).changed {
+///     println!("Checkbox changed to: {}", checked);
+/// }
+/// ```
+pub struct Checkbox<'a> {
+    checked: &'a mut bool,
+    label: &'a str,
+    bounds: Rect2D,
+    id: Option<&'a str>,
+}
+
+impl<'a> Checkbox<'a> {
+    /// Create a new checkbox.
+    pub fn new(checked: &'a mut bool, label: &'a str) -> Self {
+        Self {
+            checked,
+            label,
+            bounds: Rect2D::from_size(Vec2::new(150.0, 24.0)),
+            id: None,
+        }
+    }
+
+    /// Set the checkbox bounds.
+    pub fn bounds(mut self, bounds: Rect2D) -> Self {
+        self.bounds = bounds;
+        self
+    }
+
+    /// Set a custom ID.
+    pub fn id(mut self, id: &'a str) -> Self {
+        self.id = Some(id);
+        self
+    }
+}
+
+impl<'a> crate::Widget for Checkbox<'a> {
+    fn ui(self, ui: &mut UiContext) -> Response {
+        let id = self.id.unwrap_or(self.label);
+        ui.checkbox(id, self.label, self.checked, self.bounds)
+    }
+}
+
+// =============================================================================
+// Slider Widget
+// =============================================================================
+
+/// A slider widget for numeric values.
+///
+/// # Example
+///
+/// ```ignore
+/// use katla_ui::widgets::Slider;
+///
+/// let mut volume = 0.5;
+/// if ui.add(Slider::new(&mut volume, 0.0..=1.0)).changed {
+///     println!("Volume: {}", volume);
+/// }
+/// ```
+pub struct Slider<'a> {
+    value: &'a mut f32,
+    range: std::ops::RangeInclusive<f32>,
+    bounds: Rect2D,
+    id: Option<&'a str>,
+}
+
+impl<'a> Slider<'a> {
+    /// Create a new slider with value and range.
+    pub fn new(value: &'a mut f32, range: std::ops::RangeInclusive<f32>) -> Self {
+        Self {
+            value,
+            range,
+            bounds: Rect2D::from_size(Vec2::new(150.0, 20.0)),
+            id: None,
+        }
+    }
+
+    /// Set the slider bounds.
+    pub fn bounds(mut self, bounds: Rect2D) -> Self {
+        self.bounds = bounds;
+        self
+    }
+
+    /// Set a custom ID.
+    pub fn id(mut self, id: &'a str) -> Self {
+        self.id = Some(id);
+        self
+    }
+}
+
+impl<'a> crate::Widget for Slider<'a> {
+    fn ui(self, ui: &mut UiContext) -> Response {
+        let id = self.id.map(|s| s.to_string())
+            .unwrap_or_else(|| format!("slider_{:?}", self.range));
+        ui.slider(&id, self.value, *self.range.start(), *self.range.end(), self.bounds)
+    }
+}
+
+// =============================================================================
+// TextInput Widget
+// =============================================================================
+
+/// A text input field widget.
+///
+/// # Example
+///
+/// ```ignore
+/// use katla_ui::widgets::TextInput;
+///
+/// let mut name = String::new();
+/// if ui.add(TextInput::new(&mut name).placeholder("Enter name...")).changed {
+///     println!("Name: {}", name);
+/// }
+/// ```
+pub struct TextInput<'a> {
+    text: &'a mut String,
+    placeholder: Option<&'a str>,
+    bounds: Rect2D,
+    id: Option<&'a str>,
+}
+
+impl<'a> TextInput<'a> {
+    /// Create a new text input.
+    pub fn new(text: &'a mut String) -> Self {
+        Self {
+            text,
+            placeholder: None,
+            bounds: Rect2D::from_size(Vec2::new(200.0, 24.0)),
+            id: None,
+        }
+    }
+
+    /// Set placeholder text (shown when empty).
+    pub fn placeholder(mut self, placeholder: &'a str) -> Self {
+        self.placeholder = Some(placeholder);
+        self
+    }
+
+    /// Set the input bounds.
+    pub fn bounds(mut self, bounds: Rect2D) -> Self {
+        self.bounds = bounds;
+        self
+    }
+
+    /// Set a custom ID.
+    pub fn id(mut self, id: &'a str) -> Self {
+        self.id = Some(id);
+        self
+    }
+}
+
+impl<'a> crate::Widget for TextInput<'a> {
+    fn ui(self, ui: &mut UiContext) -> Response {
+        let id = self.id.unwrap_or("text_input");
+        let response = ui.text_input(id, self.text, self.bounds);
+
+        // Draw placeholder if empty
+        if self.text.is_empty() {
+            if let Some(placeholder) = self.placeholder {
+                let padding = 4.0;
+                let text_pos = Vec2::new(
+                    self.bounds.min.x() + padding,
+                    self.bounds.center().y() - ui.style.font_size * 0.5,
+                );
+                ui.draw_text(placeholder, text_pos, ui.style.text_color * 0.5, ui.style.font_size);
+            }
+        }
+
+        response
+    }
+}
+
+// =============================================================================
+// Label Widget
+// =============================================================================
+
+/// A text label widget.
+///
+/// # Example
+///
+/// ```ignore
+/// use katla_ui::widgets::Label;
+///
+/// ui.add(Label::new("Hello, World!"));
+/// ```
+pub struct Label<'a> {
+    text: &'a str,
+    bounds: Rect2D,
+    color: Option<Color>,
+}
+
+impl<'a> Label<'a> {
+    /// Create a new label.
+    pub fn new(text: &'a str) -> Self {
+        Self {
+            text,
+            bounds: Rect2D::from_size(Vec2::new(100.0, 20.0)),
+            color: None,
+        }
+    }
+
+    /// Set the label bounds.
+    pub fn bounds(mut self, bounds: Rect2D) -> Self {
+        self.bounds = bounds;
+        self
+    }
+
+    /// Set a custom text color.
+    pub fn color(mut self, color: Color) -> Self {
+        self.color = Some(color);
+        self
+    }
+}
+
+impl<'a> crate::Widget for Label<'a> {
+    fn ui(self, ui: &mut UiContext) -> Response {
+        let text_size = ui.measure_text(self.text, ui.style.font_size);
+        let text_pos = Vec2::new(
+            self.bounds.min.x() + (self.bounds.width() - text_size.x()) * 0.5,
+            self.bounds.center().y() - text_size.y() * 0.5,
+        );
+        let color = self.color.unwrap_or(ui.style.text_color);
+        ui.draw_text(self.text, text_pos, color, ui.style.font_size);
+        Response::new(self.bounds)
+    }
+}
 
 /// A labeled separator widget.
 ///
