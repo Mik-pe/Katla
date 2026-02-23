@@ -49,14 +49,20 @@ impl UiContext {
         );
         self.draw_text(text, text_pos, self.style.button_text, self.style.font_size);
 
+        // Check for double-click (on click release)
+        let double_clicked = clicked && self.input.mouse_double_clicked(mouse_button::LEFT);
+
+        // Track drag delta when active
+        let drag_delta = if active { self.input.mouse_delta } else { Vec2::new(0.0, 0.0) };
+
         Response {
             clicked,
             hovered,
             active,
             changed: clicked,
             bounds,
-            drag_delta: Vec2::new(0.0, 0.0),
-            double_clicked: false,
+            drag_delta,
+            double_clicked,
         }
     }
 
@@ -114,14 +120,20 @@ impl UiContext {
             self.style.font_size,
         );
 
+        // Check for double-click
+        let double_clicked = clicked && self.input.mouse_double_clicked(mouse_button::LEFT);
+
+        // Track drag delta when active
+        let drag_delta = if active { self.input.mouse_delta } else { Vec2::new(0.0, 0.0) };
+
         Response {
             clicked,
             hovered,
             active,
             changed: clicked,
             bounds,
-            drag_delta: Vec2::new(0.0, 0.0),
-            double_clicked: false,
+            drag_delta,
+            double_clicked,
         }
     }
 
@@ -183,13 +195,16 @@ impl UiContext {
         };
         self.draw_rect(grab_bounds, grab_color);
 
+        // Track drag delta when active
+        let drag_delta = if active { self.input.mouse_delta } else { Vec2::new(0.0, 0.0) };
+
         Response {
             clicked: false,
             hovered,
             active,
             changed,
             bounds,
-            drag_delta: Vec2::new(0.0, 0.0),
+            drag_delta,
             double_clicked: false,
         }
     }
