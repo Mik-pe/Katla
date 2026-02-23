@@ -142,9 +142,7 @@ pub struct AssetBrowserState {
     pub collapsed: bool,
     /// Last time directory was scanned
     last_scan: Option<Instant>,
-    /// Time of last click for double-click detection
-    last_click_time: Option<Instant>,
-    /// Index of last clicked item
+    /// Index of last clicked item (for double-click same-item check)
     last_click_index: Option<usize>,
     /// Search/filter text
     pub search_filter: String,
@@ -233,7 +231,6 @@ impl AssetBrowserState {
             panel_height: 150.0,
             collapsed: false,
             last_scan: None,
-            last_click_time: None,
             last_click_index: None,
             search_filter: String::new(),
             search_focused: false,
@@ -435,22 +432,6 @@ impl AssetBrowserState {
             .iter()
             .map(|s| s.to_string_lossy().to_string())
             .collect()
-    }
-
-    /// Check if a click is a double-click on the same item.
-    pub fn is_double_click(&mut self, index: usize) -> bool {
-        let now = Instant::now();
-
-        let is_double = self.last_click_index == Some(index)
-            && self
-                .last_click_time
-                .map(|t| t.elapsed().as_millis() < 500)
-                .unwrap_or(false);
-
-        self.last_click_time = Some(now);
-        self.last_click_index = Some(index);
-
-        is_double
     }
 
     /// Get max scroll offset based on content.
@@ -1525,7 +1506,10 @@ pub fn build_asset_browser(
 
     // Process click actions after iteration (to avoid borrow conflicts)
     if let Some(index) = clicked_index {
-        let is_double = state.is_double_click(index);
+        // Use input system's double-click detection + same-item check
+        let is_double = ui.input.mouse_double_clicked(katla_ui::input::mouse_button::LEFT)
+            && state.last_click_index == Some(index);
+        state.last_click_index = Some(index);
 
         // Check for modifier keys (Ctrl for toggle, Shift for range)
         let ctrl_held = ui.input.is_key_down(katla_ui::input::KeyCode::Control);
