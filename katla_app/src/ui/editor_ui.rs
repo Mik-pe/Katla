@@ -9,7 +9,7 @@
 
 use katla_ecs::EntityId;
 use katla_math::{Color, Rect2D, Vec2, Vec3};
-use katla_ui::{input::mouse_button, DrawList, FontId, FontSize, ForkAwesome, TextureId, UiContext};
+use katla_ui::{input::mouse_button, DrawList, FontId, FontSize, ForkAwesome, ScrollArea, ScrollAreaState, TextureId, UiContext};
 use std::collections::HashSet;
 use std::path::PathBuf;
 
@@ -189,6 +189,8 @@ pub struct EditorUI {
     drag_offset: Vec2,
     /// Currently selected preferences tab.
     preferences_tab: PreferencesTab,
+    /// Preferences panel scroll state.
+    preferences_scroll_state: ScrollAreaState,
     /// Left panel (hierarchy) width in pixels.
     pub left_panel_width: f32,
     /// Right panel (inspector) width in pixels.
@@ -247,6 +249,7 @@ impl EditorUI {
             dragging_panel: false,
             drag_offset: Vec2::new(0.0, 0.0),
             preferences_tab: PreferencesTab::default(),
+            preferences_scroll_state: ScrollAreaState::default(),
             left_panel_width: 220.0,
             right_panel_width: 280.0,
             resizing_panel: None,
@@ -1878,27 +1881,52 @@ impl EditorUI {
             );
         }
 
-        // === TAB CONTENT ===
+        // === TAB CONTENT with ScrollArea ===
         let content_start_y = panel_bounds.min.y() + title_bar_height + tab_bar_height + 8.0;
-        let cursor = Vec2::new(panel_bounds.min.x() + 16.0, content_start_y);
+        let content_height = panel_height - title_bar_height - tab_bar_height - 16.0;
+        let scroll_bounds = Rect2D::from_origin_size(
+            Vec2::new(panel_bounds.min.x(), content_start_y),
+            Vec2::new(panel_width, content_height),
+        );
+
+        // Begin scroll area
+        ui.begin_scroll_area(
+            ScrollArea::new("prefs_scroll", &mut self.preferences_scroll_state)
+                .max_height(content_height),
+            scroll_bounds,
+        );
+
+        // Get scroll offset for content positioning
+        let scroll_offset = ui.scroll_offset();
         let content_width = panel_width - 32.0;
         let row_height = 28.0;
         let spacing = 8.0;
 
-        match self.preferences_tab {
+        // Cursor starts at content area top, offset by scroll
+        let cursor = Vec2::new(
+            panel_bounds.min.x() + 16.0,
+            content_start_y - scroll_offset,
+        );
+
+        // Build current tab and get final Y position
+        let final_y = match self.preferences_tab {
             PreferencesTab::Appearance => {
-                self.build_appearance_tab(ui, &theme, cursor, content_width, row_height, spacing);
+                self.build_appearance_tab(ui, &theme, cursor, content_width, row_height, spacing)
             }
             PreferencesTab::Editor => {
-                self.build_editor_tab(ui, &theme, cursor, content_width, row_height, spacing);
+                self.build_editor_tab(ui, &theme, cursor, content_width, row_height, spacing)
             }
             PreferencesTab::Keybindings => {
-                self.build_keybindings_tab(ui, &theme, cursor, content_width, row_height, spacing);
+                self.build_keybindings_tab(ui, &theme, cursor, content_width, row_height, spacing)
             }
             PreferencesTab::About => {
-                self.build_about_tab(ui, &theme, cursor, content_width);
+                self.build_about_tab(ui, &theme, cursor, content_width)
             }
-        }
+        };
+
+        // Calculate content height (from start to final Y)
+        let tab_content_height = final_y - content_start_y + scroll_offset + 16.0;
+        ui.end_scroll_area(tab_content_height);
 
         // Click outside to close (but not while dragging)
         // Use input.is_hovered directly to bypass popup_bounds and active_id checks
@@ -1917,7 +1945,7 @@ impl EditorUI {
         content_width: f32,
         row_height: f32,
         spacing: f32,
-    ) {
+    ) -> f32 {
         // === THEME SECTION ===
         ui.draw_text(
             "Color Theme",
@@ -2079,6 +2107,9 @@ impl EditorUI {
                 ui.scaled_font_size(FontSize::Small),
             );
         }
+
+        // Return final Y position (2 rows of font scale buttons)
+        cursor.y() + 2.0 * (row_height + 4.0)
     }
 
     fn build_editor_tab(
@@ -2089,7 +2120,7 @@ impl EditorUI {
         content_width: f32,
         row_height: f32,
         _spacing: f32,
-    ) {
+    ) -> f32 {
         ui.draw_text(
             "Editor Settings",
             cursor,
@@ -2188,6 +2219,9 @@ impl EditorUI {
                 ui.scaled_font_size(FontSize::Small),
             );
         }
+
+        // Return final Y position (after grid size buttons row)
+        cursor.y() + row_height
     }
 
     fn build_keybindings_tab(
@@ -2198,7 +2232,7 @@ impl EditorUI {
         content_width: f32,
         row_height: f32,
         _spacing: f32,
-    ) {
+    ) -> f32 {
         ui.draw_text(
             "Keyboard Shortcuts",
             cursor,
@@ -2255,6 +2289,9 @@ impl EditorUI {
             theme.text_muted,
             ui.scaled_font_size(FontSize::Small),
         );
+
+        // Return final Y position
+        cursor.y() + 16.0
     }
 
     fn build_about_tab(
@@ -2263,7 +2300,7 @@ impl EditorUI {
         theme: &Theme,
         mut cursor: Vec2,
         content_width: f32,
-    ) {
+    ) -> f32 {
         // Center content
         let center_x = cursor.x() + content_width * 0.5;
 
@@ -2335,6 +2372,9 @@ impl EditorUI {
             );
             cursor = Vec2::new(cursor.x(), cursor.y() + 18.0);
         }
+
+        // Return final Y position
+        cursor.y()
     }
 
     /// Build the model preview panel (shown when a model is double-clicked).
