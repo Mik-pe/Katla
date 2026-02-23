@@ -76,10 +76,17 @@ pub fn setup_render_graph(app: &mut Application) {
     // Store viewport handle in app for later use
     app.main_viewport = Some(main_viewport);
 
-    // Register main viewport texture with UI system and get texture ID
-    renderer.register_viewport_texture(main_viewport);
-    if let Some(tex_id) = renderer.viewport_texture_id(main_viewport) {
+    // Register main viewport texture with UI renderer for sampling
+    if let (Some(tex_id), Some(color_view)) = (
+        renderer.viewport_texture_id(main_viewport),
+        renderer.get_viewport_color_view(main_viewport),
+    ) {
+        // Register with UI renderer so it can sample the viewport texture
+        if let Some(ref mut ui_renderer) = app.ui_renderer {
+            ui_renderer.register_texture(tex_id, color_view);
+        }
         app.editor_ui.main_viewport_texture_id = katla_ui::TextureId::custom(tex_id);
+        debug!("Registered main viewport texture {} with UI renderer", tex_id);
     }
 
     // Initialize output render target for final UI composition
@@ -118,8 +125,17 @@ pub fn setup_render_graph(app: &mut Application) {
     // Store viewport handle in app for later use
     app.preview_viewport = Some(preview_viewport);
 
-    // Register preview texture with UI system
-    renderer.register_viewport_texture(preview_viewport);
+    // Register preview viewport texture with UI renderer for sampling
+    if let (Some(tex_id), Some(color_view)) = (
+        renderer.viewport_texture_id(preview_viewport),
+        renderer.get_viewport_color_view(preview_viewport),
+    ) {
+        // Register with UI renderer so it can sample the preview texture
+        if let Some(ref mut ui_renderer) = app.ui_renderer {
+            ui_renderer.register_texture(tex_id, color_view);
+        }
+        debug!("Registered preview viewport texture {} with UI renderer", tex_id);
+    }
 
     // Create and register gizmo material and mesh
     setup_gizmo_resources(app);
