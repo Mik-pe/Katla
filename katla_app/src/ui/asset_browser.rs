@@ -1001,31 +1001,28 @@ pub fn build_asset_browser(
         1.0,
     );
 
-    // === CONTENT AREA ===
+    // === CONTENT AREA with ScrollArea ===
     let content_top = toolbar_top + toolbar_height;
     let content_bounds = Rect2D::new(
         Vec2::new(bounds.min.x(), content_top),
         bounds.max,
     );
 
-    // Push clipping for content
-    ui.push_clip(content_bounds);
+    // Begin scroll area (handles clipping and scrolling)
+    ui.begin_scroll_area(
+        ScrollArea::new("asset_scroll", &mut state.scroll_state)
+            .max_height(content_bounds.height()),
+        content_bounds,
+    );
+
+    // Get scroll offset for content positioning
+    let scroll_offset = ui.scroll_offset();
 
     // Grid layout parameters
     let item_size = ui.style.thumbnail_size;
     let item_padding = 8.0;
     let col_count = ((bounds.width() - item_padding) / (item_size + item_padding)).max(1.0) as usize;
     let row_height = item_size + 24.0; // Item + label
-
-    // Handle scrolling
-    let total_rows = state.assets.len().div_ceil(col_count);
-    let content_height = total_rows as f32 * row_height;
-    let max_scroll = state.max_scroll(content_height, content_bounds.height());
-
-    if ui.is_hovered(content_bounds) {
-        let scroll_delta = ui.input.scroll_delta.y() * 30.0;
-        state.scroll_state.scroll_offset = (state.scroll_state.scroll_offset - scroll_delta).clamp(0.0, max_scroll);
-    }
 
     // Draw assets in grid
     // Track actions to perform after iteration (to avoid borrow conflicts)
@@ -1040,7 +1037,7 @@ pub fn build_asset_browser(
         let row = i / col_count;
 
         let item_x = bounds.min.x() + item_padding + col as f32 * (item_size + item_padding);
-        let item_y = content_top + row as f32 * row_height - state.scroll_state.scroll_offset;
+        let item_y = content_top + row as f32 * row_height - scroll_offset;
 
         // Skip items that are outside the visible area
         if item_y + row_height < content_top || item_y > bounds.max.y() {
@@ -1221,7 +1218,7 @@ pub fn build_asset_browser(
                     let col = i % col_count;
                     let row = i / col_count;
                     let item_x = bounds.min.x() + item_padding + col as f32 * (item_size + item_padding);
-                    let item_y = content_top + row as f32 * row_height - state.scroll_state.scroll_offset;
+                    let item_y = content_top + row as f32 * row_height - scroll_offset;
                     let item_bounds = Rect2D::from_origin_size(Vec2::new(item_x, item_y), Vec2::new(item_size, item_size));
 
                     // Check if item intersects with selection rectangle
@@ -1256,7 +1253,7 @@ pub fn build_asset_browser(
                         let col = i % col_count;
                         let row = i / col_count;
                         let item_x = bounds.min.x() + item_padding + col as f32 * (item_size + item_padding);
-                        let item_y = content_top + row as f32 * row_height - state.scroll_state.scroll_offset;
+                        let item_y = content_top + row as f32 * row_height - scroll_offset;
                         let item_bounds = Rect2D::from_origin_size(Vec2::new(item_x, item_y), Vec2::new(item_size, item_size));
 
                         // Check if item intersects with selection rectangle (AABB intersection)
@@ -1299,7 +1296,7 @@ pub fn build_asset_browser(
             // Check if visible in viewport
             let _col = i % col_count;
             let row = i / col_count;
-            let item_y = content_top + row as f32 * row_height - state.scroll_state.scroll_offset;
+            let item_y = content_top + row as f32 * row_height - scroll_offset;
 
             // Skip if outside visible area
             if item_y + row_height < content_top || item_y > bounds.max.y() {
@@ -1373,7 +1370,7 @@ pub fn build_asset_browser(
                     let col = i % col_count;
                     let row = i / col_count;
                     let item_x = bounds.min.x() + item_padding + col as f32 * (item_size + item_padding);
-                    let item_y = content_top + row as f32 * row_height - state.scroll_state.scroll_offset;
+                    let item_y = content_top + row as f32 * row_height - scroll_offset;
                     let item_bounds = Rect2D::from_origin_size(
                         Vec2::new(item_x, item_y),
                         Vec2::new(item_size, item_size),
@@ -1440,7 +1437,7 @@ pub fn build_asset_browser(
         let col = rename_idx % col_count;
         let row = rename_idx / col_count;
         let item_x = bounds.min.x() + item_padding + col as f32 * (item_size + item_padding);
-        let item_y = content_top + row as f32 * row_height - state.scroll_state.scroll_offset;
+        let item_y = content_top + row as f32 * row_height - scroll_offset;
 
         let input_bounds = Rect2D::from_origin_size(
             Vec2::new(item_x, item_y + item_size + 2.0),
@@ -1610,7 +1607,10 @@ pub fn build_asset_browser(
         );
     }
 
-    ui.pop_clip();
+    // End scroll area with content height
+    let total_rows = state.assets.len().div_ceil(col_count);
+    let content_height = total_rows as f32 * row_height;
+    ui.end_scroll_area(content_height);
 
     // === CONTEXT MENU ===
     // Handle empty space context menu (for creating folders, etc.)
@@ -1621,7 +1621,7 @@ pub fn build_asset_browser(
             let col = i % col_count;
             let row = i / col_count;
             let item_x = bounds.min.x() + item_padding + col as f32 * (item_size + item_padding);
-            let item_y = content_top + row as f32 * row_height - state.scroll_state.scroll_offset;
+            let item_y = content_top + row as f32 * row_height - scroll_offset;
             let item_bounds = Rect2D::from_origin_size(Vec2::new(item_x, item_y), Vec2::new(item_size, item_size + 16.0));
             if ui.is_hovered(item_bounds) {
                 clicked_on_asset = true;
