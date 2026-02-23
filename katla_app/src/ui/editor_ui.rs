@@ -191,6 +191,8 @@ pub struct EditorUI {
     preferences_tab: PreferencesTab,
     /// Preferences panel scroll state.
     preferences_scroll_state: ScrollAreaState,
+    /// Hierarchy panel scroll state.
+    hierarchy_scroll_state: ScrollAreaState,
     /// Left panel (hierarchy) width in pixels.
     pub left_panel_width: f32,
     /// Right panel (inspector) width in pixels.
@@ -250,6 +252,7 @@ impl EditorUI {
             drag_offset: Vec2::new(0.0, 0.0),
             preferences_tab: PreferencesTab::default(),
             preferences_scroll_state: ScrollAreaState::default(),
+            hierarchy_scroll_state: ScrollAreaState::default(),
             left_panel_width: 220.0,
             right_panel_width: 280.0,
             resizing_panel: None,
@@ -1049,14 +1052,21 @@ impl EditorUI {
             ui.scaled_font_size(FontSize::Medium),
         );
 
-        // Entity list with clipping
+        // Entity list with ScrollArea
         let content_bounds = Rect2D::from_origin_size(
             Vec2::new(bounds.min.x(), bounds.min.y() + header_height),
             Vec2::new(bounds.width(), bounds.height() - header_height),
         );
-        ui.push_clip(content_bounds);
+        ui.begin_scroll_area(
+            ScrollArea::new("hierarchy_scroll", &mut self.hierarchy_scroll_state)
+                .max_height(content_bounds.height()),
+            content_bounds,
+        );
 
-        let mut cursor = Vec2::new(bounds.min.x(), bounds.min.y() + header_height + 4.0);
+        // Get scroll offset for content positioning
+        let scroll_offset = ui.scroll_offset();
+
+        let mut cursor = Vec2::new(bounds.min.x(), bounds.min.y() + header_height + 4.0 - scroll_offset);
         let item_height = 22.0;
         let indent_per_level = 16.0;
 
@@ -1223,12 +1233,11 @@ impl EditorUI {
             }
 
             cursor = Vec2::new(cursor.x(), cursor.y() + item_height);
-
-            // Stop if we've filled the panel
-            if cursor.y() > bounds.max.y() - item_height {
-                break;
-            }
         }
+
+        // Calculate content height and end scroll area
+        let content_height = visible_count as f32 * item_height + 8.0;
+        ui.end_scroll_area(content_height);
 
         // Empty state
         if entities.is_empty() {
@@ -1282,8 +1291,6 @@ impl EditorUI {
             }
             self.hierarchy_context_menu_open = false;
         }
-
-        ui.pop_clip();
     }
 
     fn build_inspector_panel(
