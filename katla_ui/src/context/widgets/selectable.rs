@@ -59,6 +59,8 @@ impl UiContext {
             active,
             changed: clicked,
             bounds,
+            drag_delta: Vec2::new(0.0, 0.0),
+            double_clicked: false,
         }
     }
 
@@ -118,6 +120,8 @@ impl UiContext {
             active,
             changed: clicked,
             bounds,
+            drag_delta: Vec2::new(0.0, 0.0),
+            double_clicked: false,
         }
     }
 }

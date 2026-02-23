@@ -80,6 +80,9 @@ pub use widget::Widget;
 /// if resp.clicked {
 ///     // Handle click
 /// }
+/// if resp.double_clicked() {
+///     // Handle double-click
+/// }
 /// if resp.hovered {
 ///     ui.tooltip("Click this button");
 /// }
@@ -96,9 +99,9 @@ pub struct Response {
     pub changed: bool,
     /// Widget bounds.
     pub bounds: Rect2D,
-    /// Mouse delta while dragging (only valid when active).
+    /// Mouse delta since last frame (for dragging).
     pub drag_delta: Vec2,
-    /// Widget was double-clicked this frame.
+    /// Whether this was a double-click.
     pub double_clicked: bool,
 }
 
@@ -160,6 +163,22 @@ impl Response {
         self.clicked || self.hovered || self.active || self.changed
     }
 
+    /// Was this a double-click?
+    pub fn double_clicked(&self) -> bool {
+        self.double_clicked
+    }
+
+    /// Get the drag delta for this frame.
+    /// Returns non-zero only when the widget is being dragged.
+    pub fn drag_delta(&self) -> Vec2 {
+        self.drag_delta
+    }
+
+    /// Check if the widget is being dragged.
+    pub fn is_dragging(&self) -> bool {
+        self.active && (self.drag_delta.x().abs() > 0.0 || self.drag_delta.y().abs() > 0.0)
+    }
+
     /// Show tooltip on hover (chainable).
     pub fn on_hover_text(self, ui: &mut UiContext, text: &str) -> Self {
         if self.hovered && !self.active {
@@ -176,6 +195,8 @@ impl Response {
             active: self.active || other.active,
             changed: self.changed || other.changed,
             bounds: self.bounds.union(&other.bounds),
+            drag_delta: self.drag_delta + other.drag_delta,
+            double_clicked: self.double_clicked || other.double_clicked,
         }
     }
 }
@@ -196,5 +217,48 @@ impl std::ops::BitOr for Response {
 impl std::ops::BitOrAssign for Response {
     fn bitor_assign(&mut self, other: Self) {
         *self = self.union(other);
+    }
+}
+
+/// Response from a container widget that returns a value.
+///
+/// Used by closure-based containers like `ui.horizontal()` that need to
+/// return both a value from the closure and interaction info for the container.
+///
+/// # Example
+///
+/// ```ignore
+/// let result = ui.horizontal(|ui| {
+///     ui.add(Button::new("One"));
+///     ui.add(Button::new("Two"));
+///     "computed value"  // Return value from closure
+/// });
+///
+/// // result.inner == "computed value"
+/// // result.response == Response for the horizontal area
+/// if result.response.clicked {
+///     println!("Container was clicked!");
+/// }
+/// ```
+#[derive(Debug, Clone)]
+pub struct InnerResponse<R> {
+    /// The return value from the closure.
+    pub inner: R,
+    /// The interaction response for the whole container.
+    pub response: Response,
+}
+
+impl<R> InnerResponse<R> {
+    /// Create a new InnerResponse.
+    pub fn new(inner: R, response: Response) -> Self {
+        Self { inner, response }
+    }
+
+    /// Map the inner value to a new type.
+    pub fn map<T>(self, f: impl FnOnce(R) -> T) -> InnerResponse<T> {
+        InnerResponse {
+            inner: f(self.inner),
+            response: self.response,
+        }
     }
 }
