@@ -9,7 +9,7 @@
 
 use katla_ecs::EntityId;
 use katla_math::{Color, Rect2D, Vec2, Vec3};
-use katla_ui::{input::mouse_button, DrawList, FontId, FontSize, ForkAwesome, ScrollArea, ScrollAreaState, TextureId, UiContext};
+use katla_ui::{input::mouse_button, DrawList, FontId, FontSize, ForkAwesome, ScrollArea, ScrollAreaState, TextureId, UiContext, widgets::{Button, Label}};
 use std::collections::HashSet;
 use std::path::PathBuf;
 
@@ -990,7 +990,7 @@ impl EditorUI {
             theme.button_text,
         );
 
-        if ui.button("play_btn", "", play_bounds).clicked {
+        if ui.add(Button::new("").bounds(play_bounds).id("play_btn")).clicked {
             self.is_playing = !self.is_playing;
             self.pending_actions.push(EditorAction::TogglePlay);
         }
@@ -1365,7 +1365,7 @@ impl EditorUI {
             // Position
             let pos_label_bounds =
                 Rect2D::from_origin_size(cursor, Vec2::new(label_width, line_height));
-            ui.label("Position:", pos_label_bounds);
+            ui.add(Label::new("Position:").bounds(pos_label_bounds));
             let pos_value_bounds = Rect2D::from_origin_size(
                 Vec2::new(cursor.x() + label_width, cursor.y()),
                 Vec2::new(_value_width, line_height),
@@ -1376,13 +1376,13 @@ impl EditorUI {
                 entity.position.y(),
                 entity.position.z()
             );
-            ui.label(&pos_text, pos_value_bounds);
+            ui.add(Label::new(&pos_text).bounds(pos_value_bounds));
             cursor = Vec2::new(cursor.x(), cursor.y() + line_height);
 
             // Rotation
             let rot_label_bounds =
                 Rect2D::from_origin_size(cursor, Vec2::new(label_width, line_height));
-            ui.label("Rotation:", rot_label_bounds);
+            ui.add(Label::new("Rotation:").bounds(rot_label_bounds));
             let rot_value_bounds = Rect2D::from_origin_size(
                 Vec2::new(cursor.x() + label_width, cursor.y()),
                 Vec2::new(_value_width, line_height),
@@ -1393,13 +1393,13 @@ impl EditorUI {
                 entity.rotation.y(),
                 entity.rotation.z()
             );
-            ui.label(&rot_text, rot_value_bounds);
+            ui.add(Label::new(&rot_text).bounds(rot_value_bounds));
             cursor = Vec2::new(cursor.x(), cursor.y() + line_height);
 
             // Scale
             let scale_label_bounds =
                 Rect2D::from_origin_size(cursor, Vec2::new(label_width, line_height));
-            ui.label("Scale:", scale_label_bounds);
+            ui.add(Label::new("Scale:").bounds(scale_label_bounds));
             let scale_value_bounds = Rect2D::from_origin_size(
                 Vec2::new(cursor.x() + label_width, cursor.y()),
                 Vec2::new(_value_width, line_height),
@@ -1410,7 +1410,7 @@ impl EditorUI {
                 entity.scale.y(),
                 entity.scale.z()
             );
-            ui.label(&scale_text, scale_value_bounds);
+            ui.add(Label::new(&scale_text).bounds(scale_value_bounds));
             cursor = Vec2::new(cursor.x(), cursor.y() + line_height + 8.0);
 
             // Separator
@@ -1467,7 +1467,7 @@ impl EditorUI {
                 Vec2::new(bounds.min.x() + 8.0, cursor.y()),
                 Vec2::new(bounds.width() - 16.0, 28.0),
             );
-            if ui.button("delete_entity", "Delete Entity", delete_bounds).clicked {
+            if ui.add(Button::new("Delete Entity").bounds(delete_bounds).id("delete_entity")).clicked {
                 self.pending_actions
                     .push(EditorAction::DeleteEntity(entity.id));
                 self.selected_entity = None;
@@ -1804,7 +1804,7 @@ impl EditorUI {
             ),
             Vec2::new(close_size, close_size),
         );
-        if ui.button("close_prefs", "×", close_bounds).clicked {
+        if ui.add(Button::new("×").bounds(close_bounds).id("close_prefs")).clicked {
             self.show_preferences = false;
             self.preferences_panel_pos = None;
         }
@@ -1849,7 +1849,7 @@ impl EditorUI {
             }
 
             // Tab click
-            if ui.button(&format!("tab_{:?}", tab), "", tab_bounds).clicked && !is_selected {
+            if ui.add(Button::new("").bounds(tab_bounds).id(&format!("tab_{:?}", tab))).clicked && !is_selected {
                 self.preferences_tab = *tab;
             }
 
@@ -1994,7 +1994,7 @@ impl EditorUI {
 
             let is_selected = *key == current_theme_key;
 
-            if ui.button(&format!("theme_{}", key), "", btn_bounds).clicked {
+            if ui.add(Button::new("").bounds(btn_bounds).id(&format!("theme_{}", key))).clicked {
                 self.pending_actions
                     .push(EditorAction::SetTheme(key.to_string()));
             }
@@ -2085,7 +2085,7 @@ impl EditorUI {
 
             let is_selected = (self.font_scale - scale).abs() < 0.01;
 
-            if ui.button(&format!("font_scale_{}", scale), "", btn_bounds).clicked {
+            if ui.add(Button::new("").bounds(btn_bounds).id(&format!("font_scale_{}", scale))).clicked {
                 self.pending_actions
                     .push(EditorAction::SetFontScale(*scale));
             }
@@ -2176,7 +2176,7 @@ impl EditorUI {
         ui.draw_rect(fill_bounds, theme.selection);
 
         // Slider handle
-        if ui.button("camera_speed_slider", "", slider_bounds).clicked {
+        if ui.add(Button::new("").bounds(slider_bounds).id("camera_speed_slider")).clicked {
             // Click to set value
         }
 
@@ -2200,7 +2200,7 @@ impl EditorUI {
                 Vec2::new(btn_width, row_height),
             );
             let is_selected = (self.grid_size - size).abs() < 0.01;
-            if ui.button(&format!("grid_size_{}", size), "", btn_bounds).clicked {
+            if ui.add(Button::new("").bounds(btn_bounds).id(&format!("grid_size_{}", size))).clicked {
                 self.grid_size = size;
             }
             let btn_color = if is_selected {

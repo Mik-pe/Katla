@@ -329,6 +329,8 @@ enum WidgetState { Checkbox(bool), Slider(f32), TextInput(String), ... }
   - [x] `Separator` - section divider with optional label
   - [x] `Badge` - colored label/tag
   - [x] `Spacer` - layout gap
+- [x] Remove old `ui.button()`, `ui.checkbox()`, `ui.slider()`, `ui.label()` public API
+- [x] Update all application code to use builder pattern
 
 ### Phase 5: Advanced Features
 - [ ] Implement drag-and-drop

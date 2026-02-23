@@ -1,7 +1,7 @@
 //! Debug overlay UI for displaying stats and controls.
 
 use katla_math::{Color, Rect2D, Vec2};
-use katla_ui::{DrawList, GraphOptions, UiContext};
+use katla_ui::{DrawList, GraphOptions, UiContext, widgets::{Button, Checkbox, Label, Slider}};
 use crate::util::MetricsHistory;
 
 /// Render mode options.
@@ -149,7 +149,7 @@ impl DebugOverlay {
         // Stats section
         for text in &stats {
             let label_bounds = Rect2D::from_origin_size(cursor, Vec2::new(window_width - padding * 2.0, line_height));
-            ui.label(text, label_bounds);
+            ui.add(Label::new(text).bounds(label_bounds));
             cursor = Vec2::new(cursor.x(), cursor.y() + line_height);
         }
 
@@ -185,7 +185,7 @@ impl DebugOverlay {
         cursor = Vec2::new(cursor.x(), cursor.y() + graph_height + padding);
         let button_bounds = Rect2D::from_origin_size(cursor, Vec2::new(window_width - padding * 2.0, button_height));
         let btn_text = if self.settings_visible { "[Close Settings]" } else { "[Settings]" };
-        if ui.button("settings_btn", btn_text, button_bounds).clicked {
+        if ui.add(Button::new(btn_text).bounds(button_bounds).id("settings_btn")).clicked {
             self.settings_visible = !self.settings_visible;
         }
 
@@ -268,7 +268,7 @@ impl DebugOverlay {
         // === Render Mode (Selectable buttons) ===
         {
             let label_bounds = Rect2D::from_origin_size(cursor, Vec2::new(panel_width - padding * 2.0, line_height));
-            ui.label("Render Mode:", label_bounds);
+            ui.add(Label::new("Render Mode:").bounds(label_bounds));
             cursor = Vec2::new(cursor.x(), cursor.y() + line_height + 4.0);
 
             // Three buttons in a row for render modes
@@ -289,7 +289,7 @@ impl DebugOverlay {
         // === Quality (Selectable buttons) ===
         {
             let label_bounds = Rect2D::from_origin_size(cursor, Vec2::new(panel_width - padding * 2.0, line_height));
-            ui.label("Quality:", label_bounds);
+            ui.add(Label::new("Quality:").bounds(label_bounds));
             cursor = Vec2::new(cursor.x(), cursor.y() + line_height + 4.0);
 
             let btn_width = (panel_width - padding * 2.0 - 12.0) / 4.0;
@@ -309,51 +309,51 @@ impl DebugOverlay {
         // === Volume Slider ===
         {
             let label_bounds = Rect2D::from_origin_size(cursor, Vec2::new(panel_width - padding * 2.0, line_height));
-            ui.label(&format!("Volume: {:.0}%", self.volume * 100.0), label_bounds);
+            ui.add(Label::new(&format!("Volume: {:.0}%", self.volume * 100.0)).bounds(label_bounds));
             cursor = Vec2::new(cursor.x(), cursor.y() + line_height + 2.0);
 
             let slider_bounds = Rect2D::from_origin_size(cursor, Vec2::new(panel_width - padding * 2.0, ui.style.checkbox_size));
-            ui.slider("volume_slider", &mut self.volume, 0.0, 1.0, slider_bounds);
+            ui.add(Slider::new(&mut self.volume, 0.0..=1.0).bounds(slider_bounds).id("volume_slider"));
             cursor = Vec2::new(cursor.x(), cursor.y() + 28.0);
         }
 
         // === Sensitivity Slider ===
         {
             let label_bounds = Rect2D::from_origin_size(cursor, Vec2::new(panel_width - padding * 2.0, line_height));
-            ui.label(&format!("Sensitivity: {:.1}", self.sensitivity), label_bounds);
+            ui.add(Label::new(&format!("Sensitivity: {:.1}", self.sensitivity)).bounds(label_bounds));
             cursor = Vec2::new(cursor.x(), cursor.y() + line_height + 2.0);
 
             let slider_bounds = Rect2D::from_origin_size(cursor, Vec2::new(panel_width - padding * 2.0, ui.style.checkbox_size));
-            ui.slider("sens_slider", &mut self.sensitivity, 0.1, 3.0, slider_bounds);
+            ui.add(Slider::new(&mut self.sensitivity, 0.1..=3.0).bounds(slider_bounds).id("sens_slider"));
             cursor = Vec2::new(cursor.x(), cursor.y() + 28.0);
         }
 
         // === Ambient Slider ===
         {
             let label_bounds = Rect2D::from_origin_size(cursor, Vec2::new(panel_width - padding * 2.0, line_height));
-            ui.label(&format!("Ambient: {:.2}", self.ambient_intensity), label_bounds);
+            ui.add(Label::new(&format!("Ambient: {:.2}", self.ambient_intensity)).bounds(label_bounds));
             cursor = Vec2::new(cursor.x(), cursor.y() + line_height + 2.0);
 
             let slider_bounds = Rect2D::from_origin_size(cursor, Vec2::new(panel_width - padding * 2.0, ui.style.checkbox_size));
-            ui.slider("ambient_slider", &mut self.ambient_intensity, 0.0, 1.0, slider_bounds);
+            ui.add(Slider::new(&mut self.ambient_intensity, 0.0..=1.0).bounds(slider_bounds).id("ambient_slider"));
             cursor = Vec2::new(cursor.x(), cursor.y() + 28.0);
         }
 
         // === Checkboxes ===
         {
             let checkbox_bounds = Rect2D::from_origin_size(cursor, Vec2::new(panel_width - padding * 2.0, line_height));
-            ui.checkbox("vsync_check", "VSync Enabled", &mut self.vsync, checkbox_bounds);
+            ui.add(Checkbox::new(&mut self.vsync, "VSync Enabled").bounds(checkbox_bounds).id("vsync_check"));
             cursor = Vec2::new(cursor.x(), cursor.y() + line_height + 4.0);
 
             let checkbox_bounds = Rect2D::from_origin_size(cursor, Vec2::new(panel_width - padding * 2.0, line_height));
-            ui.checkbox("fps_check", "Show FPS in Title", &mut self.show_fps, checkbox_bounds);
+            ui.add(Checkbox::new(&mut self.show_fps, "Show FPS in Title").bounds(checkbox_bounds).id("fps_check"));
             cursor = Vec2::new(cursor.x(), cursor.y() + 12.0);
         }
 
         // === Close Button ===
         {
             let button_bounds = Rect2D::from_origin_size(cursor, Vec2::new(panel_width - padding * 2.0, button_height));
-            if ui.button("close_settings", "Close Panel", button_bounds).clicked {
+            if ui.add(Button::new("Close Panel").bounds(button_bounds).id("close_settings")).clicked {
                 self.settings_visible = false;
             }
         }

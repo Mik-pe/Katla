@@ -10,14 +10,14 @@
 //!
 //! The UI system follows an immediate mode pattern:
 //! 1. Call `context.begin()` at the start of the frame
-//! 2. Call widget functions (button, label, etc.) to build the UI
+//! 2. Call widget functions or use builder widgets to build the UI
 //! 3. Call `context.end()` to finalize and get the draw list
 //! 4. Render the draw list using `UiRenderer`
 //!
 //! # Example
 //!
 //! ```ignore
-//! use katla_ui::{UiContext, UiInputState};
+//! use katla_ui::{UiContext, UiInputState, widgets::Button};
 //! use katla_math::{Vec2, Rect2D, Color};
 //!
 //! // Initialize context
@@ -30,11 +30,10 @@
 //! // Build UI
 //! ui.begin(screen_size);
 //!
-//! if ui.button("click_me", "Click Me!", Rect2D::from_origin_size(Vec2::new(10.0, 10.0), Vec2::new(100.0, 30.0))).clicked {
+//! // Using builder widgets
+//! if ui.add(Button::new("Click Me!").bounds(my_bounds)).clicked {
 //!     println!("Button clicked!");
 //! }
-//!
-//! ui.label("Hello, World!", Rect2D::from_origin_size(Vec2::new(10.0, 50.0), Vec2::new(200.0, 20.0)));
 //!
 //! let draw_list = ui.end();
 //!
@@ -75,7 +74,9 @@ pub use widget::Widget;
 ///
 /// # Example
 /// ```ignore
-/// let resp = ui.button("id", "Click", bounds);
+/// use katla_ui::widgets::Button;
+///
+/// let resp = ui.add(Button::new("Click").bounds(my_bounds));
 /// if resp.clicked {
 ///     // Handle click
 /// }
