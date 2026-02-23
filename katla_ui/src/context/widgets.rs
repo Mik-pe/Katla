@@ -6,12 +6,16 @@
 //! - `container` - windows, headers, child regions
 //! - `utility` - progress bar, tooltip, image
 //! - `graph` - real-time data visualization
+//! - `scroll_area` - scrollable container
 
 mod basic;
 mod container;
 mod graph;
+mod scroll_area;
 mod selectable;
 mod utility;
+
+pub use scroll_area::{ScrollArea, ScrollAreaState};
 
 use katla_math::Rect2D;
 

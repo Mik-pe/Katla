@@ -54,7 +54,7 @@ use katla_math::{Rect2D, Vec2};
 
 pub use context::{
     CloseBehavior, Popup, PopupPosition, PopupStyle, z_index, GraphOptions, LayoutDirection,
-    LayoutState, UiContext, WindowState, ZGuard,
+    LayoutState, ScrollArea, ScrollAreaState, UiContext, WindowState, ZGuard,
 };
 pub use draw_list::{DrawCommand, DrawList, TextureId, UiVertex};
 pub use icons::ForkAwesome;
