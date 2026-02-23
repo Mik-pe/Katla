@@ -20,7 +20,7 @@ use winit::keyboard::ModifiersState;
 pub use builder::*;
 use katla_ecs::{input::Action, EntityId, World};
 use katla_math::{Transform, Vec2, Vec3};
-use katla_vulkan::{material::MaterialPipeline, SkeletonBuffer, VulkanRenderer};
+use katla_vulkan::{SkeletonBuffer, VulkanRenderer};
 use winit::{
     application::ApplicationHandler,
     dpi::LogicalSize,
@@ -81,11 +81,9 @@ pub struct Application {
     pub(crate) scale_factor: f32,
     /// Gizmo rendering resources (mesh and material handles)
     pub(crate) gizmo_resources: Option<renderer::GizmoResources>,
-    /// Pipelines for render graph (stored for rebuild on config change)
-    pub(crate) sky_pipeline: Option<Rc<RefCell<MaterialPipeline>>>,
-    pub(crate) grid_pipeline: Option<Rc<RefCell<MaterialPipeline>>>,
-    pub(crate) ui_pipeline: Option<Rc<RefCell<MaterialPipeline>>>,
-    /// UI renderer (owns UI buffers, textures, descriptors)
+    /// Fullscreen renderer (owns sky/grid pipelines internally)
+    pub(crate) fullscreen_renderer: Option<crate::rendering::FullscreenRenderer>,
+    /// UI renderer (owns UI buffers, textures, descriptors, and pipeline)
     pub(crate) ui_renderer: Option<crate::rendering::UIRenderer>,
     /// UI draw data for current frame (shared with render graph)
     pub(crate) ui_draw_data: Rc<RefCell<Option<crate::rendering::UiDrawData>>>,
@@ -213,15 +211,14 @@ impl ApplicationHandler for Application {
                                 renderer.init_output_target(new_width, new_height as u32);
 
                             // Rebuild render graph with existing pipelines
-                            let grid_to_use = if self.editor_ui.show_grid {
-                                self.grid_pipeline.clone()
-                            } else {
-                                None
-                            };
+                            let grid_pipeline = self.fullscreen_renderer.as_ref()
+                                .and_then(|fr| fr.grid_pipeline(self.editor_ui.show_grid));
+                            let sky_pipeline = self.fullscreen_renderer.as_ref()
+                                .and_then(|fr| fr.sky_pipeline());
                             renderer::render_graph::build_render_graph(
                                 renderer,
-                                self.sky_pipeline.clone(),
-                                grid_to_use,
+                                sky_pipeline,
+                                grid_pipeline,
                             );
 
                             if let Some(viewport_extent) = renderer.viewport_extent() {

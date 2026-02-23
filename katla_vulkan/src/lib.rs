@@ -68,7 +68,8 @@ pub struct VulkanRenderer {
     pub material_registry: Rc<RefCell<MaterialRegistry>>,
     /// Material pipeline cache for unified material system.
     /// Caches pipelines by MaterialKey for deduplication.
-    pub material_cache: RefCell<MaterialPipelineCache>,
+    /// Wrapped in Rc to allow sharing with renderers (UIRenderer, FullscreenRenderer).
+    pub material_cache: Rc<RefCell<MaterialPipelineCache>>,
     /// Bindless texture manager for efficient texture binding.
     /// When enabled, all textures are stored in a single array accessed by index.
     /// Textures indices are passed via ObjectUniforms.texture_indices.
@@ -141,7 +142,7 @@ impl VulkanRenderer {
             current_framedata: None,
             asset_registry: AssetRegistry::new(),
             material_registry: Rc::new(RefCell::new(MaterialRegistry::new())),
-            material_cache: RefCell::new(MaterialPipelineCache::new(context)),
+            material_cache: Rc::new(RefCell::new(MaterialPipelineCache::new(context.clone()))),
             bindless_manager: None,
             render_graph: None,
             storage_manager: None,

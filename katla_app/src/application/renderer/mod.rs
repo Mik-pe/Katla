@@ -10,7 +10,7 @@ use std::rc::Rc;
 use crate::animation::Skeleton;
 use crate::components::{DrawableComponent, ParticleEmitter, TransformComponent};
 use crate::gizmo::{self, GizmoVertex};
-use crate::rendering::{GizmoMaterial, GridMaterial, SkyMaterial};
+use crate::rendering::GizmoMaterial;
 
 use super::Application;
 
@@ -36,43 +36,23 @@ pub fn setup_render_graph(app: &mut Application) {
         None => return,
     };
 
-    // Create materials using the renderer's cache (scoped to release borrow)
-    let (sky_pipeline, grid_pipeline) = {
-        let mut material_cache = renderer.material_cache.borrow_mut();
-
-        // Create and set up sky material for procedural sky background (using cache)
-        let sky_material = SkyMaterial::new(&mut material_cache);
-        let sky_pipeline = sky_material.pipeline();
-
-        // Create and set up grid material for editor grid (using cache)
-        let grid_material = GridMaterial::new(&mut material_cache);
-        let grid_pipeline = grid_material.pipeline();
-
-        (sky_pipeline, grid_pipeline)
-    };
-
-    app.sky_pipeline = Some(sky_pipeline.clone());
-    app.grid_pipeline = Some(grid_pipeline.clone());
-
-    // Only pass grid pipeline if grid should be visible
-    let grid_pipeline_to_use = if app.editor_ui.show_grid {
-        Some(grid_pipeline)
-    } else {
-        None
-    };
-
-    // Create and set up UI material for overlay rendering
-    let ui_material = {
+    // Create fullscreen renderer (owns sky/grid pipelines internally)
+    let fullscreen_renderer = {
         let mut cache = renderer.material_cache.borrow_mut();
-        crate::rendering::UiMaterial::new(&mut cache)
+        crate::rendering::FullscreenRenderer::new(&mut cache)
     };
-    let ui_pipeline = ui_material.pipeline();
-    app.ui_pipeline = Some(ui_pipeline.clone());
 
-    // Create UI renderer (owns UI buffers, textures, descriptors)
+    // Get pipelines from fullscreen renderer for render graph
+    let sky_pipeline = fullscreen_renderer.sky_pipeline();
+    let grid_pipeline = fullscreen_renderer.grid_pipeline(app.editor_ui.show_grid);
+
+    // Store fullscreen renderer in app
+    app.fullscreen_renderer = Some(fullscreen_renderer);
+
+    // Create UI renderer (owns UI pipeline internally)
     let ui_renderer = crate::rendering::UIRenderer::new(
         renderer.context.clone(),
-        ui_pipeline.clone(),
+        renderer.material_cache.clone(),
         UI_VERTEX_BUFFER_SIZE as u64,
         UI_INDEX_BUFFER_SIZE as u64,
         FONT_ATLAS_SIZE,
@@ -121,8 +101,8 @@ pub fn setup_render_graph(app: &mut Application) {
     // UI callback is set at runtime via set_ui_callback() before each frame
     render_graph::build_render_graph(
         renderer,
-        Some(sky_pipeline),
-        grid_pipeline_to_use,
+        sky_pipeline,
+        grid_pipeline,
     );
 
     // Initialize preview viewport using new unified ViewportBuilder API
@@ -153,11 +133,12 @@ fn setup_gizmo_resources(app: &mut Application) {
     };
     let context = renderer.context.clone();
 
-    // Create gizmo material using the renderer's cache (scoped to release borrow)
+    // Create gizmo pipeline from pure config using the renderer's cache
     let gizmo_pipeline = {
         let mut material_cache = renderer.material_cache.borrow_mut();
-        let gizmo_material = GizmoMaterial::new(&mut material_cache);
-        gizmo_material.pipeline()
+        let gizmo_material = GizmoMaterial::default();
+        material_cache.get_or_create(&gizmo_material)
+            .expect("Failed to create gizmo pipeline")
     };
 
     // Create a white texture for the gizmo material (it doesn't use textures but needs the descriptor)

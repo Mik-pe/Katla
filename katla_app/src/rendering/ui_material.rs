@@ -1,15 +1,11 @@
 //! UI material for immediate mode overlay rendering.
 //!
-//! Creates a pipeline for rendering UI elements with alpha blending.
+//! Pure configuration for a pipeline that renders UI elements with alpha blending.
 //! Vertices use screen coordinates (pixels) and the shader transforms to NDC
 //! using a uniform buffer containing the screen size.
 
-use katla_vulkan::{
-    material::MaterialPipeline,
-    DescriptorSetLayoutBuilder, DescriptorType,
-    MaterialPipelineCache, ShaderStages, VertexBinding, VertexFormat,
-};
-use std::{cell::RefCell, path::PathBuf, rc::Rc};
+use katla_vulkan::{DescriptorSetLayoutBuilder, DescriptorType, ShaderStages, VertexBinding, VertexFormat};
+use std::path::PathBuf;
 
 /// Shader-compatible UI vertex with tight packing.
 #[repr(C)]
@@ -31,6 +27,9 @@ impl UiShaderVertex {
 /// Uses two descriptor sets:
 /// - Set 0: Static resources (font atlas, sampler, uniforms)
 /// - Set 1: Dynamic texture via push descriptors
+///
+/// This is a pure configuration struct. Pipelines are created by the renderer
+/// using `MaterialPipelineCache::get_or_create()`.
 #[derive(katla_derive::Material)]
 #[material(shader = "resources/shaders/ui/ui.wgsl")]
 #[material(domain = "Ui")]
@@ -40,14 +39,11 @@ pub struct UiMaterial {
     pub vertex_binding: VertexBinding,
     pub shader_path: PathBuf,
     pub descriptor_layouts: Vec<DescriptorSetLayoutBuilder>,
-    #[material(skip)]
-    pub pipeline: Option<Rc<RefCell<MaterialPipeline>>>,
 }
 
-impl UiMaterial {
-    /// Create a new UI material and its pipeline.
-    pub fn new(cache: &mut MaterialPipelineCache) -> Self {
-        let mut material = Self {
+impl Default for UiMaterial {
+    fn default() -> Self {
+        Self {
             vertex_binding: VertexBinding {
                 formats: vec![VertexFormat::RG32f, VertexFormat::RG32f, VertexFormat::RGBA32f],
             },
@@ -63,19 +59,6 @@ impl UiMaterial {
                     .add_binding(0, DescriptorType::SampledImage, ShaderStages::FRAGMENT)
                     .with_push_descriptor(true),
             ],
-            pipeline: None,
-        };
-
-        let pipeline = cache
-            .get_or_create(&material)
-            .expect("Failed to create UI pipeline");
-
-        material.pipeline = Some(pipeline);
-        material
-    }
-
-    /// Get the pipeline.
-    pub fn pipeline(&self) -> Rc<RefCell<MaterialPipeline>> {
-        self.pipeline.as_ref().expect("Pipeline not initialized").clone()
+        }
     }
 }
