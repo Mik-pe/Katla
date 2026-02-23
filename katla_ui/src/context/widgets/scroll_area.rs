@@ -1,9 +1,8 @@
 //! ScrollArea widget for scrollable content.
 
-use katla_math::{Color, Rect2D, Vec2};
+use katla_math::{Rect2D, Vec2};
 
 use crate::input::mouse_button;
-use crate::Response;
 
 use super::super::UiContext;
 
@@ -52,7 +51,7 @@ impl<'a> ScrollArea<'a> {
     }
 
     /// Keep scrolled to bottom when content grows.
-    pub fn stick_to_bottom(mut self, stick: bool) -> Self {
+    pub fn stick_to_bottom(self, stick: bool) -> Self {
         self.state.stick_to_bottom = stick;
         self
     }
@@ -140,7 +139,7 @@ impl UiContext {
     /// Takes the actual content height and renders scrollbar if needed.
     pub fn end_scroll_area(&mut self, content_height: f32) {
         let bounds = self.scroll_area_bounds.unwrap();
-        let content_bounds = self.scroll_area_content_bounds.unwrap();
+        let _content_bounds = self.scroll_area_content_bounds.unwrap();
         let show_scrollbar = self.scroll_area_show_scrollbar;
         let mut state = self.scroll_area_state.take().unwrap();
 

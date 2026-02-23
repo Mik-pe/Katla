@@ -2,8 +2,7 @@ use std::{path::PathBuf, rc::Rc};
 
 use katla_math::Color;
 use katla_vulkan::{
-    DescriptorSetLayoutBuilder, DescriptorType, ImageFormat,
-    MaterialPipelineCache, ShaderStages, Texture, VertexBinding, VulkanContext, VulkanRenderer,
+    DescriptorSetLayoutBuilder, DescriptorType, ImageFormat, ShaderStages, Texture, VertexBinding, VulkanContext, VulkanRenderer,
 };
 use log::warn;
 

@@ -5,7 +5,6 @@
 //! using a uniform buffer containing the screen size.
 
 use katla_vulkan::{
-    context::VulkanContext,
     material::{MaterialPipeline, RenderState, ShaderSource},
     DescriptorSetLayoutBuilder, DescriptorType, ImageFormat,
     MaterialDomain, MaterialPipelineCache, ShaderStages, VertexBinding, VertexFormat,

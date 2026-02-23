@@ -1,14 +1,10 @@
-use crate::{rendering::vertextypes::*, util::GLTFModel};
 
 use katla_math::Color;
 use katla_vulkan::{
-    context::VulkanContext, material::PbrTextureSet, ImageFormat,
-    MaterialPipelineCache, MaterialHandle, MaterialPipeline, MaterialTemplate, Texture, VertexBinding,
-    DescriptorSetLayoutBuilder, DescriptorType, ShaderStages,
+    material::PbrTextureSet, MaterialHandle, MaterialPipeline, MaterialTemplate, Texture, VertexBinding,
 };
-use log::warn;
 
-use std::{cell::RefCell, path::{Path, PathBuf}, rc::Rc};
+use std::{cell::RefCell, rc::Rc};
 
 pub struct Material {
     pub material_pipeline: Rc<RefCell<MaterialPipeline>>,

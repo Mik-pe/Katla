@@ -762,7 +762,7 @@ impl CompiledRenderGraph {
                 } else if let Some(CompiledResource::ExternalImage { extent, .. }) =
                     resources.get(resource_id)
                 {
-                    (*extent)
+                    *extent 
                 } else {
                     return Err(RenderGraphError::CompilationError(format!(
                         "Cannot determine extent for resource {:?} - no explicit extent set",

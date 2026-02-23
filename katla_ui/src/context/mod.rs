@@ -20,7 +20,7 @@ use crate::text::{FontId, FontSystem};
 
 pub use layout::{LayoutDirection, LayoutState};
 pub use popup::{CloseBehavior, Popup, PopupPosition, PopupStyle};
-pub use state::{StateAccess, WidgetState, WidgetStorage};
+pub use state::WidgetState;
 pub use widgets::{ScrollArea, ScrollAreaState};
 
 /// ID type for UI elements.

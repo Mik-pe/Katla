@@ -2,7 +2,7 @@ use ash::vk;
 use std::{path::Path, rc::Rc};
 
 use super::{
-    DescriptorLayoutBuilder, ImageInfo, MaterialDescriptor, MaterialError, MaterialPipeline,
+    MaterialDescriptor, MaterialError, MaterialPipeline,
     PipelineBuilder, ShaderModule, ShaderSource,
 };
 use crate::render_graph::types::ShaderStages;
