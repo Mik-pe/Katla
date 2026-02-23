@@ -6,26 +6,26 @@
 //! # Example
 //!
 //! ```ignore
-//! use katla_ui::{Widget, UiContext, Response};
+//! use katla_ui::{Widget, UiContext, Response, widgets::Button};
 //!
-//! struct MyButton {
+//! struct MyWidget {
 //!     label: &'static str,
 //! }
 //!
-//! impl MyButton {
+//! impl MyWidget {
 //!     pub fn new(label: &'static str) -> Self {
 //!         Self { label }
 //!     }
 //! }
 //!
-//! impl Widget for MyButton {
+//! impl Widget for MyWidget {
 //!     fn ui(self, ui: &mut UiContext) -> Response {
-//!         ui.button("my_btn", self.label, Default::default())
+//!         ui.add(Button::new(self.label).bounds(Default::default()))
 //!     }
 //! }
 //!
 //! // Usage:
-//! ui.add(MyButton::new("Click me!"));
+//! ui.add(MyWidget::new("Click me!"));
 //! ```
 //!
 //! # Closures as Widgets
@@ -35,7 +35,7 @@
 //!
 //! ```ignore
 //! ui.add(|ui: &mut UiContext| {
-//!     ui.label("Hello");
+//!     // Custom widget logic
 //!     Response::default()
 //! });
 //! ```

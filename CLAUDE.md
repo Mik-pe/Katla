@@ -50,6 +50,7 @@ cargo run -- --single-frame    # Same as above, long form
 ## Working Conventions
 
 - **Task Continuity**: When working with tasks, continue through the task list without asking for confirmation between tasks. If there are pending tasks, proceed to the next one automatically.
+- **No Backwards Compatibility**: When introducing new APIs or patterns, don't maintain backwards compatibility or deprecation paths. Just remove the old code and update all usages to the new approach.
 
 ## Git Commit Conventions
 

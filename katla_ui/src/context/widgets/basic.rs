@@ -1,4 +1,6 @@
 //! Basic UI widgets: button, checkbox, slider, text input.
+//!
+//! These are internal implementations used by the builder widgets in `crate::widgets`.
 
 use katla_math::{Color, Rect2D, Vec2};
 
@@ -9,21 +11,8 @@ use crate::Response;
 use super::super::UiContext;
 
 impl UiContext {
-    /// Draw a label (non-interactive text).
-    pub fn label(&mut self, text: &str, bounds: Rect2D) {
-        let text_size = self.measure_text(text, self.style.font_size);
-        // Center text in bounds (top-left positioning)
-        let text_pos = Vec2::new(
-            bounds.min.x() + (bounds.width() - text_size.x()) * 0.5,
-            bounds.center().y() - text_size.y() * 0.5,
-        );
-        self.draw_text(text, text_pos, self.style.text_color, self.style.font_size);
-    }
-
-    /// Draw a button.
-    ///
-    /// Returns a Response with interaction info. Check `response.clicked` for click.
-    pub fn button(&mut self, id: &str, text: &str, bounds: Rect2D) -> Response {
+    /// Draw a button (internal - use `widgets::Button` instead).
+    pub(crate) fn button(&mut self, id: &str, text: &str, bounds: Rect2D) -> Response {
         let widget_id = self.generate_id(id);
 
         let hovered = self.update_hover(widget_id, bounds);
@@ -69,10 +58,8 @@ impl UiContext {
         }
     }
 
-    /// Draw a checkbox.
-    ///
-    /// Returns a Response. Check `response.changed` for value change.
-    pub fn checkbox(&mut self, id: &str, label: &str, checked: &mut bool, bounds: Rect2D) -> Response {
+    /// Draw a checkbox (internal - use `widgets::Checkbox` instead).
+    pub(crate) fn checkbox(&mut self, id: &str, label: &str, checked: &mut bool, bounds: Rect2D) -> Response {
         let widget_id = self.generate_id(id);
 
         let hovered = self.update_hover(widget_id, bounds);
@@ -134,10 +121,8 @@ impl UiContext {
         }
     }
 
-    /// Draw a slider.
-    ///
-    /// Returns a Response. Check `response.changed` for value change.
-    pub fn slider(
+    /// Draw a slider (internal - use `widgets::Slider` instead).
+    pub(crate) fn slider(
         &mut self,
         id: &str,
         value: &mut f32,
@@ -214,10 +199,8 @@ impl UiContext {
         );
     }
 
-    /// Draw a text input field.
-    ///
-    /// Returns a Response. Check `response.changed` for text modification.
-    pub fn text_input(&mut self, id: &str, text: &mut String, bounds: Rect2D) -> Response {
+    /// Draw a text input field (internal - use `widgets::TextInput` instead).
+    pub(crate) fn text_input(&mut self, id: &str, text: &mut String, bounds: Rect2D) -> Response {
         let widget_id = self.generate_id(id);
         let hovered = self.update_hover(widget_id, bounds);
 
@@ -295,10 +278,8 @@ impl UiContext {
         }
     }
 
-    /// Draw a multiline text area.
-    ///
-    /// Returns a Response. Check `response.changed` for text modification.
-    pub fn text_area(&mut self, id: &str, text: &mut String, bounds: Rect2D) -> Response {
+    /// Draw a multiline text area (internal - use `widgets::TextArea` instead).
+    pub(crate) fn text_area(&mut self, id: &str, text: &mut String, bounds: Rect2D) -> Response {
         let widget_id = self.generate_id(id);
         let hovered = self.update_hover(widget_id, bounds);
 
