@@ -55,11 +55,16 @@ impl UiMaterial {
         };
         let shader_path = PathBuf::from("resources/shaders/ui/ui.wgsl");
 
+        // Set 0: Static UI resources (font atlas, sampler, uniforms)
+        // Set 1: Dynamic texture via push descriptors (for viewport/thumbnails)
         let descriptor_layouts = vec![
             DescriptorSetLayoutBuilder::new()
                 .add_binding(0, DescriptorType::SampledImage, ShaderStages::FRAGMENT)
                 .add_binding(1, DescriptorType::Sampler, ShaderStages::FRAGMENT)
-                .add_binding(2, DescriptorType::SampledImage, ShaderStages::FRAGMENT),
+                .add_binding(3, DescriptorType::UniformBuffer, ShaderStages::VERTEX),
+            DescriptorSetLayoutBuilder::new()
+                .add_binding(0, DescriptorType::SampledImage, ShaderStages::FRAGMENT)
+                .with_push_descriptor(true),
         ];
 
         // Use unified Material API with cache
