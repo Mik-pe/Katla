@@ -1499,10 +1499,11 @@ impl EditorUI {
 
         // Draw the viewport texture (rendered 3D scene)
         // Use OPAQUE_IMAGE to force alpha = 1.0 (viewport may have 0 alpha from HDR)
+        // Flip V coordinate (0,1)->(1,0) because Vulkan textures are Y-flipped
         ui.draw_image(
             bounds,
-            Vec2::new(0.0, 0.0), // uv_min
-            Vec2::new(1.0, 1.0), // uv_max
+            Vec2::new(0.0, 1.0), // uv_min (flipped V)
+            Vec2::new(1.0, 0.0), // uv_max (flipped V)
             Color::OPAQUE_IMAGE,
             self.main_viewport_texture_id,
         );
