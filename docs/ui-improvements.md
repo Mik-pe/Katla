@@ -317,10 +317,12 @@ enum WidgetState { Checkbox(bool), Slider(f32), TextInput(String), ... }
 - [ ] `scroll_to_cursor()` for auto-scroll to focused item (future)
 
 ### Phase 4: Widget Trait System
-- [ ] Define `Widget` trait
-- [ ] Create builder structs for existing widgets
-- [ ] Implement `Sense` type
-- [ ] Add `ui.add()` method
+- [x] Define `Widget` trait
+- [x] Implement `Sense` type for interaction intent
+- [x] Add `ui.add()` method for custom widgets
+- [x] Add example builder widgets (`Separator`, `Badge`, `Spacer`)
+- [ ] Create builder structs for existing widgets (optional)
+- [ ] Migrate existing widgets to builder pattern (optional)
 
 ### Phase 5: Advanced Features
 - [ ] Implement drag-and-drop
