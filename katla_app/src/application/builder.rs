@@ -191,7 +191,6 @@ impl ApplicationBuilder {
             camera,
             gltf_cache: FileCache::new(gltf_loader),
             material_manager: MaterialManager::new(),
-            stage_upload: false,
             timer: Timer::new(100),
             info,
             world,
@@ -226,7 +225,6 @@ impl ApplicationBuilder {
             background_loader: BackgroundLoader::new(),
             next_thumbnail_texture_id: 100, // Custom texture IDs start at 100
             thumbnail_texture_ids: HashMap::new(),
-            pending_model_spawns: Vec::new(),
         };
 
         Ok((app, event_loop))

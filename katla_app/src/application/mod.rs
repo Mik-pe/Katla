@@ -57,7 +57,6 @@ pub struct Application {
     pub(crate) camera: Rc<RefCell<Camera>>,
     pub(crate) gltf_cache: FileCache<GLTFModel, Box<dyn Fn(&PathBuf) -> GLTFModel>>,
     pub(crate) material_manager: MaterialManager,
-    pub(crate) stage_upload: bool,
     pub(crate) timer: Timer,
     pub(crate) info: ApplicationInfo,
     pub(crate) world: World,
@@ -99,8 +98,6 @@ pub struct Application {
     pub(crate) next_thumbnail_texture_id: u64,
     /// Mapping of thumbnail paths to their uploaded texture IDs
     pub(crate) thumbnail_texture_ids: HashMap<PathBuf, katla_ui::TextureId>,
-    /// Pending model spawns (path, position) waiting for background load
-    pub(crate) pending_model_spawns: Vec<(PathBuf, katla_math::Vec3)>,
 }
 
 impl ApplicationHandler for Application {
@@ -112,11 +109,11 @@ impl ApplicationHandler for Application {
                     Window::default_attributes()
                         .with_title(&self.info.name)
                         .with_resizable(true)
+                        .with_maximized(true)
                         .with_min_inner_size(LogicalSize {
                             width: 800.0,
                             height: 600.0,
-                        })
-                        .with_maximized(true),
+                        }),
                 )
                 .unwrap();
 
@@ -299,7 +296,6 @@ impl ApplicationHandler for Application {
                             if self.editor_ui.focused_panel == crate::ui::FocusedPanel::Viewport {
                                 match keycode {
                                     KeyCode::Escape => event_loop.exit(),
-                                    KeyCode::KeyT => self.stage_upload = true,
                                     _ => {}
                                 }
                             }
@@ -359,36 +355,6 @@ impl ApplicationHandler for Application {
                             info!("Rendered {} frames, exiting", self.frame_count);
                             event_loop.exit();
                         }
-                    }
-
-                    // Stage upload test (KeyT)
-                    if self.stage_upload {
-                        let start = Instant::now();
-                        let renderer = self.renderer.as_mut().expect("Renderer not initialized");
-
-                        let _sphere = MeshBuilder::new(renderer.context.clone())
-                            .position(Vec3::new(0.0, 5.0, 0.0))
-                            .color([0.8, 0.2, 0.2])
-                            .sphere()
-                            .build(&mut self.world, renderer);
-
-                        let renderer = self.renderer.as_mut().expect("Renderer not initialized");
-                        let _cube = MeshBuilder::new(renderer.context.clone())
-                            .position(Vec3::new(20.0, 5.0, 0.0))
-                            .color([0.2, 0.8, 0.2])
-                            .build(&mut self.world, renderer);
-
-                        let renderer = self.renderer.as_mut().expect("Renderer not initialized");
-                        let _plane = MeshBuilder::new(renderer.context.clone())
-                            .position(Vec3::new(0.0, -5.0, 0.0))
-                            .color([0.5, 0.5, 0.5])
-                            .plane()
-                            .size(Vec3::new(100.0, 100.0, 1.0))
-                            .build(&mut self.world, renderer);
-
-                        let millisecs = start.elapsed().as_micros() as f64 / 1000.0;
-                        debug!("Mesh creation took {millisecs} ms");
-                        self.stage_upload = false;
                     }
 
                     if let Some(window) = &self.window {
