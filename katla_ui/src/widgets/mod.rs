@@ -39,6 +39,8 @@ pub struct Button<'a> {
     text: &'a str,
     bounds: Rect2D,
     id: Option<&'a str>,
+    fill_color: Option<Color>,
+    hover_color: Option<Color>,
 }
 
 impl<'a> Button<'a> {
@@ -48,6 +50,8 @@ impl<'a> Button<'a> {
             text,
             bounds: Rect2D::from_size(Vec2::new(100.0, 30.0)),
             id: None,
+            fill_color: None,
+            hover_color: None,
         }
     }
 
@@ -62,12 +66,93 @@ impl<'a> Button<'a> {
         self.id = Some(id);
         self
     }
+
+    /// Set a custom fill color (background).
+    pub fn fill_color(mut self, color: Color) -> Self {
+        self.fill_color = Some(color);
+        self
+    }
+
+    /// Set a custom hover color.
+    pub fn hover_color(mut self, color: Color) -> Self {
+        self.hover_color = Some(color);
+        self
+    }
 }
 
 impl<'a> crate::Widget for Button<'a> {
     fn ui(self, ui: &mut UiContext) -> Response {
         let id = self.id.unwrap_or(self.text);
-        ui.button(id, self.text, self.bounds)
+        ui.button_with_colors(
+            id,
+            self.text,
+            self.bounds,
+            self.fill_color,
+            self.hover_color,
+        )
+    }
+}
+
+// =============================================================================
+// ImageButton Widget
+// =============================================================================
+
+/// A clickable button with an icon.
+///
+/// # Example
+///
+/// ```ignore
+/// use katla_ui::widgets::ImageButton;
+/// use katla_ui::icons::ForkAwesome;
+///
+/// if ui.add(ImageButton::new(ForkAwesome::ARROW_LEFT).bounds(my_bounds)).clicked {
+///     println!("Clicked!");
+/// }
+///
+/// // Disabled button
+/// ui.add(ImageButton::new(ForkAwesome::TRASH).enabled(false));
+/// ```
+pub struct ImageButton<'a> {
+    icon: char,
+    bounds: Rect2D,
+    id: Option<&'a str>,
+    enabled: bool,
+}
+
+impl<'a> ImageButton<'a> {
+    /// Create a new image button with an icon.
+    pub fn new(icon: char) -> Self {
+        Self {
+            icon,
+            bounds: Rect2D::from_size(Vec2::new(30.0, 30.0)),
+            id: None,
+            enabled: true,
+        }
+    }
+
+    /// Set the button bounds.
+    pub fn bounds(mut self, bounds: Rect2D) -> Self {
+        self.bounds = bounds;
+        self
+    }
+
+    /// Set a custom ID (for unique identification).
+    pub fn id(mut self, id: &'a str) -> Self {
+        self.id = Some(id);
+        self
+    }
+
+    /// Set whether the button is enabled.
+    pub fn enabled(mut self, enabled: bool) -> Self {
+        self.enabled = enabled;
+        self
+    }
+}
+
+impl<'a> crate::Widget for ImageButton<'a> {
+    fn ui(self, ui: &mut UiContext) -> Response {
+        let id = self.id.unwrap_or("image_btn");
+        ui.image_button(id, self.icon, self.bounds, self.enabled)
     }
 }
 

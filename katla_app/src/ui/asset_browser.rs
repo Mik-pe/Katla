@@ -12,6 +12,7 @@ use std::path::PathBuf;
 use std::time::Instant;
 
 use katla_math::{Color, Rect2D, Vec2};
+use katla_ui::widgets::ImageButton;
 use katla_ui::{ForkAwesome, Popup, ScrollArea, ScrollAreaState, TextureId, UiContext};
 
 use super::editor_ui::FocusedPanel;
@@ -878,36 +879,18 @@ pub fn build_asset_browser(
         Vec2::new(nav_x, toolbar_top + 2.0),
         Vec2::new(nav_btn_size, nav_btn_size),
     );
-    let forward_hovered = ui.is_hovered(forward_bounds);
     let can_forward = state.can_go_forward();
 
-    if forward_hovered && can_forward {
-        ui.draw_rect(forward_bounds, theme.button_hover);
-    }
-
-    if forward_hovered && can_forward && ui.input.mouse_clicked(katla_ui::input::mouse_button::LEFT)
+    if ui
+        .add(
+            ImageButton::new(ForkAwesome::ARROW_RIGHT)
+                .bounds(forward_bounds)
+                .enabled(can_forward),
+        )
+        .clicked
     {
         state.navigate_forward(thumbnail_texture_ids);
     }
-
-    ui.draw_icon_aligned(
-        ForkAwesome::ARROW_RIGHT,
-        Vec2::new(
-            forward_bounds.min.x() + 5.0,
-            forward_bounds.center().y() - 7.0,
-        ),
-        nav_icon_size,
-        if can_forward {
-            if forward_hovered {
-                theme.text_primary
-            } else {
-                theme.text_secondary
-            }
-        } else {
-            theme.text_muted
-        },
-        katla_ui::FontId::DEFAULT,
-    );
     nav_x -= nav_btn_size + 2.0;
 
     // Back button
@@ -915,32 +898,18 @@ pub fn build_asset_browser(
         Vec2::new(nav_x, toolbar_top + 2.0),
         Vec2::new(nav_btn_size, nav_btn_size),
     );
-    let back_hovered = ui.is_hovered(back_bounds);
     let can_back = state.can_go_back();
 
-    if back_hovered && can_back {
-        ui.draw_rect(back_bounds, theme.button_hover);
-    }
-
-    if back_hovered && can_back && ui.input.mouse_clicked(katla_ui::input::mouse_button::LEFT) {
+    if ui
+        .add(
+            ImageButton::new(ForkAwesome::ARROW_LEFT)
+                .bounds(back_bounds)
+                .enabled(can_back),
+        )
+        .clicked
+    {
         state.navigate_back(thumbnail_texture_ids);
     }
-
-    ui.draw_icon_aligned(
-        ForkAwesome::ARROW_LEFT,
-        Vec2::new(back_bounds.min.x() + 5.0, back_bounds.center().y() - 7.0),
-        nav_icon_size,
-        if can_back {
-            if back_hovered {
-                theme.text_primary
-            } else {
-                theme.text_secondary
-            }
-        } else {
-            theme.text_muted
-        },
-        katla_ui::FontId::DEFAULT,
-    );
 
     // Search box (left of navigation buttons)
     let search_width = 100.0;
