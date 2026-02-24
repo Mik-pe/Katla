@@ -74,7 +74,12 @@ impl UiContext {
     /// ui.end_scroll_area();
     /// ```
     pub fn begin_scroll_area(&mut self, config: ScrollArea, bounds: Rect2D) -> Rect2D {
-        let ScrollArea { id, state, max_height, show_scrollbar } = config;
+        let ScrollArea {
+            id,
+            state,
+            max_height,
+            show_scrollbar,
+        } = config;
 
         // Calculate actual height (limited by max_height)
         let actual_height = bounds.height().min(max_height);
@@ -84,10 +89,8 @@ impl UiContext {
         let content_width = bounds.width() - scrollbar_width;
 
         // Content area
-        let content_bounds = Rect2D::from_origin_size(
-            bounds.min,
-            Vec2::new(content_width, actual_height),
-        );
+        let content_bounds =
+            Rect2D::from_origin_size(bounds.min, Vec2::new(content_width, actual_height));
 
         // Handle mouse wheel scrolling
         if self.is_hovered(content_bounds) {
@@ -109,7 +112,8 @@ impl UiContext {
             if self.input.mouse_down[mouse_button::LEFT] {
                 let max_scroll = (state.content_height - actual_height).max(0.0);
                 let track_height = actual_height;
-                let handle_height = (actual_height / state.content_height).clamp(20.0, track_height);
+                let handle_height =
+                    (actual_height / state.content_height).clamp(20.0, track_height);
                 let track_usable = track_height - handle_height;
 
                 let mouse_y = self.input.mouse_pos.y() - bounds.min.y() - handle_height * 0.5;
@@ -117,7 +121,8 @@ impl UiContext {
             } else {
                 self.active_id = None;
             }
-        } else if self.is_hovered(scrollbar_bounds) && self.input.mouse_pressed[mouse_button::LEFT] {
+        } else if self.is_hovered(scrollbar_bounds) && self.input.mouse_pressed[mouse_button::LEFT]
+        {
             self.active_id = Some(scrollbar_id);
         }
 
@@ -164,7 +169,8 @@ impl UiContext {
         if show_scrollbar && content_height > bounds.height() {
             let scrollbar_width = 10.0;
             let track_height = bounds.height();
-            let handle_height = (bounds.height() / content_height * track_height).clamp(20.0, track_height);
+            let handle_height =
+                (bounds.height() / content_height * track_height).clamp(20.0, track_height);
             let track_usable = track_height - handle_height;
             let max_scroll = (content_height - bounds.height()).max(0.0);
 
@@ -208,13 +214,18 @@ impl UiContext {
 
     /// Get current scroll offset for a scroll area.
     pub fn scroll_offset(&self) -> f32 {
-        self.scroll_area_state.as_ref().map(|s| s.scroll_offset).unwrap_or(0.0)
+        self.scroll_area_state
+            .as_ref()
+            .map(|s| s.scroll_offset)
+            .unwrap_or(0.0)
     }
 
     /// Scroll to a specific Y position within content.
     pub fn scroll_to_y(&mut self, y: f32) {
         if let Some(state) = self.scroll_area_state.as_mut() {
-            let content_bounds = self.scroll_area_content_bounds.unwrap_or_else(|| Rect2D::from_size(Vec2::new(0.0, 0.0)));
+            let content_bounds = self
+                .scroll_area_content_bounds
+                .unwrap_or_else(|| Rect2D::from_size(Vec2::new(0.0, 0.0)));
             let visible_height = content_bounds.height();
 
             // Scroll so y is visible

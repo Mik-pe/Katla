@@ -205,7 +205,7 @@ impl ModelStats {
         let triangle_count = match model.index_stride {
             2 => model.index_data.len() / 6, // 16-bit indices, 2 bytes per index, 3 indices per triangle
             4 => model.index_data.len() / 12, // 32-bit indices, 4 bytes per index, 3 indices per triangle
-            _ => vertex_count / 3,           // No indices or unknown, estimate from vertices
+            _ => vertex_count / 3,            // No indices or unknown, estimate from vertices
         };
 
         // Count meshes and primitives
@@ -316,8 +316,15 @@ impl ModelPreviewState {
             let mesh_handle = renderer.register_mesh(vertex_buffer, index_buffer);
 
             // Register material with renderer using get_registration_data()
-            let (pipeline, texture, vertex_binding, pbr_textures, pbr_refs, texture_indices, emission_index) =
-                material.get_registration_data();
+            let (
+                pipeline,
+                texture,
+                vertex_binding,
+                pbr_textures,
+                pbr_refs,
+                texture_indices,
+                emission_index,
+            ) = material.get_registration_data();
 
             let material_handle = if let Some(pbr) = pbr_textures {
                 // Use PBR registration for materials with PBR textures
@@ -373,22 +380,32 @@ impl ModelPreviewState {
 
         if let Some(template) = registry.get_template(template_name) {
             // Get the correct texture index from material info
-            let texture_index = model.materials.first()
+            let texture_index = model
+                .materials
+                .first()
                 .and_then(|m| m.base_color_texture)
                 .unwrap_or(0);
 
             // Extract texture from the GLTF model
-            let texture = model.images.get(texture_index)
+            let texture = model
+                .images
+                .get(texture_index)
                 .and_then(|image| Self::load_texture_from_gltf(image, context));
 
             Material::from_template(template, texture, None)
         } else {
-            panic!("Material template '{}' not found for model preview. Ensure materials are loaded.", template_name);
+            panic!(
+                "Material template '{}' not found for model preview. Ensure materials are loaded.",
+                template_name
+            );
         }
     }
 
     /// Load a texture from a GLTF image.
-    fn load_texture_from_gltf(image: &gltf::image::Data, context: &Rc<VulkanContext>) -> Option<Rc<katla_vulkan::Texture>> {
+    fn load_texture_from_gltf(
+        image: &gltf::image::Data,
+        context: &Rc<VulkanContext>,
+    ) -> Option<Rc<katla_vulkan::Texture>> {
         use katla_vulkan::ImageFormat;
 
         match image.format {
@@ -493,7 +510,13 @@ impl ModelPreviewState {
 
     /// Update animation playback.
     pub fn update_animation(&mut self, delta_time: f32) {
-        if self.animation.playing && self.stats.as_ref().map(|s| s.has_animations).unwrap_or(false) {
+        if self.animation.playing
+            && self
+                .stats
+                .as_ref()
+                .map(|s| s.has_animations)
+                .unwrap_or(false)
+        {
             self.animation.time += delta_time * self.animation.speed;
         }
     }

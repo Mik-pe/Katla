@@ -42,12 +42,10 @@ impl System for ParticleSimulationSystem {
         // Update each particle emitter
         for entity in entities_to_update {
             // Get transform position if available
-            let position = world
-                .get_component::<TransformComponent>(entity)
-                .map(|t| {
-                    let pos = t.transform.position;
-                    [pos.x(), pos.y(), pos.z()]
-                });
+            let position = world.get_component::<TransformComponent>(entity).map(|t| {
+                let pos = t.transform.position;
+                [pos.x(), pos.y(), pos.z()]
+            });
 
             // Update emitter
             if let Some(emitter) = world.get_component_mut::<ParticleEmitter>(entity) {

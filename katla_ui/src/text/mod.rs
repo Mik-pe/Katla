@@ -257,7 +257,7 @@ impl FontSystem {
         for y in 0..2 {
             for x in 0..2 {
                 let idx = (y * Self::DEFAULT_ATLAS_WIDTH + x) as usize * 4;
-                atlas_data[idx] = 255;     // R
+                atlas_data[idx] = 255; // R
                 atlas_data[idx + 1] = 255; // G
                 atlas_data[idx + 2] = 255; // B
                 atlas_data[idx + 3] = 255; // A
@@ -420,10 +420,8 @@ impl FontSystem {
                     ascender: ascender / scale_factor,
                     advance: advance / scale_factor,
                 };
-                self.glyph_cache.insert(
-                    (font_id, c, size_key, scale_key, subpixel_bin),
-                    cached,
-                );
+                self.glyph_cache
+                    .insert((font_id, c, size_key, scale_key, subpixel_bin), cached);
                 return Some(cached);
             }
         };
@@ -439,7 +437,8 @@ impl FontSystem {
             scale: PxScale::from(physical_size),
             position: ab_glyph::point(0.0, 0.0), // No subpixel offset for metrics
         };
-        let metrics_bounds = font.outline_glyph(glyph_for_metrics)
+        let metrics_bounds = font
+            .outline_glyph(glyph_for_metrics)
             .map(|g| g.px_bounds())
             .unwrap_or(bounds);
 
@@ -461,10 +460,8 @@ impl FontSystem {
                 ascender: ascender / scale_factor,
                 advance: advance / scale_factor,
             };
-            self.glyph_cache.insert(
-                (font_id, c, size_key, scale_key, subpixel_bin),
-                cached,
-            );
+            self.glyph_cache
+                .insert((font_id, c, size_key, scale_key, subpixel_bin), cached);
             return Some(cached);
         }
 
@@ -499,10 +496,8 @@ impl FontSystem {
         let cached = self.place_in_atlas(&rasterized, scale_factor)?;
 
         // Cache the result (includes subpixel bin in key)
-        self.glyph_cache.insert(
-            (font_id, c, size_key, scale_key, subpixel_bin),
-            cached,
-        );
+        self.glyph_cache
+            .insert((font_id, c, size_key, scale_key, subpixel_bin), cached);
 
         Some(cached)
     }
@@ -736,9 +731,9 @@ impl FontSystem {
 
             // Check cache first (metrics are stored in logical pixels)
             // Use SubpixelBin::Zero since advance width is independent of subpixel position
-            if let Some(cached) = self
-                .glyph_cache
-                .get(&(font_id, c, size_key, scale_key, SubpixelBin::Zero))
+            if let Some(cached) =
+                self.glyph_cache
+                    .get(&(font_id, c, size_key, scale_key, SubpixelBin::Zero))
             {
                 line_width += cached.advance;
             } else {

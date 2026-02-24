@@ -44,22 +44,13 @@ pub enum LoadRequest {
     },
 
     /// Load full image (for textures, skyboxes, etc.).
-    Image {
-        id: LoadId,
-        path: PathBuf,
-    },
+    Image { id: LoadId, path: PathBuf },
 
     /// Load GLTF/GLB model (CPU parsing only, GPU upload on main thread).
-    Model {
-        id: LoadId,
-        path: PathBuf,
-    },
+    Model { id: LoadId, path: PathBuf },
 
     /// Load shader source (for hot reload, validation).
-    ShaderSource {
-        id: LoadId,
-        path: PathBuf,
-    },
+    ShaderSource { id: LoadId, path: PathBuf },
 }
 
 /// Results from background loading.
@@ -170,15 +161,9 @@ impl BackgroundLoader {
                 LoadRequest::ImageThumbnail { id, path, max_size } => {
                     Self::load_image_thumbnail(id, &path, max_size)
                 }
-                LoadRequest::Image { id, path } => {
-                    Self::load_image(id, &path)
-                }
-                LoadRequest::Model { id, path } => {
-                    Self::load_model(id, &path)
-                }
-                LoadRequest::ShaderSource { id, path } => {
-                    Self::load_shader(id, &path)
-                }
+                LoadRequest::Image { id, path } => Self::load_image(id, &path),
+                LoadRequest::Model { id, path } => Self::load_model(id, &path),
+                LoadRequest::ShaderSource { id, path } => Self::load_shader(id, &path),
             };
 
             if result_tx.send(result).is_err() {
@@ -209,7 +194,8 @@ impl BackgroundLoader {
                 };
 
                 // Resize and convert to RGBA8
-                let resized = img.resize(new_width, new_height, image::imageops::FilterType::Lanczos3);
+                let resized =
+                    img.resize(new_width, new_height, image::imageops::FilterType::Lanczos3);
                 let rgba = resized.to_rgba8();
                 let (width, height) = rgba.dimensions();
                 let pixels = rgba.into_raw();
@@ -287,8 +273,8 @@ impl BackgroundLoader {
                 LoadResult::ModelLoaded {
                     id,
                     path: path.clone(),
-                    vertices: Vec::new(),  // TODO: Extract from model
-                    indices: Vec::new(),   // TODO: Extract from model
+                    vertices: Vec::new(), // TODO: Extract from model
+                    indices: Vec::new(),  // TODO: Extract from model
                 }
             }
             Err(e) => {
@@ -341,11 +327,7 @@ impl BackgroundLoader {
 
         self.pending_loads.insert(id, path.clone());
 
-        let request = LoadRequest::ImageThumbnail {
-            id,
-            path,
-            max_size,
-        };
+        let request = LoadRequest::ImageThumbnail { id, path, max_size };
 
         if let Err(e) = self.request_sender.send(request) {
             warn!("Failed to send thumbnail request: {}", e);
@@ -414,13 +396,23 @@ impl BackgroundLoader {
             // Remove from pending
             if let Some(path) = self.pending_loads.remove(&result.id()) {
                 // Cache thumbnails
-                if let LoadResult::ImageThumbnailLoaded { ref path, width, height, ref pixels, .. } = result {
-                    self.thumbnail_cache.insert(path.clone(), ThumbnailEntry {
-                        width,
-                        height,
-                        pixels: pixels.clone(),
-                        uploaded: false,
-                    });
+                if let LoadResult::ImageThumbnailLoaded {
+                    ref path,
+                    width,
+                    height,
+                    ref pixels,
+                    ..
+                } = result
+                {
+                    self.thumbnail_cache.insert(
+                        path.clone(),
+                        ThumbnailEntry {
+                            width,
+                            height,
+                            pixels: pixels.clone(),
+                            uploaded: false,
+                        },
+                    );
                 }
                 // Don't remove from pending_loads here - do it for all results
                 let _ = path; // Path was used above

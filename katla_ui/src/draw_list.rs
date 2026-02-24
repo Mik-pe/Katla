@@ -271,7 +271,14 @@ impl DrawList {
     /// * `uv_max` - Bottom-right UV coordinate
     /// * `color` - Tint color (use Color::WHITE for no tint)
     /// * `texture` - Texture to sample from
-    pub fn add_image(&mut self, bounds: Rect2D, uv_min: Vec2, uv_max: Vec2, color: Color, texture: TextureId) {
+    pub fn add_image(
+        &mut self,
+        bounds: Rect2D,
+        uv_min: Vec2,
+        uv_max: Vec2,
+        color: Color,
+        texture: TextureId,
+    ) {
         self.set_texture(texture);
 
         let vertex_offset = self.vertices.len() as u32;

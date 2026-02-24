@@ -21,7 +21,8 @@ impl ThirdPersonControlSystem {
         // Find the camera entity (child of player)
         if let Some(children) = world.get_component::<Children>(player_entity) {
             for &child_entity in &children.children {
-                if let Some(_camera) = world.get_component::<ThirdPersonCameraComponent>(child_entity)
+                if let Some(_camera) =
+                    world.get_component::<ThirdPersonCameraComponent>(child_entity)
                 {
                     if let Some(camera_state) =
                         world.get_component::<CameraStateComponent>(child_entity)
@@ -40,7 +41,8 @@ impl System for ThirdPersonControlSystem {
         // Collect input state first to avoid borrow issues
         let input = world.get_input();
         let forward = input.is_action_pressed(katla_ecs::input::Action::MoveForward) as i32 as f32;
-        let backward = input.is_action_pressed(katla_ecs::input::Action::MoveBackward) as i32 as f32;
+        let backward =
+            input.is_action_pressed(katla_ecs::input::Action::MoveBackward) as i32 as f32;
         let left = input.is_action_pressed(katla_ecs::input::Action::MoveLeft) as i32 as f32;
         let right = input.is_action_pressed(katla_ecs::input::Action::MoveRight) as i32 as f32;
         let jump = input.is_action_pressed(katla_ecs::input::Action::Jump);
@@ -48,10 +50,7 @@ impl System for ThirdPersonControlSystem {
 
         // Collect player entities with their components
         let players: Vec<_> = world
-            .query::<(
-                &ThirdPersonControllerComponent,
-                &TransformComponent,
-            )>()
+            .query::<(&ThirdPersonControllerComponent, &TransformComponent)>()
             .map(|(entity, controller, transform)| {
                 (entity, *controller, transform.transform.position.y())
             })
@@ -62,7 +61,8 @@ impl System for ThirdPersonControlSystem {
             let is_grounded = player_y <= controller.grounded_threshold;
 
             // Update character state
-            if let Some(char_state) = world.get_component_mut::<CharacterStateComponent>(player_entity)
+            if let Some(char_state) =
+                world.get_component_mut::<CharacterStateComponent>(player_entity)
             {
                 char_state.is_grounded = is_grounded;
             }
@@ -99,7 +99,8 @@ impl System for ThirdPersonControlSystem {
 
             // Handle jump
             if jump && is_grounded {
-                if let Some(velocity) = world.get_component_mut::<VelocityComponent>(player_entity) {
+                if let Some(velocity) = world.get_component_mut::<VelocityComponent>(player_entity)
+                {
                     velocity.velocity[1] = controller.jump_velocity;
                 }
             }
@@ -152,8 +153,9 @@ impl System for ThirdPersonCameraSystem {
 
             // Update distance from mouse wheel
             updated_state.current_distance -= camera.zoom_speed * mouse_wheel;
-            updated_state.current_distance =
-                updated_state.current_distance.clamp(camera.min_distance, camera.max_distance);
+            updated_state.current_distance = updated_state
+                .current_distance
+                .clamp(camera.min_distance, camera.max_distance);
 
             // Get player position
             let player_pos = if let Some(player_transform) =

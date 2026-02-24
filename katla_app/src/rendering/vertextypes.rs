@@ -91,8 +91,8 @@ pub struct VertexSkinned {
     pub normal: [f32; 3],
     pub tangent: [f32; 4],
     pub tex_coord0: [f32; 2],
-    pub joint_indices: [u16; 4],  // Up to 4 joint influences (u16 - 65k joints is plenty)
-    pub joint_weights: [f32; 4],  // Weights must sum to 1.0
+    pub joint_indices: [u16; 4], // Up to 4 joint influences (u16 - 65k joints is plenty)
+    pub joint_weights: [f32; 4], // Weights must sum to 1.0
 }
 
 impl VertexSkinned {
@@ -115,11 +115,7 @@ impl VertexSkinned {
     }
 
     /// Create from a base VertexPBR with skinning data
-    pub fn from_pbr(
-        base: VertexPBR,
-        joint_indices: [u16; 4],
-        joint_weights: [f32; 4],
-    ) -> Self {
+    pub fn from_pbr(base: VertexPBR, joint_indices: [u16; 4], joint_weights: [f32; 4]) -> Self {
         Self {
             position: base.position,
             normal: base.normal,
@@ -133,12 +129,12 @@ impl VertexSkinned {
     pub fn get_vertex_binding() -> VertexBinding {
         VertexBinding {
             formats: vec![
-                VertexFormat::RGB32f,   // position (location 0)
-                VertexFormat::RGB32f,   // normal (location 1)
-                VertexFormat::RGBA32f,  // tangent (location 2)
-                VertexFormat::RG32f,    // uv (location 3)
-                VertexFormat::RGBA16u,  // joint_indices (location 4) - u16x4, 65k joints max
-                VertexFormat::RGBA32f,  // joint_weights (location 5)
+                VertexFormat::RGB32f,  // position (location 0)
+                VertexFormat::RGB32f,  // normal (location 1)
+                VertexFormat::RGBA32f, // tangent (location 2)
+                VertexFormat::RG32f,   // uv (location 3)
+                VertexFormat::RGBA16u, // joint_indices (location 4) - u16x4, 65k joints max
+                VertexFormat::RGBA32f, // joint_weights (location 5)
             ],
         }
     }

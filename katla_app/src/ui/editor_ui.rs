@@ -9,7 +9,11 @@
 
 use katla_ecs::EntityId;
 use katla_math::{Color, Rect2D, Vec2, Vec3};
-use katla_ui::{input::mouse_button, DrawList, FontId, FontSize, ForkAwesome, ScrollArea, ScrollAreaState, TextureId, UiContext, widgets::{Button, Label}};
+use katla_ui::{
+    input::mouse_button,
+    widgets::{Button, Label},
+    DrawList, FontId, FontSize, ForkAwesome, ScrollArea, ScrollAreaState, TextureId, UiContext,
+};
 use std::collections::HashSet;
 use std::path::PathBuf;
 
@@ -116,10 +120,7 @@ pub enum EditorAction {
     /// Spawn a new model at the given position.
     SpawnModel(SpawnableModel, Vec3),
     /// Spawn a model from a specific file path.
-    SpawnModelAtPath {
-        path: PathBuf,
-        position: Vec3,
-    },
+    SpawnModelAtPath { path: PathBuf, position: Vec3 },
     /// Delete an entity.
     DeleteEntity(EntityId),
     /// Duplicate an entity.
@@ -512,17 +513,28 @@ impl EditorUI {
 
                 match resize_edge {
                     PanelResizeEdge::LeftPanelRight => {
-                        let max_width = (screen_size.x() - self.right_panel_width - min_viewport_width).max(min_panel_width);
+                        let max_width =
+                            (screen_size.x() - self.right_panel_width - min_viewport_width)
+                                .max(min_panel_width);
                         self.left_panel_width = mouse_x.clamp(min_panel_width, max_width).round();
                     }
                     PanelResizeEdge::RightPanelLeft => {
                         let min_x = self.left_panel_width + min_viewport_width;
                         let max_width = (screen_size.x() - min_x).max(min_panel_width);
-                        self.right_panel_width = (screen_size.x() - mouse_x).clamp(min_panel_width, max_width).round();
+                        self.right_panel_width = (screen_size.x() - mouse_x)
+                            .clamp(min_panel_width, max_width)
+                            .round();
                     }
                     PanelResizeEdge::AssetBrowserTop => {
-                        let max_height = (screen_size.y() - status_bar_height - toolbar_height - min_viewport_width).max(min_asset_browser_height);
-                        self.asset_browser.panel_height = (screen_size.y() - mouse_y - status_bar_height).clamp(min_asset_browser_height, max_height).round();
+                        let max_height = (screen_size.y()
+                            - status_bar_height
+                            - toolbar_height
+                            - min_viewport_width)
+                            .max(min_asset_browser_height);
+                        self.asset_browser.panel_height =
+                            (screen_size.y() - mouse_y - status_bar_height)
+                                .clamp(min_asset_browser_height, max_height)
+                                .round();
                     }
                 }
             } else {
@@ -614,7 +626,11 @@ impl EditorUI {
         // Process asset browser actions
         for action in self.asset_browser.take_actions() {
             match action {
-                super::asset_browser::AssetAction::DragToViewport { path, asset_type, screen_pos } => {
+                super::asset_browser::AssetAction::DragToViewport {
+                    path,
+                    asset_type,
+                    screen_pos,
+                } => {
                     // Check if dropped in viewport area (not in panels)
                     if viewport_bounds.contains(screen_pos) {
                         // Determine what to spawn based on asset type
@@ -628,7 +644,10 @@ impl EditorUI {
                             }
                             _ => {
                                 // For other asset types, spawn a cube as placeholder
-                                self.pending_actions.push(EditorAction::SpawnModel(SpawnableModel::Cube, Vec3::new(0.0, 0.0, 0.0)));
+                                self.pending_actions.push(EditorAction::SpawnModel(
+                                    SpawnableModel::Cube,
+                                    Vec3::new(0.0, 0.0, 0.0),
+                                ));
                             }
                         }
                     }
@@ -729,7 +748,10 @@ impl EditorUI {
                         }
                     }
                 }
-                super::asset_browser::AssetAction::MoveToFolder { asset_path, folder_path } => {
+                super::asset_browser::AssetAction::MoveToFolder {
+                    asset_path,
+                    folder_path,
+                } => {
                     // Move file/folder to destination folder
                     let file_name = asset_path.file_name().unwrap_or_default();
                     let dest_path = folder_path.join(file_name);
@@ -766,7 +788,11 @@ impl EditorUI {
         // === STATUS BAR (bottom) ===
         // Count selected items (selected_index is the primary, selected_indices are multi-select)
         let selected_count = if self.asset_browser.selected_indices.is_empty() {
-            if self.asset_browser.selected_index.is_some() { 1 } else { 0 }
+            if self.asset_browser.selected_index.is_some() {
+                1
+            } else {
+                0
+            }
         } else {
             self.asset_browser.selected_indices.len()
         };
@@ -810,7 +836,12 @@ impl EditorUI {
                             Vec2::new(preview_size, preview_size),
                         );
                         ui.draw_rect(preview_bounds, self.theme.background.with_alpha(0.9));
-                        ui.draw_rect_border(preview_bounds, self.theme.background.with_alpha(0.9), self.theme.highlight, 2.0);
+                        ui.draw_rect_border(
+                            preview_bounds,
+                            self.theme.background.with_alpha(0.9),
+                            self.theme.highlight,
+                            2.0,
+                        );
 
                         // Draw icon
                         let icon_char = asset.asset_type.icon();
@@ -847,7 +878,13 @@ impl EditorUI {
         }
     }
 
-    fn build_toolbar(&mut self, ui: &mut UiContext, screen_size: Vec2, height: f32, _padding_arg: f32) {
+    fn build_toolbar(
+        &mut self,
+        ui: &mut UiContext,
+        screen_size: Vec2,
+        height: f32,
+        _padding_arg: f32,
+    ) {
         let theme = &self.theme;
         let toolbar_bounds =
             Rect2D::from_origin_size(Vec2::new(0.0, 0.0), Vec2::new(screen_size.x(), height));
@@ -871,10 +908,11 @@ impl EditorUI {
         // No padding between menu items - menu bar should be tight
         let menu_item_width = 50.0;
         let button_height = height;
-        let mut cursor = Vec2::new(0.0, 0.0);  // Start from left edge
+        let mut cursor = Vec2::new(0.0, 0.0); // Start from left edge
 
         // === FILE MENU ===
-        let file_bounds = Rect2D::from_origin_size(cursor, Vec2::new(menu_item_width, button_height));
+        let file_bounds =
+            Rect2D::from_origin_size(cursor, Vec2::new(menu_item_width, button_height));
         ui.menu_bar_dropdown("file_menu", "File", file_bounds, |ui| {
             if ui.menu_item_clicked("New Scene") {
                 // TODO: Implement new scene
@@ -896,7 +934,8 @@ impl EditorUI {
         cursor = Vec2::new(cursor.x() + menu_item_width, cursor.y());
 
         // === EDIT MENU ===
-        let edit_bounds = Rect2D::from_origin_size(cursor, Vec2::new(menu_item_width, button_height));
+        let edit_bounds =
+            Rect2D::from_origin_size(cursor, Vec2::new(menu_item_width, button_height));
         ui.menu_bar_dropdown("edit_menu", "Edit", edit_bounds, |ui| {
             if ui.menu_item_clicked("Undo") {
                 // TODO: Implement undo
@@ -915,7 +954,8 @@ impl EditorUI {
         cursor = Vec2::new(cursor.x() + menu_item_width, cursor.y());
 
         // === VIEW MENU ===
-        let view_bounds = Rect2D::from_origin_size(cursor, Vec2::new(menu_item_width, button_height));
+        let view_bounds =
+            Rect2D::from_origin_size(cursor, Vec2::new(menu_item_width, button_height));
         let show_grid = self.show_grid;
         let show_stats = self.show_stats;
         ui.menu_bar_dropdown("view_menu", "View", view_bounds, |ui| {
@@ -946,7 +986,8 @@ impl EditorUI {
         cursor = Vec2::new(cursor.x() + 60.0 + padding, cursor.y());
 
         // === HELP MENU ===
-        let help_bounds = Rect2D::from_origin_size(cursor, Vec2::new(menu_item_width, button_height));
+        let help_bounds =
+            Rect2D::from_origin_size(cursor, Vec2::new(menu_item_width, button_height));
         ui.menu_bar_dropdown("help_menu", "Help", help_bounds, |ui| {
             if ui.menu_item_clicked("About") {
                 ui.close_current_popup();
@@ -990,7 +1031,10 @@ impl EditorUI {
             theme.button_text,
         );
 
-        if ui.add(Button::new("").bounds(play_bounds).id("play_btn")).clicked {
+        if ui
+            .add(Button::new("").bounds(play_bounds).id("play_btn"))
+            .clicked
+        {
             self.is_playing = !self.is_playing;
             self.pending_actions.push(EditorAction::TogglePlay);
         }
@@ -1066,7 +1110,10 @@ impl EditorUI {
         // Get scroll offset for content positioning
         let scroll_offset = ui.scroll_offset();
 
-        let mut cursor = Vec2::new(bounds.min.x(), bounds.min.y() + header_height + 4.0 - scroll_offset);
+        let mut cursor = Vec2::new(
+            bounds.min.x(),
+            bounds.min.y() + header_height + 4.0 - scroll_offset,
+        );
         let item_height = 22.0;
         let indent_per_level = 16.0;
 
@@ -1218,7 +1265,10 @@ impl EditorUI {
             );
             let select_hovered = ui.is_hovered(select_bounds);
 
-            if ui.input.mouse_clicked(mouse_button::LEFT) && select_hovered && !ui.is_mouse_over_popup() {
+            if ui.input.mouse_clicked(mouse_button::LEFT)
+                && select_hovered
+                && !ui.is_mouse_over_popup()
+            {
                 self.selected_entity = Some(entity.id);
                 self.pending_actions
                     .push(EditorAction::SelectEntity(entity.id));
@@ -1264,10 +1314,31 @@ impl EditorUI {
 
         // Render popup
         let clicked_action = ui.context_menu("hierarchy_context", |ui| {
-            if ui.menu_item_clicked_with_icon_and_shortcut("Duplicate", ForkAwesome::COPY, true, "Ctrl+D") { return Some("Duplicate"); }
-            if ui.menu_item_clicked_with_icon_and_shortcut("Rename", ForkAwesome::PENCIL, true, "F2") { return Some("Rename"); }
+            if ui.menu_item_clicked_with_icon_and_shortcut(
+                "Duplicate",
+                ForkAwesome::COPY,
+                true,
+                "Ctrl+D",
+            ) {
+                return Some("Duplicate");
+            }
+            if ui.menu_item_clicked_with_icon_and_shortcut(
+                "Rename",
+                ForkAwesome::PENCIL,
+                true,
+                "F2",
+            ) {
+                return Some("Rename");
+            }
             ui.menu_separator();
-            if ui.menu_item_clicked_with_icon_and_shortcut("Delete", ForkAwesome::TRASH, true, "Del") { return Some("Delete"); }
+            if ui.menu_item_clicked_with_icon_and_shortcut(
+                "Delete",
+                ForkAwesome::TRASH,
+                true,
+                "Del",
+            ) {
+                return Some("Delete");
+            }
             None::<&str>
         });
 
@@ -1276,7 +1347,8 @@ impl EditorUI {
             match action {
                 "Duplicate" => {
                     if let Some(entity_id) = self.hierarchy_context_entity {
-                        self.pending_actions.push(EditorAction::DuplicateEntity(entity_id));
+                        self.pending_actions
+                            .push(EditorAction::DuplicateEntity(entity_id));
                     }
                 }
                 "Rename" => {
@@ -1284,7 +1356,8 @@ impl EditorUI {
                 }
                 "Delete" => {
                     if let Some(entity_id) = self.hierarchy_context_entity {
-                        self.pending_actions.push(EditorAction::DeleteEntity(entity_id));
+                        self.pending_actions
+                            .push(EditorAction::DeleteEntity(entity_id));
                     }
                 }
                 _ => {}
@@ -1467,7 +1540,14 @@ impl EditorUI {
                 Vec2::new(bounds.min.x() + 8.0, cursor.y()),
                 Vec2::new(bounds.width() - 16.0, 28.0),
             );
-            if ui.add(Button::new("Delete Entity").bounds(delete_bounds).id("delete_entity")).clicked {
+            if ui
+                .add(
+                    Button::new("Delete Entity")
+                        .bounds(delete_bounds)
+                        .id("delete_entity"),
+                )
+                .clicked
+            {
                 self.pending_actions
                     .push(EditorAction::DeleteEntity(entity.id));
                 self.selected_entity = None;
@@ -1651,7 +1731,11 @@ impl EditorUI {
         ui.draw_text(
             &selection_text,
             cursor,
-            if selected_count > 0 { theme.highlight } else { theme.text_secondary },
+            if selected_count > 0 {
+                theme.highlight
+            } else {
+                theme.text_secondary
+            },
             ui.scaled_font_size(FontSize::Small),
         );
 
@@ -1805,7 +1889,10 @@ impl EditorUI {
             ),
             Vec2::new(close_size, close_size),
         );
-        if ui.add(Button::new("×").bounds(close_bounds).id("close_prefs")).clicked {
+        if ui
+            .add(Button::new("×").bounds(close_bounds).id("close_prefs"))
+            .clicked
+        {
             self.show_preferences = false;
             self.preferences_panel_pos = None;
         }
@@ -1850,7 +1937,15 @@ impl EditorUI {
             }
 
             // Tab click
-            if ui.add(Button::new("").bounds(tab_bounds).id(&format!("tab_{:?}", tab))).clicked && !is_selected {
+            if ui
+                .add(
+                    Button::new("")
+                        .bounds(tab_bounds)
+                        .id(&format!("tab_{:?}", tab)),
+                )
+                .clicked
+                && !is_selected
+            {
                 self.preferences_tab = *tab;
             }
 
@@ -1911,10 +2006,7 @@ impl EditorUI {
         let spacing = 8.0;
 
         // Cursor starts at content area top, offset by scroll
-        let cursor = Vec2::new(
-            panel_bounds.min.x() + 16.0,
-            content_start_y - scroll_offset,
-        );
+        let cursor = Vec2::new(panel_bounds.min.x() + 16.0, content_start_y - scroll_offset);
 
         // Build current tab and get final Y position
         let final_y = match self.preferences_tab {
@@ -1927,9 +2019,7 @@ impl EditorUI {
             PreferencesTab::Keybindings => {
                 self.build_keybindings_tab(ui, &theme, cursor, content_width, row_height, spacing)
             }
-            PreferencesTab::About => {
-                self.build_about_tab(ui, &theme, cursor, content_width)
-            }
+            PreferencesTab::About => self.build_about_tab(ui, &theme, cursor, content_width),
         };
 
         // Calculate content height (from start to final Y)
@@ -1995,7 +2085,14 @@ impl EditorUI {
 
             let is_selected = *key == current_theme_key;
 
-            if ui.add(Button::new("").bounds(btn_bounds).id(&format!("theme_{}", key))).clicked {
+            if ui
+                .add(
+                    Button::new("")
+                        .bounds(btn_bounds)
+                        .id(&format!("theme_{}", key)),
+                )
+                .clicked
+            {
                 self.pending_actions
                     .push(EditorAction::SetTheme(key.to_string()));
             }
@@ -2039,7 +2136,18 @@ impl EditorUI {
         // Grid toggle
         let grid_btn_bounds =
             Rect2D::from_origin_size(cursor, Vec2::new(content_width, row_height));
-        if ui.toggle_button("pref_grid_toggle", "Show Grid", self.show_grid, grid_btn_bounds, theme.success, theme.button_bg, theme.button_text).clicked {
+        if ui
+            .toggle_button(
+                "pref_grid_toggle",
+                "Show Grid",
+                self.show_grid,
+                grid_btn_bounds,
+                theme.success,
+                theme.button_bg,
+                theme.button_text,
+            )
+            .clicked
+        {
             self.pending_actions.push(EditorAction::ToggleGrid);
         }
         cursor = Vec2::new(cursor.x(), cursor.y() + row_height + 4.0);
@@ -2047,7 +2155,18 @@ impl EditorUI {
         // Stats toggle
         let stats_btn_bounds =
             Rect2D::from_origin_size(cursor, Vec2::new(content_width, row_height));
-        if ui.toggle_button("pref_stats_toggle", "Show Stats Panel", self.show_stats, stats_btn_bounds, theme.success, theme.button_bg, theme.button_text).clicked {
+        if ui
+            .toggle_button(
+                "pref_stats_toggle",
+                "Show Stats Panel",
+                self.show_stats,
+                stats_btn_bounds,
+                theme.success,
+                theme.button_bg,
+                theme.button_text,
+            )
+            .clicked
+        {
             self.pending_actions.push(EditorAction::ToggleStats);
         }
         cursor = Vec2::new(cursor.x(), cursor.y() + row_height + 16.0);
@@ -2086,7 +2205,14 @@ impl EditorUI {
 
             let is_selected = (self.font_scale - scale).abs() < 0.01;
 
-            if ui.add(Button::new("").bounds(btn_bounds).id(&format!("font_scale_{}", scale))).clicked {
+            if ui
+                .add(
+                    Button::new("")
+                        .bounds(btn_bounds)
+                        .id(&format!("font_scale_{}", scale)),
+                )
+                .clicked
+            {
                 self.pending_actions
                     .push(EditorAction::SetFontScale(*scale));
             }
@@ -2140,7 +2266,18 @@ impl EditorUI {
         // Snap to grid toggle
         let snap_btn_bounds =
             Rect2D::from_origin_size(cursor, Vec2::new(content_width, row_height));
-        if ui.toggle_button("pref_snap_toggle", "Snap to Grid", self.snap_to_grid, snap_btn_bounds, theme.success, theme.button_bg, theme.button_text).clicked {
+        if ui
+            .toggle_button(
+                "pref_snap_toggle",
+                "Snap to Grid",
+                self.snap_to_grid,
+                snap_btn_bounds,
+                theme.success,
+                theme.button_bg,
+                theme.button_text,
+            )
+            .clicked
+        {
             self.snap_to_grid = !self.snap_to_grid;
         }
         cursor = Vec2::new(
@@ -2177,7 +2314,14 @@ impl EditorUI {
         ui.draw_rect(fill_bounds, theme.selection);
 
         // Slider handle
-        if ui.add(Button::new("").bounds(slider_bounds).id("camera_speed_slider")).clicked {
+        if ui
+            .add(
+                Button::new("")
+                    .bounds(slider_bounds)
+                    .id("camera_speed_slider"),
+            )
+            .clicked
+        {
             // Click to set value
         }
 
@@ -2201,7 +2345,14 @@ impl EditorUI {
                 Vec2::new(btn_width, row_height),
             );
             let is_selected = (self.grid_size - size).abs() < 0.01;
-            if ui.add(Button::new("").bounds(btn_bounds).id(&format!("grid_size_{}", size))).clicked {
+            if ui
+                .add(
+                    Button::new("")
+                        .bounds(btn_bounds)
+                        .id(&format!("grid_size_{}", size)),
+                )
+                .clicked
+            {
                 self.grid_size = size;
             }
             let btn_color = if is_selected {
@@ -2416,7 +2567,9 @@ impl EditorUI {
             ui.draw_rect(title_bounds, theme.panel_header);
 
             // Title text
-            let model_name = self.model_preview.model_path
+            let model_name = self
+                .model_preview
+                .model_path
                 .as_ref()
                 .and_then(|p| p.file_name())
                 .map(|n| n.to_string_lossy().to_string())
@@ -2442,7 +2595,11 @@ impl EditorUI {
                 ForkAwesome::TIMES,
                 Vec2::new(close_bounds.min.x() + 3.0, close_bounds.min.y() + 2.0),
                 14.0,
-                if close_hovered { theme.text_primary } else { theme.text_secondary },
+                if close_hovered {
+                    theme.text_primary
+                } else {
+                    theme.text_secondary
+                },
             );
             if close_hovered && ui.input.mouse_clicked(mouse_button::LEFT) {
                 self.model_preview.close();
@@ -2483,7 +2640,10 @@ impl EditorUI {
                     let rotation = (std::time::SystemTime::now()
                         .duration_since(std::time::UNIX_EPOCH)
                         .unwrap_or_default()
-                        .as_millis() % 1000) as f32 / 1000.0 * std::f32::consts::TAU;
+                        .as_millis()
+                        % 1000) as f32
+                        / 1000.0
+                        * std::f32::consts::TAU;
                     let spinner_chars = ['|', '/', '—', '\\'];
                     let spinner_idx = ((rotation / std::f32::consts::FRAC_PI_2) as usize) % 4;
                     let spinner_char = spinner_chars[spinner_idx];
@@ -2532,13 +2692,14 @@ impl EditorUI {
                         ui.image(
                             self.model_preview.texture_id,
                             preview_bounds,
-                            None,  // Use default UVs (0-1)
-                            Some(Color::OPAQUE_IMAGE),  // Force opaque output
+                            None,                      // Use default UVs (0-1)
+                            Some(Color::OPAQUE_IMAGE), // Force opaque output
                         );
                     } else {
                         // Fallback text
                         let text = "Preview Ready";
-                        let text_size = ui.measure_text(text, ui.scaled_font_size(FontSize::Medium));
+                        let text_size =
+                            ui.measure_text(text, ui.scaled_font_size(FontSize::Medium));
                         ui.draw_text(
                             text,
                             Vec2::new(
@@ -2592,7 +2753,8 @@ impl EditorUI {
                     } else {
                         error.clone()
                     };
-                    let error_size = ui.measure_text(&error_display, ui.scaled_font_size(FontSize::XSmall));
+                    let error_size =
+                        ui.measure_text(&error_display, ui.scaled_font_size(FontSize::XSmall));
                     ui.draw_text(
                         &error_display,
                         Vec2::new(
@@ -2632,7 +2794,10 @@ impl EditorUI {
                         theme.text_muted,
                         ui.scaled_font_size(FontSize::XSmall),
                     );
-                    let value_x = panel_x + panel_width - padding - ui.measure_text(&value, ui.scaled_font_size(FontSize::XSmall)).x();
+                    let value_x = panel_x + panel_width
+                        - padding
+                        - ui.measure_text(&value, ui.scaled_font_size(FontSize::XSmall))
+                            .x();
                     ui.draw_text(
                         &value,
                         Vec2::new(value_x, cursor.y()),
@@ -2669,10 +2834,8 @@ impl EditorUI {
                     cursor = Vec2::new(cursor.x(), cursor.y() + 4.0);
                     let btn_width = 80.0;
                     let btn_height = 24.0;
-                    let btn_bounds = Rect2D::from_origin_size(
-                        cursor,
-                        Vec2::new(btn_width, btn_height),
-                    );
+                    let btn_bounds =
+                        Rect2D::from_origin_size(cursor, Vec2::new(btn_width, btn_height));
                     let btn_hovered = ui.is_hovered(btn_bounds);
                     if btn_hovered {
                         ui.draw_rect(btn_bounds, theme.button_hover);
@@ -2681,20 +2844,30 @@ impl EditorUI {
                     }
                     ui.draw_rect_border(btn_bounds, theme.button_bg, theme.border, 1.0);
 
-                    let btn_text = if self.model_preview.animation.playing { "Pause" } else { "Play" };
-                    let btn_text_size = ui.measure_text(btn_text, ui.scaled_font_size(FontSize::XSmall));
+                    let btn_text = if self.model_preview.animation.playing {
+                        "Pause"
+                    } else {
+                        "Play"
+                    };
+                    let btn_text_size =
+                        ui.measure_text(btn_text, ui.scaled_font_size(FontSize::XSmall));
                     ui.draw_text(
                         btn_text,
                         Vec2::new(
                             btn_bounds.center().x() - btn_text_size.x() * 0.5,
                             btn_bounds.center().y() - btn_text_size.y() * 0.5,
                         ),
-                        if btn_hovered { theme.text_primary } else { theme.text_secondary },
+                        if btn_hovered {
+                            theme.text_primary
+                        } else {
+                            theme.text_secondary
+                        },
                         ui.scaled_font_size(FontSize::XSmall),
                     );
 
                     if btn_hovered && ui.input.mouse_clicked(mouse_button::LEFT) {
-                        self.model_preview.animation.playing = !self.model_preview.animation.playing;
+                        self.model_preview.animation.playing =
+                            !self.model_preview.animation.playing;
                     }
                 }
 
@@ -2733,7 +2906,14 @@ impl EditorUI {
         ui.set_font_scale(self.font_scale);
 
         ui.begin(screen_size, scale_factor);
-        self.build(ui, entities, fps, frame_count, loader, thumbnail_texture_ids);
+        self.build(
+            ui,
+            entities,
+            fps,
+            frame_count,
+            loader,
+            thumbnail_texture_ids,
+        );
         ui.end()
     }
 

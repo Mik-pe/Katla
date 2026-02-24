@@ -2,9 +2,9 @@
 //!
 //! This module provides centralized resource path discovery and management.
 
+use crate::{AppError, AppResult};
 use log::info;
 use std::path::{Path, PathBuf};
-use crate::{AppError, AppResult};
 
 /// Centralized resource path manager.
 ///

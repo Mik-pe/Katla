@@ -13,7 +13,13 @@ impl UiContext {
     ///
     /// Returns a Response. Check `response.clicked` for click.
     /// The `selected` parameter controls whether the item is highlighted as selected.
-    pub fn selectable(&mut self, id: &str, label: &str, selected: bool, bounds: Rect2D) -> Response {
+    pub fn selectable(
+        &mut self,
+        id: &str,
+        label: &str,
+        selected: bool,
+        bounds: Rect2D,
+    ) -> Response {
         let widget_id = self.generate_id(id);
 
         let hovered = self.update_hover(widget_id, bounds);
@@ -57,7 +63,11 @@ impl UiContext {
         let double_clicked = clicked && self.input.mouse_double_clicked(mouse_button::LEFT);
 
         // Track drag delta when active
-        let drag_delta = if active { self.input.mouse_delta } else { Vec2::new(0.0, 0.0) };
+        let drag_delta = if active {
+            self.input.mouse_delta
+        } else {
+            Vec2::new(0.0, 0.0)
+        };
 
         Response {
             clicked,
@@ -101,7 +111,11 @@ impl UiContext {
         };
 
         // Draw background
-        let bg_color = if checked { checked_color } else { unchecked_color };
+        let bg_color = if checked {
+            checked_color
+        } else {
+            unchecked_color
+        };
         self.draw_rect(bounds, bg_color);
 
         // Draw check icon and label
@@ -114,17 +128,31 @@ impl UiContext {
         if checked {
             let check_icon = ForkAwesome::CHECK;
             self.draw_icon(check_icon, Vec2::new(text_x, text_y), icon_size, text_color);
-            self.draw_text(label, Vec2::new(text_x + icon_size + 4.0, text_y), text_color, font_size);
+            self.draw_text(
+                label,
+                Vec2::new(text_x + icon_size + 4.0, text_y),
+                text_color,
+                font_size,
+            );
         } else {
             // Reserve space for alignment
-            self.draw_text(label, Vec2::new(text_x + icon_size + 4.0, text_y), text_color, font_size);
+            self.draw_text(
+                label,
+                Vec2::new(text_x + icon_size + 4.0, text_y),
+                text_color,
+                font_size,
+            );
         }
 
         // Check for double-click
         let double_clicked = clicked && self.input.mouse_double_clicked(mouse_button::LEFT);
 
         // Track drag delta when active
-        let drag_delta = if active { self.input.mouse_delta } else { Vec2::new(0.0, 0.0) };
+        let drag_delta = if active {
+            self.input.mouse_delta
+        } else {
+            Vec2::new(0.0, 0.0)
+        };
 
         Response {
             clicked,

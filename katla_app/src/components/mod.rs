@@ -18,8 +18,8 @@ pub use crate::components::transform::*;
 
 // Submodules
 pub mod camera;
-pub mod physics;
-pub mod scene;
-pub mod rendering;
 pub mod input;
+pub mod physics;
+pub mod rendering;
+pub mod scene;
 pub mod transform;

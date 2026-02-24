@@ -19,5 +19,5 @@ pub use material_manager::MaterialManager;
 pub use mesh::*;
 pub use sky_material::SkyMaterial;
 pub use ui_material::UiMaterial;
-pub use ui_renderer::{UiDrawCommand, UiDrawData, UIRenderer};
+pub use ui_renderer::{UIRenderer, UiDrawCommand, UiDrawData};
 pub use vertextypes::*;

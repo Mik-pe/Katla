@@ -49,10 +49,8 @@ impl UiContext {
     ) -> bool {
         let item_height = self.style.menu_item_height;
 
-        let item_bounds = Rect2D::from_origin_size(
-            self.popup_cursor,
-            Vec2::new(self.popup_width, item_height),
-        );
+        let item_bounds =
+            Rect2D::from_origin_size(self.popup_cursor, Vec2::new(self.popup_width, item_height));
 
         // Track for auto-sizing
         self.track_popup_item(item_bounds);
@@ -61,7 +59,8 @@ impl UiContext {
         let icon_char = icon.unwrap_or(ForkAwesome::ANGLE_RIGHT);
 
         // Draw and check click
-        let clicked = self.draw_popup_item_contents(label, icon_char, enabled, item_bounds, shortcut);
+        let clicked =
+            self.draw_popup_item_contents(label, icon_char, enabled, item_bounds, shortcut);
 
         // Advance cursor
         self.popup_cursor = Vec2::new(self.popup_cursor.x(), self.popup_cursor.y() + item_height);
@@ -75,10 +74,8 @@ impl UiContext {
     pub fn toggle_menu_item_clicked(&mut self, label: &str, checked: bool) -> bool {
         let item_height = self.style.menu_item_height;
 
-        let item_bounds = Rect2D::from_origin_size(
-            self.popup_cursor,
-            Vec2::new(self.popup_width, item_height),
-        );
+        let item_bounds =
+            Rect2D::from_origin_size(self.popup_cursor, Vec2::new(self.popup_width, item_height));
 
         // Track for auto-sizing
         self.track_popup_item(item_bounds);
@@ -141,7 +138,10 @@ impl UiContext {
         );
 
         // Advance cursor
-        self.popup_cursor = Vec2::new(self.popup_cursor.x(), self.popup_cursor.y() + separator_height);
+        self.popup_cursor = Vec2::new(
+            self.popup_cursor.x(),
+            self.popup_cursor.y() + separator_height,
+        );
     }
 
     /// Internal: draw popup item contents (hover, icon, label, shortcut).

@@ -46,8 +46,7 @@ pub enum AssetType {
 }
 
 /// Thumbnail loading state for an asset.
-#[derive(Debug, Clone)]
-#[derive(Default)]
+#[derive(Debug, Clone, Default)]
 pub enum ThumbnailState {
     /// Thumbnail not yet loaded or requested.
     #[default]
@@ -59,7 +58,6 @@ pub enum ThumbnailState {
     /// Failed to load.
     Failed,
 }
-
 
 impl AssetType {
     /// Determine asset type from file extension.
@@ -194,7 +192,10 @@ pub enum AssetAction {
     /// Delete asset
     Delete(PathBuf),
     /// Rename asset (old_path, new_path)
-    Rename { old_path: PathBuf, new_path: PathBuf },
+    Rename {
+        old_path: PathBuf,
+        new_path: PathBuf,
+    },
     /// Create new folder
     CreateFolder(PathBuf),
     /// Drag asset to viewport (spawn entity)
@@ -215,8 +216,6 @@ impl AssetBrowserState {
     pub fn new() -> Self {
         let current_path = PathBuf::from("resources");
         let nav_history = vec![current_path.clone()];
-
-        
 
         // Initial scan will happen in build_asset_browser when needs_rescan() returns true
         Self {
@@ -294,9 +293,12 @@ impl AssetBrowserState {
 
                 // Apply search filter
                 if !self.search_filter.is_empty()
-                    && !name.to_lowercase().contains(&self.search_filter.to_lowercase()) {
-                        continue;
-                    }
+                    && !name
+                        .to_lowercase()
+                        .contains(&self.search_filter.to_lowercase())
+                {
+                    continue;
+                }
 
                 let asset_type = AssetType::from_path(&path);
 
@@ -356,7 +358,11 @@ impl AssetBrowserState {
     }
 
     /// Navigate to a folder asset (with history).
-    pub fn navigate_to(&mut self, path: &PathBuf, thumbnail_texture_ids: &HashMap<PathBuf, TextureId>) {
+    pub fn navigate_to(
+        &mut self,
+        path: &PathBuf,
+        thumbnail_texture_ids: &HashMap<PathBuf, TextureId>,
+    ) {
         if path.is_dir() && path != &self.current_path {
             // Clear forward history
             self.nav_history.truncate(self.nav_history_pos + 1);
@@ -411,7 +417,11 @@ impl AssetBrowserState {
     }
 
     /// Navigate to a specific path segment (for breadcrumbs).
-    pub fn navigate_to_segment(&mut self, segment_index: usize, thumbnail_texture_ids: &HashMap<PathBuf, TextureId>) {
+    pub fn navigate_to_segment(
+        &mut self,
+        segment_index: usize,
+        thumbnail_texture_ids: &HashMap<PathBuf, TextureId>,
+    ) {
         let segments: Vec<&std::ffi::OsStr> = self.current_path.iter().collect();
         if segment_index < segments.len() {
             let mut new_path = PathBuf::new();
@@ -519,7 +529,11 @@ impl AssetBrowserState {
     }
 
     /// Handle keyboard navigation.
-    pub fn handle_keyboard(&mut self, key: katla_ui::input::KeyCode, thumbnail_texture_ids: &HashMap<PathBuf, TextureId>) -> Option<AssetAction> {
+    pub fn handle_keyboard(
+        &mut self,
+        key: katla_ui::input::KeyCode,
+        thumbnail_texture_ids: &HashMap<PathBuf, TextureId>,
+    ) -> Option<AssetAction> {
         if self.search_focused || self.assets.is_empty() {
             return None;
         }
@@ -644,7 +658,8 @@ pub fn build_asset_browser(
             (screen_size.x() - dialog_width) * 0.5,
             (screen_size.y() - dialog_height) * 0.5,
         );
-        let dialog_bounds = Rect2D::from_origin_size(dialog_pos, Vec2::new(dialog_width, dialog_height));
+        let dialog_bounds =
+            Rect2D::from_origin_size(dialog_pos, Vec2::new(dialog_width, dialog_height));
         ui.open_popup_with_bounds("confirm_dialog", dialog_bounds);
     }
 
@@ -722,7 +737,12 @@ pub fn build_asset_browser(
     // Asset count
     let count_text = format!("({})", state.assets.len());
     let count_size = ui.measure_text(&count_text, ui.scaled_font_size(katla_ui::FontSize::Small));
-    let title_width = ui.measure_text("Asset Browser", ui.scaled_font_size(katla_ui::FontSize::Medium)).x();
+    let title_width = ui
+        .measure_text(
+            "Asset Browser",
+            ui.scaled_font_size(katla_ui::FontSize::Medium),
+        )
+        .x();
     let count_pos = Vec2::new(
         title_pos.x() + title_width + 6.0,
         header_bounds.center().y() - count_size.y() * 0.5,
@@ -757,7 +777,8 @@ pub fn build_asset_browser(
 
     // Breadcrumb navigation
     let mut breadcrumb_x = bounds.min.x() + padding;
-    let breadcrumb_y = toolbar_bounds.center().y() - ui.scaled_font_size(katla_ui::FontSize::Small) * 0.5;
+    let breadcrumb_y =
+        toolbar_bounds.center().y() - ui.scaled_font_size(katla_ui::FontSize::Small) * 0.5;
     let breadcrumb_height = ui.scaled_font_size(katla_ui::FontSize::Small) + 4.0;
     let segments = state.path_segments();
 
@@ -768,7 +789,8 @@ pub fn build_asset_browser(
         // Draw separator (except for first)
         if i > 0 {
             let sep_text = " / ";
-            let sep_size = ui.measure_text(sep_text, ui.scaled_font_size(katla_ui::FontSize::Small));
+            let sep_size =
+                ui.measure_text(sep_text, ui.scaled_font_size(katla_ui::FontSize::Small));
             ui.draw_text(
                 sep_text,
                 Vec2::new(breadcrumb_x, breadcrumb_y),
@@ -837,9 +859,16 @@ pub fn build_asset_browser(
 
     ui.draw_icon_aligned(
         ForkAwesome::REFRESH,
-        Vec2::new(refresh_bounds.min.x() + 5.0, refresh_bounds.center().y() - 7.0),
+        Vec2::new(
+            refresh_bounds.min.x() + 5.0,
+            refresh_bounds.center().y() - 7.0,
+        ),
         nav_icon_size,
-        if refresh_hovered { theme.text_primary } else { theme.text_secondary },
+        if refresh_hovered {
+            theme.text_primary
+        } else {
+            theme.text_secondary
+        },
         katla_ui::FontId::DEFAULT,
     );
     nav_x -= nav_btn_size + 2.0;
@@ -856,16 +885,24 @@ pub fn build_asset_browser(
         ui.draw_rect(forward_bounds, theme.button_hover);
     }
 
-    if forward_hovered && can_forward && ui.input.mouse_clicked(katla_ui::input::mouse_button::LEFT) {
+    if forward_hovered && can_forward && ui.input.mouse_clicked(katla_ui::input::mouse_button::LEFT)
+    {
         state.navigate_forward(thumbnail_texture_ids);
     }
 
     ui.draw_icon_aligned(
         ForkAwesome::ARROW_RIGHT,
-        Vec2::new(forward_bounds.min.x() + 5.0, forward_bounds.center().y() - 7.0),
+        Vec2::new(
+            forward_bounds.min.x() + 5.0,
+            forward_bounds.center().y() - 7.0,
+        ),
         nav_icon_size,
         if can_forward {
-            if forward_hovered { theme.text_primary } else { theme.text_secondary }
+            if forward_hovered {
+                theme.text_primary
+            } else {
+                theme.text_secondary
+            }
         } else {
             theme.text_muted
         },
@@ -894,7 +931,11 @@ pub fn build_asset_browser(
         Vec2::new(back_bounds.min.x() + 5.0, back_bounds.center().y() - 7.0),
         nav_icon_size,
         if can_back {
-            if back_hovered { theme.text_primary } else { theme.text_secondary }
+            if back_hovered {
+                theme.text_primary
+            } else {
+                theme.text_secondary
+            }
         } else {
             theme.text_muted
         },
@@ -916,7 +957,10 @@ pub fn build_asset_browser(
     // Search icon
     ui.draw_icon_aligned(
         ForkAwesome::SEARCH,
-        Vec2::new(search_bounds.min.x() + 4.0, search_bounds.center().y() - 7.0),
+        Vec2::new(
+            search_bounds.min.x() + 4.0,
+            search_bounds.center().y() - 7.0,
+        ),
         ui.style.icon_size_small,
         theme.text_muted,
         katla_ui::FontId::DEFAULT,
@@ -927,14 +971,20 @@ pub fn build_asset_browser(
     if state.search_filter.is_empty() {
         ui.draw_text(
             "Filter...",
-            Vec2::new(search_text_x, search_bounds.center().y() - ui.scaled_font_size(katla_ui::FontSize::XSmall) * 0.5),
+            Vec2::new(
+                search_text_x,
+                search_bounds.center().y() - ui.scaled_font_size(katla_ui::FontSize::XSmall) * 0.5,
+            ),
             theme.text_muted,
             ui.scaled_font_size(katla_ui::FontSize::XSmall),
         );
     } else {
         ui.draw_text(
             &state.search_filter,
-            Vec2::new(search_text_x, search_bounds.center().y() - ui.scaled_font_size(katla_ui::FontSize::XSmall) * 0.5),
+            Vec2::new(
+                search_text_x,
+                search_bounds.center().y() - ui.scaled_font_size(katla_ui::FontSize::XSmall) * 0.5,
+            ),
             theme.text_primary,
             ui.scaled_font_size(katla_ui::FontSize::XSmall),
         );
@@ -984,10 +1034,7 @@ pub fn build_asset_browser(
 
     // === CONTENT AREA with ScrollArea ===
     let content_top = toolbar_top + toolbar_height;
-    let content_bounds = Rect2D::new(
-        Vec2::new(bounds.min.x(), content_top),
-        bounds.max,
-    );
+    let content_bounds = Rect2D::new(Vec2::new(bounds.min.x(), content_top), bounds.max);
 
     // Begin scroll area (handles clipping and scrolling)
     ui.begin_scroll_area(
@@ -1002,7 +1049,8 @@ pub fn build_asset_browser(
     // Grid layout parameters
     let item_size = ui.style.thumbnail_size;
     let item_padding = 8.0;
-    let col_count = ((bounds.width() - item_padding) / (item_size + item_padding)).max(1.0) as usize;
+    let col_count =
+        ((bounds.width() - item_padding) / (item_size + item_padding)).max(1.0) as usize;
     let row_height = item_size + 24.0; // Item + label
 
     // Draw assets in grid
@@ -1045,14 +1093,17 @@ pub fn build_asset_browser(
                 let inset = 3.0;
                 let thumb_bounds = Rect2D::from_origin_size(
                     Vec2::new(item_bounds.min.x() + inset, item_bounds.min.y() + inset),
-                    Vec2::new(item_bounds.width() - inset * 2.0, item_bounds.height() - inset * 2.0),
+                    Vec2::new(
+                        item_bounds.width() - inset * 2.0,
+                        item_bounds.height() - inset * 2.0,
+                    ),
                 );
                 // Use OPAQUE_IMAGE to force alpha = 1.0 (thumbnails should not blend)
                 ui.image(
                     *texture_id,
                     thumb_bounds,
-                    None,  // Use default UVs (0-1)
-                    Some(Color::OPAQUE_IMAGE),  // Force opaque output
+                    None,                      // Use default UVs (0-1)
+                    Some(Color::OPAQUE_IMAGE), // Force opaque output
                 );
             }
             ThumbnailState::Loading => {
@@ -1068,7 +1119,10 @@ pub fn build_asset_browser(
                 let rotation = (std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
                     .unwrap_or_default()
-                    .as_millis() % 1000) as f32 / 1000.0 * std::f32::consts::TAU;
+                    .as_millis()
+                    % 1000) as f32
+                    / 1000.0
+                    * std::f32::consts::TAU;
 
                 // Draw spinner with rotation effect (we'll simulate rotation by changing icons)
                 let spinner_chars = ['|', '/', '—', '\\'];
@@ -1113,11 +1167,11 @@ pub fn build_asset_browser(
         // Truncate name if too long
         let display_name = truncate_text(asset.name.as_str(), max_label_width, ui);
 
-        let label_size = ui.measure_text(&display_name, ui.scaled_font_size(katla_ui::FontSize::XSmall));
-        let label_pos = Vec2::new(
-            item_bounds.center().x() - label_size.x() * 0.5,
-            label_y,
+        let label_size = ui.measure_text(
+            &display_name,
+            ui.scaled_font_size(katla_ui::FontSize::XSmall),
         );
+        let label_pos = Vec2::new(item_bounds.center().x() - label_size.x() * 0.5, label_y);
         ui.draw_text(
             &display_name,
             label_pos,
@@ -1126,7 +1180,10 @@ pub fn build_asset_browser(
         );
 
         // Handle click - skip if mouse is over a popup (context menu)
-        if is_hovered && !ui.is_mouse_over_popup() && ui.input.mouse_clicked(katla_ui::input::mouse_button::LEFT) {
+        if is_hovered
+            && !ui.is_mouse_over_popup()
+            && ui.input.mouse_clicked(katla_ui::input::mouse_button::LEFT)
+        {
             clicked_index = Some(i);
             if asset.asset_type == AssetType::Folder {
                 should_navigate = Some(asset.path.clone());
@@ -1138,7 +1195,10 @@ pub fn build_asset_browser(
         }
 
         // Handle right-click for context menu (skip if popup already open)
-        if is_hovered && !ui.has_open_popup() && ui.input.mouse_clicked(katla_ui::input::mouse_button::RIGHT) {
+        if is_hovered
+            && !ui.has_open_popup()
+            && ui.input.mouse_clicked(katla_ui::input::mouse_button::RIGHT)
+        {
             right_clicked_index = Some(i);
             state.selected_index = Some(i);
         }
@@ -1172,7 +1232,11 @@ pub fn build_asset_browser(
         let mouse_down = ui.input.is_mouse_down(katla_ui::input::mouse_button::LEFT);
 
         // Start marquee on click in content area (but not on an asset or popup)
-        if mouse_in_content && !ui.is_mouse_over_popup() && ui.input.mouse_clicked(katla_ui::input::mouse_button::LEFT) && clicked_index.is_none() {
+        if mouse_in_content
+            && !ui.is_mouse_over_popup()
+            && ui.input.mouse_clicked(katla_ui::input::mouse_button::LEFT)
+            && clicked_index.is_none()
+        {
             state.selection_rect_start = Some(ui.input.mouse_pos);
             state.selection_rect_current = Some(ui.input.mouse_pos);
             state.is_marquee_selecting = false; // Will become true on drag
@@ -1191,16 +1255,22 @@ pub fn build_asset_browser(
 
         // Draw selection rectangle and preview highlight
         if state.is_marquee_selecting {
-            if let (Some(start), Some(current)) = (state.selection_rect_start, state.selection_rect_current) {
+            if let (Some(start), Some(current)) =
+                (state.selection_rect_start, state.selection_rect_current)
+            {
                 let sel_rect = rect_from_points(start, current);
 
                 // Preview highlight for items that will be selected
                 for (i, _asset) in state.assets.iter().enumerate() {
                     let col = i % col_count;
                     let row = i / col_count;
-                    let item_x = bounds.min.x() + item_padding + col as f32 * (item_size + item_padding);
+                    let item_x =
+                        bounds.min.x() + item_padding + col as f32 * (item_size + item_padding);
                     let item_y = content_top + row as f32 * row_height - scroll_offset;
-                    let item_bounds = Rect2D::from_origin_size(Vec2::new(item_x, item_y), Vec2::new(item_size, item_size));
+                    let item_bounds = Rect2D::from_origin_size(
+                        Vec2::new(item_x, item_y),
+                        Vec2::new(item_size, item_size),
+                    );
 
                     // Check if item intersects with selection rectangle
                     if item_bounds.min.x() <= sel_rect.max.x()
@@ -1215,14 +1285,23 @@ pub fn build_asset_browser(
 
                 // Draw the selection rectangle on top
                 ui.draw_rect(sel_rect, Color::new(0.3, 0.5, 0.8, 0.3));
-                ui.draw_rect_border(sel_rect, Color::new(0.3, 0.5, 0.8, 0.3), Color::new(0.4, 0.6, 0.9, 0.8), 1.0);
+                ui.draw_rect_border(
+                    sel_rect,
+                    Color::new(0.3, 0.5, 0.8, 0.3),
+                    Color::new(0.4, 0.6, 0.9, 0.8),
+                    1.0,
+                );
             }
         }
 
         // Finalize selection on mouse release
-        if state.selection_rect_start.is_some() && ui.input.mouse_released[katla_ui::input::mouse_button::LEFT] {
+        if state.selection_rect_start.is_some()
+            && ui.input.mouse_released[katla_ui::input::mouse_button::LEFT]
+        {
             if state.is_marquee_selecting {
-                if let (Some(start), Some(current)) = (state.selection_rect_start, state.selection_rect_current) {
+                if let (Some(start), Some(current)) =
+                    (state.selection_rect_start, state.selection_rect_current)
+                {
                     let sel_rect = rect_from_points(start, current);
 
                     // Clear previous selection
@@ -1233,9 +1312,13 @@ pub fn build_asset_browser(
                     for (i, _asset) in state.assets.iter().enumerate() {
                         let col = i % col_count;
                         let row = i / col_count;
-                        let item_x = bounds.min.x() + item_padding + col as f32 * (item_size + item_padding);
+                        let item_x =
+                            bounds.min.x() + item_padding + col as f32 * (item_size + item_padding);
                         let item_y = content_top + row as f32 * row_height - scroll_offset;
-                        let item_bounds = Rect2D::from_origin_size(Vec2::new(item_x, item_y), Vec2::new(item_size, item_size));
+                        let item_bounds = Rect2D::from_origin_size(
+                            Vec2::new(item_x, item_y),
+                            Vec2::new(item_size, item_size),
+                        );
 
                         // Check if item intersects with selection rectangle (AABB intersection)
                         if item_bounds.min.x() <= sel_rect.max.x()
@@ -1350,7 +1433,8 @@ pub fn build_asset_browser(
                     // Calculate item bounds
                     let col = i % col_count;
                     let row = i / col_count;
-                    let item_x = bounds.min.x() + item_padding + col as f32 * (item_size + item_padding);
+                    let item_x =
+                        bounds.min.x() + item_padding + col as f32 * (item_size + item_padding);
                     let item_y = content_top + row as f32 * row_height - scroll_offset;
                     let item_bounds = Rect2D::from_origin_size(
                         Vec2::new(item_x, item_y),
@@ -1399,13 +1483,10 @@ pub fn build_asset_browser(
     // Collect rename data first to avoid borrow conflicts
     let rename_data = if state.rename_mode {
         if let Some(rename_idx) = state.rename_asset {
-            state.assets.get(rename_idx).map(|asset| {
-                (
-                    rename_idx,
-                    asset.name.clone(),
-                    asset.path.clone(),
-                )
-            })
+            state
+                .assets
+                .get(rename_idx)
+                .map(|asset| (rename_idx, asset.name.clone(), asset.path.clone()))
         } else {
             None
         }
@@ -1439,10 +1520,15 @@ pub fn build_asset_browser(
             );
 
             // Cursor (blink effect could be added)
-            let text_width = ui.measure_text(text, ui.scaled_font_size(katla_ui::FontSize::XSmall)).x();
+            let text_width = ui
+                .measure_text(text, ui.scaled_font_size(katla_ui::FontSize::XSmall))
+                .x();
             ui.draw_rect(
                 Rect2D::from_origin_size(
-                    Vec2::new(input_bounds.min.x() + 4.0 + text_width, input_bounds.min.y() + 2.0),
+                    Vec2::new(
+                        input_bounds.min.x() + 4.0 + text_width,
+                        input_bounds.min.y() + 2.0,
+                    ),
                     Vec2::new(1.0, 14.0),
                 ),
                 theme.text_primary,
@@ -1482,9 +1568,10 @@ pub fn build_asset_browser(
 
         // Commit on click outside
         if ui.input.mouse_clicked(katla_ui::input::mouse_button::LEFT)
-            && !ui.is_hovered(input_bounds) {
-                should_commit = true;
-            }
+            && !ui.is_hovered(input_bounds)
+        {
+            should_commit = true;
+        }
 
         // Process actions (only when focused)
         if is_focused {
@@ -1507,7 +1594,9 @@ pub fn build_asset_browser(
     // Process click actions after iteration (to avoid borrow conflicts)
     if let Some(index) = clicked_index {
         // Use input system's double-click detection + same-item check
-        let is_double = ui.input.mouse_double_clicked(katla_ui::input::mouse_button::LEFT)
+        let is_double = ui
+            .input
+            .mouse_double_clicked(katla_ui::input::mouse_button::LEFT)
             && state.last_click_index == Some(index);
         state.last_click_index = Some(index);
 
@@ -1559,7 +1648,9 @@ pub fn build_asset_browser(
                 }
             } else if let Some(path) = should_preview_model {
                 // Double-click on model - open preview panel
-                state.pending_actions.push(AssetAction::ModelPreviewRequested(path));
+                state
+                    .pending_actions
+                    .push(AssetAction::ModelPreviewRequested(path));
             }
         }
     }
@@ -1578,7 +1669,8 @@ pub fn build_asset_browser(
         } else {
             "No matching assets"
         };
-        let empty_size = ui.measure_text(empty_text, ui.scaled_font_size(katla_ui::FontSize::Medium));
+        let empty_size =
+            ui.measure_text(empty_text, ui.scaled_font_size(katla_ui::FontSize::Medium));
         let empty_pos = Vec2::new(
             content_bounds.center().x() - empty_size.x() * 0.5,
             content_bounds.center().y() - empty_size.y() * 0.5,
@@ -1606,7 +1698,10 @@ pub fn build_asset_browser(
             let row = i / col_count;
             let item_x = bounds.min.x() + item_padding + col as f32 * (item_size + item_padding);
             let item_y = content_top + row as f32 * row_height - scroll_offset;
-            let item_bounds = Rect2D::from_origin_size(Vec2::new(item_x, item_y), Vec2::new(item_size, item_size + 16.0));
+            let item_bounds = Rect2D::from_origin_size(
+                Vec2::new(item_x, item_y),
+                Vec2::new(item_size, item_size + 16.0),
+            );
             if ui.is_hovered(item_bounds) {
                 clicked_on_asset = true;
                 break;
@@ -1629,43 +1724,140 @@ pub fn build_asset_browser(
     }
 
     // Get context data for the popup
-    let (asset_type, asset_name, asset_path, asset_idx) = if let Some(asset_idx) = state.context_menu_asset {
-        if let Some(asset) = state.assets.get(asset_idx) {
-            (Some(asset.asset_type), asset.name.clone(), asset.path.clone(), asset_idx)
+    let (asset_type, asset_name, asset_path, asset_idx) =
+        if let Some(asset_idx) = state.context_menu_asset {
+            if let Some(asset) = state.assets.get(asset_idx) {
+                (
+                    Some(asset.asset_type),
+                    asset.name.clone(),
+                    asset.path.clone(),
+                    asset_idx,
+                )
+            } else {
+                (None, String::new(), state.current_path.clone(), 0)
+            }
         } else {
             (None, String::new(), state.current_path.clone(), 0)
-        }
-    } else {
-        (None, String::new(), state.current_path.clone(), 0)
-    };
+        };
 
     // Render popup - use popup() directly since we manually opened with open_context_menu_at()
     let clicked_action = ui.popup(Popup::new("asset_context").at_cursor(), |ui| {
         match asset_type {
             Some(AssetType::Folder) => {
-                if ui.menu_item_clicked_with_icon_and_shortcut("Open", ForkAwesome::FOLDER_OPEN, true, "Enter") { return Some("Open"); }
-                if ui.menu_item_clicked_with_icon_and_shortcut("Rename", ForkAwesome::PENCIL, true, "F2") { return Some("Rename"); }
+                if ui.menu_item_clicked_with_icon_and_shortcut(
+                    "Open",
+                    ForkAwesome::FOLDER_OPEN,
+                    true,
+                    "Enter",
+                ) {
+                    return Some("Open");
+                }
+                if ui.menu_item_clicked_with_icon_and_shortcut(
+                    "Rename",
+                    ForkAwesome::PENCIL,
+                    true,
+                    "F2",
+                ) {
+                    return Some("Rename");
+                }
                 ui.menu_separator();
-                if ui.menu_item_clicked_with_icon_and_shortcut("Copy Path", ForkAwesome::COPY, true, "") { return Some("Copy Path"); }
-                if ui.menu_item_clicked_with_icon_and_shortcut("Show in Explorer", ForkAwesome::EXTERNAL_LINK, true, "") { return Some("Show in Explorer"); }
+                if ui.menu_item_clicked_with_icon_and_shortcut(
+                    "Copy Path",
+                    ForkAwesome::COPY,
+                    true,
+                    "",
+                ) {
+                    return Some("Copy Path");
+                }
+                if ui.menu_item_clicked_with_icon_and_shortcut(
+                    "Show in Explorer",
+                    ForkAwesome::EXTERNAL_LINK,
+                    true,
+                    "",
+                ) {
+                    return Some("Show in Explorer");
+                }
                 ui.menu_separator();
-                if ui.menu_item_clicked_with_icon_and_shortcut("Delete", ForkAwesome::TRASH, true, "Del") { return Some("Delete"); }
+                if ui.menu_item_clicked_with_icon_and_shortcut(
+                    "Delete",
+                    ForkAwesome::TRASH,
+                    true,
+                    "Del",
+                ) {
+                    return Some("Delete");
+                }
             }
             Some(_) => {
-                if ui.menu_item_clicked_with_icon_and_shortcut("Open", ForkAwesome::FILE, true, "Enter") { return Some("Open"); }
-                if ui.menu_item_clicked_with_icon_and_shortcut("Rename", ForkAwesome::PENCIL, true, "F2") { return Some("Rename"); }
+                if ui.menu_item_clicked_with_icon_and_shortcut(
+                    "Open",
+                    ForkAwesome::FILE,
+                    true,
+                    "Enter",
+                ) {
+                    return Some("Open");
+                }
+                if ui.menu_item_clicked_with_icon_and_shortcut(
+                    "Rename",
+                    ForkAwesome::PENCIL,
+                    true,
+                    "F2",
+                ) {
+                    return Some("Rename");
+                }
                 ui.menu_separator();
-                if ui.menu_item_clicked_with_icon_and_shortcut("Copy Path", ForkAwesome::COPY, true, "") { return Some("Copy Path"); }
-                if ui.menu_item_clicked_with_icon_and_shortcut("Show in Explorer", ForkAwesome::EXTERNAL_LINK, true, "") { return Some("Show in Explorer"); }
+                if ui.menu_item_clicked_with_icon_and_shortcut(
+                    "Copy Path",
+                    ForkAwesome::COPY,
+                    true,
+                    "",
+                ) {
+                    return Some("Copy Path");
+                }
+                if ui.menu_item_clicked_with_icon_and_shortcut(
+                    "Show in Explorer",
+                    ForkAwesome::EXTERNAL_LINK,
+                    true,
+                    "",
+                ) {
+                    return Some("Show in Explorer");
+                }
                 ui.menu_separator();
-                if ui.menu_item_clicked_with_icon_and_shortcut("Delete", ForkAwesome::TRASH, true, "Del") { return Some("Delete"); }
+                if ui.menu_item_clicked_with_icon_and_shortcut(
+                    "Delete",
+                    ForkAwesome::TRASH,
+                    true,
+                    "Del",
+                ) {
+                    return Some("Delete");
+                }
             }
             None => {
-                if ui.menu_item_clicked_with_icon_and_shortcut("New Folder", ForkAwesome::FOLDER, true, "") { return Some("New Folder"); }
+                if ui.menu_item_clicked_with_icon_and_shortcut(
+                    "New Folder",
+                    ForkAwesome::FOLDER,
+                    true,
+                    "",
+                ) {
+                    return Some("New Folder");
+                }
                 ui.menu_separator();
-                if ui.menu_item_clicked_with_icon_and_shortcut("Refresh", ForkAwesome::REFRESH, true, "F5") { return Some("Refresh"); }
+                if ui.menu_item_clicked_with_icon_and_shortcut(
+                    "Refresh",
+                    ForkAwesome::REFRESH,
+                    true,
+                    "F5",
+                ) {
+                    return Some("Refresh");
+                }
                 ui.menu_separator();
-                if ui.menu_item_clicked_with_icon_and_shortcut("Show in Explorer", ForkAwesome::EXTERNAL_LINK, true, "") { return Some("Show in Explorer"); }
+                if ui.menu_item_clicked_with_icon_and_shortcut(
+                    "Show in Explorer",
+                    ForkAwesome::EXTERNAL_LINK,
+                    true,
+                    "",
+                ) {
+                    return Some("Show in Explorer");
+                }
             }
         }
         None::<&str>
@@ -1689,14 +1881,19 @@ pub fn build_asset_browser(
                 state.start_rename(asset_idx);
             }
             "Copy Path" => {
-                state.pending_actions.push(AssetAction::CopyPath(asset_path));
+                state
+                    .pending_actions
+                    .push(AssetAction::CopyPath(asset_path));
             }
             "Show in Explorer" => {
-                state.pending_actions.push(AssetAction::ShowInExplorer(asset_path));
+                state
+                    .pending_actions
+                    .push(AssetAction::ShowInExplorer(asset_path));
             }
             "Delete" => {
                 let is_folder = asset_path.is_dir();
-                let name = asset_path.file_name()
+                let name = asset_path
+                    .file_name()
                     .map(|n| n.to_string_lossy().to_string())
                     .unwrap_or_else(|| "this item".to_string());
                 state.confirm_dialog_message = if is_folder {
@@ -1708,7 +1905,9 @@ pub fn build_asset_browser(
                 state.confirm_dialog_open = true;
             }
             "New Folder" => {
-                state.pending_actions.push(AssetAction::CreateFolder(asset_path));
+                state
+                    .pending_actions
+                    .push(AssetAction::CreateFolder(asset_path));
             }
             "Refresh" => {
                 state.refresh(thumbnail_texture_ids);
@@ -1749,7 +1948,10 @@ pub fn build_asset_browser(
 
         // No button
         let no_btn_bounds = Rect2D::from_origin_size(
-            Vec2::new(dialog_pos.x() + dialog_width - btn_width * 2.0 - 20.0, btn_y),
+            Vec2::new(
+                dialog_pos.x() + dialog_width - btn_width * 2.0 - 20.0,
+                btn_y,
+            ),
             Vec2::new(btn_width, btn_height),
         );
         let no_hovered = ui.is_hovered(no_btn_bounds);
@@ -1760,8 +1962,15 @@ pub fn build_asset_browser(
         let no_text_size = ui.measure_text("No", ui.scaled_font_size(katla_ui::FontSize::Small));
         ui.draw_text(
             "No",
-            Vec2::new(no_btn_bounds.center().x() - no_text_size.x() * 0.5, no_btn_bounds.min.y() + 7.0),
-            if no_hovered { theme.text_primary } else { theme.text_secondary },
+            Vec2::new(
+                no_btn_bounds.center().x() - no_text_size.x() * 0.5,
+                no_btn_bounds.min.y() + 7.0,
+            ),
+            if no_hovered {
+                theme.text_primary
+            } else {
+                theme.text_secondary
+            },
             ui.scaled_font_size(katla_ui::FontSize::Small),
         );
 
@@ -1774,11 +1983,23 @@ pub fn build_asset_browser(
         if yes_hovered {
             ui.draw_rect(yes_btn_bounds, theme.error);
         }
-        ui.draw_rect_border(yes_btn_bounds, if yes_hovered { theme.error } else { theme.button_hover }, theme.border, 1.0);
+        ui.draw_rect_border(
+            yes_btn_bounds,
+            if yes_hovered {
+                theme.error
+            } else {
+                theme.button_hover
+            },
+            theme.border,
+            1.0,
+        );
         let yes_text_size = ui.measure_text("Yes", ui.scaled_font_size(katla_ui::FontSize::Small));
         ui.draw_text(
             "Yes",
-            Vec2::new(yes_btn_bounds.center().x() - yes_text_size.x() * 0.5, yes_btn_bounds.min.y() + 7.0),
+            Vec2::new(
+                yes_btn_bounds.center().x() - yes_text_size.x() * 0.5,
+                yes_btn_bounds.min.y() + 7.0,
+            ),
             theme.text_primary,
             ui.scaled_font_size(katla_ui::FontSize::Small),
         );
@@ -1834,7 +2055,9 @@ pub fn build_asset_browser(
 
 /// Truncate text to fit within a maximum width, adding ellipsis if needed.
 fn truncate_text(text: &str, max_width: f32, ui: &UiContext) -> String {
-    let full_width = ui.measure_text(text, ui.scaled_font_size(katla_ui::FontSize::XSmall)).x();
+    let full_width = ui
+        .measure_text(text, ui.scaled_font_size(katla_ui::FontSize::XSmall))
+        .x();
 
     if full_width <= max_width {
         return text.to_string();
@@ -1844,7 +2067,9 @@ fn truncate_text(text: &str, max_width: f32, ui: &UiContext) -> String {
     let mut len = text.len();
     while len > 0 {
         let truncated = format!("{}...", &text[..len]);
-        let width = ui.measure_text(&truncated, ui.scaled_font_size(katla_ui::FontSize::XSmall)).x();
+        let width = ui
+            .measure_text(&truncated, ui.scaled_font_size(katla_ui::FontSize::XSmall))
+            .x();
         if width <= max_width {
             return truncated;
         }

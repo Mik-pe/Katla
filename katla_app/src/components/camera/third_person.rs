@@ -53,8 +53,8 @@ impl Default for ThirdPersonCameraComponent {
         Self {
             distance: 5.0,
             height: 2.0,
-            min_pitch: -0.3,   // ~-17 degrees
-            max_pitch: 1.0,    // ~57 degrees
+            min_pitch: -0.3, // ~-17 degrees
+            max_pitch: 1.0,  // ~57 degrees
             sensitivity: 0.003,
             zoom_speed: 1.0,
             min_distance: 2.0,

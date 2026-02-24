@@ -164,10 +164,7 @@ mod tests {
             storage.get::<TestResource>().unwrap(),
             &TestResource { value: 42 }
         );
-        assert_eq!(
-            storage.get::<AnotherTestResource>().unwrap().name,
-            "test"
-        );
+        assert_eq!(storage.get::<AnotherTestResource>().unwrap().name, "test");
     }
 
     #[test]

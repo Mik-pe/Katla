@@ -109,10 +109,7 @@ macro_rules! impl_common_builder {
 
             fn get_material(&mut self, renderer: &mut VulkanRenderer) -> Material {
                 // Create checkerboard material (bindless-only)
-                create_checkerboard_material(
-                    self.base.context.clone(),
-                    renderer,
-                )
+                create_checkerboard_material(self.base.context.clone(), renderer)
             }
 
             fn create_entity(

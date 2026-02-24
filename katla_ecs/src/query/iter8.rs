@@ -38,7 +38,17 @@ impl<
         T8: Component,
     > Iterator for QueryIter8<'a, T1, T2, T3, T4, T5, T6, T7, T8>
 {
-    type Item = (EntityId, &'a T1, &'a T2, &'a T3, &'a T4, &'a T5, &'a T6, &'a T7, &'a T8);
+    type Item = (
+        EntityId,
+        &'a T1,
+        &'a T2,
+        &'a T3,
+        &'a T4,
+        &'a T5,
+        &'a T6,
+        &'a T7,
+        &'a T8,
+    );
 
     fn next(&mut self) -> Option<Self::Item> {
         let storage2 = self.storage2.as_ref()?;
@@ -58,14 +68,8 @@ impl<
                                 if let Some(component7) = storage7.get(*entity_id) {
                                     if let Some(component8) = storage8.get(*entity_id) {
                                         return Some((
-                                            *entity_id,
-                                            component1,
-                                            component2,
-                                            component3,
-                                            component4,
-                                            component5,
-                                            component6,
-                                            component7,
+                                            *entity_id, component1, component2, component3,
+                                            component4, component5, component6, component7,
                                             component8,
                                         ));
                                     }
@@ -113,7 +117,17 @@ impl<
         T8: Component,
     > Iterator for QueryIter8MutRefRefRefRefRefRefRef<'a, T1, T2, T3, T4, T5, T6, T7, T8>
 {
-    type Item = (EntityId, &'a mut T1, &'a T2, &'a T3, &'a T4, &'a T5, &'a T6, &'a T7, &'a T8);
+    type Item = (
+        EntityId,
+        &'a mut T1,
+        &'a T2,
+        &'a T3,
+        &'a T4,
+        &'a T5,
+        &'a T6,
+        &'a T7,
+        &'a T8,
+    );
 
     fn next(&mut self) -> Option<Self::Item> {
         let storage2 = self.storage2.as_ref()?;
@@ -133,14 +147,8 @@ impl<
                                 if let Some(component7) = storage7.get(*entity_id) {
                                     if let Some(component8) = storage8.get(*entity_id) {
                                         return Some((
-                                            *entity_id,
-                                            component1,
-                                            component2,
-                                            component3,
-                                            component4,
-                                            component5,
-                                            component6,
-                                            component7,
+                                            *entity_id, component1, component2, component3,
+                                            component4, component5, component6, component7,
                                             component8,
                                         ));
                                     }
@@ -166,38 +174,160 @@ impl<
         T8: Component + 'static,
     > QueryData for (&T1, &T2, &T3, &T4, &T5, &T6, &T7, &T8)
 {
-    type Item<'a> = (EntityId, &'a T1, &'a T2, &'a T3, &'a T4, &'a T5, &'a T6, &'a T7, &'a T8);
+    type Item<'a> = (
+        EntityId,
+        &'a T1,
+        &'a T2,
+        &'a T3,
+        &'a T4,
+        &'a T5,
+        &'a T6,
+        &'a T7,
+        &'a T8,
+    );
     type Iter<'a> = QueryIter8<'a, T1, T2, T3, T4, T5, T6, T7, T8>;
 
     fn fetch(storage: &mut ComponentStorageManager) -> Self::Iter<'_> {
-        assert_ne!(TypeId::of::<T1>(), TypeId::of::<T2>(), "Cannot query the same component type twice");
-        assert_ne!(TypeId::of::<T1>(), TypeId::of::<T3>(), "Cannot query the same component type twice");
-        assert_ne!(TypeId::of::<T1>(), TypeId::of::<T4>(), "Cannot query the same component type twice");
-        assert_ne!(TypeId::of::<T1>(), TypeId::of::<T5>(), "Cannot query the same component type twice");
-        assert_ne!(TypeId::of::<T1>(), TypeId::of::<T6>(), "Cannot query the same component type twice");
-        assert_ne!(TypeId::of::<T1>(), TypeId::of::<T7>(), "Cannot query the same component type twice");
-        assert_ne!(TypeId::of::<T1>(), TypeId::of::<T8>(), "Cannot query the same component type twice");
-        assert_ne!(TypeId::of::<T2>(), TypeId::of::<T3>(), "Cannot query the same component type twice");
-        assert_ne!(TypeId::of::<T2>(), TypeId::of::<T4>(), "Cannot query the same component type twice");
-        assert_ne!(TypeId::of::<T2>(), TypeId::of::<T5>(), "Cannot query the same component type twice");
-        assert_ne!(TypeId::of::<T2>(), TypeId::of::<T6>(), "Cannot query the same component type twice");
-        assert_ne!(TypeId::of::<T2>(), TypeId::of::<T7>(), "Cannot query the same component type twice");
-        assert_ne!(TypeId::of::<T2>(), TypeId::of::<T8>(), "Cannot query the same component type twice");
-        assert_ne!(TypeId::of::<T3>(), TypeId::of::<T4>(), "Cannot query the same component type twice");
-        assert_ne!(TypeId::of::<T3>(), TypeId::of::<T5>(), "Cannot query the same component type twice");
-        assert_ne!(TypeId::of::<T3>(), TypeId::of::<T6>(), "Cannot query the same component type twice");
-        assert_ne!(TypeId::of::<T3>(), TypeId::of::<T7>(), "Cannot query the same component type twice");
-        assert_ne!(TypeId::of::<T3>(), TypeId::of::<T8>(), "Cannot query the same component type twice");
-        assert_ne!(TypeId::of::<T4>(), TypeId::of::<T5>(), "Cannot query the same component type twice");
-        assert_ne!(TypeId::of::<T4>(), TypeId::of::<T6>(), "Cannot query the same component type twice");
-        assert_ne!(TypeId::of::<T4>(), TypeId::of::<T7>(), "Cannot query the same component type twice");
-        assert_ne!(TypeId::of::<T4>(), TypeId::of::<T8>(), "Cannot query the same component type twice");
-        assert_ne!(TypeId::of::<T5>(), TypeId::of::<T6>(), "Cannot query the same component type twice");
-        assert_ne!(TypeId::of::<T5>(), TypeId::of::<T7>(), "Cannot query the same component type twice");
-        assert_ne!(TypeId::of::<T5>(), TypeId::of::<T8>(), "Cannot query the same component type twice");
-        assert_ne!(TypeId::of::<T6>(), TypeId::of::<T7>(), "Cannot query the same component type twice");
-        assert_ne!(TypeId::of::<T6>(), TypeId::of::<T8>(), "Cannot query the same component type twice");
-        assert_ne!(TypeId::of::<T7>(), TypeId::of::<T8>(), "Cannot query the same component type twice");
+        assert_ne!(
+            TypeId::of::<T1>(),
+            TypeId::of::<T2>(),
+            "Cannot query the same component type twice"
+        );
+        assert_ne!(
+            TypeId::of::<T1>(),
+            TypeId::of::<T3>(),
+            "Cannot query the same component type twice"
+        );
+        assert_ne!(
+            TypeId::of::<T1>(),
+            TypeId::of::<T4>(),
+            "Cannot query the same component type twice"
+        );
+        assert_ne!(
+            TypeId::of::<T1>(),
+            TypeId::of::<T5>(),
+            "Cannot query the same component type twice"
+        );
+        assert_ne!(
+            TypeId::of::<T1>(),
+            TypeId::of::<T6>(),
+            "Cannot query the same component type twice"
+        );
+        assert_ne!(
+            TypeId::of::<T1>(),
+            TypeId::of::<T7>(),
+            "Cannot query the same component type twice"
+        );
+        assert_ne!(
+            TypeId::of::<T1>(),
+            TypeId::of::<T8>(),
+            "Cannot query the same component type twice"
+        );
+        assert_ne!(
+            TypeId::of::<T2>(),
+            TypeId::of::<T3>(),
+            "Cannot query the same component type twice"
+        );
+        assert_ne!(
+            TypeId::of::<T2>(),
+            TypeId::of::<T4>(),
+            "Cannot query the same component type twice"
+        );
+        assert_ne!(
+            TypeId::of::<T2>(),
+            TypeId::of::<T5>(),
+            "Cannot query the same component type twice"
+        );
+        assert_ne!(
+            TypeId::of::<T2>(),
+            TypeId::of::<T6>(),
+            "Cannot query the same component type twice"
+        );
+        assert_ne!(
+            TypeId::of::<T2>(),
+            TypeId::of::<T7>(),
+            "Cannot query the same component type twice"
+        );
+        assert_ne!(
+            TypeId::of::<T2>(),
+            TypeId::of::<T8>(),
+            "Cannot query the same component type twice"
+        );
+        assert_ne!(
+            TypeId::of::<T3>(),
+            TypeId::of::<T4>(),
+            "Cannot query the same component type twice"
+        );
+        assert_ne!(
+            TypeId::of::<T3>(),
+            TypeId::of::<T5>(),
+            "Cannot query the same component type twice"
+        );
+        assert_ne!(
+            TypeId::of::<T3>(),
+            TypeId::of::<T6>(),
+            "Cannot query the same component type twice"
+        );
+        assert_ne!(
+            TypeId::of::<T3>(),
+            TypeId::of::<T7>(),
+            "Cannot query the same component type twice"
+        );
+        assert_ne!(
+            TypeId::of::<T3>(),
+            TypeId::of::<T8>(),
+            "Cannot query the same component type twice"
+        );
+        assert_ne!(
+            TypeId::of::<T4>(),
+            TypeId::of::<T5>(),
+            "Cannot query the same component type twice"
+        );
+        assert_ne!(
+            TypeId::of::<T4>(),
+            TypeId::of::<T6>(),
+            "Cannot query the same component type twice"
+        );
+        assert_ne!(
+            TypeId::of::<T4>(),
+            TypeId::of::<T7>(),
+            "Cannot query the same component type twice"
+        );
+        assert_ne!(
+            TypeId::of::<T4>(),
+            TypeId::of::<T8>(),
+            "Cannot query the same component type twice"
+        );
+        assert_ne!(
+            TypeId::of::<T5>(),
+            TypeId::of::<T6>(),
+            "Cannot query the same component type twice"
+        );
+        assert_ne!(
+            TypeId::of::<T5>(),
+            TypeId::of::<T7>(),
+            "Cannot query the same component type twice"
+        );
+        assert_ne!(
+            TypeId::of::<T5>(),
+            TypeId::of::<T8>(),
+            "Cannot query the same component type twice"
+        );
+        assert_ne!(
+            TypeId::of::<T6>(),
+            TypeId::of::<T7>(),
+            "Cannot query the same component type twice"
+        );
+        assert_ne!(
+            TypeId::of::<T6>(),
+            TypeId::of::<T8>(),
+            "Cannot query the same component type twice"
+        );
+        assert_ne!(
+            TypeId::of::<T7>(),
+            TypeId::of::<T8>(),
+            "Cannot query the same component type twice"
+        );
 
         let storage1 = storage.get_storage::<T1>();
         let storage2 = storage.get_storage::<T2>();
@@ -208,9 +338,9 @@ impl<
         let storage7 = storage.get_storage::<T7>();
         let storage8 = storage.get_storage::<T8>();
 
-        if let (Some(s1), Some(s2), Some(s3), Some(s4), Some(s5), Some(s6), Some(s7), Some(s8)) =
-            (storage1, storage2, storage3, storage4, storage5, storage6, storage7, storage8)
-        {
+        if let (Some(s1), Some(s2), Some(s3), Some(s4), Some(s5), Some(s6), Some(s7), Some(s8)) = (
+            storage1, storage2, storage3, storage4, storage5, storage6, storage7, storage8,
+        ) {
             QueryIter8 {
                 storage2: Some(s2),
                 storage3: Some(s3),
@@ -248,38 +378,160 @@ impl<
         T8: Component + 'static,
     > QueryData for (&mut T1, &T2, &T3, &T4, &T5, &T6, &T7, &T8)
 {
-    type Item<'a> = (EntityId, &'a mut T1, &'a T2, &'a T3, &'a T4, &'a T5, &'a T6, &'a T7, &'a T8);
+    type Item<'a> = (
+        EntityId,
+        &'a mut T1,
+        &'a T2,
+        &'a T3,
+        &'a T4,
+        &'a T5,
+        &'a T6,
+        &'a T7,
+        &'a T8,
+    );
     type Iter<'a> = QueryIter8MutRefRefRefRefRefRefRef<'a, T1, T2, T3, T4, T5, T6, T7, T8>;
 
     fn fetch(storage: &mut ComponentStorageManager) -> Self::Iter<'_> {
-        assert_ne!(TypeId::of::<T1>(), TypeId::of::<T2>(), "Cannot query the same component type twice");
-        assert_ne!(TypeId::of::<T1>(), TypeId::of::<T3>(), "Cannot query the same component type twice");
-        assert_ne!(TypeId::of::<T1>(), TypeId::of::<T4>(), "Cannot query the same component type twice");
-        assert_ne!(TypeId::of::<T1>(), TypeId::of::<T5>(), "Cannot query the same component type twice");
-        assert_ne!(TypeId::of::<T1>(), TypeId::of::<T6>(), "Cannot query the same component type twice");
-        assert_ne!(TypeId::of::<T1>(), TypeId::of::<T7>(), "Cannot query the same component type twice");
-        assert_ne!(TypeId::of::<T1>(), TypeId::of::<T8>(), "Cannot query the same component type twice");
-        assert_ne!(TypeId::of::<T2>(), TypeId::of::<T3>(), "Cannot query the same component type twice");
-        assert_ne!(TypeId::of::<T2>(), TypeId::of::<T4>(), "Cannot query the same component type twice");
-        assert_ne!(TypeId::of::<T2>(), TypeId::of::<T5>(), "Cannot query the same component type twice");
-        assert_ne!(TypeId::of::<T2>(), TypeId::of::<T6>(), "Cannot query the same component type twice");
-        assert_ne!(TypeId::of::<T2>(), TypeId::of::<T7>(), "Cannot query the same component type twice");
-        assert_ne!(TypeId::of::<T2>(), TypeId::of::<T8>(), "Cannot query the same component type twice");
-        assert_ne!(TypeId::of::<T3>(), TypeId::of::<T4>(), "Cannot query the same component type twice");
-        assert_ne!(TypeId::of::<T3>(), TypeId::of::<T5>(), "Cannot query the same component type twice");
-        assert_ne!(TypeId::of::<T3>(), TypeId::of::<T6>(), "Cannot query the same component type twice");
-        assert_ne!(TypeId::of::<T3>(), TypeId::of::<T7>(), "Cannot query the same component type twice");
-        assert_ne!(TypeId::of::<T3>(), TypeId::of::<T8>(), "Cannot query the same component type twice");
-        assert_ne!(TypeId::of::<T4>(), TypeId::of::<T5>(), "Cannot query the same component type twice");
-        assert_ne!(TypeId::of::<T4>(), TypeId::of::<T6>(), "Cannot query the same component type twice");
-        assert_ne!(TypeId::of::<T4>(), TypeId::of::<T7>(), "Cannot query the same component type twice");
-        assert_ne!(TypeId::of::<T4>(), TypeId::of::<T8>(), "Cannot query the same component type twice");
-        assert_ne!(TypeId::of::<T5>(), TypeId::of::<T6>(), "Cannot query the same component type twice");
-        assert_ne!(TypeId::of::<T5>(), TypeId::of::<T7>(), "Cannot query the same component type twice");
-        assert_ne!(TypeId::of::<T5>(), TypeId::of::<T8>(), "Cannot query the same component type twice");
-        assert_ne!(TypeId::of::<T6>(), TypeId::of::<T7>(), "Cannot query the same component type twice");
-        assert_ne!(TypeId::of::<T6>(), TypeId::of::<T8>(), "Cannot query the same component type twice");
-        assert_ne!(TypeId::of::<T7>(), TypeId::of::<T8>(), "Cannot query the same component type twice");
+        assert_ne!(
+            TypeId::of::<T1>(),
+            TypeId::of::<T2>(),
+            "Cannot query the same component type twice"
+        );
+        assert_ne!(
+            TypeId::of::<T1>(),
+            TypeId::of::<T3>(),
+            "Cannot query the same component type twice"
+        );
+        assert_ne!(
+            TypeId::of::<T1>(),
+            TypeId::of::<T4>(),
+            "Cannot query the same component type twice"
+        );
+        assert_ne!(
+            TypeId::of::<T1>(),
+            TypeId::of::<T5>(),
+            "Cannot query the same component type twice"
+        );
+        assert_ne!(
+            TypeId::of::<T1>(),
+            TypeId::of::<T6>(),
+            "Cannot query the same component type twice"
+        );
+        assert_ne!(
+            TypeId::of::<T1>(),
+            TypeId::of::<T7>(),
+            "Cannot query the same component type twice"
+        );
+        assert_ne!(
+            TypeId::of::<T1>(),
+            TypeId::of::<T8>(),
+            "Cannot query the same component type twice"
+        );
+        assert_ne!(
+            TypeId::of::<T2>(),
+            TypeId::of::<T3>(),
+            "Cannot query the same component type twice"
+        );
+        assert_ne!(
+            TypeId::of::<T2>(),
+            TypeId::of::<T4>(),
+            "Cannot query the same component type twice"
+        );
+        assert_ne!(
+            TypeId::of::<T2>(),
+            TypeId::of::<T5>(),
+            "Cannot query the same component type twice"
+        );
+        assert_ne!(
+            TypeId::of::<T2>(),
+            TypeId::of::<T6>(),
+            "Cannot query the same component type twice"
+        );
+        assert_ne!(
+            TypeId::of::<T2>(),
+            TypeId::of::<T7>(),
+            "Cannot query the same component type twice"
+        );
+        assert_ne!(
+            TypeId::of::<T2>(),
+            TypeId::of::<T8>(),
+            "Cannot query the same component type twice"
+        );
+        assert_ne!(
+            TypeId::of::<T3>(),
+            TypeId::of::<T4>(),
+            "Cannot query the same component type twice"
+        );
+        assert_ne!(
+            TypeId::of::<T3>(),
+            TypeId::of::<T5>(),
+            "Cannot query the same component type twice"
+        );
+        assert_ne!(
+            TypeId::of::<T3>(),
+            TypeId::of::<T6>(),
+            "Cannot query the same component type twice"
+        );
+        assert_ne!(
+            TypeId::of::<T3>(),
+            TypeId::of::<T7>(),
+            "Cannot query the same component type twice"
+        );
+        assert_ne!(
+            TypeId::of::<T3>(),
+            TypeId::of::<T8>(),
+            "Cannot query the same component type twice"
+        );
+        assert_ne!(
+            TypeId::of::<T4>(),
+            TypeId::of::<T5>(),
+            "Cannot query the same component type twice"
+        );
+        assert_ne!(
+            TypeId::of::<T4>(),
+            TypeId::of::<T6>(),
+            "Cannot query the same component type twice"
+        );
+        assert_ne!(
+            TypeId::of::<T4>(),
+            TypeId::of::<T7>(),
+            "Cannot query the same component type twice"
+        );
+        assert_ne!(
+            TypeId::of::<T4>(),
+            TypeId::of::<T8>(),
+            "Cannot query the same component type twice"
+        );
+        assert_ne!(
+            TypeId::of::<T5>(),
+            TypeId::of::<T6>(),
+            "Cannot query the same component type twice"
+        );
+        assert_ne!(
+            TypeId::of::<T5>(),
+            TypeId::of::<T7>(),
+            "Cannot query the same component type twice"
+        );
+        assert_ne!(
+            TypeId::of::<T5>(),
+            TypeId::of::<T8>(),
+            "Cannot query the same component type twice"
+        );
+        assert_ne!(
+            TypeId::of::<T6>(),
+            TypeId::of::<T7>(),
+            "Cannot query the same component type twice"
+        );
+        assert_ne!(
+            TypeId::of::<T6>(),
+            TypeId::of::<T8>(),
+            "Cannot query the same component type twice"
+        );
+        assert_ne!(
+            TypeId::of::<T7>(),
+            TypeId::of::<T8>(),
+            "Cannot query the same component type twice"
+        );
 
         unsafe {
             let ptr_mut = storage as *mut ComponentStorageManager;
@@ -293,9 +545,18 @@ impl<
             let storage7 = (*ptr_const).get_storage::<T7>();
             let storage8 = (*ptr_const).get_storage::<T8>();
 
-            if let (Some(s1), Some(s2), Some(s3), Some(s4), Some(s5), Some(s6), Some(s7), Some(s8)) =
-                (storage1, storage2, storage3, storage4, storage5, storage6, storage7, storage8)
-            {
+            if let (
+                Some(s1),
+                Some(s2),
+                Some(s3),
+                Some(s4),
+                Some(s5),
+                Some(s6),
+                Some(s7),
+                Some(s8),
+            ) = (
+                storage1, storage2, storage3, storage4, storage5, storage6, storage7, storage8,
+            ) {
                 QueryIter8MutRefRefRefRefRefRefRef {
                     storage2: Some(s2),
                     storage3: Some(s3),

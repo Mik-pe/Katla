@@ -150,9 +150,11 @@ impl UiContext {
             && !self.popup_opened_this_frame
         {
             if let Some(other_id) = self.popup_id {
-                self.storage.insert(other_id, WidgetState::DropdownOpen(false));
+                self.storage
+                    .insert(other_id, WidgetState::DropdownOpen(false));
             }
-            self.storage.insert(dropdown_id, WidgetState::DropdownOpen(true));
+            self.storage
+                .insert(dropdown_id, WidgetState::DropdownOpen(true));
             self.popup_id = Some(dropdown_id);
             self.popup_bounds = Some(Rect2D::from_origin_size(
                 Vec2::new(bounds.min.x(), bounds.max.y()),
@@ -163,7 +165,8 @@ impl UiContext {
         // Toggle on click
         if self.button_behavior(dropdown_id, bounds) {
             let new_open = !is_open;
-            self.storage.insert(dropdown_id, WidgetState::DropdownOpen(new_open));
+            self.storage
+                .insert(dropdown_id, WidgetState::DropdownOpen(new_open));
             if new_open {
                 self.popup_id = Some(dropdown_id);
                 self.popup_opened_this_frame = true;
@@ -195,7 +198,12 @@ impl UiContext {
             bounds.center().x() - text_size.x() * 0.5,
             bounds.center().y() - text_size.y() * 0.5,
         );
-        self.draw_text(label, text_pos, self.style.button_text, self.style.font_size);
+        self.draw_text(
+            label,
+            text_pos,
+            self.style.button_text,
+            self.style.font_size,
+        );
 
         // Show popup if open
         if is_open {

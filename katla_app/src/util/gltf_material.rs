@@ -60,25 +60,25 @@ impl GltfMaterialInfo {
 
         // Get texture indices
         // Note: gltf crate returns texture index, we need to convert to image index
-        let base_color_texture = pbr.base_color_texture().map(|info| {
-            info.texture().source().index()
-        });
+        let base_color_texture = pbr
+            .base_color_texture()
+            .map(|info| info.texture().source().index());
 
-        let normal_texture = material.normal_texture().map(|info| {
-            info.texture().source().index()
-        });
+        let normal_texture = material
+            .normal_texture()
+            .map(|info| info.texture().source().index());
 
-        let metallic_roughness_texture = pbr.metallic_roughness_texture().map(|info| {
-            info.texture().source().index()
-        });
+        let metallic_roughness_texture = pbr
+            .metallic_roughness_texture()
+            .map(|info| info.texture().source().index());
 
-        let occlusion_texture = material.occlusion_texture().map(|info| {
-            info.texture().source().index()
-        });
+        let occlusion_texture = material
+            .occlusion_texture()
+            .map(|info| info.texture().source().index());
 
-        let emission_texture = material.emissive_texture().map(|info| {
-            info.texture().source().index()
-        });
+        let emission_texture = material
+            .emissive_texture()
+            .map(|info| info.texture().source().index());
 
         Self {
             base_color_factor,

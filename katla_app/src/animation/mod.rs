@@ -53,8 +53,8 @@ pub use samplers::{CachedSampler, Interpolation};
 pub use skin::{JointWeights, Skeleton, Skin};
 pub use systems::{AnimationUpdateSystem, MorphTargetSystem, SkeletalAnimationSystem};
 
-use katla_ecs::World;
 use crate::util::gltf_parser::AttributeParser;
+use katla_ecs::World;
 
 /// Animation system manager
 ///
@@ -131,7 +131,11 @@ impl AnimationManager {
                 vec![katla_math::Mat4::identity(); joints.len()]
             };
 
-            let skin = Skin::new("main_skin".to_string(), joints.clone(), inverse_bind_matrices);
+            let skin = Skin::new(
+                "main_skin".to_string(),
+                joints.clone(),
+                inverse_bind_matrices,
+            );
             world.add_component(entity, skin);
 
             // Build skeleton with parent hierarchy and rest pose transforms
@@ -145,7 +149,11 @@ impl AnimationManager {
         if let Some(anim_name) = default_animation {
             let player = AnimationPlayer::new(anim_name).looping();
             world.add_component(entity, player);
-            log::debug!("Started playing animation '{}' on entity {:?}", anim_name, entity);
+            log::debug!(
+                "Started playing animation '{}' on entity {:?}",
+                anim_name,
+                entity
+            );
         }
 
         true

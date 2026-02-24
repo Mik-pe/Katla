@@ -75,9 +75,17 @@ impl UiContext {
     /// * `uv_max` - Bottom-right UV coordinate
     /// * `color` - Tint color (use Color::WHITE for no tint)
     /// * `texture` - Texture to sample from (TextureId::FONT_ATLAS, VIEWPORT, or custom)
-    pub fn draw_image(&mut self, bounds: Rect2D, uv_min: Vec2, uv_max: Vec2, color: Color, texture: TextureId) {
+    pub fn draw_image(
+        &mut self,
+        bounds: Rect2D,
+        uv_min: Vec2,
+        uv_max: Vec2,
+        color: Color,
+        texture: TextureId,
+    ) {
         self.draw_list.set_clip(self.clip_rect());
-        self.draw_list.add_image(bounds, uv_min, uv_max, color, texture);
+        self.draw_list
+            .add_image(bounds, uv_min, uv_max, color, texture);
     }
 
     /// Draw a line.
@@ -198,13 +206,7 @@ impl UiContext {
     }
 
     /// Draw text using a predefined font size.
-    pub fn draw_text_sized(
-        &mut self,
-        text: &str,
-        position: Vec2,
-        color: Color,
-        size: FontSize,
-    ) {
+    pub fn draw_text_sized(&mut self, text: &str, position: Vec2, color: Color, size: FontSize) {
         self.draw_text(text, position, color, size.to_pixels())
     }
 
@@ -344,7 +346,15 @@ impl UiContext {
     /// Draw an icon followed by text at the specified position.
     ///
     /// Returns the x position after the text (for chaining).
-    pub fn draw_icon_label(&mut self, icon: char, text: &str, position: Vec2, icon_size: f32, text_size: f32, color: Color) -> f32 {
+    pub fn draw_icon_label(
+        &mut self,
+        icon: char,
+        text: &str,
+        position: Vec2,
+        icon_size: f32,
+        text_size: f32,
+        color: Color,
+    ) -> f32 {
         let icon_y = position.y();
         self.draw_icon(icon, position, icon_size, color);
         let text_x = position.x() + icon_size + 4.0;
@@ -355,14 +365,27 @@ impl UiContext {
     /// Draw an icon with text centered horizontally within bounds.
     ///
     /// Returns the y position after the content (for chaining vertically).
-    pub fn draw_icon_text_centered(&mut self, icon: char, text: &str, bounds: Rect2D, icon_size: f32, font_size: f32, color: Color) -> f32 {
+    pub fn draw_icon_text_centered(
+        &mut self,
+        icon: char,
+        text: &str,
+        bounds: Rect2D,
+        icon_size: f32,
+        font_size: f32,
+        color: Color,
+    ) -> f32 {
         let text_measure = self.measure_text(text, font_size);
         let total_width = icon_size + 4.0 + text_measure.x();
         let start_x = bounds.center().x() - total_width * 0.5;
         let text_y = bounds.center().y() - text_measure.y() * 0.5;
 
         self.draw_icon(icon, Vec2::new(start_x, text_y), icon_size, color);
-        self.draw_text(text, Vec2::new(start_x + icon_size + 4.0, text_y), color, font_size);
+        self.draw_text(
+            text,
+            Vec2::new(start_x + icon_size + 4.0, text_y),
+            color,
+            font_size,
+        );
 
         text_y + text_measure.y()
     }

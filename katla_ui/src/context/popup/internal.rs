@@ -27,21 +27,15 @@ impl UiContext {
             PopupPosition::AtPosition(pos) => pos,
             PopupPosition::BelowButton(trigger) => Vec2::new(trigger.min.x(), trigger.max.y()),
             PopupPosition::Fixed(bounds) => bounds.min,
-            PopupPosition::Centered { width, height } => {
-                Vec2::new(
-                    (self.screen_size.x() - width) * 0.5,
-                    (self.screen_size.y() - height) * 0.5,
-                )
-            }
+            PopupPosition::Centered { width, height } => Vec2::new(
+                (self.screen_size.x() - width) * 0.5,
+                (self.screen_size.y() - height) * 0.5,
+            ),
         }
     }
 
     /// Calculate final popup bounds from tracked content.
-    pub(super) fn calculate_final_popup_bounds(
-        &self,
-        config: &Popup,
-        position: Vec2,
-    ) -> Rect2D {
+    pub(super) fn calculate_final_popup_bounds(&self, config: &Popup, position: Vec2) -> Rect2D {
         match config.position {
             PopupPosition::Fixed(bounds) => bounds,
             PopupPosition::Centered { width, height } => {

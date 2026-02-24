@@ -4,7 +4,9 @@
 //! Vertices use screen coordinates (pixels) and the shader transforms to NDC
 //! using a uniform buffer containing the screen size.
 
-use katla_vulkan::{DescriptorSetLayoutBuilder, DescriptorType, ShaderStages, VertexBinding, VertexFormat};
+use katla_vulkan::{
+    DescriptorSetLayoutBuilder, DescriptorType, ShaderStages, VertexBinding, VertexFormat,
+};
 use std::path::PathBuf;
 
 /// Shader-compatible UI vertex with tight packing.
@@ -18,7 +20,11 @@ pub struct UiShaderVertex {
 
 impl UiShaderVertex {
     pub fn new(position: [f32; 2], uv: [f32; 2], color: [f32; 4]) -> Self {
-        Self { position, uv, color }
+        Self {
+            position,
+            uv,
+            color,
+        }
     }
 }
 
@@ -33,7 +39,12 @@ impl UiShaderVertex {
 #[derive(katla_derive::Material)]
 #[material(shader = "resources/shaders/ui/ui.wgsl")]
 #[material(domain = "Ui")]
-#[material(depth_test = false, depth_write = false, cull_backfaces = false, alpha_blending = true)]
+#[material(
+    depth_test = false,
+    depth_write = false,
+    cull_backfaces = false,
+    alpha_blending = true
+)]
 #[material(color_format = "B8G8R8A8Srgb")]
 pub struct UiMaterial {
     pub vertex_binding: VertexBinding,
@@ -45,7 +56,11 @@ impl Default for UiMaterial {
     fn default() -> Self {
         Self {
             vertex_binding: VertexBinding {
-                formats: vec![VertexFormat::RG32f, VertexFormat::RG32f, VertexFormat::RGBA32f],
+                formats: vec![
+                    VertexFormat::RG32f,
+                    VertexFormat::RG32f,
+                    VertexFormat::RGBA32f,
+                ],
             },
             shader_path: PathBuf::from("resources/shaders/ui/ui.wgsl"),
             descriptor_layouts: vec![

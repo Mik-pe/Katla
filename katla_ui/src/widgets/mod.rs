@@ -174,9 +174,17 @@ impl<'a> Slider<'a> {
 
 impl<'a> crate::Widget for Slider<'a> {
     fn ui(self, ui: &mut UiContext) -> Response {
-        let id = self.id.map(|s| s.to_string())
+        let id = self
+            .id
+            .map(|s| s.to_string())
             .unwrap_or_else(|| format!("slider_{:?}", self.range));
-        ui.slider(&id, self.value, *self.range.start(), *self.range.end(), self.bounds)
+        ui.slider(
+            &id,
+            self.value,
+            *self.range.start(),
+            *self.range.end(),
+            self.bounds,
+        )
     }
 }
 
@@ -246,7 +254,12 @@ impl<'a> crate::Widget for TextInput<'a> {
                     self.bounds.min.x() + padding,
                     self.bounds.center().y() - ui.style.font_size * 0.5,
                 );
-                ui.draw_text(placeholder, text_pos, ui.style.text_color * 0.5, ui.style.font_size);
+                ui.draw_text(
+                    placeholder,
+                    text_pos,
+                    ui.style.text_color * 0.5,
+                    ui.style.font_size,
+                );
             }
         }
 
@@ -353,10 +366,7 @@ impl Default for Separator {
 
 impl crate::Widget for Separator {
     fn ui(self, ui: &mut UiContext) -> Response {
-        let bounds = Rect2D::from_origin_size(
-            ui.cursor,
-            katla_math::Vec2::new(100.0, 20.0),
-        );
+        let bounds = Rect2D::from_origin_size(ui.cursor, katla_math::Vec2::new(100.0, 20.0));
 
         let color = self.color.unwrap_or(ui.style.border);
         let y = ui.cursor.y() + 10.0;
@@ -427,7 +437,8 @@ impl crate::Widget for Badge {
     fn ui(self, ui: &mut UiContext) -> crate::Response {
         let padding = 4.0;
         let text_size = ui.measure_text(self.text, ui.scaled_font_size(crate::FontSize::XSmall));
-        let badge_size = katla_math::Vec2::new(text_size.x() + padding * 2.0, text_size.y() + padding);
+        let badge_size =
+            katla_math::Vec2::new(text_size.x() + padding * 2.0, text_size.y() + padding);
 
         let bounds = Rect2D::from_origin_size(ui.cursor, badge_size);
 
@@ -480,7 +491,8 @@ impl Spacer {
 
 impl crate::Widget for Spacer {
     fn ui(self, ui: &mut UiContext) -> crate::Response {
-        let bounds = Rect2D::from_origin_size(ui.cursor, katla_math::Vec2::new(self.width, self.height));
+        let bounds =
+            Rect2D::from_origin_size(ui.cursor, katla_math::Vec2::new(self.width, self.height));
         Response::new(bounds)
     }
 }

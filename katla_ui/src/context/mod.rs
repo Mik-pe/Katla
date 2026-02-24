@@ -236,7 +236,8 @@ impl UiContext {
             if mouse_outside {
                 // Close the dropdown in storage too
                 if let Some(popup_id) = self.popup_id {
-                    self.storage.insert(popup_id, WidgetState::DropdownOpen(false));
+                    self.storage
+                        .insert(popup_id, WidgetState::DropdownOpen(false));
                 }
                 self.popup_id = None;
                 self.popup_bounds = None;
@@ -776,8 +777,16 @@ mod tests {
 
         // Bounds should encompass all items
         let tracked = ctx.popup_content_bounds.unwrap();
-        assert_eq!(tracked.min, Vec2::new(100.0, 50.0), "Top should be at first item top");
-        assert_eq!(tracked.max, Vec2::new(250.0, 122.0), "Bottom should be at last item bottom");
+        assert_eq!(
+            tracked.min,
+            Vec2::new(100.0, 50.0),
+            "Top should be at first item top"
+        );
+        assert_eq!(
+            tracked.max,
+            Vec2::new(250.0, 122.0),
+            "Bottom should be at last item bottom"
+        );
 
         ctx.end();
     }
