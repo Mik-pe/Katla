@@ -2605,21 +2605,10 @@ impl EditorUI {
                 Vec2::new(panel_x + panel_width - close_btn_size - 4.0, panel_y + 4.0),
                 Vec2::new(close_btn_size, close_btn_size),
             );
-            let close_hovered = ui.is_hovered(close_bounds);
-            if close_hovered {
-                ui.draw_rect(close_bounds, theme.button_hover);
-            }
-            ui.draw_icon(
-                ForkAwesome::TIMES,
-                Vec2::new(close_bounds.min.x() + 3.0, close_bounds.min.y() + 2.0),
-                14.0,
-                if close_hovered {
-                    theme.text_primary
-                } else {
-                    theme.text_secondary
-                },
-            );
-            if close_hovered && ui.input.mouse_clicked(mouse_button::LEFT) {
+            if ui
+                .add(katla_ui::widgets::ImageButton::new(ForkAwesome::TIMES).bounds(close_bounds))
+                .clicked
+            {
                 self.model_preview.close();
             }
 
@@ -2854,36 +2843,21 @@ impl EditorUI {
                     let btn_height = 24.0;
                     let btn_bounds =
                         Rect2D::from_origin_size(cursor, Vec2::new(btn_width, btn_height));
-                    let btn_hovered = ui.is_hovered(btn_bounds);
-                    if btn_hovered {
-                        ui.draw_rect(btn_bounds, theme.button_hover);
-                    } else {
-                        ui.draw_rect(btn_bounds, theme.button_bg);
-                    }
-                    ui.draw_rect_border(btn_bounds, theme.button_bg, theme.border, 1.0);
 
                     let btn_text = if self.model_preview.animation.playing {
                         "Pause"
                     } else {
                         "Play"
                     };
-                    let btn_text_size =
-                        ui.measure_text(btn_text, ui.scaled_font_size(FontSize::XSmall));
-                    ui.draw_text(
-                        btn_text,
-                        Vec2::new(
-                            btn_bounds.center().x() - btn_text_size.x() * 0.5,
-                            btn_bounds.center().y() - btn_text_size.y() * 0.5,
-                        ),
-                        if btn_hovered {
-                            theme.text_primary
-                        } else {
-                            theme.text_secondary
-                        },
-                        ui.scaled_font_size(FontSize::XSmall),
-                    );
-
-                    if btn_hovered && ui.input.mouse_clicked(mouse_button::LEFT) {
+                    if ui
+                        .add(
+                            katla_ui::widgets::Button::new(btn_text)
+                                .bounds(btn_bounds)
+                                .fill_color(theme.button_bg)
+                                .hover_color(theme.button_hover),
+                        )
+                        .clicked
+                    {
                         self.model_preview.animation.playing =
                             !self.model_preview.animation.playing;
                     }

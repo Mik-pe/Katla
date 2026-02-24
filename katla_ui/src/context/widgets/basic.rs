@@ -16,7 +16,71 @@ impl UiContext {
         self.button_with_colors(id, text, bounds, None, None)
     }
 
-    /// Draw an image button with an icon (internal - use `widgets::ImageButton` instead).
+    /// Draw a button with optional custom background colors.
+    pub(crate) fn button_with_colors(
+        &mut self,
+        id: &str,
+        text: &str,
+        bounds: Rect2D,
+        fill_color: Option<Color>,
+        hover_color: Option<Color>,
+    ) -> Response {
+        let widget_id = self.generate_id(id);
+
+        let hovered = self.update_hover(widget_id, bounds);
+        let active = self.active_id == Some(widget_id);
+
+        // Handle click
+        let clicked = if hovered && self.input.mouse_pressed[mouse_button::LEFT] {
+            self.active_id = Some(widget_id);
+            false
+        } else if active && self.input.mouse_released[mouse_button::LEFT] {
+            self.active_id = None;
+            hovered
+        } else {
+            false
+        };
+
+        // Determine background color based on state
+        let bg_color = if active {
+            hover_color.unwrap_or(self.style.button_active)
+        } else if hovered {
+            hover_color.unwrap_or(self.style.button_hovered)
+        } else {
+            fill_color.unwrap_or(self.style.button_normal)
+        };
+
+        // Draw button background
+        self.draw_rect(bounds, bg_color);
+
+        // Draw button text - use text_color (primary) which should be visible against backgrounds
+        let text_size = self.measure_text(text, self.style.font_size);
+        let text_pos = Vec2::new(
+            bounds.center().x() - text_size.x() * 0.5,
+            bounds.center().y() - text_size.y() * 0.5,
+        );
+        self.draw_text(text, text_pos, self.style.text_color, self.style.font_size);
+
+        // Check for double-click (on click release)
+        let double_clicked = clicked && self.input.mouse_double_clicked(mouse_button::LEFT);
+
+        // Track drag delta when active
+        let drag_delta = if active {
+            self.input.mouse_delta
+        } else {
+            Vec2::new(0.0, 0.0)
+        };
+
+        Response {
+            clicked,
+            hovered,
+            active,
+            changed: clicked,
+            bounds,
+            drag_delta,
+            double_clicked,
+        }
+    }
     pub(crate) fn image_button(
         &mut self,
         id: &str,
@@ -85,72 +149,6 @@ impl UiContext {
             bounds,
             drag_delta,
             double_clicked: double_clicked && enabled,
-        }
-    }
-
-    /// Draw a button with optional custom colors (internal - use `widgets::Button` instead).
-    pub(crate) fn button_with_colors(
-        &mut self,
-        id: &str,
-        text: &str,
-        bounds: Rect2D,
-        fill_color: Option<Color>,
-        hover_color: Option<Color>,
-    ) -> Response {
-        let widget_id = self.generate_id(id);
-
-        let hovered = self.update_hover(widget_id, bounds);
-        let active = self.active_id == Some(widget_id);
-
-        // Handle click
-        let clicked = if hovered && self.input.mouse_pressed[mouse_button::LEFT] {
-            self.active_id = Some(widget_id);
-            false
-        } else if active && self.input.mouse_released[mouse_button::LEFT] {
-            self.active_id = None;
-            hovered
-        } else {
-            false
-        };
-
-        // Determine colors based on state
-        let bg_color = if active {
-            hover_color.unwrap_or(self.style.button_active)
-        } else if hovered {
-            hover_color.unwrap_or(self.style.button_hovered)
-        } else {
-            fill_color.unwrap_or(self.style.button_normal)
-        };
-
-        // Draw button background
-        self.draw_rect(bounds, bg_color);
-
-        // Draw button text (centered, top-left positioning)
-        let text_size = self.measure_text(text, self.style.font_size);
-        let text_pos = Vec2::new(
-            bounds.center().x() - text_size.x() * 0.5,
-            bounds.center().y() - text_size.y() * 0.5,
-        );
-        self.draw_text(text, text_pos, self.style.button_text, self.style.font_size);
-
-        // Check for double-click (on click release)
-        let double_clicked = clicked && self.input.mouse_double_clicked(mouse_button::LEFT);
-
-        // Track drag delta when active
-        let drag_delta = if active {
-            self.input.mouse_delta
-        } else {
-            Vec2::new(0.0, 0.0)
-        };
-
-        Response {
-            clicked,
-            hovered,
-            active,
-            changed: clicked,
-            bounds,
-            drag_delta,
-            double_clicked,
         }
     }
 
