@@ -13,6 +13,90 @@ use super::super::UiContext;
 impl UiContext {
     /// Draw a button (internal - use `widgets::Button` instead).
     pub(crate) fn button(&mut self, id: &str, text: &str, bounds: Rect2D) -> Response {
+        self.button_with_colors(id, text, bounds, None, None)
+    }
+
+    /// Draw an image button with an icon (internal - use `widgets::ImageButton` instead).
+    pub(crate) fn image_button(
+        &mut self,
+        id: &str,
+        icon: char,
+        bounds: Rect2D,
+        enabled: bool,
+    ) -> Response {
+        let widget_id = self.generate_id(id);
+
+        let hovered = self.update_hover(widget_id, bounds) && enabled;
+        let active = self.active_id == Some(widget_id) && enabled;
+
+        // Handle click
+        let clicked = if hovered && self.input.mouse_pressed[mouse_button::LEFT] {
+            self.active_id = Some(widget_id);
+            false
+        } else if active && self.input.mouse_released[mouse_button::LEFT] {
+            self.active_id = None;
+            hovered
+        } else {
+            false
+        };
+
+        // Determine colors based on state
+        let bg_color = if !enabled {
+            self.style.button_normal * 0.5 // Dimmed when disabled
+        } else if active {
+            self.style.button_active
+        } else if hovered {
+            self.style.button_hovered
+        } else {
+            Color::TRANSPARENT // No background by default for icon buttons
+        };
+
+        // Draw button background
+        self.draw_rect(bounds, bg_color);
+
+        // Determine icon color based on state
+        let icon_color = if !enabled {
+            self.style.button_text * 0.5 // Dimmed when disabled
+        } else if hovered {
+            self.style.button_text
+        } else {
+            self.style.button_text * 0.8 // Slightly dimmed when not hovered
+        };
+
+        // Draw icon centered
+        let icon_size = bounds.height().min(bounds.width()) * 0.6;
+        self.draw_icon_centered(icon, bounds, icon_size, icon_color);
+
+        // Check for double-click (on click release)
+        let double_clicked = clicked && self.input.mouse_double_clicked(mouse_button::LEFT);
+
+        // Track drag delta when active
+        let drag_delta = if active {
+            self.input.mouse_delta
+        } else {
+            Vec2::new(0.0, 0.0)
+        };
+
+        Response {
+            clicked: clicked && enabled,
+            hovered,
+            active,
+            changed: clicked && enabled,
+            bounds,
+            drag_delta,
+            double_clicked: double_clicked && enabled,
+        }
+    }
+
+    /// Draw a button with optional custom colors (internal - use `widgets::Button` instead).
+    pub(crate) fn button_with_colors(
+        &mut self,
+        id: &str,
+        text: &str,
+        bounds: Rect2D,
+        fill_color: Option<Color>,
+        hover_color: Option<Color>,
+    ) -> Response {
         let widget_id = self.generate_id(id);
 
         let hovered = self.update_hover(widget_id, bounds);
@@ -31,11 +115,11 @@ impl UiContext {
 
         // Determine colors based on state
         let bg_color = if active {
-            self.style.button_active
+            hover_color.unwrap_or(self.style.button_active)
         } else if hovered {
-            self.style.button_hovered
+            hover_color.unwrap_or(self.style.button_hovered)
         } else {
-            self.style.button_normal
+            fill_color.unwrap_or(self.style.button_normal)
         };
 
         // Draw button background
