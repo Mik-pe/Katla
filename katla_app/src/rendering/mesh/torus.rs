@@ -121,7 +121,7 @@ mod tests {
 
             if dot < 0.0 {
                 failed += 1;
-                info!(
+                log::info!(
                     "Triangle {:?}: face_normal={:?}, avg_normal={:?}, dot={}",
                     chunk,
                     face_normal.to_array(),
@@ -133,7 +133,7 @@ mod tests {
             }
         }
 
-        info!("Torus winding: {} passed, {} failed", passed, failed);
+        log::info!("Torus winding: {} passed, {} failed", passed, failed);
         assert_eq!(
             failed, 0,
             "Torus has {} triangles with incorrect winding",

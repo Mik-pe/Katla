@@ -27,10 +27,20 @@ impl FullscreenRenderer {
         // Create sky pipeline from pure config
         let sky_material = SkyMaterial::default();
         let sky_pipeline = cache.get_or_create(&sky_material).ok();
+        if sky_pipeline.is_none() {
+            log::error!("Failed to create sky pipeline!");
+        } else {
+            log::debug!("Sky pipeline created successfully");
+        }
 
         // Create grid pipeline from pure config
         let grid_material = GridMaterial::default();
         let grid_pipeline = cache.get_or_create(&grid_material).ok();
+        if grid_pipeline.is_none() {
+            log::error!("Failed to create grid pipeline!");
+        } else {
+            log::debug!("Grid pipeline created successfully");
+        }
 
         Self {
             sky_pipeline,

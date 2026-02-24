@@ -9,9 +9,7 @@ use ash::vk;
 use common::create_headless_context;
 use katla_vulkan::{
     render_graph::{
-        types::{
-            Extent3D, ImageFormat, ImageLayout, ImageTiling, ImageUsage, SampleCount,
-        },
+        types::{Extent3D, ImageFormat, ImageLayout, ImageTiling, ImageUsage, SampleCount},
         Attachment, RenderGraphBuilder, ResourceKind,
     },
     CommandBuffer,
@@ -70,7 +68,7 @@ fn test_render_graph_compilation_headless() {
         pass.write(Attachment::Color(color_target))
             .write(Attachment::DepthStencil(depth_target))
             .clear_color(color_target, [0.2, 0.4, 0.8, 1.0])
-            .clear_depth_stencil(depth_target, 1.0, 0)
+            .clear_depth_stencil(depth_target, 0.0, 0)
             .execute("offscreen_pass", |_ctx| {
                 // Pass execution callback (empty for this test)
             });

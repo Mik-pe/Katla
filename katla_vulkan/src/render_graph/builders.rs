@@ -230,9 +230,7 @@ mod tests {
         let resource = builder.build();
 
         match resource {
-            ResourceKind::Image {
-                usage, format, ..
-            } => {
+            ResourceKind::Image { usage, format, .. } => {
                 assert!(usage.contains(&ImageUsage::ColorAttachment));
                 assert!(usage.contains(&ImageUsage::Sampled));
                 assert_eq!(format, ImageFormat::B8G8R8A8Srgb);

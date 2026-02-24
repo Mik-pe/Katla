@@ -25,7 +25,7 @@ pub const COLOR_SUBRESOURCE_RANGE: vk::ImageSubresourceRange = vk::ImageSubresou
 /// Use this for depth attachment operations.
 pub const DEPTH_SUBRESOURCE_RANGE: vk::ImageSubresourceRange = vk::ImageSubresourceRange {
     aspect_mask: vk::ImageAspectFlags::from_raw(
-        vk::ImageAspectFlags::DEPTH.as_raw() | vk::ImageAspectFlags::STENCIL.as_raw()
+        vk::ImageAspectFlags::DEPTH.as_raw() | vk::ImageAspectFlags::STENCIL.as_raw(),
     ),
     base_mip_level: 0,
     level_count: 1,
@@ -106,7 +106,10 @@ pub fn depth_attachment_barrier(image: VkImage) -> ImageMemoryBarrier2 {
         .src_stage(PipelineStage2Flags::LATE_FRAGMENT_TESTS)
         .src_access(AccessFlags2::DEPTH_STENCIL_ATTACHMENT_WRITE)
         .dst_stage(PipelineStage2Flags::EARLY_FRAGMENT_TESTS)
-        .dst_access(AccessFlags2::DEPTH_STENCIL_ATTACHMENT_READ.union(AccessFlags2::DEPTH_STENCIL_ATTACHMENT_WRITE))
+        .dst_access(
+            AccessFlags2::DEPTH_STENCIL_ATTACHMENT_READ
+                .union(AccessFlags2::DEPTH_STENCIL_ATTACHMENT_WRITE),
+        )
         .old_layout(vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL)
         .new_layout(vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL)
         .subresource_range(DEPTH_SUBRESOURCE_RANGE)
@@ -121,7 +124,10 @@ pub fn depth_init_barrier(image: VkImage) -> ImageMemoryBarrier2 {
         .src_stage(PipelineStage2Flags::TOP_OF_PIPE)
         .src_access(AccessFlags2::NONE)
         .dst_stage(PipelineStage2Flags::EARLY_FRAGMENT_TESTS)
-        .dst_access(AccessFlags2::DEPTH_STENCIL_ATTACHMENT_READ.union(AccessFlags2::DEPTH_STENCIL_ATTACHMENT_WRITE))
+        .dst_access(
+            AccessFlags2::DEPTH_STENCIL_ATTACHMENT_READ
+                .union(AccessFlags2::DEPTH_STENCIL_ATTACHMENT_WRITE),
+        )
         .old_layout(vk::ImageLayout::UNDEFINED)
         .new_layout(vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL)
         .subresource_range(DEPTH_SUBRESOURCE_RANGE)
@@ -1436,7 +1442,10 @@ mod tests {
 
     #[test]
     fn test_color_subresource_range() {
-        assert_eq!(COLOR_SUBRESOURCE_RANGE.aspect_mask, vk::ImageAspectFlags::COLOR);
+        assert_eq!(
+            COLOR_SUBRESOURCE_RANGE.aspect_mask,
+            vk::ImageAspectFlags::COLOR
+        );
         assert_eq!(COLOR_SUBRESOURCE_RANGE.base_mip_level, 0);
         assert_eq!(COLOR_SUBRESOURCE_RANGE.level_count, 1);
         assert_eq!(COLOR_SUBRESOURCE_RANGE.base_array_layer, 0);
@@ -1461,9 +1470,18 @@ mod tests {
         let barrier = color_read_to_attachment_barrier(image);
 
         assert_eq!(barrier.image, image);
-        assert_eq!(barrier.old_layout, vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL);
-        assert_eq!(barrier.new_layout, vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL);
-        assert_eq!(barrier.subresource_range.aspect_mask, COLOR_SUBRESOURCE_RANGE.aspect_mask);
+        assert_eq!(
+            barrier.old_layout,
+            vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL
+        );
+        assert_eq!(
+            barrier.new_layout,
+            vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL
+        );
+        assert_eq!(
+            barrier.subresource_range.aspect_mask,
+            COLOR_SUBRESOURCE_RANGE.aspect_mask
+        );
     }
 
     #[test]
@@ -1472,9 +1490,18 @@ mod tests {
         let barrier = color_attachment_to_read_barrier(image);
 
         assert_eq!(barrier.image, image);
-        assert_eq!(barrier.old_layout, vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL);
-        assert_eq!(barrier.new_layout, vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL);
-        assert_eq!(barrier.subresource_range.aspect_mask, COLOR_SUBRESOURCE_RANGE.aspect_mask);
+        assert_eq!(
+            barrier.old_layout,
+            vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL
+        );
+        assert_eq!(
+            barrier.new_layout,
+            vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL
+        );
+        assert_eq!(
+            barrier.subresource_range.aspect_mask,
+            COLOR_SUBRESOURCE_RANGE.aspect_mask
+        );
     }
 
     #[test]
@@ -1483,9 +1510,18 @@ mod tests {
         let barrier = depth_attachment_barrier(image);
 
         assert_eq!(barrier.image, image);
-        assert_eq!(barrier.old_layout, vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
-        assert_eq!(barrier.new_layout, vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
-        assert_eq!(barrier.subresource_range.aspect_mask, DEPTH_SUBRESOURCE_RANGE.aspect_mask);
+        assert_eq!(
+            barrier.old_layout,
+            vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL
+        );
+        assert_eq!(
+            barrier.new_layout,
+            vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL
+        );
+        assert_eq!(
+            barrier.subresource_range.aspect_mask,
+            DEPTH_SUBRESOURCE_RANGE.aspect_mask
+        );
     }
 
     #[test]
@@ -1495,8 +1531,14 @@ mod tests {
 
         assert_eq!(barrier.image, image);
         assert_eq!(barrier.old_layout, vk::ImageLayout::UNDEFINED);
-        assert_eq!(barrier.new_layout, vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL);
-        assert_eq!(barrier.subresource_range.aspect_mask, COLOR_SUBRESOURCE_RANGE.aspect_mask);
+        assert_eq!(
+            barrier.new_layout,
+            vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL
+        );
+        assert_eq!(
+            barrier.subresource_range.aspect_mask,
+            COLOR_SUBRESOURCE_RANGE.aspect_mask
+        );
     }
 
     #[test]
@@ -1506,8 +1548,14 @@ mod tests {
 
         assert_eq!(barrier.image, image);
         assert_eq!(barrier.old_layout, vk::ImageLayout::UNDEFINED);
-        assert_eq!(barrier.new_layout, vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
-        assert_eq!(barrier.subresource_range.aspect_mask, DEPTH_SUBRESOURCE_RANGE.aspect_mask);
+        assert_eq!(
+            barrier.new_layout,
+            vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL
+        );
+        assert_eq!(
+            barrier.subresource_range.aspect_mask,
+            DEPTH_SUBRESOURCE_RANGE.aspect_mask
+        );
     }
 
     #[test]
@@ -1517,7 +1565,13 @@ mod tests {
 
         assert_eq!(barrier.image, image);
         assert_eq!(barrier.old_layout, vk::ImageLayout::TRANSFER_DST_OPTIMAL);
-        assert_eq!(barrier.new_layout, vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL);
-        assert_eq!(barrier.subresource_range.aspect_mask, COLOR_SUBRESOURCE_RANGE.aspect_mask);
+        assert_eq!(
+            barrier.new_layout,
+            vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL
+        );
+        assert_eq!(
+            barrier.subresource_range.aspect_mask,
+            COLOR_SUBRESOURCE_RANGE.aspect_mask
+        );
     }
 }

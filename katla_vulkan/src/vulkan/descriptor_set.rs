@@ -132,7 +132,9 @@ impl<T: Copy> BufferSource for crate::vulkan::material::buffer_descriptor::Unifo
     }
     fn size(&self) -> vk::DeviceSize {
         // Access the inherent method on UniformBuffer
-        <Self as crate::vulkan::material::buffer_descriptor::BufferDescriptorSource>::buffer_size(self)
+        <Self as crate::vulkan::material::buffer_descriptor::BufferDescriptorSource>::buffer_size(
+            self,
+        )
     }
 }
 
@@ -458,8 +460,16 @@ impl<'a> DescriptorSetBuilder<'a> {
 
         for (_, binding) in &self.bindings {
             match binding {
-                DescriptorBinding::StorageBuffer { buffer, offset, range }
-                | DescriptorBinding::UniformBuffer { buffer, offset, range } => {
+                DescriptorBinding::StorageBuffer {
+                    buffer,
+                    offset,
+                    range,
+                }
+                | DescriptorBinding::UniformBuffer {
+                    buffer,
+                    offset,
+                    range,
+                } => {
                     buffer_infos.push(
                         vk::DescriptorBufferInfo::default()
                             .buffer(*buffer)
@@ -513,7 +523,8 @@ impl<'a> DescriptorSetBuilder<'a> {
 
         for (binding_num, binding) in &self.bindings {
             let write = match binding {
-                DescriptorBinding::StorageBuffer { .. } | DescriptorBinding::UniformBuffer { .. } => {
+                DescriptorBinding::StorageBuffer { .. }
+                | DescriptorBinding::UniformBuffer { .. } => {
                     let write = vk::WriteDescriptorSet::default()
                         .dst_set(descriptor_set)
                         .dst_binding(*binding_num)
@@ -582,14 +593,20 @@ mod tests {
             offset: 0,
             range: 1024,
         };
-        assert_eq!(storage.descriptor_type(), vk::DescriptorType::STORAGE_BUFFER);
+        assert_eq!(
+            storage.descriptor_type(),
+            vk::DescriptorType::STORAGE_BUFFER
+        );
 
         let uniform = DescriptorBinding::UniformBuffer {
             buffer: vk::Buffer::null(),
             offset: 0,
             range: 256,
         };
-        assert_eq!(uniform.descriptor_type(), vk::DescriptorType::UNIFORM_BUFFER);
+        assert_eq!(
+            uniform.descriptor_type(),
+            vk::DescriptorType::UNIFORM_BUFFER
+        );
 
         let sampled = DescriptorBinding::SampledImage {
             view: vk::ImageView::null(),

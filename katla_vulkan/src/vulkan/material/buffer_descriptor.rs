@@ -178,7 +178,8 @@ impl<T: Copy> BufferDescriptorSource for UniformBuffer<T> {
 
 impl<T: Copy> Drop for UniformBuffer<T> {
     fn drop(&mut self) {
-        self.context.free_buffer(self.buffer, std::mem::take(&mut self.allocation));
+        self.context
+            .free_buffer(self.buffer, std::mem::take(&mut self.allocation));
     }
 }
 

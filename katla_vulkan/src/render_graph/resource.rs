@@ -2,7 +2,6 @@ use std::collections::HashMap;
 use std::fmt;
 use std::ops::AddAssign;
 
-
 /// Unique identifier for a render graph resource.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub struct ResourceId(pub(crate) u32);
@@ -300,9 +299,7 @@ impl std::fmt::Debug for CompiledResource {
                 .debug_struct("CompiledResource::Buffer")
                 .field("size", size)
                 .finish(),
-            CompiledResource::Image {
-                extent, format, ..
-            } => f
+            CompiledResource::Image { extent, format, .. } => f
                 .debug_struct("CompiledResource::Image")
                 .field("extent", extent)
                 .field("format", format)
@@ -310,9 +307,7 @@ impl std::fmt::Debug for CompiledResource {
             CompiledResource::ExternalBuffer { .. } => {
                 f.debug_struct("CompiledResource::ExternalBuffer").finish()
             }
-            CompiledResource::ExternalImage {
-                format, extent, ..
-            } => f
+            CompiledResource::ExternalImage { format, extent, .. } => f
                 .debug_struct("CompiledResource::ExternalImage")
                 .field("format", format)
                 .field("extent", extent)
@@ -368,9 +363,16 @@ mod tests {
             )
             .with_layout(crate::types::ImageLayout::ShaderReadOnlyOptimal);
 
-        assert!(usage.access().contains(&crate::types::Access::VertexAttributeRead));
-        assert!(usage.stage().contains(&crate::types::PipelineStage::VertexInput));
-        assert_eq!(usage.layout(), crate::types::ImageLayout::ShaderReadOnlyOptimal);
+        assert!(usage
+            .access()
+            .contains(&crate::types::Access::VertexAttributeRead));
+        assert!(usage
+            .stage()
+            .contains(&crate::types::PipelineStage::VertexInput));
+        assert_eq!(
+            usage.layout(),
+            crate::types::ImageLayout::ShaderReadOnlyOptimal
+        );
     }
 
     #[test]

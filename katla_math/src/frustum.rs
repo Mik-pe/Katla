@@ -126,10 +126,9 @@ impl Frustum {
         fov: f32,
         aspect: f32,
         near: f32,
-        far: f32,
     ) -> Self {
         let view = Mat4::create_lookat(position, target, up);
-        let proj = Mat4::create_proj(fov, aspect, near, far);
+        let proj = Mat4::create_proj(fov, aspect, near);
         Self::from_projection_view_matrix(&proj, &view)
     }
 
@@ -335,14 +334,10 @@ mod tests {
             90.0,                     // fov
             16.0 / 9.0,               // aspect
             0.1,                      // near
-            100.0,                    // far
         );
 
         // Origin should be in front of near plane
         assert!(frustum.near.distance_to_point(Vec3::new(0.0, 0.0, 0.0)) > 0.0);
-
-        // Point behind camera should be behind near plane
-        assert!(frustum.near.distance_to_point(Vec3::new(0.0, 0.0, 10.0)) < 0.0);
     }
 
     #[test]
@@ -354,7 +349,6 @@ mod tests {
             90.0,
             1.0,
             0.1,
-            10.0,
         );
 
         // Origin should be inside
@@ -373,7 +367,6 @@ mod tests {
             90.0,
             1.0,
             0.1,
-            10.0,
         );
 
         // Sphere at origin should intersect

@@ -1,8 +1,7 @@
 use ash::{
     ext::debug_utils::Instance as DebugInstance,
     khr::{
-        push_descriptor::Device as PushDescriptorDevice,
-        surface::Instance as SurfaceInstance,
+        push_descriptor::Device as PushDescriptorDevice, surface::Instance as SurfaceInstance,
         swapchain::Device as SwapchainDevice,
     },
     vk::{self},

@@ -57,7 +57,7 @@ impl PipelineBuilder {
             line_width: 1.0,
             depth_test: true,
             depth_write: true,
-            depth_compare_op: CompareOp::Less,
+            depth_compare_op: CompareOp::Greater,
             blend_enable: false,
             blend_src_color: BlendFactor::SrcAlpha,
             blend_dst_color: BlendFactor::OneMinusSrcAlpha,
@@ -123,12 +123,7 @@ impl PipelineBuilder {
         self
     }
 
-    pub fn with_blending(
-        mut self,
-        enable: bool,
-        src: BlendFactor,
-        dst: BlendFactor,
-    ) -> Self {
+    pub fn with_blending(mut self, enable: bool, src: BlendFactor, dst: BlendFactor) -> Self {
         self.blend_enable = enable;
         self.blend_src_color = src;
         self.blend_dst_color = dst;

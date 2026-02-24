@@ -135,8 +135,8 @@ impl BindlessTextureManager {
             vk::DescriptorBindingFlags::empty(),
         ];
 
-        let mut binding_flags_info = vk::DescriptorSetLayoutBindingFlagsCreateInfo::default()
-            .binding_flags(&binding_flags);
+        let mut binding_flags_info =
+            vk::DescriptorSetLayoutBindingFlagsCreateInfo::default().binding_flags(&binding_flags);
 
         let layout_info = vk::DescriptorSetLayoutCreateInfo::default()
             .bindings(&bindings)
@@ -144,7 +144,9 @@ impl BindlessTextureManager {
             .push_next(&mut binding_flags_info);
 
         let descriptor_layout = unsafe {
-            context.device.create_descriptor_set_layout(&layout_info, None)?
+            context
+                .device
+                .create_descriptor_set_layout(&layout_info, None)?
         };
 
         // Create descriptor pool with UPDATE_AFTER_BIND flag
@@ -162,9 +164,7 @@ impl BindlessTextureManager {
             .max_sets(1)
             .flags(vk::DescriptorPoolCreateFlags::UPDATE_AFTER_BIND);
 
-        let descriptor_pool = unsafe {
-            context.device.create_descriptor_pool(&pool_info, None)?
-        };
+        let descriptor_pool = unsafe { context.device.create_descriptor_pool(&pool_info, None)? };
 
         // Allocate descriptor set
         let layouts = [descriptor_layout];
@@ -172,14 +172,11 @@ impl BindlessTextureManager {
             .descriptor_pool(descriptor_pool)
             .set_layouts(&layouts);
 
-        let descriptor_sets = unsafe {
-            context.device.allocate_descriptor_sets(&alloc_info)?
-        };
+        let descriptor_sets = unsafe { context.device.allocate_descriptor_sets(&alloc_info)? };
         let descriptor_set = descriptor_sets[0];
 
         // Write the shared sampler to binding 1 (static, done once)
-        let sampler_info = [vk::DescriptorImageInfo::default()
-            .sampler(shared_sampler.vk())];
+        let sampler_info = [vk::DescriptorImageInfo::default().sampler(shared_sampler.vk())];
 
         let sampler_write = vk::WriteDescriptorSet::default()
             .dst_set(descriptor_set)
@@ -203,7 +200,9 @@ impl BindlessTextureManager {
         }
 
         // Initialize free slots stack (skip reserved slots 0-4)
-        let free_slots: Vec<u32> = (DEFAULT_TEXTURE_COUNT..MAX_BINDLESS_TEXTURES).rev().collect();
+        let free_slots: Vec<u32> = (DEFAULT_TEXTURE_COUNT..MAX_BINDLESS_TEXTURES)
+            .rev()
+            .collect();
 
         Ok(Self {
             descriptor_pool,
@@ -372,8 +371,10 @@ impl Drop for BindlessTextureManager {
             // Default textures are dropped automatically via their Drop impl
 
             // Destroy descriptor infrastructure
-            self.device.destroy_descriptor_pool(self.descriptor_pool, None);
-            self.device.destroy_descriptor_set_layout(self.descriptor_layout.vk(), None);
+            self.device
+                .destroy_descriptor_pool(self.descriptor_pool, None);
+            self.device
+                .destroy_descriptor_set_layout(self.descriptor_layout.vk(), None);
             self.device.destroy_sampler(self.shared_sampler.vk(), None);
         }
     }

@@ -119,7 +119,7 @@ mod tests {
 
             if dot < 0.0 {
                 failed += 1;
-                info!(
+                log::info!(
                     "Triangle {:?} (centroid={:?}): face_normal={:?}, expected_normal={:?}, dot={}",
                     chunk,
                     centroid.to_array(),
@@ -132,7 +132,7 @@ mod tests {
             }
         }
 
-        info!("Sphere winding: {} passed, {} failed", passed, failed);
+        log::info!("Sphere winding: {} passed, {} failed", passed, failed);
         assert_eq!(
             failed, 0,
             "Sphere has {} triangles with incorrect winding",

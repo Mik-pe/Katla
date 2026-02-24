@@ -115,7 +115,7 @@ mod tests {
             Vec3::new(0.0, 0.0, 0.0),
             Vec3::new(0.0, 1.0, 0.0),
         );
-        let proj = Mat4::create_proj(90.0, 1.0, 0.1, 100.0);
+        let proj = Mat4::create_proj(90.0, 1.0, 0.1);
         system.set_frustum_from_matrices(&view, &proj);
 
         // Create entity at origin with bounding volume
@@ -146,7 +146,7 @@ mod tests {
             Vec3::new(0.0, 0.0, 0.0),
             Vec3::new(0.0, 1.0, 0.0),
         );
-        let proj = Mat4::create_proj(90.0, 1.0, 0.1, 100.0);
+        let proj = Mat4::create_proj(90.0, 1.0, 0.1);
         system.set_frustum_from_matrices(&view, &proj);
 
         // Create entity far outside frustum

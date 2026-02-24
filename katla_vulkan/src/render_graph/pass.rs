@@ -615,12 +615,7 @@ impl PassExecutionContext {
     /// Bind an index buffer for indexed drawing.
     ///
     /// Uses the IndexType wrapper instead of raw vk::IndexType.
-    pub fn bind_index_buffer(
-        &self,
-        buffer: VkBuffer,
-        offset: u64,
-        index_type: crate::IndexType,
-    ) {
+    pub fn bind_index_buffer(&self, buffer: VkBuffer, offset: u64, index_type: crate::IndexType) {
         self.command_buffer
             .bind_index_buffer(buffer.into(), offset, index_type);
     }
@@ -645,8 +640,13 @@ impl PassExecutionContext {
         vertex_offset: i32,
         first_instance: u32,
     ) {
-        self.command_buffer
-            .draw_indexed(index_count, instance_count, first_index, vertex_offset, first_instance);
+        self.command_buffer.draw_indexed(
+            index_count,
+            instance_count,
+            first_index,
+            vertex_offset,
+            first_instance,
+        );
     }
 
     /// Draw geometry without an index buffer (array drawing).
@@ -681,13 +681,7 @@ impl PassExecutionContext {
     ///
     /// This is a convenience method for the present pass.
     /// Performs a linear-filtered blit from src to dst covering the full images.
-    pub fn blit_images(
-        &self,
-        src_image: VkImage,
-        dst_image: VkImage,
-        width: u32,
-        height: u32,
-    ) {
+    pub fn blit_images(&self, src_image: VkImage, dst_image: VkImage, width: u32, height: u32) {
         let src: vk::Image = src_image.into();
         let dst: vk::Image = dst_image.into();
 
@@ -700,7 +694,11 @@ impl PassExecutionContext {
             })
             .src_offsets([
                 vk::Offset3D { x: 0, y: 0, z: 0 },
-                vk::Offset3D { x: width as i32, y: height as i32, z: 1 },
+                vk::Offset3D {
+                    x: width as i32,
+                    y: height as i32,
+                    z: 1,
+                },
             ])
             .dst_subresource(vk::ImageSubresourceLayers {
                 aspect_mask: vk::ImageAspectFlags::COLOR,
@@ -710,7 +708,11 @@ impl PassExecutionContext {
             })
             .dst_offsets([
                 vk::Offset3D { x: 0, y: 0, z: 0 },
-                vk::Offset3D { x: width as i32, y: height as i32, z: 1 },
+                vk::Offset3D {
+                    x: width as i32,
+                    y: height as i32,
+                    z: 1,
+                },
             ]);
 
         // Get device from renderer context
@@ -743,10 +745,8 @@ impl PassExecutionContext {
         pipeline: &crate::vulkan::material::MaterialPipeline,
         descriptor_set: crate::sync::VkDescriptorSet,
     ) {
-        self.command_buffer.bind_graphics_descriptors(
-            pipeline.vk_layout(),
-            &[descriptor_set.into()],
-        );
+        self.command_buffer
+            .bind_graphics_descriptors(pipeline.vk_layout(), &[descriptor_set.into()]);
     }
 
     /// Bind a descriptor set at a specific set index for graphics pipelines.
@@ -864,7 +864,8 @@ impl PassExecutionContext {
         let storage_descriptor = ctx.storage_descriptor();
 
         // Get bindless manager via pointer accessor
-        let bindless_descriptor = ctx.bindless_manager()
+        let bindless_descriptor = ctx
+            .bindless_manager()
             .and_then(|bm| bm.as_ref().map(|m| m.vk_descriptor_set()));
 
         // Get skeleton descriptors via pointer accessor
@@ -937,7 +938,9 @@ impl PassExecutionContext {
 
                 // Bind skeleton descriptor (set 2) if present
                 if let Some(skeleton_handle) = draw.skeleton {
-                    if let Some(Some(skeleton_desc)) = skeleton_descriptors.get(skeleton_handle.0 as usize) {
+                    if let Some(Some(skeleton_desc)) =
+                        skeleton_descriptors.get(skeleton_handle.0 as usize)
+                    {
                         self.command_buffer.bind_graphics_descriptors_at(
                             pipeline_ref.vk_layout(),
                             2,
@@ -950,10 +953,18 @@ impl PassExecutionContext {
 
                 // Draw
                 if let Some(ref ib) = mesh.index_buffer {
-                    self.command_buffer.bind_index_buffer(ib.object(), 0, ib.index_type);
+                    self.command_buffer
+                        .bind_index_buffer(ib.object(), 0, ib.index_type);
                     if let Some(ref vb) = mesh.vertex_buffer {
-                        self.command_buffer.bind_vertex_buffers(0, &[vb.object()], &[0]);
-                        self.command_buffer.draw_indexed(ib.count(), instance_count, 0, 0, first_instance);
+                        self.command_buffer
+                            .bind_vertex_buffers(0, &[vb.object()], &[0]);
+                        self.command_buffer.draw_indexed(
+                            ib.count(),
+                            instance_count,
+                            0,
+                            0,
+                            first_instance,
+                        );
                     }
                 }
             }
@@ -970,17 +981,18 @@ impl PassExecutionContext {
     ///
     /// Note: This only binds set 0 (storage uniforms). For materials that need
     /// bindless textures, use draw_fullscreen_with_material_bindless().
-    pub fn draw_fullscreen_with_material(&self, material: &std::rc::Rc<std::cell::RefCell<crate::vulkan::material::MaterialPipeline>>) {
+    pub fn draw_fullscreen_with_material(
+        &self,
+        material: &std::rc::Rc<std::cell::RefCell<crate::vulkan::material::MaterialPipeline>>,
+    ) {
         let pipeline = material.borrow();
         self.bind_graphics_pipeline(&pipeline);
 
         // Bind storage descriptor if available (for frame uniforms)
         if let Some(ctx) = &self.renderer_context {
             if let Some(desc_set) = ctx.storage_descriptor() {
-                self.command_buffer.bind_graphics_descriptors(
-                    pipeline.vk_layout(),
-                    &[desc_set.into()],
-                );
+                self.command_buffer
+                    .bind_graphics_descriptors(pipeline.vk_layout(), &[desc_set.into()]);
             }
         }
 
