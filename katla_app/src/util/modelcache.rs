@@ -8,7 +8,10 @@ use log::{debug, warn};
 
 use crate::rendering::{VertexNormal, VertexPBR, VertexPosition, VertexSkinned};
 use crate::util::gltf_material::GltfMaterialInfo;
-use crate::util::gltf_parser::{build_skinned_vertex_data, build_vertex_data, generate_smooth_normals, AttributeParser, ParsedAttributes};
+use crate::util::gltf_parser::{
+    build_skinned_vertex_data, build_vertex_data, generate_smooth_normals, AttributeParser,
+    ParsedAttributes,
+};
 
 #[derive(Clone)]
 pub struct GLTFModel {
@@ -48,7 +51,12 @@ impl GLTFModel {
                 mesh.primitives().count()
             );
 
-            for primitive in mesh.primitives() {
+            for (prim_idx, primitive) in mesh.primitives().enumerate() {
+                debug!(
+                    "    Primitive {}: has_indices={}",
+                    prim_idx,
+                    primitive.indices().is_some()
+                );
                 // Parse attributes using the new parser
                 for (semantic, accessor) in primitive.attributes() {
                     match semantic {
@@ -107,7 +115,10 @@ impl GLTFModel {
     }
 
     /// Parse a single GLTF node into skinned vertex data.
-    fn parse_node_skinned(&self, node: &gltf::Node) -> (Vec<VertexSkinned>, Vec<u8>, u8, Sphere, bool) {
+    fn parse_node_skinned(
+        &self,
+        node: &gltf::Node,
+    ) -> (Vec<VertexSkinned>, Vec<u8>, u8, Sphere, bool) {
         let mut positions = vec![];
         let mut normals = vec![];
         let mut tex_coords = vec![];
@@ -160,7 +171,11 @@ impl GLTFModel {
 
             let has_skinning = !joint_indices.is_empty() && !joint_weights.is_empty();
             let (vertex_data, sphere) = build_skinned_vertex_data(
-                positions, normals, tex_coords, joint_indices, joint_weights
+                positions,
+                normals,
+                tex_coords,
+                joint_indices,
+                joint_weights,
             );
             (vertex_data, index_data, index_stride, sphere, has_skinning)
         } else {
@@ -180,7 +195,11 @@ impl GLTFModel {
         // Extract root transform from first scene's root nodes
         // Combine all root node transforms into a single transform
         let mut root_transform = Mat4::identity();
-        if let Some(scene) = self.document.default_scene().or_else(|| self.document.scenes().next()) {
+        if let Some(scene) = self
+            .document
+            .default_scene()
+            .or_else(|| self.document.scenes().next())
+        {
             for node in scene.nodes() {
                 let transform = node.transform();
                 let (t, r, s) = transform.decomposed();
@@ -201,15 +220,32 @@ impl GLTFModel {
             if used_nodes.contains(&node.index()) {
                 // Parse both regular and skinned vertex data
                 let (vertex_data, index_data, index_stride, sphere) = self.parse_node(&node);
-                let (skinned_data, _, _, _, has_skinning) = self.parse_node_skinned(&node);
+                let (skinned_data, skinned_index_data, skinned_index_stride, _, has_skinning) =
+                    self.parse_node_skinned(&node);
+
+                // Use skinned index data for skinned meshes (parse_node may not capture indices correctly for skinned geometry)
+                let (final_index_data, final_index_stride) = if has_skinning {
+                    (skinned_index_data, skinned_index_stride)
+                } else {
+                    (index_data, index_stride)
+                };
+
+                debug!(
+                    "parse_gltf node {}: {} vertices, {} skinned vertices, {} index bytes, has_skinning={}",
+                    node.index(),
+                    vertex_data.len(),
+                    skinned_data.len(),
+                    final_index_data.len(),
+                    has_skinning
+                );
 
                 self.vertex_data.extend(vertex_data);
                 self.skinned_vertex_data.extend(skinned_data);
                 if has_skinning {
                     self.has_skinning = true;
                 }
-                self.index_data.extend(index_data);
-                self.index_stride = index_stride;
+                self.index_data.extend(final_index_data);
+                self.index_stride = final_index_stride;
                 self.bounds = sphere;
             }
         }
