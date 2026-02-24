@@ -705,23 +705,12 @@ pub fn build_asset_browser(
         ForkAwesome::CHEVRON_DOWN
     };
 
-    let toggle_hovered = ui.is_hovered(toggle_bounds);
-    if toggle_hovered && ui.input.mouse_clicked(katla_ui::input::mouse_button::LEFT) {
+    if ui
+        .add(katla_ui::widgets::ImageButton::new(toggle_icon).bounds(toggle_bounds))
+        .clicked
+    {
         state.collapsed = !state.collapsed;
     }
-
-    let toggle_color = if toggle_hovered {
-        theme.text_primary
-    } else {
-        theme.text_secondary
-    };
-    ui.draw_icon_aligned(
-        toggle_icon,
-        Vec2::new(toggle_bounds.min.x(), toggle_bounds.center().y() - 8.0),
-        14.0,
-        toggle_color,
-        katla_ui::FontId::DEFAULT,
-    );
 
     // Title
     let title_pos = Vec2::new(
@@ -840,7 +829,6 @@ pub fn build_asset_browser(
 
     // === Navigation Buttons (right side of toolbar) ===
     let nav_btn_size = ui.style.button_height_small;
-    let nav_icon_size = ui.style.icon_size_small;
     let mut nav_x = bounds.max.x() - nav_btn_size - 4.0;
 
     // Refresh button
@@ -848,30 +836,13 @@ pub fn build_asset_browser(
         Vec2::new(nav_x, toolbar_top + 2.0),
         Vec2::new(nav_btn_size, nav_btn_size),
     );
-    let refresh_hovered = ui.is_hovered(refresh_bounds);
 
-    if refresh_hovered {
-        ui.draw_rect(refresh_bounds, theme.button_hover);
-    }
-
-    if refresh_hovered && ui.input.mouse_clicked(katla_ui::input::mouse_button::LEFT) {
+    if ui
+        .add(katla_ui::widgets::ImageButton::new(ForkAwesome::REFRESH).bounds(refresh_bounds))
+        .clicked
+    {
         state.refresh(thumbnail_texture_ids);
     }
-
-    ui.draw_icon_aligned(
-        ForkAwesome::REFRESH,
-        Vec2::new(
-            refresh_bounds.min.x() + 5.0,
-            refresh_bounds.center().y() - 7.0,
-        ),
-        nav_icon_size,
-        if refresh_hovered {
-            theme.text_primary
-        } else {
-            theme.text_secondary
-        },
-        katla_ui::FontId::DEFAULT,
-    );
     nav_x -= nav_btn_size + 2.0;
 
     // Forward button
@@ -1947,63 +1918,40 @@ pub fn build_asset_browser(
             ),
             Vec2::new(btn_width, btn_height),
         );
-        let no_hovered = ui.is_hovered(no_btn_bounds);
-        if no_hovered {
-            ui.draw_rect(no_btn_bounds, theme.button_hover);
-        }
+        // Draw border (Button doesn't have border support)
         ui.draw_rect_border(no_btn_bounds, theme.button_hover, theme.border, 1.0);
-        let no_text_size = ui.measure_text("No", ui.scaled_font_size(katla_ui::FontSize::Small));
-        ui.draw_text(
-            "No",
-            Vec2::new(
-                no_btn_bounds.center().x() - no_text_size.x() * 0.5,
-                no_btn_bounds.min.y() + 7.0,
-            ),
-            if no_hovered {
-                theme.text_primary
-            } else {
-                theme.text_secondary
-            },
-            ui.scaled_font_size(katla_ui::FontSize::Small),
-        );
 
-        // Yes button
-        let yes_btn_bounds = Rect2D::from_origin_size(
-            Vec2::new(dialog_pos.x() + dialog_width - btn_width - 10.0, btn_y),
-            Vec2::new(btn_width, btn_height),
-        );
-        let yes_hovered = ui.is_hovered(yes_btn_bounds);
-        if yes_hovered {
-            ui.draw_rect(yes_btn_bounds, theme.error);
-        }
-        ui.draw_rect_border(
-            yes_btn_bounds,
-            if yes_hovered {
-                theme.error
-            } else {
-                theme.button_hover
-            },
-            theme.border,
-            1.0,
-        );
-        let yes_text_size = ui.measure_text("Yes", ui.scaled_font_size(katla_ui::FontSize::Small));
-        ui.draw_text(
-            "Yes",
-            Vec2::new(
-                yes_btn_bounds.center().x() - yes_text_size.x() * 0.5,
-                yes_btn_bounds.min.y() + 7.0,
-            ),
-            theme.text_primary,
-            ui.scaled_font_size(katla_ui::FontSize::Small),
-        );
-
-        // Handle button clicks
-        if no_hovered && ui.input.mouse_clicked(katla_ui::input::mouse_button::LEFT) {
+        if ui
+            .add(
+                katla_ui::widgets::Button::new("No")
+                    .bounds(no_btn_bounds)
+                    .fill_color(katla_math::Color::TRANSPARENT)
+                    .hover_color(theme.button_hover),
+            )
+            .clicked
+        {
             state.confirm_dialog_open = false;
             state.confirm_pending_action = None;
             ui.close_current_popup();
         }
-        if yes_hovered && ui.input.mouse_clicked(katla_ui::input::mouse_button::LEFT) {
+
+        // Yes button (dangerous action - red accent)
+        let yes_btn_bounds = Rect2D::from_origin_size(
+            Vec2::new(dialog_pos.x() + dialog_width - btn_width - 10.0, btn_y),
+            Vec2::new(btn_width, btn_height),
+        );
+        // Draw border (Button doesn't have border support)
+        ui.draw_rect_border(yes_btn_bounds, theme.error, theme.border, 1.0);
+
+        if ui
+            .add(
+                katla_ui::widgets::Button::new("Yes")
+                    .bounds(yes_btn_bounds)
+                    .fill_color(katla_math::Color::TRANSPARENT)
+                    .hover_color(theme.error),
+            )
+            .clicked
+        {
             if let Some(action) = state.confirm_pending_action.take() {
                 state.pending_actions.push(action);
             }
