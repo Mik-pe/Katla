@@ -1038,7 +1038,6 @@ impl EditorUI {
             self.is_playing = !self.is_playing;
             self.pending_actions.push(EditorAction::TogglePlay);
         }
-        cursor = Vec2::new(cursor.x() + play_width + padding, cursor.y());
 
         // Title in center (only show if there's enough space)
         let title = "Katla Engine";
@@ -1101,193 +1100,197 @@ impl EditorUI {
             Vec2::new(bounds.min.x(), bounds.min.y() + header_height),
             Vec2::new(bounds.width(), bounds.height() - header_height),
         );
-        ui.begin_scroll_area(
-            ScrollArea::new("hierarchy_scroll", &mut self.hierarchy_scroll_state)
-                .max_height(content_bounds.height()),
+
+        self.hierarchy_scroll_state = ui.scroll_area(
+            ScrollArea::new("hierarchy_scroll").max_height(content_bounds.height()),
+            self.hierarchy_scroll_state,
             content_bounds,
-        );
+            |ui| {
+                let scroll_offset = ui.scroll_offset();
 
-        // Get scroll offset for content positioning
-        let scroll_offset = ui.scroll_offset();
-
-        let mut cursor = Vec2::new(
-            bounds.min.x(),
-            bounds.min.y() + header_height + 4.0 - scroll_offset,
-        );
-        let item_height = 22.0;
-        let indent_per_level = 16.0;
-
-        for entity in entities {
-            // Skip entities whose ancestors are collapsed
-            if !self.is_entity_visible(entity, entities) {
-                continue;
-            }
-
-            // Calculate indentation based on depth
-            let indent = entity.depth as f32 * indent_per_level;
-            let item_x = bounds.min.x() + indent;
-            let item_width = bounds.width() - indent;
-
-            let item_bounds = Rect2D::from_origin_size(
-                Vec2::new(item_x, cursor.y()),
-                Vec2::new(item_width, item_height),
-            );
-
-            let is_selected = Some(entity.id) == self.selected_entity;
-            let is_hovered = ui.is_hovered(item_bounds);
-
-            let bg_color = if is_selected {
-                theme.selection
-            } else if is_hovered {
-                theme.selection_hover
-            } else {
-                Color::TRANSPARENT
-            };
-
-            if bg_color != Color::TRANSPARENT {
-                ui.draw_rect(item_bounds, bg_color);
-            }
-
-            // Tree line indicators for hierarchy
-            if entity.depth > 0 {
-                let line_x = item_x - 8.0;
-                ui.draw_line(
-                    Vec2::new(line_x, cursor.y()),
-                    Vec2::new(line_x, cursor.y() + item_height),
-                    theme.separator,
-                    1.0,
+                let mut cursor = Vec2::new(
+                    bounds.min.x(),
+                    bounds.min.y() + header_height + 4.0 - scroll_offset,
                 );
-            }
+                let item_height = 22.0;
+                let indent_per_level = 16.0;
 
-            // Expand/collapse icon for entities with children
-            let text_x = if entity.has_children {
-                let is_expanded = self.expanded_entities.contains(&entity.id);
-                let icon = if is_expanded {
-                    ForkAwesome::CHEVRON_DOWN
-                } else {
-                    ForkAwesome::CHEVRON_RIGHT
-                };
-                let triangle_bounds = Rect2D::from_origin_size(
-                    Vec2::new(item_x + 2.0, cursor.y()),
-                    Vec2::new(16.0, item_height),
-                );
-                let triangle_hovered = ui.is_hovered(triangle_bounds);
+                for entity in entities {
+                    // Skip entities whose ancestors are collapsed
+                    if !self.is_entity_visible(entity, entities) {
+                        continue;
+                    }
 
-                let triangle_color = if triangle_hovered {
-                    theme.text_primary
-                } else {
-                    theme.text_secondary
-                };
+                    // Calculate indentation based on depth
+                    let indent = entity.depth as f32 * indent_per_level;
+                    let item_x = bounds.min.x() + indent;
+                    let item_width = bounds.width() - indent;
 
-                let triangle_pos = Vec2::new(item_x + 3.0, cursor.y() + 3.0);
-                ui.draw_icon_aligned(
-                    icon,
-                    triangle_pos,
-                    ui.scaled_font_size(FontSize::Medium),
-                    triangle_color,
-                    FontId::DEFAULT,
-                );
+                    let item_bounds = Rect2D::from_origin_size(
+                        Vec2::new(item_x, cursor.y()),
+                        Vec2::new(item_width, item_height),
+                    );
 
-                // Click on triangle to toggle expand
-                if ui.input.mouse_clicked(mouse_button::LEFT) && triangle_hovered {
-                    self.toggle_expand(entity.id);
+                    let is_selected = Some(entity.id) == self.selected_entity;
+                    let is_hovered = ui.is_hovered(item_bounds);
+
+                    let bg_color = if is_selected {
+                        theme.selection
+                    } else if is_hovered {
+                        theme.selection_hover
+                    } else {
+                        Color::TRANSPARENT
+                    };
+
+                    if bg_color != Color::TRANSPARENT {
+                        ui.draw_rect(item_bounds, bg_color);
+                    }
+
+                    // Tree line indicators for hierarchy
+                    if entity.depth > 0 {
+                        let line_x = item_x - 8.0;
+                        ui.draw_line(
+                            Vec2::new(line_x, cursor.y()),
+                            Vec2::new(line_x, cursor.y() + item_height),
+                            theme.separator,
+                            1.0,
+                        );
+                    }
+
+                    // Expand/collapse icon for entities with children
+                    let text_x = if entity.has_children {
+                        let is_expanded = self.expanded_entities.contains(&entity.id);
+                        let icon = if is_expanded {
+                            ForkAwesome::CHEVRON_DOWN
+                        } else {
+                            ForkAwesome::CHEVRON_RIGHT
+                        };
+                        let triangle_bounds = Rect2D::from_origin_size(
+                            Vec2::new(item_x + 2.0, cursor.y()),
+                            Vec2::new(16.0, item_height),
+                        );
+                        let triangle_hovered = ui.is_hovered(triangle_bounds);
+
+                        let triangle_color = if triangle_hovered {
+                            theme.text_primary
+                        } else {
+                            theme.text_secondary
+                        };
+
+                        let triangle_pos = Vec2::new(item_x + 3.0, cursor.y() + 3.0);
+                        ui.draw_icon_aligned(
+                            icon,
+                            triangle_pos,
+                            ui.scaled_font_size(FontSize::Medium),
+                            triangle_color,
+                            FontId::DEFAULT,
+                        );
+
+                        // Click on triangle to toggle expand
+                        if ui.input.mouse_clicked(mouse_button::LEFT) && triangle_hovered {
+                            self.toggle_expand(entity.id);
+                        }
+
+                        item_x + 18.0
+                    } else {
+                        // Leaf node - show a small dot indicator
+                        let dot_pos = Vec2::new(item_x + 6.0, cursor.y() + 8.0);
+                        ui.draw_rect(
+                            Rect2D::from_origin_size(dot_pos, Vec2::new(4.0, 4.0)),
+                            theme.text_muted,
+                        );
+                        item_x + 18.0
+                    };
+
+                    // Entity name with type icon
+                    let entity_icon = match entity.entity_type.as_str() {
+                        "Mesh" => ForkAwesome::CUBE,
+                        "Particle Emitter" => ForkAwesome::STAR,
+                        "Directional Light" => ForkAwesome::SUN,
+                        "Point Light" => ForkAwesome::LIGHTBULB,
+                        "Camera" => ForkAwesome::CAMERA,
+                        "Empty" => ForkAwesome::CIRCLE,
+                        _ => ForkAwesome::CUBE,
+                    };
+                    let entity_icon_color = match entity.entity_type.as_str() {
+                        "Mesh" => theme.entity_mesh,
+                        "Particle Emitter" => theme.entity_particle,
+                        "Directional Light" | "Point Light" => theme.entity_light,
+                        _ => theme.text_secondary,
+                    };
+
+                    // Draw entity type icon
+                    ui.draw_icon_aligned(
+                        entity_icon,
+                        Vec2::new(text_x, cursor.y() + 3.0),
+                        ui.scaled_font_size(FontSize::Medium),
+                        entity_icon_color,
+                        FontId::DEFAULT,
+                    );
+
+                    // Entity name (shifted right for icon)
+                    let name_text = &entity.name;
+                    let name_pos = Vec2::new(text_x + 16.0, cursor.y() + 3.0);
+                    ui.draw_text(
+                        name_text,
+                        name_pos,
+                        theme.text_secondary,
+                        ui.scaled_font_size(FontSize::Medium),
+                    );
+
+                    // Entity type badge with color coding from theme
+                    let badge_color = match entity.entity_type.as_str() {
+                        "Mesh" => theme.entity_mesh,
+                        "Particle Emitter" => theme.entity_particle,
+                        "Directional Light" | "Point Light" => theme.entity_light,
+                        _ => theme.entity_empty,
+                    };
+                    let badge_text = &entity.entity_type;
+                    let badge_size =
+                        ui.measure_text(badge_text, ui.scaled_font_size(FontSize::XSmall));
+                    let badge_pos =
+                        Vec2::new(item_bounds.max.x() - badge_size.x() - 8.0, cursor.y() + 5.0);
+                    ui.draw_text(
+                        badge_text,
+                        badge_pos,
+                        badge_color,
+                        ui.scaled_font_size(FontSize::XSmall),
+                    );
+
+                    // Click to select (but not on triangle or popup)
+                    let triangle_width = if entity.has_children { 18.0 } else { 0.0 };
+                    let select_bounds = Rect2D::from_origin_size(
+                        Vec2::new(item_x + triangle_width, cursor.y()),
+                        Vec2::new(item_width - triangle_width, item_height),
+                    );
+                    let select_hovered = ui.is_hovered(select_bounds);
+
+                    if ui.input.mouse_clicked(mouse_button::LEFT)
+                        && select_hovered
+                        && !ui.is_mouse_over_popup()
+                    {
+                        self.selected_entity = Some(entity.id);
+                        self.pending_actions
+                            .push(EditorAction::SelectEntity(entity.id));
+                    }
+
+                    // Right-click for context menu (skip if popup already open)
+                    if ui.input.mouse_clicked(mouse_button::RIGHT)
+                        && is_hovered
+                        && !ui.has_open_popup()
+                    {
+                        self.selected_entity = Some(entity.id);
+                        self.hierarchy_context_entity = Some(entity.id);
+                        self.hierarchy_context_menu_open = true;
+                        ui.open_context_menu_at("hierarchy_context", ui.input.mouse_pos);
+                    }
+
+                    cursor = Vec2::new(cursor.x(), cursor.y() + item_height);
                 }
 
-                item_x + 18.0
-            } else {
-                // Leaf node - show a small dot indicator
-                let dot_pos = Vec2::new(item_x + 6.0, cursor.y() + 8.0);
-                ui.draw_rect(
-                    Rect2D::from_origin_size(dot_pos, Vec2::new(4.0, 4.0)),
-                    theme.text_muted,
-                );
-                item_x + 18.0
-            };
-
-            // Entity name with type icon
-            let entity_icon = match entity.entity_type.as_str() {
-                "Mesh" => ForkAwesome::CUBE,
-                "Particle Emitter" => ForkAwesome::STAR,
-                "Directional Light" => ForkAwesome::SUN,
-                "Point Light" => ForkAwesome::LIGHTBULB,
-                "Camera" => ForkAwesome::CAMERA,
-                "Empty" => ForkAwesome::CIRCLE,
-                _ => ForkAwesome::CUBE,
-            };
-            let entity_icon_color = match entity.entity_type.as_str() {
-                "Mesh" => theme.entity_mesh,
-                "Particle Emitter" => theme.entity_particle,
-                "Directional Light" | "Point Light" => theme.entity_light,
-                _ => theme.text_secondary,
-            };
-
-            // Draw entity type icon
-            ui.draw_icon_aligned(
-                entity_icon,
-                Vec2::new(text_x, cursor.y() + 3.0),
-                ui.scaled_font_size(FontSize::Medium),
-                entity_icon_color,
-                FontId::DEFAULT,
-            );
-
-            // Entity name (shifted right for icon)
-            let name_text = &entity.name;
-            let name_pos = Vec2::new(text_x + 16.0, cursor.y() + 3.0);
-            ui.draw_text(
-                name_text,
-                name_pos,
-                theme.text_secondary,
-                ui.scaled_font_size(FontSize::Medium),
-            );
-
-            // Entity type badge with color coding from theme
-            let badge_color = match entity.entity_type.as_str() {
-                "Mesh" => theme.entity_mesh,
-                "Particle Emitter" => theme.entity_particle,
-                "Directional Light" | "Point Light" => theme.entity_light,
-                _ => theme.entity_empty,
-            };
-            let badge_text = &entity.entity_type;
-            let badge_size = ui.measure_text(badge_text, ui.scaled_font_size(FontSize::XSmall));
-            let badge_pos = Vec2::new(item_bounds.max.x() - badge_size.x() - 8.0, cursor.y() + 5.0);
-            ui.draw_text(
-                badge_text,
-                badge_pos,
-                badge_color,
-                ui.scaled_font_size(FontSize::XSmall),
-            );
-
-            // Click to select (but not on triangle or popup)
-            let triangle_width = if entity.has_children { 18.0 } else { 0.0 };
-            let select_bounds = Rect2D::from_origin_size(
-                Vec2::new(item_x + triangle_width, cursor.y()),
-                Vec2::new(item_width - triangle_width, item_height),
-            );
-            let select_hovered = ui.is_hovered(select_bounds);
-
-            if ui.input.mouse_clicked(mouse_button::LEFT)
-                && select_hovered
-                && !ui.is_mouse_over_popup()
-            {
-                self.selected_entity = Some(entity.id);
-                self.pending_actions
-                    .push(EditorAction::SelectEntity(entity.id));
-            }
-
-            // Right-click for context menu (skip if popup already open)
-            if ui.input.mouse_clicked(mouse_button::RIGHT) && is_hovered && !ui.has_open_popup() {
-                self.selected_entity = Some(entity.id);
-                self.hierarchy_context_entity = Some(entity.id);
-                self.hierarchy_context_menu_open = true;
-                ui.open_context_menu_at("hierarchy_context", ui.input.mouse_pos);
-            }
-
-            cursor = Vec2::new(cursor.x(), cursor.y() + item_height);
-        }
-
-        // Calculate content height and end scroll area
-        let content_height = visible_count as f32 * item_height + 8.0;
-        ui.end_scroll_area(content_height);
+                visible_count as f32 * item_height + 8.0
+            },
+        );
 
         // Empty state
         if entities.is_empty() {
@@ -1992,39 +1995,54 @@ impl EditorUI {
             Vec2::new(panel_width, content_height),
         );
 
-        // Begin scroll area
-        ui.begin_scroll_area(
-            ScrollArea::new("prefs_scroll", &mut self.preferences_scroll_state)
-                .max_height(content_height),
+        self.preferences_scroll_state = ui.scroll_area(
+            ScrollArea::new("prefs_scroll").max_height(content_height),
+            self.preferences_scroll_state,
             scroll_bounds,
+            |ui| {
+                let scroll_offset = ui.scroll_offset();
+                let content_width = panel_width - 32.0;
+                let row_height = 28.0;
+                let spacing = 8.0;
+
+                // Cursor starts at content area top, offset by scroll
+                let cursor =
+                    Vec2::new(panel_bounds.min.x() + 16.0, content_start_y - scroll_offset);
+
+                // Build current tab and get final Y position
+                let final_y = match self.preferences_tab {
+                    PreferencesTab::Appearance => self.build_appearance_tab(
+                        ui,
+                        &theme,
+                        cursor,
+                        content_width,
+                        row_height,
+                        spacing,
+                    ),
+                    PreferencesTab::Editor => self.build_editor_tab(
+                        ui,
+                        &theme,
+                        cursor,
+                        content_width,
+                        row_height,
+                        spacing,
+                    ),
+                    PreferencesTab::Keybindings => self.build_keybindings_tab(
+                        ui,
+                        &theme,
+                        cursor,
+                        content_width,
+                        row_height,
+                        spacing,
+                    ),
+                    PreferencesTab::About => {
+                        self.build_about_tab(ui, &theme, cursor, content_width)
+                    }
+                };
+
+                final_y - content_start_y + scroll_offset + 16.0
+            },
         );
-
-        // Get scroll offset for content positioning
-        let scroll_offset = ui.scroll_offset();
-        let content_width = panel_width - 32.0;
-        let row_height = 28.0;
-        let spacing = 8.0;
-
-        // Cursor starts at content area top, offset by scroll
-        let cursor = Vec2::new(panel_bounds.min.x() + 16.0, content_start_y - scroll_offset);
-
-        // Build current tab and get final Y position
-        let final_y = match self.preferences_tab {
-            PreferencesTab::Appearance => {
-                self.build_appearance_tab(ui, &theme, cursor, content_width, row_height, spacing)
-            }
-            PreferencesTab::Editor => {
-                self.build_editor_tab(ui, &theme, cursor, content_width, row_height, spacing)
-            }
-            PreferencesTab::Keybindings => {
-                self.build_keybindings_tab(ui, &theme, cursor, content_width, row_height, spacing)
-            }
-            PreferencesTab::About => self.build_about_tab(ui, &theme, cursor, content_width),
-        };
-
-        // Calculate content height (from start to final Y)
-        let tab_content_height = final_y - content_start_y + scroll_offset + 16.0;
-        ui.end_scroll_area(tab_content_height);
 
         // Click outside to close (but not while dragging)
         // Use input.is_hovered directly to bypass popup_bounds and active_id checks
