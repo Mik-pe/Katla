@@ -100,7 +100,8 @@ impl UiContext {
 
     /// Get the bounds of the current popup.
     pub fn get_popup_bounds(&self) -> Rect2D {
-        self.popup_bounds.unwrap_or_else(|| Rect2D::from_size(Vec2::new(0.0, 0.0)))
+        self.popup_bounds
+            .unwrap_or_else(|| Rect2D::from_size(Vec2::new(0.0, 0.0)))
     }
 
     /// Open a context menu at the current mouse position.
@@ -129,7 +130,8 @@ impl UiContext {
     pub fn open_context_menu_at(&mut self, id: &str, pos: Vec2) -> bool {
         let context_id = self.generate_id(id);
 
-        self.storage.insert(context_id, WidgetState::ContextMenuPos(pos));
+        self.storage
+            .insert(context_id, WidgetState::ContextMenuPos(pos));
         self.popup_id = Some(context_id);
         self.popup_opened_this_frame = true;
         true
@@ -144,7 +146,8 @@ impl UiContext {
     /// Close the current popup/dropdown/context menu.
     pub fn close_current_popup(&mut self) {
         if let Some(popup_id) = self.popup_id {
-            self.storage.insert(popup_id, WidgetState::DropdownOpen(false));
+            self.storage
+                .insert(popup_id, WidgetState::DropdownOpen(false));
         }
         self.popup_id = None;
         self.popup_bounds = None;

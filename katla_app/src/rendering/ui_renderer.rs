@@ -9,9 +9,9 @@ use std::rc::Rc;
 use ash::vk;
 use katla_vulkan::{
     DescriptorSetBuilder, DescriptorSetLayoutBuilder, DescriptorType, Extent2D, FrameBuffer,
-    IndexBuffer, IndexType, MaterialPipeline, MaterialPipelineCache, Offset2D, PassExecutionContext, Rect2D,
-    ShaderStages, Texture, UniformBuffer, VertexBuffer, VkBuffer, VkDescriptorSet, VkImageView,
-    VkSampler, VulkanContext,
+    IndexBuffer, IndexType, MaterialPipeline, MaterialPipelineCache, Offset2D,
+    PassExecutionContext, Rect2D, ShaderStages, Texture, UniformBuffer, VertexBuffer, VkBuffer,
+    VkDescriptorSet, VkImageView, VkSampler, VulkanContext,
 };
 
 use super::ui_material::UiMaterial;
@@ -120,7 +120,12 @@ impl UITextures {
         let sampler = context.create_sampler_clamp_to_edge()?;
 
         let white_pixels = [255u8, 255, 255, 255];
-        let white_texture = Rc::new(Texture::create_image_rgb(context.clone(), 1, 1, &white_pixels));
+        let white_texture = Rc::new(Texture::create_image_rgb(
+            context.clone(),
+            1,
+            1,
+            &white_pixels,
+        ));
 
         let white_atlas = vec![255u8; (atlas_width * atlas_height * 4) as usize];
         let mut font_texture = Rc::new(Texture::create_image_rgb(
@@ -208,12 +213,8 @@ impl UITextures {
         } else {
             // Multiple references exist, need to recreate and update descriptor
             log::debug!("UITextures: font texture has multiple refs, recreating for resize");
-            let mut new_texture = Texture::create_image_rgb(
-                self.context.clone(),
-                width,
-                height,
-                pixels,
-            );
+            let mut new_texture =
+                Texture::create_image_rgb(self.context.clone(), width, height, pixels);
             new_texture.register_for_descriptor(self.descriptor_set(), 0);
             self.font_texture = Rc::new(new_texture);
         }
@@ -247,7 +248,9 @@ impl Drop for UITextures {
         unsafe {
             self.context.destroy_sampler(self.sampler);
             // uniform_buffer and descriptor_set are dropped automatically
-            self.context.device.destroy_descriptor_set_layout(self.descriptor_set_layout, None);
+            self.context
+                .device
+                .destroy_descriptor_set_layout(self.descriptor_set_layout, None);
         }
     }
 }
@@ -272,9 +275,8 @@ impl UIRenderer {
         atlas_width: u32,
         atlas_height: u32,
     ) -> Result<Self, vk::Result> {
-        let buffers = FrameBuffer::new(|_| {
-            UIBuffers::new(context.clone(), vertex_capacity, index_capacity)
-        });
+        let buffers =
+            FrameBuffer::new(|_| UIBuffers::new(context.clone(), vertex_capacity, index_capacity));
 
         let textures = UITextures::new(context, atlas_width, atlas_height)?;
 
@@ -341,8 +343,14 @@ impl UIRenderer {
 
         for cmd in &draw_data.commands {
             ctx.set_scissor(&Rect2D {
-                offset: Offset2D { x: cmd.clip_rect[0] as i32, y: cmd.clip_rect[1] as i32 },
-                extent: Extent2D { width: cmd.clip_rect[2] as u32, height: cmd.clip_rect[3] as u32 },
+                offset: Offset2D {
+                    x: cmd.clip_rect[0] as i32,
+                    y: cmd.clip_rect[1] as i32,
+                },
+                extent: Extent2D {
+                    width: cmd.clip_rect[2] as u32,
+                    height: cmd.clip_rect[3] as u32,
+                },
             });
 
             // SAFETY: push_texture_descriptor requires a valid pipeline_layout created

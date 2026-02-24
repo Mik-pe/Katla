@@ -3,8 +3,8 @@
 //! These tests verify that the derive macro correctly implements
 //! the Component trait for various struct types.
 
-use std::any::Any;
 use katla_ecs::Component;
+use std::any::Any;
 
 // ============================================================================
 // Test Components - Basic struct types
@@ -151,10 +151,7 @@ fn test_unit_component() {
 #[test]
 fn test_nested_component() {
     let inner = SimpleComponent { value: 10 };
-    let comp = NestedComponent {
-        inner,
-        count: 5,
-    };
+    let comp = NestedComponent { inner, count: 5 };
 
     assert!(comp.as_any().is::<NestedComponent>());
 
@@ -208,9 +205,7 @@ struct LargeArrayComponent {
 
 #[test]
 fn test_large_array_component() {
-    let comp = LargeArrayComponent {
-        data: [0u8; 1024],
-    };
+    let comp = LargeArrayComponent { data: [0u8; 1024] };
     assert!(comp.as_any().is::<LargeArrayComponent>());
 }
 
@@ -277,7 +272,11 @@ struct NameComponent {
 
 #[test]
 fn test_multiple_components_coexist() {
-    let pos = PositionComponent { x: 1.0, y: 2.0, z: 3.0 };
+    let pos = PositionComponent {
+        x: 1.0,
+        y: 2.0,
+        z: 3.0,
+    };
     let vel = VelocityComponent {
         dx: 0.5,
         dy: 0.5,
@@ -319,9 +318,7 @@ struct ConstGenericComponent<const N: usize> {
 
 #[test]
 fn test_const_generic_component() {
-    let comp3 = ConstGenericComponent::<3> {
-        data: [1, 2, 3],
-    };
+    let comp3 = ConstGenericComponent::<3> { data: [1, 2, 3] };
     assert!(comp3.as_any().is::<ConstGenericComponent<3>>());
 
     let comp5 = ConstGenericComponent::<5> {

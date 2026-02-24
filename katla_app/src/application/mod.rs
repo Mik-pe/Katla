@@ -12,7 +12,9 @@ pub mod builder;
 pub mod editor;
 pub mod renderer;
 
-use std::{cell::RefCell, collections::HashMap, ffi::CString, path::PathBuf, rc::Rc, time::Instant};
+use std::{
+    cell::RefCell, collections::HashMap, ffi::CString, path::PathBuf, rc::Rc, time::Instant,
+};
 
 use log::{debug, info, warn};
 use winit::keyboard::ModifiersState;
@@ -205,15 +207,17 @@ impl ApplicationHandler for Application {
                             // Wait for GPU to finish before destroying old resources
                             renderer.wait_for_device();
                             renderer.recreate_swapchain();
-                            let _ =
-                                renderer.init_viewport_target(new_width, new_height as u32);
-                            let _ =
-                                renderer.init_output_target(new_width, new_height as u32);
+                            let _ = renderer.init_viewport_target(new_width, new_height as u32);
+                            let _ = renderer.init_output_target(new_width, new_height as u32);
 
                             // Rebuild render graph with existing pipelines
-                            let grid_pipeline = self.fullscreen_renderer.as_ref()
+                            let grid_pipeline = self
+                                .fullscreen_renderer
+                                .as_ref()
                                 .and_then(|fr| fr.grid_pipeline(self.editor_ui.show_grid));
-                            let sky_pipeline = self.fullscreen_renderer.as_ref()
+                            let sky_pipeline = self
+                                .fullscreen_renderer
+                                .as_ref()
                                 .and_then(|fr| fr.sky_pipeline());
                             renderer::render_graph::build_render_graph(
                                 renderer,
@@ -433,11 +437,7 @@ impl Application {
     }
 
     /// Initialize the Vulkan renderer and load materials.
-    fn init_renderer(
-        &mut self,
-        event_loop: &ActiveEventLoop,
-        window: &Window,
-    ) -> VulkanRenderer {
+    fn init_renderer(&mut self, event_loop: &ActiveEventLoop, window: &Window) -> VulkanRenderer {
         let engine_name = CString::new("Katla Engine").unwrap();
         let mut renderer = VulkanRenderer::init(
             event_loop,
@@ -464,7 +464,12 @@ impl Application {
             let mut registry = renderer.material_registry.borrow_mut();
             let mut cache = renderer.material_cache.borrow_mut();
             registry
-                .load_directory_bindless(&self.resources.materials, &renderer.context, &mut cache, bindless_layout)
+                .load_directory_bindless(
+                    &self.resources.materials,
+                    &renderer.context,
+                    &mut cache,
+                    bindless_layout,
+                )
                 .expect("Failed to load bindless materials")
         };
 
@@ -490,8 +495,6 @@ impl Application {
         renderer: &mut VulkanRenderer,
         material_registry: &Rc<RefCell<katla_vulkan::MaterialRegistry>>,
     ) {
-        
-
         // Load Fox model with skeletal animation
         let fox_entity = self.load_fox_model(renderer, material_registry);
 
@@ -652,7 +655,10 @@ impl Application {
             avocado_transform,
             material_registry,
         );
-        if let Some(name_comp) = self.world.get_component_mut::<NameComponent>(avocado.entity) {
+        if let Some(name_comp) = self
+            .world
+            .get_component_mut::<NameComponent>(avocado.entity)
+        {
             name_comp.name = "Avocado (PBR Test)".to_string();
         }
         info!(
@@ -683,12 +689,7 @@ impl Application {
     }
 
     /// Setup entity parent-child relationships.
-    fn setup_entity_hierarchy(
-        &mut self,
-        fox_entity: EntityId,
-        torus: EntityId,
-        _cube: EntityId,
-    ) {
+    fn setup_entity_hierarchy(&mut self, fox_entity: EntityId, torus: EntityId, _cube: EntityId) {
         use crate::components::{Children, NameComponent, Parent};
 
         // Make torus a child of fox
@@ -704,7 +705,8 @@ impl Application {
             .unwrap_or_default();
         let mut children = existing_children;
         children.push(torus);
-        self.world.add_component(fox_entity, Children::new(children));
+        self.world
+            .add_component(fox_entity, Children::new(children));
     }
 
     /// Setup scene lighting.
@@ -746,10 +748,7 @@ impl Application {
 
     /// Setup checkerboard material.
     fn setup_checkerboard_material(&mut self, renderer: &mut VulkanRenderer) {
-        let checkerboard = create_checkerboard_material(
-            renderer.context.clone(),
-            renderer,
-        );
+        let checkerboard = create_checkerboard_material(renderer.context.clone(), renderer);
         self.material_manager
             .register_material("checkerboard", checkerboard);
         debug!("Registered checkerboard material");
@@ -765,7 +764,13 @@ impl Application {
 
         for result in results {
             match result {
-                LoadResult::ImageThumbnailLoaded { path, width, height, pixels, .. } => {
+                LoadResult::ImageThumbnailLoaded {
+                    path,
+                    width,
+                    height,
+                    pixels,
+                    ..
+                } => {
                     debug!("Thumbnail loaded: {:?} ({}x{})", path, width, height);
 
                     // Create texture ID for this thumbnail
@@ -804,11 +809,22 @@ impl Application {
                         }
                     }
                 }
-                LoadResult::ImageLoaded { path, width, height, pixels: _, .. } => {
+                LoadResult::ImageLoaded {
+                    path,
+                    width,
+                    height,
+                    pixels: _,
+                    ..
+                } => {
                     debug!("Full image loaded: {:?} ({}x{})", path, width, height);
                     // Future: Handle full image loads (e.g., for textures, skyboxes)
                 }
-                LoadResult::ModelLoaded { path, vertices: _, indices: _, .. } => {
+                LoadResult::ModelLoaded {
+                    path,
+                    vertices: _,
+                    indices: _,
+                    ..
+                } => {
                     debug!("Model loaded: {:?}", path);
 
                     // Check if this is for the model preview
@@ -816,7 +832,7 @@ impl Application {
                         // Load the model via FileCache (main thread, ensures proper data ownership)
                         let model = self.gltf_cache.read(path.clone());
                         // Update model preview with loaded model
-                        
+
                         self.editor_ui.model_preview.on_model_loaded(model);
                         info!("Model preview loaded: {:?}", path);
                     }

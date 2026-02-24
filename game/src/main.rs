@@ -23,8 +23,7 @@ fn main() {
     let args = Args::parse();
 
     // Configure logger
-    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"))
-        .init();
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
 
     info!("Katla 3D Engine starting...");
     if args.single_frame {
@@ -34,13 +33,25 @@ fn main() {
     // Build with conditional configuration
     let builder = ApplicationBuilder::new()
         // Register systems with proper execution order
-        .with_system(Box::new(TransformHierarchySystem::default()), SystemExecutionOrder::EARLY)
-        .with_system(Box::new(AnimationUpdateSystem), SystemExecutionOrder::NORMAL)
-        .with_system(Box::new(SkeletalAnimationSystem::default()), SystemExecutionOrder::NORMAL)
+        .with_system(
+            Box::new(TransformHierarchySystem::default()),
+            SystemExecutionOrder::EARLY,
+        )
+        .with_system(
+            Box::new(AnimationUpdateSystem),
+            SystemExecutionOrder::NORMAL,
+        )
+        .with_system(
+            Box::new(SkeletalAnimationSystem::default()),
+            SystemExecutionOrder::NORMAL,
+        )
         .with_system(Box::new(LightingSystem), SystemExecutionOrder::NORMAL)
         .with_system(Box::new(FlyCameraLookSystem), SystemExecutionOrder::NORMAL)
         .with_system(Box::new(PhysicsSystem), SystemExecutionOrder::NORMAL)
-        .with_system(Box::new(ParticleSimulationSystem::new()), SystemExecutionOrder::NORMAL)
+        .with_system(
+            Box::new(ParticleSimulationSystem::new()),
+            SystemExecutionOrder::NORMAL,
+        )
         .with_system(Box::new(VelocitySystem), SystemExecutionOrder::LATE);
 
     let result = if args.single_frame {
@@ -50,10 +61,7 @@ fn main() {
             .max_frames(25)
             .build()
     } else {
-        builder
-            .with_name("Katla")
-            .validation_layer(true)
-            .build()
+        builder.with_name("Katla").validation_layer(true).build()
     };
 
     match result {

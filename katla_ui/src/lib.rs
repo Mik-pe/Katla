@@ -49,14 +49,14 @@ mod renderer;
 mod sense;
 mod style;
 mod text;
-pub mod widgets;
 mod widget;
+pub mod widgets;
 
 use katla_math::{Rect2D, Vec2};
 
 pub use context::{
-    CloseBehavior, Popup, PopupPosition, PopupStyle, z_index, GraphOptions, LayoutDirection,
-    LayoutState, ScrollArea, ScrollAreaState, UiContext, WindowState, ZGuard,
+    z_index, CloseBehavior, GraphOptions, LayoutDirection, LayoutState, Popup, PopupPosition,
+    PopupStyle, ScrollArea, ScrollAreaState, UiContext, WindowState, ZGuard,
 };
 pub use draw_list::{DrawCommand, DrawList, TextureId, UiVertex};
 pub use icons::ForkAwesome;

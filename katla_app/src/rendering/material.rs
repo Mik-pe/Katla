@@ -1,7 +1,7 @@
-
 use katla_math::Color;
 use katla_vulkan::{
-    material::PbrTextureSet, MaterialHandle, MaterialPipeline, MaterialTemplate, Texture, VertexBinding,
+    material::PbrTextureSet, MaterialHandle, MaterialPipeline, MaterialTemplate, Texture,
+    VertexBinding,
 };
 
 use std::{cell::RefCell, rc::Rc};

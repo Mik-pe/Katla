@@ -53,10 +53,7 @@ pub fn load_animation_clip(
     parser: &AttributeParser,
     gltf_animation: &gltf::Animation,
 ) -> AnimationClip {
-    let name = gltf_animation
-        .name()
-        .unwrap_or("Animation")
-        .to_string();
+    let name = gltf_animation.name().unwrap_or("Animation").to_string();
 
     let mut channels: Vec<AnimationChannel> = Vec::new();
     let mut duration: f32 = 0.0;
@@ -183,7 +180,10 @@ pub fn load_skins(world: &mut World, model: &GLTFModel) {
 /// Parse Mat4 matrices from an accessor.
 ///
 /// This is exposed for `AnimationManager::setup_animated_model`.
-pub fn parse_mat4_from_accessor(buffers: &[BufferData], accessor: gltf::Accessor) -> Vec<katla_math::Mat4> {
+pub fn parse_mat4_from_accessor(
+    buffers: &[BufferData],
+    accessor: gltf::Accessor,
+) -> Vec<katla_math::Mat4> {
     let parser = AttributeParser::new(buffers);
     parser.parse_matrices(accessor)
 }
@@ -231,7 +231,10 @@ pub fn build_skeleton(model: &GLTFModel, skin_joints: &[usize]) -> Vec<katla_mat
 ///
 /// Returns a vector where parent_indices[i] is the skeleton index of joint i's parent,
 /// or None if it's a root joint.
-pub fn build_skeleton_parents(skin_joints: &[usize], document: &gltf::Document) -> Vec<Option<usize>> {
+pub fn build_skeleton_parents(
+    skin_joints: &[usize],
+    document: &gltf::Document,
+) -> Vec<Option<usize>> {
     let nodes: Vec<_> = document.nodes().collect();
 
     // Map GLTF node index -> parent GLTF node index
@@ -267,11 +270,13 @@ pub fn build_skeleton_parents(skin_joints: &[usize], document: &gltf::Document) 
 /// Build local transforms for skeleton joints from GLTF node rest poses.
 ///
 /// Returns a vector of local transforms (rest pose) for each joint in the skeleton.
-pub fn build_skeleton_local_transforms(skin_joints: &[usize], document: &gltf::Document) -> Vec<katla_math::Mat4> {
+pub fn build_skeleton_local_transforms(
+    skin_joints: &[usize],
+    document: &gltf::Document,
+) -> Vec<katla_math::Mat4> {
     let nodes: Vec<_> = document.nodes().collect();
-    let node_map: std::collections::HashMap<usize, gltf::Node> = nodes.iter()
-        .map(|n| (n.index(), n.clone()))
-        .collect();
+    let node_map: std::collections::HashMap<usize, gltf::Node> =
+        nodes.iter().map(|n| (n.index(), n.clone())).collect();
 
     let mut local_transforms = Vec::with_capacity(skin_joints.len());
     for &node_idx in skin_joints {
@@ -279,7 +284,8 @@ pub fn build_skeleton_local_transforms(skin_joints: &[usize], document: &gltf::D
             let transform = node.transform();
             let (translation, rotation, scale) = transform.decomposed();
             let t = katla_math::Vec3::new(translation[0], translation[1], translation[2]);
-            let r = katla_math::Quat::new_from_xyzw(rotation[0], rotation[1], rotation[2], rotation[3]);
+            let r =
+                katla_math::Quat::new_from_xyzw(rotation[0], rotation[1], rotation[2], rotation[3]);
             let s = katla_math::Vec3::new(scale[0], scale[1], scale[2]);
             local_transforms.push(katla_math::Mat4::from_trs(t, r, s));
         } else {
@@ -303,12 +309,11 @@ fn build_world_transforms(
 ) -> std::collections::HashMap<usize, katla_math::Mat4> {
     use std::collections::{HashMap, VecDeque};
 
-    let mut world_transforms: HashMap<usize, katla_math::Mat4> = HashMap::with_capacity(nodes.len());
+    let mut world_transforms: HashMap<usize, katla_math::Mat4> =
+        HashMap::with_capacity(nodes.len());
 
     // Build node lookup by GLTF index (not Vec position!)
-    let node_by_index: HashMap<usize, &gltf::Node> = nodes.iter()
-        .map(|n| (n.index(), n))
-        .collect();
+    let node_by_index: HashMap<usize, &gltf::Node> = nodes.iter().map(|n| (n.index(), n)).collect();
 
     // Build children map for topological traversal
     let mut children_map: HashMap<usize, Vec<usize>> = HashMap::new();
@@ -316,7 +321,10 @@ fn build_world_transforms(
         let node_index = node.index();
         children_map.entry(node_index).or_default();
         for child in node.children() {
-            children_map.entry(node_index).or_default().push(child.index());
+            children_map
+                .entry(node_index)
+                .or_default()
+                .push(child.index());
         }
     }
 
@@ -407,14 +415,22 @@ mod tests {
         let transforms = build_skeleton(&model, &joints);
 
         // Verify we got transforms for all joints
-        assert_eq!(transforms.len(), joints.len(), "Should have transform for each joint");
+        assert_eq!(
+            transforms.len(),
+            joints.len(),
+            "Should have transform for each joint"
+        );
 
         // Verify transforms are valid (not all zeros, finite values)
         for (i, transform) in transforms.iter().enumerate() {
             let data = transform.to_array();
             let mut has_nonzero = false;
             for &val in &data {
-                assert!(val.is_finite(), "Joint {} transform has non-finite values", i);
+                assert!(
+                    val.is_finite(),
+                    "Joint {} transform has non-finite values",
+                    i
+                );
                 if val.abs() > 0.0001 {
                     has_nonzero = true;
                 }
@@ -452,7 +468,11 @@ mod tests {
         // Verify all nodes have transforms
         for node in &nodes {
             let idx = node.index();
-            assert!(transforms.contains_key(&idx), "Missing transform for node {}", idx);
+            assert!(
+                transforms.contains_key(&idx),
+                "Missing transform for node {}",
+                idx
+            );
         }
 
         // Verify root nodes have identity-ish parent multiplication
@@ -476,7 +496,10 @@ mod tests {
                     assert!(
                         (w - l).abs() < 0.0001,
                         "Root node {} mismatch at index {}: world={}, local={}",
-                        idx, i, w, l
+                        idx,
+                        i,
+                        w,
+                        l
                     );
                 }
             }
@@ -515,7 +538,8 @@ mod tests {
                     *p < i,
                     "Joint {} has parent {} which comes after it in the joint array. \
                      This breaks single-pass world transform computation!",
-                    i, p
+                    i,
+                    p
                 );
             }
         }
@@ -543,11 +567,21 @@ mod tests {
 
         for (anim_idx, gltf_animation) in animations.iter().enumerate() {
             let clip = load_animation_clip(&parser, gltf_animation);
-            eprintln!("Testing animation '{}' ({} channels, {:.2}s duration)",
-                clip.name, clip.channels.len(), clip.duration);
+            eprintln!(
+                "Testing animation '{}' ({} channels, {:.2}s duration)",
+                clip.name,
+                clip.channels.len(),
+                clip.duration
+            );
 
             // Sample at multiple points in time
-            let sample_times = [0.0, clip.duration * 0.25, clip.duration * 0.5, clip.duration * 0.75, clip.duration];
+            let sample_times = [
+                0.0,
+                clip.duration * 0.25,
+                clip.duration * 0.5,
+                clip.duration * 0.75,
+                clip.duration,
+            ];
 
             for time in sample_times {
                 let samples = clip.sample(time);
@@ -556,9 +590,15 @@ mod tests {
                     match value {
                         crate::animation::clips::SampledValue::Vec3(v) => {
                             // Check for NaN/Inf
-                            assert!(v[0].is_finite() && v[1].is_finite() && v[2].is_finite(),
+                            assert!(
+                                v[0].is_finite() && v[1].is_finite() && v[2].is_finite(),
                                 "Animation '{}' at t={:.2}: node {} {:?} has non-finite value {:?}",
-                                clip.name, time, node_idx, path, v);
+                                clip.name,
+                                time,
+                                node_idx,
+                                path,
+                                v
+                            );
 
                             // Check for unreasonably large values
                             let max_reasonable = 1000.0;
@@ -573,15 +613,22 @@ mod tests {
                                 clip.name, time, node_idx, path, q);
 
                             // Check quaternion is normalized (within tolerance)
-                            let len = (q[0]*q[0] + q[1]*q[1] + q[2]*q[2] + q[3]*q[3]).sqrt();
+                            let len =
+                                (q[0] * q[0] + q[1] * q[1] + q[2] * q[2] + q[3] * q[3]).sqrt();
                             assert!((len - 1.0).abs() < 0.1,
                                 "Animation '{}' at t={:.2}: node {} {:?} has non-unit quaternion {:?} (len={:.3})",
                                 clip.name, time, node_idx, path, q, len);
                         }
                         crate::animation::clips::SampledValue::Float(f) => {
-                            assert!(f.is_finite(),
+                            assert!(
+                                f.is_finite(),
                                 "Animation '{}' at t={:.2}: node {} {:?} has non-finite float {}",
-                                clip.name, time, node_idx, path, f);
+                                clip.name,
+                                time,
+                                node_idx,
+                                path,
+                                f
+                            );
                         }
                         crate::animation::clips::SampledValue::Unknown => {
                             // Skip unknown sample types
@@ -622,30 +669,46 @@ mod tests {
             return;
         };
 
-        eprintln!("Checking {} inverse bind matrices", inverse_bind_matrices.len());
+        eprintln!(
+            "Checking {} inverse bind matrices",
+            inverse_bind_matrices.len()
+        );
 
         for (i, matrix) in inverse_bind_matrices.iter().enumerate() {
             let data = matrix.to_array();
 
             // Check for NaN/Inf
             for (j, &val) in data.iter().enumerate() {
-                assert!(val.is_finite(),
+                assert!(
+                    val.is_finite(),
                     "Inverse bind matrix {} has non-finite value at index {}: {}",
-                    i, j, val);
+                    i,
+                    j,
+                    val
+                );
             }
 
             // Check for unreasonably large values (should be within model bounds)
-            let max_reasonable = 100.0;  // Fox is roughly 100 units
+            let max_reasonable = 100.0; // Fox is roughly 100 units
             for (j, &val) in data.iter().enumerate() {
-                assert!(val.abs() < max_reasonable,
+                assert!(
+                    val.abs() < max_reasonable,
                     "Inverse bind matrix {} has suspiciously large value at index {}: {}",
-                    i, j, val);
+                    i,
+                    j,
+                    val
+                );
             }
 
             // Print translation component for debugging
             let translation = matrix.extract_translation();
-            eprintln!("  IBM[{}] translation: ({:.2}, {:.2}, {:.2})",
-                i, translation.x(), translation.y(), translation.z());
+            eprintln!(
+                "  IBM[{}] translation: ({:.2}, {:.2}, {:.2})",
+                i,
+                translation.x(),
+                translation.y(),
+                translation.z()
+            );
         }
     }
 
@@ -711,15 +774,28 @@ mod tests {
                         let new_transform = match (path, value) {
                             (crate::animation::ChannelPath::Translation, SampledValue::Vec3(t)) => {
                                 let t_vec = katla_math::Vec3::new(t[0], t[1], t[2]);
-                                katla_math::Mat4::from_trs(t_vec, decomposed.rotation, decomposed.scale)
+                                katla_math::Mat4::from_trs(
+                                    t_vec,
+                                    decomposed.rotation,
+                                    decomposed.scale,
+                                )
                             }
                             (crate::animation::ChannelPath::Rotation, SampledValue::Quat(q)) => {
-                                let q_quat = katla_math::Quat::new_from_xyzw(q[0], q[1], q[2], q[3]);
-                                katla_math::Mat4::from_trs(decomposed.position, q_quat, decomposed.scale)
+                                let q_quat =
+                                    katla_math::Quat::new_from_xyzw(q[0], q[1], q[2], q[3]);
+                                katla_math::Mat4::from_trs(
+                                    decomposed.position,
+                                    q_quat,
+                                    decomposed.scale,
+                                )
                             }
                             (crate::animation::ChannelPath::Scale, SampledValue::Vec3(s)) => {
                                 let s_vec = katla_math::Vec3::new(s[0], s[1], s[2]);
-                                katla_math::Mat4::from_trs(decomposed.position, decomposed.rotation, s_vec)
+                                katla_math::Mat4::from_trs(
+                                    decomposed.position,
+                                    decomposed.rotation,
+                                    s_vec,
+                                )
                             }
                             _ => continue,
                         };
@@ -754,18 +830,34 @@ mod tests {
             for (i, matrix) in skinning_matrices.iter().enumerate() {
                 let data = matrix.to_array();
                 for (j, &val) in data.iter().enumerate() {
-                    assert!(val.is_finite(),
+                    assert!(
+                        val.is_finite(),
                         "Animation '{}' t={:.2}: skinning matrix {} has non-finite at [{}]: {}",
-                        clip.name, time, i, j, val);
+                        clip.name,
+                        time,
+                        i,
+                        j,
+                        val
+                    );
 
                     // Allow larger values but not infinite
-                    assert!(val.abs() < 1e6,
+                    assert!(
+                        val.abs() < 1e6,
                         "Animation '{}' t={:.2}: skinning matrix {} has extreme value at [{}]: {}",
-                        clip.name, time, i, j, val);
+                        clip.name,
+                        time,
+                        i,
+                        j,
+                        val
+                    );
                 }
             }
 
-            eprintln!("  t={:.2}s: All {} skinning matrices are finite and reasonable", time, skinning_matrices.len());
+            eprintln!(
+                "  t={:.2}s: All {} skinning matrices are finite and reasonable",
+                time,
+                skinning_matrices.len()
+            );
         }
     }
 }

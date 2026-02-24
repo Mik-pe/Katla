@@ -89,16 +89,13 @@ impl EntityAllocator {
 
     /// Returns an iterator over all live entity IDs.
     pub fn iter_live(&self) -> impl Iterator<Item = EntityId> + '_ {
-        self.slots
-            .iter()
-            .enumerate()
-            .filter_map(|(index, slot)| {
-                if slot.occupied {
-                    Some(EntityId::new(index as u32, slot.generation))
-                } else {
-                    None
-                }
-            })
+        self.slots.iter().enumerate().filter_map(|(index, slot)| {
+            if slot.occupied {
+                Some(EntityId::new(index as u32, slot.generation))
+            } else {
+                None
+            }
+        })
     }
 
     /// Returns the number of live entities.

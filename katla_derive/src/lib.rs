@@ -5,7 +5,7 @@
 
 use proc_macro::TokenStream;
 use quote::quote;
-use syn::{parse_macro_input, DeriveInput, Meta, Expr, Lit, Field, punctuated::Punctuated, Token};
+use syn::{parse_macro_input, punctuated::Punctuated, DeriveInput, Expr, Field, Lit, Meta, Token};
 
 /// Derive macro for the Component trait.
 ///
@@ -135,7 +135,9 @@ pub fn derive_material(input: TokenStream) -> TokenStream {
     for attr in &input.attrs {
         if attr.path().is_ident("material") {
             // Try to parse as a list of meta items (for multiple attributes in one)
-            if let Ok(meta_list) = attr.parse_args_with(Punctuated::<Meta, Token![,]>::parse_terminated) {
+            if let Ok(meta_list) =
+                attr.parse_args_with(Punctuated::<Meta, Token![,]>::parse_terminated)
+            {
                 for meta in meta_list {
                     if let Meta::NameValue(nv) = &meta {
                         if let Some(ident) = nv.path.get_ident() {
@@ -145,7 +147,9 @@ pub fn derive_material(input: TokenStream) -> TokenStream {
                                     match key.as_str() {
                                         "shader" => shader = Some(lit_str.value()),
                                         "vertex_shader" => vertex_shader = Some(lit_str.value()),
-                                        "fragment_shader" => fragment_shader = Some(lit_str.value()),
+                                        "fragment_shader" => {
+                                            fragment_shader = Some(lit_str.value())
+                                        }
                                         "domain" => domain = Some(lit_str.value()),
                                         "color_format" => color_format = Some(lit_str.value()),
                                         "depth_format" => depth_format = Some(lit_str.value()),

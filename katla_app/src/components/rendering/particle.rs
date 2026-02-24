@@ -114,7 +114,8 @@ impl ParticleEmitter {
             max_particles,
             random_seed: self.random_seed,
         };
-        self.frame_data_buffer.write(std::slice::from_ref(&frame_data));
+        self.frame_data_buffer
+            .write(std::slice::from_ref(&frame_data));
     }
 
     /// Get the workgroup count for compute dispatch.

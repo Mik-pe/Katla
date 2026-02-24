@@ -255,12 +255,7 @@ mod tests {
     fn test_consecutive_mouse_positions() {
         let mut state = InputState::new();
 
-        let positions = [
-            (0.0, 0.0),
-            (10.0, 20.0),
-            (25.0, 45.0),
-            (100.0, 200.0),
-        ];
+        let positions = [(0.0, 0.0), (10.0, 20.0), (25.0, 45.0), (100.0, 200.0)];
 
         for (i, (x, y)) in positions.iter().enumerate() {
             state.set_mouse_position(*x, *y);
@@ -268,10 +263,7 @@ mod tests {
 
             if i > 0 {
                 let (prev_x, prev_y) = positions[i - 1];
-                assert_eq!(
-                    state.mouse_delta,
-                    Vec2::new(*x - prev_x, *y - prev_y)
-                );
+                assert_eq!(state.mouse_delta, Vec2::new(*x - prev_x, *y - prev_y));
             }
         }
     }

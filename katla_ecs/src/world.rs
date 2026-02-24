@@ -261,7 +261,8 @@ impl World {
     /// Removes entities that have no components.
     pub fn cleanup_empty_entities(&mut self) {
         let entities_to_keep: Vec<EntityId> = self.entities.iter_live().collect();
-        self.storage.retain_entities(&entities_to_keep.iter().copied().collect());
+        self.storage
+            .retain_entities(&entities_to_keep.iter().copied().collect());
     }
 
     pub fn get_input(&self) -> &InputState {

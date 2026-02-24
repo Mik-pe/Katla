@@ -164,7 +164,7 @@ pub fn render_debug_ui(app: &mut Application, dt: f32) {
             .iter()
             .map(|v| {
                 UiShaderVertex::new(
-                    [v.position.x(), v.position.y()],  // Logical coordinates
+                    [v.position.x(), v.position.y()], // Logical coordinates
                     [v.uv.x(), v.uv.y()],
                     [v.color.r, v.color.g, v.color.b, v.color.a],
                 )
@@ -264,7 +264,6 @@ pub fn render_debug_ui(app: &mut Application, dt: f32) {
 /// Collect entity information for the editor UI in tree order.
 pub fn collect_entity_info(app: &Application) -> Vec<EntityInfo> {
     use crate::animation::Skeleton;
-    
 
     // First pass: collect all entities with transforms and their relationships
     // EntityData: (name, position, rotation, scale, entity_type, components)

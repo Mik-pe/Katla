@@ -29,11 +29,17 @@ impl Default for SkyMaterial {
         Self {
             vertex_binding: VertexBinding { formats: vec![] },
             shader_path: PathBuf::from("resources/shaders/sky.wgsl"),
-            descriptor_layouts: vec![
-                DescriptorSetLayoutBuilder::new()
-                    .add_binding(0, DescriptorType::StorageBuffer, ShaderStages::VERTEX_FRAGMENT)
-                    .add_binding(1, DescriptorType::StorageBuffer, ShaderStages::VERTEX_FRAGMENT),
-            ],
+            descriptor_layouts: vec![DescriptorSetLayoutBuilder::new()
+                .add_binding(
+                    0,
+                    DescriptorType::StorageBuffer,
+                    ShaderStages::VERTEX_FRAGMENT,
+                )
+                .add_binding(
+                    1,
+                    DescriptorType::StorageBuffer,
+                    ShaderStages::VERTEX_FRAGMENT,
+                )],
         }
     }
 }

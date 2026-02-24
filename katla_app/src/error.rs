@@ -6,36 +6,22 @@ use std::fmt;
 #[derive(Debug)]
 pub enum AppError {
     /// Failed to find resources directory
-    ResourcesNotFound {
-        path: String,
-    },
+    ResourcesNotFound { path: String },
 
     /// Failed to load GLTF model
-    ModelLoadFailed {
-        path: String,
-        reason: String,
-    },
+    ModelLoadFailed { path: String, reason: String },
 
     /// Failed to load material
-    MaterialLoadFailed {
-        name: String,
-        reason: String,
-    },
+    MaterialLoadFailed { name: String, reason: String },
 
     /// Failed to initialize renderer
-    RendererInitFailed {
-        reason: String,
-    },
+    RendererInitFailed { reason: String },
 
     /// IO error
-    Io {
-        source: std::io::Error,
-    },
+    Io { source: std::io::Error },
 
     /// Other error with message
-    Other {
-        message: String,
-    },
+    Other { message: String },
 }
 
 impl fmt::Display for AppError {

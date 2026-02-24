@@ -84,7 +84,10 @@ impl SkeletonUploadSystem {
     }
 
     /// Get the skeleton descriptor set for an entity
-    pub fn get_descriptor_set(&self, entity: EntityId) -> Option<Rc<RefCell<Option<SkeletonDescriptorSet>>>> {
+    pub fn get_descriptor_set(
+        &self,
+        entity: EntityId,
+    ) -> Option<Rc<RefCell<Option<SkeletonDescriptorSet>>>> {
         self.skeleton_resources
             .get(&entity)
             .map(|r| r.descriptor_set.clone())

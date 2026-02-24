@@ -29,16 +29,17 @@ impl Model {
         color: Option<katla_math::Color>,
     ) -> Self {
         // Register assets with renderer if available
-        let (mesh_handle, material_handle) = Self::register_with_renderer(meshes.first_mut(), material, renderer);
+        let (mesh_handle, material_handle) =
+            Self::register_with_renderer(meshes.first_mut(), material, renderer);
 
         // Create DrawableComponent with optional color and PBR values
         let drawable = DrawableComponent::with_handles_and_material(
             mesh_handle,
             material_handle,
             color,
-            0.0,   // metallic - will be overridden by GLTF loading
-            0.5,   // roughness - will be overridden by GLTF loading
-            1.0,   // ao
+            0.0, // metallic - will be overridden by GLTF loading
+            0.5, // roughness - will be overridden by GLTF loading
+            1.0, // ao
         );
 
         // Spawn entity with all components
@@ -74,15 +75,36 @@ impl Model {
             };
 
             // Register material with optional PBR textures
-            let (pipeline, texture, vertex_binding, pbr_textures, pbr_texture_refs, texture_indices, emission_index) =
-                material.get_registration_data();
+            let (
+                pipeline,
+                texture,
+                vertex_binding,
+                pbr_textures,
+                pbr_texture_refs,
+                texture_indices,
+                emission_index,
+            ) = material.get_registration_data();
 
             // Use PBR registration if PBR textures are present
             let mat_h = if let Some(pbr) = pbr_textures {
                 let tex_refs = pbr_texture_refs.unwrap_or_default();
-                r.register_material_pbr(pipeline, texture, vertex_binding, pbr, tex_refs, texture_indices, emission_index)
+                r.register_material_pbr(
+                    pipeline,
+                    texture,
+                    vertex_binding,
+                    pbr,
+                    tex_refs,
+                    texture_indices,
+                    emission_index,
+                )
             } else {
-                r.register_material_full(pipeline, texture, vertex_binding, texture_indices, emission_index)
+                r.register_material_full(
+                    pipeline,
+                    texture,
+                    vertex_binding,
+                    texture_indices,
+                    emission_index,
+                )
             };
 
             (mesh_h, mat_h)
@@ -113,12 +135,16 @@ impl Model {
             if let Some(template) = registry.get_template("gltf_default") {
                 // Get the correct texture index from material info
                 // Fall back to image 0 if no material info or no base color texture
-                let texture_index = model.materials.first()
+                let texture_index = model
+                    .materials
+                    .first()
                     .and_then(|m| m.base_color_texture)
                     .unwrap_or(0);
 
                 // Extract texture from the GLTF model using the correct index
-                let texture = model.images.get(texture_index)
+                let texture = model
+                    .images
+                    .get(texture_index)
                     .and_then(|image| Self::load_texture_from_gltf(image, &context));
 
                 // Create material from template
@@ -133,13 +159,25 @@ impl Model {
         };
 
         // Get PBR values from material info
-        let (metallic, roughness) = model.materials.first()
+        let (metallic, roughness) = model
+            .materials
+            .first()
             .map(|m| (m.metallic_factor, m.roughness_factor))
             .unwrap_or((0.0, 0.5));
 
         let mesh = Mesh::new_from_model(model, context.clone());
 
-        Self::new_with_pbr(world, vec![mesh], material, renderer, transform, None, metallic, roughness, 1.0)
+        Self::new_with_pbr(
+            world,
+            vec![mesh],
+            material,
+            renderer,
+            transform,
+            None,
+            metallic,
+            roughness,
+            1.0,
+        )
     }
 
     /// Create a model with explicit PBR material values.
@@ -155,7 +193,8 @@ impl Model {
         ao: f32,
     ) -> Self {
         // Register assets with renderer if available
-        let (mesh_handle, material_handle) = Self::register_with_renderer(meshes.first_mut(), material, renderer);
+        let (mesh_handle, material_handle) =
+            Self::register_with_renderer(meshes.first_mut(), material, renderer);
 
         // Create DrawableComponent with PBR values
         let drawable = DrawableComponent::with_handles_and_material(
@@ -196,11 +235,11 @@ impl Model {
         transform: Transform,
         material_registry: &std::cell::RefCell<MaterialRegistry>,
     ) -> Self {
-        use katla_vulkan::material::PbrTextureSet;
         use katla_vulkan::bindless_texture::{
-            DEFAULT_ALBEDO_SLOT, DEFAULT_NORMAL_SLOT, DEFAULT_MR_SLOT,
-            DEFAULT_AO_SLOT, DEFAULT_EMISSION_SLOT,
+            DEFAULT_ALBEDO_SLOT, DEFAULT_AO_SLOT, DEFAULT_EMISSION_SLOT, DEFAULT_MR_SLOT,
+            DEFAULT_NORMAL_SLOT,
         };
+        use katla_vulkan::material::PbrTextureSet;
 
         // Check if model has skinning
         let has_skinning = model.has_skinning;
@@ -209,16 +248,45 @@ impl Model {
         let (use_bindless, texture_indices, emission_index) = if let Some(ref mut r) = renderer {
             if r.bindless_manager().is_some() {
                 // Will register textures later after loading them
-                (true, [DEFAULT_ALBEDO_SLOT, DEFAULT_NORMAL_SLOT, DEFAULT_MR_SLOT, DEFAULT_AO_SLOT], DEFAULT_EMISSION_SLOT)
+                (
+                    true,
+                    [
+                        DEFAULT_ALBEDO_SLOT,
+                        DEFAULT_NORMAL_SLOT,
+                        DEFAULT_MR_SLOT,
+                        DEFAULT_AO_SLOT,
+                    ],
+                    DEFAULT_EMISSION_SLOT,
+                )
             } else {
-                (false, [DEFAULT_ALBEDO_SLOT, DEFAULT_NORMAL_SLOT, DEFAULT_MR_SLOT, DEFAULT_AO_SLOT], DEFAULT_EMISSION_SLOT)
+                (
+                    false,
+                    [
+                        DEFAULT_ALBEDO_SLOT,
+                        DEFAULT_NORMAL_SLOT,
+                        DEFAULT_MR_SLOT,
+                        DEFAULT_AO_SLOT,
+                    ],
+                    DEFAULT_EMISSION_SLOT,
+                )
             }
         } else {
-            (false, [DEFAULT_ALBEDO_SLOT, DEFAULT_NORMAL_SLOT, DEFAULT_MR_SLOT, DEFAULT_AO_SLOT], DEFAULT_EMISSION_SLOT)
+            (
+                false,
+                [
+                    DEFAULT_ALBEDO_SLOT,
+                    DEFAULT_NORMAL_SLOT,
+                    DEFAULT_MR_SLOT,
+                    DEFAULT_AO_SLOT,
+                ],
+                DEFAULT_EMISSION_SLOT,
+            )
         };
 
         // Helper to load a texture from a GLTF image index
-        let load_texture = |image_index: Option<usize>, default_texture: &Rc<katla_vulkan::Texture>| -> Rc<katla_vulkan::Texture> {
+        let load_texture = |image_index: Option<usize>,
+                            default_texture: &Rc<katla_vulkan::Texture>|
+         -> Rc<katla_vulkan::Texture> {
             if let Some(idx) = image_index {
                 if let Some(image) = model.images.get(idx) {
                     if let Some(tex) = Self::load_texture_from_gltf(image, &context) {
@@ -230,11 +298,21 @@ impl Model {
         };
 
         // Create default textures for missing maps
-        let default_albedo = Rc::new(katla_vulkan::Texture::create_default_albedo(context.clone()));
-        let default_normal = Rc::new(katla_vulkan::Texture::create_default_normal(context.clone()));
-        let default_mr = Rc::new(katla_vulkan::Texture::create_default_metallic_roughness(context.clone()));
-        let default_occlusion = Rc::new(katla_vulkan::Texture::create_default_occlusion(context.clone()));
-        let default_emission = Rc::new(katla_vulkan::Texture::create_default_emission(context.clone()));
+        let default_albedo = Rc::new(katla_vulkan::Texture::create_default_albedo(
+            context.clone(),
+        ));
+        let default_normal = Rc::new(katla_vulkan::Texture::create_default_normal(
+            context.clone(),
+        ));
+        let default_mr = Rc::new(katla_vulkan::Texture::create_default_metallic_roughness(
+            context.clone(),
+        ));
+        let default_occlusion = Rc::new(katla_vulkan::Texture::create_default_occlusion(
+            context.clone(),
+        ));
+        let default_emission = Rc::new(katla_vulkan::Texture::create_default_emission(
+            context.clone(),
+        ));
 
         // Get material info from GLTF
         let mat_info = model.materials.first();
@@ -260,14 +338,8 @@ impl Model {
         }
 
         // Load all textures (use defaults for missing maps)
-        let albedo_tex = load_texture(
-            mat_info.and_then(|m| m.base_color_texture),
-            &default_albedo,
-        );
-        let normal_tex = load_texture(
-            mat_info.and_then(|m| m.normal_texture),
-            &default_normal,
-        );
+        let albedo_tex = load_texture(mat_info.and_then(|m| m.base_color_texture), &default_albedo);
+        let normal_tex = load_texture(mat_info.and_then(|m| m.normal_texture), &default_normal);
         let mr_tex = load_texture(
             mat_info.and_then(|m| m.metallic_roughness_texture),
             &default_mr,
@@ -276,24 +348,34 @@ impl Model {
             mat_info.and_then(|m| m.occlusion_texture),
             &default_occlusion,
         );
-        let emission_tex = load_texture(
-            mat_info.and_then(|m| m.emission_texture),
-            &default_emission,
-        );
+        let emission_tex =
+            load_texture(mat_info.and_then(|m| m.emission_texture), &default_emission);
 
         // Register textures with bindless manager and get indices
         let (texture_indices, emission_index) = if use_bindless {
             if let Some(ref mut r) = renderer {
                 if let Some(manager) = r.bindless_manager_mut() {
                     // Register textures with bindless manager
-                    let albedo_idx = manager.register_texture(albedo_tex.image_view).unwrap_or(DEFAULT_ALBEDO_SLOT);
-                    let normal_idx = manager.register_texture(normal_tex.image_view).unwrap_or(DEFAULT_NORMAL_SLOT);
-                    let mr_idx = manager.register_texture(mr_tex.image_view).unwrap_or(DEFAULT_MR_SLOT);
-                    let ao_idx = manager.register_texture(occlusion_tex.image_view).unwrap_or(DEFAULT_AO_SLOT);
-                    let emiss_idx = manager.register_texture(emission_tex.image_view).unwrap_or(DEFAULT_EMISSION_SLOT);
+                    let albedo_idx = manager
+                        .register_texture(albedo_tex.image_view)
+                        .unwrap_or(DEFAULT_ALBEDO_SLOT);
+                    let normal_idx = manager
+                        .register_texture(normal_tex.image_view)
+                        .unwrap_or(DEFAULT_NORMAL_SLOT);
+                    let mr_idx = manager
+                        .register_texture(mr_tex.image_view)
+                        .unwrap_or(DEFAULT_MR_SLOT);
+                    let ao_idx = manager
+                        .register_texture(occlusion_tex.image_view)
+                        .unwrap_or(DEFAULT_AO_SLOT);
+                    let emiss_idx = manager
+                        .register_texture(emission_tex.image_view)
+                        .unwrap_or(DEFAULT_EMISSION_SLOT);
 
-                    debug!("  Bindless texture slots: albedo={}, normal={}, mr={}, ao={}, emission={}",
-                        albedo_idx, normal_idx, mr_idx, ao_idx, emiss_idx);
+                    debug!(
+                        "  Bindless texture slots: albedo={}, normal={}, mr={}, ao={}, emission={}",
+                        albedo_idx, normal_idx, mr_idx, ao_idx, emiss_idx
+                    );
 
                     ([albedo_idx, normal_idx, mr_idx, ao_idx], emiss_idx)
                 } else {
@@ -331,14 +413,32 @@ impl Model {
                 // Skinned mesh material selection
                 if use_bindless {
                     // Bindless mode - use bindless skinned template with full PBR
-                    if let Some(template) = material_registry.borrow().get_template("gltf_skinned_pbr_bindless") {
+                    if let Some(template) = material_registry
+                        .borrow()
+                        .get_template("gltf_skinned_pbr_bindless")
+                    {
                         info!("  Using gltf_skinned_pbr_bindless template");
-                        Material::from_template_skinned_pbr_bindless(template, pbr_textures, texture_refs, None, texture_indices, emission_index)
+                        Material::from_template_skinned_pbr_bindless(
+                            template,
+                            pbr_textures,
+                            texture_refs,
+                            None,
+                            texture_indices,
+                            emission_index,
+                        )
                     } else {
                         warn!("  Template 'gltf_skinned_pbr_bindless' not found, falling back to gltf_skinned");
                         // Fallback to albedo-only skinned template
-                        if let Some(template) = material_registry.borrow().get_template("gltf_skinned") {
-                            Material::from_template_skinned_with_bindless(template, Some(albedo_tex), None, texture_indices, emission_index)
+                        if let Some(template) =
+                            material_registry.borrow().get_template("gltf_skinned")
+                        {
+                            Material::from_template_skinned_with_bindless(
+                                template,
+                                Some(albedo_tex),
+                                None,
+                                texture_indices,
+                                emission_index,
+                            )
                         } else {
                             panic!("Neither 'gltf_skinned_pbr_bindless' nor 'gltf_skinned' templates found. Ensure materials are loaded.");
                         }
@@ -346,12 +446,15 @@ impl Model {
                 } else {
                     // Legacy mode - use per-material texture descriptors
                     // TODO: Create a gltf_skinned_pbr_full template for full PBR on skinned models
-                    if let Some(template) = material_registry.borrow().get_template("gltf_skinned") {
+                    if let Some(template) = material_registry.borrow().get_template("gltf_skinned")
+                    {
                         info!("  Using gltf_skinned template (albedo only)");
                         Material::from_template_skinned(template, Some(albedo_tex), None)
                     } else {
                         warn!("  Template 'gltf_skinned' not found, falling back to gltf_default");
-                        if let Some(template) = material_registry.borrow().get_template("gltf_default") {
+                        if let Some(template) =
+                            material_registry.borrow().get_template("gltf_default")
+                        {
                             Material::from_template(template, Some(albedo_tex), None)
                         } else {
                             panic!("Neither 'gltf_skinned' nor 'gltf_default' templates found. Ensure materials are loaded.");
@@ -362,12 +465,23 @@ impl Model {
                 // Use full PBR template for static models
                 if use_bindless {
                     // Bindless mode - use bindless templates
-                    if let Some(template) = material_registry.borrow().get_template("gltf_pbr_bindless") {
+                    if let Some(template) =
+                        material_registry.borrow().get_template("gltf_pbr_bindless")
+                    {
                         info!("  Using gltf_pbr_bindless template");
-                        Material::from_template_pbr_bindless(template, pbr_textures, texture_refs, None, texture_indices, emission_index)
+                        Material::from_template_pbr_bindless(
+                            template,
+                            pbr_textures,
+                            texture_refs,
+                            None,
+                            texture_indices,
+                            emission_index,
+                        )
                     } else {
                         warn!("  Template 'gltf_pbr_bindless' not found, falling back to gltf_default");
-                        if let Some(template) = material_registry.borrow().get_template("gltf_default") {
+                        if let Some(template) =
+                            material_registry.borrow().get_template("gltf_default")
+                        {
                             Material::from_template(template, Some(albedo_tex), None)
                         } else {
                             panic!("Neither 'gltf_pbr_bindless' nor 'gltf_default' templates found. Ensure materials are loaded.");
@@ -375,12 +489,23 @@ impl Model {
                     }
                 } else {
                     // Legacy mode - now also uses bindless (all materials are bindless)
-                    if let Some(template) = material_registry.borrow().get_template("gltf_pbr_bindless") {
+                    if let Some(template) =
+                        material_registry.borrow().get_template("gltf_pbr_bindless")
+                    {
                         info!("  Using gltf_pbr_bindless template");
-                        Material::from_template_pbr_bindless(template, pbr_textures, texture_refs, None, texture_indices, emission_index)
+                        Material::from_template_pbr_bindless(
+                            template,
+                            pbr_textures,
+                            texture_refs,
+                            None,
+                            texture_indices,
+                            emission_index,
+                        )
                     } else {
                         warn!("  Template 'gltf_pbr_bindless' not found, falling back to gltf_default");
-                        if let Some(template) = material_registry.borrow().get_template("gltf_default") {
+                        if let Some(template) =
+                            material_registry.borrow().get_template("gltf_default")
+                        {
                             Material::from_template(template, Some(albedo_tex), None)
                         } else {
                             panic!("Neither 'gltf_pbr_bindless' nor 'gltf_default' templates found. Ensure materials are loaded.");
@@ -405,7 +530,17 @@ impl Model {
         let combined_matrix = transform.make_mat4() * root_transform;
         let final_transform = combined_matrix.decompose();
 
-        Self::new_with_pbr(world, vec![mesh], material, renderer, final_transform, None, metallic, roughness, 1.0)
+        Self::new_with_pbr(
+            world,
+            vec![mesh],
+            material,
+            renderer,
+            final_transform,
+            None,
+            metallic,
+            roughness,
+            1.0,
+        )
     }
 
     /// Load a texture from GLTF image data.
@@ -416,23 +551,19 @@ impl Model {
         context: &Rc<VulkanContext>,
     ) -> Option<Rc<katla_vulkan::Texture>> {
         match image.format {
-            gltf::image::Format::R8G8B8 => Some(Rc::new(
-                katla_vulkan::Texture::create_image_rgb(
-                    context.clone(),
-                    image.width,
-                    image.height,
-                    &image.pixels,
-                ),
-            )),
-            gltf::image::Format::R8G8B8A8 => Some(Rc::new(
-                katla_vulkan::Texture::create_image(
-                    context.clone(),
-                    image.width,
-                    image.height,
-                    katla_vulkan::ImageFormat::R8G8B8A8Srgb,
-                    &image.pixels,
-                ),
-            )),
+            gltf::image::Format::R8G8B8 => Some(Rc::new(katla_vulkan::Texture::create_image_rgb(
+                context.clone(),
+                image.width,
+                image.height,
+                &image.pixels,
+            ))),
+            gltf::image::Format::R8G8B8A8 => Some(Rc::new(katla_vulkan::Texture::create_image(
+                context.clone(),
+                image.width,
+                image.height,
+                katla_vulkan::ImageFormat::R8G8B8A8Srgb,
+                &image.pixels,
+            ))),
             _ => {
                 debug!("Unsupported texture format: {:?}", image.format);
                 None

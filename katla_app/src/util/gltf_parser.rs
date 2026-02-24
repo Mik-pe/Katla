@@ -229,36 +229,32 @@ impl<'a> AttributeParser<'a> {
 
         // GLTF uses U8 or U16 for joint indices
         match accessor.data_type() {
-            gltf::accessor::DataType::U8 => {
-                Some(
-                    attr_arr
-                        .chunks(stride)
-                        .map(|bytes| {
-                            [
-                                bytes[0] as u16,
-                                bytes[1] as u16,
-                                bytes[2] as u16,
-                                bytes[3] as u16,
-                            ]
-                        })
-                        .collect(),
-                )
-            }
-            gltf::accessor::DataType::U16 => {
-                Some(
-                    attr_arr
-                        .chunks(stride)
-                        .map(|bytes| {
-                            [
-                                LittleEndian::read_u16(&bytes[0..2]),
-                                LittleEndian::read_u16(&bytes[2..4]),
-                                LittleEndian::read_u16(&bytes[4..6]),
-                                LittleEndian::read_u16(&bytes[6..8]),
-                            ]
-                        })
-                        .collect(),
-                )
-            }
+            gltf::accessor::DataType::U8 => Some(
+                attr_arr
+                    .chunks(stride)
+                    .map(|bytes| {
+                        [
+                            bytes[0] as u16,
+                            bytes[1] as u16,
+                            bytes[2] as u16,
+                            bytes[3] as u16,
+                        ]
+                    })
+                    .collect(),
+            ),
+            gltf::accessor::DataType::U16 => Some(
+                attr_arr
+                    .chunks(stride)
+                    .map(|bytes| {
+                        [
+                            LittleEndian::read_u16(&bytes[0..2]),
+                            LittleEndian::read_u16(&bytes[2..4]),
+                            LittleEndian::read_u16(&bytes[4..6]),
+                            LittleEndian::read_u16(&bytes[6..8]),
+                        ]
+                    })
+                    .collect(),
+            ),
             _ => None,
         }
     }
@@ -661,14 +657,16 @@ pub fn build_skinned_vertex_data(
     let vertex_count = positions.len();
     let vertex_data: Vec<VertexSkinned> = if has_pos && has_skinning {
         izip!(positions, normals, tex_coords, joint_indices, joint_weights)
-            .map(|(position, normal, tex_coord, joints, weights)| VertexSkinned {
-                position,
-                normal,
-                tangent: default_tangent,
-                tex_coord0: tex_coord,
-                joint_indices: joints,
-                joint_weights: weights,
-            })
+            .map(
+                |(position, normal, tex_coord, joints, weights)| VertexSkinned {
+                    position,
+                    normal,
+                    tangent: default_tangent,
+                    tex_coord0: tex_coord,
+                    joint_indices: joints,
+                    joint_weights: weights,
+                },
+            )
             .collect()
     } else if has_pos {
         // No skinning data - use defaults
@@ -730,10 +728,7 @@ impl ParsedAttributes {
     ///
     /// # Returns
     /// ParsedAttributes with all available vertex data
-    pub fn from_gltf(
-        primitive: &gltf::Primitive,
-        parser: &AttributeParser,
-    ) -> Self {
+    pub fn from_gltf(primitive: &gltf::Primitive, parser: &AttributeParser) -> Self {
         let mut positions = vec![];
         let mut normals = vec![];
         let tangents = vec![];
@@ -824,7 +819,11 @@ mod tests {
     fn test_build_vertex_data_complete() {
         let positions = vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]];
         let normals = vec![[0.0, 0.0, 1.0], [0.0, 0.0, 1.0], [0.0, 0.0, 1.0]];
-        let tangents = vec![[1.0, 0.0, 0.0, 1.0], [1.0, 0.0, 0.0, 1.0], [1.0, 0.0, 0.0, 1.0]];
+        let tangents = vec![
+            [1.0, 0.0, 0.0, 1.0],
+            [1.0, 0.0, 0.0, 1.0],
+            [1.0, 0.0, 0.0, 1.0],
+        ];
         let tex_coords = vec![[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]];
 
         let (vertices, sphere) = build_vertex_data(positions, normals, tangents, tex_coords);

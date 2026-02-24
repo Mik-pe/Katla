@@ -2,7 +2,8 @@ use std::{path::PathBuf, rc::Rc};
 
 use katla_math::Color;
 use katla_vulkan::{
-    DescriptorSetLayoutBuilder, DescriptorType, ImageFormat, ShaderStages, Texture, VertexBinding, VulkanContext, VulkanRenderer,
+    DescriptorSetLayoutBuilder, DescriptorType, ImageFormat, ShaderStages, Texture, VertexBinding,
+    VulkanContext, VulkanRenderer,
 };
 use log::warn;
 
@@ -84,7 +85,10 @@ fn create_checkerboard_material_with_color(
     ));
 
     // Register texture with bindless manager
-    let bindless_manager = renderer.bindless_manager.as_mut().expect("Bindless manager not initialized");
+    let bindless_manager = renderer
+        .bindless_manager
+        .as_mut()
+        .expect("Bindless manager not initialized");
     let albedo_idx = match bindless_manager.register_texture(texture.image_view) {
         Some(idx) => idx,
         None => {
@@ -109,14 +113,21 @@ fn create_checkerboard_material_with_color(
     let config = BindlessPbrMaterialConfig {
         vertex_binding: vertex_binding.clone(),
         shader_path: PathBuf::from(PBR_SHADER_PATH),
-        descriptor_layouts: vec![
-            DescriptorSetLayoutBuilder::new()
-                .add_binding(0, DescriptorType::StorageBuffer, ShaderStages::VERTEX_FRAGMENT)
-                .add_binding(1, DescriptorType::StorageBuffer, ShaderStages::VERTEX_FRAGMENT),
-        ],
+        descriptor_layouts: vec![DescriptorSetLayoutBuilder::new()
+            .add_binding(
+                0,
+                DescriptorType::StorageBuffer,
+                ShaderStages::VERTEX_FRAGMENT,
+            )
+            .add_binding(
+                1,
+                DescriptorType::StorageBuffer,
+                ShaderStages::VERTEX_FRAGMENT,
+            )],
     };
 
-    let material_pipeline = renderer.material_cache
+    let material_pipeline = renderer
+        .material_cache
         .borrow_mut()
         .get_or_create_bindless(&config, bindless_layout)
         .expect("Failed to create bindless pipeline");

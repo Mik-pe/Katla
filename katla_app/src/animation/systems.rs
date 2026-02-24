@@ -138,7 +138,6 @@ pub struct SkeletalAnimationSystem {
     sample_buffer: SampleBuffer,
 }
 
-
 impl System for SkeletalAnimationSystem {
     fn update(&mut self, world: &mut World, _delta_time: f32) {
         let entities: Vec<EntityId> = world
@@ -179,11 +178,18 @@ impl System for SkeletalAnimationSystem {
                 }
 
                 // Sample the animation before moving clip_name into the tuple
-                let sampled = model.animations.get(&clip_name).map(|c| c.sample(player.time));
+                let sampled = model
+                    .animations
+                    .get(&clip_name)
+                    .map(|c| c.sample(player.time));
 
                 (
                     (player.time, clip_name),
-                    (skin.joint_count(), skin.joints.clone(), skin.inverse_bind_matrices.clone()),
+                    (
+                        skin.joint_count(),
+                        skin.joints.clone(),
+                        skin.inverse_bind_matrices.clone(),
+                    ),
                     sampled,
                 )
             };
@@ -231,7 +237,6 @@ impl System for SkeletalAnimationSystem {
 
                 // Step 3: Compute final skinning matrices (world * IBM)
                 skeleton.compute_skinning_matrices(&inverse_bind_matrices);
-
             }
         }
     }

@@ -73,10 +73,7 @@ impl UiContext {
 
     /// Add a spacer of the given width (in horizontal layout) or height (in vertical layout).
     pub fn spacer(&mut self, size: f32) {
-        self.cursor = Vec2::new(
-            self.cursor.x() + size,
-            self.cursor.y(),
-        );
+        self.cursor = Vec2::new(self.cursor.x() + size, self.cursor.y());
     }
 
     // -------------------------------------------------------------------------
@@ -181,10 +178,7 @@ impl UiContext {
         let column_width = available_width / count as f32;
 
         for i in 0..count {
-            self.cursor = Vec2::new(
-                start_cursor.x() + i as f32 * column_width,
-                start_cursor.y(),
-            );
+            self.cursor = Vec2::new(start_cursor.x() + i as f32 * column_width, start_cursor.y());
             f(self, i);
         }
 

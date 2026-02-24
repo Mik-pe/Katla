@@ -53,7 +53,11 @@ impl UiContext {
         let double_clicked = clicked && self.input.mouse_double_clicked(mouse_button::LEFT);
 
         // Track drag delta when active
-        let drag_delta = if active { self.input.mouse_delta } else { Vec2::new(0.0, 0.0) };
+        let drag_delta = if active {
+            self.input.mouse_delta
+        } else {
+            Vec2::new(0.0, 0.0)
+        };
 
         Response {
             clicked,
@@ -67,7 +71,13 @@ impl UiContext {
     }
 
     /// Draw a checkbox (internal - use `widgets::Checkbox` instead).
-    pub(crate) fn checkbox(&mut self, id: &str, label: &str, checked: &mut bool, bounds: Rect2D) -> Response {
+    pub(crate) fn checkbox(
+        &mut self,
+        id: &str,
+        label: &str,
+        checked: &mut bool,
+        bounds: Rect2D,
+    ) -> Response {
         let widget_id = self.generate_id(id);
 
         let hovered = self.update_hover(widget_id, bounds);
@@ -124,7 +134,11 @@ impl UiContext {
         let double_clicked = clicked && self.input.mouse_double_clicked(mouse_button::LEFT);
 
         // Track drag delta when active
-        let drag_delta = if active { self.input.mouse_delta } else { Vec2::new(0.0, 0.0) };
+        let drag_delta = if active {
+            self.input.mouse_delta
+        } else {
+            Vec2::new(0.0, 0.0)
+        };
 
         Response {
             clicked,
@@ -196,7 +210,11 @@ impl UiContext {
         self.draw_rect(grab_bounds, grab_color);
 
         // Track drag delta when active
-        let drag_delta = if active { self.input.mouse_delta } else { Vec2::new(0.0, 0.0) };
+        let drag_delta = if active {
+            self.input.mouse_delta
+        } else {
+            Vec2::new(0.0, 0.0)
+        };
 
         Response {
             clicked: false,

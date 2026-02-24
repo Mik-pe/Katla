@@ -3,7 +3,9 @@
 //! Pure configuration for a pipeline that renders gizmos (translate/rotate/scale handles)
 //! with unlit rendering and always-on-top depth behavior.
 
-use katla_vulkan::{DescriptorSetLayoutBuilder, DescriptorType, ShaderStages, VertexBinding, VertexFormat};
+use katla_vulkan::{
+    DescriptorSetLayoutBuilder, DescriptorType, ShaderStages, VertexBinding, VertexFormat,
+};
 use std::path::PathBuf;
 
 /// Gizmo material that renders 3D manipulation handles.
@@ -27,11 +29,17 @@ impl Default for GizmoMaterial {
                 formats: vec![VertexFormat::RGB32f, VertexFormat::RGB32f],
             },
             shader_path: PathBuf::from("resources/shaders/gizmo.wgsl"),
-            descriptor_layouts: vec![
-                DescriptorSetLayoutBuilder::new()
-                    .add_binding(0, DescriptorType::StorageBuffer, ShaderStages::VERTEX_FRAGMENT)
-                    .add_binding(1, DescriptorType::StorageBuffer, ShaderStages::VERTEX_FRAGMENT),
-            ],
+            descriptor_layouts: vec![DescriptorSetLayoutBuilder::new()
+                .add_binding(
+                    0,
+                    DescriptorType::StorageBuffer,
+                    ShaderStages::VERTEX_FRAGMENT,
+                )
+                .add_binding(
+                    1,
+                    DescriptorType::StorageBuffer,
+                    ShaderStages::VERTEX_FRAGMENT,
+                )],
         }
     }
 }

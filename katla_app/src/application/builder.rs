@@ -181,9 +181,8 @@ impl ApplicationBuilder {
 
         // Create GLTF cache with loader that panics on error (same as old From<PathBuf> impl)
         let gltf_loader = Box::new(|path: &std::path::PathBuf| {
-            GLTFModel::new(path).unwrap_or_else(|e| {
-                panic!("Failed to load GLTF model from {:?}: {}", path, e)
-            })
+            GLTFModel::new(path)
+                .unwrap_or_else(|e| panic!("Failed to load GLTF model from {:?}: {}", path, e))
         });
 
         let app = Application {

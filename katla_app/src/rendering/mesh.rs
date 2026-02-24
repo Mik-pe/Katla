@@ -103,8 +103,6 @@ impl Mesh {
     /// * `model` - GLTF model with parsed attributes
     /// * `context` - Vulkan context
     pub fn new_from_model_soa(model: Rc<GLTFModel>, context: Rc<VulkanContext>) -> Self {
-        
-
         let index_type = match model.index_stride {
             1 => IndexType::Uint8,
             2 => IndexType::Uint16,
@@ -430,20 +428,18 @@ impl Mesh {
         }
 
         let data_slice = unsafe {
-            std::slice::from_raw_parts(
-                data.as_ptr() as *const u8,
-                std::mem::size_of_val(data),
-            )
+            std::slice::from_raw_parts(data.as_ptr() as *const u8, std::mem::size_of_val(data))
         };
 
-        let mut vertex_buffer = VertexBuffer::new(
-            context,
-            data_slice.len() as u64,
-            data.len() as u32,
-        );
+        let mut vertex_buffer =
+            VertexBuffer::new(context, data_slice.len() as u64, data.len() as u32);
         vertex_buffer.upload_data(data_slice);
 
-        Some(AttributeBinding::new(attr_type, format, vertex_buffer.object()))
+        Some(AttributeBinding::new(
+            attr_type,
+            format,
+            vertex_buffer.object(),
+        ))
     }
 
     fn create_index_buffer<DataType>(

@@ -6,9 +6,9 @@ use std::{
 };
 
 use crate::rendering::Material;
-use katla_vulkan::{MaterialHandle, VulkanContext, VulkanRenderer, MaterialRegistry};
+use katla_vulkan::{MaterialHandle, MaterialRegistry, VulkanContext, VulkanRenderer};
 use log::{debug, error, info};
-use notify::{Watcher, RecursiveMode};
+use notify::{RecursiveMode, Watcher};
 
 /// ID for referencing a shared material.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -23,8 +23,8 @@ pub struct MaterialManager {
     by_name: HashMap<String, MaterialId>,
     hot_reload: Option<MaterialHotReload>,
     shader_to_materials: HashMap<PathBuf, Vec<String>>, // Maps shader path -> material names
-    material_handles: HashMap<String, MaterialHandle>, // Maps material name -> renderer handle
-    context: Option<Rc<VulkanContext>>, // Store context for cleanup
+    material_handles: HashMap<String, MaterialHandle>,  // Maps material name -> renderer handle
+    context: Option<Rc<VulkanContext>>,                 // Store context for cleanup
 }
 
 impl MaterialManager {
@@ -263,10 +263,8 @@ impl MaterialManager {
 
                     for material_name in material_names {
                         // Recreate the material
-                        let new_material = material_factory(
-                            material_name,
-                            renderer.context.clone(),
-                        );
+                        let new_material =
+                            material_factory(material_name, renderer.context.clone());
 
                         // Update the material in the manager
                         if let Some(&id) = self.by_name.get(material_name) {
@@ -287,10 +285,7 @@ impl MaterialManager {
                                         material_name
                                     );
                                 } else {
-                                    debug!(
-                                        "  ✗ Failed to update AssetRegistry: {}",
-                                        material_name
-                                    );
+                                    debug!("  ✗ Failed to update AssetRegistry: {}", material_name);
                                 }
                             } else {
                                 // No handle in AssetRegistry - just update MaterialManager

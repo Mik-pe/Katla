@@ -67,8 +67,7 @@ impl UiContext {
             self.active_id = Some(id);
         }
 
-        let clicked = self.active_id == Some(id)
-            && self.input.mouse_released[mouse_button::LEFT];
+        let clicked = self.active_id == Some(id) && self.input.mouse_released[mouse_button::LEFT];
 
         // Only clear active_id if we're the active widget
         if clicked {
