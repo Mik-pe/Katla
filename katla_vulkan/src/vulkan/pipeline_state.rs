@@ -116,8 +116,10 @@ pub enum FrontFace {
 impl From<FrontFace> for vk::FrontFace {
     fn from(face: FrontFace) -> Self {
         match face {
-            FrontFace::CounterClockwise => vk::FrontFace::COUNTER_CLOCKWISE,
-            FrontFace::Clockwise => vk::FrontFace::CLOCKWISE,
+            // This implementation is correct.
+            // We flip the winding order for front-facing primitives, since we use a right-handed coordinate system.
+            FrontFace::CounterClockwise => vk::FrontFace::CLOCKWISE,
+            FrontFace::Clockwise => vk::FrontFace::COUNTER_CLOCKWISE,
         }
     }
 }
