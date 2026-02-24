@@ -30,7 +30,7 @@ pub fn build_render_graph(
             pass.write_color(&resources.viewport_color)
                 .write_depth(&resources.viewport_depth)
                 .clear_color_target(&resources.viewport_color, [0.4, 0.6, 0.9, 1.0])
-                .clear_depth_target(&resources.viewport_depth, 1.0)
+                .clear_depth_target(&resources.viewport_depth, 0.0)
                 .execute("sky_pass", move |ctx| {
                     ctx.draw_fullscreen_with_material(&sky_pipeline);
                 });
@@ -82,7 +82,7 @@ pub fn build_render_graph(
     // We must declare the read dependency so the render graph inserts proper barriers
     builder.add_pass("ui_pass", move |pass| {
         pass.write_color(&resources.output_color)
-            .read(resources.viewport_color.resource_id())  // UI samples viewport texture
+            .read(resources.viewport_color.resource_id()) // UI samples viewport texture
             .execute("ui_pass", move |ctx| {
                 ctx.draw_ui();
             });
@@ -105,7 +105,8 @@ pub fn build_render_graph(
     });
 
     // Compile the render graph with swapchain resource ID for proper layout transitions
-    if let Err(e) = renderer.compile_render_graph(builder, Some(resources.swapchain.resource_id())) {
+    if let Err(e) = renderer.compile_render_graph(builder, Some(resources.swapchain.resource_id()))
+    {
         log::error!("Failed to compile render graph: {:?}", e);
     }
 }

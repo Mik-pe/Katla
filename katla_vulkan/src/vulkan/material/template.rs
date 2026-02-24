@@ -5,8 +5,7 @@
 //! parameters and textures.
 
 use super::{
-    MaterialDescriptor, MaterialParameters, MaterialPipeline, MaterialValue,
-    ShaderReflection,
+    MaterialDescriptor, MaterialParameters, MaterialPipeline, MaterialValue, ShaderReflection,
 };
 use crate::Texture;
 use ash::vk;

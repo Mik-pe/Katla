@@ -5,8 +5,8 @@
 //! event-driven template hot reload using filesystem watching.
 
 use super::{
-    load_material_from_file, FileWatcher, MaterialDescriptor, MaterialError,
-    MaterialTemplate, ShaderReflection,
+    load_material_from_file, FileWatcher, MaterialDescriptor, MaterialError, MaterialTemplate,
+    ShaderReflection,
 };
 use crate::{DynamicMaterialConfig, MaterialPipelineCache, VulkanContext};
 use ash::vk;
@@ -198,7 +198,10 @@ impl MaterialRegistry {
 
         // Detect material type from shader path
         let (is_skinned, is_pbr_full) = detect_material_type(&descriptor);
-        debug!("Template '{}' detection: is_skinned={}, is_pbr_full={}", name, is_skinned, is_pbr_full);
+        debug!(
+            "Template '{}' detection: is_skinned={}, is_pbr_full={}",
+            name, is_skinned, is_pbr_full
+        );
 
         // Get appropriate vertex binding
         let vertex_binding = if is_skinned {
@@ -217,20 +220,16 @@ impl MaterialRegistry {
         };
 
         // Get pipeline from cache
-        let pipeline = cache
-            .get_or_create(&config)
-            .map_err(|e| MaterialError::InvalidDescriptor(format!("Failed to create pipeline: {}", e)))?;
+        let pipeline = cache.get_or_create(&config).map_err(|e| {
+            MaterialError::InvalidDescriptor(format!("Failed to create pipeline: {}", e))
+        })?;
 
         // Generate reflection
         let reflection = generate_reflection(&descriptor)?;
 
         // Create template from cached pipeline
-        let template = MaterialTemplate::from_cached_pipeline(
-            name.clone(),
-            descriptor,
-            reflection,
-            pipeline,
-        );
+        let template =
+            MaterialTemplate::from_cached_pipeline(name.clone(), descriptor, reflection, pipeline);
 
         // Register with path for hot reload
         self.register_template_with_path(template, path);
@@ -278,18 +277,19 @@ impl MaterialRegistry {
         // Get pipeline from cache
         let pipeline = cache
             .get_or_create_bindless(&config, bindless_layout)
-            .map_err(|e| MaterialError::InvalidDescriptor(format!("Failed to create bindless pipeline: {}", e)))?;
+            .map_err(|e| {
+                MaterialError::InvalidDescriptor(format!(
+                    "Failed to create bindless pipeline: {}",
+                    e
+                ))
+            })?;
 
         // Generate reflection
         let reflection = generate_reflection(&descriptor)?;
 
         // Create template from cached pipeline
-        let template = MaterialTemplate::from_cached_pipeline(
-            name.clone(),
-            descriptor,
-            reflection,
-            pipeline,
-        );
+        let template =
+            MaterialTemplate::from_cached_pipeline(name.clone(), descriptor, reflection, pipeline);
 
         // Register with path for hot reload
         self.register_template_with_path(template, path);
@@ -429,8 +429,9 @@ fn generate_reflection(descriptor: &MaterialDescriptor) -> Result<ShaderReflecti
         ShaderSource::WgslFile(path) => {
             let wgsl = std::fs::read_to_string(path)
                 .map_err(|e| MaterialError::ShaderLoadFailed(path.clone(), e))?;
-            ShaderReflection::from_wgsl(&wgsl)
-                .map_err(|e| MaterialError::InvalidDescriptor(format!("Reflection failed: {:?}", e)))
+            ShaderReflection::from_wgsl(&wgsl).map_err(|e| {
+                MaterialError::InvalidDescriptor(format!("Reflection failed: {:?}", e))
+            })
         }
         _ => Ok(ShaderReflection::default()),
     }
@@ -438,13 +439,5 @@ fn generate_reflection(descriptor: &MaterialDescriptor) -> Result<ShaderReflecti
 
 /// Get PBR vertex binding helper
 fn get_pbr_vertex_binding() -> crate::VertexBinding {
-    use crate::{VertexBinding, VertexFormat};
-    VertexBinding {
-        formats: vec![
-            VertexFormat::RGB32f,    // position
-            VertexFormat::RGB32f,    // normal
-            VertexFormat::RG32f,     // uv
-            VertexFormat::RGB32f,    // tangent
-        ],
-    }
+    crate::vulkan::vertexbinding::get_pbr_vertex_binding()
 }

@@ -31,7 +31,7 @@ fn bench_mat4_creation(c: &mut Criterion) {
     });
 
     group.bench_function("create_proj", |b| {
-        b.iter(|| black_box(Mat4::create_proj(60.0, 16.0 / 9.0, 0.1, 100.0)));
+        b.iter(|| black_box(Mat4::create_proj(60.0, 16.0 / 9.0, 0.1)));
     });
 
     group.bench_function("create_lookat", |b| {

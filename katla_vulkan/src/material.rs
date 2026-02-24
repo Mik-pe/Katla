@@ -22,8 +22,8 @@
 //! - [`PbrTextureSet`] - PBR texture collection
 //! - And more...
 
-use std::hash::{Hash, Hasher};
 use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
 
 use crate::render_graph::types::{ImageFormat, ShaderStages};
 use crate::vulkan::descriptor::{DescriptorBinding, DescriptorSetLayoutBuilder};
@@ -39,36 +39,66 @@ pub use crate::vulkan::material::descriptor::{RenderState, ShaderSource};
 
 // Re-export legacy types from vulkan::material for backward compatibility
 pub use crate::vulkan::material::{
-    // Core legacy types
-    MaterialPipeline, MaterialBuilder, MaterialBuildError, PbrTextureSet, ImageInfo,
-    // Descriptor types
-    DescriptorLayoutBuilder, MaterialDescriptor, MaterialError, MaterialValue,
-    ShaderStage, UniformType, UniformHandle,
-    // Buffer descriptors
-    BufferBinding, BufferDescriptorSource, UniformBuffer,
-    // Compute pipeline
-    ComputePipeline, ComputePipelineBuilder, ComputePipelineError,
-    // Hot reload and registry
-    MaterialRegistry, MaterialTemplate, MaterialInstance,
-    // Skeleton
-    SkeletonDescriptorSet,
-    // Storage uniforms
-    FrameUniforms, ObjectUniforms, StorageDescriptorSet, StorageUniformLayout,
-    StorageUniformManager,
-    // Parameters
-    MaterialParameters, ParameterError,
-    // Reflection
-    ShaderReflection, UniformLayout, ReflectionError, StructMember, MemberType, StructLayout,
+    load_material_from_file,
     // Asset loading
-    AssetError, load_material_from_file,
+    AssetError,
+    // Buffer descriptors
+    BufferBinding,
+    BufferDescriptorSource,
+    // Compute pipeline
+    ComputePipeline,
+    ComputePipelineBuilder,
+    ComputePipelineError,
+    // Descriptor types
+    DescriptorLayoutBuilder,
     // File watching
-    FileWatcher, WatcherError,
-    // Shader module
-    ShaderModule, ShaderCache, ShaderError,
-    // Pipeline builder (legacy)
-    PipelineBuilder, Pipeline, PipelineError,
+    FileWatcher,
+    // Storage uniforms
+    FrameUniforms,
+    ImageInfo,
     // Template
     InstanceError,
+    MaterialBuildError,
+    MaterialBuilder,
+    MaterialDescriptor,
+    MaterialError,
+    MaterialInstance,
+    // Parameters
+    MaterialParameters,
+    // Core legacy types
+    MaterialPipeline,
+    // Hot reload and registry
+    MaterialRegistry,
+    MaterialTemplate,
+    MaterialValue,
+    MemberType,
+    ObjectUniforms,
+    ParameterError,
+    PbrTextureSet,
+    Pipeline,
+    // Pipeline builder (legacy)
+    PipelineBuilder,
+    PipelineError,
+    ReflectionError,
+    ShaderCache,
+    ShaderError,
+    // Shader module
+    ShaderModule,
+    // Reflection
+    ShaderReflection,
+    ShaderStage,
+    // Skeleton
+    SkeletonDescriptorSet,
+    StorageDescriptorSet,
+    StorageUniformLayout,
+    StorageUniformManager,
+    StructLayout,
+    StructMember,
+    UniformBuffer,
+    UniformHandle,
+    UniformLayout,
+    UniformType,
+    WatcherError,
 };
 
 /// Material domain for render pass organization.
@@ -242,7 +272,10 @@ pub struct PbrMaterialConfig {
 impl PbrMaterialConfig {
     /// Create a new PBR material config.
     pub fn new(vertex_binding: VertexBinding, shader_path: PathBuf) -> Self {
-        Self { vertex_binding, shader_path }
+        Self {
+            vertex_binding,
+            shader_path,
+        }
     }
 }
 
@@ -272,8 +305,16 @@ impl Material for PbrMaterialConfig {
         vec![
             // Set 0: Storage buffers
             DescriptorSetLayoutBuilder::new()
-                .add_binding(0, DescriptorType::StorageBuffer, ShaderStages::VERTEX_FRAGMENT)
-                .add_binding(1, DescriptorType::StorageBuffer, ShaderStages::VERTEX_FRAGMENT),
+                .add_binding(
+                    0,
+                    DescriptorType::StorageBuffer,
+                    ShaderStages::VERTEX_FRAGMENT,
+                )
+                .add_binding(
+                    1,
+                    DescriptorType::StorageBuffer,
+                    ShaderStages::VERTEX_FRAGMENT,
+                ),
             // Set 1: Textures
             DescriptorSetLayoutBuilder::new()
                 .add_binding(0, DescriptorType::SampledImage, ShaderStages::FRAGMENT)
@@ -301,7 +342,10 @@ pub struct SkinnedPbrMaterialConfig {
 impl SkinnedPbrMaterialConfig {
     /// Create a new skinned PBR material config.
     pub fn new(vertex_binding: VertexBinding, shader_path: PathBuf) -> Self {
-        Self { vertex_binding, shader_path }
+        Self {
+            vertex_binding,
+            shader_path,
+        }
     }
 }
 
@@ -331,15 +375,26 @@ impl Material for SkinnedPbrMaterialConfig {
         vec![
             // Set 0: Storage buffers
             DescriptorSetLayoutBuilder::new()
-                .add_binding(0, DescriptorType::StorageBuffer, ShaderStages::VERTEX_FRAGMENT)
-                .add_binding(1, DescriptorType::StorageBuffer, ShaderStages::VERTEX_FRAGMENT),
+                .add_binding(
+                    0,
+                    DescriptorType::StorageBuffer,
+                    ShaderStages::VERTEX_FRAGMENT,
+                )
+                .add_binding(
+                    1,
+                    DescriptorType::StorageBuffer,
+                    ShaderStages::VERTEX_FRAGMENT,
+                ),
             // Set 1: Textures
             DescriptorSetLayoutBuilder::new()
                 .add_binding(0, DescriptorType::SampledImage, ShaderStages::FRAGMENT)
                 .add_binding(1, DescriptorType::Sampler, ShaderStages::FRAGMENT),
             // Set 2: Skeleton
-            DescriptorSetLayoutBuilder::new()
-                .add_binding(0, DescriptorType::StorageBuffer, ShaderStages::VERTEX_FRAGMENT),
+            DescriptorSetLayoutBuilder::new().add_binding(
+                0,
+                DescriptorType::StorageBuffer,
+                ShaderStages::VERTEX_FRAGMENT,
+            ),
         ]
     }
 
@@ -366,7 +421,10 @@ pub struct FullPbrMaterialConfig {
 impl FullPbrMaterialConfig {
     /// Create a new full PBR material config.
     pub fn new(vertex_binding: VertexBinding, shader_path: PathBuf) -> Self {
-        Self { vertex_binding, shader_path }
+        Self {
+            vertex_binding,
+            shader_path,
+        }
     }
 }
 
@@ -396,19 +454,27 @@ impl Material for FullPbrMaterialConfig {
         vec![
             // Set 0: Storage buffers
             DescriptorSetLayoutBuilder::new()
-                .add_binding(0, DescriptorType::StorageBuffer, ShaderStages::VERTEX_FRAGMENT)
-                .add_binding(1, DescriptorType::StorageBuffer, ShaderStages::VERTEX_FRAGMENT),
+                .add_binding(
+                    0,
+                    DescriptorType::StorageBuffer,
+                    ShaderStages::VERTEX_FRAGMENT,
+                )
+                .add_binding(
+                    1,
+                    DescriptorType::StorageBuffer,
+                    ShaderStages::VERTEX_FRAGMENT,
+                ),
             // Set 1: PBR textures (5 textures + 5 samplers)
             DescriptorSetLayoutBuilder::new()
-                .add_binding(0, DescriptorType::SampledImage, ShaderStages::FRAGMENT)  // albedo
+                .add_binding(0, DescriptorType::SampledImage, ShaderStages::FRAGMENT) // albedo
                 .add_binding(1, DescriptorType::Sampler, ShaderStages::FRAGMENT)
-                .add_binding(2, DescriptorType::SampledImage, ShaderStages::FRAGMENT)  // normal
+                .add_binding(2, DescriptorType::SampledImage, ShaderStages::FRAGMENT) // normal
                 .add_binding(3, DescriptorType::Sampler, ShaderStages::FRAGMENT)
-                .add_binding(4, DescriptorType::SampledImage, ShaderStages::FRAGMENT)  // metallic/roughness
+                .add_binding(4, DescriptorType::SampledImage, ShaderStages::FRAGMENT) // metallic/roughness
                 .add_binding(5, DescriptorType::Sampler, ShaderStages::FRAGMENT)
-                .add_binding(6, DescriptorType::SampledImage, ShaderStages::FRAGMENT)  // occlusion
+                .add_binding(6, DescriptorType::SampledImage, ShaderStages::FRAGMENT) // occlusion
                 .add_binding(7, DescriptorType::Sampler, ShaderStages::FRAGMENT)
-                .add_binding(8, DescriptorType::SampledImage, ShaderStages::FRAGMENT)  // emission
+                .add_binding(8, DescriptorType::SampledImage, ShaderStages::FRAGMENT) // emission
                 .add_binding(9, DescriptorType::Sampler, ShaderStages::FRAGMENT),
         ]
     }
@@ -436,7 +502,10 @@ pub struct BindlessPbrMaterialConfig {
 impl BindlessPbrMaterialConfig {
     /// Create a new bindless PBR material config.
     pub fn new(vertex_binding: VertexBinding, shader_path: PathBuf) -> Self {
-        Self { vertex_binding, shader_path }
+        Self {
+            vertex_binding,
+            shader_path,
+        }
     }
 }
 
@@ -466,8 +535,16 @@ impl Material for BindlessPbrMaterialConfig {
         vec![
             // Set 0: Storage buffers (Set 1 is bindless, provided externally)
             DescriptorSetLayoutBuilder::new()
-                .add_binding(0, DescriptorType::StorageBuffer, ShaderStages::VERTEX_FRAGMENT)
-                .add_binding(1, DescriptorType::StorageBuffer, ShaderStages::VERTEX_FRAGMENT),
+                .add_binding(
+                    0,
+                    DescriptorType::StorageBuffer,
+                    ShaderStages::VERTEX_FRAGMENT,
+                )
+                .add_binding(
+                    1,
+                    DescriptorType::StorageBuffer,
+                    ShaderStages::VERTEX_FRAGMENT,
+                ),
         ]
     }
 
@@ -495,7 +572,10 @@ pub struct BindlessSkinnedPbrMaterialConfig {
 impl BindlessSkinnedPbrMaterialConfig {
     /// Create a new bindless skinned PBR material config.
     pub fn new(vertex_binding: VertexBinding, shader_path: PathBuf) -> Self {
-        Self { vertex_binding, shader_path }
+        Self {
+            vertex_binding,
+            shader_path,
+        }
     }
 }
 
@@ -525,11 +605,22 @@ impl Material for BindlessSkinnedPbrMaterialConfig {
         vec![
             // Set 0: Storage buffers
             DescriptorSetLayoutBuilder::new()
-                .add_binding(0, DescriptorType::StorageBuffer, ShaderStages::VERTEX_FRAGMENT)
-                .add_binding(1, DescriptorType::StorageBuffer, ShaderStages::VERTEX_FRAGMENT),
+                .add_binding(
+                    0,
+                    DescriptorType::StorageBuffer,
+                    ShaderStages::VERTEX_FRAGMENT,
+                )
+                .add_binding(
+                    1,
+                    DescriptorType::StorageBuffer,
+                    ShaderStages::VERTEX_FRAGMENT,
+                ),
             // Set 2: Skeleton (Set 1 is bindless, provided externally)
-            DescriptorSetLayoutBuilder::new()
-                .add_binding(0, DescriptorType::StorageBuffer, ShaderStages::VERTEX_FRAGMENT),
+            DescriptorSetLayoutBuilder::new().add_binding(
+                0,
+                DescriptorType::StorageBuffer,
+                ShaderStages::VERTEX_FRAGMENT,
+            ),
         ]
     }
 
@@ -598,27 +689,42 @@ impl DynamicMaterialConfig {
     }
 
     /// Create a standard PBR config.
-    pub fn pbr(descriptor: &super::vulkan::material::MaterialDescriptor, vertex_binding: VertexBinding) -> Self {
+    pub fn pbr(
+        descriptor: &super::vulkan::material::MaterialDescriptor,
+        vertex_binding: VertexBinding,
+    ) -> Self {
         Self::new(descriptor, vertex_binding, false, false, false)
     }
 
     /// Create a skinned PBR config.
-    pub fn skinned(descriptor: &super::vulkan::material::MaterialDescriptor, vertex_binding: VertexBinding) -> Self {
+    pub fn skinned(
+        descriptor: &super::vulkan::material::MaterialDescriptor,
+        vertex_binding: VertexBinding,
+    ) -> Self {
         Self::new(descriptor, vertex_binding, false, true, false)
     }
 
     /// Create a full PBR config (5 textures).
-    pub fn full_pbr(descriptor: &super::vulkan::material::MaterialDescriptor, vertex_binding: VertexBinding) -> Self {
+    pub fn full_pbr(
+        descriptor: &super::vulkan::material::MaterialDescriptor,
+        vertex_binding: VertexBinding,
+    ) -> Self {
         Self::new(descriptor, vertex_binding, true, false, false)
     }
 
     /// Create a bindless config.
-    pub fn bindless(descriptor: &super::vulkan::material::MaterialDescriptor, vertex_binding: VertexBinding) -> Self {
+    pub fn bindless(
+        descriptor: &super::vulkan::material::MaterialDescriptor,
+        vertex_binding: VertexBinding,
+    ) -> Self {
         Self::new(descriptor, vertex_binding, false, false, true)
     }
 
     /// Create a bindless skinned config.
-    pub fn bindless_skinned(descriptor: &super::vulkan::material::MaterialDescriptor, vertex_binding: VertexBinding) -> Self {
+    pub fn bindless_skinned(
+        descriptor: &super::vulkan::material::MaterialDescriptor,
+        vertex_binding: VertexBinding,
+    ) -> Self {
         Self::new(descriptor, vertex_binding, false, true, true)
     }
 }
@@ -642,20 +748,27 @@ impl Material for DynamicMaterialConfig {
 
     fn descriptor_layouts(&self) -> Vec<DescriptorSetLayoutBuilder> {
         // Set 0: Storage buffers (always present)
-        let mut layouts = vec![
-            DescriptorSetLayoutBuilder::new()
-                .add_binding(0, DescriptorType::StorageBuffer, ShaderStages::VERTEX_FRAGMENT)
-                .add_binding(1, DescriptorType::StorageBuffer, ShaderStages::VERTEX_FRAGMENT),
-        ];
+        let mut layouts = vec![DescriptorSetLayoutBuilder::new()
+            .add_binding(
+                0,
+                DescriptorType::StorageBuffer,
+                ShaderStages::VERTEX_FRAGMENT,
+            )
+            .add_binding(
+                1,
+                DescriptorType::StorageBuffer,
+                ShaderStages::VERTEX_FRAGMENT,
+            )];
 
         if self.uses_bindless {
             // Set 1 is bindless (provided externally)
             // Set 2: Skeleton if needed
             if self.uses_skeleton {
-                layouts.push(
-                    DescriptorSetLayoutBuilder::new()
-                        .add_binding(0, DescriptorType::StorageBuffer, ShaderStages::VERTEX_FRAGMENT)
-                );
+                layouts.push(DescriptorSetLayoutBuilder::new().add_binding(
+                    0,
+                    DescriptorType::StorageBuffer,
+                    ShaderStages::VERTEX_FRAGMENT,
+                ));
             }
         } else {
             // Non-bindless: Set 1 contains textures
@@ -672,23 +785,24 @@ impl Material for DynamicMaterialConfig {
                         .add_binding(6, DescriptorType::SampledImage, ShaderStages::FRAGMENT)
                         .add_binding(7, DescriptorType::Sampler, ShaderStages::FRAGMENT)
                         .add_binding(8, DescriptorType::SampledImage, ShaderStages::FRAGMENT)
-                        .add_binding(9, DescriptorType::Sampler, ShaderStages::FRAGMENT)
+                        .add_binding(9, DescriptorType::Sampler, ShaderStages::FRAGMENT),
                 );
             } else {
                 // Standard: 1 texture + 1 sampler
                 layouts.push(
                     DescriptorSetLayoutBuilder::new()
                         .add_binding(0, DescriptorType::SampledImage, ShaderStages::FRAGMENT)
-                        .add_binding(1, DescriptorType::Sampler, ShaderStages::FRAGMENT)
+                        .add_binding(1, DescriptorType::Sampler, ShaderStages::FRAGMENT),
                 );
             }
 
             // Set 2: Skeleton if needed
             if self.uses_skeleton {
-                layouts.push(
-                    DescriptorSetLayoutBuilder::new()
-                        .add_binding(0, DescriptorType::StorageBuffer, ShaderStages::VERTEX_FRAGMENT)
-                );
+                layouts.push(DescriptorSetLayoutBuilder::new().add_binding(
+                    0,
+                    DescriptorType::StorageBuffer,
+                    ShaderStages::VERTEX_FRAGMENT,
+                ));
             }
         }
 
@@ -867,9 +981,9 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
+use crate::sync::VkRenderPass;
 use crate::vulkan::context::VulkanContext;
 use crate::vulkan::pipeline_state::{CullMode, FrontFace};
-use crate::sync::VkRenderPass;
 
 /// Error type for material pipeline cache operations.
 #[derive(Debug)]
@@ -1025,13 +1139,17 @@ impl MaterialPipelineCache {
         // Validate bindless requirement
         if !material.uses_bindless() {
             return Err(MaterialCacheError::InvalidConfiguration(
-                "get_or_create_bindless() requires uses_bindless() to return true".to_string()
+                "get_or_create_bindless() requires uses_bindless() to return true".to_string(),
             ));
         }
 
         // Load shaders from material
-        let vert_shader = self.load_shader(&material.vertex_shader(), ash::vk::ShaderStageFlags::VERTEX)?;
-        let frag_shader = self.load_shader(&material.fragment_shader(), ash::vk::ShaderStageFlags::FRAGMENT)?;
+        let vert_shader =
+            self.load_shader(&material.vertex_shader(), ash::vk::ShaderStageFlags::VERTEX)?;
+        let frag_shader = self.load_shader(
+            &material.fragment_shader(),
+            ash::vk::ShaderStageFlags::FRAGMENT,
+        )?;
 
         // Build descriptor set layouts from material
         // For bindless, we use the material's layouts but inject the bindless layout for set 1
@@ -1041,8 +1159,12 @@ impl MaterialPipelineCache {
 
         // Set 0: from material (uniform/storage buffers)
         if let Some(builder) = layout_builders.first() {
-            let wrapped = builder.clone().build(&self.context)
-                .map_err(|e| MaterialCacheError::PipelineCreationFailed(format!("Descriptor layout failed: {:?}", e)))?;
+            let wrapped = builder.clone().build(&self.context).map_err(|e| {
+                MaterialCacheError::PipelineCreationFailed(format!(
+                    "Descriptor layout failed: {:?}",
+                    e
+                ))
+            })?;
             vk_layouts.push(wrapped.vk());
             wrapped_layouts.push(wrapped);
         }
@@ -1056,8 +1178,12 @@ impl MaterialPipelineCache {
         if material.uses_skeleton() {
             // Skeleton layout is at index 1 for bindless materials (index 0 is uniforms, index 1 is skeleton)
             if let Some(builder) = layout_builders.get(1) {
-                let wrapped = builder.clone().build(&self.context)
-                    .map_err(|e| MaterialCacheError::PipelineCreationFailed(format!("Skeleton layout failed: {:?}", e)))?;
+                let wrapped = builder.clone().build(&self.context).map_err(|e| {
+                    MaterialCacheError::PipelineCreationFailed(format!(
+                        "Skeleton layout failed: {:?}",
+                        e
+                    ))
+                })?;
                 vk_layouts.push(wrapped.vk());
                 wrapped_layouts.push(wrapped);
             }
@@ -1066,19 +1192,28 @@ impl MaterialPipelineCache {
         // Build the pipeline
         let mut pipeline_builder = PipelineBuilder::new(self.context.clone())
             .with_shaders(vert_shader.module, frag_shader.module)
-            .with_entry_points(vert_shader.entry_point.clone(), frag_shader.entry_point.clone())
+            .with_entry_points(
+                vert_shader.entry_point.clone(),
+                frag_shader.entry_point.clone(),
+            )
             .with_vertex_input(
                 vec![vertex_binding.get_binding_desc(0)],
                 vertex_binding.get_attribute_desc(0),
             )
-            .with_depth_test(render_state.depth_test, render_state.depth_write, crate::vulkan::pipeline_state::CompareOp::Less)
+            .with_depth_test(
+                render_state.depth_test,
+                render_state.depth_write,
+                crate::vulkan::pipeline_state::CompareOp::Greater,
+            )
             .with_descriptor_layouts(vk_layouts.clone())
             .with_rendering_formats(Some(material.color_format()), Some(material.depth_format()));
 
         if render_state.cull_backfaces {
-            pipeline_builder = pipeline_builder.with_cull_mode(CullMode::Back, FrontFace::CounterClockwise);
+            pipeline_builder =
+                pipeline_builder.with_cull_mode(CullMode::Back, FrontFace::CounterClockwise);
         } else {
-            pipeline_builder = pipeline_builder.with_cull_mode(CullMode::None, FrontFace::CounterClockwise);
+            pipeline_builder =
+                pipeline_builder.with_cull_mode(CullMode::None, FrontFace::CounterClockwise);
         }
 
         if render_state.alpha_blending {
@@ -1090,7 +1225,10 @@ impl MaterialPipelineCache {
             .map_err(|e| MaterialCacheError::PipelineCreationFailed(format!("{:?}", e)))?;
 
         // Create bindless MaterialPipeline
-        let uniform_set_layout = vk_layouts.first().copied().unwrap_or(ash::vk::DescriptorSetLayout::null());
+        let uniform_set_layout = vk_layouts
+            .first()
+            .copied()
+            .unwrap_or(ash::vk::DescriptorSetLayout::null());
         let skeleton_set_layout = if material.uses_skeleton() {
             vk_layouts.get(2).copied()
         } else {
@@ -1126,22 +1264,33 @@ impl MaterialPipelineCache {
         // Check for bindless - must use get_or_create_bindless()
         if material.uses_bindless() {
             return Err(MaterialCacheError::InvalidConfiguration(
-                "Bindless materials require bindless_layout. Use get_or_create_bindless() instead.".to_string()
+                "Bindless materials require bindless_layout. Use get_or_create_bindless() instead."
+                    .to_string(),
             ));
         }
 
         // Load shaders from material
-        let vert_shader = self.load_shader(&material.vertex_shader(), ash::vk::ShaderStageFlags::VERTEX)?;
-        let frag_shader = self.load_shader(&material.fragment_shader(), ash::vk::ShaderStageFlags::FRAGMENT)?;
+        let vert_shader =
+            self.load_shader(&material.vertex_shader(), ash::vk::ShaderStageFlags::VERTEX)?;
+        let frag_shader = self.load_shader(
+            &material.fragment_shader(),
+            ash::vk::ShaderStageFlags::FRAGMENT,
+        )?;
 
         // Build descriptor set layouts from material's descriptor_layouts()
         let layout_builders = material.descriptor_layouts();
-        let mut vk_layouts: Vec<ash::vk::DescriptorSetLayout> = Vec::with_capacity(layout_builders.len());
-        let mut wrapped_layouts: Vec<crate::sync::VkDescriptorSetLayout> = Vec::with_capacity(layout_builders.len());
+        let mut vk_layouts: Vec<ash::vk::DescriptorSetLayout> =
+            Vec::with_capacity(layout_builders.len());
+        let mut wrapped_layouts: Vec<crate::sync::VkDescriptorSetLayout> =
+            Vec::with_capacity(layout_builders.len());
 
         for builder in &layout_builders {
-            let wrapped = builder.clone().build(&self.context)
-                .map_err(|e| MaterialCacheError::PipelineCreationFailed(format!("Descriptor layout failed: {:?}", e)))?;
+            let wrapped = builder.clone().build(&self.context).map_err(|e| {
+                MaterialCacheError::PipelineCreationFailed(format!(
+                    "Descriptor layout failed: {:?}",
+                    e
+                ))
+            })?;
             vk_layouts.push(wrapped.vk());
             wrapped_layouts.push(wrapped);
         }
@@ -1149,20 +1298,29 @@ impl MaterialPipelineCache {
         // Build the pipeline using PipelineBuilder
         let mut pipeline_builder = PipelineBuilder::new(self.context.clone())
             .with_shaders(vert_shader.module, frag_shader.module)
-            .with_entry_points(vert_shader.entry_point.clone(), frag_shader.entry_point.clone())
+            .with_entry_points(
+                vert_shader.entry_point.clone(),
+                frag_shader.entry_point.clone(),
+            )
             .with_vertex_input(
                 vec![vertex_binding.get_binding_desc(0)],
                 vertex_binding.get_attribute_desc(0),
             )
-            .with_depth_test(render_state.depth_test, render_state.depth_write, crate::vulkan::pipeline_state::CompareOp::Less)
+            .with_depth_test(
+                render_state.depth_test,
+                render_state.depth_write,
+                crate::vulkan::pipeline_state::CompareOp::Greater,
+            )
             .with_descriptor_layouts(vk_layouts.clone())
             .with_rendering_formats(Some(material.color_format()), Some(material.depth_format()));
 
         // Apply cull mode
         if render_state.cull_backfaces {
-            pipeline_builder = pipeline_builder.with_cull_mode(CullMode::Back, FrontFace::CounterClockwise);
+            pipeline_builder =
+                pipeline_builder.with_cull_mode(CullMode::Back, FrontFace::CounterClockwise);
         } else {
-            pipeline_builder = pipeline_builder.with_cull_mode(CullMode::None, FrontFace::CounterClockwise);
+            pipeline_builder =
+                pipeline_builder.with_cull_mode(CullMode::None, FrontFace::CounterClockwise);
         }
 
         // Apply alpha blending
@@ -1187,22 +1345,33 @@ impl MaterialPipelineCache {
     }
 
     /// Load a shader from ShaderSource.
-    fn load_shader(&self, source: &ShaderSource, stage: ash::vk::ShaderStageFlags)
-        -> Result<ShaderModule, MaterialCacheError>
-    {
-        let entry_point = std::ffi::CString::new(
-            if stage == ash::vk::ShaderStageFlags::VERTEX { "vs_main" } else { "fs_main" }
-        ).unwrap();
+    fn load_shader(
+        &self,
+        source: &ShaderSource,
+        stage: ash::vk::ShaderStageFlags,
+    ) -> Result<ShaderModule, MaterialCacheError> {
+        let entry_point = std::ffi::CString::new(if stage == ash::vk::ShaderStageFlags::VERTEX {
+            "vs_main"
+        } else {
+            "fs_main"
+        })
+        .unwrap();
 
         match source {
-            ShaderSource::WgslFile(path) => {
-                ShaderModule::from_wgsl(self.context.device.clone(), path, stage, entry_point.to_str().unwrap())
-                    .map_err(|e| MaterialCacheError::ShaderCompilationFailed(format!("{:?}", e)))
-            }
-            ShaderSource::WgslString(code) => {
-                ShaderModule::from_wgsl_string(self.context.device.clone(), code, stage, entry_point.to_str().unwrap())
-                    .map_err(|e| MaterialCacheError::ShaderCompilationFailed(format!("{:?}", e)))
-            }
+            ShaderSource::WgslFile(path) => ShaderModule::from_wgsl(
+                self.context.device.clone(),
+                path,
+                stage,
+                entry_point.to_str().unwrap(),
+            )
+            .map_err(|e| MaterialCacheError::ShaderCompilationFailed(format!("{:?}", e))),
+            ShaderSource::WgslString(code) => ShaderModule::from_wgsl_string(
+                self.context.device.clone(),
+                code,
+                stage,
+                entry_point.to_str().unwrap(),
+            )
+            .map_err(|e| MaterialCacheError::ShaderCompilationFailed(format!("{:?}", e))),
             ShaderSource::PreCompiled(bytes) => {
                 ShaderModule::from_bytes(self.context.device.clone(), bytes.clone(), stage, "main")
                     .map_err(|e| MaterialCacheError::ShaderCompilationFailed(format!("{:?}", e)))
@@ -1219,19 +1388,35 @@ impl MaterialPipelineCache {
         uses_skeleton: bool,
     ) -> MaterialPipeline {
         // Convert layouts to vk types
-        let vk_layouts: Vec<ash::vk::DescriptorSetLayout> = layouts.iter().map(|l| l.vk()).collect();
+        let vk_layouts: Vec<ash::vk::DescriptorSetLayout> =
+            layouts.iter().map(|l| l.vk()).collect();
 
         // Determine layout assignment based on domain and skeleton
-        let uniform_set_layout = vk_layouts.first().copied().unwrap_or(ash::vk::DescriptorSetLayout::null());
+        let uniform_set_layout = vk_layouts
+            .first()
+            .copied()
+            .unwrap_or(ash::vk::DescriptorSetLayout::null());
         let texture_set_layout = vk_layouts.get(1).copied();
-        let skeleton_set_layout = if uses_skeleton { vk_layouts.get(2).copied() } else { None };
+        let skeleton_set_layout = if uses_skeleton {
+            vk_layouts.get(2).copied()
+        } else {
+            None
+        };
 
         // Create appropriate MaterialPipeline based on configuration
         match domain {
             MaterialDomain::Ui => {
                 // UI materials use two sets: uniform (set 0) and push descriptor (set 1)
-                let push_descriptor_layout = vk_layouts.get(1).copied().unwrap_or(ash::vk::DescriptorSetLayout::null());
-                MaterialPipeline::new_ui(pipeline, uniform_set_layout, push_descriptor_layout, self.context.clone())
+                let push_descriptor_layout = vk_layouts
+                    .get(1)
+                    .copied()
+                    .unwrap_or(ash::vk::DescriptorSetLayout::null());
+                MaterialPipeline::new_ui(
+                    pipeline,
+                    uniform_set_layout,
+                    push_descriptor_layout,
+                    self.context.clone(),
+                )
             }
             _ => {
                 // Standard surface/post-process/particle materials
@@ -1244,7 +1429,12 @@ impl MaterialPipelineCache {
                         self.context.clone(),
                     )
                 } else if let Some(tex_layout) = texture_set_layout {
-                    MaterialPipeline::new_storage(pipeline, uniform_set_layout, tex_layout, self.context.clone())
+                    MaterialPipeline::new_storage(
+                        pipeline,
+                        uniform_set_layout,
+                        tex_layout,
+                        self.context.clone(),
+                    )
                 } else {
                     MaterialPipeline::new_custom(pipeline, uniform_set_layout, self.context.clone())
                 }

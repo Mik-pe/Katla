@@ -2,12 +2,12 @@ use ash::vk;
 use std::{path::Path, rc::Rc};
 
 use super::{
-    MaterialDescriptor, MaterialError, MaterialPipeline,
-    PipelineBuilder, ShaderModule, ShaderSource,
+    MaterialDescriptor, MaterialError, MaterialPipeline, PipelineBuilder, ShaderModule,
+    ShaderSource,
 };
 use crate::render_graph::types::ShaderStages;
 use crate::vulkan::context::VulkanContext;
-use crate::vulkan::pipeline_state::{CullMode, CompareOp, FrontFace};
+use crate::vulkan::pipeline_state::{CompareOp, CullMode, FrontFace};
 use crate::{ImageFormat, Texture, VertexBinding};
 
 pub struct MaterialBuilder {
@@ -39,7 +39,7 @@ impl MaterialBuilder {
             texture: None,
             depth_test: true,
             depth_write: true,
-            depth_compare_op: CompareOp::Less,
+            depth_compare_op: CompareOp::Greater,
             cull_back_faces: true,
             alpha_blending: false,
             has_color: false,
@@ -247,13 +247,13 @@ impl MaterialBuilder {
     /// Sets up the pipeline for editor grid rendering with:
     /// - Alpha blending enabled (grid lines have transparency for AA)
     /// - Depth test enabled but depth write DISABLED (grid doesn't block objects behind it)
-    /// - Depth compare = LESS_OR_EQUAL (grid visible where not occluded by closer geometry)
+    /// - Depth compare = GREATER_OR_EQUAL (grid visible where not occluded by closer geometry, reverse Z)
     /// - No backface culling
     pub fn with_grid_rendering(mut self) -> Self {
         self.alpha_blending = true;
         self.depth_test = true;
         self.depth_write = false; // Don't write depth - let alpha blending handle visibility
-        self.depth_compare_op = CompareOp::LessOrEqual;
+        self.depth_compare_op = CompareOp::GreaterOrEqual;
         self.cull_back_faces = false;
         self
     }
@@ -346,11 +346,11 @@ impl MaterialBuilder {
             .with_descriptor_layouts(vec![existing_desc_layout]);
 
         if self.cull_back_faces {
-            pipeline_builder = pipeline_builder
-                .with_cull_mode(CullMode::Back, FrontFace::CounterClockwise);
+            pipeline_builder =
+                pipeline_builder.with_cull_mode(CullMode::Back, FrontFace::CounterClockwise);
         } else {
-            pipeline_builder = pipeline_builder
-                .with_cull_mode(CullMode::None, FrontFace::CounterClockwise);
+            pipeline_builder =
+                pipeline_builder.with_cull_mode(CullMode::None, FrontFace::CounterClockwise);
         }
 
         if self.alpha_blending {
@@ -365,11 +365,8 @@ impl MaterialBuilder {
             .map_err(|e| MaterialBuildError::PipelineCreationFailed(format!("{:?}", e)))?;
 
         // All shaders are WGSL, which uses separate bindings
-        let material_pipeline = MaterialPipeline::new_custom(
-            pipeline,
-            existing_desc_layout,
-            self.context.clone(),
-        );
+        let material_pipeline =
+            MaterialPipeline::new_custom(pipeline, existing_desc_layout, self.context.clone());
 
         Ok(material_pipeline)
     }

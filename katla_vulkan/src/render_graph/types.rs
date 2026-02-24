@@ -836,9 +836,9 @@ impl From<Viewport> for ash::vk::Viewport {
     fn from(viewport: Viewport) -> Self {
         ash::vk::Viewport {
             x: viewport.x,
-            y: viewport.y + viewport.height, // NB: Allows for +Y being upwards
+            y: viewport.y,
             width: viewport.width,
-            height: -viewport.height, // NB: Negative to flip +Y being upwards
+            height: viewport.height,
             min_depth: viewport.min_depth,
             max_depth: viewport.max_depth,
         }

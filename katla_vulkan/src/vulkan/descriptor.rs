@@ -25,11 +25,7 @@ pub struct DescriptorBinding {
 
 impl DescriptorBinding {
     /// Create a new descriptor binding.
-    pub fn new(
-        binding: u32,
-        descriptor_type: DescriptorType,
-        shader_stages: ShaderStages,
-    ) -> Self {
+    pub fn new(binding: u32, descriptor_type: DescriptorType, shader_stages: ShaderStages) -> Self {
         Self {
             binding,
             descriptor_type,
@@ -74,7 +70,11 @@ impl DescriptorSetLayoutBuilder {
         descriptor_type: DescriptorType,
         shader_stages: ShaderStages,
     ) -> Self {
-        self.bindings.push(DescriptorBinding::new(binding, descriptor_type, shader_stages));
+        self.bindings.push(DescriptorBinding::new(
+            binding,
+            descriptor_type,
+            shader_stages,
+        ));
         self
     }
 
@@ -123,7 +123,9 @@ impl DescriptorSetLayoutBuilder {
             .bindings(&vk_bindings);
 
         let layout = unsafe {
-            context.device.create_descriptor_set_layout(&create_info, None)?
+            context
+                .device
+                .create_descriptor_set_layout(&create_info, None)?
         };
 
         Ok(VkDescriptorSetLayout::new(layout))
@@ -152,24 +154,30 @@ mod tests {
 
     #[test]
     fn test_descriptor_binding_creation() {
-        let binding = DescriptorBinding::new(0, DescriptorType::UniformBuffer, ShaderStages::VERTEX);
+        let binding =
+            DescriptorBinding::new(0, DescriptorType::UniformBuffer, ShaderStages::VERTEX);
         assert_eq!(binding.binding, 0);
         assert_eq!(binding.descriptor_count, 1);
     }
 
     #[test]
     fn test_descriptor_binding_with_count() {
-        let binding = DescriptorBinding::new(0, DescriptorType::UniformBuffer, ShaderStages::VERTEX)
-            .with_count(10);
+        let binding =
+            DescriptorBinding::new(0, DescriptorType::UniformBuffer, ShaderStages::VERTEX)
+                .with_count(10);
         assert_eq!(binding.descriptor_count, 10);
     }
 
     #[test]
     fn test_descriptor_binding_into_vk() {
-        let binding = DescriptorBinding::new(0, DescriptorType::StorageBuffer, ShaderStages::COMPUTE);
+        let binding =
+            DescriptorBinding::new(0, DescriptorType::StorageBuffer, ShaderStages::COMPUTE);
         let vk_binding = binding.into_vk();
         assert_eq!(vk_binding.binding, 0);
-        assert_eq!(vk_binding.descriptor_type, vk::DescriptorType::STORAGE_BUFFER);
+        assert_eq!(
+            vk_binding.descriptor_type,
+            vk::DescriptorType::STORAGE_BUFFER
+        );
         assert_eq!(vk_binding.stage_flags, vk::ShaderStageFlags::COMPUTE);
     }
 
@@ -177,7 +185,11 @@ mod tests {
     fn test_descriptor_set_layout_builder() {
         let builder = DescriptorSetLayoutBuilder::new()
             .add_binding(0, DescriptorType::UniformBuffer, ShaderStages::VERTEX)
-            .add_binding(1, DescriptorType::CombinedImageSampler, ShaderStages::FRAGMENT);
+            .add_binding(
+                1,
+                DescriptorType::CombinedImageSampler,
+                ShaderStages::FRAGMENT,
+            );
 
         assert_eq!(builder.bindings.len(), 2);
         assert_eq!(builder.bindings[0].binding, 0);

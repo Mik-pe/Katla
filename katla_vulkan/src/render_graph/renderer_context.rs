@@ -4,14 +4,12 @@ use std::any::Any;
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use ash::vk;
 use ash::khr::push_descriptor::Device as PushDescriptorDevice;
+use ash::vk;
 
 use crate::rendering::registry::AssetRegistry;
 use crate::rendering::DrawList;
-use crate::vulkan::material::{
-    SkeletonDescriptorSet, StorageDescriptorSet, StorageUniformManager,
-};
+use crate::vulkan::material::{SkeletonDescriptorSet, StorageDescriptorSet, StorageUniformManager};
 use crate::vulkan::BindlessTextureManager;
 
 /// Trait for render frame context - provides access to per-frame data

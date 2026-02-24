@@ -125,10 +125,8 @@ impl VulkanRenderer {
             );
             for (i, particle) in draw_list.particle_dispatches.iter().enumerate() {
                 // Bind compute pipeline and descriptors
-                command_buffer.bind_pipeline(
-                    particle.pipeline.vk(),
-                    vk::PipelineBindPoint::COMPUTE,
-                );
+                command_buffer
+                    .bind_pipeline(particle.pipeline.vk(), vk::PipelineBindPoint::COMPUTE);
                 command_buffer.bind_descriptor_sets(
                     vk::PipelineBindPoint::COMPUTE,
                     particle.pipeline_layout.vk(),
@@ -194,10 +192,8 @@ impl VulkanRenderer {
                 viewport_graph.execute_no_swapchain(&mut command_buffer, frame_idx)?;
                 debug!("render_frame: viewport {} graph.execute complete", idx);
 
-                viewport.transition_to_sample(
-                    command_buffer.vk_command_buffer(),
-                    &self.context.device,
-                );
+                viewport
+                    .transition_to_sample(command_buffer.vk_command_buffer(), &self.context.device);
                 debug!("render_frame: viewport {} texture transitioned", idx);
             }
         }

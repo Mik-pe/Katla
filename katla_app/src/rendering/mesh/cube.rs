@@ -229,14 +229,17 @@ mod tests {
             let n2 = Vec3::from(vertices[i2].normal);
             let avg_normal = (n0 + n1 + n2).normalize();
 
-            // For outward-facing triangles, face_normal and avg_normal should point in the same direction
+            // For outward-facing triangles with CCW winding, face_normal and avg_normal should point in the same direction
             let dot = face_normal.dot(avg_normal);
-            info!(
+            log::info!(
                 "Triangle {:?}: face_normal={:?}, avg_normal={:?}, dot={}",
-                chunk, face_normal.0, avg_normal.0, dot
+                chunk,
+                face_normal.0,
+                avg_normal.0,
+                dot
             );
 
-            // They should be roughly aligned (dot product > 0)
+            // They should be aligned (dot product > 0)
             assert!(
                 dot > 0.1,
                 "Triangle {:?} has incorrect winding: face_normal={:?}, avg_normal={:?}, dot={}",

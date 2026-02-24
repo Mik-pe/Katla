@@ -2,8 +2,8 @@ use katla_ecs::{EntityId, World};
 use katla_math::{Mat4, Transform, Vec3};
 
 use crate::components::{
-    DragComponent, FlyCameraControllerComponent, FlyCameraLookComponent, ForceComponent,
-    PerspectiveComponent, TransformComponent, VelocityComponent, EditorHidden,
+    DragComponent, EditorHidden, FlyCameraControllerComponent, FlyCameraLookComponent,
+    ForceComponent, PerspectiveComponent, TransformComponent, VelocityComponent,
 };
 
 pub struct Camera {
@@ -43,12 +43,7 @@ impl Camera {
 
     pub fn get_proj_mat(&self, world: &World) -> Mat4 {
         if let Some(projection) = world.get_component::<PerspectiveComponent>(self.entity) {
-            Mat4::create_proj(
-                projection.fov,
-                projection.aspect_ratio,
-                projection.near,
-                projection.far,
-            )
+            Mat4::create_proj(projection.fov, projection.aspect_ratio, projection.near)
         } else {
             Mat4::identity()
         }

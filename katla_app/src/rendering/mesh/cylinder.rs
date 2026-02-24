@@ -177,16 +177,19 @@ mod tests {
 
             if dot < 0.0 {
                 failed += 1;
-                info!(
+                log::info!(
                     "Triangle {:?}: face_normal={:?}, avg_normal={:?}, dot={}",
-                    chunk, face_normal.0, avg_normal.0, dot
+                    chunk,
+                    face_normal.0,
+                    avg_normal.0,
+                    dot
                 );
             } else {
                 passed += 1;
             }
         }
 
-        info!("Cylinder winding: {} passed, {} failed", passed, failed);
+        log::info!("Cylinder winding: {} passed, {} failed", passed, failed);
         assert_eq!(
             failed, 0,
             "Cylinder has {} triangles with incorrect winding",

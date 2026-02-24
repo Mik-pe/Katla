@@ -45,9 +45,9 @@ fn vs_main(in: UiVertex) -> VertexOutput {
 
     // Transform from screen coordinates to NDC
     // Screen: (0,0) = top-left, Y increases downward
-    // NDC: (-1,-1) = bottom-left, (+1,+1) = top-right
+    // NDC: (-1,-1) = top-left, (+1,+1) = bottom-right (viewport no longer flips Y)
     let ndc_x = (in.position.x / uniforms.screen_size.x) * 2.0 - 1.0;
-    let ndc_y = (in.position.y / uniforms.screen_size.y) * 2.0 - 1.0;
+    let ndc_y = 1.0 - (in.position.y / uniforms.screen_size.y) * 2.0;
 
     out.clip_position = vec4f(ndc_x, ndc_y, 0.0, 1.0);
     out.uv = in.uv;

@@ -307,22 +307,50 @@ pub struct ColorComponentFlags {
 
 impl ColorComponentFlags {
     /// All components enabled.
-    pub const ALL: Self = Self { r: true, g: true, b: true, a: true };
+    pub const ALL: Self = Self {
+        r: true,
+        g: true,
+        b: true,
+        a: true,
+    };
     /// No components enabled.
-    pub const NONE: Self = Self { r: false, g: false, b: false, a: false };
+    pub const NONE: Self = Self {
+        r: false,
+        g: false,
+        b: false,
+        a: false,
+    };
     /// RGB components only.
-    pub const RGB: Self = Self { r: true, g: true, b: true, a: false };
+    pub const RGB: Self = Self {
+        r: true,
+        g: true,
+        b: true,
+        a: false,
+    };
     /// Alpha component only.
-    pub const A: Self = Self { r: false, g: false, b: false, a: true };
+    pub const A: Self = Self {
+        r: false,
+        g: false,
+        b: false,
+        a: true,
+    };
 }
 
 impl From<ColorComponentFlags> for vk::ColorComponentFlags {
     fn from(flags: ColorComponentFlags) -> Self {
         let mut result = vk::ColorComponentFlags::empty();
-        if flags.r { result |= vk::ColorComponentFlags::R; }
-        if flags.g { result |= vk::ColorComponentFlags::G; }
-        if flags.b { result |= vk::ColorComponentFlags::B; }
-        if flags.a { result |= vk::ColorComponentFlags::A; }
+        if flags.r {
+            result |= vk::ColorComponentFlags::R;
+        }
+        if flags.g {
+            result |= vk::ColorComponentFlags::G;
+        }
+        if flags.b {
+            result |= vk::ColorComponentFlags::B;
+        }
+        if flags.a {
+            result |= vk::ColorComponentFlags::A;
+        }
         result
     }
 }
@@ -366,9 +394,9 @@ mod tests {
 
     #[test]
     fn test_compare_op_conversion() {
-        let op = CompareOp::Less;
+        let op = CompareOp::Greater;
         let vk_op: vk::CompareOp = op.into();
-        assert_eq!(vk_op, vk::CompareOp::LESS);
+        assert_eq!(vk_op, vk::CompareOp::GREATER);
     }
 
     #[test]
@@ -442,7 +470,8 @@ mod tests {
         let vk_flags: vk::ColorComponentFlags = flags.into();
         assert_eq!(
             vk_flags,
-            vk::ColorComponentFlags::R | vk::ColorComponentFlags::G
+            vk::ColorComponentFlags::R
+                | vk::ColorComponentFlags::G
                 | vk::ColorComponentFlags::B
                 | vk::ColorComponentFlags::A
         );

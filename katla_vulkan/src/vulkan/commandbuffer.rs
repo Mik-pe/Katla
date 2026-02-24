@@ -379,7 +379,7 @@ impl CommandBuffer {
     ///
     /// let depth_attachment = RenderingAttachmentInfo::new(depth_image_view)
     ///     .layout(ImageLayout::DepthStencilAttachmentOptimal)
-    ///     .clear(ClearValue::depth(1.0, 0));
+    ///     .clear(ClearValue::depth(0.0, 0));
     ///
     /// let rendering_info = RenderingInfo::new()
     ///     .add_color_attachment(color_attachment)

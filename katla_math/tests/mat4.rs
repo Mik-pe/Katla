@@ -233,12 +233,12 @@ fn test_create_ortho() {
 
 #[test]
 fn test_create_proj() {
-    let m = Mat4::create_proj(90.0, 1.0, 0.1, 100.0);
+    let m = Mat4::create_proj(90.0, 1.0, 0.1);
 
     assert_relative_eq!(m[2][3], -1.0);
     assert_relative_eq!(m[3][3], 0.0);
-    assert!(m[2][2] < 0.0);
-    assert!(m[3][2] < 0.0);
+    assert!(m[2][2] == 0.0);
+    assert!(m[3][2] > 0.0);
 }
 
 #[test]

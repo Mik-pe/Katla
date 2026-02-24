@@ -27,9 +27,13 @@ use log::info;
 
 use crate::render_graph::types::{Extent2D, ImageFormat};
 use crate::rendering::DrawList;
-use crate::sync::{AccessFlags2, DependencyInfo, ImageMemoryBarrier2, PipelineStage2Flags, VkImage, VkImageView};
+use crate::sync::{
+    AccessFlags2, DependencyInfo, ImageMemoryBarrier2, PipelineStage2Flags, VkImage, VkImageView,
+};
 use crate::vulkan::material::storage_uniform::{StorageDescriptorSet, StorageUniformManager};
-use crate::{CompiledRenderGraph, FrameUniforms, RenderGraphError, ViewportRenderTarget, VulkanContext};
+use crate::{
+    CompiledRenderGraph, FrameUniforms, RenderGraphError, ViewportRenderTarget, VulkanContext,
+};
 use ash::vk;
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -240,8 +244,14 @@ impl Viewport {
         context: &Rc<VulkanContext>,
     ) -> Result<Self, RenderGraphError> {
         // Create render target using existing ViewportRenderTarget
-        let render_target = ViewportRenderTarget::new(context.clone(), builder.width, builder.height)
-            .map_err(|e| RenderGraphError::CompilationError(format!("Failed to create render target: {:?}", e)))?;
+        let render_target = ViewportRenderTarget::new(
+            context.clone(),
+            builder.width,
+            builder.height,
+        )
+        .map_err(|e| {
+            RenderGraphError::CompilationError(format!("Failed to create render target: {:?}", e))
+        })?;
 
         info!(
             "Created viewport '{}' ({}x{}, depth={:?}, mode={:?})",
@@ -339,7 +349,10 @@ impl Viewport {
             .src_stage(PipelineStage2Flags::LATE_FRAGMENT_TESTS)
             .src_access(AccessFlags2::DEPTH_STENCIL_ATTACHMENT_WRITE)
             .dst_stage(PipelineStage2Flags::EARLY_FRAGMENT_TESTS)
-            .dst_access(AccessFlags2::DEPTH_STENCIL_ATTACHMENT_READ.union(AccessFlags2::DEPTH_STENCIL_ATTACHMENT_WRITE))
+            .dst_access(
+                AccessFlags2::DEPTH_STENCIL_ATTACHMENT_READ
+                    .union(AccessFlags2::DEPTH_STENCIL_ATTACHMENT_WRITE),
+            )
             .old_layout(vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL)
             .new_layout(vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL)
             .subresource_range(depth_subresource);
@@ -450,7 +463,10 @@ mod tests {
     #[test]
     fn test_depth_format_conversion() {
         assert_eq!(vk::Format::from(DepthFormat::None), vk::Format::UNDEFINED);
-        assert_eq!(vk::Format::from(DepthFormat::D32Sfloat), vk::Format::D32_SFLOAT);
+        assert_eq!(
+            vk::Format::from(DepthFormat::D32Sfloat),
+            vk::Format::D32_SFLOAT
+        );
         assert_eq!(
             vk::Format::from(DepthFormat::D32SfloatS8Uint),
             vk::Format::D32_SFLOAT_S8_UINT

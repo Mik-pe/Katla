@@ -126,7 +126,10 @@ impl ImageInfo {
     }
 
     pub fn from_raw(image_view: vk::ImageView, sampler: vk::Sampler) -> Self {
-        Self { image_view, sampler }
+        Self {
+            image_view,
+            sampler,
+        }
     }
 }
 
@@ -480,7 +483,9 @@ impl Drop for MaterialPipeline {
         // Clean up additional descriptor layouts (e.g., push descriptor layouts)
         for layout in self.additional_layouts.drain(..) {
             unsafe {
-                self.context.device.destroy_descriptor_set_layout(layout, None);
+                self.context
+                    .device
+                    .destroy_descriptor_set_layout(layout, None);
             }
         }
         if let Some(texture_layout) = self.texture_set_layout.take() {

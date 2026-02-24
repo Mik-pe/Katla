@@ -17,7 +17,8 @@ use crate::render_graph::resource::{
     CompiledResource, ResourceId, ResourceKind, ResourceLifetime, ResourceNameMap,
 };
 use crate::render_graph::types::{
-    ClearValue, Extent2D, ImageLayout, Offset2D, Rect2D, RenderingAttachmentInfo, RenderingInfo, Viewport,
+    ClearValue, Extent2D, ImageLayout, Offset2D, Rect2D, RenderingAttachmentInfo, RenderingInfo,
+    Viewport,
 };
 use crate::rendering::DrawList;
 use crate::sync::{VkFramebuffer, VkImage, VkImageView};
@@ -106,13 +107,13 @@ impl CompiledRenderGraph {
     /// Returns None if the resource doesn't exist or isn't an image.
     fn get_image(&self, resource_id: ResourceId) -> Option<VkImage> {
         let resources = self.resources.borrow();
-        resources.get(&resource_id).and_then(|resource| {
-            match resource {
+        resources
+            .get(&resource_id)
+            .and_then(|resource| match resource {
                 CompiledResource::ExternalImage { image, .. } => Some(*image),
                 CompiledResource::Image { image, .. } => Some(*image),
                 _ => None,
-            }
-        })
+            })
     }
 
     /// Create multiple framebuffers for passes that use external images.
@@ -764,7 +765,7 @@ impl CompiledRenderGraph {
                 } else if let Some(CompiledResource::ExternalImage { extent, .. }) =
                     resources.get(resource_id)
                 {
-                    *extent 
+                    *extent
                 } else {
                     return Err(RenderGraphError::CompilationError(format!(
                         "Cannot determine extent for resource {:?} - no explicit extent set",
@@ -807,11 +808,14 @@ impl CompiledRenderGraph {
                     .iter()
                     .find(|u| u.resource_id == *output_resource_id);
 
-                let layout = usage_info.map(|u| u.layout).unwrap_or(ImageLayout::Undefined);
+                let layout = usage_info
+                    .map(|u| u.layout)
+                    .unwrap_or(ImageLayout::Undefined);
 
                 let is_render_attachment = matches!(
                     layout,
-                    ImageLayout::ColorAttachmentOptimal | ImageLayout::DepthStencilAttachmentOptimal
+                    ImageLayout::ColorAttachmentOptimal
+                        | ImageLayout::DepthStencilAttachmentOptimal
                 );
 
                 let is_transfer_src = layout == ImageLayout::TransferSrcOptimal;
@@ -875,9 +879,10 @@ impl CompiledRenderGraph {
 
                 if let Some(usage) = usage_info {
                     if usage.layout == ImageLayout::TransferSrcOptimal
-                        && !transfer_src_resources.contains(input_resource_id) {
-                            transfer_src_resources.push(*input_resource_id);
-                        }
+                        && !transfer_src_resources.contains(input_resource_id)
+                    {
+                        transfer_src_resources.push(*input_resource_id);
+                    }
                 }
             }
 
@@ -891,9 +896,10 @@ impl CompiledRenderGraph {
 
                 if let Some(usage) = usage_info {
                     if usage.layout == ImageLayout::ShaderReadOnlyOptimal
-                        && !shader_read_resources.contains(input_resource_id) {
-                            shader_read_resources.push(*input_resource_id);
-                        }
+                        && !shader_read_resources.contains(input_resource_id)
+                    {
+                        shader_read_resources.push(*input_resource_id);
+                    }
                 }
             }
 
@@ -1028,7 +1034,10 @@ impl CompiledRenderGraph {
         frame_index: usize,
     ) -> Result<(), RenderGraphError> {
         let pass_count = self.passes.len();
-        debug!("execute: starting {} passes (frame_index={})", pass_count, frame_index);
+        debug!(
+            "execute: starting {} passes (frame_index={})",
+            pass_count, frame_index
+        );
         for i in 0..pass_count {
             // Check if we have dynamic rendering attachments
             let has_color_attachments = !self.passes[i].color_attachments.is_empty();
@@ -1080,7 +1089,10 @@ impl CompiledRenderGraph {
         frame_index: usize,
     ) -> Result<(), RenderGraphError> {
         let pass_count = self.passes.len();
-        debug!("execute_no_swapchain: starting {} passes (frame_index={})", pass_count, frame_index);
+        debug!(
+            "execute_no_swapchain: starting {} passes (frame_index={})",
+            pass_count, frame_index
+        );
 
         // Use image_index 0 for all passes (offscreen rendering has single attachment set)
         let image_index = 0;
@@ -1096,14 +1108,14 @@ impl CompiledRenderGraph {
 
             debug!(
                 "execute_no_swapchain: pass {} ({}), has_color={}, has_depth={}",
-                i,
-                self.passes[i].name,
-                has_color_attachments,
-                has_depth_attachment,
+                i, self.passes[i].name, has_color_attachments, has_depth_attachment,
             );
 
             if has_render_attachments {
-                debug!("execute_no_swapchain: calling execute_pass_dynamic for pass {}", i);
+                debug!(
+                    "execute_no_swapchain: calling execute_pass_dynamic for pass {}",
+                    i
+                );
                 self.execute_pass_dynamic(
                     command_buffer,
                     i,
@@ -1113,11 +1125,20 @@ impl CompiledRenderGraph {
                     is_last_pass,
                     frame_index,
                 )?;
-                debug!("execute_no_swapchain: execute_pass_dynamic for pass {} complete", i);
+                debug!(
+                    "execute_no_swapchain: execute_pass_dynamic for pass {} complete",
+                    i
+                );
             } else {
-                debug!("execute_no_swapchain: calling execute_pass_transfer for pass {}", i);
+                debug!(
+                    "execute_no_swapchain: calling execute_pass_transfer for pass {}",
+                    i
+                );
                 self.execute_pass_transfer(command_buffer, i, is_last_pass, frame_index)?;
-                debug!("execute_no_swapchain: execute_pass_transfer for pass {} complete", i);
+                debug!(
+                    "execute_no_swapchain: execute_pass_transfer for pass {} complete",
+                    i
+                );
             }
         }
         Ok(())
@@ -1197,7 +1218,9 @@ impl CompiledRenderGraph {
         // Set frame index and UI callback on the context
         Rc::get_mut(&mut ctx).unwrap().set_frame_index(frame_index);
         if let Some(ref callback) = self.ui_draw_callback {
-            Rc::get_mut(&mut ctx).unwrap().set_ui_callback(Rc::clone(callback));
+            Rc::get_mut(&mut ctx)
+                .unwrap()
+                .set_ui_callback(Rc::clone(callback));
         }
 
         // Execute the pass closure directly (no begin_rendering/end_rendering)
@@ -1210,10 +1233,18 @@ impl CompiledRenderGraph {
                 let is_swapchain = self.swapchain_resource_id == Some(*resource_id);
 
                 let (new_layout, dst_stage, dst_access) = if is_swapchain {
-                    (vk::ImageLayout::PRESENT_SRC_KHR, PipelineStage2Flags::BOTTOM_OF_PIPE, AccessFlags2::NONE)
+                    (
+                        vk::ImageLayout::PRESENT_SRC_KHR,
+                        PipelineStage2Flags::BOTTOM_OF_PIPE,
+                        AccessFlags2::NONE,
+                    )
                 } else {
                     // For other textures, transition back to COLOR_ATTACHMENT for next frame
-                    (vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL, PipelineStage2Flags::COLOR_ATTACHMENT_OUTPUT, AccessFlags2::COLOR_ATTACHMENT_WRITE)
+                    (
+                        vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+                        PipelineStage2Flags::COLOR_ATTACHMENT_OUTPUT,
+                        AccessFlags2::COLOR_ATTACHMENT_WRITE,
+                    )
                 };
 
                 let barrier = ImageMemoryBarrier2::new(image)
@@ -1363,7 +1394,10 @@ impl CompiledRenderGraph {
                     .src_stage(PipelineStage2Flags::LATE_FRAGMENT_TESTS)
                     .src_access(AccessFlags2::DEPTH_STENCIL_ATTACHMENT_WRITE)
                     .dst_stage(PipelineStage2Flags::EARLY_FRAGMENT_TESTS)
-                    .dst_access(AccessFlags2::DEPTH_STENCIL_ATTACHMENT_READ.union(AccessFlags2::DEPTH_STENCIL_ATTACHMENT_WRITE))
+                    .dst_access(
+                        AccessFlags2::DEPTH_STENCIL_ATTACHMENT_READ
+                            .union(AccessFlags2::DEPTH_STENCIL_ATTACHMENT_WRITE),
+                    )
                     .old_layout(old_layout)
                     .new_layout(vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL)
                     .subresource_range(DEPTH_SUBRESOURCE_RANGE);
@@ -1420,7 +1454,9 @@ impl CompiledRenderGraph {
         // Set frame index and UI callback on the context
         Rc::get_mut(&mut ctx).unwrap().set_frame_index(frame_index);
         if let Some(ref callback) = self.ui_draw_callback {
-            Rc::get_mut(&mut ctx).unwrap().set_ui_callback(Rc::clone(callback));
+            Rc::get_mut(&mut ctx)
+                .unwrap()
+                .set_ui_callback(Rc::clone(callback));
         }
 
         // Execute pre-rendering callback (for custom barriers BEFORE begin_rendering)
@@ -1556,7 +1592,9 @@ impl CompiledRenderGraph {
 
         // Set UI callback on the context
         if let Some(ref callback) = self.ui_draw_callback {
-            Rc::get_mut(&mut ctx).unwrap().set_ui_callback(Rc::clone(callback));
+            Rc::get_mut(&mut ctx)
+                .unwrap()
+                .set_ui_callback(Rc::clone(callback));
         }
 
         // Execute pass-specific commands using ExecutionRegistry
@@ -1628,7 +1666,9 @@ impl Drop for CompiledRenderGraph {
                             allocation,
                             ..
                         } => {
-                            self.context.device.destroy_image_view(image_view.vk(), None);
+                            self.context
+                                .device
+                                .destroy_image_view(image_view.vk(), None);
                             self.context.free_image(image.vk(), allocation);
                         }
                         CompiledResource::ExternalBuffer { .. }
@@ -1741,7 +1781,7 @@ mod tests {
             pass.write(Attachment::Color(ResourceId(1)))
                 .write(Attachment::DepthStencil(ResourceId(0)))
                 .clear_color(ResourceId(1), [0.1, 0.2, 0.3, 1.0])
-                .clear_depth_stencil(ResourceId(0), 1.0, 0)
+                .clear_depth_stencil(ResourceId(0), 0.0, 0)
                 .execute("geometry_pass", |ctx| {
                     // In a real scenario, this would record actual Vulkan commands
                     // For testing, we verify the closure signature is correct

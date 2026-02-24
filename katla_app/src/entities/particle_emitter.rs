@@ -28,9 +28,8 @@ pub fn create_particle_emitter(
         .expect("Failed to create particle buffer");
 
     // Create frame data uniform buffer (16 bytes)
-    let frame_data_buffer =
-        DeviceAddressBuffer::new_persistent(context.clone(), 16)
-            .expect("Failed to create frame data buffer");
+    let frame_data_buffer = DeviceAddressBuffer::new_persistent(context.clone(), 16)
+        .expect("Failed to create frame data buffer");
 
     // === COMPUTE PIPELINE ===
     // Descriptor layout: binding 0 = particles (storage), binding 1 = frame data (uniform)
@@ -48,7 +47,8 @@ pub fn create_particle_emitter(
         .expect("Failed to create compute descriptor set");
 
     // Load and compile compute shader
-    let compute_shader_code = include_str!("../../../resources/shaders/particles/particle_sim.wgsl");
+    let compute_shader_code =
+        include_str!("../../../resources/shaders/particles/particle_sim.wgsl");
     let compute_shader = ShaderModule::from_wgsl_string_wrapped(
         context.device.clone(),
         compute_shader_code,
@@ -82,13 +82,22 @@ pub fn create_particle_emitter(
     // - Binding 1: objects array (ObjectUniforms[])
     // We only use binding 0, but the layout must match for compatibility.
     let frame_descriptor_layout = DescriptorSetLayoutBuilder::new()
-        .add_binding(0, DescriptorType::StorageBuffer, ShaderStages::VERTEX_FRAGMENT)
-        .add_binding(1, DescriptorType::StorageBuffer, ShaderStages::VERTEX_FRAGMENT)
+        .add_binding(
+            0,
+            DescriptorType::StorageBuffer,
+            ShaderStages::VERTEX_FRAGMENT,
+        )
+        .add_binding(
+            1,
+            DescriptorType::StorageBuffer,
+            ShaderStages::VERTEX_FRAGMENT,
+        )
         .build(&context)
         .expect("Failed to create frame descriptor layout");
 
     // Load and compile render shaders
-    let render_shader_code = include_str!("../../../resources/shaders/particles/particle_render.wgsl");
+    let render_shader_code =
+        include_str!("../../../resources/shaders/particles/particle_render.wgsl");
     let vertex_shader = ShaderModule::from_wgsl_string_wrapped(
         context.device.clone(),
         render_shader_code,
@@ -109,16 +118,26 @@ pub fn create_particle_emitter(
     // Note: Pipeline borrows the layouts, but MaterialPipeline will own frame_descriptor_layout
     let render_pipeline = PipelineBuilder::new(context.clone())
         .with_shaders(vertex_shader.module, fragment_shader.module)
-        .with_descriptor_layouts_wrapped(vec![frame_descriptor_layout, render_particle_descriptor_layout])
+        .with_descriptor_layouts_wrapped(vec![
+            frame_descriptor_layout,
+            render_particle_descriptor_layout,
+        ])
         .with_additive_blending()
-        .with_depth_test(true, false, CompareOp::Less) // depth test but no write
+        .with_depth_test(true, false, CompareOp::Greater) // depth test but no write
         .with_cull_mode(CullMode::None, FrontFace::CounterClockwise)
-        .with_rendering_formats(Some(ImageFormat::R16G16B16A16Sfloat), Some(ImageFormat::D32SfloatS8Uint))
+        .with_rendering_formats(
+            Some(ImageFormat::R16G16B16A16Sfloat),
+            Some(ImageFormat::D32SfloatS8Uint),
+        )
         .build(VkRenderPass::default()) // Dynamic rendering
         .expect("Failed to create render pipeline");
 
     // MaterialPipeline takes ownership of frame_descriptor_layout
-    let render_pipeline = MaterialPipeline::new_custom(render_pipeline, frame_descriptor_layout.into(), context.clone());
+    let render_pipeline = MaterialPipeline::new_custom(
+        render_pipeline,
+        frame_descriptor_layout.into(),
+        context.clone(),
+    );
 
     // Create render particle descriptor set - takes ownership of render_particle_descriptor_layout
     // This must happen AFTER pipeline creation since pipeline builder borrows the layout

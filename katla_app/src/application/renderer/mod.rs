@@ -4,7 +4,10 @@ pub mod render_graph;
 
 use log::{debug, error, info};
 
-use katla_vulkan::{DrawCall, DrawList, FrameUniforms, IndexBuffer, IndexType, MaterialHandle, MeshHandle, ParticleDispatch, ParticleRender, VertexBuffer, VulkanContext};
+use katla_vulkan::{
+    DrawCall, DrawList, FrameUniforms, IndexBuffer, IndexType, MaterialHandle, MeshHandle,
+    ParticleDispatch, ParticleRender, VertexBuffer, VulkanContext,
+};
 use std::rc::Rc;
 
 use crate::animation::Skeleton;
@@ -57,20 +60,23 @@ pub fn setup_render_graph(app: &mut Application) {
         UI_INDEX_BUFFER_SIZE as u64,
         FONT_ATLAS_SIZE,
         FONT_ATLAS_SIZE,
-    ).expect("Failed to create UI renderer");
+    )
+    .expect("Failed to create UI renderer");
     app.ui_renderer = Some(ui_renderer);
 
     // Get window size for main viewport
     let viewport_size = app.window.as_ref().unwrap().inner_size();
 
     // Initialize main viewport using new unified ViewportBuilder API
-    let main_builder = renderer.create_viewport()
+    let main_builder = renderer
+        .create_viewport()
         .size(viewport_size.width, viewport_size.height)
         .with_depth(katla_vulkan::DepthFormat::D32SfloatS8Uint)
-        .clear_color(0.3, 0.5, 0.3, 1.0)  // Dark green
+        .clear_color(0.3, 0.5, 0.3, 1.0) // Dark green
         .label("main");
 
-    let main_viewport = renderer.build_viewport(main_builder)
+    let main_viewport = renderer
+        .build_viewport(main_builder)
         .expect("Failed to create main viewport");
 
     // Store viewport handle in app for later use
@@ -88,7 +94,10 @@ pub fn setup_render_graph(app: &mut Application) {
             ui_renderer.register_texture(texture_id.0, color_view);
         }
         app.editor_ui.main_viewport_texture_id = texture_id;
-        debug!("Registered main viewport texture {} (raw: {}) with UI renderer", texture_id.0, tex_id);
+        debug!(
+            "Registered main viewport texture {} (raw: {}) with UI renderer",
+            texture_id.0, tex_id
+        );
     }
 
     // Initialize output render target for final UI composition
@@ -108,20 +117,18 @@ pub fn setup_render_graph(app: &mut Application) {
     // Setup render graph using the new application-layer API
     // Pass all pipelines at setup time - render graph stores them internally
     // UI callback is set at runtime via set_ui_callback() before each frame
-    render_graph::build_render_graph(
-        renderer,
-        sky_pipeline,
-        grid_pipeline,
-    );
+    render_graph::build_render_graph(renderer, sky_pipeline, grid_pipeline);
 
     // Initialize preview viewport using new unified ViewportBuilder API
-    let preview_builder = renderer.create_viewport()
+    let preview_builder = renderer
+        .create_viewport()
         .size(512, 512)
         .with_depth(katla_vulkan::DepthFormat::D32SfloatS8Uint)
-        .clear_color(0.15, 0.15, 0.18, 1.0)  // Dark gray
+        .clear_color(0.15, 0.15, 0.18, 1.0) // Dark gray
         .label("preview");
 
-    let preview_viewport = renderer.build_viewport(preview_builder)
+    let preview_viewport = renderer
+        .build_viewport(preview_builder)
         .expect("Failed to create preview viewport");
 
     // Store viewport handle in app for later use
@@ -138,7 +145,10 @@ pub fn setup_render_graph(app: &mut Application) {
         if let Some(ref mut ui_renderer) = app.ui_renderer {
             ui_renderer.register_texture(texture_id.0, color_view);
         }
-        debug!("Registered preview viewport texture {} (raw: {}) with UI renderer", texture_id.0, tex_id);
+        debug!(
+            "Registered preview viewport texture {} (raw: {}) with UI renderer",
+            texture_id.0, tex_id
+        );
     }
 
     // Create and register gizmo material and mesh
@@ -157,18 +167,15 @@ fn setup_gizmo_resources(app: &mut Application) {
     let gizmo_pipeline = {
         let mut material_cache = renderer.material_cache.borrow_mut();
         let gizmo_material = GizmoMaterial::default();
-        material_cache.get_or_create(&gizmo_material)
+        material_cache
+            .get_or_create(&gizmo_material)
             .expect("Failed to create gizmo pipeline")
     };
 
     // Create a white texture for the gizmo material (it doesn't use textures but needs the descriptor)
     let white_pixels: Vec<u8> = vec![255, 255, 255, 255];
-    let white_texture = katla_vulkan::Texture::create_image_rgb(
-        context.clone(),
-        1,
-        1,
-        &white_pixels,
-    );
+    let white_texture =
+        katla_vulkan::Texture::create_image_rgb(context.clone(), 1, 1, &white_pixels);
 
     // Register material using VulkanRenderer's method
     let vertex_binding = gizmo::gizmo_vertex_binding();
@@ -179,7 +186,10 @@ fn setup_gizmo_resources(app: &mut Application) {
         [0; 4],
         0,
     );
-    debug!("Registered gizmo material with handle {:?}", material_handle);
+    debug!(
+        "Registered gizmo material with handle {:?}",
+        material_handle
+    );
 
     // Create gizmo mesh
     let (vertices, indices) = gizmo::generate_translate_gizmo(1.0);
@@ -202,7 +212,10 @@ fn setup_gizmo_resources(app: &mut Application) {
 }
 
 /// Create a vertex buffer for gizmo geometry.
-fn create_gizmo_vertex_buffer(context: &Rc<VulkanContext>, vertices: Vec<GizmoVertex>) -> VertexBuffer {
+fn create_gizmo_vertex_buffer(
+    context: &Rc<VulkanContext>,
+    vertices: Vec<GizmoVertex>,
+) -> VertexBuffer {
     let data_slice = unsafe {
         std::slice::from_raw_parts(
             vertices.as_ptr() as *const u8,
@@ -211,11 +224,7 @@ fn create_gizmo_vertex_buffer(context: &Rc<VulkanContext>, vertices: Vec<GizmoVe
     };
 
     let count = vertices.len() as u32;
-    let mut vertex_buffer = VertexBuffer::new(
-        context.clone(),
-        data_slice.len() as u64,
-        count,
-    );
+    let mut vertex_buffer = VertexBuffer::new(context.clone(), data_slice.len() as u64, count);
     vertex_buffer.upload_data(data_slice);
     vertex_buffer
 }
@@ -279,17 +288,16 @@ pub fn render_frame(app: &mut Application) {
         proj_matrix: proj.to_array(),
         inv_view_proj_matrix: inv_view_proj.to_array(),
         camera_position: [cam_x, cam_y, cam_z, 0.0],
-        light_direction: [0.3, 1.0, 0.2, 0.0],  // Points UP toward sun (not down!)
+        light_direction: [0.3, 1.0, 0.2, 0.0], // Points UP toward sun (not down!)
         light_color: [1.0, 0.98, 0.95, 0.0],   // Warm white sunlight
-        light_intensity: 3.0,                   // HDR intensity for PBR
+        light_intensity: 3.0,                  // HDR intensity for PBR
     });
 
     // Check for material hot reload
     {
         let mut registry = renderer.material_registry.borrow_mut();
         let mut cache = renderer.material_cache.borrow_mut();
-        if let Ok(reloaded) = registry.check_hot_reload(&renderer.context, &mut cache)
-        {
+        if let Ok(reloaded) = registry.check_hot_reload(&renderer.context, &mut cache) {
             if reloaded > 0 {
                 info!("Hot reloaded {} material template(s)", reloaded);
             }
@@ -312,10 +320,9 @@ pub fn render_frame(app: &mut Application) {
         if let (Some(mesh_handle), Some(material_handle)) =
             (drawable.mesh_handle, drawable.material_handle)
         {
-            let mut draw_call =
-                DrawCall::new(mesh_handle, material_handle)
-                    .with_transform(model_array)
-                    .with_pbr(drawable.metallic, drawable.roughness, drawable.ao);
+            let mut draw_call = DrawCall::new(mesh_handle, material_handle)
+                .with_transform(model_array)
+                .with_pbr(drawable.metallic, drawable.roughness, drawable.ao);
 
             // Add color override if specified in DrawableComponent
             if let Some(color) = drawable.color {
@@ -366,8 +373,13 @@ pub fn render_frame(app: &mut Application) {
     }
 
     // Render gizmo for selected entity
-    if let (Some(gizmo_res), Some(selected_entity)) = (&app.gizmo_resources, app.editor_ui.selected_entity) {
-        if let Some(transform) = app.world.get_component::<TransformComponent>(selected_entity) {
+    if let (Some(gizmo_res), Some(selected_entity)) =
+        (&app.gizmo_resources, app.editor_ui.selected_entity)
+    {
+        if let Some(transform) = app
+            .world
+            .get_component::<TransformComponent>(selected_entity)
+        {
             let model_matrix = transform.transform.make_mat4();
             let model_array: [f32; 16] = model_matrix.to_array();
 
@@ -408,10 +420,9 @@ pub fn render_frame(app: &mut Application) {
             // Compute preview camera matrices
             let view = preview.camera.view_matrix();
             let proj = katla_math::Mat4::create_proj(
-                45.0,   // 45 degree FOV (in degrees)
-                1.0,    // Square aspect ratio for preview
+                45.0, // 45 degree FOV (in degrees)
+                1.0,  // Square aspect ratio for preview
                 0.1,
-                100.0,
             );
 
             let view_proj = &proj * &view;
@@ -467,7 +478,9 @@ pub fn render_frame(app: &mut Application) {
             let ui_renderer_ptr: *const crate::rendering::UIRenderer = ui_renderer as *const _;
             let callback = std::rc::Rc::new(move |ctx: &katla_vulkan::PassExecutionContext| {
                 // SAFETY: The UI renderer is valid for the lifetime of the frame
-                unsafe { (*ui_renderer_ptr).draw(ctx, &draw_data); }
+                unsafe {
+                    (*ui_renderer_ptr).draw(ctx, &draw_data);
+                }
             });
             renderer.set_ui_callback(callback);
         } else {

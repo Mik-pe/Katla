@@ -10,10 +10,9 @@ pub mod vulkan;
 pub use error::RendererError;
 use log::{error, info, warn};
 pub use material::{
-    Material, MaterialCacheError, MaterialCacheStats, MaterialDomain, MaterialKey, MaterialPipelineCache,
-    PbrMaterialConfig, SkinnedPbrMaterialConfig, FullPbrMaterialConfig,
-    BindlessPbrMaterialConfig, BindlessSkinnedPbrMaterialConfig,
-    DynamicMaterialConfig,
+    BindlessPbrMaterialConfig, BindlessSkinnedPbrMaterialConfig, DynamicMaterialConfig,
+    FullPbrMaterialConfig, Material, MaterialCacheError, MaterialCacheStats, MaterialDomain,
+    MaterialKey, MaterialPipelineCache, PbrMaterialConfig, SkinnedPbrMaterialConfig,
 };
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 pub use render_graph::errors::RenderGraphError;
@@ -615,7 +614,7 @@ impl VulkanRenderer {
             pass.write(Attachment::Color(p_color))
                 .write(Attachment::DepthStencil(p_depth))
                 .clear_color(p_color, clear_color)
-                .clear_depth_stencil(p_depth, 1.0, 0)
+                .clear_depth_stencil(p_depth, 0.0, 0)
                 .execute("viewport_sky_pass", move |ctx| {
                     // Sky rendering handled by geometry pass for now
                     // (simplified - just clear and move on)
@@ -719,9 +718,9 @@ impl VulkanRenderer {
 
     /// Check if a viewport is ready for rendering.
     pub fn is_viewport_ready(&self, handle: ViewportHandle) -> bool {
-        self.viewports.get(handle.0).is_some_and(|v| {
-            v.storage_manager.is_some() && v.storage_descriptor.is_some()
-        })
+        self.viewports
+            .get(handle.0)
+            .is_some_and(|v| v.storage_manager.is_some() && v.storage_descriptor.is_some())
     }
 
     /// Update viewport camera and lighting.
@@ -1302,7 +1301,6 @@ impl VulkanRenderer {
     }
 }
 
-
 /// Offscreen render target for viewport rendering.
 ///
 /// This holds the color and depth attachments for rendering the 3D scene
@@ -1538,7 +1536,11 @@ impl OutputRenderTarget {
                 .format(vk::Format::B8G8R8A8_SRGB) // Match swapchain format
                 .tiling(vk::ImageTiling::OPTIMAL)
                 .initial_layout(vk::ImageLayout::UNDEFINED)
-                .usage(vk::ImageUsageFlags::COLOR_ATTACHMENT | vk::ImageUsageFlags::TRANSFER_SRC | vk::ImageUsageFlags::TRANSFER_DST)
+                .usage(
+                    vk::ImageUsageFlags::COLOR_ATTACHMENT
+                        | vk::ImageUsageFlags::TRANSFER_SRC
+                        | vk::ImageUsageFlags::TRANSFER_DST,
+                )
                 .sharing_mode(vk::SharingMode::EXCLUSIVE)
                 .samples(vk::SampleCountFlags::TYPE_1);
 

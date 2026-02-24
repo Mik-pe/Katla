@@ -114,23 +114,14 @@ impl Mat4 {
         ])
     }
 
-    pub fn create_proj(fov_angles: f32, aspect_ratio: f32, near: f32, far: f32) -> Self {
-        let fov_ratio = near * f32::tan(f32::to_radians(fov_angles) / 2.0);
-
-        let r = aspect_ratio * fov_ratio;
-        let l = -r;
-        let t = fov_ratio;
-        let b = -t;
+    // Creates a reverse Z infinite far plane projection matrix
+    pub fn create_proj(fov_angles: f32, aspect_ratio: f32, near: f32) -> Self {
+        let f = 1.0 / f32::tan(f32::to_radians(fov_angles) / 2.0);
         Self([
-            Vec4::new(2f32 * near / (r - l), 0.0, 0.0, 0.0),
-            Vec4::new(0.0, 2f32 * near / (t - b), 0.0, 0.0),
-            Vec4::new(
-                (r + l) / (r - l),
-                (t + b) / (t - b),
-                -(far + near) / (far - near),
-                -1.0,
-            ),
-            Vec4::new(0.0, 0.0, -2.0 * far * near / (far - near), 0.0),
+            Vec4::new(f / aspect_ratio, 0.0, 0.0, 0.0),
+            Vec4::new(0.0, -f, 0.0, 0.0),
+            Vec4::new(0.0, 0.0, 0.0, -1.0),
+            Vec4::new(0.0, 0.0, near, 0.0),
         ])
     }
 
@@ -427,10 +418,8 @@ impl Mat4 {
     pub fn to_array(&self) -> [f32; 16] {
         let arr: [[f32; 4]; 4] = self.clone().into();
         [
-            arr[0][0], arr[0][1], arr[0][2], arr[0][3],
-            arr[1][0], arr[1][1], arr[1][2], arr[1][3],
-            arr[2][0], arr[2][1], arr[2][2], arr[2][3],
-            arr[3][0], arr[3][1], arr[3][2], arr[3][3],
+            arr[0][0], arr[0][1], arr[0][2], arr[0][3], arr[1][0], arr[1][1], arr[1][2], arr[1][3],
+            arr[2][0], arr[2][1], arr[2][2], arr[2][3], arr[3][0], arr[3][1], arr[3][2], arr[3][3],
         ]
     }
 }
