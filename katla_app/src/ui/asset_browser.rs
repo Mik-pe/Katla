@@ -1037,656 +1037,680 @@ pub fn build_asset_browser(
     let content_bounds = Rect2D::new(Vec2::new(bounds.min.x(), content_top), bounds.max);
 
     // Begin scroll area (handles clipping and scrolling)
-    ui.begin_scroll_area(
-        ScrollArea::new("asset_scroll", &mut state.scroll_state)
-            .max_height(content_bounds.height()),
+    state.scroll_state = ui.scroll_area(
+        ScrollArea::new("asset_scroll").max_height(content_bounds.height()),
+        state.scroll_state,
         content_bounds,
-    );
+        |ui| {
+            let scroll_offset = ui.scroll_offset();
 
-    // Get scroll offset for content positioning
-    let scroll_offset = ui.scroll_offset();
+            // Grid layout parameters
+            let item_size = ui.style.thumbnail_size;
+            let item_padding = 8.0;
+            let col_count =
+                ((bounds.width() - item_padding) / (item_size + item_padding)).max(1.0) as usize;
+            let row_height = item_size + 24.0; // Item + label
 
-    // Grid layout parameters
-    let item_size = ui.style.thumbnail_size;
-    let item_padding = 8.0;
-    let col_count =
-        ((bounds.width() - item_padding) / (item_size + item_padding)).max(1.0) as usize;
-    let row_height = item_size + 24.0; // Item + label
+            // Draw assets in grid
+            // Track actions to perform after iteration (to avoid borrow conflicts)
+            let mut clicked_index: Option<usize> = None;
+            let mut right_clicked_index: Option<usize> = None;
+            let mut drag_start_index: Option<usize> = None;
+            let mut should_navigate: Option<PathBuf> = None;
+            let mut should_preview_model: Option<PathBuf> = None;
 
-    // Draw assets in grid
-    // Track actions to perform after iteration (to avoid borrow conflicts)
-    let mut clicked_index: Option<usize> = None;
-    let mut right_clicked_index: Option<usize> = None;
-    let mut drag_start_index: Option<usize> = None;
-    let mut should_navigate: Option<PathBuf> = None;
-    let mut should_preview_model: Option<PathBuf> = None;
+            for (i, asset) in state.assets.iter().enumerate() {
+                let col = i % col_count;
+                let row = i / col_count;
 
-    for (i, asset) in state.assets.iter().enumerate() {
-        let col = i % col_count;
-        let row = i / col_count;
+                let item_x =
+                    bounds.min.x() + item_padding + col as f32 * (item_size + item_padding);
+                let item_y = content_top + row as f32 * row_height - scroll_offset;
 
-        let item_x = bounds.min.x() + item_padding + col as f32 * (item_size + item_padding);
-        let item_y = content_top + row as f32 * row_height - scroll_offset;
+                // Skip items that are outside the visible area
+                if item_y + row_height < content_top || item_y > bounds.max.y() {
+                    continue;
+                }
 
-        // Skip items that are outside the visible area
-        if item_y + row_height < content_top || item_y > bounds.max.y() {
-            continue;
-        }
+                let item_pos = Vec2::new(item_x, item_y);
+                let item_bounds =
+                    Rect2D::from_origin_size(item_pos, Vec2::new(item_size, item_size));
 
-        let item_pos = Vec2::new(item_x, item_y);
-        let item_bounds = Rect2D::from_origin_size(item_pos, Vec2::new(item_size, item_size));
+                // Background on hover/select (check both single and multi-select)
+                let is_selected =
+                    state.selected_index == Some(i) || state.selected_indices.contains(&i);
+                let is_hovered = ui.is_hovered(item_bounds);
 
-        // Background on hover/select (check both single and multi-select)
-        let is_selected = state.selected_index == Some(i) || state.selected_indices.contains(&i);
-        let is_hovered = ui.is_hovered(item_bounds);
+                if is_selected {
+                    ui.draw_rect(item_bounds, theme.selection);
+                } else if is_hovered {
+                    ui.draw_rect(item_bounds, theme.selection_hover);
+                }
 
-        if is_selected {
-            ui.draw_rect(item_bounds, theme.selection);
-        } else if is_hovered {
-            ui.draw_rect(item_bounds, theme.selection_hover);
-        }
+                // Draw thumbnail or icon centered in item
+                match &asset.thumbnail_state {
+                    ThumbnailState::Loaded { texture_id } => {
+                        // Inset thumbnail by 3 pixels to show selection/hover background
+                        let inset = 3.0;
+                        let thumb_bounds = Rect2D::from_origin_size(
+                            Vec2::new(item_bounds.min.x() + inset, item_bounds.min.y() + inset),
+                            Vec2::new(
+                                item_bounds.width() - inset * 2.0,
+                                item_bounds.height() - inset * 2.0,
+                            ),
+                        );
+                        // Use OPAQUE_IMAGE to force alpha = 1.0 (thumbnails should not blend)
+                        ui.image(
+                            *texture_id,
+                            thumb_bounds,
+                            None,                      // Use default UVs (0-1)
+                            Some(Color::OPAQUE_IMAGE), // Force opaque output
+                        );
+                    }
+                    ThumbnailState::Loading => {
+                        // Show animated spinner while loading
+                        let icon_size = ui.style.icon_size_large;
+                        let icon_pos = Vec2::new(
+                            item_bounds.center().x() - icon_size * 0.5,
+                            item_bounds.center().y() - icon_size * 0.5,
+                        );
 
-        // Draw thumbnail or icon centered in item
-        match &asset.thumbnail_state {
-            ThumbnailState::Loaded { texture_id } => {
-                // Inset thumbnail by 3 pixels to show selection/hover background
-                let inset = 3.0;
-                let thumb_bounds = Rect2D::from_origin_size(
-                    Vec2::new(item_bounds.min.x() + inset, item_bounds.min.y() + inset),
-                    Vec2::new(
-                        item_bounds.width() - inset * 2.0,
-                        item_bounds.height() - inset * 2.0,
-                    ),
-                );
-                // Use OPAQUE_IMAGE to force alpha = 1.0 (thumbnails should not blend)
-                ui.image(
-                    *texture_id,
-                    thumb_bounds,
-                    None,                      // Use default UVs (0-1)
-                    Some(Color::OPAQUE_IMAGE), // Force opaque output
-                );
-            }
-            ThumbnailState::Loading => {
-                // Show animated spinner while loading
-                let icon_size = ui.style.icon_size_large;
-                let icon_pos = Vec2::new(
-                    item_bounds.center().x() - icon_size * 0.5,
-                    item_bounds.center().y() - icon_size * 0.5,
-                );
+                        // Use a rotating spinner icon
+                        // Rotation based on time (we can approximate with frame count)
+                        let rotation = (std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .unwrap_or_default()
+                            .as_millis()
+                            % 1000) as f32
+                            / 1000.0
+                            * std::f32::consts::TAU;
 
-                // Use a rotating spinner icon
-                // Rotation based on time (we can approximate with frame count)
-                let rotation = (std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap_or_default()
-                    .as_millis()
-                    % 1000) as f32
-                    / 1000.0
-                    * std::f32::consts::TAU;
+                        // Draw spinner with rotation effect (we'll simulate rotation by changing icons)
+                        let spinner_chars = ['|', '/', '—', '\\'];
+                        let spinner_idx = ((rotation / std::f32::consts::FRAC_PI_2) as usize) % 4;
+                        let spinner_char = spinner_chars[spinner_idx];
 
-                // Draw spinner with rotation effect (we'll simulate rotation by changing icons)
-                let spinner_chars = ['|', '/', '—', '\\'];
-                let spinner_idx = ((rotation / std::f32::consts::FRAC_PI_2) as usize) % 4;
-                let spinner_char = spinner_chars[spinner_idx];
-
-                ui.draw_icon(spinner_char, icon_pos, icon_size, theme.text_secondary);
-            }
-            ThumbnailState::Failed => {
-                // Show error icon
-                let icon = ForkAwesome::TIMES_CIRCLE;
-                let icon_color = theme.error;
-                let icon_size = ui.style.icon_size_large;
-                let icon_pos = Vec2::new(
-                    item_bounds.center().x() - icon_size * 0.5,
-                    item_bounds.center().y() - icon_size * 0.5,
-                );
-                ui.draw_icon(icon, icon_pos, icon_size, icon_color);
-            }
-            ThumbnailState::Pending => {
-                // Show regular icon
-                let icon = asset.asset_type.icon();
-                let icon_color = asset.asset_type.color(theme);
-                let icon_size = ui.style.icon_size_large;
-                let icon_pos = Vec2::new(
-                    item_bounds.center().x() - icon_size * 0.5,
-                    item_bounds.center().y() - icon_size * 0.5,
-                );
-                ui.draw_icon(icon, icon_pos, icon_size, icon_color);
-            }
-        }
-
-        // Draw selection border if selected (just the border, don't fill - icon already drawn)
-        if is_selected {
-            ui.draw_selection_border(item_bounds, theme.highlight, 2.0);
-        }
-
-        // Draw name below icon (truncated)
-        let label_y = item_y + item_size + 2.0;
-        let max_label_width = item_size + item_padding;
-
-        // Truncate name if too long
-        let display_name = truncate_text(asset.name.as_str(), max_label_width, ui);
-
-        let label_size = ui.measure_text(
-            &display_name,
-            ui.scaled_font_size(katla_ui::FontSize::XSmall),
-        );
-        let label_pos = Vec2::new(item_bounds.center().x() - label_size.x() * 0.5, label_y);
-        ui.draw_text(
-            &display_name,
-            label_pos,
-            theme.text_secondary,
-            ui.scaled_font_size(katla_ui::FontSize::XSmall),
-        );
-
-        // Handle click - skip if mouse is over a popup (context menu)
-        if is_hovered
-            && !ui.is_mouse_over_popup()
-            && ui.input.mouse_clicked(katla_ui::input::mouse_button::LEFT)
-        {
-            clicked_index = Some(i);
-            if asset.asset_type == AssetType::Folder {
-                should_navigate = Some(asset.path.clone());
-            } else if asset.asset_type == AssetType::Model {
-                should_preview_model = Some(asset.path.clone());
-            }
-            // Track potential drag start
-            drag_start_index = Some(i);
-        }
-
-        // Handle right-click for context menu (skip if popup already open)
-        if is_hovered
-            && !ui.has_open_popup()
-            && ui.input.mouse_clicked(katla_ui::input::mouse_button::RIGHT)
-        {
-            right_clicked_index = Some(i);
-            state.selected_index = Some(i);
-        }
-
-        // Show tooltip on hover (skip if context menu open or dragging)
-        if is_hovered && !state.context_menu_open && !state.is_dragging {
-            let tooltip_text = format!(
-                "{}\nType: {}\nPath: {}",
-                asset.name,
-                match asset.asset_type {
-                    AssetType::Folder => "Folder",
-                    AssetType::Model => "Model",
-                    AssetType::Image => "Image",
-                    AssetType::Shader => "Shader",
-                    AssetType::Material => "Material",
-                    AssetType::Font => "Font",
-                    AssetType::Unknown => "File",
-                },
-                asset.path.display()
-            );
-            ui.with_z_index(katla_ui::z_index::POPUP, |ui| {
-                ui.tooltip(&tooltip_text);
-            });
-        }
-    }
-
-    // === MARQUEE SELECTION ===
-    // Handle rectangle selection in content area
-    {
-        let mouse_in_content = content_bounds.contains(ui.input.mouse_pos);
-        let mouse_down = ui.input.is_mouse_down(katla_ui::input::mouse_button::LEFT);
-
-        // Start marquee on click in content area (but not on an asset or popup)
-        if mouse_in_content
-            && !ui.is_mouse_over_popup()
-            && ui.input.mouse_clicked(katla_ui::input::mouse_button::LEFT)
-            && clicked_index.is_none()
-        {
-            state.selection_rect_start = Some(ui.input.mouse_pos);
-            state.selection_rect_current = Some(ui.input.mouse_pos);
-            state.is_marquee_selecting = false; // Will become true on drag
-        }
-
-        // Update marquee rectangle while dragging
-        if state.selection_rect_start.is_some() && mouse_down {
-            state.selection_rect_current = Some(ui.input.mouse_pos);
-            let start = state.selection_rect_start.unwrap();
-            let current = ui.input.mouse_pos;
-            let dist = (current - start).length();
-            if dist > state.drag_threshold {
-                state.is_marquee_selecting = true;
-            }
-        }
-
-        // Draw selection rectangle and preview highlight
-        if state.is_marquee_selecting {
-            if let (Some(start), Some(current)) =
-                (state.selection_rect_start, state.selection_rect_current)
-            {
-                let sel_rect = rect_from_points(start, current);
-
-                // Preview highlight for items that will be selected
-                for (i, _asset) in state.assets.iter().enumerate() {
-                    let col = i % col_count;
-                    let row = i / col_count;
-                    let item_x =
-                        bounds.min.x() + item_padding + col as f32 * (item_size + item_padding);
-                    let item_y = content_top + row as f32 * row_height - scroll_offset;
-                    let item_bounds = Rect2D::from_origin_size(
-                        Vec2::new(item_x, item_y),
-                        Vec2::new(item_size, item_size),
-                    );
-
-                    // Check if item intersects with selection rectangle
-                    if item_bounds.min.x() <= sel_rect.max.x()
-                        && item_bounds.max.x() >= sel_rect.min.x()
-                        && item_bounds.min.y() <= sel_rect.max.y()
-                        && item_bounds.max.y() >= sel_rect.min.y()
-                    {
-                        // Draw preview highlight
-                        ui.draw_rect(item_bounds, Color::new(0.3, 0.5, 0.8, 0.4));
+                        ui.draw_icon(spinner_char, icon_pos, icon_size, theme.text_secondary);
+                    }
+                    ThumbnailState::Failed => {
+                        // Show error icon
+                        let icon = ForkAwesome::TIMES_CIRCLE;
+                        let icon_color = theme.error;
+                        let icon_size = ui.style.icon_size_large;
+                        let icon_pos = Vec2::new(
+                            item_bounds.center().x() - icon_size * 0.5,
+                            item_bounds.center().y() - icon_size * 0.5,
+                        );
+                        ui.draw_icon(icon, icon_pos, icon_size, icon_color);
+                    }
+                    ThumbnailState::Pending => {
+                        // Show regular icon
+                        let icon = asset.asset_type.icon();
+                        let icon_color = asset.asset_type.color(theme);
+                        let icon_size = ui.style.icon_size_large;
+                        let icon_pos = Vec2::new(
+                            item_bounds.center().x() - icon_size * 0.5,
+                            item_bounds.center().y() - icon_size * 0.5,
+                        );
+                        ui.draw_icon(icon, icon_pos, icon_size, icon_color);
                     }
                 }
 
-                // Draw the selection rectangle on top
-                ui.draw_rect(sel_rect, Color::new(0.3, 0.5, 0.8, 0.3));
-                ui.draw_rect_border(
-                    sel_rect,
-                    Color::new(0.3, 0.5, 0.8, 0.3),
-                    Color::new(0.4, 0.6, 0.9, 0.8),
-                    1.0,
+                // Draw selection border if selected (just the border, don't fill - icon already drawn)
+                if is_selected {
+                    ui.draw_selection_border(item_bounds, theme.highlight, 2.0);
+                }
+
+                // Draw name below icon (truncated)
+                let label_y = item_y + item_size + 2.0;
+                let max_label_width = item_size + item_padding;
+
+                // Truncate name if too long
+                let display_name = truncate_text(asset.name.as_str(), max_label_width, ui);
+
+                let label_size = ui.measure_text(
+                    &display_name,
+                    ui.scaled_font_size(katla_ui::FontSize::XSmall),
                 );
-            }
-        }
+                let label_pos = Vec2::new(item_bounds.center().x() - label_size.x() * 0.5, label_y);
+                ui.draw_text(
+                    &display_name,
+                    label_pos,
+                    theme.text_secondary,
+                    ui.scaled_font_size(katla_ui::FontSize::XSmall),
+                );
 
-        // Finalize selection on mouse release
-        if state.selection_rect_start.is_some()
-            && ui.input.mouse_released[katla_ui::input::mouse_button::LEFT]
-        {
-            if state.is_marquee_selecting {
-                if let (Some(start), Some(current)) =
-                    (state.selection_rect_start, state.selection_rect_current)
+                // Handle click - skip if mouse is over a popup (context menu)
+                if is_hovered
+                    && !ui.is_mouse_over_popup()
+                    && ui.input.mouse_clicked(katla_ui::input::mouse_button::LEFT)
                 {
-                    let sel_rect = rect_from_points(start, current);
+                    clicked_index = Some(i);
+                    if asset.asset_type == AssetType::Folder {
+                        should_navigate = Some(asset.path.clone());
+                    } else if asset.asset_type == AssetType::Model {
+                        should_preview_model = Some(asset.path.clone());
+                    }
+                    // Track potential drag start
+                    drag_start_index = Some(i);
+                }
 
-                    // Clear previous selection
-                    state.selected_indices.clear();
-                    state.selected_index = None;
+                // Handle right-click for context menu (skip if popup already open)
+                if is_hovered
+                    && !ui.has_open_popup()
+                    && ui.input.mouse_clicked(katla_ui::input::mouse_button::RIGHT)
+                {
+                    right_clicked_index = Some(i);
+                    state.selected_index = Some(i);
+                }
 
-                    // Select all assets that intersect with the rectangle
-                    for (i, _asset) in state.assets.iter().enumerate() {
-                        let col = i % col_count;
-                        let row = i / col_count;
-                        let item_x =
-                            bounds.min.x() + item_padding + col as f32 * (item_size + item_padding);
-                        let item_y = content_top + row as f32 * row_height - scroll_offset;
-                        let item_bounds = Rect2D::from_origin_size(
-                            Vec2::new(item_x, item_y),
-                            Vec2::new(item_size, item_size),
+                // Show tooltip on hover (skip if context menu open or dragging)
+                if is_hovered && !state.context_menu_open && !state.is_dragging {
+                    let tooltip_text = format!(
+                        "{}\nType: {}\nPath: {}",
+                        asset.name,
+                        match asset.asset_type {
+                            AssetType::Folder => "Folder",
+                            AssetType::Model => "Model",
+                            AssetType::Image => "Image",
+                            AssetType::Shader => "Shader",
+                            AssetType::Material => "Material",
+                            AssetType::Font => "Font",
+                            AssetType::Unknown => "File",
+                        },
+                        asset.path.display()
+                    );
+                    ui.with_z_index(katla_ui::z_index::POPUP, |ui| {
+                        ui.tooltip(&tooltip_text);
+                    });
+                }
+            }
+
+            // === MARQUEE SELECTION ===
+            // Handle rectangle selection in content area
+            {
+                let mouse_in_content = content_bounds.contains(ui.input.mouse_pos);
+                let mouse_down = ui.input.is_mouse_down(katla_ui::input::mouse_button::LEFT);
+
+                // Start marquee on click in content area (but not on an asset or popup)
+                if mouse_in_content
+                    && !ui.is_mouse_over_popup()
+                    && ui.input.mouse_clicked(katla_ui::input::mouse_button::LEFT)
+                    && clicked_index.is_none()
+                {
+                    state.selection_rect_start = Some(ui.input.mouse_pos);
+                    state.selection_rect_current = Some(ui.input.mouse_pos);
+                    state.is_marquee_selecting = false; // Will become true on drag
+                }
+
+                // Update marquee rectangle while dragging
+                if state.selection_rect_start.is_some() && mouse_down {
+                    state.selection_rect_current = Some(ui.input.mouse_pos);
+                    let start = state.selection_rect_start.unwrap();
+                    let current = ui.input.mouse_pos;
+                    let dist = (current - start).length();
+                    if dist > state.drag_threshold {
+                        state.is_marquee_selecting = true;
+                    }
+                }
+
+                // Draw selection rectangle and preview highlight
+                if state.is_marquee_selecting {
+                    if let (Some(start), Some(current)) =
+                        (state.selection_rect_start, state.selection_rect_current)
+                    {
+                        let sel_rect = rect_from_points(start, current);
+
+                        // Preview highlight for items that will be selected
+                        for (i, _asset) in state.assets.iter().enumerate() {
+                            let col = i % col_count;
+                            let row = i / col_count;
+                            let item_x = bounds.min.x()
+                                + item_padding
+                                + col as f32 * (item_size + item_padding);
+                            let item_y = content_top + row as f32 * row_height - scroll_offset;
+                            let item_bounds = Rect2D::from_origin_size(
+                                Vec2::new(item_x, item_y),
+                                Vec2::new(item_size, item_size),
+                            );
+
+                            // Check if item intersects with selection rectangle
+                            if item_bounds.min.x() <= sel_rect.max.x()
+                                && item_bounds.max.x() >= sel_rect.min.x()
+                                && item_bounds.min.y() <= sel_rect.max.y()
+                                && item_bounds.max.y() >= sel_rect.min.y()
+                            {
+                                // Draw preview highlight
+                                ui.draw_rect(item_bounds, Color::new(0.3, 0.5, 0.8, 0.4));
+                            }
+                        }
+
+                        // Draw the selection rectangle on top
+                        ui.draw_rect(sel_rect, Color::new(0.3, 0.5, 0.8, 0.3));
+                        ui.draw_rect_border(
+                            sel_rect,
+                            Color::new(0.3, 0.5, 0.8, 0.3),
+                            Color::new(0.4, 0.6, 0.9, 0.8),
+                            1.0,
                         );
+                    }
+                }
 
-                        // Check if item intersects with selection rectangle (AABB intersection)
-                        if item_bounds.min.x() <= sel_rect.max.x()
-                            && item_bounds.max.x() >= sel_rect.min.x()
-                            && item_bounds.min.y() <= sel_rect.max.y()
-                            && item_bounds.max.y() >= sel_rect.min.y()
+                // Finalize selection on mouse release
+                if state.selection_rect_start.is_some()
+                    && ui.input.mouse_released[katla_ui::input::mouse_button::LEFT]
+                {
+                    if state.is_marquee_selecting {
+                        if let (Some(start), Some(current)) =
+                            (state.selection_rect_start, state.selection_rect_current)
                         {
-                            state.selected_indices.insert(i);
-                            if state.selected_index.is_none() {
-                                state.selected_index = Some(i); // Set primary selection
+                            let sel_rect = rect_from_points(start, current);
+
+                            // Clear previous selection
+                            state.selected_indices.clear();
+                            state.selected_index = None;
+
+                            // Select all assets that intersect with the rectangle
+                            for (i, _asset) in state.assets.iter().enumerate() {
+                                let col = i % col_count;
+                                let row = i / col_count;
+                                let item_x = bounds.min.x()
+                                    + item_padding
+                                    + col as f32 * (item_size + item_padding);
+                                let item_y = content_top + row as f32 * row_height - scroll_offset;
+                                let item_bounds = Rect2D::from_origin_size(
+                                    Vec2::new(item_x, item_y),
+                                    Vec2::new(item_size, item_size),
+                                );
+
+                                // Check if item intersects with selection rectangle (AABB intersection)
+                                if item_bounds.min.x() <= sel_rect.max.x()
+                                    && item_bounds.max.x() >= sel_rect.min.x()
+                                    && item_bounds.min.y() <= sel_rect.max.y()
+                                    && item_bounds.max.y() >= sel_rect.min.y()
+                                {
+                                    state.selected_indices.insert(i);
+                                    if state.selected_index.is_none() {
+                                        state.selected_index = Some(i); // Set primary selection
+                                    }
+                                }
+                            }
+                        }
+                    } else {
+                        // Simple click in empty space (not marquee) - clear selection
+                        state.selected_index = None;
+                        state.selected_indices.clear();
+                    }
+                    // Reset marquee state
+                    state.selection_rect_start = None;
+                    state.selection_rect_current = None;
+                    state.is_marquee_selecting = false;
+                }
+            }
+
+            // === THUMBNAIL REQUESTING ===
+            // Request thumbnails for visible images that haven't been requested yet
+            {
+                // Collect paths that need thumbnails (to avoid borrow conflicts)
+                let mut thumbs_to_request: Vec<(usize, PathBuf)> = Vec::new();
+
+                for (i, asset) in state.assets.iter().enumerate() {
+                    // Only request thumbnails for images
+                    if asset.asset_type != AssetType::Image {
+                        continue;
+                    }
+
+                    // Check if visible in viewport
+                    let _col = i % col_count;
+                    let row = i / col_count;
+                    let item_y = content_top + row as f32 * row_height - scroll_offset;
+
+                    // Skip if outside visible area
+                    if item_y + row_height < content_top || item_y > bounds.max.y() {
+                        continue;
+                    }
+
+                    // Check if thumbnail needs to be requested
+                    if matches!(asset.thumbnail_state, ThumbnailState::Pending) {
+                        // Check if already cached in loader
+                        if loader.has_thumbnail(&asset.path) {
+                            // Already cached, will be handled in poll()
+                        } else if !loader.is_loading(&asset.path) {
+                            thumbs_to_request.push((i, asset.path.clone()));
+                        }
+                    }
+                }
+
+                // Request thumbnails (limited batch per frame to avoid overload)
+                for (idx, path) in thumbs_to_request.into_iter().take(4) {
+                    loader.request_thumbnail(path, item_size as u32);
+                    state.assets[idx].thumbnail_state = ThumbnailState::Loading;
+                }
+            }
+
+            // Start drag if tracked
+            if let Some(idx) = drag_start_index {
+                state.start_drag(idx, ui.input.mouse_pos);
+            }
+
+            // === DRAG AND DROP HANDLING ===
+            // Update drag state while mouse is held
+            if state.drag_asset.is_some()
+                && ui.input.is_mouse_down(katla_ui::input::mouse_button::LEFT)
+            {
+                state.update_drag(ui.input.mouse_pos);
+            }
+
+            // Handle drag end - check what we're dropping on
+            if state.drag_asset.is_some()
+                && ui.input.mouse_released[katla_ui::input::mouse_button::LEFT]
+            {
+                let drag_idx = state.drag_asset.unwrap();
+                let mouse_pos = ui.input.mouse_pos;
+                let mouse_in_browser = bounds.contains(mouse_pos);
+
+                if state.is_dragging {
+                    // Collect all assets to drag (single or multi-select)
+                    let mut assets_to_drag: Vec<(usize, PathBuf, AssetType)> = Vec::new();
+
+                    if !state.selected_indices.is_empty()
+                        && state.selected_indices.contains(&drag_idx)
+                    {
+                        // Drag all selected items
+                        for &idx in &state.selected_indices {
+                            if let Some(asset) = state.assets.get(idx) {
+                                assets_to_drag.push((idx, asset.path.clone(), asset.asset_type));
+                            }
+                        }
+                    } else {
+                        // Drag only the clicked item
+                        if let Some(asset) = state.assets.get(drag_idx) {
+                            assets_to_drag.push((drag_idx, asset.path.clone(), asset.asset_type));
+                        }
+                    }
+
+                    // Check if dropped on a folder
+                    let mut dropped_on_folder: Option<PathBuf> = None;
+
+                    if mouse_in_browser {
+                        for (i, asset) in state.assets.iter().enumerate() {
+                            // Skip if this asset is being dragged
+                            if assets_to_drag.iter().any(|(idx, _, _)| *idx == i) {
+                                continue;
+                            }
+
+                            // Calculate item bounds
+                            let col = i % col_count;
+                            let row = i / col_count;
+                            let item_x = bounds.min.x()
+                                + item_padding
+                                + col as f32 * (item_size + item_padding);
+                            let item_y = content_top + row as f32 * row_height - scroll_offset;
+                            let item_bounds = Rect2D::from_origin_size(
+                                Vec2::new(item_x, item_y),
+                                Vec2::new(item_size, item_size),
+                            );
+
+                            if item_bounds.contains(mouse_pos)
+                                && asset.asset_type == AssetType::Folder
+                            {
+                                dropped_on_folder = Some(asset.path.clone());
+                                break;
+                            }
+                        }
+                    }
+
+                    if let Some(folder_path) = dropped_on_folder {
+                        // Drop on folder - move all dragged assets
+                        for (_, asset_path, _) in &assets_to_drag {
+                            state.pending_actions.push(AssetAction::MoveToFolder {
+                                asset_path: asset_path.clone(),
+                                folder_path: folder_path.clone(),
+                            });
+                        }
+                    } else if !mouse_in_browser {
+                        // Drop outside browser - spawn all models in viewport
+                        for (_, asset_path, asset_type) in &assets_to_drag {
+                            if matches!(asset_type, AssetType::Model | AssetType::Image) {
+                                state.pending_actions.push(AssetAction::DragToViewport {
+                                    path: asset_path.clone(),
+                                    asset_type: *asset_type,
+                                    screen_pos: mouse_pos,
+                                });
                             }
                         }
                     }
                 }
-            } else {
-                // Simple click in empty space (not marquee) - clear selection
-                state.selected_index = None;
-                state.selected_indices.clear();
-            }
-            // Reset marquee state
-            state.selection_rect_start = None;
-            state.selection_rect_current = None;
-            state.is_marquee_selecting = false;
-        }
-    }
-
-    // === THUMBNAIL REQUESTING ===
-    // Request thumbnails for visible images that haven't been requested yet
-    {
-        // Collect paths that need thumbnails (to avoid borrow conflicts)
-        let mut thumbs_to_request: Vec<(usize, PathBuf)> = Vec::new();
-
-        for (i, asset) in state.assets.iter().enumerate() {
-            // Only request thumbnails for images
-            if asset.asset_type != AssetType::Image {
-                continue;
+                state.end_drag();
             }
 
-            // Check if visible in viewport
-            let _col = i % col_count;
-            let row = i / col_count;
-            let item_y = content_top + row as f32 * row_height - scroll_offset;
-
-            // Skip if outside visible area
-            if item_y + row_height < content_top || item_y > bounds.max.y() {
-                continue;
+            // Cancel drag on escape
+            if state.drag_asset.is_some() && ui.input.key_pressed(katla_ui::input::KeyCode::Escape)
+            {
+                state.cancel_drag();
             }
 
-            // Check if thumbnail needs to be requested
-            if matches!(asset.thumbnail_state, ThumbnailState::Pending) {
-                // Check if already cached in loader
-                if loader.has_thumbnail(&asset.path) {
-                    // Already cached, will be handled in poll()
-                } else if !loader.is_loading(&asset.path) {
-                    thumbs_to_request.push((i, asset.path.clone()));
-                }
-            }
-        }
+            // Note: Drag preview is now rendered at the EditorUI level for visibility across panels
 
-        // Request thumbnails (limited batch per frame to avoid overload)
-        for (idx, path) in thumbs_to_request.into_iter().take(4) {
-            loader.request_thumbnail(path, item_size as u32);
-            state.assets[idx].thumbnail_state = ThumbnailState::Loading;
-        }
-    }
-
-    // Start drag if tracked
-    if let Some(idx) = drag_start_index {
-        state.start_drag(idx, ui.input.mouse_pos);
-    }
-
-    // === DRAG AND DROP HANDLING ===
-    // Update drag state while mouse is held
-    if state.drag_asset.is_some() && ui.input.is_mouse_down(katla_ui::input::mouse_button::LEFT) {
-        state.update_drag(ui.input.mouse_pos);
-    }
-
-    // Handle drag end - check what we're dropping on
-    if state.drag_asset.is_some() && ui.input.mouse_released[katla_ui::input::mouse_button::LEFT] {
-        let drag_idx = state.drag_asset.unwrap();
-        let mouse_pos = ui.input.mouse_pos;
-        let mouse_in_browser = bounds.contains(mouse_pos);
-
-        if state.is_dragging {
-            // Collect all assets to drag (single or multi-select)
-            let mut assets_to_drag: Vec<(usize, PathBuf, AssetType)> = Vec::new();
-
-            if !state.selected_indices.is_empty() && state.selected_indices.contains(&drag_idx) {
-                // Drag all selected items
-                for &idx in &state.selected_indices {
-                    if let Some(asset) = state.assets.get(idx) {
-                        assets_to_drag.push((idx, asset.path.clone(), asset.asset_type));
-                    }
+            // === RENAME MODE HANDLING ===
+            // Collect rename data first to avoid borrow conflicts
+            let rename_data = if state.rename_mode {
+                if let Some(rename_idx) = state.rename_asset {
+                    state
+                        .assets
+                        .get(rename_idx)
+                        .map(|asset| (rename_idx, asset.name.clone(), asset.path.clone()))
+                } else {
+                    None
                 }
             } else {
-                // Drag only the clicked item
-                if let Some(asset) = state.assets.get(drag_idx) {
-                    assets_to_drag.push((drag_idx, asset.path.clone(), asset.asset_type));
-                }
-            }
+                None
+            };
 
-            // Check if dropped on a folder
-            let mut dropped_on_folder: Option<PathBuf> = None;
+            if let Some((rename_idx, original_name, original_path)) = rename_data {
+                // Draw rename input overlay
+                let col = rename_idx % col_count;
+                let row = rename_idx / col_count;
+                let item_x =
+                    bounds.min.x() + item_padding + col as f32 * (item_size + item_padding);
+                let item_y = content_top + row as f32 * row_height - scroll_offset;
 
-            if mouse_in_browser {
-                for (i, asset) in state.assets.iter().enumerate() {
-                    // Skip if this asset is being dragged
-                    if assets_to_drag.iter().any(|(idx, _, _)| *idx == i) {
-                        continue;
-                    }
+                let input_bounds = Rect2D::from_origin_size(
+                    Vec2::new(item_x, item_y + item_size + 2.0),
+                    Vec2::new(item_size, 18.0),
+                );
 
-                    // Calculate item bounds
-                    let col = i % col_count;
-                    let row = i / col_count;
-                    let item_x =
-                        bounds.min.x() + item_padding + col as f32 * (item_size + item_padding);
-                    let item_y = content_top + row as f32 * row_height - scroll_offset;
-                    let item_bounds = Rect2D::from_origin_size(
-                        Vec2::new(item_x, item_y),
-                        Vec2::new(item_size, item_size),
+                ui.with_z_index(katla_ui::z_index::POPUP, |ui| {
+                    ui.draw_rect(input_bounds, theme.background);
+                    ui.draw_rect_border(input_bounds, theme.background, theme.highlight, 1.0);
+
+                    // Draw rename text with cursor
+                    let text = &state.rename_buffer;
+                    ui.draw_text(
+                        text,
+                        Vec2::new(input_bounds.min.x() + 4.0, input_bounds.min.y() + 3.0),
+                        theme.text_primary,
+                        ui.scaled_font_size(katla_ui::FontSize::XSmall),
                     );
 
-                    if item_bounds.contains(mouse_pos) && asset.asset_type == AssetType::Folder {
-                        dropped_on_folder = Some(asset.path.clone());
-                        break;
+                    // Cursor (blink effect could be added)
+                    let text_width = ui
+                        .measure_text(text, ui.scaled_font_size(katla_ui::FontSize::XSmall))
+                        .x();
+                    ui.draw_rect(
+                        Rect2D::from_origin_size(
+                            Vec2::new(
+                                input_bounds.min.x() + 4.0 + text_width,
+                                input_bounds.min.y() + 2.0,
+                            ),
+                            Vec2::new(1.0, 14.0),
+                        ),
+                        theme.text_primary,
+                    );
+                });
+
+                // Handle text input
+                for &c in &ui.input.characters {
+                    if c == '\x08' {
+                        state.rename_buffer.pop();
+                    } else if c >= ' ' && state.rename_buffer.len() < 64 {
+                        // Filter out invalid filename characters
+                        if !matches!(c, '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|') {
+                            state.rename_buffer.push(c);
+                        }
+                    }
+                }
+
+                // Capture keyboard so game doesn't get input (only when panel is focused)
+                if is_focused {
+                    ui.input.want_capture_keyboard = true;
+                }
+
+                // Track commit/cancel actions
+                let mut should_commit = false;
+                let mut should_cancel = false;
+
+                // Commit on Enter
+                if is_focused && ui.input.key_pressed(katla_ui::input::KeyCode::Enter) {
+                    should_commit = true;
+                }
+
+                // Cancel on Escape
+                if is_focused && ui.input.key_pressed(katla_ui::input::KeyCode::Escape) {
+                    should_cancel = true;
+                }
+
+                // Commit on click outside
+                if ui.input.mouse_clicked(katla_ui::input::mouse_button::LEFT)
+                    && !ui.is_hovered(input_bounds)
+                {
+                    should_commit = true;
+                }
+
+                // Process actions (only when focused)
+                if is_focused {
+                    if should_commit {
+                        let new_name = state.rename_buffer.clone();
+                        if new_name != original_name && !new_name.is_empty() {
+                            let new_path = original_path.parent().unwrap().join(&new_name);
+                            state.pending_actions.push(AssetAction::Rename {
+                                old_path: original_path.clone(),
+                                new_path,
+                            });
+                        }
+                        state.cancel_rename();
+                    } else if should_cancel {
+                        state.cancel_rename();
                     }
                 }
             }
 
-            if let Some(folder_path) = dropped_on_folder {
-                // Drop on folder - move all dragged assets
-                for (_, asset_path, _) in &assets_to_drag {
-                    state.pending_actions.push(AssetAction::MoveToFolder {
-                        asset_path: asset_path.clone(),
-                        folder_path: folder_path.clone(),
-                    });
-                }
-            } else if !mouse_in_browser {
-                // Drop outside browser - spawn all models in viewport
-                for (_, asset_path, asset_type) in &assets_to_drag {
-                    if matches!(asset_type, AssetType::Model | AssetType::Image) {
-                        state.pending_actions.push(AssetAction::DragToViewport {
-                            path: asset_path.clone(),
-                            asset_type: *asset_type,
-                            screen_pos: mouse_pos,
-                        });
+            // Process click actions after iteration (to avoid borrow conflicts)
+            if let Some(index) = clicked_index {
+                // Use input system's double-click detection + same-item check
+                let is_double = ui
+                    .input
+                    .mouse_double_clicked(katla_ui::input::mouse_button::LEFT)
+                    && state.last_click_index == Some(index);
+                state.last_click_index = Some(index);
+
+                // Check for modifier keys (Ctrl for toggle, Shift for range)
+                let ctrl_held = ui.input.is_key_down(katla_ui::input::KeyCode::Control);
+                let shift_held = ui.input.is_key_down(katla_ui::input::KeyCode::Shift);
+
+                if ctrl_held {
+                    // Ctrl+Click: Toggle selection
+                    if state.selected_indices.contains(&index)
+                        || state.selected_index == Some(index)
+                    {
+                        // Deselect this item
+                        state.selected_indices.remove(&index);
+                        if state.selected_index == Some(index) {
+                            state.selected_index = state.selected_indices.iter().next().copied();
+                        }
+                    } else {
+                        // Add to selection - first move existing single selection to multi-select
+                        if let Some(prev) = state.selected_index {
+                            if !state.selected_indices.contains(&prev) {
+                                state.selected_indices.insert(prev);
+                            }
+                        }
+                        state.selected_indices.insert(index);
+                        state.selected_index = Some(index);
                     }
-                }
-            }
-        }
-        state.end_drag();
-    }
-
-    // Cancel drag on escape
-    if state.drag_asset.is_some() && ui.input.key_pressed(katla_ui::input::KeyCode::Escape) {
-        state.cancel_drag();
-    }
-
-    // Note: Drag preview is now rendered at the EditorUI level for visibility across panels
-
-    // === RENAME MODE HANDLING ===
-    // Collect rename data first to avoid borrow conflicts
-    let rename_data = if state.rename_mode {
-        if let Some(rename_idx) = state.rename_asset {
-            state
-                .assets
-                .get(rename_idx)
-                .map(|asset| (rename_idx, asset.name.clone(), asset.path.clone()))
-        } else {
-            None
-        }
-    } else {
-        None
-    };
-
-    if let Some((rename_idx, original_name, original_path)) = rename_data {
-        // Draw rename input overlay
-        let col = rename_idx % col_count;
-        let row = rename_idx / col_count;
-        let item_x = bounds.min.x() + item_padding + col as f32 * (item_size + item_padding);
-        let item_y = content_top + row as f32 * row_height - scroll_offset;
-
-        let input_bounds = Rect2D::from_origin_size(
-            Vec2::new(item_x, item_y + item_size + 2.0),
-            Vec2::new(item_size, 18.0),
-        );
-
-        ui.with_z_index(katla_ui::z_index::POPUP, |ui| {
-            ui.draw_rect(input_bounds, theme.background);
-            ui.draw_rect_border(input_bounds, theme.background, theme.highlight, 1.0);
-
-            // Draw rename text with cursor
-            let text = &state.rename_buffer;
-            ui.draw_text(
-                text,
-                Vec2::new(input_bounds.min.x() + 4.0, input_bounds.min.y() + 3.0),
-                theme.text_primary,
-                ui.scaled_font_size(katla_ui::FontSize::XSmall),
-            );
-
-            // Cursor (blink effect could be added)
-            let text_width = ui
-                .measure_text(text, ui.scaled_font_size(katla_ui::FontSize::XSmall))
-                .x();
-            ui.draw_rect(
-                Rect2D::from_origin_size(
-                    Vec2::new(
-                        input_bounds.min.x() + 4.0 + text_width,
-                        input_bounds.min.y() + 2.0,
-                    ),
-                    Vec2::new(1.0, 14.0),
-                ),
-                theme.text_primary,
-            );
-        });
-
-        // Handle text input
-        for &c in &ui.input.characters {
-            if c == '\x08' {
-                state.rename_buffer.pop();
-            } else if c >= ' ' && state.rename_buffer.len() < 64 {
-                // Filter out invalid filename characters
-                if !matches!(c, '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|') {
-                    state.rename_buffer.push(c);
-                }
-            }
-        }
-
-        // Capture keyboard so game doesn't get input (only when panel is focused)
-        if is_focused {
-            ui.input.want_capture_keyboard = true;
-        }
-
-        // Track commit/cancel actions
-        let mut should_commit = false;
-        let mut should_cancel = false;
-
-        // Commit on Enter
-        if is_focused && ui.input.key_pressed(katla_ui::input::KeyCode::Enter) {
-            should_commit = true;
-        }
-
-        // Cancel on Escape
-        if is_focused && ui.input.key_pressed(katla_ui::input::KeyCode::Escape) {
-            should_cancel = true;
-        }
-
-        // Commit on click outside
-        if ui.input.mouse_clicked(katla_ui::input::mouse_button::LEFT)
-            && !ui.is_hovered(input_bounds)
-        {
-            should_commit = true;
-        }
-
-        // Process actions (only when focused)
-        if is_focused {
-            if should_commit {
-                let new_name = state.rename_buffer.clone();
-                if new_name != original_name && !new_name.is_empty() {
-                    let new_path = original_path.parent().unwrap().join(&new_name);
-                    state.pending_actions.push(AssetAction::Rename {
-                        old_path: original_path.clone(),
-                        new_path,
-                    });
-                }
-                state.cancel_rename();
-            } else if should_cancel {
-                state.cancel_rename();
-            }
-        }
-    }
-
-    // Process click actions after iteration (to avoid borrow conflicts)
-    if let Some(index) = clicked_index {
-        // Use input system's double-click detection + same-item check
-        let is_double = ui
-            .input
-            .mouse_double_clicked(katla_ui::input::mouse_button::LEFT)
-            && state.last_click_index == Some(index);
-        state.last_click_index = Some(index);
-
-        // Check for modifier keys (Ctrl for toggle, Shift for range)
-        let ctrl_held = ui.input.is_key_down(katla_ui::input::KeyCode::Control);
-        let shift_held = ui.input.is_key_down(katla_ui::input::KeyCode::Shift);
-
-        if ctrl_held {
-            // Ctrl+Click: Toggle selection
-            if state.selected_indices.contains(&index) || state.selected_index == Some(index) {
-                // Deselect this item
-                state.selected_indices.remove(&index);
-                if state.selected_index == Some(index) {
-                    state.selected_index = state.selected_indices.iter().next().copied();
-                }
-            } else {
-                // Add to selection - first move existing single selection to multi-select
-                if let Some(prev) = state.selected_index {
-                    if !state.selected_indices.contains(&prev) {
-                        state.selected_indices.insert(prev);
+                } else if shift_held && state.selected_index.is_some() {
+                    // Shift+Click: Range selection from last selected to this
+                    let start = state.selected_index.unwrap();
+                    let end = index;
+                    state.selected_indices.clear();
+                    for i in start.min(end)..=start.max(end) {
+                        if i < state.assets.len() {
+                            state.selected_indices.insert(i);
+                        }
                     }
-                }
-                state.selected_indices.insert(index);
-                state.selected_index = Some(index);
-            }
-        } else if shift_held && state.selected_index.is_some() {
-            // Shift+Click: Range selection from last selected to this
-            let start = state.selected_index.unwrap();
-            let end = index;
-            state.selected_indices.clear();
-            for i in start.min(end)..=start.max(end) {
-                if i < state.assets.len() {
-                    state.selected_indices.insert(i);
-                }
-            }
-        } else {
-            // Normal click: Single selection
-            state.selected_index = Some(index);
-            state.selected_indices.clear();
-        }
-
-        // Only navigate on double-click if no modifier keys were held
-        if is_double && !ctrl_held && !shift_held {
-            if let Some(path) = should_navigate {
-                if path.ends_with("..") {
-                    state.navigate_up(thumbnail_texture_ids);
                 } else {
-                    state.navigate_to(&path, thumbnail_texture_ids);
+                    // Normal click: Single selection
+                    state.selected_index = Some(index);
+                    state.selected_indices.clear();
                 }
-            } else if let Some(path) = should_preview_model {
-                // Double-click on model - open preview panel
-                state
-                    .pending_actions
-                    .push(AssetAction::ModelPreviewRequested(path));
+
+                // Only navigate on double-click if no modifier keys were held
+                if is_double && !ctrl_held && !shift_held {
+                    if let Some(path) = should_navigate {
+                        if path.ends_with("..") {
+                            state.navigate_up(thumbnail_texture_ids);
+                        } else {
+                            state.navigate_to(&path, thumbnail_texture_ids);
+                        }
+                    } else if let Some(path) = should_preview_model {
+                        // Double-click on model - open preview panel
+                        state
+                            .pending_actions
+                            .push(AssetAction::ModelPreviewRequested(path));
+                    }
+                }
             }
-        }
-    }
 
-    // Process right-click to open context menu
-    if let Some(index) = right_clicked_index {
-        state.context_menu_asset = Some(index);
-        state.context_menu_open = true;
-        ui.open_context_menu_at("asset_context", ui.input.mouse_pos);
-    }
+            // Process right-click to open context menu
+            if let Some(index) = right_clicked_index {
+                state.context_menu_asset = Some(index);
+                state.context_menu_open = true;
+                ui.open_context_menu_at("asset_context", ui.input.mouse_pos);
+            }
 
-    // Empty state
-    if state.assets.is_empty() {
-        let empty_text = if state.search_filter.is_empty() {
-            "No assets found"
-        } else {
-            "No matching assets"
-        };
-        let empty_size =
-            ui.measure_text(empty_text, ui.scaled_font_size(katla_ui::FontSize::Medium));
-        let empty_pos = Vec2::new(
-            content_bounds.center().x() - empty_size.x() * 0.5,
-            content_bounds.center().y() - empty_size.y() * 0.5,
-        );
-        ui.draw_text(
-            empty_text,
-            empty_pos,
-            theme.text_muted,
-            ui.scaled_font_size(katla_ui::FontSize::Medium),
-        );
-    }
+            // Empty state
+            if state.assets.is_empty() {
+                let empty_text = if state.search_filter.is_empty() {
+                    "No assets found"
+                } else {
+                    "No matching assets"
+                };
+                let empty_size =
+                    ui.measure_text(empty_text, ui.scaled_font_size(katla_ui::FontSize::Medium));
+                let empty_pos = Vec2::new(
+                    content_bounds.center().x() - empty_size.x() * 0.5,
+                    content_bounds.center().y() - empty_size.y() * 0.5,
+                );
+                ui.draw_text(
+                    empty_text,
+                    empty_pos,
+                    theme.text_muted,
+                    ui.scaled_font_size(katla_ui::FontSize::Medium),
+                );
+            }
 
-    // End scroll area with content height
-    let total_rows = state.assets.len().div_ceil(col_count);
-    let content_height = total_rows as f32 * row_height;
-    ui.end_scroll_area(content_height);
+            let total_rows = state.assets.len().div_ceil(col_count);
+            total_rows as f32 * row_height
+        },
+    );
+
+    // Get scroll offset for context menu (from state since scroll_area cleared it)
+    let scroll_offset = state.scroll_state.scroll_offset;
+    let item_size = ui.style.thumbnail_size;
+    let item_padding = 8.0;
+    let col_count =
+        ((bounds.width() - item_padding) / (item_size + item_padding)).max(1.0) as usize;
+    let row_height = item_size + 24.0;
 
     // === CONTEXT MENU ===
     // Handle empty space context menu (for creating folders, etc.)

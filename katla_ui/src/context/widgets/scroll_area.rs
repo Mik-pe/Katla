@@ -17,24 +17,25 @@ pub struct ScrollAreaState {
     pub stick_to_bottom: bool,
 }
 
-/// Scroll area builder.
+/// Scroll area options (builder pattern).
 pub struct ScrollArea<'a> {
     id: &'a str,
-    state: &'a mut ScrollAreaState,
     /// Maximum height for the scroll area.
     max_height: f32,
     /// Whether to show vertical scrollbar.
     show_scrollbar: bool,
+    /// Whether to stick to bottom when content grows.
+    stick_to_bottom: bool,
 }
 
 impl<'a> ScrollArea<'a> {
-    /// Create a new scroll area.
-    pub fn new(id: &'a str, state: &'a mut ScrollAreaState) -> Self {
+    /// Create a new scroll area configuration.
+    pub fn new(id: &'a str) -> Self {
         Self {
             id,
-            state,
             max_height: f32::MAX,
             show_scrollbar: true,
+            stick_to_bottom: false,
         }
     }
 
@@ -51,35 +52,51 @@ impl<'a> ScrollArea<'a> {
     }
 
     /// Keep scrolled to bottom when content grows.
-    pub fn stick_to_bottom(self, stick: bool) -> Self {
-        self.state.stick_to_bottom = stick;
+    pub fn stick_to_bottom(mut self, stick: bool) -> Self {
+        self.stick_to_bottom = stick;
         self
     }
 }
 
 impl UiContext {
-    /// Begin a scrollable area.
+    /// Scrollable area with closure-based content.
     ///
-    /// Returns the content bounds to draw content into.
-    /// Call `end_scroll_area()` after drawing content.
+    /// The closure should draw the scrollable content and return the total content height.
     ///
     /// # Example
     /// ```ignore
     /// let mut scroll_state = ScrollAreaState::default();
-    /// let content_bounds = ui.begin_scroll_area(
-    ///     ScrollArea::new("my_scroll", &mut scroll_state).max_height(200.0),
-    ///     bounds
+    /// scroll_state = ui.scroll_area(
+    ///     ScrollArea::new("my_scroll").max_height(200.0),
+    ///     scroll_state,
+    ///     bounds,
+    ///     |ui| {
+    ///         // Draw content at offset positions
+    ///         let content_height = 500.0; // Calculate from your content
+    ///         content_height
+    ///     }
     /// );
-    /// // Draw content at content_bounds.min + scroll offset
-    /// ui.end_scroll_area();
     /// ```
-    pub fn begin_scroll_area(&mut self, config: ScrollArea, bounds: Rect2D) -> Rect2D {
+    pub fn scroll_area<F>(
+        &mut self,
+        config: ScrollArea,
+        state: ScrollAreaState,
+        bounds: Rect2D,
+        content: F,
+    ) -> ScrollAreaState
+    where
+        F: FnOnce(&mut Self) -> f32,
+    {
         let ScrollArea {
             id,
-            state,
             max_height,
             show_scrollbar,
+            stick_to_bottom,
         } = config;
+
+        // Create mutable state from the passed value
+        let mut state = state;
+        state.stick_to_bottom = stick_to_bottom;
 
         // Calculate actual height (limited by max_height)
         let actual_height = bounds.height().min(max_height);
@@ -129,24 +146,17 @@ impl UiContext {
         // Push clip for content
         self.push_clip(content_bounds);
 
-        // Store for end_scroll_area
+        // Store for helper methods (scroll_offset, scroll_to_y)
         self.scroll_area_bounds = Some(bounds);
         self.scroll_area_content_bounds = Some(content_bounds);
-        self.scroll_area_state = Some(ScrollAreaState { ..*state });
+        self.scroll_area_state = Some(state);
         self.scroll_area_show_scrollbar = show_scrollbar;
 
-        // Return content bounds with scroll offset applied (caller draws at offset)
-        content_bounds
-    }
+        // Run content closure
+        let content_height = content(self);
 
-    /// End a scrollable area.
-    ///
-    /// Takes the actual content height and renders scrollbar if needed.
-    pub fn end_scroll_area(&mut self, content_height: f32) {
-        let bounds = self.scroll_area_bounds.unwrap();
-        let _content_bounds = self.scroll_area_content_bounds.unwrap();
-        let show_scrollbar = self.scroll_area_show_scrollbar;
-        let mut state = self.scroll_area_state.take().unwrap();
+        // Get the state back (it was modified by the closure via scroll_offset, scroll_to_y)
+        let mut state = self.scroll_area_state.unwrap();
 
         // Update content height
         let prev_content_height = state.content_height;
@@ -205,11 +215,10 @@ impl UiContext {
         // Clear stored state
         self.scroll_area_bounds = None;
         self.scroll_area_content_bounds = None;
+        self.scroll_area_state = None;
 
-        // Copy state back
-        if let Some(stored) = self.scroll_area_state.as_mut() {
-            *stored = state;
-        }
+        // Return the updated state
+        state
     }
 
     /// Get current scroll offset for a scroll area.
