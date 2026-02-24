@@ -416,11 +416,11 @@ mod tests {
     fn test_front_face_conversion() {
         let face = FrontFace::CounterClockwise;
         let vk_face: vk::FrontFace = face.into();
-        assert_eq!(vk_face, vk::FrontFace::COUNTER_CLOCKWISE);
+        assert_eq!(vk_face, vk::FrontFace::CLOCKWISE);
 
         let face = FrontFace::Clockwise;
         let vk_face: vk::FrontFace = face.into();
-        assert_eq!(vk_face, vk::FrontFace::CLOCKWISE);
+        assert_eq!(vk_face, vk::FrontFace::COUNTER_CLOCKWISE);
     }
 
     #[test]
