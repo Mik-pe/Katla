@@ -49,10 +49,10 @@ impl AttributeType {
             AttributeType::Normal => 1,
             AttributeType::Tangent => 2,
             AttributeType::TexCoord0 => 3,
-            AttributeType::TexCoord1 => 4,
-            AttributeType::Color0 => 5,
-            AttributeType::JointIndices => 6,
-            AttributeType::JointWeights => 7,
+            AttributeType::JointIndices => 4,  // Match skinned shader location
+            AttributeType::JointWeights => 5,  // Match skinned shader location
+            AttributeType::TexCoord1 => 6,
+            AttributeType::Color0 => 7,
         }
     }
 
@@ -119,8 +119,10 @@ mod tests {
         assert_eq!(AttributeType::Normal.default_location(), 1);
         assert_eq!(AttributeType::Tangent.default_location(), 2);
         assert_eq!(AttributeType::TexCoord0.default_location(), 3);
-        assert_eq!(AttributeType::JointIndices.default_location(), 6);
-        assert_eq!(AttributeType::JointWeights.default_location(), 7);
+        assert_eq!(AttributeType::JointIndices.default_location(), 4);  // Match skinned shader
+        assert_eq!(AttributeType::JointWeights.default_location(), 5);  // Match skinned shader
+        assert_eq!(AttributeType::TexCoord1.default_location(), 6);
+        assert_eq!(AttributeType::Color0.default_location(), 7);
     }
 
     #[test]

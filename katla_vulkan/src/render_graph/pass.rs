@@ -874,6 +874,8 @@ impl PassExecutionContext {
         };
 
         let mut next_object_index: u32 = 0;
+        let mut draw_count = 0;
+        let mut skip_count = 0;
 
         for draw in &draw_list.draws {
             let instance_count = draw.instance_count();
@@ -905,6 +907,16 @@ impl PassExecutionContext {
             let material = registry.get_material(draw.material);
 
             if let (Some(mesh), Some(material)) = (mesh, material) {
+                draw_count += 1;
+                let has_skeleton = draw.skeleton.is_some();
+                log::debug!(
+                    "Draw {} (mesh={:?}, mat={:?}, skeleton={})",
+                    draw_count,
+                    draw.mesh,
+                    draw.material,
+                    has_skeleton
+                );
+
                 let pipeline_ref = material.pipeline.borrow();
                 self.command_buffer.bind_graphics_pipeline(&pipeline_ref);
 
@@ -958,6 +970,13 @@ impl PassExecutionContext {
                     if let Some(ref vb) = mesh.vertex_buffer {
                         self.command_buffer
                             .bind_vertex_buffers(0, &[vb.object()], &[0]);
+                        log::debug!(
+                            "  draw_indexed: index_count={}, instance_count={}, first_instance={}, has_skeleton={}",
+                            ib.count(),
+                            instance_count,
+                            first_instance,
+                            draw.skeleton.is_some()
+                        );
                         self.command_buffer.draw_indexed(
                             ib.count(),
                             instance_count,
@@ -965,10 +984,42 @@ impl PassExecutionContext {
                             0,
                             first_instance,
                         );
+                    } else {
+                        log::warn!("  mesh has no vertex buffer!");
                     }
+                } else if let Some(ref vb) = mesh.vertex_buffer {
+                    // Non-indexed geometry - use draw_array
+                    self.command_buffer
+                        .bind_vertex_buffers(0, &[vb.object()], &[0]);
+                    log::debug!(
+                        "  draw_array: vertex_count={}, instance_count={}, first_instance={}, has_skeleton={}",
+                        vb.count(),
+                        instance_count,
+                        first_instance,
+                        draw.skeleton.is_some()
+                    );
+                    self.command_buffer
+                        .draw_array(vb.count(), instance_count, 0, first_instance);
+                } else {
+                    log::warn!("  mesh has no vertex or index buffer!");
                 }
+            } else {
+                skip_count += 1;
+                log::debug!(
+                    "Skip draw (mesh found={}, material found={}, mesh={:?}, mat={:?})",
+                    mesh.is_some(),
+                    material.is_some(),
+                    draw.mesh,
+                    draw.material
+                );
             }
         }
+
+        log::debug!(
+            "draw_draw_list complete: {} draws, {} skipped",
+            draw_count,
+            skip_count
+        );
     }
 
     /// Draw a fullscreen quad with a material.
