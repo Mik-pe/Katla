@@ -1000,6 +1000,9 @@ impl VulkanRenderer {
     ) -> MaterialHandle {
         use crate::rendering::registry::MaterialAsset;
 
+        // Determine uses_bindless from the pipeline itself
+        let uses_bindless = pipeline.borrow().is_bindless;
+
         let material_asset = MaterialAsset {
             pipeline,
             texture,
@@ -1007,7 +1010,7 @@ impl VulkanRenderer {
             pbr_textures: None,
             texture_indices,
             emission_index,
-            uses_bindless: true,
+            uses_bindless,
         };
 
         self.asset_registry.register_material(material_asset)
@@ -1057,6 +1060,9 @@ impl VulkanRenderer {
     ) -> MaterialHandle {
         use crate::rendering::registry::MaterialAsset;
 
+        // Determine uses_bindless from the pipeline itself
+        let uses_bindless = pipeline.borrow().is_bindless;
+
         let material_asset = MaterialAsset {
             pipeline,
             texture,
@@ -1064,7 +1070,7 @@ impl VulkanRenderer {
             pbr_textures: None,
             texture_indices,
             emission_index,
-            uses_bindless: true,
+            uses_bindless,
         };
 
         self.asset_registry

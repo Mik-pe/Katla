@@ -226,6 +226,9 @@ pub struct MaterialPipeline {
     /// Push descriptor set index (if this pipeline uses push descriptors).
     /// Used by UI textures for dynamic texture switching.
     pub push_descriptor_set: Option<u32>,
+    /// Whether this pipeline uses bindless textures.
+    /// Bindless materials bind the BindlessTextureManager's descriptor set at set 1.
+    pub is_bindless: bool,
     context: Rc<VulkanContext>,
 }
 
@@ -249,6 +252,7 @@ impl MaterialPipeline {
             texture_set_layout: None,
             skeleton_set_layout: None,
             push_descriptor_set: None,
+            is_bindless: false,
             context,
         }
     }
@@ -272,6 +276,7 @@ impl MaterialPipeline {
             texture_set_layout: None,
             skeleton_set_layout: None,
             push_descriptor_set: Some(1), // Set 1 is the push descriptor set
+            is_bindless: false,
             context,
         }
     }
@@ -295,6 +300,7 @@ impl MaterialPipeline {
             texture_set_layout: Some(texture_set_layout),
             skeleton_set_layout: None,
             push_descriptor_set: None,
+            is_bindless: false,
             context,
         }
     }
@@ -324,6 +330,7 @@ impl MaterialPipeline {
             texture_set_layout: Some(texture_set_layout),
             skeleton_set_layout: Some(skeleton_set_layout),
             push_descriptor_set: None,
+            is_bindless: false,
             context,
         }
     }
@@ -354,6 +361,7 @@ impl MaterialPipeline {
             texture_set_layout: None, // No per-material texture layout for bindless
             skeleton_set_layout: None,
             push_descriptor_set: None,
+            is_bindless: true,
             context,
         }
     }
@@ -381,6 +389,7 @@ impl MaterialPipeline {
             texture_set_layout: None, // No per-material texture layout for bindless
             skeleton_set_layout: Some(skeleton_set_layout),
             push_descriptor_set: None,
+            is_bindless: true,
             context,
         }
     }
