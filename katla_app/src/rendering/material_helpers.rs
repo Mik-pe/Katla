@@ -136,7 +136,7 @@ fn create_checkerboard_material_with_color(
         material_pipeline,
         Some(texture),
         vertex_binding,
-        color,
+        color.map(|c| c.to_array()),
         texture_indices,
         emission_idx,
     )

@@ -51,9 +51,9 @@ pub fn derive_component(input: TokenStream) -> TokenStream {
     TokenStream::from(expanded)
 }
 
-/// Derive macro for the Material trait.
+/// Derive macro for the MaterialDefinition trait.
 ///
-/// This macro automatically implements the `Material` trait for your struct
+/// This macro automatically implements the `MaterialDefinition` trait for your struct
 /// using field values and/or helper attributes.
 ///
 /// # Field Attributes
@@ -90,7 +90,7 @@ pub fn derive_component(input: TokenStream) -> TokenStream {
 ///
 /// ```ignore
 /// use katla_vulkan::{
-///     Material, VertexBinding, ShaderSource, RenderState,
+///     MaterialDefinition, VertexBinding, ShaderSource, RenderState,
 ///     DescriptorSetLayoutBuilder, DescriptorType, ShaderStages,
 ///     MaterialDomain, ImageFormat, MaterialPipeline,
 /// };
@@ -305,7 +305,7 @@ pub fn derive_material(input: TokenStream) -> TokenStream {
 
     // Generate the implementation
     let expanded = quote! {
-        impl #impl_generics katla_vulkan::Material for #name #ty_generics #where_clause {
+        impl #impl_generics katla_vulkan::MaterialDefinition for #name #ty_generics #where_clause {
             fn vertex_shader(&self) -> katla_vulkan::material::ShaderSource {
                 #vertex_shader_expr
             }

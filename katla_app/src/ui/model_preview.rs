@@ -326,6 +326,10 @@ impl ModelPreviewState {
                 emission_index,
             ) = material.get_registration_data();
 
+            // Vertex binding and pipeline are required for material registration
+            let pipeline = pipeline.expect("Material must have pipeline");
+            let vertex_binding = vertex_binding.expect("Material must have vertex binding");
+
             let material_handle = if let Some(pbr) = pbr_textures {
                 // Use PBR registration for materials with PBR textures
                 renderer.register_material_pbr(
@@ -392,7 +396,7 @@ impl ModelPreviewState {
                 .get(texture_index)
                 .and_then(|image| Self::load_texture_from_gltf(image, context));
 
-            Material::from_template(template, texture, None)
+            Material::from_template_with_optional_texture(template, texture, None)
         } else {
             panic!(
                 "Material template '{}' not found for model preview. Ensure materials are loaded.",

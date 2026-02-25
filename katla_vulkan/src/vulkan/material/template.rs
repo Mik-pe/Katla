@@ -5,9 +5,10 @@
 //! parameters and textures.
 
 use super::{
-    MaterialDescriptor, MaterialParameters, MaterialPipeline, MaterialValue, ShaderReflection,
+    MaterialDescriptor, MaterialParameters, MaterialPipeline, MaterialValue, PbrTextureSet,
+    ShaderReflection,
 };
-use crate::Texture;
+use crate::{Texture, VertexBinding};
 use ash::vk;
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
@@ -262,107 +263,348 @@ impl MaterialTemplate {
     }
 }
 
-/// An instance of a material template with instance-specific parameters
+//=============================================================================
+// Unified Material Type
+//=============================================================================
+
+/// The unified material type for the application layer.
 ///
-/// Each instance can have different parameter values and textures while
-/// sharing the same pipeline with other instances.
-pub struct MaterialInstance {
-    template: Rc<MaterialTemplate>,
+/// This type combines pipeline reference, textures, and bindless texture indices
+/// into a single material that can be registered with the renderer.
+///
+/// # Creation
+///
+/// Materials can be created from:
+/// - Template name: `Material::new("gltf_pbr_bindless")` (resolved during registration)
+/// - Existing template: `Material::from_template(template)`
+/// - Cached pipeline: `Material::from_cached_pipeline(pipeline, vertex_binding)`
+///
+/// # Builder Pattern
+///
+/// ```ignore
+/// let material = Material::new("gltf_pbr_bindless")
+///     .with_pbr_textures(pbr_textures, texture_refs)
+///     .with_bindless_indices([0, 1, 2, 3], 4);
+///
+/// let handle = renderer.register_material(&mut material)?;
+/// ```
+#[derive(Clone)]
+pub struct Material {
+    /// Optional template reference (None until resolved)
+    template: Option<Rc<MaterialTemplate>>,
+    /// Template name for lazy resolution
+    template_name: Option<String>,
+    /// Instance-specific parameter values
     parameters: HashMap<String, MaterialValue>,
+    /// Instance-specific textures by binding name
     textures: HashMap<String, Rc<Texture>>,
+    /// Vertex binding for this material's geometry
+    vertex_binding: Option<VertexBinding>,
+    /// PBR texture set for full PBR materials
+    pbr_textures: Option<PbrTextureSet>,
+    /// Texture references to keep alive
+    pbr_texture_refs: Option<Vec<Rc<Texture>>>,
+    /// Bindless texture indices: [albedo, normal, metallic_roughness, ao]
+    pub texture_indices: [u32; 4],
+    /// Emission texture index for bindless
+    pub emission_index: u32,
+    /// Optional base color tint
+    pub base_color: Option<[f32; 4]>,
 }
 
-impl MaterialInstance {
-    /// Create a new instance with a shared template
-    pub fn with_template(template: Rc<MaterialTemplate>) -> Self {
+impl Material {
+    /// Create a new material by template name.
+    ///
+    /// The template will be resolved when the material is registered
+    /// with the renderer via `register_material()`.
+    pub fn new(template_name: impl Into<String>) -> Self {
         Self {
-            template,
+            template: None,
+            template_name: Some(template_name.into()),
             parameters: HashMap::new(),
             textures: HashMap::new(),
+            vertex_binding: None,
+            pbr_textures: None,
+            pbr_texture_refs: None,
+            texture_indices: [0; 4],
+            emission_index: 0,
+            base_color: None,
         }
     }
 
-    /// Create a new instance with a shared template and custom parameters
-    pub fn with_template_and_params(
+    /// Create a material from an existing template.
+    pub fn from_template(template: Rc<MaterialTemplate>) -> Self {
+        Self {
+            template: Some(template),
+            template_name: None,
+            parameters: HashMap::new(),
+            textures: HashMap::new(),
+            vertex_binding: None,
+            pbr_textures: None,
+            pbr_texture_refs: None,
+            texture_indices: [0; 4],
+            emission_index: 0,
+            base_color: None,
+        }
+    }
+
+    /// Create a material from a template reference.
+    ///
+    /// This is a convenience method that clones the Rc.
+    pub fn from_template_ref(template: &Rc<MaterialTemplate>) -> Self {
+        Self::from_template(Rc::clone(template))
+    }
+
+    /// Create a material from a template with optional texture.
+    ///
+    /// This is a convenience factory method for the common case of
+    /// creating a material with just an albedo texture.
+    pub fn from_template_with_optional_texture(
+        template: &Rc<MaterialTemplate>,
+        texture: Option<Rc<Texture>>,
+        _color: Option<[f32; 4]>,
+    ) -> Self {
+        let mut material = Self::from_template(Rc::clone(template));
+        if let Some(tex) = texture {
+            material = material.with_texture("albedo", tex);
+        }
+        material
+    }
+
+    /// Create a material from a template with vertex binding.
+    pub fn from_template_with_binding(
         template: Rc<MaterialTemplate>,
-        params: HashMap<String, MaterialValue>,
+        vertex_binding: VertexBinding,
     ) -> Self {
         Self {
-            template,
-            parameters: params,
+            template: Some(template),
+            template_name: None,
+            parameters: HashMap::new(),
             textures: HashMap::new(),
+            vertex_binding: Some(vertex_binding),
+            pbr_textures: None,
+            pbr_texture_refs: None,
+            texture_indices: [0; 4],
+            emission_index: 0,
+            base_color: None,
         }
     }
 
-    /// Get the template this instance references
-    pub fn template(&self) -> &MaterialTemplate {
-        &self.template
+    /// Create a material from a cached pipeline.
+    pub fn from_cached_pipeline(
+        _pipeline: Rc<RefCell<MaterialPipeline>>,
+        vertex_binding: VertexBinding,
+    ) -> Self {
+        // Create a minimal template wrapper for the pipeline
+        // Note: This is a simplified version - full template creation requires descriptor/reflection
+        Self {
+            template: None, // Will need special handling
+            template_name: None,
+            parameters: HashMap::new(),
+            textures: HashMap::new(),
+            vertex_binding: Some(vertex_binding),
+            pbr_textures: None,
+            pbr_texture_refs: None,
+            texture_indices: [0; 4],
+            emission_index: 0,
+            base_color: None,
+        }
     }
 
-    /// Get the pipeline (shared with template)
-    pub fn pipeline(&self) -> Rc<RefCell<MaterialPipeline>> {
-        self.template.pipeline()
+    // === Builder Methods ===
+
+    /// Set the vertex binding.
+    pub fn with_vertex_binding(mut self, binding: VertexBinding) -> Self {
+        self.vertex_binding = Some(binding);
+        self
     }
 
-    /// Get the reflection data (shared with template)
-    pub fn reflection(&self) -> &ShaderReflection {
-        &self.template.reflection
+    /// Set a single texture by binding name.
+    pub fn with_texture(mut self, name: &str, texture: Rc<Texture>) -> Self {
+        self.textures.insert(name.to_string(), texture);
+        self
     }
 
-    /// Set a parameter value
+    /// Set PBR textures with texture references.
+    ///
+    /// The `pbr_textures` contains the Vulkan handles for rendering,
+    /// while `texture_refs` keeps the Texture objects alive.
+    pub fn with_pbr_textures(
+        mut self,
+        pbr_textures: PbrTextureSet,
+        texture_refs: Vec<Rc<Texture>>,
+    ) -> Self {
+        self.pbr_textures = Some(pbr_textures);
+        self.pbr_texture_refs = Some(texture_refs);
+        self
+    }
+
+    /// Set bindless texture indices.
+    ///
+    /// Indices: [albedo, normal, metallic_roughness, ao]
+    pub fn with_bindless_indices(mut self, indices: [u32; 4], emission: u32) -> Self {
+        self.texture_indices = indices;
+        self.emission_index = emission;
+        self
+    }
+
+    /// Set a parameter value.
+    pub fn with_parameter(mut self, name: &str, value: MaterialValue) -> Self {
+        self.parameters.insert(name.to_string(), value);
+        self
+    }
+
+    /// Set the base color tint.
+    pub fn with_base_color(mut self, color: [f32; 4]) -> Self {
+        self.base_color = Some(color);
+        self
+    }
+
+    // === Accessors ===
+
+    /// Get the template name (for lazy resolution).
+    pub fn template_name(&self) -> Option<&str> {
+        self.template_name.as_deref()
+    }
+
+    /// Check if the template is resolved.
+    pub fn is_resolved(&self) -> bool {
+        self.template.is_some()
+    }
+
+    /// Get the template (if resolved).
+    pub fn template(&self) -> Option<&MaterialTemplate> {
+        self.template.as_deref()
+    }
+
+    /// Get the pipeline (if resolved).
+    pub fn pipeline(&self) -> Option<Rc<RefCell<MaterialPipeline>>> {
+        self.template.as_ref().map(|t| t.pipeline())
+    }
+
+    /// Get the vertex binding.
+    pub fn vertex_binding(&self) -> Option<&VertexBinding> {
+        self.vertex_binding.as_ref()
+    }
+
+    /// Get PBR textures.
+    pub fn pbr_textures(&self) -> Option<&PbrTextureSet> {
+        self.pbr_textures.as_ref()
+    }
+
+    /// Get PBR texture references.
+    pub fn pbr_texture_refs(&self) -> Option<&[Rc<Texture>]> {
+        self.pbr_texture_refs.as_deref()
+    }
+
+    /// Get a parameter value.
+    pub fn get_parameter(&self, name: &str) -> Option<&MaterialValue> {
+        self.parameters.get(name)
+    }
+
+    /// Get a texture by binding name.
+    pub fn get_texture(&self, name: &str) -> Option<&Rc<Texture>> {
+        self.textures.get(name)
+    }
+
+    /// Get all textures.
+    pub fn textures(&self) -> &HashMap<String, Rc<Texture>> {
+        &self.textures
+    }
+
+    // === Resolution ===
+
+    /// Resolve the template from a registry.
+    ///
+    /// This is called by the renderer during registration.
+    pub fn resolve(&mut self, registry: &super::registry::MaterialRegistry) -> bool {
+        if self.template.is_some() {
+            return true;
+        }
+
+        if let Some(name) = &self.template_name {
+            if let Some(template) = registry.get_template(name) {
+                self.template = Some(template.clone());
+                return true;
+            }
+        }
+
+        false
+    }
+
+    /// Set the resolved template directly.
+    ///
+    /// Used by the renderer after resolving from name.
+    pub fn set_template(&mut self, template: Rc<MaterialTemplate>) {
+        self.template = Some(template);
+    }
+
+    /// Set the cached pipeline directly (for non-template materials).
+    pub fn set_cached_pipeline(&mut self, _pipeline: Rc<RefCell<MaterialPipeline>>) {
+        // For materials without templates, we store the pipeline in a minimal wrapper
+        // This is used for materials created from cached pipelines
+        self.template = None;
+        // Note: In a full implementation, we'd need to handle this case
+    }
+
+    // === Mutators ===
+
+    /// Set a parameter value (mutable).
     pub fn set_parameter(&mut self, name: impl Into<String>, value: MaterialValue) {
         self.parameters.insert(name.into(), value);
     }
 
-    /// Get a parameter value
-    pub fn get_parameter(&self, name: &str) -> Option<&MaterialValue> {
-        // Check instance parameters first
-        if let Some(value) = self.parameters.get(name) {
-            return Some(value);
-        }
-        // Fall back to template defaults
-        self.template.default_parameters.get(name)
-    }
-
-    /// Set a texture for a binding slot
+    /// Set a texture for a binding slot (mutable).
     pub fn set_texture(&mut self, slot: impl Into<String>, texture: Rc<Texture>) {
         self.textures.insert(slot.into(), texture);
     }
 
-    /// Get a texture for a binding slot
-    pub fn get_texture(&self, slot: &str) -> Option<&Rc<Texture>> {
-        self.textures.get(slot)
+    /// Set PBR textures (mutable).
+    pub fn set_pbr_textures(
+        &mut self,
+        pbr_textures: PbrTextureSet,
+        texture_refs: Vec<Rc<Texture>>,
+    ) {
+        self.pbr_textures = Some(pbr_textures);
+        self.pbr_texture_refs = Some(texture_refs);
     }
 
-    /// Get all instance parameters (merged with defaults)
-    pub fn get_all_parameters(&self) -> HashMap<String, MaterialValue> {
-        let mut merged = HashMap::new();
-
-        // Start with template defaults
-        for (name, value) in self.template.descriptor.parameters.iter() {
-            merged.insert(name.clone(), value.clone());
-        }
-
-        // Override with instance parameters
-        for (name, value) in self.parameters.iter() {
-            merged.insert(name.clone(), value.clone());
-        }
-
-        merged
+    /// Set bindless texture indices (mutable).
+    pub fn set_bindless_indices(&mut self, indices: [u32; 4], emission: u32) {
+        self.texture_indices = indices;
+        self.emission_index = emission;
     }
 
-    /// Generate the uniform buffer data for this instance
+    // === Utility ===
+
+    /// Clone this material (shallow copy of template).
+    pub fn clone_material(&self) -> Self {
+        Self {
+            template: self.template.clone(),
+            template_name: self.template_name.clone(),
+            parameters: self.parameters.clone(),
+            textures: self.textures.clone(),
+            vertex_binding: self.vertex_binding.clone(),
+            pbr_textures: self.pbr_textures.clone(),
+            pbr_texture_refs: self.pbr_texture_refs.clone(),
+            texture_indices: self.texture_indices,
+            emission_index: self.emission_index,
+            base_color: self.base_color,
+        }
+    }
+
+    /// Generate the uniform buffer data for this material.
     pub fn generate_uniform_buffer(&self) -> Result<Vec<u8>, InstanceError> {
-        // Create a temporary parameters container with merged values
+        let template = self
+            .template
+            .as_ref()
+            .ok_or_else(|| InstanceError::TemplateNotFound("No template set".to_string()))?;
+
+        // Merge parameters with defaults
         let merged_params = self.get_all_parameters();
 
-        // For now, we'll need to reconstruct the MaterialParameters
-        // In a full implementation, this would use the reflection system
-        // to generate the buffer with proper offsets
-
         // Get the uniform buffer layout
-        let layout = self
-            .template
+        let layout = template
             .reflection
             .get_uniforms_struct()
             .ok_or_else(|| InstanceError::ParameterNotFound("No uniforms struct".to_string()))?;
@@ -384,16 +626,252 @@ impl MaterialInstance {
         Ok(buffer)
     }
 
-    /// Clone this instance
-    ///
-    /// This creates a shallow copy that shares the template but has
-    /// independent parameters and textures.
-    pub fn clone_instance(&self) -> Self {
-        Self {
-            template: Rc::clone(&self.template),
-            parameters: self.parameters.clone(),
-            textures: self.textures.clone(),
+    /// Get all parameters merged with template defaults.
+    pub fn get_all_parameters(&self) -> HashMap<String, MaterialValue> {
+        let mut merged = HashMap::new();
+
+        // Start with template defaults
+        if let Some(template) = &self.template {
+            for (name, value) in template.descriptor.parameters.iter() {
+                merged.insert(name.clone(), value.clone());
+            }
         }
+
+        // Override with instance parameters
+        for (name, value) in self.parameters.iter() {
+            merged.insert(name.clone(), value.clone());
+        }
+
+        merged
+    }
+}
+
+//=============================================================================
+// Legacy MaterialInstance (Type Alias for Backward Compatibility)
+//=============================================================================
+
+/// Legacy type alias for backward compatibility.
+///
+/// New code should use `Material` directly.
+pub type MaterialInstance = Material;
+
+impl MaterialInstance {
+    /// Legacy constructor: Create a new instance with a shared template.
+    #[deprecated(note = "Use Material::from_template instead")]
+    pub fn with_template(template: Rc<MaterialTemplate>) -> Self {
+        Material::from_template(template)
+    }
+
+    /// Legacy constructor: Create a new instance with a shared template and custom parameters.
+    #[deprecated(note = "Use Material::from_template and with_parameter instead")]
+    pub fn with_template_and_params(
+        template: Rc<MaterialTemplate>,
+        params: HashMap<String, MaterialValue>,
+    ) -> Self {
+        let mut material = Material::from_template(template);
+        material.parameters = params;
+        material
+    }
+}
+
+// ============================================================================
+// Backward Compatibility Methods for katla_app
+// ============================================================================
+
+impl Material {
+    /// Create a material from a template with a texture and color.
+    ///
+    /// This is a compatibility method for the old katla_app::rendering::Material API.
+    ///
+    /// Takes a reference to Rc<MaterialTemplate> for compatibility with how
+    /// templates are returned from MaterialRegistry::get_template().
+    pub fn from_template_compatible(
+        template: &Rc<MaterialTemplate>,
+        texture: Option<Rc<Texture>>,
+        _color: Option<[f32; 4]>,
+    ) -> Self {
+        use crate::vulkan::vertexbinding::get_pbr_vertex_binding;
+
+        let mut material = Material::from_template_with_binding(
+            Rc::clone(template),
+            get_pbr_vertex_binding(),
+        );
+        if let Some(tex) = texture {
+            material = material.with_texture("albedo", tex);
+        }
+        material
+    }
+
+    /// Create a full PBR material from a template.
+    pub fn from_template_pbr(
+        template: &Rc<MaterialTemplate>,
+        pbr_textures: PbrTextureSet,
+        texture_refs: Vec<Rc<Texture>>,
+        _color: Option<[f32; 4]>,
+    ) -> Self {
+        use crate::vulkan::vertexbinding::get_pbr_vertex_binding;
+
+        Material::from_template_with_binding(Rc::clone(template), get_pbr_vertex_binding())
+            .with_pbr_textures(pbr_textures, texture_refs)
+    }
+
+    /// Create a skinned material from a template.
+    pub fn from_template_skinned(
+        template: &Rc<MaterialTemplate>,
+        texture: Option<Rc<Texture>>,
+        _color: Option<[f32; 4]>,
+    ) -> Self {
+        use crate::vulkan::vertexbinding::get_skinned_vertex_binding;
+
+        let mut material = Material::from_template_with_binding(
+            Rc::clone(template),
+            get_skinned_vertex_binding(),
+        );
+        if let Some(tex) = texture {
+            material = material.with_texture("albedo", tex);
+        }
+        material
+    }
+
+    /// Create a skinned material with bindless texture indices.
+    pub fn from_template_skinned_with_bindless(
+        template: &Rc<MaterialTemplate>,
+        texture: Option<Rc<Texture>>,
+        _color: Option<[f32; 4]>,
+        texture_indices: [u32; 4],
+        emission_index: u32,
+    ) -> Self {
+        use crate::vulkan::vertexbinding::get_skinned_vertex_binding;
+
+        let mut material = Material::from_template_with_binding(
+            Rc::clone(template),
+            get_skinned_vertex_binding(),
+        )
+        .with_bindless_indices(texture_indices, emission_index);
+
+        if let Some(tex) = texture {
+            material = material.with_texture("albedo", tex);
+        }
+        material
+    }
+
+    /// Create a full PBR material with bindless texture indices.
+    pub fn from_template_pbr_bindless(
+        template: &Rc<MaterialTemplate>,
+        pbr_textures: PbrTextureSet,
+        texture_refs: Vec<Rc<Texture>>,
+        _color: Option<[f32; 4]>,
+        texture_indices: [u32; 4],
+        emission_index: u32,
+    ) -> Self {
+        use crate::vulkan::vertexbinding::get_pbr_vertex_binding;
+
+        Material::from_template_with_binding(Rc::clone(template), get_pbr_vertex_binding())
+            .with_pbr_textures(pbr_textures, texture_refs)
+            .with_bindless_indices(texture_indices, emission_index)
+    }
+
+    /// Create a skinned PBR material with bindless texture indices.
+    pub fn from_template_skinned_pbr_bindless(
+        template: &Rc<MaterialTemplate>,
+        pbr_textures: PbrTextureSet,
+        texture_refs: Vec<Rc<Texture>>,
+        _color: Option<[f32; 4]>,
+        texture_indices: [u32; 4],
+        emission_index: u32,
+    ) -> Self {
+        use crate::vulkan::vertexbinding::get_skinned_vertex_binding;
+
+        Material::from_template_with_binding(Rc::clone(template), get_skinned_vertex_binding())
+            .with_pbr_textures(pbr_textures, texture_refs)
+            .with_bindless_indices(texture_indices, emission_index)
+    }
+
+    /// Create a material from a pipeline directly (non-template).
+    pub fn from_pipeline(
+        _material_pipeline: MaterialPipeline,
+        texture: Option<Rc<Texture>>,
+        vertex_binding: VertexBinding,
+        _color: Option<[f32; 4]>,
+    ) -> Self {
+        // Note: This is a simplified implementation
+        // Full implementation would need to wrap the pipeline in a template
+        let mut material = Material::new("__pipeline__");
+        if let Some(tex) = texture {
+            material = material.with_texture("albedo", tex);
+        }
+        material.vertex_binding = Some(vertex_binding);
+        material
+    }
+
+    /// Create a bindless material from a pipeline.
+    pub fn from_pipeline_with_textures(
+        _material_pipeline: MaterialPipeline,
+        texture: Option<Rc<Texture>>,
+        vertex_binding: VertexBinding,
+        _color: Option<[f32; 4]>,
+        texture_indices: [u32; 4],
+        emission_index: u32,
+    ) -> Self {
+        let mut material = Material::new("__pipeline__")
+            .with_bindless_indices(texture_indices, emission_index);
+        if let Some(tex) = texture {
+            material = material.with_texture("albedo", tex);
+        }
+        material.vertex_binding = Some(vertex_binding);
+        material
+    }
+
+    /// Create a bindless material from a cached pipeline.
+    pub fn from_cached_pipeline_with_textures(
+        _material_pipeline: Rc<RefCell<MaterialPipeline>>,
+        texture: Option<Rc<Texture>>,
+        vertex_binding: VertexBinding,
+        _color: Option<[f32; 4]>,
+        texture_indices: [u32; 4],
+        emission_index: u32,
+    ) -> Self {
+        let mut material = Material::new("__cached_pipeline__")
+            .with_bindless_indices(texture_indices, emission_index);
+        if let Some(tex) = texture {
+            material = material.with_texture("albedo", tex);
+        }
+        material.vertex_binding = Some(vertex_binding);
+        material
+    }
+
+    /// Get the pipeline for rendering (if resolved).
+    ///
+    /// This returns the pipeline Rc for rendering operations.
+    pub fn material_pipeline(&self) -> Option<Rc<RefCell<MaterialPipeline>>> {
+        self.pipeline()
+    }
+
+    /// Get registration data for legacy compatibility.
+    ///
+    /// This is used by code that hasn't been updated to use the new
+    /// `renderer.register_material()` API.
+    #[allow(clippy::type_complexity)]
+    pub fn get_registration_data(
+        &self,
+    ) -> (
+        Option<Rc<RefCell<MaterialPipeline>>>,
+        Option<Rc<Texture>>,
+        Option<VertexBinding>,
+        Option<PbrTextureSet>,
+        Option<Vec<Rc<Texture>>>,
+        [u32; 4],
+        u32,
+    ) {
+        (
+            self.pipeline(),
+            self.textures.values().next().cloned(),
+            self.vertex_binding.clone(),
+            self.pbr_textures.clone(),
+            self.pbr_texture_refs.clone(),
+            self.texture_indices,
+            self.emission_index,
+        )
     }
 }
 
