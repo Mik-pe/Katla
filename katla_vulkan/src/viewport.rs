@@ -26,14 +26,13 @@
 use log::info;
 
 use crate::render_graph::types::{Extent2D, ImageFormat};
-use crate::rendering::DrawList;
+use crate::renderer::DrawList;
+use crate::renderer::ViewportRenderTarget;
 use crate::sync::{
     AccessFlags2, DependencyInfo, ImageMemoryBarrier2, PipelineStage2Flags, VkImage, VkImageView,
 };
 use crate::vulkan::material::storage_uniform::{StorageDescriptorSet, StorageUniformManager};
-use crate::{
-    CompiledRenderGraph, FrameUniforms, RenderGraphError, ViewportRenderTarget, VulkanContext,
-};
+use crate::{CompiledRenderGraph, FrameUniforms, RenderGraphError, VulkanContext};
 use ash::vk;
 use std::cell::RefCell;
 use std::rc::Rc;

@@ -8,7 +8,7 @@ use std::ops::Index;
 
 /// A container for double/triple-buffered resources.
 ///
-/// Uses `crate::FRAMES_IN_FLIGHT` for size - no configuration needed.
+/// Uses `crate::renderer::FRAMES_IN_FLIGHT` for size - no configuration needed.
 /// This ensures consistent frame buffering across the entire engine.
 ///
 /// # Example
@@ -35,7 +35,7 @@ impl<T> FrameBuffer<T> {
     where
         F: Fn(usize) -> T,
     {
-        let buffers = (0..crate::FRAMES_IN_FLIGHT)
+        let buffers = (0..crate::renderer::FRAMES_IN_FLIGHT)
             .map(|i| RefCell::new(factory(i)))
             .collect();
         Self { buffers }
@@ -89,7 +89,7 @@ mod tests {
     #[test]
     fn test_frame_buffer_creation() {
         let buffer: FrameBuffer<i32> = FrameBuffer::new(|i| i as i32 * 10);
-        assert_eq!(buffer.len(), crate::FRAMES_IN_FLIGHT);
+        assert_eq!(buffer.len(), crate::renderer::FRAMES_IN_FLIGHT);
     }
 
     #[test]

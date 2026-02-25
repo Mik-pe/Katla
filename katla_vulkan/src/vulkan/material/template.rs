@@ -702,10 +702,8 @@ impl Material {
     ) -> Self {
         use crate::vulkan::vertexbinding::get_pbr_vertex_binding;
 
-        let mut material = Material::from_template_with_binding(
-            Rc::clone(template),
-            get_pbr_vertex_binding(),
-        );
+        let mut material =
+            Material::from_template_with_binding(Rc::clone(template), get_pbr_vertex_binding());
         if let Some(tex) = texture {
             material = material.with_texture("albedo", tex);
         }
@@ -733,10 +731,8 @@ impl Material {
     ) -> Self {
         use crate::vulkan::vertexbinding::get_skinned_vertex_binding;
 
-        let mut material = Material::from_template_with_binding(
-            Rc::clone(template),
-            get_skinned_vertex_binding(),
-        );
+        let mut material =
+            Material::from_template_with_binding(Rc::clone(template), get_skinned_vertex_binding());
         if let Some(tex) = texture {
             material = material.with_texture("albedo", tex);
         }
@@ -753,11 +749,9 @@ impl Material {
     ) -> Self {
         use crate::vulkan::vertexbinding::get_skinned_vertex_binding;
 
-        let mut material = Material::from_template_with_binding(
-            Rc::clone(template),
-            get_skinned_vertex_binding(),
-        )
-        .with_bindless_indices(texture_indices, emission_index);
+        let mut material =
+            Material::from_template_with_binding(Rc::clone(template), get_skinned_vertex_binding())
+                .with_bindless_indices(texture_indices, emission_index);
 
         if let Some(tex) = texture {
             material = material.with_texture("albedo", tex);

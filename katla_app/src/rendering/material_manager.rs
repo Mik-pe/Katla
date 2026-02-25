@@ -165,7 +165,11 @@ impl MaterialManager {
         let template = material_registry.get_template(&name)?;
 
         // Create material from template
-        let material = Material::from_template_with_optional_texture(template, texture, color.map(|c| c.to_array()));
+        let material = Material::from_template_with_optional_texture(
+            template,
+            texture,
+            color.map(|c| c.to_array()),
+        );
 
         // Register the material
         Some(self.register_material(name, material))
@@ -272,10 +276,9 @@ impl MaterialManager {
                                 // Get the pipeline from the new material
                                 if let Some(pipeline) = new_material.material_pipeline() {
                                     // Replace the pipeline in AssetRegistry
-                                    let updated = renderer.asset_registry.replace_material_pipeline(
-                                        handle,
-                                        pipeline,
-                                    );
+                                    let updated = renderer
+                                        .asset_registry
+                                        .replace_material_pipeline(handle, pipeline);
 
                                     if updated {
                                         // Update in MaterialManager
@@ -286,7 +289,10 @@ impl MaterialManager {
                                             material_name
                                         );
                                     } else {
-                                        debug!("  ✗ Failed to update AssetRegistry: {}", material_name);
+                                        debug!(
+                                            "  ✗ Failed to update AssetRegistry: {}",
+                                            material_name
+                                        );
                                     }
                                 } else {
                                     // No pipeline - just update MaterialManager

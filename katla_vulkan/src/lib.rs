@@ -2,7 +2,6 @@ pub mod error;
 pub mod material;
 pub mod render_graph;
 pub mod renderer;
-pub mod rendering;
 pub mod sync;
 pub mod viewport;
 pub mod vulkan;
@@ -20,13 +19,9 @@ pub use render_graph::resource::{
     CompiledResource, ResourceAccessType, ResourceId, ResourceKind, ResourceLifetime, ResourceUsage,
 };
 pub use render_graph::*;
-pub use renderer::*;
-pub use rendering::{
-    registry::AssetRegistry,
-    types::{
-        DrawCall, DrawList, FrameUniforms, InstanceData, MaterialHandle, MeshHandle,
-        ParticleDispatch, ParticleRender, SkeletonHandle,
-    },
+pub use renderer::{
+    AssetRegistry, DrawCall, DrawList, FrameData, FrameUniforms, InstanceData, MaterialHandle,
+    MeshHandle, ParticleDispatch, ParticleRender, SkeletonHandle, VulkanRenderer, FRAMES_IN_FLIGHT,
 };
 pub use sync::{
     VkBuffer, VkCommandBuffer, VkDescriptorPool, VkDescriptorSet, VkDescriptorSetLayout, VkFence,

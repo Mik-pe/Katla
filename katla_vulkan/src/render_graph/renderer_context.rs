@@ -7,8 +7,8 @@ use std::rc::Rc;
 use ash::khr::push_descriptor::Device as PushDescriptorDevice;
 use ash::vk;
 
-use crate::rendering::registry::AssetRegistry;
-use crate::rendering::DrawList;
+use crate::renderer::registry::AssetRegistry;
+use crate::renderer::DrawList;
 use crate::vulkan::material::{SkeletonDescriptorSet, StorageDescriptorSet, StorageUniformManager};
 use crate::vulkan::BindlessTextureManager;
 
