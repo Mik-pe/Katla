@@ -85,6 +85,10 @@ impl Model {
                 emission_index,
             ) = material.get_registration_data();
 
+            // Vertex binding and pipeline are required for material registration
+            let pipeline = pipeline.expect("Material must have pipeline");
+            let vertex_binding = vertex_binding.expect("Material must have vertex binding");
+
             // Use PBR registration if PBR textures are present
             let mat_h = if let Some(pbr) = pbr_textures {
                 let tex_refs = pbr_texture_refs.unwrap_or_default();
@@ -111,80 +115,6 @@ impl Model {
         } else {
             (MeshHandle(0), MaterialHandle(0))
         }
-    }
-
-    pub fn new_from_gltf(
-        world: &mut World,
-        model: Rc<GLTFModel>,
-        context: Rc<VulkanContext>,
-        renderer: Option<&mut VulkanRenderer>,
-        transform: Transform,
-        material_registry: Option<&std::rc::Rc<std::cell::RefCell<MaterialRegistry>>>,
-    ) -> Self {
-        // Try to create material from template first
-        // Use provided registry, or get from renderer
-        let registry_ref = if let Some(registry) = material_registry {
-            Some(Rc::clone(registry))
-        } else {
-            renderer.as_ref().map(|r| Rc::clone(&r.material_registry))
-        };
-
-        let material = if let Some(registry) = registry_ref {
-            let registry = registry.borrow();
-            // Try to get "gltf_default" template
-            if let Some(template) = registry.get_template("gltf_default") {
-                // Get the correct texture index from material info
-                // Fall back to image 0 if no material info or no base color texture
-                let texture_index = model
-                    .materials
-                    .first()
-                    .and_then(|m| m.base_color_texture)
-                    .unwrap_or(0);
-
-                // Extract texture from the GLTF model using the correct index
-                let texture = model
-                    .images
-                    .get(texture_index)
-                    .and_then(|image| Self::load_texture_from_gltf(image, &context));
-
-                // Create material from template
-                Material::from_template(template, texture, None)
-            } else {
-                // Template not found - this is a configuration error
-                panic!("Material template 'gltf_default' not found. Ensure materials are loaded before creating models.");
-            }
-        } else {
-            // No registry provided - this is a configuration error
-            panic!("No material registry provided. Ensure VulkanRenderer has material_registry initialized.");
-        };
-
-        // Get PBR values from material info
-        let (metallic, roughness) = model
-            .materials
-            .first()
-            .map(|m| (m.metallic_factor, m.roughness_factor))
-            .unwrap_or((0.0, 0.5));
-
-        let root_t = model.root_transform.decompose();
-        log::info!(
-            "Root is: {:?}, {:?}, {:?}",
-            root_t.position,
-            root_t.rotation,
-            root_t.scale
-        );
-        let transform = root_t * transform;
-        let mesh = Mesh::new_from_model(model, context.clone());
-        Self::new_with_pbr(
-            world,
-            vec![mesh],
-            material,
-            renderer,
-            transform,
-            None,
-            metallic,
-            roughness,
-            1.0,
-        )
     }
 
     /// Create a model with explicit PBR material values.
@@ -462,7 +392,7 @@ impl Model {
                         if let Some(template) =
                             material_registry.borrow().get_template("gltf_default")
                         {
-                            Material::from_template(template, Some(albedo_tex), None)
+                            Material::from_template_with_optional_texture(template, Some(albedo_tex), None)
                         } else {
                             panic!("Neither 'gltf_skinned' nor 'gltf_default' templates found. Ensure materials are loaded.");
                         }
@@ -489,7 +419,7 @@ impl Model {
                         if let Some(template) =
                             material_registry.borrow().get_template("gltf_default")
                         {
-                            Material::from_template(template, Some(albedo_tex), None)
+                            Material::from_template_with_optional_texture(template, Some(albedo_tex), None)
                         } else {
                             panic!("Neither 'gltf_pbr_bindless' nor 'gltf_default' templates found. Ensure materials are loaded.");
                         }
@@ -513,7 +443,7 @@ impl Model {
                         if let Some(template) =
                             material_registry.borrow().get_template("gltf_default")
                         {
-                            Material::from_template(template, Some(albedo_tex), None)
+                            Material::from_template_with_optional_texture(template, Some(albedo_tex), None)
                         } else {
                             panic!("Neither 'gltf_pbr_bindless' nor 'gltf_default' templates found. Ensure materials are loaded.");
                         }

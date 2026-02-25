@@ -6,7 +6,7 @@
 //!
 //! # Design
 //!
-//! The [`Material`] trait reuses existing types:
+//! The [`MaterialDefinition`] trait reuses existing types:
 //! - [`ShaderSource`] for shader code
 //! - [`RenderState`] for depth/blending/culling
 //! - [`VertexBinding`] for vertex format
@@ -127,7 +127,7 @@ pub enum MaterialDomain {
 /// ```ignore
 /// struct SkyMaterial;
 ///
-/// impl Material for SkyMaterial {
+/// impl MaterialDefinition for SkyMaterial {
 ///     fn vertex_shader(&self) -> ShaderSource {
 ///         ShaderSource::WgslFile("shaders/sky.wgsl".into())
 ///     }
@@ -165,10 +165,10 @@ pub enum MaterialDomain {
 ///
 /// # Thread Safety
 ///
-/// Note: The Material trait does not require `Send + Sync` because material
+/// Note: The MaterialDefinition trait does not require `Send + Sync` because material
 /// implementations often contain `Rc<RefCell<MaterialPipeline>>` for pipeline
 /// storage. Materials are typically used on the main render thread only.
-pub trait Material: 'static {
+pub trait MaterialDefinition: 'static {
     // === Required: Shaders ===
 
     /// Returns the vertex shader source.
@@ -279,7 +279,7 @@ impl PbrMaterialConfig {
     }
 }
 
-impl Material for PbrMaterialConfig {
+impl MaterialDefinition for PbrMaterialConfig {
     fn vertex_shader(&self) -> ShaderSource {
         ShaderSource::WgslFile(self.shader_path.clone())
     }
@@ -349,7 +349,7 @@ impl SkinnedPbrMaterialConfig {
     }
 }
 
-impl Material for SkinnedPbrMaterialConfig {
+impl MaterialDefinition for SkinnedPbrMaterialConfig {
     fn vertex_shader(&self) -> ShaderSource {
         ShaderSource::WgslFile(self.shader_path.clone())
     }
@@ -428,7 +428,7 @@ impl FullPbrMaterialConfig {
     }
 }
 
-impl Material for FullPbrMaterialConfig {
+impl MaterialDefinition for FullPbrMaterialConfig {
     fn vertex_shader(&self) -> ShaderSource {
         ShaderSource::WgslFile(self.shader_path.clone())
     }
@@ -509,7 +509,7 @@ impl BindlessPbrMaterialConfig {
     }
 }
 
-impl Material for BindlessPbrMaterialConfig {
+impl MaterialDefinition for BindlessPbrMaterialConfig {
     fn vertex_shader(&self) -> ShaderSource {
         ShaderSource::WgslFile(self.shader_path.clone())
     }
@@ -579,7 +579,7 @@ impl BindlessSkinnedPbrMaterialConfig {
     }
 }
 
-impl Material for BindlessSkinnedPbrMaterialConfig {
+impl MaterialDefinition for BindlessSkinnedPbrMaterialConfig {
     fn vertex_shader(&self) -> ShaderSource {
         ShaderSource::WgslFile(self.shader_path.clone())
     }
@@ -729,7 +729,7 @@ impl DynamicMaterialConfig {
     }
 }
 
-impl Material for DynamicMaterialConfig {
+impl MaterialDefinition for DynamicMaterialConfig {
     fn vertex_shader(&self) -> ShaderSource {
         ShaderSource::WgslFile(self.shader_path.clone())
     }
@@ -854,8 +854,8 @@ pub struct MaterialKey {
 }
 
 impl MaterialKey {
-    /// Create a key from a Material implementation.
-    pub fn from_material<M: Material + ?Sized>(material: &M) -> Self {
+    /// Create a key from a MaterialDefinition implementation.
+    pub fn from_material<M: MaterialDefinition + ?Sized>(material: &M) -> Self {
         Self {
             vertex_shader_hash: hash_shader(&material.vertex_shader()),
             fragment_shader_hash: hash_shader(&material.fragment_shader()),
@@ -1062,12 +1062,12 @@ impl MaterialPipelineCache {
     /// Otherwise, creates a new pipeline, caches it, and returns it.
     ///
     /// # Arguments
-    /// * `material` - Material implementation to create pipeline for
+    /// * `material` - MaterialDefinition implementation to create pipeline for
     ///
     /// # Returns
     /// * `Ok(Rc<RefCell<MaterialPipeline>>)` - Cached or newly created pipeline
     /// * `Err(MaterialCacheError)` - If pipeline creation fails
-    pub fn get_or_create<M: Material + ?Sized>(
+    pub fn get_or_create<M: MaterialDefinition + ?Sized>(
         &mut self,
         material: &M,
     ) -> Result<Rc<RefCell<MaterialPipeline>>, MaterialCacheError> {
@@ -1099,9 +1099,9 @@ impl MaterialPipelineCache {
     /// the bindless texture array instead of individual texture descriptors.
     ///
     /// # Arguments
-    /// * `material` - Material implementation to create pipeline for
+    /// * `material` - MaterialDefinition implementation to create pipeline for
     /// * `bindless_layout` - Descriptor set layout from BindlessTextureManager
-    pub fn get_or_create_bindless<M: Material + ?Sized>(
+    pub fn get_or_create_bindless<M: MaterialDefinition + ?Sized>(
         &mut self,
         material: &M,
         bindless_layout: ash::vk::DescriptorSetLayout,
@@ -1128,7 +1128,7 @@ impl MaterialPipelineCache {
     }
 
     /// Create a bindless pipeline for a material.
-    fn create_bindless_pipeline<M: Material + ?Sized>(
+    fn create_bindless_pipeline<M: MaterialDefinition + ?Sized>(
         &self,
         material: &M,
         bindless_layout: ash::vk::DescriptorSetLayout,
@@ -1249,12 +1249,12 @@ impl MaterialPipelineCache {
         Ok(Rc::new(RefCell::new(material_pipeline)))
     }
 
-    /// Create a pipeline for a material using the Material trait directly.
+    /// Create a pipeline for a material using the MaterialDefinition trait directly.
     ///
     /// This method uses the material's `descriptor_layouts()` to build descriptor set layouts,
     /// then creates a pipeline using PipelineBuilder. This is the unified path that all
     /// materials should use.
-    fn create_pipeline_for_material<M: Material + ?Sized>(
+    fn create_pipeline_for_material<M: MaterialDefinition + ?Sized>(
         &self,
         material: &M,
     ) -> Result<Rc<RefCell<MaterialPipeline>>, MaterialCacheError> {
@@ -1453,7 +1453,7 @@ impl MaterialPipelineCache {
     }
 
     /// Check if a pipeline exists for the given material.
-    pub fn contains<M: Material + ?Sized>(&self, material: &M) -> bool {
+    pub fn contains<M: MaterialDefinition + ?Sized>(&self, material: &M) -> bool {
         let key = MaterialKey::from_material(material);
         self.cache.contains_key(&key)
     }
@@ -1469,7 +1469,7 @@ impl MaterialPipelineCache {
     /// Remove a specific pipeline from the cache.
     ///
     /// Returns true if the pipeline was in the cache and was removed.
-    pub fn remove<M: Material + ?Sized>(&mut self, material: &M) -> bool {
+    pub fn remove<M: MaterialDefinition + ?Sized>(&mut self, material: &M) -> bool {
         let key = MaterialKey::from_material(material);
         self.cache.remove(&key).is_some()
     }

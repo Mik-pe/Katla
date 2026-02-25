@@ -46,6 +46,7 @@ use crate::sync::{VkImageView, VkSampler};
 ///
 /// Contains albedo, normal, metallic/roughness, and occlusion textures.
 /// Used to gather texture info before registering with bindless manager.
+#[derive(Clone)]
 pub struct PbrTextureSet {
     pub albedo: ImageInfo,
     pub normal: ImageInfo,

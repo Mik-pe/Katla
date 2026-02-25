@@ -165,20 +165,19 @@ impl MaterialManager {
         let template = material_registry.get_template(&name)?;
 
         // Create material from template
-        let material = Material::from_template(template, texture, color);
+        let material = Material::from_template_with_optional_texture(template, texture, color.map(|c| c.to_array()));
 
         // Register the material
         Some(self.register_material(name, material))
     }
 
     /// Update a material's handle (used when material is re-registered)
+    ///
+    /// Note: The new unified Material doesn't store handles internally.
+    /// This method only updates the internal mapping.
     pub fn update_material_handle(&mut self, name: &str, handle: MaterialHandle) {
-        if let Some(&id) = self.by_name.get(name) {
-            if id.0 < self.materials.len() {
-                self.materials[id.0].handle = Some(handle);
-                self.material_handles.insert(name.to_string(), handle);
-            }
-        }
+        // Just update the mapping - the new Material type doesn't store handles
+        self.material_handles.insert(name.to_string(), handle);
     }
 
     /// Enable hot reload for materials.
@@ -270,22 +269,33 @@ impl MaterialManager {
                         if let Some(&id) = self.by_name.get(material_name) {
                             // Update the AssetRegistry's material if we have a handle
                             if let Some(&handle) = self.material_handles.get(material_name) {
-                                // Replace the pipeline in AssetRegistry
-                                let updated = renderer.asset_registry.replace_material_pipeline(
-                                    handle,
-                                    new_material.material_pipeline.clone(),
-                                );
+                                // Get the pipeline from the new material
+                                if let Some(pipeline) = new_material.material_pipeline() {
+                                    // Replace the pipeline in AssetRegistry
+                                    let updated = renderer.asset_registry.replace_material_pipeline(
+                                        handle,
+                                        pipeline,
+                                    );
 
-                                if updated {
-                                    // Update in MaterialManager
+                                    if updated {
+                                        // Update in MaterialManager
+                                        self.materials[id.0] = new_material;
+                                        reloaded += 1;
+                                        debug!(
+                                            "  ✓ Reloaded material: {} (updated AssetRegistry)",
+                                            material_name
+                                        );
+                                    } else {
+                                        debug!("  ✗ Failed to update AssetRegistry: {}", material_name);
+                                    }
+                                } else {
+                                    // No pipeline - just update MaterialManager
                                     self.materials[id.0] = new_material;
                                     reloaded += 1;
                                     debug!(
-                                        "  ✓ Reloaded material: {} (updated AssetRegistry)",
+                                        "  ✓ Reloaded material: {} (no pipeline)",
                                         material_name
                                     );
-                                } else {
-                                    debug!("  ✗ Failed to update AssetRegistry: {}", material_name);
                                 }
                             } else {
                                 // No handle in AssetRegistry - just update MaterialManager
@@ -336,16 +346,11 @@ impl MaterialManager {
     /// This should be called during shutdown AFTER wait_for_device() to ensure
     /// the GPU is not using any resources.
     ///
-    /// Note: Old pipelines from hot reload are not destroyed here to avoid
+    /// Note: The new unified Material type handles cleanup via Rc reference counting.
+    /// Old pipelines from hot reload are cleaned up automatically when their Rc refs are dropped.
     pub fn destroy(&mut self) {
-        // Destroy active materials
-        for material in &mut self.materials {
-            // Destroy the pipeline
-            if let Ok(mut pipeline) = material.material_pipeline.try_borrow_mut() {
-                pipeline.destroy();
-            }
-        }
-
+        // Clear all materials - cleanup is handled by Rc reference counting
+        // The MaterialPipeline's Drop implementation will handle Vulkan cleanup
         self.materials.clear();
         self.by_name.clear();
         self.shader_to_materials.clear();

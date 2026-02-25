@@ -11,8 +11,8 @@ pub use error::RendererError;
 use log::{error, info, warn};
 pub use material::{
     BindlessPbrMaterialConfig, BindlessSkinnedPbrMaterialConfig, DynamicMaterialConfig,
-    FullPbrMaterialConfig, Material, MaterialCacheError, MaterialCacheStats, MaterialDomain,
-    MaterialKey, MaterialPipelineCache, PbrMaterialConfig, SkinnedPbrMaterialConfig,
+    FullPbrMaterialConfig, MaterialCacheError, MaterialCacheStats, MaterialDefinition,
+    MaterialDomain, MaterialKey, MaterialPipelineCache, PbrMaterialConfig, SkinnedPbrMaterialConfig,
 };
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 pub use render_graph::errors::RenderGraphError;
@@ -1075,6 +1075,78 @@ impl VulkanRenderer {
 
         self.asset_registry
             .register_material_pbr(material_asset, pbr_textures, textures)
+    }
+
+    /// Register a unified Material with the renderer.
+    ///
+    /// This is the preferred method for registering materials. It handles:
+    /// - Template resolution (if material was created by name)
+    /// - PBR textures and bindless texture indices
+    /// - Automatic pipeline registration
+    ///
+    /// # Arguments
+    /// * `material` - The material to register (will be resolved if needed)
+    ///
+    /// # Returns
+    /// A `MaterialHandle` that references the registered material, or None if resolution fails.
+    ///
+    /// # Example
+    /// ```ignore
+    /// let material = Material::new("gltf_pbr_bindless")
+    ///     .with_pbr_textures(pbr_textures, texture_refs)
+    ///     .with_bindless_indices([0, 1, 2, 3], 4);
+    ///
+    /// let handle = renderer.register_material(&mut material)?;
+    /// ```
+    pub fn register_material(&mut self, material: &mut vulkan::material::Material) -> Option<MaterialHandle> {
+        use crate::rendering::registry::MaterialAsset;
+
+        // Resolve template if not already done
+        if !material.is_resolved() {
+            let registry = self.material_registry.borrow();
+            material.resolve(&registry);
+        }
+
+        // Get pipeline from resolved material
+        let pipeline = material.pipeline()?;
+        let vertex_binding = material.vertex_binding()?.clone();
+
+        // Determine uses_bindless from the pipeline itself
+        let uses_bindless = pipeline.borrow().is_bindless;
+
+        // Handle PBR textures if present
+        if let (Some(pbr_textures), Some(texture_refs)) =
+            (material.pbr_textures().cloned(), material.pbr_texture_refs().map(|r| r.to_vec()))
+        {
+            let material_asset = MaterialAsset {
+                pipeline,
+                texture: None,
+                vertex_binding,
+                pbr_textures: None,
+                texture_indices: material.texture_indices,
+                emission_index: material.emission_index,
+                uses_bindless,
+            };
+
+            return Some(self.asset_registry.register_material_pbr(
+                material_asset,
+                pbr_textures,
+                texture_refs,
+            ));
+        }
+
+        // Standard material registration
+        let material_asset = MaterialAsset {
+            pipeline,
+            texture: material.textures().values().next().cloned(),
+            vertex_binding,
+            pbr_textures: None,
+            texture_indices: material.texture_indices,
+            emission_index: material.emission_index,
+            uses_bindless,
+        };
+
+        Some(self.asset_registry.register_material(material_asset))
     }
 
     /// Register a skeleton buffer for GPU skeletal animation.
