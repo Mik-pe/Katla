@@ -5,8 +5,6 @@
 use ash::vk;
 use log::debug;
 
-use crate::render_graph::types::{Extent2D, ImageFormat};
-use crate::render_graph::{ResourceId, ResourceKind};
 use crate::rendering::DrawList;
 use crate::{FrameData, RenderGraphError, VulkanRenderer};
 
@@ -36,26 +34,6 @@ impl VulkanRenderer {
         });
         debug!("swap_frames: done");
         Ok(())
-    }
-
-    /// Create a swapchain resource for the render graph.
-    pub fn create_swapchain_resource(
-        &self,
-        builder: &mut crate::RenderGraphBuilder,
-        image_index: u32,
-    ) -> ResourceId {
-        let swapchain_format = self.frame_context.swapchain.format.format;
-        let extent = self.frame_context.swapchain.get_extent();
-        builder.add_resource(
-            format!("swapchain_{}", image_index),
-            ResourceKind::ExternalImage {
-                image: self.frame_context.swapchain_images[image_index as usize],
-                image_view: self.frame_context.swapchain_image_views[image_index as usize],
-                format: ImageFormat::from_vk(swapchain_format)
-                    .expect("Unsupported swapchain format"),
-                extent: Extent2D::new(extent.width, extent.height),
-            },
-        )
     }
 
     /// Render a frame using the render graph system.
