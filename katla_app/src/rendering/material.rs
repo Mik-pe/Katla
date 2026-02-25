@@ -5,10 +5,6 @@
 
 // Re-export the unified Material type and related types
 pub use katla_vulkan::{
-    material::PbrTextureSet,
-    MaterialHandle,
-    MaterialTemplate,
-    Texture,
+    material::PbrTextureSet, vulkan::material::Material, MaterialHandle, MaterialTemplate, Texture,
     VertexBinding,
-    vulkan::material::Material,
 };

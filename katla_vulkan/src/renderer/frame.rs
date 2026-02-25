@@ -5,8 +5,8 @@
 use ash::vk;
 use log::debug;
 
-use crate::rendering::DrawList;
-use crate::{FrameData, RenderGraphError, VulkanRenderer};
+use super::{DrawList, FrameData, VulkanRenderer};
+use crate::RenderGraphError;
 
 impl VulkanRenderer {
     /// Acquire the next swapchain image for rendering.

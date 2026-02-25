@@ -392,7 +392,11 @@ impl Model {
                         if let Some(template) =
                             material_registry.borrow().get_template("gltf_default")
                         {
-                            Material::from_template_with_optional_texture(template, Some(albedo_tex), None)
+                            Material::from_template_with_optional_texture(
+                                template,
+                                Some(albedo_tex),
+                                None,
+                            )
                         } else {
                             panic!("Neither 'gltf_skinned' nor 'gltf_default' templates found. Ensure materials are loaded.");
                         }
@@ -419,7 +423,11 @@ impl Model {
                         if let Some(template) =
                             material_registry.borrow().get_template("gltf_default")
                         {
-                            Material::from_template_with_optional_texture(template, Some(albedo_tex), None)
+                            Material::from_template_with_optional_texture(
+                                template,
+                                Some(albedo_tex),
+                                None,
+                            )
                         } else {
                             panic!("Neither 'gltf_pbr_bindless' nor 'gltf_default' templates found. Ensure materials are loaded.");
                         }
@@ -443,7 +451,11 @@ impl Model {
                         if let Some(template) =
                             material_registry.borrow().get_template("gltf_default")
                         {
-                            Material::from_template_with_optional_texture(template, Some(albedo_tex), None)
+                            Material::from_template_with_optional_texture(
+                                template,
+                                Some(albedo_tex),
+                                None,
+                            )
                         } else {
                             panic!("Neither 'gltf_pbr_bindless' nor 'gltf_default' templates found. Ensure materials are loaded.");
                         }

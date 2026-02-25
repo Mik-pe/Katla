@@ -317,7 +317,7 @@ impl StorageUniformManager {
     ///
     /// # Arguments
     /// * `frame` - Frame uniforms from the rendering module
-    pub fn update_from_frame_uniforms(&mut self, frame: &crate::rendering::FrameUniforms) {
+    pub fn update_from_frame_uniforms(&mut self, frame: &crate::renderer::FrameUniforms) {
         self.update_frame_with_lighting(
             &frame.view_matrix,
             &frame.proj_matrix,

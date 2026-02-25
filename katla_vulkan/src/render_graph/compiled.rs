@@ -20,7 +20,7 @@ use crate::render_graph::types::{
     ClearValue, Extent2D, ImageLayout, Offset2D, Rect2D, RenderingAttachmentInfo, RenderingInfo,
     Viewport,
 };
-use crate::rendering::DrawList;
+use crate::renderer::DrawList;
 use crate::sync::{VkFramebuffer, VkImage, VkImageView};
 use crate::CommandBuffer;
 use crate::RenderGraphError;

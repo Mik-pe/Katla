@@ -7,18 +7,26 @@
 //! - `ui` - UI buffer and texture management (TODO: extract from lib.rs)
 
 mod frame;
+pub mod registry;
+pub mod types;
 // mod ui;
 // mod viewport;
 
+// Re-export commonly used types for convenience
+pub use registry::AssetRegistry;
+pub use types::{
+    DrawCall, DrawList, FrameUniforms, InstanceData, MaterialHandle, MeshHandle, ParticleDispatch,
+    ParticleRender, SkeletonHandle,
+};
+
 use crate::{
-    render_graph, viewport::Viewport, AssetRegistry, Attachment, BindlessTextureManager,
-    CompiledRenderGraph, DescriptorLayoutBuilder, DrawList, FrameUniforms, IndexBuffer, Material,
-    MaterialHandle, MaterialPipeline, MaterialPipelineCache, MaterialRegistry, MeshHandle,
-    RenderGraphBuilder, RenderGraphError, RendererError, ResourceId, ResourceKind, SkeletonBuffer,
-    SkeletonDescriptorSet, SkeletonHandle, StorageDescriptorSet, StorageUniformManager, SwapData,
-    Texture, VertexBinding, VertexBuffer, ViewportBuilder, ViewportHandle, VkDescriptorSet,
-    VkDescriptorSetLayout, VkFence, VkImage, VkImageView, VkSemaphore, VulkanContext,
-    VulkanFrameCtx, MAX_BINDLESS_TEXTURES,
+    render_graph, viewport::Viewport, Attachment, BindlessTextureManager, CompiledRenderGraph,
+    DescriptorLayoutBuilder, IndexBuffer, Material, MaterialPipeline, MaterialPipelineCache,
+    MaterialRegistry, RenderGraphBuilder, RenderGraphError, RendererError, ResourceId,
+    ResourceKind, SkeletonBuffer, SkeletonDescriptorSet, StorageDescriptorSet,
+    StorageUniformManager, SwapData, Texture, VertexBinding, VertexBuffer, ViewportBuilder,
+    ViewportHandle, VkDescriptorSet, VkDescriptorSetLayout, VkFence, VkImage, VkImageView,
+    VkSemaphore, VulkanContext, VulkanFrameCtx, MAX_BINDLESS_TEXTURES,
 };
 use ash::vk;
 use log::{error, info, warn};
@@ -844,7 +852,7 @@ impl VulkanRenderer {
         T: bytemuck::Pod,
         U: bytemuck::Pod,
     {
-        use crate::rendering::registry::MeshAsset;
+        use crate::renderer::registry::MeshAsset;
         use crate::vulkan::*;
 
         // Convert vertices to bytes
@@ -930,7 +938,7 @@ impl VulkanRenderer {
         vertex_buffer: Option<VertexBuffer>,
         index_buffer: Option<IndexBuffer>,
     ) -> MeshHandle {
-        use crate::rendering::registry::MeshAsset;
+        use crate::renderer::registry::MeshAsset;
 
         let mesh_asset = MeshAsset {
             vertex_buffer,
@@ -970,7 +978,7 @@ impl VulkanRenderer {
         texture_indices: [u32; 4],
         emission_index: u32,
     ) -> MaterialHandle {
-        use crate::rendering::registry::MaterialAsset;
+        use crate::renderer::registry::MaterialAsset;
 
         // Determine uses_bindless from the pipeline itself
         let uses_bindless = pipeline.borrow().is_bindless;
@@ -1030,7 +1038,7 @@ impl VulkanRenderer {
         texture_indices: [u32; 4],
         emission_index: u32,
     ) -> MaterialHandle {
-        use crate::rendering::registry::MaterialAsset;
+        use crate::renderer::registry::MaterialAsset;
 
         // Determine uses_bindless from the pipeline itself
         let uses_bindless = pipeline.borrow().is_bindless;
@@ -1071,7 +1079,7 @@ impl VulkanRenderer {
     /// let handle = renderer.register_material(&mut material)?;
     /// ```
     pub fn register_material(&mut self, material: &mut Material) -> Option<MaterialHandle> {
-        use crate::rendering::registry::MaterialAsset;
+        use crate::renderer::registry::MaterialAsset;
 
         // Resolve template if not already done
         if !material.is_resolved() {

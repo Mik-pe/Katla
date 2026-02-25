@@ -81,7 +81,10 @@ fn test_context_cleanup_no_errors() {
         for error in &errors {
             eprintln!("  - {}", error);
         }
-        panic!("Context cleanup produced {} validation errors", errors.len());
+        panic!(
+            "Context cleanup produced {} validation errors",
+            errors.len()
+        );
     }
 }
 
@@ -136,7 +139,9 @@ fn test_render_graph_cleanup_no_errors() {
         });
 
         // Compile and then drop
-        let _graph = graph_builder.build(&context).expect("Failed to compile graph");
+        let _graph = graph_builder
+            .build(&context)
+            .expect("Failed to compile graph");
 
         // Wait for device to be idle before destruction
         unsafe {
@@ -153,7 +158,10 @@ fn test_render_graph_cleanup_no_errors() {
         for error in &errors {
             eprintln!("  - {}", error);
         }
-        panic!("Render graph cleanup produced {} validation errors", errors.len());
+        panic!(
+            "Render graph cleanup produced {} validation errors",
+            errors.len()
+        );
     }
 }
 
@@ -223,7 +231,10 @@ fn test_semaphore_cleanup() {
         for error in &errors {
             eprintln!("  - {}", error);
         }
-        panic!("Semaphore cleanup produced {} validation errors", errors.len());
+        panic!(
+            "Semaphore cleanup produced {} validation errors",
+            errors.len()
+        );
     }
 }
 
@@ -268,6 +279,9 @@ fn test_command_buffer_cleanup() {
         for error in &errors {
             eprintln!("  - {}", error);
         }
-        panic!("Command buffer cleanup produced {} validation errors", errors.len());
+        panic!(
+            "Command buffer cleanup produced {} validation errors",
+            errors.len()
+        );
     }
 }
