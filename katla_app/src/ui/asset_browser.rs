@@ -1946,7 +1946,7 @@ pub fn build_asset_browser(
                 *open = false;
             }
 
-            // Yes button (dangerous action - red accent)
+            // Yes button (dangerous action - always red)
             let yes_btn_bounds = Rect2D::from_origin_size(
                 Vec2::new(dialog_pos.x() + dialog_width - btn_width - 10.0, btn_y),
                 Vec2::new(btn_width, btn_height),
@@ -1958,8 +1958,7 @@ pub fn build_asset_browser(
                 .add(
                     katla_ui::widgets::Button::new("Yes")
                         .bounds(yes_btn_bounds)
-                        .fill_color(katla_math::Color::TRANSPARENT)
-                        .hover_color(theme.error),
+                        .fill_color(theme.error),
                 )
                 .clicked
             {
