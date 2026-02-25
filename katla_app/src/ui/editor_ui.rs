@@ -85,6 +85,50 @@ pub enum PreferencesTab {
     About,
 }
 
+/// Visibility state for any UI panel.
+///
+/// Using an enum instead of multiple bools ensures we can't have invalid states
+/// (e.g., both hidden and just_opened being true).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum PanelState {
+    /// Panel is hidden.
+    #[default]
+    Hidden,
+    /// Panel just opened this frame - protected from click-outside close.
+    JustOpened,
+    /// Panel is visible and can be closed by clicking outside.
+    Visible,
+}
+
+impl PanelState {
+    /// Returns true if the panel should be rendered.
+    pub fn is_visible(&self) -> bool {
+        *self != PanelState::Hidden
+    }
+
+    /// Returns true if the panel is protected from click-outside close.
+    pub fn is_just_opened(&self) -> bool {
+        *self == PanelState::JustOpened
+    }
+
+    /// Opens the panel, setting it to JustOpened state.
+    pub fn open(&mut self) {
+        *self = PanelState::JustOpened;
+    }
+
+    /// Closes the panel.
+    pub fn close(&mut self) {
+        *self = PanelState::Hidden;
+    }
+
+    /// Transitions from JustOpened to Visible (call at end of first frame).
+    pub fn mark_shown(&mut self) {
+        if *self == PanelState::JustOpened {
+            *self = PanelState::Visible;
+        }
+    }
+}
+
 impl PreferencesTab {
     pub fn all() -> &'static [PreferencesTab] {
         &[
@@ -176,12 +220,10 @@ pub struct EditorUI {
     pub visible: bool,
     /// Currently selected entity.
     pub selected_entity: Option<EntityId>,
-    /// Show spawn menu.
-    show_spawn_menu: bool,
-    /// Spawn menu just opened this frame (skip click-outside check).
-    spawn_menu_just_opened: bool,
-    /// Show preferences panel.
-    show_preferences: bool,
+    /// Spawn menu visibility state.
+    spawn_menu_state: PanelState,
+    /// Preferences panel visibility state.
+    preferences_state: PanelState,
     /// Preferences panel position (None = centered).
     preferences_panel_pos: Option<Vec2>,
     /// Currently dragging panel title bar.
@@ -251,9 +293,8 @@ impl EditorUI {
         Self {
             visible: true,
             selected_entity: None,
-            show_spawn_menu: false,
-            spawn_menu_just_opened: false,
-            show_preferences: false,
+            spawn_menu_state: PanelState::default(),
+            preferences_state: PanelState::default(),
             preferences_panel_pos: None,
             dragging_panel: false,
             drag_offset: Vec2::new(0.0, 0.0),
@@ -820,7 +861,7 @@ impl EditorUI {
         );
 
         // === PREFERENCES PANEL (overlay) ===
-        if self.show_preferences {
+        if self.preferences_state.is_visible() {
             self.build_preferences_panel(ui, screen_size);
         }
 
@@ -969,7 +1010,7 @@ impl EditorUI {
                 }
                 ui.menu_separator();
                 if ui.menu_item_clicked("Preferences...") {
-                    self.show_preferences = true;
+                    self.preferences_state.open();
                     *open = false;
                 }
             },
@@ -1943,7 +1984,7 @@ impl EditorUI {
             .add(Button::new("×").bounds(close_bounds).id("close_prefs"))
             .clicked
         {
-            self.show_preferences = false;
+            self.preferences_state.close();
             self.preferences_panel_pos = None;
         }
 
@@ -2091,13 +2132,32 @@ impl EditorUI {
             },
         );
 
-        // Click outside to close (but not while dragging)
+        // Click outside to close (but not while dragging or just opened)
         // Use input.is_hovered directly to bypass popup_bounds and active_id checks
         let mouse_in_panel = ui.input.is_hovered(panel_bounds);
-        if !self.dragging_panel && ui.input.mouse_clicked(mouse_button::LEFT) && !mouse_in_panel {
-            self.show_preferences = false;
+        let mouse_clicked = ui.input.mouse_clicked(mouse_button::LEFT);
+        self.handle_preferences_click_outside(mouse_clicked, mouse_in_panel);
+    }
+
+    /// Handle click-outside detection for preferences panel.
+    ///
+    /// This is extracted for testability. The panel should close when:
+    /// - User is not dragging the panel
+    /// - Panel was not just opened this frame (prevents immediate close)
+    /// - Mouse was clicked
+    /// - Click was outside the panel bounds
+    pub fn handle_preferences_click_outside(&mut self, mouse_clicked: bool, mouse_in_panel: bool) {
+        if !self.dragging_panel
+            && !self.preferences_state.is_just_opened()
+            && mouse_clicked
+            && !mouse_in_panel
+        {
+            self.preferences_state.close();
             self.preferences_panel_pos = None;
         }
+
+        // Transition from JustOpened to Visible after first frame
+        self.preferences_state.mark_shown();
     }
 
     fn build_appearance_tab(
@@ -2965,5 +3025,172 @@ impl EditorUI {
 impl Default for EditorUI {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Test that preferences panel stays open on the first frame after being opened.
+    ///
+    /// This tests the fix for the bug where the preferences panel would close
+    /// immediately after being opened from the menu bar, because the same
+    /// click that opened it would be detected as a "click outside".
+    ///
+    /// BEFORE FIX: Panel would close because mouse_clicked=true and mouse_in_panel=false
+    /// AFTER FIX: Panel stays open because PanelState::JustOpened protects it
+    #[test]
+    fn test_preferences_stays_open_on_first_frame_after_menu_click() {
+        let mut editor = EditorUI::new();
+
+        // Simulate opening preferences from menu - this is what happens when
+        // user clicks "Preferences..." menu item
+        editor.preferences_state.open();
+
+        // Verify panel is in JustOpened state
+        assert_eq!(editor.preferences_state, PanelState::JustOpened);
+
+        // Simulate the same frame: the click that opened the menu is still
+        // registered as mouse_clicked=true, but mouse is not in the panel
+        // (panel just appeared, mouse is still at menu position)
+        let mouse_clicked = true;
+        let mouse_in_panel = false;
+
+        // This is the buggy codepath - without the JustOpened protection,
+        // the panel would close immediately
+        editor.handle_preferences_click_outside(mouse_clicked, mouse_in_panel);
+
+        // AFTER FIX: Panel should stay open because JustOpened protected it
+        assert!(
+            editor.preferences_state.is_visible(),
+            "preferences should stay open on first frame (JustOpened protection)"
+        );
+        assert_eq!(
+            editor.preferences_state,
+            PanelState::Visible,
+            "state should transition to Visible after first frame"
+        );
+    }
+
+    /// Test that preferences panel can be closed by clicking outside after first frame.
+    ///
+    /// This verifies that the JustOpened protection doesn't prevent normal closing.
+    #[test]
+    fn test_preferences_closes_on_click_outside_after_first_frame() {
+        let mut editor = EditorUI::new();
+
+        // Open preferences and transition to Visible (simulating first frame already passed)
+        editor.preferences_state.open();
+        editor.preferences_state.mark_shown();
+        assert_eq!(editor.preferences_state, PanelState::Visible);
+
+        // Simulate second frame: user clicks outside the panel
+        let mouse_clicked = true;
+        let mouse_in_panel = false;
+
+        editor.handle_preferences_click_outside(mouse_clicked, mouse_in_panel);
+
+        // Panel should close normally
+        assert_eq!(
+            editor.preferences_state,
+            PanelState::Hidden,
+            "preferences should close when clicking outside after first frame"
+        );
+    }
+
+    /// Test that clicking inside the panel doesn't close it.
+    #[test]
+    fn test_preferences_does_not_close_when_clicking_inside() {
+        let mut editor = EditorUI::new();
+
+        // Open and transition to Visible
+        editor.preferences_state.open();
+        editor.preferences_state.mark_shown();
+
+        // Click inside the panel
+        let mouse_clicked = true;
+        let mouse_in_panel = true;
+
+        editor.handle_preferences_click_outside(mouse_clicked, mouse_in_panel);
+
+        assert!(
+            editor.preferences_state.is_visible(),
+            "preferences should stay open when clicking inside panel"
+        );
+    }
+
+    /// Test that dragging the panel prevents click-outside close.
+    #[test]
+    fn test_preferences_does_not_close_while_dragging() {
+        let mut editor = EditorUI::new();
+
+        // Open and transition to Visible
+        editor.preferences_state.open();
+        editor.preferences_state.mark_shown();
+        editor.dragging_panel = true;
+
+        // Click outside while dragging
+        let mouse_clicked = true;
+        let mouse_in_panel = false;
+
+        editor.handle_preferences_click_outside(mouse_clicked, mouse_in_panel);
+
+        assert!(
+            editor.preferences_state.is_visible(),
+            "preferences should stay open while dragging panel"
+        );
+    }
+
+    /// Test that no click means no close.
+    #[test]
+    fn test_preferences_does_not_close_without_click() {
+        let mut editor = EditorUI::new();
+
+        // Open and transition to Visible
+        editor.preferences_state.open();
+        editor.preferences_state.mark_shown();
+
+        // No click happened
+        let mouse_clicked = false;
+        let mouse_in_panel = false;
+
+        editor.handle_preferences_click_outside(mouse_clicked, mouse_in_panel);
+
+        assert!(
+            editor.preferences_state.is_visible(),
+            "preferences should stay open when no click occurred"
+        );
+    }
+
+    /// Test PanelState enum methods.
+    #[test]
+    fn test_panel_state_enum() {
+        let mut state = PanelState::default();
+        assert_eq!(state, PanelState::Hidden);
+        assert!(!state.is_visible());
+        assert!(!state.is_just_opened());
+
+        state.open();
+        assert_eq!(state, PanelState::JustOpened);
+        assert!(state.is_visible());
+        assert!(state.is_just_opened());
+
+        state.mark_shown();
+        assert_eq!(state, PanelState::Visible);
+        assert!(state.is_visible());
+        assert!(!state.is_just_opened());
+
+        // mark_shown on Visible is idempotent
+        state.mark_shown();
+        assert_eq!(state, PanelState::Visible);
+
+        state.close();
+        assert_eq!(state, PanelState::Hidden);
+        assert!(!state.is_visible());
+
+        // mark_shown on Hidden does nothing
+        state.mark_shown();
+        assert_eq!(state, PanelState::Hidden);
     }
 }
