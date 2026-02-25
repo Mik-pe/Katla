@@ -370,4 +370,86 @@ mod tests {
             Rect2D::from_origin_size(Vec2::new(200.0, 200.0), Vec2::new(100.0, 100.0));
         assert!(!state.is_hovered(outside_rect));
     }
+
+    #[test]
+    fn test_double_click_detection_with_time() {
+        let mut state = UiInputState::new();
+
+        // First click at time 0.0
+        state.set_mouse_pos(Vec2::new(50.0, 50.0));
+        state.set_mouse_button_with_time(mouse_button::LEFT, true, 0.0);
+        assert!(
+            !state.mouse_double_clicked(mouse_button::LEFT),
+            "First click should not be a double-click"
+        );
+        state.set_mouse_button_with_time(mouse_button::LEFT, false, 0.1);
+        state.clear_frame_state();
+
+        // Second click at time 0.2 (within DOUBLE_CLICK_TIME of 0.5s)
+        state.set_mouse_pos(Vec2::new(50.0, 50.0)); // Same position
+        state.set_mouse_button_with_time(mouse_button::LEFT, true, 0.2);
+        assert!(
+            state.mouse_double_clicked(mouse_button::LEFT),
+            "Second quick click at same position should be a double-click"
+        );
+    }
+
+    #[test]
+    fn test_double_click_too_slow() {
+        let mut state = UiInputState::new();
+
+        // First click at time 0.0
+        state.set_mouse_pos(Vec2::new(50.0, 50.0));
+        state.set_mouse_button_with_time(mouse_button::LEFT, true, 0.0);
+        state.set_mouse_button_with_time(mouse_button::LEFT, false, 0.1);
+        state.clear_frame_state();
+
+        // Second click at time 1.0 (too slow - beyond DOUBLE_CLICK_TIME of 0.5s)
+        state.set_mouse_pos(Vec2::new(50.0, 50.0));
+        state.set_mouse_button_with_time(mouse_button::LEFT, true, 1.0);
+        assert!(
+            !state.mouse_double_clicked(mouse_button::LEFT),
+            "Click after 1 second should NOT be a double-click"
+        );
+    }
+
+    #[test]
+    fn test_double_click_too_far() {
+        let mut state = UiInputState::new();
+
+        // First click at position (50, 50)
+        state.set_mouse_pos(Vec2::new(50.0, 50.0));
+        state.set_mouse_button_with_time(mouse_button::LEFT, true, 0.0);
+        state.set_mouse_button_with_time(mouse_button::LEFT, false, 0.1);
+        state.clear_frame_state();
+
+        // Second click at position (60, 60) - too far (14px away, max is 5px)
+        state.set_mouse_pos(Vec2::new(60.0, 60.0));
+        state.set_mouse_button_with_time(mouse_button::LEFT, true, 0.2);
+        assert!(
+            !state.mouse_double_clicked(mouse_button::LEFT),
+            "Click too far away should NOT be a double-click"
+        );
+    }
+
+    #[test]
+    fn test_double_click_requires_with_time_method() {
+        // This test documents that set_mouse_button (without time) does NOT
+        // enable double-click detection - you must use set_mouse_button_with_time
+        let mut state = UiInputState::new();
+
+        // First click using set_mouse_button (without time)
+        state.set_mouse_pos(Vec2::new(50.0, 50.0));
+        state.set_mouse_button(mouse_button::LEFT, true);
+        state.set_mouse_button(mouse_button::LEFT, false);
+        state.clear_frame_state();
+
+        // Second click using set_mouse_button (without time)
+        state.set_mouse_pos(Vec2::new(50.0, 50.0));
+        state.set_mouse_button(mouse_button::LEFT, true);
+        assert!(
+            !state.mouse_double_clicked(mouse_button::LEFT),
+            "set_mouse_button without time should NOT enable double-click detection"
+        );
+    }
 }

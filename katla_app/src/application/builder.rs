@@ -1,4 +1,4 @@
-use std::{cell::RefCell, collections::HashMap, rc::Rc};
+use std::{cell::RefCell, collections::HashMap, rc::Rc, time::Instant};
 
 use katla_ecs::{System, SystemExecutionOrder, World};
 use katla_ui::{FontId, ForkAwesome};
@@ -225,6 +225,7 @@ impl ApplicationBuilder {
             background_loader: BackgroundLoader::new(),
             next_thumbnail_texture_id: 100, // Custom texture IDs start at 100
             thumbnail_texture_ids: HashMap::new(),
+            start_time: Instant::now(),
         };
 
         Ok((app, event_loop))
