@@ -242,9 +242,9 @@ impl VulkanRenderer {
     /// Should be called once per frame before rendering.
     ///
     /// # Arguments
-    /// * `view` - View matrix (world-to-camera)
-    /// * `proj` - Projection matrix (camera-to-clip)
-    pub fn update_storage_frame(&mut self, view: &[[f32; 4]; 4], proj: &[[f32; 4]; 4]) {
+    /// * `view` - View matrix (world-to-camera) - column-major [f32; 16]
+    /// * `proj` - Projection matrix (camera-to-clip) - column-major [f32; 16]
+    pub fn update_storage_frame(&mut self, view: &[f32; 16], proj: &[f32; 16]) {
         if let Some(ref mut manager) = self.storage_manager {
             manager.update_frame(view, proj);
         }
@@ -254,9 +254,9 @@ impl VulkanRenderer {
     ///
     /// # Arguments
     /// * `index` - Object index (0-255)
-    /// * `model` - Model matrix (object-to-world)
+    /// * `model` - Model matrix (object-to-world) - column-major [f32; 16]
     /// * `color` - Color tint (RGBA)
-    pub fn update_storage_object(&mut self, index: usize, model: &[[f32; 4]; 4], color: &[f32; 4]) {
+    pub fn update_storage_object(&mut self, index: usize, model: &[f32; 16], color: &[f32; 4]) {
         if let Some(ref mut manager) = self.storage_manager {
             manager.update_object(index, model, color);
         }
@@ -730,9 +730,9 @@ impl VulkanRenderer {
     pub fn update_viewport_camera(
         &mut self,
         handle: ViewportHandle,
-        view_matrix: &[[f32; 4]; 4],
-        proj_matrix: &[[f32; 4]; 4],
-        inv_view_proj: &[[f32; 4]; 4],
+        view_matrix: &[f32; 16],
+        proj_matrix: &[f32; 16],
+        inv_view_proj: &[f32; 16],
         camera_position: &[f32; 4],
         light_direction: &[f32; 4],
         light_color: &[f32; 4],

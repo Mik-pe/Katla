@@ -13,8 +13,8 @@ use super::context::VulkanContext;
 /// Must match the constant in model_pbr_skinned.wgsl
 pub const MAX_JOINTS: usize = 256;
 
-/// GPU-friendly joint matrix format (4x4 matrix as column-major array).
-pub type JointMatrix = [[f32; 4]; 4];
+/// GPU-friendly joint matrix format (4x4 matrix as column-major [f32; 16]).
+pub type JointMatrix = [f32; 16];
 
 /// Storage buffer for skeleton joint matrices.
 ///

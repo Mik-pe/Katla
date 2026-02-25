@@ -23,7 +23,6 @@ impl Transform {
             rotation: Quat::new(),
         }
     }
-
     /// Create a transform from position, rotation, and scale
     pub fn from_position_rotation_scale(position: Vec3, rotation: Quat, scale: Vec3) -> Self {
         Self {
