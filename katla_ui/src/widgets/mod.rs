@@ -41,6 +41,7 @@ pub struct Button<'a> {
     id: Option<&'a str>,
     fill_color: Option<Color>,
     hover_color: Option<Color>,
+    border_color: Option<Color>,
 }
 
 impl<'a> Button<'a> {
@@ -52,6 +53,7 @@ impl<'a> Button<'a> {
             id: None,
             fill_color: None,
             hover_color: None,
+            border_color: None,
         }
     }
 
@@ -78,18 +80,31 @@ impl<'a> Button<'a> {
         self.hover_color = Some(color);
         self
     }
+
+    /// Set a border color.
+    pub fn border(mut self, color: Color) -> Self {
+        self.border_color = Some(color);
+        self
+    }
 }
 
 impl<'a> crate::Widget for Button<'a> {
     fn ui(self, ui: &mut UiContext) -> Response {
         let id = self.id.unwrap_or(self.text);
-        ui.button_with_colors(
+        let response = ui.button_with_colors(
             id,
             self.text,
             self.bounds,
             self.fill_color,
             self.hover_color,
-        )
+        );
+
+        // Draw border if specified
+        if let Some(border_color) = self.border_color {
+            ui.draw_selection_border(self.bounds, border_color, 1.0);
+        }
+
+        response
     }
 }
 
