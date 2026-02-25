@@ -1958,7 +1958,8 @@ pub fn build_asset_browser(
                 .add(
                     katla_ui::widgets::Button::new("Yes")
                         .bounds(yes_btn_bounds)
-                        .fill_color(theme.error),
+                        .fill_color(theme.error)
+                        .hover_color(theme.error * 1.3),
                 )
                 .clicked
             {
