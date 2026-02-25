@@ -31,12 +31,15 @@ impl UiContext {
         let active = self.active_id == Some(widget_id);
 
         // Handle click
+        // Note: On release, we use self.input.is_hovered() directly instead of self.is_hovered()
+        // because self.is_hovered() returns false when active_id is set (which it is during press).
         let clicked = if hovered && self.input.mouse_pressed[mouse_button::LEFT] {
             self.active_id = Some(widget_id);
             false
         } else if active && self.input.mouse_released[mouse_button::LEFT] {
             self.active_id = None;
-            hovered
+            // Check if mouse is still over button using raw input check (bypasses active_id block)
+            self.input.is_hovered(bounds)
         } else {
             false
         };

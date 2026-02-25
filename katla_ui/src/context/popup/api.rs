@@ -1,26 +1,50 @@
-//! High-level popup API: context_menu, dropdown, modal, menu_bar_dropdown.
+//! High-level popup API: context_menu, dropdown, modal, popup.
+//!
+//! All functions use `&mut bool` for open state, allowing the caller to control
+//! when popups open and close.
 
 use katla_math::{Color, Rect2D, Vec2};
 
-use super::super::state::WidgetState;
 use super::super::{z_index, UiContext};
 use super::{Popup, PopupPosition, PopupStyle};
 
 impl UiContext {
     /// Show a popup with custom configuration.
     ///
-    /// Returns `Some(R)` if the popup was open, containing the closure's return value.
-    /// Returns `None` if the popup is not open.
-    pub fn popup<F, R>(&mut self, config: Popup, content: F) -> Option<R>
+    /// Returns `true` if the popup was open (and rendered), `false` if not.
+    ///
+    /// The `open` parameter controls whether the popup is shown. Set it to `true` to open,
+    /// and the closure can set it to `false` to close.
+    pub fn popup<F>(&mut self, config: Popup, open: &mut bool, content: F) -> bool
     where
-        F: FnOnce(&mut Self) -> R,
+        F: FnOnce(&mut Self, &mut bool),
     {
-        let popup_id = self.generate_id(&config.id);
+        // Use stable ID for popups - they need consistent IDs across frames
+        let popup_id = self.make_stable_id(&config.id);
 
-        // Check if this popup is open
-        let is_open = self.popup_id == Some(popup_id);
-        if !is_open {
-            return None;
+        // Check if we should render
+        if !*open {
+            // Clear popup state when closed
+            if self.popup_id == Some(popup_id) {
+                self.popup_id = None;
+                self.popup_position = None;
+                self.popup_bounds = None;
+            }
+            return false;
+        }
+
+        // Mark this popup as open
+        let was_just_opened = self.popup_id != Some(popup_id);
+        self.popup_id = Some(popup_id);
+        if was_just_opened {
+            self.popup_opened_this_frame = true;
+            self.active_id = None;
+            self.input.focused_id = None;
+
+            // Capture mouse position for AtCursor popups
+            if matches!(config.position, PopupPosition::AtCursor) {
+                self.popup_position = Some(self.input.mouse_pos);
+            }
         }
 
         // Determine position based on config
@@ -55,14 +79,20 @@ impl UiContext {
         self.push_id(&config.id);
 
         // Store initial popup bounds for get_popup_bounds()
-        let initial_bounds = Rect2D::from_origin_size(
-            position,
-            Vec2::new(self.popup_width, self.style.menu_item_height),
-        );
+        // For Centered popups (modals), use the specified size immediately
+        let initial_bounds = match config.position {
+            PopupPosition::Centered { width, height } => {
+                Rect2D::from_origin_size(position, Vec2::new(width, height))
+            }
+            _ => Rect2D::from_origin_size(
+                position,
+                Vec2::new(self.popup_width, self.style.menu_item_height),
+            ),
+        };
         self.popup_bounds = Some(initial_bounds);
 
         // Run content closure
-        let result = content(self);
+        content(self, open);
 
         // Calculate final bounds from tracked content
         let final_bounds = self.calculate_final_popup_bounds(&config, position);
@@ -79,109 +109,195 @@ impl UiContext {
         // Store final bounds for click-outside detection
         self.popup_bounds = Some(final_bounds);
 
-        // Handle close behavior
-        self.handle_popup_close(&config, final_bounds);
+        // Handle close behavior - but skip if just opened this frame
+        // (the opening click shouldn't immediately close the popup)
+        if !was_just_opened && self.handle_popup_close(&config, final_bounds) {
+            *open = false;
+        }
+
+        // If the closure closed the popup, clear our state
+        if !*open {
+            self.popup_id = None;
+            self.popup_position = None;
+            self.popup_bounds = None;
+        }
 
         // Clean up
         self.pop_clip();
         self.pop_id();
         self.pop_z_index();
 
-        Some(result)
+        true
     }
 
-    /// Context menu at cursor position (closure-based).
+    /// Context menu at cursor position.
     ///
-    /// Renders the popup if already open. Call `open_context_menu_at()` to open it.
-    /// Does NOT auto-open - caller must detect right-click and call open explicitly.
-    pub fn context_menu<F, R>(&mut self, id: &str, content: F) -> Option<R>
+    /// Opens when `open` is set to `true`. The position is captured from the mouse
+    /// when first opened.
+    ///
+    /// # Example
+    /// ```ignore
+    /// let mut menu_open = false;
+    ///
+    /// // Open on right-click
+    /// if ui.input.mouse_clicked(RIGHT) && !ui.has_open_popup() {
+    ///     menu_open = true;
+    /// }
+    ///
+    /// ui.context_menu("menu", &mut menu_open, |ui, open| {
+    ///     if ui.menu_item_clicked("Option") {
+    ///         *open = false;  // Close menu
+    ///     }
+    /// });
+    /// ```
+    pub fn context_menu<F>(&mut self, id: &str, open: &mut bool, content: F)
     where
-        F: FnOnce(&mut Self) -> R,
+        F: FnOnce(&mut Self, &mut bool),
     {
-        // Just render if already open - no auto-open
-        self.popup(Popup::new(id).at_cursor(), content)
+        self.popup(Popup::new(id).at_cursor(), open, content);
     }
 
-    /// Dropdown below a trigger button (closure-based).
+    /// Context menu with explicit position.
     ///
-    /// Returns Some(R) when dropdown is open, None when closed.
-    pub fn dropdown<F, R>(&mut self, id: &str, trigger: Rect2D, content: F) -> Option<R>
+    /// Like `context_menu` but opens at a specific position instead of mouse position.
+    pub fn context_menu_at<F>(&mut self, id: &str, pos: Vec2, open: &mut bool, content: F)
     where
-        F: FnOnce(&mut Self) -> R,
+        F: FnOnce(&mut Self, &mut bool),
     {
-        self.popup(Popup::new(id).below_button(trigger), content)
+        self.popup(Popup::new(id).at_position(pos), open, content);
+    }
+
+    /// Dropdown below a trigger button.
+    ///
+    /// # Example
+    /// ```ignore
+    /// let mut dropdown_open = false;
+    /// let trigger_bounds = Rect2D::from_origin_size(pos, Vec2::new(100.0, 24.0));
+    ///
+    /// // Draw trigger button
+    /// if ui.button_at("Select...", trigger_bounds).clicked {
+    ///     dropdown_open = !dropdown_open;
+    /// }
+    ///
+    /// ui.dropdown("menu", trigger_bounds, &mut dropdown_open, |ui, open| {
+    ///     if ui.menu_item_clicked("Option A") {
+    ///         *open = false;
+    ///     }
+    /// });
+    /// ```
+    pub fn dropdown<F>(&mut self, id: &str, trigger: Rect2D, open: &mut bool, content: F)
+    where
+        F: FnOnce(&mut Self, &mut bool),
+    {
+        self.popup(Popup::new(id).below_button(trigger), open, content);
     }
 
     /// Modal dialog (centered, blocks background).
     ///
-    /// Use `open_popup(id)` to show the dialog.
-    pub fn modal<F, R>(&mut self, id: &str, width: f32, height: f32, content: F) -> Option<R>
+    /// # Example
+    /// ```ignore
+    /// let mut dialog_open = false;
+    ///
+    /// if ui.button("Delete").clicked {
+    ///     dialog_open = true;
+    /// }
+    ///
+    /// ui.modal("confirm", 300.0, 150.0, &mut dialog_open, |ui, open| {
+    ///     ui.label("Are you sure?");
+    ///     if ui.button("OK").clicked {
+    ///         // Do the action
+    ///         *open = false;
+    ///     }
+    ///     if ui.button("Cancel").clicked {
+    ///         *open = false;
+    ///     }
+    /// });
+    /// ```
+    pub fn modal<F>(&mut self, id: &str, width: f32, height: f32, open: &mut bool, content: F)
     where
-        F: FnOnce(&mut Self) -> R,
+        F: FnOnce(&mut Self, &mut bool),
     {
-        self.popup(Popup::new(id).centered(width, height).modal(), content)
+        self.popup(
+            Popup::new(id).centered(width, height).modal(),
+            open,
+            content,
+        );
     }
 
-    /// Menu bar dropdown with trigger button (closure-based).
+    /// Menu bar dropdown with trigger button.
     ///
     /// Draws the trigger button and handles the dropdown popup.
-    pub fn menu_bar_dropdown<F, R>(
+    ///
+    /// # Example
+    /// ```ignore
+    /// let mut file_open = false;
+    /// ui.menu_bar_dropdown("file", "File", button_bounds, &mut file_open, |ui, open| {
+    ///     if ui.menu_item_clicked("New") {
+    ///         *open = false;
+    ///     }
+    /// });
+    /// ```
+    pub fn menu_bar_dropdown<F>(
         &mut self,
         id: &str,
         label: &str,
         bounds: Rect2D,
+        open: &mut bool,
         content: F,
-    ) -> Option<R>
-    where
-        F: FnOnce(&mut Self) -> R,
+    ) where
+        F: FnOnce(&mut Self, &mut bool),
     {
-        let dropdown_id = self.generate_id(id);
+        // Use stable ID for menus - they're always at the same position
+        let dropdown_id = self.make_stable_id(id);
 
-        // Get open state
-        let is_open = self.popup_id == Some(dropdown_id);
+        // Check if this dropdown should close (from hover-to-switch in this frame)
+        if self.menu_bar_close_id == Some(dropdown_id) {
+            *open = false;
+            self.menu_bar_close_id = None; // Clear so we don't close again
+        }
 
         // Draw trigger button and handle interaction
         let hovered = self.update_hover(dropdown_id, bounds);
 
-        // Hover-to-switch when another popup is open
+        // Toggle on click
+        // Note: On release, we use self.input.is_hovered() directly instead of self.is_hovered()
+        // because self.is_hovered() returns false when active_id is set (which it is during press).
+        let clicked = if hovered && self.input.mouse_pressed[crate::input::mouse_button::LEFT] {
+            self.active_id = Some(dropdown_id);
+            false
+        } else if self.active_id == Some(dropdown_id)
+            && self.input.mouse_released[crate::input::mouse_button::LEFT]
+        {
+            self.active_id = None;
+            // Check if mouse is still over button using raw input check (bypasses active_id block)
+            self.input.is_hovered(bounds)
+        } else {
+            false
+        };
+
+        if clicked {
+            *open = !*open;
+        }
+
+        // Hover-to-switch when another dropdown is open
+        // When hovering over a DIFFERENT dropdown while one is open, close the
+        // current popup and open this one. This provides standard menu bar behavior.
+        // Note: We check popup_id != dropdown_id to avoid switching when hovering
+        // the same dropdown that's already open.
         if hovered
             && self.popup_id.is_some()
             && self.popup_id != Some(dropdown_id)
             && !self.popup_opened_this_frame
         {
-            if let Some(other_id) = self.popup_id {
-                self.storage
-                    .insert(other_id, WidgetState::DropdownOpen(false));
-            }
-            self.storage
-                .insert(dropdown_id, WidgetState::DropdownOpen(true));
-            self.popup_id = Some(dropdown_id);
-            self.popup_bounds = Some(Rect2D::from_origin_size(
-                Vec2::new(bounds.min.x(), bounds.max.y()),
-                Vec2::new(bounds.width().max(self.style.menu_min_width), 200.0),
-            ));
-        }
-
-        // Toggle on click
-        if self.button_behavior(dropdown_id, bounds) {
-            let new_open = !is_open;
-            self.storage
-                .insert(dropdown_id, WidgetState::DropdownOpen(new_open));
-            if new_open {
-                self.popup_id = Some(dropdown_id);
-                self.popup_opened_this_frame = true;
-                self.popup_bounds = Some(Rect2D::from_origin_size(
-                    Vec2::new(bounds.min.x(), bounds.max.y()),
-                    Vec2::new(bounds.width().max(self.style.menu_min_width), 200.0),
-                ));
-            } else {
-                self.popup_id = None;
-                self.popup_bounds = None;
-            }
+            // Tell the current popup's dropdown to close
+            self.menu_bar_close_id = self.popup_id;
+            // Close the current popup (this allows the new dropdown to take over)
+            self.close_current_popup();
+            *open = true;
         }
 
         // Draw trigger button
-        let bg_color = if is_open {
+        let bg_color = if *open {
             self.style.menu_active
         } else if self.active_id == Some(dropdown_id) {
             self.style.button_active
@@ -206,10 +322,8 @@ impl UiContext {
         );
 
         // Show popup if open
-        if is_open {
-            self.dropdown(id, bounds, content)
-        } else {
-            None
+        if *open {
+            self.dropdown(id, bounds, open, content);
         }
     }
 }

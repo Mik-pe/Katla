@@ -2,27 +2,18 @@
 
 use katla_math::{Color, Rect2D, Vec2};
 
-use super::super::state::WidgetState;
 use super::super::UiContext;
 use super::{Popup, PopupPosition, PopupStyle};
 
 impl UiContext {
     /// Calculate popup position based on config.
+    ///
+    /// For `AtCursor`, uses the captured position from when the popup was first opened.
     pub(super) fn calculate_popup_position(&self, config: &Popup) -> Vec2 {
         match config.position {
             PopupPosition::AtCursor => {
-                // Get stored position or use current mouse position
-                let popup_id = self.generate_id(&config.id);
-                self.storage
-                    .get(&popup_id)
-                    .and_then(|s| {
-                        if let WidgetState::ContextMenuPos(p) = s {
-                            Some(*p)
-                        } else {
-                            None
-                        }
-                    })
-                    .unwrap_or(self.input.mouse_pos)
+                // Use captured position if available, otherwise current mouse pos
+                self.popup_position.unwrap_or(self.input.mouse_pos)
             }
             PopupPosition::AtPosition(pos) => pos,
             PopupPosition::BelowButton(trigger) => Vec2::new(trigger.min.x(), trigger.max.y()),
@@ -77,7 +68,9 @@ impl UiContext {
     }
 
     /// Handle popup close behavior.
-    pub(super) fn handle_popup_close(&mut self, config: &Popup, bounds: Rect2D) {
+    ///
+    /// Returns `true` if the popup should be closed.
+    pub(super) fn handle_popup_close(&mut self, config: &Popup, bounds: Rect2D) -> bool {
         // Capture mouse when over popup
         if bounds.contains(self.input.mouse_pos) {
             self.input.want_capture_mouse = true;
@@ -88,18 +81,27 @@ impl UiContext {
             if self.input.mouse_clicked(crate::input::mouse_button::LEFT)
                 && !bounds.contains(self.input.mouse_pos)
             {
-                self.close_current_popup();
+                // For dropdowns, don't close if clicking on the trigger button
+                // This allows toggling the dropdown by clicking the same button
+                if let PopupPosition::BelowButton(trigger) = config.position {
+                    if trigger.contains(self.input.mouse_pos) {
+                        return false;
+                    }
+                }
+                return true;
             }
         }
 
         // Handle Escape-to-close
         if self.input.key_pressed(crate::input::KeyCode::Escape) {
-            self.close_current_popup();
+            return true;
         }
 
         // Capture keyboard for modals
         if config.style == PopupStyle::Modal {
             self.input.want_capture_keyboard = true;
         }
+
+        false
     }
 }

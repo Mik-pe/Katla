@@ -80,6 +80,8 @@ pub struct DebugOverlay {
     fps_history: MetricsHistory,
     /// Frame time history (in milliseconds) for the graph.
     frame_time_history: MetricsHistory,
+    /// Context menu open state.
+    context_menu_open: bool,
 }
 
 impl DebugOverlay {
@@ -98,6 +100,7 @@ impl DebugOverlay {
             context_message: String::new(),
             fps_history: MetricsHistory::new(100),
             frame_time_history: MetricsHistory::new(100),
+            context_menu_open: false,
         }
     }
 
@@ -225,24 +228,24 @@ impl DebugOverlay {
         // === Context Menu (right-click anywhere in debug area) ===
         // Open on right-click if no popup already open
         if ui.input.mouse_clicked(katla_ui::input::mouse_button::RIGHT) && !ui.has_open_popup() {
-            ui.open_context_menu_at("main_context", ui.input.mouse_pos);
+            self.context_menu_open = true;
         }
 
-        ui.context_menu("main_context", |ui| {
+        ui.context_menu("main_context", &mut self.context_menu_open, |ui, open| {
             if ui.menu_item_clicked("Solid Mode") {
                 self.render_mode = RenderMode::Solid;
                 self.context_message = "Switched to Solid!".to_string();
-                ui.close_current_popup();
+                *open = false;
             }
             if ui.menu_item_clicked("Wireframe") {
                 self.render_mode = RenderMode::Wireframe;
                 self.context_message = "Switched to Wireframe!".to_string();
-                ui.close_current_popup();
+                *open = false;
             }
             if ui.menu_item_clicked("Points") {
                 self.render_mode = RenderMode::Points;
                 self.context_message = "Switched to Points!".to_string();
-                ui.close_current_popup();
+                *open = false;
             }
         });
 

@@ -6,10 +6,7 @@
 mod drawing;
 mod layout;
 mod popup;
-mod state;
 mod widgets;
-
-use std::collections::HashMap;
 
 use katla_math::{Color, Rect2D, Vec2};
 
@@ -20,7 +17,6 @@ use crate::text::{FontId, FontSystem};
 
 pub use layout::{LayoutDirection, LayoutState};
 pub use popup::{CloseBehavior, Popup, PopupPosition, PopupStyle};
-pub use state::WidgetState;
 pub use widgets::{ScrollArea, ScrollAreaState};
 
 /// ID type for UI elements.
@@ -88,8 +84,6 @@ pub struct UiContext {
     id_stack: Vec<WidgetId>,
     /// Counter for generating unique IDs.
     id_counter: u32,
-    /// Storage for widget state (checkboxes, sliders, etc.).
-    pub(crate) storage: HashMap<WidgetId, WidgetState>,
     /// Currently hovered widget.
     pub(crate) hovered_id: Option<WidgetId>,
     /// Currently active (pressed) widget.
@@ -104,6 +98,12 @@ pub struct UiContext {
     pub(crate) layout_stack: Vec<LayoutState>,
     /// Currently open popup ID.
     popup_id: Option<WidgetId>,
+    /// ID of the menu bar dropdown to close (set during hover-to-switch).
+    /// When hover-to-switch happens, this is set to the ID of the dropdown
+    /// that should close itself.
+    menu_bar_close_id: Option<WidgetId>,
+    /// Captured position for the current popup (set when first opened).
+    popup_position: Option<Vec2>,
     /// Bounds of the current popup (for click-outside detection).
     pub(crate) popup_bounds: Option<Rect2D>,
     /// Whether a popup was opened this frame (prevents immediate close).
@@ -145,7 +145,6 @@ impl UiContext {
             clip_stack: Vec::new(),
             id_stack: Vec::new(),
             id_counter: 0,
-            storage: HashMap::new(),
             hovered_id: None,
             active_id: None,
             in_frame: false,
@@ -153,6 +152,8 @@ impl UiContext {
             row_height: 0.0,
             layout_stack: Vec::new(),
             popup_id: None,
+            menu_bar_close_id: None,
+            popup_position: None,
             popup_bounds: None,
             popup_opened_this_frame: false,
             popup_consume_click: false,
@@ -214,40 +215,19 @@ impl UiContext {
         self.row_height = 0.0;
         self.layout_stack.clear();
 
-        // Clear custom popup bounds at start of frame (they'll be re-registered if still open)
-        // Built-in popups (with popup_id) keep their bounds for click-outside detection
+        // Clear popup bounds at start of frame
+        // They'll be re-registered if the popup is still open
         if self.popup_id.is_none() {
             self.popup_bounds = None;
         }
 
-        // Reset popup click consumption flag from previous frame
-        self.popup_consume_click = false;
+        // NOTE: Don't clear menu_bar_close_id here! It needs to persist across frames
+        // so that dropdowns can check if they should close (hover-to-switch happens
+        // after the first dropdown has already processed).
 
-        // Check for click outside popup to close it
-        // NOTE: We check BEFORE resetting popup_opened_this_frame so that
-        // popups opened in the previous frame don't get closed immediately
-        if self.popup_id.is_some()
-            && !self.popup_opened_this_frame
-            && self.input.mouse_pressed[crate::input::mouse_button::LEFT]
-        {
-            let mouse_outside = self
-                .popup_bounds
-                .is_none_or(|bounds| !bounds.contains(self.input.mouse_pos));
-            if mouse_outside {
-                // Close the dropdown in storage too
-                if let Some(popup_id) = self.popup_id {
-                    self.storage
-                        .insert(popup_id, WidgetState::DropdownOpen(false));
-                }
-                self.popup_id = None;
-                self.popup_bounds = None;
-                // CONSUME the click to prevent click-through to underlying widgets
-                self.popup_consume_click = true;
-            }
-        }
-
-        // Reset the flag AFTER the check
+        // Reset popup flags
         self.popup_opened_this_frame = false;
+        self.popup_consume_click = false;
 
         // NOTE: Don't clear active_id here! Widgets need to check it in button_behavior.
         // We'll clear it in end() if it wasn't consumed by a click.
@@ -303,20 +283,37 @@ impl UiContext {
     // -------------------------------------------------------------------------
 
     /// Generate a unique ID for a widget.
-    pub fn generate_id(&self, label: &str) -> WidgetId {
-        let base = if let Some(&parent) = self.id_stack.last() {
-            parent
-        } else {
-            0
-        };
+    ///
+    /// Combines parent ID, label, and a sequential counter to ensure uniqueness.
+    /// The counter is reset each frame in `begin()`, so consistent call order
+    /// produces consistent IDs across frames.
+    pub fn generate_id(&mut self, label: &str) -> WidgetId {
+        let base = self.id_stack.last().copied().unwrap_or(0);
+        let counter = self.id_counter;
+        self.id_counter += 1;
 
-        // Simple hash combining parent ID with label
-        // This produces consistent IDs across frames for the same widget
+        // Hash: parent + label + counter
+        // This ensures unique IDs even for widgets with same label in same parent
         let mut hash = base;
         for byte in label.bytes() {
             hash = hash.wrapping_mul(31).wrapping_add(byte as u64);
         }
+        hash = hash.wrapping_mul(31).wrapping_add(counter as u64);
 
+        hash
+    }
+
+    /// Generate a stable ID that doesn't depend on call order.
+    ///
+    /// Use this for things like popups that need the same ID regardless of
+    /// when they're called in the frame.
+    pub fn make_stable_id(&self, label: &str) -> WidgetId {
+        let base = self.id_stack.last().copied().unwrap_or(0);
+
+        let mut hash = base;
+        for byte in label.bytes() {
+            hash = hash.wrapping_mul(31).wrapping_add(byte as u64);
+        }
         hash
     }
 
@@ -586,16 +583,38 @@ mod tests {
         let mut ctx = UiContext::new();
         ctx.begin(Vec2::new(800.0, 600.0), 1.0);
 
+        // Each call generates a unique ID due to counter increment
         let id1 = ctx.generate_id("test");
         let id2 = ctx.generate_id("test");
         let id3 = ctx.generate_id("other");
 
-        // Same label produces same ID (hash-based, deterministic)
-        assert_eq!(id1, id2);
-        // Different labels produce different IDs
-        assert_ne!(id1, id3);
+        // Same label produces DIFFERENT IDs (counter ensures uniqueness)
+        assert_ne!(id1, id2, "same label should get different IDs");
+        // Different labels also produce different IDs
+        assert_ne!(id1, id3, "different labels should get different IDs");
 
         ctx.end();
+    }
+
+    #[test]
+    fn test_id_generation_consistent_across_frames() {
+        let mut ctx = UiContext::new();
+
+        // Frame 1
+        ctx.begin(Vec2::new(800.0, 600.0), 1.0);
+        let frame1_id1 = ctx.generate_id("button");
+        let frame1_id2 = ctx.generate_id("button");
+        ctx.end();
+
+        // Frame 2 - same call order should produce same IDs
+        ctx.begin(Vec2::new(800.0, 600.0), 1.0);
+        let frame2_id1 = ctx.generate_id("button");
+        let frame2_id2 = ctx.generate_id("button");
+        ctx.end();
+
+        // IDs should be consistent across frames (important for state persistence)
+        assert_eq!(frame1_id1, frame2_id1, "first button ID should be stable");
+        assert_eq!(frame1_id2, frame2_id2, "second button ID should be stable");
     }
 
     /// Test that text character positions are stable when panel moves within same subpixel bin.
@@ -788,6 +807,667 @@ mod tests {
             "Bottom should be at last item bottom"
         );
 
+        ctx.end();
+    }
+
+    // === Menu Bar Dropdown Click Tests ===
+
+    /// Test that menu_bar_dropdown opens when clicked (press + release).
+    ///
+    /// This tests the full click cycle:
+    /// 1. Frame 1: Mouse press on button -> sets active_id
+    /// 2. Frame 2: Mouse release while over button -> should toggle open state
+    #[test]
+    fn test_menu_bar_dropdown_click_opens_dropdown() {
+        use crate::input::mouse_button;
+
+        let mut ctx = UiContext::new();
+        let mut dropdown_open = false;
+        let button_bounds = Rect2D::from_origin_size(Vec2::new(0.0, 0.0), Vec2::new(60.0, 24.0));
+
+        // Frame 1: Mouse press on the button
+        ctx.begin(Vec2::new(800.0, 600.0), 1.0);
+        ctx.input.set_mouse_pos(Vec2::new(30.0, 12.0)); // Center of button
+        ctx.input.set_mouse_button(mouse_button::LEFT, true);
+
+        ctx.menu_bar_dropdown(
+            "file",
+            "File",
+            button_bounds,
+            &mut dropdown_open,
+            |_ui, _open| {
+                // Menu content would go here
+            },
+        );
+        ctx.end();
+
+        // Dropdown should NOT be open yet (just pressed, not released)
+        assert!(!dropdown_open, "Dropdown should not open on press");
+
+        // Frame 2: Mouse release while still over button
+        ctx.input.clear_frame_state();
+        ctx.begin(Vec2::new(800.0, 600.0), 1.0);
+        // Mouse is still at the same position (still hovering the button)
+        ctx.input.set_mouse_pos(Vec2::new(30.0, 12.0));
+        ctx.input.set_mouse_button(mouse_button::LEFT, false); // Release
+
+        ctx.menu_bar_dropdown(
+            "file",
+            "File",
+            button_bounds,
+            &mut dropdown_open,
+            |_ui, _open| {
+                // Menu content would go here
+            },
+        );
+        ctx.end();
+
+        // NOW the dropdown should be open!
+        assert!(
+            dropdown_open,
+            "Dropdown should open after click (press + release)"
+        );
+    }
+
+    /// Test that clicking an open dropdown closes it.
+    #[test]
+    fn test_menu_bar_dropdown_click_toggles() {
+        use crate::input::mouse_button;
+
+        let mut ctx = UiContext::new();
+        let mut dropdown_open = false;
+        let button_bounds = Rect2D::from_origin_size(Vec2::new(0.0, 0.0), Vec2::new(60.0, 24.0));
+
+        // --- First click: open the dropdown ---
+        // Frame 1: Press
+        ctx.begin(Vec2::new(800.0, 600.0), 1.0);
+        ctx.input.set_mouse_pos(Vec2::new(30.0, 12.0));
+        ctx.input.set_mouse_button(mouse_button::LEFT, true);
+        ctx.menu_bar_dropdown(
+            "file",
+            "File",
+            button_bounds,
+            &mut dropdown_open,
+            |_ui, _open| {},
+        );
+        ctx.end();
+
+        // Frame 2: Release
+        ctx.input.clear_frame_state();
+        ctx.begin(Vec2::new(800.0, 600.0), 1.0);
+        ctx.input.set_mouse_pos(Vec2::new(30.0, 12.0));
+        ctx.input.set_mouse_button(mouse_button::LEFT, false);
+        ctx.menu_bar_dropdown(
+            "file",
+            "File",
+            button_bounds,
+            &mut dropdown_open,
+            |_ui, _open| {},
+        );
+        ctx.end();
+
+        assert!(dropdown_open, "Dropdown should be open after first click");
+
+        // --- Second click: close the dropdown ---
+        // Frame 3: Press
+        ctx.input.clear_frame_state();
+        ctx.begin(Vec2::new(800.0, 600.0), 1.0);
+        ctx.input.set_mouse_pos(Vec2::new(30.0, 12.0));
+        ctx.input.set_mouse_button(mouse_button::LEFT, true);
+        ctx.menu_bar_dropdown(
+            "file",
+            "File",
+            button_bounds,
+            &mut dropdown_open,
+            |_ui, _open| {},
+        );
+        ctx.end();
+
+        // Frame 4: Release
+        ctx.input.clear_frame_state();
+        ctx.begin(Vec2::new(800.0, 600.0), 1.0);
+        ctx.input.set_mouse_pos(Vec2::new(30.0, 12.0));
+        ctx.input.set_mouse_button(mouse_button::LEFT, false);
+        ctx.menu_bar_dropdown(
+            "file",
+            "File",
+            button_bounds,
+            &mut dropdown_open,
+            |_ui, _open| {},
+        );
+        ctx.end();
+
+        assert!(
+            !dropdown_open,
+            "Dropdown should be closed after second click"
+        );
+    }
+
+    /// Test that menu_bar_dropdown click works even when popup bounds overlap button.
+    /// This tests that the raw input hover check bypasses popup blocking.
+    #[test]
+    fn test_menu_bar_dropdown_click_with_open_popup() {
+        use crate::input::mouse_button;
+
+        let mut ctx = UiContext::new();
+        let mut dropdown_open = true; // Start with dropdown already open
+        let button_bounds = Rect2D::from_origin_size(Vec2::new(0.0, 0.0), Vec2::new(60.0, 24.0));
+
+        // Simulate that a popup was opened in a previous frame (popup state persists)
+        ctx.begin(Vec2::new(800.0, 600.0), 1.0);
+        // First, simulate the popup being rendered which sets popup_bounds
+        ctx.popup(
+            crate::context::Popup::new("test").below_button(button_bounds),
+            &mut dropdown_open,
+            |_ui, _open| {},
+        );
+        ctx.end();
+
+        // Now popup_bounds should be set from the previous frame
+        // Simulate a click on the button to close the dropdown
+        ctx.input.clear_frame_state();
+        ctx.begin(Vec2::new(800.0, 600.0), 1.0);
+        ctx.input.set_mouse_pos(Vec2::new(30.0, 12.0));
+        ctx.input.set_mouse_button(mouse_button::LEFT, true);
+        ctx.menu_bar_dropdown(
+            "test",
+            "Test",
+            button_bounds,
+            &mut dropdown_open,
+            |_ui, _open| {},
+        );
+        ctx.end();
+
+        // Release - should toggle the dropdown closed
+        ctx.input.clear_frame_state();
+        ctx.begin(Vec2::new(800.0, 600.0), 1.0);
+        ctx.input.set_mouse_pos(Vec2::new(30.0, 12.0));
+        ctx.input.set_mouse_button(mouse_button::LEFT, false);
+        ctx.menu_bar_dropdown(
+            "test",
+            "Test",
+            button_bounds,
+            &mut dropdown_open,
+            |_ui, _open| {},
+        );
+        ctx.end();
+
+        assert!(
+            !dropdown_open,
+            "Dropdown should close when clicked with popup open"
+        );
+    }
+
+    // === Menu Bar Hover-to-Switch Tests ===
+
+    /// Test that hovering over another dropdown while one is open switches to it.
+    ///
+    /// This is the standard menu bar behavior: when "File" is open and you hover
+    /// over "Edit", the File menu closes and Edit menu opens automatically.
+    ///
+    /// Note: In immediate mode UI, hover-to-switch takes 2 frames:
+    /// - Frame N: Hover detected, close flag set, Edit opens
+    /// - Frame N+1: File sees close flag and closes
+    #[test]
+    fn test_menu_bar_hover_to_switch() {
+        use crate::input::mouse_button;
+
+        let mut ctx = UiContext::new();
+        let mut file_open = false;
+        let mut edit_open = false;
+        let file_bounds = Rect2D::from_origin_size(Vec2::new(0.0, 0.0), Vec2::new(60.0, 24.0));
+        let edit_bounds = Rect2D::from_origin_size(Vec2::new(60.0, 0.0), Vec2::new(60.0, 24.0));
+
+        // --- First, open the File dropdown ---
+        // Frame 1: Press on File
+        ctx.begin(Vec2::new(800.0, 600.0), 1.0);
+        ctx.input.set_mouse_pos(Vec2::new(30.0, 12.0)); // Over File button
+        ctx.input.set_mouse_button(mouse_button::LEFT, true);
+        ctx.menu_bar_dropdown("file", "File", file_bounds, &mut file_open, |_ui, _open| {});
+        ctx.menu_bar_dropdown("edit", "Edit", edit_bounds, &mut edit_open, |_ui, _open| {});
+        ctx.end();
+
+        // Frame 2: Release on File
+        ctx.input.clear_frame_state();
+        ctx.begin(Vec2::new(800.0, 600.0), 1.0);
+        ctx.input.set_mouse_pos(Vec2::new(30.0, 12.0));
+        ctx.input.set_mouse_button(mouse_button::LEFT, false);
+        ctx.menu_bar_dropdown("file", "File", file_bounds, &mut file_open, |_ui, _open| {});
+        ctx.menu_bar_dropdown("edit", "Edit", edit_bounds, &mut edit_open, |_ui, _open| {});
+        ctx.end();
+
+        assert!(file_open, "File dropdown should be open");
+        assert!(!edit_open, "Edit dropdown should be closed");
+
+        // --- Now hover over Edit (no click, just hover) ---
+        // Frame 3: Move mouse to Edit button - hover-to-switch triggered
+        ctx.input.clear_frame_state();
+        ctx.begin(Vec2::new(800.0, 600.0), 1.0);
+        ctx.input.set_mouse_pos(Vec2::new(90.0, 12.0)); // Over Edit button
+        ctx.menu_bar_dropdown("file", "File", file_bounds, &mut file_open, |_ui, _open| {});
+        ctx.menu_bar_dropdown("edit", "Edit", edit_bounds, &mut edit_open, |_ui, _open| {});
+        ctx.end();
+
+        // Edit should be open now
+        assert!(edit_open, "Edit dropdown should open when hovering it");
+
+        // Frame 4: File sees the close flag and closes
+        ctx.input.clear_frame_state();
+        ctx.begin(Vec2::new(800.0, 600.0), 1.0);
+        ctx.input.set_mouse_pos(Vec2::new(90.0, 12.0)); // Still over Edit
+        ctx.menu_bar_dropdown("file", "File", file_bounds, &mut file_open, |_ui, _open| {});
+        ctx.menu_bar_dropdown("edit", "Edit", edit_bounds, &mut edit_open, |_ui, _open| {});
+        ctx.end();
+
+        // Now File should be closed and Edit should be open
+        assert!(!file_open, "File dropdown should close when hovering Edit");
+        assert!(edit_open, "Edit dropdown should remain open");
+    }
+
+    /// Test that only one menu dropdown can be open at a time.
+    ///
+    /// Note: Hover-to-switch takes 2 frames in immediate mode:
+    /// - Frame N: Hover detected, close flag set, new dropdown opens
+    /// - Frame N+1: Old dropdown sees close flag and closes
+    #[test]
+    fn test_menu_bar_only_one_open() {
+        use crate::input::mouse_button;
+
+        let mut ctx = UiContext::new();
+        let mut file_open = false;
+        let mut edit_open = false;
+        let mut view_open = false;
+        let file_bounds = Rect2D::from_origin_size(Vec2::new(0.0, 0.0), Vec2::new(60.0, 24.0));
+        let edit_bounds = Rect2D::from_origin_size(Vec2::new(60.0, 0.0), Vec2::new(60.0, 24.0));
+        let view_bounds = Rect2D::from_origin_size(Vec2::new(120.0, 0.0), Vec2::new(60.0, 24.0));
+
+        // Open File dropdown
+        ctx.begin(Vec2::new(800.0, 600.0), 1.0);
+        ctx.input.set_mouse_pos(Vec2::new(30.0, 12.0));
+        ctx.input.set_mouse_button(mouse_button::LEFT, true);
+        ctx.menu_bar_dropdown("file", "File", file_bounds, &mut file_open, |_ui, _open| {});
+        ctx.menu_bar_dropdown("edit", "Edit", edit_bounds, &mut edit_open, |_ui, _open| {});
+        ctx.menu_bar_dropdown("view", "View", view_bounds, &mut view_open, |_ui, _open| {});
+        ctx.end();
+
+        ctx.input.clear_frame_state();
+        ctx.begin(Vec2::new(800.0, 600.0), 1.0);
+        ctx.input.set_mouse_pos(Vec2::new(30.0, 12.0));
+        ctx.input.set_mouse_button(mouse_button::LEFT, false);
+        ctx.menu_bar_dropdown("file", "File", file_bounds, &mut file_open, |_ui, _open| {});
+        ctx.menu_bar_dropdown("edit", "Edit", edit_bounds, &mut edit_open, |_ui, _open| {});
+        ctx.menu_bar_dropdown("view", "View", view_bounds, &mut view_open, |_ui, _open| {});
+        ctx.end();
+
+        assert!(
+            file_open && !edit_open && !view_open,
+            "Only File should be open"
+        );
+
+        // Hover over Edit - Frame 1 (hover detected)
+        ctx.input.clear_frame_state();
+        ctx.begin(Vec2::new(800.0, 600.0), 1.0);
+        ctx.input.set_mouse_pos(Vec2::new(90.0, 12.0));
+        ctx.menu_bar_dropdown("file", "File", file_bounds, &mut file_open, |_ui, _open| {});
+        ctx.menu_bar_dropdown("edit", "Edit", edit_bounds, &mut edit_open, |_ui, _open| {});
+        ctx.menu_bar_dropdown("view", "View", view_bounds, &mut view_open, |_ui, _open| {});
+        ctx.end();
+
+        // Frame 2 (File sees close flag)
+        ctx.input.clear_frame_state();
+        ctx.begin(Vec2::new(800.0, 600.0), 1.0);
+        ctx.input.set_mouse_pos(Vec2::new(90.0, 12.0));
+        ctx.menu_bar_dropdown("file", "File", file_bounds, &mut file_open, |_ui, _open| {});
+        ctx.menu_bar_dropdown("edit", "Edit", edit_bounds, &mut edit_open, |_ui, _open| {});
+        ctx.menu_bar_dropdown("view", "View", view_bounds, &mut view_open, |_ui, _open| {});
+        ctx.end();
+
+        assert!(
+            !file_open && edit_open && !view_open,
+            "Only Edit should be open"
+        );
+
+        // Hover over View - Frame 1 (hover detected)
+        ctx.input.clear_frame_state();
+        ctx.begin(Vec2::new(800.0, 600.0), 1.0);
+        ctx.input.set_mouse_pos(Vec2::new(150.0, 12.0));
+        ctx.menu_bar_dropdown("file", "File", file_bounds, &mut file_open, |_ui, _open| {});
+        ctx.menu_bar_dropdown("edit", "Edit", edit_bounds, &mut edit_open, |_ui, _open| {});
+        ctx.menu_bar_dropdown("view", "View", view_bounds, &mut view_open, |_ui, _open| {});
+        ctx.end();
+
+        // Frame 2 (Edit sees close flag)
+        ctx.input.clear_frame_state();
+        ctx.begin(Vec2::new(800.0, 600.0), 1.0);
+        ctx.input.set_mouse_pos(Vec2::new(150.0, 12.0));
+        ctx.menu_bar_dropdown("file", "File", file_bounds, &mut file_open, |_ui, _open| {});
+        ctx.menu_bar_dropdown("edit", "Edit", edit_bounds, &mut edit_open, |_ui, _open| {});
+        ctx.menu_bar_dropdown("view", "View", view_bounds, &mut view_open, |_ui, _open| {});
+        ctx.end();
+
+        assert!(
+            !file_open && !edit_open && view_open,
+            "Only View should be open"
+        );
+    }
+
+    /// Test that hover-to-switch only happens when a dropdown is already open.
+    /// Hovering alone (without clicking first) should NOT open a dropdown.
+    #[test]
+    fn test_menu_bar_hover_does_not_open_without_click() {
+        let mut ctx = UiContext::new();
+        let mut file_open = false;
+        let file_bounds = Rect2D::from_origin_size(Vec2::new(0.0, 0.0), Vec2::new(60.0, 24.0));
+
+        // Just hover over File - should NOT open it
+        ctx.begin(Vec2::new(800.0, 600.0), 1.0);
+        ctx.input.set_mouse_pos(Vec2::new(30.0, 12.0));
+        ctx.menu_bar_dropdown("file", "File", file_bounds, &mut file_open, |_ui, _open| {});
+        ctx.end();
+
+        assert!(!file_open, "Hovering alone should not open dropdown");
+    }
+
+    // === Modal Bounds Tests ===
+
+    /// Test that get_popup_bounds() returns correct bounds for a centered modal.
+    ///
+    /// This verifies that the modal's bounds match its specified width/height,
+    /// allowing content to be correctly positioned within the modal.
+    #[test]
+    fn test_modal_get_popup_bounds_matches_specified_size() {
+        let mut ctx = UiContext::new();
+        let mut modal_open = true;
+        let modal_width = 320.0;
+        let modal_height = 120.0;
+
+        ctx.begin(Vec2::new(800.0, 600.0), 1.0);
+        ctx.modal(
+            "test_modal",
+            modal_width,
+            modal_height,
+            &mut modal_open,
+            |ui, _open| {
+                let bounds = ui.get_popup_bounds();
+
+                // The bounds should have the specified width and height
+                assert!(
+                    (bounds.width() - modal_width).abs() < 1.0,
+                    "Modal width should be {}, got {}",
+                    modal_width,
+                    bounds.width()
+                );
+                assert!(
+                    (bounds.height() - modal_height).abs() < 1.0,
+                    "Modal height should be {}, got {}",
+                    modal_height,
+                    bounds.height()
+                );
+
+                // The modal should be centered on screen
+                let expected_x = (800.0 - modal_width) * 0.5;
+                let expected_y = (600.0 - modal_height) * 0.5;
+                assert!(
+                    (bounds.min.x() - expected_x).abs() < 1.0,
+                    "Modal x should be {}, got {}",
+                    expected_x,
+                    bounds.min.x()
+                );
+                assert!(
+                    (bounds.min.y() - expected_y).abs() < 1.0,
+                    "Modal y should be {}, got {}",
+                    expected_y,
+                    bounds.min.y()
+                );
+            },
+        );
+        ctx.end();
+    }
+
+    /// Test that buttons positioned relative to modal bounds are inside the modal.
+    ///
+    /// This is the actual bug: when positioning buttons using get_popup_bounds(),
+    /// they end up outside the modal rectangle because the bounds are wrong.
+    #[test]
+    fn test_modal_buttons_within_bounds() {
+        let mut ctx = UiContext::new();
+        let mut modal_open = true;
+        let modal_width = 320.0;
+        let modal_height = 120.0;
+        let btn_width = 80.0;
+        let btn_height = 28.0;
+        let btn_margin = 10.0;
+
+        ctx.begin(Vec2::new(800.0, 600.0), 1.0);
+        ctx.modal(
+            "test_modal",
+            modal_width,
+            modal_height,
+            &mut modal_open,
+            |ui, _open| {
+                let bounds = ui.get_popup_bounds();
+
+                // Position "Yes" button at bottom-right of modal
+                let yes_btn_bounds = Rect2D::from_origin_size(
+                    Vec2::new(
+                        bounds.min.x() + modal_width - btn_width - btn_margin,
+                        bounds.min.y() + modal_height - btn_height - btn_margin,
+                    ),
+                    Vec2::new(btn_width, btn_height),
+                );
+
+                // Position "No" button to the left of "Yes"
+                let no_btn_bounds = Rect2D::from_origin_size(
+                    Vec2::new(
+                        bounds.min.x() + modal_width - btn_width * 2.0 - btn_margin * 2.0,
+                        bounds.min.y() + modal_height - btn_height - btn_margin,
+                    ),
+                    Vec2::new(btn_width, btn_height),
+                );
+
+                // Both buttons should be fully contained within the modal bounds
+                assert!(
+                    bounds.contains_rect(&yes_btn_bounds),
+                    "Yes button {:?} should be within modal bounds {:?}",
+                    yes_btn_bounds,
+                    bounds
+                );
+                assert!(
+                    bounds.contains_rect(&no_btn_bounds),
+                    "No button {:?} should be within modal bounds {:?}",
+                    no_btn_bounds,
+                    bounds
+                );
+            },
+        );
+        ctx.end();
+    }
+
+    /// Test that button clicks work inside a modal.
+    ///
+    /// This tests the full click cycle (press + release) for a button
+    /// positioned inside a modal dialog.
+    #[test]
+    fn test_modal_button_click_works() {
+        use crate::input::mouse_button;
+        use crate::widgets::Button;
+
+        let mut ctx = UiContext::new();
+        let mut modal_open = true;
+        let modal_width = 320.0;
+        let modal_height = 120.0;
+        let btn_width = 80.0;
+        let btn_height = 28.0;
+        let btn_margin = 10.0;
+        let mut button_clicked = false;
+
+        // Calculate expected button position (same both frames)
+        let modal_x = (800.0 - modal_width) * 0.5;
+        let modal_y = (600.0 - modal_height) * 0.5;
+        let no_btn_x = modal_x + modal_width - btn_width * 2.0 - btn_margin * 2.0;
+        let no_btn_y = modal_y + modal_height - btn_height - btn_margin;
+        let btn_center = Vec2::new(no_btn_x + btn_width * 0.5, no_btn_y + btn_height * 0.5);
+
+        // Frame 1: Press on the button inside modal
+        ctx.input.set_mouse_pos(btn_center);
+        ctx.input.set_mouse_button(mouse_button::LEFT, true);
+        ctx.begin(Vec2::new(800.0, 600.0), 1.0);
+        ctx.modal(
+            "test_modal",
+            modal_width,
+            modal_height,
+            &mut modal_open,
+            |ui, _open| {
+                let bounds = ui.get_popup_bounds();
+                let no_btn_bounds = Rect2D::from_origin_size(
+                    Vec2::new(
+                        bounds.min.x() + modal_width - btn_width * 2.0 - btn_margin * 2.0,
+                        bounds.min.y() + modal_height - btn_height - btn_margin,
+                    ),
+                    Vec2::new(btn_width, btn_height),
+                );
+
+                let response = ui.add(Button::new("No").bounds(no_btn_bounds));
+                if response.clicked {
+                    button_clicked = true;
+                }
+            },
+        );
+        ctx.end();
+
+        // Button should NOT be clicked yet (just pressed)
+        assert!(!button_clicked, "Button should not click on press");
+
+        // Frame 2: Release on the button
+        ctx.input.clear_frame_state();
+        ctx.input.set_mouse_pos(btn_center);
+        ctx.input.set_mouse_button(mouse_button::LEFT, false);
+        ctx.begin(Vec2::new(800.0, 600.0), 1.0);
+        ctx.modal(
+            "test_modal",
+            modal_width,
+            modal_height,
+            &mut modal_open,
+            |ui, _open| {
+                let bounds = ui.get_popup_bounds();
+                let no_btn_bounds = Rect2D::from_origin_size(
+                    Vec2::new(
+                        bounds.min.x() + modal_width - btn_width * 2.0 - btn_margin * 2.0,
+                        bounds.min.y() + modal_height - btn_height - btn_margin,
+                    ),
+                    Vec2::new(btn_width, btn_height),
+                );
+
+                let response = ui.add(Button::new("No").bounds(no_btn_bounds));
+                if response.clicked {
+                    button_clicked = true;
+                }
+            },
+        );
+        ctx.end();
+
+        // NOW the button should be clicked!
+        assert!(
+            button_clicked,
+            "Button should be clicked after press+release"
+        );
+    }
+
+    /// Test that button hover detection works inside a modal.
+    #[test]
+    fn test_modal_button_hover_works() {
+        let mut ctx = UiContext::new();
+        let mut modal_open = true;
+        let modal_width = 320.0;
+        let modal_height = 120.0;
+        let btn_width = 80.0;
+        let btn_height = 28.0;
+        let btn_margin = 10.0;
+
+        ctx.begin(Vec2::new(800.0, 600.0), 1.0);
+        ctx.modal(
+            "test_modal",
+            modal_width,
+            modal_height,
+            &mut modal_open,
+            |ui, _open| {
+                let bounds = ui.get_popup_bounds();
+
+                let no_btn_bounds = Rect2D::from_origin_size(
+                    Vec2::new(
+                        bounds.min.x() + modal_width - btn_width * 2.0 - btn_margin * 2.0,
+                        bounds.min.y() + modal_height - btn_height - btn_margin,
+                    ),
+                    Vec2::new(btn_width, btn_height),
+                );
+
+                // Set mouse position to center of the button
+                let btn_center = Vec2::new(
+                    no_btn_bounds.min.x() + btn_width * 0.5,
+                    no_btn_bounds.min.y() + btn_height * 0.5,
+                );
+                ui.input.set_mouse_pos(btn_center);
+
+                // Check if the button would be hovered by checking is_hovered directly
+                let hovered = ui.input.is_hovered(no_btn_bounds);
+                assert!(
+                    hovered,
+                    "Button at {:?} should be hovered when mouse at {:?}",
+                    no_btn_bounds, btn_center
+                );
+            },
+        );
+        ctx.end();
+    }
+
+    /// Test that Button widget hover state (for visuals) works inside a modal.
+    /// This tests the actual Button widget's hovered response, not just raw input.
+    #[test]
+    fn test_modal_button_widget_hover_visual_works() {
+        use crate::widgets::Button;
+
+        let mut ctx = UiContext::new();
+        let mut modal_open = true;
+        let modal_width = 320.0;
+        let modal_height = 120.0;
+        let btn_width = 80.0;
+        let btn_height = 28.0;
+        let btn_margin = 10.0;
+
+        // Calculate expected button position
+        let modal_x = (800.0 - modal_width) * 0.5;
+        let modal_y = (600.0 - modal_height) * 0.5;
+        let no_btn_x = modal_x + modal_width - btn_width * 2.0 - btn_margin * 2.0;
+        let no_btn_y = modal_y + modal_height - btn_height - btn_margin;
+        let btn_center = Vec2::new(no_btn_x + btn_width * 0.5, no_btn_y + btn_height * 0.5);
+
+        // Set mouse position BEFORE beginning frame
+        ctx.input.set_mouse_pos(btn_center);
+
+        ctx.begin(Vec2::new(800.0, 600.0), 1.0);
+        ctx.modal(
+            "test_modal",
+            modal_width,
+            modal_height,
+            &mut modal_open,
+            |ui, _open| {
+                let bounds = ui.get_popup_bounds();
+                let no_btn_bounds = Rect2D::from_origin_size(
+                    Vec2::new(
+                        bounds.min.x() + modal_width - btn_width * 2.0 - btn_margin * 2.0,
+                        bounds.min.y() + modal_height - btn_height - btn_margin,
+                    ),
+                    Vec2::new(btn_width, btn_height),
+                );
+
+                // Add the button and check its hover state
+                let response = ui.add(Button::new("No").bounds(no_btn_bounds));
+                assert!(
+                    response.hovered,
+                    "Button widget should report hovered=true when mouse is over it inside modal"
+                );
+            },
+        );
         ctx.end();
     }
 }

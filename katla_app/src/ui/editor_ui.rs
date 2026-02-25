@@ -228,6 +228,12 @@ pub struct EditorUI {
     hierarchy_context_menu_open: bool,
     /// Entity for hierarchy context menu.
     hierarchy_context_entity: Option<EntityId>,
+    /// Menu bar dropdown states
+    file_menu_open: bool,
+    edit_menu_open: bool,
+    view_menu_open: bool,
+    create_menu_open: bool,
+    help_menu_open: bool,
     /// Current color theme.
     pub theme: Theme,
     /// Asset browser panel state.
@@ -271,6 +277,11 @@ impl EditorUI {
             expanded_entities: HashSet::new(),
             hierarchy_context_menu_open: false,
             hierarchy_context_entity: None,
+            file_menu_open: false,
+            edit_menu_open: false,
+            view_menu_open: false,
+            create_menu_open: false,
+            help_menu_open: false,
             theme: Theme::catppuccin(), // Default to Catppuccin because it's sick
             asset_browser: AssetBrowserState::new(),
             model_preview: ModelPreviewState::new(),
@@ -913,44 +924,56 @@ impl EditorUI {
         // === FILE MENU ===
         let file_bounds =
             Rect2D::from_origin_size(cursor, Vec2::new(menu_item_width, button_height));
-        ui.menu_bar_dropdown("file_menu", "File", file_bounds, |ui| {
-            if ui.menu_item_clicked("New Scene") {
-                // TODO: Implement new scene
-                ui.close_current_popup();
-            }
-            if ui.menu_item_clicked("Open...") {
-                // TODO: Implement open scene
-                ui.close_current_popup();
-            }
-            if ui.menu_item_clicked("Save") {
-                // TODO: Implement save scene
-                ui.close_current_popup();
-            }
-            ui.menu_separator();
-            if ui.menu_item_clicked("Quit") {
-                ui.close_current_popup();
-            }
-        });
+        ui.menu_bar_dropdown(
+            "file_menu",
+            "File",
+            file_bounds,
+            &mut self.file_menu_open,
+            |ui, open| {
+                if ui.menu_item_clicked("New Scene") {
+                    // TODO: Implement new scene
+                    *open = false;
+                }
+                if ui.menu_item_clicked("Open...") {
+                    // TODO: Implement open scene
+                    *open = false;
+                }
+                if ui.menu_item_clicked("Save") {
+                    // TODO: Implement save scene
+                    *open = false;
+                }
+                ui.menu_separator();
+                if ui.menu_item_clicked("Quit") {
+                    *open = false;
+                }
+            },
+        );
         cursor = Vec2::new(cursor.x() + menu_item_width, cursor.y());
 
         // === EDIT MENU ===
         let edit_bounds =
             Rect2D::from_origin_size(cursor, Vec2::new(menu_item_width, button_height));
-        ui.menu_bar_dropdown("edit_menu", "Edit", edit_bounds, |ui| {
-            if ui.menu_item_clicked("Undo") {
-                // TODO: Implement undo
-                ui.close_current_popup();
-            }
-            if ui.menu_item_clicked("Redo") {
-                // TODO: Implement redo
-                ui.close_current_popup();
-            }
-            ui.menu_separator();
-            if ui.menu_item_clicked("Preferences...") {
-                self.show_preferences = true;
-                ui.close_current_popup();
-            }
-        });
+        ui.menu_bar_dropdown(
+            "edit_menu",
+            "Edit",
+            edit_bounds,
+            &mut self.edit_menu_open,
+            |ui, open| {
+                if ui.menu_item_clicked("Undo") {
+                    // TODO: Implement undo
+                    *open = false;
+                }
+                if ui.menu_item_clicked("Redo") {
+                    // TODO: Implement redo
+                    *open = false;
+                }
+                ui.menu_separator();
+                if ui.menu_item_clicked("Preferences...") {
+                    self.show_preferences = true;
+                    *open = false;
+                }
+            },
+        );
         cursor = Vec2::new(cursor.x() + menu_item_width, cursor.y());
 
         // === VIEW MENU ===
@@ -958,41 +981,59 @@ impl EditorUI {
             Rect2D::from_origin_size(cursor, Vec2::new(menu_item_width, button_height));
         let show_grid = self.show_grid;
         let show_stats = self.show_stats;
-        ui.menu_bar_dropdown("view_menu", "View", view_bounds, |ui| {
-            if ui.toggle_menu_item_clicked("Grid", show_grid) {
-                self.show_grid = !self.show_grid;
-                self.pending_actions.push(EditorAction::ToggleGrid);
-                ui.close_current_popup();
-            }
-            if ui.toggle_menu_item_clicked("Stats", show_stats) {
-                self.show_stats = !self.show_stats;
-                self.pending_actions.push(EditorAction::ToggleStats);
-                ui.close_current_popup();
-            }
-        });
+        ui.menu_bar_dropdown(
+            "view_menu",
+            "View",
+            view_bounds,
+            &mut self.view_menu_open,
+            |ui, open| {
+                if ui.toggle_menu_item_clicked("Grid", show_grid) {
+                    self.show_grid = !self.show_grid;
+                    self.pending_actions.push(EditorAction::ToggleGrid);
+                    *open = false;
+                }
+                if ui.toggle_menu_item_clicked("Stats", show_stats) {
+                    self.show_stats = !self.show_stats;
+                    self.pending_actions.push(EditorAction::ToggleStats);
+                    *open = false;
+                }
+            },
+        );
         cursor = Vec2::new(cursor.x() + menu_item_width, cursor.y());
 
         // === CREATE MENU ===
         let create_bounds = Rect2D::from_origin_size(cursor, Vec2::new(60.0, button_height));
-        ui.menu_bar_dropdown("create_menu", "Create", create_bounds, |ui| {
-            for model in SpawnableModel::all() {
-                if ui.menu_item_clicked(model.name()) {
-                    self.pending_actions
-                        .push(EditorAction::SpawnModel(*model, Vec3::new(0.0, 0.0, 0.0)));
-                    ui.close_current_popup();
+        ui.menu_bar_dropdown(
+            "create_menu",
+            "Create",
+            create_bounds,
+            &mut self.create_menu_open,
+            |ui, open| {
+                for model in SpawnableModel::all() {
+                    if ui.menu_item_clicked(model.name()) {
+                        self.pending_actions
+                            .push(EditorAction::SpawnModel(*model, Vec3::new(0.0, 0.0, 0.0)));
+                        *open = false;
+                    }
                 }
-            }
-        });
+            },
+        );
         cursor = Vec2::new(cursor.x() + 60.0 + padding, cursor.y());
 
         // === HELP MENU ===
         let help_bounds =
             Rect2D::from_origin_size(cursor, Vec2::new(menu_item_width, button_height));
-        ui.menu_bar_dropdown("help_menu", "Help", help_bounds, |ui| {
-            if ui.menu_item_clicked("About") {
-                ui.close_current_popup();
-            }
-        });
+        ui.menu_bar_dropdown(
+            "help_menu",
+            "Help",
+            help_bounds,
+            &mut self.help_menu_open,
+            |ui, open| {
+                if ui.menu_item_clicked("About") {
+                    *open = false;
+                }
+            },
+        );
         cursor = Vec2::new(cursor.x() + menu_item_width, cursor.y());
 
         // Separator line before play controls
@@ -1267,7 +1308,7 @@ impl EditorUI {
 
                     if ui.input.mouse_clicked(mouse_button::LEFT)
                         && select_hovered
-                        && !ui.is_mouse_over_popup()
+                        && !ui.has_open_popup()
                     {
                         self.selected_entity = Some(entity.id);
                         self.pending_actions
@@ -1282,7 +1323,6 @@ impl EditorUI {
                         self.selected_entity = Some(entity.id);
                         self.hierarchy_context_entity = Some(entity.id);
                         self.hierarchy_context_menu_open = true;
-                        ui.open_context_menu_at("hierarchy_context", ui.input.mouse_pos);
                     }
 
                     cursor = Vec2::new(cursor.x(), cursor.y() + item_height);
@@ -1309,44 +1349,52 @@ impl EditorUI {
         }
 
         // === HIERARCHY CONTEXT MENU ===
-        let hierarchy_menu_open = ui.is_context_menu_open("hierarchy_context");
-        if self.hierarchy_context_menu_open && !hierarchy_menu_open {
-            self.hierarchy_context_menu_open = false;
+        let mut clicked_action: Option<&str> = None;
+        ui.context_menu(
+            "hierarchy_context",
+            &mut self.hierarchy_context_menu_open,
+            |ui, open| {
+                if ui.menu_item_clicked_with_icon_and_shortcut(
+                    "Duplicate",
+                    ForkAwesome::COPY,
+                    true,
+                    "Ctrl+D",
+                ) {
+                    clicked_action = Some("Duplicate");
+                    *open = false;
+                    return;
+                }
+                if ui.menu_item_clicked_with_icon_and_shortcut(
+                    "Rename",
+                    ForkAwesome::PENCIL,
+                    true,
+                    "F2",
+                ) {
+                    clicked_action = Some("Rename");
+                    *open = false;
+                    return;
+                }
+                ui.menu_separator();
+                if ui.menu_item_clicked_with_icon_and_shortcut(
+                    "Delete",
+                    ForkAwesome::TRASH,
+                    true,
+                    "Del",
+                ) {
+                    clicked_action = Some("Delete");
+                    *open = false;
+                    return;
+                }
+            },
+        );
+
+        // Clear context entity when menu closes
+        if !self.hierarchy_context_menu_open {
             self.hierarchy_context_entity = None;
         }
 
-        // Render popup
-        let clicked_action = ui.context_menu("hierarchy_context", |ui| {
-            if ui.menu_item_clicked_with_icon_and_shortcut(
-                "Duplicate",
-                ForkAwesome::COPY,
-                true,
-                "Ctrl+D",
-            ) {
-                return Some("Duplicate");
-            }
-            if ui.menu_item_clicked_with_icon_and_shortcut(
-                "Rename",
-                ForkAwesome::PENCIL,
-                true,
-                "F2",
-            ) {
-                return Some("Rename");
-            }
-            ui.menu_separator();
-            if ui.menu_item_clicked_with_icon_and_shortcut(
-                "Delete",
-                ForkAwesome::TRASH,
-                true,
-                "Del",
-            ) {
-                return Some("Delete");
-            }
-            None::<&str>
-        });
-
         // Process action
-        if let Some(action) = clicked_action.flatten() {
+        if let Some(action) = clicked_action {
             match action {
                 "Duplicate" => {
                     if let Some(entity_id) = self.hierarchy_context_entity {
@@ -1365,7 +1413,6 @@ impl EditorUI {
                 }
                 _ => {}
             }
-            self.hierarchy_context_menu_open = false;
         }
     }
 
