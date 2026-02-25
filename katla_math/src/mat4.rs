@@ -339,13 +339,13 @@ impl Mat4 {
         let scale = crate::Vec3::new(sx, sy, sz);
 
         let m00 = self[0][0] / sx;
-        let m01 = self[0][1] / sy;
-        let m02 = self[0][2] / sz;
-        let m10 = self[1][0] / sx;
+        let m01 = self[0][1] / sx;
+        let m02 = self[0][2] / sx;
+        let m10 = self[1][0] / sy;
         let m11 = self[1][1] / sy;
-        let m12 = self[1][2] / sz;
-        let m20 = self[2][0] / sx;
-        let m21 = self[2][1] / sy;
+        let m12 = self[1][2] / sy;
+        let m20 = self[2][0] / sz;
+        let m21 = self[2][1] / sz;
         let m22 = self[2][2] / sz;
 
         let trace = m00 + m11 + m22;
@@ -353,27 +353,27 @@ impl Mat4 {
         let rotation = if trace > 0.0 {
             let s = f32::sqrt(trace + 1.0) * 2.0;
             let w = 0.25 * s;
-            let x = (m21 - m12) / s;
-            let y = (m02 - m20) / s;
-            let z = (m10 - m01) / s;
+            let x = (m12 - m21) / s;
+            let y = (m20 - m02) / s;
+            let z = (m01 - m10) / s;
             crate::Quat::new_from_xyzw(x, y, z, w)
         } else if (m00 > m11) && (m00 > m22) {
             let s = f32::sqrt(1.0 + m00 - m11 - m22) * 2.0;
-            let w = (m21 - m12) / s;
+            let w = (m12 - m21) / s;
             let x = 0.25 * s;
             let y = (m01 + m10) / s;
             let z = (m02 + m20) / s;
             crate::Quat::new_from_xyzw(x, y, z, w)
         } else if m11 > m22 {
             let s = f32::sqrt(1.0 + m11 - m00 - m22) * 2.0;
-            let w = (m02 - m20) / s;
+            let w = (m20 - m02) / s;
             let x = (m01 + m10) / s;
             let y = 0.25 * s;
             let z = (m12 + m21) / s;
             crate::Quat::new_from_xyzw(x, y, z, w)
         } else {
             let s = f32::sqrt(1.0 + m22 - m00 - m11) * 2.0;
-            let w = (m10 - m01) / s;
+            let w = (m01 - m10) / s;
             let x = (m02 + m20) / s;
             let y = (m12 + m21) / s;
             let z = 0.25 * s;
@@ -416,10 +416,10 @@ impl Mat4 {
     ///
     /// This is the format expected by GPU shaders and Vulkan.
     pub fn to_array(&self) -> [f32; 16] {
-        let arr: [[f32; 4]; 4] = self.clone().into();
         [
-            arr[0][0], arr[0][1], arr[0][2], arr[0][3], arr[1][0], arr[1][1], arr[1][2], arr[1][3],
-            arr[2][0], arr[2][1], arr[2][2], arr[2][3], arr[3][0], arr[3][1], arr[3][2], arr[3][3],
+            self[0][0], self[0][1], self[0][2], self[0][3], self[1][0], self[1][1], self[1][2],
+            self[1][3], self[2][0], self[2][1], self[2][2], self[2][3], self[3][0], self[3][1],
+            self[3][2], self[3][3],
         ]
     }
 }
@@ -434,6 +434,7 @@ impl Index<usize> for Mat4 {
     type Output = Vec4;
 
     fn index(&self, index: usize) -> &Vec4 {
+        //NB: Since this returns a Vec4, we get column-by-column of this matrix
         match index {
             0 => &self.0[0],
             1 => &self.0[1],
