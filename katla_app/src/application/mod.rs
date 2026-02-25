@@ -657,6 +657,30 @@ impl Application {
             "DamagedHelmet model loaded with full PBR textures (entity {})",
             helmet.entity.id()
         );
+
+        // Load Lantern model for non-indexed geometry testing
+        let lantern_path = self.resources.model_path("Lantern.glb");
+        let lantern_transform = Transform::new_from_position(Vec3::new(15.0, 5.0, 15.0))
+            .with_scale(Vec3::new(1.0, 1.0, 1.0));
+        let lantern_model = self.gltf_cache.read(lantern_path);
+        let lantern = Model::from_gltf(
+            &mut self.world,
+            lantern_model.clone(),
+            renderer.context.clone(),
+            Some(renderer),
+            lantern_transform,
+            material_registry,
+        );
+        if let Some(name_comp) = self
+            .world
+            .get_component_mut::<NameComponent>(lantern.entity)
+        {
+            name_comp.name = "Lantern (Non-indexed Test)".to_string();
+        }
+        info!(
+            "Lantern model loaded for non-indexed geometry testing (entity {})",
+            lantern.entity.id()
+        );
     }
 
     /// Setup entity parent-child relationships.
