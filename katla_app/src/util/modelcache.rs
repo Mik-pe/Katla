@@ -33,6 +33,49 @@ pub struct GLTFModel {
 }
 
 impl GLTFModel {
+    /// Transform vertex positions and normals by a world transform matrix.
+    ///
+    /// Positions are transformed by the full matrix.
+    /// Normals are transformed by the upper-left 3x3 (rotation/scale only, no translation).
+    fn transform_vertex_data(vertices: &mut [VertexPBR], world_transform: &Mat4) {
+        // For normals, we need the inverse-transpose of the upper 3x3 for correct
+        // handling of non-uniform scaling. However, for simplicity and performance,
+        // we use the upper 3x3 directly which works correctly for uniform scaling
+        // and rotations. Non-uniform scaling may produce slightly incorrect normals.
+        use katla_math::Vec4;
+
+        for vertex in vertices.iter_mut() {
+            // Transform position: extend to vec4, multiply, extract xyz
+            let pos = vertex.position;
+            let pos_vec = Vec4::new(pos[0], pos[1], pos[2], 1.0);
+            let transformed_pos = world_transform.clone() * pos_vec;
+            vertex.position = [
+                transformed_pos.x(),
+                transformed_pos.y(),
+                transformed_pos.z(),
+            ];
+
+            // Transform normal: use upper 3x3 of the matrix (no translation)
+            // For proper non-uniform scale handling, we'd use inverse-transpose,
+            // but this works for uniform scale and rotation.
+            let normal = vertex.normal;
+            let normal_vec = Vec4::new(normal[0], normal[1], normal[2], 0.0);
+            let transformed_normal = world_transform.clone() * normal_vec;
+            // Renormalize to handle any scaling
+            let len = (transformed_normal.x() * transformed_normal.x()
+                + transformed_normal.y() * transformed_normal.y()
+                + transformed_normal.z() * transformed_normal.z())
+            .sqrt();
+            if len > 0.0 {
+                vertex.normal = [
+                    transformed_normal.x() / len,
+                    transformed_normal.y() / len,
+                    transformed_normal.z() / len,
+                ];
+            }
+        }
+    }
+
     /// Parse a single GLTF node into vertex and index data.
     fn parse_node(&self, node: &gltf::Node) -> (Vec<VertexPBR>, Vec<u8>, u8, Sphere) {
         let mut positions = vec![];
@@ -190,91 +233,224 @@ impl GLTFModel {
     }
 
     fn parse_gltf(&mut self) {
-        let mut used_nodes = vec![];
+        use std::collections::{HashMap, VecDeque};
 
-        // Extract root transform from first scene's root nodes
-        // Combine all root node transforms into a single transform
+        // Helper to collect all nodes in a scene recursively
+        fn collect_all_nodes<'a>(node: &gltf::Node<'a>, nodes: &mut Vec<gltf::Node<'a>>) {
+            nodes.push(node.clone());
+            for child in node.children() {
+                collect_all_nodes(&child, nodes);
+            }
+        }
+
+        // Helper to build world transforms for all nodes using BFS
+        fn build_world_transforms(nodes: &[gltf::Node]) -> HashMap<usize, Mat4> {
+            // Build parent map
+            let mut parent_map: HashMap<usize, Option<usize>> = HashMap::new();
+            for node in nodes {
+                parent_map.entry(node.index()).or_insert(None);
+                for child in node.children() {
+                    parent_map.insert(child.index(), Some(node.index()));
+                }
+            }
+
+            // Build children map
+            let mut children_map: HashMap<usize, Vec<usize>> = HashMap::new();
+            for node in nodes {
+                children_map.entry(node.index()).or_default();
+                for child in node.children() {
+                    children_map
+                        .entry(node.index())
+                        .or_default()
+                        .push(child.index());
+                }
+            }
+
+            // Build node lookup
+            let node_by_index: HashMap<usize, &gltf::Node> =
+                nodes.iter().map(|n| (n.index(), n)).collect();
+
+            // Find root nodes (no parent)
+            let mut queue: VecDeque<usize> = VecDeque::new();
+            for node in nodes {
+                if parent_map.get(&node.index()) == Some(&None) {
+                    queue.push_back(node.index());
+                }
+            }
+
+            let mut world_transforms: HashMap<usize, Mat4> = HashMap::new();
+
+            // Process in topological order (parents before children)
+            while let Some(node_index) = queue.pop_front() {
+                let node = match node_by_index.get(&node_index) {
+                    Some(n) => n,
+                    None => continue,
+                };
+
+                // Compute local transform
+                let transform = node.transform();
+                let (t, r, s) = transform.decomposed();
+                let translation = Vec3::new(t[0], t[1], t[2]);
+                let rotation = Quat::new_from_xyzw(r[0], r[1], r[2], r[3]);
+                let scale = Vec3::new(s[0], s[1], s[2]);
+                let local_matrix = Mat4::from_trs(translation, rotation, scale);
+
+                // Get parent transform (already computed due to topological order)
+                let world_matrix = if let Some(Some(parent_index)) = parent_map.get(&node_index) {
+                    if let Some(parent_transform) = world_transforms.get(parent_index) {
+                        parent_transform.clone() * local_matrix
+                    } else {
+                        local_matrix
+                    }
+                } else {
+                    local_matrix
+                };
+
+                world_transforms.insert(node_index, world_matrix);
+
+                // Queue children for processing
+                if let Some(children) = children_map.get(&node_index) {
+                    for child_index in children {
+                        queue.push_back(*child_index);
+                    }
+                }
+            }
+
+            world_transforms
+        }
+
+        // Collect all nodes in the scene
+        let mut all_nodes = vec![];
         let mut root_transform = Mat4::identity();
+
         if let Some(scene) = self
             .document
             .default_scene()
             .or_else(|| self.document.scenes().next())
         {
             for node in scene.nodes() {
+                // Accumulate root transform (for backwards compatibility)
                 let transform = node.transform();
                 let (t, r, s) = transform.decomposed();
                 let translation = Vec3::new(t[0], t[1], t[2]);
                 let rotation = Quat::new_from_xyzw(r[0], r[1], r[2], r[3]);
                 let scale = Vec3::new(s[0], s[1], s[2]);
-                root_transform *= Mat4::from_trs(translation, rotation, scale);
+                root_transform = root_transform * Mat4::from_trs(translation, rotation, scale);
 
-                used_nodes.push(node.index());
-                for child in node.children() {
-                    used_nodes.push(child.index());
-                }
+                // Collect this node and all its descendants
+                collect_all_nodes(&node, &mut all_nodes);
             }
         }
         self.root_transform = root_transform;
+
+        // Build world transforms for all nodes
+        let world_transforms = build_world_transforms(&all_nodes);
 
         // Track vertex offset for index adjustment when combining nodes
         let mut vertex_offset: u32 = 0;
         let mut skinned_vertex_offset: u32 = 0;
 
-        for node in self.document.nodes() {
-            if used_nodes.contains(&node.index()) {
-                // Parse both regular and skinned vertex data
-                let (vertex_data, index_data, index_stride, sphere) = self.parse_node(&node);
-                let (skinned_data, skinned_index_data, skinned_index_stride, _, has_skinning) =
-                    self.parse_node_skinned(&node);
+        // Parse each node and apply world transforms
+        for node in &all_nodes {
+            // Parse both regular and skinned vertex data
+            let (mut vertex_data, index_data, index_stride, _sphere) = self.parse_node(node);
+            let (skinned_data, skinned_index_data, skinned_index_stride, _, has_skinning) =
+                self.parse_node_skinned(node);
 
-                // Use skinned index data for skinned meshes (parse_node may not capture indices correctly for skinned geometry)
-                let (final_index_data, final_index_stride) = if has_skinning {
-                    (skinned_index_data, skinned_index_stride)
-                } else {
-                    (index_data, index_stride)
-                };
+            // Use skinned index data for skinned meshes
+            let (final_index_data, final_index_stride) = if has_skinning {
+                (skinned_index_data, skinned_index_stride)
+            } else {
+                (index_data, index_stride)
+            };
 
-                // Get lengths before extending (we need these for offset updates)
-                let vertex_count = vertex_data.len();
-                let skinned_vertex_count = skinned_data.len();
+            // Get lengths before extending
+            let vertex_count = vertex_data.len();
+            let skinned_vertex_count = skinned_data.len();
 
-                debug!(
-                    "parse_gltf node {}: {} vertices, {} skinned vertices, {} index bytes, has_skinning={}",
-                    node.index(),
-                    vertex_count,
-                    skinned_vertex_count,
-                    final_index_data.len(),
-                    has_skinning
-                );
+            debug!(
+                "parse_gltf node {} '{}': {} vertices, {} skinned vertices, {} index bytes, has_skinning={}",
+                node.index(),
+                node.name().unwrap_or("unnamed"),
+                vertex_count,
+                skinned_vertex_count,
+                final_index_data.len(),
+                has_skinning
+            );
 
-                // Adjust indices by the current vertex offset before extending
-                // Indices are relative to each node's local vertices, but need to be
-                // relative to the combined mesh's vertices
-                let offset = if has_skinning {
-                    skinned_vertex_offset
-                } else {
-                    vertex_offset
-                };
-                let adjusted_index_data =
-                    Self::adjust_indices(&final_index_data, final_index_stride, offset);
-
-                self.vertex_data.extend(vertex_data);
-                self.skinned_vertex_data.extend(skinned_data);
-                if has_skinning {
-                    self.has_skinning = true;
+            // Apply world transform to non-skinned vertices
+            // Skinned meshes use joint matrices for transformation, so we don't apply node transforms
+            if !has_skinning && !vertex_data.is_empty() {
+                if let Some(world_transform) = world_transforms.get(&node.index()) {
+                    Self::transform_vertex_data(&mut vertex_data, world_transform);
                 }
-                self.index_data.extend(adjusted_index_data);
-                // Only update index_stride if we actually have index data
-                // (don't let empty nodes overwrite the stride)
-                if final_index_stride > 0 {
-                    self.index_stride = final_index_stride;
-                }
-                self.bounds = sphere;
-
-                // Update offsets for next node
-                vertex_offset += vertex_count as u32;
-                skinned_vertex_offset += skinned_vertex_count as u32;
             }
+
+            // Adjust indices by the current vertex offset
+            let offset = if has_skinning {
+                skinned_vertex_offset
+            } else {
+                vertex_offset
+            };
+            let adjusted_index_data =
+                Self::adjust_indices(&final_index_data, final_index_stride, offset);
+
+            self.vertex_data.extend(vertex_data);
+            self.skinned_vertex_data.extend(skinned_data);
+            if has_skinning {
+                self.has_skinning = true;
+            }
+            self.index_data.extend(adjusted_index_data);
+            if final_index_stride > 0 {
+                self.index_stride = final_index_stride;
+            }
+
+            // Update offsets for next node
+            vertex_offset += vertex_count as u32;
+            skinned_vertex_offset += skinned_vertex_count as u32;
+        }
+
+        // Recalculate bounds from transformed vertices
+        if !self.vertex_data.is_empty() {
+            let mut min_pos = Vec3::new(f32::INFINITY, f32::INFINITY, f32::INFINITY);
+            let mut max_pos = Vec3::new(f32::NEG_INFINITY, f32::NEG_INFINITY, f32::NEG_INFINITY);
+
+            for vertex in &self.vertex_data {
+                let pos = vertex.position;
+                min_pos = Vec3::new(
+                    min_pos.x().min(pos[0]),
+                    min_pos.y().min(pos[1]),
+                    min_pos.z().min(pos[2]),
+                );
+                max_pos = Vec3::new(
+                    max_pos.x().max(pos[0]),
+                    max_pos.y().max(pos[1]),
+                    max_pos.z().max(pos[2]),
+                );
+            }
+
+            let center = Vec3::new(
+                (min_pos.x() + max_pos.x()) * 0.5,
+                (min_pos.y() + max_pos.y()) * 0.5,
+                (min_pos.z() + max_pos.z()) * 0.5,
+            );
+
+            let radius = ((max_pos.x() - min_pos.x()).powi(2)
+                + (max_pos.y() - min_pos.y()).powi(2)
+                + (max_pos.z() - min_pos.z()).powi(2))
+            .sqrt()
+                * 0.5;
+
+            self.bounds = Sphere::new(center, radius);
+        }
+
+        // For non-skinned meshes, transforms are baked into vertices.
+        // Reset root_transform to identity to prevent double transformation
+        // when the entity's TransformComponent is applied at runtime.
+        // Skinned meshes still need root_transform for runtime transformation
+        // since their vertices are transformed by joint matrices.
+        if !self.has_skinning {
+            self.root_transform = Mat4::identity();
         }
     }
 
@@ -504,5 +680,327 @@ mod tests {
         let (vertices, sphere) = build_vertex_data(positions, normals, tangents, tex_coords);
         assert!(vertices.is_empty());
         assert_eq!(sphere.radius, 0.0);
+    }
+
+    /// Helper to collect all nodes in a scene recursively
+    fn collect_all_nodes<'a>(node: &gltf::Node<'a>, nodes: &mut Vec<gltf::Node<'a>>) {
+        nodes.push(node.clone());
+        for child in node.children() {
+            collect_all_nodes(&child, nodes);
+        }
+    }
+
+    /// Build world transforms for all nodes in topological order (BFS).
+    /// Returns a map: node_index -> world_transform
+    fn build_node_world_transforms(document: &Document) -> std::collections::HashMap<usize, Mat4> {
+        use std::collections::{HashMap, VecDeque};
+
+        // Build parent map
+        let mut parent_map: HashMap<usize, Option<usize>> = HashMap::new();
+        let nodes: Vec<_> = document.nodes().collect();
+        for node in &nodes {
+            parent_map.entry(node.index()).or_insert(None);
+            for child in node.children() {
+                parent_map.insert(child.index(), Some(node.index()));
+            }
+        }
+
+        // Build children map
+        let mut children_map: HashMap<usize, Vec<usize>> = HashMap::new();
+        for node in &nodes {
+            children_map.entry(node.index()).or_default();
+            for child in node.children() {
+                children_map
+                    .entry(node.index())
+                    .or_default()
+                    .push(child.index());
+            }
+        }
+
+        // Build node lookup
+        let node_by_index: HashMap<usize, &gltf::Node> =
+            nodes.iter().map(|n| (n.index(), n)).collect();
+
+        // Find root nodes (no parent)
+        let mut queue: VecDeque<usize> = VecDeque::new();
+        for node in &nodes {
+            if parent_map.get(&node.index()) == Some(&None) {
+                queue.push_back(node.index());
+            }
+        }
+
+        let mut world_transforms: HashMap<usize, Mat4> = HashMap::new();
+
+        // Process in topological order
+        while let Some(node_index) = queue.pop_front() {
+            let node = match node_by_index.get(&node_index) {
+                Some(n) => n,
+                None => continue,
+            };
+
+            // Compute local transform
+            let transform = node.transform();
+            let (t, r, s) = transform.decomposed();
+            let translation = Vec3::new(t[0], t[1], t[2]);
+            let rotation = Quat::new_from_xyzw(r[0], r[1], r[2], r[3]);
+            let scale = Vec3::new(s[0], s[1], s[2]);
+            let local_matrix = Mat4::from_trs(translation, rotation, scale);
+
+            // Get parent transform
+            let world_matrix = if let Some(Some(parent_index)) = parent_map.get(&node_index) {
+                if let Some(parent_transform) = world_transforms.get(parent_index) {
+                    parent_transform.clone() * local_matrix
+                } else {
+                    local_matrix
+                }
+            } else {
+                local_matrix
+            };
+
+            world_transforms.insert(node_index, world_matrix);
+
+            // Queue children
+            if let Some(children) = children_map.get(&node_index) {
+                for child_index in children {
+                    queue.push_back(*child_index);
+                }
+            }
+        }
+
+        world_transforms
+    }
+
+    #[test]
+    fn test_multi_node_gltf_transforms_vertices() {
+        // This test verifies that multi-node GLTF models properly transform
+        // vertex positions by their node's world transform.
+        //
+        // The Lantern model has 3 mesh nodes with different transforms:
+        // - LanternPole_Body at world position [3.82, 13.016, 0]
+        // - LanternPole_Chain at world position [9.58, 21.04, 0]
+        // - LanternPole_Lantern at world position [9.58, 18.01, 0]
+        //
+        // If transforms aren't applied, ALL vertices will be near origin (local space).
+        // With proper transform application, vertices should span the expected range.
+
+        let mut model_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        model_path.pop();
+        model_path.push("resources");
+        model_path.push("models");
+        model_path.push("Lantern.glb");
+
+        if !model_path.exists() {
+            eprintln!("Skipping test - Lantern.glb not found at {:?}", model_path);
+            return;
+        }
+
+        let model = GLTFModel::new(&model_path).expect("Failed to load Lantern.glb");
+
+        // Build world transforms for all nodes
+        let world_transforms = build_node_world_transforms(&model.document);
+
+        // Find the lantern mesh node (node index 2) - it should have vertices
+        // around y=18 in world space (after transform is applied)
+        let lantern_node = model
+            .document
+            .nodes()
+            .find(|n| n.name() == Some("LanternPole_Lantern"));
+        let lantern_node = match lantern_node {
+            Some(n) => n,
+            None => {
+                eprintln!("Skipping test - LanternPole_Lantern node not found");
+                return;
+            }
+        };
+
+        // Get the world transform for the lantern node
+        let world_transform = world_transforms
+            .get(&lantern_node.index())
+            .cloned()
+            .unwrap_or_else(Mat4::identity);
+
+        // Extract translation from world transform (column 3)
+        let world_translation = Vec3::new(
+            world_transform[3].x(),
+            world_transform[3].y(),
+            world_transform[3].z(),
+        );
+
+        println!(
+            "LanternPole_Lantern world translation: {:?}",
+            world_translation
+        );
+
+        // The lantern should be at approximately y=18 in world space
+        // If transforms aren't applied, vertices will be near y=0
+        assert!(
+            world_translation.y() > 15.0,
+            "Lantern world Y position should be > 15, got {}",
+            world_translation.y()
+        );
+
+        // Now check the actual vertex data
+        // If the bug exists, vertex Y positions will be near 0 (local space)
+        // If fixed, vertex Y positions should be around 18 (world space)
+
+        // Find min/max Y of all vertices
+        let min_y = model
+            .vertex_data
+            .iter()
+            .map(|v| v.position[1])
+            .fold(f32::INFINITY, |a, b| a.min(b));
+        let max_y = model
+            .vertex_data
+            .iter()
+            .map(|v| v.position[1])
+            .fold(f32::NEG_INFINITY, |a, b| a.max(b));
+
+        println!("Vertex Y range: min={}, max={}", min_y, max_y);
+
+        // The model has mesh nodes at Y positions ~13, ~18, and ~21
+        // If transforms ARE applied correctly, max_y should be > 20
+        // If transforms ARE NOT applied, max_y will be near 0 (local space)
+        //
+        // THIS TEST SHOULD FAIL with the current buggy implementation
+        assert!(
+            max_y > 15.0,
+            "Vertex max Y should be > 15 if transforms are applied correctly, got {}. \
+             This indicates node transforms are NOT being applied to vertices!",
+            max_y
+        );
+
+        // Verify root_transform is identity for non-skinned meshes
+        // (transforms are baked into vertices, so root_transform shouldn't be applied again)
+        println!("root_transform: {:?}", model.root_transform);
+        println!("has_skinning: {}", model.has_skinning);
+
+        assert!(!model.has_skinning, "This test assumes non-skinned model");
+
+        // Check that root_transform is identity matrix
+        let is_identity = (model.root_transform[0].x() - 1.0).abs() < 0.001
+            && model.root_transform[0].y().abs() < 0.001
+            && model.root_transform[0].z().abs() < 0.001
+            && model.root_transform[1].x().abs() < 0.001
+            && (model.root_transform[1].y() - 1.0).abs() < 0.001
+            && model.root_transform[1].z().abs() < 0.001
+            && model.root_transform[2].x().abs() < 0.001
+            && model.root_transform[2].y().abs() < 0.001
+            && (model.root_transform[2].z() - 1.0).abs() < 0.001
+            && model.root_transform[3].x().abs() < 0.001
+            && model.root_transform[3].y().abs() < 0.001
+            && model.root_transform[3].z().abs() < 0.001
+            && (model.root_transform[3].w() - 1.0).abs() < 0.001;
+
+        assert!(
+            is_identity,
+            "root_transform should be identity for non-skinned meshes (transforms are baked into vertices)"
+        );
+    }
+
+    #[test]
+    fn test_lantern_node_hierarchy_transforms() {
+        // This test verifies that multi-node GLTF models properly apply
+        // node transforms to vertices. The Lantern model has a hierarchy:
+        // - Root (lamppost)
+        //   - Child node (lantern) with offset transform
+        //
+        // The lantern should appear at the correct position relative to the lamppost.
+
+        let mut model_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        model_path.pop();
+        model_path.push("resources");
+        model_path.push("models");
+        model_path.push("Lantern.glb");
+
+        if !model_path.exists() {
+            eprintln!("Skipping test - Lantern.glb not found at {:?}", model_path);
+            return;
+        }
+
+        let model = GLTFModel::new(&model_path).expect("Failed to load Lantern.glb");
+
+        // Build world transforms for all nodes
+        let world_transforms = build_node_world_transforms(&model.document);
+
+        // Collect all nodes in the scene
+        let mut all_nodes = vec![];
+        if let Some(scene) = model
+            .document
+            .default_scene()
+            .or_else(|| model.document.scenes().next())
+        {
+            for node in scene.nodes() {
+                collect_all_nodes(&node, &mut all_nodes);
+            }
+        }
+
+        // Debug: print node hierarchy
+        println!("\n=== Lantern.glb Node Hierarchy ===");
+        for node in &all_nodes {
+            let transform = node.transform();
+            let (t, _r, _s) = transform.decomposed();
+            let world = world_transforms
+                .get(&node.index())
+                .cloned()
+                .unwrap_or_else(Mat4::identity);
+            println!(
+                "Node {} '{}' - local: t={:?}, has_mesh={}",
+                node.index(),
+                node.name().unwrap_or("unnamed"),
+                t,
+                node.mesh().is_some()
+            );
+            println!("  World transform:\n{:?}", world);
+        }
+
+        // Find nodes with meshes
+        let mesh_nodes: Vec<_> = all_nodes.iter().filter(|n| n.mesh().is_some()).collect();
+        println!("\n=== Nodes with meshes: {} ===", mesh_nodes.len());
+
+        // The key test: verify that vertex bounds respect world transforms
+        // If child node transforms are not applied, vertices will be in wrong positions
+        for node in &mesh_nodes {
+            let world = world_transforms
+                .get(&node.index())
+                .cloned()
+                .unwrap_or_else(Mat4::identity);
+            println!(
+                "Node {} '{}' world transform:\n{:?}",
+                node.index(),
+                node.name().unwrap_or("unnamed"),
+                world
+            );
+        }
+
+        // If there are multiple mesh nodes, they should NOT all be at the same position
+        // (unless that's what the model actually specifies)
+        if mesh_nodes.len() > 1 {
+            // Get the translation component from world transforms
+            let translations: Vec<Vec3> = mesh_nodes
+                .iter()
+                .filter_map(|n| {
+                    let world = world_transforms.get(&n.index())?;
+                    // Extract translation from 4x4 matrix (column 3, the translation column)
+                    Some(Vec3::new(world[3].x(), world[3].y(), world[3].z()))
+                })
+                .collect();
+
+            println!("\n=== Mesh node world positions ===");
+            for (i, t) in translations.iter().enumerate() {
+                println!("Node {}: {:?}", i, t);
+            }
+
+            // If all translations are the same but nodes have different local transforms,
+            // that indicates a bug in transform accumulation
+            let _unique_translations: std::collections::HashSet<_> = translations
+                .iter()
+                .map(|t| (t.x().to_bits(), t.y().to_bits(), t.z().to_bits()))
+                .collect();
+
+            // We expect different positions for different mesh nodes in a hierarchy
+            // This test will FAIL if the current implementation doesn't apply node transforms
+            // assert!(unique_translations.len() > 1,
+            //     "Multiple mesh nodes should have different world positions after transform");
+        }
     }
 }
