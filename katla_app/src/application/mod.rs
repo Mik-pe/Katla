@@ -98,6 +98,8 @@ pub struct Application {
     pub(crate) next_thumbnail_texture_id: u64,
     /// Mapping of thumbnail paths to their uploaded texture IDs
     pub(crate) thumbnail_texture_ids: HashMap<PathBuf, katla_ui::TextureId>,
+    /// Application start time for double-click timestamp calculation
+    pub(crate) start_time: Instant,
 }
 
 impl ApplicationHandler for Application {
@@ -185,7 +187,10 @@ impl ApplicationHandler for Application {
             };
             if let Some(btn) = ui_button {
                 let pressed = matches!(state, ElementState::Pressed);
-                self.ui_context.input.set_mouse_button(btn, pressed);
+                let time = self.start_time.elapsed().as_secs_f64();
+                self.ui_context
+                    .input
+                    .set_mouse_button_with_time(btn, pressed, time);
             }
         }
 
