@@ -10,6 +10,8 @@ Test driven development can be used to find bugs, iterate on implementations etc
 
 For bug solving we SHOULD:
 - Write FAILING test(s) for the correct behaviour we WANT happen.
+  - The tests should aim to mimic the behaviour of the buggy codepath.
+  - The codepath may need to first be rewritten in a way that provides easier testability, such as providing good structures and functions to make it easier to setup or mock.
 - Check that the test(s) FAIL since the bug disrupts the behaviour
 - Find and impement a solution to the problem
 - Verify that the test(s) PASS and the bug is solved.
