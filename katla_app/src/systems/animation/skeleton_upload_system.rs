@@ -93,12 +93,9 @@ impl SkeletonUploadSystem {
             .map(|r| r.descriptor_set.clone())
     }
 
-    /// Convert Mat4 to GPU-friendly [[f32; 4]; 4] format
-    /// Both katla_math and WGSL use column-major, so direct copy
-    fn mat4_to_array(matrix: &Mat4) -> [[f32; 4]; 4] {
-        let data: [[f32; 4]; 4] = matrix.clone().into();
-        // Direct copy - both are column-major
-        data
+    /// Convert Mat4 to GPU-friendly column-major [f32; 16] format
+    fn mat4_to_array(matrix: &Mat4) -> [f32; 16] {
+        matrix.to_array()
     }
 }
 
@@ -118,7 +115,7 @@ impl System for SkeletonUploadSystem {
             };
 
             // Convert Mat4 joint transforms to GPU format
-            let joint_matrices: Vec<[[f32; 4]; 4]> = skeleton
+            let joint_matrices: Vec<[f32; 16]> = skeleton
                 .joint_transforms
                 .iter()
                 .map(Self::mat4_to_array)

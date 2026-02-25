@@ -886,7 +886,7 @@ impl PassExecutionContext {
             if let Some(material) = registry.get_material(draw.material) {
                 if let Some(storage_manager_opt) = ctx.storage_manager() {
                     if let Some(manager) = storage_manager_opt.as_mut() {
-                        let model: [[f32; 4]; 4] = bytemuck::cast(draw.model_matrix);
+                        let model: &[f32; 16] = &draw.model_matrix;
                         let color = draw.color.unwrap_or([1.0, 1.0, 1.0, 1.0]);
                         manager.update_object_bindless(
                             first_instance as usize,

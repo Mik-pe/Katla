@@ -126,15 +126,15 @@ impl StorageDescriptorSet {
 /// Total: 320 bytes (3 × mat4x4 + 4 × vec4).
 #[derive(Debug, Clone, Copy)]
 pub struct FrameUniforms {
-    /// View matrix (world-to-camera transform).
-    pub view: [[f32; 4]; 4],
+    /// View matrix (world-to-camera transform) - column-major.
+    pub view: [f32; 16],
 
-    /// Projection matrix (camera-to-clip transform).
-    pub proj: [[f32; 4]; 4],
+    /// Projection matrix (camera-to-clip transform) - column-major.
+    pub proj: [f32; 16],
 
-    /// Inverse view-projection matrix (clip-to-world transform).
+    /// Inverse view-projection matrix (clip-to-world transform) - column-major.
     /// Used for sky rendering to convert screen coords to world rays.
-    pub inv_view_proj: [[f32; 4]; 4],
+    pub inv_view_proj: [f32; 16],
 
     /// Camera position in world space (for specular calculations).
     pub camera_position: [f32; 4], // vec4 for alignment
@@ -154,8 +154,8 @@ pub struct FrameUniforms {
 /// Total: 112 bytes (1 × mat4x4 + 3 × vec4).
 #[derive(Debug, Clone, Copy)]
 pub struct ObjectUniforms {
-    /// Model matrix (object-to-world transform).
-    pub model: [[f32; 4]; 4],
+    /// Model matrix (object-to-world transform) - column-major.
+    pub model: [f32; 16],
 
     /// Base color tint for the object (RGBA).
     pub base_color: [f32; 4],
@@ -261,9 +261,9 @@ impl StorageUniformManager {
     /// This computes a default inverse view-projection matrix. For accurate
     /// sky rendering, use `update_frame_with_lighting()` with the correct
     /// inverse VP matrix.
-    pub fn update_frame(&mut self, view: &[[f32; 4]; 4], proj: &[[f32; 4]; 4]) {
+    pub fn update_frame(&mut self, view: &[f32; 16], proj: &[f32; 16]) {
         // Default inverse VP (identity - won't work correctly for sky)
-        let default_inv_vp = [[0.0f32; 4]; 4];
+        let default_inv_vp = [0.0f32; 16];
 
         // Use default lighting when only view/proj provided
         // Light direction points TO the light (upward for sun/sky)
@@ -282,17 +282,17 @@ impl StorageUniformManager {
     ///
     /// # Arguments
     /// * `view` - View matrix (world-to-camera)
-    /// * `proj` - Projection matrix (camera-to-clip)
-    /// * `inv_view_proj` - Inverse view-projection matrix (clip-to-world) for sky rendering
+    /// * `proj` - Projection matrix (camera-to-clip) - column-major [f32; 16]
+    /// * `inv_view_proj` - Inverse view-projection matrix (clip-to-world) - column-major [f32; 16]
     /// * `camera_position` - Camera position in world space
     /// * `light_direction` - Normalized direction TO the light
     /// * `light_color` - Light color (RGB)
     /// * `light_intensity` - Light intensity multiplier
     pub fn update_frame_with_lighting(
         &mut self,
-        view: &[[f32; 4]; 4],
-        proj: &[[f32; 4]; 4],
-        inv_view_proj: &[[f32; 4]; 4],
+        view: &[f32; 16],
+        proj: &[f32; 16],
+        inv_view_proj: &[f32; 16],
         camera_position: &[f32; 4],
         light_direction: &[f32; 4],
         light_color: &[f32; 4],
@@ -315,21 +315,13 @@ impl StorageUniformManager {
 
     /// Update frame uniforms from a FrameUniforms struct.
     ///
-    /// This is a convenience method that handles the matrix format conversion
-    /// from `[f32; 16]` (used by rendering::FrameUniforms) to `[[f32; 4]; 4]`
-    /// (used by the GPU buffer layout).
-    ///
     /// # Arguments
     /// * `frame` - Frame uniforms from the rendering module
     pub fn update_from_frame_uniforms(&mut self, frame: &crate::rendering::FrameUniforms) {
-        let view: [[f32; 4]; 4] = bytemuck::cast(frame.view_matrix);
-        let proj: [[f32; 4]; 4] = bytemuck::cast(frame.proj_matrix);
-        let inv_view_proj: [[f32; 4]; 4] = bytemuck::cast(frame.inv_view_proj_matrix);
-
         self.update_frame_with_lighting(
-            &view,
-            &proj,
-            &inv_view_proj,
+            &frame.view_matrix,
+            &frame.proj_matrix,
+            &frame.inv_view_proj_matrix,
             &frame.camera_position,
             &frame.light_direction,
             &frame.light_color,
@@ -344,12 +336,12 @@ impl StorageUniformManager {
     ///
     /// # Arguments
     /// * `index` - Object index (0-255)
-    /// * `model` - Model matrix (object-to-world)
+    /// * `model` - Model matrix (object-to-world) - column-major [f32; 16]
     /// * `color` - Color tint (RGBA)
     ///
     /// # Panics
     /// Panics if index >= 256
-    pub fn update_object(&mut self, index: usize, model: &[[f32; 4]; 4], color: &[f32; 4]) {
+    pub fn update_object(&mut self, index: usize, model: &[f32; 16], color: &[f32; 4]) {
         // Use default PBR material params
         self.update_object_with_material(index, model, color, 0.0, 0.5, 1.0);
     }
@@ -358,7 +350,7 @@ impl StorageUniformManager {
     ///
     /// # Arguments
     /// * `index` - Object index (0-255)
-    /// * `model` - Model matrix (object-to-world)
+    /// * `model` - Model matrix (object-to-world) - column-major [f32; 16]
     /// * `color` - Base color tint (RGBA)
     /// * `metallic` - Metallic factor (0.0 = dielectric, 1.0 = metal)
     /// * `roughness` - Roughness factor (0.0 = smooth, 1.0 = rough)
@@ -366,7 +358,7 @@ impl StorageUniformManager {
     pub fn update_object_with_material(
         &mut self,
         index: usize,
-        model: &[[f32; 4]; 4],
+        model: &[f32; 16],
         color: &[f32; 4],
         metallic: f32,
         roughness: f32,
@@ -380,7 +372,7 @@ impl StorageUniformManager {
     ///
     /// # Arguments
     /// * `index` - Object index (0-255)
-    /// * `model` - Model matrix (object-to-world)
+    /// * `model` - Model matrix (object-to-world) - column-major [f32; 16]
     /// * `color` - Base color tint (RGBA)
     /// * `metallic` - Metallic factor (0.0 = dielectric, 1.0 = metal)
     /// * `roughness` - Roughness factor (0.0 = smooth, 1.0 = rough)
@@ -389,7 +381,7 @@ impl StorageUniformManager {
     pub fn update_object_with_material_full(
         &mut self,
         index: usize,
-        model: &[[f32; 4]; 4],
+        model: &[f32; 16],
         color: &[f32; 4],
         metallic: f32,
         roughness: f32,
@@ -413,7 +405,7 @@ impl StorageUniformManager {
     ///
     /// # Arguments
     /// * `index` - Object index (0-255)
-    /// * `model` - Model matrix (object-to-world)
+    /// * `model` - Model matrix in column-major format (object-to-world)
     /// * `color` - Base color tint (RGBA)
     /// * `metallic` - Metallic factor (0.0 = dielectric, 1.0 = metal)
     /// * `roughness` - Roughness factor (0.0 = smooth, 1.0 = rough)
@@ -423,7 +415,7 @@ impl StorageUniformManager {
     pub fn update_object_bindless(
         &mut self,
         index: usize,
-        model: &[[f32; 4]; 4],
+        model: &[f32; 16],
         color: &[f32; 4],
         metallic: f32,
         roughness: f32,

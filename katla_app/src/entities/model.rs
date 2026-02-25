@@ -165,8 +165,15 @@ impl Model {
             .map(|m| (m.metallic_factor, m.roughness_factor))
             .unwrap_or((0.0, 0.5));
 
+        let root_t = model.root_transform.decompose();
+        log::info!(
+            "Root is: {:?}, {:?}, {:?}",
+            root_t.position,
+            root_t.rotation,
+            root_t.scale
+        );
+        let transform = root_t * transform;
         let mesh = Mesh::new_from_model(model, context.clone());
-
         Self::new_with_pbr(
             world,
             vec![mesh],
@@ -524,7 +531,7 @@ impl Model {
         } else {
             Mesh::new_from_model(model, context.clone())
         };
-
+        log::info!("Root is: {:?}", root_transform);
         // Combine user transform with model's root transform from GLTF
         // Root transform is applied first (model space), then user transform
         let combined_matrix = transform.make_mat4() * root_transform;

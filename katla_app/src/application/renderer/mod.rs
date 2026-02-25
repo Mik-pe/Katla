@@ -433,16 +433,12 @@ pub fn render_frame(app: &mut Application) {
 
             // Update viewport camera using new unified API
             if let Some(viewport_handle) = app.preview_viewport {
-                // Convert matrices to column-major arrays
-                let view_arr: [[f32; 4]; 4] = bytemuck::cast(view.to_array());
-                let proj_arr: [[f32; 4]; 4] = bytemuck::cast(proj.to_array());
-                let inv_view_proj_arr: [[f32; 4]; 4] = bytemuck::cast(inv_view_proj.to_array());
-
+                // Matrices are already column-major from to_array()
                 renderer.update_viewport_camera(
                     viewport_handle,
-                    &view_arr,
-                    &proj_arr,
-                    &inv_view_proj_arr,
+                    &view.to_array(),
+                    &proj.to_array(),
+                    &inv_view_proj.to_array(),
                     &[cam_pos.x(), cam_pos.y(), cam_pos.z(), 0.0],
                     &[0.3, 1.0, 0.2, 0.0],
                     &[1.0, 0.98, 0.95, 0.0],
@@ -511,17 +507,16 @@ pub fn render_frame(app: &mut Application) {
 /// This is called after world.update() which runs SkeletalAnimationSystem
 /// to compute the joint transforms.
 pub fn upload_skeleton_transforms(app: &mut Application) {
-    // Convert Mat4 to GPU-friendly [[f32; 4]; 4] format
-    fn mat4_to_array(matrix: &katla_math::Mat4) -> [[f32; 4]; 4] {
-        let data: [[f32; 4]; 4] = matrix.clone().into();
-        data
+    // Convert Mat4 to GPU-friendly column-major [f32; 16] format
+    fn mat4_to_array(matrix: &katla_math::Mat4) -> [f32; 16] {
+        matrix.to_array()
     }
 
     // For each entity with a stored skeleton buffer, upload the transforms
     for (entity, buffer) in &app.skeleton_buffers {
         if let Some(skeleton) = app.world.get_component::<Skeleton>(*entity) {
             // Convert Mat4 joint transforms to GPU format
-            let joint_matrices: Vec<[[f32; 4]; 4]> = skeleton
+            let joint_matrices: Vec<[f32; 16]> = skeleton
                 .joint_transforms
                 .iter()
                 .map(mat4_to_array)
