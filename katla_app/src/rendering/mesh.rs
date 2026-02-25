@@ -447,26 +447,28 @@ impl Mesh {
         data: Vec<DataType>,
         index_type: IndexType,
     ) -> Option<IndexBuffer> {
-        if data.is_empty() {
-            None
-        } else {
-            let data_slice = unsafe {
-                std::slice::from_raw_parts(
-                    data.as_ptr() as *const u8,
-                    data.len() * std::mem::size_of::<DataType>(),
-                )
-            };
-            let count = match index_type {
-                IndexType::Uint8 => data_slice.len() as u32,
-                IndexType::Uint16 => (data_slice.len() as u32) / 2,
-                IndexType::Uint32 => (data_slice.len() as u32) / 4,
-                IndexType::None => 0_u32,
-            };
-            let mut index_buffer =
-                IndexBuffer::new(context.clone(), data_slice.len() as u64, index_type, count);
-            index_buffer.upload_data(data_slice);
-            Some(index_buffer)
+        // IndexType::None is only valid for ray tracing, not regular draw calls
+        // Return None to trigger non-indexed rendering with draw_array
+        if data.is_empty() || index_type == IndexType::None {
+            return None;
         }
+
+        let data_slice = unsafe {
+            std::slice::from_raw_parts(
+                data.as_ptr() as *const u8,
+                data.len() * std::mem::size_of::<DataType>(),
+            )
+        };
+        let count = match index_type {
+            IndexType::Uint8 => data_slice.len() as u32,
+            IndexType::Uint16 => (data_slice.len() as u32) / 2,
+            IndexType::Uint32 => (data_slice.len() as u32) / 4,
+            IndexType::None => unreachable!(), // Handled above
+        };
+        let mut index_buffer =
+            IndexBuffer::new(context.clone(), data_slice.len() as u64, index_type, count);
+        index_buffer.upload_data(data_slice);
+        Some(index_buffer)
     }
 
     fn create_vertex_buffer<DataType>(

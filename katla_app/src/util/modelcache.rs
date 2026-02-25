@@ -216,6 +216,10 @@ impl GLTFModel {
         }
         self.root_transform = root_transform;
 
+        // Track vertex offset for index adjustment when combining nodes
+        let mut vertex_offset: u32 = 0;
+        let mut skinned_vertex_offset: u32 = 0;
+
         for node in self.document.nodes() {
             if used_nodes.contains(&node.index()) {
                 // Parse both regular and skinned vertex data
@@ -230,23 +234,46 @@ impl GLTFModel {
                     (index_data, index_stride)
                 };
 
+                // Get lengths before extending (we need these for offset updates)
+                let vertex_count = vertex_data.len();
+                let skinned_vertex_count = skinned_data.len();
+
                 debug!(
                     "parse_gltf node {}: {} vertices, {} skinned vertices, {} index bytes, has_skinning={}",
                     node.index(),
-                    vertex_data.len(),
-                    skinned_data.len(),
+                    vertex_count,
+                    skinned_vertex_count,
                     final_index_data.len(),
                     has_skinning
                 );
+
+                // Adjust indices by the current vertex offset before extending
+                // Indices are relative to each node's local vertices, but need to be
+                // relative to the combined mesh's vertices
+                let offset = if has_skinning {
+                    skinned_vertex_offset
+                } else {
+                    vertex_offset
+                };
+                let adjusted_index_data =
+                    Self::adjust_indices(&final_index_data, final_index_stride, offset);
 
                 self.vertex_data.extend(vertex_data);
                 self.skinned_vertex_data.extend(skinned_data);
                 if has_skinning {
                     self.has_skinning = true;
                 }
-                self.index_data.extend(final_index_data);
-                self.index_stride = final_index_stride;
+                self.index_data.extend(adjusted_index_data);
+                // Only update index_stride if we actually have index data
+                // (don't let empty nodes overwrite the stride)
+                if final_index_stride > 0 {
+                    self.index_stride = final_index_stride;
+                }
                 self.bounds = sphere;
+
+                // Update offsets for next node
+                vertex_offset += vertex_count as u32;
+                skinned_vertex_offset += skinned_vertex_count as u32;
             }
         }
     }
@@ -358,6 +385,64 @@ impl GLTFModel {
     /// Check if this model has SoA attributes parsed.
     pub fn has_soa_attributes(&self) -> bool {
         self.parsed_attributes.is_some()
+    }
+
+    /// Adjust indices by adding an offset when combining multiple nodes.
+    ///
+    /// Each node's indices are relative to its own vertices. When combining
+    /// nodes into a single mesh, indices must be offset by the accumulated
+    /// vertex count from previous nodes.
+    fn adjust_indices(index_data: &[u8], index_stride: u8, offset: u32) -> Vec<u8> {
+        if index_data.is_empty() || index_stride == 0 || offset == 0 {
+            return index_data.to_vec();
+        }
+
+        match index_stride {
+            2 => {
+                // 16-bit indices
+                let mut result = Vec::with_capacity(index_data.len());
+                for chunk in index_data.chunks(2) {
+                    let index = u16::from_le_bytes([chunk[0], chunk[1]]);
+                    let adjusted = index as u32 + offset;
+                    // Check for overflow
+                    if adjusted > u16::MAX as u32 {
+                        warn!(
+                            "Index overflow when adjusting indices: {} + {} = {}",
+                            index, offset, adjusted
+                        );
+                    }
+                    let adjusted_u16 = adjusted as u16;
+                    result.extend_from_slice(&adjusted_u16.to_le_bytes());
+                }
+                result
+            }
+            4 => {
+                // 32-bit indices
+                let mut result = Vec::with_capacity(index_data.len());
+                for chunk in index_data.chunks(4) {
+                    let index = u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]);
+                    let adjusted = index + offset;
+                    result.extend_from_slice(&adjusted.to_le_bytes());
+                }
+                result
+            }
+            1 => {
+                // 8-bit indices (rare, but handle it)
+                let mut result = Vec::with_capacity(index_data.len());
+                for &byte in index_data {
+                    let adjusted = byte as u32 + offset;
+                    if adjusted > u8::MAX as u32 {
+                        warn!(
+                            "Index overflow when adjusting 8-bit indices: {} + {} = {}",
+                            byte, offset, adjusted
+                        );
+                    }
+                    result.push(adjusted as u8);
+                }
+                result
+            }
+            _ => index_data.to_vec(),
+        }
     }
 }
 
