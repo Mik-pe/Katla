@@ -358,6 +358,8 @@ impl ApplicationHandler for Application {
                         self.frame_count += 1;
                         if self.frame_count >= max {
                             info!("Rendered {} frames, exiting", self.frame_count);
+                            // Call cleanup directly since exiting() may not be triggered
+                            self.cleanup_on_exit();
                             event_loop.exit();
                         }
                     }
@@ -372,6 +374,15 @@ impl ApplicationHandler for Application {
     }
 
     fn exiting(&mut self, _event_loop: &ActiveEventLoop) {
+        info!("Application exiting - cleaning up...");
+        self.cleanup_on_exit();
+    }
+}
+
+impl Application {
+    /// Cleanup resources on exit.
+    /// Called both from exiting() and directly before event_loop.exit() for max_frames mode.
+    fn cleanup_on_exit(&mut self) {
         // Save preferences before exit
         if let Err(e) = self.preferences.save() {
             warn!("Failed to save preferences: {}", e);

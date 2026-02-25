@@ -294,6 +294,8 @@ pub struct Material {
     template: Option<Rc<MaterialTemplate>>,
     /// Template name for lazy resolution
     template_name: Option<String>,
+    /// Cached pipeline for materials created from existing pipelines
+    cached_pipeline: Option<Rc<RefCell<MaterialPipeline>>>,
     /// Instance-specific parameter values
     parameters: HashMap<String, MaterialValue>,
     /// Instance-specific textures by binding name
@@ -321,6 +323,7 @@ impl Material {
         Self {
             template: None,
             template_name: Some(template_name.into()),
+            cached_pipeline: None,
             parameters: HashMap::new(),
             textures: HashMap::new(),
             vertex_binding: None,
@@ -337,6 +340,7 @@ impl Material {
         Self {
             template: Some(template),
             template_name: None,
+            cached_pipeline: None,
             parameters: HashMap::new(),
             textures: HashMap::new(),
             vertex_binding: None,
@@ -379,6 +383,7 @@ impl Material {
         Self {
             template: Some(template),
             template_name: None,
+            cached_pipeline: None,
             parameters: HashMap::new(),
             textures: HashMap::new(),
             vertex_binding: Some(vertex_binding),
@@ -392,14 +397,13 @@ impl Material {
 
     /// Create a material from a cached pipeline.
     pub fn from_cached_pipeline(
-        _pipeline: Rc<RefCell<MaterialPipeline>>,
+        pipeline: Rc<RefCell<MaterialPipeline>>,
         vertex_binding: VertexBinding,
     ) -> Self {
-        // Create a minimal template wrapper for the pipeline
-        // Note: This is a simplified version - full template creation requires descriptor/reflection
         Self {
-            template: None, // Will need special handling
+            template: None,
             template_name: None,
+            cached_pipeline: Some(pipeline),
             parameters: HashMap::new(),
             textures: HashMap::new(),
             vertex_binding: Some(vertex_binding),
@@ -479,6 +483,11 @@ impl Material {
 
     /// Get the pipeline (if resolved).
     pub fn pipeline(&self) -> Option<Rc<RefCell<MaterialPipeline>>> {
+        // First check for a cached pipeline (from from_cached_pipeline_*)
+        if let Some(ref cached) = self.cached_pipeline {
+            return Some(Rc::clone(cached));
+        }
+        // Then check template
         self.template.as_ref().map(|t| t.pipeline())
     }
 
@@ -582,6 +591,7 @@ impl Material {
         Self {
             template: self.template.clone(),
             template_name: self.template_name.clone(),
+            cached_pipeline: self.cached_pipeline.clone(),
             parameters: self.parameters.clone(),
             textures: self.textures.clone(),
             vertex_binding: self.vertex_binding.clone(),
@@ -789,54 +799,83 @@ impl Material {
 
     /// Create a material from a pipeline directly (non-template).
     pub fn from_pipeline(
-        _material_pipeline: MaterialPipeline,
+        material_pipeline: MaterialPipeline,
         texture: Option<Rc<Texture>>,
         vertex_binding: VertexBinding,
         _color: Option<[f32; 4]>,
     ) -> Self {
-        // Note: This is a simplified implementation
-        // Full implementation would need to wrap the pipeline in a template
-        let mut material = Material::new("__pipeline__");
+        let mut material = Self {
+            template: None,
+            template_name: None,
+            cached_pipeline: Some(Rc::new(RefCell::new(material_pipeline))),
+            parameters: HashMap::new(),
+            textures: HashMap::new(),
+            vertex_binding: Some(vertex_binding),
+            pbr_textures: None,
+            pbr_texture_refs: None,
+            texture_indices: [0; 4],
+            emission_index: 0,
+            base_color: None,
+        };
         if let Some(tex) = texture {
             material = material.with_texture("albedo", tex);
         }
-        material.vertex_binding = Some(vertex_binding);
         material
     }
 
     /// Create a bindless material from a pipeline.
     pub fn from_pipeline_with_textures(
-        _material_pipeline: MaterialPipeline,
+        material_pipeline: MaterialPipeline,
         texture: Option<Rc<Texture>>,
         vertex_binding: VertexBinding,
         _color: Option<[f32; 4]>,
         texture_indices: [u32; 4],
         emission_index: u32,
     ) -> Self {
-        let mut material = Material::new("__pipeline__")
-            .with_bindless_indices(texture_indices, emission_index);
+        let mut material = Self {
+            template: None,
+            template_name: None,
+            cached_pipeline: Some(Rc::new(RefCell::new(material_pipeline))),
+            parameters: HashMap::new(),
+            textures: HashMap::new(),
+            vertex_binding: Some(vertex_binding),
+            pbr_textures: None,
+            pbr_texture_refs: None,
+            texture_indices,
+            emission_index,
+            base_color: None,
+        };
         if let Some(tex) = texture {
             material = material.with_texture("albedo", tex);
         }
-        material.vertex_binding = Some(vertex_binding);
         material
     }
 
     /// Create a bindless material from a cached pipeline.
     pub fn from_cached_pipeline_with_textures(
-        _material_pipeline: Rc<RefCell<MaterialPipeline>>,
+        material_pipeline: Rc<RefCell<MaterialPipeline>>,
         texture: Option<Rc<Texture>>,
         vertex_binding: VertexBinding,
         _color: Option<[f32; 4]>,
         texture_indices: [u32; 4],
         emission_index: u32,
     ) -> Self {
-        let mut material = Material::new("__cached_pipeline__")
-            .with_bindless_indices(texture_indices, emission_index);
+        let mut material = Self {
+            template: None,
+            template_name: None,
+            cached_pipeline: Some(material_pipeline),
+            parameters: HashMap::new(),
+            textures: HashMap::new(),
+            vertex_binding: Some(vertex_binding),
+            pbr_textures: None,
+            pbr_texture_refs: None,
+            texture_indices,
+            emission_index,
+            base_color: None,
+        };
         if let Some(tex) = texture {
             material = material.with_texture("albedo", tex);
         }
-        material.vertex_binding = Some(vertex_binding);
         material
     }
 
