@@ -1930,15 +1930,14 @@ pub fn build_asset_browser(
                 ),
                 Vec2::new(btn_width, btn_height),
             );
-            // Draw border (Button doesn't have border support)
-            ui.draw_rect_border(no_btn_bounds, katla_math::Color::TRANSPARENT, theme.border, 1.0);
 
             if ui
                 .add(
                     katla_ui::widgets::Button::new("No")
                         .bounds(no_btn_bounds)
                         .fill_color(katla_math::Color::TRANSPARENT)
-                        .hover_color(theme.button_hover),
+                        .hover_color(theme.button_hover)
+                        .border(theme.border),
                 )
                 .clicked
             {
@@ -1951,15 +1950,14 @@ pub fn build_asset_browser(
                 Vec2::new(dialog_pos.x() + dialog_width - btn_width - 10.0, btn_y),
                 Vec2::new(btn_width, btn_height),
             );
-            // Draw border (Button doesn't have border support)
-            ui.draw_rect_border(yes_btn_bounds, katla_math::Color::TRANSPARENT, theme.border, 1.0);
 
             if ui
                 .add(
                     katla_ui::widgets::Button::new("Yes")
                         .bounds(yes_btn_bounds)
                         .fill_color(theme.error)
-                        .hover_color(theme.error * 1.3),
+                        .hover_color(theme.error * 1.3)
+                        .border(theme.border),
                 )
                 .clicked
             {
