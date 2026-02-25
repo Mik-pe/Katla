@@ -649,21 +649,6 @@ pub fn build_asset_browser(
     loader: &mut crate::util::BackgroundLoader,
     thumbnail_texture_ids: &HashMap<PathBuf, TextureId>,
 ) {
-    // Open confirmation dialog popup if needed
-    // Use open_popup_with_bounds to preregister bounds for same-frame hover blocking
-    if state.confirm_dialog_open && !ui.is_popup_open_with_id("confirm_dialog") {
-        let screen_size = ui.screen_size();
-        let dialog_width = 320.0;
-        let dialog_height = 120.0;
-        let dialog_pos = Vec2::new(
-            (screen_size.x() - dialog_width) * 0.5,
-            (screen_size.y() - dialog_height) * 0.5,
-        );
-        let dialog_bounds =
-            Rect2D::from_origin_size(dialog_pos, Vec2::new(dialog_width, dialog_height));
-        ui.open_popup_with_bounds("confirm_dialog", dialog_bounds);
-    }
-
     let is_focused = *focused_panel == FocusedPanel::AssetBrowser;
     // Auto-rescan if needed
     if state.needs_rescan() {
@@ -1122,7 +1107,7 @@ pub fn build_asset_browser(
 
                 // Handle click - skip if mouse is over a popup (context menu)
                 if is_hovered
-                    && !ui.is_mouse_over_popup()
+                    && !ui.has_open_popup()
                     && ui.input.mouse_clicked(katla_ui::input::mouse_button::LEFT)
                 {
                     clicked_index = Some(i);
@@ -1174,7 +1159,7 @@ pub fn build_asset_browser(
 
                 // Start marquee on click in content area (but not on an asset or popup)
                 if mouse_in_content
-                    && !ui.is_mouse_over_popup()
+                    && !ui.has_open_popup()
                     && ui.input.mouse_clicked(katla_ui::input::mouse_button::LEFT)
                     && clicked_index.is_none()
                 {
@@ -1615,7 +1600,6 @@ pub fn build_asset_browser(
             if let Some(index) = right_clicked_index {
                 state.context_menu_asset = Some(index);
                 state.context_menu_open = true;
-                ui.open_context_menu_at("asset_context", ui.input.mouse_pos);
             }
 
             // Empty state
@@ -1675,16 +1659,7 @@ pub fn build_asset_browser(
         if !clicked_on_asset && ui.input.mouse_clicked(katla_ui::input::mouse_button::RIGHT) {
             state.context_menu_asset = None;
             state.context_menu_open = true;
-            ui.open_context_menu_at("asset_context", ui.input.mouse_pos);
         }
-    }
-
-    // === RENDER CONTEXT MENU using popup system ===
-    // Clean up state if menu was closed
-    let asset_context_menu_open = ui.is_context_menu_open("asset_context");
-    if state.context_menu_open && !asset_context_menu_open {
-        state.context_menu_open = false;
-        state.context_menu_asset = None;
     }
 
     // Get context data for the popup
@@ -1704,9 +1679,12 @@ pub fn build_asset_browser(
             (None, String::new(), state.current_path.clone(), 0)
         };
 
-    // Render popup - use popup() directly since we manually opened with open_context_menu_at()
-    let clicked_action = ui.popup(Popup::new("asset_context").at_cursor(), |ui| {
-        match asset_type {
+    // Render context menu popup
+    let mut clicked_action: Option<&str> = None;
+    ui.popup(
+        Popup::new("asset_context").at_cursor(),
+        &mut state.context_menu_open,
+        |ui, open| match asset_type {
             Some(AssetType::Folder) => {
                 if ui.menu_item_clicked_with_icon_and_shortcut(
                     "Open",
@@ -1714,7 +1692,9 @@ pub fn build_asset_browser(
                     true,
                     "Enter",
                 ) {
-                    return Some("Open");
+                    clicked_action = Some("Open");
+                    *open = false;
+                    return;
                 }
                 if ui.menu_item_clicked_with_icon_and_shortcut(
                     "Rename",
@@ -1722,7 +1702,9 @@ pub fn build_asset_browser(
                     true,
                     "F2",
                 ) {
-                    return Some("Rename");
+                    clicked_action = Some("Rename");
+                    *open = false;
+                    return;
                 }
                 ui.menu_separator();
                 if ui.menu_item_clicked_with_icon_and_shortcut(
@@ -1731,7 +1713,9 @@ pub fn build_asset_browser(
                     true,
                     "",
                 ) {
-                    return Some("Copy Path");
+                    clicked_action = Some("Copy Path");
+                    *open = false;
+                    return;
                 }
                 if ui.menu_item_clicked_with_icon_and_shortcut(
                     "Show in Explorer",
@@ -1739,7 +1723,9 @@ pub fn build_asset_browser(
                     true,
                     "",
                 ) {
-                    return Some("Show in Explorer");
+                    clicked_action = Some("Show in Explorer");
+                    *open = false;
+                    return;
                 }
                 ui.menu_separator();
                 if ui.menu_item_clicked_with_icon_and_shortcut(
@@ -1748,7 +1734,9 @@ pub fn build_asset_browser(
                     true,
                     "Del",
                 ) {
-                    return Some("Delete");
+                    clicked_action = Some("Delete");
+                    *open = false;
+                    return;
                 }
             }
             Some(_) => {
@@ -1758,7 +1746,9 @@ pub fn build_asset_browser(
                     true,
                     "Enter",
                 ) {
-                    return Some("Open");
+                    clicked_action = Some("Open");
+                    *open = false;
+                    return;
                 }
                 if ui.menu_item_clicked_with_icon_and_shortcut(
                     "Rename",
@@ -1766,7 +1756,9 @@ pub fn build_asset_browser(
                     true,
                     "F2",
                 ) {
-                    return Some("Rename");
+                    clicked_action = Some("Rename");
+                    *open = false;
+                    return;
                 }
                 ui.menu_separator();
                 if ui.menu_item_clicked_with_icon_and_shortcut(
@@ -1775,7 +1767,9 @@ pub fn build_asset_browser(
                     true,
                     "",
                 ) {
-                    return Some("Copy Path");
+                    clicked_action = Some("Copy Path");
+                    *open = false;
+                    return;
                 }
                 if ui.menu_item_clicked_with_icon_and_shortcut(
                     "Show in Explorer",
@@ -1783,7 +1777,9 @@ pub fn build_asset_browser(
                     true,
                     "",
                 ) {
-                    return Some("Show in Explorer");
+                    clicked_action = Some("Show in Explorer");
+                    *open = false;
+                    return;
                 }
                 ui.menu_separator();
                 if ui.menu_item_clicked_with_icon_and_shortcut(
@@ -1792,7 +1788,9 @@ pub fn build_asset_browser(
                     true,
                     "Del",
                 ) {
-                    return Some("Delete");
+                    clicked_action = Some("Delete");
+                    *open = false;
+                    return;
                 }
             }
             None => {
@@ -1802,7 +1800,9 @@ pub fn build_asset_browser(
                     true,
                     "",
                 ) {
-                    return Some("New Folder");
+                    clicked_action = Some("New Folder");
+                    *open = false;
+                    return;
                 }
                 ui.menu_separator();
                 if ui.menu_item_clicked_with_icon_and_shortcut(
@@ -1811,7 +1811,9 @@ pub fn build_asset_browser(
                     true,
                     "F5",
                 ) {
-                    return Some("Refresh");
+                    clicked_action = Some("Refresh");
+                    *open = false;
+                    return;
                 }
                 ui.menu_separator();
                 if ui.menu_item_clicked_with_icon_and_shortcut(
@@ -1820,15 +1822,21 @@ pub fn build_asset_browser(
                     true,
                     "",
                 ) {
-                    return Some("Show in Explorer");
+                    clicked_action = Some("Show in Explorer");
+                    *open = false;
+                    return;
                 }
             }
-        }
-        None::<&str>
-    });
+        },
+    );
+
+    // Clear context menu asset when menu closes
+    if !state.context_menu_open {
+        state.context_menu_asset = None;
+    }
 
     // Process action
-    if let Some(action) = clicked_action.flatten() {
+    if let Some(action) = clicked_action {
         match action {
             "Open" => {
                 if asset_type == Some(AssetType::Folder) {
@@ -1878,94 +1886,90 @@ pub fn build_asset_browser(
             }
             _ => {}
         }
-        state.context_menu_open = false;
     }
 
     // === CONFIRMATION DIALOG ===
-    ui.modal("confirm_dialog", 320.0, 120.0, |ui| {
-        let dialog_bounds = ui.get_popup_bounds();
-        let dialog_pos = dialog_bounds.min;
-        let dialog_width = dialog_bounds.width();
+    ui.modal(
+        "confirm_dialog",
+        320.0,
+        120.0,
+        &mut state.confirm_dialog_open,
+        |ui, open| {
+            let dialog_bounds = ui.get_popup_bounds();
+            let dialog_pos = dialog_bounds.min;
+            let dialog_width = dialog_bounds.width();
 
-        // Title bar
-        let title_bounds = Rect2D::from_origin_size(dialog_pos, Vec2::new(dialog_width, 28.0));
-        ui.draw_rect(title_bounds, theme.panel_header);
-        ui.draw_text(
-            "Confirm Delete",
-            Vec2::new(dialog_pos.x() + 10.0, dialog_pos.y() + 7.0),
-            theme.text_primary,
-            ui.scaled_font_size(katla_ui::FontSize::Small),
-        );
+            // Title bar
+            let title_bounds = Rect2D::from_origin_size(dialog_pos, Vec2::new(dialog_width, 28.0));
+            ui.draw_rect(title_bounds, theme.panel_header);
+            ui.draw_text(
+                "Confirm Delete",
+                Vec2::new(dialog_pos.x() + 10.0, dialog_pos.y() + 7.0),
+                theme.text_primary,
+                ui.scaled_font_size(katla_ui::FontSize::Small),
+            );
 
-        // Message
-        ui.draw_text(
-            &state.confirm_dialog_message,
-            Vec2::new(dialog_pos.x() + 10.0, dialog_pos.y() + 40.0),
-            theme.text_secondary,
-            ui.scaled_font_size(katla_ui::FontSize::Small),
-        );
+            // Message
+            ui.draw_text(
+                &state.confirm_dialog_message,
+                Vec2::new(dialog_pos.x() + 10.0, dialog_pos.y() + 40.0),
+                theme.text_secondary,
+                ui.scaled_font_size(katla_ui::FontSize::Small),
+            );
 
-        // Buttons
-        let btn_width = 80.0;
-        let btn_height = 28.0;
-        let btn_y = dialog_pos.y() + 120.0 - btn_height - 12.0;
+            // Buttons
+            let btn_width = 80.0;
+            let btn_height = 28.0;
+            let btn_y = dialog_pos.y() + 120.0 - btn_height - 12.0;
 
-        // No button
-        let no_btn_bounds = Rect2D::from_origin_size(
-            Vec2::new(
-                dialog_pos.x() + dialog_width - btn_width * 2.0 - 20.0,
-                btn_y,
-            ),
-            Vec2::new(btn_width, btn_height),
-        );
-        // Draw border (Button doesn't have border support)
-        ui.draw_rect_border(no_btn_bounds, theme.button_hover, theme.border, 1.0);
+            // No button
+            let no_btn_bounds = Rect2D::from_origin_size(
+                Vec2::new(
+                    dialog_pos.x() + dialog_width - btn_width * 2.0 - 20.0,
+                    btn_y,
+                ),
+                Vec2::new(btn_width, btn_height),
+            );
+            // Draw border (Button doesn't have border support)
+            ui.draw_rect_border(no_btn_bounds, katla_math::Color::TRANSPARENT, theme.border, 1.0);
 
-        if ui
-            .add(
-                katla_ui::widgets::Button::new("No")
-                    .bounds(no_btn_bounds)
-                    .fill_color(katla_math::Color::TRANSPARENT)
-                    .hover_color(theme.button_hover),
-            )
-            .clicked
-        {
-            state.confirm_dialog_open = false;
-            state.confirm_pending_action = None;
-            ui.close_current_popup();
-        }
-
-        // Yes button (dangerous action - red accent)
-        let yes_btn_bounds = Rect2D::from_origin_size(
-            Vec2::new(dialog_pos.x() + dialog_width - btn_width - 10.0, btn_y),
-            Vec2::new(btn_width, btn_height),
-        );
-        // Draw border (Button doesn't have border support)
-        ui.draw_rect_border(yes_btn_bounds, theme.error, theme.border, 1.0);
-
-        if ui
-            .add(
-                katla_ui::widgets::Button::new("Yes")
-                    .bounds(yes_btn_bounds)
-                    .fill_color(katla_math::Color::TRANSPARENT)
-                    .hover_color(theme.error),
-            )
-            .clicked
-        {
-            if let Some(action) = state.confirm_pending_action.take() {
-                state.pending_actions.push(action);
+            if ui
+                .add(
+                    katla_ui::widgets::Button::new("No")
+                        .bounds(no_btn_bounds)
+                        .fill_color(katla_math::Color::TRANSPARENT)
+                        .hover_color(theme.button_hover),
+                )
+                .clicked
+            {
+                state.confirm_pending_action = None;
+                *open = false;
             }
-            state.confirm_dialog_open = false;
-            ui.close_current_popup();
-        }
 
-        // Escape cancels (modal handles keyboard capture)
-        if ui.input.key_pressed(katla_ui::input::KeyCode::Escape) {
-            state.confirm_dialog_open = false;
-            state.confirm_pending_action = None;
-            ui.close_current_popup();
-        }
-    });
+            // Yes button (dangerous action - red accent)
+            let yes_btn_bounds = Rect2D::from_origin_size(
+                Vec2::new(dialog_pos.x() + dialog_width - btn_width - 10.0, btn_y),
+                Vec2::new(btn_width, btn_height),
+            );
+            // Draw border (Button doesn't have border support)
+            ui.draw_rect_border(yes_btn_bounds, katla_math::Color::TRANSPARENT, theme.border, 1.0);
+
+            if ui
+                .add(
+                    katla_ui::widgets::Button::new("Yes")
+                        .bounds(yes_btn_bounds)
+                        .fill_color(katla_math::Color::TRANSPARENT)
+                        .hover_color(theme.error),
+                )
+                .clicked
+            {
+                if let Some(action) = state.confirm_pending_action.take() {
+                    state.pending_actions.push(action);
+                }
+                *open = false;
+            }
+        },
+    );
 
     // === KEYBOARD NAVIGATION ===
     if !state.search_focused && !state.context_menu_open && !state.rename_mode {
