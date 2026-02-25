@@ -201,6 +201,101 @@ fn test_make_mat4() {
 }
 
 #[test]
+fn test_make_mat4_elements() {
+    // Test that make_mat4 creates the correct column-major rotation matrix
+    // For a 90° rotation around Z axis, the matrix should be:
+    // Column 0: (0, 1, 0, 0) - where (1,0,0) maps to
+    // Column 1: (-1, 0, 0, 0) - where (0,1,0) maps to
+    // Column 2: (0, 0, 1, 0) - where (0,0,1) maps to
+    // Column 3: (0, 0, 0, 1)
+    let q = Quat::from_axis_angle(Vec3::new(0.0, 0.0, 1.0), std::f32::consts::FRAC_PI_2);
+    let m = q.make_mat4();
+
+    // Check column 0 (should be where (1,0,0) maps to: (0,1,0))
+    assert!((m[0][0] - 0.0).abs() < 1e-5); // row 0, col 0
+    assert!((m[0][1] - 1.0).abs() < 1e-5); // row 1, col 0
+    assert!((m[0][2] - 0.0).abs() < 1e-5); // row 2, col 0
+    assert!((m[0][3] - 0.0).abs() < 1e-5); // row 3, col 0
+
+    // Check column 1 (should be where (0,1,0) maps to: (-1,0,0))
+    assert!((m[1][0] - (-1.0)).abs() < 1e-5); // row 0, col 1
+    assert!((m[1][1] - 0.0).abs() < 1e-5); // row 1, col 1
+    assert!((m[1][2] - 0.0).abs() < 1e-5); // row 2, col 1
+    assert!((m[1][3] - 0.0).abs() < 1e-5); // row 3, col 1
+
+    // Check column 2 (should be where (0,0,1) maps to: (0,0,1))
+    assert!((m[2][0] - 0.0).abs() < 1e-5); // row 0, col 2
+    assert!((m[2][1] - 0.0).abs() < 1e-5); // row 1, col 2
+    assert!((m[2][2] - 1.0).abs() < 1e-5); // row 2, col 2
+    assert!((m[2][3] - 0.0).abs() < 1e-5); // row 3, col 2
+
+    // Check column 3 (translation column)
+    assert!((m[3][0] - 0.0).abs() < 1e-5); // row 0, col 3
+    assert!((m[3][1] - 0.0).abs() < 1e-5); // row 1, col 3
+    assert!((m[3][2] - 0.0).abs() < 1e-5); // row 2, col 3
+    assert!((m[3][3] - 1.0).abs() < 1e-5); // row 3, col 3
+}
+
+#[test]
+fn test_make_mat4_45_degree_rotation() {
+    // Test with a 45-degree rotation where the matrix is NOT symmetric
+    // This will catch row-major vs column-major bugs
+    let angle = std::f32::consts::FRAC_PI_4; // 45 degrees
+    let q = Quat::from_axis_angle(Vec3::new(0.0, 0.0, 1.0), angle);
+    let m = q.make_mat4();
+
+    // For a 45° rotation around Z, the rotation matrix is:
+    // [ cos(45°)  -sin(45°)  0 ]   [ √2/2  -√2/2  0 ]
+    // [ sin(45°)   cos(45°)  0 ] = [ √2/2   √2/2  0 ]
+    // [   0          0       1 ]   [  0      0     1 ]
+    //
+    // In column-major storage (Mat4[col][row]):
+    // Column 0: (cos(45°), sin(45°), 0, 0) = where (1,0,0) maps to
+    // Column 1: (-sin(45°), cos(45°), 0, 0) = where (0,1,0) maps to
+    // Column 2: (0, 0, 1, 0) = where (0,0,1) maps to
+    // Column 3: (0, 0, 0, 1)
+
+    let cos_45 = f32::cos(angle);
+    let sin_45 = f32::sin(angle);
+
+    // Check column 0
+    assert!(
+        (m[0][0] - cos_45).abs() < 1e-5,
+        "m[0][0] should be cos(45°)"
+    );
+    assert!(
+        (m[0][1] - sin_45).abs() < 1e-5,
+        "m[0][1] should be sin(45°)"
+    );
+    assert!((m[0][2] - 0.0).abs() < 1e-5);
+    assert!((m[0][3] - 0.0).abs() < 1e-5);
+
+    // Check column 1 (the crucial one - if transposed, sin and cos would swap)
+    assert!(
+        (m[1][0] - (-sin_45)).abs() < 1e-5,
+        "m[1][0] should be -sin(45°)"
+    );
+    assert!(
+        (m[1][1] - cos_45).abs() < 1e-5,
+        "m[1][1] should be cos(45°)"
+    );
+    assert!((m[1][2] - 0.0).abs() < 1e-5);
+    assert!((m[1][3] - 0.0).abs() < 1e-5);
+
+    // Check column 2
+    assert!((m[2][0] - 0.0).abs() < 1e-5);
+    assert!((m[2][1] - 0.0).abs() < 1e-5);
+    assert!((m[2][2] - 1.0).abs() < 1e-5);
+    assert!((m[2][3] - 0.0).abs() < 1e-5);
+
+    // Check column 3
+    assert!((m[3][0] - 0.0).abs() < 1e-5);
+    assert!((m[3][1] - 0.0).abs() < 1e-5);
+    assert!((m[3][2] - 0.0).abs() < 1e-5);
+    assert!((m[3][3] - 1.0).abs() < 1e-5);
+}
+
+#[test]
 fn test_quat_mul() {
     let q1 = Quat::from_axis_angle(Vec3::new(0.0, 0.0, 1.0), std::f32::consts::FRAC_PI_4);
     let q2 = Quat::from_axis_angle(Vec3::new(0.0, 0.0, 1.0), std::f32::consts::FRAC_PI_4);
@@ -385,4 +480,99 @@ fn test_quat_roundtrip_mat4() {
     assert!((r1[0] - r2[0]).abs() < 1e-5);
     assert!((r1[1] - r2[1]).abs() < 1e-5);
     assert!((r1[2] - r2[2]).abs() < 1e-5);
+}
+
+#[test]
+fn test_from_trs_matrix_elements() {
+    // Simulate what happens in modelcache.rs when loading glTF transforms
+    // Create a known transform and check that from_trs produces the correct matrix
+
+    let translation = Vec3::new(1.0, 2.0, 3.0);
+    let rotation = Quat::from_axis_angle(Vec3::new(0.0, 0.0, 1.0), std::f32::consts::FRAC_PI_4);
+    let scale = Vec3::new(2.0, 3.0, 4.0);
+
+    let m = Mat4::from_trs(translation, rotation, scale);
+
+    // The matrix should be: T * R * S
+    // First, let's check the translation column (column 3)
+    // After T * R * S, the translation should be (1, 2, 3)
+    assert!((m[3][0] - 1.0).abs() < 1e-5, "Translation X should be 1.0");
+    assert!((m[3][1] - 2.0).abs() < 1e-5, "Translation Y should be 2.0");
+    assert!((m[3][2] - 3.0).abs() < 1e-5, "Translation Z should be 3.0");
+    assert!((m[3][3] - 1.0).abs() < 1e-5, "Translation W should be 1.0");
+
+    // Check that scale is applied (check the length of basis vectors)
+    // Column 0 should have length 2.0 (scale X)
+    let col0_len = (m[0][0] * m[0][0] + m[0][1] * m[0][1] + m[0][2] * m[0][2]).sqrt();
+    assert!(
+        (col0_len - 2.0).abs() < 1e-5,
+        "Column 0 length should be 2.0 (scale X)"
+    );
+
+    // Column 1 should have length 3.0 (scale Y)
+    let col1_len = (m[1][0] * m[1][0] + m[1][1] * m[1][1] + m[1][2] * m[1][2]).sqrt();
+    assert!(
+        (col1_len - 3.0).abs() < 1e-5,
+        "Column 1 length should be 3.0 (scale Y)"
+    );
+
+    // Column 2 should have length 4.0 (scale Z)
+    let col2_len = (m[2][0] * m[2][0] + m[2][1] * m[2][1] + m[2][2] * m[2][2]).sqrt();
+    assert!(
+        (col2_len - 4.0).abs() < 1e-5,
+        "Column 2 length should be 4.0 (scale Z)"
+    );
+}
+
+#[test]
+fn test_from_trs_rotation_only() {
+    // Test with rotation only (no translation or scale)
+    let translation = Vec3::new(0.0, 0.0, 0.0);
+    let rotation = Quat::from_axis_angle(Vec3::new(0.0, 0.0, 1.0), std::f32::consts::FRAC_PI_4);
+    let scale = Vec3::new(1.0, 1.0, 1.0);
+
+    let m = Mat4::from_trs(translation, rotation, scale);
+
+    // This should be the same as just the rotation matrix
+    let rot_mat = rotation.make_mat4();
+
+    for col in 0..4 {
+        for row in 0..4 {
+            assert!(
+                (m[col][row] - rot_mat[col][row]).abs() < 1e-5,
+                "Matrix element [{}, {}] mismatch: {} vs {}",
+                col,
+                row,
+                m[col][row],
+                rot_mat[col][row]
+            );
+        }
+    }
+}
+
+#[test]
+fn test_from_trs_decompose_recompose() {
+    // Test that we can decompose a matrix and recompose it
+    let original = Mat4::from_trs(
+        Vec3::new(1.0, 2.0, 3.0),
+        Quat::from_axis_angle(Vec3::new(0.0, 1.0, 0.0), 0.5),
+        Vec3::new(2.0, 2.0, 2.0),
+    );
+
+    let decomposed = original.decompose();
+    let recomposed = decomposed.make_mat4();
+
+    // Check that the matrices are the same
+    for col in 0..4 {
+        for row in 0..4 {
+            assert!(
+                (original[col][row] - recomposed[col][row]).abs() < 1e-4,
+                "Matrix element [{}, {}] mismatch after decompose/recompose: {} vs {}",
+                col,
+                row,
+                original[col][row],
+                recomposed[col][row]
+            );
+        }
+    }
 }
