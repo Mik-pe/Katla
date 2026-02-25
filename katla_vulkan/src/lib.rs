@@ -760,6 +760,9 @@ impl VulkanRenderer {
         // Destroy all render targets (Drop handles cleanup)
         self.render_targets.clear();
 
+        // Destroy all viewports (Drop handles cleanup for ViewportRenderTarget)
+        self.viewports.clear();
+
         // Destroy render graph (holds framebuffers and resources)
         self.render_graph = None;
 
