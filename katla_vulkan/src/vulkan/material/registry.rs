@@ -8,6 +8,7 @@ use super::{
     load_material_from_file, FileWatcher, MaterialDescriptor, MaterialError, MaterialTemplate,
     ShaderReflection,
 };
+use crate::material::MaterialDefinition;
 use crate::{DynamicMaterialConfig, MaterialPipelineCache, VulkanContext};
 use ash::vk;
 use log::{debug, info};
@@ -48,7 +49,7 @@ impl MaterialRegistry {
     pub fn register_template_with_path(&mut self, template: MaterialTemplate, path: &Path) {
         let name = template.name().to_string();
         self.templates.insert(name.clone(), Rc::new(template));
-        self.template_paths.insert(name.clone(), path.to_path_buf());
+        self.template_paths.insert(name, path.to_path_buf());
     }
 
     /// Get a template by name
@@ -82,14 +83,6 @@ impl MaterialRegistry {
     }
 
     /// Load all material templates from a directory using storage buffers.
-    ///
-    /// This is the preferred loading method. It uses the unified Material API
-    /// with the pipeline cache for deduplication.
-    ///
-    /// # Arguments
-    /// * `dir` - Directory containing .toml material files
-    /// * `context` - Vulkan context (for reflection)
-    /// * `cache` - Material pipeline cache
     pub fn load_directory(
         &mut self,
         dir: &Path,
@@ -111,7 +104,6 @@ impl MaterialRegistry {
             })?;
             let path = entry.path();
 
-            // Only load .toml files
             if path.extension() != Some(OsStr::new("toml")) {
                 continue;
             }
@@ -128,15 +120,6 @@ impl MaterialRegistry {
     }
 
     /// Load all material templates using bindless textures.
-    ///
-    /// This creates pipelines that use the bindless texture array instead of
-    /// per-material texture descriptors.
-    ///
-    /// # Arguments
-    /// * `dir` - Directory containing .toml material files
-    /// * `context` - Vulkan context (for reflection)
-    /// * `cache` - Material pipeline cache
-    /// * `bindless_layout` - Descriptor set layout from BindlessTextureManager
     pub fn load_directory_bindless(
         &mut self,
         dir: &Path,
@@ -159,7 +142,6 @@ impl MaterialRegistry {
             })?;
             let path = entry.path();
 
-            // Only load .toml files
             if path.extension() != Some(OsStr::new("toml")) {
                 continue;
             }
@@ -176,41 +158,32 @@ impl MaterialRegistry {
     }
 
     /// Load a single material from a TOML file.
-    ///
-    /// Uses the unified Material API with the pipeline cache.
     pub fn load_material(
         &mut self,
         path: &Path,
         _context: &Rc<VulkanContext>,
         cache: &mut MaterialPipelineCache,
     ) -> Result<Rc<MaterialTemplate>, MaterialError> {
-        // Load the descriptor from the TOML file
         let descriptor = load_material_from_file(path)?;
-
-        // Get template name from descriptor
         let name = descriptor.name.clone();
 
-        // Skip if template already exists
         if self.has_template(&name) {
             debug!("Template '{}' already exists, skipping", name);
             return Ok(self.get_template(&name).unwrap().clone());
         }
 
-        // Detect material type from shader path
         let (is_skinned, is_pbr_full) = detect_material_type(&descriptor);
         debug!(
             "Template '{}' detection: is_skinned={}, is_pbr_full={}",
             name, is_skinned, is_pbr_full
         );
 
-        // Get appropriate vertex binding
         let vertex_binding = if is_skinned {
             crate::vulkan::vertexbinding::get_skinned_vertex_binding()
         } else {
             get_pbr_vertex_binding()
         };
 
-        // Create the config based on material type
         let config = if is_skinned {
             DynamicMaterialConfig::skinned(&descriptor, vertex_binding)
         } else if is_pbr_full {
@@ -219,19 +192,24 @@ impl MaterialRegistry {
             DynamicMaterialConfig::pbr(&descriptor, vertex_binding)
         };
 
-        // Get pipeline from cache
-        let pipeline = cache.get_or_create(&config).map_err(|e| {
+        let pipeline_handle = cache.get_or_create(&config).map_err(|e| {
             MaterialError::InvalidDescriptor(format!("Failed to create pipeline: {}", e))
         })?;
 
-        // Generate reflection
         let reflection = generate_reflection(&descriptor)?;
 
-        // Create template from cached pipeline
-        let template =
-            MaterialTemplate::from_cached_pipeline(name.clone(), descriptor, reflection, pipeline);
+        let is_bindless = config.uses_bindless();
+        let template = MaterialTemplate::from_cached_pipeline_with_layouts(
+            name.clone(),
+            descriptor,
+            reflection,
+            pipeline_handle,
+            vk::DescriptorSetLayout::null(),
+            None,
+            None,
+            is_bindless,
+        );
 
-        // Register with path for hot reload
         self.register_template_with_path(template, path);
 
         Ok(self.get_template(&name).unwrap().clone())
@@ -245,37 +223,29 @@ impl MaterialRegistry {
         cache: &mut MaterialPipelineCache,
         bindless_layout: vk::DescriptorSetLayout,
     ) -> Result<Rc<MaterialTemplate>, MaterialError> {
-        // Load the descriptor from the TOML file
         let descriptor = load_material_from_file(path)?;
-
-        // Get template name from descriptor
         let name = descriptor.name.clone();
 
-        // Skip if template already exists
         if self.has_template(&name) {
             debug!("Template '{}' already exists, skipping", name);
             return Ok(self.get_template(&name).unwrap().clone());
         }
 
-        // Detect if skinned
         let is_skinned = detect_material_type(&descriptor).0;
 
-        // Get appropriate vertex binding
         let vertex_binding = if is_skinned {
             crate::vulkan::vertexbinding::get_skinned_vertex_binding()
         } else {
             get_pbr_vertex_binding()
         };
 
-        // Create bindless config
         let config = if is_skinned {
             DynamicMaterialConfig::bindless_skinned(&descriptor, vertex_binding)
         } else {
             DynamicMaterialConfig::bindless(&descriptor, vertex_binding)
         };
 
-        // Get pipeline from cache
-        let pipeline = cache
+        let pipeline_handle = cache
             .get_or_create_bindless(&config, bindless_layout)
             .map_err(|e| {
                 MaterialError::InvalidDescriptor(format!(
@@ -284,14 +254,19 @@ impl MaterialRegistry {
                 ))
             })?;
 
-        // Generate reflection
         let reflection = generate_reflection(&descriptor)?;
 
-        // Create template from cached pipeline
-        let template =
-            MaterialTemplate::from_cached_pipeline(name.clone(), descriptor, reflection, pipeline);
+        let template = MaterialTemplate::from_cached_pipeline_with_layouts(
+            name.clone(),
+            descriptor,
+            reflection,
+            pipeline_handle,
+            vk::DescriptorSetLayout::null(),
+            None,
+            None,
+            true,
+        );
 
-        // Register with path for hot reload
         self.register_template_with_path(template, path);
 
         Ok(self.get_template(&name).unwrap().clone())
@@ -324,14 +299,11 @@ impl MaterialRegistry {
     }
 
     /// Check for file changes and reload modified materials
-    ///
-    /// Returns a list of template names that were reloaded
     pub fn check_reload(
         &mut self,
         context: &Rc<VulkanContext>,
         cache: &mut MaterialPipelineCache,
     ) -> Result<Vec<String>, MaterialError> {
-        // Collect all changed files first (to avoid borrow conflicts)
         let changed_paths: Vec<PathBuf> = {
             let watcher = match &self.file_watcher {
                 Some(w) => w,
@@ -342,17 +314,13 @@ impl MaterialRegistry {
 
         let mut reloaded = Vec::new();
 
-        // Process each changed path
         for path in changed_paths {
-            // Find template by path
             if let Some(name) = self.find_template_by_path(&path) {
                 debug!("Reloading material: {}", name);
 
-                // Remove old template
                 self.templates.remove(&name);
                 self.template_paths.remove(&name);
 
-                // Reload
                 match self.load_material(&path, context, cache) {
                     Ok(_) => {
                         reloaded.push(name);
@@ -368,8 +336,6 @@ impl MaterialRegistry {
     }
 
     /// Convenience method for hot reload - returns count of reloaded materials
-    ///
-    /// This is a simplified version of check_reload that only returns the count.
     pub fn check_hot_reload(
         &mut self,
         context: &Rc<VulkanContext>,
@@ -388,7 +354,6 @@ impl MaterialRegistry {
 
     /// Destroy all templates and clean up resources
     pub fn destroy(&mut self) {
-        // Clear all templates - Drop handles pipeline cleanup via Rc
         self.templates.clear();
         self.template_paths.clear();
         self.file_watcher = None;

@@ -21,7 +21,8 @@ pub use render_graph::resource::{
 pub use render_graph::*;
 pub use renderer::{
     AssetRegistry, DrawCall, DrawList, FrameData, FrameUniforms, InstanceData, MaterialHandle,
-    MeshHandle, ParticleDispatch, ParticleRender, SkeletonHandle, VulkanRenderer, FRAMES_IN_FLIGHT,
+    MeshHandle, ParticleDispatch, ParticleRender, PipelineHandle, SkeletonHandle, VulkanRenderer,
+    FRAMES_IN_FLIGHT,
 };
 pub use sync::{
     VkBuffer, VkCommandBuffer, VkDescriptorPool, VkDescriptorSet, VkDescriptorSetLayout, VkFence,

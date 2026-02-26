@@ -8,9 +8,10 @@ use super::{
     MaterialDescriptor, MaterialParameters, MaterialPipeline, MaterialValue, PbrTextureSet,
     ShaderReflection,
 };
+use crate::renderer::handles::PipelineHandle;
 use crate::{Texture, VertexBinding};
 use ash::vk;
-use std::{cell::RefCell, collections::HashMap, rc::Rc};
+use std::{collections::HashMap, rc::Rc};
 
 /// Errors that can occur with material instances
 #[derive(Debug)]
@@ -42,89 +43,102 @@ impl std::fmt::Display for InstanceError {
 
 impl std::error::Error for InstanceError {}
 
-/// A material template that contains the pipeline and shared data
+/// A material template that references a pipeline via handle.
 ///
 /// Multiple material instances can reference this template, making it
 /// memory-efficient to have many materials with the same shader but
 /// different parameters.
 ///
-/// The pipeline is wrapped in Rc<RefCell<>> so that hot reload updates
-/// are shared across all materials using this template.
-///
-/// The descriptor set layout is stored separately from the pipeline so
-/// it can be preserved across hot reloads, ensuring that material instances'
-/// descriptor sets remain valid.
+/// The pipeline is referenced by handle from the MaterialPipelineCache,
+/// which owns all pipelines centrally.
 pub struct MaterialTemplate {
     name: String,
     descriptor: MaterialDescriptor,
-    pipeline: Rc<RefCell<MaterialPipeline>>,
-    /// The descriptor set layout for set 0 (uniforms).
-    /// This will be preserved across hot reloads.
+    pipeline: PipelineHandle,
     desc_layout: vk::DescriptorSetLayout,
-    /// The descriptor set layout for set 1 (textures) in storage buffer mode.
-    /// None for legacy mode (textures are in set 0).
     texture_set_layout: Option<vk::DescriptorSetLayout>,
+    skeleton_set_layout: Option<vk::DescriptorSetLayout>,
+    is_bindless: bool,
     reflection: ShaderReflection,
     default_parameters: MaterialParameters,
 }
 
 impl MaterialTemplate {
-    /// Create a new material template from a descriptor
+    /// Create a new material template from a descriptor and pipeline handle.
     pub fn new(
         name: String,
         descriptor: MaterialDescriptor,
         reflection: ShaderReflection,
         pipeline: MaterialPipeline,
     ) -> Self {
-        // Extract the descriptor set layout from the pipeline
-        // This will be preserved across hot reloads
         let desc_layout = pipeline
             .desc_layout
             .expect("Pipeline created without descriptor set layout");
-
-        // Extract texture set layout for storage buffer mode
         let texture_set_layout = pipeline.texture_set_layout;
+        let skeleton_set_layout = pipeline.skeleton_set_layout;
+        let is_bindless = pipeline.is_bindless;
 
         let default_parameters = MaterialParameters::new(descriptor.clone(), reflection.clone());
 
         Self {
             name,
             descriptor,
-            pipeline: Rc::new(RefCell::new(pipeline)),
+            pipeline: PipelineHandle::NONE,
             desc_layout,
             texture_set_layout,
+            skeleton_set_layout,
+            is_bindless,
             reflection,
             default_parameters,
         }
     }
 
-    /// Create a material template from a cached pipeline.
+    /// Create a material template from a cached pipeline handle.
     ///
     /// This is used with MaterialPipelineCache where the pipeline
-    /// is already wrapped in Rc<RefCell<>>.
+    /// is stored centrally and referenced by handle.
     pub fn from_cached_pipeline(
         name: String,
         descriptor: MaterialDescriptor,
         reflection: ShaderReflection,
-        cached_pipeline: Rc<RefCell<MaterialPipeline>>,
+        pipeline_handle: PipelineHandle,
     ) -> Self {
-        // Extract layouts from the cached pipeline
-        let (desc_layout, texture_set_layout) = {
-            let pipeline = cached_pipeline.borrow();
-            let desc_layout = pipeline
-                .desc_layout
-                .expect("Pipeline created without descriptor set layout");
-            (desc_layout, pipeline.texture_set_layout)
-        };
-
         let default_parameters = MaterialParameters::new(descriptor.clone(), reflection.clone());
 
         Self {
             name,
             descriptor,
-            pipeline: cached_pipeline,
+            pipeline: pipeline_handle,
+            desc_layout: vk::DescriptorSetLayout::null(),
+            texture_set_layout: None,
+            skeleton_set_layout: None,
+            is_bindless: false,
+            reflection,
+            default_parameters,
+        }
+    }
+
+    /// Create a material template from a cached pipeline with layout info.
+    pub fn from_cached_pipeline_with_layouts(
+        name: String,
+        descriptor: MaterialDescriptor,
+        reflection: ShaderReflection,
+        pipeline_handle: PipelineHandle,
+        desc_layout: vk::DescriptorSetLayout,
+        texture_set_layout: Option<vk::DescriptorSetLayout>,
+        skeleton_set_layout: Option<vk::DescriptorSetLayout>,
+        is_bindless: bool,
+    ) -> Self {
+        let default_parameters = MaterialParameters::new(descriptor.clone(), reflection.clone());
+
+        Self {
+            name,
+            descriptor,
+            pipeline: pipeline_handle,
             desc_layout,
             texture_set_layout,
+            skeleton_set_layout,
+            is_bindless,
             reflection,
             default_parameters,
         }
@@ -140,9 +154,9 @@ impl MaterialTemplate {
         &self.descriptor
     }
 
-    /// Get the pipeline
-    pub fn pipeline(&self) -> Rc<RefCell<MaterialPipeline>> {
-        Rc::clone(&self.pipeline)
+    /// Get the pipeline handle
+    pub fn pipeline(&self) -> PipelineHandle {
+        self.pipeline
     }
 
     /// Get the reflection data
@@ -156,18 +170,23 @@ impl MaterialTemplate {
     }
 
     /// Get the descriptor set layout for this template.
-    ///
-    /// This is preserved across hot reloads to ensure that material
-    /// instances' descriptor sets remain valid.
     pub fn desc_layout(&self) -> vk::DescriptorSetLayout {
         self.desc_layout
     }
 
     /// Get the texture set layout for storage buffer mode.
-    ///
-    /// Returns None for legacy mode where textures are in set 0.
     pub fn texture_set_layout(&self) -> Option<vk::DescriptorSetLayout> {
         self.texture_set_layout
+    }
+
+    /// Get the skeleton set layout.
+    pub fn skeleton_set_layout(&self) -> Option<vk::DescriptorSetLayout> {
+        self.skeleton_set_layout
+    }
+
+    /// Check if this template uses bindless textures.
+    pub fn is_bindless(&self) -> bool {
+        self.is_bindless
     }
 
     /// Check if this template uses storage buffer mode (modern rendering)
@@ -175,89 +194,32 @@ impl MaterialTemplate {
         self.texture_set_layout.is_some()
     }
 
-    /// Get the pipeline as a mutable RefCell borrow (for hot reload)
-    ///
-    /// This allows updating the pipeline in-place through the RefCell,
-    /// which is shared with all materials using this template.
-    pub fn pipeline_mut(&self) -> std::cell::RefMut<'_, MaterialPipeline> {
-        self.pipeline.borrow_mut()
-    }
-
-    /// Update the pipeline (e.g., after hot reload)
-    ///
-    /// This affects all instances that reference this template
-    pub fn update_pipeline(&mut self, pipeline: MaterialPipeline) {
-        // Destroy the old pipeline
-        if let Ok(mut old_pipeline) = self.pipeline.try_borrow_mut() {
-            old_pipeline.destroy();
-        }
-
-        // Replace the pipeline inside the existing RefCell
-        // This ensures all materials holding this Rc see the updated pipeline
-        *self.pipeline.borrow_mut() = pipeline;
-    }
-
-    /// Get the descriptor layout and context for creating new uniform buffers
-    ///
-    /// This allows materials to create their own uniform buffers while
-    /// sharing the pipeline from this template.
-    ///
-    /// Uses the stored descriptor set layout which is preserved across hot reloads.
-    pub fn get_uniform_layout_info(
-        &self,
-    ) -> (
-        vk::DescriptorSetLayout,
-        Rc<crate::VulkanContext>,
-        super::UniformLayout,
-    ) {
-        let pipeline = self.pipeline.borrow();
-        (
-            self.desc_layout,
-            pipeline.context.clone(),
-            pipeline.uniform.layout().clone(),
-        )
-    }
-
-    /// Create a new uniform buffer for a material instance
-    ///
-    /// Each material should call this to get its own uniform buffer,
-    /// avoiding conflicts when multiple materials share the same template.
-    ///
-    /// For storage mode (when texture_set_layout is Some), creates a minimal
-    /// uniform handle without a buffer - texture info only.
-    ///
-    /// Uses separate texture and sampler bindings for WGSL shaders.
-    pub fn create_uniform(&self) -> super::UniformHandle {
-        let (desc_layout, context, _layout) = self.get_uniform_layout_info();
-
-        // Always use storage mode for bindless - uniform data comes from StorageUniformManager
-        // Textures are accessed via ObjectUniforms.texture_indices
-        super::UniformHandle::new_storage(&context, &desc_layout)
+    /// Create a new uniform buffer for a material instance.
+    pub fn create_uniform(&self, context: &Rc<crate::VulkanContext>) -> super::UniformHandle {
+        super::UniformHandle::new_storage(context, &self.desc_layout)
     }
 
     /// Destroy the template's resources.
-    ///
-    /// This destroys the pipeline and the descriptor set layouts.
-    /// This should be called when the template is no longer needed.
     pub fn destroy(&self, context: &Rc<crate::VulkanContext>) {
-        // Destroy the pipeline
-        if let Ok(mut pipeline) = self.pipeline.try_borrow_mut() {
-            pipeline.destroy();
-        }
-
-        // Destroy the descriptor set layout
         unsafe {
             context
                 .device
                 .destroy_descriptor_set_layout(self.desc_layout, None);
         }
 
-        // Destroy the texture set layout if present (storage mode)
         if let Some(texture_layout) = self.texture_set_layout {
             unsafe {
                 context
                     .device
                     .destroy_descriptor_set_layout(texture_layout, None);
+            }
+        }
+
+        if let Some(skeleton_layout) = self.skeleton_set_layout {
+            unsafe {
+                context
+                    .device
+                    .destroy_descriptor_set_layout(skeleton_layout, None);
             }
         }
     }
@@ -277,7 +239,7 @@ impl MaterialTemplate {
 /// Materials can be created from:
 /// - Template name: `Material::new("gltf_pbr_bindless")` (resolved during registration)
 /// - Existing template: `Material::from_template(template)`
-/// - Cached pipeline: `Material::from_cached_pipeline(pipeline, vertex_binding)`
+/// - Pipeline handle: `Material::from_pipeline_handle(pipeline, vertex_binding)`
 ///
 /// # Builder Pattern
 ///
@@ -294,8 +256,10 @@ pub struct Material {
     template: Option<Rc<MaterialTemplate>>,
     /// Template name for lazy resolution
     template_name: Option<String>,
-    /// Cached pipeline for materials created from existing pipelines
-    cached_pipeline: Option<Rc<RefCell<MaterialPipeline>>>,
+    /// Pipeline handle for materials created with a specific pipeline
+    pipeline: PipelineHandle,
+    /// Whether this material uses bindless textures
+    is_bindless: bool,
     /// Instance-specific parameter values
     parameters: HashMap<String, MaterialValue>,
     /// Instance-specific textures by binding name
@@ -323,7 +287,8 @@ impl Material {
         Self {
             template: None,
             template_name: Some(template_name.into()),
-            cached_pipeline: None,
+            pipeline: PipelineHandle::NONE,
+            is_bindless: false,
             parameters: HashMap::new(),
             textures: HashMap::new(),
             vertex_binding: None,
@@ -337,10 +302,12 @@ impl Material {
 
     /// Create a material from an existing template.
     pub fn from_template(template: Rc<MaterialTemplate>) -> Self {
+        let is_bindless = template.is_bindless();
         Self {
             template: Some(template),
             template_name: None,
-            cached_pipeline: None,
+            pipeline: PipelineHandle::NONE,
+            is_bindless,
             parameters: HashMap::new(),
             textures: HashMap::new(),
             vertex_binding: None,
@@ -353,16 +320,11 @@ impl Material {
     }
 
     /// Create a material from a template reference.
-    ///
-    /// This is a convenience method that clones the Rc.
     pub fn from_template_ref(template: &Rc<MaterialTemplate>) -> Self {
         Self::from_template(Rc::clone(template))
     }
 
     /// Create a material from a template with optional texture.
-    ///
-    /// This is a convenience factory method for the common case of
-    /// creating a material with just an albedo texture.
     pub fn from_template_with_optional_texture(
         template: &Rc<MaterialTemplate>,
         texture: Option<Rc<Texture>>,
@@ -380,10 +342,12 @@ impl Material {
         template: Rc<MaterialTemplate>,
         vertex_binding: VertexBinding,
     ) -> Self {
+        let is_bindless = template.is_bindless();
         Self {
             template: Some(template),
             template_name: None,
-            cached_pipeline: None,
+            pipeline: PipelineHandle::NONE,
+            is_bindless,
             parameters: HashMap::new(),
             textures: HashMap::new(),
             vertex_binding: Some(vertex_binding),
@@ -395,15 +359,17 @@ impl Material {
         }
     }
 
-    /// Create a material from a cached pipeline.
-    pub fn from_cached_pipeline(
-        pipeline: Rc<RefCell<MaterialPipeline>>,
+    /// Create a material from a pipeline handle.
+    pub fn from_pipeline_handle(
+        pipeline: PipelineHandle,
         vertex_binding: VertexBinding,
+        is_bindless: bool,
     ) -> Self {
         Self {
             template: None,
             template_name: None,
-            cached_pipeline: Some(pipeline),
+            pipeline,
+            is_bindless,
             parameters: HashMap::new(),
             textures: HashMap::new(),
             vertex_binding: Some(vertex_binding),
@@ -430,9 +396,6 @@ impl Material {
     }
 
     /// Set PBR textures with texture references.
-    ///
-    /// The `pbr_textures` contains the Vulkan handles for rendering,
-    /// while `texture_refs` keeps the Texture objects alive.
     pub fn with_pbr_textures(
         mut self,
         pbr_textures: PbrTextureSet,
@@ -444,8 +407,6 @@ impl Material {
     }
 
     /// Set bindless texture indices.
-    ///
-    /// Indices: [albedo, normal, metallic_roughness, ao]
     pub fn with_bindless_indices(mut self, indices: [u32; 4], emission: u32) -> Self {
         self.texture_indices = indices;
         self.emission_index = emission;
@@ -481,14 +442,18 @@ impl Material {
         self.template.as_deref()
     }
 
-    /// Get the pipeline (if resolved).
-    pub fn pipeline(&self) -> Option<Rc<RefCell<MaterialPipeline>>> {
-        // First check for a cached pipeline (from from_cached_pipeline_*)
-        if let Some(ref cached) = self.cached_pipeline {
-            return Some(Rc::clone(cached));
+    /// Get the pipeline handle.
+    pub fn pipeline(&self) -> PipelineHandle {
+        if let Some(template) = &self.template {
+            template.pipeline()
+        } else {
+            self.pipeline
         }
-        // Then check template
-        self.template.as_ref().map(|t| t.pipeline())
+    }
+
+    /// Check if this material uses bindless textures.
+    pub fn is_bindless(&self) -> bool {
+        self.is_bindless
     }
 
     /// Get the vertex binding.
@@ -524,8 +489,6 @@ impl Material {
     // === Resolution ===
 
     /// Resolve the template from a registry.
-    ///
-    /// This is called by the renderer during registration.
     pub fn resolve(&mut self, registry: &super::registry::MaterialRegistry) -> bool {
         if self.template.is_some() {
             return true;
@@ -533,6 +496,7 @@ impl Material {
 
         if let Some(name) = &self.template_name {
             if let Some(template) = registry.get_template(name) {
+                self.is_bindless = template.is_bindless();
                 self.template = Some(template.clone());
                 return true;
             }
@@ -542,18 +506,16 @@ impl Material {
     }
 
     /// Set the resolved template directly.
-    ///
-    /// Used by the renderer after resolving from name.
     pub fn set_template(&mut self, template: Rc<MaterialTemplate>) {
+        self.is_bindless = template.is_bindless();
         self.template = Some(template);
     }
 
-    /// Set the cached pipeline directly (for non-template materials).
-    pub fn set_cached_pipeline(&mut self, _pipeline: Rc<RefCell<MaterialPipeline>>) {
-        // For materials without templates, we store the pipeline in a minimal wrapper
-        // This is used for materials created from cached pipelines
+    /// Set the pipeline handle directly.
+    pub fn set_pipeline(&mut self, pipeline: PipelineHandle, is_bindless: bool) {
+        self.pipeline = pipeline;
+        self.is_bindless = is_bindless;
         self.template = None;
-        // Note: In a full implementation, we'd need to handle this case
     }
 
     // === Mutators ===
@@ -591,7 +553,8 @@ impl Material {
         Self {
             template: self.template.clone(),
             template_name: self.template_name.clone(),
-            cached_pipeline: self.cached_pipeline.clone(),
+            pipeline: self.pipeline,
+            is_bindless: self.is_bindless,
             parameters: self.parameters.clone(),
             textures: self.textures.clone(),
             vertex_binding: self.vertex_binding.clone(),
@@ -610,10 +573,8 @@ impl Material {
             .as_ref()
             .ok_or_else(|| InstanceError::TemplateNotFound("No template set".to_string()))?;
 
-        // Merge parameters with defaults
         let merged_params = self.get_all_parameters();
 
-        // Get the uniform buffer layout
         let layout = template
             .reflection
             .get_uniforms_struct()
@@ -621,7 +582,6 @@ impl Material {
 
         let mut buffer = vec![0u8; layout.size];
 
-        // Fill in the parameter values at their correct offsets
         for member in &layout.members {
             if let Some(value) = merged_params.get(&member.name) {
                 let value_bytes = value.to_bytes();
@@ -640,14 +600,12 @@ impl Material {
     pub fn get_all_parameters(&self) -> HashMap<String, MaterialValue> {
         let mut merged = HashMap::new();
 
-        // Start with template defaults
         if let Some(template) = &self.template {
             for (name, value) in template.descriptor.parameters.iter() {
                 merged.insert(name.clone(), value.clone());
             }
         }
 
-        // Override with instance parameters
         for (name, value) in self.parameters.iter() {
             merged.insert(name.clone(), value.clone());
         }
@@ -661,8 +619,6 @@ impl Material {
 //=============================================================================
 
 /// Legacy type alias for backward compatibility.
-///
-/// New code should use `Material` directly.
 pub type MaterialInstance = Material;
 
 impl MaterialInstance {
@@ -690,11 +646,6 @@ impl MaterialInstance {
 
 impl Material {
     /// Create a material from a template with a texture and color.
-    ///
-    /// This is a compatibility method for the old katla_app::rendering::Material API.
-    ///
-    /// Takes a reference to Rc<MaterialTemplate> for compatibility with how
-    /// templates are returned from MaterialRegistry::get_template().
     pub fn from_template_compatible(
         template: &Rc<MaterialTemplate>,
         texture: Option<Rc<Texture>>,
@@ -791,110 +742,24 @@ impl Material {
             .with_bindless_indices(texture_indices, emission_index)
     }
 
-    /// Create a material from a pipeline directly (non-template).
-    pub fn from_pipeline(
-        material_pipeline: MaterialPipeline,
-        texture: Option<Rc<Texture>>,
-        vertex_binding: VertexBinding,
-        _color: Option<[f32; 4]>,
-    ) -> Self {
-        let mut material = Self {
-            template: None,
-            template_name: None,
-            cached_pipeline: Some(Rc::new(RefCell::new(material_pipeline))),
-            parameters: HashMap::new(),
-            textures: HashMap::new(),
-            vertex_binding: Some(vertex_binding),
-            pbr_textures: None,
-            pbr_texture_refs: None,
-            texture_indices: [0; 4],
-            emission_index: 0,
-            base_color: None,
-        };
-        if let Some(tex) = texture {
-            material = material.with_texture("albedo", tex);
-        }
-        material
-    }
-
-    /// Create a bindless material from a pipeline.
-    pub fn from_pipeline_with_textures(
-        material_pipeline: MaterialPipeline,
-        texture: Option<Rc<Texture>>,
-        vertex_binding: VertexBinding,
-        _color: Option<[f32; 4]>,
-        texture_indices: [u32; 4],
-        emission_index: u32,
-    ) -> Self {
-        let mut material = Self {
-            template: None,
-            template_name: None,
-            cached_pipeline: Some(Rc::new(RefCell::new(material_pipeline))),
-            parameters: HashMap::new(),
-            textures: HashMap::new(),
-            vertex_binding: Some(vertex_binding),
-            pbr_textures: None,
-            pbr_texture_refs: None,
-            texture_indices,
-            emission_index,
-            base_color: None,
-        };
-        if let Some(tex) = texture {
-            material = material.with_texture("albedo", tex);
-        }
-        material
-    }
-
-    /// Create a bindless material from a cached pipeline.
-    pub fn from_cached_pipeline_with_textures(
-        material_pipeline: Rc<RefCell<MaterialPipeline>>,
-        texture: Option<Rc<Texture>>,
-        vertex_binding: VertexBinding,
-        _color: Option<[f32; 4]>,
-        texture_indices: [u32; 4],
-        emission_index: u32,
-    ) -> Self {
-        let mut material = Self {
-            template: None,
-            template_name: None,
-            cached_pipeline: Some(material_pipeline),
-            parameters: HashMap::new(),
-            textures: HashMap::new(),
-            vertex_binding: Some(vertex_binding),
-            pbr_textures: None,
-            pbr_texture_refs: None,
-            texture_indices,
-            emission_index,
-            base_color: None,
-        };
-        if let Some(tex) = texture {
-            material = material.with_texture("albedo", tex);
-        }
-        material
-    }
-
-    /// Get the pipeline for rendering (if resolved).
-    ///
-    /// This returns the pipeline Rc for rendering operations.
-    pub fn material_pipeline(&self) -> Option<Rc<RefCell<MaterialPipeline>>> {
+    /// Get the pipeline handle for registration.
+    pub fn material_pipeline(&self) -> PipelineHandle {
         self.pipeline()
     }
 
     /// Get registration data for legacy compatibility.
-    ///
-    /// This is used by code that hasn't been updated to use the new
-    /// `renderer.register_material()` API.
     #[allow(clippy::type_complexity)]
     pub fn get_registration_data(
         &self,
     ) -> (
-        Option<Rc<RefCell<MaterialPipeline>>>,
+        PipelineHandle,
         Option<Rc<Texture>>,
         Option<VertexBinding>,
         Option<PbrTextureSet>,
         Option<Vec<Rc<Texture>>>,
         [u32; 4],
         u32,
+        bool,
     ) {
         (
             self.pipeline(),
@@ -904,9 +769,7 @@ impl Material {
             self.pbr_texture_refs.clone(),
             self.texture_indices,
             self.emission_index,
+            self.is_bindless,
         )
     }
 }
-
-// Note: Template tests require Vulkan context and are tested through
-// the example programs and integration tests.

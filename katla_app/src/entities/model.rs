@@ -77,35 +77,33 @@ impl Model {
             // Register material with optional PBR textures
             let (
                 pipeline,
-                texture,
+                _texture,
                 vertex_binding,
                 pbr_textures,
-                pbr_texture_refs,
+                _pbr_texture_refs,
                 texture_indices,
                 emission_index,
+                is_bindless,
             ) = material.get_registration_data();
 
             // Vertex binding and pipeline are required for material registration
-            let pipeline = pipeline.expect("Material must have pipeline");
             let vertex_binding = vertex_binding.expect("Material must have vertex binding");
 
             // Use PBR registration if PBR textures are present
             let mat_h = if let Some(pbr) = pbr_textures {
-                let tex_refs = pbr_texture_refs.unwrap_or_default();
                 r.register_material_pbr(
                     pipeline,
-                    texture,
                     vertex_binding,
+                    is_bindless,
                     pbr,
-                    tex_refs,
                     texture_indices,
                     emission_index,
                 )
             } else {
                 r.register_material_full(
                     pipeline,
-                    texture,
                     vertex_binding,
+                    is_bindless,
                     texture_indices,
                     emission_index,
                 )

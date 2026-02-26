@@ -288,7 +288,7 @@ impl CompiledRenderGraph {
     ) -> Vec<RenderPassGroup> {
         let mut groups = Vec::new();
 
-        for (_pass_index, pass) in graph.passes.iter().enumerate() {
+        for pass in graph.passes.iter() {
             let mut group = RenderPassGroup {
                 attachments: Vec::new(),
                 subpasses: vec![SubpassDescriptor {

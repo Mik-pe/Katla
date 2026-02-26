@@ -3,10 +3,7 @@
 //! This module defines the render graph passes that the application needs.
 //! The application just says "draw stuff" and katla_vulkan handles the complexity.
 
-use std::cell::RefCell;
-use std::rc::Rc;
-
-use katla_vulkan::{MaterialPipeline, VulkanRenderer};
+use katla_vulkan::{PipelineHandle, VulkanRenderer};
 
 /// Build the render graph with all application passes.
 ///
@@ -16,8 +13,8 @@ use katla_vulkan::{MaterialPipeline, VulkanRenderer};
 /// UI rendering is handled via callback set at runtime via `renderer.set_ui_callback()`.
 pub fn build_render_graph(
     renderer: &mut VulkanRenderer,
-    sky_pipeline: Option<Rc<RefCell<MaterialPipeline>>>,
-    grid_pipeline: Option<Rc<RefCell<MaterialPipeline>>>,
+    sky_pipeline: Option<PipelineHandle>,
+    grid_pipeline: Option<PipelineHandle>,
 ) {
     // Get builder with resources pre-registered
     let (mut builder, resources) = renderer.create_render_graph_with_resources();
@@ -26,13 +23,12 @@ pub fn build_render_graph(
     // Draw a fullscreen sky using the sky material
     if let Some(sky_pipeline) = sky_pipeline {
         builder.add_pass("sky_pass", move |pass| {
-            let sky_pipeline = sky_pipeline.clone();
             pass.write_color(&resources.viewport_color)
                 .write_depth(&resources.viewport_depth)
                 .clear_color_target(&resources.viewport_color, [0.4, 0.6, 0.9, 1.0])
                 .clear_depth_target(&resources.viewport_depth, 0.0)
                 .execute("sky_pass", move |ctx| {
-                    ctx.draw_fullscreen_with_material(&sky_pipeline);
+                    ctx.draw_fullscreen_with_pipeline(sky_pipeline);
                 });
         });
     }
@@ -41,11 +37,10 @@ pub fn build_render_graph(
     // Draw a fullscreen grid using the grid material
     if let Some(grid_pipeline) = grid_pipeline {
         builder.add_pass("grid_pass", move |pass| {
-            let grid_pipeline = grid_pipeline.clone();
             pass.write_color(&resources.viewport_color)
                 .write_depth(&resources.viewport_depth)
                 .execute("grid_pass", move |ctx| {
-                    ctx.draw_fullscreen_with_material(&grid_pipeline);
+                    ctx.draw_fullscreen_with_pipeline(grid_pipeline);
                 });
         });
     }

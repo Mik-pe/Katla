@@ -132,12 +132,10 @@ fn create_checkerboard_material_with_color(
         .get_or_create_bindless(&config, bindless_layout)
         .expect("Failed to create bindless pipeline");
 
-    Material::from_cached_pipeline_with_textures(
+    Material::from_pipeline_handle(
         material_pipeline,
-        Some(texture),
         vertex_binding,
-        color.map(|c| c.to_array()),
-        texture_indices,
-        emission_idx,
+        true, // is_bindless
     )
+    .with_bindless_indices(texture_indices, emission_idx)
 }

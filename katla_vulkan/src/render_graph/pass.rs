@@ -563,6 +563,16 @@ impl PassExecutionContext {
         self.frame_index = frame_index;
     }
 
+    /// Get a material pipeline by handle from the material cache.
+    ///
+    /// Returns None if the renderer context is not available or the handle is invalid.
+    pub fn get_pipeline(
+        &self,
+        handle: crate::renderer::PipelineHandle,
+    ) -> Option<&crate::vulkan::material::MaterialPipeline> {
+        self.renderer_context.as_ref()?.get_pipeline(handle)
+    }
+
     /// Get a compiled image resource by ID (works for both Image and ExternalImage)
     /// Returns wrapper types for the image and image view.
     pub fn get_image(&self, resource_id: ResourceId) -> Option<(VkImage, VkImageView)> {
@@ -668,6 +678,51 @@ impl PassExecutionContext {
     /// Convenience method for sky, grid, and post-processing passes.
     pub fn draw_fullscreen(&self) {
         self.draw_array(3, 1, 0, 0);
+    }
+
+    /// Draw a fullscreen triangle with a specific pipeline handle.
+    ///
+    /// Convenience method for sky, grid, and post-processing passes.
+    /// Resolves the pipeline handle, binds the pipeline and descriptor sets, then draws.
+    pub fn draw_fullscreen_with_pipeline(&self, pipeline_handle: crate::renderer::PipelineHandle) {
+        let Some(ctx) = &self.renderer_context else {
+            log::warn!("draw_fullscreen_with_pipeline: no renderer context");
+            return;
+        };
+
+        let Some(pipeline) = ctx.get_pipeline(pipeline_handle) else {
+            log::warn!(
+                "draw_fullscreen_with_pipeline: pipeline handle {:?} not found",
+                pipeline_handle
+            );
+            return;
+        };
+
+        self.command_buffer.bind_graphics_pipeline(pipeline);
+
+        let storage_descriptor = ctx.storage_descriptor();
+        let bindless_descriptor = ctx.bindless_manager().map(|bm| bm.vk_descriptor_set());
+
+        if pipeline.is_bindless {
+            match (storage_descriptor, bindless_descriptor) {
+                (Some(storage), Some(bindless)) => {
+                    self.command_buffer.bind_graphics_descriptors(
+                        pipeline.vk_layout(),
+                        &[storage.into(), bindless],
+                    );
+                }
+                (Some(storage), None) => {
+                    self.command_buffer
+                        .bind_graphics_descriptors(pipeline.vk_layout(), &[storage.into()]);
+                }
+                _ => {}
+            }
+        } else if let Some(storage) = storage_descriptor {
+            self.command_buffer
+                .bind_graphics_descriptors(pipeline.vk_layout(), &[storage.into()]);
+        }
+
+        self.draw_fullscreen();
     }
 
     /// Get the render extent for this pass.
@@ -864,9 +919,7 @@ impl PassExecutionContext {
         let storage_descriptor = ctx.storage_descriptor();
 
         // Get bindless manager via pointer accessor
-        let bindless_descriptor = ctx
-            .bindless_manager()
-            .and_then(|bm| bm.as_ref().map(|m| m.vk_descriptor_set()));
+        let bindless_descriptor = ctx.bindless_manager().map(|bm| bm.vk_descriptor_set());
 
         // Get skeleton descriptors via pointer accessor
         let Some(skeleton_descriptors) = ctx.skeleton_descriptors() else {
@@ -882,24 +935,18 @@ impl PassExecutionContext {
             let first_instance = next_object_index;
             next_object_index += instance_count;
 
-            // Update uniforms first - get storage_manager fresh for each iteration
+            // Update uniforms first
             if let Some(material) = registry.get_material(draw.material) {
-                if let Some(storage_manager_opt) = ctx.storage_manager() {
-                    if let Some(manager) = storage_manager_opt.as_mut() {
-                        let model: &[f32; 16] = &draw.model_matrix;
-                        let color = draw.color.unwrap_or([1.0, 1.0, 1.0, 1.0]);
-                        manager.update_object_bindless(
-                            first_instance as usize,
-                            &model,
-                            &color,
-                            draw.metallic,
-                            draw.roughness,
-                            draw.ao,
-                            material.emission_index as f32,
-                            material.texture_indices,
-                        );
-                    }
-                }
+                ctx.update_object_uniforms(
+                    first_instance as usize,
+                    &draw.model_matrix,
+                    &draw.color.unwrap_or([1.0, 1.0, 1.0, 1.0]),
+                    draw.metallic,
+                    draw.roughness,
+                    draw.ao,
+                    material.emission_index as f32,
+                    material.texture_indices,
+                );
             }
 
             // Get mesh and material for drawing
@@ -917,8 +964,12 @@ impl PassExecutionContext {
                     has_skeleton
                 );
 
-                let pipeline_ref = material.pipeline.borrow();
-                self.command_buffer.bind_graphics_pipeline(&pipeline_ref);
+                let Some(pipeline) = ctx.get_pipeline(material.pipeline) else {
+                    log::warn!("Pipeline handle {:?} not found in cache", material.pipeline);
+                    continue;
+                };
+
+                self.command_buffer.bind_graphics_pipeline(pipeline);
 
                 // Bind descriptor sets based on what the material needs
                 // Materials created with build_bindless() have 2 sets, others have 1
@@ -929,22 +980,20 @@ impl PassExecutionContext {
                         if let Some(bindless_set) = bindless_descriptor {
                             // Bind both sets at once (sets 0 and 1)
                             self.command_buffer.bind_graphics_descriptors(
-                                pipeline_ref.vk_layout(),
+                                pipeline.vk_layout(),
                                 &[desc_set.into(), bindless_set],
                             );
                         } else {
                             // Bindless material but no bindless set available - just bind set 0
                             self.command_buffer.bind_graphics_descriptors(
-                                pipeline_ref.vk_layout(),
+                                pipeline.vk_layout(),
                                 &[desc_set.into()],
                             );
                         }
                     } else {
                         // Non-bindless material - only bind set 0
-                        self.command_buffer.bind_graphics_descriptors(
-                            pipeline_ref.vk_layout(),
-                            &[desc_set.into()],
-                        );
+                        self.command_buffer
+                            .bind_graphics_descriptors(pipeline.vk_layout(), &[desc_set.into()]);
                     }
                 }
 
@@ -954,14 +1003,12 @@ impl PassExecutionContext {
                         skeleton_descriptors.get(skeleton_handle.0 as usize)
                     {
                         self.command_buffer.bind_graphics_descriptors_at(
-                            pipeline_ref.vk_layout(),
+                            pipeline.vk_layout(),
                             2,
                             &[skeleton_desc.vk_set()],
                         );
                     }
                 }
-
-                drop(pipeline_ref);
 
                 // Draw
                 if let Some(ref ib) = mesh.index_buffer {

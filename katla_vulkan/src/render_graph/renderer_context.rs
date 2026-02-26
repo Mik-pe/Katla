@@ -7,9 +7,12 @@ use std::rc::Rc;
 use ash::khr::push_descriptor::Device as PushDescriptorDevice;
 
 use crate::renderer::registry::AssetRegistry;
-use crate::renderer::DrawList;
-use crate::vulkan::material::{SkeletonDescriptorSet, StorageDescriptorSet, StorageUniformManager};
+use crate::renderer::{DrawList, PipelineHandle};
+use crate::vulkan::material::{
+    MaterialPipeline, SkeletonDescriptorSet, StorageDescriptorSet, StorageUniformManager,
+};
 use crate::vulkan::BindlessTextureManager;
+use crate::MaterialPipelineCache;
 
 /// Trait for render frame context - provides access to per-frame data
 /// without coupling katla_vulkan to application types.
@@ -36,28 +39,27 @@ impl RenderFrameContext for EmptyRenderFrameContext {
 
 /// Raw pointers to renderer state for render graph passes.
 ///
-/// This uses raw pointers because the underlying GPU resources cannot be cloned.
-/// The pointers are valid for the lifetime of the render graph execution.
+/// Uses raw pointers because GPU resources cannot be cloned. Mutable access
+/// is managed through the render graph's sequential execution model.
 ///
 /// # Safety
 ///
-/// The caller must ensure that the VulkanRenderer outlives any RendererContext
-/// created from it. This is guaranteed because:
-/// 1. RendererContext is created in compile_render_graph()
-/// 2. The render graph is stored in VulkanRenderer
-/// 3. VulkanRenderer cannot be dropped while the render graph exists
+/// Pointers must remain valid for the lifetime of the render graph execution.
+/// This is guaranteed because VulkanRenderer owns the data and outlives the graph.
 #[derive(Clone, Default)]
 pub struct RendererContextPointers {
-    /// Asset registry for mesh and material access
-    pub asset_registry: *mut AssetRegistry,
-    /// Storage uniform manager for frame/object data
-    pub storage_manager: *mut Option<StorageUniformManager>,
+    /// Asset registry for mesh and material access (read-only during rendering)
+    pub asset_registry: *const AssetRegistry,
+    /// Material pipeline cache for resolving handles (read-only)
+    pub material_cache: *const MaterialPipelineCache,
+    /// Storage uniform manager for frame/object data (mutable during rendering)
+    pub storage_manager: *mut StorageUniformManager,
     /// Storage descriptor set for binding (set 0)
     pub storage_descriptor_set: *const Option<StorageDescriptorSet>,
     /// Skeleton descriptors for GPU skeletal animation
     pub skeleton_descriptors: *const Vec<Option<SkeletonDescriptorSet>>,
-    /// Bindless texture manager for efficient texture binding
-    pub bindless_manager: *mut Option<BindlessTextureManager>,
+    /// Bindless texture manager (read-only during rendering)
+    pub bindless_manager: *const BindlessTextureManager,
     /// Device handle for Vulkan commands (cloned, not a pointer)
     pub vk_device: Option<ash::Device>,
     /// Push descriptor loader for dynamic descriptor updates
@@ -67,6 +69,7 @@ pub struct RendererContextPointers {
 /// Container for renderer state accessible from render graph passes.
 ///
 /// Uses raw pointers for GPU resources that cannot be cloned.
+/// Mutable access patterns are enforced by the render graph's sequential execution.
 #[derive(Clone, Default)]
 pub struct RendererContext {
     /// Raw pointers to non-cloneable GPU resources
@@ -100,7 +103,7 @@ impl RendererContext {
         !self.pointers.asset_registry.is_null()
     }
 
-    /// Get the asset registry.
+    /// Get the asset registry (read-only).
     pub fn asset_registry(&self) -> Option<&AssetRegistry> {
         if self.pointers.asset_registry.is_null() {
             None
@@ -109,26 +112,54 @@ impl RendererContext {
         }
     }
 
-    /// Get the asset registry mutably.
-    pub fn asset_registry_mut(&self) -> Option<&mut AssetRegistry> {
-        if self.pointers.asset_registry.is_null() {
+    /// Get the material pipeline cache (read-only).
+    pub fn material_cache(&self) -> Option<&MaterialPipelineCache> {
+        if self.pointers.material_cache.is_null() {
             None
         } else {
-            unsafe { Some(&mut *self.pointers.asset_registry) }
+            unsafe { Some(&*self.pointers.material_cache) }
         }
     }
 
-    /// Get the storage manager.
-    pub fn storage_manager(&self) -> Option<&mut Option<StorageUniformManager>> {
+    /// Get a material pipeline by handle.
+    pub fn get_pipeline(&self, handle: PipelineHandle) -> Option<&MaterialPipeline> {
+        self.material_cache()?.get_pipeline(handle)
+    }
+
+    /// Update storage uniforms for an object.
+    ///
+    /// This is the only method that mutates storage state, keeping mutation
+    /// controlled and explicit rather than exposing a mutable reference.
+    pub fn update_object_uniforms(
+        &self,
+        index: usize,
+        model: &[f32; 16],
+        color: &[f32; 4],
+        metallic: f32,
+        roughness: f32,
+        ao: f32,
+        emission_idx: f32,
+        texture_indices: [u32; 4],
+    ) {
         if self.pointers.storage_manager.is_null() {
-            None
-        } else {
-            unsafe { Some(&mut *self.pointers.storage_manager) }
+            return;
+        }
+        unsafe {
+            (*self.pointers.storage_manager).update_object_bindless(
+                index,
+                model,
+                color,
+                metallic,
+                roughness,
+                ao,
+                emission_idx,
+                texture_indices,
+            );
         }
     }
 
-    /// Get the bindless manager.
-    pub fn bindless_manager(&self) -> Option<&Option<BindlessTextureManager>> {
+    /// Get the bindless manager (read-only).
+    pub fn bindless_manager(&self) -> Option<&BindlessTextureManager> {
         if self.pointers.bindless_manager.is_null() {
             None
         } else {
@@ -136,7 +167,7 @@ impl RendererContext {
         }
     }
 
-    /// Get the skeleton descriptors.
+    /// Get the skeleton descriptors (read-only).
     pub fn skeleton_descriptors(&self) -> Option<&Vec<Option<SkeletonDescriptorSet>>> {
         if self.pointers.skeleton_descriptors.is_null() {
             None

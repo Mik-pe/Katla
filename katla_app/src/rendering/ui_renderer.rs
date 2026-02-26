@@ -9,9 +9,9 @@ use std::rc::Rc;
 use ash::vk;
 use katla_vulkan::{
     DescriptorSetBuilder, DescriptorSetLayoutBuilder, DescriptorType, Extent2D, FrameBuffer,
-    IndexBuffer, IndexType, MaterialPipeline, MaterialPipelineCache, Offset2D,
-    PassExecutionContext, Rect2D, ShaderStages, Texture, UniformBuffer, VertexBuffer, VkBuffer,
-    VkDescriptorSet, VkImageView, VkSampler, VulkanContext,
+    IndexBuffer, IndexType, MaterialPipelineCache, Offset2D, PassExecutionContext, PipelineHandle,
+    Rect2D, ShaderStages, Texture, UniformBuffer, VertexBuffer, VkBuffer, VkDescriptorSet,
+    VkImageView, VkSampler, VulkanContext,
 };
 
 use super::ui_material::UiMaterial;
@@ -259,7 +259,7 @@ impl Drop for UITextures {
 pub struct UIRenderer {
     buffers: FrameBuffer<UIBuffers>,
     textures: UITextures,
-    pipeline: Rc<RefCell<MaterialPipeline>>,
+    pipeline: PipelineHandle,
 }
 
 impl UIRenderer {
@@ -331,15 +331,19 @@ impl UIRenderer {
             return false;
         }
 
-        let pipeline = self.pipeline.borrow();
-        ctx.bind_graphics_pipeline(&pipeline);
-        ctx.bind_graphics_descriptor_set_at(&pipeline, self.textures.descriptor_set(), 0);
+        // Resolve pipeline handle through the context's cache
+        let Some(pipeline) = ctx.get_pipeline(self.pipeline) else {
+            log::error!("UI pipeline handle {:?} not found in cache", self.pipeline);
+            return false;
+        };
+
+        ctx.bind_graphics_pipeline(pipeline);
+        ctx.bind_graphics_descriptor_set_at(pipeline, self.textures.descriptor_set(), 0);
         ctx.bind_vertex_buffers(0, &[ui_buffer.vertex_buffer()], &[0]);
         ctx.bind_index_buffer(ui_buffer.index_buffer(), 0, IndexType::Uint32);
 
         // Use the pipeline's layout (created with both set 0 and set 1)
         let pipeline_layout = pipeline.vk_layout();
-        drop(pipeline);
 
         for cmd in &draw_data.commands {
             ctx.set_scissor(&Rect2D {

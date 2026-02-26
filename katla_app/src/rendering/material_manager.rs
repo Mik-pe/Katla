@@ -274,34 +274,23 @@ impl MaterialManager {
                             // Update the AssetRegistry's material if we have a handle
                             if let Some(&handle) = self.material_handles.get(material_name) {
                                 // Get the pipeline from the new material
-                                if let Some(pipeline) = new_material.material_pipeline() {
-                                    // Replace the pipeline in AssetRegistry
-                                    let updated = renderer
-                                        .asset_registry
-                                        .replace_material_pipeline(handle, pipeline);
+                                let pipeline = new_material.material_pipeline();
 
-                                    if updated {
-                                        // Update in MaterialManager
-                                        self.materials[id.0] = new_material;
-                                        reloaded += 1;
-                                        debug!(
-                                            "  ✓ Reloaded material: {} (updated AssetRegistry)",
-                                            material_name
-                                        );
-                                    } else {
-                                        debug!(
-                                            "  ✗ Failed to update AssetRegistry: {}",
-                                            material_name
-                                        );
-                                    }
-                                } else {
-                                    // No pipeline - just update MaterialManager
+                                // Replace the pipeline in AssetRegistry
+                                let updated = renderer
+                                    .asset_registry
+                                    .replace_material_pipeline(handle, pipeline);
+
+                                if updated {
+                                    // Update in MaterialManager
                                     self.materials[id.0] = new_material;
                                     reloaded += 1;
                                     debug!(
-                                        "  ✓ Reloaded material: {} (no pipeline)",
+                                        "  ✓ Reloaded material: {} (updated AssetRegistry)",
                                         material_name
                                     );
+                                } else {
+                                    debug!("  ✗ Failed to update AssetRegistry: {}", material_name);
                                 }
                             } else {
                                 // No handle in AssetRegistry - just update MaterialManager
