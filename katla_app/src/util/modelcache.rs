@@ -6,7 +6,7 @@ use gltf::Document;
 use katla_math::{Mat4, Quat, Sphere, Vec3};
 use log::{debug, warn};
 
-use crate::rendering::{VertexNormal, VertexPBR, VertexPosition, VertexSkinned};
+use crate::rendering::{VertexPBR, VertexSkinned};
 use crate::util::gltf_material::GltfMaterialInfo;
 use crate::util::gltf_parser::{
     build_skinned_vertex_data, build_vertex_data, generate_smooth_normals, AttributeParser,
@@ -26,10 +26,15 @@ pub struct GLTFModel {
     pub index_data: Vec<u8>,
     pub index_stride: u8,
     pub bounds: Sphere,
-    /// SoA (Structure of Arrays) vertex attributes for flexible rendering
-    pub parsed_attributes: Option<ParsedAttributes>,
     /// Root node transform from GLTF (combined transform of first scene's root nodes)
     pub root_transform: Mat4,
+}
+
+fn collect_all_nodes<'a>(node: &gltf::Node<'a>, nodes: &mut Vec<gltf::Node<'a>>) {
+    nodes.push(node.clone());
+    for child in node.children() {
+        collect_all_nodes(&child, nodes);
+    }
 }
 
 impl GLTFModel {
@@ -234,14 +239,6 @@ impl GLTFModel {
 
     fn parse_gltf(&mut self) {
         use std::collections::{HashMap, VecDeque};
-
-        // Helper to collect all nodes in a scene recursively
-        fn collect_all_nodes<'a>(node: &gltf::Node<'a>, nodes: &mut Vec<gltf::Node<'a>>) {
-            nodes.push(node.clone());
-            for child in node.children() {
-                collect_all_nodes(&child, nodes);
-            }
-        }
 
         // Helper to build world transforms for all nodes using BFS
         fn build_world_transforms(nodes: &[gltf::Node]) -> HashMap<usize, Mat4> {
@@ -482,30 +479,10 @@ impl GLTFModel {
             index_data: vec![],
             index_stride: 0,
             bounds: Sphere::new(Vec3::new(0.0, 0.0, 0.0), 0.0),
-            parsed_attributes: None,
             root_transform: Mat4::identity(),
         };
         model.parse_gltf();
         Ok(model)
-    }
-
-    pub fn vertpos(&self) -> Vec<VertexPosition> {
-        self.vertex_data
-            .iter()
-            .map(|x| VertexPosition {
-                position: x.position,
-            })
-            .collect::<Vec<VertexPosition>>()
-    }
-
-    pub fn vertposnorm(&self) -> Vec<VertexNormal> {
-        self.vertex_data
-            .iter()
-            .map(|x| VertexNormal {
-                position: x.position,
-                normal: x.normal,
-            })
-            .collect::<Vec<VertexNormal>>()
     }
 
     /// Get PBR vertex data (borrowed slice).
@@ -556,11 +533,6 @@ impl GLTFModel {
             }
         }
         None
-    }
-
-    /// Check if this model has SoA attributes parsed.
-    pub fn has_soa_attributes(&self) -> bool {
-        self.parsed_attributes.is_some()
     }
 
     /// Adjust indices by adding an offset when combining multiple nodes.
@@ -680,14 +652,6 @@ mod tests {
         let (vertices, sphere) = build_vertex_data(positions, normals, tangents, tex_coords);
         assert!(vertices.is_empty());
         assert_eq!(sphere.radius, 0.0);
-    }
-
-    /// Helper to collect all nodes in a scene recursively
-    fn collect_all_nodes<'a>(node: &gltf::Node<'a>, nodes: &mut Vec<gltf::Node<'a>>) {
-        nodes.push(node.clone());
-        for child in node.children() {
-            collect_all_nodes(&child, nodes);
-        }
     }
 
     /// Build world transforms for all nodes in topological order (BFS).

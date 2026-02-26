@@ -110,9 +110,6 @@ pub fn render_debug_ui(app: &mut Application, dt: f32) {
             EditorAction::SelectEntity(entity_id) => {
                 info!("Selected entity {:?}", entity_id);
             }
-            EditorAction::MoveEntity(_entity_id, _position) => {
-                // TODO: Implement entity moving
-            }
             EditorAction::TogglePlay => {
                 info!("Toggle play mode");
             }

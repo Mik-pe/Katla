@@ -62,16 +62,6 @@ use katla_ecs::World;
 pub struct AnimationManager;
 
 impl AnimationManager {
-    /// Load animations from a GLTF model into the world
-    pub fn load_gltf_animations(world: &mut World, model: &crate::util::GLTFModel) {
-        gltf_loader::load_animations(world, model);
-    }
-
-    /// Load skins from a GLTF model into the world
-    pub fn load_gltf_skins(world: &mut World, model: &crate::util::GLTFModel) {
-        gltf_loader::load_skins(world, model);
-    }
-
     /// Set up an animated model entity with all required components for skeletal animation.
     ///
     /// This loads animations and skins onto the given entity, making it ready for

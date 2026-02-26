@@ -1,50 +1,8 @@
 use crate::animation::samplers::Interpolation;
-use crate::animation::{
-    AnimatedModel, AnimationChannel, AnimationClip, AnimationSampler, ChannelPath,
-};
+use crate::animation::{AnimationChannel, AnimationClip, AnimationSampler, ChannelPath};
 use crate::util::gltf_parser::AttributeParser;
 use crate::util::GLTFModel;
 use gltf::buffer::Data as BufferData;
-use katla_ecs::World;
-
-pub fn load_animations(world: &mut World, model: &GLTFModel) {
-    let document = &model.document;
-    let parser = AttributeParser::new(&model.buffers);
-
-    let animations: Vec<_> = document.animations().collect();
-    if animations.is_empty() {
-        log::debug!("Model has no animations");
-        return;
-    }
-
-    log::debug!("Model has {} animations:", animations.len());
-
-    let mut animated_model = AnimatedModel {
-        animations: std::collections::HashMap::new(),
-        sequences: std::collections::HashMap::new(),
-    };
-
-    for (index, gltf_animation) in animations.iter().enumerate() {
-        let name = gltf_animation
-            .name()
-            .unwrap_or(&format!("Animation_{}", index))
-            .to_string();
-
-        log::debug!("  Parsing animation '{}'", name);
-
-        let clip = load_animation_clip(&parser, gltf_animation);
-        animated_model.animations.insert(name, clip);
-    }
-
-    log::debug!(
-        "  Successfully loaded {} animation clips",
-        animated_model.animations.len()
-    );
-
-    let entity = world.create_entity();
-    world.add_component(entity, animated_model);
-    log::debug!("  Attached AnimatedModel to entity {:?}", entity);
-}
 
 /// Load a single animation clip from a GLTF animation.
 ///
@@ -130,53 +88,6 @@ fn parse_sampler(
     }
 }
 
-pub fn load_skins(world: &mut World, model: &GLTFModel) {
-    let document = &model.document;
-    let parser = AttributeParser::new(&model.buffers);
-
-    let skins: Vec<_> = document.skins().collect();
-    if skins.is_empty() {
-        log::debug!("Model has no skins");
-        return;
-    }
-
-    log::debug!("Model has {} skins:", skins.len());
-
-    for (index, gltf_skin) in skins.iter().enumerate() {
-        let name = gltf_skin
-            .name()
-            .unwrap_or(&format!("Skin_{}", index))
-            .to_string();
-
-        log::debug!("  Parsing skin '{}'", name);
-
-        let joints: Vec<usize> = gltf_skin.joints().map(|node| node.index()).collect();
-        let joints_count = joints.len();
-
-        log::debug!("    - Found {} joints", joints_count);
-
-        let inverse_bind_matrices = if let Some(accessor) = gltf_skin.inverse_bind_matrices() {
-            parser.parse_matrices(accessor)
-        } else {
-            log::debug!("    - No inverse bind matrices, using identity");
-            vec![katla_math::Mat4::identity(); joints_count]
-        };
-
-        let skin = crate::animation::Skin::new(name.clone(), joints, inverse_bind_matrices);
-
-        log::debug!(
-            "    - Created skin component with {} joints",
-            skin.joint_count()
-        );
-
-        let entity = world.create_entity();
-        world.add_component(entity, skin);
-        log::debug!("    - Attached Skin component to entity {:?}", entity);
-    }
-
-    log::debug!("  Successfully loaded {} skins", skins.len());
-}
-
 /// Parse Mat4 matrices from an accessor.
 ///
 /// This is exposed for `AnimationManager::setup_animated_model`.
@@ -186,45 +97,6 @@ pub fn parse_mat4_from_accessor(
 ) -> Vec<katla_math::Mat4> {
     let parser = AttributeParser::new(buffers);
     parser.parse_matrices(accessor)
-}
-
-pub fn build_skeleton(model: &GLTFModel, skin_joints: &[usize]) -> Vec<katla_math::Mat4> {
-    log::debug!("Building skeleton for {} joints", skin_joints.len());
-
-    let document = &model.document;
-    let nodes: Vec<_> = document.nodes().collect();
-
-    // Build parent map: node_index -> parent_index (or None for roots)
-    let mut parent_map: std::collections::HashMap<usize, Option<usize>> =
-        std::collections::HashMap::new();
-    for node in &nodes {
-        parent_map.insert(node.index(), None);
-    }
-    for node in &nodes {
-        for child in node.children() {
-            parent_map.insert(child.index(), Some(node.index()));
-        }
-    }
-
-    // Precompute all world transforms in topological order (parents before children)
-    let world_transforms = build_world_transforms(&nodes, &parent_map);
-
-    // Extract transforms for skeleton joints
-    let mut joint_transforms = Vec::with_capacity(skin_joints.len());
-    for joint_index in skin_joints {
-        if let Some(transform) = world_transforms.get(joint_index) {
-            joint_transforms.push(transform.clone());
-        } else {
-            log::warn!("    Joint node {} not found", joint_index);
-            joint_transforms.push(katla_math::Mat4::identity());
-        }
-    }
-
-    log::debug!(
-        "  Built skeleton with {} joint transforms",
-        joint_transforms.len()
-    );
-    joint_transforms
 }
 
 /// Build parent indices for skeleton hierarchy.
@@ -303,6 +175,7 @@ pub fn build_skeleton_local_transforms(
 /// computation of shared ancestors in deep hierarchies.
 ///
 /// Returns a map: node_index -> world_transform
+#[cfg(test)]
 fn build_world_transforms(
     nodes: &[gltf::Node],
     parent_map: &std::collections::HashMap<usize, Option<usize>>,
@@ -389,54 +262,6 @@ mod tests {
         model_path.push("models");
         model_path.push("Fox.glb");
         model_path
-    }
-
-    #[test]
-    fn test_build_skeleton_fox() {
-        let model_path = get_fox_model_path();
-        if !model_path.exists() {
-            eprintln!("Skipping test - Fox.glb not found at {:?}", model_path);
-            return;
-        }
-
-        let model = GLTFModel::new(&model_path).expect("Failed to load Fox.glb");
-
-        // Get skin joints from the first skin
-        let skins: Vec<_> = model.document.skins().collect();
-        if skins.is_empty() {
-            eprintln!("Skipping test - Fox.glb has no skins");
-            return;
-        }
-
-        let skin = &skins[0];
-        let joints: Vec<usize> = skin.joints().map(|n| n.index()).collect();
-
-        // Build skeleton transforms
-        let transforms = build_skeleton(&model, &joints);
-
-        // Verify we got transforms for all joints
-        assert_eq!(
-            transforms.len(),
-            joints.len(),
-            "Should have transform for each joint"
-        );
-
-        // Verify transforms are valid (not all zeros, finite values)
-        for (i, transform) in transforms.iter().enumerate() {
-            let data = transform.to_array();
-            let mut has_nonzero = false;
-            for &val in &data {
-                assert!(
-                    val.is_finite(),
-                    "Joint {} transform has non-finite values",
-                    i
-                );
-                if val.abs() > 0.0001 {
-                    has_nonzero = true;
-                }
-            }
-            assert!(has_nonzero, "Joint {} has all-zero transform", i);
-        }
     }
 
     #[test]
