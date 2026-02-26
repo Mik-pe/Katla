@@ -198,16 +198,6 @@ impl ComputePipeline {
         VkPipelineLayout::new(self.layout)
     }
 
-    /// Get the raw Vulkan pipeline handle (for internal use).
-    pub(crate) fn vk_pipeline(&self) -> vk::Pipeline {
-        self.handle
-    }
-
-    /// Get the raw Vulkan pipeline layout handle (for internal use).
-    pub(crate) fn vk_layout(&self) -> vk::PipelineLayout {
-        self.layout
-    }
-
     /// Destroy the pipeline resources.
     pub fn destroy(&mut self) {
         unsafe {

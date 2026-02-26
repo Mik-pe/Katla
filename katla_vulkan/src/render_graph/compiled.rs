@@ -82,14 +82,12 @@ pub struct CompiledPass {
 
 /// RenderPassGroup groups passes that share a Vulkan render pass.
 pub struct RenderPassGroup {
-    pass_indices: Vec<usize>,
     attachments: Vec<ResourceId>,
     subpasses: Vec<SubpassDescriptor>,
 }
 
 /// SubpassDescriptor describes a subpass within a render pass.
 pub struct SubpassDescriptor {
-    pass_index: usize,
     input_attachments: Vec<(u32, ResourceId)>,
     color_attachments: Vec<(u32, ResourceId)>,
     depth_stencil: Option<(u32, ResourceId)>,
@@ -290,12 +288,10 @@ impl CompiledRenderGraph {
     ) -> Vec<RenderPassGroup> {
         let mut groups = Vec::new();
 
-        for (pass_index, pass) in graph.passes.iter().enumerate() {
+        for (_pass_index, pass) in graph.passes.iter().enumerate() {
             let mut group = RenderPassGroup {
-                pass_indices: vec![pass_index],
                 attachments: Vec::new(),
                 subpasses: vec![SubpassDescriptor {
-                    pass_index,
                     input_attachments: Vec::new(),
                     color_attachments: Vec::new(),
                     depth_stencil: None,
@@ -385,203 +381,6 @@ impl CompiledRenderGraph {
         }
 
         groups
-    }
-
-    /// Generate Vulkan render passes.
-    fn generate_render_passes(
-        groups: &[RenderPassGroup],
-        graph: &crate::RenderGraph,
-        _context: &Rc<VulkanContext>,
-    ) -> Result<Vec<vk::RenderPass>, RenderGraphError> {
-        let mut render_passes = Vec::new();
-
-        for group in groups {
-            let mut attachments = Vec::new();
-            let mut subpasses = Vec::new();
-
-            // Create attachment descriptions
-            for resource_id in &group.attachments {
-                let resource = graph
-                    .resources
-                    .get(resource_id)
-                    .ok_or(RenderGraphError::ResourceNotFound(resource_id.0))?;
-
-                let attachment = match &resource.kind {
-                    ResourceKind::Image {
-                        format,
-                        samples,
-                        initial_layout,
-                        final_layout,
-                        ..
-                    } => {
-                        let vk_format: vk::Format = (*format).into();
-                        let vk_samples: vk::SampleCountFlags = (*samples).into();
-                        let vk_initial_layout: vk::ImageLayout = (*initial_layout).into();
-                        let vk_final_layout: vk::ImageLayout = (*final_layout).into();
-
-                        // Find the usage for this attachment
-                        let mut load_op = vk::AttachmentLoadOp::DONT_CARE;
-                        let mut store_op = vk::AttachmentStoreOp::DONT_CARE;
-
-                        // Look at the first pass that uses this resource as an output
-                        for pass_idx in &group.pass_indices {
-                            if let Some(pass) = graph.passes.get(*pass_idx) {
-                                for usage in pass.usages() {
-                                    if usage.resource_id == *resource_id {
-                                        load_op = usage.load_op.into();
-                                        store_op = usage.store_op.into();
-                                        break;
-                                    }
-                                }
-                            }
-                        }
-
-                        let (_final_layout_stencil, stencil_load_op, stencil_store_op) = {
-                            if is_depth_or_stencil_format(*format) {
-                                (
-                                    vk_final_layout,
-                                    vk::AttachmentLoadOp::DONT_CARE,
-                                    vk::AttachmentStoreOp::DONT_CARE,
-                                )
-                            } else {
-                                (vk::ImageLayout::UNDEFINED, load_op, store_op)
-                            }
-                        };
-
-                        vk::AttachmentDescription::default()
-                            .format(vk_format)
-                            .samples(vk_samples)
-                            .load_op(load_op)
-                            .store_op(store_op)
-                            .stencil_load_op(stencil_load_op)
-                            .stencil_store_op(stencil_store_op)
-                            .initial_layout(vk_initial_layout)
-                            .final_layout(vk_final_layout)
-                    }
-                    ResourceKind::ExternalImage { format, .. } => {
-                        let vk_format: vk::Format = (*format).into();
-
-                        // Find the usage for this attachment (same as Image case)
-                        let mut load_op = vk::AttachmentLoadOp::DONT_CARE;
-                        let mut store_op = vk::AttachmentStoreOp::DONT_CARE;
-
-                        // Look at the first pass that uses this resource as an output
-                        for pass_idx in &group.pass_indices {
-                            if let Some(pass) = graph.passes.get(*pass_idx) {
-                                for usage in pass.usages() {
-                                    if usage.resource_id == *resource_id {
-                                        load_op = usage.load_op.into();
-                                        store_op = usage.store_op.into();
-                                        break;
-                                    }
-                                }
-                            }
-                        }
-
-                        // Determine final layout based on format (swapchain vs depth)
-                        let is_depth = is_depth_or_stencil_format(*format);
-                        let final_layout = if is_depth {
-                            vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL
-                        } else {
-                            vk::ImageLayout::PRESENT_SRC_KHR
-                        };
-
-                        info!("ExternalImage attachment: format={:?}, load_op={:?}, store_op={:?}, final_layout={:?}",
-                            format, load_op, store_op, final_layout);
-
-                        vk::AttachmentDescription::default()
-                            .format(vk_format)
-                            .samples(vk::SampleCountFlags::TYPE_1)
-                            .load_op(load_op)
-                            .store_op(store_op)
-                            .stencil_load_op(vk::AttachmentLoadOp::DONT_CARE)
-                            .stencil_store_op(vk::AttachmentStoreOp::DONT_CARE)
-                            .initial_layout(vk::ImageLayout::UNDEFINED)
-                            .final_layout(final_layout)
-                    }
-                    _ => {
-                        return Err(RenderGraphError::InvalidResourceUsage(format!(
-                            "Resource {:?} is not an image",
-                            resource_id
-                        )))
-                    }
-                };
-
-                attachments.push(attachment);
-            }
-
-            // Create subpass descriptions
-            for subpass_desc in &group.subpasses {
-                let pass = graph.passes.get(subpass_desc.pass_index).ok_or(
-                    RenderGraphError::CompilationError(format!(
-                        "Pass index {} not found",
-                        subpass_desc.pass_index
-                    )),
-                )?;
-
-                let bind_point = pass.bind_point();
-
-                let mut subpass = vk::SubpassDescription::default()
-                    .pipeline_bind_point(bind_point.into())
-                    .color_attachments(&subpass_desc.vk_color_refs);
-
-                // Only set input_attachments if we have any
-                if !subpass_desc.vk_input_refs.is_empty() {
-                    subpass = subpass.input_attachments(&subpass_desc.vk_input_refs);
-                }
-
-                let subpass = if let Some(ref depth_ref) = subpass_desc.vk_depth_ref {
-                    subpass.depth_stencil_attachment(depth_ref)
-                } else {
-                    subpass
-                };
-
-                subpasses.push(subpass);
-            }
-
-            // Create subpass dependencies
-            // Always create at least one dependency from EXTERNAL to subpass 0
-            // This is required for proper synchronization with external operations
-            let mut dependencies: Vec<vk::SubpassDependency> = Vec::new();
-            if subpasses.len() > 1 {
-                for i in 0..subpasses.len() - 1 {
-                    let dependency = vk::SubpassDependency::default()
-                        .src_subpass(i as u32)
-                        .dst_subpass((i + 1) as u32)
-                        .src_stage_mask(
-                            vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT
-                                | vk::PipelineStageFlags::LATE_FRAGMENT_TESTS,
-                        )
-                        .dst_stage_mask(
-                            vk::PipelineStageFlags::FRAGMENT_SHADER
-                                | vk::PipelineStageFlags::EARLY_FRAGMENT_TESTS,
-                        )
-                        .src_access_mask(
-                            vk::AccessFlags::COLOR_ATTACHMENT_WRITE
-                                | vk::AccessFlags::DEPTH_STENCIL_ATTACHMENT_WRITE,
-                        )
-                        .dst_access_mask(vk::AccessFlags::INPUT_ATTACHMENT_READ);
-
-                    dependencies.push(dependency);
-                }
-            }
-
-            // Add dependency from EXTERNAL to first subpass for proper external synchronization
-            let external_dependency = vk::SubpassDependency::default()
-                .src_subpass(vk::SUBPASS_EXTERNAL)
-                .dst_subpass(0)
-                .src_stage_mask(vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT)
-                .src_access_mask(vk::AccessFlags::empty())
-                .dst_stage_mask(vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT)
-                .dst_access_mask(vk::AccessFlags::COLOR_ATTACHMENT_WRITE);
-            dependencies.push(external_dependency);
-
-            // Dynamic rendering: use null render pass
-            let render_pass = vk::RenderPass::null();
-            render_passes.push(render_pass);
-        }
-
-        Ok(render_passes)
     }
 
     /// Allocate Vulkan resources.
@@ -1497,114 +1296,6 @@ impl CompiledRenderGraph {
 
         Ok(())
     }
-
-    /// Execute a pass using legacy render passes.
-    ///
-    /// NOTE: This method now uses dynamic rendering internally to avoid deprecated APIs.
-    fn execute_pass_legacy(
-        &mut self,
-        command_buffer: &mut CommandBuffer,
-        pass_index: usize,
-        _image_index: usize,
-    ) -> Result<(), RenderGraphError> {
-        let pass = &self.passes[pass_index];
-
-        // Use dynamic rendering (Vulkan 1.3) instead of legacy render pass
-        // Build rendering info from framebuffer attachments if available
-        let render_area = vk::Rect2D {
-            offset: vk::Offset2D { x: 0, y: 0 },
-            extent: pass.extent.into(),
-        };
-
-        let mut rendering_info = RenderingInfo::new().render_area(render_area).layer_count(1);
-
-        // Add color attachments with clear values
-        let color_clears: Vec<_> = pass
-            .clear_values
-            .iter()
-            .filter(|cv| matches!(cv, ClearValue::Color(_)))
-            .collect();
-
-        for (i, (image_view, _resource_id)) in pass.color_attachments.iter().enumerate() {
-            let mut attachment = RenderingAttachmentInfo::new(*image_view)
-                .layout(ImageLayout::ColorAttachmentOptimal);
-
-            if let Some(&cv) = color_clears.get(i) {
-                attachment = attachment.clear(*cv);
-            }
-
-            rendering_info = rendering_info.add_color_attachment(attachment);
-        }
-
-        // Add depth attachment if available
-        if let Some((depth_view, _resource_id)) = pass.depth_attachment {
-            let depth_clear = pass
-                .clear_values
-                .iter()
-                .find(|cv| matches!(cv, ClearValue::DepthStencil(_)));
-
-            let mut attachment = RenderingAttachmentInfo::new(depth_view)
-                .layout(ImageLayout::DepthStencilAttachmentOptimal);
-
-            if let Some(&cv) = depth_clear {
-                attachment = attachment.clear(cv);
-            }
-
-            rendering_info = rendering_info.depth_attachment(attachment);
-        }
-
-        // Begin dynamic rendering
-        command_buffer.begin_rendering(rendering_info);
-
-        // Set viewport and scissor for this pass
-        let viewport = Viewport {
-            x: 0.0,
-            y: 0.0,
-            width: pass.extent.width as f32,
-            height: pass.extent.height as f32,
-            min_depth: 0.0,
-            max_depth: 1.0,
-        };
-
-        let scissor = Rect2D {
-            offset: Offset2D { x: 0, y: 0 },
-            extent: pass.extent,
-        };
-
-        command_buffer.set_viewport(&[viewport]);
-        command_buffer.set_scissor(&[scissor]);
-
-        // Create execution context with optional renderer context
-        let mut ctx = if let Some(ref rc) = self.renderer_context {
-            Rc::new(PassExecutionContext::with_renderer_context(
-                (*command_buffer).clone(),
-                self.resources.clone(),
-                pass.extent,
-                Rc::clone(rc),
-            ))
-        } else {
-            Rc::new(PassExecutionContext::new_dynamic(
-                (*command_buffer).clone(),
-                self.resources.clone(),
-                pass.extent,
-            ))
-        };
-
-        // Set UI callback on the context
-        if let Some(ref callback) = self.ui_draw_callback {
-            Rc::get_mut(&mut ctx)
-                .unwrap()
-                .set_ui_callback(Rc::clone(callback));
-        }
-
-        // Execute pass-specific commands using ExecutionRegistry
-        pass.execute(ctx, &mut self.registry);
-
-        // End dynamic rendering
-        command_buffer.end_rendering();
-
-        Ok(())
-    }
 }
 
 impl CompiledPass {
@@ -1695,20 +1386,6 @@ fn is_depth_or_stencil_format(format: crate::render_graph::types::ImageFormat) -
     )
 }
 
-/// Helper function to check if a format is depth or stencil (raw vk type for internal use).
-fn is_depth_or_stencil(format: vk::Format) -> bool {
-    matches!(
-        format,
-        vk::Format::D16_UNORM
-            | vk::Format::X8_D24_UNORM_PACK32
-            | vk::Format::D32_SFLOAT
-            | vk::Format::S8_UINT
-            | vk::Format::D16_UNORM_S8_UINT
-            | vk::Format::D24_UNORM_S8_UINT
-            | vk::Format::D32_SFLOAT_S8_UINT
-    )
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1721,21 +1398,17 @@ mod tests {
     #[test]
     fn test_render_pass_group_creation() {
         let group = RenderPassGroup {
-            pass_indices: vec![0],
             attachments: vec![ResourceId(0)],
             subpasses: vec![SubpassDescriptor {
-                pass_index: 0,
                 input_attachments: Vec::new(),
                 color_attachments: vec![(0, ResourceId(0))],
                 depth_stencil: None,
-                // resolve_attachments: Vec::new(), // TODO: Not yet implemented
                 vk_input_refs: Vec::new(),
                 vk_color_refs: Vec::new(),
                 vk_depth_ref: None,
             }],
         };
 
-        assert_eq!(group.pass_indices.len(), 1);
         assert_eq!(group.attachments.len(), 1);
         assert_eq!(group.subpasses.len(), 1);
     }
