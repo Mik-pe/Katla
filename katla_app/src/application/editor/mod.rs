@@ -44,6 +44,7 @@ pub fn render_debug_ui(app: &mut Application, dt: f32) {
     let (vertices, indices, commands, use_editor) = if app.use_editor_ui {
         let draw_list = app.editor_ui.render(
             &mut app.ui_context,
+            &app.preferences,
             screen_size,
             scale_factor,
             &entity_info,
@@ -133,6 +134,9 @@ pub fn render_debug_ui(app: &mut Application, dt: f32) {
                 app.editor_ui.set_font_scale(scale);
                 app.preferences.font_scale = scale;
                 info!("Font scale changed to: {:.0}%", scale * 100.0);
+            }
+            EditorAction::OpenPanel(panel) => {
+                app.editor_ui.open_panel(panel);
             }
         }
 
@@ -464,12 +468,6 @@ pub fn spawn_model(app: &mut Application, model_type: SpawnableModel, position: 
     let builder = MeshBuilder::new(context.clone()).position(position);
 
     let spawned_id = match model_type {
-        SpawnableModel::Fox => {
-            info!("Spawning Fox at {:?} (using cube placeholder)", position);
-            builder
-                .cube()
-                .build(&mut app.world, app.renderer.as_mut().unwrap())
-        }
         SpawnableModel::Cube => builder
             .cube()
             .build(&mut app.world, app.renderer.as_mut().unwrap()),

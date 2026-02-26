@@ -977,10 +977,10 @@ fn hash_shader_stages(stages: &ShaderStages, hasher: &mut DefaultHasher) {
 // Material Pipeline Cache
 //=============================================================================
 
-use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
+use crate::renderer::handles::{PipelineHandle, ResourceStorage};
 use crate::sync::VkRenderPass;
 use crate::vulkan::context::VulkanContext;
 use crate::vulkan::pipeline_state::{CullMode, FrontFace};
@@ -1014,17 +1014,11 @@ impl std::fmt::Display for MaterialCacheError {
 
 impl std::error::Error for MaterialCacheError {}
 
-/// Cached pipeline entry with its key for lookup.
-struct CachedPipeline {
-    key: MaterialKey,
-    pipeline: Rc<RefCell<MaterialPipeline>>,
-}
-
 /// Cache for material pipelines keyed by MaterialKey.
 ///
 /// This cache deduplicates pipeline creation by reusing existing pipelines
-/// when materials have compatible configurations. Use this to avoid creating
-/// duplicate pipelines for materials with the same shaders and render state.
+/// when materials have compatible configurations. Pipelines are stored in
+/// a central `ResourceStorage` and referenced by opaque `PipelineHandle`.
 ///
 /// # Example
 ///
@@ -1035,15 +1029,19 @@ struct CachedPipeline {
 /// let mut cache = MaterialPipelineCache::new(context.clone());
 ///
 /// // Get or create pipeline for a material
-/// let pipeline = cache.get_or_create(&my_material)?;
+/// let handle = cache.get_or_create(&my_material)?;
 ///
-/// // Subsequent calls with same material return cached pipeline
-/// let pipeline2 = cache.get_or_create(&my_material)?;
-/// assert!(Rc::ptr_eq(&pipeline, &pipeline2));
+/// // Subsequent calls with same material return same handle
+/// let handle2 = cache.get_or_create(&my_material)?;
+/// assert_eq!(handle, handle2);
+///
+/// // Access the pipeline via handle
+/// let pipeline = cache.get_pipeline(handle);
 /// ```
 pub struct MaterialPipelineCache {
     context: Rc<VulkanContext>,
-    cache: HashMap<MaterialKey, CachedPipeline>,
+    cache: HashMap<MaterialKey, PipelineHandle>,
+    storage: ResourceStorage<MaterialPipeline>,
 }
 
 impl MaterialPipelineCache {
@@ -1052,41 +1050,36 @@ impl MaterialPipelineCache {
         Self {
             context,
             cache: HashMap::new(),
+            storage: ResourceStorage::new(),
         }
     }
 
     /// Get or create a pipeline for the given material.
     ///
-    /// If a compatible pipeline already exists in the cache, returns that.
-    /// Otherwise, creates a new pipeline, caches it, and returns it.
+    /// If a compatible pipeline already exists in the cache, returns its handle.
+    /// Otherwise, creates a new pipeline, caches it, and returns the new handle.
     ///
     /// # Arguments
     /// * `material` - MaterialDefinition implementation to create pipeline for
     ///
     /// # Returns
-    /// * `Ok(Rc<RefCell<MaterialPipeline>>)` - Cached or newly created pipeline
+    /// * `Ok(PipelineHandle)` - Handle to the cached or newly created pipeline
     /// * `Err(MaterialCacheError)` - If pipeline creation fails
     pub fn get_or_create<M: MaterialDefinition + ?Sized>(
         &mut self,
         material: &M,
-    ) -> Result<Rc<RefCell<MaterialPipeline>>, MaterialCacheError> {
+    ) -> Result<PipelineHandle, MaterialCacheError> {
         let key = MaterialKey::from_material(material);
 
-        // Check cache first
-        if let Some(cached) = self.cache.get(&key) {
-            return Ok(cached.pipeline.clone());
+        if let Some(&handle) = self.cache.get(&key) {
+            return Ok(handle);
         }
 
-        // Create new pipeline
         let pipeline = self.create_pipeline_for_material(material)?;
+        let handle = PipelineHandle(self.storage.insert(pipeline));
 
-        let cached = CachedPipeline {
-            key: key.clone(),
-            pipeline: pipeline.clone(),
-        };
-
-        self.cache.insert(key, cached);
-        Ok(pipeline)
+        self.cache.insert(key, handle);
+        Ok(handle)
     }
 
     /// Get or create a pipeline for bindless materials.
@@ -1102,24 +1095,34 @@ impl MaterialPipelineCache {
         &mut self,
         material: &M,
         bindless_layout: ash::vk::DescriptorSetLayout,
-    ) -> Result<Rc<RefCell<MaterialPipeline>>, MaterialCacheError> {
+    ) -> Result<PipelineHandle, MaterialCacheError> {
         let key = MaterialKey::from_material(material);
 
-        // Check cache first
-        if let Some(cached) = self.cache.get(&key) {
-            return Ok(cached.pipeline.clone());
+        if let Some(&handle) = self.cache.get(&key) {
+            return Ok(handle);
         }
 
-        // Create bindless pipeline
         let pipeline = self.create_bindless_pipeline(material, bindless_layout)?;
+        let handle = PipelineHandle(self.storage.insert(pipeline));
 
-        let cached = CachedPipeline {
-            key: key.clone(),
-            pipeline: pipeline.clone(),
-        };
+        self.cache.insert(key, handle);
+        Ok(handle)
+    }
 
-        self.cache.insert(key, cached);
-        Ok(pipeline)
+    /// Get a pipeline by handle.
+    pub fn get_pipeline(&self, handle: PipelineHandle) -> Option<&MaterialPipeline> {
+        if handle.is_none() {
+            return None;
+        }
+        self.storage.get(handle.0)
+    }
+
+    /// Get a mutable pipeline by handle.
+    pub fn get_pipeline_mut(&mut self, handle: PipelineHandle) -> Option<&mut MaterialPipeline> {
+        if handle.is_none() {
+            return None;
+        }
+        self.storage.get_mut(handle.0)
     }
 
     /// Create a bindless pipeline for a material.
@@ -1127,18 +1130,16 @@ impl MaterialPipelineCache {
         &self,
         material: &M,
         bindless_layout: ash::vk::DescriptorSetLayout,
-    ) -> Result<Rc<RefCell<MaterialPipeline>>, MaterialCacheError> {
+    ) -> Result<MaterialPipeline, MaterialCacheError> {
         let render_state = material.render_state();
         let vertex_binding = material.vertex_binding();
 
-        // Validate bindless requirement
         if !material.uses_bindless() {
             return Err(MaterialCacheError::InvalidConfiguration(
                 "get_or_create_bindless() requires uses_bindless() to return true".to_string(),
             ));
         }
 
-        // Load shaders from material
         let vert_shader =
             self.load_shader(&material.vertex_shader(), ash::vk::ShaderStageFlags::VERTEX)?;
         let frag_shader = self.load_shader(
@@ -1146,13 +1147,10 @@ impl MaterialPipelineCache {
             ash::vk::ShaderStageFlags::FRAGMENT,
         )?;
 
-        // Build descriptor set layouts from material
-        // For bindless, we use the material's layouts but inject the bindless layout for set 1
         let layout_builders = material.descriptor_layouts();
         let mut vk_layouts: Vec<ash::vk::DescriptorSetLayout> = Vec::new();
         let mut wrapped_layouts: Vec<crate::sync::VkDescriptorSetLayout> = Vec::new();
 
-        // Set 0: from material (uniform/storage buffers)
         if let Some(builder) = layout_builders.first() {
             let wrapped = builder.clone().build(&self.context).map_err(|e| {
                 MaterialCacheError::PipelineCreationFailed(format!(
@@ -1164,14 +1162,9 @@ impl MaterialPipelineCache {
             wrapped_layouts.push(wrapped);
         }
 
-        // Set 1: bindless texture array (provided externally)
         vk_layouts.push(bindless_layout);
 
-        // Set 2: skeleton layout if needed
-        // Note: For bindless materials, the skeleton layout is at index 1 in descriptor_layouts()
-        // (because Set 1 is the bindless texture array that's injected between Set 0 and Set 2)
         if material.uses_skeleton() {
-            // Skeleton layout is at index 1 for bindless materials (index 0 is uniforms, index 1 is skeleton)
             if let Some(builder) = layout_builders.get(1) {
                 let wrapped = builder.clone().build(&self.context).map_err(|e| {
                     MaterialCacheError::PipelineCreationFailed(format!(
@@ -1184,7 +1177,6 @@ impl MaterialPipelineCache {
             }
         }
 
-        // Build the pipeline
         let mut pipeline_builder = PipelineBuilder::new(self.context.clone())
             .with_shaders(vert_shader.module, frag_shader.module)
             .with_entry_points(
@@ -1219,7 +1211,6 @@ impl MaterialPipelineCache {
             .build(VkRenderPass::from(ash::vk::RenderPass::null()))
             .map_err(|e| MaterialCacheError::PipelineCreationFailed(format!("{:?}", e)))?;
 
-        // Create bindless MaterialPipeline
         let uniform_set_layout = vk_layouts
             .first()
             .copied()
@@ -1241,22 +1232,17 @@ impl MaterialPipelineCache {
             MaterialPipeline::new_bindless(pipeline, uniform_set_layout, self.context.clone())
         };
 
-        Ok(Rc::new(RefCell::new(material_pipeline)))
+        Ok(material_pipeline)
     }
 
     /// Create a pipeline for a material using the MaterialDefinition trait directly.
-    ///
-    /// This method uses the material's `descriptor_layouts()` to build descriptor set layouts,
-    /// then creates a pipeline using PipelineBuilder. This is the unified path that all
-    /// materials should use.
     fn create_pipeline_for_material<M: MaterialDefinition + ?Sized>(
         &self,
         material: &M,
-    ) -> Result<Rc<RefCell<MaterialPipeline>>, MaterialCacheError> {
+    ) -> Result<MaterialPipeline, MaterialCacheError> {
         let render_state = material.render_state();
         let vertex_binding = material.vertex_binding();
 
-        // Check for bindless - must use get_or_create_bindless()
         if material.uses_bindless() {
             return Err(MaterialCacheError::InvalidConfiguration(
                 "Bindless materials require bindless_layout. Use get_or_create_bindless() instead."
@@ -1264,7 +1250,6 @@ impl MaterialPipelineCache {
             ));
         }
 
-        // Load shaders from material
         let vert_shader =
             self.load_shader(&material.vertex_shader(), ash::vk::ShaderStageFlags::VERTEX)?;
         let frag_shader = self.load_shader(
@@ -1272,7 +1257,6 @@ impl MaterialPipelineCache {
             ash::vk::ShaderStageFlags::FRAGMENT,
         )?;
 
-        // Build descriptor set layouts from material's descriptor_layouts()
         let layout_builders = material.descriptor_layouts();
         let mut vk_layouts: Vec<ash::vk::DescriptorSetLayout> =
             Vec::with_capacity(layout_builders.len());
@@ -1290,7 +1274,6 @@ impl MaterialPipelineCache {
             wrapped_layouts.push(wrapped);
         }
 
-        // Build the pipeline using PipelineBuilder
         let mut pipeline_builder = PipelineBuilder::new(self.context.clone())
             .with_shaders(vert_shader.module, frag_shader.module)
             .with_entry_points(
@@ -1309,7 +1292,6 @@ impl MaterialPipelineCache {
             .with_descriptor_layouts(vk_layouts.clone())
             .with_rendering_formats(Some(material.color_format()), Some(material.depth_format()));
 
-        // Apply cull mode
         if render_state.cull_backfaces {
             pipeline_builder =
                 pipeline_builder.with_cull_mode(CullMode::Back, FrontFace::CounterClockwise);
@@ -1318,17 +1300,14 @@ impl MaterialPipelineCache {
                 pipeline_builder.with_cull_mode(CullMode::None, FrontFace::CounterClockwise);
         }
 
-        // Apply alpha blending
         if render_state.alpha_blending {
             pipeline_builder = pipeline_builder.with_alpha_blending();
         }
 
-        // Build the pipeline (using null render pass for dynamic rendering)
         let pipeline = pipeline_builder
             .build(VkRenderPass::from(ash::vk::RenderPass::null()))
             .map_err(|e| MaterialCacheError::PipelineCreationFailed(format!("{:?}", e)))?;
 
-        // Create MaterialPipeline wrapper
         let material_pipeline = self.create_material_pipeline(
             pipeline,
             wrapped_layouts,
@@ -1336,7 +1315,7 @@ impl MaterialPipelineCache {
             material.uses_skeleton(),
         );
 
-        Ok(Rc::new(RefCell::new(material_pipeline)))
+        Ok(material_pipeline)
     }
 
     /// Load a shader from ShaderSource.
@@ -1454,11 +1433,9 @@ impl MaterialPipelineCache {
     }
 
     /// Clear all cached pipelines.
-    ///
-    /// This destroys all cached pipelines. Use with caution.
     pub fn clear(&mut self) {
-        // Pipelines are dropped via Rc/RefCell, which handles cleanup
         self.cache.clear();
+        self.storage.clear();
     }
 
     /// Remove a specific pipeline from the cache.
@@ -1466,14 +1443,19 @@ impl MaterialPipelineCache {
     /// Returns true if the pipeline was in the cache and was removed.
     pub fn remove<M: MaterialDefinition + ?Sized>(&mut self, material: &M) -> bool {
         let key = MaterialKey::from_material(material);
-        self.cache.remove(&key).is_some()
+        if let Some(handle) = self.cache.remove(&key) {
+            self.storage.remove(handle.0);
+            true
+        } else {
+            false
+        }
     }
 
     /// Get statistics about the cache.
     pub fn stats(&self) -> MaterialCacheStats {
         let mut by_domain = HashMap::new();
-        for cached in self.cache.values() {
-            *by_domain.entry(cached.key.domain).or_insert(0) += 1;
+        for key in self.cache.keys() {
+            *by_domain.entry(key.domain).or_insert(0) += 1;
         }
         MaterialCacheStats {
             total_pipelines: self.cache.len(),
@@ -1484,7 +1466,6 @@ impl MaterialPipelineCache {
 
 impl Drop for MaterialPipelineCache {
     fn drop(&mut self) {
-        // Log cache stats on drop for debugging
         if !self.cache.is_empty() {
             log::debug!(
                 "MaterialPipelineCache dropping with {} pipelines",

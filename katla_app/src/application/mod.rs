@@ -584,9 +584,7 @@ impl Application {
 
             if let Some(drawable) = self.world.get_component::<DrawableComponent>(fox.entity) {
                 if let Some(material_handle) = drawable.material_handle {
-                    if let Some(skeleton_layout) = renderer
-                        .asset_registry
-                        .get_skeleton_set_layout(material_handle)
+                    if let Some(skeleton_layout) = renderer.get_skeleton_set_layout(material_handle)
                     {
                         if let Some(skeleton_handle) =
                             renderer.register_skeleton(skeleton_buffer.clone(), skeleton_layout)

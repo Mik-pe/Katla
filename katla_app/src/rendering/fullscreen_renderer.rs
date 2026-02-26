@@ -1,22 +1,19 @@
 //! Fullscreen renderer for sky and grid rendering.
 //!
 //! Encapsulates fullscreen pipeline creation and management.
-//! Materials are pure config; this renderer owns the pipelines internally.
+//! Materials are pure config; this renderer owns the pipeline handles internally.
 
-use std::cell::RefCell;
-use std::rc::Rc;
-
-use katla_vulkan::{MaterialPipeline, MaterialPipelineCache};
+use katla_vulkan::{MaterialPipelineCache, PipelineHandle};
 
 use super::{GridMaterial, SkyMaterial};
 
 /// Renderer for fullscreen effects (sky, grid).
 ///
-/// Owns pipelines internally. Created from pure material configs
+/// Owns pipeline handles internally. Created from pure material configs
 /// using the shared material cache.
 pub struct FullscreenRenderer {
-    sky_pipeline: Option<Rc<RefCell<MaterialPipeline>>>,
-    grid_pipeline: Option<Rc<RefCell<MaterialPipeline>>>,
+    sky_pipeline: Option<PipelineHandle>,
+    grid_pipeline: Option<PipelineHandle>,
 }
 
 impl FullscreenRenderer {
@@ -48,15 +45,15 @@ impl FullscreenRenderer {
         }
     }
 
-    /// Get the sky pipeline.
-    pub fn sky_pipeline(&self) -> Option<Rc<RefCell<MaterialPipeline>>> {
-        self.sky_pipeline.clone()
+    /// Get the sky pipeline handle.
+    pub fn sky_pipeline(&self) -> Option<PipelineHandle> {
+        self.sky_pipeline
     }
 
-    /// Get the grid pipeline (only if grid should be visible).
-    pub fn grid_pipeline(&self, visible: bool) -> Option<Rc<RefCell<MaterialPipeline>>> {
+    /// Get the grid pipeline handle (only if grid should be visible).
+    pub fn grid_pipeline(&self, visible: bool) -> Option<PipelineHandle> {
         if visible {
-            self.grid_pipeline.clone()
+            self.grid_pipeline
         } else {
             None
         }

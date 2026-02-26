@@ -7,12 +7,11 @@
 //! - `ui` - UI buffer and texture management (TODO: extract from lib.rs)
 
 mod frame;
+pub mod handles;
 pub mod registry;
 pub mod types;
-// mod ui;
-// mod viewport;
 
-// Re-export commonly used types for convenience
+pub use handles::{PipelineHandle, ResourceStorage, TextureHandle};
 pub use registry::AssetRegistry;
 pub use types::{
     DrawCall, DrawList, FrameUniforms, InstanceData, MaterialHandle, MeshHandle, ParticleDispatch,
@@ -21,12 +20,11 @@ pub use types::{
 
 use crate::{
     render_graph, viewport::Viewport, Attachment, BindlessTextureManager, CompiledRenderGraph,
-    DescriptorLayoutBuilder, IndexBuffer, Material, MaterialPipeline, MaterialPipelineCache,
-    MaterialRegistry, RenderGraphBuilder, RenderGraphError, RendererError, ResourceId,
-    ResourceKind, SkeletonBuffer, SkeletonDescriptorSet, StorageDescriptorSet,
-    StorageUniformManager, SwapData, Texture, VertexBinding, VertexBuffer, ViewportBuilder,
-    ViewportHandle, VkDescriptorSet, VkDescriptorSetLayout, VkFence, VkImage, VkImageView,
-    VkSemaphore, VulkanContext, VulkanFrameCtx, MAX_BINDLESS_TEXTURES,
+    DescriptorLayoutBuilder, IndexBuffer, Material, MaterialPipelineCache, MaterialRegistry,
+    RenderGraphBuilder, RenderGraphError, RendererError, ResourceId, ResourceKind, SkeletonBuffer,
+    SkeletonDescriptorSet, StorageDescriptorSet, StorageUniformManager, SwapData, VertexBinding,
+    VertexBuffer, ViewportBuilder, ViewportHandle, VkDescriptorSet, VkDescriptorSetLayout, VkFence,
+    VkImage, VkImageView, VkSemaphore, VulkanContext, VulkanFrameCtx, MAX_BINDLESS_TEXTURES,
 };
 use ash::vk;
 use log::{error, info, warn};
@@ -948,80 +946,61 @@ impl VulkanRenderer {
         self.asset_registry.register_mesh(mesh_asset)
     }
 
-    /// Create a material from a material pipeline and optional texture.
+    /// Create a material from a pipeline handle.
     ///
     /// Returns a handle that can be used in DrawCall objects.
     ///
     /// # Arguments
-    /// * `pipeline` - The material pipeline (shaders, descriptors, etc.)
-    /// * `texture` - Optional texture bound to the material
+    /// * `pipeline` - Pipeline handle from MaterialPipelineCache
     /// * `vertex_binding` - Vertex binding description for the pipeline
-    /// * `uniform` - Optional per-material uniform buffer (for template-based materials)
+    /// * `is_bindless` - Whether this material uses bindless textures
     ///
     /// # Returns
     /// A `MaterialHandle` that references the registered material.
     pub fn create_material(
         &mut self,
-        pipeline: Rc<RefCell<MaterialPipeline>>,
-        texture: Option<Rc<Texture>>,
+        pipeline: super::renderer::PipelineHandle,
         vertex_binding: VertexBinding,
+        is_bindless: bool,
     ) -> MaterialHandle {
-        self.create_material_with_indices(pipeline, texture, vertex_binding, [0; 4], 0)
+        self.create_material_with_indices(pipeline, vertex_binding, is_bindless, [0; 4], 0)
     }
 
     /// Create a material with bindless texture indices.
     pub fn create_material_with_indices(
         &mut self,
-        pipeline: Rc<RefCell<MaterialPipeline>>,
-        texture: Option<Rc<Texture>>,
+        pipeline: super::renderer::PipelineHandle,
         vertex_binding: VertexBinding,
+        is_bindless: bool,
         texture_indices: [u32; 4],
         emission_index: u32,
     ) -> MaterialHandle {
         use crate::renderer::registry::MaterialAsset;
 
-        // Determine uses_bindless from the pipeline itself
-        let uses_bindless = pipeline.borrow().is_bindless;
-
         let material_asset = MaterialAsset {
             pipeline,
-            texture,
             vertex_binding,
-            pbr_textures: None,
             texture_indices,
             emission_index,
-            uses_bindless,
+            uses_bindless: is_bindless,
         };
 
         self.asset_registry.register_material(material_asset)
     }
 
-    /// Register a material with all its data including optional per-material uniform buffer.
-    ///
-    /// This is a convenience method for registering materials from the application layer.
-    ///
-    /// # Arguments
-    /// * `pipeline` - The material pipeline
-    /// * `texture` - Optional texture
-    /// * `vertex_binding` - Vertex binding description
-    /// * `uniform` - Optional per-material uniform buffer
-    /// * `texture_indices` - Bindless texture indices [albedo, normal, mr, ao]
-    /// * `emission_index` - Bindless emission texture index
-    ///
-    /// # Returns
-    /// A `MaterialHandle` that references the registered material.
+    /// Register a material with all its data.
     pub fn register_material_full(
         &mut self,
-        pipeline: Rc<RefCell<MaterialPipeline>>,
-        texture: Option<Rc<Texture>>,
+        pipeline: super::renderer::PipelineHandle,
         vertex_binding: VertexBinding,
+        is_bindless: bool,
         texture_indices: [u32; 4],
         emission_index: u32,
     ) -> MaterialHandle {
         self.create_material_with_indices(
             pipeline,
-            texture,
             vertex_binding,
+            is_bindless,
             texture_indices,
             emission_index,
         )
@@ -1030,31 +1009,25 @@ impl VulkanRenderer {
     /// Register a material with PBR textures.
     pub fn register_material_pbr(
         &mut self,
-        pipeline: Rc<RefCell<MaterialPipeline>>,
-        texture: Option<Rc<Texture>>,
+        pipeline: super::renderer::PipelineHandle,
         vertex_binding: VertexBinding,
-        pbr_textures: crate::vulkan::material::PbrTextureSet,
-        textures: Vec<Rc<Texture>>,
+        is_bindless: bool,
+        _pbr_textures: crate::vulkan::material::PbrTextureSet,
         texture_indices: [u32; 4],
         emission_index: u32,
     ) -> MaterialHandle {
         use crate::renderer::registry::MaterialAsset;
 
-        // Determine uses_bindless from the pipeline itself
-        let uses_bindless = pipeline.borrow().is_bindless;
-
         let material_asset = MaterialAsset {
             pipeline,
-            texture,
             vertex_binding,
-            pbr_textures: None,
             texture_indices,
             emission_index,
-            uses_bindless,
+            uses_bindless: is_bindless,
         };
 
         self.asset_registry
-            .register_material_pbr(material_asset, pbr_textures, textures)
+            .register_material_pbr(material_asset, _pbr_textures)
     }
 
     /// Register a unified Material with the renderer.
@@ -1081,50 +1054,39 @@ impl VulkanRenderer {
     pub fn register_material(&mut self, material: &mut Material) -> Option<MaterialHandle> {
         use crate::renderer::registry::MaterialAsset;
 
-        // Resolve template if not already done
         if !material.is_resolved() {
             let registry = self.material_registry.borrow();
             material.resolve(&registry);
         }
 
-        // Get pipeline from resolved material
-        let pipeline = material.pipeline()?;
+        let pipeline = material.pipeline();
+        if pipeline.is_none() {
+            return None;
+        }
         let vertex_binding = material.vertex_binding()?.clone();
+        let is_bindless = material.is_bindless();
 
-        // Determine uses_bindless from the pipeline itself
-        let uses_bindless = pipeline.borrow().is_bindless;
-
-        // Handle PBR textures if present
-        if let (Some(pbr_textures), Some(texture_refs)) = (
-            material.pbr_textures().cloned(),
-            material.pbr_texture_refs().map(|r| r.to_vec()),
-        ) {
+        if let Some(pbr_textures) = material.pbr_textures().cloned() {
             let material_asset = MaterialAsset {
                 pipeline,
-                texture: None,
                 vertex_binding,
-                pbr_textures: None,
                 texture_indices: material.texture_indices,
                 emission_index: material.emission_index,
-                uses_bindless,
+                uses_bindless: is_bindless,
             };
 
-            return Some(self.asset_registry.register_material_pbr(
-                material_asset,
-                pbr_textures,
-                texture_refs,
-            ));
+            return Some(
+                self.asset_registry
+                    .register_material_pbr(material_asset, pbr_textures),
+            );
         }
 
-        // Standard material registration
         let material_asset = MaterialAsset {
             pipeline,
-            texture: material.textures().values().next().cloned(),
             vertex_binding,
-            pbr_textures: None,
             texture_indices: material.texture_indices,
             emission_index: material.emission_index,
-            uses_bindless,
+            uses_bindless: is_bindless,
         };
 
         Some(self.asset_registry.register_material(material_asset))
@@ -1163,6 +1125,21 @@ impl VulkanRenderer {
         };
 
         Some(handle)
+    }
+
+    /// Get the skeleton descriptor set layout for a material.
+    ///
+    /// Returns `None` if the material doesn't support skeletal animation.
+    pub fn get_skeleton_set_layout(
+        &self,
+        handle: MaterialHandle,
+    ) -> Option<crate::sync::VkDescriptorSetLayout> {
+        let material = self.asset_registry.get_material(handle)?;
+        let cache = self.material_cache.borrow();
+        let pipeline = cache.get_pipeline(material.pipeline)?;
+        pipeline
+            .skeleton_set_layout
+            .map(crate::sync::VkDescriptorSetLayout::new)
     }
 
     /// Get the skeleton descriptor set for a handle.
@@ -1342,16 +1319,33 @@ impl VulkanRenderer {
     ///
     /// This is used to safely pass renderer state to render graph passes
     /// without requiring unsafe pointer patterns.
-    fn create_renderer_context(&self) -> render_graph::RendererContext {
+    fn create_renderer_context(&mut self) -> render_graph::RendererContext {
         // SAFETY: These pointers are valid for the lifetime of VulkanRenderer.
         // The render graph is stored in VulkanRenderer and will not outlive it.
+        //
+        // For material_cache: We only read from the cache during rendering.
+        // All mutations to the cache happen outside of rendering (during material creation).
+        // The cache is wrapped in Rc<RefCell<>> for sharing with other renderers,
+        // but during render graph execution we have exclusive access for reading.
+        let material_cache_ptr = {
+            let cache = self.material_cache.borrow();
+            &*cache as *const _
+        };
+
         render_graph::RendererContext {
             pointers: render_graph::RendererContextPointers {
-                asset_registry: std::ptr::addr_of!(self.asset_registry) as *mut _,
-                storage_manager: std::ptr::addr_of!(self.storage_manager) as *mut _,
+                asset_registry: std::ptr::addr_of!(self.asset_registry) as *const _,
+                material_cache: material_cache_ptr,
+                storage_manager: self
+                    .storage_manager
+                    .as_mut()
+                    .map_or(std::ptr::null_mut(), |m| m as *mut _),
                 storage_descriptor_set: std::ptr::addr_of!(self.storage_descriptor_set),
                 skeleton_descriptors: std::ptr::addr_of!(self.skeleton_descriptors),
-                bindless_manager: std::ptr::addr_of!(self.bindless_manager) as *mut _,
+                bindless_manager: self
+                    .bindless_manager
+                    .as_ref()
+                    .map_or(std::ptr::null(), |m| m as *const _),
                 vk_device: Some(self.context.device.clone()),
                 push_descriptor_loader: Some(self.context.push_descriptor_loader.clone()),
             },

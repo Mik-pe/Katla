@@ -3,9 +3,9 @@
 //! The registry stores meshes and materials internally and provides opaque handles
 //! for referencing them. This keeps ash::vk types contained within katla_vulkan.
 
+use super::handles::PipelineHandle;
 use super::types::*;
 use crate::vulkan::*;
-use std::{cell::RefCell, rc::Rc};
 
 /// Mesh representation containing Vulkan buffers.
 pub struct MeshAsset {
@@ -15,19 +15,12 @@ pub struct MeshAsset {
     pub index_buffer: Option<IndexBuffer>,
 }
 
-/// Material representation.
+/// Material representation using opaque handles.
 pub struct MaterialAsset {
-    /// Graphics pipeline and descriptor sets (shared ownership with interior mutability).
-    pub pipeline: Rc<RefCell<MaterialPipeline>>,
-    #[allow(dead_code)] // Needed for resource cleanup
-    /// Optional texture bound to this material.
-    pub texture: Option<Rc<Texture>>,
-    #[allow(dead_code)] // Needed for resource cleanup
+    /// Pipeline handle (references pipeline in MaterialPipelineCache).
+    pub pipeline: PipelineHandle,
     /// Vertex binding description.
     pub vertex_binding: VertexBinding,
-    /// PBR textures kept alive for the lifetime of the material.
-    #[allow(dead_code)]
-    pub pbr_textures: Option<Vec<Rc<Texture>>>,
     /// Bindless texture indices: [albedo, normal, metallic_roughness, ao]
     pub texture_indices: [u32; 4],
     /// Emission texture index for bindless.
@@ -94,21 +87,15 @@ impl AssetRegistry {
 
     /// Register a material with PBR textures and return a handle.
     ///
-    /// The textures are stored to keep them alive for the lifetime of the material.
-    /// Materials use bindless textures - texture indices should be set in MaterialAsset.
+    /// Textures are managed externally via bindless texture system.
     pub(crate) fn register_material_pbr(
         &mut self,
-        mut material: MaterialAsset,
+        material: MaterialAsset,
         _pbr_textures: crate::vulkan::material::PbrTextureSet,
-        textures: Vec<Rc<Texture>>,
     ) -> MaterialHandle {
-        // Store textures to keep them alive
-        material.pbr_textures = Some(textures);
-
         let id = self.next_material_id;
         self.next_material_id += 1;
 
-        // Push None slots until we reach the required index
         while self.materials.len() <= id {
             self.materials.push(None);
         }
@@ -132,16 +119,11 @@ impl AssetRegistry {
         self.materials.get_mut(handle.0)?.as_mut()
     }
 
-    /// Update a material's pipeline without destroying the old one (for hot reload).
-    ///
-    /// This replaces the pipeline Rc pointer, allowing the old pipeline to be
-    /// dropped naturally when no longer in use. This is safe for hot reload
-    /// because the GPU will finish using the old pipeline before it's actually
-    /// destroyed via the Drop trait.
+    /// Update a material's pipeline handle (for hot reload).
     pub fn replace_material_pipeline(
         &mut self,
         handle: MaterialHandle,
-        new_pipeline: std::rc::Rc<std::cell::RefCell<crate::vulkan::material::MaterialPipeline>>,
+        new_pipeline: PipelineHandle,
     ) -> bool {
         if let Some(material) = self.get_material_mut(handle) {
             material.pipeline = new_pipeline;
@@ -159,22 +141,6 @@ impl AssetRegistry {
     /// Get the number of registered materials.
     pub fn material_count(&self) -> usize {
         self.materials.iter().filter(|m| m.is_some()).count()
-    }
-
-    /// Get the skeleton descriptor set layout for a material.
-    ///
-    /// Returns `None` if the material doesn't support skeletal animation.
-    pub fn get_skeleton_set_layout(
-        &self,
-        handle: MaterialHandle,
-    ) -> Option<crate::sync::VkDescriptorSetLayout> {
-        self.materials.get(handle.0)?.as_ref()?;
-        let material = self.materials.get(handle.0)?.as_ref()?;
-        material
-            .pipeline
-            .borrow()
-            .skeleton_set_layout
-            .map(crate::sync::VkDescriptorSetLayout::new)
     }
 
     /// Clear all assets from the registry.

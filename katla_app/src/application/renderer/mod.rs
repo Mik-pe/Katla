@@ -172,17 +172,13 @@ fn setup_gizmo_resources(app: &mut Application) {
             .expect("Failed to create gizmo pipeline")
     };
 
-    // Create a white texture for the gizmo material (it doesn't use textures but needs the descriptor)
-    let white_pixels: Vec<u8> = vec![255, 255, 255, 255];
-    let white_texture =
-        katla_vulkan::Texture::create_image_rgb(context.clone(), 1, 1, &white_pixels);
-
     // Register material using VulkanRenderer's method
+    // Gizmo doesn't use bindless textures
     let vertex_binding = gizmo::gizmo_vertex_binding();
     let material_handle = renderer.register_material_full(
         gizmo_pipeline,
-        Some(Rc::new(white_texture)),
         vertex_binding,
+        false, // not bindless
         [0; 4],
         0,
     );

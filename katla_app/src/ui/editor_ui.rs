@@ -7,6 +7,9 @@
 //! - Toolbar (top)
 //! - Status bar (bottom)
 
+mod preferences;
+mod toolbar;
+
 use katla_ecs::EntityId;
 use katla_math::{Color, Rect2D, Vec2, Vec3};
 use katla_ui::{
@@ -17,43 +20,25 @@ use katla_ui::{
 use std::collections::HashSet;
 use std::path::PathBuf;
 
-use super::asset_browser::AssetBrowserState;
+use crate::{
+    ui::{
+        asset_browser::{build_asset_browser, AssetAction, AssetBrowserState, AssetType},
+        editor_ui::toolbar::{Toolbar, ToolbarState},
+    },
+    Preferences,
+};
+
 use super::model_preview::ModelPreviewState;
 use super::theme::Theme;
 
 /// Model types that can be spawned.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SpawnableModel {
-    Fox,
     Cube,
     Sphere,
     Cylinder,
     Plane,
     Torus,
-}
-
-impl SpawnableModel {
-    pub fn name(&self) -> &'static str {
-        match self {
-            SpawnableModel::Fox => "Fox",
-            SpawnableModel::Cube => "Cube",
-            SpawnableModel::Sphere => "Sphere",
-            SpawnableModel::Cylinder => "Cylinder",
-            SpawnableModel::Plane => "Plane",
-            SpawnableModel::Torus => "Torus",
-        }
-    }
-
-    pub fn all() -> &'static [SpawnableModel] {
-        &[
-            SpawnableModel::Fox,
-            SpawnableModel::Cube,
-            SpawnableModel::Sphere,
-            SpawnableModel::Cylinder,
-            SpawnableModel::Plane,
-            SpawnableModel::Torus,
-        ]
-    }
 }
 
 /// Entity info for the hierarchy panel.
@@ -158,6 +143,12 @@ impl PreferencesTab {
     }
 }
 
+#[derive(Debug, Clone)]
+pub enum Panel {
+    Preferences,
+    Editor,
+}
+
 /// Action requested from the editor UI.
 #[derive(Debug, Clone)]
 pub enum EditorAction {
@@ -181,6 +172,8 @@ pub enum EditorAction {
     ToggleStats,
     /// Set font scale (1.0 = 100%).
     SetFontScale(f32),
+    /// Open panel
+    OpenPanel(Panel),
 }
 
 /// Which panel is currently focused (receives input).
@@ -252,10 +245,6 @@ pub struct EditorUI {
     pub show_stats: bool,
     /// Font scale multiplier (1.0 = 100%).
     pub font_scale: f32,
-    /// Selected spawn model.
-    selected_spawn: SpawnableModel,
-    /// Spawn position input.
-    spawn_pos: [f32; 3],
     /// Deferred actions to be processed by the application.
     pub pending_actions: Vec<EditorAction>,
     /// Last known viewport panel size (width, height) in pixels.
@@ -266,12 +255,8 @@ pub struct EditorUI {
     hierarchy_context_menu_open: bool,
     /// Entity for hierarchy context menu.
     hierarchy_context_entity: Option<EntityId>,
-    /// Menu bar dropdown states
-    file_menu_open: bool,
-    edit_menu_open: bool,
-    view_menu_open: bool,
-    create_menu_open: bool,
-    help_menu_open: bool,
+
+    toolbar_state: ToolbarState,
     /// Current color theme.
     pub theme: Theme,
     /// Asset browser panel state.
@@ -307,18 +292,12 @@ impl EditorUI {
             show_grid: true,
             show_stats: true,
             font_scale: 1.0,
-            selected_spawn: SpawnableModel::Fox,
-            spawn_pos: [0.0, 0.0, 0.0],
             pending_actions: Vec::new(),
             last_viewport_size: (800, 600), // Default size
             expanded_entities: HashSet::new(),
             hierarchy_context_menu_open: false,
             hierarchy_context_entity: None,
-            file_menu_open: false,
-            edit_menu_open: false,
-            view_menu_open: false,
-            create_menu_open: false,
-            help_menu_open: false,
+            toolbar_state: ToolbarState::default(),
             theme: Theme::catppuccin(), // Default to Catppuccin because it's sick
             asset_browser: AssetBrowserState::new(),
             model_preview: ModelPreviewState::new(),
@@ -378,6 +357,15 @@ impl EditorUI {
         }
     }
 
+    pub fn open_panel(&mut self, panel: Panel) {
+        match panel {
+            Panel::Preferences => {
+                self.preferences_state.open();
+            }
+            Panel::Editor => {}
+        }
+    }
+
     /// Check if an entity should be visible (all ancestors are expanded).
     fn is_entity_visible(&self, entity: &EntityInfo, all_entities: &[EntityInfo]) -> bool {
         let mut current = entity.parent_id;
@@ -399,6 +387,7 @@ impl EditorUI {
     pub fn build(
         &mut self,
         ui: &mut UiContext,
+        preferences: &Preferences,
         entities: &[EntityInfo],
         fps: f32,
         frame_count: usize,
@@ -485,7 +474,6 @@ impl EditorUI {
             self.selected_entity = None;
         }
 
-        let padding = 4.0; // Inner padding for content
         let toolbar_height = 32.0;
         let status_bar_height = 24.0;
 
@@ -497,19 +485,19 @@ impl EditorUI {
         };
 
         // === TOOLBAR (top) ===
-        self.build_toolbar(ui, screen_size, toolbar_height, padding);
-
-        // Toolbar bottom border (fills gap)
-        ui.draw_rect(
-            Rect2D::from_origin_size(
-                Vec2::new(0.0, toolbar_height),
-                Vec2::new(screen_size.x(), 1.0),
-            ),
-            Color::new(0.3, 0.3, 0.3, 1.0),
-        );
+        ui.add(Toolbar::new(
+            screen_size,
+            toolbar_height,
+            &mut self.toolbar_state,
+            &self.theme,
+            preferences,
+        ));
+        // Take any actions from Toolbar
+        self.pending_actions
+            .append(&mut self.toolbar_state.pending_actions);
 
         // Panel Y range (between toolbar and asset browser, no gaps)
-        let panel_top = toolbar_height + 1.0; // Just after toolbar border
+        let panel_top = toolbar_height; // Just after toolbar border
         let panel_bottom = screen_size.y() - status_bar_height - asset_browser_height;
         let panel_height = panel_bottom - panel_top;
 
@@ -646,7 +634,7 @@ impl EditorUI {
             Vec2::new(0.0, panel_bottom),
             Vec2::new(screen_size.x(), asset_browser_height),
         );
-        super::asset_browser::build_asset_browser(
+        build_asset_browser(
             &mut self.asset_browser,
             ui,
             &self.theme,
@@ -659,7 +647,7 @@ impl EditorUI {
         // Process asset browser actions
         for action in self.asset_browser.take_actions() {
             match action {
-                super::asset_browser::AssetAction::DragToViewport {
+                AssetAction::DragToViewport {
                     path,
                     asset_type,
                     screen_pos,
@@ -668,7 +656,7 @@ impl EditorUI {
                     if viewport_bounds.contains(screen_pos) {
                         // Determine what to spawn based on asset type
                         match asset_type {
-                            super::asset_browser::AssetType::Model => {
+                            AssetType::Model => {
                                 // Store the path for model loading (will be handled by application)
                                 self.pending_actions.push(EditorAction::SpawnModelAtPath {
                                     path: path.clone(),
@@ -685,7 +673,7 @@ impl EditorUI {
                         }
                     }
                 }
-                super::asset_browser::AssetAction::CreateFolder(parent_path) => {
+                AssetAction::CreateFolder(parent_path) => {
                     // Create "New Folder" in the specified directory
                     let mut new_folder = parent_path.join("New Folder");
                     let mut counter = 1;
@@ -700,7 +688,7 @@ impl EditorUI {
                         self.asset_browser.scan_directory(thumbnail_texture_ids);
                     }
                 }
-                super::asset_browser::AssetAction::Delete(path) => {
+                AssetAction::Delete(path) => {
                     if path.is_dir() {
                         if let Err(e) = std::fs::remove_dir_all(&path) {
                             log::warn!("Failed to delete folder: {}", e);
@@ -715,7 +703,7 @@ impl EditorUI {
                         self.asset_browser.scan_directory(thumbnail_texture_ids);
                     }
                 }
-                super::asset_browser::AssetAction::Rename { old_path, new_path } => {
+                AssetAction::Rename { old_path, new_path } => {
                     // Rename file or folder
                     if old_path != new_path {
                         if let Err(e) = std::fs::rename(&old_path, &new_path) {
@@ -726,7 +714,7 @@ impl EditorUI {
                         }
                     }
                 }
-                super::asset_browser::AssetAction::Open(path) => {
+                AssetAction::Open(path) => {
                     // Navigate into folder or open file
                     if path.is_dir() {
                         self.asset_browser.navigate_to(&path, thumbnail_texture_ids);
@@ -735,7 +723,7 @@ impl EditorUI {
                         // TODO: Open file in appropriate editor
                     }
                 }
-                super::asset_browser::AssetAction::ModelPreviewRequested(path) => {
+                AssetAction::ModelPreviewRequested(path) => {
                     // Request model preview in the preview panel
                     log::info!("Model preview requested: {:?}", path);
                     let load_id = loader.request_model(path.clone());
@@ -746,12 +734,12 @@ impl EditorUI {
                     self.model_preview.model = None;
                     self.model_preview.stats = None;
                 }
-                super::asset_browser::AssetAction::CopyPath(path) => {
+                AssetAction::CopyPath(path) => {
                     // Copy path as string (log for now, clipboard not implemented)
                     log::info!("Copy path: {:?}", path);
                     // TODO: Implement clipboard when available
                 }
-                super::asset_browser::AssetAction::ShowInExplorer(path) => {
+                AssetAction::ShowInExplorer(path) => {
                     // Open file manager at location
                     #[cfg(target_os = "windows")]
                     {
@@ -781,7 +769,7 @@ impl EditorUI {
                         }
                     }
                 }
-                super::asset_browser::AssetAction::MoveToFolder {
+                AssetAction::MoveToFolder {
                     asset_path,
                     folder_path,
                 } => {
@@ -909,215 +897,6 @@ impl EditorUI {
                 }
             }
         }
-    }
-
-    fn build_toolbar(
-        &mut self,
-        ui: &mut UiContext,
-        screen_size: Vec2,
-        height: f32,
-        _padding_arg: f32,
-    ) {
-        let theme = &self.theme;
-        let toolbar_bounds =
-            Rect2D::from_origin_size(Vec2::new(0.0, 0.0), Vec2::new(screen_size.x(), height));
-
-        // Darker toolbar background
-        ui.draw_rect(toolbar_bounds, theme.background_dark);
-        ui.draw_line(
-            Vec2::new(0.0, height),
-            Vec2::new(screen_size.x(), height),
-            theme.separator,
-            1.0,
-        );
-
-        // Make menu bar items not have background by default (only on hover/active)
-        let original_button_normal = ui.style.button_normal;
-        ui.style.button_normal = Color::TRANSPARENT;
-
-        // Internal padding for non-menu items
-        let padding = 4.0;
-
-        // No padding between menu items - menu bar should be tight
-        let menu_item_width = 50.0;
-        let button_height = height;
-        let mut cursor = Vec2::new(0.0, 0.0); // Start from left edge
-
-        // === FILE MENU ===
-        let file_bounds =
-            Rect2D::from_origin_size(cursor, Vec2::new(menu_item_width, button_height));
-        ui.menu_bar_dropdown(
-            "file_menu",
-            "File",
-            file_bounds,
-            &mut self.file_menu_open,
-            |ui, open| {
-                if ui.menu_item_clicked("New Scene") {
-                    // TODO: Implement new scene
-                    *open = false;
-                }
-                if ui.menu_item_clicked("Open...") {
-                    // TODO: Implement open scene
-                    *open = false;
-                }
-                if ui.menu_item_clicked("Save") {
-                    // TODO: Implement save scene
-                    *open = false;
-                }
-                ui.menu_separator();
-                if ui.menu_item_clicked("Quit") {
-                    *open = false;
-                }
-            },
-        );
-        cursor = Vec2::new(cursor.x() + menu_item_width, cursor.y());
-
-        // === EDIT MENU ===
-        let edit_bounds =
-            Rect2D::from_origin_size(cursor, Vec2::new(menu_item_width, button_height));
-        ui.menu_bar_dropdown(
-            "edit_menu",
-            "Edit",
-            edit_bounds,
-            &mut self.edit_menu_open,
-            |ui, open| {
-                if ui.menu_item_clicked("Undo") {
-                    // TODO: Implement undo
-                    *open = false;
-                }
-                if ui.menu_item_clicked("Redo") {
-                    // TODO: Implement redo
-                    *open = false;
-                }
-                ui.menu_separator();
-                if ui.menu_item_clicked("Preferences...") {
-                    self.preferences_state.open();
-                    *open = false;
-                }
-            },
-        );
-        cursor = Vec2::new(cursor.x() + menu_item_width, cursor.y());
-
-        // === VIEW MENU ===
-        let view_bounds =
-            Rect2D::from_origin_size(cursor, Vec2::new(menu_item_width, button_height));
-        let show_grid = self.show_grid;
-        let show_stats = self.show_stats;
-        ui.menu_bar_dropdown(
-            "view_menu",
-            "View",
-            view_bounds,
-            &mut self.view_menu_open,
-            |ui, open| {
-                if ui.toggle_menu_item_clicked("Grid", show_grid) {
-                    self.show_grid = !self.show_grid;
-                    self.pending_actions.push(EditorAction::ToggleGrid);
-                    *open = false;
-                }
-                if ui.toggle_menu_item_clicked("Stats", show_stats) {
-                    self.show_stats = !self.show_stats;
-                    self.pending_actions.push(EditorAction::ToggleStats);
-                    *open = false;
-                }
-            },
-        );
-        cursor = Vec2::new(cursor.x() + menu_item_width, cursor.y());
-
-        // === CREATE MENU ===
-        let create_bounds = Rect2D::from_origin_size(cursor, Vec2::new(60.0, button_height));
-        ui.menu_bar_dropdown(
-            "create_menu",
-            "Create",
-            create_bounds,
-            &mut self.create_menu_open,
-            |ui, open| {
-                for model in SpawnableModel::all() {
-                    if ui.menu_item_clicked(model.name()) {
-                        self.pending_actions
-                            .push(EditorAction::SpawnModel(*model, Vec3::new(0.0, 0.0, 0.0)));
-                        *open = false;
-                    }
-                }
-            },
-        );
-        cursor = Vec2::new(cursor.x() + 60.0 + padding, cursor.y());
-
-        // === HELP MENU ===
-        let help_bounds =
-            Rect2D::from_origin_size(cursor, Vec2::new(menu_item_width, button_height));
-        ui.menu_bar_dropdown(
-            "help_menu",
-            "Help",
-            help_bounds,
-            &mut self.help_menu_open,
-            |ui, open| {
-                if ui.menu_item_clicked("About") {
-                    *open = false;
-                }
-            },
-        );
-        cursor = Vec2::new(cursor.x() + menu_item_width, cursor.y());
-
-        // Separator line before play controls
-        cursor = Vec2::new(cursor.x() + padding * 2.0, cursor.y());
-        ui.draw_line(
-            Vec2::new(cursor.x(), padding),
-            Vec2::new(cursor.x(), height - padding),
-            theme.separator,
-            1.0,
-        );
-        cursor = Vec2::new(cursor.x() + padding * 2.0, cursor.y());
-
-        // Play/Pause button with icon
-        let play_width = 70.0;
-        let play_bounds = Rect2D::from_origin_size(cursor, Vec2::new(play_width, button_height));
-        let play_color = if self.is_playing {
-            theme.success
-        } else {
-            theme.button_bg
-        };
-        ui.draw_rect(play_bounds, play_color);
-
-        // Draw play/pause icon and text (centered)
-        let (play_icon, play_text) = if self.is_playing {
-            (ForkAwesome::PAUSE, "Pause")
-        } else {
-            (ForkAwesome::PLAY, "Play")
-        };
-        let icon_size = 14.0;
-        ui.draw_icon_text_centered(
-            play_icon,
-            play_text,
-            play_bounds,
-            icon_size,
-            ui.scaled_font_size(FontSize::Small),
-            theme.button_text,
-        );
-
-        if ui
-            .add(Button::new("").bounds(play_bounds).id("play_btn"))
-            .clicked
-        {
-            self.is_playing = !self.is_playing;
-            self.pending_actions.push(EditorAction::TogglePlay);
-        }
-
-        // Title in center (only show if there's enough space)
-        let title = "Katla Engine";
-        let title_size = ui.measure_text(title, ui.scaled_font_size(FontSize::Medium));
-        let title_pos = Vec2::new(
-            screen_size.x() * 0.5 - title_size.x() * 0.5,
-            height * 0.5 - title_size.y() * 0.5,
-        );
-        ui.draw_text(
-            title,
-            title_pos,
-            theme.text_muted,
-            ui.scaled_font_size(FontSize::Medium),
-        );
-
-        // Restore original button style
-        ui.style.button_normal = original_button_normal;
     }
 
     fn build_hierarchy_panel(
@@ -2971,6 +2750,7 @@ impl EditorUI {
     pub fn render<'a>(
         &'a mut self,
         ui: &'a mut UiContext,
+        preferences: &Preferences,
         screen_size: Vec2,
         scale_factor: f32,
         entities: &'a [EntityInfo],
@@ -2988,6 +2768,7 @@ impl EditorUI {
         ui.begin(screen_size, scale_factor);
         self.build(
             ui,
+            preferences,
             entities,
             fps,
             frame_count,
