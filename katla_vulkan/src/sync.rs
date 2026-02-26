@@ -163,510 +163,67 @@ pub fn swapchain_to_present_barrier(image: VkImage) -> ImageMemoryBarrier2 {
         .subresource_range(COLOR_SUBRESOURCE_RANGE)
 }
 
-/// Wrapper around `vk::Semaphore`.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub struct VkSemaphore(pub vk::Semaphore);
+macro_rules! define_vk_wrapper {
+    ($name:ident, $vk_type:ty) => {
+        #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+        pub struct $name(pub $vk_type);
 
-unsafe impl Send for VkSemaphore {}
-unsafe impl Sync for VkSemaphore {}
+        unsafe impl Send for $name {}
+        unsafe impl Sync for $name {}
 
-impl VkSemaphore {
-    /// Creates a new Semaphore wrapper.
-    pub fn new(semaphore: vk::Semaphore) -> Self {
-        Self(semaphore)
-    }
+        impl $name {
+            pub fn new(handle: $vk_type) -> Self {
+                Self(handle)
+            }
 
-    /// Returns the underlying `vk::Semaphore`.
-    pub(crate) fn vk(&self) -> vk::Semaphore {
-        self.0
-    }
+            #[allow(dead_code)]
+            pub(crate) fn vk(&self) -> $vk_type {
+                self.0
+            }
+        }
+
+        impl From<$vk_type> for $name {
+            fn from(handle: $vk_type) -> Self {
+                Self(handle)
+            }
+        }
+
+        impl From<$name> for $vk_type {
+            fn from(wrapper: $name) -> Self {
+                wrapper.0
+            }
+        }
+
+        impl AsRef<$vk_type> for $name {
+            fn as_ref(&self) -> &$vk_type {
+                &self.0
+            }
+        }
+    };
+    ($name:ident, $vk_type:ty, default) => {
+        define_vk_wrapper!($name, $vk_type);
+
+        impl Default for $name {
+            fn default() -> Self {
+                Self(<$vk_type>::null())
+            }
+        }
+    };
 }
 
-impl From<vk::Semaphore> for VkSemaphore {
-    fn from(semaphore: vk::Semaphore) -> Self {
-        Self(semaphore)
-    }
-}
-
-impl From<VkSemaphore> for vk::Semaphore {
-    fn from(wrapper: VkSemaphore) -> Self {
-        wrapper.0
-    }
-}
-
-impl AsRef<vk::Semaphore> for VkSemaphore {
-    fn as_ref(&self) -> &vk::Semaphore {
-        &self.0
-    }
-}
-
-/// Wrapper around `vk::Fence`.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub struct VkFence(pub vk::Fence);
-
-unsafe impl Send for VkFence {}
-unsafe impl Sync for VkFence {}
-
-impl VkFence {
-    /// Creates a new Fence wrapper.
-    pub fn new(fence: vk::Fence) -> Self {
-        Self(fence)
-    }
-
-    /// Returns the underlying `vk::Fence`.
-    pub(crate) fn vk(&self) -> vk::Fence {
-        self.0
-    }
-}
-
-impl From<vk::Fence> for VkFence {
-    fn from(fence: vk::Fence) -> Self {
-        Self(fence)
-    }
-}
-
-impl From<VkFence> for vk::Fence {
-    fn from(wrapper: VkFence) -> Self {
-        wrapper.0
-    }
-}
-
-impl AsRef<vk::Fence> for VkFence {
-    fn as_ref(&self) -> &vk::Fence {
-        &self.0
-    }
-}
-
-/// Wrapper around `vk::ImageView`.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub struct VkImageView(pub vk::ImageView);
-
-unsafe impl Send for VkImageView {}
-unsafe impl Sync for VkImageView {}
-
-impl VkImageView {
-    /// Creates a new ImageView wrapper.
-    pub fn new(image_view: vk::ImageView) -> Self {
-        Self(image_view)
-    }
-
-    /// Returns the underlying `vk::ImageView`.
-    pub(crate) fn vk(&self) -> vk::ImageView {
-        self.0
-    }
-}
-
-impl From<vk::ImageView> for VkImageView {
-    fn from(image_view: vk::ImageView) -> Self {
-        Self(image_view)
-    }
-}
-
-impl From<VkImageView> for vk::ImageView {
-    fn from(wrapper: VkImageView) -> Self {
-        wrapper.0
-    }
-}
-
-impl AsRef<vk::ImageView> for VkImageView {
-    fn as_ref(&self) -> &vk::ImageView {
-        &self.0
-    }
-}
-
-/// Wrapper around `vk::Sampler`.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub struct VkSampler(pub vk::Sampler);
-
-unsafe impl Send for VkSampler {}
-unsafe impl Sync for VkSampler {}
-
-impl VkSampler {
-    /// Creates a new Sampler wrapper.
-    pub fn new(sampler: vk::Sampler) -> Self {
-        Self(sampler)
-    }
-
-    /// Returns the underlying `vk::Sampler`.
-    pub(crate) fn vk(&self) -> vk::Sampler {
-        self.0
-    }
-}
-
-impl From<vk::Sampler> for VkSampler {
-    fn from(sampler: vk::Sampler) -> Self {
-        Self(sampler)
-    }
-}
-
-impl From<VkSampler> for vk::Sampler {
-    fn from(wrapper: VkSampler) -> Self {
-        wrapper.0
-    }
-}
-
-impl AsRef<vk::Sampler> for VkSampler {
-    fn as_ref(&self) -> &vk::Sampler {
-        &self.0
-    }
-}
-
-/// Wrapper around `vk::Image`.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub struct VkImage(pub vk::Image);
-
-unsafe impl Send for VkImage {}
-unsafe impl Sync for VkImage {}
-
-impl VkImage {
-    /// Creates a new Image wrapper.
-    pub fn new(image: vk::Image) -> Self {
-        Self(image)
-    }
-
-    /// Returns the underlying `vk::Image`.
-    pub(crate) fn vk(&self) -> vk::Image {
-        self.0
-    }
-}
-
-impl From<vk::Image> for VkImage {
-    fn from(image: vk::Image) -> Self {
-        Self(image)
-    }
-}
-
-impl From<VkImage> for vk::Image {
-    fn from(wrapper: VkImage) -> Self {
-        wrapper.0
-    }
-}
-
-impl AsRef<vk::Image> for VkImage {
-    fn as_ref(&self) -> &vk::Image {
-        &self.0
-    }
-}
-
-/// Wrapper around `vk::RenderPass`.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub struct VkRenderPass(pub vk::RenderPass);
-
-unsafe impl Send for VkRenderPass {}
-unsafe impl Sync for VkRenderPass {}
-
-impl VkRenderPass {
-    /// Creates a new RenderPass wrapper.
-    pub fn new(render_pass: vk::RenderPass) -> Self {
-        Self(render_pass)
-    }
-
-    /// Returns the underlying `vk::RenderPass`.
-    pub(crate) fn vk(&self) -> vk::RenderPass {
-        self.0
-    }
-}
-
-impl Default for VkRenderPass {
-    fn default() -> Self {
-        Self(vk::RenderPass::null())
-    }
-}
-
-impl From<vk::RenderPass> for VkRenderPass {
-    fn from(render_pass: vk::RenderPass) -> Self {
-        Self(render_pass)
-    }
-}
-
-impl From<VkRenderPass> for vk::RenderPass {
-    fn from(wrapper: VkRenderPass) -> Self {
-        wrapper.0
-    }
-}
-
-impl AsRef<vk::RenderPass> for VkRenderPass {
-    fn as_ref(&self) -> &vk::RenderPass {
-        &self.0
-    }
-}
-
-/// Wrapper around `vk::Framebuffer`.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub struct VkFramebuffer(pub vk::Framebuffer);
-
-unsafe impl Send for VkFramebuffer {}
-unsafe impl Sync for VkFramebuffer {}
-
-impl VkFramebuffer {
-    /// Creates a new Framebuffer wrapper.
-    pub fn new(framebuffer: vk::Framebuffer) -> Self {
-        Self(framebuffer)
-    }
-
-    /// Returns the underlying `vk::Framebuffer`.
-    pub(crate) fn vk(&self) -> vk::Framebuffer {
-        self.0
-    }
-}
-
-impl From<vk::Framebuffer> for VkFramebuffer {
-    fn from(framebuffer: vk::Framebuffer) -> Self {
-        Self(framebuffer)
-    }
-}
-
-impl From<VkFramebuffer> for vk::Framebuffer {
-    fn from(wrapper: VkFramebuffer) -> Self {
-        wrapper.0
-    }
-}
-
-impl AsRef<vk::Framebuffer> for VkFramebuffer {
-    fn as_ref(&self) -> &vk::Framebuffer {
-        &self.0
-    }
-}
-
-/// Wrapper around `vk::DescriptorSet`.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub struct VkDescriptorSet(pub vk::DescriptorSet);
-
-unsafe impl Send for VkDescriptorSet {}
-unsafe impl Sync for VkDescriptorSet {}
-
-impl VkDescriptorSet {
-    /// Creates a new DescriptorSet wrapper.
-    pub fn new(descriptor_set: vk::DescriptorSet) -> Self {
-        Self(descriptor_set)
-    }
-
-    /// Returns the underlying `vk::DescriptorSet`.
-    pub(crate) fn vk(&self) -> vk::DescriptorSet {
-        self.0
-    }
-}
-
-impl From<vk::DescriptorSet> for VkDescriptorSet {
-    fn from(descriptor_set: vk::DescriptorSet) -> Self {
-        Self(descriptor_set)
-    }
-}
-
-impl From<VkDescriptorSet> for vk::DescriptorSet {
-    fn from(wrapper: VkDescriptorSet) -> Self {
-        wrapper.0
-    }
-}
-
-impl AsRef<vk::DescriptorSet> for VkDescriptorSet {
-    fn as_ref(&self) -> &vk::DescriptorSet {
-        &self.0
-    }
-}
-
-/// Wrapper around `vk::DescriptorSetLayout`.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub struct VkDescriptorSetLayout(pub vk::DescriptorSetLayout);
-
-unsafe impl Send for VkDescriptorSetLayout {}
-unsafe impl Sync for VkDescriptorSetLayout {}
-
-impl VkDescriptorSetLayout {
-    /// Creates a new DescriptorSetLayout wrapper.
-    pub fn new(descriptor_set_layout: vk::DescriptorSetLayout) -> Self {
-        Self(descriptor_set_layout)
-    }
-
-    /// Returns the underlying `vk::DescriptorSetLayout`.
-    pub(crate) fn vk(&self) -> vk::DescriptorSetLayout {
-        self.0
-    }
-}
-
-impl From<vk::DescriptorSetLayout> for VkDescriptorSetLayout {
-    fn from(descriptor_set_layout: vk::DescriptorSetLayout) -> Self {
-        Self(descriptor_set_layout)
-    }
-}
-
-impl From<VkDescriptorSetLayout> for vk::DescriptorSetLayout {
-    fn from(wrapper: VkDescriptorSetLayout) -> Self {
-        wrapper.0
-    }
-}
-
-impl AsRef<vk::DescriptorSetLayout> for VkDescriptorSetLayout {
-    fn as_ref(&self) -> &vk::DescriptorSetLayout {
-        &self.0
-    }
-}
-
-/// Wrapper around `vk::DescriptorPool`.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub struct VkDescriptorPool(pub vk::DescriptorPool);
-
-unsafe impl Send for VkDescriptorPool {}
-unsafe impl Sync for VkDescriptorPool {}
-
-impl VkDescriptorPool {
-    /// Creates a new DescriptorPool wrapper.
-    pub fn new(descriptor_pool: vk::DescriptorPool) -> Self {
-        Self(descriptor_pool)
-    }
-
-    /// Returns the underlying `vk::DescriptorPool`.
-    pub(crate) fn vk(&self) -> vk::DescriptorPool {
-        self.0
-    }
-}
-
-impl From<vk::DescriptorPool> for VkDescriptorPool {
-    fn from(descriptor_pool: vk::DescriptorPool) -> Self {
-        Self(descriptor_pool)
-    }
-}
-
-impl From<VkDescriptorPool> for vk::DescriptorPool {
-    fn from(wrapper: VkDescriptorPool) -> Self {
-        wrapper.0
-    }
-}
-
-impl AsRef<vk::DescriptorPool> for VkDescriptorPool {
-    fn as_ref(&self) -> &vk::DescriptorPool {
-        &self.0
-    }
-}
-
-/// Wrapper around `vk::Pipeline`.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub struct VkPipeline(pub vk::Pipeline);
-
-unsafe impl Send for VkPipeline {}
-unsafe impl Sync for VkPipeline {}
-
-impl VkPipeline {
-    /// Creates a new Pipeline wrapper.
-    pub fn new(pipeline: vk::Pipeline) -> Self {
-        Self(pipeline)
-    }
-
-    /// Returns the underlying `vk::Pipeline`.
-    pub(crate) fn vk(&self) -> vk::Pipeline {
-        self.0
-    }
-}
-
-impl Default for VkPipeline {
-    fn default() -> Self {
-        Self(vk::Pipeline::null())
-    }
-}
-
-impl From<vk::Pipeline> for VkPipeline {
-    fn from(pipeline: vk::Pipeline) -> Self {
-        Self(pipeline)
-    }
-}
-
-impl From<VkPipeline> for vk::Pipeline {
-    fn from(wrapper: VkPipeline) -> Self {
-        wrapper.0
-    }
-}
-
-impl AsRef<vk::Pipeline> for VkPipeline {
-    fn as_ref(&self) -> &vk::Pipeline {
-        &self.0
-    }
-}
-
-/// Wrapper around `vk::PipelineLayout`.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub struct VkPipelineLayout(pub vk::PipelineLayout);
-
-unsafe impl Send for VkPipelineLayout {}
-unsafe impl Sync for VkPipelineLayout {}
-
-impl VkPipelineLayout {
-    /// Creates a new PipelineLayout wrapper.
-    pub fn new(pipeline_layout: vk::PipelineLayout) -> Self {
-        Self(pipeline_layout)
-    }
-
-    /// Returns the underlying `vk::PipelineLayout`.
-    pub(crate) fn vk(&self) -> vk::PipelineLayout {
-        self.0
-    }
-}
-
-impl Default for VkPipelineLayout {
-    fn default() -> Self {
-        Self(vk::PipelineLayout::null())
-    }
-}
-
-impl From<vk::PipelineLayout> for VkPipelineLayout {
-    fn from(pipeline_layout: vk::PipelineLayout) -> Self {
-        Self(pipeline_layout)
-    }
-}
-
-impl From<VkPipelineLayout> for vk::PipelineLayout {
-    fn from(wrapper: VkPipelineLayout) -> Self {
-        wrapper.0
-    }
-}
-
-impl AsRef<vk::PipelineLayout> for VkPipelineLayout {
-    fn as_ref(&self) -> &vk::PipelineLayout {
-        &self.0
-    }
-}
-
-/// Wrapper around `vk::Buffer`.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub struct VkBuffer(pub vk::Buffer);
-
-unsafe impl Send for VkBuffer {}
-unsafe impl Sync for VkBuffer {}
-
-impl VkBuffer {
-    /// Creates a new Buffer wrapper.
-    pub fn new(buffer: vk::Buffer) -> Self {
-        Self(buffer)
-    }
-
-    /// Returns the underlying `vk::Buffer`.
-    pub(crate) fn vk(&self) -> vk::Buffer {
-        self.0
-    }
-}
-
-impl Default for VkBuffer {
-    fn default() -> Self {
-        Self(vk::Buffer::null())
-    }
-}
-
-impl From<vk::Buffer> for VkBuffer {
-    fn from(buffer: vk::Buffer) -> Self {
-        Self(buffer)
-    }
-}
-
-impl From<VkBuffer> for vk::Buffer {
-    fn from(wrapper: VkBuffer) -> Self {
-        wrapper.0
-    }
-}
-
-impl AsRef<vk::Buffer> for VkBuffer {
-    fn as_ref(&self) -> &vk::Buffer {
-        &self.0
-    }
-}
+define_vk_wrapper!(VkSemaphore, vk::Semaphore);
+define_vk_wrapper!(VkFence, vk::Fence);
+define_vk_wrapper!(VkImageView, vk::ImageView);
+define_vk_wrapper!(VkSampler, vk::Sampler);
+define_vk_wrapper!(VkImage, vk::Image);
+define_vk_wrapper!(VkRenderPass, vk::RenderPass, default);
+define_vk_wrapper!(VkFramebuffer, vk::Framebuffer);
+define_vk_wrapper!(VkDescriptorSet, vk::DescriptorSet);
+define_vk_wrapper!(VkDescriptorSetLayout, vk::DescriptorSetLayout);
+define_vk_wrapper!(VkDescriptorPool, vk::DescriptorPool);
+define_vk_wrapper!(VkPipeline, vk::Pipeline, default);
+define_vk_wrapper!(VkPipelineLayout, vk::PipelineLayout, default);
+define_vk_wrapper!(VkBuffer, vk::Buffer, default);
 
 //=============================================================================
 // Synchronization2 Wrapper Types (Vulkan 1.3)
@@ -1183,19 +740,10 @@ unsafe impl Send for VkCommandBuffer {}
 unsafe impl Sync for VkCommandBuffer {}
 
 impl VkCommandBuffer {
-    /// Creates a new CommandBuffer wrapper.
     pub fn new(command_buffer: vk::CommandBuffer) -> Self {
         Self(command_buffer)
     }
 
-    /// Returns the underlying `vk::CommandBuffer`.
-    pub(crate) fn vk(&self) -> vk::CommandBuffer {
-        self.0
-    }
-
-    /// Returns the raw Vulkan command buffer handle.
-    ///
-    /// This is needed for advanced operations like push descriptors.
     pub fn vk_command_buffer(&self) -> vk::CommandBuffer {
         self.0
     }

@@ -5,7 +5,6 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use ash::khr::push_descriptor::Device as PushDescriptorDevice;
-use ash::vk;
 
 use crate::renderer::registry::AssetRegistry;
 use crate::renderer::DrawList;
@@ -93,15 +92,6 @@ impl RendererContext {
             (*self.pointers.storage_descriptor_set)
                 .as_ref()
                 .map(|ds| ds.set())
-        }
-    }
-
-    /// Get storage descriptor set as raw vk handle (internal use).
-    pub(crate) fn vk_storage_descriptor(&self) -> Option<vk::DescriptorSet> {
-        unsafe {
-            (*self.pointers.storage_descriptor_set)
-                .as_ref()
-                .map(|ds| ds.vk_set())
         }
     }
 

@@ -1018,7 +1018,6 @@ impl std::error::Error for MaterialCacheError {}
 struct CachedPipeline {
     key: MaterialKey,
     pipeline: Rc<RefCell<MaterialPipeline>>,
-    vertex_binding: VertexBinding,
 }
 
 /// Cache for material pipelines keyed by MaterialKey.
@@ -1080,12 +1079,10 @@ impl MaterialPipelineCache {
 
         // Create new pipeline
         let pipeline = self.create_pipeline_for_material(material)?;
-        let vertex_binding = material.vertex_binding();
 
         let cached = CachedPipeline {
             key: key.clone(),
             pipeline: pipeline.clone(),
-            vertex_binding,
         };
 
         self.cache.insert(key, cached);
@@ -1115,12 +1112,10 @@ impl MaterialPipelineCache {
 
         // Create bindless pipeline
         let pipeline = self.create_bindless_pipeline(material, bindless_layout)?;
-        let vertex_binding = material.vertex_binding();
 
         let cached = CachedPipeline {
             key: key.clone(),
             pipeline: pipeline.clone(),
-            vertex_binding,
         };
 
         self.cache.insert(key, cached);
