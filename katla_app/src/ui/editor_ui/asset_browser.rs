@@ -15,8 +15,8 @@ use katla_math::{Color, Rect2D, Vec2};
 use katla_ui::widgets::ImageButton;
 use katla_ui::{ForkAwesome, Popup, ScrollArea, ScrollAreaState, TextureId, UiContext};
 
-use super::editor_ui::FocusedPanel;
-use super::theme::Theme;
+use super::FocusedPanel;
+use crate::ui::theme::Theme;
 
 /// Build a rectangle from two corner points (handles any ordering).
 #[inline]

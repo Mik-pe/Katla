@@ -4,8 +4,8 @@ use katla_ui::{
     Widget,
 };
 
+use super::model_preview::{LoadState, ModelPreviewState};
 use super::Theme;
-use crate::ui::model_preview::{LoadState, ModelPreviewState};
 
 pub struct ModelPreviewPanel<'a> {
     pub screen_size: Vec2,
