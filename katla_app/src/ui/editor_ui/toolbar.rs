@@ -1,5 +1,5 @@
 use katla_math::{Color, Rect2D, Vec2, Vec3};
-use katla_ui::{widgets::Button, FontSize, ForkAwesome, Response, Widget};
+use katla_ui::{FontSize, Response, Widget};
 
 use crate::{
     ui::{editor_ui::Panel, EditorAction, SpawnableModel, Theme},
