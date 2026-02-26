@@ -171,8 +171,6 @@ pub enum EditorAction {
     DuplicateEntity(EntityId),
     /// Select an entity.
     SelectEntity(EntityId),
-    /// Move selected entity.
-    MoveEntity(EntityId, Vec3),
     /// Toggle play/pause.
     TogglePlay,
     /// Change the editor theme.
@@ -199,8 +197,6 @@ pub enum FocusedPanel {
     Inspector,
     /// Asset browser panel.
     AssetBrowser,
-    /// Toolbar.
-    Toolbar,
 }
 
 /// Panel resize edge for dragging.
@@ -348,11 +344,6 @@ impl EditorUI {
         self.font_scale = scale.clamp(0.5, 3.0);
     }
 
-    /// Get scaled font size in pixels.
-    fn font_px(&self, size: FontSize) -> f32 {
-        size.to_pixels_scaled(self.font_scale)
-    }
-
     /// Get the current theme key (for preferences).
     pub fn theme_key(&self) -> &'static str {
         match self.theme.name {
@@ -376,16 +367,6 @@ impl EditorUI {
     /// Get the current theme name.
     pub fn theme_name(&self) -> &'static str {
         self.theme.name
-    }
-
-    /// Get the last known viewport panel size in pixels.
-    pub fn viewport_size(&self) -> (u32, u32) {
-        self.last_viewport_size
-    }
-
-    /// Check if an entity is expanded in the hierarchy.
-    pub fn is_expanded(&self, entity_id: EntityId) -> bool {
-        self.expanded_entities.contains(&entity_id)
     }
 
     /// Toggle expansion of an entity.

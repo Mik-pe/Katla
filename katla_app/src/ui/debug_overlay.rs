@@ -56,8 +56,6 @@ impl QualityLevel {
 
 /// Debug overlay for displaying engine stats and controls.
 pub struct DebugOverlay {
-    /// Whether the overlay is visible.
-    visible: bool,
     /// Settings panel visible.
     settings_visible: bool,
     /// Current render mode.
@@ -88,7 +86,6 @@ impl DebugOverlay {
     /// Create a new debug overlay.
     pub fn new() -> Self {
         Self {
-            visible: true,
             settings_visible: true,
             render_mode: RenderMode::Solid,
             quality: QualityLevel::High,
@@ -102,16 +99,6 @@ impl DebugOverlay {
             frame_time_history: MetricsHistory::new(100),
             context_menu_open: false,
         }
-    }
-
-    /// Toggle overlay visibility.
-    pub fn toggle(&mut self) {
-        self.visible = !self.visible;
-    }
-
-    /// Check if overlay is visible.
-    pub fn is_visible(&self) -> bool {
-        self.visible
     }
 
     /// Build the debug overlay UI.
@@ -519,21 +506,6 @@ impl DebugOverlay {
 
         // End UI frame and return draw list
         ui.end()
-    }
-
-    /// Get the current render mode.
-    pub fn render_mode(&self) -> RenderMode {
-        self.render_mode
-    }
-
-    /// Get whether to show FPS in title.
-    pub fn show_fps_in_title(&self) -> bool {
-        self.show_fps
-    }
-
-    /// Clear the context message.
-    pub fn clear_context_message(&mut self) {
-        self.context_message.clear();
     }
 }
 
