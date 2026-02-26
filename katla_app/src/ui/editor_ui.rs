@@ -7,8 +7,10 @@
 //! - Toolbar (top)
 //! - Status bar (bottom)
 
+mod asset_browser;
 mod hierarchy;
 mod inspector;
+mod model_preview;
 mod model_preview_panel;
 mod preferences;
 mod status_bar;
@@ -22,7 +24,6 @@ use std::path::PathBuf;
 
 use crate::{
     ui::{
-        asset_browser::{build_asset_browser, AssetAction, AssetBrowserState, AssetType},
         editor_ui::hierarchy::HierarchyState,
         editor_ui::preferences::{
             EditorSettings, PreferencesAction, PreferencesPanel, PreferencesPanelState,
@@ -32,9 +33,11 @@ use crate::{
     Preferences,
 };
 
-use super::model_preview::ModelPreviewState;
 use super::theme::Theme;
+use asset_browser::{build_asset_browser, AssetAction, AssetBrowserState, AssetType};
+use model_preview::ModelPreviewState;
 
+pub use asset_browser::ThumbnailState;
 pub use preferences::PanelState;
 
 /// Model types that can be spawned.
@@ -648,7 +651,7 @@ impl EditorUI {
                     log::info!("Model preview requested: {:?}", path);
                     let load_id = loader.request_model(path.clone());
                     self.model_preview.model_path = Some(path);
-                    self.model_preview.load_state = super::model_preview::LoadState::Loading;
+                    self.model_preview.load_state = model_preview::LoadState::Loading;
                     self.model_preview.load_id = Some(load_id);
                     self.model_preview.visible = true;
                     self.model_preview.model = None;

@@ -2,13 +2,12 @@
 //!
 //! This module provides the bridge between katla_ui and the application layer.
 
-mod asset_browser;
 mod debug_overlay;
 mod editor_ui;
-pub mod model_preview;
 pub mod theme;
 
-pub use asset_browser::ThumbnailState;
 pub use debug_overlay::DebugOverlay;
-pub use editor_ui::{EditorAction, EditorUI, EntityInfo, FocusedPanel, SpawnableModel};
+pub use editor_ui::{
+    EditorAction, EditorUI, EntityInfo, FocusedPanel, SpawnableModel, ThumbnailState,
+};
 pub use theme::Theme;
