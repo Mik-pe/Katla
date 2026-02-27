@@ -100,6 +100,8 @@ pub struct Application {
     pub(crate) thumbnail_texture_ids: HashMap<PathBuf, katla_ui::TextureId>,
     /// Application start time for double-click timestamp calculation
     pub(crate) start_time: Instant,
+    /// Immediate-mode 3D debug drawing context
+    pub debug_draw: crate::rendering::DebugDraw,
 }
 
 impl ApplicationHandler for Application {
