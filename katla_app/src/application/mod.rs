@@ -82,8 +82,6 @@ pub struct Application {
     pub(crate) scale_factor: f32,
     /// Gizmo rendering resources (mesh and material handles)
     pub(crate) gizmo_resources: Option<renderer::GizmoResources>,
-    /// Fullscreen renderer (owns sky/grid pipelines internally)
-    pub(crate) fullscreen_renderer: Option<crate::rendering::FullscreenRenderer>,
     /// UI renderer (owns UI buffers, textures, descriptors, and pipeline)
     pub(crate) ui_renderer: Option<crate::rendering::UIRenderer>,
     /// UI draw data for current frame (shared with render graph)
@@ -215,14 +213,8 @@ impl ApplicationHandler for Application {
                             let _ = renderer.init_output_target(new_width, new_height as u32);
 
                             // Rebuild render graph with existing pipelines
-                            let grid_pipeline = self
-                                .fullscreen_renderer
-                                .as_ref()
-                                .and_then(|fr| fr.grid_pipeline(self.editor_ui.show_grid));
-                            let sky_pipeline = self
-                                .fullscreen_renderer
-                                .as_ref()
-                                .and_then(|fr| fr.sky_pipeline());
+                            let sky_pipeline = renderer.sky_pipeline();
+                            let grid_pipeline = renderer.grid_pipeline(self.editor_ui.show_grid);
                             renderer::render_graph::build_render_graph(
                                 renderer,
                                 sky_pipeline,

@@ -19,7 +19,6 @@ pub use material::{
     MaterialDomain, MaterialKey, MaterialPipelineCache, PbrMaterialConfig,
     SkinnedPbrMaterialConfig,
 };
-pub use texture::{TextureDescriptor, TextureManager, TextureUsage};
 pub use render_graph::errors::RenderGraphError;
 pub use render_graph::pass::{PassBuilder, PassExecutionContext};
 pub use render_graph::resource::{
@@ -27,9 +26,10 @@ pub use render_graph::resource::{
 };
 pub use render_graph::*;
 pub use renderer::{
-    AssetRegistry, DrawCall, DrawList, FrameData, FrameUniforms, InstanceData, ParticleDispatch,
-    ParticleRender, VulkanRenderer, FRAMES_IN_FLIGHT,
+    AssetRegistry, DefaultRenderTargets, DrawCall, DrawList, FrameData, FrameUniforms,
+    InstanceData, ParticleDispatch, ParticleRender, VulkanRenderer, FRAMES_IN_FLIGHT,
 };
+pub use texture::{TextureDescriptor, TextureManager, TextureUsage};
 pub use viewport::{DepthFormat, OutputMode, ViewportBuilder, ViewportHandle};
 pub use vulkan::context::{ValidationMessage, ValidationMessageType, ValidationSeverity};
 pub use vulkan::material::storage_uniform::*;
