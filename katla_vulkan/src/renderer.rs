@@ -60,7 +60,7 @@ pub struct VulkanRenderer {
     pub material_registry: Rc<RefCell<MaterialRegistry>>,
     /// Material pipeline cache for unified material system.
     /// Caches pipelines by MaterialKey for deduplication.
-    /// Wrapped in Rc to allow sharing with renderers (UIRenderer, FullscreenRenderer).
+    /// Wrapped in Rc to allow sharing with renderers (UIRenderer).
     pub material_cache: Rc<RefCell<MaterialPipelineCache>>,
     /// Bindless texture manager for efficient texture binding.
     /// All textures are stored in a single array accessed by index.
@@ -108,11 +108,32 @@ pub struct VulkanRenderer {
     /// Cached handle for the storage descriptor set (frame uniforms).
     /// Registered once when storage system is initialized.
     storage_descriptor_handle: DescriptorSetHandle,
+    /// Sky rendering pipeline (fullscreen procedural sky).
+    /// Set by application layer via `set_sky_pipeline()`.
+    sky_pipeline: Option<PipelineHandle>,
+    /// Grid rendering pipeline (infinite editor grid).
+    /// Set by application layer via `set_grid_pipeline()`.
+    grid_pipeline: Option<PipelineHandle>,
 }
 
-/// Number of frames that can be in flight on the GPU at once.
-/// Used for double-buffering of per-frame resources.
 pub const FRAMES_IN_FLIGHT: usize = 2;
+
+/// Default render targets for a typical rendering pipeline.
+///
+/// This struct provides pre-configured render targets for common
+/// rendering setups. Applications can use these directly or create
+/// their own custom configurations using `RenderGraphBuilder::new()`.
+#[derive(Clone, Debug)]
+pub struct DefaultRenderTargets {
+    /// The swapchain image (presentation target)
+    pub swapchain: render_graph::RenderTarget,
+    /// The viewport color attachment (main scene render target)
+    pub viewport_color: render_graph::RenderTarget,
+    /// The viewport depth attachment (main scene depth buffer)
+    pub viewport_depth: render_graph::RenderTarget,
+    /// The output color attachment (UI composition target)
+    pub output_color: render_graph::RenderTarget,
+}
 
 impl VulkanRenderer {
     pub fn init(
@@ -149,9 +170,14 @@ impl VulkanRenderer {
         // Initialize bindless texture manager
         let bindless_manager = BindlessTextureManager::new(context.clone()).map_err(|e| {
             error!("Failed to create bindless texture manager: {:?}", e);
-            RendererError::InitializationFailed("Failed to create bindless texture manager".to_string())
+            RendererError::InitializationFailed(
+                "Failed to create bindless texture manager".to_string(),
+            )
         })?;
-        info!("Bindless texture system initialized (max {} textures)", MAX_BINDLESS_TEXTURES);
+        info!(
+            "Bindless texture system initialized (max {} textures)",
+            MAX_BINDLESS_TEXTURES
+        );
 
         // Initialize texture manager
         let texture_manager = TextureManager::new(context.clone()).map_err(|e| {
@@ -162,7 +188,7 @@ impl VulkanRenderer {
 
         // Initialize storage uniform system with standard layout
         let storage_manager = StorageUniformManager::new(context.clone())?;
-        
+
         // Create standard storage uniform layout (set 0)
         let uniform_set_layout = DescriptorLayoutBuilder::new()
             .add_binding(
@@ -180,7 +206,9 @@ impl VulkanRenderer {
             .build(&context.device)
             .map_err(|e| {
                 error!("Failed to create storage uniform layout: {:?}", e);
-                RendererError::InitializationFailed("Failed to create storage uniform layout".to_string())
+                RendererError::InitializationFailed(
+                    "Failed to create storage uniform layout".to_string(),
+                )
             })?;
 
         let storage_descriptor_set = storage_manager.create_descriptor_set(
@@ -194,7 +222,9 @@ impl VulkanRenderer {
 
         // Clean up the layout (materials will create their own)
         unsafe {
-            context.device.destroy_descriptor_set_layout(uniform_set_layout, None);
+            context
+                .device
+                .destroy_descriptor_set_layout(uniform_set_layout, None);
         }
         info!("Storage uniform system initialized (20KB buffer, 256 objects max)");
 
@@ -223,6 +253,8 @@ impl VulkanRenderer {
             external_images: ResourceStorage::new(),
             external_buffers: ResourceStorage::new(),
             storage_descriptor_handle,
+            sky_pipeline: None,
+            grid_pipeline: None,
         })
     }
 
@@ -246,6 +278,35 @@ impl VulkanRenderer {
         &mut self.texture_manager
     }
 
+    /// Set the sky rendering pipeline.
+    ///
+    /// The application layer creates this pipeline using MaterialPipelineCache
+    /// with SkyMaterial, then registers it here for use in the render graph.
+    pub fn set_sky_pipeline(&mut self, pipeline: PipelineHandle) {
+        self.sky_pipeline = Some(pipeline);
+    }
+
+    /// Set the grid rendering pipeline.
+    ///
+    /// The application layer creates this pipeline using MaterialPipelineCache
+    /// with GridMaterial, then registers it here for use in the render graph.
+    pub fn set_grid_pipeline(&mut self, pipeline: PipelineHandle) {
+        self.grid_pipeline = Some(pipeline);
+    }
+
+    /// Get the sky pipeline handle.
+    pub fn sky_pipeline(&self) -> Option<PipelineHandle> {
+        self.sky_pipeline
+    }
+
+    /// Get the grid pipeline handle (only if grid should be visible).
+    pub fn grid_pipeline(&self, visible: bool) -> Option<PipelineHandle> {
+        if visible {
+            self.grid_pipeline
+        } else {
+            None
+        }
+    }
 
     /// Set frame-level uniforms for the current frame.
     ///
@@ -310,7 +371,6 @@ impl VulkanRenderer {
     pub fn storage_descriptor_handle(&self) -> DescriptorSetHandle {
         self.storage_descriptor_handle
     }
-
 
     // ========================================================================
     // Particle System Resource Registration
@@ -1272,34 +1332,35 @@ impl VulkanRenderer {
     // Rendering Configuration (High-level API - application doesn't deal with Vulkan)
     // ========================================================================
 
-    /// Setup render graph with pipelines.
     // ========================================================================
     // Render Graph Building (Application owns passes)
     // ========================================================================
 
-    /// Create a render graph builder with resources pre-registered.
+    /// Create a render graph builder with default resources pre-registered.
+    /// Create a render graph builder with default resources pre-registered.
     ///
     /// This creates a builder with swapchain, viewport, and output resources
-    /// already added. The returned `FrameResources` contains handles for
+    /// already added. The returned `DefaultRenderTargets` contains handles for
     /// referencing these resources in pass definitions.
+    ///
+    /// This is an opinionated convenience method for common rendering setups.
+    /// For full control, use `RenderGraphBuilder::new()` directly.
     ///
     /// # Example
     ///
     /// ```ignore
-    /// let (mut builder, resources) = renderer.create_render_graph_with_resources();
+    /// let (mut builder, targets) = renderer.create_default_render_graph();
     ///
-    /// // Add passes using resources
+    /// // Add passes using targets
     /// builder.add_pass("sky_pass", |pass| {
-    ///     pass.write_color(&resources.viewport_color)
+    ///     pass.write_color(&targets.viewport_color)
     ///         .clear_color([0.4, 0.6, 0.9, 1.0]);
     /// });
     ///
     /// // Compile the graph with swapchain ID for proper layout transitions
-    /// renderer.compile_render_graph(builder, Some(resources.swapchain.resource_id()))?;
+    /// renderer.compile_render_graph(builder, Some(targets.swapchain.resource_id()))?;
     /// ```
-    pub fn create_render_graph_with_resources(
-        &mut self,
-    ) -> (RenderGraphBuilder, render_graph::FrameResources) {
+    pub fn create_default_render_graph(&mut self) -> (RenderGraphBuilder, DefaultRenderTargets) {
         use crate::render_graph::types::{Extent2D, ImageFormat};
 
         let mut builder = RenderGraphBuilder::new();
@@ -1381,14 +1442,14 @@ impl VulkanRenderer {
             viewport_color_id
         };
 
-        let resources = render_graph::FrameResources::new(
-            swapchain_id,
-            viewport_color_id,
-            viewport_depth_id,
-            output_id,
-        );
+        let targets = DefaultRenderTargets {
+            swapchain: render_graph::RenderTarget::new(swapchain_id),
+            viewport_color: render_graph::RenderTarget::new(viewport_color_id),
+            viewport_depth: render_graph::RenderTarget::new(viewport_depth_id),
+            output_color: render_graph::RenderTarget::new(output_id),
+        };
 
-        (builder, resources)
+        (builder, targets)
     }
 
     /// Compile a render graph from a builder.
@@ -1456,7 +1517,6 @@ impl VulkanRenderer {
         }
     }
 }
-
 
 /// Offscreen render target for viewport rendering.
 ///

@@ -5,16 +5,16 @@ pub mod render_graph;
 use log::{debug, error, info};
 
 use katla_vulkan::{
-    DrawCall, DrawList, FrameUniforms, IndexBuffer, IndexType, MaterialHandle,
-    MeshHandle, ParticleDispatch, ParticleRender, VertexBuffer, VulkanContext,
+    DrawCall, DrawList, FrameUniforms, IndexBuffer, IndexType, MaterialHandle, MeshHandle,
+    ParticleDispatch, ParticleRender, VertexBuffer, VulkanContext,
 };
 use std::rc::Rc;
 
+use super::Application;
 use crate::animation::Skeleton;
 use crate::components::{DrawableComponent, ParticleEmitter, TransformComponent};
 use crate::gizmo::{self, GizmoVertex};
 use crate::rendering::{DebugLineMaterial, GizmoMaterial};
-use super::Application;
 
 /// UI vertex buffer size in bytes (256KB - enough for complex UIs)
 const UI_VERTEX_BUFFER_SIZE: usize = 256 * 1024;
@@ -38,18 +38,44 @@ pub fn setup_render_graph(app: &mut Application) {
         None => return,
     };
 
-    // Create fullscreen renderer (owns sky/grid pipelines internally)
-    let fullscreen_renderer = {
+    // Create sky and grid pipelines using the material cache
+    {
         let mut cache = renderer.material_cache.borrow_mut();
-        crate::rendering::FullscreenRenderer::new(&mut cache)
-    };
 
-    // Get pipelines from fullscreen renderer for render graph
-    let sky_pipeline = fullscreen_renderer.sky_pipeline();
-    let grid_pipeline = fullscreen_renderer.grid_pipeline(app.editor_ui.show_grid);
+        // Create sky pipeline from pure config
+        let sky_material = crate::rendering::SkyMaterial::default();
+        let sky_pipeline = cache
+            .get_or_create(&sky_material)
+            .inspect(|_| log::debug!("Sky pipeline created successfully"))
+            .or_else(|_| {
+                log::error!("Failed to create sky pipeline!");
+                Err(())
+            })
+            .ok();
 
-    // Store fullscreen renderer in app
-    app.fullscreen_renderer = Some(fullscreen_renderer);
+        // Create grid pipeline from pure config
+        let grid_material = crate::rendering::GridMaterial::default();
+        let grid_pipeline = cache
+            .get_or_create(&grid_material)
+            .inspect(|_| log::debug!("Grid pipeline created successfully"))
+            .or_else(|_| {
+                log::error!("Failed to create grid pipeline!");
+                Err(())
+            })
+            .ok();
+
+        // Store pipelines directly in VulkanRenderer
+        if let Some(pipeline) = sky_pipeline {
+            renderer.set_sky_pipeline(pipeline);
+        }
+        if let Some(pipeline) = grid_pipeline {
+            renderer.set_grid_pipeline(pipeline);
+        }
+    } // cache is dropped here
+
+    // Get pipelines from VulkanRenderer for render graph
+    let sky_pipeline = renderer.sky_pipeline();
+    let grid_pipeline = renderer.grid_pipeline(app.editor_ui.show_grid);
 
     // Create UI renderer (owns UI pipeline internally)
     let ui_renderer = crate::rendering::UIRenderer::new(
@@ -148,6 +174,9 @@ pub fn setup_render_graph(app: &mut Application) {
             texture_id.0, tex_id
         );
     }
+
+    // Drop the renderer borrow so helper functions can borrow from app
+    drop(renderer);
 
     // Create and register gizmo material and mesh
     setup_gizmo_resources(app);
@@ -434,12 +463,13 @@ pub fn render_frame(app: &mut Application) {
 
     // === DEBUG DRAWING ===
     // Create buffers and render debug primitives (lines, wireframes, etc.)
-    if let (Some((vertex_buffer, index_buffer)), Some(material_handle)) =
-        (app.debug_draw.create_buffers(&renderer.context), app.debug_draw.material_handle())
-    {
+    if let (Some((vertex_buffer, index_buffer)), Some(material_handle)) = (
+        app.debug_draw.create_buffers(&renderer.context),
+        app.debug_draw.material_handle(),
+    ) {
         // Register mesh with the buffers (creates a new handle each frame)
         let mesh_handle = renderer.register_mesh(Some(vertex_buffer), Some(index_buffer));
-        
+
         let identity = katla_math::Mat4::identity();
         let debug_draw_call = DrawCall::new(mesh_handle, material_handle)
             .with_transform(identity.to_array())
