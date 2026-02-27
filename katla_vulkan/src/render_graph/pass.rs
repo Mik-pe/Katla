@@ -709,25 +709,16 @@ impl PassExecutionContext {
         self.command_buffer.bind_graphics_pipeline(pipeline);
 
         let storage_descriptor = ctx.storage_descriptor();
-        let bindless_descriptor = ctx.bindless_manager().map(|bm| bm.vk_descriptor_set());
+        let bindless_descriptor = ctx.bindless_manager().vk_descriptor_set();
 
         if pipeline.is_bindless {
-            match (storage_descriptor, bindless_descriptor) {
-                (Some(storage), Some(bindless)) => {
-                    self.command_buffer.bind_graphics_descriptors(
-                        pipeline.vk_layout(),
-                        &[storage.into(), bindless],
-                    );
-                }
-                (Some(storage), None) => {
-                    self.command_buffer
-                        .bind_graphics_descriptors(pipeline.vk_layout(), &[storage.into()]);
-                }
-                _ => {}
-            }
-        } else if let Some(storage) = storage_descriptor {
+            self.command_buffer.bind_graphics_descriptors(
+                pipeline.vk_layout(),
+                &[storage_descriptor.into(), bindless_descriptor],
+            );
+        } else {
             self.command_buffer
-                .bind_graphics_descriptors(pipeline.vk_layout(), &[storage.into()]);
+                .bind_graphics_descriptors(pipeline.vk_layout(), &[storage_descriptor.into()]);
         }
 
         self.draw_fullscreen();
@@ -910,11 +901,7 @@ impl PassExecutionContext {
         };
 
         // Get draw list
-        let draw_list = match &ctx.draw_list {
-            Some(cell) => cell.borrow_mut().take(),
-            None => return,
-        };
-        let Some(draw_list) = draw_list else {
+        let Some(draw_list) = ctx.draw_list.borrow_mut().take() else {
             return;
         };
 
@@ -926,8 +913,8 @@ impl PassExecutionContext {
         // Get storage descriptor set
         let storage_descriptor = ctx.storage_descriptor();
 
-        // Get bindless manager via pointer accessor
-        let bindless_descriptor = ctx.bindless_manager().map(|bm| bm.vk_descriptor_set());
+        // Get bindless manager
+        let bindless_descriptor = ctx.bindless_manager().vk_descriptor_set();
 
         // Get skeleton descriptors via pointer accessor
         let Some(skeleton_descriptors) = ctx.skeleton_descriptors() else {
@@ -979,30 +966,21 @@ impl PassExecutionContext {
 
                 self.command_buffer.bind_graphics_pipeline(pipeline);
 
+                self.command_buffer.bind_graphics_pipeline(pipeline);
+
                 // Bind descriptor sets based on what the material needs
                 // Materials created with build_bindless() have 2 sets, others have 1
-                if let Some(desc_set) = storage_descriptor {
-                    // Check if this material uses bindless textures
-                    // Materials that use bindless have a second descriptor set layout
-                    if material.uses_bindless {
-                        if let Some(bindless_set) = bindless_descriptor {
-                            // Bind both sets at once (sets 0 and 1)
-                            self.command_buffer.bind_graphics_descriptors(
-                                pipeline.vk_layout(),
-                                &[desc_set.into(), bindless_set],
-                            );
-                        } else {
-                            // Bindless material but no bindless set available - just bind set 0
-                            self.command_buffer.bind_graphics_descriptors(
-                                pipeline.vk_layout(),
-                                &[desc_set.into()],
-                            );
-                        }
-                    } else {
-                        // Non-bindless material - only bind set 0
-                        self.command_buffer
-                            .bind_graphics_descriptors(pipeline.vk_layout(), &[desc_set.into()]);
-                    }
+                // Check if this material uses bindless textures
+                if material.uses_bindless {
+                    // Bind both sets at once (sets 0 and 1)
+                    self.command_buffer.bind_graphics_descriptors(
+                        pipeline.vk_layout(),
+                        &[storage_descriptor.into(), bindless_descriptor],
+                    );
+                } else {
+                    // Non-bindless material - only bind set 0
+                    self.command_buffer
+                        .bind_graphics_descriptors(pipeline.vk_layout(), &[storage_descriptor.into()]);
                 }
 
                 // Bind skeleton descriptor (set 2) if present
@@ -1094,12 +1072,11 @@ impl PassExecutionContext {
         let pipeline = material.borrow();
         self.bind_graphics_pipeline(&pipeline);
 
-        // Bind storage descriptor if available (for frame uniforms)
+        // Bind storage descriptor for frame uniforms
         if let Some(ctx) = &self.renderer_context {
-            if let Some(desc_set) = ctx.storage_descriptor() {
-                self.command_buffer
-                    .bind_graphics_descriptors(pipeline.vk_layout(), &[desc_set.into()]);
-            }
+            let desc_set = ctx.storage_descriptor();
+            self.command_buffer
+                .bind_graphics_descriptors(pipeline.vk_layout(), &[desc_set.into()]);
         }
 
         drop(pipeline);

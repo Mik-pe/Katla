@@ -427,19 +427,11 @@ impl Application {
             self.info.validation_layer_enabled,
             CString::new(self.info.name.as_str()).unwrap(),
             engine_name,
-        );
-
-        renderer
-            .init_storage_standard()
-            .expect("Failed to initialize storage uniform system");
-
-        // Initialize bindless textures BEFORE loading materials
-        renderer
-            .init_bindless()
-            .expect("Failed to initialize bindless texture system");
+        )
+        .expect("Failed to initialize Vulkan renderer");
 
         // Load bindless material templates (bindless-only now)
-        let bindless_layout = renderer.bindless_manager().unwrap().vk_descriptor_layout();
+        let bindless_layout = renderer.bindless_manager().vk_descriptor_layout();
 
         // Need to scope borrows to avoid conflicts
         let bindless_count = {
@@ -794,11 +786,10 @@ impl Application {
                     if let Some(ref mut ui_renderer) = self.ui_renderer {
                         // Create texture from pixels using TextureManager
                         if let Some(ref mut renderer) = self.renderer {
-                            if let Some(tm) = renderer.texture_manager_mut() {
-                                let desc = katla_vulkan::TextureDescriptor::rgba8_srgb(width, height);
-                                let handle = tm.create(&desc, &pixels);
-                                ui_renderer.register_texture_handle(texture_id.0, handle, tm);
-                            }
+                            let tm = renderer.texture_manager_mut();
+                            let desc = katla_vulkan::TextureDescriptor::rgba8_srgb(width, height);
+                            let handle = tm.create(&desc, &pixels);
+                            ui_renderer.register_texture_handle(texture_id.0, handle, tm);
                         }
                     }
 

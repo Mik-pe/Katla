@@ -77,9 +77,7 @@ impl VulkanRenderer {
 
         // Update frame uniforms
         if let Some(ref frame) = self.frame_uniforms {
-            if let Some(ref mut manager) = self.storage_manager {
-                manager.update_from_frame_uniforms(frame);
-            }
+            self.storage_manager.update_from_frame_uniforms(frame);
         }
         debug!("render_frame: frame uniforms updated");
 
