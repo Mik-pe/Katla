@@ -63,23 +63,21 @@ pub struct VulkanRenderer {
     /// Wrapped in Rc to allow sharing with renderers (UIRenderer, FullscreenRenderer).
     pub material_cache: Rc<RefCell<MaterialPipelineCache>>,
     /// Bindless texture manager for efficient texture binding.
-    /// When enabled, all textures are stored in a single array accessed by index.
-    /// Textures indices are passed via ObjectUniforms.texture_indices.
-    pub bindless_manager: Option<BindlessTextureManager>,
+    /// All textures are stored in a single array accessed by index.
+    /// Texture indices are passed via ObjectUniforms.texture_indices.
+    pub bindless_manager: BindlessTextureManager,
     /// Centralized texture manager for handle-based texture creation.
     /// Provides a clean API for creating and looking up textures by handle.
-    /// Must be initialized via init_texture_manager() before use.
-    pub texture_manager: Option<TextureManager>,
+    pub texture_manager: TextureManager,
     /// The render graph - single graph with multiple framebuffers (one per swapchain image)
     pub render_graph: Option<CompiledRenderGraph>,
     /// Storage uniform manager for storage buffer-based uniforms.
-    /// When enabled, materials use storage buffers with instance indexing
-    /// instead of descriptor-based uniforms.
-    pub storage_manager: Option<StorageUniformManager>,
+    /// Materials use storage buffers with instance indexing.
+    pub storage_manager: StorageUniformManager,
     /// Storage descriptor set for binding storage buffers to shaders (set 0).
-    pub storage_descriptor_set: Option<StorageDescriptorSet>,
+    pub storage_descriptor_set: StorageDescriptorSet,
     /// Draw list cell for geometry pass (shared with render graph).
-    pub draw_list_cell: Option<Rc<RefCell<Option<DrawList>>>>,
+    pub draw_list_cell: Rc<RefCell<Option<DrawList>>>,
     /// Skeleton descriptor sets for GPU skeletal animation.
     /// Indexed by SkeletonHandle.
     pub skeleton_descriptors: Vec<Option<SkeletonDescriptorSet>>,
@@ -123,7 +121,7 @@ impl VulkanRenderer {
         with_validation_layers: bool,
         app_name: CString,
         engine_name: CString,
-    ) -> Self {
+    ) -> Result<Self, RendererError> {
         let context = Rc::new(VulkanContext::init(
             display,
             window,
@@ -146,7 +144,61 @@ impl VulkanRenderer {
             .collect();
         let swap_data = SwapData::new(&context.device, &swapchain_images_raw, FRAMES_IN_FLIGHT);
 
-        Self {
+        let mut particle_descriptors = ResourceStorage::new();
+
+        // Initialize bindless texture manager
+        let bindless_manager = BindlessTextureManager::new(context.clone()).map_err(|e| {
+            error!("Failed to create bindless texture manager: {:?}", e);
+            RendererError::InitializationFailed("Failed to create bindless texture manager".to_string())
+        })?;
+        info!("Bindless texture system initialized (max {} textures)", MAX_BINDLESS_TEXTURES);
+
+        // Initialize texture manager
+        let texture_manager = TextureManager::new(context.clone()).map_err(|e| {
+            error!("Failed to create texture manager: {:?}", e);
+            RendererError::InitializationFailed("Failed to create texture manager".to_string())
+        })?;
+        info!("Texture manager initialized");
+
+        // Initialize storage uniform system with standard layout
+        let storage_manager = StorageUniformManager::new(context.clone())?;
+        
+        // Create standard storage uniform layout (set 0)
+        let uniform_set_layout = DescriptorLayoutBuilder::new()
+            .add_binding(
+                0,
+                vk::DescriptorType::STORAGE_BUFFER,
+                vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT,
+                1,
+            )
+            .add_binding(
+                1,
+                vk::DescriptorType::STORAGE_BUFFER,
+                vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT,
+                1,
+            )
+            .build(&context.device)
+            .map_err(|e| {
+                error!("Failed to create storage uniform layout: {:?}", e);
+                RendererError::InitializationFailed("Failed to create storage uniform layout".to_string())
+            })?;
+
+        let storage_descriptor_set = storage_manager.create_descriptor_set(
+            &context,
+            crate::sync::VkDescriptorSetLayout::new(uniform_set_layout),
+        )?;
+
+        // Register the descriptor set and store the handle
+        let storage_descriptor_handle =
+            DescriptorSetHandle::new(particle_descriptors.insert(storage_descriptor_set.set()));
+
+        // Clean up the layout (materials will create their own)
+        unsafe {
+            context.device.destroy_descriptor_set_layout(uniform_set_layout, None);
+        }
+        info!("Storage uniform system initialized (20KB buffer, 256 objects max)");
+
+        Ok(Self {
             context: context.clone(),
             frame_context,
             swap_data,
@@ -154,12 +206,12 @@ impl VulkanRenderer {
             asset_registry: AssetRegistry::new(),
             material_registry: Rc::new(RefCell::new(MaterialRegistry::new())),
             material_cache: Rc::new(RefCell::new(MaterialPipelineCache::new(context.clone()))),
-            bindless_manager: None,
-            texture_manager: None,
+            bindless_manager,
+            texture_manager,
             render_graph: None,
-            storage_manager: None,
-            storage_descriptor_set: None,
-            draw_list_cell: Some(Rc::new(RefCell::new(None))),
+            storage_manager,
+            storage_descriptor_set,
+            draw_list_cell: Rc::new(RefCell::new(None)),
             skeleton_descriptors: Vec::new(),
             frame_uniforms: None,
             render_targets: Vec::new(),
@@ -167,95 +219,33 @@ impl VulkanRenderer {
             viewports: Vec::new(),
             particle_pipelines: ResourceStorage::new(),
             particle_layouts: ResourceStorage::new(),
-            particle_descriptors: ResourceStorage::new(),
+            particle_descriptors,
             external_images: ResourceStorage::new(),
             external_buffers: ResourceStorage::new(),
-            storage_descriptor_handle: DescriptorSetHandle::NONE,
-        }
-    }
-
-    /// Initialize bindless texture system.
-    ///
-    /// This creates the bindless texture manager for efficient texture binding.
-    /// All textures are stored in a single array and accessed by index.
-    ///
-    /// # Returns
-    /// Ok(()) on success, or an error if initialization fails
-    pub fn init_bindless(&mut self) -> Result<(), RendererError> {
-        let manager = BindlessTextureManager::new(self.context.clone())?;
-        self.bindless_manager = Some(manager);
-        info!(
-            "Bindless texture system initialized (max {} textures)",
-            MAX_BINDLESS_TEXTURES
-        );
-        Ok(())
+            storage_descriptor_handle,
+        })
     }
 
     /// Get the bindless texture manager.
-    pub fn bindless_manager(&self) -> Option<&BindlessTextureManager> {
-        self.bindless_manager.as_ref()
+    pub fn bindless_manager(&self) -> &BindlessTextureManager {
+        &self.bindless_manager
     }
 
     /// Get the bindless texture manager mutably.
-    pub fn bindless_manager_mut(&mut self) -> Option<&mut BindlessTextureManager> {
-        self.bindless_manager.as_mut()
-    }
-
-    /// Initialize the texture manager system.
-    ///
-    /// This creates the texture manager for handle-based texture creation.
-    /// Must be called before using texture_manager.
-    ///
-    /// # Returns
-    /// Ok(()) on success, or an error if initialization fails
-    pub fn init_texture_manager(&mut self) -> Result<(), RendererError> {
-        let manager = TextureManager::new(self.context.clone()).map_err(|e| {
-            RendererError::InitializationFailed(format!("Failed to create texture manager: {:?}", e))
-        })?;
-        self.texture_manager = Some(manager);
-        info!("Texture manager initialized");
-        Ok(())
+    pub fn bindless_manager_mut(&mut self) -> &mut BindlessTextureManager {
+        &mut self.bindless_manager
     }
 
     /// Get the texture manager.
-    pub fn texture_manager(&self) -> Option<&TextureManager> {
-        self.texture_manager.as_ref()
+    pub fn texture_manager(&self) -> &TextureManager {
+        &self.texture_manager
     }
 
     /// Get the texture manager mutably.
-    pub fn texture_manager_mut(&mut self) -> Option<&mut TextureManager> {
-        self.texture_manager.as_mut()
+    pub fn texture_manager_mut(&mut self) -> &mut TextureManager {
+        &mut self.texture_manager
     }
 
-    /// Initialize storage uniform system.
-    ///
-    /// This creates the storage uniform manager and descriptor set for
-    /// storage buffer-based uniform access with instance indexing.
-    /// Must be called before using storage buffer rendering.
-    ///
-    /// # Arguments
-    /// * `uniform_desc_layout` - Descriptor set layout for uniform set (set 0)
-    ///
-    /// # Returns
-    /// Ok(()) on success, or an error if initialization fails
-    pub fn init_storage(
-        &mut self,
-        uniform_desc_layout: crate::sync::VkDescriptorSetLayout,
-    ) -> Result<(), RendererError> {
-        let manager = StorageUniformManager::new(self.context.clone())?;
-        let descriptor_set = manager.create_descriptor_set(&self.context, uniform_desc_layout)?;
-
-        // Register the descriptor set and store the handle
-        let handle =
-            DescriptorSetHandle::new(self.particle_descriptors.insert(descriptor_set.set()));
-
-        self.storage_manager = Some(manager);
-        self.storage_descriptor_set = Some(descriptor_set);
-        self.storage_descriptor_handle = handle;
-
-        info!("Storage uniform system initialized (20KB buffer, 256 objects max)");
-        Ok(())
-    }
 
     /// Set frame-level uniforms for the current frame.
     ///
@@ -295,9 +285,7 @@ impl VulkanRenderer {
     /// * `view` - View matrix (world-to-camera) - column-major [f32; 16]
     /// * `proj` - Projection matrix (camera-to-clip) - column-major [f32; 16]
     pub fn update_storage_frame(&mut self, view: &[f32; 16], proj: &[f32; 16]) {
-        if let Some(ref mut manager) = self.storage_manager {
-            manager.update_frame(view, proj);
-        }
+        self.storage_manager.update_frame(view, proj);
     }
 
     /// Update object uniforms in storage buffer.
@@ -307,16 +295,12 @@ impl VulkanRenderer {
     /// * `model` - Model matrix (object-to-world) - column-major [f32; 16]
     /// * `color` - Color tint (RGBA)
     pub fn update_storage_object(&mut self, index: usize, model: &[f32; 16], color: &[f32; 4]) {
-        if let Some(ref mut manager) = self.storage_manager {
-            manager.update_object(index, model, color);
-        }
+        self.storage_manager.update_object(index, model, color);
     }
 
     /// Get storage descriptor set for binding (set 0).
-    ///
-    /// Returns None if storage system not initialized.
-    pub fn storage_descriptor(&self) -> Option<VkDescriptorSet> {
-        self.storage_descriptor_set.as_ref().map(|ds| ds.set())
+    pub fn storage_descriptor(&self) -> VkDescriptorSet {
+        self.storage_descriptor_set.set()
     }
 
     /// Get the handle for the storage descriptor set.
@@ -327,65 +311,6 @@ impl VulkanRenderer {
         self.storage_descriptor_handle
     }
 
-    /// Check if storage uniform system is initialized.
-    pub fn is_storage_initialized(&self) -> bool {
-        self.storage_manager.is_some() && self.storage_descriptor_set.is_some()
-    }
-
-    /// Create and initialize storage system with standard layout.
-    ///
-    /// This creates the uniform descriptor set layout and initializes
-    /// the storage manager. Should be called before any materials are created.
-    pub fn init_storage_standard(&mut self) -> Result<(), RendererError> {
-        // Create standard storage uniform layout (set 0)
-        let uniform_set_layout = DescriptorLayoutBuilder::new()
-            // Binding 0: Frame uniforms (view/proj) as storage buffer
-            .add_binding(
-                0,
-                vk::DescriptorType::STORAGE_BUFFER,
-                vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT,
-                1,
-            )
-            // Binding 1: Object array (model/color per object) as storage buffer
-            .add_binding(
-                1,
-                vk::DescriptorType::STORAGE_BUFFER,
-                vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT,
-                1,
-            )
-            .build(&self.context.device)
-            .map_err(|e| {
-                error!("Failed to create storage uniform layout: {:?}", e);
-                RendererError::InitializationFailed(
-                    "Failed to create storage uniform layout".to_string(),
-                )
-            })?;
-
-        // Initialize storage manager and descriptor set
-        let manager = StorageUniformManager::new(self.context.clone())?;
-        let descriptor_set = manager.create_descriptor_set(
-            &self.context,
-            crate::sync::VkDescriptorSetLayout::new(uniform_set_layout),
-        )?;
-
-        // Register the descriptor set and store the handle
-        let handle =
-            DescriptorSetHandle::new(self.particle_descriptors.insert(descriptor_set.set()));
-
-        self.storage_manager = Some(manager);
-        self.storage_descriptor_set = Some(descriptor_set);
-        self.storage_descriptor_handle = handle;
-
-        // Clean up the layout (materials will create their own)
-        unsafe {
-            self.context
-                .device
-                .destroy_descriptor_set_layout(uniform_set_layout, None);
-        }
-
-        info!("Storage uniform system initialized (20KB buffer, 256 objects max)");
-        Ok(())
-    }
 
     // ========================================================================
     // Particle System Resource Registration
@@ -916,10 +841,7 @@ impl VulkanRenderer {
             }
         }
 
-        // Destroy storage uniform resources (Drop handles cleanup)
-        self.storage_descriptor_set = None;
-        self.storage_manager = None;
-
+        // Storage uniform resources will be dropped automatically
         self.context.pre_destroy();
         self.swap_data.destroy(&self.context.device);
         self.frame_context.destroy();
@@ -1489,9 +1411,7 @@ impl VulkanRenderer {
         graph.set_renderer_context(Rc::new(renderer_context));
 
         // Share draw list cell with compiled render graph
-        if let Some(ref cell) = self.draw_list_cell {
-            graph.set_draw_list_cell(cell.clone());
-        }
+        graph.set_draw_list_cell(self.draw_list_cell.clone());
 
         // Set swapchain resource ID for proper layout transitions during present
         if let Some(id) = swapchain_resource_id {
@@ -1523,16 +1443,10 @@ impl VulkanRenderer {
             pointers: render_graph::RendererContextPointers {
                 asset_registry: std::ptr::addr_of!(self.asset_registry) as *const _,
                 material_cache: material_cache_ptr,
-                storage_manager: self
-                    .storage_manager
-                    .as_mut()
-                    .map_or(std::ptr::null_mut(), |m| m as *mut _),
-                storage_descriptor_set: std::ptr::addr_of!(self.storage_descriptor_set),
+                storage_manager: &mut self.storage_manager as *mut _,
+                storage_descriptor_set: &self.storage_descriptor_set as *const _,
                 skeleton_descriptors: std::ptr::addr_of!(self.skeleton_descriptors),
-                bindless_manager: self
-                    .bindless_manager
-                    .as_ref()
-                    .map_or(std::ptr::null(), |m| m as *const _),
+                bindless_manager: &self.bindless_manager as *const _,
                 external_images: std::ptr::addr_of!(self.external_images),
                 external_buffers: std::ptr::addr_of!(self.external_buffers),
                 vk_device: Some(self.context.device.clone()),
@@ -1542,6 +1456,7 @@ impl VulkanRenderer {
         }
     }
 }
+
 
 /// Offscreen render target for viewport rendering.
 ///

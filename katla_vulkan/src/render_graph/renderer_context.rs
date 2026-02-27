@@ -57,7 +57,7 @@ pub struct RendererContextPointers {
     /// Storage uniform manager for frame/object data (mutable during rendering)
     pub storage_manager: *mut StorageUniformManager,
     /// Storage descriptor set for binding (set 0)
-    pub storage_descriptor_set: *const Option<StorageDescriptorSet>,
+    pub storage_descriptor_set: *const StorageDescriptorSet,
     /// Skeleton descriptors for GPU skeletal animation
     pub skeleton_descriptors: *const Vec<Option<SkeletonDescriptorSet>>,
     /// Bindless texture manager (read-only during rendering)
@@ -81,7 +81,7 @@ pub struct RendererContext {
     /// Raw pointers to non-cloneable GPU resources
     pub pointers: RendererContextPointers,
     /// Draw list for the current frame (already Rc<RefCell<>>)
-    pub draw_list: Option<Rc<RefCell<Option<DrawList>>>>,
+    pub draw_list: Rc<RefCell<Option<DrawList>>>,
 }
 
 impl RendererContext {
@@ -96,12 +96,8 @@ impl RendererContext {
     }
 
     /// Get storage descriptor set for binding (set 0).
-    pub fn storage_descriptor(&self) -> Option<crate::sync::VkDescriptorSet> {
-        unsafe {
-            (*self.pointers.storage_descriptor_set)
-                .as_ref()
-                .map(|ds| ds.set())
-        }
+    pub fn storage_descriptor(&self) -> crate::sync::VkDescriptorSet {
+        unsafe { (*self.pointers.storage_descriptor_set).set() }
     }
 
     /// Check if asset registry is available.
@@ -165,12 +161,8 @@ impl RendererContext {
     }
 
     /// Get the bindless manager (read-only).
-    pub fn bindless_manager(&self) -> Option<&BindlessTextureManager> {
-        if self.pointers.bindless_manager.is_null() {
-            None
-        } else {
-            unsafe { Some(&*self.pointers.bindless_manager) }
-        }
+    pub fn bindless_manager(&self) -> &BindlessTextureManager {
+        unsafe { &*self.pointers.bindless_manager }
     }
 
     /// Get the skeleton descriptors (read-only).

@@ -184,10 +184,10 @@ impl Model {
         // Get default texture handles (static, don't need mutable access)
         let (default_handles, loaded_handles) = {
             // Get TextureManager from renderer - required for texture creation
-            let texture_manager = match renderer.as_mut().and_then(|r| r.texture_manager_mut()) {
-                Some(tm) => tm,
+            let texture_manager = match renderer.as_mut() {
+                Some(r) => r.texture_manager_mut(),
                 None => {
-                    warn!("TextureManager not available, creating model without textures");
+                    warn!("Renderer not available, creating model without textures");
                     return Self::new_with_pbr(
                         world,
                         vec![],
@@ -267,68 +267,56 @@ impl Model {
         }
 
         // Register textures with bindless manager and get indices
-        let (texture_indices, emission_index, albedo_tex_rc) = {
-            // First, get views from TextureManager (immutable borrow)
-            let views = renderer.as_mut().and_then(|r| {
-                r.texture_manager().map(|tm| {
-                    (
-                        tm.get_view(albedo_handle),
-                        tm.get_view(normal_handle),
-                        tm.get_view(mr_handle),
-                        tm.get_view(occlusion_handle),
-                        tm.get_view(emission_handle),
-                        tm.get_texture_rc(albedo_handle),
-                    )
-                })
-            });
+        let (texture_indices, emission_index, albedo_tex_rc) = match renderer {
+            Some(ref mut r) => {
+                // Get views from TextureManager
+                let tm = r.texture_manager();
+                let views = (
+                    tm.get_view(albedo_handle),
+                    tm.get_view(normal_handle),
+                    tm.get_view(mr_handle),
+                    tm.get_view(occlusion_handle),
+                    tm.get_view(emission_handle),
+                    tm.get_texture_rc(albedo_handle),
+                );
 
-            match views {
-                Some((Some(albedo_view), Some(normal_view), Some(mr_view), Some(ao_view), Some(emiss_view), albedo_rc)) => {
-                    // Now get bindless_manager and register textures
-                    if let Some(ref mut r) = renderer {
-                        if let Some(bindless) = r.bindless_manager_mut() {
-                            let albedo_idx = bindless.register_texture(albedo_view).unwrap_or(DEFAULT_ALBEDO_SLOT);
-                            let normal_idx = bindless.register_texture(normal_view).unwrap_or(DEFAULT_NORMAL_SLOT);
-                            let mr_idx = bindless.register_texture(mr_view).unwrap_or(DEFAULT_MR_SLOT);
-                            let ao_idx = bindless.register_texture(ao_view).unwrap_or(DEFAULT_AO_SLOT);
-                            let emiss_idx = bindless.register_texture(emiss_view).unwrap_or(DEFAULT_EMISSION_SLOT);
+                match views {
+                    (Some(albedo_view), Some(normal_view), Some(mr_view), Some(ao_view), Some(emiss_view), albedo_rc) => {
+                        // Get bindless_manager and register textures
+                        let bindless = r.bindless_manager_mut();
+                        let albedo_idx = bindless.register_texture(albedo_view).unwrap_or(DEFAULT_ALBEDO_SLOT);
+                        let normal_idx = bindless.register_texture(normal_view).unwrap_or(DEFAULT_NORMAL_SLOT);
+                        let mr_idx = bindless.register_texture(mr_view).unwrap_or(DEFAULT_MR_SLOT);
+                        let ao_idx = bindless.register_texture(ao_view).unwrap_or(DEFAULT_AO_SLOT);
+                        let emiss_idx = bindless.register_texture(emiss_view).unwrap_or(DEFAULT_EMISSION_SLOT);
 
-                            debug!(
-                                "  Bindless texture slots: albedo={}, normal={}, mr={}, ao={}, emission={}",
-                                albedo_idx, normal_idx, mr_idx, ao_idx, emiss_idx
-                            );
+                        debug!(
+                            "  Bindless texture slots: albedo={}, normal={}, mr={}, ao={}, emission={}",
+                            albedo_idx, normal_idx, mr_idx, ao_idx, emiss_idx
+                        );
 
-                            // Track bindless slots in TextureManager
-                            if let Some(tm) = r.texture_manager_mut() {
-                                tm.register_bindless_slot(albedo_handle, albedo_idx);
-                                tm.register_bindless_slot(normal_handle, normal_idx);
-                                tm.register_bindless_slot(mr_handle, mr_idx);
-                                tm.register_bindless_slot(occlusion_handle, ao_idx);
-                                tm.register_bindless_slot(emission_handle, emiss_idx);
-                            }
+                        // Track bindless slots in TextureManager
+                        let tm = r.texture_manager_mut();
+                        tm.register_bindless_slot(albedo_handle, albedo_idx);
+                        tm.register_bindless_slot(normal_handle, normal_idx);
+                        tm.register_bindless_slot(mr_handle, mr_idx);
+                        tm.register_bindless_slot(occlusion_handle, ao_idx);
+                        tm.register_bindless_slot(emission_handle, emiss_idx);
 
-                            ([albedo_idx, normal_idx, mr_idx, ao_idx], emiss_idx, albedo_rc)
-                        } else {
-                            (
-                                [DEFAULT_ALBEDO_SLOT, DEFAULT_NORMAL_SLOT, DEFAULT_MR_SLOT, DEFAULT_AO_SLOT],
-                                DEFAULT_EMISSION_SLOT,
-                                albedo_rc,
-                            )
-                        }
-                    } else {
-                        (
-                            [DEFAULT_ALBEDO_SLOT, DEFAULT_NORMAL_SLOT, DEFAULT_MR_SLOT, DEFAULT_AO_SLOT],
-                            DEFAULT_EMISSION_SLOT,
-                            albedo_rc,
-                        )
+                        ([albedo_idx, normal_idx, mr_idx, ao_idx], emiss_idx, albedo_rc)
                     }
+                    _ => (
+                        [DEFAULT_ALBEDO_SLOT, DEFAULT_NORMAL_SLOT, DEFAULT_MR_SLOT, DEFAULT_AO_SLOT],
+                        DEFAULT_EMISSION_SLOT,
+                        None,
+                    ),
                 }
-                _ => (
-                    [DEFAULT_ALBEDO_SLOT, DEFAULT_NORMAL_SLOT, DEFAULT_MR_SLOT, DEFAULT_AO_SLOT],
-                    DEFAULT_EMISSION_SLOT,
-                    None,
-                ),
             }
+            None => (
+                [DEFAULT_ALBEDO_SLOT, DEFAULT_NORMAL_SLOT, DEFAULT_MR_SLOT, DEFAULT_AO_SLOT],
+                DEFAULT_EMISSION_SLOT,
+                None,
+            ),
         };
 
         // Create PbrTextureSet with the loaded texture handles

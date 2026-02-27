@@ -5,7 +5,7 @@ use katla_vulkan::{
     DescriptorSetLayoutBuilder, DescriptorType, ShaderStages, TextureDescriptor, VertexBinding,
     VulkanRenderer,
 };
-use log::warn;
+
 
 use crate::rendering::{Material, VertexPBR};
 
@@ -77,36 +77,21 @@ fn create_checkerboard_material_with_color(
     let pixels = generate_checkerboard_pixels(64, 8);
 
     // Create texture using TextureManager
-    let albedo_handle = if let Some(tm) = renderer.texture_manager_mut() {
-        let desc = TextureDescriptor::rgba8_srgb(64, 64);
-        tm.create(&desc, &pixels)
-    } else {
-        warn!("TextureManager not available, using default texture");
-        return Material::new("gltf_default");
-    };
+    let tm = renderer.texture_manager_mut();
+    let desc = TextureDescriptor::rgba8_srgb(64, 64);
+    let albedo_handle = tm.create(&desc, &pixels);
 
     // Get view and register with bindless manager
-    let albedo_idx = if let Some(tm) = renderer.texture_manager() {
-        if let Some(view) = tm.get_view(albedo_handle) {
-            if let Some(bindless) = renderer.bindless_manager_mut() {
-                bindless
-                    .register_texture(view)
-                    .unwrap_or(DEFAULT_ALBEDO_SLOT)
-            } else {
-                DEFAULT_ALBEDO_SLOT
-            }
-        } else {
-            DEFAULT_ALBEDO_SLOT
-        }
+    let albedo_idx = if let Some(view) = renderer.texture_manager().get_view(albedo_handle) {
+        renderer.bindless_manager_mut()
+            .register_texture(view)
+            .unwrap_or(DEFAULT_ALBEDO_SLOT)
     } else {
         DEFAULT_ALBEDO_SLOT
     };
 
     // Track bindless slot in TextureManager
-    if let Some(tm) = renderer.texture_manager_mut() {
-        tm.register_bindless_slot(albedo_handle, albedo_idx);
-    }
-
+    renderer.texture_manager_mut().register_bindless_slot(albedo_handle, albedo_idx);
     // Use default textures for other PBR slots
     let texture_indices = [
         albedo_idx,
@@ -118,11 +103,7 @@ fn create_checkerboard_material_with_color(
 
     // Create material config and get pipeline from cache
     let vertex_binding = VertexPBR::get_vertex_binding();
-    let bindless_layout = renderer
-        .bindless_manager
-        .as_ref()
-        .map(|b| b.vk_descriptor_layout())
-        .expect("Bindless manager not initialized");
+    let bindless_layout = renderer.bindless_manager().vk_descriptor_layout();
 
     let config = BindlessPbrMaterialConfig {
         vertex_binding: vertex_binding.clone(),
