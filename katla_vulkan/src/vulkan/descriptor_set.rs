@@ -158,6 +158,31 @@ impl DescriptorSet {
     pub(crate) fn vk(&self) -> vk::DescriptorSet {
         self.set
     }
+    /// Update a sampled image binding with a new image view.
+    ///
+    /// This is used when a texture is resized and the image view changes.
+    /// Call this after the texture's imageView has been recreated.
+    pub fn update_sampled_image(&self, binding: u32, view: VkImageView) {
+        let image_info = vk::DescriptorImageInfo {
+            sampler: vk::Sampler::null(),
+            image_view: view.vk(),
+            image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+        };
+
+        let write = vk::WriteDescriptorSet {
+            dst_set: self.set,
+            dst_binding: binding,
+            dst_array_element: 0,
+            descriptor_count: 1,
+            descriptor_type: vk::DescriptorType::SAMPLED_IMAGE,
+            p_image_info: &image_info,
+            ..Default::default()
+        };
+
+        unsafe {
+            self.device.update_descriptor_sets(&[write], &[]);
+        }
+    }
 
     /// Create from existing pool allocation (for advanced use cases).
     ///

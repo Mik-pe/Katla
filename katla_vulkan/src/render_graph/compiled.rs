@@ -53,6 +53,10 @@ pub struct CompiledRenderGraph {
     viewport_depth_resource_id: Option<ResourceId>,
     /// Swapchain resource ID (for per-frame image updates)
     swapchain_resource_id: Option<ResourceId>,
+    /// Current swapchain image (updated per-frame)
+    current_swapchain_image: Option<VkImage>,
+    /// Current swapchain image view (updated per-frame)
+    current_swapchain_view: Option<VkImageView>,
 }
 
 /// CompiledPass represents a single compiled pass with all necessary Vulkan objects.
@@ -211,6 +215,8 @@ impl CompiledRenderGraph {
             viewport_color_resource_id: None,
             viewport_depth_resource_id: None,
             swapchain_resource_id: None,
+            current_swapchain_image: None,
+            current_swapchain_view: None,
         })
     }
 
@@ -242,9 +248,9 @@ impl CompiledRenderGraph {
     /// resolved at execution time from the storage in VulkanRenderer.
     /// This method is now a no-op since handles are resolved dynamically.
     #[deprecated(note = "Swapchain images are now resolved via handle storage at execution time")]
-    pub fn update_swapchain_image(&mut self, _image: VkImage, _image_view: VkImageView) {
-        // No-op: handles are resolved at execution time via RendererContext
-        // The storage in VulkanRenderer should be updated directly if needed
+    pub fn update_swapchain_image(&mut self, image: VkImage, image_view: VkImageView) {
+        self.current_swapchain_image = Some(image);
+        self.current_swapchain_view = Some(image_view);
     }
 
     /// Update the swapchain image by handle.
@@ -845,8 +851,7 @@ impl CompiledRenderGraph {
             } else {
                 // Transfer/compute pass - no render pass needed
                 debug!("execute: calling execute_pass_transfer for pass {}", i);
-                self.execute_pass_transfer(command_buffer, i, is_last_pass, frame_index)?;
-                debug!("execute: execute_pass_transfer for pass {} complete", i);
+                self.execute_pass_transfer(command_buffer, i, is_last_pass, frame_index, swapchain_images, image_index)?;
             }
         }
         Ok(())
@@ -909,7 +914,7 @@ impl CompiledRenderGraph {
                     "execute_no_swapchain: calling execute_pass_transfer for pass {}",
                     i
                 );
-                self.execute_pass_transfer(command_buffer, i, is_last_pass, frame_index)?;
+                self.execute_pass_transfer(command_buffer, i, is_last_pass, frame_index, &empty_swapchain, image_index)?;
                 debug!(
                     "execute_no_swapchain: execute_pass_transfer for pass {} complete",
                     i
@@ -927,6 +932,8 @@ impl CompiledRenderGraph {
         pass_index: usize,
         _is_last_pass: bool,
         frame_index: usize,
+        swapchain_images: &[VkImage],
+        image_index: usize,
     ) -> Result<(), RenderGraphError> {
         let pass = &self.passes[pass_index];
 
@@ -954,7 +961,21 @@ impl CompiledRenderGraph {
 
         // Transition transfer destination images to TRANSFER_DST_OPTIMAL
         for resource_id in &pass.transfer_dst_resources {
-            if let Some(image) = self.get_image(*resource_id) {
+            // Check if this is the swapchain - use direct array access for current image
+            let is_swapchain = self.swapchain_resource_id == Some(*resource_id);
+            
+            let image = if is_swapchain {
+                // Use the current swapchain image directly from parameters
+                swapchain_images.get(image_index).copied()
+            } else {
+                // For other resources, use normal lookup
+                self.get_image(*resource_id)
+            };
+            
+            
+            if let Some(image) = image {
+                // Use UNDEFINED as old_layout - valid for any current state
+                // (first frame=UNDEFINED, subsequent=PRESENT_SRC_KHR)
                 let barrier = ImageMemoryBarrier2::new(image)
                     .src_stage(PipelineStage2Flags::BOTTOM_OF_PIPE)
                     .src_access(AccessFlags2::NONE)
@@ -997,16 +1018,35 @@ impl CompiledRenderGraph {
                 .unwrap()
                 .set_ui_callback(Rc::clone(callback));
         }
+        
+        // Set current swapchain image/view if this pass uses the swapchain
+        if let Some(swapchain_id) = self.swapchain_resource_id {
+            if pass.transfer_dst_resources.contains(&swapchain_id) {
+                // Use the stored current swapchain image/view (set by update_swapchain_image)
+                if let (Some(image), Some(view)) = (self.current_swapchain_image, self.current_swapchain_view) {
+                    Rc::get_mut(&mut ctx).unwrap().set_swapchain(swapchain_id, image, view);
+                }
+            }
+        }
 
         // Execute the pass closure directly (no begin_rendering/end_rendering)
         pass.execute(ctx, &mut self.registry);
 
         // After blit: transition transfer destinations to final layout
         for resource_id in &pass.transfer_dst_resources {
-            if let Some(image) = self.get_image(*resource_id) {
+            // Check if this is the swapchain - use direct array access for current image
+            let is_swapchain = self.swapchain_resource_id == Some(*resource_id);
+            
+            let image = if is_swapchain {
+                // Use the current swapchain image directly from parameters
+                swapchain_images.get(image_index).copied()
+            } else {
+                // For other resources, use normal lookup
+                self.get_image(*resource_id)
+            };
+            
+            if let Some(image) = image {
                 // Check if this is the swapchain - transition to PRESENT_SRC
-                let is_swapchain = self.swapchain_resource_id == Some(*resource_id);
-
                 let (new_layout, dst_stage, dst_access) = if is_swapchain {
                     (
                         vk::ImageLayout::PRESENT_SRC_KHR,
