@@ -1,3 +1,6 @@
+pub mod debug_draw;
+pub mod debug_line_material;
+
 pub mod fullscreen_renderer;
 pub mod gizmo_material;
 pub mod grid_material;
@@ -21,3 +24,5 @@ pub use sky_material::SkyMaterial;
 pub use ui_material::UiMaterial;
 pub use ui_renderer::{UIRenderer, UiDrawCommand, UiDrawData};
 pub use vertextypes::*;
+pub use debug_draw::{debug_vertex_binding, DebugDraw, DebugVertex};
+pub use debug_line_material::DebugLineMaterial;

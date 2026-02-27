@@ -13,8 +13,7 @@ use std::rc::Rc;
 use crate::animation::Skeleton;
 use crate::components::{DrawableComponent, ParticleEmitter, TransformComponent};
 use crate::gizmo::{self, GizmoVertex};
-use crate::rendering::GizmoMaterial;
-
+use crate::rendering::{DebugLineMaterial, GizmoMaterial};
 use super::Application;
 
 /// UI vertex buffer size in bytes (256KB - enough for complex UIs)
@@ -152,6 +151,9 @@ pub fn setup_render_graph(app: &mut Application) {
 
     // Create and register gizmo material and mesh
     setup_gizmo_resources(app);
+
+    // Create and register debug draw material and mesh
+    setup_debug_draw_resources(app);
 }
 
 /// Setup gizmo rendering resources.
@@ -244,6 +246,41 @@ fn create_gizmo_index_buffer(context: &Rc<VulkanContext>, indices: Vec<u32>) -> 
     index_buffer
 }
 
+/// Setup debug drawing resources.
+pub fn setup_debug_draw_resources(app: &mut Application) {
+    let renderer = match app.renderer.as_mut() {
+        Some(r) => r,
+        None => return,
+    };
+
+    // Create debug line pipeline from pure config using the renderer's cache
+    let debug_pipeline = {
+        let mut material_cache = renderer.material_cache.borrow_mut();
+        let debug_material = DebugLineMaterial::default();
+        material_cache
+            .get_or_create(&debug_material)
+            .expect("Failed to create debug line pipeline")
+    };
+
+    // Register material using VulkanRenderer's method
+    // Debug lines don't use bindless textures
+    let vertex_binding = crate::rendering::debug_vertex_binding();
+    let material_handle = renderer.register_material_full(
+        debug_pipeline,
+        vertex_binding,
+        false, // not bindless
+        [0; 4],
+        0,
+    );
+    debug!(
+        "Registered debug line material with handle {:?}",
+        material_handle
+    );
+
+    // Store material handle in debug draw
+    app.debug_draw.set_material_handle(material_handle);
+}
+
 /// Render using the render graph system with draw call submission.
 pub fn render_frame(app: &mut Application) {
     let renderer = match app.renderer.as_mut() {
@@ -251,6 +288,8 @@ pub fn render_frame(app: &mut Application) {
         None => return,
     };
 
+    // Clear debug draw for new frame (immediate mode semantics)
+    app.debug_draw.clear();
     // Get camera matrices
     let view = app
         .camera
@@ -391,6 +430,23 @@ pub fn render_frame(app: &mut Application) {
             draw_list.push(gizmo_draw_call);
             debug!("Rendering gizmo for entity {:?}", selected_entity);
         }
+    }
+
+    // === DEBUG DRAWING ===
+    // Create buffers and render debug primitives (lines, wireframes, etc.)
+    if let (Some((vertex_buffer, index_buffer)), Some(material_handle)) =
+        (app.debug_draw.create_buffers(&renderer.context), app.debug_draw.material_handle())
+    {
+        // Register mesh with the buffers (creates a new handle each frame)
+        let mesh_handle = renderer.register_mesh(Some(vertex_buffer), Some(index_buffer));
+        
+        let identity = katla_math::Mat4::identity();
+        let debug_draw_call = DrawCall::new(mesh_handle, material_handle)
+            .with_transform(identity.to_array())
+            .with_color([1.0, 1.0, 1.0, 1.0]);
+
+        draw_list.push(debug_draw_call);
+        debug!("Rendering {} debug lines", app.debug_draw.line_count());
     }
 
     // === PREVIEW RENDERING ===

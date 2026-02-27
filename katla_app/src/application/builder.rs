@@ -226,6 +226,7 @@ impl ApplicationBuilder {
             next_thumbnail_texture_id: 100, // Custom texture IDs start at 100
             thumbnail_texture_ids: HashMap::new(),
             start_time: Instant::now(),
+            debug_draw: crate::rendering::DebugDraw::new(),
         };
 
         Ok((app, event_loop))
