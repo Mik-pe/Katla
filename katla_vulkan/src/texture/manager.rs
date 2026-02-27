@@ -222,7 +222,10 @@ impl TextureManager {
 
     /// Get a mutable reference to the Texture for a handle.
     pub fn get_texture_mut(&mut self, handle: TextureHandle) -> Option<&mut Texture> {
-        self.textures.get_mut(handle.index()).map(|rc| Rc::get_mut(rc)).flatten()
+        self.textures
+            .get_mut(handle.index())
+            .map(|rc| Rc::get_mut(rc))
+            .flatten()
     }
 
     /// Check if a handle points to a valid texture.

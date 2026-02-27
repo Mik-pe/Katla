@@ -59,7 +59,8 @@
 use ash::vk;
 use std::rc::Rc;
 
-use crate::vulkan::{bda::DeviceAddressBuffer, DescriptorSetBuilder, VulkanContext};
+use super::super::context::VulkanContext;
+use crate::vulkan::{bda::DeviceAddressBuffer, DescriptorSetBuilder};
 use crate::RendererError;
 
 /// Storage buffer descriptor set for uniform buffers.

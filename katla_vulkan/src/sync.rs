@@ -166,7 +166,7 @@ pub fn swapchain_to_present_barrier(image: VkImage) -> ImageMemoryBarrier2 {
 macro_rules! define_vk_wrapper {
     ($name:ident, $vk_type:ty) => {
         #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-        pub(crate) struct $name(pub $vk_type);
+        pub struct $name(pub $vk_type);
 
         unsafe impl Send for $name {}
         unsafe impl Sync for $name {}
@@ -735,7 +735,7 @@ impl Default for DependencyInfo {
 
 /// Wrapper around `vk::CommandBuffer`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub(crate) struct VkCommandBuffer(pub vk::CommandBuffer);
+pub struct VkCommandBuffer(pub vk::CommandBuffer);
 
 unsafe impl Send for VkCommandBuffer {}
 unsafe impl Sync for VkCommandBuffer {}

@@ -3,7 +3,7 @@ use std::rc::Rc;
 
 use crate::pass::ExecutionRegistry;
 use crate::render_graph::resource::Resource;
-use crate::VulkanContext;
+use crate::vulkan::context::VulkanContext;
 use crate::{CompiledRenderGraph, Pass, PassBuilder, RenderGraphError, ResourceId, ResourceKind};
 
 #[derive(Default)]

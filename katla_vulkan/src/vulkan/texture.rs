@@ -1,4 +1,4 @@
-use super::VulkanContext;
+use super::context::VulkanContext;
 use crate::render_graph::types::ImageFormat;
 use crate::sync::{
     AccessFlags2, DependencyInfo, ImageMemoryBarrier2, PipelineStage2Flags, VkDescriptorSet,
@@ -261,7 +261,10 @@ impl Texture {
             // NOTE: Synchronous command buffer submission can be a bottleneck.
             // For better performance, batch multiple uploads or use async transfer queues.
             context.end_single_time_commands(command_buffer);
-            context.free_buffer(crate::sync::VkBuffer::new(staging_buffer), staging_allocation);
+            context.free_buffer(
+                crate::sync::VkBuffer::new(staging_buffer),
+                staging_allocation,
+            );
 
             let image_view = VulkanFrameCtx::create_image_view(
                 &context.device,
@@ -432,7 +435,10 @@ impl Texture {
             });
 
             self.context.end_single_time_commands(command_buffer);
-            self.context.free_buffer(crate::sync::VkBuffer::new(staging_buffer), staging_allocation);
+            self.context.free_buffer(
+                crate::sync::VkBuffer::new(staging_buffer),
+                staging_allocation,
+            );
         }
     }
     /// Resize the texture, recreating the internal image.
@@ -508,7 +514,10 @@ impl Texture {
             );
 
             self.context.end_single_time_commands(command_buffer);
-            self.context.free_buffer(crate::sync::VkBuffer::new(staging_buffer), staging_allocation);
+            self.context.free_buffer(
+                crate::sync::VkBuffer::new(staging_buffer),
+                staging_allocation,
+            );
             // Create new image view
             let new_image_view = VulkanFrameCtx::create_image_view(
                 &self.context.device,

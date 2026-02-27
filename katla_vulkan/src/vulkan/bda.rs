@@ -31,8 +31,8 @@ use ash::vk;
 use gpu_allocator::MemoryLocation;
 use std::rc::Rc;
 
+use super::context::VulkanContext;
 use crate::sync::VkBuffer;
-use crate::VulkanContext;
 
 /// A buffer that can be accessed via its GPU device address.
 ///
@@ -220,8 +220,10 @@ impl DeviceAddressBuffer {
 
 impl Drop for DeviceAddressBuffer {
     fn drop(&mut self) {
-        self.context
-            .free_buffer(VkBuffer::new(self.buffer), std::mem::take(&mut self.allocation));
+        self.context.free_buffer(
+            VkBuffer::new(self.buffer),
+            std::mem::take(&mut self.allocation),
+        );
     }
 }
 

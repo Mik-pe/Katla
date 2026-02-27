@@ -323,7 +323,7 @@ impl BindlessTextureManager {
     /// Get the descriptor set for binding.
     ///
     /// Bind this to set 1 once per frame.
-    pub fn descriptor_set(&self) -> VkDescriptorSet {
+    pub(crate) fn descriptor_set(&self) -> VkDescriptorSet {
         self.descriptor_set
     }
 
@@ -336,7 +336,7 @@ impl BindlessTextureManager {
     /// Get the descriptor set layout.
     ///
     /// Use this when creating pipelines that will use bindless textures.
-    pub fn descriptor_layout(&self) -> VkDescriptorSetLayout {
+    pub(crate) fn descriptor_layout(&self) -> VkDescriptorSetLayout {
         self.descriptor_layout
     }
 
@@ -347,7 +347,7 @@ impl BindlessTextureManager {
     }
 
     /// Get the shared sampler.
-    pub fn shared_sampler(&self) -> VkSampler {
+    pub(crate) fn shared_sampler(&self) -> VkSampler {
         self.shared_sampler
     }
 

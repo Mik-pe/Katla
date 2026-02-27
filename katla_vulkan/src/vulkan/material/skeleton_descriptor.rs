@@ -10,7 +10,8 @@ use ash::vk;
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use crate::vulkan::{skeleton_buffer::SkeletonBuffer, DescriptorSetBuilder, VulkanContext};
+use super::super::context::VulkanContext;
+use crate::vulkan::{skeleton_buffer::SkeletonBuffer, DescriptorSetBuilder};
 
 /// Descriptor set for binding skeleton joint matrices to the GPU.
 ///

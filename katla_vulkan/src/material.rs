@@ -1045,8 +1045,8 @@ pub struct MaterialPipelineCache {
 }
 
 impl MaterialPipelineCache {
-    /// Create a new empty pipeline cache.
-    pub fn new(context: Rc<VulkanContext>) -> Self {
+    /// Create a new empty pipeline cache (internal).
+    pub(crate) fn new(context: Rc<VulkanContext>) -> Self {
         Self {
             context,
             cache: HashMap::new(),
@@ -1091,7 +1091,7 @@ impl MaterialPipelineCache {
     /// # Arguments
     /// * `material` - MaterialDefinition implementation to create pipeline for
     /// * `bindless_layout` - Descriptor set layout from BindlessTextureManager
-    pub fn get_or_create_bindless<M: MaterialDefinition + ?Sized>(
+    pub(crate) fn get_or_create_bindless<M: MaterialDefinition + ?Sized>(
         &mut self,
         material: &M,
         bindless_layout: crate::sync::VkDescriptorSetLayout,

@@ -67,9 +67,9 @@ pub struct RendererContextPointers {
     /// External buffer storage for resolving BufferHandle to VkBuffer
     pub external_buffers: *const ResourceStorage<VkBuffer>,
     /// Device handle for Vulkan commands (cloned, not a pointer)
-    pub vk_device: Option<ash::Device>,
+    pub(crate) vk_device: Option<ash::Device>,
     /// Push descriptor loader for dynamic descriptor updates
-    pub push_descriptor_loader: Option<PushDescriptorDevice>,
+    pub(crate) push_descriptor_loader: Option<PushDescriptorDevice>,
 }
 
 /// Container for renderer state accessible from render graph passes.

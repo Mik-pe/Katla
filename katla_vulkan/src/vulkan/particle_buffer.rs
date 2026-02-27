@@ -27,9 +27,9 @@
 use ash::vk;
 use std::rc::Rc;
 
+use super::context::VulkanContext;
 use crate::vulkan::bda::DeviceAddressBuffer;
 use crate::vulkan::material::buffer_descriptor::BufferDescriptorSource;
-use crate::VulkanContext;
 
 /// Maximum number of particles per emitter.
 /// 64K particles = 4MB per emitter (64 bytes * 65536)

@@ -4,12 +4,14 @@
 //! supporting loading from files, bulk loading from directories, and
 //! event-driven template hot reload using filesystem watching.
 
+use super::super::context::VulkanContext;
 use super::{
     load_material_from_file, FileWatcher, MaterialDescriptor, MaterialError, MaterialTemplate,
     ShaderReflection,
 };
 use crate::material::MaterialDefinition;
-use crate::{DynamicMaterialConfig, MaterialPipelineCache, VulkanContext};
+use crate::DynamicMaterialConfig;
+use crate::MaterialPipelineCache;
 use ash::vk;
 use log::{debug, info};
 use std::{
