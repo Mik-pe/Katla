@@ -196,6 +196,8 @@ impl UITextures {
             texture.resize(width, height, pixels);
             if let Some(view) = manager.get_view(self.font_texture_handle) {
                 self.font_texture_view = view;
+                // Update descriptor set with the new font atlas image view
+                self.descriptor_set.update_sampled_image(0, view);
             }
             true
         } else {

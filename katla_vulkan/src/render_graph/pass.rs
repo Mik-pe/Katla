@@ -445,8 +445,6 @@ impl PassBuilder {
     }
 }
 
-/// PassExecutionContext provides all the information needed during pass execution.
-/// This is passed to the execute closure defined in the PassBuilder.
 pub struct PassExecutionContext {
     /// Command buffer to record commands into
     pub command_buffer: std::rc::Rc<CommandBuffer>,
@@ -467,6 +465,12 @@ pub struct PassExecutionContext {
     frame_index: usize,
     /// UI draw callback for UI pass
     ui_draw_callback: Option<Rc<dyn Fn(&PassExecutionContext)>>,
+    /// Current swapchain image (set per-frame for present pass)
+    current_swapchain_image: Option<VkImage>,
+    /// Current swapchain image view (set per-frame for present pass)
+    current_swapchain_view: Option<VkImageView>,
+    /// Resource ID of the swapchain (to identify swapchain lookups)
+    swapchain_resource_id: Option<ResourceId>,
 }
 
 impl PassExecutionContext {
@@ -489,6 +493,9 @@ impl PassExecutionContext {
             renderer_context: None,
             frame_index: 0,
             ui_draw_callback: None,
+            current_swapchain_image: None,
+            current_swapchain_view: None,
+            swapchain_resource_id: None,
         }
     }
 
@@ -510,6 +517,9 @@ impl PassExecutionContext {
             renderer_context: None,
             frame_index: 0,
             ui_draw_callback: None,
+            current_swapchain_image: None,
+            current_swapchain_view: None,
+            swapchain_resource_id: None,
         }
     }
 
@@ -532,6 +542,9 @@ impl PassExecutionContext {
             renderer_context: Some(renderer_context),
             frame_index: 0,
             ui_draw_callback: None,
+            current_swapchain_image: None,
+            current_swapchain_view: None,
+            swapchain_resource_id: None,
         }
     }
 
@@ -563,6 +576,13 @@ impl PassExecutionContext {
         self.frame_index = frame_index;
     }
 
+    /// Set the current swapchain image, view, and resource ID (called internally before present pass).
+    pub(crate) fn set_swapchain(&mut self, resource_id: ResourceId, image: VkImage, view: VkImageView) {
+        self.swapchain_resource_id = Some(resource_id);
+        self.current_swapchain_image = Some(image);
+        self.current_swapchain_view = Some(view);
+    }
+
     /// Get a material pipeline by handle from the material cache.
     ///
     /// Returns None if the renderer context is not available or the handle is invalid.
@@ -580,11 +600,24 @@ impl PassExecutionContext {
             Some(CompiledResource::Image {
                 image, image_view, ..
             }) => Some((*image, *image_view)),
-            Some(CompiledResource::ExternalImage { handle, .. }) => {
-                // Resolve handle via renderer context
+            Some(CompiledResource::ExternalImage { .. }) => {
+                // For swapchain: use the current image set per-frame (only if resource_id matches)
+                if self.swapchain_resource_id == Some(resource_id) {
+                    if let (Some(image), Some(view)) = (self.current_swapchain_image, self.current_swapchain_view) {
+                        return Some((image, view));
+                    }
+                }
+                // For other external images: resolve handle via renderer context
                 self.renderer_context
                     .as_ref()
-                    .and_then(|ctx| ctx.get_external_image(*handle))
+                    .and_then(|ctx| {
+                        let handle = self.resources.borrow().get(&resource_id)
+                            .and_then(|r| match r {
+                                CompiledResource::ExternalImage { handle, .. } => Some(*handle),
+                                _ => None,
+                            })?;
+                        ctx.get_external_image(handle)
+                    })
             }
             _ => None,
         }
