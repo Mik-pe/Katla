@@ -327,8 +327,9 @@ impl BindlessTextureManager {
         self.descriptor_set
     }
 
-    /// Get the raw Vulkan descriptor set handle.
-    pub fn vk_descriptor_set(&self) -> vk::DescriptorSet {
+    /// Get the raw descriptor set for internal binding operations.
+    /// This is pub(crate) to avoid exposing Vulkan types in the public API.
+    pub(crate) fn vk_descriptor_set(&self) -> vk::DescriptorSet {
         self.descriptor_set.vk()
     }
 
@@ -339,8 +340,9 @@ impl BindlessTextureManager {
         self.descriptor_layout
     }
 
-    /// Get the raw Vulkan descriptor set layout handle.
-    pub fn vk_descriptor_layout(&self) -> vk::DescriptorSetLayout {
+    /// Get the raw descriptor set layout handle.
+    /// This is pub(crate) to avoid exposing Vulkan types in the public API.
+    pub(crate) fn vk_descriptor_layout(&self) -> vk::DescriptorSetLayout {
         self.descriptor_layout.vk()
     }
 

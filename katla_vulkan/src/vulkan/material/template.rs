@@ -170,17 +170,17 @@ impl MaterialTemplate {
     }
 
     /// Get the descriptor set layout for this template.
-    pub fn desc_layout(&self) -> vk::DescriptorSetLayout {
+    pub(crate) fn desc_layout(&self) -> vk::DescriptorSetLayout {
         self.desc_layout
     }
 
     /// Get the texture set layout for storage buffer mode.
-    pub fn texture_set_layout(&self) -> Option<vk::DescriptorSetLayout> {
+    pub(crate) fn texture_set_layout(&self) -> Option<vk::DescriptorSetLayout> {
         self.texture_set_layout
     }
 
     /// Get the skeleton set layout.
-    pub fn skeleton_set_layout(&self) -> Option<vk::DescriptorSetLayout> {
+    pub(crate) fn skeleton_set_layout(&self) -> Option<vk::DescriptorSetLayout> {
         self.skeleton_set_layout
     }
 

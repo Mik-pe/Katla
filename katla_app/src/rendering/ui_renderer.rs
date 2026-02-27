@@ -6,15 +6,14 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
+use super::ui_material::UiMaterial;
 use ash::vk;
 use katla_vulkan::sync::{VkBuffer, VkDescriptorSet, VkImageView, VkSampler};
 use katla_vulkan::{
     DescriptorSetBuilder, DescriptorSetLayoutBuilder, DescriptorType, Extent2D, FrameBuffer,
-    IndexBuffer, IndexType, Offset2D, PassExecutionContext, PipelineHandle,
-    Rect2D, ShaderStages, TextureHandle, TextureManager, UniformBuffer, VertexBuffer,
-    VulkanContext, VulkanRenderer,
+    IndexBuffer, IndexType, Offset2D, PassExecutionContext, PipelineHandle, Rect2D, ShaderStages,
+    TextureHandle, TextureManager, UniformBuffer, VertexBuffer, VulkanContext, VulkanRenderer,
 };
-use super::ui_material::UiMaterial;
 
 /// A single draw command for UI rendering.
 #[derive(Debug, Clone)]
@@ -60,7 +59,11 @@ impl UIBuffers {
 
     fn update_vertices(&self, data: &[u8]) -> bool {
         if data.len() as u64 > self.vertex_capacity {
-            log::warn!("UIBuffers: vertex data ({}) exceeds capacity ({})", data.len(), self.vertex_capacity);
+            log::warn!(
+                "UIBuffers: vertex data ({}) exceeds capacity ({})",
+                data.len(),
+                self.vertex_capacity
+            );
             return false;
         }
         self.vertex_buffer.borrow_mut().upload_data(data);
@@ -69,7 +72,11 @@ impl UIBuffers {
 
     fn update_indices(&self, data: &[u8]) -> bool {
         if data.len() as u64 > self.index_capacity {
-            log::warn!("UIBuffers: index data ({}) exceeds capacity ({})", data.len(), self.index_capacity);
+            log::warn!(
+                "UIBuffers: index data ({}) exceeds capacity ({})",
+                data.len(),
+                self.index_capacity
+            );
             return false;
         }
         self.index_buffer.borrow_mut().upload_data(data);
@@ -112,11 +119,16 @@ impl UITextures {
 
         let white_pixels = [255u8, 255, 255, 255];
         let white_texture_handle = texture_manager.create_solid(white_pixels);
-        let white_texture_view = texture_manager.get_view(white_texture_handle).expect("White texture not found");
+        let white_texture_view = texture_manager
+            .get_view(white_texture_handle)
+            .expect("White texture not found");
 
         let white_atlas = vec![255u8; (atlas_width * atlas_height * 4) as usize];
-        let font_texture_handle = texture_manager.create_rgba(atlas_width, atlas_height, &white_atlas);
-        let font_texture_view = texture_manager.get_view(font_texture_handle).expect("Font texture not found");
+        let font_texture_handle =
+            texture_manager.create_rgba(atlas_width, atlas_height, &white_atlas);
+        let font_texture_view = texture_manager
+            .get_view(font_texture_handle)
+            .expect("Font texture not found");
 
         let descriptor_set_layout = DescriptorSetLayoutBuilder::new()
             .add_binding(0, DescriptorType::SampledImage, ShaderStages::FRAGMENT)
@@ -163,7 +175,11 @@ impl UITextures {
         if pixels.len() != (self.atlas_width * self.atlas_height * 4) as usize {
             return false;
         }
-        if let Some(texture) = self.texture_manager.borrow_mut().get_texture_mut(self.font_texture_handle) {
+        if let Some(texture) = self
+            .texture_manager
+            .borrow_mut()
+            .get_texture_mut(self.font_texture_handle)
+        {
             texture.update_data(pixels);
             true
         } else {
@@ -175,9 +191,10 @@ impl UITextures {
     fn resize_font_atlas(&mut self, width: u32, height: u32, pixels: &[u8]) -> bool {
         self.atlas_width = width;
         self.atlas_height = height;
-        if let Some(texture) = self.texture_manager.borrow_mut().get_texture_mut(self.font_texture_handle) {
+        let mut manager = self.texture_manager.borrow_mut();
+        if let Some(texture) = manager.get_texture_mut(self.font_texture_handle) {
             texture.resize(width, height, pixels);
-            if let Some(view) = self.texture_manager.borrow().get_view(self.font_texture_handle) {
+            if let Some(view) = manager.get_view(self.font_texture_handle) {
                 self.font_texture_view = view;
             }
             true
@@ -226,13 +243,21 @@ impl UIRenderer {
 
         let texture_manager = TextureManager::new(context.clone())?;
 
-        let buffers = FrameBuffer::new(|_| UIBuffers::new(context.clone(), vertex_capacity, index_capacity));
+        let buffers =
+            FrameBuffer::new(|_| UIBuffers::new(context.clone(), vertex_capacity, index_capacity));
         let textures = UITextures::new(context, texture_manager, atlas_width, atlas_height)?;
 
         let ui_material = UiMaterial::default();
-        let pipeline = material_cache.borrow_mut().get_or_create(&ui_material).expect("Failed to create UI pipeline");
+        let pipeline = material_cache
+            .borrow_mut()
+            .get_or_create(&ui_material)
+            .expect("Failed to create UI pipeline");
 
-        Ok(Self { buffers, textures, pipeline })
+        Ok(Self {
+            buffers,
+            textures,
+            pipeline,
+        })
     }
 
     pub fn update_font_atlas(&mut self, pixels: &[u8]) -> bool {
@@ -261,7 +286,11 @@ impl UIRenderer {
             self.textures.set_external_texture(texture_id, view);
             true
         } else {
-            log::warn!("TextureHandle {:?} not found in TextureManager for texture_id {}", handle, texture_id);
+            log::warn!(
+                "TextureHandle {:?} not found in TextureManager for texture_id {}",
+                handle,
+                texture_id
+            );
             false
         }
     }
@@ -273,8 +302,12 @@ impl UIRenderer {
 
         let ui_buffer = self.buffers.current_mut(ctx.frame_index());
 
-        if !ui_buffer.update_vertices(&draw_data.vertex_data) { return false; }
-        if !ui_buffer.update_indices(&draw_data.index_data) { return false; }
+        if !ui_buffer.update_vertices(&draw_data.vertex_data) {
+            return false;
+        }
+        if !ui_buffer.update_indices(&draw_data.index_data) {
+            return false;
+        }
 
         let Some(pipeline) = ctx.get_pipeline(self.pipeline) else {
             log::error!("UI pipeline handle {:?} not found in cache", self.pipeline);
@@ -290,8 +323,14 @@ impl UIRenderer {
 
         for cmd in &draw_data.commands {
             ctx.set_scissor(&Rect2D {
-                offset: Offset2D { x: cmd.clip_rect[0] as i32, y: cmd.clip_rect[1] as i32 },
-                extent: Extent2D { width: cmd.clip_rect[2] as u32, height: cmd.clip_rect[3] as u32 },
+                offset: Offset2D {
+                    x: cmd.clip_rect[0] as i32,
+                    y: cmd.clip_rect[1] as i32,
+                },
+                extent: Extent2D {
+                    width: cmd.clip_rect[2] as u32,
+                    height: cmd.clip_rect[3] as u32,
+                },
             });
 
             unsafe {

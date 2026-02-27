@@ -1081,10 +1081,7 @@ impl CompiledRenderGraph {
 
         // Build rendering info
         let mut rendering_info = RenderingInfo::new()
-            .render_area(vk::Rect2D {
-                offset: vk::Offset2D { x: 0, y: 0 },
-                extent: pass.extent.into(),
-            })
+            .render_area(Rect2D::from_extents(pass.extent.width, pass.extent.height))
             .layer_count(1);
 
         // Add color attachments with clear values
@@ -1329,7 +1326,7 @@ impl Drop for CompiledRenderGraph {
                         CompiledResource::Buffer {
                             buffer, allocation, ..
                         } => {
-                            self.context.free_buffer(buffer.vk(), allocation);
+                            self.context.free_buffer(buffer, allocation);
                         }
                         CompiledResource::Image {
                             image,
@@ -1340,7 +1337,7 @@ impl Drop for CompiledRenderGraph {
                             self.context
                                 .device
                                 .destroy_image_view(image_view.vk(), None);
-                            self.context.free_image(image.vk(), allocation);
+                            self.context.free_image(image, allocation);
                         }
                         CompiledResource::ExternalBuffer { .. }
                         | CompiledResource::ExternalImage { .. } => {

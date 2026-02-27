@@ -261,7 +261,7 @@ impl Texture {
             // NOTE: Synchronous command buffer submission can be a bottleneck.
             // For better performance, batch multiple uploads or use async transfer queues.
             context.end_single_time_commands(command_buffer);
-            context.free_buffer(staging_buffer, staging_allocation);
+            context.free_buffer(crate::sync::VkBuffer::new(staging_buffer), staging_allocation);
 
             let image_view = VulkanFrameCtx::create_image_view(
                 &context.device,
@@ -432,10 +432,9 @@ impl Texture {
             });
 
             self.context.end_single_time_commands(command_buffer);
-            self.context.free_buffer(staging_buffer, staging_allocation);
+            self.context.free_buffer(crate::sync::VkBuffer::new(staging_buffer), staging_allocation);
         }
     }
-
     /// Resize the texture, recreating the internal image.
     ///
     /// The image view and sampler are updated to the new image.
@@ -509,8 +508,7 @@ impl Texture {
             );
 
             self.context.end_single_time_commands(command_buffer);
-            self.context.free_buffer(staging_buffer, staging_allocation);
-
+            self.context.free_buffer(crate::sync::VkBuffer::new(staging_buffer), staging_allocation);
             // Create new image view
             let new_image_view = VulkanFrameCtx::create_image_view(
                 &self.context.device,
@@ -523,8 +521,7 @@ impl Texture {
             self.context
                 .device
                 .destroy_image_view(old_image_view.vk(), None);
-            self.context.free_image(old_image.vk(), old_allocation);
-
+            self.context.free_image(old_image, old_allocation);
             // Update self with new resources
             self.width = width;
             self.height = height;
@@ -675,6 +672,6 @@ impl Drop for Texture {
                 .destroy_image_view(self.image_view.vk(), None);
         }
         let allocation = unsafe { ManuallyDrop::take(&mut self.image_memory) };
-        self.context.free_image(self.image.vk(), allocation);
+        self.context.free_image(self.image, allocation);
     }
 }

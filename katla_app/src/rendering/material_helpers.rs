@@ -103,7 +103,7 @@ fn create_checkerboard_material_with_color(
 
     // Create material config and get pipeline from cache
     let vertex_binding = VertexPBR::get_vertex_binding();
-    let bindless_layout = renderer.bindless_manager().vk_descriptor_layout();
+    let bindless_layout = renderer.bindless_manager().descriptor_layout();
 
     let config = BindlessPbrMaterialConfig {
         vertex_binding: vertex_binding.clone(),

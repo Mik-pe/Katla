@@ -125,7 +125,7 @@ impl MaterialRegistry {
         dir: &Path,
         context: &Rc<VulkanContext>,
         cache: &mut MaterialPipelineCache,
-        bindless_layout: vk::DescriptorSetLayout,
+        bindless_layout: crate::sync::VkDescriptorSetLayout,
     ) -> Result<usize, MaterialError> {
         let dir_entries = fs::read_dir(dir).map_err(|e| {
             MaterialError::InvalidDescriptor(format!(
@@ -221,7 +221,7 @@ impl MaterialRegistry {
         path: &Path,
         _context: &Rc<VulkanContext>,
         cache: &mut MaterialPipelineCache,
-        bindless_layout: vk::DescriptorSetLayout,
+        bindless_layout: crate::sync::VkDescriptorSetLayout,
     ) -> Result<Rc<MaterialTemplate>, MaterialError> {
         let descriptor = load_material_from_file(path)?;
         let name = descriptor.name.clone();

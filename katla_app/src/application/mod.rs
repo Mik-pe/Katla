@@ -431,7 +431,7 @@ impl Application {
         .expect("Failed to initialize Vulkan renderer");
 
         // Load bindless material templates (bindless-only now)
-        let bindless_layout = renderer.bindless_manager().vk_descriptor_layout();
+        let bindless_layout = renderer.bindless_manager().descriptor_layout();
 
         // Need to scope borrows to avoid conflicts
         let bindless_count = {

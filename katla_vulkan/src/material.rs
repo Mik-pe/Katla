@@ -1094,7 +1094,7 @@ impl MaterialPipelineCache {
     pub fn get_or_create_bindless<M: MaterialDefinition + ?Sized>(
         &mut self,
         material: &M,
-        bindless_layout: ash::vk::DescriptorSetLayout,
+        bindless_layout: crate::sync::VkDescriptorSetLayout,
     ) -> Result<PipelineHandle, MaterialCacheError> {
         let key = MaterialKey::from_material(material);
 
@@ -1129,7 +1129,7 @@ impl MaterialPipelineCache {
     fn create_bindless_pipeline<M: MaterialDefinition + ?Sized>(
         &self,
         material: &M,
-        bindless_layout: ash::vk::DescriptorSetLayout,
+        bindless_layout: crate::sync::VkDescriptorSetLayout,
     ) -> Result<MaterialPipeline, MaterialCacheError> {
         let render_state = material.render_state();
         let vertex_binding = material.vertex_binding();
@@ -1162,7 +1162,7 @@ impl MaterialPipelineCache {
             wrapped_layouts.push(wrapped);
         }
 
-        vk_layouts.push(bindless_layout);
+        vk_layouts.push(bindless_layout.vk());
 
         if material.uses_skeleton() {
             if let Some(builder) = layout_builders.get(1) {

@@ -59,11 +59,10 @@ struct BufferObject {
 impl Drop for BufferObject {
     fn drop(&mut self) {
         if let Some(allocation) = self.allocation.take() {
-            self.context.free_buffer(self.buffer, allocation);
+            self.context.free_buffer(crate::sync::VkBuffer::new(self.buffer), allocation);
         }
     }
 }
-
 pub struct VertexBuffer {
     buffer: BufferObject,
 }

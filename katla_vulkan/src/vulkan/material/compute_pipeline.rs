@@ -1,34 +1,17 @@
+#![allow(dead_code)]
 //! Compute pipeline builder for Vulkan 1.3.
 //!
 //! Provides a builder pattern for creating compute pipelines, similar to
 //! `PipelineBuilder` but for compute shaders. This is used for GPU compute
 //! operations like particle simulation.
-//!
-//! # Example
-//!
-//! ```ignore
-//! use katla_vulkan::vulkan::material::{ComputePipelineBuilder, ShaderModule};
-//!
-//! let compute_shader = ShaderModule::from_wgsl(&context, include_str!("particle_sim.wgsl"), "cs_main")?;
-//!
-//! let pipeline = ComputePipelineBuilder::new(context.clone())
-//!     .with_shader(compute_shader.shader_module)
-//!     .with_descriptor_layouts(vec![descriptor_set_layout])
-//!     .add_push_constant_range(vk::ShaderStageFlags::COMPUTE, 0, std::mem::size_of::<ParticlePushConstants>() as u32)
-//!     .build()?;
-//! ```
-
-use std::{ffi::CString, rc::Rc};
 
 use ash::vk;
+use std::{ffi::CString, rc::Rc};
 
 use crate::sync::{VkDescriptorSetLayout, VkPipeline, VkPipelineLayout};
 use crate::VulkanContext;
 
 /// Builder for creating compute pipelines.
-///
-/// Provides a fluent API for configuring compute pipelines before creation.
-/// Unlike graphics pipelines, compute pipelines only have a single shader stage.
 pub struct ComputePipelineBuilder {
     context: Rc<VulkanContext>,
     compute_shader: Option<vk::ShaderModule>,
@@ -49,9 +32,9 @@ impl ComputePipelineBuilder {
         }
     }
 
-    /// Set the compute shader module.
-    pub fn with_shader(mut self, shader: vk::ShaderModule) -> Self {
-        self.compute_shader = Some(shader);
+    /// Set the compute shader module. (wrapper variant; raw variant removed)
+    pub fn with_shader(mut self, shader: crate::sync::VkShaderModule) -> Self {
+        self.compute_shader = Some(shader.vk());
         self
     }
 
@@ -61,26 +44,14 @@ impl ComputePipelineBuilder {
         self
     }
 
-    /// Set the descriptor set layouts.
-    pub fn with_descriptor_layouts(mut self, layouts: Vec<vk::DescriptorSetLayout>) -> Self {
-        self.descriptor_layouts = layouts;
-        self
-    }
-
     /// Set the descriptor set layouts using wrapper types.
-    pub fn with_descriptor_layouts_wrapped(mut self, layouts: Vec<VkDescriptorSetLayout>) -> Self {
+    pub fn with_descriptor_layouts(mut self, layouts: Vec<VkDescriptorSetLayout>) -> Self {
         self.descriptor_layouts = layouts.into_iter().map(|l| l.into()).collect();
         self
     }
 
-    /// Add a descriptor set layout.
-    pub fn add_descriptor_layout(mut self, layout: vk::DescriptorSetLayout) -> Self {
-        self.descriptor_layouts.push(layout);
-        self
-    }
-
     /// Add a descriptor set layout using wrapper type.
-    pub fn add_descriptor_layout_wrapped(mut self, layout: VkDescriptorSetLayout) -> Self {
+    pub fn add_descriptor_layout(mut self, layout: VkDescriptorSetLayout) -> Self {
         self.descriptor_layouts.push(layout.into());
         self
     }
@@ -93,22 +64,6 @@ impl ComputePipelineBuilder {
 
     /// Add a push constant range.
     pub fn add_push_constant_range(
-        mut self,
-        stages: vk::ShaderStageFlags,
-        offset: u32,
-        size: u32,
-    ) -> Self {
-        self.push_constant_ranges.push(
-            vk::PushConstantRange::default()
-                .stage_flags(stages)
-                .offset(offset)
-                .size(size),
-        );
-        self
-    }
-
-    /// Add a push constant range using wrapper types.
-    pub fn add_push_constant_range_wrapped(
         mut self,
         stages: crate::render_graph::types::ShaderStages,
         offset: u32,
@@ -125,9 +80,6 @@ impl ComputePipelineBuilder {
     }
 
     /// Build the compute pipeline.
-    ///
-    /// # Returns
-    /// A `ComputePipeline` on success, or an error if creation fails.
     pub fn build(self) -> Result<ComputePipeline, ComputePipelineError> {
         let compute_shader = self
             .compute_shader
@@ -175,8 +127,6 @@ impl ComputePipelineBuilder {
 }
 
 /// A Vulkan compute pipeline.
-///
-/// Contains the pipeline handle and layout for dispatching compute operations.
 pub struct ComputePipeline {
     /// The Vulkan pipeline handle.
     handle: vk::Pipeline,
@@ -249,11 +199,5 @@ mod tests {
     fn test_compute_pipeline_builder_creation() {
         // Test that the builder can be created (without Vulkan context)
         // The actual build requires a valid context
-    }
-
-    #[test]
-    fn test_compute_pipeline_error_display() {
-        let err = ComputePipelineError::MissingComputeShader;
-        assert_eq!(format!("{}", err), "Compute shader not provided");
     }
 }

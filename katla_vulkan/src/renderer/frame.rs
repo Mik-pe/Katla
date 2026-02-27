@@ -194,8 +194,7 @@ impl VulkanRenderer {
                 debug!("render_frame: viewport {} graph.execute complete", idx);
 
                 viewport
-                    .transition_to_sample(command_buffer.vk_command_buffer(), &self.context.device);
-                debug!("render_frame: viewport {} texture transitioned", idx);
+                    .transition_to_sample(command_buffer.command_buffer(), &self.context.device);
             }
         }
 

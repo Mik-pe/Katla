@@ -217,8 +217,8 @@ impl ParticleBuffer {
 
 // Implement BufferDescriptorSource for easy descriptor binding
 impl BufferDescriptorSource for ParticleBuffer {
-    fn buffer(&self) -> vk::Buffer {
-        self.buffer.buffer
+    fn buffer(&self) -> crate::sync::VkBuffer {
+        crate::sync::VkBuffer::new(self.buffer.buffer)
     }
 
     fn buffer_size(&self) -> vk::DeviceSize {
@@ -258,8 +258,8 @@ impl EmitterConfigBuffer {
 }
 
 impl BufferDescriptorSource for EmitterConfigBuffer {
-    fn buffer(&self) -> vk::Buffer {
-        self.buffer.buffer
+    fn buffer(&self) -> crate::sync::VkBuffer {
+        crate::sync::VkBuffer::new(self.buffer.buffer)
     }
 
     fn buffer_size(&self) -> vk::DeviceSize {

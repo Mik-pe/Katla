@@ -14,7 +14,7 @@ use std::{
 };
 
 pub struct ShaderModule {
-    pub module: vk::ShaderModule,
+    pub(crate) module: vk::ShaderModule,
     pub stage: vk::ShaderStageFlags,
     pub entry_point: CString,
     device: Device,
@@ -134,6 +134,11 @@ impl ShaderModule {
             .stage(self.stage)
             .module(self.module)
             .name(entry_point)
+    }
+
+    // Expose a safe wrapper around the raw Vulkan shader module
+    pub fn wrapped_module(&self) -> crate::sync::VkShaderModule {
+        crate::sync::VkShaderModule::new(self.module)
     }
 }
 
