@@ -155,8 +155,7 @@ impl RenderTexture {
         }
         let image_memory = self.image_memory.take();
 
-        self.context
-            .free_image(self.image, image_memory.unwrap());
+        self.context.free_image(self.image, image_memory.unwrap());
     }
 }
 
@@ -166,7 +165,7 @@ impl Drop for RenderTexture {
     }
 }
 
-pub struct VulkanContext {
+pub(crate) struct VulkanContext {
     _entry: Entry,
     pub instance: Instance,
     pub device: Device,

@@ -270,6 +270,49 @@ impl VulkanRenderer {
         &mut self.texture_manager
     }
 
+    /// Create a bindless PBR material pipeline.
+    ///
+    /// This is a high-level wrapper that internally handles the bindless descriptor layout
+    /// and creates a pipeline for the given material configuration.
+    ///
+    /// # Arguments
+    /// * `config` - Material configuration (vertex binding, shaders, etc.)
+    ///
+    /// # Returns
+    /// A pipeline handle that can be used in draw calls.
+    pub fn create_bindless_material(
+        &mut self,
+        config: &crate::BindlessPbrMaterialConfig,
+    ) -> Result<PipelineHandle, RendererError> {
+        let layout = self.bindless_manager.descriptor_layout();
+        self.material_cache
+            .borrow_mut()
+            .get_or_create_bindless(config, layout)
+            .map_err(|e| RendererError::InvalidOperation(e.to_string()))
+    }
+
+    /// Load bindless materials from a directory.
+    ///
+    /// This is a high-level wrapper that loads all material templates from the given
+    /// directory and creates bindless pipelines for them.
+    ///
+    /// # Arguments
+    /// * `dir` - Path to the directory containing material files
+    ///
+    /// # Returns
+    /// The number of materials loaded.
+    pub fn load_bindless_materials(
+        &mut self,
+        dir: &std::path::Path,
+    ) -> Result<usize, RendererError> {
+        let layout = self.bindless_manager.descriptor_layout();
+        let mut registry = self.material_registry.borrow_mut();
+        let mut cache = self.material_cache.borrow_mut();
+        registry
+            .load_directory_bindless(dir, &self.context, &mut cache, layout)
+            .map_err(|e| RendererError::InvalidOperation(e.to_string()))
+    }
+
     /// Set frame-level uniforms for the current frame.
     ///
     /// This should be called once per frame before `render_frame()`.

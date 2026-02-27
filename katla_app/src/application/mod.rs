@@ -432,22 +432,10 @@ impl Application {
         )
         .expect("Failed to initialize Vulkan renderer");
 
-        // Load bindless material templates (bindless-only now)
-        let bindless_layout = renderer.bindless_manager().descriptor_layout();
-
-        // Need to scope borrows to avoid conflicts
-        let bindless_count = {
-            let mut registry = renderer.material_registry.borrow_mut();
-            let mut cache = renderer.material_cache.borrow_mut();
-            registry
-                .load_directory_bindless(
-                    &self.resources.materials,
-                    &renderer.context,
-                    &mut cache,
-                    bindless_layout,
-                )
-                .expect("Failed to load bindless materials")
-        };
+        // Load bindless material templates using the high-level wrapper
+        let bindless_count = renderer
+            .load_bindless_materials(&self.resources.materials)
+            .expect("Failed to load bindless materials");
 
         info!(
             "Loaded {} bindless material templates from {}",
