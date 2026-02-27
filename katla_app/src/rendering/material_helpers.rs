@@ -6,7 +6,6 @@ use katla_vulkan::{
     VulkanRenderer,
 };
 
-
 use crate::rendering::{Material, VertexPBR};
 
 /// Shader path for PBR materials
@@ -83,7 +82,8 @@ fn create_checkerboard_material_with_color(
 
     // Get view and register with bindless manager
     let albedo_idx = if let Some(view) = renderer.texture_manager().get_view(albedo_handle) {
-        renderer.bindless_manager_mut()
+        renderer
+            .bindless_manager_mut()
             .register_texture(view)
             .unwrap_or(DEFAULT_ALBEDO_SLOT)
     } else {
@@ -91,7 +91,9 @@ fn create_checkerboard_material_with_color(
     };
 
     // Track bindless slot in TextureManager
-    renderer.texture_manager_mut().register_bindless_slot(albedo_handle, albedo_idx);
+    renderer
+        .texture_manager_mut()
+        .register_bindless_slot(albedo_handle, albedo_idx);
     // Use default textures for other PBR slots
     let texture_indices = [
         albedo_idx,

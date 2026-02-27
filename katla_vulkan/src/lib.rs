@@ -8,6 +8,21 @@ pub mod texture;
 pub mod viewport;
 pub mod vulkan;
 
+// Internal re-exports for crate-wide access
+pub(crate) use material::MaterialRegistry;
+pub(crate) use vulkan::bindless_texture::MAX_BINDLESS_TEXTURES;
+pub(crate) use vulkan::context::VulkanContext;
+pub(crate) use vulkan::context::VulkanFrameCtx;
+pub(crate) use vulkan::material::template::Material;
+pub(crate) use vulkan::material::SkeletonDescriptorSet;
+pub(crate) use vulkan::skeleton_buffer::SkeletonBuffer;
+pub(crate) use vulkan::texture::Texture;
+pub(crate) use vulkan::vertexbuffer::{IndexBuffer, VertexBuffer};
+pub(crate) use vulkan::BindlessTextureManager;
+pub(crate) use vulkan::DescriptorLayoutBuilder;
+pub(crate) use vulkan::SwapData;
+
+// Public API exports
 pub use error::RendererError;
 pub use handle::{
     BufferHandle, DescriptorSetHandle, Handle, ImageHandle, MaterialHandle, MeshHandle,
@@ -33,4 +48,29 @@ pub use texture::{TextureDescriptor, TextureManager, TextureUsage};
 pub use viewport::{DepthFormat, OutputMode, ViewportBuilder, ViewportHandle};
 pub use vulkan::context::{ValidationMessage, ValidationMessageType, ValidationSeverity};
 pub use vulkan::material::storage_uniform::*;
-pub use vulkan::*;
+// Bindless texture constants
+pub use vulkan::bindless_texture::{
+    DEFAULT_ALBEDO_SLOT, DEFAULT_AO_SLOT, DEFAULT_EMISSION_SLOT, DEFAULT_MR_SLOT,
+    DEFAULT_NORMAL_SLOT, DEFAULT_TEXTURE_COUNT,
+};
+// Explicit exports from vulkan module (not wildcard)
+pub use vulkan::vertexbinding::{VertexBinding, VertexFormat};
+pub use vulkan::vertexbuffer::{IndexBuffer, IndexType, VertexBuffer};
+// Particle utilities
+pub use vulkan::particle_buffer::calculate_workgroup_count;
+// Context (needed for initialization)
+pub use vulkan::context::VulkanContext;
+// Descriptor builders needed for custom descriptor sets
+pub use vulkan::descriptor::DescriptorSetLayoutBuilder;
+pub use vulkan::descriptor_set::{DescriptorBinding, DescriptorSet, DescriptorSetBuilder};
+// Pipeline state types
+pub use vulkan::pipeline_state::{CompareOp, CullMode, DescriptorType, FrontFace};
+// Material pipeline types
+pub use vulkan::material::{
+    ComputePipelineBuilder, MaterialPipeline, MaterialTemplate, PipelineBuilder, ShaderModule,
+};
+// Buffer and memory types
+pub use vulkan::bda::DeviceAddressBuffer;
+pub use vulkan::particle_buffer::{EmitterConfig, ParticleBuffer};
+// Command buffer (needed for render graph execution)
+pub use vulkan::commandbuffer::CommandBuffer;

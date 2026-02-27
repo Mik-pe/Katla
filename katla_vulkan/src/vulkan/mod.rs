@@ -24,7 +24,8 @@ pub use bda::*;
 pub use bindless_texture::*;
 pub use commandbuffer::*;
 pub use commandpool::*;
-pub use context::*;
+// VulkanContext is now internal - only validation types are exported
+pub use context::{ValidationMessage, ValidationMessageType, ValidationSeverity};
 pub use descriptor::*;
 pub use descriptor_set::*;
 pub use frame_buffer::*;
@@ -42,7 +43,8 @@ pub use texture::*;
 pub use vertex_attr_set::*;
 pub use vertex_attribute::*;
 pub use vertexbinding::*;
-pub use vertexbuffer::*;
+// VertexBuffer and IndexBuffer are now internal
+pub use vertexbuffer::IndexType;
 
 // Re-export ImageFormat from render_graph for external use
 pub use crate::render_graph::types::ImageFormat;

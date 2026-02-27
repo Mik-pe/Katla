@@ -7,8 +7,9 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use super::ui_material::UiMaterial;
-use ash::vk;
-use katla_vulkan::sync::{VkBuffer, VkDescriptorSet, VkImageView, VkSampler};
+use katla_vulkan::sync::{
+    VkBuffer, VkDescriptorSet, VkDescriptorSetLayout, VkImageView, VkSampler,
+};
 use katla_vulkan::{
     DescriptorSetBuilder, DescriptorSetLayoutBuilder, DescriptorType, Extent2D, FrameBuffer,
     IndexBuffer, IndexType, Offset2D, PassExecutionContext, PipelineHandle, Rect2D, ShaderStages,
@@ -83,12 +84,12 @@ impl UIBuffers {
         true
     }
 
-    fn vertex_buffer(&self) -> vk::Buffer {
-        self.vertex_buffer.borrow().object()
+    fn vertex_buffer(&self) -> VkBuffer {
+        VkBuffer(self.vertex_buffer.borrow().object())
     }
 
-    fn index_buffer(&self) -> vk::Buffer {
-        self.index_buffer.borrow().object()
+    fn index_buffer(&self) -> VkBuffer {
+        VkBuffer(self.index_buffer.borrow().object())
     }
 }
 
@@ -100,7 +101,7 @@ struct UITextures {
     white_texture_view: VkImageView,
     sampler: VkSampler,
     uniform_buffer: UniformBuffer<[f32; 4]>,
-    descriptor_set_layout: vk::DescriptorSetLayout,
+    descriptor_set_layout: VkDescriptorSetLayout,
     descriptor_set: katla_vulkan::DescriptorSet,
     atlas_width: u32,
     atlas_height: u32,
@@ -114,7 +115,7 @@ impl UITextures {
         mut texture_manager: TextureManager,
         atlas_width: u32,
         atlas_height: u32,
-    ) -> Result<Self, vk::Result> {
+    ) -> Result<Self, katla_vulkan::RendererError> {
         let sampler = context.create_sampler_clamp_to_edge()?;
 
         let white_pixels = [255u8, 255, 255, 255];
@@ -136,7 +137,7 @@ impl UITextures {
             .add_binding(3, DescriptorType::UniformBuffer, ShaderStages::VERTEX)
             .build(&context)?;
 
-        let descriptor_set_layout_raw: vk::DescriptorSetLayout = descriptor_set_layout.into();
+        let descriptor_set_layout_raw: VkDescriptorSetLayout = descriptor_set_layout.into();
 
         let uniform_buffer = UniformBuffer::<[f32; 4]>::new(context.clone())?;
         uniform_buffer.write(&[1920.0, 1080.0, 0.0, 0.0]);
@@ -210,7 +211,7 @@ impl UITextures {
         self.external_textures.insert(texture_id, image_view);
     }
 
-    fn get_image_view(&self, texture_id: u64) -> vk::ImageView {
+    fn get_image_view(&self, texture_id: u64) -> VkImageView {
         if texture_id == katla_ui::TextureId::FONT_ATLAS.0 {
             self.font_texture_view.into()
         } else if texture_id == katla_ui::TextureId::NONE.0 {
@@ -239,7 +240,7 @@ impl UIRenderer {
         index_capacity: u64,
         atlas_width: u32,
         atlas_height: u32,
-    ) -> Result<Self, vk::Result> {
+    ) -> Result<Self, katla_vulkan::RendererError> {
         let context = renderer.context.clone();
         let material_cache = renderer.material_cache.clone();
 
@@ -318,8 +319,8 @@ impl UIRenderer {
 
         ctx.bind_graphics_pipeline(pipeline);
         ctx.bind_graphics_descriptor_set_at(pipeline, self.textures.descriptor_set(), 0);
-        ctx.bind_vertex_buffers(0, &[VkBuffer(ui_buffer.vertex_buffer())], &[0]);
-        ctx.bind_index_buffer(VkBuffer(ui_buffer.index_buffer()), 0, IndexType::Uint32);
+        ctx.bind_vertex_buffers(0, &[ui_buffer.vertex_buffer()], &[0]);
+        ctx.bind_index_buffer(ui_buffer.index_buffer(), 0, IndexType::Uint32);
 
         let pipeline_layout = pipeline.vk_layout();
 
@@ -337,7 +338,7 @@ impl UIRenderer {
 
             unsafe {
                 let image_view = self.textures.get_image_view(cmd.texture_id);
-                ctx.push_texture_descriptor(pipeline_layout, image_view);
+                ctx.push_texture_descriptor(pipeline_layout, image_view.into());
             }
 
             ctx.draw_indexed(cmd.index_count, 1, cmd.index_offset, 0, 0);
