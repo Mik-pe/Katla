@@ -39,7 +39,7 @@ pub fn setup_render_graph(app: &mut Application) {
     };
 
     // Create sky and grid pipelines using the material cache
-    {
+    let (sky_pipeline, grid_pipeline) = {
         let mut cache = renderer.material_cache.borrow_mut();
 
         // Create sky pipeline from pure config
@@ -64,18 +64,20 @@ pub fn setup_render_graph(app: &mut Application) {
             })
             .ok();
 
-        // Store pipelines directly in VulkanRenderer
-        if let Some(pipeline) = sky_pipeline {
-            renderer.set_sky_pipeline(pipeline);
-        }
-        if let Some(pipeline) = grid_pipeline {
-            renderer.set_grid_pipeline(pipeline);
-        }
-    } // cache is dropped here
+        (sky_pipeline, grid_pipeline)
+    }; // cache is dropped here
 
-    // Get pipelines from VulkanRenderer for render graph
-    let sky_pipeline = renderer.sky_pipeline();
-    let grid_pipeline = renderer.grid_pipeline(app.editor_ui.show_grid);
+    // Store pipelines in Application (not VulkanRenderer)
+    app.sky_pipeline = sky_pipeline;
+    app.grid_pipeline = grid_pipeline;
+
+    // Get pipelines from Application for render graph
+    let sky_pipeline = app.sky_pipeline;
+    let grid_pipeline = if app.editor_ui.show_grid {
+        app.grid_pipeline
+    } else {
+        None
+    };
 
     // Create UI renderer (owns UI pipeline internally)
     let ui_renderer = crate::rendering::UIRenderer::new(

@@ -108,12 +108,6 @@ pub struct VulkanRenderer {
     /// Cached handle for the storage descriptor set (frame uniforms).
     /// Registered once when storage system is initialized.
     storage_descriptor_handle: DescriptorSetHandle,
-    /// Sky rendering pipeline (fullscreen procedural sky).
-    /// Set by application layer via `set_sky_pipeline()`.
-    sky_pipeline: Option<PipelineHandle>,
-    /// Grid rendering pipeline (infinite editor grid).
-    /// Set by application layer via `set_grid_pipeline()`.
-    grid_pipeline: Option<PipelineHandle>,
 }
 
 pub const FRAMES_IN_FLIGHT: usize = 2;
@@ -253,8 +247,6 @@ impl VulkanRenderer {
             external_images: ResourceStorage::new(),
             external_buffers: ResourceStorage::new(),
             storage_descriptor_handle,
-            sky_pipeline: None,
-            grid_pipeline: None,
         })
     }
 
@@ -276,36 +268,6 @@ impl VulkanRenderer {
     /// Get the texture manager mutably.
     pub fn texture_manager_mut(&mut self) -> &mut TextureManager {
         &mut self.texture_manager
-    }
-
-    /// Set the sky rendering pipeline.
-    ///
-    /// The application layer creates this pipeline using MaterialPipelineCache
-    /// with SkyMaterial, then registers it here for use in the render graph.
-    pub fn set_sky_pipeline(&mut self, pipeline: PipelineHandle) {
-        self.sky_pipeline = Some(pipeline);
-    }
-
-    /// Set the grid rendering pipeline.
-    ///
-    /// The application layer creates this pipeline using MaterialPipelineCache
-    /// with GridMaterial, then registers it here for use in the render graph.
-    pub fn set_grid_pipeline(&mut self, pipeline: PipelineHandle) {
-        self.grid_pipeline = Some(pipeline);
-    }
-
-    /// Get the sky pipeline handle.
-    pub fn sky_pipeline(&self) -> Option<PipelineHandle> {
-        self.sky_pipeline
-    }
-
-    /// Get the grid pipeline handle (only if grid should be visible).
-    pub fn grid_pipeline(&self, visible: bool) -> Option<PipelineHandle> {
-        if visible {
-            self.grid_pipeline
-        } else {
-            None
-        }
     }
 
     /// Set frame-level uniforms for the current frame.

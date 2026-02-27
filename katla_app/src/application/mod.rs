@@ -82,6 +82,10 @@ pub struct Application {
     pub(crate) scale_factor: f32,
     /// Gizmo rendering resources (mesh and material handles)
     pub(crate) gizmo_resources: Option<renderer::GizmoResources>,
+    /// Sky rendering pipeline handle (fullscreen procedural sky)
+    pub(crate) sky_pipeline: Option<katla_vulkan::PipelineHandle>,
+    /// Grid rendering pipeline handle (infinite editor grid)
+    pub(crate) grid_pipeline: Option<katla_vulkan::PipelineHandle>,
     /// UI renderer (owns UI buffers, textures, descriptors, and pipeline)
     pub(crate) ui_renderer: Option<crate::rendering::UIRenderer>,
     /// UI draw data for current frame (shared with render graph)
@@ -213,8 +217,12 @@ impl ApplicationHandler for Application {
                             let _ = renderer.init_output_target(new_width, new_height as u32);
 
                             // Rebuild render graph with existing pipelines
-                            let sky_pipeline = renderer.sky_pipeline();
-                            let grid_pipeline = renderer.grid_pipeline(self.editor_ui.show_grid);
+                            let sky_pipeline = self.sky_pipeline;
+                            let grid_pipeline = if self.editor_ui.show_grid {
+                                self.grid_pipeline
+                            } else {
+                                None
+                            };
                             renderer::render_graph::build_render_graph(
                                 renderer,
                                 sky_pipeline,

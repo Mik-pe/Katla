@@ -142,11 +142,13 @@ pub fn render_debug_ui(app: &mut Application, dt: f32) {
 
         // Update grid visibility by rebuilding render graph
         // Grid toggle requires render graph rebuild since passes own their pipelines
-        if let (Some(ref mut renderer), Some(ref fullscreen_renderer)) =
-            (&mut app.renderer, &app.fullscreen_renderer)
-        {
-            let sky_pipeline = fullscreen_renderer.sky_pipeline();
-            let grid_pipeline = fullscreen_renderer.grid_pipeline(app.editor_ui.show_grid);
+        if let Some(ref mut renderer) = &mut app.renderer {
+            let sky_pipeline = app.sky_pipeline;
+            let grid_pipeline = if app.editor_ui.show_grid {
+                app.grid_pipeline
+            } else {
+                None
+            };
             super::renderer::render_graph::build_render_graph(
                 renderer,
                 sky_pipeline,
