@@ -16,7 +16,6 @@ use crate::components::{NameComponent, ParticleEmitter, TransformComponent};
 
 /// Create a particle emitter entity.
 
-
 /// Create a particle emitter entity.
 ///
 /// This creates all GPU resources needed for particle simulation and rendering.
@@ -63,9 +62,9 @@ pub fn create_particle_emitter(
     // Create compute pipeline with push constant range for frame data
     // Push constants: delta_time, emit_count, max_particles, random_seed (4 x f32 = 16 bytes)
     let compute_pipeline = ComputePipelineBuilder::new(context.clone())
-        .with_shader(compute_shader.module)
-        .with_descriptor_layouts_wrapped(vec![compute_descriptor_layout])
-        .add_push_constant_range_wrapped(ShaderStages::COMPUTE, 0, 16)
+        .with_shader(compute_shader.wrapped_module())
+        .with_descriptor_layouts(vec![compute_descriptor_layout])
+        .add_push_constant_range(ShaderStages::COMPUTE, 0, 16)
         .build()
         .expect("Failed to create compute pipeline");
 
@@ -120,7 +119,10 @@ pub fn create_particle_emitter(
     // Create render pipeline with additive blending for fire effect
     // Note: Pipeline borrows the layouts, but MaterialPipeline will own frame_descriptor_layout
     let render_pipeline = PipelineBuilder::new(context.clone())
-        .with_shaders(vertex_shader.module, fragment_shader.module)
+        .with_shaders_wrapped(
+            vertex_shader.wrapped_module(),
+            fragment_shader.wrapped_module(),
+        )
         .with_descriptor_layouts_wrapped(vec![
             frame_descriptor_layout,
             render_particle_descriptor_layout,

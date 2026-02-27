@@ -871,11 +871,11 @@ impl PassExecutionContext {
         }
     }
 
-    /// Get access to the underlying command buffer for advanced operations.
+    /// Get access to the underlying command buffer for internal operations.
     ///
-    /// This provides access to the raw command buffer for operations not
-    /// exposed by PassExecutionContext. Use with caution.
-    pub fn vk_command_buffer(&self) -> vk::CommandBuffer {
+    /// This is pub(crate) to avoid exposing Vulkan types in the public API.
+    /// Use the PassExecutionContext methods for rendering operations instead.
+    pub(crate) fn vk_command_buffer(&self) -> vk::CommandBuffer {
         self.command_buffer.vk_command_buffer()
     }
 

@@ -127,7 +127,13 @@ impl PbrTextureSet {
         let occlusion_slot = bindless.register_texture(tm.get_view(self.occlusion)?)?;
         let emission_slot = bindless.register_texture(tm.get_view(self.emission)?)?;
 
-        Some([albedo_slot, normal_slot, mr_slot, occlusion_slot, emission_slot])
+        Some([
+            albedo_slot,
+            normal_slot,
+            mr_slot,
+            occlusion_slot,
+            emission_slot,
+        ])
     }
 }
 
@@ -149,7 +155,7 @@ impl ImageInfo {
         }
     }
 
-    pub fn from_raw(image_view: vk::ImageView, sampler: vk::Sampler) -> Self {
+    pub(crate) fn from_raw(image_view: vk::ImageView, sampler: vk::Sampler) -> Self {
         Self {
             image_view,
             sampler,
@@ -232,7 +238,10 @@ impl DescriptorLayoutBuilder {
         self
     }
 
-    pub fn build(&self, device: &ash::Device) -> Result<vk::DescriptorSetLayout, vk::Result> {
+    pub(crate) fn build(
+        &self,
+        device: &ash::Device,
+    ) -> Result<vk::DescriptorSetLayout, vk::Result> {
         let create_info = vk::DescriptorSetLayoutCreateInfo::default().bindings(&self.bindings);
         unsafe { device.create_descriptor_set_layout(&create_info, None) }
     }

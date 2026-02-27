@@ -19,7 +19,7 @@ pub enum ImageFormat {
 impl ImageFormat {
     /// Convert from a raw vk::Format (for backward compatibility).
     /// Returns None if the format is not supported.
-    pub fn from_vk(format: ash::vk::Format) -> Option<Self> {
+    pub(crate) fn from_vk(format: ash::vk::Format) -> Option<Self> {
         match format {
             ash::vk::Format::R8_UNORM => Some(ImageFormat::R8Unorm),
             ash::vk::Format::R8G8_UNORM => Some(ImageFormat::Rg8Unorm),
@@ -70,7 +70,7 @@ pub enum ImageLayout {
 
 impl ImageLayout {
     /// Convert from a raw vk::ImageLayout (for backward compatibility).
-    pub fn from_vk(layout: ash::vk::ImageLayout) -> Self {
+    pub(crate) fn from_vk(layout: ash::vk::ImageLayout) -> Self {
         match layout {
             ash::vk::ImageLayout::UNDEFINED => ImageLayout::Undefined,
             ash::vk::ImageLayout::GENERAL => ImageLayout::General,
@@ -223,7 +223,7 @@ pub enum ImageUsage {
 }
 
 impl ImageUsage {
-    pub fn to_vk_flags(self) -> ash::vk::ImageUsageFlags {
+    pub(crate) fn to_vk_flags(self) -> ash::vk::ImageUsageFlags {
         match self {
             ImageUsage::TransferSrc => ash::vk::ImageUsageFlags::TRANSFER_SRC,
             ImageUsage::TransferDst => ash::vk::ImageUsageFlags::TRANSFER_DST,
@@ -237,7 +237,7 @@ impl ImageUsage {
         }
     }
 
-    pub fn all(usages: Vec<ImageUsage>) -> ash::vk::ImageUsageFlags {
+    pub(crate) fn all(usages: Vec<ImageUsage>) -> ash::vk::ImageUsageFlags {
         usages
             .iter()
             .fold(ash::vk::ImageUsageFlags::empty(), |acc, u| {
@@ -371,7 +371,7 @@ pub enum BufferUsage {
 }
 
 impl BufferUsage {
-    pub fn to_vk_flags(self) -> ash::vk::BufferUsageFlags {
+    pub(crate) fn to_vk_flags(self) -> ash::vk::BufferUsageFlags {
         match self {
             BufferUsage::TransferSrc => ash::vk::BufferUsageFlags::TRANSFER_SRC,
             BufferUsage::TransferDst => ash::vk::BufferUsageFlags::TRANSFER_DST,
@@ -385,7 +385,7 @@ impl BufferUsage {
         }
     }
 
-    pub fn all(usages: Vec<BufferUsage>) -> ash::vk::BufferUsageFlags {
+    pub(crate) fn all(usages: Vec<BufferUsage>) -> ash::vk::BufferUsageFlags {
         usages
             .iter()
             .fold(ash::vk::BufferUsageFlags::empty(), |acc, u| {
@@ -404,7 +404,7 @@ pub enum MemoryProperty {
 }
 
 impl MemoryProperty {
-    pub fn to_vk_flags(self) -> ash::vk::MemoryPropertyFlags {
+    pub(crate) fn to_vk_flags(self) -> ash::vk::MemoryPropertyFlags {
         match self {
             MemoryProperty::DeviceLocal => ash::vk::MemoryPropertyFlags::DEVICE_LOCAL,
             MemoryProperty::HostVisible => ash::vk::MemoryPropertyFlags::HOST_VISIBLE,
@@ -414,7 +414,7 @@ impl MemoryProperty {
         }
     }
 
-    pub fn all(properties: Vec<MemoryProperty>) -> ash::vk::MemoryPropertyFlags {
+    pub(crate) fn all(properties: Vec<MemoryProperty>) -> ash::vk::MemoryPropertyFlags {
         properties
             .iter()
             .fold(ash::vk::MemoryPropertyFlags::empty(), |acc, p| {
@@ -445,7 +445,7 @@ pub enum Access {
 }
 
 impl Access {
-    pub fn to_vk_flags(self) -> ash::vk::AccessFlags {
+    pub(crate) fn to_vk_flags(self) -> ash::vk::AccessFlags {
         match self {
             Access::IndirectCommandRead => ash::vk::AccessFlags::INDIRECT_COMMAND_READ,
             Access::IndexRead => ash::vk::AccessFlags::INDEX_READ,
@@ -471,7 +471,7 @@ impl Access {
         }
     }
 
-    pub fn all(accesses: &[Access]) -> ash::vk::AccessFlags {
+    pub(crate) fn all(accesses: &[Access]) -> ash::vk::AccessFlags {
         accesses
             .iter()
             .fold(ash::vk::AccessFlags::empty(), |acc, a| {
@@ -497,7 +497,7 @@ pub enum PipelineStage {
 }
 
 impl PipelineStage {
-    pub fn to_vk_flags(self) -> ash::vk::PipelineStageFlags {
+    pub(crate) fn to_vk_flags(self) -> ash::vk::PipelineStageFlags {
         match self {
             PipelineStage::TopOfPipe => ash::vk::PipelineStageFlags::TOP_OF_PIPE,
             PipelineStage::DrawIndirect => ash::vk::PipelineStageFlags::DRAW_INDIRECT,
@@ -516,7 +516,7 @@ impl PipelineStage {
         }
     }
 
-    pub fn all(stages: &[PipelineStage]) -> ash::vk::PipelineStageFlags {
+    pub(crate) fn all(stages: &[PipelineStage]) -> ash::vk::PipelineStageFlags {
         stages
             .iter()
             .fold(ash::vk::PipelineStageFlags::empty(), |acc, s| {
@@ -587,7 +587,7 @@ impl RenderingAttachmentInfo {
     }
 
     /// Create from a raw vk::ImageView (convenience for internal use).
-    pub fn from_vk(image_view: ash::vk::ImageView) -> Self {
+    pub(crate) fn from_vk(image_view: ash::vk::ImageView) -> Self {
         Self::new(VkImageView::new(image_view))
     }
 
@@ -598,7 +598,7 @@ impl RenderingAttachmentInfo {
     }
 
     /// Set the image layout from a raw vk::ImageLayout (convenience).
-    pub fn layout_vk(mut self, layout: ash::vk::ImageLayout) -> Self {
+    pub(crate) fn layout_vk(mut self, layout: ash::vk::ImageLayout) -> Self {
         self.image_layout = ImageLayout::from_vk(layout);
         self
     }
@@ -623,7 +623,7 @@ impl RenderingAttachmentInfo {
     }
 
     /// Convert to Vulkan vk::RenderingAttachmentInfoKHR.
-    pub fn into_vk(self) -> ash::vk::RenderingAttachmentInfoKHR<'static> {
+    pub(crate) fn into_vk(self) -> ash::vk::RenderingAttachmentInfoKHR<'static> {
         let clear_value = self
             .clear_value
             .map_or_else(ash::vk::ClearValue::default, |cv| cv.into());
@@ -648,7 +648,7 @@ pub struct RenderingInfo {
     /// Stencil attachment (optional, for separate stencil).
     pub stencil_attachment: Option<RenderingAttachmentInfo>,
     /// Render area (offset and extent).
-    pub render_area: ash::vk::Rect2D,
+    pub render_area: Rect2D,
     /// Layer count.
     pub layer_count: u32,
     /// View mask for multiview (0 for non-multiview).
@@ -662,7 +662,7 @@ impl RenderingInfo {
             color_attachments: Vec::new(),
             depth_attachment: None,
             stencil_attachment: None,
-            render_area: ash::vk::Rect2D::default(),
+            render_area: Rect2D::from_extents(0, 0),
             layer_count: 1,
             view_mask: 0,
         }
@@ -687,7 +687,7 @@ impl RenderingInfo {
     }
 
     /// Set the render area.
-    pub fn render_area(mut self, area: ash::vk::Rect2D) -> Self {
+    pub(crate) fn render_area(mut self, area: Rect2D) -> Self {
         self.render_area = area;
         self
     }
@@ -720,7 +720,7 @@ impl RenderingInfo {
         let stencil_vk = self.stencil_attachment.as_ref().map(|s| (*s).into_vk());
 
         let mut builder = ash::vk::RenderingInfoKHR::default()
-            .render_area(self.render_area)
+            .render_area(self.render_area.into())
             .layer_count(self.layer_count)
             .color_attachments(&color_attachments_vk);
 

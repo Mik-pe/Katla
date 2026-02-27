@@ -21,7 +21,7 @@ pub use types::{
 };
 
 use crate::sync::{
-    VkDescriptorSet, VkDescriptorSetLayout, VkFence, VkImage, VkImageView, VkSemaphore,
+    VkDescriptorSet, VkDescriptorSetLayout, VkFence, VkImage, VkImageView, VkSampler, VkSemaphore,
 };
 use crate::{
     render_graph, viewport::Viewport, Attachment, BindlessTextureManager, CompiledRenderGraph,
@@ -1632,11 +1632,12 @@ impl ViewportRenderTarget {
     }
 
     /// Get the sampler for this render target.
-    pub fn vk_sampler(&self) -> vk::Sampler {
-        self.sampler
+    ///
+    /// Returns a wrapper type to avoid exposing vk::Sampler in the public API.
+    pub fn sampler(&self) -> VkSampler {
+        VkSampler::new(self.sampler)
     }
 }
-
 impl Drop for ViewportRenderTarget {
     fn drop(&mut self) {
         unsafe {

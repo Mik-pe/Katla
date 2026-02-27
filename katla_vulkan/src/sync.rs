@@ -12,7 +12,7 @@ use ash::vk;
 /// Standard color subresource range for single-layer images.
 ///
 /// Use this for most color attachment and texture operations.
-pub const COLOR_SUBRESOURCE_RANGE: vk::ImageSubresourceRange = vk::ImageSubresourceRange {
+pub(crate) const COLOR_SUBRESOURCE_RANGE: vk::ImageSubresourceRange = vk::ImageSubresourceRange {
     aspect_mask: vk::ImageAspectFlags::COLOR,
     base_mip_level: 0,
     level_count: 1,
@@ -23,7 +23,7 @@ pub const COLOR_SUBRESOURCE_RANGE: vk::ImageSubresourceRange = vk::ImageSubresou
 /// Standard depth-stencil subresource range for depth buffers.
 ///
 /// Use this for depth attachment operations.
-pub const DEPTH_SUBRESOURCE_RANGE: vk::ImageSubresourceRange = vk::ImageSubresourceRange {
+pub(crate) const DEPTH_SUBRESOURCE_RANGE: vk::ImageSubresourceRange = vk::ImageSubresourceRange {
     aspect_mask: vk::ImageAspectFlags::from_raw(
         vk::ImageAspectFlags::DEPTH.as_raw() | vk::ImageAspectFlags::STENCIL.as_raw(),
     ),
@@ -224,6 +224,7 @@ define_vk_wrapper!(VkDescriptorPool, vk::DescriptorPool);
 define_vk_wrapper!(VkPipeline, vk::Pipeline, default);
 define_vk_wrapper!(VkPipelineLayout, vk::PipelineLayout, default);
 define_vk_wrapper!(VkBuffer, vk::Buffer, default);
+define_vk_wrapper!(VkShaderModule, vk::ShaderModule);
 
 //=============================================================================
 // Synchronization2 Wrapper Types (Vulkan 1.3)
@@ -306,12 +307,12 @@ impl PipelineStage2Flags {
         Self(vk::PipelineStageFlags2KHR::PRE_RASTERIZATION_SHADERS_KHR);
 
     /// Create new flags from raw Vulkan flags.
-    pub fn from_raw(flags: vk::PipelineStageFlags2KHR) -> Self {
+    pub(crate) fn from_raw(flags: vk::PipelineStageFlags2KHR) -> Self {
         Self(flags)
     }
 
     /// Get the raw Vulkan flags.
-    pub fn into_vk(self) -> vk::PipelineStageFlags2KHR {
+    pub(crate) fn into_vk(self) -> vk::PipelineStageFlags2KHR {
         self.0
     }
 
@@ -429,12 +430,12 @@ impl AccessFlags2 {
     pub const SHADER_STORAGE_WRITE: Self = Self(vk::AccessFlags2KHR::SHADER_STORAGE_WRITE_KHR);
 
     /// Create new flags from raw Vulkan flags.
-    pub fn from_raw(flags: vk::AccessFlags2KHR) -> Self {
+    pub(crate) fn from_raw(flags: vk::AccessFlags2KHR) -> Self {
         Self(flags)
     }
 
     /// Get the raw Vulkan flags.
-    pub fn into_vk(self) -> vk::AccessFlags2KHR {
+    pub(crate) fn into_vk(self) -> vk::AccessFlags2KHR {
         self.0
     }
 
@@ -486,16 +487,16 @@ impl From<vk::AccessFlags> for AccessFlags2 {
 /// image memory barriers compared to the legacy vk::ImageMemoryBarrier.
 #[derive(Clone, Debug)]
 pub struct ImageMemoryBarrier2 {
-    pub src_stage_mask: PipelineStage2Flags,
-    pub dst_stage_mask: PipelineStage2Flags,
-    pub src_access_mask: AccessFlags2,
-    pub dst_access_mask: AccessFlags2,
-    pub old_layout: vk::ImageLayout,
-    pub new_layout: vk::ImageLayout,
-    pub src_queue_family_index: u32,
-    pub dst_queue_family_index: u32,
-    pub image: VkImage,
-    pub subresource_range: vk::ImageSubresourceRange,
+    pub(crate) src_stage_mask: PipelineStage2Flags,
+    pub(crate) dst_stage_mask: PipelineStage2Flags,
+    pub(crate) src_access_mask: AccessFlags2,
+    pub(crate) dst_access_mask: AccessFlags2,
+    pub(crate) old_layout: vk::ImageLayout,
+    pub(crate) new_layout: vk::ImageLayout,
+    pub(crate) src_queue_family_index: u32,
+    pub(crate) dst_queue_family_index: u32,
+    pub(crate) image: VkImage,
+    pub(crate) subresource_range: vk::ImageSubresourceRange,
 }
 
 impl ImageMemoryBarrier2 {
@@ -558,7 +559,7 @@ impl ImageMemoryBarrier2 {
     }
 
     /// Convert to Vulkan vk::ImageMemoryBarrier2KHR.
-    pub fn into_vk(self) -> vk::ImageMemoryBarrier2KHR<'static> {
+    pub(crate) fn into_vk(self) -> vk::ImageMemoryBarrier2KHR<'static> {
         vk::ImageMemoryBarrier2KHR::default()
             .src_stage_mask(self.src_stage_mask.into_vk())
             .dst_stage_mask(self.dst_stage_mask.into_vk())
@@ -580,15 +581,15 @@ impl ImageMemoryBarrier2 {
 /// Used for compute-graphics synchronization with particle buffers.
 #[derive(Clone, Debug)]
 pub struct BufferMemoryBarrier2 {
-    pub src_stage_mask: PipelineStage2Flags,
-    pub dst_stage_mask: PipelineStage2Flags,
-    pub src_access_mask: AccessFlags2,
-    pub dst_access_mask: AccessFlags2,
-    pub src_queue_family_index: u32,
-    pub dst_queue_family_index: u32,
-    pub buffer: VkBuffer,
-    pub offset: vk::DeviceSize,
-    pub size: vk::DeviceSize,
+    pub(crate) src_stage_mask: PipelineStage2Flags,
+    pub(crate) dst_stage_mask: PipelineStage2Flags,
+    pub(crate) src_access_mask: AccessFlags2,
+    pub(crate) dst_access_mask: AccessFlags2,
+    pub(crate) src_queue_family_index: u32,
+    pub(crate) dst_queue_family_index: u32,
+    pub(crate) buffer: VkBuffer,
+    pub(crate) offset: vk::DeviceSize,
+    pub(crate) size: vk::DeviceSize,
 }
 
 impl BufferMemoryBarrier2 {
@@ -644,7 +645,7 @@ impl BufferMemoryBarrier2 {
     }
 
     /// Convert to Vulkan vk::BufferMemoryBarrier2KHR.
-    pub fn into_vk(self) -> vk::BufferMemoryBarrier2KHR<'static> {
+    pub(crate) fn into_vk(self) -> vk::BufferMemoryBarrier2KHR<'static> {
         vk::BufferMemoryBarrier2KHR::default()
             .src_stage_mask(self.src_stage_mask.into_vk())
             .dst_stage_mask(self.dst_stage_mask.into_vk())
@@ -664,9 +665,9 @@ impl BufferMemoryBarrier2 {
 /// and provides a more flexible way to specify synchronization barriers.
 #[derive(Clone, Debug)]
 pub struct DependencyInfo {
-    pub memory_barriers: Vec<vk::MemoryBarrier2KHR<'static>>,
-    pub buffer_barriers: Vec<vk::BufferMemoryBarrier2KHR<'static>>,
-    pub image_barriers: Vec<ImageMemoryBarrier2>,
+    pub(crate) memory_barriers: Vec<vk::MemoryBarrier2KHR<'static>>,
+    pub(crate) buffer_barriers: Vec<vk::BufferMemoryBarrier2KHR<'static>>,
+    pub(crate) image_barriers: Vec<ImageMemoryBarrier2>,
 }
 
 impl DependencyInfo {
@@ -744,7 +745,7 @@ impl VkCommandBuffer {
         Self(command_buffer)
     }
 
-    pub fn vk_command_buffer(&self) -> vk::CommandBuffer {
+    pub(crate) fn vk_command_buffer(&self) -> vk::CommandBuffer {
         self.0
     }
 }

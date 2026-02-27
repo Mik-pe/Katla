@@ -1,6 +1,7 @@
 //! Buffer descriptor utilities.
 //!
 //! Provides types for working with uniform and storage buffer descriptors.
+//!
 //! For creating descriptor sets, use [`crate::vulkan::DescriptorSetBuilder`].
 
 use ash::vk;
@@ -11,8 +12,8 @@ use super::VulkanContext;
 /// Info for a single buffer binding in a descriptor set.
 #[derive(Clone, Copy, Debug)]
 pub struct BufferBinding {
-    /// The Vulkan buffer handle.
-    pub buffer: vk::Buffer,
+    /// The wrapped Vulkan buffer handle.
+    pub buffer: crate::sync::VkBuffer,
     /// Binding number in the shader.
     pub binding: u32,
     /// Offset into the buffer (in bytes).
@@ -30,7 +31,7 @@ pub struct BufferBinding {
 /// with buffers in descriptor sets, but this trait is kept for backward compatibility.
 pub trait BufferDescriptorSource {
     /// Get the Vulkan buffer handle.
-    fn buffer(&self) -> vk::Buffer;
+    fn buffer(&self) -> crate::sync::VkBuffer;
 
     /// Get the buffer size in bytes.
     fn buffer_size(&self) -> vk::DeviceSize;
@@ -67,8 +68,8 @@ pub trait BufferDescriptorSource {
 
 // Implement BufferDescriptorSource for DeviceAddressBuffer
 impl BufferDescriptorSource for crate::vulkan::bda::DeviceAddressBuffer {
-    fn buffer(&self) -> vk::Buffer {
-        self.buffer
+    fn buffer(&self) -> crate::sync::VkBuffer {
+        crate::sync::VkBuffer::new(self.buffer)
     }
 
     fn buffer_size(&self) -> vk::DeviceSize {
@@ -78,8 +79,8 @@ impl BufferDescriptorSource for crate::vulkan::bda::DeviceAddressBuffer {
 
 // Implement BufferDescriptorSource for SkeletonBuffer
 impl BufferDescriptorSource for crate::vulkan::skeleton_buffer::SkeletonBuffer {
-    fn buffer(&self) -> vk::Buffer {
-        self.buffer()
+    fn buffer(&self) -> crate::sync::VkBuffer {
+        crate::sync::VkBuffer::new(self.buffer())
     }
 
     fn buffer_size(&self) -> vk::DeviceSize {
@@ -167,8 +168,8 @@ impl<T: Copy> UniformBuffer<T> {
 }
 
 impl<T: Copy> BufferDescriptorSource for UniformBuffer<T> {
-    fn buffer(&self) -> vk::Buffer {
-        self.buffer
+    fn buffer(&self) -> crate::sync::VkBuffer {
+        crate::sync::VkBuffer::new(self.buffer)
     }
 
     fn buffer_size(&self) -> vk::DeviceSize {
@@ -178,19 +179,20 @@ impl<T: Copy> BufferDescriptorSource for UniformBuffer<T> {
 
 impl<T: Copy> Drop for UniformBuffer<T> {
     fn drop(&mut self) {
-        self.context
-            .free_buffer(self.buffer, std::mem::take(&mut self.allocation));
+        self.context.free_buffer(
+            crate::sync::VkBuffer::new(self.buffer),
+            std::mem::take(&mut self.allocation),
+        );
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-
     #[test]
     fn test_buffer_binding_creation() {
         let binding = BufferBinding {
-            buffer: vk::Buffer::null(),
+            buffer: crate::sync::VkBuffer::default(),
             binding: 0,
             offset: 0,
             range: 1024,
@@ -205,14 +207,14 @@ mod tests {
         // This tests creating multiple bindings without Vulkan
         let bindings: Vec<BufferBinding> = vec![
             BufferBinding {
-                buffer: vk::Buffer::null(),
+                buffer: crate::sync::VkBuffer::default(),
                 binding: 0,
                 offset: 0,
                 range: 256,
                 descriptor_type: vk::DescriptorType::STORAGE_BUFFER,
             },
             BufferBinding {
-                buffer: vk::Buffer::null(),
+                buffer: crate::sync::VkBuffer::default(),
                 binding: 1,
                 offset: 256,
                 range: 24576,

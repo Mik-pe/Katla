@@ -78,7 +78,7 @@ impl AttributeType {
 pub struct AttributeBinding {
     pub attr_type: AttributeType,
     pub format: VertexFormat,
-    pub buffer: vk::Buffer,
+    pub(crate) buffer: vk::Buffer,
 }
 
 impl AttributeBinding {
@@ -91,8 +91,13 @@ impl AttributeBinding {
         }
     }
 
+    /// Return a wrapper around the underlying Vulkan buffer.
+    pub fn wrapped_buffer(&self) -> crate::sync::VkBuffer {
+        crate::sync::VkBuffer::new(self.buffer)
+    }
+
     /// Get the Vulkan vertex attribute description for pipeline creation.
-    pub fn get_attribute_desc(&self, binding: u32) -> vk::VertexInputAttributeDescription {
+    pub(crate) fn get_attribute_desc(&self, binding: u32) -> vk::VertexInputAttributeDescription {
         vk::VertexInputAttributeDescription::default()
             .binding(binding)
             .location(self.attr_type.default_location())
@@ -101,7 +106,7 @@ impl AttributeBinding {
     }
 
     /// Get the Vulkan binding description for pipeline creation.
-    pub fn get_binding_desc(&self, binding: u32) -> vk::VertexInputBindingDescription {
+    pub(crate) fn get_binding_desc(&self, binding: u32) -> vk::VertexInputBindingDescription {
         vk::VertexInputBindingDescription::default()
             .binding(binding)
             .stride(self.format.get_offset()) // Single element stride

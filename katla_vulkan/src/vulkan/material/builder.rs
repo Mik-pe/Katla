@@ -79,6 +79,20 @@ impl PipelineBuilder {
         self
     }
 
+    /// Sets shaders using VkShaderModule wrappers.
+    ///
+    /// This variant accepts wrapper types that implement VkShaderModule and
+    /// converts them to the underlying vk::ShaderModule before assigning.
+    pub fn with_shaders_wrapped(
+        mut self,
+        vert: crate::sync::VkShaderModule,
+        frag: crate::sync::VkShaderModule,
+    ) -> Self {
+        self.vertex_shader = Some(vert.vk());
+        self.fragment_shader = Some(frag.vk());
+        self
+    }
+
     pub fn with_entry_points(mut self, vertex: CString, fragment: CString) -> Self {
         self.vertex_shader_entry_point = vertex;
         self.fragment_shader_entry_point = fragment;
@@ -175,7 +189,7 @@ impl PipelineBuilder {
         self
     }
 
-    pub fn with_descriptor_layouts(mut self, layouts: Vec<vk::DescriptorSetLayout>) -> Self {
+    pub(crate) fn with_descriptor_layouts(mut self, layouts: Vec<vk::DescriptorSetLayout>) -> Self {
         self.descriptor_layouts = layouts;
         self
     }
@@ -186,7 +200,7 @@ impl PipelineBuilder {
         self
     }
 
-    pub fn with_push_constants(mut self, ranges: Vec<vk::PushConstantRange>) -> Self {
+    pub(crate) fn with_push_constants(mut self, ranges: Vec<vk::PushConstantRange>) -> Self {
         self.push_constant_ranges = ranges;
         self
     }

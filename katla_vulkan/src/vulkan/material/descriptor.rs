@@ -51,7 +51,7 @@ impl DescriptorBinding {
         }
     }
 
-    pub fn descriptor_type(&self) -> Option<vk::DescriptorType> {
+    pub(crate) fn descriptor_type(&self) -> Option<vk::DescriptorType> {
         match self {
             DescriptorBinding::SampledImage { .. } => Some(vk::DescriptorType::SAMPLED_IMAGE),
             DescriptorBinding::Sampler { .. } => Some(vk::DescriptorType::SAMPLER),

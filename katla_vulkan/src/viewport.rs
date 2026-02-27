@@ -29,7 +29,8 @@ use crate::render_graph::types::{Extent2D, ImageFormat};
 use crate::renderer::DrawList;
 use crate::renderer::ViewportRenderTarget;
 use crate::sync::{
-    AccessFlags2, DependencyInfo, ImageMemoryBarrier2, PipelineStage2Flags, VkImage, VkImageView,
+    AccessFlags2, DependencyInfo, ImageMemoryBarrier2, PipelineStage2Flags, VkCommandBuffer,
+    VkImage, VkImageView,
 };
 use crate::vulkan::material::storage_uniform::{StorageDescriptorSet, StorageUniformManager};
 use crate::{CompiledRenderGraph, FrameUniforms, RenderGraphError, VulkanContext};
@@ -313,7 +314,9 @@ impl Viewport {
 
     /// Transition color texture from shader read to color attachment.
     /// Call BEFORE rendering when UI has sampled the texture.
-    pub fn transition_to_render(&self, cmd_buf: vk::CommandBuffer, device: &ash::Device) {
+    ///
+    /// This is pub(crate) to avoid exposing Vulkan types in the public API.
+    pub(crate) fn transition_to_render(&self, cmd_buf: VkCommandBuffer, device: &ash::Device) {
         let color_image = self.color_image();
         let depth_image = self.depth_image();
 
@@ -361,14 +364,16 @@ impl Viewport {
                 .add_image_barrier(color_barrier)
                 .add_image_barrier(depth_barrier)
                 .build(|dep_info| {
-                    device.cmd_pipeline_barrier2(cmd_buf, dep_info);
+                    device.cmd_pipeline_barrier2(cmd_buf.vk_command_buffer(), dep_info);
                 });
         }
     }
 
     /// Transition color texture from color attachment to shader read.
     /// Call AFTER rendering so UI can sample the texture.
-    pub fn transition_to_sample(&self, cmd_buf: vk::CommandBuffer, device: &ash::Device) {
+    ///
+    /// This is pub(crate) to avoid exposing Vulkan types in the public API.
+    pub(crate) fn transition_to_sample(&self, cmd_buf: VkCommandBuffer, device: &ash::Device) {
         let color_image = self.color_image();
 
         let subresource = vk::ImageSubresourceRange {
@@ -393,7 +398,7 @@ impl Viewport {
             DependencyInfo::new()
                 .add_image_barrier(barrier)
                 .build(|dep_info| {
-                    device.cmd_pipeline_barrier2(cmd_buf, dep_info);
+                    device.cmd_pipeline_barrier2(cmd_buf.vk_command_buffer(), dep_info);
                 });
         }
     }

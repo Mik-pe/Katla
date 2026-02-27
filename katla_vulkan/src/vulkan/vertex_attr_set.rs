@@ -59,7 +59,9 @@ impl VertexAttributeSet {
     /// Get all Vulkan vertex attribute descriptions for pipeline creation.
     ///
     /// Returns descriptions sorted by binding location for consistent pipeline creation.
-    pub fn get_attribute_descriptions(&self) -> Vec<ash::vk::VertexInputAttributeDescription> {
+    pub(crate) fn get_attribute_descriptions(
+        &self,
+    ) -> Vec<ash::vk::VertexInputAttributeDescription> {
         let mut bindings: Vec<_> = self
             .attributes
             .keys()
@@ -78,7 +80,7 @@ impl VertexAttributeSet {
     /// Get all Vulkan binding descriptions for pipeline creation.
     ///
     /// Returns descriptions sorted by binding location.
-    pub fn get_binding_descriptions(&self) -> Vec<ash::vk::VertexInputBindingDescription> {
+    pub(crate) fn get_binding_descriptions(&self) -> Vec<ash::vk::VertexInputBindingDescription> {
         let mut bindings: Vec<_> = self
             .attributes
             .keys()
@@ -97,7 +99,10 @@ impl VertexAttributeSet {
     /// Get Vulkan buffer handles for specific attribute types.
     ///
     /// Useful for binding only a subset of attributes (e.g., depth-only pass).
-    pub fn get_buffers_for_attributes(&self, attr_types: &[AttributeType]) -> Vec<ash::vk::Buffer> {
+    pub(crate) fn get_buffers_for_attributes(
+        &self,
+        attr_types: &[AttributeType],
+    ) -> Vec<ash::vk::Buffer> {
         attr_types
             .iter()
             .filter_map(|attr| self.attributes.get(attr).map(|binding| binding.buffer))

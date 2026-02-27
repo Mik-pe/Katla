@@ -25,7 +25,7 @@ use super::SwapchainInfo;
 
 const LAYER_KHRONOS_VALIDATION: &str = concat!("VK_LAYER_KHRONOS_validation", "\0");
 
-use crate::sync::{VkImage, VkImageView, VkSampler};
+use crate::sync::{VkBuffer, VkFramebuffer, VkImage, VkImageView, VkSampler};
 
 /// Validation message severity level.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -156,7 +156,7 @@ impl RenderTexture {
         let image_memory = self.image_memory.take();
 
         self.context
-            .free_image(self.image.vk(), image_memory.unwrap());
+            .free_image(self.image, image_memory.unwrap());
     }
 }
 
@@ -306,10 +306,12 @@ impl VulkanContext {
         (buffer, allocation)
     }
 
-    pub fn free_buffer(&self, buffer: vk::Buffer, allocation: Allocation) {
+    /// Free a buffer and its allocation.
+    /// Uses wrapper type to avoid exposing vk::Buffer in public API.
+    pub fn free_buffer(&self, buffer: VkBuffer, allocation: Allocation) {
         let mut allocator = self.allocator.borrow_mut();
         allocator.free(allocation).unwrap();
-        unsafe { self.device.destroy_buffer(buffer, None) };
+        unsafe { self.device.destroy_buffer(buffer.vk(), None) };
     }
 
     /// Map a buffer allocation to host memory.
@@ -344,11 +346,13 @@ impl VulkanContext {
         (image, allocation)
     }
 
-    pub fn free_image(&self, image: vk::Image, allocation: Allocation) {
+    /// Free an image and its allocation.
+    /// Uses wrapper type to avoid exposing vk::Image in public API.
+    pub fn free_image(&self, image: VkImage, allocation: Allocation) {
         let mut allocator = self.allocator.borrow_mut();
         allocator.free(allocation).unwrap();
         unsafe {
-            self.device.destroy_image(image, None);
+            self.device.destroy_image(image.vk(), None);
         }
     }
 
@@ -411,11 +415,13 @@ impl VulkanContext {
 
     /// Create an image view for a given image.
     ///
+    /// This is pub(crate) to avoid exposing Vulkan types in the public API.
+    ///
     /// # Arguments
     /// * `image` - The Vulkan image to create a view for
     /// * `format` - The format of the image view
     /// * `aspect_mask` - Which aspects of the image to include in the view
-    pub fn create_image_view(
+    pub(crate) fn create_image_view(
         &self,
         image: vk::Image,
         format: vk::Format,
@@ -441,13 +447,15 @@ impl VulkanContext {
         unsafe { self.device.create_image_view(&create_info, None).unwrap() }
     }
 
-    /// Create a framebuffer using the new Framebuffer wrapper.
+    /// Create a framebuffer.
+    ///
+    /// This is pub(crate) to avoid exposing Vulkan types in the public API.
     ///
     /// # Arguments
     /// * `render_pass` - The render pass this framebuffer is compatible with
     /// * `attachments` - Array of image views to attach to the framebuffer
     /// * `extent` - Width and height of the framebuffer
-    pub fn create_framebuffer(
+    pub(crate) fn create_framebuffer(
         &self,
         render_pass: vk::RenderPass,
         attachments: &[vk::ImageView],
@@ -464,7 +472,9 @@ impl VulkanContext {
     }
 
     /// Destroy a framebuffer.
-    pub fn destroy_framebuffer(&self, framebuffer: vk::Framebuffer) {
+    ///
+    /// This is pub(crate) to avoid exposing Vulkan types in the public API.
+    pub(crate) fn destroy_framebuffer(&self, framebuffer: vk::Framebuffer) {
         unsafe {
             self.device.destroy_framebuffer(framebuffer, None);
         }
