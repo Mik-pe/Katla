@@ -57,7 +57,7 @@ pub struct CompiledRenderGraph {
 
 /// CompiledPass represents a single compiled pass with all necessary Vulkan objects.
 /// The execute field now contains the pass name for looking up the closure in the ExecutionRegistry.
-/// Multiple framebuffers are supported (e.g., one per swapchain image).
+/// Multiple framebuffers are supported (e.g., one per swapchain image variant).
 pub struct CompiledPass {
     pub name: String,
     /// Multiple framebuffers - one per swapchain image variant
@@ -68,10 +68,10 @@ pub struct CompiledPass {
     execute: PassExecute,
     /// Pre-execute callback runs BEFORE begin_rendering() for custom barrier setup
     pre_execute: Option<PassExecute>,
-    /// Color attachments as (image_view, resource_id) tuples for dynamic rendering
-    pub color_attachments: Vec<(VkImageView, ResourceId)>,
-    /// Depth attachment as (image_view, resource_id) tuple for dynamic rendering
-    pub depth_attachment: Option<(VkImageView, ResourceId)>,
+    /// Color attachments as (resource_id) - VkImageView resolved at execution time
+    pub color_attachments: Vec<ResourceId>,
+    /// Depth attachment as resource_id - VkImageView resolved at execution time
+    pub depth_attachment: Option<ResourceId>,
     /// Transfer source resources (need transition to TRANSFER_SRC_OPTIMAL)
     pub transfer_src_resources: Vec<ResourceId>,
     /// Transfer destination resources (need transition to TRANSFER_DST_OPTIMAL)
@@ -108,8 +108,33 @@ impl CompiledRenderGraph {
         resources
             .get(&resource_id)
             .and_then(|resource| match resource {
-                CompiledResource::ExternalImage { image, .. } => Some(*image),
+                CompiledResource::ExternalImage { handle, .. } => {
+                    // Resolve handle via renderer context
+                    self.renderer_context
+                        .as_ref()
+                        .and_then(|ctx| ctx.get_external_image(*handle))
+                        .map(|(image, _)| image)
+                }
                 CompiledResource::Image { image, .. } => Some(*image),
+                _ => None,
+            })
+    }
+
+    /// Get the VkImageView for a resource ID.
+    /// Returns None if the resource doesn't exist or isn't an image.
+    fn get_image_view(&self, resource_id: ResourceId) -> Option<VkImageView> {
+        let resources = self.resources.borrow();
+        resources
+            .get(&resource_id)
+            .and_then(|resource| match resource {
+                CompiledResource::ExternalImage { handle, .. } => {
+                    // Resolve handle via renderer context
+                    self.renderer_context
+                        .as_ref()
+                        .and_then(|ctx| ctx.get_external_image(*handle))
+                        .map(|(_, view)| view)
+                }
+                CompiledResource::Image { image_view, .. } => Some(*image_view),
                 _ => None,
             })
     }
@@ -212,23 +237,21 @@ impl CompiledRenderGraph {
         self.swapchain_resource_id = Some(swapchain_id);
     }
 
-    /// Update the swapchain image for the current frame.
-    /// This must be called before execute() to ensure present_pass blits to the correct image.
-    pub fn update_swapchain_image(&mut self, image: VkImage, image_view: VkImageView) {
-        if let Some(swapchain_id) = self.swapchain_resource_id {
-            let mut resources = self.resources.borrow_mut();
-            if let Some(resource) = resources.get_mut(&swapchain_id) {
-                if let CompiledResource::ExternalImage {
-                    image: res_image,
-                    image_view: res_image_view,
-                    ..
-                } = resource
-                {
-                    *res_image = image;
-                    *res_image_view = image_view;
-                }
-            }
-        }
+    /// Update the swapchain image handle for the current frame.
+    /// With handle-based external resources, the actual VkImage/VkImageView are
+    /// resolved at execution time from the storage in VulkanRenderer.
+    /// This method is now a no-op since handles are resolved dynamically.
+    #[deprecated(note = "Swapchain images are now resolved via handle storage at execution time")]
+    pub fn update_swapchain_image(&mut self, _image: VkImage, _image_view: VkImageView) {
+        // No-op: handles are resolved at execution time via RendererContext
+        // The storage in VulkanRenderer should be updated directly if needed
+    }
+
+    /// Update the swapchain image by handle.
+    /// The caller must update the storage in VulkanRenderer with the new image/view.
+    pub fn update_swapchain_handle(&mut self, _handle: crate::handle::ImageHandle) {
+        // No-op: the handle stays the same, but the storage in VulkanRenderer is updated
+        // This method exists for API compatibility
     }
 
     /// Analyze resource lifetimes across all passes.
@@ -393,24 +416,21 @@ impl CompiledRenderGraph {
 
         for (resource_id, resource) in &graph.resources {
             match &resource.kind {
-                ResourceKind::ExternalBuffer { buffer } => {
+                ResourceKind::ExternalBuffer { handle } => {
                     resources.insert(
                         *resource_id,
-                        CompiledResource::ExternalBuffer { buffer: *buffer },
+                        CompiledResource::ExternalBuffer { handle: *handle },
                     );
                 }
                 ResourceKind::ExternalImage {
-                    image,
-                    image_view,
+                    handle,
                     format,
                     extent,
-                    ..
                 } => {
                     resources.insert(
                         *resource_id,
                         CompiledResource::ExternalImage {
-                            image: *image,
-                            image_view: *image_view,
+                            handle: *handle,
                             format: *format,
                             extent: *extent,
                         },
@@ -595,8 +615,8 @@ impl CompiledRenderGraph {
 
             // Extract color and depth attachments for dynamic rendering
             // Store as (image_view, resource_id) tuples for easy layout transitions
-            let mut color_attachments: Vec<(VkImageView, ResourceId)> = Vec::new();
-            let mut depth_attachment: Option<(VkImageView, ResourceId)> = None;
+            let mut color_attachments: Vec<ResourceId> = Vec::new();
+            let mut depth_attachment: Option<ResourceId> = None;
             let mut transfer_src_resources: Vec<ResourceId> = Vec::new();
             let mut transfer_dst_resources: Vec<ResourceId> = Vec::new();
 
@@ -646,22 +666,18 @@ impl CompiledRenderGraph {
 
                 if let Some(resource) = resources.get(output_resource_id) {
                     match resource {
-                        CompiledResource::ExternalImage {
-                            image_view, format, ..
-                        } => {
+                        CompiledResource::ExternalImage { format, .. } => {
                             if is_depth_or_stencil_format(*format) {
-                                depth_attachment = Some((*image_view, *output_resource_id));
+                                depth_attachment = Some(*output_resource_id);
                             } else {
-                                color_attachments.push((*image_view, *output_resource_id));
+                                color_attachments.push(*output_resource_id);
                             }
                         }
-                        CompiledResource::Image {
-                            image_view, format, ..
-                        } => {
+                        CompiledResource::Image { format, .. } => {
                             if is_depth_or_stencil_format(*format) {
-                                depth_attachment = Some((*image_view, *output_resource_id));
+                                depth_attachment = Some(*output_resource_id);
                             } else {
-                                color_attachments.push((*image_view, *output_resource_id));
+                                color_attachments.push(*output_resource_id);
                             }
                         }
                         _ => {}
@@ -761,60 +777,20 @@ impl CompiledRenderGraph {
     /// This should be called before execute() to update the viewport color and depth
     /// attachments to use the correct textures for the current frame index.
     /// This prevents race conditions when frames overlap (frames in flight > 1).
+    ///
+    /// With handle-based external resources, this method is deprecated.
+    /// Update the storage in VulkanRenderer instead - handles resolve at execution time.
+    #[deprecated(note = "Update VulkanRenderer's external_images storage instead")]
     pub fn update_viewport_attachments(
         &mut self,
-        color_image_view: VkImageView,
-        depth_image_view: VkImageView,
-        color_image: VkImage,
-        depth_image: VkImage,
+        _color_image_view: VkImageView,
+        _depth_image_view: VkImageView,
+        _color_image: VkImage,
+        _depth_image: VkImage,
     ) {
-        // Update color_attachments for viewport passes (sky_pass, geometry_pass, particle_pass)
-        for pass in &mut self.passes {
-            // Skip ui_pass and present_pass (they use output texture or swapchain transfer, not viewport)
-            if pass.category == PassCategory::Ui || pass.category == PassCategory::Present {
-                continue;
-            }
-
-            // For viewport passes, update the first color attachment's image view
-            if !pass.color_attachments.is_empty() {
-                pass.color_attachments[0].0 = color_image_view;
-            }
-
-            // Update depth attachment
-            if let Some((ref mut depth_view, _)) = pass.depth_attachment {
-                *depth_view = depth_image_view;
-            }
-        }
-
-        // Update the resources map so ctx.get_image() returns the correct viewport texture
-        // This is crucial for copy_pass which uses get_image() to get the viewport texture
-        let mut resources = self.resources.borrow_mut();
-
-        // Update viewport color resource
-        if let Some(color_id) = self.viewport_color_resource_id {
-            if let Some(resource) = resources.get_mut(&color_id) {
-                if let CompiledResource::ExternalImage {
-                    image, image_view, ..
-                } = resource
-                {
-                    *image = color_image;
-                    *image_view = color_image_view;
-                }
-            }
-        }
-
-        // Update viewport depth resource
-        if let Some(depth_id) = self.viewport_depth_resource_id {
-            if let Some(resource) = resources.get_mut(&depth_id) {
-                if let CompiledResource::ExternalImage {
-                    image, image_view, ..
-                } = resource
-                {
-                    *image = depth_image;
-                    *image_view = depth_image_view;
-                }
-            }
-        }
+        // With handle-based resources, attachments store ResourceId only.
+        // VkImageView is resolved at execution time via RendererContext.
+        // The storage in VulkanRenderer should be updated directly.
     }
 
     /// Execute the compiled render graph.
@@ -1118,39 +1094,43 @@ impl CompiledRenderGraph {
             .filter(|cv| matches!(cv, ClearValue::Color(_)))
             .collect();
 
-        for (i, (image_view, _resource_id)) in pass.color_attachments.iter().enumerate() {
-            let mut attachment = RenderingAttachmentInfo::new(*image_view)
-                .layout(ImageLayout::ColorAttachmentOptimal);
+        for (i, resource_id) in pass.color_attachments.iter().enumerate() {
+            if let Some(image_view) = self.get_image_view(*resource_id) {
+                let mut attachment = RenderingAttachmentInfo::new(image_view)
+                    .layout(ImageLayout::ColorAttachmentOptimal);
 
-            // Use filtered color clears, indexed by color attachment position
-            if let Some(&cv) = color_clears.get(i) {
-                attachment = attachment.clear(*cv);
+                // Use filtered color clears, indexed by color attachment position
+                if let Some(&cv) = color_clears.get(i) {
+                    attachment = attachment.clear(*cv);
+                }
+
+                rendering_info = rendering_info.add_color_attachment(attachment);
             }
-
-            rendering_info = rendering_info.add_color_attachment(attachment);
         }
 
         // Add depth attachment with clear value
-        if let Some((depth_view, _resource_id)) = pass.depth_attachment {
-            // Find depth clear value
-            let depth_clear = pass
-                .clear_values
-                .iter()
-                .find(|cv| matches!(cv, ClearValue::DepthStencil(_)));
+        if let Some(depth_resource_id) = pass.depth_attachment {
+            if let Some(depth_view) = self.get_image_view(depth_resource_id) {
+                // Find depth clear value
+                let depth_clear = pass
+                    .clear_values
+                    .iter()
+                    .find(|cv| matches!(cv, ClearValue::DepthStencil(_)));
 
-            let mut attachment = RenderingAttachmentInfo::new(depth_view)
-                .layout(ImageLayout::DepthStencilAttachmentOptimal);
+                let mut attachment = RenderingAttachmentInfo::new(depth_view)
+                    .layout(ImageLayout::DepthStencilAttachmentOptimal);
 
-            if let Some(&cv) = depth_clear {
-                attachment = attachment.clear(cv);
+                if let Some(&cv) = depth_clear {
+                    attachment = attachment.clear(cv);
+                }
+
+                rendering_info = rendering_info.depth_attachment(attachment);
             }
-
-            rendering_info = rendering_info.depth_attachment(attachment);
         }
 
         // Transition ALL color attachment images to COLOR_ATTACHMENT_OPTIMAL before rendering
         // The render graph automatically handles layout transitions for all render targets.
-        for (_image_view, resource_id) in &pass.color_attachments {
+        for resource_id in &pass.color_attachments {
             if let Some(image) = self.get_image(*resource_id) {
                 // Determine old layout based on pass index
                 // First pass: UNDEFINED (discard previous content)
@@ -1181,7 +1161,7 @@ impl CompiledRenderGraph {
         }
 
         // Transition depth image to DEPTH_STENCIL_ATTACHMENT_OPTIMAL before rendering
-        if let Some((_depth_view, depth_resource_id)) = pass.depth_attachment {
+        if let Some(depth_resource_id) = pass.depth_attachment {
             if let Some(depth_image) = self.get_image(depth_resource_id) {
                 let old_layout = if pass_index == 0 {
                     vk::ImageLayout::UNDEFINED

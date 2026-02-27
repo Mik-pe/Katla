@@ -8,7 +8,7 @@ use super::{
     MaterialDescriptor, MaterialParameters, MaterialPipeline, MaterialValue, PbrTextureSet,
     ShaderReflection,
 };
-use crate::renderer::handles::PipelineHandle;
+use crate::handle::PipelineHandle;
 use crate::{Texture, VertexBinding};
 use ash::vk;
 use std::{collections::HashMap, rc::Rc};
@@ -245,7 +245,7 @@ impl MaterialTemplate {
 ///
 /// ```ignore
 /// let material = Material::new("gltf_pbr_bindless")
-///     .with_pbr_textures(pbr_textures, texture_refs)
+///     .with_pbr_textures(pbr_textures)
 ///     .with_bindless_indices([0, 1, 2, 3], 4);
 ///
 /// let handle = renderer.register_material(&mut material)?;
@@ -266,10 +266,8 @@ pub struct Material {
     textures: HashMap<String, Rc<Texture>>,
     /// Vertex binding for this material's geometry
     vertex_binding: Option<VertexBinding>,
-    /// PBR texture set for full PBR materials
+    /// PBR texture set for full PBR materials (uses TextureHandle)
     pbr_textures: Option<PbrTextureSet>,
-    /// Texture references to keep alive
-    pbr_texture_refs: Option<Vec<Rc<Texture>>>,
     /// Bindless texture indices: [albedo, normal, metallic_roughness, ao]
     pub texture_indices: [u32; 4],
     /// Emission texture index for bindless
@@ -293,7 +291,6 @@ impl Material {
             textures: HashMap::new(),
             vertex_binding: None,
             pbr_textures: None,
-            pbr_texture_refs: None,
             texture_indices: [0; 4],
             emission_index: 0,
             base_color: None,
@@ -312,7 +309,6 @@ impl Material {
             textures: HashMap::new(),
             vertex_binding: None,
             pbr_textures: None,
-            pbr_texture_refs: None,
             texture_indices: [0; 4],
             emission_index: 0,
             base_color: None,
@@ -352,7 +348,6 @@ impl Material {
             textures: HashMap::new(),
             vertex_binding: Some(vertex_binding),
             pbr_textures: None,
-            pbr_texture_refs: None,
             texture_indices: [0; 4],
             emission_index: 0,
             base_color: None,
@@ -374,7 +369,6 @@ impl Material {
             textures: HashMap::new(),
             vertex_binding: Some(vertex_binding),
             pbr_textures: None,
-            pbr_texture_refs: None,
             texture_indices: [0; 4],
             emission_index: 0,
             base_color: None,
@@ -395,14 +389,9 @@ impl Material {
         self
     }
 
-    /// Set PBR textures with texture references.
-    pub fn with_pbr_textures(
-        mut self,
-        pbr_textures: PbrTextureSet,
-        texture_refs: Vec<Rc<Texture>>,
-    ) -> Self {
+    /// Set PBR textures (uses TextureHandle, no refs needed).
+    pub fn with_pbr_textures(mut self, pbr_textures: PbrTextureSet) -> Self {
         self.pbr_textures = Some(pbr_textures);
-        self.pbr_texture_refs = Some(texture_refs);
         self
     }
 
@@ -466,11 +455,6 @@ impl Material {
         self.pbr_textures.as_ref()
     }
 
-    /// Get PBR texture references.
-    pub fn pbr_texture_refs(&self) -> Option<&[Rc<Texture>]> {
-        self.pbr_texture_refs.as_deref()
-    }
-
     /// Get a parameter value.
     pub fn get_parameter(&self, name: &str) -> Option<&MaterialValue> {
         self.parameters.get(name)
@@ -530,14 +514,9 @@ impl Material {
         self.textures.insert(slot.into(), texture);
     }
 
-    /// Set PBR textures (mutable).
-    pub fn set_pbr_textures(
-        &mut self,
-        pbr_textures: PbrTextureSet,
-        texture_refs: Vec<Rc<Texture>>,
-    ) {
+    /// Set PBR textures (mutable, uses TextureHandle).
+    pub fn set_pbr_textures(&mut self, pbr_textures: PbrTextureSet) {
         self.pbr_textures = Some(pbr_textures);
-        self.pbr_texture_refs = Some(texture_refs);
     }
 
     /// Set bindless texture indices (mutable).
@@ -559,7 +538,6 @@ impl Material {
             textures: self.textures.clone(),
             vertex_binding: self.vertex_binding.clone(),
             pbr_textures: self.pbr_textures.clone(),
-            pbr_texture_refs: self.pbr_texture_refs.clone(),
             texture_indices: self.texture_indices,
             emission_index: self.emission_index,
             base_color: self.base_color,
@@ -665,13 +643,12 @@ impl Material {
     pub fn from_template_pbr(
         template: &Rc<MaterialTemplate>,
         pbr_textures: PbrTextureSet,
-        texture_refs: Vec<Rc<Texture>>,
         _color: Option<[f32; 4]>,
     ) -> Self {
         use crate::vulkan::vertexbinding::get_pbr_vertex_binding;
 
         Material::from_template_with_binding(Rc::clone(template), get_pbr_vertex_binding())
-            .with_pbr_textures(pbr_textures, texture_refs)
+            .with_pbr_textures(pbr_textures)
     }
 
     /// Create a skinned material from a template.
@@ -714,7 +691,6 @@ impl Material {
     pub fn from_template_pbr_bindless(
         template: &Rc<MaterialTemplate>,
         pbr_textures: PbrTextureSet,
-        texture_refs: Vec<Rc<Texture>>,
         _color: Option<[f32; 4]>,
         texture_indices: [u32; 4],
         emission_index: u32,
@@ -722,7 +698,7 @@ impl Material {
         use crate::vulkan::vertexbinding::get_pbr_vertex_binding;
 
         Material::from_template_with_binding(Rc::clone(template), get_pbr_vertex_binding())
-            .with_pbr_textures(pbr_textures, texture_refs)
+            .with_pbr_textures(pbr_textures)
             .with_bindless_indices(texture_indices, emission_index)
     }
 
@@ -730,7 +706,6 @@ impl Material {
     pub fn from_template_skinned_pbr_bindless(
         template: &Rc<MaterialTemplate>,
         pbr_textures: PbrTextureSet,
-        texture_refs: Vec<Rc<Texture>>,
         _color: Option<[f32; 4]>,
         texture_indices: [u32; 4],
         emission_index: u32,
@@ -738,7 +713,7 @@ impl Material {
         use crate::vulkan::vertexbinding::get_skinned_vertex_binding;
 
         Material::from_template_with_binding(Rc::clone(template), get_skinned_vertex_binding())
-            .with_pbr_textures(pbr_textures, texture_refs)
+            .with_pbr_textures(pbr_textures)
             .with_bindless_indices(texture_indices, emission_index)
     }
 
@@ -756,7 +731,6 @@ impl Material {
         Option<Rc<Texture>>,
         Option<VertexBinding>,
         Option<PbrTextureSet>,
-        Option<Vec<Rc<Texture>>>,
         [u32; 4],
         u32,
         bool,
@@ -766,7 +740,6 @@ impl Material {
             self.textures.values().next().cloned(),
             self.vertex_binding.clone(),
             self.pbr_textures.clone(),
-            self.pbr_texture_refs.clone(),
             self.texture_indices,
             self.emission_index,
             self.is_bindless,

@@ -1,18 +1,25 @@
 pub mod error;
+pub mod handle;
 pub mod material;
 pub mod render_graph;
 pub mod renderer;
 pub mod sync;
+pub mod texture;
 pub mod viewport;
 pub mod vulkan;
 
 pub use error::RendererError;
+pub use handle::{
+    BufferHandle, DescriptorSetHandle, Handle, ImageHandle, MaterialHandle, MeshHandle,
+    PipelineHandle, PipelineLayoutHandle, ResourceStorage, SkeletonHandle, TextureHandle,
+};
 pub use material::{
     BindlessPbrMaterialConfig, BindlessSkinnedPbrMaterialConfig, DynamicMaterialConfig,
     FullPbrMaterialConfig, MaterialCacheError, MaterialCacheStats, MaterialDefinition,
     MaterialDomain, MaterialKey, MaterialPipelineCache, PbrMaterialConfig,
     SkinnedPbrMaterialConfig,
 };
+pub use texture::{TextureDescriptor, TextureManager, TextureUsage};
 pub use render_graph::errors::RenderGraphError;
 pub use render_graph::pass::{PassBuilder, PassExecutionContext};
 pub use render_graph::resource::{
@@ -20,14 +27,8 @@ pub use render_graph::resource::{
 };
 pub use render_graph::*;
 pub use renderer::{
-    AssetRegistry, DrawCall, DrawList, FrameData, FrameUniforms, InstanceData, MaterialHandle,
-    MeshHandle, ParticleDispatch, ParticleRender, PipelineHandle, SkeletonHandle, VulkanRenderer,
-    FRAMES_IN_FLIGHT,
-};
-pub use sync::{
-    VkBuffer, VkCommandBuffer, VkDescriptorPool, VkDescriptorSet, VkDescriptorSetLayout, VkFence,
-    VkFramebuffer, VkImage, VkImageView, VkPipeline, VkPipelineLayout, VkRenderPass, VkSampler,
-    VkSemaphore,
+    AssetRegistry, DrawCall, DrawList, FrameData, FrameUniforms, InstanceData, ParticleDispatch,
+    ParticleRender, VulkanRenderer, FRAMES_IN_FLIGHT,
 };
 pub use viewport::{DepthFormat, OutputMode, ViewportBuilder, ViewportHandle};
 pub use vulkan::context::{ValidationMessage, ValidationMessageType, ValidationSeverity};

@@ -2,6 +2,8 @@ use std::collections::HashMap;
 use std::fmt;
 use std::ops::AddAssign;
 
+use crate::handle::{BufferHandle, ImageHandle};
+
 /// Unique identifier for a render graph resource.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub struct ResourceId(pub(crate) u32);
@@ -92,11 +94,10 @@ pub enum ResourceKind {
         final_layout: super::types::ImageLayout,
     },
     ExternalBuffer {
-        buffer: super::types::VkBuffer,
+        handle: BufferHandle,
     },
     ExternalImage {
-        image: super::types::VkImage,
-        image_view: super::types::VkImageView,
+        handle: ImageHandle,
         format: super::types::ImageFormat,
         extent: super::types::Extent2D,
     },
@@ -269,24 +270,23 @@ impl ResourceLifetime {
 /// These are created during graph compilation and used during execution.
 pub enum CompiledResource {
     Buffer {
-        buffer: super::types::VkBuffer,
+        buffer: crate::sync::VkBuffer,
         allocation: gpu_allocator::vulkan::Allocation,
         size: u64,
     },
     Image {
-        image: super::types::VkImage,
-        image_view: super::types::VkImageView,
+        image: crate::sync::VkImage,
+        image_view: crate::sync::VkImageView,
         allocation: gpu_allocator::vulkan::Allocation,
         extent: super::types::Extent3D,
         format: super::types::ImageFormat,
         layout: super::types::ImageLayout,
     },
     ExternalBuffer {
-        buffer: super::types::VkBuffer,
+        handle: BufferHandle,
     },
     ExternalImage {
-        image: super::types::VkImage,
-        image_view: super::types::VkImageView,
+        handle: ImageHandle,
         format: super::types::ImageFormat,
         extent: super::types::Extent2D,
     },

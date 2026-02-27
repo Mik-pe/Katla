@@ -1,9 +1,9 @@
-use std::{path::PathBuf, rc::Rc};
+use std::path::PathBuf;
 
 use katla_math::Color;
 use katla_vulkan::{
-    DescriptorSetLayoutBuilder, DescriptorType, ImageFormat, ShaderStages, Texture, VertexBinding,
-    VulkanContext, VulkanRenderer,
+    DescriptorSetLayoutBuilder, DescriptorType, ShaderStages, TextureDescriptor, VertexBinding,
+    VulkanRenderer,
 };
 use log::warn;
 
@@ -48,11 +48,8 @@ struct BindlessPbrMaterialConfig {
 ///
 /// This function creates a material with a procedurally generated checkerboard texture.
 /// The texture is registered with the bindless manager.
-pub fn create_checkerboard_material(
-    context: Rc<VulkanContext>,
-    renderer: &mut VulkanRenderer,
-) -> Material {
-    create_checkerboard_material_with_color(context, renderer, None)
+pub fn create_checkerboard_material(renderer: &mut VulkanRenderer) -> Material {
+    create_checkerboard_material_with_color(renderer, None)
 }
 
 /// Create a colored checkerboard material.
@@ -60,55 +57,72 @@ pub fn create_checkerboard_material(
 /// This function creates a material with a procedurally generated checkerboard texture
 /// that is blended with a material color.
 pub fn create_colored_checkerboard_material(
-    context: Rc<VulkanContext>,
     renderer: &mut VulkanRenderer,
     color: Color,
 ) -> Material {
-    create_checkerboard_material_with_color(context, renderer, Some(color))
+    create_checkerboard_material_with_color(renderer, Some(color))
 }
 
 /// Internal helper to create checkerboard material with optional color.
 fn create_checkerboard_material_with_color(
-    context: Rc<VulkanContext>,
     renderer: &mut VulkanRenderer,
     color: Option<Color>,
 ) -> Material {
+    use katla_vulkan::bindless_texture::{
+        DEFAULT_ALBEDO_SLOT, DEFAULT_AO_SLOT, DEFAULT_EMISSION_SLOT, DEFAULT_MR_SLOT,
+        DEFAULT_NORMAL_SLOT,
+    };
+
     // Generate checkerboard pixels
     let pixels = generate_checkerboard_pixels(64, 8);
 
-    let texture = Rc::new(Texture::create_image(
-        context.clone(),
-        64,
-        64,
-        ImageFormat::R8G8B8A8Srgb,
-        &pixels,
-    ));
-
-    // Register texture with bindless manager
-    let bindless_manager = renderer
-        .bindless_manager
-        .as_mut()
-        .expect("Bindless manager not initialized");
-    let albedo_idx = match bindless_manager.register_texture(texture.image_view) {
-        Some(idx) => idx,
-        None => {
-            warn!("Failed to register checkerboard texture, using default");
-            katla_vulkan::bindless_texture::DEFAULT_ALBEDO_SLOT
-        }
+    // Create texture using TextureManager
+    let albedo_handle = if let Some(tm) = renderer.texture_manager_mut() {
+        let desc = TextureDescriptor::rgba8_srgb(64, 64);
+        tm.create(&desc, &pixels)
+    } else {
+        warn!("TextureManager not available, using default texture");
+        return Material::new("gltf_default");
     };
+
+    // Get view and register with bindless manager
+    let albedo_idx = if let Some(tm) = renderer.texture_manager() {
+        if let Some(view) = tm.get_view(albedo_handle) {
+            if let Some(bindless) = renderer.bindless_manager_mut() {
+                bindless
+                    .register_texture(view)
+                    .unwrap_or(DEFAULT_ALBEDO_SLOT)
+            } else {
+                DEFAULT_ALBEDO_SLOT
+            }
+        } else {
+            DEFAULT_ALBEDO_SLOT
+        }
+    } else {
+        DEFAULT_ALBEDO_SLOT
+    };
+
+    // Track bindless slot in TextureManager
+    if let Some(tm) = renderer.texture_manager_mut() {
+        tm.register_bindless_slot(albedo_handle, albedo_idx);
+    }
 
     // Use default textures for other PBR slots
     let texture_indices = [
         albedo_idx,
-        katla_vulkan::bindless_texture::DEFAULT_NORMAL_SLOT,
-        katla_vulkan::bindless_texture::DEFAULT_MR_SLOT,
-        katla_vulkan::bindless_texture::DEFAULT_AO_SLOT,
+        DEFAULT_NORMAL_SLOT,
+        DEFAULT_MR_SLOT,
+        DEFAULT_AO_SLOT,
     ];
-    let emission_idx = katla_vulkan::bindless_texture::DEFAULT_EMISSION_SLOT;
+    let emission_idx = DEFAULT_EMISSION_SLOT;
 
     // Create material config and get pipeline from cache
     let vertex_binding = VertexPBR::get_vertex_binding();
-    let bindless_layout = bindless_manager.vk_descriptor_layout();
+    let bindless_layout = renderer
+        .bindless_manager
+        .as_ref()
+        .map(|b| b.vk_descriptor_layout())
+        .expect("Bindless manager not initialized");
 
     let config = BindlessPbrMaterialConfig {
         vertex_binding: vertex_binding.clone(),
@@ -132,10 +146,11 @@ fn create_checkerboard_material_with_color(
         .get_or_create_bindless(&config, bindless_layout)
         .expect("Failed to create bindless pipeline");
 
-    Material::from_pipeline_handle(
-        material_pipeline,
-        vertex_binding,
-        true, // is_bindless
-    )
-    .with_bindless_indices(texture_indices, emission_idx)
+    let mut material = Material::from_pipeline_handle(material_pipeline, vertex_binding, true);
+
+    if let Some(c) = color {
+        material = material.with_base_color([c.r, c.g, c.b, c.a]);
+    }
+
+    material.with_bindless_indices(texture_indices, emission_idx)
 }

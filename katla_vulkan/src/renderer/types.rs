@@ -3,23 +3,12 @@
 //! This module provides types that avoid exposing ash::vk to the application layer.
 //! Mesh and material data is registered with the renderer and referenced via opaque handles.
 
-use crate::sync::{VkDescriptorSet, VkPipeline, VkPipelineLayout};
+use crate::handle::{
+    DescriptorSetHandle, MaterialHandle, MeshHandle, PipelineHandle, PipelineLayoutHandle,
+    SkeletonHandle,
+};
 
-/// High-level mesh handle - opaque token, no ash types exposed.
-///
-/// The actual mesh data (vertex/index buffers) is stored internally in the AssetRegistry.
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
-pub struct MeshHandle(pub usize);
-
-/// High-level material handle - opaque token.
-///
-/// The actual material (pipeline, textures, descriptors) is stored internally.
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
-pub struct MaterialHandle(pub usize);
-
-/// Handle to a skeleton descriptor set for GPU skinning.
-#[derive(Clone, Copy, Debug, Default)]
-pub struct SkeletonHandle(pub u32);
+pub use crate::handle::{Handle, TextureHandle};
 
 /// Frame-level uniforms that are shared across all draw calls.
 ///
@@ -291,11 +280,11 @@ pub struct DrawList {
 #[derive(Clone, Debug)]
 pub struct ParticleDispatch {
     /// Compute pipeline handle
-    pub pipeline: VkPipeline,
-    /// Pipeline layout
-    pub pipeline_layout: VkPipelineLayout,
-    /// Descriptor set for particle buffer binding
-    pub descriptor_set: VkDescriptorSet,
+    pub pipeline: PipelineHandle,
+    /// Pipeline layout handle
+    pub pipeline_layout: PipelineLayoutHandle,
+    /// Descriptor set handle for particle buffer binding
+    pub descriptor_set: DescriptorSetHandle,
     /// Frame data: (delta_time, emit_count, max_particles, random_seed)
     pub frame_data: [f32; 4],
     /// Number of workgroups to dispatch
@@ -308,14 +297,14 @@ pub struct ParticleDispatch {
 /// to the renderer for instanced drawing.
 #[derive(Clone, Debug)]
 pub struct ParticleRender {
-    /// Graphics pipeline for particle rendering
-    pub pipeline: VkPipeline,
-    /// Pipeline layout
-    pub pipeline_layout: VkPipelineLayout,
-    /// Descriptor set for frame uniforms (set 0)
-    pub frame_descriptor_set: VkDescriptorSet,
-    /// Descriptor set for particle buffer (set 1)
-    pub particle_descriptor_set: VkDescriptorSet,
+    /// Graphics pipeline handle for particle rendering
+    pub pipeline: PipelineHandle,
+    /// Pipeline layout handle
+    pub pipeline_layout: PipelineLayoutHandle,
+    /// Descriptor set handle for frame uniforms (set 0)
+    pub frame_descriptor_set: DescriptorSetHandle,
+    /// Descriptor set handle for particle buffer (set 1)
+    pub particle_descriptor_set: DescriptorSetHandle,
     /// Number of particles (instances) to draw
     pub particle_count: u32,
 }
@@ -427,12 +416,12 @@ impl DrawList {
 
     /// Sort by material (reduces state changes during rendering).
     pub fn sort_by_material(&mut self) {
-        self.draws.sort_by_key(|d| d.material.0);
+        self.draws.sort_by_key(|d| d.material.index());
     }
 
     /// Sort by mesh (can improve vertex buffer binding cache).
     pub fn sort_by_mesh(&mut self) {
-        self.draws.sort_by_key(|d| d.mesh.0);
+        self.draws.sort_by_key(|d| d.mesh.index());
     }
 
     /// Reverse the order of draw calls (useful for certain transparency techniques).
@@ -497,12 +486,12 @@ pub fn compute_sort_key(
         // Actually for transparency we want FAR objects drawn FIRST (lower key), near objects LAST
         // So we use inverted depth or just depth directly with descending sort
         // For simplicity: higher distance = higher key = drawn later (correct back-to-front)
-        ((depth_bits as u64) << 32) | ((material.0 as u64) << 16) | (mesh.0 as u64)
+        ((depth_bits as u64) << 32) | ((material.index() as u64) << 16) | (mesh.index() as u64)
     } else {
         // Front-to-back for opaque: smaller distance = lower key = drawn first (early-Z optimization)
         // But we also want material grouping for state changes
         // So: material first, then mesh, then depth
-        ((material.0 as u64) << 48) | ((mesh.0 as u64) << 32) | (depth_bits as u64)
+        ((material.index() as u64) << 48) | ((mesh.index() as u64) << 32) | (depth_bits as u64)
     }
 }
 
@@ -535,8 +524,8 @@ mod tests {
 
     #[test]
     fn test_draw_call_creation() {
-        let mesh = MeshHandle(0);
-        let material = MaterialHandle(0);
+        let mesh = MeshHandle::new(0);
+        let material = MaterialHandle::new(0);
 
         let draw = DrawCall::new(mesh, material);
 
@@ -546,8 +535,8 @@ mod tests {
 
     #[test]
     fn test_draw_call_builder() {
-        let mesh = MeshHandle(0);
-        let material = MaterialHandle(0);
+        let mesh = MeshHandle::new(0);
+        let material = MaterialHandle::new(0);
         let model = [
             1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
         ];
@@ -577,8 +566,8 @@ mod tests {
         assert!(list.is_empty());
         assert_eq!(list.len(), 0);
 
-        let mesh = MeshHandle(0);
-        let material = MaterialHandle(0);
+        let mesh = MeshHandle::new(0);
+        let material = MaterialHandle::new(0);
 
         list.push(DrawCall::new(mesh, material));
 
@@ -589,8 +578,8 @@ mod tests {
     #[test]
     fn test_draw_list_sorting() {
         let mut list = DrawList::new();
-        let mesh = MeshHandle(0);
-        let material = MaterialHandle(0);
+        let mesh = MeshHandle::new(0);
+        let material = MaterialHandle::new(0);
 
         list.push(DrawCall::new(mesh, material).with_sort_key(3));
         list.push(DrawCall::new(mesh, material).with_sort_key(1));
@@ -606,8 +595,8 @@ mod tests {
     #[test]
     fn test_draw_list_into_iter() {
         let mut list = DrawList::new();
-        let mesh = MeshHandle(0);
-        let material = MaterialHandle(0);
+        let mesh = MeshHandle::new(0);
+        let material = MaterialHandle::new(0);
 
         list.push(DrawCall::new(mesh, material));
         list.push(DrawCall::new(mesh, material));
@@ -618,9 +607,9 @@ mod tests {
 
     #[test]
     fn test_compute_sort_key_opaque() {
-        let mat1 = MaterialHandle(1);
-        let mat2 = MaterialHandle(2);
-        let mesh = MeshHandle(0);
+        let mat1 = MaterialHandle::new(1);
+        let mat2 = MaterialHandle::new(2);
+        let mesh = MeshHandle::new(0);
 
         // For opaque: material grouping takes priority
         let key_near = compute_sort_key(mat1, mesh, 10.0, false);
@@ -636,8 +625,8 @@ mod tests {
 
     #[test]
     fn test_compute_sort_key_transparent() {
-        let mat = MaterialHandle(0);
-        let mesh = MeshHandle(0);
+        let mat = MaterialHandle::new(0);
+        let mesh = MeshHandle::new(0);
 
         // For transparent: back-to-front, far objects first
         let key_near = compute_sort_key(mat, mesh, 10.0, true);
@@ -661,8 +650,8 @@ mod tests {
     #[test]
     fn test_draw_list_compute_sort_keys() {
         let mut list = DrawList::new();
-        let mesh = MeshHandle(0);
-        let mat = MaterialHandle(0);
+        let mesh = MeshHandle::new(0);
+        let mat = MaterialHandle::new(0);
 
         // Identity matrix at origin
         let model = [

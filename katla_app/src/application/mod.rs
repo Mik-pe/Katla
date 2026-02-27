@@ -525,13 +525,22 @@ impl Application {
             .insert_resource(crate::components::AmbientLight::gray(0.15));
 
         // Create particle emitter
-        let _particle_emitter = crate::entities::create_particle_emitter(
+        let particle_emitter = crate::entities::create_particle_emitter(
             &mut self.world,
             renderer.context.clone(),
             Vec3::new(0.0, 10.0, 0.0),
             100.0,
         );
         debug!("Created particle emitter entity");
+
+        // Register particle emitter with renderer for handle-based dispatch
+        if let Some(emitter) = self
+            .world
+            .get_component_mut::<crate::components::ParticleEmitter>(particle_emitter)
+        {
+            emitter.register_with_renderer(renderer);
+            debug!("Registered particle emitter with renderer");
+        }
 
         // Setup checkerboard material
         self.setup_checkerboard_material(renderer);
@@ -752,7 +761,7 @@ impl Application {
 
     /// Setup checkerboard material.
     fn setup_checkerboard_material(&mut self, renderer: &mut VulkanRenderer) {
-        let checkerboard = create_checkerboard_material(renderer.context.clone(), renderer);
+        let checkerboard = create_checkerboard_material(renderer);
         self.material_manager
             .register_material("checkerboard", checkerboard);
         debug!("Registered checkerboard material");
@@ -783,16 +792,13 @@ impl Application {
 
                     // Register with UI renderer
                     if let Some(ref mut ui_renderer) = self.ui_renderer {
-                        // Create texture from pixels
-                        if let Some(ref renderer) = self.renderer {
-                            let texture = katla_vulkan::Texture::create_image(
-                                renderer.context.clone(),
-                                width,
-                                height,
-                                katla_vulkan::ImageFormat::R8G8B8A8Srgb,
-                                &pixels,
-                            );
-                            ui_renderer.register_texture(texture_id.0, texture.image_view);
+                        // Create texture from pixels using TextureManager
+                        if let Some(ref mut renderer) = self.renderer {
+                            if let Some(tm) = renderer.texture_manager_mut() {
+                                let desc = katla_vulkan::TextureDescriptor::rgba8_srgb(width, height);
+                                let handle = tm.create(&desc, &pixels);
+                                ui_renderer.register_texture_handle(texture_id.0, handle, tm);
+                            }
                         }
                     }
 

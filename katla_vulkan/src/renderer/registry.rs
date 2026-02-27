@@ -3,8 +3,8 @@
 //! The registry stores meshes and materials internally and provides opaque handles
 //! for referencing them. This keeps ash::vk types contained within katla_vulkan.
 
-use super::handles::PipelineHandle;
 use super::types::*;
+use crate::handle::{MaterialHandle, MeshHandle, PipelineHandle};
 use crate::vulkan::*;
 
 /// Mesh representation containing Vulkan buffers.
@@ -66,7 +66,7 @@ impl AssetRegistry {
         }
 
         self.meshes[id] = Some(mesh);
-        MeshHandle(id)
+        MeshHandle::new(id as u32)
     }
 
     /// Register a material and return a handle.
@@ -82,7 +82,7 @@ impl AssetRegistry {
         }
 
         self.materials[id] = Some(material);
-        MaterialHandle(id)
+        MaterialHandle::new(id as u32)
     }
 
     /// Register a material with PBR textures and return a handle.
@@ -101,22 +101,22 @@ impl AssetRegistry {
         }
 
         self.materials[id] = Some(material);
-        MaterialHandle(id)
+        MaterialHandle::new(id as u32)
     }
 
     /// Get a mesh by handle.
     pub fn get_mesh(&self, handle: MeshHandle) -> Option<&MeshAsset> {
-        self.meshes.get(handle.0)?.as_ref()
+        self.meshes.get(handle.index() as usize)?.as_ref()
     }
 
     /// Get a material by handle (immutable).
     pub fn get_material(&self, handle: MaterialHandle) -> Option<&MaterialAsset> {
-        self.materials.get(handle.0)?.as_ref()
+        self.materials.get(handle.index() as usize)?.as_ref()
     }
 
     /// Get a mutable material by handle (for rendering updates).
     pub fn get_material_mut(&mut self, handle: MaterialHandle) -> Option<&mut MaterialAsset> {
-        self.materials.get_mut(handle.0)?.as_mut()
+        self.materials.get_mut(handle.index() as usize)?.as_mut()
     }
 
     /// Update a material's pipeline handle (for hot reload).

@@ -980,7 +980,7 @@ fn hash_shader_stages(stages: &ShaderStages, hasher: &mut DefaultHasher) {
 use std::collections::HashMap;
 use std::rc::Rc;
 
-use crate::renderer::handles::{PipelineHandle, ResourceStorage};
+use crate::handle::{PipelineHandle, ResourceStorage};
 use crate::sync::VkRenderPass;
 use crate::vulkan::context::VulkanContext;
 use crate::vulkan::pipeline_state::{CullMode, FrontFace};
@@ -1076,7 +1076,7 @@ impl MaterialPipelineCache {
         }
 
         let pipeline = self.create_pipeline_for_material(material)?;
-        let handle = PipelineHandle(self.storage.insert(pipeline));
+        let handle = PipelineHandle::new(self.storage.insert(pipeline) as u32);
 
         self.cache.insert(key, handle);
         Ok(handle)
@@ -1103,7 +1103,7 @@ impl MaterialPipelineCache {
         }
 
         let pipeline = self.create_bindless_pipeline(material, bindless_layout)?;
-        let handle = PipelineHandle(self.storage.insert(pipeline));
+        let handle = PipelineHandle::new(self.storage.insert(pipeline) as u32);
 
         self.cache.insert(key, handle);
         Ok(handle)
@@ -1114,7 +1114,7 @@ impl MaterialPipelineCache {
         if handle.is_none() {
             return None;
         }
-        self.storage.get(handle.0)
+        self.storage.get(handle.index())
     }
 
     /// Get a mutable pipeline by handle.
@@ -1122,7 +1122,7 @@ impl MaterialPipelineCache {
         if handle.is_none() {
             return None;
         }
-        self.storage.get_mut(handle.0)
+        self.storage.get_mut(handle.index())
     }
 
     /// Create a bindless pipeline for a material.
@@ -1444,7 +1444,7 @@ impl MaterialPipelineCache {
     pub fn remove<M: MaterialDefinition + ?Sized>(&mut self, material: &M) -> bool {
         let key = MaterialKey::from_material(material);
         if let Some(handle) = self.cache.remove(&key) {
-            self.storage.remove(handle.0);
+            self.storage.remove(handle.index());
             true
         } else {
             false

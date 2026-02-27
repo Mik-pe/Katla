@@ -5,8 +5,8 @@ pub mod render_graph;
 use log::{debug, error, info};
 
 use katla_vulkan::{
-    DrawCall, DrawList, FrameUniforms, IndexBuffer, IndexType, MaterialHandle, MeshHandle,
-    ParticleDispatch, ParticleRender, VertexBuffer, VulkanContext,
+    DrawCall, DrawList, FrameUniforms, IndexBuffer, IndexType, MaterialHandle,
+    MeshHandle, ParticleDispatch, ParticleRender, VertexBuffer, VulkanContext,
 };
 use std::rc::Rc;
 
@@ -54,8 +54,7 @@ pub fn setup_render_graph(app: &mut Application) {
 
     // Create UI renderer (owns UI pipeline internally)
     let ui_renderer = crate::rendering::UIRenderer::new(
-        renderer.context.clone(),
-        renderer.material_cache.clone(),
+        renderer,
         UI_VERTEX_BUFFER_SIZE as u64,
         UI_INDEX_BUFFER_SIZE as u64,
         FONT_ATLAS_SIZE,
@@ -338,30 +337,36 @@ pub fn render_frame(app: &mut Application) {
     // Collect particle dispatches and renders from particle emitters
     let delta_time = app.timer.get_delta() as f32;
 
-    // Get storage descriptor for frame uniforms (before mutable borrow)
-    let storage_descriptor = renderer.storage_descriptor_set.as_ref().map(|s| s.set());
+    // Get storage descriptor handle for frame uniforms
+    let storage_descriptor_handle = renderer.storage_descriptor_handle();
 
     for (_entity, emitter) in app.world.query::<&mut ParticleEmitter>() {
+        // Skip emitters that haven't been registered with the renderer
+        if !emitter.is_registered() {
+            debug!("Skipping unregistered particle emitter");
+            continue;
+        }
+
         // Update emitter (updates frame data buffer)
         emitter.update(delta_time);
 
         // Add compute dispatch for particle simulation
         let dispatch = ParticleDispatch {
-            pipeline: emitter.compute_pipeline(),
-            pipeline_layout: emitter.compute_layout(),
-            descriptor_set: emitter.compute_descriptor(),
+            pipeline: emitter.compute_pipeline_handle(),
+            pipeline_layout: emitter.compute_layout_handle(),
+            descriptor_set: emitter.compute_descriptor_handle(),
             frame_data: [0.0; 4], // Frame data is in uniform buffer
             workgroup_count: emitter.workgroup_count(),
         };
         draw_list.push_particle(dispatch);
 
-        // Add particle render if we have the storage descriptor
-        if let Some(frame_descriptor) = storage_descriptor {
+        // Add particle render if we have the storage descriptor handle
+        if storage_descriptor_handle.is_some() {
             let render = ParticleRender {
-                pipeline: emitter.render_pipeline(),
-                pipeline_layout: emitter.render_layout(),
-                frame_descriptor_set: frame_descriptor,
-                particle_descriptor_set: emitter.render_particle_descriptor(),
+                pipeline: emitter.render_pipeline_handle(),
+                pipeline_layout: emitter.render_layout_handle(),
+                frame_descriptor_set: storage_descriptor_handle,
+                particle_descriptor_set: emitter.render_descriptor_handle(),
                 particle_count: emitter.particle_count(),
             };
             draw_list.push_particle_render(render);

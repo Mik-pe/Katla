@@ -2,7 +2,7 @@ use std::{ffi::CString, rc::Rc};
 
 use ash::vk;
 
-use crate::sync::{VkDescriptorSetLayout, VkPipeline, VkPipelineLayout};
+use crate::sync::{VkDescriptorSetLayout, VkPipeline, VkPipelineLayout, VkRenderPass};
 use crate::vulkan::pipeline_state::{
     BlendFactor, BlendOp, CompareOp, CullMode, DynamicState, FrontFace, PolygonMode,
     PrimitiveTopology,
@@ -377,6 +377,15 @@ impl PipelineBuilder {
             layout: pipeline_layout,
             device: self.context.device.clone(),
         })
+    }
+
+    /// Build a pipeline for dynamic rendering (Vulkan 1.3).
+    ///
+    /// This is a convenience method that creates a pipeline without a render pass,
+    /// suitable for use with dynamic rendering. The color and depth formats must
+    /// be set via `with_rendering_formats()` before calling this method.
+    pub fn build_dynamic(self) -> Result<Pipeline, PipelineError> {
+        self.build(VkRenderPass::from(vk::RenderPass::null()))
     }
 }
 
