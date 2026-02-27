@@ -22,14 +22,14 @@ use crate::render_graph::types::{
 };
 use crate::renderer::DrawList;
 use crate::sync::{VkFramebuffer, VkImage, VkImageView};
-use crate::CommandBuffer;
+use crate::vulkan::context::VulkanContext;
+use crate::vulkan::CommandBuffer;
 use crate::RenderGraphError;
-use crate::VulkanContext;
 
 /// CompiledRenderGraph represents a fully compiled render graph with all Vulkan objects created.
 /// This is the result of the compilation process and can be executed each frame.
 pub struct CompiledRenderGraph {
-    pub context: Rc<VulkanContext>,
+    pub(crate) context: Rc<VulkanContext>,
     pub passes: Vec<CompiledPass>,
     /// Resources map wrapped in RefCell for per-frame updates (e.g., viewport texture double-buffering)
     pub resources: Rc<RefCell<HashMap<ResourceId, CompiledResource>>>,
@@ -64,8 +64,8 @@ pub struct CompiledRenderGraph {
 /// Multiple framebuffers are supported (e.g., one per swapchain image variant).
 pub struct CompiledPass {
     pub name: String,
-    /// Multiple framebuffers - one per swapchain image variant
-    pub vk_framebuffers: Vec<VkFramebuffer>,
+    /// Multiple framebuffers - one per swapchain image variant (internal)
+    pub(crate) vk_framebuffers: Vec<VkFramebuffer>,
     pub extent: Extent2D,
     pub clear_values: Vec<ClearValue>,
     pub category: PassCategory,
@@ -150,7 +150,7 @@ impl CompiledRenderGraph {
     /// NOTE: For swapchain rendering with dynamic rendering (Vulkan 1.3), framebuffers
     /// are NOT created. Dynamic rendering uses vkCmdBeginRendering/vkCmdEndRendering
     /// instead of traditional render passes and framebuffers.
-    pub fn create_swapchain_framebuffers(
+    pub(crate) fn create_swapchain_framebuffers(
         &mut self,
         _swapchain_images: &[(VkImage, VkImageView, Extent2D, vk::Format)],
     ) -> Result<(), RenderGraphError> {
@@ -175,8 +175,8 @@ impl CompiledRenderGraph {
         Ok(())
     }
 
-    /// Compile a render graph into Vulkan objects.
-    pub fn compile(
+    /// Compile a render graph into Vulkan objects (internal).
+    pub(crate) fn compile(
         mut graph: crate::RenderGraph,
         registry: ExecutionRegistry<'static>,
         context: &Rc<VulkanContext>,
@@ -248,7 +248,7 @@ impl CompiledRenderGraph {
     /// resolved at execution time from the storage in VulkanRenderer.
     /// This method is now a no-op since handles are resolved dynamically.
     #[deprecated(note = "Swapchain images are now resolved via handle storage at execution time")]
-    pub fn update_swapchain_image(&mut self, image: VkImage, image_view: VkImageView) {
+    pub(crate) fn update_swapchain_image(&mut self, image: VkImage, image_view: VkImageView) {
         self.current_swapchain_image = Some(image);
         self.current_swapchain_view = Some(image_view);
     }
@@ -787,7 +787,7 @@ impl CompiledRenderGraph {
     /// With handle-based external resources, this method is deprecated.
     /// Update the storage in VulkanRenderer instead - handles resolve at execution time.
     #[deprecated(note = "Update VulkanRenderer's external_images storage instead")]
-    pub fn update_viewport_attachments(
+    pub(crate) fn update_viewport_attachments(
         &mut self,
         _color_image_view: VkImageView,
         _depth_image_view: VkImageView,
@@ -851,7 +851,14 @@ impl CompiledRenderGraph {
             } else {
                 // Transfer/compute pass - no render pass needed
                 debug!("execute: calling execute_pass_transfer for pass {}", i);
-                self.execute_pass_transfer(command_buffer, i, is_last_pass, frame_index, swapchain_images, image_index)?;
+                self.execute_pass_transfer(
+                    command_buffer,
+                    i,
+                    is_last_pass,
+                    frame_index,
+                    swapchain_images,
+                    image_index,
+                )?;
             }
         }
         Ok(())
@@ -914,7 +921,14 @@ impl CompiledRenderGraph {
                     "execute_no_swapchain: calling execute_pass_transfer for pass {}",
                     i
                 );
-                self.execute_pass_transfer(command_buffer, i, is_last_pass, frame_index, &empty_swapchain, image_index)?;
+                self.execute_pass_transfer(
+                    command_buffer,
+                    i,
+                    is_last_pass,
+                    frame_index,
+                    &empty_swapchain,
+                    image_index,
+                )?;
                 debug!(
                     "execute_no_swapchain: execute_pass_transfer for pass {} complete",
                     i
@@ -963,7 +977,7 @@ impl CompiledRenderGraph {
         for resource_id in &pass.transfer_dst_resources {
             // Check if this is the swapchain - use direct array access for current image
             let is_swapchain = self.swapchain_resource_id == Some(*resource_id);
-            
+
             let image = if is_swapchain {
                 // Use the current swapchain image directly from parameters
                 swapchain_images.get(image_index).copied()
@@ -971,8 +985,7 @@ impl CompiledRenderGraph {
                 // For other resources, use normal lookup
                 self.get_image(*resource_id)
             };
-            
-            
+
             if let Some(image) = image {
                 // Use UNDEFINED as old_layout - valid for any current state
                 // (first frame=UNDEFINED, subsequent=PRESENT_SRC_KHR)
@@ -1018,13 +1031,17 @@ impl CompiledRenderGraph {
                 .unwrap()
                 .set_ui_callback(Rc::clone(callback));
         }
-        
+
         // Set current swapchain image/view if this pass uses the swapchain
         if let Some(swapchain_id) = self.swapchain_resource_id {
             if pass.transfer_dst_resources.contains(&swapchain_id) {
                 // Use the stored current swapchain image/view (set by update_swapchain_image)
-                if let (Some(image), Some(view)) = (self.current_swapchain_image, self.current_swapchain_view) {
-                    Rc::get_mut(&mut ctx).unwrap().set_swapchain(swapchain_id, image, view);
+                if let (Some(image), Some(view)) =
+                    (self.current_swapchain_image, self.current_swapchain_view)
+                {
+                    Rc::get_mut(&mut ctx)
+                        .unwrap()
+                        .set_swapchain(swapchain_id, image, view);
                 }
             }
         }
@@ -1036,7 +1053,7 @@ impl CompiledRenderGraph {
         for resource_id in &pass.transfer_dst_resources {
             // Check if this is the swapchain - use direct array access for current image
             let is_swapchain = self.swapchain_resource_id == Some(*resource_id);
-            
+
             let image = if is_swapchain {
                 // Use the current swapchain image directly from parameters
                 swapchain_images.get(image_index).copied()
@@ -1044,7 +1061,7 @@ impl CompiledRenderGraph {
                 // For other resources, use normal lookup
                 self.get_image(*resource_id)
             };
-            
+
             if let Some(image) = image {
                 // Check if this is the swapchain - transition to PRESENT_SRC
                 let (new_layout, dst_stage, dst_access) = if is_swapchain {

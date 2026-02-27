@@ -4,7 +4,8 @@ use crate::render_graph::renderer_context::RendererContext;
 use crate::resource::CompiledResource;
 use crate::sync::{VkBuffer, VkFramebuffer, VkImage, VkImageView};
 use crate::types::{ClearValue, Extent2D, PipelineBindPoint};
-use crate::{CommandBuffer, ResourceId, ResourceUsage};
+use crate::vulkan::CommandBuffer;
+use crate::{ResourceId, ResourceUsage};
 use std::collections::HashMap;
 use std::rc::Rc;
 
@@ -451,8 +452,8 @@ pub struct PassExecutionContext {
     /// Compiled resources available for this pass (wrapped in RefCell for per-frame updates)
     pub resources:
         std::rc::Rc<std::cell::RefCell<std::collections::HashMap<ResourceId, CompiledResource>>>,
-    /// The framebuffer for this pass (legacy render pass only)
-    pub framebuffer: VkFramebuffer,
+    /// The framebuffer for this pass (legacy render pass only) - internal
+    pub(crate) framebuffer: VkFramebuffer,
     /// The current subpass index (0 for simple passes)
     pub subpass: u32,
     /// The render extent (width and height)
@@ -577,7 +578,12 @@ impl PassExecutionContext {
     }
 
     /// Set the current swapchain image, view, and resource ID (called internally before present pass).
-    pub(crate) fn set_swapchain(&mut self, resource_id: ResourceId, image: VkImage, view: VkImageView) {
+    pub(crate) fn set_swapchain(
+        &mut self,
+        resource_id: ResourceId,
+        image: VkImage,
+        view: VkImageView,
+    ) {
         self.swapchain_resource_id = Some(resource_id);
         self.current_swapchain_image = Some(image);
         self.current_swapchain_view = Some(view);
@@ -603,21 +609,24 @@ impl PassExecutionContext {
             Some(CompiledResource::ExternalImage { .. }) => {
                 // For swapchain: use the current image set per-frame (only if resource_id matches)
                 if self.swapchain_resource_id == Some(resource_id) {
-                    if let (Some(image), Some(view)) = (self.current_swapchain_image, self.current_swapchain_view) {
+                    if let (Some(image), Some(view)) =
+                        (self.current_swapchain_image, self.current_swapchain_view)
+                    {
                         return Some((image, view));
                     }
                 }
                 // For other external images: resolve handle via renderer context
-                self.renderer_context
-                    .as_ref()
-                    .and_then(|ctx| {
-                        let handle = self.resources.borrow().get(&resource_id)
+                self.renderer_context.as_ref().and_then(|ctx| {
+                    let handle =
+                        self.resources
+                            .borrow()
+                            .get(&resource_id)
                             .and_then(|r| match r {
                                 CompiledResource::ExternalImage { handle, .. } => Some(*handle),
                                 _ => None,
                             })?;
-                        ctx.get_external_image(handle)
-                    })
+                    ctx.get_external_image(handle)
+                })
             }
             _ => None,
         }
@@ -1012,8 +1021,10 @@ impl PassExecutionContext {
                     );
                 } else {
                     // Non-bindless material - only bind set 0
-                    self.command_buffer
-                        .bind_graphics_descriptors(pipeline.vk_layout(), &[storage_descriptor.into()]);
+                    self.command_buffer.bind_graphics_descriptors(
+                        pipeline.vk_layout(),
+                        &[storage_descriptor.into()],
+                    );
                 }
 
                 // Bind skeleton descriptor (set 2) if present

@@ -369,7 +369,8 @@ impl CommandBuffer {
     /// # Example
     /// ```no_run
     /// # use ash::vk;
-    /// # use katla_vulkan::render_graph::types::{RenderingAttachmentInfo, RenderingInfo, ClearValue, Extent2D, ImageLayout, VkImageView};
+    /// # use katla_vulkan::render_graph::types::{RenderingAttachmentInfo, RenderingInfo, ClearValue, ImageLayout};
+    /// # use katla_vulkan::sync::VkImageView;
     /// # use katla_vulkan::CommandBuffer;
     /// # let command_buffer: CommandBuffer = unsafe { std::mem::zeroed() };
     /// # let color_image_view: VkImageView = unsafe { std::mem::zeroed() };
@@ -384,10 +385,7 @@ impl CommandBuffer {
     /// let rendering_info = RenderingInfo::new()
     ///     .add_color_attachment(color_attachment)
     ///     .depth_attachment(depth_attachment)
-    ///     .render_area(vk::Rect2D {
-    ///         offset: vk::Offset2D { x: 0, y: 0 },
-    ///         extent: vk::Extent2D { width: 1920, height: 1080 },
-    ///     });
+    ///     .layer_count(1);
     ///
     /// command_buffer.begin_rendering(rendering_info);
     /// // ... record draw commands ...

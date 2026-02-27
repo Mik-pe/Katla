@@ -165,7 +165,7 @@ impl Drop for RenderTexture {
     }
 }
 
-pub(crate) struct VulkanContext {
+pub struct VulkanContext {
     _entry: Entry,
     pub instance: Instance,
     pub device: Device,

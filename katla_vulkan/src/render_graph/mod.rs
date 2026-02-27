@@ -12,7 +12,7 @@ pub mod errors;
 pub use builders::RenderGraphHelper;
 pub use compiled::{CompiledPass, CompiledRenderGraph, RenderPassGroup, SubpassDescriptor};
 pub use errors::RenderGraphError;
-pub use frame_resources::{FrameResources, RenderTarget};
+pub use frame_resources::RenderTarget;
 pub use graph::*;
 pub use pass::{Attachment, Pass, PassBuilder, PassCategory, PassExecutionContext};
 pub use renderer_context::{

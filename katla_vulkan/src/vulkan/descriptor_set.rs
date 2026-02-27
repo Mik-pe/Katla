@@ -23,8 +23,8 @@
 use ash::vk;
 use std::rc::Rc;
 
+use super::context::VulkanContext;
 use crate::sync::{VkDescriptorSet, VkDescriptorSetLayout, VkImageView, VkSampler};
-use crate::vulkan::VulkanContext;
 
 /// Resource binding types for descriptor sets.
 #[derive(Clone, Debug)]

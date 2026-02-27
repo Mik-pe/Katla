@@ -17,7 +17,7 @@ pub fn build_render_graph(
     grid_pipeline: Option<PipelineHandle>,
 ) {
     // Get builder with resources pre-registered
-    let (mut builder, resources) = renderer.create_render_graph_with_resources();
+    let (mut builder, resources) = renderer.create_default_render_graph();
 
     // === SKY PASS ===
     // Draw a fullscreen sky using the sky material

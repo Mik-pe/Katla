@@ -2,12 +2,12 @@ use std::{ffi::CString, rc::Rc};
 
 use ash::vk;
 
+use super::super::context::VulkanContext;
 use crate::sync::{VkDescriptorSetLayout, VkPipeline, VkPipelineLayout, VkRenderPass};
 use crate::vulkan::pipeline_state::{
     BlendFactor, BlendOp, CompareOp, CullMode, DynamicState, FrontFace, PolygonMode,
     PrimitiveTopology,
 };
-use crate::VulkanContext;
 
 pub struct PipelineBuilder {
     context: Rc<VulkanContext>,

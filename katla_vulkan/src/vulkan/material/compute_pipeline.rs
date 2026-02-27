@@ -8,8 +8,8 @@
 use ash::vk;
 use std::{ffi::CString, rc::Rc};
 
+use super::super::context::VulkanContext;
 use crate::sync::{VkDescriptorSetLayout, VkPipeline, VkPipelineLayout};
-use crate::VulkanContext;
 
 /// Builder for creating compute pipelines.
 pub struct ComputePipelineBuilder {

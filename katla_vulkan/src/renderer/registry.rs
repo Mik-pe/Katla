@@ -5,7 +5,7 @@
 
 use super::types::*;
 use crate::handle::{MaterialHandle, MeshHandle, PipelineHandle};
-use crate::vulkan::*;
+use crate::{IndexBuffer, VertexBinding, VertexBuffer};
 
 /// Mesh representation containing Vulkan buffers.
 pub struct MeshAsset {
