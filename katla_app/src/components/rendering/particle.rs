@@ -5,8 +5,8 @@
 
 use katla_ecs::Component;
 use katla_vulkan::{
-    ComputePipeline, DescriptorSet, DeviceAddressBuffer, EmitterConfig, MaterialPipeline,
-    ParticleBuffer, VkDescriptorSet, VkPipeline, VkPipelineLayout,
+    ComputePipeline, DescriptorSet, DescriptorSetHandle, DeviceAddressBuffer, EmitterConfig,
+    MaterialPipeline, ParticleBuffer, PipelineHandle, PipelineLayoutHandle,
 };
 
 /// Frame data for compute shader (must match shader struct)
@@ -55,10 +55,26 @@ pub struct ParticleEmitter {
     pub alive_count: u32,
     /// Random seed for this frame
     pub random_seed: u32,
+    /// Registered handle for compute pipeline
+    compute_pipeline_handle: PipelineHandle,
+    /// Registered handle for compute pipeline layout
+    compute_layout_handle: PipelineLayoutHandle,
+    /// Registered handle for compute descriptor set
+    compute_descriptor_handle: DescriptorSetHandle,
+    /// Registered handle for render pipeline
+    render_pipeline_handle: PipelineHandle,
+    /// Registered handle for render pipeline layout
+    render_layout_handle: PipelineLayoutHandle,
+    /// Registered handle for render particle descriptor
+    render_descriptor_handle: DescriptorSetHandle,
 }
 
 impl ParticleEmitter {
     /// Create a new particle emitter.
+    ///
+    /// Note: After creation, you must call `register_with_renderer()` before
+    /// using the emitter for rendering. This registers the pipelines and
+    /// descriptors with the renderer and stores the handles.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         particle_buffer: ParticleBuffer,
@@ -83,7 +99,41 @@ impl ParticleEmitter {
             is_active: true,
             alive_count: 0,
             random_seed: 0,
+            compute_pipeline_handle: PipelineHandle::NONE,
+            compute_layout_handle: PipelineLayoutHandle::NONE,
+            compute_descriptor_handle: DescriptorSetHandle::NONE,
+            render_pipeline_handle: PipelineHandle::NONE,
+            render_layout_handle: PipelineLayoutHandle::NONE,
+            render_descriptor_handle: DescriptorSetHandle::NONE,
         }
+    }
+
+    /// Register pipelines and descriptors with the renderer.
+    ///
+    /// This must be called after creation before the emitter can be used for rendering.
+    /// It registers the compute and render pipelines with the renderer's internal
+    /// storage and stores the handles for later use.
+    pub fn register_with_renderer(&mut self, renderer: &mut katla_vulkan::VulkanRenderer) {
+        // Register compute pipeline resources
+        self.compute_pipeline_handle =
+            renderer.register_particle_pipeline(self.compute_pipeline.pipeline());
+        self.compute_layout_handle =
+            renderer.register_particle_layout(self.compute_pipeline.pipeline_layout());
+        self.compute_descriptor_handle =
+            renderer.register_particle_descriptor(self.compute_descriptor_set.wrapped());
+
+        // Register render pipeline resources
+        self.render_pipeline_handle =
+            renderer.register_particle_pipeline(self.render_pipeline.pipeline());
+        self.render_layout_handle =
+            renderer.register_particle_layout(self.render_pipeline.pipeline_layout());
+        self.render_descriptor_handle =
+            renderer.register_particle_descriptor(self.render_particle_descriptor.wrapped());
+    }
+
+    /// Check if this emitter has been registered with a renderer.
+    pub fn is_registered(&self) -> bool {
+        self.compute_pipeline_handle.is_some()
     }
 
     /// Update the emitter for a frame.
@@ -143,30 +193,30 @@ impl ParticleEmitter {
         self.is_active = active;
     }
 
-    // Compute shader bindings
-    pub fn compute_pipeline(&self) -> VkPipeline {
-        self.compute_pipeline.pipeline()
+    // Compute shader bindings (handles)
+    pub fn compute_pipeline_handle(&self) -> PipelineHandle {
+        self.compute_pipeline_handle
     }
 
-    pub fn compute_layout(&self) -> VkPipelineLayout {
-        self.compute_pipeline.pipeline_layout()
+    pub fn compute_layout_handle(&self) -> PipelineLayoutHandle {
+        self.compute_layout_handle
     }
 
-    pub fn compute_descriptor(&self) -> VkDescriptorSet {
-        self.compute_descriptor_set.wrapped()
+    pub fn compute_descriptor_handle(&self) -> DescriptorSetHandle {
+        self.compute_descriptor_handle
     }
 
-    // Render shader bindings
-    pub fn render_pipeline(&self) -> VkPipeline {
-        self.render_pipeline.pipeline()
+    // Render shader bindings (handles)
+    pub fn render_pipeline_handle(&self) -> PipelineHandle {
+        self.render_pipeline_handle
     }
 
-    pub fn render_layout(&self) -> VkPipelineLayout {
-        self.render_pipeline.pipeline_layout()
+    pub fn render_layout_handle(&self) -> PipelineLayoutHandle {
+        self.render_layout_handle
     }
 
-    pub fn render_particle_descriptor(&self) -> VkDescriptorSet {
-        self.render_particle_descriptor.wrapped()
+    pub fn render_descriptor_handle(&self) -> DescriptorSetHandle {
+        self.render_descriptor_handle
     }
 }
 

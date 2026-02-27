@@ -9,10 +9,13 @@ use katla_math::{Transform, Vec3};
 use katla_vulkan::{
     CompareOp, ComputePipelineBuilder, CullMode, DescriptorSetBuilder, DescriptorSetLayoutBuilder,
     DescriptorType, DeviceAddressBuffer, EmitterConfig, FrontFace, ImageFormat, MaterialPipeline,
-    ParticleBuffer, PipelineBuilder, ShaderModule, ShaderStages, VkRenderPass, VulkanContext,
+    ParticleBuffer, PipelineBuilder, ShaderModule, ShaderStages, VulkanContext,
 };
 
 use crate::components::{NameComponent, ParticleEmitter, TransformComponent};
+
+/// Create a particle emitter entity.
+
 
 /// Create a particle emitter entity.
 ///
@@ -129,7 +132,7 @@ pub fn create_particle_emitter(
             Some(ImageFormat::R16G16B16A16Sfloat),
             Some(ImageFormat::D32SfloatS8Uint),
         )
-        .build(VkRenderPass::default()) // Dynamic rendering
+        .build_dynamic()
         .expect("Failed to create render pipeline");
 
     // MaterialPipeline takes ownership of frame_descriptor_layout

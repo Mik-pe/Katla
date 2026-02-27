@@ -26,5 +26,5 @@ pub use types::{
     Access, AttachmentLoadOp, AttachmentStoreOp, BufferUsage, ClearColor, ClearDepthStencil,
     ClearValue, Extent2D, Extent3D, ImageFormat, ImageLayout, ImageTiling, ImageUsage,
     MemoryProperty, Offset2D, PipelineBindPoint, PipelineStage, Rect2D, RenderingAttachmentInfo,
-    RenderingInfo, SampleCount, ShaderStages, VkImageView,
+    RenderingInfo, SampleCount, ShaderStages,
 };

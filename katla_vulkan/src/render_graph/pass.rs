@@ -580,9 +580,12 @@ impl PassExecutionContext {
             Some(CompiledResource::Image {
                 image, image_view, ..
             }) => Some((*image, *image_view)),
-            Some(CompiledResource::ExternalImage {
-                image, image_view, ..
-            }) => Some((*image, *image_view)),
+            Some(CompiledResource::ExternalImage { handle, .. }) => {
+                // Resolve handle via renderer context
+                self.renderer_context
+                    .as_ref()
+                    .and_then(|ctx| ctx.get_external_image(*handle))
+            }
             _ => None,
         }
     }
@@ -592,7 +595,12 @@ impl PassExecutionContext {
     pub fn get_buffer(&self, resource_id: ResourceId) -> Option<VkBuffer> {
         match self.resources.borrow().get(&resource_id) {
             Some(CompiledResource::Buffer { buffer, .. }) => Some(*buffer),
-            Some(CompiledResource::ExternalBuffer { buffer }) => Some(*buffer),
+            Some(CompiledResource::ExternalBuffer { handle }) => {
+                // Resolve handle via renderer context
+                self.renderer_context
+                    .as_ref()
+                    .and_then(|ctx| ctx.get_external_buffer(*handle))
+            }
             _ => None,
         }
     }
@@ -1000,7 +1008,7 @@ impl PassExecutionContext {
                 // Bind skeleton descriptor (set 2) if present
                 if let Some(skeleton_handle) = draw.skeleton {
                     if let Some(Some(skeleton_desc)) =
-                        skeleton_descriptors.get(skeleton_handle.0 as usize)
+                        skeleton_descriptors.get(skeleton_handle.index() as usize)
                     {
                         self.command_buffer.bind_graphics_descriptors_at(
                             pipeline.vk_layout(),

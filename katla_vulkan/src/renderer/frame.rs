@@ -102,20 +102,45 @@ impl VulkanRenderer {
                 draw_list.particle_dispatches.len()
             );
             for (i, particle) in draw_list.particle_dispatches.iter().enumerate() {
+                // Resolve handles to actual Vulkan objects
+                let pipeline = match self.particle_pipelines.get(particle.pipeline.index()) {
+                    Some(p) => p.vk(),
+                    None => {
+                        log::warn!("render_frame: particle {} has invalid pipeline handle", i);
+                        continue;
+                    }
+                };
+                let layout = match self.particle_layouts.get(particle.pipeline_layout.index()) {
+                    Some(l) => l.vk(),
+                    None => {
+                        log::warn!("render_frame: particle {} has invalid layout handle", i);
+                        continue;
+                    }
+                };
+                let descriptor = match self
+                    .particle_descriptors
+                    .get(particle.descriptor_set.index())
+                {
+                    Some(d) => d.vk(),
+                    None => {
+                        log::warn!("render_frame: particle {} has invalid descriptor handle", i);
+                        continue;
+                    }
+                };
+
                 // Bind compute pipeline and descriptors
-                command_buffer
-                    .bind_pipeline(particle.pipeline.vk(), vk::PipelineBindPoint::COMPUTE);
+                command_buffer.bind_pipeline(pipeline, vk::PipelineBindPoint::COMPUTE);
                 command_buffer.bind_descriptor_sets(
                     vk::PipelineBindPoint::COMPUTE,
-                    particle.pipeline_layout.vk(),
-                    &[particle.descriptor_set.vk()],
+                    layout,
+                    &[descriptor],
                 );
 
                 // Push constants and dispatch
                 unsafe {
                     self.context.device.cmd_push_constants(
                         command_buffer.vk_command_buffer(),
-                        particle.pipeline_layout.vk(),
+                        layout,
                         vk::ShaderStageFlags::COMPUTE,
                         0,
                         bytemuck::cast_slice(&particle.frame_data),

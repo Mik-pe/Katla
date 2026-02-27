@@ -1,23 +1,17 @@
 use super::types::*;
 use super::{RenderGraphBuilder, ResourceId, ResourceKind};
+use crate::handle::ImageHandle;
 
 pub struct SwapchainImageResourceBuilder {
-    image: VkImage,
-    image_view: VkImageView,
+    handle: ImageHandle,
     format: ImageFormat,
     extent: Extent2D,
 }
 
 impl SwapchainImageResourceBuilder {
-    pub fn new(
-        image: VkImage,
-        image_view: VkImageView,
-        format: ImageFormat,
-        extent: Extent2D,
-    ) -> Self {
+    pub fn new(handle: ImageHandle, format: ImageFormat, extent: Extent2D) -> Self {
         Self {
-            image,
-            image_view,
+            handle,
             format,
             extent,
         }
@@ -25,8 +19,7 @@ impl SwapchainImageResourceBuilder {
 
     pub fn build(self) -> ResourceKind {
         ResourceKind::ExternalImage {
-            image: self.image,
-            image_view: self.image_view,
+            handle: self.handle,
             format: self.format,
             extent: self.extent,
         }
@@ -205,8 +198,7 @@ impl RenderGraphHelper for RenderGraphBuilder {
         self.add_resource(
             name,
             ResourceKind::ExternalImage {
-                image: VkImage::from(ash::vk::Image::null()),
-                image_view: VkImageView::from(ash::vk::ImageView::null()),
+                handle: ImageHandle::NONE,
                 format,
                 extent,
             },

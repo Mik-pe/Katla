@@ -1,8 +1,10 @@
 use super::VulkanContext;
 use crate::render_graph::types::ImageFormat;
-use crate::sync::{AccessFlags2, DependencyInfo, ImageMemoryBarrier2, PipelineStage2Flags};
+use crate::sync::{
+    AccessFlags2, DependencyInfo, ImageMemoryBarrier2, PipelineStage2Flags, VkDescriptorSet,
+    VkImage, VkImageView, VkSampler,
+};
 use crate::VulkanFrameCtx;
-use crate::{VkDescriptorSet, VkImage, VkImageView, VkSampler};
 
 use std::mem::ManuallyDrop;
 use std::rc::Rc;
@@ -133,7 +135,11 @@ impl Texture {
         context.create_sampler_repeat_anisotropic().unwrap().into()
     }
 
-    fn convert_rgb_to_rgba(rgb_data: &[u8], width: u32, height: u32) -> Vec<u8> {
+    /// Convert RGB pixel data to RGBA format.
+    ///
+    /// This is useful for loading textures stored as RGB (3 bytes per pixel)
+    /// into the more common RGBA format (4 bytes per pixel).
+    pub fn convert_rgb_to_rgba(rgb_data: &[u8], width: u32, height: u32) -> Vec<u8> {
         let pixel_count = (width * height) as usize;
         let mut rgba_data = Vec::with_capacity(pixel_count * 4);
 
@@ -160,6 +166,29 @@ impl Texture {
             height,
             ImageFormat::R8G8B8A8Srgb,
             &rgba_data,
+        )
+    }
+
+    /// Create a texture from a TextureDescriptor.
+    ///
+    /// This is the preferred method for creating textures when using the
+    /// TextureManager system.
+    ///
+    /// # Arguments
+    /// * `context` - Vulkan context for resource creation
+    /// * `desc` - Texture descriptor specifying dimensions, format, and usage
+    /// * `pixel_data` - Initial pixel data (must match descriptor dimensions and format)
+    pub fn from_descriptor(
+        context: &Rc<VulkanContext>,
+        desc: &crate::texture::TextureDescriptor,
+        pixel_data: &[u8],
+    ) -> Self {
+        Self::create_image(
+            context.clone(),
+            desc.width,
+            desc.height,
+            desc.format,
+            pixel_data,
         )
     }
 

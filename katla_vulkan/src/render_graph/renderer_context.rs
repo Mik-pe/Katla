@@ -6,8 +6,10 @@ use std::rc::Rc;
 
 use ash::khr::push_descriptor::Device as PushDescriptorDevice;
 
+use crate::handle::{BufferHandle, ImageHandle, ResourceStorage};
 use crate::renderer::registry::AssetRegistry;
 use crate::renderer::{DrawList, PipelineHandle};
+use crate::sync::{VkBuffer, VkImage, VkImageView};
 use crate::vulkan::material::{
     MaterialPipeline, SkeletonDescriptorSet, StorageDescriptorSet, StorageUniformManager,
 };
@@ -60,6 +62,10 @@ pub struct RendererContextPointers {
     pub skeleton_descriptors: *const Vec<Option<SkeletonDescriptorSet>>,
     /// Bindless texture manager (read-only during rendering)
     pub bindless_manager: *const BindlessTextureManager,
+    /// External image storage for resolving ImageHandle to (VkImage, VkImageView)
+    pub external_images: *const ResourceStorage<(VkImage, VkImageView)>,
+    /// External buffer storage for resolving BufferHandle to VkBuffer
+    pub external_buffers: *const ResourceStorage<VkBuffer>,
     /// Device handle for Vulkan commands (cloned, not a pointer)
     pub vk_device: Option<ash::Device>,
     /// Push descriptor loader for dynamic descriptor updates
@@ -184,5 +190,33 @@ impl RendererContext {
     /// Get the push descriptor loader.
     pub fn push_descriptor_loader(&self) -> Option<&PushDescriptorDevice> {
         self.pointers.push_descriptor_loader.as_ref()
+    }
+
+    /// Resolve an ImageHandle to (VkImage, VkImageView).
+    /// Returns None if the handle is invalid or storage is not available.
+    pub fn get_external_image(&self, handle: ImageHandle) -> Option<(VkImage, VkImageView)> {
+        if self.pointers.external_images.is_null() {
+            None
+        } else {
+            unsafe {
+                (*self.pointers.external_images)
+                    .get(handle.index())
+                    .copied()
+            }
+        }
+    }
+
+    /// Resolve a BufferHandle to VkBuffer.
+    /// Returns None if the handle is invalid or storage is not available.
+    pub fn get_external_buffer(&self, handle: BufferHandle) -> Option<VkBuffer> {
+        if self.pointers.external_buffers.is_null() {
+            None
+        } else {
+            unsafe {
+                (*self.pointers.external_buffers)
+                    .get(handle.index())
+                    .copied()
+            }
+        }
     }
 }

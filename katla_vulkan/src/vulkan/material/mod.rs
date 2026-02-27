@@ -40,29 +40,30 @@ use ash::vk;
 use std::rc::Rc;
 
 use super::context::VulkanContext;
+use crate::handle::TextureHandle;
 use crate::sync::{VkImageView, VkSampler};
 
 /// PBR texture set containing all texture maps for a PBR material.
 ///
-/// Contains albedo, normal, metallic/roughness, and occlusion textures.
-/// Used to gather texture info before registering with bindless manager.
-#[derive(Clone)]
+/// Contains albedo, normal, metallic/roughness, occlusion, and emission textures.
+/// Uses TextureHandle for opaque texture references.
+#[derive(Clone, Debug)]
 pub struct PbrTextureSet {
-    pub albedo: ImageInfo,
-    pub normal: ImageInfo,
-    pub metallic_roughness: ImageInfo,
-    pub occlusion: ImageInfo,
-    pub emission: ImageInfo,
+    pub albedo: TextureHandle,
+    pub normal: TextureHandle,
+    pub metallic_roughness: TextureHandle,
+    pub occlusion: TextureHandle,
+    pub emission: TextureHandle,
 }
 
 impl PbrTextureSet {
-    /// Create a new PBR texture set from ImageInfo structs.
+    /// Create a new PBR texture set from texture handles.
     pub fn new(
-        albedo: ImageInfo,
-        normal: ImageInfo,
-        metallic_roughness: ImageInfo,
-        occlusion: ImageInfo,
-        emission: ImageInfo,
+        albedo: TextureHandle,
+        normal: TextureHandle,
+        metallic_roughness: TextureHandle,
+        occlusion: TextureHandle,
+        emission: TextureHandle,
     ) -> Self {
         Self {
             albedo,
@@ -73,45 +74,67 @@ impl PbrTextureSet {
         }
     }
 
-    /// Create from raw Vulkan handles using a shared sampler.
-    pub fn from_handles_shared_sampler(
-        albedo_view: vk::ImageView,
-        normal_view: vk::ImageView,
-        mr_view: vk::ImageView,
-        occlusion_view: vk::ImageView,
-        emission_view: vk::ImageView,
-        sampler: vk::Sampler,
-    ) -> Self {
+    /// Create a PBR texture set with default textures.
+    ///
+    /// Uses the TextureManager's default textures for all slots.
+    pub fn with_defaults(tm: &crate::texture::TextureManager) -> Self {
         Self {
-            albedo: ImageInfo::from_raw(albedo_view, sampler),
-            normal: ImageInfo::from_raw(normal_view, sampler),
-            metallic_roughness: ImageInfo::from_raw(mr_view, sampler),
-            occlusion: ImageInfo::from_raw(occlusion_view, sampler),
-            emission: ImageInfo::from_raw(emission_view, sampler),
+            albedo: tm.default_white(),
+            normal: tm.default_normal(),
+            metallic_roughness: tm.default_metallic_roughness(),
+            occlusion: tm.default_occlusion(),
+            emission: tm.default_emission(),
         }
     }
 
-    /// Create from wrapper types using a shared sampler.
-    pub fn from_wrapped_shared_sampler(
-        albedo_view: crate::sync::VkImageView,
-        normal_view: crate::sync::VkImageView,
-        mr_view: crate::sync::VkImageView,
-        occlusion_view: crate::sync::VkImageView,
-        emission_view: crate::sync::VkImageView,
-        sampler: crate::sync::VkSampler,
-    ) -> Self {
-        Self::from_handles_shared_sampler(
-            albedo_view.into(),
-            normal_view.into(),
-            mr_view.into(),
-            occlusion_view.into(),
-            emission_view.into(),
-            sampler.into(),
-        )
+    /// Create a PBR texture set with placeholder handles.
+    ///
+    /// This is for backward compatibility when TextureManager is not available.
+    /// The handles are NONE and should not be used for actual texture lookups.
+    /// Bindless indices are used for actual texture access.
+    pub fn with_placeholder_handles() -> Self {
+        Self {
+            albedo: TextureHandle::NONE,
+            normal: TextureHandle::NONE,
+            metallic_roughness: TextureHandle::NONE,
+            occlusion: TextureHandle::NONE,
+            emission: TextureHandle::NONE,
+        }
+    }
+
+    /// Get all texture handles as an array.
+    pub fn handles(&self) -> [TextureHandle; 5] {
+        [
+            self.albedo,
+            self.normal,
+            self.metallic_roughness,
+            self.occlusion,
+            self.emission,
+        ]
+    }
+
+    /// Register textures with bindless manager and return indices.
+    ///
+    /// Returns [albedo, normal, mr, occlusion, emission] bindless slot indices.
+    pub fn register_bindless(
+        &self,
+        tm: &crate::texture::TextureManager,
+        bindless: &mut crate::vulkan::bindless_texture::BindlessTextureManager,
+    ) -> Option<[u32; 5]> {
+        let albedo_slot = bindless.register_texture(tm.get_view(self.albedo)?)?;
+        let normal_slot = bindless.register_texture(tm.get_view(self.normal)?)?;
+        let mr_slot = bindless.register_texture(tm.get_view(self.metallic_roughness)?)?;
+        let occlusion_slot = bindless.register_texture(tm.get_view(self.occlusion)?)?;
+        let emission_slot = bindless.register_texture(tm.get_view(self.emission)?)?;
+
+        Some([albedo_slot, normal_slot, mr_slot, occlusion_slot, emission_slot])
     }
 }
 
-/// Texture info for bindless texture registration.
+/// Legacy texture info for bindless texture registration.
+///
+/// This type is kept for backward compatibility. Prefer using
+/// PbrTextureSet with TextureHandle instead.
 #[derive(Clone)]
 pub struct ImageInfo {
     pub image_view: vk::ImageView,
@@ -131,6 +154,16 @@ impl ImageInfo {
             image_view,
             sampler,
         }
+    }
+
+    /// Create ImageInfo from a TextureHandle by looking up in TextureManager.
+    pub fn from_handle(
+        handle: TextureHandle,
+        tm: &crate::texture::TextureManager,
+        sampler: VkSampler,
+    ) -> Option<Self> {
+        let view = tm.get_view(handle)?;
+        Some(Self::new(view, sampler))
     }
 }
 

@@ -1,5 +1,10 @@
+use crate::sync::VkImageView;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u32)]
 pub enum ImageFormat {
+    R8Unorm,
+    Rg8Unorm,
     R8G8B8A8Srgb,
     R8G8B8A8Unorm,
     B8G8R8A8Srgb,
@@ -16,6 +21,8 @@ impl ImageFormat {
     /// Returns None if the format is not supported.
     pub fn from_vk(format: ash::vk::Format) -> Option<Self> {
         match format {
+            ash::vk::Format::R8_UNORM => Some(ImageFormat::R8Unorm),
+            ash::vk::Format::R8G8_UNORM => Some(ImageFormat::Rg8Unorm),
             ash::vk::Format::R8G8B8A8_SRGB => Some(ImageFormat::R8G8B8A8Srgb),
             ash::vk::Format::R8G8B8A8_UNORM => Some(ImageFormat::R8G8B8A8Unorm),
             ash::vk::Format::B8G8R8A8_SRGB => Some(ImageFormat::B8G8R8A8Srgb),
@@ -33,6 +40,8 @@ impl ImageFormat {
 impl From<ImageFormat> for ash::vk::Format {
     fn from(format: ImageFormat) -> Self {
         match format {
+            ImageFormat::R8Unorm => ash::vk::Format::R8_UNORM,
+            ImageFormat::Rg8Unorm => ash::vk::Format::R8G8_UNORM,
             ImageFormat::R8G8B8A8Srgb => ash::vk::Format::R8G8B8A8_SRGB,
             ImageFormat::R8G8B8A8Unorm => ash::vk::Format::R8G8B8A8_UNORM,
             ImageFormat::B8G8R8A8Srgb => ash::vk::Format::B8G8R8A8_SRGB,
@@ -132,13 +141,6 @@ impl From<AttachmentStoreOp> for ash::vk::AttachmentStoreOp {
         }
     }
 }
-
-//=============================================================================
-// Vulkan Handle Wrappers - Re-export from sync module
-//=============================================================================
-
-// Re-export wrapper types from sync module for render graph API
-pub use crate::sync::{VkBuffer, VkFramebuffer, VkImage, VkImageView};
 
 //=============================================================================
 // Extent Types

@@ -321,7 +321,6 @@ impl ModelPreviewState {
                 _texture,
                 vertex_binding,
                 pbr_textures,
-                _pbr_refs,
                 texture_indices,
                 emission_index,
                 is_bindless,
