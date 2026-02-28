@@ -25,7 +25,7 @@ use super::SwapchainInfo;
 
 const LAYER_KHRONOS_VALIDATION: &str = concat!("VK_LAYER_KHRONOS_validation", "\0");
 
-use crate::sync::{VkBuffer, VkFramebuffer, VkImage, VkImageView, VkSampler};
+use crate::sync::{VkBuffer, VkImage, VkImageView, VkSampler};
 
 /// Validation message severity level.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]

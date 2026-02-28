@@ -25,7 +25,6 @@
 
 use log::info;
 
-use crate::render_graph::types::{Extent2D, ImageFormat};
 use crate::renderer::DrawList;
 use crate::renderer::ViewportRenderTarget;
 use crate::sync::{
@@ -223,8 +222,6 @@ pub struct Viewport {
     pub output_mode: OutputMode,
     /// Render target (color + depth).
     pub render_target: ViewportRenderTarget,
-    /// Compiled render graph.
-    pub render_graph: Option<CompiledRenderGraph>,
     /// Storage uniform manager for camera.
     pub storage_manager: Option<StorageUniformManager>,
     /// Storage descriptor set.
@@ -263,10 +260,11 @@ impl Viewport {
             extent: builder.extent(),
             output_mode: builder.output_mode,
             render_target,
-            render_graph: None,
+            // Initialize draw list cell so render graph can attach a DrawList later
+            draw_list_cell: Rc::new(RefCell::new(None)),
             storage_manager: None,
             storage_descriptor: None,
-            draw_list_cell: Rc::new(RefCell::new(None)),
+            // No frame uniforms yet
             frame_uniforms: None,
             clear_color: builder.clear_color,
         })

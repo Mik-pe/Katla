@@ -3,7 +3,6 @@
 //! The registry stores meshes and materials internally and provides opaque handles
 //! for referencing them. This keeps ash::vk types contained within katla_vulkan.
 
-use super::types::*;
 use crate::handle::{MaterialHandle, MeshHandle, PipelineHandle};
 use crate::{IndexBuffer, VertexBinding, VertexBuffer};
 

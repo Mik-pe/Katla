@@ -1,0 +1,25 @@
+{
+  "permissions": {
+    "allow": [
+      "Edit",
+      "Bash(cargo:*)",
+      "Bash(git:*)",
+      "Bash(ls:*)",
+      "Bash(find:*)",
+      "Bash(for:*)",
+      "Bash(grep:*)",
+      "Bash(cd:*)",
+      "WebSearch",
+      "Bash(1)",
+      "Bash(RUST_LOG=\"info,katla_app::application=debug\" timeout 5 cargo run:*)",
+      "Bash(RUST_LOG=\"info,katla_app::application=debug,katla_vulkan=debug\" timeout 5 cargo run:*)",
+      "Bash(curl:*)",
+      "mcp__web-reader__webReader",
+      "mcp__web-search-prime__webSearchPrime"
+    ]
+  },
+  "enabledPlugins": {
+    "rust-analyzer-lsp@claude-plugins-official": true
+  },
+  "outputStyle": "Coding Vibes"
+}

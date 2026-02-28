@@ -1,10 +1,7 @@
 use std::path::PathBuf;
 
 use katla_math::Color;
-use katla_vulkan::{
-    DescriptorSetLayoutBuilder, DescriptorType, ShaderStages, TextureDescriptor, VertexBinding,
-    VulkanRenderer,
-};
+use katla_vulkan::{BindlessPbrMaterialConfig, TextureDescriptor, VulkanRenderer};
 
 use crate::rendering::{Material, VertexPBR};
 
@@ -32,17 +29,6 @@ fn generate_checkerboard_pixels(texture_size: u32, checker_size: u32) -> Vec<u8>
     pixels
 }
 
-/// Material configuration for bindless PBR materials.
-#[derive(katla_derive::Material)]
-#[material(shader = "resources/shaders/model_pbr.wgsl", domain = "Surface")]
-#[material(depth_test = true, depth_write = true, cull_backfaces = true)]
-#[material(uses_bindless = true)]
-struct BindlessPbrMaterialConfig {
-    vertex_binding: VertexBinding,
-    shader_path: PathBuf,
-    descriptor_layouts: Vec<DescriptorSetLayoutBuilder>,
-}
-
 /// Create a checkerboard material.
 ///
 /// This function creates a material with a procedurally generated checkerboard texture.
@@ -67,7 +53,7 @@ fn create_checkerboard_material_with_color(
     renderer: &mut VulkanRenderer,
     color: Option<Color>,
 ) -> Material {
-    use katla_vulkan::bindless_texture::{
+    use katla_vulkan::{
         DEFAULT_ALBEDO_SLOT, DEFAULT_AO_SLOT, DEFAULT_EMISSION_SLOT, DEFAULT_MR_SLOT,
         DEFAULT_NORMAL_SLOT,
     };
@@ -105,28 +91,12 @@ fn create_checkerboard_material_with_color(
 
     // Create material config and get pipeline from cache
     let vertex_binding = VertexPBR::get_vertex_binding();
-    let bindless_layout = renderer.bindless_manager().descriptor_layout();
 
-    let config = BindlessPbrMaterialConfig {
-        vertex_binding: vertex_binding.clone(),
-        shader_path: PathBuf::from(PBR_SHADER_PATH),
-        descriptor_layouts: vec![DescriptorSetLayoutBuilder::new()
-            .add_binding(
-                0,
-                DescriptorType::StorageBuffer,
-                ShaderStages::VERTEX_FRAGMENT,
-            )
-            .add_binding(
-                1,
-                DescriptorType::StorageBuffer,
-                ShaderStages::VERTEX_FRAGMENT,
-            )],
-    };
+    let config =
+        BindlessPbrMaterialConfig::new(vertex_binding.clone(), PathBuf::from(PBR_SHADER_PATH));
 
     let material_pipeline = renderer
-        .material_cache
-        .borrow_mut()
-        .get_or_create_bindless(&config, bindless_layout)
+        .create_bindless_material(&config)
         .expect("Failed to create bindless pipeline");
 
     let mut material = Material::from_pipeline_handle(material_pipeline, vertex_binding, true);

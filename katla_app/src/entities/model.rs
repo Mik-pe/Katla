@@ -172,11 +172,11 @@ impl Model {
         transform: Transform,
         material_registry: &std::cell::RefCell<MaterialRegistry>,
     ) -> Self {
-        use katla_vulkan::bindless_texture::{
+        use katla_vulkan::material::PbrTextureSet;
+        use katla_vulkan::{
             DEFAULT_ALBEDO_SLOT, DEFAULT_AO_SLOT, DEFAULT_EMISSION_SLOT, DEFAULT_MR_SLOT,
             DEFAULT_NORMAL_SLOT,
         };
-        use katla_vulkan::material::PbrTextureSet;
 
         // Check if model has skinning
         let has_skinning = model.has_skinning;

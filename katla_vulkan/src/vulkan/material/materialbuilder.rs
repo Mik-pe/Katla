@@ -5,7 +5,6 @@ use super::{
     MaterialDescriptor, MaterialError, MaterialPipeline, PipelineBuilder, ShaderModule,
     ShaderSource,
 };
-use crate::render_graph::types::ShaderStages;
 use crate::vulkan::context::VulkanContext;
 use crate::vulkan::pipeline_state::{CompareOp, CullMode, FrontFace};
 use crate::{ImageFormat, Texture, VertexBinding};

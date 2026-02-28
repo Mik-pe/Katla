@@ -91,9 +91,11 @@ pub struct Application {
     /// UI draw data for current frame (shared with render graph)
     pub(crate) ui_draw_data: Rc<RefCell<Option<crate::rendering::UiDrawData>>>,
     /// Main scene viewport handle
-    pub(crate) main_viewport: Option<katla_vulkan::ViewportHandle>,
+    pub(crate) main_viewport: Option<katla_vulkan::SafeViewportHandle>,
     /// Preview viewport handle (for model preview panel)
-    pub(crate) preview_viewport: Option<katla_vulkan::ViewportHandle>,
+    pub(crate) preview_viewport: Option<katla_vulkan::SafeViewportHandle>,
+    /// Viewport manager for multi-viewport support (new system)
+    pub(crate) viewport_manager: katla_vulkan::ViewportManager,
     /// Background asset loader thread
     pub(crate) background_loader: BackgroundLoader,
     /// Next texture ID for thumbnails (custom IDs start at 100)
@@ -223,11 +225,31 @@ impl ApplicationHandler for Application {
                             } else {
                                 None
                             };
-                            renderer::render_graph::build_render_graph(
-                                renderer,
-                                sky_pipeline,
-                                grid_pipeline,
-                            );
+                            // Get viewport images and rebuild render graph
+                            if let Some(viewport_handle) = self.main_viewport {
+                                if let Some(viewport) =
+                                    self.viewport_manager.get_viewport(viewport_handle)
+                                {
+                                    let extent = viewport.get_extent();
+                                    let viewport_images = katla_vulkan::ViewportImages {
+                                        color_image: viewport.color_image(),
+                                        color_view: viewport.color_view(),
+                                        depth_image: viewport.depth_image(),
+                                        depth_view: viewport.depth_view(),
+                                        extent: katla_vulkan::render_graph::types::Extent2D::new(
+                                            extent.width,
+                                            extent.height,
+                                        ),
+                                    };
+
+                                    renderer::render_graph::build_render_graph(
+                                        renderer,
+                                        viewport_images,
+                                        sky_pipeline,
+                                        grid_pipeline,
+                                    );
+                                }
+                            }
 
                             if let Some(viewport_extent) = renderer.viewport_extent() {
                                 let aspect =

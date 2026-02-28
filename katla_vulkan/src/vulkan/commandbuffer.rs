@@ -4,7 +4,6 @@ use super::{
     vertex_attr_set::VertexAttributeSet, vertex_attribute::AttributeType, vertexbuffer::IndexType,
     CommandPool,
 };
-use crate::render_graph::types::{Rect2D, RenderingInfo, Viewport};
 use crate::sync::{DependencyInfo, VkCommandBuffer};
 
 #[derive(Clone)]
@@ -368,9 +367,7 @@ impl CommandBuffer {
     ///
     /// # Example
     /// ```no_run
-    /// # use ash::vk;
-    /// # use katla_vulkan::render_graph::types::{RenderingAttachmentInfo, RenderingInfo, ClearValue, ImageLayout};
-    /// # use katla_vulkan::sync::VkImageView;
+    /// # use ash::vk;    /// # use katla_vulkan::sync::VkImageView;
     /// # use katla_vulkan::CommandBuffer;
     /// # let command_buffer: CommandBuffer = unsafe { std::mem::zeroed() };
     /// # let color_image_view: VkImageView = unsafe { std::mem::zeroed() };

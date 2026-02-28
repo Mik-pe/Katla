@@ -5,7 +5,6 @@
 
 use ash::vk;
 
-use crate::render_graph::types::ShaderStages;
 use crate::sync::VkDescriptorSetLayout;
 use crate::vulkan::context::VulkanContext;
 use crate::vulkan::pipeline_state::DescriptorType;
@@ -149,7 +148,6 @@ impl DescriptorSetLayoutBuilder {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::render_graph::types::ShaderStages;
     use crate::vulkan::pipeline_state::DescriptorType;
 
     #[test]

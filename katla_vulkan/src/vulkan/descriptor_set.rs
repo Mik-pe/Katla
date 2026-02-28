@@ -78,7 +78,7 @@ impl DescriptorBinding {
 /// Trait for types that expose a Vulkan buffer for descriptor binding.
 ///
 /// Implement this for your buffer types to enable easy descriptor creation.
-pub(crate) trait BufferSource {
+pub trait BufferSource {
     /// Get the Vulkan buffer handle.
     fn buffer(&self) -> crate::sync::VkBuffer;
     /// Get the buffer size in bytes.

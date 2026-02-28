@@ -25,10 +25,10 @@
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 
-use crate::render_graph::types::{ImageFormat, ShaderStages};
 use crate::vulkan::descriptor::{DescriptorBinding, DescriptorSetLayoutBuilder};
 use crate::vulkan::pipeline_state::DescriptorType;
 use crate::vulkan::vertexbinding::VertexBinding;
+use crate::{ImageFormat, ShaderStages};
 
 // Re-export Material trait types for public API
 pub use crate::vulkan::material::descriptor::{RenderState, ShaderSource};
@@ -1076,7 +1076,7 @@ impl MaterialPipelineCache {
         }
 
         let pipeline = self.create_pipeline_for_material(material)?;
-        let handle = PipelineHandle::new(self.storage.insert(pipeline) as u32);
+        let handle = PipelineHandle::new(self.storage.insert(pipeline));
 
         self.cache.insert(key, handle);
         Ok(handle)
@@ -1103,7 +1103,7 @@ impl MaterialPipelineCache {
         }
 
         let pipeline = self.create_bindless_pipeline(material, bindless_layout)?;
-        let handle = PipelineHandle::new(self.storage.insert(pipeline) as u32);
+        let handle = PipelineHandle::new(self.storage.insert(pipeline));
 
         self.cache.insert(key, handle);
         Ok(handle)

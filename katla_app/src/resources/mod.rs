@@ -1,6 +1,12 @@
-//! Resource path management.
+//! Resource management.
 //!
-//! This module provides centralized resource path discovery and management.
+//! This module provides centralized resource path discovery and management,
+//! as well as ECS resources for the editor.
+
+pub mod selection;
+pub mod viewport_state;
+
+// Resource path management (legacy)
 
 use crate::{AppError, AppResult};
 use log::info;

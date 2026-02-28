@@ -63,12 +63,7 @@ impl ComputePipelineBuilder {
     }
 
     /// Add a push constant range.
-    pub fn add_push_constant_range(
-        mut self,
-        stages: crate::render_graph::types::ShaderStages,
-        offset: u32,
-        size: u32,
-    ) -> Self {
+    pub fn add_push_constant_range(mut self, stages: ShaderStages, offset: u32, size: u32) -> Self {
         let vk_stages: vk::ShaderStageFlags = stages.into();
         self.push_constant_ranges.push(
             vk::PushConstantRange::default()

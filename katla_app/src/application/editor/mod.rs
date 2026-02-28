@@ -149,11 +149,29 @@ pub fn render_debug_ui(app: &mut Application, dt: f32) {
             } else {
                 None
             };
-            super::renderer::render_graph::build_render_graph(
-                renderer,
-                sky_pipeline,
-                grid_pipeline,
-            );
+            // Get viewport images and rebuild render graph
+            if let Some(viewport_handle) = app.main_viewport {
+                if let Some(viewport) = app.viewport_manager.get_viewport(viewport_handle) {
+                    let extent = viewport.get_extent();
+                    let viewport_images = katla_vulkan::ViewportImages {
+                        color_image: viewport.color_image(),
+                        color_view: viewport.color_view(),
+                        depth_image: viewport.depth_image(),
+                        depth_view: viewport.depth_view(),
+                        extent: katla_vulkan::render_graph::types::Extent2D::new(
+                            extent.width,
+                            extent.height,
+                        ),
+                    };
+
+                    super::renderer::render_graph::build_render_graph(
+                        renderer,
+                        viewport_images,
+                        sky_pipeline,
+                        grid_pipeline,
+                    );
+                }
+            }
         }
     }
 

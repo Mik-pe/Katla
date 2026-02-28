@@ -14,12 +14,12 @@ pub use plane::*;
 pub use sphere::*;
 pub use torus::*;
 
-use katla_vulkan::context::VulkanContext;
 use katla_vulkan::vulkan::{
     vertex_attr_set::VertexAttributeSet,
     vertex_attribute::{AttributeBinding, AttributeType},
     VertexFormat,
 };
+use katla_vulkan::VulkanContext;
 use katla_vulkan::{self, IndexBuffer, IndexType, MeshHandle, VertexBuffer};
 
 use std::rc::Rc;
