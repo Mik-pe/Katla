@@ -1,7 +1,6 @@
 pub mod error;
 pub mod handle;
 pub mod material;
-pub mod render_graph;
 pub mod renderer;
 pub mod sync;
 pub mod texture;
@@ -9,16 +8,17 @@ pub mod viewport;
 pub mod vulkan;
 
 // Internal re-exports for crate-wide access
-pub(crate) use material::MaterialRegistry;
 pub(crate) use vulkan::bindless_texture::MAX_BINDLESS_TEXTURES;
 pub(crate) use vulkan::context::VulkanFrameCtx;
-pub(crate) use vulkan::material::template::Material;
-pub(crate) use vulkan::material::SkeletonDescriptorSet;
-pub(crate) use vulkan::skeleton_buffer::SkeletonBuffer;
-pub(crate) use vulkan::texture::Texture;
+pub(crate) use vulkan::material::DescriptorLayoutBuilder;
 pub(crate) use vulkan::BindlessTextureManager;
-pub(crate) use vulkan::DescriptorLayoutBuilder;
 pub(crate) use vulkan::SwapData;
+// Now public - needed by katla_app
+pub use material::MaterialRegistry;
+pub use vulkan::material::template::Material;
+pub use vulkan::material::SkeletonDescriptorSet;
+pub use vulkan::skeleton_buffer::SkeletonBuffer;
+pub use vulkan::texture::Texture;
 
 // Public API exports
 pub use error::RendererError;
@@ -32,19 +32,15 @@ pub use material::{
     MaterialDomain, MaterialKey, MaterialPipelineCache, PbrMaterialConfig,
     SkinnedPbrMaterialConfig,
 };
-pub use render_graph::errors::RenderGraphError;
-pub use render_graph::pass::{PassBuilder, PassExecutionContext};
-pub use render_graph::resource::{
-    CompiledResource, ResourceAccessType, ResourceId, ResourceKind, ResourceLifetime, ResourceUsage,
-};
-pub use render_graph::*;
 pub use renderer::{
-    AssetRegistry, DefaultRenderTargets, DrawCall, DrawList, FrameData, FrameUniforms,
-    InstanceData, ParticleDispatch, ParticleRender, VulkanRenderer, FRAMES_IN_FLIGHT,
+    AssetRegistry, DrawCall, DrawList, FrameData, FrameUniforms, InstanceData, ParticleDispatch,
+    ParticleRender, ViewportImages, VulkanRenderer, FRAMES_IN_FLIGHT,
 };
 pub use texture::{TextureDescriptor, TextureManager, TextureUsage};
-pub use viewport::{DepthFormat, OutputMode, ViewportBuilder, ViewportHandle};
-pub use vulkan::context::{ValidationMessage, ValidationMessageType, ValidationSeverity, VulkanContext};
+
+pub use vulkan::context::{
+    ValidationMessage, ValidationMessageType, ValidationSeverity, VulkanContext,
+};
 pub use vulkan::material::storage_uniform::*;
 // Bindless texture constants
 pub use vulkan::bindless_texture::{
@@ -67,7 +63,11 @@ pub use vulkan::material::{
 };
 // Buffer and memory types
 pub use vulkan::bda::DeviceAddressBuffer;
-pub use vulkan::particle_buffer::{EmitterConfig, ParticleBuffer};
+pub use vulkan::material::buffer_descriptor::UniformBuffer;
+pub use vulkan::material::compute_pipeline::ComputePipeline;
+pub use vulkan::particle_buffer::{EmitterConfig, ParticleBuffer, MAX_PARTICLES};
+// Framebuffer (legacy render pass)
+pub use vulkan::frame_buffer::FrameBuffer;
 // Command buffer (needed for render graph execution)
 pub use vulkan::commandbuffer::CommandBuffer;
 // Vulkan wrapper types (these are wrappers, not raw Vulkan types)

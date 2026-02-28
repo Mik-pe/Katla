@@ -93,33 +93,37 @@ pub fn setup_render_graph(app: &mut Application) {
     // Get window size for main viewport
     let viewport_size = app.window.as_ref().unwrap().inner_size();
 
-    // Initialize main viewport using new unified ViewportBuilder API
-    let main_builder = renderer
-        .create_viewport()
+    // Initialize main viewport using ViewportManager
+    let main_builder = katla_vulkan::ViewportBuilder::new()
         .size(viewport_size.width, viewport_size.height)
         .with_depth(katla_vulkan::DepthFormat::D32SfloatS8Uint)
         .clear_color(0.3, 0.5, 0.3, 1.0) // Dark green
         .label("main");
 
-    let main_viewport = renderer
-        .build_viewport(main_builder)
+    let main_viewport = app
+        .viewport_manager
+        .create_viewport(&main_builder, &renderer.context)
         .expect("Failed to create main viewport");
 
     // Store viewport handle in app for later use
     app.main_viewport = Some(main_viewport);
 
     // Register main viewport texture with UI renderer for sampling
-    if let (Some(tex_id), Some(color_view)) = (
-        renderer.viewport_texture_id(main_viewport),
-        renderer.get_viewport_color_view(main_viewport),
+    if let (Some(tex_id), Some(viewport)) = (
+        app.viewport_manager.get_texture_id(main_viewport),
+        app.viewport_manager.get_viewport(main_viewport),
     ) {
+        let color_view = viewport.color_view();
         // Register with UI renderer so it can sample the viewport texture
         // Use TextureId::custom() to get the same ID format the UI will use in draw commands
         let texture_id = katla_ui::TextureId::custom(tex_id);
         if let Some(ref mut ui_renderer) = app.ui_renderer {
             ui_renderer.register_texture(texture_id.0, color_view);
         }
-        app.editor_ui.main_viewport_texture_id = texture_id;
+        app.editor_ui.viewport_texture_ids[0] = Some(texture_id);
+        app.editor_ui
+            .viewport_grid_state
+            .set_viewport_at(0, Some(0)); // Slot 0 uses viewport index 0
         debug!(
             "Registered main viewport texture {} (raw: {}) with UI renderer",
             texture_id.0, tex_id
@@ -133,38 +137,51 @@ pub fn setup_render_graph(app: &mut Application) {
         .expect("Failed to initialize output render target");
 
     // Set camera aspect ratio based on viewport texture size (not window size!)
-    if let Some(extent) = renderer.get_viewport_extent(main_viewport) {
+    if let Some(viewport) = app.viewport_manager.get_viewport(main_viewport) {
+        let extent = viewport.get_extent();
         let aspect = extent.width as f32 / extent.height as f32;
         app.camera
             .borrow_mut()
             .aspect_ratio_changed(&mut app.world, aspect);
     }
 
-    // Setup render graph using the new application-layer API
-    // Pass all pipelines at setup time - render graph stores them internally
-    // UI callback is set at runtime via set_ui_callback() before each frame
-    render_graph::build_render_graph(renderer, sky_pipeline, grid_pipeline);
+    // Get viewport images for render graph
+    let viewport_images = if let Some(viewport) = app.viewport_manager.get_viewport(main_viewport) {
+        let extent = viewport.get_extent();
+        katla_vulkan::ViewportImages {
+            color_image: viewport.color_image(),
+            color_view: viewport.color_view(),
+            depth_image: viewport.depth_image(),
+            depth_view: viewport.depth_view(),
+            extent: katla_vulkan::render_graph::types::Extent2D::new(extent.width, extent.height),
+        }
+    } else {
+        panic!("Main viewport not found in ViewportManager");
+    };
 
-    // Initialize preview viewport using new unified ViewportBuilder API
-    let preview_builder = renderer
-        .create_viewport()
+    render_graph::build_render_graph(renderer, viewport_images, sky_pipeline, grid_pipeline);
+
+    // Initialize preview viewport using ViewportManager
+    let preview_builder = katla_vulkan::ViewportBuilder::new()
         .size(512, 512)
         .with_depth(katla_vulkan::DepthFormat::D32SfloatS8Uint)
         .clear_color(0.15, 0.15, 0.18, 1.0) // Dark gray
         .label("preview");
 
-    let preview_viewport = renderer
-        .build_viewport(preview_builder)
+    let preview_viewport = app
+        .viewport_manager
+        .create_viewport(&preview_builder, &renderer.context)
         .expect("Failed to create preview viewport");
 
     // Store viewport handle in app for later use
     app.preview_viewport = Some(preview_viewport);
 
     // Register preview viewport texture with UI renderer for sampling
-    if let (Some(tex_id), Some(color_view)) = (
-        renderer.viewport_texture_id(preview_viewport),
-        renderer.get_viewport_color_view(preview_viewport),
+    if let (Some(tex_id), Some(viewport)) = (
+        app.viewport_manager.get_texture_id(preview_viewport),
+        app.viewport_manager.get_viewport(preview_viewport),
     ) {
+        let color_view = viewport.color_view();
         // Register with UI renderer so it can sample the preview texture
         // Use TextureId::custom() to get the same ID format the UI will use in draw commands
         let texture_id = katla_ui::TextureId::custom(tex_id);
@@ -520,10 +537,10 @@ pub fn render_frame(app: &mut Application) {
             // Extract camera position
             let cam_pos = preview.camera.position();
 
-            // Update viewport camera using new unified API
+            // Update viewport camera using ViewportManager
             if let Some(viewport_handle) = app.preview_viewport {
                 // Matrices are already column-major from to_array()
-                renderer.update_viewport_camera(
+                app.viewport_manager.update_viewport_camera(
                     viewport_handle,
                     &view.to_array(),
                     &proj.to_array(),
@@ -541,13 +558,14 @@ pub fn render_frame(app: &mut Application) {
                 let mut preview_draw_list = DrawList::new();
                 preview_draw_list.push(preview_draw);
 
-                renderer.set_viewport_draw_list(viewport_handle, preview_draw_list);
+                app.viewport_manager
+                    .set_viewport_draw_list(viewport_handle, preview_draw_list);
             }
         }
-    } else {
         // Clear preview draw list when not active
         if let Some(viewport_handle) = app.preview_viewport {
-            renderer.clear_viewport_draw_list(viewport_handle);
+            app.viewport_manager
+                .clear_viewport_draw_list(viewport_handle);
         }
     }
 

@@ -92,10 +92,6 @@ fn test_context_cleanup_no_errors() {
 /// Note: This test creates its own Rc<VulkanContext> to work with the render graph API.
 #[test]
 fn test_render_graph_cleanup_no_errors() {
-    use katla_vulkan::render_graph::{
-        types::{Extent3D, ImageFormat, ImageLayout, ImageTiling, ImageUsage, SampleCount},
-        Attachment, RenderGraphBuilder, ResourceKind,
-    };
     use std::rc::Rc;
 
     let messages: SharedMessages = Arc::new(Mutex::new(Vec::new()));

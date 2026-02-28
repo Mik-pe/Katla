@@ -6,7 +6,6 @@
 //! - `viewport` - Viewport system management (TODO: extract from lib.rs)
 //! - `ui` - UI buffer and texture management (TODO: extract from lib.rs)
 
-mod frame;
 pub mod registry;
 pub mod types;
 
@@ -24,12 +23,10 @@ use crate::sync::{
     VkDescriptorSet, VkDescriptorSetLayout, VkFence, VkImage, VkImageView, VkSampler, VkSemaphore,
 };
 use crate::{
-    render_graph, viewport::Viewport, Attachment, BindlessTextureManager, CompiledRenderGraph,
-    DescriptorLayoutBuilder, IndexBuffer, Material, MaterialPipelineCache, MaterialRegistry,
-    RenderGraphBuilder, RenderGraphError, RendererError, ResourceId, ResourceKind, SkeletonBuffer,
-    SkeletonDescriptorSet, StorageDescriptorSet, StorageUniformManager, SwapData, TextureManager,
-    VertexBinding, VertexBuffer, ViewportBuilder, ViewportHandle, VulkanContext, VulkanFrameCtx,
-    MAX_BINDLESS_TEXTURES,
+    viewport::Viewport, BindlessTextureManager, DescriptorLayoutBuilder, IndexBuffer, Material,
+    MaterialPipelineCache, MaterialRegistry, RendererError, SkeletonBuffer, SkeletonDescriptorSet,
+    StorageDescriptorSet, StorageUniformManager, SwapData, TextureManager, VertexBinding,
+    VertexBuffer, VulkanContext, VulkanFrameCtx, MAX_BINDLESS_TEXTURES,
 };
 use ash::vk;
 use log::{error, info, warn};
@@ -69,8 +66,6 @@ pub struct VulkanRenderer {
     /// Centralized texture manager for handle-based texture creation.
     /// Provides a clean API for creating and looking up textures by handle.
     pub texture_manager: TextureManager,
-    /// The render graph - single graph with multiple framebuffers (one per swapchain image)
-    pub render_graph: Option<CompiledRenderGraph>,
     /// Storage uniform manager for storage buffer-based uniforms.
     /// Materials use storage buffers with instance indexing.
     pub storage_manager: StorageUniformManager,
@@ -112,21 +107,22 @@ pub struct VulkanRenderer {
 
 pub const FRAMES_IN_FLIGHT: usize = 2;
 
-/// Default render targets for a typical rendering pipeline.
+/// Viewport images for render graph creation.
 ///
-/// This struct provides pre-configured render targets for common
-/// rendering setups. Applications can use these directly or create
-/// their own custom configurations using `RenderGraphBuilder::new()`.
-#[derive(Clone, Debug)]
-pub struct DefaultRenderTargets {
-    /// The swapchain image (presentation target)
-    pub swapchain: render_graph::RenderTarget,
-    /// The viewport color attachment (main scene render target)
-    pub viewport_color: render_graph::RenderTarget,
-    /// The viewport depth attachment (main scene depth buffer)
-    pub viewport_depth: render_graph::RenderTarget,
-    /// The output color attachment (UI composition target)
-    pub output_color: render_graph::RenderTarget,
+/// This struct holds the image and image view handles needed to create
+/// a render graph with a viewport.
+#[derive(Clone)]
+pub struct ViewportImages {
+    /// Color attachment image.
+    pub color_image: VkImage,
+    /// Color attachment image view.
+    pub color_view: VkImageView,
+    /// Depth attachment image.
+    pub depth_image: VkImage,
+    /// Depth attachment image view.
+    pub depth_view: VkImageView,
+    /// Viewport extent.
+    pub extent: Extent2D,
 }
 
 impl VulkanRenderer {
@@ -232,7 +228,6 @@ impl VulkanRenderer {
             material_cache: Rc::new(RefCell::new(MaterialPipelineCache::new(context.clone()))),
             bindless_manager,
             texture_manager,
-            render_graph: None,
             storage_manager,
             storage_descriptor_set,
             draw_list_cell: Rc::new(RefCell::new(None)),
@@ -322,25 +317,6 @@ impl VulkanRenderer {
     /// * `uniforms` - Frame uniforms containing view/proj matrices, camera position, and lighting
     pub fn set_frame_uniforms(&mut self, uniforms: FrameUniforms) {
         self.frame_uniforms = Some(uniforms);
-    }
-
-    /// Set UI draw callback for the render graph.
-    ///
-    /// This should be called each frame before render_frame() to provide
-    /// a callback that will draw the UI during the UI pass.
-    pub fn set_ui_callback(&mut self, callback: Rc<dyn Fn(&render_graph::PassExecutionContext)>) {
-        if let Some(ref mut graph) = self.render_graph {
-            graph.set_ui_callback(callback);
-        }
-    }
-
-    /// Clear the UI draw callback.
-    ///
-    /// Call this when there's no UI to render to prevent stale callbacks.
-    pub fn clear_ui_callback(&mut self) {
-        if let Some(ref mut graph) = self.render_graph {
-            graph.clear_ui_callback();
-        }
     }
 
     /// Update frame uniforms in storage buffer.
@@ -500,10 +476,10 @@ impl VulkanRenderer {
     }
 
     /// Get output dimensions.
-    pub fn output_extent(&self) -> Option<render_graph::types::Extent2D> {
+    pub fn output_extent(&self) -> Option<Extent2D> {
         self.output_target
             .as_ref()
-            .map(|t| render_graph::types::Extent2D::from(t.extent))
+            .map(|t| Extent2D::from(t.extent))
     }
 
     // ========================================================================
@@ -603,9 +579,9 @@ impl VulkanRenderer {
     }
 
     /// Get viewport dimensions.
-    pub fn viewport_extent(&self) -> Option<render_graph::types::Extent2D> {
+    pub fn viewport_extent(&self) -> Option<Extent2D> {
         self.get_render_target_first(Self::VIEWPORT_TEXTURE_ID)
-            .map(|t| render_graph::types::Extent2D::from(t.extent))
+            .map(|t| Extent2D::from(t.extent))
     }
 
     // ========================================================================
@@ -626,154 +602,6 @@ impl VulkanRenderer {
     /// ```
     pub fn create_viewport(&self) -> ViewportBuilder {
         ViewportBuilder::new()
-    }
-
-    /// Build a viewport from a builder configuration.
-    ///
-    /// This creates everything needed for rendering:
-    /// - Render target (color + depth textures)
-    /// - Storage uniform manager (independent camera)
-    /// - Render graph with sky and geometry passes
-    ///
-    /// After building, use:
-    /// - `set_viewport_camera()` to set the view/projection
-    /// - `set_viewport_draw_list()` to set what to render
-    /// - `viewport_texture_id()` to get the texture for UI display
-    pub fn build_viewport(
-        &mut self,
-        builder: ViewportBuilder,
-    ) -> Result<ViewportHandle, RenderGraphError> {
-        // 1. Create the render target
-        let mut viewport = Viewport::new(&builder, &self.context)?;
-        let handle = ViewportHandle::new(self.viewports.len());
-
-        // 2. Initialize storage manager for independent camera
-        let manager = StorageUniformManager::new(self.context.clone()).map_err(|e| {
-            RenderGraphError::CompilationError(format!("Failed to create storage: {:?}", e))
-        })?;
-
-        let uniform_set_layout = DescriptorLayoutBuilder::new()
-            .add_binding(
-                0,
-                vk::DescriptorType::STORAGE_BUFFER,
-                vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT,
-                1,
-            )
-            .add_binding(
-                1,
-                vk::DescriptorType::STORAGE_BUFFER,
-                vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT,
-                1,
-            )
-            .build(&self.context.device)
-            .map_err(|e| {
-                RenderGraphError::CompilationError(format!("Failed to create layout: {:?}", e))
-            })?;
-
-        let descriptor_set = manager
-            .create_descriptor_set(
-                &self.context,
-                VkDescriptorSetLayout::new(uniform_set_layout),
-            )
-            .map_err(|e| {
-                RenderGraphError::CompilationError(format!("Failed to create descriptor: {:?}", e))
-            })?;
-
-        // Clean up the layout (descriptor set holds a reference)
-        unsafe {
-            self.context
-                .device
-                .destroy_descriptor_set_layout(uniform_set_layout, None);
-        }
-
-        viewport.storage_manager = Some(manager);
-        viewport.storage_descriptor = Some(descriptor_set);
-
-        // 3. Build render graph for this viewport (sky + geometry → viewport texture)
-        // All viewports use the same simple render graph that renders to their texture
-        let render_graph = self.build_viewport_render_graph(&viewport, handle);
-        viewport.render_graph = render_graph;
-
-        // 4. Store viewport
-        self.viewports.push(viewport);
-
-        info!("Viewport '{}' created", builder.get_label());
-        Ok(handle)
-    }
-
-    /// Build render graph for a viewport (sky + geometry passes → viewport texture).
-    fn build_viewport_render_graph(
-        &mut self,
-        viewport: &Viewport,
-        handle: ViewportHandle,
-    ) -> Option<CompiledRenderGraph> {
-        use crate::render_graph::types::ImageFormat;
-
-        let mut graph_builder = RenderGraphBuilder::new();
-
-        // Register viewport images and get handles
-        let color_handle =
-            self.register_external_image(viewport.color_image(), viewport.color_view());
-        let depth_handle =
-            self.register_external_image(viewport.depth_image(), viewport.depth_view());
-
-        // Add viewport color resource
-        let viewport_color = graph_builder.add_resource(
-            format!("{}_color", viewport.label),
-            ResourceKind::ExternalImage {
-                handle: color_handle,
-                format: ImageFormat::R16G16B16A16Sfloat,
-                extent: viewport.extent,
-            },
-        );
-
-        // Add viewport depth resource
-        let viewport_depth = graph_builder.add_resource(
-            format!("{}_depth", viewport.label),
-            ResourceKind::ExternalImage {
-                handle: depth_handle,
-                format: ImageFormat::D32SfloatS8Uint,
-                extent: viewport.extent,
-            },
-        );
-
-        // Store pointers for closures
-        let viewport_index = handle.0;
-        let clear_color = viewport.clear_color;
-
-        // === SKY PASS ===
-        // Note: Layout transitions are handled automatically by execute_pass_dynamic
-        // No pre_execute callback needed - the render graph manages barriers
-        let p_color = viewport_color;
-        let p_depth = viewport_depth;
-        graph_builder.add_pass("viewport_sky_pass", move |pass| {
-            pass.write(Attachment::Color(p_color))
-                .write(Attachment::DepthStencil(p_depth))
-                .clear_color(p_color, clear_color)
-                .clear_depth_stencil(p_depth, 0.0, 0)
-                .execute("viewport_sky_pass", move |ctx| {
-                    // Sky rendering handled by geometry pass for now
-                    // (simplified - just clear and move on)
-                    let _ = ctx;
-                });
-        });
-
-        // === GEOMETRY PASS ===
-        let p_color = viewport_color;
-        let p_depth = viewport_depth;
-        let viewport_index_capture = viewport_index;
-
-        graph_builder.add_pass("viewport_geometry_pass", move |pass| {
-            pass.write(Attachment::Color(p_color))
-                .write(Attachment::DepthStencil(p_depth))
-                .execute("viewport_geometry_pass", move |ctx| {
-                    // Geometry rendering is handled externally via render_viewport()
-                    // This pass just ensures proper barriers are in place
-                    let _ = (ctx, viewport_index_capture);
-                });
-        });
-
-        graph_builder.build(&self.context).ok()
     }
 
     /// Get the number of viewports.
@@ -807,10 +635,7 @@ impl VulkanRenderer {
     }
 
     /// Get the viewport extent (by handle).
-    pub fn get_viewport_extent(
-        &self,
-        handle: ViewportHandle,
-    ) -> Option<crate::render_graph::types::Extent2D> {
+    pub fn get_viewport_extent(&self, handle: ViewportHandle) -> Option<crate::Extent2D> {
         self.viewports.get(handle.0).map(|v| v.get_extent())
     }
 
@@ -891,9 +716,6 @@ impl VulkanRenderer {
         // Destroy all viewports (Drop handles cleanup for ViewportRenderTarget)
         self.viewports.clear();
 
-        // Destroy render graph (holds framebuffers and resources)
-        self.render_graph = None;
-
         // Destroy all registered assets first (materials, meshes)
         self.asset_registry.destroy();
 
@@ -930,64 +752,10 @@ impl VulkanRenderer {
 
         let new_extent = self.frame_context.swapchain.get_extent();
         info!("  New extent: {}x{}", new_extent.width, new_extent.height);
-
-        if let Some(ref mut graph) = self.render_graph {
-            let extent_vk = self.frame_context.swapchain.get_extent();
-            let new_extent =
-                crate::render_graph::types::Extent2D::new(extent_vk.width, extent_vk.height);
-            for pass in &mut graph.passes {
-                pass.extent = new_extent;
-            }
-
-            // Destroy old framebuffers
-            for pass in &graph.passes {
-                for framebuffer in &pass.vk_framebuffers {
-                    unsafe {
-                        self.context
-                            .device
-                            .destroy_framebuffer(framebuffer.vk(), None);
-                    }
-                }
-            }
-
-            // Get the new depth texture image view (depth texture is recreated during swapchain recreation)
-            let _new_depth_view = self.frame_context.depth_render_texture.image_view.vk();
-
-            // No passes render directly to swapchain with color attachments anymore.
-            // - sky_pass and geometry_pass render to viewport/output texture
-            // - ui_pass renders to output texture
-            // - present_pass uses transfer operations (blit) to copy output to swapchain
-            // Therefore, no swapchain attachment updates are needed here.
-        }
     }
 
     pub fn num_images(&self) -> usize {
         self.frame_context.swapchain_image_views.len()
-    }
-
-    /// Create a depth resource for the render graph.
-    /// Returns a ResourceId for the depth texture that can be used in render graph passes.
-    pub fn create_depth_resource(&mut self, builder: &mut RenderGraphBuilder) -> ResourceId {
-        // Use the actual depth texture format to ensure compatibility
-        use crate::render_graph::types::{Extent2D, ImageFormat};
-
-        let depth_format = self.frame_context.depth_render_texture.format;
-        let extent = self.frame_context.swapchain.get_extent();
-
-        // Register the depth image and get a handle
-        let depth_handle = self.register_external_image(
-            self.frame_context.depth_render_texture.image,
-            self.frame_context.depth_render_texture.image_view,
-        );
-
-        builder.add_resource(
-            "depth",
-            ResourceKind::ExternalImage {
-                handle: depth_handle,
-                format: ImageFormat::from_vk(depth_format).expect("Unsupported depth format"),
-                extent: Extent2D::new(extent.width, extent.height),
-            },
-        )
     }
 
     /// Create a mesh from vertex and index data.
@@ -1306,220 +1074,6 @@ impl VulkanRenderer {
         self.skeleton_descriptors
             .get(handle.index() as usize)?
             .as_ref()
-    }
-
-    // ========================================================================
-    // Render Graph Infrastructure (Generic)
-    // ========================================================================
-
-    /// Set the main render graph for rendering.
-    ///
-    /// The application builds its own render graph with the passes it needs,
-    /// then passes it here. VulkanRenderer executes it during `render_frame()`.
-    ///
-    /// This makes the render graph generic - VulkanRenderer doesn't know about
-    /// any application-specific passes.
-    pub fn set_render_graph(&mut self, graph: CompiledRenderGraph) {
-        self.render_graph = Some(graph);
-    }
-
-    /// Get a reference to the main render graph.
-    pub fn render_graph(&self) -> Option<&CompiledRenderGraph> {
-        self.render_graph.as_ref()
-    }
-
-    /// Get a mutable reference to the main render graph.
-    pub fn render_graph_mut(&mut self) -> Option<&mut CompiledRenderGraph> {
-        self.render_graph.as_mut()
-    }
-
-    // ========================================================================
-    // Rendering Configuration (High-level API - application doesn't deal with Vulkan)
-    // ========================================================================
-
-    // ========================================================================
-    // Render Graph Building (Application owns passes)
-    // ========================================================================
-
-    /// Create a render graph builder with default resources pre-registered.
-    /// Create a render graph builder with default resources pre-registered.
-    ///
-    /// This creates a builder with swapchain, viewport, and output resources
-    /// already added. The returned `DefaultRenderTargets` contains handles for
-    /// referencing these resources in pass definitions.
-    ///
-    /// This is an opinionated convenience method for common rendering setups.
-    /// For full control, use `RenderGraphBuilder::new()` directly.
-    ///
-    /// # Example
-    ///
-    /// ```ignore
-    /// let (mut builder, targets) = renderer.create_default_render_graph();
-    ///
-    /// // Add passes using targets
-    /// builder.add_pass("sky_pass", |pass| {
-    ///     pass.write_color(&targets.viewport_color)
-    ///         .clear_color([0.4, 0.6, 0.9, 1.0]);
-    /// });
-    ///
-    /// // Compile the graph with swapchain ID for proper layout transitions
-    /// renderer.compile_render_graph(builder, Some(targets.swapchain.resource_id()))?;
-    /// ```
-    pub fn create_default_render_graph(&mut self) -> (RenderGraphBuilder, DefaultRenderTargets) {
-        use crate::render_graph::types::{Extent2D, ImageFormat};
-
-        let mut builder = RenderGraphBuilder::new();
-
-        // Get swapchain info
-        let swapchain_format = self.frame_context.swapchain.format.format;
-        let swapchain_extent = self.frame_context.swapchain.get_extent();
-
-        // Register swapchain image and get handle
-        let swapchain_handle = self.register_external_image(
-            self.frame_context.swapchain_images[0],
-            self.frame_context.swapchain_image_views[0],
-        );
-
-        // Add swapchain resource
-        let swapchain_id = builder.add_resource(
-            "swapchain",
-            ResourceKind::ExternalImage {
-                handle: swapchain_handle,
-                format: ImageFormat::from_vk(swapchain_format)
-                    .expect("Unsupported swapchain format"),
-                extent: Extent2D::new(swapchain_extent.width, swapchain_extent.height),
-            },
-        );
-
-        // Add viewport resources if available
-        let (viewport_color_id, viewport_depth_id) = if let Some(viewport) = self.viewports.first()
-        {
-            // Extract data we need before mutably borrowing self
-            let color_image = viewport.color_image();
-            let color_view = viewport.color_view();
-            let depth_image = viewport.depth_image();
-            let depth_view = viewport.depth_view();
-            let extent = viewport.extent;
-
-            let color_handle = self.register_external_image(color_image, color_view);
-            let depth_handle = self.register_external_image(depth_image, depth_view);
-
-            let color = builder.add_resource(
-                "viewport_color",
-                ResourceKind::ExternalImage {
-                    handle: color_handle,
-                    format: ImageFormat::R16G16B16A16Sfloat,
-                    extent,
-                },
-            );
-            let depth = builder.add_resource(
-                "viewport_depth",
-                ResourceKind::ExternalImage {
-                    handle: depth_handle,
-                    format: ImageFormat::D32SfloatS8Uint,
-                    extent,
-                },
-            );
-            (color, depth)
-        } else {
-            // Fallback: use placeholder IDs (will need proper depth buffer later)
-            let depth_id = self.create_depth_resource(&mut builder);
-            // In legacy mode, output_color is the same as viewport_color
-            (swapchain_id, depth_id)
-        };
-
-        // Add output resource if available
-        let output_id = if let Some(ref output) = self.output_target {
-            let output_image: crate::sync::VkImage = output.color_image.into();
-            let output_view: crate::sync::VkImageView = output.color_image_view.into();
-            let output_extent = output.extent;
-            let output_handle = self.register_external_image(output_image, output_view);
-            builder.add_resource(
-                "output_color",
-                ResourceKind::ExternalImage {
-                    handle: output_handle,
-                    format: ImageFormat::R16G16B16A16Sfloat,
-                    extent: Extent2D::new(output_extent.width, output_extent.height),
-                },
-            )
-        } else {
-            // No output target - use viewport color directly
-            viewport_color_id
-        };
-
-        let targets = DefaultRenderTargets {
-            swapchain: render_graph::RenderTarget::new(swapchain_id),
-            viewport_color: render_graph::RenderTarget::new(viewport_color_id),
-            viewport_depth: render_graph::RenderTarget::new(viewport_depth_id),
-            output_color: render_graph::RenderTarget::new(output_id),
-        };
-
-        (builder, targets)
-    }
-
-    /// Compile a render graph from a builder.
-    ///
-    /// This builds the render graph and stores it internally for execution.
-    /// After calling this, the graph can be executed each frame via `render_frame()`.
-    ///
-    /// # Arguments
-    /// * `builder` - The render graph builder containing passes and resources
-    /// * `swapchain_resource_id` - Optional ResourceId of the swapchain for proper layout transitions
-    pub fn compile_render_graph(
-        &mut self,
-        builder: RenderGraphBuilder,
-        swapchain_resource_id: Option<render_graph::ResourceId>,
-    ) -> Result<(), render_graph::RenderGraphError> {
-        let mut graph = builder.build(&self.context)?;
-
-        // Set up renderer context for safe access to renderer state
-        let renderer_context = self.create_renderer_context();
-        graph.set_renderer_context(Rc::new(renderer_context));
-
-        // Share draw list cell with compiled render graph
-        graph.set_draw_list_cell(self.draw_list_cell.clone());
-
-        // Set swapchain resource ID for proper layout transitions during present
-        if let Some(id) = swapchain_resource_id {
-            graph.set_swapchain_resource_id(id);
-        }
-
-        self.render_graph = Some(graph);
-        Ok(())
-    }
-
-    /// Create a RendererContext for the current renderer state.
-    ///
-    /// This is used to safely pass renderer state to render graph passes
-    /// without requiring unsafe pointer patterns.
-    fn create_renderer_context(&mut self) -> render_graph::RendererContext {
-        // SAFETY: These pointers are valid for the lifetime of VulkanRenderer.
-        // The render graph is stored in VulkanRenderer and will not outlive it.
-        //
-        // For material_cache: We only read from the cache during rendering.
-        // All mutations to the cache happen outside of rendering (during material creation).
-        // The cache is wrapped in Rc<RefCell<>> for sharing with other renderers,
-        // but during render graph execution we have exclusive access for reading.
-        let material_cache_ptr = {
-            let cache = self.material_cache.borrow();
-            &*cache as *const _
-        };
-
-        render_graph::RendererContext {
-            pointers: render_graph::RendererContextPointers {
-                asset_registry: std::ptr::addr_of!(self.asset_registry) as *const _,
-                material_cache: material_cache_ptr,
-                storage_manager: &mut self.storage_manager as *mut _,
-                storage_descriptor_set: &self.storage_descriptor_set as *const _,
-                skeleton_descriptors: std::ptr::addr_of!(self.skeleton_descriptors),
-                bindless_manager: &self.bindless_manager as *const _,
-                external_images: std::ptr::addr_of!(self.external_images),
-                external_buffers: std::ptr::addr_of!(self.external_buffers),
-                vk_device: Some(self.context.device.clone()),
-                push_descriptor_loader: Some(self.context.push_descriptor_loader.clone()),
-            },
-            draw_list: self.draw_list_cell.clone(),
-        }
     }
 }
 

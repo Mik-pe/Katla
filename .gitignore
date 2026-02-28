@@ -11,3 +11,4 @@ imgui.ini
 *.pdb
 *.exe
 *.dll
+.sisyphus

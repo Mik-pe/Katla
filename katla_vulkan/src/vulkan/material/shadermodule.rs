@@ -74,7 +74,7 @@ impl ShaderModule {
     pub fn from_wgsl_string_wrapped(
         device: Device,
         wgsl_str: &str,
-        stage: crate::render_graph::types::ShaderStages,
+        stage: ShaderStages,
         entry_point: impl Into<String>,
     ) -> Result<Self, ShaderError> {
         let vk_stage: vk::ShaderStageFlags = stage.into();

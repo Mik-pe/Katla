@@ -222,8 +222,8 @@ impl PipelineBuilder {
 
     pub fn with_rendering_formats(
         mut self,
-        color_format: Option<crate::render_graph::types::ImageFormat>,
-        depth_format: Option<crate::render_graph::types::ImageFormat>,
+        color_format: Option<ImageFormat>,
+        depth_format: Option<ImageFormat>,
     ) -> Self {
         self.color_format = color_format.map(|f| f.into());
         self.depth_format = depth_format.map(|f| f.into());

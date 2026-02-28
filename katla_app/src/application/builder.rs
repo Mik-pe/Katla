@@ -223,6 +223,7 @@ impl ApplicationBuilder {
             ui_draw_data: Rc::new(RefCell::new(None)),
             main_viewport: None,
             preview_viewport: None,
+            viewport_manager: katla_vulkan::ViewportManager::new(),
             background_loader: BackgroundLoader::new(),
             next_thumbnail_texture_id: 100, // Custom texture IDs start at 100
             thumbnail_texture_ids: HashMap::new(),

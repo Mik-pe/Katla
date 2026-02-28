@@ -5,7 +5,6 @@
 //! for common use cases.
 
 use crate::handle::{ResourceStorage, TextureHandle};
-use crate::render_graph::types::ImageFormat;
 use crate::sync::VkImageView;
 use crate::vulkan::context::VulkanContext;
 use crate::vulkan::texture::Texture;
@@ -13,7 +12,7 @@ use ash::vk;
 use std::collections::HashMap;
 use std::rc::Rc;
 
-use super::descriptor::{TextureDescriptor, TextureUsage};
+use super::descriptor::TextureDescriptor;
 
 /// Default texture slot indices.
 /// These match BindlessTextureManager's default slots for consistency.
@@ -224,8 +223,7 @@ impl TextureManager {
     pub fn get_texture_mut(&mut self, handle: TextureHandle) -> Option<&mut Texture> {
         self.textures
             .get_mut(handle.index())
-            .map(|rc| Rc::get_mut(rc))
-            .flatten()
+            .and_then(|rc| Rc::get_mut(rc))
     }
 
     /// Check if a handle points to a valid texture.
@@ -321,6 +319,7 @@ impl TextureManager {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::TextureUsage;
 
     #[test]
     fn test_texture_descriptor_default() {

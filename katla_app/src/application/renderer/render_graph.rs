@@ -3,23 +3,29 @@
 //! This module defines the render graph passes that the application needs.
 //! The application just says "draw stuff" and katla_vulkan handles the complexity.
 
-use katla_vulkan::{PipelineHandle, VulkanRenderer};
-
+use katla_vulkan::{PipelineHandle, ViewportImages, VulkanRenderer};
 /// Build the render graph with all application passes.
 ///
 /// This function creates the render graph with sky, grid, geometry, composite, UI, and present passes.
 /// The API is simple - just tell each pass what to draw.
 ///
 /// UI rendering is handled via callback set at runtime via `renderer.set_ui_callback()`.
+///
+/// # Arguments
+/// * `renderer` - The Vulkan renderer
+/// * `viewport_images` - The viewport color and depth images to render to
+/// * `sky_pipeline` - Optional sky rendering pipeline
+/// * `grid_pipeline` - Optional grid rendering pipeline
 pub fn build_render_graph(
     renderer: &mut VulkanRenderer,
+    viewport_images: ViewportImages,
     sky_pipeline: Option<PipelineHandle>,
     grid_pipeline: Option<PipelineHandle>,
 ) {
-    // Get builder with resources pre-registered
-    let (mut builder, resources) = renderer.create_default_render_graph();
+    // Get builder with resources pre-registered (using explicit viewport images)
+    let (mut builder, resources) =
+        renderer.create_default_render_graph_with_viewport(viewport_images);
 
-    // === SKY PASS ===
     // Draw a fullscreen sky using the sky material
     if let Some(sky_pipeline) = sky_pipeline {
         builder.add_pass("sky_pass", move |pass| {

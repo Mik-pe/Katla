@@ -16,6 +16,7 @@ mod preferences;
 mod status_bar;
 mod toolbar;
 mod viewport;
+mod viewport_grid;
 
 use katla_ecs::EntityId;
 use katla_math::{Color, Rect2D, Vec2, Vec3};
@@ -23,6 +24,7 @@ use katla_ui::{DrawList, FontSize, TextureId, UiContext};
 use std::path::PathBuf;
 
 use crate::{
+    resources::viewport_state::ViewportGridState,
     ui::{
         editor_ui::hierarchy::HierarchyState,
         editor_ui::preferences::{
@@ -171,8 +173,10 @@ pub struct EditorUI {
     pub model_preview: ModelPreviewState,
     /// Currently focused panel (receives keyboard input).
     pub focused_panel: FocusedPanel,
-    /// Main viewport texture ID (set by application during setup).
-    pub main_viewport_texture_id: katla_ui::TextureId,
+    /// Viewport grid state (layout and viewport assignments).
+    pub viewport_grid_state: ViewportGridState,
+    /// Texture IDs for each viewport slot (set by application during setup).
+    pub viewport_texture_ids: [Option<katla_ui::TextureId>; 4],
 }
 
 impl EditorUI {
@@ -198,7 +202,8 @@ impl EditorUI {
             asset_browser: AssetBrowserState::new(),
             model_preview: ModelPreviewState::new(),
             focused_panel: FocusedPanel::Viewport,
-            main_viewport_texture_id: katla_ui::TextureId::VIEWPORT,
+            viewport_grid_state: ViewportGridState::new(),
+            viewport_texture_ids: [Some(katla_ui::TextureId::VIEWPORT), None, None, None],
         }
     }
 
@@ -545,12 +550,26 @@ impl EditorUI {
             viewport_bounds.height().max(1.0) as u32,
         );
 
-        ui.add(viewport::Viewport::new(
+        // Draw viewport grid
+        let grid_response = ui.add(viewport_grid::ViewportGrid::new(
             viewport_bounds,
-            self.main_viewport_texture_id,
+            &self.viewport_grid_state,
+            &self.viewport_texture_ids,
             &self.theme,
             &mut self.focused_panel,
         ));
+
+        // Update active viewport based on hover
+        if grid_response.hovered {
+            let min = viewport_bounds.min;
+            let max = viewport_bounds.max;
+            crate::input::update_active_viewport(
+                &mut self.viewport_grid_state,
+                ui.input.mouse_pos,
+                min,
+                max,
+            );
+        }
 
         // === ASSET BROWSER (bottom panel) ===
         let asset_browser_bounds = Rect2D::from_origin_size(
