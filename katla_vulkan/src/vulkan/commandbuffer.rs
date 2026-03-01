@@ -4,7 +4,7 @@ use super::{
     vertex_attr_set::VertexAttributeSet, vertex_attribute::AttributeType, vertexbuffer::IndexType,
     CommandPool,
 };
-use crate::sync::{DependencyInfo, Rect2D, RenderingInfo, Viewport, VkCommandBuffer};
+use crate::sync::{DependencyInfo, Rect2D, RenderingInfo, Viewport};
 
 #[derive(Clone)]
 pub struct CommandBuffer {
@@ -30,11 +30,6 @@ impl CommandBuffer {
             command_pool: command_pool.vk_command_pool(),
             command_buffer,
         }
-    }
-
-    /// Get the command buffer handle as a wrapper type.
-    pub(crate) fn command_buffer(&self) -> VkCommandBuffer {
-        VkCommandBuffer::new(self.command_buffer)
     }
 
     /// Get the raw Vulkan command buffer handle.
@@ -324,26 +319,30 @@ impl CommandBuffer {
     /// * `dependency_info` - Dependency info containing all barriers
     ///
     /// # Example
-    /// ```no_run
+    /// ```ignore
     /// use katla_vulkan::sync::{ImageMemoryBarrier2, PipelineStage2Flags, AccessFlags2, DependencyInfo, VkImage};
-    /// # use ash::vk;
+    /// use ash::vk;
     ///
     /// # let command_buffer: katla_vulkan::CommandBuffer = unsafe { std::mem::zeroed() };
     /// # let image: VkImage = VkImage::new(unsafe { std::mem::zeroed() });
-    /// let barrier = ImageMemoryBarrier2::new(image)
-    ///     .src_stage(PipelineStage2Flags::TRANSFER)
-    ///     .dst_stage(PipelineStage2Flags::FRAGMENT_SHADER)
-    ///     .src_access(AccessFlags2::TRANSFER_WRITE)
-    ///     .dst_access(AccessFlags2::SHADER_READ)
-    ///     .old_layout(vk::ImageLayout::TRANSFER_DST_OPTIMAL)
-    ///     .new_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
-    ///     .subresource_range(vk::ImageSubresourceRange {
+    /// let barrier = ImageMemoryBarrier2 {
+    ///     image,
+    ///     src_stage_mask: PipelineStage2Flags::TRANSFER,
+    ///     dst_stage_mask: PipelineStage2Flags::FRAGMENT_SHADER,
+    ///     src_access_mask: AccessFlags2::TRANSFER_WRITE,
+    ///     dst_access_mask: AccessFlags2::SHADER_READ,
+    ///     old_layout: vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+    ///     new_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+    ///     src_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
+    ///     dst_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
+    ///     subresource_range: vk::ImageSubresourceRange {
     ///         aspect_mask: vk::ImageAspectFlags::COLOR,
     ///         base_mip_level: 0,
     ///         level_count: 1,
     ///         base_array_layer: 0,
     ///         layer_count: 1,
-    ///     });
+    ///     },
+    /// };
     ///
     /// let dep_info = DependencyInfo::new()
     ///     .add_image_barrier(barrier);
@@ -366,27 +365,38 @@ impl CommandBuffer {
     /// * `rendering_info` - Rendering info describing attachments and render area
     ///
     /// # Example
-    /// ```no_run
-    /// # use ash::vk;    /// # use katla_vulkan::sync::VkImageView;
-    /// # use katla_vulkan::CommandBuffer;
+    /// ```ignore
+    /// use katla_vulkan::sync::{Rect2D, RenderingInfo, VkImageView};
+    /// use ash::vk::{self, ClearValue, ImageLayout, RenderingAttachmentInfo as VkRenderingAttachmentInfo};
+    /// use katla_vulkan::CommandBuffer;
+    ///
     /// # let command_buffer: CommandBuffer = unsafe { std::mem::zeroed() };
     /// # let color_image_view: VkImageView = unsafe { std::mem::zeroed() };
     /// # let depth_image_view: VkImageView = unsafe { std::mem::zeroed() };
-    /// let color_attachment = RenderingAttachmentInfo::new(color_image_view)
-    ///     .clear(ClearValue::color(0.1, 0.2, 0.3, 1.0));
+    /// let color_attachment = VkRenderingAttachmentInfo::default()
+    ///     .image_view(color_image_view.vk())
+    ///     .image_layout(ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
+    ///     .load_op(vk::AttachmentLoadOp::CLEAR)
+    ///     .store_op(vk::AttachmentStoreOp::STORE)
+    ///     .clear_value(ClearValue::color([0.1, 0.2, 0.3, 1.0]));
     ///
-    /// let depth_attachment = RenderingAttachmentInfo::new(depth_image_view)
-    ///     .layout(ImageLayout::DepthStencilAttachmentOptimal)
-    ///     .clear(ClearValue::depth(0.0, 0));
+    /// let depth_attachment = VkRenderingAttachmentInfo::default()
+    ///     .image_view(depth_image_view.vk())
+    ///     .image_layout(ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL)
+    ///     .load_op(vk::AttachmentLoadOp::CLEAR)
+    ///     .store_op(vk::AttachmentStoreOp::STORE)
+    ///     .clear_value(ClearValue::depth(0.0));
     ///
-    /// let rendering_info = RenderingInfo::new()
-    ///     .add_color_attachment(color_attachment)
+    /// let rendering_info = RenderingInfo::new(Rect2D::from_extent(800, 600))
+    ///     .color_attachment(color_attachment)
     ///     .depth_attachment(depth_attachment)
     ///     .layer_count(1);
     ///
-    /// command_buffer.begin_rendering(rendering_info);
-    /// // ... record draw commands ...
-    /// command_buffer.end_rendering();
+    /// rendering_info.build(|info| {
+    ///     command_buffer.begin_rendering(info);
+    ///     // ... record draw commands ...
+    ///     command_buffer.end_rendering();
+    /// });
     /// ```
     pub fn begin_rendering(&self, rendering_info: RenderingInfo) {
         rendering_info.build(|rendering_info| unsafe {

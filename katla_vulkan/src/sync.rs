@@ -33,136 +33,6 @@ pub(crate) const DEPTH_SUBRESOURCE_RANGE: vk::ImageSubresourceRange = vk::ImageS
     layer_count: 1,
 };
 
-//=============================================================================
-// Barrier Helper Functions
-//=============================================================================
-
-/// Create a barrier for transitioning color image from SHADER_READ_ONLY to COLOR_ATTACHMENT.
-///
-/// Common pattern when rendering to a texture that was previously sampled.
-#[inline]
-pub(crate) fn color_read_to_attachment_barrier(image: VkImage) -> ImageMemoryBarrier2 {
-    ImageMemoryBarrier2::new(image)
-        .src_stage(PipelineStage2Flags::FRAGMENT_SHADER)
-        .src_access(AccessFlags2::SHADER_READ)
-        .dst_stage(PipelineStage2Flags::COLOR_ATTACHMENT_OUTPUT)
-        .dst_access(AccessFlags2::COLOR_ATTACHMENT_WRITE)
-        .old_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
-        .new_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
-        .subresource_range(COLOR_SUBRESOURCE_RANGE)
-}
-
-/// Create a barrier for transitioning color image from COLOR_ATTACHMENT to SHADER_READ_ONLY.
-///
-/// Common pattern after rendering to a texture that will be sampled later.
-#[inline]
-pub(crate) fn color_attachment_to_read_barrier(image: VkImage) -> ImageMemoryBarrier2 {
-    ImageMemoryBarrier2::new(image)
-        .src_stage(PipelineStage2Flags::COLOR_ATTACHMENT_OUTPUT)
-        .src_access(AccessFlags2::COLOR_ATTACHMENT_WRITE)
-        .dst_stage(PipelineStage2Flags::FRAGMENT_SHADER)
-        .dst_access(AccessFlags2::SHADER_READ)
-        .old_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
-        .new_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
-        .subresource_range(COLOR_SUBRESOURCE_RANGE)
-}
-
-/// Create a barrier for transitioning color image to TRANSFER_DST.
-///
-/// Common pattern when preparing to blit/copy to an image.
-#[inline]
-pub(crate) fn color_to_transfer_dst_barrier(image: VkImage) -> ImageMemoryBarrier2 {
-    ImageMemoryBarrier2::new(image)
-        .src_stage(PipelineStage2Flags::TOP_OF_PIPE)
-        .src_access(AccessFlags2::NONE)
-        .dst_stage(PipelineStage2Flags::TRANSFER)
-        .dst_access(AccessFlags2::TRANSFER_WRITE)
-        .old_layout(vk::ImageLayout::UNDEFINED)
-        .new_layout(vk::ImageLayout::TRANSFER_DST_OPTIMAL)
-        .subresource_range(COLOR_SUBRESOURCE_RANGE)
-}
-
-/// Create a barrier for transitioning color image from TRANSFER_DST to SHADER_READ_ONLY.
-///
-/// Common pattern after uploading texture data.
-#[inline]
-pub(crate) fn transfer_dst_to_read_barrier(image: VkImage) -> ImageMemoryBarrier2 {
-    ImageMemoryBarrier2::new(image)
-        .src_stage(PipelineStage2Flags::TRANSFER)
-        .src_access(AccessFlags2::TRANSFER_WRITE)
-        .dst_stage(PipelineStage2Flags::FRAGMENT_SHADER)
-        .dst_access(AccessFlags2::SHADER_READ)
-        .old_layout(vk::ImageLayout::TRANSFER_DST_OPTIMAL)
-        .new_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
-        .subresource_range(COLOR_SUBRESOURCE_RANGE)
-}
-
-/// Create a depth attachment barrier for synchronization.
-///
-/// Ensures depth attachment is properly synchronized between passes.
-#[inline]
-pub(crate) fn depth_attachment_barrier(image: VkImage) -> ImageMemoryBarrier2 {
-    ImageMemoryBarrier2::new(image)
-        .src_stage(PipelineStage2Flags::LATE_FRAGMENT_TESTS)
-        .src_access(AccessFlags2::DEPTH_STENCIL_ATTACHMENT_WRITE)
-        .dst_stage(PipelineStage2Flags::EARLY_FRAGMENT_TESTS)
-        .dst_access(
-            AccessFlags2::DEPTH_STENCIL_ATTACHMENT_READ
-                .union(AccessFlags2::DEPTH_STENCIL_ATTACHMENT_WRITE),
-        )
-        .old_layout(vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL)
-        .new_layout(vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL)
-        .subresource_range(DEPTH_SUBRESOURCE_RANGE)
-}
-
-/// Create a barrier for transitioning depth image from UNDEFINED to DEPTH_ATTACHMENT.
-///
-/// Common pattern when initializing a depth buffer.
-#[inline]
-pub(crate) fn depth_init_barrier(image: VkImage) -> ImageMemoryBarrier2 {
-    ImageMemoryBarrier2::new(image)
-        .src_stage(PipelineStage2Flags::TOP_OF_PIPE)
-        .src_access(AccessFlags2::NONE)
-        .dst_stage(PipelineStage2Flags::EARLY_FRAGMENT_TESTS)
-        .dst_access(
-            AccessFlags2::DEPTH_STENCIL_ATTACHMENT_READ
-                .union(AccessFlags2::DEPTH_STENCIL_ATTACHMENT_WRITE),
-        )
-        .old_layout(vk::ImageLayout::UNDEFINED)
-        .new_layout(vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL)
-        .subresource_range(DEPTH_SUBRESOURCE_RANGE)
-}
-
-/// Create a barrier for transitioning color image from UNDEFINED to COLOR_ATTACHMENT.
-///
-/// Common pattern when initializing a color attachment.
-#[inline]
-pub(crate) fn color_init_barrier(image: VkImage) -> ImageMemoryBarrier2 {
-    ImageMemoryBarrier2::new(image)
-        .src_stage(PipelineStage2Flags::TOP_OF_PIPE)
-        .src_access(AccessFlags2::NONE)
-        .dst_stage(PipelineStage2Flags::COLOR_ATTACHMENT_OUTPUT)
-        .dst_access(AccessFlags2::COLOR_ATTACHMENT_WRITE)
-        .old_layout(vk::ImageLayout::UNDEFINED)
-        .new_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
-        .subresource_range(COLOR_SUBRESOURCE_RANGE)
-}
-
-/// Create a barrier for transitioning swapchain image from UNDEFINED to PRESENT_SRC.
-///
-/// Common pattern before presenting.
-#[inline]
-pub(crate) fn swapchain_to_present_barrier(image: VkImage) -> ImageMemoryBarrier2 {
-    ImageMemoryBarrier2::new(image)
-        .src_stage(PipelineStage2Flags::TRANSFER)
-        .src_access(AccessFlags2::TRANSFER_WRITE)
-        .dst_stage(PipelineStage2Flags::BOTTOM_OF_PIPE)
-        .dst_access(AccessFlags2::NONE)
-        .old_layout(vk::ImageLayout::TRANSFER_DST_OPTIMAL)
-        .new_layout(vk::ImageLayout::PRESENT_SRC_KHR)
-        .subresource_range(COLOR_SUBRESOURCE_RANGE)
-}
-
 macro_rules! define_vk_wrapper {
     ($name:ident, $vk_type:ty) => {
         #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -172,6 +42,7 @@ macro_rules! define_vk_wrapper {
         unsafe impl Sync for $name {}
 
         impl $name {
+            #[allow(dead_code)]
             pub fn new(handle: $vk_type) -> Self {
                 Self(handle)
             }
@@ -767,21 +638,6 @@ pub struct BufferMemoryBarrier2 {
 }
 
 impl BufferMemoryBarrier2 {
-    /// Create a new buffer memory barrier 2.
-    pub(crate) fn new(buffer: VkBuffer) -> Self {
-        Self {
-            src_stage_mask: PipelineStage2Flags::TOP_OF_PIPE,
-            dst_stage_mask: PipelineStage2Flags::BOTTOM_OF_PIPE,
-            src_access_mask: AccessFlags2::NONE,
-            dst_access_mask: AccessFlags2::NONE,
-            src_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
-            dst_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
-            buffer,
-            offset: 0,
-            size: vk::WHOLE_SIZE,
-        }
-    }
-
     /// Set source stage mask.
     pub fn src_stage(mut self, stage: PipelineStage2Flags) -> Self {
         self.src_stage_mask = stage;
@@ -913,12 +769,6 @@ pub(crate) struct VkCommandBuffer(pub vk::CommandBuffer);
 
 unsafe impl Send for VkCommandBuffer {}
 unsafe impl Sync for VkCommandBuffer {}
-
-impl VkCommandBuffer {
-    pub fn new(command_buffer: vk::CommandBuffer) -> Self {
-        Self(command_buffer)
-    }
-}
 
 impl Default for VkCommandBuffer {
     fn default() -> Self {
@@ -1074,45 +924,6 @@ mod tests {
     }
 
     #[test]
-    fn test_buffer_memory_barrier2_builder() {
-        let buffer = VkBuffer::new(vk::Buffer::null());
-        let barrier = BufferMemoryBarrier2::new(buffer)
-            .src_stage(PipelineStage2Flags::COMPUTE_SHADER)
-            .dst_stage(PipelineStage2Flags::VERTEX_SHADER)
-            .src_access(AccessFlags2::SHADER_WRITE)
-            .dst_access(AccessFlags2::VERTEX_ATTRIBUTE_READ)
-            .offset(0)
-            .size(1024);
-
-        assert_eq!(barrier.buffer, buffer);
-        assert_eq!(barrier.offset, 0);
-        assert_eq!(barrier.size, 1024);
-    }
-
-    #[test]
-    fn test_buffer_memory_barrier2_into_vk() {
-        let buffer = VkBuffer::new(vk::Buffer::null());
-        let barrier = BufferMemoryBarrier2::new(buffer)
-            .src_stage(PipelineStage2Flags::COMPUTE_SHADER)
-            .dst_stage(PipelineStage2Flags::VERTEX_INPUT);
-
-        let vk_barrier = barrier.into_vk();
-        assert_eq!(vk_barrier.buffer, buffer.vk());
-    }
-
-    #[test]
-    fn test_dependency_info_with_buffer_barrier2() {
-        let buffer = VkBuffer::new(vk::Buffer::null());
-        let barrier = BufferMemoryBarrier2::new(buffer)
-            .src_stage(PipelineStage2Flags::COMPUTE_SHADER)
-            .dst_stage(PipelineStage2Flags::VERTEX_SHADER);
-
-        let dep_info = DependencyInfo::new().add_buffer_barrier2(barrier);
-
-        assert_eq!(dep_info.buffer_barriers.len(), 1);
-    }
-
-    #[test]
     fn test_pipeline_wrapper() {
         let vk_pipeline = vk::Pipeline::null();
         let pipeline = VkPipeline::new(vk_pipeline);
@@ -1155,142 +966,5 @@ mod tests {
         let buffer: VkBuffer = vk_buffer.into();
         let back: vk::Buffer = buffer.into();
         assert_eq!(vk_buffer, back);
-    }
-
-    // Barrier helper function tests
-
-    #[test]
-    fn test_color_subresource_range() {
-        assert_eq!(
-            COLOR_SUBRESOURCE_RANGE.aspect_mask,
-            vk::ImageAspectFlags::COLOR
-        );
-        assert_eq!(COLOR_SUBRESOURCE_RANGE.base_mip_level, 0);
-        assert_eq!(COLOR_SUBRESOURCE_RANGE.level_count, 1);
-        assert_eq!(COLOR_SUBRESOURCE_RANGE.base_array_layer, 0);
-        assert_eq!(COLOR_SUBRESOURCE_RANGE.layer_count, 1);
-    }
-
-    #[test]
-    fn test_depth_subresource_range() {
-        assert_eq!(
-            DEPTH_SUBRESOURCE_RANGE.aspect_mask,
-            vk::ImageAspectFlags::DEPTH | vk::ImageAspectFlags::STENCIL
-        );
-        assert_eq!(DEPTH_SUBRESOURCE_RANGE.base_mip_level, 0);
-        assert_eq!(DEPTH_SUBRESOURCE_RANGE.level_count, 1);
-        assert_eq!(DEPTH_SUBRESOURCE_RANGE.base_array_layer, 0);
-        assert_eq!(DEPTH_SUBRESOURCE_RANGE.layer_count, 1);
-    }
-
-    #[test]
-    fn test_color_read_to_attachment_barrier() {
-        let image = VkImage::new(vk::Image::null());
-        let barrier = color_read_to_attachment_barrier(image);
-
-        assert_eq!(barrier.image, image);
-        assert_eq!(
-            barrier.old_layout,
-            vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL
-        );
-        assert_eq!(
-            barrier.new_layout,
-            vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL
-        );
-        assert_eq!(
-            barrier.subresource_range.aspect_mask,
-            COLOR_SUBRESOURCE_RANGE.aspect_mask
-        );
-    }
-
-    #[test]
-    fn test_color_attachment_to_read_barrier() {
-        let image = VkImage::new(vk::Image::null());
-        let barrier = color_attachment_to_read_barrier(image);
-
-        assert_eq!(barrier.image, image);
-        assert_eq!(
-            barrier.old_layout,
-            vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL
-        );
-        assert_eq!(
-            barrier.new_layout,
-            vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL
-        );
-        assert_eq!(
-            barrier.subresource_range.aspect_mask,
-            COLOR_SUBRESOURCE_RANGE.aspect_mask
-        );
-    }
-
-    #[test]
-    fn test_depth_attachment_barrier() {
-        let image = VkImage::new(vk::Image::null());
-        let barrier = depth_attachment_barrier(image);
-
-        assert_eq!(barrier.image, image);
-        assert_eq!(
-            barrier.old_layout,
-            vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL
-        );
-        assert_eq!(
-            barrier.new_layout,
-            vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL
-        );
-        assert_eq!(
-            barrier.subresource_range.aspect_mask,
-            DEPTH_SUBRESOURCE_RANGE.aspect_mask
-        );
-    }
-
-    #[test]
-    fn test_color_init_barrier() {
-        let image = VkImage::new(vk::Image::null());
-        let barrier = color_init_barrier(image);
-
-        assert_eq!(barrier.image, image);
-        assert_eq!(barrier.old_layout, vk::ImageLayout::UNDEFINED);
-        assert_eq!(
-            barrier.new_layout,
-            vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL
-        );
-        assert_eq!(
-            barrier.subresource_range.aspect_mask,
-            COLOR_SUBRESOURCE_RANGE.aspect_mask
-        );
-    }
-
-    #[test]
-    fn test_depth_init_barrier() {
-        let image = VkImage::new(vk::Image::null());
-        let barrier = depth_init_barrier(image);
-
-        assert_eq!(barrier.image, image);
-        assert_eq!(barrier.old_layout, vk::ImageLayout::UNDEFINED);
-        assert_eq!(
-            barrier.new_layout,
-            vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL
-        );
-        assert_eq!(
-            barrier.subresource_range.aspect_mask,
-            DEPTH_SUBRESOURCE_RANGE.aspect_mask
-        );
-    }
-
-    #[test]
-    fn test_transfer_dst_to_read_barrier() {
-        let image = VkImage::new(vk::Image::null());
-        let barrier = transfer_dst_to_read_barrier(image);
-
-        assert_eq!(barrier.image, image);
-        assert_eq!(barrier.old_layout, vk::ImageLayout::TRANSFER_DST_OPTIMAL);
-        assert_eq!(
-            barrier.new_layout,
-            vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL
-        );
-        assert_eq!(
-            barrier.subresource_range.aspect_mask,
-            COLOR_SUBRESOURCE_RANGE.aspect_mask
-        );
     }
 }

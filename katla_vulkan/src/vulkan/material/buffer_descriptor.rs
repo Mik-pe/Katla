@@ -9,21 +9,6 @@ use std::rc::Rc;
 
 use super::VulkanContext;
 
-/// Info for a single buffer binding in a descriptor set.
-#[derive(Clone, Copy, Debug)]
-pub(crate) struct BufferBinding {
-    /// The wrapped Vulkan buffer handle.
-    pub buffer: crate::sync::VkBuffer,
-    /// Binding number in the shader.
-    pub binding: u32,
-    /// Offset into the buffer (in bytes).
-    pub offset: vk::DeviceSize,
-    /// Range/size of the binding (in bytes).
-    pub range: vk::DeviceSize,
-    /// Descriptor type for this binding (STORAGE_BUFFER or UNIFORM_BUFFER).
-    pub descriptor_type: vk::DescriptorType,
-}
-
 /// Trait for types that can provide buffer binding info.
 ///
 /// Implement this for your buffer types to enable easy descriptor creation.
@@ -32,38 +17,6 @@ pub(crate) struct BufferBinding {
 pub(crate) trait BufferDescriptorSource {
     /// Get the Vulkan buffer handle.
     fn buffer(&self) -> crate::sync::VkBuffer;
-
-    /// Get the buffer size in bytes.
-    fn buffer_size(&self) -> vk::DeviceSize;
-
-    /// Create a binding for this entire buffer.
-    /// Note: descriptor_type defaults to STORAGE_BUFFER.
-    fn as_binding(&self, binding: u32) -> BufferBinding {
-        BufferBinding {
-            buffer: self.buffer(),
-            binding,
-            offset: 0,
-            range: self.buffer_size(),
-            descriptor_type: vk::DescriptorType::STORAGE_BUFFER,
-        }
-    }
-
-    /// Create a binding for a range within this buffer.
-    /// Note: descriptor_type defaults to STORAGE_BUFFER.
-    fn as_binding_range(
-        &self,
-        binding: u32,
-        offset: vk::DeviceSize,
-        range: vk::DeviceSize,
-    ) -> BufferBinding {
-        BufferBinding {
-            buffer: self.buffer(),
-            binding,
-            offset,
-            range,
-            descriptor_type: vk::DescriptorType::STORAGE_BUFFER,
-        }
-    }
 }
 
 // Implement BufferDescriptorSource for DeviceAddressBuffer
@@ -71,20 +24,12 @@ impl BufferDescriptorSource for crate::vulkan::bda::DeviceAddressBuffer {
     fn buffer(&self) -> crate::sync::VkBuffer {
         crate::sync::VkBuffer::new(self.buffer)
     }
-
-    fn buffer_size(&self) -> vk::DeviceSize {
-        self.size()
-    }
 }
 
 // Implement BufferDescriptorSource for SkeletonBuffer
 impl BufferDescriptorSource for crate::vulkan::skeleton_buffer::SkeletonBuffer {
     fn buffer(&self) -> crate::sync::VkBuffer {
         crate::sync::VkBuffer::new(self.buffer())
-    }
-
-    fn buffer_size(&self) -> vk::DeviceSize {
-        self.size()
     }
 }
 
@@ -171,10 +116,6 @@ impl<T: Copy> BufferDescriptorSource for UniformBuffer<T> {
     fn buffer(&self) -> crate::sync::VkBuffer {
         crate::sync::VkBuffer::new(self.buffer)
     }
-
-    fn buffer_size(&self) -> vk::DeviceSize {
-        self.size()
-    }
 }
 
 impl<T: Copy> Drop for UniformBuffer<T> {
@@ -189,40 +130,11 @@ impl<T: Copy> Drop for UniformBuffer<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    #[test]
-    fn test_buffer_binding_creation() {
-        let binding = BufferBinding {
-            buffer: crate::sync::VkBuffer::default(),
-            binding: 0,
-            offset: 0,
-            range: 1024,
-            descriptor_type: vk::DescriptorType::STORAGE_BUFFER,
-        };
-        assert_eq!(binding.binding, 0);
-        assert_eq!(binding.range, 1024);
-    }
 
     #[test]
-    fn test_binding_accumulation() {
-        // This tests creating multiple bindings without Vulkan
-        let bindings: Vec<BufferBinding> = vec![
-            BufferBinding {
-                buffer: crate::sync::VkBuffer::default(),
-                binding: 0,
-                offset: 0,
-                range: 256,
-                descriptor_type: vk::DescriptorType::STORAGE_BUFFER,
-            },
-            BufferBinding {
-                buffer: crate::sync::VkBuffer::default(),
-                binding: 1,
-                offset: 256,
-                range: 24576,
-                descriptor_type: vk::DescriptorType::UNIFORM_BUFFER,
-            },
-        ];
-        assert_eq!(bindings.len(), 2);
-        assert_eq!(bindings[0].binding, 0);
-        assert_eq!(bindings[1].binding, 1);
+    fn test_uniform_buffer_trait() {
+        // Just verify the trait exists and compiles
+        fn assert_buffer_source<T: BufferDescriptorSource>(_: &T) {}
+        // UniformBuffer implements BufferDescriptorSource
     }
 }

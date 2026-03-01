@@ -34,7 +34,7 @@ pub use material::{
 };
 pub use renderer::{
     AssetRegistry, DrawCall, DrawList, FrameData, FrameUniforms, InstanceData, ParticleDispatch,
-    ParticleRender, ViewportImages, VulkanRenderer, FRAMES_IN_FLIGHT,
+    ParticleRender, VulkanRenderer, FRAMES_IN_FLIGHT,
 };
 pub use texture::{ImageFormat, TextureDescriptor, TextureManager, TextureUsage};
 

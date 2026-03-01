@@ -220,10 +220,6 @@ impl BufferDescriptorSource for ParticleBuffer {
     fn buffer(&self) -> crate::sync::VkBuffer {
         crate::sync::VkBuffer::new(self.buffer.buffer)
     }
-
-    fn buffer_size(&self) -> vk::DeviceSize {
-        self.buffer.size
-    }
 }
 
 /// Configuration buffer for emitter settings.
@@ -260,10 +256,6 @@ impl EmitterConfigBuffer {
 impl BufferDescriptorSource for EmitterConfigBuffer {
     fn buffer(&self) -> crate::sync::VkBuffer {
         crate::sync::VkBuffer::new(self.buffer.buffer)
-    }
-
-    fn buffer_size(&self) -> vk::DeviceSize {
-        self.buffer.size
     }
 }
 

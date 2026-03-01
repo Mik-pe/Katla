@@ -312,20 +312,6 @@ impl Texture {
     ///
     /// # Example
     ///
-    /// ```ignore
-    /// let mut texture = Texture::create_image_rgb(context, width, height, pixels);
-    /// texture.register_for_descriptor(descriptor_set, 0);
-    /// // Later, resize() will automatically update the descriptor
-    /// texture.resize(new_width, new_height, new_pixels);
-    /// ```
-    pub(crate) fn register_for_descriptor(
-        &mut self,
-        descriptor_set: VkDescriptorSet,
-        binding: u32,
-    ) {
-        self.registered_descriptors.push((descriptor_set, binding));
-    }
-
     /// Update all registered descriptors with the current image view.
     ///
     /// Called automatically by `resize()` after the image view is recreated.

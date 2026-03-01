@@ -28,7 +28,6 @@ use log::info;
 
 use crate::renderer::DrawList;
 use crate::renderer::ViewportRenderTarget;
-use crate::sync::{VkImage, VkImageView};
 use crate::texture::ImageFormat;
 use crate::vulkan::material::storage_uniform::{StorageDescriptorSet, StorageUniformManager};
 use crate::{FrameUniforms, VulkanContext};
@@ -258,26 +257,6 @@ impl Viewport {
     }
 
     /// Get the color image view (for UI sampling).
-    pub(crate) fn color_view(&self) -> VkImageView {
-        self.render_target.color_view()
-    }
-
-    /// Get the color image.
-    pub(crate) fn color_image(&self) -> VkImage {
-        self.render_target.color_image()
-    }
-
-    /// Get the depth image view.
-    pub(crate) fn depth_view(&self) -> VkImageView {
-        self.render_target.depth_view()
-    }
-
-    /// Get the depth image.
-    pub(crate) fn depth_image(&self) -> VkImage {
-        self.render_target.depth_image()
-    }
-
-    /// Get the viewport extent.
     pub fn get_extent(&self) -> Extent2D {
         self.extent
     }

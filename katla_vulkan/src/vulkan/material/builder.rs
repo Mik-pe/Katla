@@ -3,7 +3,7 @@ use std::{ffi::CString, rc::Rc};
 use ash::vk;
 
 use super::super::context::VulkanContext;
-use crate::sync::{VkDescriptorSetLayout, VkPipeline, VkPipelineLayout, VkRenderPass};
+use crate::sync::VkRenderPass;
 use crate::texture::ImageFormat;
 use crate::vulkan::pipeline_state::{
     BlendFactor, BlendOp, CompareOp, CullMode, DynamicState, FrontFace, PolygonMode,
@@ -77,20 +77,6 @@ impl PipelineBuilder {
     pub fn with_shaders(mut self, vert: vk::ShaderModule, frag: vk::ShaderModule) -> Self {
         self.vertex_shader = Some(vert);
         self.fragment_shader = Some(frag);
-        self
-    }
-
-    /// Sets shaders using VkShaderModule wrappers.
-    ///
-    /// This variant accepts wrapper types that implement VkShaderModule and
-    /// converts them to the underlying vk::ShaderModule before assigning.
-    pub(crate) fn with_shaders_wrapped(
-        mut self,
-        vert: crate::sync::VkShaderModule,
-        frag: crate::sync::VkShaderModule,
-    ) -> Self {
-        self.vertex_shader = Some(vert.vk());
-        self.fragment_shader = Some(frag.vk());
         self
     }
 
@@ -192,15 +178,6 @@ impl PipelineBuilder {
 
     pub(crate) fn with_descriptor_layouts(mut self, layouts: Vec<vk::DescriptorSetLayout>) -> Self {
         self.descriptor_layouts = layouts;
-        self
-    }
-
-    /// Set the descriptor set layouts using wrapper types.
-    pub(crate) fn with_descriptor_layouts_wrapped(
-        mut self,
-        layouts: Vec<VkDescriptorSetLayout>,
-    ) -> Self {
-        self.descriptor_layouts = layouts.into_iter().map(|l| l.into()).collect();
         self
     }
 
@@ -412,20 +389,6 @@ pub struct Pipeline {
 }
 
 impl Pipeline {
-    /// Get the pipeline handle as a wrapper type.
-    ///
-    /// Panics if the pipeline was destroyed.
-    pub(crate) fn pipeline(&self) -> VkPipeline {
-        VkPipeline::new(self.handle)
-    }
-
-    /// Get the pipeline layout as a wrapper type.
-    ///
-    /// Panics if the pipeline was destroyed.
-    pub(crate) fn pipeline_layout(&self) -> VkPipelineLayout {
-        VkPipelineLayout::new(self.layout)
-    }
-
     /// Get the raw Vulkan pipeline handle (for internal use).
     pub(crate) fn vk_pipeline(&self) -> vk::Pipeline {
         self.handle
