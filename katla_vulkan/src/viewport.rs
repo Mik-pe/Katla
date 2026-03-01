@@ -28,10 +28,7 @@ use log::info;
 
 use crate::renderer::DrawList;
 use crate::renderer::ViewportRenderTarget;
-use crate::sync::{
-    AccessFlags2, DependencyInfo, ImageMemoryBarrier2, PipelineStage2Flags, VkCommandBuffer,
-    VkImage, VkImageView,
-};
+use crate::sync::{VkImage, VkImageView};
 use crate::texture::ImageFormat;
 use crate::vulkan::material::storage_uniform::{StorageDescriptorSet, StorageUniformManager};
 use crate::{FrameUniforms, VulkanContext};
@@ -73,12 +70,7 @@ pub enum DepthFormat {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ViewportHandle(pub usize);
 
-impl ViewportHandle {
-    /// Create a new viewport handle (internal use only).
-    pub(crate) fn new(index: usize) -> Self {
-        Self(index)
-    }
-}
+impl ViewportHandle {}
 
 // ============================================================================
 // ViewportBuilder
@@ -303,97 +295,6 @@ impl Viewport {
     /// Clear the draw list.
     pub fn clear_draw_list(&self) {
         *self.draw_list_cell.borrow_mut() = None;
-    }
-
-    /// Transition color texture from shader read to color attachment.
-    /// Call BEFORE rendering when UI has sampled the texture.
-    ///
-    /// This is pub(crate) to avoid exposing Vulkan types in the public API.
-    pub(crate) fn transition_to_render(&self, cmd_buf: VkCommandBuffer, device: &ash::Device) {
-        let color_image = self.color_image();
-        let depth_image = self.depth_image();
-
-        let color_subresource = vk::ImageSubresourceRange {
-            aspect_mask: vk::ImageAspectFlags::COLOR,
-            base_mip_level: 0,
-            level_count: 1,
-            base_array_layer: 0,
-            layer_count: 1,
-        };
-
-        let depth_subresource = vk::ImageSubresourceRange {
-            aspect_mask: vk::ImageAspectFlags::DEPTH | vk::ImageAspectFlags::STENCIL,
-            base_mip_level: 0,
-            level_count: 1,
-            base_array_layer: 0,
-            layer_count: 1,
-        };
-
-        // Color: SHADER_READ_ONLY -> COLOR_ATTACHMENT
-        let color_barrier = ImageMemoryBarrier2::new(color_image)
-            .src_stage(PipelineStage2Flags::FRAGMENT_SHADER)
-            .src_access(AccessFlags2::SHADER_READ)
-            .dst_stage(PipelineStage2Flags::COLOR_ATTACHMENT_OUTPUT)
-            .dst_access(AccessFlags2::COLOR_ATTACHMENT_WRITE)
-            .old_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
-            .new_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
-            .subresource_range(color_subresource);
-
-        // Depth: stays in DEPTH_ATTACHMENT (just stage sync)
-        let depth_barrier = ImageMemoryBarrier2::new(depth_image)
-            .src_stage(PipelineStage2Flags::LATE_FRAGMENT_TESTS)
-            .src_access(AccessFlags2::DEPTH_STENCIL_ATTACHMENT_WRITE)
-            .dst_stage(PipelineStage2Flags::EARLY_FRAGMENT_TESTS)
-            .dst_access(
-                AccessFlags2::DEPTH_STENCIL_ATTACHMENT_READ
-                    .union(AccessFlags2::DEPTH_STENCIL_ATTACHMENT_WRITE),
-            )
-            .old_layout(vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL)
-            .new_layout(vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL)
-            .subresource_range(depth_subresource);
-
-        unsafe {
-            DependencyInfo::new()
-                .add_image_barrier(color_barrier)
-                .add_image_barrier(depth_barrier)
-                .build(|dep_info| {
-                    device.cmd_pipeline_barrier2(cmd_buf.vk_command_buffer(), dep_info);
-                });
-        }
-    }
-
-    /// Transition color texture from color attachment to shader read.
-    /// Call AFTER rendering so UI can sample the texture.
-    ///
-    /// This is pub(crate) to avoid exposing Vulkan types in the public API.
-    pub(crate) fn transition_to_sample(&self, cmd_buf: VkCommandBuffer, device: &ash::Device) {
-        let color_image = self.color_image();
-
-        let subresource = vk::ImageSubresourceRange {
-            aspect_mask: vk::ImageAspectFlags::COLOR,
-            base_mip_level: 0,
-            level_count: 1,
-            base_array_layer: 0,
-            layer_count: 1,
-        };
-
-        // Color: COLOR_ATTACHMENT -> SHADER_READ_ONLY
-        let barrier = ImageMemoryBarrier2::new(color_image)
-            .src_stage(PipelineStage2Flags::COLOR_ATTACHMENT_OUTPUT)
-            .src_access(AccessFlags2::COLOR_ATTACHMENT_WRITE)
-            .dst_stage(PipelineStage2Flags::FRAGMENT_SHADER)
-            .dst_access(AccessFlags2::SHADER_READ)
-            .old_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
-            .new_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
-            .subresource_range(subresource);
-
-        unsafe {
-            DependencyInfo::new()
-                .add_image_barrier(barrier)
-                .build(|dep_info| {
-                    device.cmd_pipeline_barrier2(cmd_buf.vk_command_buffer(), dep_info);
-                });
-        }
     }
 }
 

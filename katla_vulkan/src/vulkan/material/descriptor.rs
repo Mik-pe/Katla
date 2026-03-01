@@ -1,4 +1,3 @@
-use ash::vk;
 use std::{collections::HashMap, path::PathBuf};
 
 /// Source for shader code
@@ -47,17 +46,6 @@ impl DescriptorBinding {
             DescriptorBinding::SampledImage { binding, .. } => Some(*binding),
             DescriptorBinding::Sampler { binding, .. } => Some(*binding),
             DescriptorBinding::CombinedImageSampler { binding, .. } => Some(*binding),
-            DescriptorBinding::Uniform { .. } => None,
-        }
-    }
-
-    pub(crate) fn descriptor_type(&self) -> Option<vk::DescriptorType> {
-        match self {
-            DescriptorBinding::SampledImage { .. } => Some(vk::DescriptorType::SAMPLED_IMAGE),
-            DescriptorBinding::Sampler { .. } => Some(vk::DescriptorType::SAMPLER),
-            DescriptorBinding::CombinedImageSampler { .. } => {
-                Some(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
-            }
             DescriptorBinding::Uniform { .. } => None,
         }
     }

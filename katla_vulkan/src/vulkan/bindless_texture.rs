@@ -91,7 +91,7 @@ pub struct BindlessTextureManager {
     /// Device handle for cleanup.
     device: ash::Device,
     /// Default textures (kept alive for their resources).
-    default_textures: Vec<Texture>,
+    _default_textures: Vec<Texture>,
 }
 
 impl BindlessTextureManager {
@@ -212,7 +212,7 @@ impl BindlessTextureManager {
             slots,
             free_slots,
             device: context.device.clone(),
-            default_textures,
+            _default_textures: default_textures,
         })
     }
 
@@ -320,35 +320,11 @@ impl BindlessTextureManager {
         }
     }
 
-    /// Get the descriptor set for binding.
-    ///
-    /// Bind this to set 1 once per frame.
-    pub(crate) fn descriptor_set(&self) -> VkDescriptorSet {
-        self.descriptor_set
-    }
-
-    /// Get the raw descriptor set for internal binding operations.
-    /// This is pub(crate) to avoid exposing Vulkan types in the public API.
-    pub(crate) fn vk_descriptor_set(&self) -> vk::DescriptorSet {
-        self.descriptor_set.vk()
-    }
-
     /// Get the descriptor set layout.
     ///
     /// Use this when creating pipelines that will use bindless textures.
-    pub(crate) fn descriptor_layout(&self) -> VkDescriptorSetLayout {
+    pub fn descriptor_layout(&self) -> VkDescriptorSetLayout {
         self.descriptor_layout
-    }
-
-    /// Get the raw descriptor set layout handle.
-    /// This is pub(crate) to avoid exposing Vulkan types in the public API.
-    pub(crate) fn vk_descriptor_layout(&self) -> vk::DescriptorSetLayout {
-        self.descriptor_layout.vk()
-    }
-
-    /// Get the shared sampler.
-    pub(crate) fn shared_sampler(&self) -> VkSampler {
-        self.shared_sampler
     }
 
     /// Get the number of currently used slots.
