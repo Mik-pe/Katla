@@ -36,7 +36,7 @@ pub use renderer::{
     AssetRegistry, DrawCall, DrawList, FrameData, FrameUniforms, InstanceData, ParticleDispatch,
     ParticleRender, ViewportImages, VulkanRenderer, FRAMES_IN_FLIGHT,
 };
-pub use texture::{TextureDescriptor, TextureManager, TextureUsage};
+pub use texture::{ImageFormat, TextureDescriptor, TextureManager, TextureUsage};
 
 pub use vulkan::context::{
     ValidationMessage, ValidationMessageType, ValidationSeverity, VulkanContext,
@@ -56,7 +56,9 @@ pub use vulkan::particle_buffer::calculate_workgroup_count;
 pub use vulkan::descriptor::DescriptorSetLayoutBuilder;
 pub use vulkan::descriptor_set::{DescriptorBinding, DescriptorSet, DescriptorSetBuilder};
 // Pipeline state types
-pub use vulkan::pipeline_state::{CompareOp, CullMode, DescriptorType, FrontFace};
+pub use vulkan::pipeline_state::{CompareOp, CullMode, DescriptorType, FrontFace, ShaderStages};
+// Re-export vk::Extent2D for convenience
+pub use ash::vk::Extent2D;
 // Material pipeline types
 pub use vulkan::material::{
     ComputePipelineBuilder, MaterialPipeline, MaterialTemplate, PipelineBuilder, ShaderModule,

@@ -10,6 +10,7 @@ use std::{ffi::CString, rc::Rc};
 
 use super::super::context::VulkanContext;
 use crate::sync::{VkDescriptorSetLayout, VkPipeline, VkPipelineLayout};
+use crate::vulkan::pipeline_state::ShaderStages;
 
 /// Builder for creating compute pipelines.
 pub struct ComputePipelineBuilder {

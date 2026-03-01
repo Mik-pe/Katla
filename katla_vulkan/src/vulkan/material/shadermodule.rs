@@ -1,8 +1,4 @@
-use ash::{
-    util::read_spv,
-    vk::{self},
-    Device,
-};
+use ash::{util::read_spv, vk, Device};
 use naga::{
     back::spv::{self, WriterFlags},
     front::wgsl,
@@ -12,6 +8,8 @@ use std::{
     io::Cursor,
     path::{Path, PathBuf},
 };
+
+use crate::vulkan::pipeline_state::ShaderStages;
 
 pub struct ShaderModule {
     pub(crate) module: vk::ShaderModule,
