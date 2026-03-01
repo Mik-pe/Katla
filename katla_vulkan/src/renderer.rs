@@ -35,9 +35,9 @@ use std::{cell::RefCell, ffi::CString, rc::Rc};
 use crate::sync::{COLOR_SUBRESOURCE_RANGE, DEPTH_SUBRESOURCE_RANGE};
 
 pub struct FrameData {
-    pub available_sem: VkSemaphore,
-    pub finished_sem: VkSemaphore,
-    pub in_flight_fence: VkFence,
+    pub(crate) available_sem: VkSemaphore,
+    pub(crate) finished_sem: VkSemaphore,
+    pub(crate) in_flight_fence: VkFence,
     pub image_index: u32,
 }
 
@@ -113,13 +113,13 @@ pub const FRAMES_IN_FLIGHT: usize = 2;
 #[derive(Clone)]
 pub struct ViewportImages {
     /// Color attachment image.
-    pub color_image: VkImage,
+    pub(crate) color_image: VkImage,
     /// Color attachment image view.
-    pub color_view: VkImageView,
+    pub(crate) color_view: VkImageView,
     /// Depth attachment image.
-    pub depth_image: VkImage,
+    pub(crate) depth_image: VkImage,
     /// Depth attachment image view.
-    pub depth_view: VkImageView,
+    pub(crate) depth_view: VkImageView,
     /// Viewport extent.
     pub extent: Extent2D,
 }
@@ -340,7 +340,7 @@ impl VulkanRenderer {
     }
 
     /// Get storage descriptor set for binding (set 0).
-    pub fn storage_descriptor(&self) -> VkDescriptorSet {
+    pub(crate) fn storage_descriptor(&self) -> VkDescriptorSet {
         self.storage_descriptor_set.set()
     }
 
@@ -360,7 +360,7 @@ impl VulkanRenderer {
     ///
     /// This is used by the particle system to register compute and graphics pipelines.
     /// The handle can then be used in ParticleDispatch and ParticleRender.
-    pub fn register_particle_pipeline(
+    pub(crate) fn register_particle_pipeline(
         &mut self,
         pipeline: crate::sync::VkPipeline,
     ) -> PipelineHandle {
@@ -368,7 +368,7 @@ impl VulkanRenderer {
     }
 
     /// Register a pipeline layout for particle system use and return a handle.
-    pub fn register_particle_layout(
+    pub(crate) fn register_particle_layout(
         &mut self,
         layout: crate::sync::VkPipelineLayout,
     ) -> PipelineLayoutHandle {
@@ -376,7 +376,7 @@ impl VulkanRenderer {
     }
 
     /// Register a descriptor set for particle system use and return a handle.
-    pub fn register_particle_descriptor(
+    pub(crate) fn register_particle_descriptor(
         &mut self,
         descriptor: crate::sync::VkDescriptorSet,
     ) -> DescriptorSetHandle {
@@ -384,7 +384,7 @@ impl VulkanRenderer {
     }
 
     /// Get a registered pipeline by handle.
-    pub fn get_particle_pipeline(
+    pub(crate) fn get_particle_pipeline(
         &self,
         handle: PipelineHandle,
     ) -> Option<&crate::sync::VkPipeline> {
@@ -392,7 +392,7 @@ impl VulkanRenderer {
     }
 
     /// Get a registered pipeline layout by handle.
-    pub fn get_particle_layout(
+    pub(crate) fn get_particle_layout(
         &self,
         handle: PipelineLayoutHandle,
     ) -> Option<&crate::sync::VkPipelineLayout> {
@@ -400,7 +400,7 @@ impl VulkanRenderer {
     }
 
     /// Get a registered descriptor set by handle.
-    pub fn get_particle_descriptor(
+    pub(crate) fn get_particle_descriptor(
         &self,
         handle: DescriptorSetHandle,
     ) -> Option<&crate::sync::VkDescriptorSet> {
@@ -409,7 +409,7 @@ impl VulkanRenderer {
 
     /// Register an external image (e.g., swapchain image, viewport texture) for render graph use.
     /// Returns a handle that can be used in ResourceKind::ExternalImage.
-    pub fn register_external_image(
+    pub(crate) fn register_external_image(
         &mut self,
         image: crate::sync::VkImage,
         image_view: crate::sync::VkImageView,
@@ -419,12 +419,15 @@ impl VulkanRenderer {
 
     /// Register an external buffer for render graph use.
     /// Returns a handle that can be used in ResourceKind::ExternalBuffer.
-    pub fn register_external_buffer(&mut self, buffer: crate::sync::VkBuffer) -> BufferHandle {
+    pub(crate) fn register_external_buffer(
+        &mut self,
+        buffer: crate::sync::VkBuffer,
+    ) -> BufferHandle {
         BufferHandle::new(self.external_buffers.insert(buffer))
     }
 
     /// Get a registered external image by handle.
-    pub fn get_external_image(
+    pub(crate) fn get_external_image(
         &self,
         handle: ImageHandle,
     ) -> Option<&(crate::sync::VkImage, crate::sync::VkImageView)> {
@@ -432,7 +435,10 @@ impl VulkanRenderer {
     }
 
     /// Get a registered external buffer by handle.
-    pub fn get_external_buffer(&self, handle: BufferHandle) -> Option<&crate::sync::VkBuffer> {
+    pub(crate) fn get_external_buffer(
+        &self,
+        handle: BufferHandle,
+    ) -> Option<&crate::sync::VkBuffer> {
         self.external_buffers.get(handle.index())
     }
 
@@ -461,14 +467,14 @@ impl VulkanRenderer {
     }
 
     /// Get the output color image view (for rendering UI).
-    pub fn output_color_view(&self) -> Option<VkImageView> {
+    pub(crate) fn output_color_view(&self) -> Option<VkImageView> {
         self.output_target
             .as_ref()
             .map(|t| VkImageView::new(t.color_image_view))
     }
 
     /// Get the output color image (for present pass blit).
-    pub fn output_color_image(&self) -> Option<VkImage> {
+    pub(crate) fn output_color_image(&self) -> Option<VkImage> {
         self.output_target
             .as_ref()
             .map(|t| VkImage::new(t.color_image))
@@ -560,21 +566,21 @@ impl VulkanRenderer {
     }
 
     /// Get the viewport color image view.
-    pub fn viewport_color_view(&self) -> Option<VkImageView> {
+    pub(crate) fn viewport_color_view(&self) -> Option<VkImageView> {
         self.get_render_target_first(Self::VIEWPORT_TEXTURE_ID)
             .map(|t| t.color_view())
     }
 
     /// Get the viewport depth image.
-    pub fn viewport_depth_image(&self) -> Option<VkImage> {
+    pub(crate) fn viewport_depth_image(&self) -> Option<VkImage> {
         self.get_render_target_first(Self::VIEWPORT_TEXTURE_ID)
-            .map(|t| VkImage::new(t.depth_image()))
+            .map(|t| t.depth_image())
     }
 
     /// Get the viewport color image.
-    pub fn viewport_color_image(&self) -> Option<VkImage> {
+    pub(crate) fn viewport_color_image(&self) -> Option<VkImage> {
         self.get_render_target_first(Self::VIEWPORT_TEXTURE_ID)
-            .map(|t| VkImage::new(t.color_image()))
+            .map(|t| t.color_image())
     }
 
     /// Get viewport dimensions.
@@ -629,7 +635,7 @@ impl VulkanRenderer {
     }
 
     /// Get the color image view for a viewport (by handle).
-    pub fn get_viewport_color_view(&self, handle: ViewportHandle) -> Option<VkImageView> {
+    pub(crate) fn get_viewport_color_view(&self, handle: ViewportHandle) -> Option<VkImageView> {
         self.viewports.get(handle.0).map(|v| v.color_view())
     }
 
@@ -1026,7 +1032,7 @@ impl VulkanRenderer {
     ///
     /// # Returns
     /// A `SkeletonHandle` that references the registered skeleton.
-    pub fn register_skeleton(
+    pub(crate) fn register_skeleton(
         &mut self,
         skeleton_buffer: Rc<RefCell<SkeletonBuffer>>,
         skeleton_set_layout: crate::sync::VkDescriptorSetLayout,
@@ -1053,7 +1059,7 @@ impl VulkanRenderer {
     /// Get the skeleton descriptor set layout for a material.
     ///
     /// Returns `None` if the material doesn't support skeletal animation.
-    pub fn get_skeleton_set_layout(
+    pub(crate) fn get_skeleton_set_layout(
         &self,
         handle: MaterialHandle,
     ) -> Option<crate::sync::VkDescriptorSetLayout> {
@@ -1230,29 +1236,29 @@ impl ViewportRenderTarget {
     }
 
     /// Get the color image view for render graph and UI sampling.
-    pub fn color_view(&self) -> VkImageView {
+    pub(crate) fn color_view(&self) -> VkImageView {
         VkImageView::new(self.color_image_view)
     }
 
     /// Get the depth image view for render graph.
-    pub(crate) fn depth_view(&self) -> vk::ImageView {
-        self.depth_image_view
+    pub(crate) fn depth_view(&self) -> VkImageView {
+        VkImageView::new(self.depth_image_view)
     }
 
     /// Get the color image handle.
-    pub(crate) fn color_image(&self) -> vk::Image {
-        self.color_image
+    pub(crate) fn color_image(&self) -> VkImage {
+        VkImage::new(self.color_image)
     }
 
     /// Get the depth image handle.
-    pub(crate) fn depth_image(&self) -> vk::Image {
-        self.depth_image
+    pub(crate) fn depth_image(&self) -> VkImage {
+        VkImage::new(self.depth_image)
     }
 
     /// Get the sampler for this render target.
     ///
     /// Returns a wrapper type to avoid exposing vk::Sampler in the public API.
-    pub fn sampler(&self) -> VkSampler {
+    pub(crate) fn sampler(&self) -> VkSampler {
         VkSampler::new(self.sampler)
     }
 }

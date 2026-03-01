@@ -15,7 +15,7 @@ pub mod template;
 pub mod uniform_layout;
 
 pub use asset::*;
-pub use buffer_descriptor::{BufferBinding, BufferDescriptorSource, UniformBuffer};
+pub use buffer_descriptor::UniformBuffer;
 pub use builder::*;
 pub use compute_pipeline::{ComputePipeline, ComputePipelineBuilder, ComputePipelineError};
 pub use descriptor::{
@@ -148,7 +148,7 @@ pub struct ImageInfo {
 }
 
 impl ImageInfo {
-    pub fn new(image_view: VkImageView, sampler: VkSampler) -> Self {
+    pub(crate) fn new(image_view: VkImageView, sampler: VkSampler) -> Self {
         Self {
             image_view: image_view.vk(),
             sampler: sampler.vk(),
@@ -156,7 +156,7 @@ impl ImageInfo {
     }
 
     /// Create ImageInfo from a TextureHandle by looking up in TextureManager.
-    pub fn from_handle(
+    pub(crate) fn from_handle(
         handle: TextureHandle,
         tm: &crate::texture::TextureManager,
         sampler: VkSampler,
@@ -443,14 +443,14 @@ impl MaterialPipeline {
     /// Get the pipeline handle as a wrapper type.
     ///
     /// Panics if the pipeline was destroyed.
-    pub fn pipeline(&self) -> crate::sync::VkPipeline {
+    pub(crate) fn pipeline(&self) -> crate::sync::VkPipeline {
         self.vk_pipeline().pipeline()
     }
 
     /// Get the pipeline layout as a wrapper type.
     ///
     /// Panics if the pipeline was destroyed.
-    pub fn pipeline_layout(&self) -> crate::sync::VkPipelineLayout {
+    pub(crate) fn pipeline_layout(&self) -> crate::sync::VkPipelineLayout {
         self.vk_pipeline().pipeline_layout()
     }
 

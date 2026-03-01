@@ -42,9 +42,6 @@ pub use crate::vulkan::material::{
     load_material_from_file,
     // Asset loading
     AssetError,
-    // Buffer descriptors
-    BufferBinding,
-    BufferDescriptorSource,
     // Compute pipeline
     ComputePipeline,
     ComputePipelineBuilder,

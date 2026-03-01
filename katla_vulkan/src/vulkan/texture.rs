@@ -19,8 +19,8 @@ pub struct Texture {
     format: ImageFormat,
     image_memory: ManuallyDrop<Allocation>,
     image: VkImage,
-    pub image_view: VkImageView,
-    pub image_sampler: VkSampler,
+    pub(crate) image_view: VkImageView,
+    pub(crate) image_sampler: VkSampler,
     /// Descriptors that should be auto-updated when the image view changes.
     registered_descriptors: Vec<(VkDescriptorSet, u32)>,
     context: Rc<VulkanContext>,
@@ -318,7 +318,11 @@ impl Texture {
     /// // Later, resize() will automatically update the descriptor
     /// texture.resize(new_width, new_height, new_pixels);
     /// ```
-    pub fn register_for_descriptor(&mut self, descriptor_set: VkDescriptorSet, binding: u32) {
+    pub(crate) fn register_for_descriptor(
+        &mut self,
+        descriptor_set: VkDescriptorSet,
+        binding: u32,
+    ) {
         self.registered_descriptors.push((descriptor_set, binding));
     }
 

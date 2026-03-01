@@ -108,7 +108,10 @@ impl DescriptorSetLayoutBuilder {
     }
 
     /// Build the descriptor set layout.
-    pub fn build(self, context: &VulkanContext) -> Result<VkDescriptorSetLayout, vk::Result> {
+    pub(crate) fn build(
+        self,
+        context: &VulkanContext,
+    ) -> Result<VkDescriptorSetLayout, vk::Result> {
         let vk_bindings: Vec<vk::DescriptorSetLayoutBinding> =
             self.bindings.into_iter().map(|b| b.into_vk()).collect();
 

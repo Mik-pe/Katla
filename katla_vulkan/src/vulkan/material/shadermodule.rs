@@ -135,7 +135,7 @@ impl ShaderModule {
     }
 
     // Expose a safe wrapper around the raw Vulkan shader module
-    pub fn wrapped_module(&self) -> crate::sync::VkShaderModule {
+    pub(crate) fn wrapped_module(&self) -> crate::sync::VkShaderModule {
         crate::sync::VkShaderModule::new(self.module)
     }
 }

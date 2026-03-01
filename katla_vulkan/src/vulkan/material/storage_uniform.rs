@@ -84,7 +84,7 @@ impl StorageDescriptorSet {
     ///
     /// # Returns
     /// A new StorageDescriptorSet with storage buffer bindings
-    pub fn new(
+    pub(crate) fn new(
         context: &Rc<VulkanContext>,
         storage_buffer: &DeviceAddressBuffer,
         desc_layout: crate::sync::VkDescriptorSetLayout,
@@ -111,7 +111,7 @@ impl StorageDescriptorSet {
     }
 
     /// Get the descriptor set for binding as a wrapper type.
-    pub fn set(&self) -> crate::sync::VkDescriptorSet {
+    pub(crate) fn set(&self) -> crate::sync::VkDescriptorSet {
         self.inner.wrapped()
     }
 
@@ -481,7 +481,7 @@ impl StorageUniformManager {
     ///
     /// # Returns
     /// A StorageDescriptorSet that can be bound to a pipeline
-    pub fn create_descriptor_set(
+    pub(crate) fn create_descriptor_set(
         &self,
         context: &Rc<VulkanContext>,
         desc_layout: crate::sync::VkDescriptorSetLayout,

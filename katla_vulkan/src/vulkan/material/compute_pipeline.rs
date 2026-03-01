@@ -34,7 +34,7 @@ impl ComputePipelineBuilder {
     }
 
     /// Set the compute shader module. (wrapper variant; raw variant removed)
-    pub fn with_shader(mut self, shader: crate::sync::VkShaderModule) -> Self {
+    pub(crate) fn with_shader(mut self, shader: crate::sync::VkShaderModule) -> Self {
         self.compute_shader = Some(shader.vk());
         self
     }
@@ -46,13 +46,13 @@ impl ComputePipelineBuilder {
     }
 
     /// Set the descriptor set layouts using wrapper types.
-    pub fn with_descriptor_layouts(mut self, layouts: Vec<VkDescriptorSetLayout>) -> Self {
+    pub(crate) fn with_descriptor_layouts(mut self, layouts: Vec<VkDescriptorSetLayout>) -> Self {
         self.descriptor_layouts = layouts.into_iter().map(|l| l.into()).collect();
         self
     }
 
     /// Add a descriptor set layout using wrapper type.
-    pub fn add_descriptor_layout(mut self, layout: VkDescriptorSetLayout) -> Self {
+    pub(crate) fn add_descriptor_layout(mut self, layout: VkDescriptorSetLayout) -> Self {
         self.descriptor_layouts.push(layout.into());
         self
     }
@@ -135,12 +135,12 @@ pub struct ComputePipeline {
 
 impl ComputePipeline {
     /// Get the pipeline handle as a wrapper type.
-    pub fn pipeline(&self) -> VkPipeline {
+    pub(crate) fn pipeline(&self) -> VkPipeline {
         VkPipeline::new(self.handle)
     }
 
     /// Get the pipeline layout as a wrapper type.
-    pub fn pipeline_layout(&self) -> VkPipelineLayout {
+    pub(crate) fn pipeline_layout(&self) -> VkPipelineLayout {
         VkPipelineLayout::new(self.layout)
     }
 

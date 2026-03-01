@@ -139,9 +139,9 @@ struct QueueFamilyIndices {
 
 pub struct RenderTexture {
     pub extent: vk::Extent2D,
-    pub image_view: VkImageView,
+    pub(crate) image_view: VkImageView,
     pub format: vk::Format,
-    pub image: VkImage,
+    pub(crate) image: VkImage,
     pub image_memory: Option<Allocation>,
     pub context: Rc<VulkanContext>,
 }
@@ -186,9 +186,9 @@ pub struct VulkanContext {
 }
 pub struct VulkanFrameCtx {
     pub context: Rc<VulkanContext>,
-    pub swapchain_image_views: Vec<VkImageView>,
+    pub(crate) swapchain_image_views: Vec<VkImageView>,
     pub swapchain: super::Swapchain,
-    pub swapchain_images: Vec<VkImage>,
+    pub(crate) swapchain_images: Vec<VkImage>,
     pub depth_render_texture: RenderTexture,
     pub command_buffers: Vec<super::CommandBuffer>,
 }
@@ -307,7 +307,7 @@ impl VulkanContext {
 
     /// Free a buffer and its allocation.
     /// Uses wrapper type to avoid exposing vk::Buffer in public API.
-    pub fn free_buffer(&self, buffer: VkBuffer, allocation: Allocation) {
+    pub(crate) fn free_buffer(&self, buffer: VkBuffer, allocation: Allocation) {
         let mut allocator = self.allocator.borrow_mut();
         allocator.free(allocation).unwrap();
         unsafe { self.device.destroy_buffer(buffer.vk(), None) };
@@ -347,7 +347,7 @@ impl VulkanContext {
 
     /// Free an image and its allocation.
     /// Uses wrapper type to avoid exposing vk::Image in public API.
-    pub fn free_image(&self, image: VkImage, allocation: Allocation) {
+    pub(crate) fn free_image(&self, image: VkImage, allocation: Allocation) {
         let mut allocator = self.allocator.borrow_mut();
         allocator.free(allocation).unwrap();
         unsafe {
@@ -358,7 +358,7 @@ impl VulkanContext {
     /// Create a CLAMP_TO_EDGE sampler suitable for UI/2D rendering.
     ///
     /// Uses LINEAR filtering with no anisotropy.
-    pub fn create_sampler_clamp_to_edge(&self) -> Result<VkSampler, vk::Result> {
+    pub(crate) fn create_sampler_clamp_to_edge(&self) -> Result<VkSampler, vk::Result> {
         let create_info = vk::SamplerCreateInfo::default()
             .mag_filter(vk::Filter::LINEAR)
             .min_filter(vk::Filter::LINEAR)
@@ -383,7 +383,7 @@ impl VulkanContext {
     /// Create a REPEAT sampler with anisotropy for 3D textures.
     ///
     /// Uses LINEAR filtering with 16x anisotropy and mipmaps.
-    pub fn create_sampler_repeat_anisotropic(&self) -> Result<VkSampler, vk::Result> {
+    pub(crate) fn create_sampler_repeat_anisotropic(&self) -> Result<VkSampler, vk::Result> {
         let create_info = vk::SamplerCreateInfo::default()
             .mag_filter(vk::Filter::LINEAR)
             .min_filter(vk::Filter::LINEAR)
@@ -406,7 +406,7 @@ impl VulkanContext {
     }
 
     /// Destroy a sampler.
-    pub fn destroy_sampler(&self, sampler: VkSampler) {
+    pub(crate) fn destroy_sampler(&self, sampler: VkSampler) {
         unsafe {
             self.device.destroy_sampler(sampler.into(), None);
         }
