@@ -19,9 +19,6 @@ pub enum RendererError {
     /// IO error (file loading, etc.).
     IoError(String),
 
-    /// Render graph compilation or execution error.
-    RenderGraphError(String),
-
     /// Resource not found.
     NotFound(String),
 
@@ -37,7 +34,6 @@ impl fmt::Display for RendererError {
         match self {
             RendererError::VulkanError(msg) => write!(f, "Vulkan error: {}", msg),
             RendererError::IoError(msg) => write!(f, "IO error: {}", msg),
-            RendererError::RenderGraphError(msg) => write!(f, "Render graph error: {}", msg),
             RendererError::NotFound(msg) => write!(f, "Not found: {}", msg),
             RendererError::InvalidOperation(msg) => write!(f, "Invalid operation: {}", msg),
             RendererError::InitializationFailed(msg) => write!(f, "Initialization failed: {}", msg),
@@ -60,12 +56,6 @@ impl From<ash::vk::Result> for RendererError {
 impl From<io::Error> for RendererError {
     fn from(error: io::Error) -> Self {
         RendererError::IoError(error.to_string())
-    }
-}
-
-impl From<crate::RenderGraphError> for RendererError {
-    fn from(error: crate::RenderGraphError) -> Self {
-        RendererError::RenderGraphError(error.to_string())
     }
 }
 

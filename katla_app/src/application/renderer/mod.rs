@@ -597,15 +597,7 @@ pub fn render_frame(app: &mut Application) {
 
     // Handle render errors
     if let Err(e) = result {
-        match e {
-            katla_vulkan::RenderGraphError::SwapchainOutOfDate => {
-                // Swapchain is out of date (e.g., window resize), skip this frame
-                // The swapchain will be recreated on the next frame
-            }
-            _ => {
-                error!("Render frame failed: {:?}", e);
-            }
-        }
+        error!("Render frame failed: {:?}", e);
     }
 }
 

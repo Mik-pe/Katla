@@ -5,6 +5,8 @@
 
 use bitflags::bitflags;
 
+use crate::texture::ImageFormat;
+
 bitflags! {
     /// Usage flags for texture creation.
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -26,14 +28,6 @@ impl Default for TextureUsage {
     fn default() -> Self {
         TextureUsage::SAMPLED | TextureUsage::COPY_DST
     }
-}
-
-pub enum ImageFormat {
-    R8G8B8A8Srgb,
-    R8G8B8A8Unorm,
-    R8Unorm,
-    Rg8Unorm,
-    R16G16B16A16Sfloat,
 }
 
 /// Descriptor for creating a texture.

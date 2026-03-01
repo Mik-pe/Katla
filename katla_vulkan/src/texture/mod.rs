@@ -26,9 +26,11 @@
 //! ```
 
 mod descriptor;
+mod format;
 mod manager;
 
 pub use descriptor::{TextureDescriptor, TextureUsage};
+pub use format::*;
 pub use manager::{
     TextureManager, DEFAULT_ALBEDO_SLOT, DEFAULT_EMISSION_SLOT, DEFAULT_MR_SLOT,
     DEFAULT_NORMAL_SLOT, DEFAULT_OCCLUSION_SLOT,

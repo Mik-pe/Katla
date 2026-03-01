@@ -14,21 +14,20 @@ pub use crate::handle::{
     DescriptorSetHandle, Handle, MaterialHandle, MeshHandle, PipelineHandle, PipelineLayoutHandle,
     ResourceStorage, SkeletonHandle, TextureHandle,
 };
+use crate::viewport::{ViewportBuilder, ViewportHandle};
 pub use registry::AssetRegistry;
 pub use types::{
     DrawCall, DrawList, FrameUniforms, InstanceData, ParticleDispatch, ParticleRender,
 };
 
-use crate::sync::{
-    VkDescriptorSet, VkDescriptorSetLayout, VkFence, VkImage, VkImageView, VkSampler, VkSemaphore,
-};
+use crate::sync::{VkDescriptorSet, VkFence, VkImage, VkImageView, VkSampler, VkSemaphore};
 use crate::{
     viewport::Viewport, BindlessTextureManager, DescriptorLayoutBuilder, IndexBuffer, Material,
     MaterialPipelineCache, MaterialRegistry, RendererError, SkeletonBuffer, SkeletonDescriptorSet,
     StorageDescriptorSet, StorageUniformManager, SwapData, TextureManager, VertexBinding,
     VertexBuffer, VulkanContext, VulkanFrameCtx, MAX_BINDLESS_TEXTURES,
 };
-use ash::vk;
+use ash::vk::{self, Extent2D};
 use log::{error, info, warn};
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 use std::{cell::RefCell, ffi::CString, rc::Rc};
