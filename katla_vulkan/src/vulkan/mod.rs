@@ -5,8 +5,6 @@ pub mod commandpool;
 pub mod context;
 pub mod descriptor;
 pub mod descriptor_set;
-pub mod frame_buffer;
-pub mod framebuffer;
 pub mod material;
 pub mod particle_buffer;
 pub mod pipeline_state;
@@ -31,9 +29,7 @@ pub use descriptor::DescriptorSetLayoutBuilder;
 pub use descriptor_set::{DescriptorSet, DescriptorSetBuilder};
 // Note: descriptor::DescriptorBinding is for layout creation
 // descriptor_set::DescriptorBinding is for runtime binding - use full path when needed
-pub use frame_buffer::*;
-pub use framebuffer::*;
-#[allow(deprecated)]
+
 pub use material::storage_uniform::*;
 // Exclude material::DescriptorBinding to avoid conflict with descriptor::DescriptorBinding
 // MaterialAsset is in crate::renderer::registry, MaterialType does not exist

@@ -25,7 +25,7 @@ use super::SwapchainInfo;
 
 const LAYER_KHRONOS_VALIDATION: &str = concat!("VK_LAYER_KHRONOS_validation", "\0");
 
-use crate::sync::{VkBuffer, VkImage, VkImageView, VkSampler};
+use crate::sync::{VkImage, VkImageView, VkSampler};
 
 /// Validation message severity level.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -306,11 +306,10 @@ impl VulkanContext {
     }
 
     /// Free a buffer and its allocation.
-    /// Uses wrapper type to avoid exposing vk::Buffer in public API.
-    pub(crate) fn free_buffer(&self, buffer: VkBuffer, allocation: Allocation) {
+    pub(crate) fn free_buffer(&self, buffer: vk::Buffer, allocation: Allocation) {
         let mut allocator = self.allocator.borrow_mut();
         allocator.free(allocation).unwrap();
-        unsafe { self.device.destroy_buffer(buffer.vk(), None) };
+        unsafe { self.device.destroy_buffer(buffer, None) };
     }
 
     /// Map a buffer allocation to host memory.

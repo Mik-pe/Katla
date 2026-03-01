@@ -74,7 +74,7 @@ impl PipelineBuilder {
         }
     }
 
-    pub fn with_shaders(mut self, vert: vk::ShaderModule, frag: vk::ShaderModule) -> Self {
+    pub(crate) fn with_shaders(mut self, vert: vk::ShaderModule, frag: vk::ShaderModule) -> Self {
         self.vertex_shader = Some(vert);
         self.fragment_shader = Some(frag);
         self
@@ -86,7 +86,7 @@ impl PipelineBuilder {
         self
     }
 
-    pub fn with_vertex_input(
+    pub(crate) fn with_vertex_input(
         mut self,
         bindings: Vec<vk::VertexInputBindingDescription>,
         attributes: Vec<vk::VertexInputAttributeDescription>,

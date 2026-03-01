@@ -81,17 +81,6 @@ pub struct AttributeBinding {
     pub(crate) buffer: vk::Buffer,
 }
 
-impl AttributeBinding {
-    /// Create a new attribute binding.
-    pub fn new(attr_type: AttributeType, format: VertexFormat, buffer: vk::Buffer) -> Self {
-        Self {
-            attr_type,
-            format,
-            buffer,
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

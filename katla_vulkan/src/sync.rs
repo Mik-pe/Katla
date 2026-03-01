@@ -88,7 +88,6 @@ define_vk_wrapper!(VkImageView, vk::ImageView);
 define_vk_wrapper!(VkSampler, vk::Sampler);
 define_vk_wrapper!(VkImage, vk::Image);
 define_vk_wrapper!(VkRenderPass, vk::RenderPass, default);
-define_vk_wrapper!(VkFramebuffer, vk::Framebuffer);
 define_vk_wrapper!(VkDescriptorSet, vk::DescriptorSet);
 define_vk_wrapper!(VkDescriptorSetLayout, vk::DescriptorSetLayout);
 define_vk_wrapper!(VkDescriptorPool, vk::DescriptorPool);
@@ -228,24 +227,6 @@ impl RenderingInfo {
     /// Set the layer count.
     pub fn layer_count(mut self, count: u32) -> Self {
         self.layer_count = count;
-        self
-    }
-
-    /// Add a color attachment.
-    pub fn color_attachment(mut self, attachment: vk::RenderingAttachmentInfo<'static>) -> Self {
-        self.color_attachments.push(attachment);
-        self
-    }
-
-    /// Set the depth attachment.
-    pub fn depth_attachment(mut self, attachment: vk::RenderingAttachmentInfo<'static>) -> Self {
-        self.depth_attachment = Some(attachment);
-        self
-    }
-
-    /// Set the stencil attachment.
-    pub fn stencil_attachment(mut self, attachment: vk::RenderingAttachmentInfo<'static>) -> Self {
-        self.stencil_attachment = Some(attachment);
         self
     }
 
@@ -586,19 +567,19 @@ impl ImageMemoryBarrier2 {
     }
 
     /// Set old image layout.
-    pub fn old_layout(mut self, layout: vk::ImageLayout) -> Self {
+    pub(crate) fn old_layout(mut self, layout: vk::ImageLayout) -> Self {
         self.old_layout = layout;
         self
     }
 
     /// Set new image layout.
-    pub fn new_layout(mut self, layout: vk::ImageLayout) -> Self {
+    pub(crate) fn new_layout(mut self, layout: vk::ImageLayout) -> Self {
         self.new_layout = layout;
         self
     }
 
     /// Set image subresource range.
-    pub fn subresource_range(mut self, range: vk::ImageSubresourceRange) -> Self {
+    pub(crate) fn subresource_range(mut self, range: vk::ImageSubresourceRange) -> Self {
         self.subresource_range = range;
         self
     }
@@ -662,18 +643,6 @@ impl BufferMemoryBarrier2 {
         self
     }
 
-    /// Set buffer offset.
-    pub fn offset(mut self, offset: vk::DeviceSize) -> Self {
-        self.offset = offset;
-        self
-    }
-
-    /// Set buffer size.
-    pub fn size(mut self, size: vk::DeviceSize) -> Self {
-        self.size = size;
-        self
-    }
-
     /// Convert to Vulkan vk::BufferMemoryBarrier2KHR.
     pub(crate) fn into_vk(self) -> vk::BufferMemoryBarrier2KHR<'static> {
         vk::BufferMemoryBarrier2KHR::default()
@@ -708,18 +677,6 @@ impl DependencyInfo {
             buffer_barriers: Vec::new(),
             image_barriers: Vec::new(),
         }
-    }
-
-    /// Add a memory barrier.
-    pub fn add_memory_barrier(mut self, barrier: vk::MemoryBarrier2KHR<'static>) -> Self {
-        self.memory_barriers.push(barrier);
-        self
-    }
-
-    /// Add a buffer memory barrier (raw Vulkan type).
-    pub fn add_buffer_barrier(mut self, barrier: vk::BufferMemoryBarrier2KHR<'static>) -> Self {
-        self.buffer_barriers.push(barrier);
-        self
     }
 
     /// Add a buffer memory barrier using the wrapper type.

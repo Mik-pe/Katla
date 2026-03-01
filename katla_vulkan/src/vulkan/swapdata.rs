@@ -10,7 +10,11 @@ pub struct SwapData {
 }
 
 impl SwapData {
-    pub fn new(device: &Device, swapchain_images: &[vk::Image], frames_in_flight: usize) -> Self {
+    pub(crate) fn new(
+        device: &Device,
+        swapchain_images: &[vk::Image],
+        frames_in_flight: usize,
+    ) -> Self {
         let num_swapchain_images = swapchain_images.len();
 
         // Create the semaphores for acquire (we don't know which image we'll get yet)

@@ -23,8 +23,8 @@ pub use vulkan::texture::Texture;
 // Public API exports
 pub use error::RendererError;
 pub use handle::{
-    BufferHandle, DescriptorSetHandle, Handle, ImageHandle, MaterialHandle, MeshHandle,
-    PipelineHandle, PipelineLayoutHandle, ResourceStorage, SkeletonHandle, TextureHandle,
+    DescriptorSetHandle, Handle, MaterialHandle, MeshHandle, PipelineHandle, PipelineLayoutHandle,
+    SkeletonHandle, TextureHandle,
 };
 pub use material::{
     BindlessPbrMaterialConfig, BindlessSkinnedPbrMaterialConfig, DynamicMaterialConfig,
@@ -68,7 +68,5 @@ pub use vulkan::bda::DeviceAddressBuffer;
 pub use vulkan::material::buffer_descriptor::UniformBuffer;
 pub use vulkan::material::compute_pipeline::ComputePipeline;
 pub use vulkan::particle_buffer::{EmitterConfig, ParticleBuffer, MAX_PARTICLES};
-// Framebuffer (legacy render pass)
-pub use vulkan::frame_buffer::FrameBuffer;
 // Command buffer (needed for render graph execution)
 pub use vulkan::commandbuffer::CommandBuffer;

@@ -58,7 +58,7 @@ impl ComputePipelineBuilder {
     }
 
     /// Set the push constant ranges.
-    pub fn with_push_constants(mut self, ranges: Vec<vk::PushConstantRange>) -> Self {
+    pub(crate) fn with_push_constants(mut self, ranges: Vec<vk::PushConstantRange>) -> Self {
         self.push_constant_ranges = ranges;
         self
     }
