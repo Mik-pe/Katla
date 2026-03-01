@@ -3,6 +3,7 @@ use crate::sync::{
     AccessFlags2, DependencyInfo, ImageMemoryBarrier2, PipelineStage2Flags, VkDescriptorSet,
     VkImage, VkImageView, VkSampler,
 };
+use crate::texture::ImageFormat;
 use crate::VulkanFrameCtx;
 
 use std::mem::ManuallyDrop;

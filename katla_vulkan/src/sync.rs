@@ -227,6 +227,190 @@ define_vk_wrapper!(VkBuffer, vk::Buffer, default);
 define_vk_wrapper!(VkShaderModule, vk::ShaderModule);
 
 //=============================================================================
+// Dynamic Rendering Types (Vulkan 1.3)
+//=============================================================================
+
+/// Wrapper for Vulkan 1.3 Viewport.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct Viewport {
+    pub x: f32,
+    pub y: f32,
+    pub width: f32,
+    pub height: f32,
+    pub min_depth: f32,
+    pub max_depth: f32,
+}
+
+impl Viewport {
+    /// Create a new viewport.
+    pub fn new(x: f32, y: f32, width: f32, height: f32, min_depth: f32, max_depth: f32) -> Self {
+        Self {
+            x,
+            y,
+            width,
+            height,
+            min_depth,
+            max_depth,
+        }
+    }
+
+    /// Create a viewport from position and size (uses default depth range 0.0-1.0).
+    pub fn from_rect(x: f32, y: f32, width: f32, height: f32) -> Self {
+        Self {
+            x,
+            y,
+            width,
+            height,
+            min_depth: 0.0,
+            max_depth: 1.0,
+        }
+    }
+}
+
+impl From<Viewport> for vk::Viewport {
+    fn from(viewport: Viewport) -> Self {
+        vk::Viewport::default()
+            .x(viewport.x)
+            .y(viewport.y)
+            .width(viewport.width)
+            .height(viewport.height)
+            .min_depth(viewport.min_depth)
+            .max_depth(viewport.max_depth)
+    }
+}
+
+/// Wrapper for Vulkan 1.3 Rect2D (scissor rectangle).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub struct Rect2D {
+    pub x: i32,
+    pub y: i32,
+    pub width: u32,
+    pub height: u32,
+}
+
+impl Rect2D {
+    /// Create a new 2D rectangle.
+    pub fn new(x: i32, y: i32, width: u32, height: u32) -> Self {
+        Self {
+            x,
+            y,
+            width,
+            height,
+        }
+    }
+
+    /// Create a rectangle from an extent (position 0,0).
+    pub fn from_extent(width: u32, height: u32) -> Self {
+        Self {
+            x: 0,
+            y: 0,
+            width,
+            height,
+        }
+    }
+}
+
+impl From<Rect2D> for vk::Rect2D {
+    fn from(rect: Rect2D) -> Self {
+        vk::Rect2D::default()
+            .offset(vk::Offset2D {
+                x: rect.x,
+                y: rect.y,
+            })
+            .extent(vk::Extent2D {
+                width: rect.width,
+                height: rect.height,
+            })
+    }
+}
+
+/// Wrapper for Vulkan 1.3 RenderingInfo (dynamic rendering).
+#[derive(Clone, Debug)]
+pub struct RenderingInfo {
+    pub render_area: Rect2D,
+    pub layer_count: u32,
+    pub view_mask: u32,
+    pub color_attachments: Vec<vk::RenderingAttachmentInfo<'static>>,
+    pub depth_attachment: Option<vk::RenderingAttachmentInfo<'static>>,
+    pub stencil_attachment: Option<vk::RenderingAttachmentInfo<'static>>,
+}
+
+impl RenderingInfo {
+    /// Create a new rendering info.
+    pub fn new(render_area: Rect2D) -> Self {
+        Self {
+            render_area,
+            layer_count: 1,
+            view_mask: 0,
+            color_attachments: Vec::new(),
+            depth_attachment: None,
+            stencil_attachment: None,
+        }
+    }
+
+    /// Set the render area.
+    pub fn render_area(mut self, rect: Rect2D) -> Self {
+        self.render_area = rect;
+        self
+    }
+
+    /// Set the layer count.
+    pub fn layer_count(mut self, count: u32) -> Self {
+        self.layer_count = count;
+        self
+    }
+
+    /// Add a color attachment.
+    pub fn color_attachment(mut self, attachment: vk::RenderingAttachmentInfo<'static>) -> Self {
+        self.color_attachments.push(attachment);
+        self
+    }
+
+    /// Set the depth attachment.
+    pub fn depth_attachment(mut self, attachment: vk::RenderingAttachmentInfo<'static>) -> Self {
+        self.depth_attachment = Some(attachment);
+        self
+    }
+
+    /// Set the stencil attachment.
+    pub fn stencil_attachment(mut self, attachment: vk::RenderingAttachmentInfo<'static>) -> Self {
+        self.stencil_attachment = Some(attachment);
+        self
+    }
+
+    /// Build and execute with the given callback.
+    /// This handles the lifetime issues by keeping the Vulkan structs alive during the callback.
+    pub fn build<F, R>(self, f: F) -> R
+    where
+        F: FnOnce(&vk::RenderingInfo<'_>) -> R,
+    {
+        let vk_render_area: vk::Rect2D = self.render_area.into();
+
+        // Build color attachments slice
+        let color_attachments_vk: Vec<vk::RenderingAttachmentInfo<'_>> =
+            self.color_attachments.iter().map(|a| a.clone()).collect();
+
+        let mut rendering_info = vk::RenderingInfo::default()
+            .render_area(vk_render_area)
+            .layer_count(self.layer_count)
+            .view_mask(self.view_mask)
+            .color_attachments(&color_attachments_vk);
+
+        // Handle optional depth attachment
+        if let Some(ref depth) = self.depth_attachment {
+            rendering_info = rendering_info.depth_attachment(depth);
+        }
+
+        // Handle optional stencil attachment
+        if let Some(ref stencil) = self.stencil_attachment {
+            rendering_info = rendering_info.stencil_attachment(stencil);
+        }
+
+        f(&rendering_info)
+    }
+}
+
+//=============================================================================
 // Synchronization2 Wrapper Types (Vulkan 1.3)
 //=============================================================================
 

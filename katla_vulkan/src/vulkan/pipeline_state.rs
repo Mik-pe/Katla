@@ -375,6 +375,164 @@ impl From<VertexInputRate> for vk::VertexInputRate {
     }
 }
 
+/// Shader stage flags for pipeline creation.
+///
+/// This type wraps Vulkan shader stage flags and provides a type-safe API
+/// for specifying which shader stages are used in various operations.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub struct ShaderStages {
+    pub vertex: bool,
+    pub fragment: bool,
+    pub compute: bool,
+    pub geometry: bool,
+    pub tessellation_control: bool,
+    pub tessellation_evaluation: bool,
+}
+
+impl ShaderStages {
+    /// No shader stages.
+    pub const NONE: Self = Self {
+        vertex: false,
+        fragment: false,
+        compute: false,
+        geometry: false,
+        tessellation_control: false,
+        tessellation_evaluation: false,
+    };
+
+    /// Vertex shader stage only.
+    pub const VERTEX: Self = Self {
+        vertex: true,
+        fragment: false,
+        compute: false,
+        geometry: false,
+        tessellation_control: false,
+        tessellation_evaluation: false,
+    };
+
+    /// Fragment shader stage only.
+    pub const FRAGMENT: Self = Self {
+        vertex: false,
+        fragment: true,
+        compute: false,
+        geometry: false,
+        tessellation_control: false,
+        tessellation_evaluation: false,
+    };
+
+    /// Compute shader stage only.
+    pub const COMPUTE: Self = Self {
+        vertex: false,
+        fragment: false,
+        compute: true,
+        geometry: false,
+        tessellation_control: false,
+        tessellation_evaluation: false,
+    };
+
+    /// Geometry shader stage only.
+    pub const GEOMETRY: Self = Self {
+        vertex: false,
+        fragment: false,
+        compute: false,
+        geometry: true,
+        tessellation_control: false,
+        tessellation_evaluation: false,
+    };
+
+    /// Tessellation control shader stage only.
+    pub const TESSELLATION_CONTROL: Self = Self {
+        vertex: false,
+        fragment: false,
+        compute: false,
+        geometry: false,
+        tessellation_control: true,
+        tessellation_evaluation: false,
+    };
+
+    /// Tessellation evaluation shader stage only.
+    pub const TESSELLATION_EVALUATION: Self = Self {
+        vertex: false,
+        fragment: false,
+        compute: false,
+        geometry: false,
+        tessellation_control: false,
+        tessellation_evaluation: true,
+    };
+
+    /// Vertex and fragment shader stages (common for graphics pipelines).
+    pub const VERTEX_FRAGMENT: Self = Self {
+        vertex: true,
+        fragment: true,
+        compute: false,
+        geometry: false,
+        tessellation_control: false,
+        tessellation_evaluation: false,
+    };
+
+    /// All graphics shader stages.
+    pub const ALL_GRAPHICS: Self = Self {
+        vertex: true,
+        fragment: true,
+        compute: false,
+        geometry: true,
+        tessellation_control: true,
+        tessellation_evaluation: true,
+    };
+
+    /// Create a new ShaderStages with all stages disabled.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Check if any shader stage is enabled.
+    pub fn is_empty(&self) -> bool {
+        !self.vertex
+            && !self.fragment
+            && !self.compute
+            && !self.geometry
+            && !self.tessellation_control
+            && !self.tessellation_evaluation
+    }
+
+    /// Combine two ShaderStages with bitwise OR.
+    pub fn union(self, other: Self) -> Self {
+        Self {
+            vertex: self.vertex || other.vertex,
+            fragment: self.fragment || other.fragment,
+            compute: self.compute || other.compute,
+            geometry: self.geometry || other.geometry,
+            tessellation_control: self.tessellation_control || other.tessellation_control,
+            tessellation_evaluation: self.tessellation_evaluation || other.tessellation_evaluation,
+        }
+    }
+}
+
+impl From<ShaderStages> for vk::ShaderStageFlags {
+    fn from(stages: ShaderStages) -> Self {
+        let mut flags = vk::ShaderStageFlags::empty();
+        if stages.vertex {
+            flags |= vk::ShaderStageFlags::VERTEX;
+        }
+        if stages.fragment {
+            flags |= vk::ShaderStageFlags::FRAGMENT;
+        }
+        if stages.compute {
+            flags |= vk::ShaderStageFlags::COMPUTE;
+        }
+        if stages.geometry {
+            flags |= vk::ShaderStageFlags::GEOMETRY;
+        }
+        if stages.tessellation_control {
+            flags |= vk::ShaderStageFlags::TESSELLATION_CONTROL;
+        }
+        if stages.tessellation_evaluation {
+            flags |= vk::ShaderStageFlags::TESSELLATION_EVALUATION;
+        }
+        flags
+    }
+}
+
 //=============================================================================
 // Tests
 //=============================================================================

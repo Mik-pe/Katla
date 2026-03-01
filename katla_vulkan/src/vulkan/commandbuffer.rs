@@ -4,7 +4,7 @@ use super::{
     vertex_attr_set::VertexAttributeSet, vertex_attribute::AttributeType, vertexbuffer::IndexType,
     CommandPool,
 };
-use crate::sync::{DependencyInfo, VkCommandBuffer};
+use crate::sync::{DependencyInfo, Rect2D, RenderingInfo, Viewport, VkCommandBuffer};
 
 #[derive(Clone)]
 pub struct CommandBuffer {

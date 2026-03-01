@@ -7,7 +7,7 @@ use ash::vk;
 
 use crate::sync::VkDescriptorSetLayout;
 use crate::vulkan::context::VulkanContext;
-use crate::vulkan::pipeline_state::DescriptorType;
+use crate::vulkan::pipeline_state::{DescriptorType, ShaderStages};
 
 /// A single descriptor binding in a descriptor set layout.
 #[derive(Debug, Clone, Hash)]
