@@ -23,6 +23,7 @@
 //! ui.image(renderer.viewport_texture(viewport));
 //! ```
 
+use ash::vk::Extent2D;
 use log::info;
 
 use crate::renderer::DrawList;
@@ -31,8 +32,9 @@ use crate::sync::{
     AccessFlags2, DependencyInfo, ImageMemoryBarrier2, PipelineStage2Flags, VkCommandBuffer,
     VkImage, VkImageView,
 };
+use crate::texture::ImageFormat;
 use crate::vulkan::material::storage_uniform::{StorageDescriptorSet, StorageUniformManager};
-use crate::{CompiledRenderGraph, FrameUniforms, RenderGraphError, VulkanContext};
+use crate::{FrameUniforms, VulkanContext};
 use ash::vk;
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -158,7 +160,10 @@ impl ViewportBuilder {
 
     /// Get the viewport extent.
     pub fn extent(&self) -> Extent2D {
-        Extent2D::new(self.width, self.height)
+        Extent2D {
+            width: self.width,
+            height: self.height,
+        }
     }
 
     /// Get the clear color.
@@ -236,26 +241,16 @@ pub struct Viewport {
 
 impl Viewport {
     /// Create a new viewport from builder configuration.
-    pub fn new(
-        builder: &ViewportBuilder,
-        context: &Rc<VulkanContext>,
-    ) -> Result<Self, RenderGraphError> {
+    pub fn new(builder: &ViewportBuilder, context: &Rc<VulkanContext>) -> Self {
         // Create render target using existing ViewportRenderTarget
-        let render_target = ViewportRenderTarget::new(
-            context.clone(),
-            builder.width,
-            builder.height,
-        )
-        .map_err(|e| {
-            RenderGraphError::CompilationError(format!("Failed to create render target: {:?}", e))
-        })?;
-
+        let render_target =
+            ViewportRenderTarget::new(context.clone(), builder.width, builder.height).unwrap();
         info!(
             "Created viewport '{}' ({}x{}, depth={:?}, mode={:?})",
             builder.label, builder.width, builder.height, builder.depth_format, builder.output_mode
         );
 
-        Ok(Self {
+        Self {
             label: builder.label.clone(),
             extent: builder.extent(),
             output_mode: builder.output_mode,
@@ -267,7 +262,7 @@ impl Viewport {
             // No frame uniforms yet
             frame_uniforms: None,
             clear_color: builder.clear_color,
-        })
+        }
     }
 
     /// Get the color image view (for UI sampling).

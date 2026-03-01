@@ -6,6 +6,7 @@
 
 use crate::handle::{ResourceStorage, TextureHandle};
 use crate::sync::VkImageView;
+use crate::texture::ImageFormat;
 use crate::vulkan::context::VulkanContext;
 use crate::vulkan::texture::Texture;
 use ash::vk;

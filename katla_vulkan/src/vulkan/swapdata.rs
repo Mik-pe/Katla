@@ -1,5 +1,4 @@
 use crate::sync::{VkFence, VkSemaphore};
-use crate::RenderGraphError;
 use ash::{khr::swapchain::Device as SwapchainDevice, vk, Device};
 
 pub struct SwapData {
@@ -62,7 +61,7 @@ impl SwapData {
         device: &Device,
         swapchain_loader: &SwapchainDevice,
         swapchain: vk::SwapchainKHR,
-    ) -> Result<(VkSemaphore, VkSemaphore, VkFence, u32), RenderGraphError> {
+    ) -> (VkSemaphore, VkSemaphore, VkFence, u32) {
         // Use per-frame semaphore for acquire (we don't know which image we'll get yet)
         let available_semaphore = self.image_available_semaphores[self.frame];
 
@@ -76,18 +75,11 @@ impl SwapData {
                 vk::Fence::null(),
             )
         }
-        .map_err(|err| {
-            if err == vk::Result::ERROR_OUT_OF_DATE_KHR || err == vk::Result::SUBOPTIMAL_KHR {
-                RenderGraphError::SwapchainOutOfDate
-            } else {
-                RenderGraphError::VulkanError(err)
-            }
-        })?;
+        .unwrap();
 
         let image_in_flight = self.images_in_flight[image_index as usize];
         if image_in_flight != vk::Fence::null() {
-            unsafe { device.wait_for_fences(&[image_in_flight], true, u64::MAX) }
-                .map_err(RenderGraphError::VulkanError)?;
+            unsafe { device.wait_for_fences(&[image_in_flight], true, u64::MAX) }.unwrap();
         }
         self.images_in_flight[image_index as usize] = self.in_flight_fences[self.frame];
 
@@ -96,12 +88,12 @@ impl SwapData {
         let finished_semaphore = self.render_finished_semaphores
             [image_index as usize % self.render_finished_semaphores.len()];
 
-        Ok((
+        (
             VkSemaphore::new(available_semaphore),
             VkSemaphore::new(finished_semaphore),
             VkFence::new(self.in_flight_fences[self.frame]),
             image_index,
-        ))
+        )
     }
 
     pub fn step_frame(&mut self) {

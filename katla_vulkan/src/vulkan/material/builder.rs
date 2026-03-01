@@ -4,6 +4,7 @@ use ash::vk;
 
 use super::super::context::VulkanContext;
 use crate::sync::{VkDescriptorSetLayout, VkPipeline, VkPipelineLayout, VkRenderPass};
+use crate::texture::ImageFormat;
 use crate::vulkan::pipeline_state::{
     BlendFactor, BlendOp, CompareOp, CullMode, DynamicState, FrontFace, PolygonMode,
     PrimitiveTopology,
