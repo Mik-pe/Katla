@@ -1,9 +1,6 @@
 use ash::{vk, Device};
 
-use super::{
-    vertex_attr_set::VertexAttributeSet, vertex_attribute::AttributeType, vertexbuffer::IndexType,
-    CommandPool,
-};
+use super::{vertex_attr_set::VertexAttributeSet, vertex_attribute::AttributeType, CommandPool};
 use crate::sync::{DependencyInfo, Rect2D, RenderingInfo, Viewport};
 
 #[derive(Clone)]
@@ -55,70 +52,10 @@ impl CommandBuffer {
         }
     }
 
-    pub fn begin_command(&self, flags: vk::CommandBufferUsageFlags) {
-        let begin_info = vk::CommandBufferBeginInfo::default().flags(flags);
-        unsafe {
-            self.device
-                .begin_command_buffer(self.command_buffer, &begin_info)
-                .expect("Failed to begin command buffer - command buffer may be in invalid state");
-        }
-    }
-
     pub fn end_command(&self) {
         unsafe {
             self.device.end_command_buffer(self.command_buffer).expect(
                 "Failed to end command buffer - command buffer may not be in recording state",
-            );
-        }
-    }
-
-    pub fn bind_pipeline(
-        &self,
-        pipeline: vk::Pipeline,
-        pipeline_bind_point: vk::PipelineBindPoint,
-    ) {
-        unsafe {
-            self.device
-                .cmd_bind_pipeline(self.command_buffer, pipeline_bind_point, pipeline);
-        }
-    }
-
-    pub fn bind_descriptor_sets(
-        &self,
-        pipeline_bind_point: vk::PipelineBindPoint,
-        pipeline_layout: vk::PipelineLayout,
-        descriptor_sets: &[vk::DescriptorSet],
-    ) {
-        unsafe {
-            self.device.cmd_bind_descriptor_sets(
-                self.command_buffer,
-                pipeline_bind_point,
-                pipeline_layout,
-                0,
-                descriptor_sets,
-                &[],
-            );
-        }
-    }
-
-    /// Bind descriptor sets with a specific first set index.
-    ///
-    /// This allows binding to set 1, 2, etc. for pipelines with multiple descriptor sets.
-    pub fn bind_descriptor_sets_with_offset(
-        &self,
-        pipeline_bind_point: vk::PipelineBindPoint,
-        pipeline_layout: vk::PipelineLayout,
-        first_set: u32,
-        descriptor_sets: &[vk::DescriptorSet],
-    ) {
-        unsafe {
-            self.device.cmd_bind_descriptor_sets(
-                self.command_buffer,
-                pipeline_bind_point,
-                pipeline_layout,
-                first_set,
-                descriptor_sets,
-                &[],
             );
         }
     }
@@ -160,115 +97,6 @@ impl CommandBuffer {
                 vk::PipelineBindPoint::COMPUTE,
                 pipeline.vk_pipeline().vk_pipeline(),
             );
-        }
-    }
-
-    /// Bind graphics descriptor sets using wrapper types.
-    ///
-    /// This is a convenience method that wraps `cmd_bind_descriptor_sets` with the
-    /// GRAPHICS bind point, eliminating repetitive unsafe blocks.
-    pub fn bind_graphics_descriptors(
-        &self,
-        pipeline_layout: vk::PipelineLayout,
-        descriptor_sets: &[vk::DescriptorSet],
-    ) {
-        unsafe {
-            self.device.cmd_bind_descriptor_sets(
-                self.command_buffer,
-                vk::PipelineBindPoint::GRAPHICS,
-                pipeline_layout,
-                0,
-                descriptor_sets,
-                &[],
-            );
-        }
-    }
-
-    /// Bind graphics descriptor sets at a specific first set index.
-    ///
-    /// This allows binding to set 1, 2, etc. for pipelines with multiple descriptor sets.
-    /// Common use cases:
-    /// - Set 0: Storage uniforms / frame data
-    /// - Set 1: Bindless textures
-    /// - Set 2: Skeleton data for animation
-    pub fn bind_graphics_descriptors_at(
-        &self,
-        pipeline_layout: vk::PipelineLayout,
-        first_set: u32,
-        descriptor_sets: &[vk::DescriptorSet],
-    ) {
-        unsafe {
-            self.device.cmd_bind_descriptor_sets(
-                self.command_buffer,
-                vk::PipelineBindPoint::GRAPHICS,
-                pipeline_layout,
-                first_set,
-                descriptor_sets,
-                &[],
-            );
-        }
-    }
-
-    /// Bind compute descriptor sets using wrapper types.
-    pub fn bind_compute_descriptors(
-        &self,
-        pipeline_layout: vk::PipelineLayout,
-        descriptor_sets: &[vk::DescriptorSet],
-    ) {
-        unsafe {
-            self.device.cmd_bind_descriptor_sets(
-                self.command_buffer,
-                vk::PipelineBindPoint::COMPUTE,
-                pipeline_layout,
-                0,
-                descriptor_sets,
-                &[],
-            );
-        }
-    }
-
-    /// Bind graphics pipeline and descriptors together.
-    ///
-    /// This is the most common pattern - bind a pipeline and its primary
-    /// descriptor set in one call.
-    pub fn bind_graphics_pipeline_with_descriptors(
-        &self,
-        pipeline: &super::material::MaterialPipeline,
-        descriptor_set: vk::DescriptorSet,
-    ) {
-        unsafe {
-            self.device.cmd_bind_pipeline(
-                self.command_buffer,
-                vk::PipelineBindPoint::GRAPHICS,
-                pipeline.vk_pipeline().vk_pipeline(),
-            );
-            self.device.cmd_bind_descriptor_sets(
-                self.command_buffer,
-                vk::PipelineBindPoint::GRAPHICS,
-                pipeline.vk_layout(),
-                0,
-                &[descriptor_set],
-                &[],
-            );
-        }
-    }
-
-    pub fn bind_index_buffer(&self, buffer: vk::Buffer, offset: u64, index_type: IndexType) {
-        let vk_index_type: vk::IndexType = index_type.into();
-        unsafe {
-            self.device
-                .cmd_bind_index_buffer(self.command_buffer, buffer, offset, vk_index_type)
-        }
-    }
-
-    pub fn bind_vertex_buffers(&self, first_binding: u32, buffers: &[vk::Buffer], offsets: &[u64]) {
-        unsafe {
-            self.device.cmd_bind_vertex_buffers(
-                self.command_buffer,
-                first_binding,
-                buffers,
-                offsets,
-            )
         }
     }
 
@@ -583,16 +411,8 @@ impl CommandBuffer {
     ///     group_count_z: u32,
     /// }
     /// ```
-    pub fn dispatch_indirect(&self, buffer: vk::Buffer, offset: vk::DeviceSize) {
-        unsafe {
-            self.device
-                .cmd_dispatch_indirect(self.command_buffer, buffer, offset);
-        }
-    }
-
-    /// Push constants to a pipeline.
     ///
-    /// Push constants provide a fast way to send small amounts of data to shaders.
+    /// Push constants to a pipeline.
     /// They are stored in the command buffer and don't require descriptor sets.
     ///
     /// # Arguments

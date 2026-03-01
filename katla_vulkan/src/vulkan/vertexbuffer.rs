@@ -59,8 +59,7 @@ struct BufferObject {
 impl Drop for BufferObject {
     fn drop(&mut self) {
         if let Some(allocation) = self.allocation.take() {
-            self.context
-                .free_buffer(crate::sync::VkBuffer::new(self.buffer), allocation);
+            self.context.free_buffer(self.buffer, allocation);
         }
     }
 }
@@ -131,7 +130,7 @@ impl IndexBuffer {
 }
 
 impl VertexBuffer {
-    pub fn new(context: Rc<VulkanContext>, buf_size: vk::DeviceSize, count: u32) -> Self {
+    pub(crate) fn new(context: Rc<VulkanContext>, buf_size: vk::DeviceSize, count: u32) -> Self {
         let buffer = {
             let create_info = vk::BufferCreateInfo::default()
                 .sharing_mode(vk::SharingMode::EXCLUSIVE)
