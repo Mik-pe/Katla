@@ -117,14 +117,6 @@ pub struct BufferMarker;
 #[derive(Debug, Clone, Copy)]
 pub struct ImageMarker;
 
-/// Marker type for image view handles.
-#[derive(Debug, Clone, Copy)]
-pub(crate) struct ImageViewMarker;
-
-/// Marker type for sampler handles.
-#[derive(Debug, Clone, Copy)]
-pub(crate) struct SamplerMarker;
-
 /// Marker type for pipeline handles.
 #[derive(Debug, Clone, Copy)]
 pub struct PipelineMarker;
@@ -137,24 +129,6 @@ pub struct PipelineLayoutMarker;
 #[derive(Debug, Clone, Copy)]
 pub struct DescriptorSetMarker;
 
-/// Marker type for descriptor set layout handles.
-pub(crate) struct DescriptorSetLayoutMarker;
-
-/// Marker type for render pass handles.
-pub(crate) struct RenderPassMarker;
-
-/// Marker type for framebuffer handles.
-pub(crate) struct FramebufferMarker;
-
-/// Marker type for semaphore handles.
-pub(crate) struct SemaphoreMarker;
-
-/// Marker type for fence handles.
-pub(crate) struct FenceMarker;
-
-/// Marker type for command buffer handles.
-pub(crate) struct CommandBufferMarker;
-
 //=============================================================================
 // Internal Handle Type Aliases (Render Layer)
 //=============================================================================
@@ -165,12 +139,6 @@ pub type BufferHandle = Handle<BufferMarker>;
 /// Handle to an image resource.
 pub type ImageHandle = Handle<ImageMarker>;
 
-/// Handle to an image view resource.
-pub(crate) type ImageViewHandle = Handle<ImageViewMarker>;
-
-/// Handle to a sampler resource.
-pub(crate) type SamplerHandle = Handle<SamplerMarker>;
-
 /// Handle to a pipeline resource.
 pub type PipelineHandle = Handle<PipelineMarker>;
 
@@ -179,24 +147,6 @@ pub type PipelineLayoutHandle = Handle<PipelineLayoutMarker>;
 
 /// Handle to a descriptor set resource.
 pub type DescriptorSetHandle = Handle<DescriptorSetMarker>;
-
-/// Handle to a descriptor set layout resource.
-pub(crate) type DescriptorSetLayoutHandle = Handle<DescriptorSetLayoutMarker>;
-
-/// Handle to a render pass resource.
-pub(crate) type RenderPassHandle = Handle<RenderPassMarker>;
-
-/// Handle to a framebuffer resource.
-pub(crate) type FramebufferHandle = Handle<FramebufferMarker>;
-
-/// Handle to a semaphore resource.
-pub(crate) type SemaphoreHandle = Handle<SemaphoreMarker>;
-
-/// Handle to a fence resource.
-pub(crate) type FenceHandle = Handle<FenceMarker>;
-
-/// Handle to a command buffer resource.
-pub(crate) type CommandBufferHandle = Handle<CommandBufferMarker>;
 
 //=============================================================================
 // Resource Storage

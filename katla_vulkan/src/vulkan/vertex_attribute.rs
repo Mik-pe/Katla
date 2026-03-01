@@ -95,23 +95,6 @@ impl AttributeBinding {
     pub fn wrapped_buffer(&self) -> crate::sync::VkBuffer {
         crate::sync::VkBuffer::new(self.buffer)
     }
-
-    /// Get the Vulkan vertex attribute description for pipeline creation.
-    pub(crate) fn get_attribute_desc(&self, binding: u32) -> vk::VertexInputAttributeDescription {
-        vk::VertexInputAttributeDescription::default()
-            .binding(binding)
-            .location(self.attr_type.default_location())
-            .format(self.format.get_vk_format())
-            .offset(0) // Always 0 for SOA - each buffer starts at beginning
-    }
-
-    /// Get the Vulkan binding description for pipeline creation.
-    pub(crate) fn get_binding_desc(&self, binding: u32) -> vk::VertexInputBindingDescription {
-        vk::VertexInputBindingDescription::default()
-            .binding(binding)
-            .stride(self.format.get_offset()) // Single element stride
-            .input_rate(vk::VertexInputRate::VERTEX)
-    }
 }
 
 #[cfg(test)]

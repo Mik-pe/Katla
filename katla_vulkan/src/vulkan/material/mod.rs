@@ -155,13 +155,6 @@ impl ImageInfo {
         }
     }
 
-    pub(crate) fn from_raw(image_view: vk::ImageView, sampler: vk::Sampler) -> Self {
-        Self {
-            image_view,
-            sampler,
-        }
-    }
-
     /// Create ImageInfo from a TextureHandle by looking up in TextureManager.
     pub fn from_handle(
         handle: TextureHandle,

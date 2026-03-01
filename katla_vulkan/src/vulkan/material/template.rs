@@ -169,21 +169,6 @@ impl MaterialTemplate {
         &self.default_parameters
     }
 
-    /// Get the descriptor set layout for this template.
-    pub(crate) fn desc_layout(&self) -> vk::DescriptorSetLayout {
-        self.desc_layout
-    }
-
-    /// Get the texture set layout for storage buffer mode.
-    pub(crate) fn texture_set_layout(&self) -> Option<vk::DescriptorSetLayout> {
-        self.texture_set_layout
-    }
-
-    /// Get the skeleton set layout.
-    pub(crate) fn skeleton_set_layout(&self) -> Option<vk::DescriptorSetLayout> {
-        self.skeleton_set_layout
-    }
-
     /// Check if this template uses bindless textures.
     pub fn is_bindless(&self) -> bool {
         self.is_bindless

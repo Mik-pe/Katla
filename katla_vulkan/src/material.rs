@@ -1347,7 +1347,7 @@ impl MaterialPipelineCache {
             )
             .map_err(|e| MaterialCacheError::ShaderCompilationFailed(format!("{:?}", e))),
             ShaderSource::PreCompiled(bytes) => {
-                ShaderModule::from_bytes(self.context.device.clone(), bytes.clone(), stage, "main")
+                ShaderModule::from_bytes(self.context.device.clone(), bytes, stage, "main")
                     .map_err(|e| MaterialCacheError::ShaderCompilationFailed(format!("{:?}", e)))
             }
         }

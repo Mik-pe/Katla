@@ -490,11 +490,6 @@ impl PipelineStage2Flags {
     pub const PRE_RASTERIZATION_SHADERS: Self =
         Self(vk::PipelineStageFlags2KHR::PRE_RASTERIZATION_SHADERS_KHR);
 
-    /// Create new flags from raw Vulkan flags.
-    pub(crate) fn from_raw(flags: vk::PipelineStageFlags2KHR) -> Self {
-        Self(flags)
-    }
-
     /// Get the raw Vulkan flags.
     pub(crate) fn into_vk(self) -> vk::PipelineStageFlags2KHR {
         self.0
@@ -612,11 +607,6 @@ impl AccessFlags2 {
 
     /// Shader storage write.
     pub const SHADER_STORAGE_WRITE: Self = Self(vk::AccessFlags2KHR::SHADER_STORAGE_WRITE_KHR);
-
-    /// Create new flags from raw Vulkan flags.
-    pub(crate) fn from_raw(flags: vk::AccessFlags2KHR) -> Self {
-        Self(flags)
-    }
 
     /// Get the raw Vulkan flags.
     pub(crate) fn into_vk(self) -> vk::AccessFlags2KHR {
@@ -927,10 +917,6 @@ unsafe impl Sync for VkCommandBuffer {}
 impl VkCommandBuffer {
     pub fn new(command_buffer: vk::CommandBuffer) -> Self {
         Self(command_buffer)
-    }
-
-    pub(crate) fn vk_command_buffer(&self) -> vk::CommandBuffer {
-        self.0
     }
 }
 
