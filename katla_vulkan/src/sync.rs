@@ -41,7 +41,7 @@ pub(crate) const DEPTH_SUBRESOURCE_RANGE: vk::ImageSubresourceRange = vk::ImageS
 ///
 /// Common pattern when rendering to a texture that was previously sampled.
 #[inline]
-pub fn color_read_to_attachment_barrier(image: VkImage) -> ImageMemoryBarrier2 {
+pub(crate) fn color_read_to_attachment_barrier(image: VkImage) -> ImageMemoryBarrier2 {
     ImageMemoryBarrier2::new(image)
         .src_stage(PipelineStage2Flags::FRAGMENT_SHADER)
         .src_access(AccessFlags2::SHADER_READ)
@@ -56,7 +56,7 @@ pub fn color_read_to_attachment_barrier(image: VkImage) -> ImageMemoryBarrier2 {
 ///
 /// Common pattern after rendering to a texture that will be sampled later.
 #[inline]
-pub fn color_attachment_to_read_barrier(image: VkImage) -> ImageMemoryBarrier2 {
+pub(crate) fn color_attachment_to_read_barrier(image: VkImage) -> ImageMemoryBarrier2 {
     ImageMemoryBarrier2::new(image)
         .src_stage(PipelineStage2Flags::COLOR_ATTACHMENT_OUTPUT)
         .src_access(AccessFlags2::COLOR_ATTACHMENT_WRITE)
@@ -71,7 +71,7 @@ pub fn color_attachment_to_read_barrier(image: VkImage) -> ImageMemoryBarrier2 {
 ///
 /// Common pattern when preparing to blit/copy to an image.
 #[inline]
-pub fn color_to_transfer_dst_barrier(image: VkImage) -> ImageMemoryBarrier2 {
+pub(crate) fn color_to_transfer_dst_barrier(image: VkImage) -> ImageMemoryBarrier2 {
     ImageMemoryBarrier2::new(image)
         .src_stage(PipelineStage2Flags::TOP_OF_PIPE)
         .src_access(AccessFlags2::NONE)
@@ -86,7 +86,7 @@ pub fn color_to_transfer_dst_barrier(image: VkImage) -> ImageMemoryBarrier2 {
 ///
 /// Common pattern after uploading texture data.
 #[inline]
-pub fn transfer_dst_to_read_barrier(image: VkImage) -> ImageMemoryBarrier2 {
+pub(crate) fn transfer_dst_to_read_barrier(image: VkImage) -> ImageMemoryBarrier2 {
     ImageMemoryBarrier2::new(image)
         .src_stage(PipelineStage2Flags::TRANSFER)
         .src_access(AccessFlags2::TRANSFER_WRITE)
@@ -101,7 +101,7 @@ pub fn transfer_dst_to_read_barrier(image: VkImage) -> ImageMemoryBarrier2 {
 ///
 /// Ensures depth attachment is properly synchronized between passes.
 #[inline]
-pub fn depth_attachment_barrier(image: VkImage) -> ImageMemoryBarrier2 {
+pub(crate) fn depth_attachment_barrier(image: VkImage) -> ImageMemoryBarrier2 {
     ImageMemoryBarrier2::new(image)
         .src_stage(PipelineStage2Flags::LATE_FRAGMENT_TESTS)
         .src_access(AccessFlags2::DEPTH_STENCIL_ATTACHMENT_WRITE)
@@ -119,7 +119,7 @@ pub fn depth_attachment_barrier(image: VkImage) -> ImageMemoryBarrier2 {
 ///
 /// Common pattern when initializing a depth buffer.
 #[inline]
-pub fn depth_init_barrier(image: VkImage) -> ImageMemoryBarrier2 {
+pub(crate) fn depth_init_barrier(image: VkImage) -> ImageMemoryBarrier2 {
     ImageMemoryBarrier2::new(image)
         .src_stage(PipelineStage2Flags::TOP_OF_PIPE)
         .src_access(AccessFlags2::NONE)
@@ -137,7 +137,7 @@ pub fn depth_init_barrier(image: VkImage) -> ImageMemoryBarrier2 {
 ///
 /// Common pattern when initializing a color attachment.
 #[inline]
-pub fn color_init_barrier(image: VkImage) -> ImageMemoryBarrier2 {
+pub(crate) fn color_init_barrier(image: VkImage) -> ImageMemoryBarrier2 {
     ImageMemoryBarrier2::new(image)
         .src_stage(PipelineStage2Flags::TOP_OF_PIPE)
         .src_access(AccessFlags2::NONE)
@@ -152,7 +152,7 @@ pub fn color_init_barrier(image: VkImage) -> ImageMemoryBarrier2 {
 ///
 /// Common pattern before presenting.
 #[inline]
-pub fn swapchain_to_present_barrier(image: VkImage) -> ImageMemoryBarrier2 {
+pub(crate) fn swapchain_to_present_barrier(image: VkImage) -> ImageMemoryBarrier2 {
     ImageMemoryBarrier2::new(image)
         .src_stage(PipelineStage2Flags::TRANSFER)
         .src_access(AccessFlags2::TRANSFER_WRITE)
@@ -166,7 +166,7 @@ pub fn swapchain_to_present_barrier(image: VkImage) -> ImageMemoryBarrier2 {
 macro_rules! define_vk_wrapper {
     ($name:ident, $vk_type:ty) => {
         #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-        pub struct $name(pub $vk_type);
+        pub(crate) struct $name(pub $vk_type);
 
         unsafe impl Send for $name {}
         unsafe impl Sync for $name {}
@@ -675,7 +675,7 @@ pub struct ImageMemoryBarrier2 {
 
 impl ImageMemoryBarrier2 {
     /// Create a new image memory barrier 2.
-    pub fn new(image: VkImage) -> Self {
+    pub(crate) fn new(image: VkImage) -> Self {
         Self {
             src_stage_mask: PipelineStage2Flags::TOP_OF_PIPE,
             dst_stage_mask: PipelineStage2Flags::BOTTOM_OF_PIPE,
@@ -768,7 +768,7 @@ pub struct BufferMemoryBarrier2 {
 
 impl BufferMemoryBarrier2 {
     /// Create a new buffer memory barrier 2.
-    pub fn new(buffer: VkBuffer) -> Self {
+    pub(crate) fn new(buffer: VkBuffer) -> Self {
         Self {
             src_stage_mask: PipelineStage2Flags::TOP_OF_PIPE,
             dst_stage_mask: PipelineStage2Flags::BOTTOM_OF_PIPE,
@@ -909,7 +909,7 @@ impl Default for DependencyInfo {
 
 /// Wrapper around `vk::CommandBuffer`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub struct VkCommandBuffer(pub vk::CommandBuffer);
+pub(crate) struct VkCommandBuffer(pub vk::CommandBuffer);
 
 unsafe impl Send for VkCommandBuffer {}
 unsafe impl Sync for VkCommandBuffer {}

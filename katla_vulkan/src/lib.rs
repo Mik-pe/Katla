@@ -54,7 +54,7 @@ pub use vulkan::vertexbuffer::{IndexBuffer, IndexType, VertexBuffer};
 pub use vulkan::particle_buffer::calculate_workgroup_count;
 // Descriptor builders needed for custom descriptor sets
 pub use vulkan::descriptor::DescriptorSetLayoutBuilder;
-pub use vulkan::descriptor_set::{DescriptorBinding, DescriptorSet, DescriptorSetBuilder};
+pub use vulkan::descriptor_set::{DescriptorSet, DescriptorSetBuilder};
 // Pipeline state types
 pub use vulkan::pipeline_state::{CompareOp, CullMode, DescriptorType, FrontFace, ShaderStages};
 // Re-export vk::Extent2D for convenience
@@ -72,9 +72,3 @@ pub use vulkan::particle_buffer::{EmitterConfig, ParticleBuffer, MAX_PARTICLES};
 pub use vulkan::frame_buffer::FrameBuffer;
 // Command buffer (needed for render graph execution)
 pub use vulkan::commandbuffer::CommandBuffer;
-// Vulkan wrapper types (these are wrappers, not raw Vulkan types)
-pub use sync::{
-    VkBuffer, VkCommandBuffer, VkDescriptorSet, VkDescriptorSetLayout, VkFence, VkFramebuffer,
-    VkImage, VkImageView, VkPipeline, VkPipelineLayout, VkRenderPass, VkSampler, VkSemaphore,
-    VkShaderModule,
-};

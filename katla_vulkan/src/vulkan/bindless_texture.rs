@@ -274,7 +274,7 @@ impl BindlessTextureManager {
     ///
     /// # Returns
     /// The slot index (0..MAX_BINDLESS_TEXTURES), or None if no slots available
-    pub fn register_texture(&mut self, image_view: VkImageView) -> Option<u32> {
+    pub(crate) fn register_texture(&mut self, image_view: VkImageView) -> Option<u32> {
         let slot = self.free_slots.pop()?;
         let vk_view: vk::ImageView = image_view.into();
 
@@ -323,7 +323,7 @@ impl BindlessTextureManager {
     /// Get the descriptor set layout.
     ///
     /// Use this when creating pipelines that will use bindless textures.
-    pub fn descriptor_layout(&self) -> VkDescriptorSetLayout {
+    pub(crate) fn descriptor_layout(&self) -> VkDescriptorSetLayout {
         self.descriptor_layout
     }
 

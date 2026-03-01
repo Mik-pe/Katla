@@ -11,7 +11,7 @@ use super::VulkanContext;
 
 /// Info for a single buffer binding in a descriptor set.
 #[derive(Clone, Copy, Debug)]
-pub struct BufferBinding {
+pub(crate) struct BufferBinding {
     /// The wrapped Vulkan buffer handle.
     pub buffer: crate::sync::VkBuffer,
     /// Binding number in the shader.
@@ -29,7 +29,7 @@ pub struct BufferBinding {
 /// Implement this for your buffer types to enable easy descriptor creation.
 /// The new [`crate::vulkan::BufferSource`] trait is the preferred way to work
 /// with buffers in descriptor sets, but this trait is kept for backward compatibility.
-pub trait BufferDescriptorSource {
+pub(crate) trait BufferDescriptorSource {
     /// Get the Vulkan buffer handle.
     fn buffer(&self) -> crate::sync::VkBuffer;
 

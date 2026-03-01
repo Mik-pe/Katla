@@ -122,7 +122,7 @@ impl MaterialRegistry {
     }
 
     /// Load all material templates using bindless textures.
-    pub fn load_directory_bindless(
+    pub(crate) fn load_directory_bindless(
         &mut self,
         dir: &Path,
         context: &Rc<VulkanContext>,
@@ -218,7 +218,7 @@ impl MaterialRegistry {
     }
 
     /// Load a single bindless material from a TOML file.
-    pub fn load_material_bindless(
+    pub(crate) fn load_material_bindless(
         &mut self,
         path: &Path,
         _context: &Rc<VulkanContext>,

@@ -28,7 +28,7 @@ use crate::sync::{VkDescriptorSet, VkDescriptorSetLayout, VkImageView, VkSampler
 
 /// Resource binding types for descriptor sets.
 #[derive(Clone, Debug)]
-pub enum DescriptorBinding {
+pub(crate) enum DescriptorBinding {
     /// Storage buffer binding.
     StorageBuffer {
         buffer: crate::sync::VkBuffer,
@@ -78,7 +78,7 @@ impl DescriptorBinding {
 /// Trait for types that expose a Vulkan buffer for descriptor binding.
 ///
 /// Implement this for your buffer types to enable easy descriptor creation.
-pub trait BufferSource {
+pub(crate) trait BufferSource {
     /// Get the Vulkan buffer handle.
     fn buffer(&self) -> crate::sync::VkBuffer;
     /// Get the buffer size in bytes.
@@ -150,7 +150,7 @@ pub struct DescriptorSet {
 
 impl DescriptorSet {
     /// Get the descriptor set handle as a wrapper type.
-    pub fn wrapped(&self) -> VkDescriptorSet {
+    pub(crate) fn wrapped(&self) -> VkDescriptorSet {
         VkDescriptorSet::new(self.set)
     }
 
@@ -162,7 +162,7 @@ impl DescriptorSet {
     ///
     /// This is used when a texture is resized and the image view changes.
     /// Call this after the texture's imageView has been recreated.
-    pub fn update_sampled_image(&self, binding: u32, view: VkImageView) {
+    pub(crate) fn update_sampled_image(&self, binding: u32, view: VkImageView) {
         let image_info = vk::DescriptorImageInfo {
             sampler: vk::Sampler::null(),
             image_view: view.vk(),
@@ -261,7 +261,7 @@ impl<'a> DescriptorSetBuilder<'a> {
     // ========================================================================
 
     /// Add a storage buffer binding (entire buffer).
-    pub fn storage_buffer(mut self, binding: u32, source: &impl BufferSource) -> Self {
+    pub(crate) fn storage_buffer(mut self, binding: u32, source: &impl BufferSource) -> Self {
         self.bindings.push((
             binding,
             DescriptorBinding::StorageBuffer {
@@ -274,7 +274,7 @@ impl<'a> DescriptorSetBuilder<'a> {
     }
 
     /// Add a storage buffer binding with explicit range.
-    pub fn storage_buffer_range(
+    pub(crate) fn storage_buffer_range(
         mut self,
         binding: u32,
         source: &impl BufferSource,
@@ -293,7 +293,7 @@ impl<'a> DescriptorSetBuilder<'a> {
     }
 
     /// Add a uniform buffer binding (entire buffer).
-    pub fn uniform_buffer(mut self, binding: u32, source: &impl BufferSource) -> Self {
+    pub(crate) fn uniform_buffer(mut self, binding: u32, source: &impl BufferSource) -> Self {
         self.bindings.push((
             binding,
             DescriptorBinding::UniformBuffer {
@@ -306,7 +306,7 @@ impl<'a> DescriptorSetBuilder<'a> {
     }
 
     /// Add a uniform buffer binding with explicit range.
-    pub fn uniform_buffer_range(
+    pub(crate) fn uniform_buffer_range(
         mut self,
         binding: u32,
         source: &impl BufferSource,
@@ -327,7 +327,7 @@ impl<'a> DescriptorSetBuilder<'a> {
     /// Add a raw buffer binding with explicit type.
     ///
     /// This is a low-level method for cases where you need full control.
-    pub fn raw_buffer(
+    pub(crate) fn raw_buffer(
         mut self,
         binding: u32,
         buffer: crate::sync::VkBuffer,
@@ -357,7 +357,7 @@ impl<'a> DescriptorSetBuilder<'a> {
     // ========================================================================
 
     /// Add a sampled image binding.
-    pub fn sampled_image(mut self, binding: u32, view: VkImageView) -> Self {
+    pub(crate) fn sampled_image(mut self, binding: u32, view: VkImageView) -> Self {
         self.bindings.push((
             binding,
             DescriptorBinding::SampledImage {
@@ -369,7 +369,7 @@ impl<'a> DescriptorSetBuilder<'a> {
     }
 
     /// Add a sampled image binding with custom layout.
-    pub fn sampled_image_with_layout(
+    pub(crate) fn sampled_image_with_layout(
         mut self,
         binding: u32,
         view: VkImageView,
@@ -386,7 +386,7 @@ impl<'a> DescriptorSetBuilder<'a> {
     }
 
     /// Add a sampler binding.
-    pub fn sampler(mut self, binding: u32, sampler: VkSampler) -> Self {
+    pub(crate) fn sampler(mut self, binding: u32, sampler: VkSampler) -> Self {
         self.bindings.push((
             binding,
             DescriptorBinding::Sampler {
@@ -397,7 +397,7 @@ impl<'a> DescriptorSetBuilder<'a> {
     }
 
     /// Add a combined image sampler binding.
-    pub fn combined_image_sampler(
+    pub(crate) fn combined_image_sampler(
         mut self,
         binding: u32,
         view: VkImageView,
@@ -415,7 +415,7 @@ impl<'a> DescriptorSetBuilder<'a> {
     }
 
     /// Add a storage image binding.
-    pub fn storage_image(mut self, binding: u32, view: VkImageView) -> Self {
+    pub(crate) fn storage_image(mut self, binding: u32, view: VkImageView) -> Self {
         self.bindings.push((
             binding,
             DescriptorBinding::StorageImage {
@@ -437,7 +437,7 @@ impl<'a> DescriptorSetBuilder<'a> {
     ///
     /// # Panics
     /// Panics if no bindings have been added.
-    pub fn build(self, layout: VkDescriptorSetLayout) -> Result<DescriptorSet, vk::Result> {
+    pub(crate) fn build(self, layout: VkDescriptorSetLayout) -> Result<DescriptorSet, vk::Result> {
         if self.bindings.is_empty() {
             panic!("DescriptorSetBuilder requires at least one binding");
         }
@@ -592,7 +592,7 @@ impl<'a> DescriptorSetBuilder<'a> {
     /// Build and take ownership of the layout.
     ///
     /// Use this when the descriptor set should own its layout for cleanup.
-    pub fn build_with_owned_layout(
+    pub(crate) fn build_with_owned_layout(
         self,
         layout: VkDescriptorSetLayout,
     ) -> Result<DescriptorSet, vk::Result> {

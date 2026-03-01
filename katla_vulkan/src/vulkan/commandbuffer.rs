@@ -33,7 +33,7 @@ impl CommandBuffer {
     }
 
     /// Get the command buffer handle as a wrapper type.
-    pub fn command_buffer(&self) -> VkCommandBuffer {
+    pub(crate) fn command_buffer(&self) -> VkCommandBuffer {
         VkCommandBuffer::new(self.command_buffer)
     }
 

@@ -56,7 +56,7 @@ impl SwapData {
     /// - finished semaphore
     /// - in flight fence
     /// - swapimage index
-    pub fn swap_images(
+    pub(crate) fn swap_images(
         &mut self,
         device: &Device,
         swapchain_loader: &SwapchainDevice,

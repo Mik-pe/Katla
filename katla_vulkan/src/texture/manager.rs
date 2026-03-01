@@ -203,7 +203,7 @@ impl TextureManager {
     /// Get the Vulkan image view for a texture handle.
     ///
     /// This is for internal use by renderers that need the raw Vulkan handle.
-    pub fn get_view(&self, handle: TextureHandle) -> Option<VkImageView> {
+    pub(crate) fn get_view(&self, handle: TextureHandle) -> Option<VkImageView> {
         self.textures.get(handle.index()).map(|t| t.image_view)
     }
 

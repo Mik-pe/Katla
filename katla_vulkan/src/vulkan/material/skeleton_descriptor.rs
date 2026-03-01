@@ -43,7 +43,7 @@ impl SkeletonDescriptorSet {
     /// * `context` - Vulkan context
     /// * `skeleton_buffer` - The skeleton buffer containing joint matrices (wrapped in RefCell for mutation)
     /// * `layout` - The skeleton descriptor set layout from the pipeline (wrapper type)
-    pub fn new(
+    pub(crate) fn new(
         context: Rc<VulkanContext>,
         skeleton_buffer: Rc<RefCell<SkeletonBuffer>>,
         layout: crate::sync::VkDescriptorSetLayout,
@@ -60,7 +60,7 @@ impl SkeletonDescriptorSet {
     }
 
     /// Get the descriptor set handle as a wrapper type.
-    pub fn set(&self) -> crate::sync::VkDescriptorSet {
+    pub(crate) fn set(&self) -> crate::sync::VkDescriptorSet {
         self.inner.wrapped()
     }
 

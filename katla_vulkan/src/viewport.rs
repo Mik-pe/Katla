@@ -258,23 +258,23 @@ impl Viewport {
     }
 
     /// Get the color image view (for UI sampling).
-    pub fn color_view(&self) -> VkImageView {
+    pub(crate) fn color_view(&self) -> VkImageView {
         self.render_target.color_view()
     }
 
     /// Get the color image.
-    pub fn color_image(&self) -> VkImage {
-        VkImage::new(self.render_target.color_image())
+    pub(crate) fn color_image(&self) -> VkImage {
+        self.render_target.color_image()
     }
 
     /// Get the depth image view.
-    pub fn depth_view(&self) -> VkImageView {
-        VkImageView::new(self.render_target.depth_view())
+    pub(crate) fn depth_view(&self) -> VkImageView {
+        self.render_target.depth_view()
     }
 
     /// Get the depth image.
-    pub fn depth_image(&self) -> VkImage {
-        VkImage::new(self.render_target.depth_image())
+    pub(crate) fn depth_image(&self) -> VkImage {
+        self.render_target.depth_image()
     }
 
     /// Get the viewport extent.
@@ -373,13 +373,13 @@ mod tests {
 
     #[test]
     fn test_viewport_handle() {
-        let handle = ViewportHandle::new(42);
+        let handle = ViewportHandle(42);
         assert_eq!(handle.0, 42);
 
-        let handle2 = ViewportHandle::new(42);
+        let handle2 = ViewportHandle(42);
         assert_eq!(handle, handle2);
 
-        let handle3 = ViewportHandle::new(43);
+        let handle3 = ViewportHandle(43);
         assert_ne!(handle, handle3);
     }
 }

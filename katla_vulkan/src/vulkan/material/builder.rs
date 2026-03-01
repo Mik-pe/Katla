@@ -84,7 +84,7 @@ impl PipelineBuilder {
     ///
     /// This variant accepts wrapper types that implement VkShaderModule and
     /// converts them to the underlying vk::ShaderModule before assigning.
-    pub fn with_shaders_wrapped(
+    pub(crate) fn with_shaders_wrapped(
         mut self,
         vert: crate::sync::VkShaderModule,
         frag: crate::sync::VkShaderModule,
@@ -196,7 +196,10 @@ impl PipelineBuilder {
     }
 
     /// Set the descriptor set layouts using wrapper types.
-    pub fn with_descriptor_layouts_wrapped(mut self, layouts: Vec<VkDescriptorSetLayout>) -> Self {
+    pub(crate) fn with_descriptor_layouts_wrapped(
+        mut self,
+        layouts: Vec<VkDescriptorSetLayout>,
+    ) -> Self {
         self.descriptor_layouts = layouts.into_iter().map(|l| l.into()).collect();
         self
     }
@@ -231,7 +234,10 @@ impl PipelineBuilder {
         self
     }
 
-    pub fn build(self, render_pass: crate::sync::VkRenderPass) -> Result<Pipeline, PipelineError> {
+    pub(crate) fn build(
+        self,
+        render_pass: crate::sync::VkRenderPass,
+    ) -> Result<Pipeline, PipelineError> {
         let vk_render_pass: vk::RenderPass = render_pass.into();
         let shader_vert = self
             .vertex_shader
@@ -407,12 +413,16 @@ pub struct Pipeline {
 
 impl Pipeline {
     /// Get the pipeline handle as a wrapper type.
-    pub fn pipeline(&self) -> VkPipeline {
+    ///
+    /// Panics if the pipeline was destroyed.
+    pub(crate) fn pipeline(&self) -> VkPipeline {
         VkPipeline::new(self.handle)
     }
 
     /// Get the pipeline layout as a wrapper type.
-    pub fn pipeline_layout(&self) -> VkPipelineLayout {
+    ///
+    /// Panics if the pipeline was destroyed.
+    pub(crate) fn pipeline_layout(&self) -> VkPipelineLayout {
         VkPipelineLayout::new(self.layout)
     }
 
