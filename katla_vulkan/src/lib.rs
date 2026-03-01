@@ -76,3 +76,20 @@ pub use sync::{
     VkImage, VkImageView, VkPipeline, VkPipelineLayout, VkRenderPass, VkSampler, VkSemaphore,
     VkShaderModule,
 };
+
+// Render graph public API re-exports
+// These types are used by viewport.rs and other modules
+pub use render_graph::{
+    CompiledRenderGraph,
+    Pass,
+    PassBuilder,
+    RenderGraph, // Needed by compiled.rs
+    RenderGraphError,
+    ResourceId,
+    ResourceKind,
+};
+pub use render_graph::{ImageFormat, ShaderStages};
+
+// Additional re-exports needed by render_graph internal modules
+// (they use crate:: prefix)
+pub use render_graph::{ResourceUsage, VulkanContext};

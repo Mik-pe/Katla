@@ -52,5 +52,3 @@ pub use vertex_attribute::*;
 pub use vertexbinding::*;
 // VertexBuffer and IndexBuffer are now internal
 pub use vertexbuffer::IndexType;
-
-pub use ImageFormat;
