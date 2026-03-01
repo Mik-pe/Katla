@@ -405,13 +405,6 @@ impl VulkanContext {
         Ok(VkSampler::new(sampler))
     }
 
-    /// Destroy a sampler.
-    pub(crate) fn destroy_sampler(&self, sampler: VkSampler) {
-        unsafe {
-            self.device.destroy_sampler(sampler.into(), None);
-        }
-    }
-
     fn create_instance(
         with_validation_layers: bool,
         app_name: &CStr,

@@ -41,7 +41,6 @@ use std::rc::Rc;
 
 use super::context::VulkanContext;
 use crate::handle::TextureHandle;
-use crate::sync::{VkImageView, VkSampler};
 
 /// PBR texture set containing all texture maps for a PBR material.
 ///
@@ -145,25 +144,6 @@ impl PbrTextureSet {
 pub struct ImageInfo {
     pub image_view: vk::ImageView,
     pub sampler: vk::Sampler,
-}
-
-impl ImageInfo {
-    pub(crate) fn new(image_view: VkImageView, sampler: VkSampler) -> Self {
-        Self {
-            image_view: image_view.vk(),
-            sampler: sampler.vk(),
-        }
-    }
-
-    /// Create ImageInfo from a TextureHandle by looking up in TextureManager.
-    pub(crate) fn from_handle(
-        handle: TextureHandle,
-        tm: &crate::texture::TextureManager,
-        sampler: VkSampler,
-    ) -> Option<Self> {
-        let view = tm.get_view(handle)?;
-        Some(Self::new(view, sampler))
-    }
 }
 
 /// Minimal handle for storage buffer-based materials.
@@ -438,20 +418,6 @@ impl MaterialPipeline {
     /// Get the pipeline handle.
     pub fn get_pipeline(&self) -> Option<&Pipeline> {
         self.pipeline.as_ref()
-    }
-
-    /// Get the pipeline handle as a wrapper type.
-    ///
-    /// Panics if the pipeline was destroyed.
-    pub(crate) fn pipeline(&self) -> crate::sync::VkPipeline {
-        self.vk_pipeline().pipeline()
-    }
-
-    /// Get the pipeline layout as a wrapper type.
-    ///
-    /// Panics if the pipeline was destroyed.
-    pub(crate) fn pipeline_layout(&self) -> crate::sync::VkPipelineLayout {
-        self.vk_pipeline().pipeline_layout()
     }
 
     /// Get the pipeline handle (panics if pipeline was destroyed)

@@ -90,11 +90,6 @@ impl AttributeBinding {
             buffer,
         }
     }
-
-    /// Return a wrapper around the underlying Vulkan buffer.
-    pub(crate) fn wrapped_buffer(&self) -> crate::sync::VkBuffer {
-        crate::sync::VkBuffer::new(self.buffer)
-    }
 }
 
 #[cfg(test)]

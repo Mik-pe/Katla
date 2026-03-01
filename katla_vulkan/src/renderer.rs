@@ -9,10 +9,9 @@
 pub mod registry;
 pub mod types;
 
-use crate::handle::{BufferHandle, ImageHandle};
 pub use crate::handle::{
-    DescriptorSetHandle, Handle, MaterialHandle, MeshHandle, PipelineHandle, PipelineLayoutHandle,
-    ResourceStorage, SkeletonHandle, TextureHandle,
+    BufferHandle, DescriptorSetHandle, Handle, ImageHandle, MaterialHandle, MeshHandle,
+    PipelineHandle, PipelineLayoutHandle, ResourceStorage, SkeletonHandle, TextureHandle,
 };
 use crate::viewport::{ViewportBuilder, ViewportHandle};
 pub use registry::AssetRegistry;
@@ -20,10 +19,9 @@ pub use types::{
     DrawCall, DrawList, FrameUniforms, InstanceData, ParticleDispatch, ParticleRender,
 };
 
-use crate::sync::{VkDescriptorSet, VkFence, VkImage, VkImageView, VkSampler, VkSemaphore};
 use crate::{
     viewport::Viewport, BindlessTextureManager, DescriptorLayoutBuilder, IndexBuffer, Material,
-    MaterialPipelineCache, MaterialRegistry, RendererError, SkeletonBuffer, SkeletonDescriptorSet,
+    MaterialPipelineCache, MaterialRegistry, RendererError, SkeletonDescriptorSet,
     StorageDescriptorSet, StorageUniformManager, SwapData, TextureManager, VertexBinding,
     VertexBuffer, VulkanContext, VulkanFrameCtx, MAX_BINDLESS_TEXTURES,
 };
@@ -35,9 +33,6 @@ use std::{cell::RefCell, ffi::CString, rc::Rc};
 use crate::sync::{COLOR_SUBRESOURCE_RANGE, DEPTH_SUBRESOURCE_RANGE};
 
 pub struct FrameData {
-    pub(crate) available_sem: VkSemaphore,
-    pub(crate) finished_sem: VkSemaphore,
-    pub(crate) in_flight_fence: VkFence,
     pub image_index: u32,
 }
 
@@ -87,42 +82,12 @@ pub struct VulkanRenderer {
     /// Viewport system (new unified API).
     /// Application layer manages which handle is "main" vs "preview".
     viewports: Vec<Viewport>,
-    /// Internal storage for particle system pipelines (compute and graphics).
-    /// Handles are resolved at command recording time.
-    pub(crate) particle_pipelines: ResourceStorage<crate::sync::VkPipeline>,
-    /// Internal storage for particle system pipeline layouts.
-    pub(crate) particle_layouts: ResourceStorage<crate::sync::VkPipelineLayout>,
-    /// Internal storage for particle system descriptor sets.
-    pub(crate) particle_descriptors: ResourceStorage<crate::sync::VkDescriptorSet>,
-    /// Internal storage for external images (swapchain, viewport textures).
-    /// Stores (VkImage, VkImageView) tuples for render graph use.
-    pub(crate) external_images: ResourceStorage<(crate::sync::VkImage, crate::sync::VkImageView)>,
-    /// Internal storage for external buffers.
-    pub(crate) external_buffers: ResourceStorage<crate::sync::VkBuffer>,
     /// Cached handle for the storage descriptor set (frame uniforms).
     /// Registered once when storage system is initialized.
     storage_descriptor_handle: DescriptorSetHandle,
 }
 
 pub const FRAMES_IN_FLIGHT: usize = 2;
-
-/// Viewport images for render graph creation.
-///
-/// This struct holds the image and image view handles needed to create
-/// a render graph with a viewport.
-#[derive(Clone)]
-pub struct ViewportImages {
-    /// Color attachment image.
-    pub(crate) color_image: VkImage,
-    /// Color attachment image view.
-    pub(crate) color_view: VkImageView,
-    /// Depth attachment image.
-    pub(crate) depth_image: VkImage,
-    /// Depth attachment image view.
-    pub(crate) depth_view: VkImageView,
-    /// Viewport extent.
-    pub extent: Extent2D,
-}
 
 impl VulkanRenderer {
     pub fn init(
@@ -153,8 +118,6 @@ impl VulkanRenderer {
             .map(|img| img.vk())
             .collect();
         let swap_data = SwapData::new(&context.device, &swapchain_images_raw, FRAMES_IN_FLIGHT);
-
-        let mut particle_descriptors = ResourceStorage::new();
 
         // Initialize bindless texture manager
         let bindless_manager = BindlessTextureManager::new(context.clone()).map_err(|e| {
@@ -207,7 +170,7 @@ impl VulkanRenderer {
 
         // Register the descriptor set and store the handle
         let storage_descriptor_handle =
-            DescriptorSetHandle::new(particle_descriptors.insert(storage_descriptor_set.set()));
+            DescriptorSetHandle::new(ResourceStorage::new().insert(storage_descriptor_set.set()));
 
         // Clean up the layout (materials will create their own)
         unsafe {
@@ -235,11 +198,6 @@ impl VulkanRenderer {
             render_targets: Vec::new(),
             output_target: None,
             viewports: Vec::new(),
-            particle_pipelines: ResourceStorage::new(),
-            particle_layouts: ResourceStorage::new(),
-            particle_descriptors,
-            external_images: ResourceStorage::new(),
-            external_buffers: ResourceStorage::new(),
             storage_descriptor_handle,
         })
     }
@@ -339,107 +297,12 @@ impl VulkanRenderer {
         self.storage_manager.update_object(index, model, color);
     }
 
-    /// Get storage descriptor set for binding (set 0).
-    pub(crate) fn storage_descriptor(&self) -> VkDescriptorSet {
-        self.storage_descriptor_set.set()
-    }
-
     /// Get the handle for the storage descriptor set.
     ///
     /// This returns the handle that can be used in ParticleRender for
     /// the frame descriptor set.
     pub fn storage_descriptor_handle(&self) -> DescriptorSetHandle {
         self.storage_descriptor_handle
-    }
-
-    // ========================================================================
-    // Particle System Resource Registration
-    // ========================================================================
-
-    /// Register a pipeline for particle system use and return a handle.
-    ///
-    /// This is used by the particle system to register compute and graphics pipelines.
-    /// The handle can then be used in ParticleDispatch and ParticleRender.
-    pub(crate) fn register_particle_pipeline(
-        &mut self,
-        pipeline: crate::sync::VkPipeline,
-    ) -> PipelineHandle {
-        PipelineHandle::new(self.particle_pipelines.insert(pipeline))
-    }
-
-    /// Register a pipeline layout for particle system use and return a handle.
-    pub(crate) fn register_particle_layout(
-        &mut self,
-        layout: crate::sync::VkPipelineLayout,
-    ) -> PipelineLayoutHandle {
-        PipelineLayoutHandle::new(self.particle_layouts.insert(layout))
-    }
-
-    /// Register a descriptor set for particle system use and return a handle.
-    pub(crate) fn register_particle_descriptor(
-        &mut self,
-        descriptor: crate::sync::VkDescriptorSet,
-    ) -> DescriptorSetHandle {
-        DescriptorSetHandle::new(self.particle_descriptors.insert(descriptor))
-    }
-
-    /// Get a registered pipeline by handle.
-    pub(crate) fn get_particle_pipeline(
-        &self,
-        handle: PipelineHandle,
-    ) -> Option<&crate::sync::VkPipeline> {
-        self.particle_pipelines.get(handle.index())
-    }
-
-    /// Get a registered pipeline layout by handle.
-    pub(crate) fn get_particle_layout(
-        &self,
-        handle: PipelineLayoutHandle,
-    ) -> Option<&crate::sync::VkPipelineLayout> {
-        self.particle_layouts.get(handle.index())
-    }
-
-    /// Get a registered descriptor set by handle.
-    pub(crate) fn get_particle_descriptor(
-        &self,
-        handle: DescriptorSetHandle,
-    ) -> Option<&crate::sync::VkDescriptorSet> {
-        self.particle_descriptors.get(handle.index())
-    }
-
-    /// Register an external image (e.g., swapchain image, viewport texture) for render graph use.
-    /// Returns a handle that can be used in ResourceKind::ExternalImage.
-    pub(crate) fn register_external_image(
-        &mut self,
-        image: crate::sync::VkImage,
-        image_view: crate::sync::VkImageView,
-    ) -> ImageHandle {
-        ImageHandle::new(self.external_images.insert((image, image_view)))
-    }
-
-    /// Register an external buffer for render graph use.
-    /// Returns a handle that can be used in ResourceKind::ExternalBuffer.
-    pub(crate) fn register_external_buffer(
-        &mut self,
-        buffer: crate::sync::VkBuffer,
-    ) -> BufferHandle {
-        BufferHandle::new(self.external_buffers.insert(buffer))
-    }
-
-    /// Get a registered external image by handle.
-    pub(crate) fn get_external_image(
-        &self,
-        handle: ImageHandle,
-    ) -> Option<&(crate::sync::VkImage, crate::sync::VkImageView)> {
-        self.external_images.get(handle.index())
-    }
-
-    /// Get a registered external buffer by handle.
-    pub(crate) fn get_external_buffer(
-        &self,
-        handle: BufferHandle,
-    ) -> Option<&crate::sync::VkBuffer> {
-        self.external_buffers.get(handle.index())
     }
 
     /// Initialize or resize the output render target.
@@ -464,20 +327,6 @@ impl VulkanRenderer {
             );
         }
         Ok(())
-    }
-
-    /// Get the output color image view (for rendering UI).
-    pub(crate) fn output_color_view(&self) -> Option<VkImageView> {
-        self.output_target
-            .as_ref()
-            .map(|t| VkImageView::new(t.color_image_view))
-    }
-
-    /// Get the output color image (for present pass blit).
-    pub(crate) fn output_color_image(&self) -> Option<VkImage> {
-        self.output_target
-            .as_ref()
-            .map(|t| VkImage::new(t.color_image))
     }
 
     /// Get output dimensions.
@@ -565,24 +414,6 @@ impl VulkanRenderer {
         self.init_render_target(Self::VIEWPORT_TEXTURE_ID, width, height, 1)
     }
 
-    /// Get the viewport color image view.
-    pub(crate) fn viewport_color_view(&self) -> Option<VkImageView> {
-        self.get_render_target_first(Self::VIEWPORT_TEXTURE_ID)
-            .map(|t| t.color_view())
-    }
-
-    /// Get the viewport depth image.
-    pub(crate) fn viewport_depth_image(&self) -> Option<VkImage> {
-        self.get_render_target_first(Self::VIEWPORT_TEXTURE_ID)
-            .map(|t| t.depth_image())
-    }
-
-    /// Get the viewport color image.
-    pub(crate) fn viewport_color_image(&self) -> Option<VkImage> {
-        self.get_render_target_first(Self::VIEWPORT_TEXTURE_ID)
-            .map(|t| t.color_image())
-    }
-
     /// Get viewport dimensions.
     pub fn viewport_extent(&self) -> Option<Extent2D> {
         self.get_render_target_first(Self::VIEWPORT_TEXTURE_ID)
@@ -632,11 +463,6 @@ impl VulkanRenderer {
             // Using range 200+ to avoid conflicts with existing texture IDs
             200 + handle.0 as u64
         })
-    }
-
-    /// Get the color image view for a viewport (by handle).
-    pub(crate) fn get_viewport_color_view(&self, handle: ViewportHandle) -> Option<VkImageView> {
-        self.viewports.get(handle.0).map(|v| v.color_view())
     }
 
     /// Get the viewport extent (by handle).
@@ -1021,56 +847,6 @@ impl VulkanRenderer {
         Some(self.asset_registry.register_material(material_asset))
     }
 
-    /// Register a skeleton buffer for GPU skeletal animation.
-    ///
-    /// Creates a descriptor set for the skeleton buffer and returns a handle
-    /// that can be used to reference it in draw calls.
-    ///
-    /// # Arguments
-    /// * `skeleton_buffer` - The skeleton buffer containing joint matrices
-    /// * `skeleton_set_layout` - The descriptor set layout for skeleton binding (Set 2)
-    ///
-    /// # Returns
-    /// A `SkeletonHandle` that references the registered skeleton.
-    pub(crate) fn register_skeleton(
-        &mut self,
-        skeleton_buffer: Rc<RefCell<SkeletonBuffer>>,
-        skeleton_set_layout: crate::sync::VkDescriptorSetLayout,
-    ) -> Option<SkeletonHandle> {
-        // Create descriptor set for skeleton
-        let descriptor =
-            SkeletonDescriptorSet::new(self.context.clone(), skeleton_buffer, skeleton_set_layout)
-                .ok()?;
-
-        // Find an empty slot or add new one
-        let handle = if let Some(slot) = self.skeleton_descriptors.iter().position(|s| s.is_none())
-        {
-            self.skeleton_descriptors[slot] = Some(descriptor);
-            SkeletonHandle::new(slot as u32)
-        } else {
-            let handle = SkeletonHandle::new(self.skeleton_descriptors.len() as u32);
-            self.skeleton_descriptors.push(Some(descriptor));
-            handle
-        };
-
-        Some(handle)
-    }
-
-    /// Get the skeleton descriptor set layout for a material.
-    ///
-    /// Returns `None` if the material doesn't support skeletal animation.
-    pub(crate) fn get_skeleton_set_layout(
-        &self,
-        handle: MaterialHandle,
-    ) -> Option<crate::sync::VkDescriptorSetLayout> {
-        let material = self.asset_registry.get_material(handle)?;
-        let cache = self.material_cache.borrow();
-        let pipeline = cache.get_pipeline(material.pipeline)?;
-        pipeline
-            .skeleton_set_layout
-            .map(crate::sync::VkDescriptorSetLayout::new)
-    }
-
     /// Get the skeleton descriptor set for a handle.
     pub fn get_skeleton_descriptor(
         &self,
@@ -1233,33 +1009,6 @@ impl ViewportRenderTarget {
                 context,
             })
         }
-    }
-
-    /// Get the color image view for render graph and UI sampling.
-    pub(crate) fn color_view(&self) -> VkImageView {
-        VkImageView::new(self.color_image_view)
-    }
-
-    /// Get the depth image view for render graph.
-    pub(crate) fn depth_view(&self) -> VkImageView {
-        VkImageView::new(self.depth_image_view)
-    }
-
-    /// Get the color image handle.
-    pub(crate) fn color_image(&self) -> VkImage {
-        VkImage::new(self.color_image)
-    }
-
-    /// Get the depth image handle.
-    pub(crate) fn depth_image(&self) -> VkImage {
-        VkImage::new(self.depth_image)
-    }
-
-    /// Get the sampler for this render target.
-    ///
-    /// Returns a wrapper type to avoid exposing vk::Sampler in the public API.
-    pub(crate) fn sampler(&self) -> VkSampler {
-        VkSampler::new(self.sampler)
     }
 }
 impl Drop for ViewportRenderTarget {

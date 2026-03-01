@@ -24,7 +24,7 @@ use ash::vk;
 use std::rc::Rc;
 
 use super::context::VulkanContext;
-use crate::sync::{VkDescriptorSet, VkDescriptorSetLayout, VkImageView, VkSampler};
+use crate::sync::{VkDescriptorSet, VkDescriptorSetLayout};
 
 /// Resource binding types for descriptor sets.
 #[derive(Clone, Debug)]
@@ -35,30 +35,6 @@ pub(crate) enum DescriptorBinding {
         offset: vk::DeviceSize,
         range: vk::DeviceSize,
     },
-    /// Uniform buffer binding.
-    UniformBuffer {
-        buffer: crate::sync::VkBuffer,
-        offset: vk::DeviceSize,
-        range: vk::DeviceSize,
-    },
-    /// Sampled image binding (requires separate sampler).
-    SampledImage {
-        view: vk::ImageView,
-        layout: vk::ImageLayout,
-    },
-    /// Sampler binding.
-    Sampler { sampler: vk::Sampler },
-    /// Combined image sampler binding (sampler + image together).
-    CombinedImageSampler {
-        view: vk::ImageView,
-        sampler: vk::Sampler,
-        layout: vk::ImageLayout,
-    },
-    /// Storage image binding (read/write access).
-    StorageImage {
-        view: vk::ImageView,
-        layout: vk::ImageLayout,
-    },
 }
 
 impl DescriptorBinding {
@@ -66,11 +42,6 @@ impl DescriptorBinding {
     pub(crate) fn descriptor_type(&self) -> vk::DescriptorType {
         match self {
             Self::StorageBuffer { .. } => vk::DescriptorType::STORAGE_BUFFER,
-            Self::UniformBuffer { .. } => vk::DescriptorType::UNIFORM_BUFFER,
-            Self::SampledImage { .. } => vk::DescriptorType::SAMPLED_IMAGE,
-            Self::Sampler { .. } => vk::DescriptorType::SAMPLER,
-            Self::CombinedImageSampler { .. } => vk::DescriptorType::COMBINED_IMAGE_SAMPLER,
-            Self::StorageImage { .. } => vk::DescriptorType::STORAGE_IMAGE,
         }
     }
 }
@@ -81,8 +52,6 @@ impl DescriptorBinding {
 pub(crate) trait BufferSource {
     /// Get the Vulkan buffer handle.
     fn buffer(&self) -> crate::sync::VkBuffer;
-    /// Get the buffer size in bytes.
-    fn size(&self) -> vk::DeviceSize;
 }
 
 // ============================================================================
@@ -93,17 +62,11 @@ impl BufferSource for crate::vulkan::bda::DeviceAddressBuffer {
     fn buffer(&self) -> crate::sync::VkBuffer {
         self.buffer.into()
     }
-    fn size(&self) -> vk::DeviceSize {
-        self.size
-    }
 }
 
 impl BufferSource for crate::vulkan::skeleton_buffer::SkeletonBuffer {
     fn buffer(&self) -> crate::sync::VkBuffer {
         self.buffer().into()
-    }
-    fn size(&self) -> vk::DeviceSize {
-        self.size()
     }
 }
 
@@ -111,17 +74,11 @@ impl BufferSource for crate::vulkan::particle_buffer::ParticleBuffer {
     fn buffer(&self) -> crate::sync::VkBuffer {
         self.buffer().into()
     }
-    fn size(&self) -> vk::DeviceSize {
-        self.size()
-    }
 }
 
 impl BufferSource for crate::vulkan::particle_buffer::EmitterConfigBuffer {
     fn buffer(&self) -> crate::sync::VkBuffer {
         self.buffer().into()
-    }
-    fn size(&self) -> vk::DeviceSize {
-        std::mem::size_of::<crate::vulkan::particle_buffer::EmitterConfig>() as vk::DeviceSize
     }
 }
 
@@ -129,12 +86,6 @@ impl<T: Copy> BufferSource for crate::vulkan::material::buffer_descriptor::Unifo
     fn buffer(&self) -> crate::sync::VkBuffer {
         // Access the inherent method on UniformBuffer, not the trait method
         <Self as crate::vulkan::material::buffer_descriptor::BufferDescriptorSource>::buffer(self)
-    }
-    fn size(&self) -> vk::DeviceSize {
-        // Access the inherent method on UniformBuffer
-        <Self as crate::vulkan::material::buffer_descriptor::BufferDescriptorSource>::buffer_size(
-            self,
-        )
     }
 }
 
@@ -157,31 +108,6 @@ impl DescriptorSet {
     /// Get the raw Vulkan descriptor set handle.
     pub(crate) fn vk(&self) -> vk::DescriptorSet {
         self.set
-    }
-    /// Update a sampled image binding with a new image view.
-    ///
-    /// This is used when a texture is resized and the image view changes.
-    /// Call this after the texture's imageView has been recreated.
-    pub(crate) fn update_sampled_image(&self, binding: u32, view: VkImageView) {
-        let image_info = vk::DescriptorImageInfo {
-            sampler: vk::Sampler::null(),
-            image_view: view.vk(),
-            image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
-        };
-
-        let write = vk::WriteDescriptorSet {
-            dst_set: self.set,
-            dst_binding: binding,
-            dst_array_element: 0,
-            descriptor_count: 1,
-            descriptor_type: vk::DescriptorType::SAMPLED_IMAGE,
-            p_image_info: &image_info,
-            ..Default::default()
-        };
-
-        unsafe {
-            self.device.update_descriptor_sets(&[write], &[]);
-        }
     }
 
     /// Create from existing pool allocation (for advanced use cases).
@@ -260,167 +186,21 @@ impl<'a> DescriptorSetBuilder<'a> {
     // Buffer bindings
     // ========================================================================
 
-    /// Add a storage buffer binding (entire buffer).
-    pub(crate) fn storage_buffer(mut self, binding: u32, source: &impl BufferSource) -> Self {
-        self.bindings.push((
-            binding,
-            DescriptorBinding::StorageBuffer {
-                buffer: source.buffer(),
-                offset: 0,
-                range: source.size(),
-            },
-        ));
-        self
-    }
-
     /// Add a storage buffer binding with explicit range.
     pub(crate) fn storage_buffer_range(
         mut self,
         binding: u32,
-        source: &impl BufferSource,
+        buffer: &dyn BufferSource,
         offset: vk::DeviceSize,
         range: vk::DeviceSize,
     ) -> Self {
+        let vk_buffer = buffer.buffer();
         self.bindings.push((
             binding,
             DescriptorBinding::StorageBuffer {
-                buffer: source.buffer(),
+                buffer: vk_buffer,
                 offset,
                 range,
-            },
-        ));
-        self
-    }
-
-    /// Add a uniform buffer binding (entire buffer).
-    pub(crate) fn uniform_buffer(mut self, binding: u32, source: &impl BufferSource) -> Self {
-        self.bindings.push((
-            binding,
-            DescriptorBinding::UniformBuffer {
-                buffer: source.buffer(),
-                offset: 0,
-                range: source.size(),
-            },
-        ));
-        self
-    }
-
-    /// Add a uniform buffer binding with explicit range.
-    pub(crate) fn uniform_buffer_range(
-        mut self,
-        binding: u32,
-        source: &impl BufferSource,
-        offset: vk::DeviceSize,
-        range: vk::DeviceSize,
-    ) -> Self {
-        self.bindings.push((
-            binding,
-            DescriptorBinding::UniformBuffer {
-                buffer: source.buffer(),
-                offset,
-                range,
-            },
-        ));
-        self
-    }
-
-    /// Add a raw buffer binding with explicit type.
-    ///
-    /// This is a low-level method for cases where you need full control.
-    pub(crate) fn raw_buffer(
-        mut self,
-        binding: u32,
-        buffer: crate::sync::VkBuffer,
-        offset: vk::DeviceSize,
-        range: vk::DeviceSize,
-        descriptor_type: vk::DescriptorType,
-    ) -> Self {
-        let desc_binding = match descriptor_type {
-            vk::DescriptorType::STORAGE_BUFFER => DescriptorBinding::StorageBuffer {
-                buffer,
-                offset,
-                range,
-            },
-            vk::DescriptorType::UNIFORM_BUFFER => DescriptorBinding::UniformBuffer {
-                buffer,
-                offset,
-                range,
-            },
-            _ => panic!("raw_buffer only supports STORAGE_BUFFER or UNIFORM_BUFFER"),
-        };
-        self.bindings.push((binding, desc_binding));
-        self
-    }
-
-    // ========================================================================
-    // Image bindings
-    // ========================================================================
-
-    /// Add a sampled image binding.
-    pub(crate) fn sampled_image(mut self, binding: u32, view: VkImageView) -> Self {
-        self.bindings.push((
-            binding,
-            DescriptorBinding::SampledImage {
-                view: view.vk(),
-                layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
-            },
-        ));
-        self
-    }
-
-    /// Add a sampled image binding with custom layout.
-    pub(crate) fn sampled_image_with_layout(
-        mut self,
-        binding: u32,
-        view: VkImageView,
-        layout: vk::ImageLayout,
-    ) -> Self {
-        self.bindings.push((
-            binding,
-            DescriptorBinding::SampledImage {
-                view: view.vk(),
-                layout,
-            },
-        ));
-        self
-    }
-
-    /// Add a sampler binding.
-    pub(crate) fn sampler(mut self, binding: u32, sampler: VkSampler) -> Self {
-        self.bindings.push((
-            binding,
-            DescriptorBinding::Sampler {
-                sampler: sampler.vk(),
-            },
-        ));
-        self
-    }
-
-    /// Add a combined image sampler binding.
-    pub(crate) fn combined_image_sampler(
-        mut self,
-        binding: u32,
-        view: VkImageView,
-        sampler: VkSampler,
-    ) -> Self {
-        self.bindings.push((
-            binding,
-            DescriptorBinding::CombinedImageSampler {
-                view: view.vk(),
-                sampler: sampler.vk(),
-                layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
-            },
-        ));
-        self
-    }
-
-    /// Add a storage image binding.
-    pub(crate) fn storage_image(mut self, binding: u32, view: VkImageView) -> Self {
-        self.bindings.push((
-            binding,
-            DescriptorBinding::StorageImage {
-                view: view.vk(),
-                layout: vk::ImageLayout::GENERAL,
             },
         ));
         self
@@ -481,16 +261,10 @@ impl<'a> DescriptorSetBuilder<'a> {
 
         // Build descriptor infos (must stay in scope until update_descriptor_sets)
         let mut buffer_infos: Vec<vk::DescriptorBufferInfo> = Vec::new();
-        let mut image_infos: Vec<vk::DescriptorImageInfo> = Vec::new();
 
         for (_, binding) in &self.bindings {
             match binding {
                 DescriptorBinding::StorageBuffer {
-                    buffer,
-                    offset,
-                    range,
-                }
-                | DescriptorBinding::UniformBuffer {
                     buffer,
                     offset,
                     range,
@@ -502,54 +276,16 @@ impl<'a> DescriptorSetBuilder<'a> {
                             .range(*range),
                     );
                 }
-                DescriptorBinding::SampledImage { view, layout } => {
-                    image_infos.push(
-                        vk::DescriptorImageInfo::default()
-                            .sampler(vk::Sampler::null())
-                            .image_view(*view)
-                            .image_layout(*layout),
-                    );
-                }
-                DescriptorBinding::Sampler { sampler } => {
-                    image_infos.push(
-                        vk::DescriptorImageInfo::default()
-                            .sampler(*sampler)
-                            .image_view(vk::ImageView::null())
-                            .image_layout(vk::ImageLayout::UNDEFINED),
-                    );
-                }
-                DescriptorBinding::CombinedImageSampler {
-                    view,
-                    sampler,
-                    layout,
-                } => {
-                    image_infos.push(
-                        vk::DescriptorImageInfo::default()
-                            .sampler(*sampler)
-                            .image_view(*view)
-                            .image_layout(*layout),
-                    );
-                }
-                DescriptorBinding::StorageImage { view, layout } => {
-                    image_infos.push(
-                        vk::DescriptorImageInfo::default()
-                            .sampler(vk::Sampler::null())
-                            .image_view(*view)
-                            .image_layout(*layout),
-                    );
-                }
             }
         }
 
         // Build writes referencing the infos
         let mut writes: Vec<vk::WriteDescriptorSet> = Vec::new();
         let mut buffer_idx = 0;
-        let mut image_idx = 0;
 
         for (binding_num, binding) in &self.bindings {
             let write = match binding {
-                DescriptorBinding::StorageBuffer { .. }
-                | DescriptorBinding::UniformBuffer { .. } => {
+                DescriptorBinding::StorageBuffer { .. } => {
                     let write = vk::WriteDescriptorSet::default()
                         .dst_set(descriptor_set)
                         .dst_binding(*binding_num)
@@ -557,19 +293,6 @@ impl<'a> DescriptorSetBuilder<'a> {
                         .descriptor_type(binding.descriptor_type())
                         .buffer_info(std::slice::from_ref(&buffer_infos[buffer_idx]));
                     buffer_idx += 1;
-                    write
-                }
-                DescriptorBinding::SampledImage { .. }
-                | DescriptorBinding::Sampler { .. }
-                | DescriptorBinding::CombinedImageSampler { .. }
-                | DescriptorBinding::StorageImage { .. } => {
-                    let write = vk::WriteDescriptorSet::default()
-                        .dst_set(descriptor_set)
-                        .dst_binding(*binding_num)
-                        .dst_array_element(0)
-                        .descriptor_type(binding.descriptor_type())
-                        .image_info(std::slice::from_ref(&image_infos[image_idx]));
-                    image_idx += 1;
                     write
                 }
             };
@@ -587,19 +310,6 @@ impl<'a> DescriptorSetBuilder<'a> {
             owned_layout: None,
             device: device.clone(),
         })
-    }
-
-    /// Build and take ownership of the layout.
-    ///
-    /// Use this when the descriptor set should own its layout for cleanup.
-    pub(crate) fn build_with_owned_layout(
-        self,
-        layout: VkDescriptorSetLayout,
-    ) -> Result<DescriptorSet, vk::Result> {
-        let layout_vk: vk::DescriptorSetLayout = layout.into();
-        let mut descriptor_set = self.build(layout)?;
-        descriptor_set.owned_layout = Some(layout_vk);
-        Ok(descriptor_set)
     }
 }
 
@@ -622,27 +332,6 @@ mod tests {
             storage.descriptor_type(),
             vk::DescriptorType::STORAGE_BUFFER
         );
-
-        let uniform = DescriptorBinding::UniformBuffer {
-            buffer: crate::sync::VkBuffer::default(),
-            offset: 0,
-            range: 256,
-        };
-        assert_eq!(
-            uniform.descriptor_type(),
-            vk::DescriptorType::UNIFORM_BUFFER
-        );
-
-        let sampled = DescriptorBinding::SampledImage {
-            view: vk::ImageView::null(),
-            layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
-        };
-        assert_eq!(sampled.descriptor_type(), vk::DescriptorType::SAMPLED_IMAGE);
-
-        let sampler = DescriptorBinding::Sampler {
-            sampler: vk::Sampler::null(),
-        };
-        assert_eq!(sampler.descriptor_type(), vk::DescriptorType::SAMPLER);
     }
 
     #[test]
