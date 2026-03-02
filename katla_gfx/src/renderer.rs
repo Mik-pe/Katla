@@ -721,6 +721,56 @@ impl VulkanRenderer {
         self.create_mesh(&vertices, &indices)
     }
 
+    /// Create a cylinder mesh standing on Y axis.
+    ///
+    /// # Arguments
+    /// * `height` - The height of the cylinder (Y axis)
+    /// * `radius` - The radius of the cylinder
+    /// * `segments` - Number of segments around the circumference
+    ///
+    /// # Returns
+    /// A `MeshHandle` that references the registered mesh.
+    pub fn create_cylinder_mesh(&mut self, height: f32, radius: f32, segments: u32) -> MeshHandle {
+        let (vertices, indices) = crate::primitives::generate_cylinder(height, radius, segments);
+        self.create_mesh(&vertices, &indices)
+    }
+
+    /// Create a torus (donut) mesh on the XZ plane.
+    ///
+    /// # Arguments
+    /// * `major_radius` - Distance from center of torus to center of tube
+    /// * `minor_radius` - Radius of the tube
+    /// * `segments` - Number of segments around the major circumference
+    /// * `rings` - Number of segments around the minor circumference (tube)
+    ///
+    /// # Returns
+    /// A `MeshHandle` that references the registered mesh.
+    pub fn create_torus_mesh(
+        &mut self,
+        major_radius: f32,
+        minor_radius: f32,
+        segments: u32,
+        rings: u32,
+    ) -> MeshHandle {
+        let (vertices, indices) =
+            crate::primitives::generate_torus(major_radius, minor_radius, segments, rings);
+        self.create_mesh(&vertices, &indices)
+    }
+
+    /// Create a plane on the XY axis (vertical, facing +Z).
+    ///
+    /// # Arguments
+    /// * `width` - The width of the plane (X axis)
+    /// * `height` - The height of the plane (Y axis)
+    /// * `segments` - Number of subdivisions in both directions
+    ///
+    /// # Returns
+    /// A `MeshHandle` that references the registered mesh.
+    pub fn create_plane_xy_mesh(&mut self, width: f32, height: f32, segments: u32) -> MeshHandle {
+        let (vertices, indices) = crate::primitives::generate_plane_xy(width, height, segments);
+        self.create_mesh(&vertices, &indices)
+    }
+
     /// Create a simple PBR material with standard bindless settings.
     ///
     /// This is a convenience method that creates a bindless PBR material pipeline
