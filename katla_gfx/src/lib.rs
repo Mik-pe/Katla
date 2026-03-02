@@ -1,25 +1,38 @@
+//! Katla Graphics Library
+
+// Public modules
+pub mod buffer;
 pub mod error;
 pub mod handle;
 pub mod material;
+pub mod mesh;
+pub mod pipeline;
 pub mod renderer;
 pub mod sync;
 pub mod texture;
 pub mod viewport;
-pub mod vulkan;
+
+// Internal implementation (not public)
+pub(crate) mod vulkan;
 
 // Internal re-exports for crate-wide access
-pub(crate) use vulkan::BindlessTextureManager;
-pub(crate) use vulkan::SwapData;
+// These types are used by other modules via crate::TypeName
+pub(crate) use vulkan::bindless_texture::BindlessTextureManager;
 pub(crate) use vulkan::bindless_texture::MAX_BINDLESS_TEXTURES;
 pub(crate) use vulkan::context::VulkanFrameCtx;
-// Now public - needed by katla_app
-pub use material::MaterialRegistry;
-pub use vulkan::material::SkeletonDescriptorSet;
-pub use vulkan::material::template::Material;
-pub use vulkan::skeleton_buffer::SkeletonBuffer;
-pub use vulkan::texture::Texture;
+pub(crate) use vulkan::material::Material;
+pub(crate) use vulkan::material::SkeletonDescriptorSet;
+pub(crate) use vulkan::material::storage_uniform::{
+    FrameUniforms, StorageDescriptorSet, StorageUniformManager,
+};
+pub(crate) use vulkan::pipeline_state::ShaderStages;
+pub(crate) use vulkan::swapdata::SwapData;
+pub(crate) use vulkan::texture::Texture;
+pub(crate) use vulkan::vertexbinding::VertexBinding;
+pub(crate) use vulkan::vertexbuffer::{IndexBuffer, VertexBuffer};
 
-// Public API exports
+// Root convenience exports (public API)
+pub use ash::vk::Extent2D;
 pub use error::RendererError;
 pub use handle::{
     DescriptorSetHandle, Handle, MaterialHandle, MeshHandle, PipelineHandle, PipelineLayoutHandle,
@@ -31,41 +44,18 @@ pub use material::{
     MaterialDomain, MaterialKey, MaterialPipelineCache, PbrMaterialConfig,
     SkinnedPbrMaterialConfig,
 };
+// MaterialRegistry is in vulkan::material, not the material module
 pub use renderer::{
-    AssetRegistry, DrawCall, DrawList, FRAMES_IN_FLIGHT, FrameData, FrameUniforms, InstanceData,
-    ParticleDispatch, ParticleRender, VulkanRenderer,
+    AssetRegistry, DrawCall, DrawList, FRAMES_IN_FLIGHT, FrameData, InstanceData, ParticleDispatch,
+    ParticleRender, VulkanRenderer,
 };
 pub use texture::{ImageFormat, TextureDescriptor, TextureManager, TextureUsage};
-
-pub use vulkan::context::{
-    ValidationMessage, ValidationMessageType, ValidationSeverity, VulkanContext,
-};
-pub use vulkan::material::storage_uniform::*;
-// Bindless texture constants
 pub use vulkan::bindless_texture::{
     DEFAULT_ALBEDO_SLOT, DEFAULT_AO_SLOT, DEFAULT_EMISSION_SLOT, DEFAULT_MR_SLOT,
     DEFAULT_NORMAL_SLOT, DEFAULT_TEXTURE_COUNT,
 };
-// Explicit exports from vulkan module (not wildcard)
-pub use vulkan::vertexbinding::{VertexBinding, VertexFormat};
-pub use vulkan::vertexbuffer::{IndexBuffer, IndexType, VertexBuffer};
-// Particle utilities
-pub use vulkan::particle_buffer::calculate_workgroup_count;
-// Descriptor builders needed for custom descriptor sets
-pub use vulkan::descriptor::DescriptorSetLayoutBuilder;
-pub use vulkan::descriptor_set::{DescriptorSet, DescriptorSetBuilder};
-// Pipeline state types
-pub use vulkan::pipeline_state::{CompareOp, CullMode, DescriptorType, FrontFace, ShaderStages};
-// Re-export vk::Extent2D for convenience
-pub use ash::vk::Extent2D;
-// Material pipeline types
-pub use vulkan::material::{
-    ComputePipelineBuilder, MaterialPipeline, MaterialTemplate, PipelineBuilder, ShaderModule,
-};
-// Buffer and memory types
-pub use vulkan::bda::DeviceAddressBuffer;
-pub use vulkan::material::buffer_descriptor::UniformBuffer;
-pub use vulkan::material::compute_pipeline::ComputePipeline;
-pub use vulkan::particle_buffer::{EmitterConfig, MAX_PARTICLES, ParticleBuffer};
-// Command buffer (needed for render graph execution)
 pub use vulkan::commandbuffer::CommandBuffer;
+pub use vulkan::context::{
+    ValidationMessage, ValidationMessageType, ValidationSeverity, VulkanContext,
+};
+pub use vulkan::material::MaterialRegistry;

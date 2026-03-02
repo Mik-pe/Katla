@@ -18,29 +18,41 @@ pub mod vertex_attribute;
 pub mod vertexbinding;
 pub mod vertexbuffer;
 
-pub use bda::*;
-pub use bindless_texture::*;
-pub use commandbuffer::*;
-pub use commandpool::*;
-// VulkanContext is now internal - only validation types are exported
+// Re-export commonly used types from submodules for internal crate access
+pub use bda::DeviceAddressBuffer;
+pub use bindless_texture::{
+    BindlessTextureManager, DEFAULT_ALBEDO_SLOT, DEFAULT_AO_SLOT, DEFAULT_EMISSION_SLOT,
+    DEFAULT_MR_SLOT, DEFAULT_NORMAL_SLOT, DEFAULT_TEXTURE_COUNT,
+};
+pub use commandbuffer::CommandBuffer;
+pub use commandpool::CommandPool;
 pub use context::{ValidationMessage, ValidationMessageType, ValidationSeverity};
 pub use descriptor::{DescriptorSetLayoutBuilder, LayoutBinding};
 pub use descriptor_set::{DescriptorSet, DescriptorSetBuilder};
-
-pub use material::storage_uniform::*;
+pub use material::storage_uniform::{
+    FrameUniforms, ObjectUniforms, StorageDescriptorSet, StorageUniformLayout,
+    StorageUniformManager,
+};
 pub use material::{
     MaterialBuilder, MaterialDescriptor, MaterialError, MaterialValue, RenderState, ShaderBinding,
     ShaderSource,
 };
-pub use particle_buffer::*;
-pub use pipeline_state::*;
-pub use queue::*;
-pub use skeleton_buffer::*;
-pub use swapchain::*;
-pub use swapdata::*;
-pub use texture::*;
-pub use vertex_attr_set::*;
-pub use vertex_attribute::*;
-pub use vertexbinding::*;
-// VertexBuffer and IndexBuffer are now internal
-pub use vertexbuffer::IndexType;
+pub use particle_buffer::{
+    EmitterConfig, EmitterConfigBuffer, MAX_PARTICLES, ParticleBuffer, ParticleData,
+    calculate_workgroup_count,
+};
+pub use pipeline_state::{
+    BlendFactor, BlendOp, ColorComponentFlags, CompareOp, CullMode, DescriptorType, DynamicState,
+    FrontFace, PolygonMode, PrimitiveTopology, ShaderStages, VertexInputRate,
+};
+pub use queue::Queue;
+pub use skeleton_buffer::{JointMatrix, MAX_JOINTS, SkeletonBuffer};
+pub use swapchain::{Swapchain, SwapchainInfo};
+pub use swapdata::SwapData;
+pub use texture::Texture;
+pub use vertex_attr_set::VertexAttributeSet;
+pub use vertex_attribute::{AttributeBinding, AttributeType};
+pub use vertexbinding::{
+    VertexBinding, VertexFormat, get_pbr_vertex_binding, get_skinned_vertex_binding,
+};
+pub use vertexbuffer::{IndexBuffer, IndexType, VertexBuffer};
