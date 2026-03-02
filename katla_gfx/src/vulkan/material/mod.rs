@@ -13,7 +13,7 @@ pub mod storage_uniform;
 pub mod template;
 
 // Explicit exports from asset module
-pub use asset::{load_material_from_file, AssetError};
+pub use asset::{AssetError, load_material_from_file};
 
 // Explicit exports from builder module
 pub use builder::{Pipeline, PipelineBuilder, PipelineError};
