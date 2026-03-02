@@ -1,7 +1,7 @@
 use super::CommandBuffer;
 
-use ash::Device;
 use ash::vk::{self, Fence, Semaphore};
+use ash::Device;
 
 pub struct Queue {
     device: Device,

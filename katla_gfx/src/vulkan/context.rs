@@ -1,21 +1,21 @@
 use ash::{
-    Device, Entry, Instance,
     ext::debug_utils::Instance as DebugInstance,
     khr::{
         push_descriptor::Device as PushDescriptorDevice, surface::Instance as SurfaceInstance,
         swapchain::Device as SwapchainDevice,
     },
     vk::{self},
+    Device, Entry, Instance,
 };
 use gpu_allocator::{
-    AllocationSizes, AllocatorDebugSettings,
     vulkan::{Allocation, AllocationScheme, Allocator, AllocatorCreateDesc},
+    AllocationSizes, AllocatorDebugSettings,
 };
 use log::{debug, info};
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 use std::{
     cell::RefCell,
-    ffi::{CStr, CString, c_void},
+    ffi::{c_void, CStr, CString},
     mem::ManuallyDrop,
     rc::Rc,
     sync::{Arc, Mutex},
@@ -770,11 +770,9 @@ impl VulkanContext {
         let queue_indices =
             QueueFamilyIndices::find_queue_families_headless(&instance, physical_device);
 
-        let queue_create_infos = vec![
-            vk::DeviceQueueCreateInfo::default()
-                .queue_family_index(queue_indices.graphics_idx.unwrap())
-                .queue_priorities(&[1.0]),
-        ];
+        let queue_create_infos = vec![vk::DeviceQueueCreateInfo::default()
+            .queue_family_index(queue_indices.graphics_idx.unwrap())
+            .queue_priorities(&[1.0])];
 
         let graphics_queue_idx = queue_indices.graphics_idx.unwrap();
         let transfer_queue_idx = queue_indices.transfer_idx.unwrap_or(0);
@@ -1339,7 +1337,11 @@ unsafe extern "system" fn debug_callback(
             CStr::from_ptr(callback_data.p_message).to_string_lossy()
         );
 
-        if should_break { vk::TRUE } else { vk::FALSE }
+        if should_break {
+            vk::TRUE
+        } else {
+            vk::FALSE
+        }
     }
 }
 

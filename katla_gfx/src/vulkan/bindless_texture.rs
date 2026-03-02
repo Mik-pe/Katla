@@ -52,10 +52,10 @@
 use ash::vk;
 use std::rc::Rc;
 
-use crate::RendererError;
 use crate::sync::{VkDescriptorSet, VkDescriptorSetLayout, VkImageView, VkSampler};
 use crate::vulkan::context::VulkanContext;
 use crate::vulkan::texture::Texture;
+use crate::RendererError;
 
 /// Maximum number of textures in the bindless array.
 pub const MAX_BINDLESS_TEXTURES: u32 = 4096;

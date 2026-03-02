@@ -15,7 +15,7 @@ pub mod template;
 pub mod uniform_layout;
 
 // Explicit exports from asset module
-pub use asset::{AssetError, load_material_from_file};
+pub use asset::{load_material_from_file, AssetError};
 
 // Explicit exports from buffer_descriptor module
 pub use buffer_descriptor::UniformBuffer;

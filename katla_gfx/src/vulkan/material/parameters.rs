@@ -4,8 +4,8 @@
 //! and automatic buffer generation.
 
 use super::{
-    MaterialDescriptor, MaterialValue,
     reflection::{MemberType, ShaderReflection, StructLayout},
+    MaterialDescriptor, MaterialValue,
 };
 use std::collections::HashMap;
 
