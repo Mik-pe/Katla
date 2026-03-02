@@ -1,21 +1,21 @@
 use ash::{
+    Device, Entry, Instance,
     ext::debug_utils::Instance as DebugInstance,
     khr::{
         push_descriptor::Device as PushDescriptorDevice, surface::Instance as SurfaceInstance,
         swapchain::Device as SwapchainDevice,
     },
     vk::{self},
-    Device, Entry, Instance,
 };
 use gpu_allocator::{
-    vulkan::{Allocation, AllocationScheme, Allocator, AllocatorCreateDesc},
     AllocationSizes, AllocatorDebugSettings,
+    vulkan::{Allocation, AllocationScheme, Allocator, AllocatorCreateDesc},
 };
 use log::{debug, info};
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 use std::{
     cell::RefCell,
-    ffi::{c_void, CStr, CString},
+    ffi::{CStr, CString, c_void},
     mem::ManuallyDrop,
     rc::Rc,
     sync::{Arc, Mutex},
@@ -688,9 +688,11 @@ impl VulkanContext {
         let queue_indices =
             QueueFamilyIndices::find_queue_families_headless(&instance, physical_device);
 
-        let queue_create_infos = vec![vk::DeviceQueueCreateInfo::default()
-            .queue_family_index(queue_indices.graphics_idx.unwrap())
-            .queue_priorities(&[1.0])];
+        let queue_create_infos = vec![
+            vk::DeviceQueueCreateInfo::default()
+                .queue_family_index(queue_indices.graphics_idx.unwrap())
+                .queue_priorities(&[1.0]),
+        ];
 
         let graphics_queue_idx = queue_indices.graphics_idx.unwrap();
         let transfer_queue_idx = queue_indices.transfer_idx.unwrap_or(0);
@@ -1216,58 +1218,56 @@ unsafe extern "system" fn debug_callback(
     p_callback_data: *const vk::DebugUtilsMessengerCallbackDataEXT,
     p_user_data: *mut c_void,
 ) -> vk::Bool32 {
-    let callback_data = &*p_callback_data;
+    unsafe {
+        let callback_data = &*p_callback_data;
 
-    // Convert to Rust types
-    let severity = ValidationSeverity::from(message_severity);
-    let message_type = ValidationMessageType::from(message_types);
-    let message = CStr::from_ptr(callback_data.p_message)
-        .to_string_lossy()
-        .to_string();
+        // Convert to Rust types
+        let severity = ValidationSeverity::from(message_severity);
+        let message_type = ValidationMessageType::from(message_types);
+        let message = CStr::from_ptr(callback_data.p_message)
+            .to_string_lossy()
+            .to_string();
 
-    // Extract VUID from p_message_id_name if available (this is the canonical source)
-    // Otherwise try to find it in the message text (fallback for older validation layers)
-    let vuid = if !callback_data.p_message_id_name.is_null() {
-        let id_name = unsafe { CStr::from_ptr(callback_data.p_message_id_name) };
-        let id_str = id_name.to_string_lossy();
-        // Check if it's a VUID (starts with "VUID-")
-        if id_str.starts_with("VUID-") {
-            Some(id_str.to_string())
+        // Extract VUID from p_message_id_name if available (this is the canonical source)
+        // Otherwise try to find it in the message text (fallback for older validation layers)
+        let vuid = if !callback_data.p_message_id_name.is_null() {
+            let id_name = unsafe { CStr::from_ptr(callback_data.p_message_id_name) };
+            let id_str = id_name.to_string_lossy();
+            // Check if it's a VUID (starts with "VUID-")
+            if id_str.starts_with("VUID-") {
+                Some(id_str.to_string())
+            } else {
+                None
+            }
         } else {
-            None
-        }
-    } else {
-        // Fallback: try to find VUID in message text
-        message
-            .split_whitespace()
-            .find(|s| s.starts_with("VUID-"))
-            .map(|s| s.to_string())
-    };
+            // Fallback: try to find VUID in message text
+            message
+                .split_whitespace()
+                .find(|s| s.starts_with("VUID-"))
+                .map(|s| s.to_string())
+        };
 
-    let validation_msg = ValidationMessage {
-        severity,
-        message_type,
-        message,
-        vuid,
-    };
+        let validation_msg = ValidationMessage {
+            severity,
+            message_type,
+            message,
+            vuid,
+        };
 
-    // Reconstruct the Arc<Mutex<ValidationCallbackStorage>> from the raw pointer
-    let storage = Arc::from_raw(p_user_data as *const Mutex<ValidationCallbackStorage>);
-    let mut storage_guard = storage.lock().unwrap();
-    let should_break = storage_guard.call(&validation_msg);
-    drop(storage_guard);
-    let _ = Arc::into_raw(storage); // Don't drop the Arc
+        // Reconstruct the Arc<Mutex<ValidationCallbackStorage>> from the raw pointer
+        let storage = Arc::from_raw(p_user_data as *const Mutex<ValidationCallbackStorage>);
+        let mut storage_guard = storage.lock().unwrap();
+        let should_break = storage_guard.call(&validation_msg);
+        drop(storage_guard);
+        let _ = Arc::into_raw(storage); // Don't drop the Arc
 
-    // Always log the message (for backwards compatibility and visibility)
-    debug!(
-        "{}",
-        CStr::from_ptr(callback_data.p_message).to_string_lossy()
-    );
+        // Always log the message (for backwards compatibility and visibility)
+        debug!(
+            "{}",
+            CStr::from_ptr(callback_data.p_message).to_string_lossy()
+        );
 
-    if should_break {
-        vk::TRUE
-    } else {
-        vk::FALSE
+        if should_break { vk::TRUE } else { vk::FALSE }
     }
 }
 

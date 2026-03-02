@@ -215,7 +215,7 @@ impl VulkanRenderer {
         let mut registry = self.material_registry.borrow_mut();
         let mut cache = self.material_cache.borrow_mut();
         registry
-            .load_directory_bindless(dir, &self.context, &mut cache, layout)
+            .load_directory_bindless(dir, &mut cache, layout)
             .map_err(|e| RendererError::InvalidOperation(e.to_string()))
     }
 
@@ -680,21 +680,6 @@ impl VulkanRenderer {
         }
         let vertex_binding = material.vertex_binding()?.clone();
         let is_bindless = material.is_bindless();
-
-        if let Some(pbr_textures) = material.pbr_textures().cloned() {
-            let material_asset = MaterialAsset {
-                pipeline,
-                vertex_binding,
-                texture_indices: material.texture_indices,
-                emission_index: material.emission_index,
-                uses_bindless: is_bindless,
-            };
-
-            return Some(
-                self.asset_registry
-                    .register_material_pbr(material_asset, pbr_textures),
-            );
-        }
 
         let material_asset = MaterialAsset {
             pipeline,
