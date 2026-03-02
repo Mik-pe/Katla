@@ -39,8 +39,8 @@ pub use material::{
     MaterialDescriptor, MaterialError, MaterialValue, RenderState, ShaderBinding, ShaderSource,
 };
 pub use particle_buffer::{
-    calculate_workgroup_count, EmitterConfig, EmitterConfigBuffer, ParticleBuffer, ParticleData,
-    MAX_PARTICLES,
+    EmitterConfig, EmitterConfigBuffer, MAX_PARTICLES, ParticleBuffer, ParticleData,
+    calculate_workgroup_count,
 };
 // Internal pipeline state types - not exposed publicly
 pub(crate) use pipeline_state::{
@@ -51,11 +51,11 @@ pub(crate) use crate::pipeline::{
     BlendFactor, BlendOp, CompareOp, CullMode, FrontFace, PolygonMode,
 };
 pub use queue::Queue;
-pub use skeleton_buffer::{JointMatrix, SkeletonBuffer, MAX_JOINTS};
+pub use skeleton_buffer::{JointMatrix, MAX_JOINTS, SkeletonBuffer};
 pub use swapchain::{Swapchain, SwapchainInfo};
 pub use swapdata::SwapData;
 pub use texture::Texture;
 pub use vertexbinding::{
-    get_pbr_vertex_binding, get_skinned_vertex_binding, VertexBinding, VertexFormat,
+    VertexBinding, VertexFormat, get_pbr_vertex_binding, get_skinned_vertex_binding,
 };
 pub use vertexbuffer::{IndexBuffer, IndexType, VertexBuffer};

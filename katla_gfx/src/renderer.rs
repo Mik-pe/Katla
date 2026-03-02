@@ -20,10 +20,10 @@ pub use types::{
 
 use crate::vulkan::material::MaterialRegistry;
 use crate::{
-    material::MaterialPipelineCache, viewport::Viewport, BindlessTextureManager, IndexBuffer,
-    Material, RendererError, SkeletonDescriptorSet, StorageDescriptorSet, StorageUniformManager,
-    SwapData, TextureManager, VertexBinding, VertexBuffer, VulkanContext, VulkanFrameCtx,
-    MAX_BINDLESS_TEXTURES,
+    BindlessTextureManager, IndexBuffer, MAX_BINDLESS_TEXTURES, Material, RendererError,
+    SkeletonDescriptorSet, StorageDescriptorSet, StorageUniformManager, SwapData, TextureManager,
+    VertexBinding, VertexBuffer, VulkanContext, VulkanFrameCtx, material::MaterialPipelineCache,
+    viewport::Viewport,
 };
 use ash::vk;
 use log::{error, info, warn};
