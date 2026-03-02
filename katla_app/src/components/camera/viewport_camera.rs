@@ -110,6 +110,7 @@ impl ViewportCamera {
 ///
 /// This is updated by the `ViewportCameraSystem` each frame.
 #[derive(Debug)]
+#[derive(Default)]
 pub struct ViewportCameraMatrices {
     /// View matrix for each slot.
     pub view_matrices: [Option<Mat4>; 4],
@@ -117,14 +118,6 @@ pub struct ViewportCameraMatrices {
     pub projection_matrices: [Option<Mat4>; 4],
 }
 
-impl Default for ViewportCameraMatrices {
-    fn default() -> Self {
-        Self {
-            view_matrices: [None, None, None, None],
-            projection_matrices: [None, None, None, None],
-        }
-    }
-}
 
 impl ViewportCameraMatrices {
     /// Creates a new empty matrices resource.

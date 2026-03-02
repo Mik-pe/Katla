@@ -5,7 +5,7 @@ use katla_ecs::{System, SystemExecutionOrder, World};
 use katla_gfx::VulkanRenderer;
 use katla_ui::{FontId, ForkAwesome};
 use winit::dpi::LogicalSize;
-use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
+use winit::event_loop::{ControlFlow, EventLoop};
 use winit::keyboard::ModifiersState;
 use winit::window::Window;
 
@@ -16,7 +16,6 @@ use crate::{
     gui_state::GuiState,
     input::InputMapper,
     preferences::Preferences,
-    rendering::MaterialManager,
     resources::ResourceManager,
     ui::Theme,
     util::{BackgroundLoader, FileCache, GLTFModel, Timer},
@@ -83,7 +82,6 @@ impl ApplicationBuilder {
 
     /// Initialize the Vulkan renderer and load materials.
     fn init_renderer(
-        &mut self,
         event_loop: &EventLoop<()>,
         window: &Window,
         info: &ApplicationInfo,
@@ -230,14 +228,13 @@ impl ApplicationBuilder {
             )
             .unwrap();
 
-        let renderer = self.init_renderer(&event_loop, &window, &info, &resources);
+        let renderer = Self::init_renderer(&event_loop, &window, &info, &resources);
 
         let app = Application {
             window,
             renderer,
             camera,
             gltf_cache: FileCache::new(gltf_loader),
-            material_manager: MaterialManager::new(),
             timer: Timer::new(100),
             info,
             world,
@@ -245,7 +242,6 @@ impl ApplicationBuilder {
             current_modifiers: ModifiersState::empty(),
             frame_count: 0,
             resources,
-            skeleton_buffers: HashMap::new(),
             ui_context,
             debug_overlay: crate::ui::DebugOverlay::new(),
             editor_ui: {
@@ -263,12 +259,10 @@ impl ApplicationBuilder {
             preferences,
             gui_state,
             scale_factor: 1.0, // Will be updated when window is created
-            ui_renderer: None,
             background_loader: BackgroundLoader::new(),
             next_thumbnail_texture_id: 100, // Custom texture IDs start at 100
             thumbnail_texture_ids: HashMap::new(),
             start_time: Instant::now(),
-            debug_draw: crate::rendering::DebugDraw::new(),
         };
 
         Ok((app, event_loop))

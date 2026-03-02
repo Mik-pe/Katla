@@ -1,7 +1,6 @@
 use crate::animation::samplers::Interpolation;
 use crate::animation::{AnimationChannel, AnimationClip, AnimationSampler, ChannelPath};
 use crate::util::gltf_parser::AttributeParser;
-use crate::util::GLTFModel;
 use gltf::buffer::Data as BufferData;
 
 /// Load a single animation clip from a GLTF animation.

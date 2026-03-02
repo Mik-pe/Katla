@@ -100,6 +100,7 @@ impl ViewportLayout {
 /// assert_eq!(state.get_viewport_at(0), Some(viewport_handle_0));
 /// ```
 #[derive(Debug, Clone)]
+#[derive(Default)]
 pub struct ViewportGridState {
     /// Current layout configuration.
     pub layout: ViewportLayout,
@@ -111,15 +112,6 @@ pub struct ViewportGridState {
     pub active_viewport: Option<usize>,
 }
 
-impl Default for ViewportGridState {
-    fn default() -> Self {
-        Self {
-            layout: ViewportLayout::default(),
-            viewport_slots: [None; 4],
-            active_viewport: None,
-        }
-    }
-}
 
 impl ViewportGridState {
     /// Creates a new ViewportGridState with the default (Single) layout.

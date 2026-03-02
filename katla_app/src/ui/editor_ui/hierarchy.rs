@@ -351,7 +351,6 @@ impl<'a> Widget for Hierarchy<'a> {
                 ) {
                     clicked_action = Some("Delete");
                     *open = false;
-                    return;
                 }
             },
         );

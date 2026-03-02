@@ -696,14 +696,13 @@ fn build_editor_tab(
     let fill_bounds = Rect2D::from_origin_size(cursor, Vec2::new(fill_width, 20.0));
     ui.draw_rect(fill_bounds, theme.selection);
 
-    if ui
+    ui
         .add(
             Button::new("")
                 .bounds(slider_bounds)
                 .id("camera_speed_slider"),
         )
-        .clicked
-    {}
+        .clicked;
 
     cursor = Vec2::new(cursor.x(), cursor.y() + 40.0);
 

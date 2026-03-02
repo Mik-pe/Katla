@@ -17,7 +17,6 @@ pub use crate::systems::rendering::*;
 pub use crate::systems::transform::*;
 
 // Animation systems
-pub use crate::systems::animation::*;
 
 // Submodules
 pub mod animation;

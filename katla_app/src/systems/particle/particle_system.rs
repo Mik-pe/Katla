@@ -1,21 +1,13 @@
 //! Particle simulation system for GPU-based particle effects.
 //!
-//! This system updates ParticleEmitter components each frame, managing
-//! particle emission timing and preparing push constants for the GPU.
+//! This system is currently a placeholder. GPU particle simulation
+//! will be implemented in a future update.
 
-use katla_ecs::{EntityId, System, World};
-
-use crate::components::{ParticleEmitter, TransformComponent};
+use katla_ecs::{System, World};
 
 /// System for updating particle emitter state each frame.
 ///
-/// This system handles:
-/// - Emit accumulator updates based on emit rate and delta time
-/// - Synchronizing emitter position with entity transform
-/// - Updating the frame data uniform buffer for GPU compute dispatch
-///
-/// Note: The actual GPU compute dispatch happens in the render graph,
-/// not in this system. This system only updates CPU-side state.
+/// This system is a placeholder for future GPU-based particle simulation.
 pub struct ParticleSimulationSystem;
 
 impl Default for ParticleSimulationSystem {
@@ -32,32 +24,8 @@ impl ParticleSimulationSystem {
 }
 
 impl System for ParticleSimulationSystem {
-    fn update(&mut self, world: &mut World, delta_time: f32) {
-        // Collect entities that need updates (to avoid borrow issues)
-        let entities_to_update: Vec<EntityId> = world
-            .query::<&ParticleEmitter>()
-            .map(|(entity, _)| entity)
-            .collect();
-
-        // Update each particle emitter
-        for entity in entities_to_update {
-            // Get transform position if available
-            let position = world.get_component::<TransformComponent>(entity).map(|t| {
-                let pos = t.transform.position;
-                [pos.x(), pos.y(), pos.z()]
-            });
-
-            // Update emitter
-            if let Some(emitter) = world.get_component_mut::<ParticleEmitter>(entity) {
-                // Sync emitter position with transform if present
-                if let Some(pos) = position {
-                    emitter.set_position(pos);
-                }
-
-                // Update emitter (calculates emit count, updates accumulator, writes to frame data buffer)
-                emitter.update(delta_time);
-            }
-        }
+    fn update(&mut self, _world: &mut World, _delta_time: f32) {
+        // Placeholder - particle simulation to be implemented
     }
 
     fn name(&self) -> &str {

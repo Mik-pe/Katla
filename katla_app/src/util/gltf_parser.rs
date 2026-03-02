@@ -6,7 +6,7 @@ use byteorder::{ByteOrder, LittleEndian};
 use gltf::buffer::Data as BufferData;
 use katla_math::{Mat4, Quat, Sphere, Vec3, Vec4};
 
-use crate::rendering::{VertexPBR, VertexSkinned};
+use katla_gfx::{VertexPBR, VertexPBRSkinned};
 
 /// GLTF attribute parser using accessor iterators.
 pub struct AttributeParser<'a> {
@@ -636,7 +636,7 @@ pub fn build_skinned_vertex_data(
     tex_coords: Vec<[f32; 2]>,
     joint_indices: Vec<[u16; 4]>,
     joint_weights: Vec<[f32; 4]>,
-) -> (Vec<VertexSkinned>, Sphere) {
+) -> (Vec<VertexPBRSkinned>, Sphere) {
     use itertools::izip;
 
     let has_pos = !positions.is_empty();
@@ -655,10 +655,10 @@ pub fn build_skinned_vertex_data(
     let default_tangent = [1.0f32, 0.0, 0.0, 1.0];
 
     let vertex_count = positions.len();
-    let vertex_data: Vec<VertexSkinned> = if has_pos && has_skinning {
+    let vertex_data: Vec<VertexPBRSkinned> = if has_pos && has_skinning {
         izip!(positions, normals, tex_coords, joint_indices, joint_weights)
             .map(
-                |(position, normal, tex_coord, joints, weights)| VertexSkinned {
+                |(position, normal, tex_coord, joints, weights)| VertexPBRSkinned {
                     position,
                     normal,
                     tangent: default_tangent,
@@ -677,7 +677,7 @@ pub fn build_skinned_vertex_data(
             .map(|(((i, position), normal), tex_coord)| {
                 let joints = joint_indices.get(i).copied().unwrap_or(default_joints);
                 let weights = joint_weights.get(i).copied().unwrap_or(default_weights);
-                VertexSkinned {
+                VertexPBRSkinned {
                     position,
                     normal,
                     tangent: default_tangent,

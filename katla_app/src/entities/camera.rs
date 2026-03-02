@@ -51,7 +51,7 @@ impl Camera {
 
     pub fn get_view_mat(&self, world: &World) -> Mat4 {
         let fwd = Vec3::new(0.0, 0.0, -1.0);
-        let to = katla_math::mat4_mul_vec3(&self.get_view_rotation(world), &fwd);
+        let to = self.get_view_rotation(world) * fwd;
         if let Some(transform) = world.get_component::<TransformComponent>(self.entity) {
             let pos = transform.transform.position;
             Mat4::create_lookat(pos, pos + to, Vec3::new(0.0, 1.0, 0.0))
