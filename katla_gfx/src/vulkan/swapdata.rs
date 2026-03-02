@@ -1,4 +1,4 @@
-use ash::{Device, vk};
+use ash::{vk, Device};
 
 pub struct SwapData {
     frames_in_flight: usize,

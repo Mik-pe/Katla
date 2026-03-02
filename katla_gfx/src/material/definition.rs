@@ -3,10 +3,10 @@
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 
-use crate::ImageFormat;
 use crate::vulkan::descriptor::{DescriptorSetLayoutBuilder, LayoutBinding};
 use crate::vulkan::pipeline_state::{DescriptorType, ShaderStages};
 use crate::vulkan::vertexbinding::VertexBinding;
+use crate::ImageFormat;
 
 pub use crate::vulkan::material::descriptor::{RenderState, ShaderSource};
 

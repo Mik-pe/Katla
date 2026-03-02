@@ -5,8 +5,8 @@
 //! event-driven template hot reload using filesystem watching.
 
 use super::{
-    FileWatcher, MaterialDescriptor, MaterialError, MaterialTemplate, ShaderReflection,
-    load_material_from_file,
+    load_material_from_file, FileWatcher, MaterialDescriptor, MaterialError, MaterialTemplate,
+    ShaderReflection,
 };
 use crate::material::{DynamicMaterialConfig, MaterialDefinition, MaterialPipelineCache};
 use ash::vk;

@@ -1,4 +1,4 @@
-use ash::{Device, util::read_spv, vk};
+use ash::{util::read_spv, vk, Device};
 use naga::{
     back::spv::{self, WriterFlags},
     front::wgsl,

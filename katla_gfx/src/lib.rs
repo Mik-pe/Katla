@@ -5,10 +5,12 @@ pub mod error;
 pub mod handle;
 pub mod material;
 pub mod pipeline;
-pub mod primitives;
 pub mod renderer;
 pub mod texture;
 pub mod vertex;
+
+// Internal implementation (primitive mesh generators - use VulkanRenderer::create_*_mesh instead)
+pub(crate) mod primitives;
 
 // Internal implementation (not public)
 pub(crate) mod vulkan;
@@ -23,8 +25,8 @@ pub(crate) mod viewport;
 pub(crate) use vulkan::bindless_texture::BindlessTextureManager;
 pub(crate) use vulkan::bindless_texture::MAX_BINDLESS_TEXTURES;
 pub(crate) use vulkan::context::VulkanFrameCtx;
-pub(crate) use vulkan::material::SkeletonDescriptorSet;
 pub(crate) use vulkan::material::storage_uniform::{StorageDescriptorSet, StorageUniformManager};
+pub(crate) use vulkan::material::SkeletonDescriptorSet;
 pub(crate) use vulkan::swapdata::SwapData;
 pub(crate) use vulkan::texture::Texture;
 pub(crate) use vulkan::vertexbinding::VertexBinding;
