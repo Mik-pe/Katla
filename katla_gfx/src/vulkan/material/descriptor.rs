@@ -24,9 +24,9 @@ impl ShaderSource {
     }
 }
 
-/// Descriptor binding types
+/// Shader binding types for material descriptors.
 #[derive(Clone, Debug)]
-pub enum DescriptorBinding {
+pub enum ShaderBinding {
     /// Uniform buffer binding
     Uniform { name: String, ty: UniformType },
 
@@ -40,22 +40,22 @@ pub enum DescriptorBinding {
     CombinedImageSampler { binding: u32, name: String },
 }
 
-impl DescriptorBinding {
+impl ShaderBinding {
     pub fn binding(&self) -> Option<u32> {
         match self {
-            DescriptorBinding::SampledImage { binding, .. } => Some(*binding),
-            DescriptorBinding::Sampler { binding, .. } => Some(*binding),
-            DescriptorBinding::CombinedImageSampler { binding, .. } => Some(*binding),
-            DescriptorBinding::Uniform { .. } => None,
+            ShaderBinding::SampledImage { binding, .. } => Some(*binding),
+            ShaderBinding::Sampler { binding, .. } => Some(*binding),
+            ShaderBinding::CombinedImageSampler { binding, .. } => Some(*binding),
+            ShaderBinding::Uniform { .. } => None,
         }
     }
 
     pub fn name(&self) -> String {
         match self {
-            DescriptorBinding::Uniform { name, .. } => name.clone(),
-            DescriptorBinding::SampledImage { name, .. } => name.clone(),
-            DescriptorBinding::Sampler { name, .. } => name.clone(),
-            DescriptorBinding::CombinedImageSampler { name, .. } => name.clone(),
+            ShaderBinding::Uniform { name, .. } => name.clone(),
+            ShaderBinding::SampledImage { name, .. } => name.clone(),
+            ShaderBinding::Sampler { name, .. } => name.clone(),
+            ShaderBinding::CombinedImageSampler { name, .. } => name.clone(),
         }
     }
 }
@@ -142,7 +142,7 @@ pub struct MaterialDescriptor {
     pub name: String,
     pub vertex_shader: ShaderSource,
     pub fragment_shader: ShaderSource,
-    pub bindings: Vec<DescriptorBinding>,
+    pub bindings: Vec<ShaderBinding>,
     pub parameters: HashMap<String, MaterialValue>,
     pub render_state: RenderState,
 }
@@ -165,13 +165,13 @@ impl MaterialDescriptor {
     }
 
     /// Add a binding to the descriptor
-    pub fn with_binding(mut self, binding: DescriptorBinding) -> Self {
+    pub fn with_binding(mut self, binding: ShaderBinding) -> Self {
         self.bindings.push(binding);
         self
     }
 
     /// Add multiple bindings
-    pub fn with_bindings(mut self, bindings: Vec<DescriptorBinding>) -> Self {
+    pub fn with_bindings(mut self, bindings: Vec<ShaderBinding>) -> Self {
         self.bindings = bindings;
         self
     }
@@ -193,7 +193,7 @@ impl MaterialDescriptor {
         self.bindings
             .iter()
             .filter_map(|b| {
-                if let DescriptorBinding::Uniform { ty, .. } = b {
+                if let ShaderBinding::Uniform { ty, .. } = b {
                     Some(ty.size())
                 } else {
                     None
@@ -207,7 +207,7 @@ impl MaterialDescriptor {
         self.bindings.iter().any(|b| {
             matches!(
                 b,
-                DescriptorBinding::SampledImage { .. } | DescriptorBinding::Sampler { .. }
+                ShaderBinding::SampledImage { .. } | ShaderBinding::Sampler { .. }
             )
         })
     }
@@ -216,7 +216,7 @@ impl MaterialDescriptor {
     pub fn has_color_uniform(&self) -> bool {
         self.bindings
             .iter()
-            .any(|b| matches!(b, DescriptorBinding::Uniform { name, .. } if name == "color"))
+            .any(|b| matches!(b, ShaderBinding::Uniform { name, .. } if name == "color"))
     }
 }
 

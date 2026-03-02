@@ -24,17 +24,13 @@ pub use commandbuffer::*;
 pub use commandpool::*;
 // VulkanContext is now internal - only validation types are exported
 pub use context::{ValidationMessage, ValidationMessageType, ValidationSeverity};
-// Explicit re-exports to avoid DescriptorBinding ambiguity
-pub use descriptor::DescriptorSetLayoutBuilder;
+pub use descriptor::{DescriptorSetLayoutBuilder, LayoutBinding};
 pub use descriptor_set::{DescriptorSet, DescriptorSetBuilder};
-// Note: descriptor::DescriptorBinding is for layout creation
-// descriptor_set::DescriptorBinding is for runtime binding - use full path when needed
 
 pub use material::storage_uniform::*;
-// Exclude material::DescriptorBinding to avoid conflict with descriptor::DescriptorBinding
-// MaterialAsset is in crate::renderer::registry, MaterialType does not exist
 pub use material::{
-    MaterialBuilder, MaterialDescriptor, MaterialError, MaterialValue, RenderState, ShaderSource,
+    MaterialBuilder, MaterialDescriptor, MaterialError, MaterialValue, RenderState, ShaderBinding,
+    ShaderSource,
 };
 pub use particle_buffer::*;
 pub use pipeline_state::*;

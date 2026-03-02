@@ -1,6 +1,6 @@
 use ash::{
-    vk::{self},
     Device,
+    vk::{self},
 };
 
 pub struct CommandPool {

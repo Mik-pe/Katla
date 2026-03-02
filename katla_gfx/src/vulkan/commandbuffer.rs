@@ -1,6 +1,6 @@
-use ash::{vk, Device};
+use ash::{Device, vk};
 
-use super::{vertex_attr_set::VertexAttributeSet, vertex_attribute::AttributeType, CommandPool};
+use super::{CommandPool, vertex_attr_set::VertexAttributeSet, vertex_attribute::AttributeType};
 use crate::sync::{DependencyInfo, Rect2D, Viewport};
 
 #[derive(Clone)]

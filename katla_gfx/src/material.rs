@@ -39,7 +39,6 @@ pub use crate::vulkan::material::descriptor::{RenderState, ShaderSource};
 
 // Re-export legacy types from vulkan::material for backward compatibility
 pub use crate::vulkan::material::{
-    load_material_from_file,
     // Asset loading
     AssetError,
     // Compute pipeline
@@ -91,6 +90,7 @@ pub use crate::vulkan::material::{
     UniformLayout,
     UniformType,
     WatcherError,
+    load_material_from_file,
 };
 
 /// Material domain for render pass organization.
@@ -740,17 +740,19 @@ impl MaterialDefinition for DynamicMaterialConfig {
 
     fn descriptor_layouts(&self) -> Vec<DescriptorSetLayoutBuilder> {
         // Set 0: Storage buffers (always present)
-        let mut layouts = vec![DescriptorSetLayoutBuilder::new()
-            .add_binding(
-                0,
-                DescriptorType::StorageBuffer,
-                ShaderStages::VERTEX_FRAGMENT,
-            )
-            .add_binding(
-                1,
-                DescriptorType::StorageBuffer,
-                ShaderStages::VERTEX_FRAGMENT,
-            )];
+        let mut layouts = vec![
+            DescriptorSetLayoutBuilder::new()
+                .add_binding(
+                    0,
+                    DescriptorType::StorageBuffer,
+                    ShaderStages::VERTEX_FRAGMENT,
+                )
+                .add_binding(
+                    1,
+                    DescriptorType::StorageBuffer,
+                    ShaderStages::VERTEX_FRAGMENT,
+                ),
+        ];
 
         if self.uses_bindless {
             // Set 1 is bindless (provided externally)

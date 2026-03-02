@@ -28,7 +28,7 @@ use crate::sync::VkDescriptorSetLayout;
 
 /// Resource binding types for descriptor sets.
 #[derive(Clone, Debug)]
-pub(crate) enum DescriptorBinding {
+pub(crate) enum ResourceBinding {
     /// Storage buffer binding.
     StorageBuffer {
         buffer: crate::sync::VkBuffer,
@@ -37,7 +37,7 @@ pub(crate) enum DescriptorBinding {
     },
 }
 
-impl DescriptorBinding {
+impl ResourceBinding {
     /// Get the Vulkan descriptor type for this binding.
     pub(crate) fn descriptor_type(&self) -> vk::DescriptorType {
         match self {
@@ -157,7 +157,7 @@ pub struct DescriptorSetFlags {
 /// ```
 pub struct DescriptorSetBuilder<'a> {
     context: &'a Rc<VulkanContext>,
-    bindings: Vec<(u32, DescriptorBinding)>,
+    bindings: Vec<(u32, ResourceBinding)>,
     flags: DescriptorSetFlags,
 }
 
@@ -192,7 +192,7 @@ impl<'a> DescriptorSetBuilder<'a> {
         let vk_buffer = buffer.buffer();
         self.bindings.push((
             binding,
-            DescriptorBinding::StorageBuffer {
+            ResourceBinding::StorageBuffer {
                 buffer: vk_buffer,
                 offset,
                 range,
@@ -259,7 +259,7 @@ impl<'a> DescriptorSetBuilder<'a> {
 
         for (_, binding) in &self.bindings {
             match binding {
-                DescriptorBinding::StorageBuffer {
+                ResourceBinding::StorageBuffer {
                     buffer,
                     offset,
                     range,
@@ -280,7 +280,7 @@ impl<'a> DescriptorSetBuilder<'a> {
 
         for (binding_num, binding) in &self.bindings {
             let write = match binding {
-                DescriptorBinding::StorageBuffer { .. } => {
+                ResourceBinding::StorageBuffer { .. } => {
                     let write = vk::WriteDescriptorSet::default()
                         .dst_set(descriptor_set)
                         .dst_binding(*binding_num)
@@ -317,8 +317,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_descriptor_binding_types() {
-        let storage = DescriptorBinding::StorageBuffer {
+    fn test_resource_binding_types() {
+        let storage = ResourceBinding::StorageBuffer {
             buffer: crate::sync::VkBuffer::default(),
             offset: 0,
             range: 1024,
