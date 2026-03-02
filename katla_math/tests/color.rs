@@ -1,4 +1,4 @@
-use katla_math::{Color, Vec4, HSV};
+use katla_math::{Color, HSV, Vec4};
 
 #[test]
 fn test_constructors() {

@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
-use katla_math::Color;
 use katla_gfx::{BindlessPbrMaterialConfig, TextureDescriptor, VulkanRenderer};
+use katla_math::Color;
 
 use crate::rendering::{Material, VertexPBR};
 
@@ -53,41 +53,31 @@ fn create_checkerboard_material_with_color(
     renderer: &mut VulkanRenderer,
     color: Option<Color>,
 ) -> Material {
-    use katla_gfx::{
-        DEFAULT_ALBEDO_SLOT, DEFAULT_AO_SLOT, DEFAULT_EMISSION_SLOT, DEFAULT_MR_SLOT,
-        DEFAULT_NORMAL_SLOT,
-    };
+    // Get default slot indices
+    let defaults = renderer.bindless_defaults();
 
     // Generate checkerboard pixels
     let pixels = generate_checkerboard_pixels(64, 8);
 
     // Create texture using TextureManager
     let tm = renderer.texture_manager_mut();
-    let desc = TextureDescriptor::rgba8_srgb(64, 64);
-    let albedo_handle = tm.create(&desc, &pixels);
+    let albedo_handle = tm.create_rgba(64, 64, &pixels);
+    let albedo_view = tm
+        .get_view(albedo_handle)
+        .expect("Failed to get albedo view");
+    let albedo_idx = renderer
+        .bindless_manager_mut()
+        .register_texture(albedo_view)
+        .unwrap_or(defaults.albedo);
 
-    // Get view and register with bindless manager
-    let albedo_idx = if let Some(view) = renderer.texture_manager().get_view(albedo_handle) {
-        renderer
-            .bindless_manager_mut()
-            .register_texture(view)
-            .unwrap_or(DEFAULT_ALBEDO_SLOT)
-    } else {
-        DEFAULT_ALBEDO_SLOT
-    };
-
-    // Track bindless slot in TextureManager
-    renderer
-        .texture_manager_mut()
-        .register_bindless_slot(albedo_handle, albedo_idx);
-    // Use default textures for other PBR slots
+    // Use default textures in other PBR slots
     let texture_indices = [
         albedo_idx,
-        DEFAULT_NORMAL_SLOT,
-        DEFAULT_MR_SLOT,
-        DEFAULT_AO_SLOT,
+        defaults.normal,
+        defaults.metallic_roughness,
+        defaults.occlusion,
     ];
-    let emission_idx = DEFAULT_EMISSION_SLOT;
+    let emission_idx = defaults.emission;
 
     // Create material config and get pipeline from cache
     let vertex_binding = VertexPBR::get_vertex_binding();

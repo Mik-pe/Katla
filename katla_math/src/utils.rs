@@ -278,11 +278,7 @@ pub fn mod_f32(a: f32, b: f32) -> f32 {
 /// Safe division that returns 0 for division by zero
 #[inline]
 pub fn safe_div(a: f32, b: f32) -> f32 {
-    if b.abs() < f32::EPSILON {
-        0.0
-    } else {
-        a / b
-    }
+    if b.abs() < f32::EPSILON { 0.0 } else { a / b }
 }
 
 /// Reciprocal (1/x) with protection against division by zero
@@ -298,11 +294,7 @@ pub fn reciprocal(value: f32) -> f32 {
 /// Square root with protection for negative values (returns 0)
 #[inline]
 pub fn safe_sqrt(value: f32) -> f32 {
-    if value <= 0.0 {
-        0.0
-    } else {
-        value.sqrt()
-    }
+    if value <= 0.0 { 0.0 } else { value.sqrt() }
 }
 
 /// Check if a value is finite (not NaN or infinity)

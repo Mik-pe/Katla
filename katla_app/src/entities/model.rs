@@ -169,10 +169,9 @@ impl Model {
         material_registry: &std::cell::RefCell<MaterialRegistry>,
     ) -> Self {
         use katla_gfx::material::PbrTextureSet;
-        use katla_gfx::{
-            DEFAULT_ALBEDO_SLOT, DEFAULT_AO_SLOT, DEFAULT_EMISSION_SLOT, DEFAULT_MR_SLOT,
-            DEFAULT_NORMAL_SLOT,
-        };
+
+        // Get default slot indices from renderer
+        let defaults = renderer.bindless_defaults();
 
         // Check if model has skinning
         let has_skinning = model.has_skinning;
@@ -292,19 +291,19 @@ impl Model {
                     let bindless = renderer.bindless_manager_mut();
                     let albedo_idx = bindless
                         .register_texture(albedo_view)
-                        .unwrap_or(DEFAULT_ALBEDO_SLOT);
+                        .unwrap_or(defaults.albedo);
                     let normal_idx = bindless
                         .register_texture(normal_view)
-                        .unwrap_or(DEFAULT_NORMAL_SLOT);
+                        .unwrap_or(defaults.normal);
                     let mr_idx = bindless
                         .register_texture(mr_view)
-                        .unwrap_or(DEFAULT_MR_SLOT);
+                        .unwrap_or(defaults.metallic_roughness);
                     let ao_idx = bindless
                         .register_texture(ao_view)
-                        .unwrap_or(DEFAULT_AO_SLOT);
+                        .unwrap_or(defaults.occlusion);
                     let emiss_idx = bindless
                         .register_texture(emiss_view)
-                        .unwrap_or(DEFAULT_EMISSION_SLOT);
+                        .unwrap_or(defaults.emission);
 
                     debug!(
                         "  Bindless texture slots: albedo={}, normal={}, mr={}, ao={}, emission={}",
@@ -327,12 +326,12 @@ impl Model {
                 }
                 _ => (
                     [
-                        DEFAULT_ALBEDO_SLOT,
-                        DEFAULT_NORMAL_SLOT,
-                        DEFAULT_MR_SLOT,
-                        DEFAULT_AO_SLOT,
+                        defaults.albedo,
+                        defaults.normal,
+                        defaults.metallic_roughness,
+                        defaults.occlusion,
                     ],
-                    DEFAULT_EMISSION_SLOT,
+                    defaults.emission,
                     None,
                 ),
             }

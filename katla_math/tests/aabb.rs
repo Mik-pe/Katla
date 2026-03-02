@@ -1,5 +1,5 @@
-use katla_math::Vec3;
 use katla_math::AABB;
+use katla_math::Vec3;
 
 #[test]
 fn test_expand() {

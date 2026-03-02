@@ -15,10 +15,8 @@
 //! app.debug_draw.sphere_wireframe(impact_point, 0.5, Color::YELLOW, 16);
 //! ```
 
+use katla_gfx::{IndexBuffer, IndexType, MaterialHandle, MeshHandle, VertexBuffer, VulkanContext};
 use katla_math::{Color, Mat4, Vec3};
-use katla_gfx::{
-    IndexBuffer, IndexType, MaterialHandle, MeshHandle, VertexBuffer, VulkanContext,
-};
 use std::rc::Rc;
 
 /// Maximum number of debug lines per frame (pre-allocated buffer size)

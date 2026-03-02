@@ -1,4 +1,4 @@
-use crate::{Mat4, Ray, Sphere, Vec3, AABB};
+use crate::{AABB, Mat4, Ray, Sphere, Vec3};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Plane {
@@ -122,11 +122,7 @@ impl Plane {
         let t = (self.distance - self.normal.dot(ray.origin)) / denominator;
 
         // Only return intersection if it's in front of the ray
-        if t >= 0.0 {
-            Some(t)
-        } else {
-            None
-        }
+        if t >= 0.0 { Some(t) } else { None }
     }
 
     /// Transform the plane by a matrix

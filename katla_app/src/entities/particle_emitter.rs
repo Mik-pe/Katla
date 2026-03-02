@@ -5,12 +5,12 @@
 use std::rc::Rc;
 
 use katla_ecs::World;
-use katla_math::{Transform, Vec3};
 use katla_gfx::{
     CompareOp, ComputePipelineBuilder, CullMode, DescriptorSetBuilder, DescriptorSetLayoutBuilder,
     DescriptorType, DeviceAddressBuffer, EmitterConfig, FrontFace, ImageFormat, MaterialPipeline,
     ParticleBuffer, PipelineBuilder, ShaderModule, ShaderStages, VulkanContext,
 };
+use katla_math::{Transform, Vec3};
 
 use crate::components::{NameComponent, ParticleEmitter, TransformComponent};
 
