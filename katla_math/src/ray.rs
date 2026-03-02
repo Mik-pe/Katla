@@ -1,4 +1,4 @@
-use crate::{Mat4, Plane, Sphere, Vec3, AABB};
+use crate::{AABB, Mat4, Plane, Sphere, Vec3};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Ray {
@@ -200,11 +200,7 @@ impl Ray {
 
         let t = inv_det * edge2.dot(q);
 
-        if t > 1e-6 {
-            Some(self.at(t))
-        } else {
-            None
-        }
+        if t > 1e-6 { Some(self.at(t)) } else { None }
     }
 
     /// Transform the ray by a matrix
