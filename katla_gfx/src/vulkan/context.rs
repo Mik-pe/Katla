@@ -199,6 +199,54 @@ impl Drop for RenderTexture {
     }
 }
 
+/// Low-level Vulkan context providing direct access to GPU resources.
+///
+/// This is an **escape hatch** for advanced use cases where the high-level
+/// [`VulkanRenderer`] API is insufficient. Most applications should prefer
+/// the high-level API for common operations.
+///
+/// # High-level alternatives
+///
+/// | Operation | High-level API |
+/// |-----------|---------------|
+/// | Create mesh | [`VulkanRenderer::create_mesh()`] |
+/// | Register material | [`VulkanRenderer::register_material()`] |
+/// | Load texture | [`TextureManager::create()`] via [`VulkanRenderer::texture_manager()`] |
+/// | Render target | [`VulkanRenderer::create_viewport()`] |
+///
+/// # Escape hatch use cases
+///
+/// Use `VulkanContext` directly when you need to:
+/// - Allocate custom GPU buffers with specific memory requirements
+/// - Implement render passes outside the standard pipeline
+/// - Query physical device limits and features
+/// - Integrate with external Vulkan-based libraries
+///
+/// # Example
+///
+/// ```no_run
+/// use katla_gfx::{VulkanContext, VulkanRenderer};
+/// use std::rc::Rc;
+///
+/// // Normal usage: access context through renderer
+/// # let renderer: VulkanRenderer = unsafe { std::mem::zeroed() };
+/// let context: &Rc<VulkanContext> = &renderer.context;
+///
+/// // Escape hatch: query device limits for advanced features
+/// let limits = unsafe {
+///     context.instance
+///         .get_physical_device_properties(context.physical_device)
+///         .limits
+/// };
+/// let max_texture_size = limits.max_image_dimension2_d;
+/// ```
+///
+/// [`VulkanRenderer`]: crate::renderer::VulkanRenderer
+/// [`VulkanRenderer::create_mesh()`]: crate::renderer::VulkanRenderer::create_mesh
+/// [`VulkanRenderer::register_material()`]: crate::renderer::VulkanRenderer::register_material
+/// [`VulkanRenderer::texture_manager()`]: crate::renderer::VulkanRenderer::texture_manager
+/// [`VulkanRenderer::create_viewport()`]: crate::renderer::VulkanRenderer::create_viewport
+/// [`TextureManager::create()`]: crate::texture::TextureManager::create
 pub struct VulkanContext {
     _entry: Entry,
     pub instance: Instance,

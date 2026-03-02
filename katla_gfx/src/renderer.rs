@@ -22,7 +22,7 @@ use crate::vulkan::material::MaterialRegistry;
 use crate::{
     BindlessTextureManager, IndexBuffer, MAX_BINDLESS_TEXTURES, Material, RendererError,
     SkeletonDescriptorSet, StorageDescriptorSet, StorageUniformManager, SwapData, TextureManager,
-    VertexBuffer, VulkanContext, VulkanFrameCtx, material::MaterialPipelineCache,
+    VertexBinding, VertexBuffer, VulkanContext, VulkanFrameCtx, material::MaterialPipelineCache,
     viewport::Viewport,
 };
 use ash::vk;
@@ -680,6 +680,85 @@ impl VulkanRenderer {
         };
 
         self.asset_registry.register_mesh(mesh_asset)
+    }
+
+    /// Create a cube mesh with the given size.
+    ///
+    /// # Arguments
+    /// * `size` - The size of the cube as [width, height, depth]
+    ///
+    /// # Returns
+    /// A `MeshHandle` that references the registered mesh.
+    pub fn create_cube_mesh(&mut self, size: [f32; 3]) -> MeshHandle {
+        let (vertices, indices) = crate::primitives::generate_cube(size);
+        self.create_mesh(&vertices, &indices)
+    }
+
+    /// Create a UV sphere mesh.
+    ///
+    /// # Arguments
+    /// * `radius` - The radius of the sphere
+    /// * `segments` - Number of horizontal segments (longitude)
+    /// * `rings` - Number of vertical rings (latitude)
+    ///
+    /// # Returns
+    /// A `MeshHandle` that references the registered mesh.
+    pub fn create_sphere_mesh(&mut self, radius: f32, segments: u32, rings: u32) -> MeshHandle {
+        let (vertices, indices) = crate::primitives::generate_sphere(radius, segments, rings);
+        self.create_mesh(&vertices, &indices)
+    }
+
+    /// Create a plane mesh on the XZ plane.
+    ///
+    /// # Arguments
+    /// * `width` - The width of the plane (X axis)
+    /// * `height` - The height of the plane (Z axis)
+    ///
+    /// # Returns
+    /// A `MeshHandle` that references the registered mesh.
+    pub fn create_plane_mesh(&mut self, width: f32, height: f32) -> MeshHandle {
+        let (vertices, indices) = crate::primitives::generate_plane(width, height);
+        self.create_mesh(&vertices, &indices)
+    }
+
+    /// Create a simple PBR material with standard bindless settings.
+    ///
+    /// This is a convenience method that creates a bindless PBR material pipeline
+    /// and registers it with the renderer in one step.
+    ///
+    /// # Arguments
+    /// * `vertex_binding` - Vertex binding describing the vertex format
+    /// * `shader_path` - Path to the WGSL shader file
+    ///
+    /// # Returns
+    /// A `MaterialHandle` that references the registered material, or None if creation fails.
+    ///
+    /// # Example
+    /// ```ignore
+    /// use katla_gfx::{VertexLayout, PbrMaterialConfig};
+    ///
+    /// let layout = VertexLayout::pbr();
+    /// let binding = VertexBinding::from(&layout);
+    /// let handle = renderer.create_pbr_material(binding, PathBuf::from("shaders/pbr.wgsl"))?;
+    /// ```
+    pub fn create_pbr_material(
+        &mut self,
+        vertex_binding: VertexBinding,
+        shader_path: std::path::PathBuf,
+    ) -> Option<MaterialHandle> {
+        use crate::material::PbrMaterialConfig;
+
+        let config = PbrMaterialConfig::bindless(vertex_binding.clone(), shader_path);
+        let layout = self.bindless_manager.descriptor_layout();
+
+        let pipeline = self
+            .material_cache
+            .borrow_mut()
+            .get_or_create_bindless(&config, layout)
+            .ok()?;
+
+        let mut material = Material::from_pipeline_handle(pipeline, vertex_binding, true);
+        self.register_material(&mut material)
     }
 
     /// Register a unified Material with the renderer.
