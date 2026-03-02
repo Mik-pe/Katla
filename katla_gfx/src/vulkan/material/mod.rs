@@ -14,27 +14,56 @@ pub mod storage_uniform;
 pub mod template;
 pub mod uniform_layout;
 
-pub use asset::*;
+// Explicit exports from asset module
+pub use asset::{AssetError, load_material_from_file};
+
+// Explicit exports from buffer_descriptor module
 pub use buffer_descriptor::UniformBuffer;
-pub use builder::*;
+
+// Explicit exports from builder module
+pub use builder::{Pipeline, PipelineBuilder, PipelineError};
+
+// Explicit exports from compute_pipeline module
 pub use compute_pipeline::{ComputePipeline, ComputePipelineBuilder, ComputePipelineError};
+
+// Explicit exports from descriptor module
 pub use descriptor::{
-    DescriptorBinding, MaterialDescriptor, MaterialError, MaterialValue, RenderState, ShaderSource,
+    MaterialDescriptor, MaterialError, MaterialValue, RenderState, ShaderBinding, ShaderSource,
     ShaderStage, UniformType,
 };
-pub use file_watcher::*;
-pub use materialbuilder::*;
-pub use parameters::*;
-pub use reflection::*;
-pub use registry::*;
-pub use shadermodule::*;
+
+// Explicit exports from file_watcher module
+pub use file_watcher::{FileWatcher, WatcherError};
+
+// Explicit exports from materialbuilder module
+pub use materialbuilder::{MaterialBuildError, MaterialBuilder};
+
+// Explicit exports from parameters module
+pub use parameters::{MaterialParameters, ParameterError};
+
+// Explicit exports from reflection module
+pub use reflection::{MemberType, ReflectionError, ShaderReflection, StructLayout, StructMember};
+
+// Explicit exports from registry module
+pub use registry::MaterialRegistry;
+
+// Explicit exports from shadermodule module
+pub use shadermodule::{ShaderCache, ShaderError, ShaderModule};
+
+// Explicit exports from skeleton_descriptor module
 pub use skeleton_descriptor::SkeletonDescriptorSet;
+
+// Explicit exports from storage_uniform module
 pub use storage_uniform::{
     FrameUniforms, ObjectUniforms, StorageDescriptorSet, StorageUniformLayout,
     StorageUniformManager,
 };
-pub use template::*;
-pub use uniform_layout::*;
+
+// Explicit exports from template module
+pub use template::{InstanceError, Material, MaterialTemplate};
+
+// Explicit exports from uniform_layout module
+pub use uniform_layout::UniformLayout;
 
 use ash::vk;
 use std::rc::Rc;

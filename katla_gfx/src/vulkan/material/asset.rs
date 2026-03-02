@@ -4,7 +4,7 @@
 //! allowing declarative material creation without code changes.
 
 use super::{
-    DescriptorBinding, MaterialDescriptor, MaterialValue, RenderState, ShaderSource, UniformType,
+    MaterialDescriptor, MaterialValue, RenderState, ShaderBinding, ShaderSource, UniformType,
 };
 use serde::Deserialize;
 use std::{collections::HashMap, path::Path};
@@ -167,7 +167,7 @@ impl MaterialToml {
         // Add uniform bindings
         for (name, uniform) in self.bindings.uniforms {
             let ty = parse_uniform_type(&uniform.ty, uniform.count.unwrap_or(1))?;
-            descriptor = descriptor.with_binding(DescriptorBinding::Uniform { name, ty });
+            descriptor = descriptor.with_binding(ShaderBinding::Uniform { name, ty });
         }
 
         // Add texture bindings
@@ -175,7 +175,7 @@ impl MaterialToml {
             let name = texture.name.unwrap_or_else(|| slot.clone());
             // Determine if this is a separate binding or combined
             // For now, we'll use CombinedImageSampler as default
-            descriptor = descriptor.with_binding(DescriptorBinding::CombinedImageSampler {
+            descriptor = descriptor.with_binding(ShaderBinding::CombinedImageSampler {
                 binding: texture.binding,
                 name,
             });

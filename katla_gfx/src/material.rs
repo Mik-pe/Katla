@@ -25,73 +25,14 @@
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 
-use crate::vulkan::descriptor::{DescriptorBinding, DescriptorSetLayoutBuilder};
+use crate::vulkan::descriptor::{DescriptorSetLayoutBuilder, LayoutBinding};
+use crate::vulkan::material::{MaterialPipeline, Pipeline, PipelineBuilder, ShaderModule};
 use crate::vulkan::pipeline_state::DescriptorType;
 use crate::vulkan::vertexbinding::VertexBinding;
 use crate::{ImageFormat, ShaderStages};
 
 // Re-export Material trait types for public API
 pub use crate::vulkan::material::descriptor::{RenderState, ShaderSource};
-
-//=============================================================================
-// Legacy Re-exports (for backward compatibility)
-//=============================================================================
-
-// Re-export legacy types from vulkan::material for backward compatibility
-pub use crate::vulkan::material::{
-    // Asset loading
-    AssetError,
-    // Compute pipeline
-    ComputePipeline,
-    ComputePipelineBuilder,
-    ComputePipelineError,
-    // File watching
-    FileWatcher,
-    // Storage uniforms
-    FrameUniforms,
-    // Template
-    InstanceError,
-    MaterialBuildError,
-    MaterialBuilder,
-    MaterialDescriptor,
-    MaterialError,
-    // Parameters
-    MaterialParameters,
-    // Core legacy types
-    MaterialPipeline,
-    // Hot reload and registry
-    MaterialRegistry,
-    MaterialTemplate,
-    MaterialValue,
-    MemberType,
-    ObjectUniforms,
-    ParameterError,
-    PbrTextureSet,
-    Pipeline,
-    // Pipeline builder (legacy)
-    PipelineBuilder,
-    PipelineError,
-    ReflectionError,
-    ShaderCache,
-    ShaderError,
-    // Shader module
-    ShaderModule,
-    // Reflection
-    ShaderReflection,
-    ShaderStage,
-    // Skeleton
-    SkeletonDescriptorSet,
-    StorageDescriptorSet,
-    StorageUniformLayout,
-    StorageUniformManager,
-    StructLayout,
-    StructMember,
-    UniformBuffer,
-    UniformLayout,
-    UniformType,
-    WatcherError,
-    load_material_from_file,
-};
 
 /// Material domain for render pass organization.
 ///
@@ -933,7 +874,7 @@ fn hash_layout(layout: &DescriptorSetLayoutBuilder, hasher: &mut DefaultHasher) 
 }
 
 /// Hash a single descriptor binding.
-fn hash_descriptor_binding(binding: &DescriptorBinding, hasher: &mut DefaultHasher) {
+fn hash_descriptor_binding(binding: &LayoutBinding, hasher: &mut DefaultHasher) {
     binding.binding.hash(hasher);
     hash_descriptor_type(&binding.descriptor_type, hasher);
     binding.descriptor_count.hash(hasher);
