@@ -28,7 +28,7 @@ pub(crate) use bindless_texture::{
 pub(crate) use commandbuffer::CommandBuffer;
 pub use commandpool::CommandPool;
 pub use context::ValidationLevel;
-pub(crate) use context::{ValidationMessage, ValidationMessageType, ValidationSeverity};
+pub(crate) use context::{ValidationMessage, ValidationSeverity};
 pub(crate) use descriptor::{DescriptorSetLayoutBuilder, LayoutBinding};
 pub(crate) use descriptor_set::{DescriptorSet, DescriptorSetBuilder};
 pub use material::storage_uniform::{
@@ -36,8 +36,7 @@ pub use material::storage_uniform::{
     StorageUniformManager,
 };
 pub use material::{
-    MaterialBuilder, MaterialDescriptor, MaterialError, MaterialValue, RenderState, ShaderBinding,
-    ShaderSource,
+    MaterialDescriptor, MaterialError, MaterialValue, RenderState, ShaderBinding, ShaderSource,
 };
 pub use particle_buffer::{
     calculate_workgroup_count, EmitterConfig, EmitterConfigBuffer, ParticleBuffer, ParticleData,
@@ -46,7 +45,6 @@ pub use particle_buffer::{
 // Internal pipeline state types - not exposed publicly
 pub(crate) use pipeline_state::{
     ColorComponentFlags, DescriptorType, DynamicState, PrimitiveTopology, ShaderStages,
-    VertexInputRate,
 };
 // Re-export Katla-native types from pipeline module for internal use
 pub(crate) use crate::pipeline::{
@@ -57,8 +55,6 @@ pub use skeleton_buffer::{JointMatrix, SkeletonBuffer, MAX_JOINTS};
 pub use swapchain::{Swapchain, SwapchainInfo};
 pub use swapdata::SwapData;
 pub use texture::Texture;
-pub use vertex_attr_set::VertexAttributeSet;
-pub use vertex_attribute::{AttributeBinding, AttributeType};
 pub use vertexbinding::{
     get_pbr_vertex_binding, get_skinned_vertex_binding, VertexBinding, VertexFormat,
 };

@@ -303,7 +303,7 @@ impl MaterialRegistry {
                 Some(w) => w,
                 None => return Ok(Vec::new()),
             };
-            std::iter::from_fn(|| watcher.try_recv()).collect()
+            std::iter::from_fn(|| watcher.try_events()).collect()
         };
 
         let mut reloaded = Vec::new();

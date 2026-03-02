@@ -243,15 +243,9 @@ pub(crate) fn hash_descriptor_binding(binding: &LayoutBinding, hasher: &mut Defa
 pub(crate) fn hash_descriptor_type(ty: &DescriptorType, hasher: &mut DefaultHasher) {
     // Use discriminant for stable hashing across versions
     let discriminant = match ty {
-        DescriptorType::UniformBuffer => 0u8,
-        DescriptorType::StorageBuffer => 1,
-        DescriptorType::SampledImage => 2,
-        DescriptorType::Sampler => 3,
-        DescriptorType::CombinedImageSampler => 4,
-        DescriptorType::UniformTexelBuffer => 5,
-        DescriptorType::StorageTexelBuffer => 6,
-        DescriptorType::InputAttachment => 7,
-        DescriptorType::StorageImage => 8,
+        DescriptorType::StorageBuffer => 0u8,
+        DescriptorType::SampledImage => 1,
+        DescriptorType::Sampler => 2,
     };
     discriminant.hash(hasher);
 }
@@ -348,17 +342,17 @@ mod tests {
     #[test]
     fn test_descriptor_type_hash_stability() {
         let mut hasher1 = DefaultHasher::new();
-        hash_descriptor_type(&DescriptorType::UniformBuffer, &mut hasher1);
+        hash_descriptor_type(&DescriptorType::StorageBuffer, &mut hasher1);
         let hash1 = hasher1.finish();
 
         let mut hasher2 = DefaultHasher::new();
-        hash_descriptor_type(&DescriptorType::UniformBuffer, &mut hasher2);
+        hash_descriptor_type(&DescriptorType::StorageBuffer, &mut hasher2);
         let hash2 = hasher2.finish();
 
         assert_eq!(hash1, hash2);
         assert_ne!(hash1, {
             let mut hasher = DefaultHasher::new();
-            hash_descriptor_type(&DescriptorType::StorageBuffer, &mut hasher);
+            hash_descriptor_type(&DescriptorType::SampledImage, &mut hasher);
             hasher.finish()
         });
     }

@@ -13,39 +13,21 @@ pub(crate) use crate::pipeline::{
 /// Descriptor type for descriptor set layout bindings.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) enum DescriptorType {
-    /// Uniform buffer.
-    UniformBuffer,
     /// Storage buffer.
     StorageBuffer,
     /// Sampled image.
     SampledImage,
     /// Sampler.
     Sampler,
-    /// Combined image sampler.
-    CombinedImageSampler,
-    /// Uniform texel buffer.
-    UniformTexelBuffer,
-    /// Storage texel buffer.
-    StorageTexelBuffer,
-    /// Input attachment.
-    InputAttachment,
-    /// Storage image.
-    StorageImage,
 }
 
 impl From<DescriptorType> for vk::DescriptorType {
     #[inline]
     fn from(ty: DescriptorType) -> Self {
         match ty {
-            DescriptorType::UniformBuffer => vk::DescriptorType::UNIFORM_BUFFER,
             DescriptorType::StorageBuffer => vk::DescriptorType::STORAGE_BUFFER,
             DescriptorType::SampledImage => vk::DescriptorType::SAMPLED_IMAGE,
             DescriptorType::Sampler => vk::DescriptorType::SAMPLER,
-            DescriptorType::CombinedImageSampler => vk::DescriptorType::COMBINED_IMAGE_SAMPLER,
-            DescriptorType::UniformTexelBuffer => vk::DescriptorType::UNIFORM_TEXEL_BUFFER,
-            DescriptorType::StorageTexelBuffer => vk::DescriptorType::STORAGE_TEXEL_BUFFER,
-            DescriptorType::InputAttachment => vk::DescriptorType::INPUT_ATTACHMENT,
-            DescriptorType::StorageImage => vk::DescriptorType::STORAGE_IMAGE,
         }
     }
 }
@@ -53,30 +35,15 @@ impl From<DescriptorType> for vk::DescriptorType {
 /// Primitive topology for input assembly.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) enum PrimitiveTopology {
-    /// Point list.
-    PointList,
-    /// Line list.
-    LineList,
-    /// Line strip.
-    LineStrip,
     /// Triangle list.
     TriangleList,
-    /// Triangle strip.
-    TriangleStrip,
-    /// Triangle fan.
-    TriangleFan,
 }
 
 impl From<PrimitiveTopology> for vk::PrimitiveTopology {
     #[inline]
     fn from(topology: PrimitiveTopology) -> Self {
         match topology {
-            PrimitiveTopology::PointList => vk::PrimitiveTopology::POINT_LIST,
-            PrimitiveTopology::LineList => vk::PrimitiveTopology::LINE_LIST,
-            PrimitiveTopology::LineStrip => vk::PrimitiveTopology::LINE_STRIP,
             PrimitiveTopology::TriangleList => vk::PrimitiveTopology::TRIANGLE_LIST,
-            PrimitiveTopology::TriangleStrip => vk::PrimitiveTopology::TRIANGLE_STRIP,
-            PrimitiveTopology::TriangleFan => vk::PrimitiveTopology::TRIANGLE_FAN,
         }
     }
 }
@@ -88,20 +55,6 @@ pub(crate) enum DynamicState {
     Viewport,
     /// Scissor.
     Scissor,
-    /// Line width.
-    LineWidth,
-    /// Depth bias.
-    DepthBias,
-    /// Blend constants.
-    BlendConstants,
-    /// Depth bounds.
-    DepthBounds,
-    /// Stencil compare mask.
-    StencilCompareMask,
-    /// Stencil write mask.
-    StencilWriteMask,
-    /// Stencil reference.
-    StencilReference,
 }
 
 impl From<DynamicState> for vk::DynamicState {
@@ -110,13 +63,6 @@ impl From<DynamicState> for vk::DynamicState {
         match state {
             DynamicState::Viewport => vk::DynamicState::VIEWPORT,
             DynamicState::Scissor => vk::DynamicState::SCISSOR,
-            DynamicState::LineWidth => vk::DynamicState::LINE_WIDTH,
-            DynamicState::DepthBias => vk::DynamicState::DEPTH_BIAS,
-            DynamicState::BlendConstants => vk::DynamicState::BLEND_CONSTANTS,
-            DynamicState::DepthBounds => vk::DynamicState::DEPTH_BOUNDS,
-            DynamicState::StencilCompareMask => vk::DynamicState::STENCIL_COMPARE_MASK,
-            DynamicState::StencilWriteMask => vk::DynamicState::STENCIL_WRITE_MASK,
-            DynamicState::StencilReference => vk::DynamicState::STENCIL_REFERENCE,
         }
     }
 }
@@ -130,36 +76,7 @@ pub(crate) struct ColorComponentFlags {
     pub a: bool,
 }
 
-impl ColorComponentFlags {
-    /// All components enabled.
-    pub(crate) const ALL: Self = Self {
-        r: true,
-        g: true,
-        b: true,
-        a: true,
-    };
-    /// No components enabled.
-    pub const NONE: Self = Self {
-        r: false,
-        g: false,
-        b: false,
-        a: false,
-    };
-    /// RGB components only.
-    pub const RGB: Self = Self {
-        r: true,
-        g: true,
-        b: true,
-        a: false,
-    };
-    /// Alpha component only.
-    pub const A: Self = Self {
-        r: false,
-        g: false,
-        b: false,
-        a: true,
-    };
-}
+impl ColorComponentFlags {}
 
 impl From<ColorComponentFlags> for vk::ColorComponentFlags {
     #[inline]
@@ -178,25 +95,6 @@ impl From<ColorComponentFlags> for vk::ColorComponentFlags {
             result |= vk::ColorComponentFlags::A;
         }
         result
-    }
-}
-
-/// Vertex input rate.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub(crate) enum VertexInputRate {
-    /// Vertex rate.
-    Vertex,
-    /// Instance rate.
-    Instance,
-}
-
-impl From<VertexInputRate> for vk::VertexInputRate {
-    #[inline]
-    fn from(rate: VertexInputRate) -> Self {
-        match rate {
-            VertexInputRate::Vertex => vk::VertexInputRate::VERTEX,
-            VertexInputRate::Instance => vk::VertexInputRate::INSTANCE,
-        }
     }
 }
 
@@ -305,36 +203,6 @@ impl ShaderStages {
         tessellation_control: true,
         tessellation_evaluation: true,
     };
-
-    /// Create a new ShaderStages with all stages disabled.
-    #[inline]
-    pub(crate) fn new() -> Self {
-        Self::default()
-    }
-
-    /// Check if any shader stage is enabled.
-    #[inline]
-    pub(crate) fn is_empty(&self) -> bool {
-        !self.vertex
-            && !self.fragment
-            && !self.compute
-            && !self.geometry
-            && !self.tessellation_control
-            && !self.tessellation_evaluation
-    }
-
-    /// Combine two ShaderStages with bitwise OR.
-    #[inline]
-    pub(crate) fn union(self, other: Self) -> Self {
-        Self {
-            vertex: self.vertex || other.vertex,
-            fragment: self.fragment || other.fragment,
-            compute: self.compute || other.compute,
-            geometry: self.geometry || other.geometry,
-            tessellation_control: self.tessellation_control || other.tessellation_control,
-            tessellation_evaluation: self.tessellation_evaluation || other.tessellation_evaluation,
-        }
-    }
 }
 
 impl From<ShaderStages> for vk::ShaderStageFlags {
@@ -373,10 +241,6 @@ mod tests {
 
     #[test]
     fn test_descriptor_type_conversion() {
-        let ty = DescriptorType::UniformBuffer;
-        let vk_ty: vk::DescriptorType = ty.into();
-        assert_eq!(vk_ty, vk::DescriptorType::UNIFORM_BUFFER);
-
         let ty = DescriptorType::StorageBuffer;
         let vk_ty: vk::DescriptorType = ty.into();
         assert_eq!(vk_ty, vk::DescriptorType::STORAGE_BUFFER);
@@ -398,26 +262,6 @@ mod tests {
         let state = DynamicState::Scissor;
         let vk_state: vk::DynamicState = state.into();
         assert_eq!(vk_state, vk::DynamicState::SCISSOR);
-    }
-
-    #[test]
-    fn test_color_component_flags() {
-        let flags = ColorComponentFlags::ALL;
-        let vk_flags: vk::ColorComponentFlags = flags.into();
-        assert_eq!(
-            vk_flags,
-            vk::ColorComponentFlags::R
-                | vk::ColorComponentFlags::G
-                | vk::ColorComponentFlags::B
-                | vk::ColorComponentFlags::A
-        );
-
-        let flags = ColorComponentFlags::RGB;
-        let vk_flags: vk::ColorComponentFlags = flags.into();
-        assert_eq!(
-            vk_flags,
-            vk::ColorComponentFlags::R | vk::ColorComponentFlags::G | vk::ColorComponentFlags::B
-        );
     }
 
     #[test]

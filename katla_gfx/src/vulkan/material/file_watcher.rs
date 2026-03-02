@@ -112,17 +112,8 @@ impl FileWatcher {
     }
 
     /// Check for any file change events (non-blocking)
-    ///
-    /// This should be called in the main update loop. Returns the
-    /// path of any file that was modified since the last check,
-    /// or None if no changes occurred.
-    pub fn try_recv(&self) -> Option<PathBuf> {
+    pub fn try_events(&self) -> Option<PathBuf> {
         self.receiver.try_recv().ok()
-    }
-
-    /// Get the receiver for direct polling if needed
-    pub fn receiver(&self) -> &Receiver<PathBuf> {
-        &self.receiver
     }
 }
 
