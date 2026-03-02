@@ -1,9 +1,13 @@
+use std::ffi::CString;
 use std::{cell::RefCell, collections::HashMap, rc::Rc, time::Instant};
 
 use katla_ecs::{System, SystemExecutionOrder, World};
+use katla_gfx::VulkanRenderer;
 use katla_ui::{FontId, ForkAwesome};
-use winit::event_loop::{ControlFlow, EventLoop};
+use winit::dpi::LogicalSize;
+use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
 use winit::keyboard::ModifiersState;
+use winit::window::Window;
 
 use crate::{
     application::{Application, ApplicationInfo},
@@ -75,6 +79,34 @@ impl ApplicationBuilder {
         let event_loop = EventLoop::new().unwrap();
         event_loop.set_control_flow(ControlFlow::Poll);
         event_loop
+    }
+
+    /// Initialize the Vulkan renderer and load materials.
+    fn init_renderer(
+        &mut self,
+        event_loop: &EventLoop<()>,
+        window: &Window,
+        info: &ApplicationInfo,
+        resources: &ResourceManager,
+    ) -> VulkanRenderer {
+        let engine_name = CString::new("Katla Engine").unwrap();
+        let renderer = VulkanRenderer::init(
+            event_loop,
+            window,
+            info.validation_layer_enabled,
+            CString::new(info.name.as_str()).unwrap(),
+            engine_name,
+        )
+        .expect("Failed to initialize Vulkan renderer");
+
+        renderer
+            .material_registry
+            .borrow_mut()
+            .enable_hot_reload(&resources.root, 100)
+            .expect("Failed to enable hot reload");
+        log::info!("Hot reload enabled for materials and shaders");
+
+        renderer
     }
 
     pub fn build(self) -> AppResult<(Application, EventLoop<()>)> {
@@ -185,9 +217,24 @@ impl ApplicationBuilder {
                 .unwrap_or_else(|e| panic!("Failed to load GLTF model from {:?}: {}", path, e))
         });
 
+        let window = event_loop
+            .create_window(
+                Window::default_attributes()
+                    .with_title(&info.name)
+                    .with_resizable(true)
+                    .with_maximized(true)
+                    .with_min_inner_size(LogicalSize {
+                        width: 800.0,
+                        height: 600.0,
+                    }),
+            )
+            .unwrap();
+
+        let renderer = self.init_renderer(&event_loop, &window, &info, &resources);
+
         let app = Application {
-            window: None,
-            renderer: None,
+            window,
+            renderer,
             camera,
             gltf_cache: FileCache::new(gltf_loader),
             material_manager: MaterialManager::new(),
@@ -216,14 +263,7 @@ impl ApplicationBuilder {
             preferences,
             gui_state,
             scale_factor: 1.0, // Will be updated when window is created
-            gizmo_resources: None,
-            sky_pipeline: None,
-            grid_pipeline: None,
             ui_renderer: None,
-            ui_draw_data: Rc::new(RefCell::new(None)),
-            main_viewport: None,
-            preview_viewport: None,
-            viewport_manager: katla_gfx::ViewportManager::new(),
             background_loader: BackgroundLoader::new(),
             next_thumbnail_texture_id: 100, // Custom texture IDs start at 100
             thumbnail_texture_ids: HashMap::new(),

@@ -7,9 +7,7 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use super::ui_material::UiMaterial;
-use katla_gfx::sync::{
-    VkBuffer, VkDescriptorSet, VkDescriptorSetLayout, VkImageView, VkSampler,
-};
+use katla_gfx::sync::{VkBuffer, VkDescriptorSet, VkDescriptorSetLayout, VkImageView, VkSampler};
 use katla_gfx::{
     DescriptorSetBuilder, DescriptorSetLayoutBuilder, DescriptorType, Extent2D, FrameBuffer,
     IndexBuffer, IndexType, Offset2D, PassExecutionContext, PipelineHandle, Rect2D, ShaderStages,
@@ -116,26 +114,26 @@ impl UITextures {
         atlas_width: u32,
         atlas_height: u32,
     ) -> Result<Self, katla_gfx::RendererError> {
-        let sampler = context.create_sampler_clamp_to_edge()?;
+        // let sampler = context.create_sampler_clamp_to_edge()?;
 
-        let white_pixels = [255u8, 255, 255, 255];
-        let white_texture_handle = texture_manager.create_solid(white_pixels);
-        let white_texture_view = texture_manager
-            .get_view(white_texture_handle)
-            .expect("White texture not found");
+        // let white_pixels = [255u8, 255, 255, 255];
+        // let white_texture_handle = texture_manager.create_solid(white_pixels);
+        // let white_texture_view = texture_manager
+        //     .get_view(white_texture_handle)
+        //     .expect("White texture not found");
 
-        let white_atlas = vec![255u8; (atlas_width * atlas_height * 4) as usize];
-        let font_texture_handle =
-            texture_manager.create_rgba(atlas_width, atlas_height, &white_atlas);
-        let font_texture_view = texture_manager
-            .get_view(font_texture_handle)
-            .expect("Font texture not found");
+        // let white_atlas = vec![255u8; (atlas_width * atlas_height * 4) as usize];
+        // let font_texture_handle =
+        //     texture_manager.create_rgba(atlas_width, atlas_height, &white_atlas);
+        // let font_texture_view = texture_manager
+        //     .get_view(font_texture_handle)
+        //     .expect("Font texture not found");
 
-        let descriptor_set_layout = DescriptorSetLayoutBuilder::new()
-            .add_binding(0, DescriptorType::SampledImage, ShaderStages::FRAGMENT)
-            .add_binding(1, DescriptorType::Sampler, ShaderStages::FRAGMENT)
-            .add_binding(3, DescriptorType::UniformBuffer, ShaderStages::VERTEX)
-            .build(&context)?;
+        // let descriptor_set_layout = DescriptorSetLayoutBuilder::new()
+        //     .add_binding(0, DescriptorType::SampledImage, ShaderStages::FRAGMENT)
+        //     .add_binding(1, DescriptorType::Sampler, ShaderStages::FRAGMENT)
+        //     .add_binding(3, DescriptorType::UniformBuffer, ShaderStages::VERTEX)
+        //     .build(&context)?;
 
         let descriptor_set_layout_raw: VkDescriptorSetLayout = descriptor_set_layout.into();
 
@@ -193,18 +191,18 @@ impl UITextures {
         self.atlas_width = width;
         self.atlas_height = height;
         let mut manager = self.texture_manager.borrow_mut();
-        if let Some(texture) = manager.get_texture_mut(self.font_texture_handle) {
-            texture.resize(width, height, pixels);
-            if let Some(view) = manager.get_view(self.font_texture_handle) {
-                self.font_texture_view = view;
-                // Update descriptor set with the new font atlas image view
-                self.descriptor_set.update_sampled_image(0, view);
-            }
-            true
-        } else {
-            log::warn!("UITextures: font texture not found in manager");
-            false
-        }
+        // if let Some(texture) = manager.get_texture_mut(self.font_texture_handle) {
+        //     texture.resize(width, height, pixels);
+        //     if let Some(view) = manager.get_view(self.font_texture_handle) {
+        //         self.font_texture_view = view;
+        //         // Update descriptor set with the new font atlas image view
+        //         self.descriptor_set.update_sampled_image(0, view);
+        //     }
+        //     true
+        // } else {
+        log::warn!("UITextures: font texture not found in manager");
+        false
+        // }
     }
 
     fn set_external_texture(&mut self, texture_id: u64, image_view: VkImageView) {
@@ -285,17 +283,18 @@ impl UIRenderer {
         handle: TextureHandle,
         texture_manager: &TextureManager,
     ) -> bool {
-        if let Some(view) = texture_manager.get_view(handle) {
-            self.textures.set_external_texture(texture_id, view);
-            true
-        } else {
-            log::warn!(
-                "TextureHandle {:?} not found in TextureManager for texture_id {}",
-                handle,
-                texture_id
-            );
-            false
-        }
+        // if let Some(view) = texture_manager.get_view(handle) {
+        //     self.textures.set_external_texture(texture_id, view);
+        //     true
+        // } else {
+        //     log::warn!(
+        //         "TextureHandle {:?} not found in TextureManager for texture_id {}",
+        //         handle,
+        //         texture_id
+        //     );
+        //     false
+        // }
+        false
     }
 
     pub fn draw(&self, ctx: &PassExecutionContext, draw_data: &UiDrawData) -> bool {

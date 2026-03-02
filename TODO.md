@@ -7,9 +7,9 @@ TODO:
   ├──────────┼────────────────────────────┼───────────────────────────────────┤
   │ High     │ Descriptor Set Cache       │ Eliminates per-frame allocations  │
   ├──────────┼────────────────────────────┼───────────────────────────────────┤
-  │ High     │ Unified Descriptor Builder │ Reduces code duplication          │ DONE
+  │ High     │ Unified Descriptor Builder │ Reduces code duplication          │
   ├──────────┼────────────────────────────┼───────────────────────────────────┤
-  │ High     │ Pipeline Cache             │ Faster lookups, better hot reload │ DONE
+  │ High     │ Pipeline Cache             │ Faster lookups, better hot reload │
   ├──────────┼────────────────────────────┼───────────────────────────────────┤
   │ Medium   │ Opaque Handles             │ Cleaner API, better encapsulation │
   ├──────────┼────────────────────────────┼───────────────────────────────────┤
@@ -18,6 +18,13 @@ TODO:
   │ Low      │ Sampler Cache              │ Fewer sampler objects             │
   └──────────┴────────────────────────────┴───────────────────────────────────┘
 
+
+To implement:
+- Rendergraph
+  - Draw commands
+- Materials
+- TextureManager
+  - Opaque handles
 
 Random issues:
 
