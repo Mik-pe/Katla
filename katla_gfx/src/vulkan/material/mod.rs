@@ -13,46 +13,41 @@ pub mod storage_uniform;
 pub mod template;
 
 // Explicit exports from asset module
-pub use asset::{AssetError, load_material_from_file};
+pub use asset::load_material_from_file;
 
 // Explicit exports from builder module
-pub use builder::{Pipeline, PipelineBuilder, PipelineError};
+pub use builder::{Pipeline, PipelineBuilder};
 
 // Explicit exports from compute_pipeline module
 pub use compute_pipeline::{ComputePipeline, ComputePipelineBuilder, ComputePipelineError};
 
 // Explicit exports from descriptor module
 pub use descriptor::{
-    MaterialDescriptor, MaterialError, MaterialValue, RenderState, ShaderBinding, ShaderSource,
-    ShaderStage, UniformType,
+    MaterialDescriptor, MaterialError, MaterialValue, RenderState, ShaderBinding, ShaderSource, UniformType,
 };
 
 // Explicit exports from file_watcher module
-pub use file_watcher::{FileWatcher, WatcherError};
+pub use file_watcher::FileWatcher;
 
 // Explicit exports from parameters module
-pub use parameters::{MaterialParameters, ParameterError};
+pub use parameters::MaterialParameters;
 
 // Explicit exports from reflection module
-pub use reflection::{MemberType, ReflectionError, ShaderReflection, StructLayout, StructMember};
+pub use reflection::ShaderReflection;
 
 // Explicit exports from registry module
 pub(crate) use registry::MaterialRegistry;
 
 // Explicit exports from shadermodule module
-pub use shadermodule::{ShaderCache, ShaderError, ShaderModule};
+pub use shadermodule::ShaderModule;
 
 // Explicit exports from skeleton_descriptor module
 pub use skeleton_descriptor::SkeletonDescriptorSet;
 
 // Explicit exports from storage_uniform module
-pub use storage_uniform::{
-    FrameUniforms, ObjectUniforms, StorageDescriptorSet, StorageUniformLayout,
-    StorageUniformManager,
-};
 
 // Explicit exports from template module
-pub use template::{InstanceError, Material, MaterialTemplate};
+pub use template::MaterialTemplate;
 
 use ash::vk;
 use std::rc::Rc;

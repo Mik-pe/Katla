@@ -9,8 +9,8 @@ mod config;
 mod definition;
 
 // Internal types (not public API)
-pub(crate) use cache::{MaterialCacheError, MaterialCacheStats, MaterialPipelineCache};
-pub(crate) use config::{BindlessPbrMaterialConfig, DynamicMaterialConfig};
+pub(crate) use cache::MaterialPipelineCache;
+pub(crate) use config::DynamicMaterialConfig;
 
 // Public API
 pub use config::{PbrMaterialConfig, PbrMaterialFlags};

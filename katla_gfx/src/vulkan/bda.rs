@@ -164,14 +164,14 @@ impl DeviceAddressBuffer {
     /// # Safety
     /// - The buffer must not already be mapped (unless persistently mapped)
     /// - The mapped memory must not be accessed after the buffer is dropped
-    pub unsafe fn map(&mut self) -> &mut [u8] {
+    pub unsafe fn map(&mut self) -> &mut [u8] { unsafe {
         if let Some(ptr) = self.mapped_ptr {
             std::slice::from_raw_parts_mut(ptr, self.size as usize)
         } else {
             let ptr = self.context.map_buffer(&self.allocation);
             std::slice::from_raw_parts_mut(ptr, self.size as usize)
         }
-    }
+    }}
 
     /// Write data to the buffer.
     ///

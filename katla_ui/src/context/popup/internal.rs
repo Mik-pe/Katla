@@ -77,8 +77,8 @@ impl UiContext {
         }
 
         // Handle click-outside-to-close
-        if config.close_behavior == super::CloseBehavior::ClickOutside {
-            if self.input.mouse_clicked(crate::input::mouse_button::LEFT)
+        if config.close_behavior == super::CloseBehavior::ClickOutside
+            && self.input.mouse_clicked(crate::input::mouse_button::LEFT)
                 && !bounds.contains(self.input.mouse_pos)
             {
                 // For dropdowns, don't close if clicking on the trigger button
@@ -90,7 +90,6 @@ impl UiContext {
                 }
                 return true;
             }
-        }
 
         // Handle Escape-to-close
         if self.input.key_pressed(crate::input::KeyCode::Escape) {
