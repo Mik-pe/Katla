@@ -167,8 +167,8 @@ impl ShaderCache {
             return Ok(module);
         }
 
-        if let Some(extension) = path.extension() {
-            if extension == "wgsl" {
+        if let Some(extension) = path.extension()
+            && extension == "wgsl" {
                 let shader = ShaderModule::from_wgsl(self.device.clone(), path, stage, "main")?;
                 let module = shader.module;
 
@@ -177,7 +177,6 @@ impl ShaderCache {
                 self.shaders.insert(path.to_path_buf(), module);
                 return Ok(module);
             }
-        }
 
         let shader = ShaderModule::from_file(self.device.clone(), path, stage, "main")?;
         let module = shader.module;

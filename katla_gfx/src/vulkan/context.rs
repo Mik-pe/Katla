@@ -904,11 +904,10 @@ impl Drop for VulkanContext {
             self.device.destroy_device(None);
 
             // Destroy surface if it exists
-            if let Some(surface) = self.surface {
-                if let Some(surface_loader) = &self.surface_loader {
+            if let Some(surface) = self.surface
+                && let Some(surface_loader) = &self.surface_loader {
                     surface_loader.destroy_surface(surface, None);
                 }
-            }
 
             if let Some(messenger) = self.debug_callback {
                 self.debug_utils_loader
@@ -1069,7 +1068,7 @@ unsafe fn pick_physical_device(
     instance: &Instance,
     surface_loader: &SurfaceInstance,
     surface: vk::SurfaceKHR,
-) -> Option<vk::PhysicalDevice> {
+) -> Option<vk::PhysicalDevice> { unsafe {
     let physical_devices = instance.enumerate_physical_devices().unwrap();
 
     let physical_device = physical_devices.into_iter().max_by_key(|physical_device| {
@@ -1083,14 +1082,14 @@ unsafe fn pick_physical_device(
         );
     }
     physical_device
-}
+}}
 
 unsafe fn is_physical_device_suitable(
     instance: &Instance,
     surface_loader: &SurfaceInstance,
     physical_device: vk::PhysicalDevice,
     surface: vk::SurfaceKHR,
-) -> u32 {
+) -> u32 { unsafe {
     let properties = instance.get_physical_device_properties(physical_device);
     let mut score = 0;
 
@@ -1111,11 +1110,11 @@ unsafe fn is_physical_device_suitable(
     }
 
     score
-}
+}}
 
 /// Pick a physical device for headless rendering.
 /// Simplified version that doesn't require swapchain support.
-unsafe fn pick_physical_device_headless(instance: &Instance) -> Option<vk::PhysicalDevice> {
+unsafe fn pick_physical_device_headless(instance: &Instance) -> Option<vk::PhysicalDevice> { unsafe {
     let physical_devices = instance.enumerate_physical_devices().unwrap();
 
     // Score devices based on type and capabilities (no swapchain requirement)
@@ -1142,7 +1141,7 @@ unsafe fn pick_physical_device_headless(instance: &Instance) -> Option<vk::Physi
         );
     }
     physical_device
-}
+}}
 
 fn create_depth_render_texture(context: Rc<VulkanContext>, extent: vk::Extent2D) -> RenderTexture {
     let depth_format = context.find_depth_format();
@@ -1273,7 +1272,7 @@ fn create_debug_messenger(
 
 unsafe extern "system" fn debug_callback(
     message_severity: vk::DebugUtilsMessageSeverityFlagsEXT,
-    message_types: vk::DebugUtilsMessageTypeFlagsEXT,
+    _message_types: vk::DebugUtilsMessageTypeFlagsEXT,
     p_callback_data: *const vk::DebugUtilsMessengerCallbackDataEXT,
     p_user_data: *mut c_void,
 ) -> vk::Bool32 {

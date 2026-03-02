@@ -6,9 +6,6 @@
 use ash::vk;
 
 // Re-export Katla-native types from pipeline module for internal use
-pub(crate) use crate::pipeline::{
-    BlendFactor, BlendOp, CompareOp, CullMode, FrontFace, PolygonMode,
-};
 
 /// Descriptor type for descriptor set layout bindings.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

@@ -506,8 +506,8 @@ impl VulkanRenderer {
         light_color: &[f32; 4],
         light_intensity: f32,
     ) {
-        if let Some(viewport) = self.viewports.get_mut(handle.0) {
-            if let Some(ref mut manager) = viewport.storage_manager {
+        if let Some(viewport) = self.viewports.get_mut(handle.0)
+            && let Some(ref mut manager) = viewport.storage_manager {
                 manager.update_frame_with_lighting(
                     view_matrix,
                     proj_matrix,
@@ -518,7 +518,6 @@ impl VulkanRenderer {
                     light_intensity,
                 );
             }
-        }
     }
 
     pub fn destroy(&mut self) {
