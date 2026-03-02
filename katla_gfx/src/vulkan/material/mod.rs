@@ -45,7 +45,7 @@ pub use parameters::{MaterialParameters, ParameterError};
 pub use reflection::{MemberType, ReflectionError, ShaderReflection, StructLayout, StructMember};
 
 // Explicit exports from registry module
-pub use registry::MaterialRegistry;
+pub(crate) use registry::MaterialRegistry;
 
 // Explicit exports from shadermodule module
 pub use shadermodule::{ShaderCache, ShaderError, ShaderModule};

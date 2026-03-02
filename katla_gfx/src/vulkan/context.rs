@@ -27,9 +27,9 @@ const LAYER_KHRONOS_VALIDATION: &str = concat!("VK_LAYER_KHRONOS_validation", "\
 
 use crate::sync::{VkImage, VkImageView, VkSampler};
 
-/// Validation message severity level.
+/// Validation message severity level (internal).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub enum ValidationSeverity {
+pub(crate) enum ValidationSeverity {
     Verbose,
     Info,
     Warning,
@@ -61,9 +61,9 @@ impl From<vk::DebugUtilsMessageSeverityFlagsEXT> for ValidationSeverity {
     }
 }
 
-/// Validation message type.
+/// Validation message type (internal).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ValidationMessageType {
+pub(crate) enum ValidationMessageType {
     General,
     Validation,
     Performance,
@@ -81,9 +81,9 @@ impl From<vk::DebugUtilsMessageTypeFlagsEXT> for ValidationMessageType {
     }
 }
 
-/// A validation message from Vulkan validation layers.
+/// A validation message from Vulkan validation layers (internal).
 #[derive(Debug, Clone)]
-pub struct ValidationMessage {
+pub(crate) struct ValidationMessage {
     pub severity: ValidationSeverity,
     pub message_type: ValidationMessageType,
     pub message: String,
@@ -91,15 +91,36 @@ pub struct ValidationMessage {
     pub vuid: Option<String>,
 }
 
-/// Type for validation callbacks.
+/// Type for validation callbacks (internal).
 ///
 /// The callback receives a reference to the validation message and should return
 /// `false` to continue execution or `true` to trigger a breakpoint.
-pub type ValidationCallback = dyn FnMut(&ValidationMessage) -> bool + Send + Sync;
+pub(crate) type ValidationCallback = dyn FnMut(&ValidationMessage) -> bool + Send + Sync;
+
+/// Validation message level for user callbacks.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ValidationLevel {
+    Error,
+    Warning,
+    Info,
+    Debug,
+}
+
+impl From<ValidationSeverity> for ValidationLevel {
+    fn from(severity: ValidationSeverity) -> Self {
+        match severity {
+            ValidationSeverity::Error => ValidationLevel::Error,
+            ValidationSeverity::Warning => ValidationLevel::Warning,
+            ValidationSeverity::Info => ValidationLevel::Info,
+            ValidationSeverity::Verbose => ValidationLevel::Debug,
+        }
+    }
+}
 
 /// Internal storage for validation callbacks.
 struct ValidationCallbackStorage {
     callback: Option<Box<ValidationCallback>>,
+    simplified_callback: Option<Box<dyn FnMut(&str, ValidationLevel) + Send + Sync>>,
     messages: Vec<ValidationMessage>,
 }
 
@@ -107,6 +128,7 @@ impl ValidationCallbackStorage {
     fn new() -> Self {
         Self {
             callback: None,
+            simplified_callback: None,
             messages: Vec::new(),
         }
     }
@@ -115,7 +137,12 @@ impl ValidationCallbackStorage {
         // Store all messages
         self.messages.push(msg.clone());
 
-        // Call the user callback if one is registered
+        // Call the simplified callback if registered
+        if let Some(ref mut cb) = self.simplified_callback {
+            cb(&msg.message, ValidationLevel::from(msg.severity));
+        }
+
+        // Call the detailed user callback if one is registered
         if let Some(ref mut cb) = self.callback {
             cb(msg)
         } else {
@@ -125,6 +152,13 @@ impl ValidationCallbackStorage {
 
     fn set_callback(&mut self, callback: Box<ValidationCallback>) {
         self.callback = Some(callback);
+    }
+
+    fn set_simplified_callback(
+        &mut self,
+        callback: Box<dyn FnMut(&str, ValidationLevel) + Send + Sync>,
+    ) {
+        self.simplified_callback = Some(callback);
     }
 
     fn take_messages(&mut self) -> Vec<ValidationMessage> {
@@ -754,49 +788,39 @@ impl VulkanContext {
         }
     }
 
-    /// Set a custom validation callback for receiving Vulkan validation messages.
+    /// Set a callback for validation messages.
     ///
-    /// This allows applications and tests to receive validation messages in Rust types.
-    ///
-    /// # Arguments
-    /// * `callback` - A boxed callback that receives validation messages
+    /// The callback receives the message text and severity level.
     ///
     /// # Example
     /// ```no_run
-    /// use katla_gfx::VulkanContext;
-    /// use katla_gfx::ValidationMessage;
-    /// use std::sync::Mutex;
+    /// use katla_gfx::{VulkanContext, ValidationLevel};
     ///
     /// # let context: VulkanContext = unsafe { std::mem::zeroed() };
-    /// // Capture validation messages
-    /// let context = context; // In real code, use Rc::clone(context) if needed
-    /// context.set_validation_callback(Box::new(|msg| {
-    ///     println!("Validation: {}: {}", msg.severity, msg.message);
-    ///     false // Don't break
-    /// }));
+    /// context.set_validation_callback(|message: &str, level: ValidationLevel| {
+    ///     println!("[{:?}] {}", level, message);
+    /// });
     /// ```
-    pub fn set_validation_callback(&self, callback: Box<ValidationCallback>) {
+    pub fn set_validation_callback<F>(&self, callback: F)
+    where
+        F: FnMut(&str, ValidationLevel) + Send + Sync + 'static,
+    {
+        let mut storage = self.validation_callback.lock().unwrap();
+        storage.set_simplified_callback(Box::new(callback));
+    }
+
+    /// Set a detailed validation callback (internal use).
+    ///
+    /// This allows tests to receive full validation message details including VUIDs.
+    pub(crate) fn set_validation_callback_detailed(&self, callback: Box<ValidationCallback>) {
         let mut storage = self.validation_callback.lock().unwrap();
         storage.set_callback(callback);
     }
 
-    /// Get all validation messages that have been captured since the last call.
+    /// Get all validation messages that have been captured (internal use).
     ///
     /// This clears the internal message buffer, so each call returns only new messages.
-    ///
-    /// # Example
-    /// ```no_run
-    /// use katla_gfx::VulkanContext;
-    ///
-    /// # let context: VulkanContext = unsafe { std::mem::zeroed() };
-    /// // Run Vulkan code that triggers validation errors...
-    ///
-    /// // Check for specific VUID errors
-    /// let messages = context.take_validation_messages();
-    /// let has_draw_error = messages.iter()
-    ///     .any(|m| m.vuid.as_ref().map(|v| v.contains("VUID-vkCmdDraw")).unwrap_or(false));
-    /// ```
-    pub fn take_validation_messages(&self) -> Vec<ValidationMessage> {
+    pub(crate) fn take_validation_messages(&self) -> Vec<ValidationMessage> {
         let mut storage = self.validation_callback.lock().unwrap();
         storage.take_messages()
     }
@@ -808,7 +832,7 @@ impl VulkanContext {
     /// - Info messages → `info!`
     /// - Verbose messages → `debug!`
     pub fn setup_validation_logging(&self) {
-        self.set_validation_callback(Box::new(|msg| {
+        self.set_validation_callback_detailed(Box::new(|msg| {
             let prefix = if let Some(ref vuid) = msg.vuid {
                 format!("[{}]", vuid)
             } else {

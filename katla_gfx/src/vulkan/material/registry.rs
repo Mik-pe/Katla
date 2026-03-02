@@ -8,9 +8,7 @@ use super::{
     FileWatcher, MaterialDescriptor, MaterialError, MaterialTemplate, ShaderReflection,
     load_material_from_file,
 };
-use crate::DynamicMaterialConfig;
-use crate::MaterialPipelineCache;
-use crate::material::MaterialDefinition;
+use crate::material::{DynamicMaterialConfig, MaterialDefinition, MaterialPipelineCache};
 use ash::vk;
 use log::{debug, info};
 use std::{

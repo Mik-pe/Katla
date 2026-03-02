@@ -28,8 +28,10 @@ pub(crate) use vulkan::texture::Texture;
 pub(crate) use vulkan::vertexbinding::VertexBinding;
 pub(crate) use vulkan::vertexbuffer::{IndexBuffer, VertexBuffer};
 
-// Graphics primitives (from ash::vk)
-pub use ash::vk::Extent2D;
+// Size type (Katla-native)
+mod size;
+
+pub use crate::size::Size2D;
 
 // Error handling
 pub use error::RendererError;
@@ -42,40 +44,28 @@ pub use handle::{
 
 // Material system
 pub use material::{
-    BindlessPbrMaterialConfig, BindlessSkinnedPbrMaterialConfig, DynamicMaterialConfig,
-    FullPbrMaterialConfig, MaterialCacheError, MaterialCacheStats, MaterialDefinition,
-    MaterialDomain, MaterialKey, MaterialPipelineCache, PbrMaterialConfig, RenderState,
-    ShaderSource, SkinnedPbrMaterialConfig,
+    MaterialDefinition, MaterialDomain, MaterialKey, PbrMaterialConfig, PbrMaterialFlags,
+    RenderState, ShaderSource,
 };
 
-// Pipeline building
+// Pipeline building - Katla-native types only
 pub use pipeline::{
-    BlendFactor, BlendOp, ColorComponentFlags, CompareOp, ComputePipeline, ComputePipelineBuilder,
-    ComputePipelineError, CullMode, DescriptorSet, DescriptorSetBuilder, DescriptorSetFlags,
-    DescriptorSetLayoutBuilder, DescriptorType, DynamicState, FrontFace, InstanceError,
-    LayoutBinding, Material, MaterialPipeline, MaterialTemplate, Pipeline, PipelineBuilder,
-    PipelineError, PolygonMode, PrimitiveTopology, ShaderCache, ShaderError, ShaderModule,
-    ShaderStages, VertexInputRate,
+    BlendFactor, BlendOp, CompareOp, ComputePipeline, ComputePipelineBuilder, ComputePipelineError,
+    CullMode, FrontFace, InstanceError, Material, MaterialPipeline, MaterialTemplate, Pipeline,
+    PipelineBuilder, PipelineError, PolygonMode, ShaderCache, ShaderError, ShaderModule,
+    ShaderStageFlags, VertexAttributeFormat, VertexLayout,
 };
 
 // Rendering
 pub use renderer::{
-    AssetRegistry, DrawCall, DrawList, FRAMES_IN_FLIGHT, FrameData, FrameUniforms, InstanceData,
+    AssetRegistry, BindlessDefaults, DrawCall, DrawList, FrameUniforms, InstanceData,
     ParticleDispatch, ParticleRender, VulkanRenderer,
 };
 
 // Texture management
 pub use texture::{ImageFormat, TextureDescriptor, TextureManager, TextureUsage};
 
-// Bindless texture constants
-pub use vulkan::bindless_texture::{
-    DEFAULT_ALBEDO_SLOT, DEFAULT_AO_SLOT, DEFAULT_EMISSION_SLOT, DEFAULT_MR_SLOT,
-    DEFAULT_NORMAL_SLOT, DEFAULT_TEXTURE_COUNT,
-};
-
-// Context (for advanced use)
-pub use vulkan::commandbuffer::CommandBuffer;
-pub use vulkan::context::{
-    ValidationMessage, ValidationMessageType, ValidationSeverity, VulkanContext,
-};
-pub use vulkan::material::MaterialRegistry;
+// Context - advanced escape hatch for low-level Vulkan access.
+// Use this only when you need direct access to Vulkan device, allocator,
+// or other low-level resources that aren't exposed through the high-level API.
+pub use vulkan::context::{ValidationLevel, VulkanContext};

@@ -4,16 +4,16 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use crate::handle::{PipelineHandle, ResourceStorage};
+use crate::pipeline::{CompareOp, CullMode, FrontFace};
 use crate::sync::VkRenderPass;
 use crate::vulkan::context::VulkanContext;
 use crate::vulkan::material::{MaterialPipeline, Pipeline, PipelineBuilder, ShaderModule};
-use crate::vulkan::pipeline_state::{CullMode, FrontFace};
 
 use super::{MaterialDefinition, MaterialDomain, MaterialKey};
 
 /// Error type for material pipeline cache operations.
 #[derive(Debug)]
-pub enum MaterialCacheError {
+pub(crate) enum MaterialCacheError {
     /// Failed to create pipeline
     PipelineCreationFailed(String),
     /// Shader compilation failed
@@ -45,7 +45,7 @@ impl std::error::Error for MaterialCacheError {}
 /// This cache deduplicates pipeline creation by reusing existing pipelines
 /// when materials have compatible configurations. Pipelines are stored in
 /// a central `ResourceStorage` and referenced by opaque `PipelineHandle`.
-pub struct MaterialPipelineCache {
+pub(crate) struct MaterialPipelineCache {
     context: Rc<VulkanContext>,
     cache: HashMap<MaterialKey, PipelineHandle>,
     storage: ResourceStorage<MaterialPipeline>,
@@ -72,7 +72,7 @@ impl MaterialPipelineCache {
     /// # Returns
     /// * `Ok(PipelineHandle)` - Handle to the cached or newly created pipeline
     /// * `Err(MaterialCacheError)` - If pipeline creation fails
-    pub fn get_or_create<M: MaterialDefinition + ?Sized>(
+    pub(crate) fn get_or_create<M: MaterialDefinition + ?Sized>(
         &mut self,
         material: &M,
     ) -> Result<PipelineHandle, MaterialCacheError> {
@@ -117,7 +117,7 @@ impl MaterialPipelineCache {
     }
 
     /// Get a pipeline by handle.
-    pub fn get_pipeline(&self, handle: PipelineHandle) -> Option<&MaterialPipeline> {
+    pub(crate) fn get_pipeline(&self, handle: PipelineHandle) -> Option<&MaterialPipeline> {
         if handle.is_none() {
             return None;
         }
@@ -125,7 +125,10 @@ impl MaterialPipelineCache {
     }
 
     /// Get a mutable pipeline by handle.
-    pub fn get_pipeline_mut(&mut self, handle: PipelineHandle) -> Option<&mut MaterialPipeline> {
+    pub(crate) fn get_pipeline_mut(
+        &mut self,
+        handle: PipelineHandle,
+    ) -> Option<&mut MaterialPipeline> {
         if handle.is_none() {
             return None;
         }
@@ -197,7 +200,7 @@ impl MaterialPipelineCache {
             .with_depth_test(
                 render_state.depth_test,
                 render_state.depth_write,
-                crate::vulkan::pipeline_state::CompareOp::Greater,
+                CompareOp::Greater,
             )
             .with_descriptor_layouts(vk_layouts.clone())
             .with_rendering_formats(Some(material.color_format()), Some(material.depth_format()));
@@ -294,7 +297,7 @@ impl MaterialPipelineCache {
             .with_depth_test(
                 render_state.depth_test,
                 render_state.depth_write,
-                crate::vulkan::pipeline_state::CompareOp::Greater,
+                CompareOp::Greater,
             )
             .with_descriptor_layouts(vk_layouts.clone())
             .with_rendering_formats(Some(material.color_format()), Some(material.depth_format()));
@@ -426,23 +429,23 @@ impl MaterialPipelineCache {
     }
 
     /// Get the number of cached pipelines.
-    pub fn len(&self) -> usize {
+    pub(crate) fn len(&self) -> usize {
         self.cache.len()
     }
 
     /// Check if the cache is empty.
-    pub fn is_empty(&self) -> bool {
+    pub(crate) fn is_empty(&self) -> bool {
         self.cache.is_empty()
     }
 
     /// Check if a pipeline exists for the given material.
-    pub fn contains<M: MaterialDefinition + ?Sized>(&self, material: &M) -> bool {
+    pub(crate) fn contains<M: MaterialDefinition + ?Sized>(&self, material: &M) -> bool {
         let key = MaterialKey::from_material(material);
         self.cache.contains_key(&key)
     }
 
     /// Clear all cached pipelines.
-    pub fn clear(&mut self) {
+    pub(crate) fn clear(&mut self) {
         self.cache.clear();
         self.storage.clear();
     }
@@ -450,7 +453,7 @@ impl MaterialPipelineCache {
     /// Remove a specific pipeline from the cache.
     ///
     /// Returns true if the pipeline was in the cache and was removed.
-    pub fn remove<M: MaterialDefinition + ?Sized>(&mut self, material: &M) -> bool {
+    pub(crate) fn remove<M: MaterialDefinition + ?Sized>(&mut self, material: &M) -> bool {
         let key = MaterialKey::from_material(material);
         if let Some(handle) = self.cache.remove(&key) {
             self.storage.remove(handle.index());
@@ -461,7 +464,7 @@ impl MaterialPipelineCache {
     }
 
     /// Get statistics about the cache.
-    pub fn stats(&self) -> MaterialCacheStats {
+    pub(crate) fn stats(&self) -> MaterialCacheStats {
         let mut by_domain = HashMap::new();
         for key in self.cache.keys() {
             *by_domain.entry(key.domain).or_insert(0) += 1;
@@ -486,7 +489,7 @@ impl Drop for MaterialPipelineCache {
 
 /// Statistics about the material pipeline cache.
 #[derive(Debug, Clone)]
-pub struct MaterialCacheStats {
+pub(crate) struct MaterialCacheStats {
     /// Total number of cached pipelines
     pub total_pipelines: usize,
     /// Pipelines grouped by domain

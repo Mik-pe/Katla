@@ -9,15 +9,9 @@
 //! - Enables pointer-based shader algorithms
 //!
 //! # Usage
-//! ```no_run
-//! use katla_gfx::vulkan::bda::DeviceAddressBuffer;
-//! # use katla_gfx::VulkanContext;
-//! # use std::rc::Rc;
-//! # let context: Rc<VulkanContext> = unsafe { std::mem::zeroed() };
-//!
-//! let mut buffer = DeviceAddressBuffer::new(
-//!     context.clone(),
-//!     4096,  // size in bytes
+//! ```ignore
+//! // This example requires internal access to DeviceAddressBuffer
+//! // Use the high-level API instead
 //! ).expect("Failed to create BDA buffer");
 //!
 //! // Get the device address to pass to shaders via push constants

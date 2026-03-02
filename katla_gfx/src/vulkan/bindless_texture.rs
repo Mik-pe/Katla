@@ -61,14 +61,14 @@ use crate::vulkan::texture::Texture;
 pub const MAX_BINDLESS_TEXTURES: u32 = 4096;
 
 /// Number of reserved slots for default textures.
-pub const DEFAULT_TEXTURE_COUNT: u32 = 5;
+pub(crate) const DEFAULT_TEXTURE_COUNT: u32 = 5;
 
 /// Default texture slot indices.
-pub const DEFAULT_ALBEDO_SLOT: u32 = 0;
-pub const DEFAULT_NORMAL_SLOT: u32 = 1;
-pub const DEFAULT_MR_SLOT: u32 = 2;
-pub const DEFAULT_AO_SLOT: u32 = 3;
-pub const DEFAULT_EMISSION_SLOT: u32 = 4;
+pub(crate) const DEFAULT_ALBEDO_SLOT: u32 = 0;
+pub(crate) const DEFAULT_NORMAL_SLOT: u32 = 1;
+pub(crate) const DEFAULT_MR_SLOT: u32 = 2;
+pub(crate) const DEFAULT_AO_SLOT: u32 = 3;
+pub(crate) const DEFAULT_EMISSION_SLOT: u32 = 4;
 
 /// Bindless texture manager.
 ///

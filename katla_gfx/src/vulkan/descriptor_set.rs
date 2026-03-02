@@ -92,7 +92,7 @@ impl<T: Copy> BufferSource for crate::vulkan::material::buffer_descriptor::Unifo
 /// Owned descriptor set with automatic cleanup.
 ///
 /// Contains the descriptor set and its pool. When dropped, both are destroyed.
-pub struct DescriptorSet {
+pub(crate) struct DescriptorSet {
     set: vk::DescriptorSet,
     pool: vk::DescriptorPool,
     owned_layout: Option<vk::DescriptorSetLayout>,
@@ -109,7 +109,7 @@ impl DescriptorSet {
     ///
     /// # Safety
     /// The pool must remain valid for the lifetime of this DescriptorSet.
-    pub unsafe fn from_raw(
+    pub(crate) unsafe fn from_raw(
         set: vk::DescriptorSet,
         pool: vk::DescriptorPool,
         device: ash::Device,
@@ -137,7 +137,7 @@ impl Drop for DescriptorSet {
 
 /// Flags for descriptor set creation.
 #[derive(Clone, Copy, Debug, Default)]
-pub struct DescriptorSetFlags {
+pub(crate) struct DescriptorSetFlags {
     /// Enable UPDATE_AFTER_BIND for dynamic texture registration.
     pub update_after_bind: bool,
 }
@@ -155,7 +155,7 @@ pub struct DescriptorSetFlags {
 ///     .storage_buffer_range(1, &storage_buffer, 256, 28672)
 ///     .build(layout)?;
 /// ```
-pub struct DescriptorSetBuilder<'a> {
+pub(crate) struct DescriptorSetBuilder<'a> {
     context: &'a Rc<VulkanContext>,
     bindings: Vec<(u32, ResourceBinding)>,
     flags: DescriptorSetFlags,
@@ -163,7 +163,7 @@ pub struct DescriptorSetBuilder<'a> {
 
 impl<'a> DescriptorSetBuilder<'a> {
     /// Create a new builder.
-    pub fn new(context: &'a Rc<VulkanContext>) -> Self {
+    pub(crate) fn new(context: &'a Rc<VulkanContext>) -> Self {
         Self {
             context,
             bindings: Vec::new(),
@@ -172,7 +172,7 @@ impl<'a> DescriptorSetBuilder<'a> {
     }
 
     /// Set creation flags.
-    pub fn with_flags(mut self, flags: DescriptorSetFlags) -> Self {
+    pub(crate) fn with_flags(mut self, flags: DescriptorSetFlags) -> Self {
         self.flags = flags;
         self
     }
