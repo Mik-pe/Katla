@@ -7,10 +7,10 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use super::ui_material::UiMaterial;
-use katla_vulkan::sync::{
+use katla_gfx::sync::{
     VkBuffer, VkDescriptorSet, VkDescriptorSetLayout, VkImageView, VkSampler,
 };
-use katla_vulkan::{
+use katla_gfx::{
     DescriptorSetBuilder, DescriptorSetLayoutBuilder, DescriptorType, Extent2D, FrameBuffer,
     IndexBuffer, IndexType, Offset2D, PassExecutionContext, PipelineHandle, Rect2D, ShaderStages,
     TextureHandle, TextureManager, UniformBuffer, VertexBuffer, VulkanContext, VulkanRenderer,
@@ -102,7 +102,7 @@ struct UITextures {
     sampler: VkSampler,
     uniform_buffer: UniformBuffer<[f32; 4]>,
     descriptor_set_layout: VkDescriptorSetLayout,
-    descriptor_set: katla_vulkan::DescriptorSet,
+    descriptor_set: katla_gfx::DescriptorSet,
     atlas_width: u32,
     atlas_height: u32,
     external_textures: HashMap<u64, VkImageView>,
@@ -115,7 +115,7 @@ impl UITextures {
         mut texture_manager: TextureManager,
         atlas_width: u32,
         atlas_height: u32,
-    ) -> Result<Self, katla_vulkan::RendererError> {
+    ) -> Result<Self, katla_gfx::RendererError> {
         let sampler = context.create_sampler_clamp_to_edge()?;
 
         let white_pixels = [255u8, 255, 255, 255];
@@ -240,7 +240,7 @@ impl UIRenderer {
         index_capacity: u64,
         atlas_width: u32,
         atlas_height: u32,
-    ) -> Result<Self, katla_vulkan::RendererError> {
+    ) -> Result<Self, katla_gfx::RendererError> {
         let context = renderer.context.clone();
         let material_cache = renderer.material_cache.clone();
 

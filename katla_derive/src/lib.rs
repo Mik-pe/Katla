@@ -89,7 +89,7 @@ pub fn derive_component(input: TokenStream) -> TokenStream {
 /// # Example
 ///
 /// ```ignore
-/// use katla_vulkan::{
+/// use katla_gfx::{
 ///     MaterialDefinition, VertexBinding, ShaderSource, RenderState,
 ///     DescriptorSetLayoutBuilder, DescriptorType, ShaderStages,
 ///     MaterialDomain, ImageFormat, MaterialPipeline,
@@ -193,10 +193,10 @@ pub fn derive_material(input: TokenStream) -> TokenStream {
     // Generate shader source expressions
     let vertex_shader_expr = match &vertex_shader {
         Some(path) => quote! {
-            katla_vulkan::material::ShaderSource::WgslFile(::std::path::PathBuf::from(#path))
+            katla_gfx::material::ShaderSource::WgslFile(::std::path::PathBuf::from(#path))
         },
         None if has_shader_path => quote! {
-            katla_vulkan::material::ShaderSource::WgslFile(self.shader_path.clone())
+            katla_gfx::material::ShaderSource::WgslFile(self.shader_path.clone())
         },
         None => quote! {
             compile_error!("Material requires either #[material(shader = \"path\")] or a shader_path field")
@@ -205,10 +205,10 @@ pub fn derive_material(input: TokenStream) -> TokenStream {
 
     let fragment_shader_expr = match &fragment_shader {
         Some(path) => quote! {
-            katla_vulkan::material::ShaderSource::WgslFile(::std::path::PathBuf::from(#path))
+            katla_gfx::material::ShaderSource::WgslFile(::std::path::PathBuf::from(#path))
         },
         None if has_shader_path => quote! {
-            katla_vulkan::material::ShaderSource::WgslFile(self.shader_path.clone())
+            katla_gfx::material::ShaderSource::WgslFile(self.shader_path.clone())
         },
         None => quote! {
             compile_error!("Material requires either #[material(shader = \"path\")] or a shader_path field")
@@ -235,11 +235,11 @@ pub fn derive_material(input: TokenStream) -> TokenStream {
 
     // Generate domain expression
     let domain_expr = match domain.as_deref() {
-        Some("Surface") => quote! { katla_vulkan::MaterialDomain::Surface },
-        Some("Ui") => quote! { katla_vulkan::MaterialDomain::Ui },
-        Some("PostProcess") => quote! { katla_vulkan::MaterialDomain::PostProcess },
-        Some("Particle") => quote! { katla_vulkan::MaterialDomain::Particle },
-        _ => quote! { katla_vulkan::MaterialDomain::Surface },
+        Some("Surface") => quote! { katla_gfx::MaterialDomain::Surface },
+        Some("Ui") => quote! { katla_gfx::MaterialDomain::Ui },
+        Some("PostProcess") => quote! { katla_gfx::MaterialDomain::PostProcess },
+        Some("Particle") => quote! { katla_gfx::MaterialDomain::Particle },
+        _ => quote! { katla_gfx::MaterialDomain::Surface },
     };
 
     // Generate render state
@@ -262,7 +262,7 @@ pub fn derive_material(input: TokenStream) -> TokenStream {
         };
 
         quote! {
-            katla_vulkan::material::RenderState {
+            katla_gfx::material::RenderState {
                 #depth_test_code
                 #depth_write_code
                 #cull_code
@@ -273,18 +273,18 @@ pub fn derive_material(input: TokenStream) -> TokenStream {
 
     // Generate color format expression
     let color_format_expr = match color_format.as_deref() {
-        Some("B8G8R8A8Srgb") => quote! { katla_vulkan::ImageFormat::B8G8R8A8Srgb },
-        Some("R8G8B8A8Srgb") => quote! { katla_vulkan::ImageFormat::R8G8B8A8Srgb },
-        Some("R16G16B16A16Sfloat") => quote! { katla_vulkan::ImageFormat::R16G16B16A16Sfloat },
-        _ => quote! { katla_vulkan::ImageFormat::R16G16B16A16Sfloat },
+        Some("B8G8R8A8Srgb") => quote! { katla_gfx::ImageFormat::B8G8R8A8Srgb },
+        Some("R8G8B8A8Srgb") => quote! { katla_gfx::ImageFormat::R8G8B8A8Srgb },
+        Some("R16G16B16A16Sfloat") => quote! { katla_gfx::ImageFormat::R16G16B16A16Sfloat },
+        _ => quote! { katla_gfx::ImageFormat::R16G16B16A16Sfloat },
     };
 
     // Generate depth format expression
     let depth_format_expr = match depth_format.as_deref() {
-        Some("D32Sfloat") => quote! { katla_vulkan::ImageFormat::D32Sfloat },
-        Some("D32SfloatS8Uint") => quote! { katla_vulkan::ImageFormat::D32SfloatS8Uint },
-        Some("D24UnormS8Uint") => quote! { katla_vulkan::ImageFormat::D24UnormS8Uint },
-        _ => quote! { katla_vulkan::ImageFormat::D32SfloatS8Uint },
+        Some("D32Sfloat") => quote! { katla_gfx::ImageFormat::D32Sfloat },
+        Some("D32SfloatS8Uint") => quote! { katla_gfx::ImageFormat::D32SfloatS8Uint },
+        Some("D24UnormS8Uint") => quote! { katla_gfx::ImageFormat::D24UnormS8Uint },
+        _ => quote! { katla_gfx::ImageFormat::D32SfloatS8Uint },
     };
 
     // Generate uses methods
@@ -305,36 +305,36 @@ pub fn derive_material(input: TokenStream) -> TokenStream {
 
     // Generate the implementation
     let expanded = quote! {
-        impl #impl_generics katla_vulkan::MaterialDefinition for #name #ty_generics #where_clause {
-            fn vertex_shader(&self) -> katla_vulkan::material::ShaderSource {
+        impl #impl_generics katla_gfx::MaterialDefinition for #name #ty_generics #where_clause {
+            fn vertex_shader(&self) -> katla_gfx::material::ShaderSource {
                 #vertex_shader_expr
             }
 
-            fn fragment_shader(&self) -> katla_vulkan::material::ShaderSource {
+            fn fragment_shader(&self) -> katla_gfx::material::ShaderSource {
                 #fragment_shader_expr
             }
 
-            fn vertex_binding(&self) -> katla_vulkan::VertexBinding {
+            fn vertex_binding(&self) -> katla_gfx::VertexBinding {
                 #vertex_binding_expr
             }
 
-            fn render_state(&self) -> katla_vulkan::material::RenderState {
+            fn render_state(&self) -> katla_gfx::material::RenderState {
                 #render_state_code
             }
 
-            fn descriptor_layouts(&self) -> ::std::vec::Vec<katla_vulkan::DescriptorSetLayoutBuilder> {
+            fn descriptor_layouts(&self) -> ::std::vec::Vec<katla_gfx::DescriptorSetLayoutBuilder> {
                 #descriptor_layouts_expr
             }
 
-            fn domain(&self) -> katla_vulkan::MaterialDomain {
+            fn domain(&self) -> katla_gfx::MaterialDomain {
                 #domain_expr
             }
 
-            fn color_format(&self) -> katla_vulkan::ImageFormat {
+            fn color_format(&self) -> katla_gfx::ImageFormat {
                 #color_format_expr
             }
 
-            fn depth_format(&self) -> katla_vulkan::ImageFormat {
+            fn depth_format(&self) -> katla_gfx::ImageFormat {
                 #depth_format_expr
             }
 

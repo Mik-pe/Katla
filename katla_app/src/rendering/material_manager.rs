@@ -6,7 +6,7 @@ use std::{
 };
 
 use crate::rendering::Material;
-use katla_vulkan::{MaterialHandle, MaterialRegistry, VulkanContext, VulkanRenderer};
+use katla_gfx::{MaterialHandle, MaterialRegistry, VulkanContext, VulkanRenderer};
 use log::{debug, error, info};
 use notify::{RecursiveMode, Watcher};
 
@@ -156,7 +156,7 @@ impl MaterialManager {
         &mut self,
         name: impl Into<String>,
         material_registry: &MaterialRegistry,
-        texture: Option<Rc<katla_vulkan::Texture>>,
+        texture: Option<Rc<katla_gfx::Texture>>,
         color: Option<katla_math::Color>,
     ) -> Option<MaterialId> {
         let name = name.into();

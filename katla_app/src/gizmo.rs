@@ -2,8 +2,8 @@
 //!
 //! Provides visual handles for translating, rotating, and scaling selected entities.
 
+use katla_gfx::{VertexBinding, VertexFormat};
 use katla_math::{Color, Vec3};
-use katla_vulkan::{VertexBinding, VertexFormat};
 
 /// Gizmo axis identifier.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

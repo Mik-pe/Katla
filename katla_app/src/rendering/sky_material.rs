@@ -4,7 +4,7 @@
 //! with atmospheric scattering and sun disk. The sky always renders behind
 //! all geometry (depth write disabled, depth compare = always).
 
-use katla_vulkan::{DescriptorSetLayoutBuilder, DescriptorType, ShaderStages, VertexBinding};
+use katla_gfx::{DescriptorSetLayoutBuilder, DescriptorType, ShaderStages, VertexBinding};
 use std::path::PathBuf;
 
 /// Sky material that renders a procedural sky background.

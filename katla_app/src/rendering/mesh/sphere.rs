@@ -1,6 +1,6 @@
 use crate::rendering::{Mesh, VertexPBR};
 use katla_math::Vec3;
-use katla_vulkan::VulkanContext;
+use katla_gfx::VulkanContext;
 
 pub fn create_sphere_vertices(radius: f32, segments: u32, rings: u32) -> Vec<VertexPBR> {
     let mut vertices = Vec::new();

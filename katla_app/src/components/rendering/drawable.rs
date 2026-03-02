@@ -1,6 +1,6 @@
 use katla_ecs::Component;
+use katla_gfx::{MaterialHandle, MeshHandle, SkeletonHandle};
 use katla_math::Color;
-use katla_vulkan::{MaterialHandle, MeshHandle, SkeletonHandle};
 
 #[derive(Component)]
 pub struct DrawableComponent {

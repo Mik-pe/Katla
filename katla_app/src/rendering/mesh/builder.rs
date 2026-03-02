@@ -2,7 +2,7 @@ use std::rc::Rc;
 
 use katla_ecs::{EntityId, World};
 use katla_math::{Transform, Vec3};
-use katla_vulkan::{VulkanContext, VulkanRenderer};
+use katla_gfx::{VulkanContext, VulkanRenderer};
 
 use crate::{
     entities::Model,

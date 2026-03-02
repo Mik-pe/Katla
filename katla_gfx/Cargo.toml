@@ -1,0 +1,18 @@
+[package]
+name = "katla_gfx"
+version = "0.1.0"
+authors = ["Mik-pe <mikael.pettersson201@gmail.com>"]
+edition = "2024"
+
+[dependencies]
+raw-window-handle = "*"
+ash = "^0.38.0"
+ash-window = "^0.13.0"
+gpu-allocator = "^0.28.0"
+naga = {version = "*", features = ["wgsl-in", "spv-out"]}
+bytemuck = { version = "*", features = ["derive"] }
+toml = "*"
+serde = { version = "*", features = ["derive"] }
+notify = "*"
+log = "*"
+bitflags = "*"

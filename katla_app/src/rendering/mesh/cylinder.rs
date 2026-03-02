@@ -1,6 +1,6 @@
 use crate::rendering::{Mesh, VertexPBR};
+use katla_gfx::VulkanContext;
 use katla_math::Vec3;
-use katla_vulkan::VulkanContext;
 
 pub fn create_cylinder_vertices(height: f32, radius: f32, segments: u32) -> Vec<VertexPBR> {
     let mut vertices = Vec::new();

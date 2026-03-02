@@ -83,7 +83,7 @@ impl ViewportLayout {
 /// # Slot Assignment
 ///
 /// Viewport handles are stored by index (0-3). The handles reference viewports
-/// managed by [`ViewportManager`] in katla_vulkan. When the layout changes,
+/// managed by [`ViewportManager`] in katla_gfx. When the layout changes,
 /// viewport assignments persist (cameras don't reset).
 ///
 /// # Example

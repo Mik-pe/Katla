@@ -4,10 +4,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Katla is a Vulkan-based 3D render engine written in Rust, using ECS (Entity Component System) architecture. The project is structured as a Cargo workspace with multiple crates:
+Katla is a Vulkan-based 3D render engine written in Rust 2024 edition, using ECS (Entity Component System) architecture. The project is structured as a Cargo workspace with multiple crates:
 
 - **katla_math** - Custom math library (vectors, matrices, quaternions) - SIMD planned (see katla_math/PLAN.md)
-- **katla_vulkan** - Vulkan rendering layer with render graph system
+- **katla_gfx** - Katla high-level graphics API layer
 - **katla_app** - Application framework, components, and systems
 - **katla_ecs** - Custom Entity Component System framework
 - **katla_derive** - Derive macros for the ECS (Component trait)
@@ -17,9 +17,8 @@ Katla is a Vulkan-based 3D render engine written in Rust, using ECS (Entity Comp
 
 ```bash
 # Build
-cargo build                    # Build all workspace crates
-cargo build --release          # Release build
 cargo check                    # Quick typecheck
+cargo build                    # Build all workspace crates
 cargo build -p katla_ecs       # Build specific package
 
 # Test
@@ -29,18 +28,15 @@ cargo test -p katla_ecs        # Test specific package
 cargo test test_entity_id_creation  # Run single test
 cargo test test_entity        # Run tests matching pattern
 cargo test -- --nocapture      # Show stdout
-cargo test --release           # Release mode tests
 
 # Lint
 cargo clippy                   # Linter
 cargo clippy --fix             # Auto-fix
 cargo fmt                      # Format
-cargo fmt --check              # Check formatting
 
 # Run
-cargo run                      # Run the application
+cargo run                     # Run the application
 cargo run -- -s               # Run in limited-frame mode (25 frames) for validation
-cargo run -- --single-frame    # Same as above, long form
 ```
 
 ## Command Line Arguments
@@ -51,6 +47,7 @@ cargo run -- --single-frame    # Same as above, long form
 
 - **Task Continuity**: When working with tasks, continue through the task list without asking for confirmation between tasks. If there are pending tasks, proceed to the next one automatically.
 - **No Backwards Compatibility**: When introducing new APIs or patterns, don't maintain backwards compatibility or deprecation paths. Just remove the old code and update all usages to the new approach.
+- **No AI Slop comments**: Avoid adding comments that are obvious or can be inferred from the code itself. Avoid adding comments that have to do with the current issue at hand.
 
 ## Git Commit Conventions
 
@@ -65,16 +62,6 @@ Summary line (50-72 chars, imperative mood)
 - Each line starts with a hyphen
 - Describe WHAT was done, not WHY
 - Keep it concise and focused
-```
-
-**Examples:**
-```
-Add animation system with skeletal and transform-based animation
-
-- AnimationPlayer component with play/pause/loop/seek controls
-- AnimatedModel, JointTransform, MorphTargetWeights components
-- AnimationClip, AnimationChannel, AnimationSampler structures
-- AnimationUpdateSystem, SkeletalAnimationSystem, MorphTargetSystem
 ```
 
 ### Commit Guidelines
@@ -116,17 +103,19 @@ git commit -m "Summary line
 **CRITICAL**: These restrictions maintain clean module boundaries and prevent circular dependencies.
 
 **Rules:**
-- **katla_vulkan** must NOT depend on: `katla_math`, `katla_ecs`, `katla_app`, `katla_ui`
-- **katla_ecs** must NOT depend on: `katla_app`, `katla_vulkan`, `katla_math`, `katla_ui`
+- **katla_gfx** must NOT depend on: `katla_math`, `katla_ecs`, `katla_app`, `katla_ui`
+- **katla_ecs** must NOT depend on: `katla_app`, `katla_gfx`, `katla_math`, `katla_ui`
 - **katla_math** must NOT depend on: ANY other crate
 - **katla_ui** must NOT depend on: `katla_ecs`, `katla_app`
-- **katla_ui** CAN depend on: `katla_math`, `katla_vulkan`
-- **katla_app** can depend on: `katla_vulkan`, `katla_ecs`, `katla_math`, `katla_ui`
+- **katla_ui** CAN depend on: `katla_math`, `katla_gfx`
+- **katla_app** can depend on: `katla_gfx`, `katla_ecs`, `katla_math`, `katla_ui`
 
 ## Code Style
   
 - **Naming**: `StructName`, `function_name`, `CONSTANT_NAME`, `type_param T`
 - **Tests**: Prefix with `test_` (`test_entity_id_creation`)
+- **Modules**: Prefer splitting into multiple files/private rust modules over large modules
+- **Complexity**: Avoid overly complex types, Result<Rc<Option<RefCell<Option<T>>>>
 - **Error Handling**: `Option<T>`, `Result<T, E>`, avoid `unwrap()` in production
 - **Documentation**: `///` for public APIs, `//!` for module-level
 - **Visibility**: Use `pub(crate)` for internal APIs that are public within the crate

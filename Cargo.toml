@@ -1,5 +1,5 @@
 [workspace]
-members = ["katla_math", "katla_vulkan", "katla_app", "katla_ecs", "katla_derive", "katla_ui", "game"]
+members = ["katla_math", "katla_gfx", "katla_app", "katla_ecs", "katla_derive", "katla_ui", "game"]
 resolver = "2"
 
 # Faster dev builds with some optimizations

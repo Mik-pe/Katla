@@ -11,16 +11,16 @@
 //!
 //! # Future Work
 //! The actual 3D rendering should be done via the render graph system,
-//! not by adding model-specific code to katla_vulkan. The render graph
+//! not by adding model-specific code to katla_gfx. The render graph
 //! can support multiple cameras/viewports for different purposes.
 
 use std::cell::RefCell;
 use std::path::PathBuf;
 use std::rc::Rc;
 
+use katla_gfx::{MaterialHandle, MaterialRegistry, MeshHandle, VulkanContext, VulkanRenderer};
 use katla_math::{Mat4, Vec2, Vec3};
 use katla_ui::TextureId;
-use katla_vulkan::{MaterialHandle, MaterialRegistry, MeshHandle, VulkanContext, VulkanRenderer};
 
 use crate::rendering::{Material, Mesh};
 use crate::util::{GLTFModel, LoadId};
@@ -407,12 +407,12 @@ impl ModelPreviewState {
     fn load_texture_from_gltf(
         image: &gltf::image::Data,
         context: &Rc<VulkanContext>,
-    ) -> Option<Rc<katla_vulkan::Texture>> {
-        use katla_vulkan::ImageFormat;
+    ) -> Option<Rc<katla_gfx::Texture>> {
+        use katla_gfx::ImageFormat;
 
         match image.format {
             gltf::image::Format::R8G8B8 => {
-                let tex = katla_vulkan::Texture::create_image_rgb(
+                let tex = katla_gfx::Texture::create_image_rgb(
                     context.clone(),
                     image.width,
                     image.height,
@@ -421,7 +421,7 @@ impl ModelPreviewState {
                 Some(Rc::new(tex))
             }
             gltf::image::Format::R8G8B8A8 => {
-                let tex = katla_vulkan::Texture::create_image(
+                let tex = katla_gfx::Texture::create_image(
                     context.clone(),
                     image.width,
                     image.height,

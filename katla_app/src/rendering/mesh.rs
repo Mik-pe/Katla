@@ -14,13 +14,13 @@ pub use plane::*;
 pub use sphere::*;
 pub use torus::*;
 
-use katla_vulkan::vulkan::{
+use katla_gfx::vulkan::{
     vertex_attr_set::VertexAttributeSet,
     vertex_attribute::{AttributeBinding, AttributeType},
     VertexFormat,
 };
-use katla_vulkan::VulkanContext;
-use katla_vulkan::{self, IndexBuffer, IndexType, MeshHandle, VertexBuffer};
+use katla_gfx::VulkanContext;
+use katla_gfx::{self, IndexBuffer, IndexType, MeshHandle, VertexBuffer};
 
 use std::rc::Rc;
 
@@ -213,7 +213,7 @@ impl Mesh {
     /// ```no_run
     /// # use katla_app::rendering::Mesh;
     /// # use std::rc::Rc;
-    /// # let context: Rc<katla_vulkan::VulkanContext> = unsafe { std::mem::zeroed() };
+    /// # let context: Rc<katla_gfx::VulkanContext> = unsafe { std::mem::zeroed() };
     /// let positions = vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]];
     /// let normals = vec![[0.0, 1.0, 0.0], [0.0, 1.0, 0.0]];
     /// let tangents = vec![[1.0, 0.0, 0.0, 1.0], [1.0, 0.0, 0.0, 1.0]];
@@ -491,7 +491,7 @@ impl Mesh {
         }
     }
 
-    pub fn draw(&self, command_buffer: &katla_vulkan::CommandBuffer) {
+    pub fn draw(&self, command_buffer: &katla_gfx::CommandBuffer) {
         if let Some(index_buffer) = &self.index_buffer {
             command_buffer.bind_index_buffer(index_buffer.object(), 0, index_buffer.index_type);
 
@@ -517,10 +517,10 @@ impl Mesh {
     /// ```no_run
     /// # use katla_app::rendering::Mesh;
     /// # let mesh: Mesh = unsafe { std::mem::zeroed() };
-    /// # let command_buffer: katla_vulkan::CommandBuffer = unsafe { std::mem::zeroed() };
+    /// # let command_buffer: katla_gfx::CommandBuffer = unsafe { std::mem::zeroed() };
     /// mesh.draw_soa(&command_buffer);
     /// ```
-    pub fn draw_soa(&self, command_buffer: &katla_vulkan::CommandBuffer) {
+    pub fn draw_soa(&self, command_buffer: &katla_gfx::CommandBuffer) {
         if let Some(attributes) = &self.attributes {
             if let Some(index_buffer) = &self.index_buffer {
                 command_buffer.bind_index_buffer(index_buffer.object(), 0, index_buffer.index_type);
@@ -542,9 +542,9 @@ impl Mesh {
     /// # Example
     /// ```no_run
     /// # use katla_app::rendering::Mesh;
-    /// # use katla_vulkan::vulkan::vertex_attribute::AttributeType;
+    /// # use katla_gfx::vulkan::vertex_attribute::AttributeType;
     /// # let mesh: Mesh = unsafe { std::mem::zeroed() };
-    /// # let command_buffer: katla_vulkan::CommandBuffer = unsafe { std::mem::zeroed() };
+    /// # let command_buffer: katla_gfx::CommandBuffer = unsafe { std::mem::zeroed() };
     /// // Depth-only pass: only position needed
     /// mesh.draw_soa_subset(&command_buffer, &[AttributeType::Position]);
     ///
@@ -559,7 +559,7 @@ impl Mesh {
     /// ```
     pub fn draw_soa_subset(
         &self,
-        command_buffer: &katla_vulkan::CommandBuffer,
+        command_buffer: &katla_gfx::CommandBuffer,
         attr_types: &[AttributeType],
     ) {
         if let Some(attributes) = &self.attributes {

@@ -4,7 +4,7 @@
 //! It holds all the resources needed for particle simulation and rendering.
 
 use katla_ecs::Component;
-use katla_vulkan::{
+use katla_gfx::{
     ComputePipeline, DescriptorSet, DescriptorSetHandle, DeviceAddressBuffer, EmitterConfig,
     MaterialPipeline, ParticleBuffer, PipelineHandle, PipelineLayoutHandle,
 };
@@ -113,7 +113,7 @@ impl ParticleEmitter {
     /// This must be called after creation before the emitter can be used for rendering.
     /// It registers the compute and render pipelines with the renderer's internal
     /// storage and stores the handles for later use.
-    pub fn register_with_renderer(&mut self, renderer: &mut katla_vulkan::VulkanRenderer) {
+    pub fn register_with_renderer(&mut self, renderer: &mut katla_gfx::VulkanRenderer) {
         // Register compute pipeline resources
         self.compute_pipeline_handle =
             renderer.register_particle_pipeline(self.compute_pipeline.pipeline());
@@ -170,7 +170,7 @@ impl ParticleEmitter {
 
     /// Get the workgroup count for compute dispatch.
     pub fn workgroup_count(&self) -> u32 {
-        katla_vulkan::calculate_workgroup_count(self.particle_buffer.capacity() as u32, 256)
+        katla_gfx::calculate_workgroup_count(self.particle_buffer.capacity() as u32, 256)
     }
 
     /// Get the max particle count for rendering.
@@ -223,11 +223,11 @@ impl ParticleEmitter {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use katla_vulkan::MAX_PARTICLES;
+    use katla_gfx::MAX_PARTICLES;
 
     #[test]
     fn test_workgroup_calculation() {
-        let count = katla_vulkan::calculate_workgroup_count(MAX_PARTICLES as u32, 256);
+        let count = katla_gfx::calculate_workgroup_count(MAX_PARTICLES as u32, 256);
         assert_eq!(count, 256);
     }
 

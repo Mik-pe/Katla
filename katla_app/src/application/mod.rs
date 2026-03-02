@@ -22,7 +22,7 @@ use winit::keyboard::ModifiersState;
 pub use builder::*;
 use katla_ecs::{input::Action, EntityId, World};
 use katla_math::{Transform, Vec2, Vec3};
-use katla_vulkan::{SkeletonBuffer, VulkanRenderer};
+use katla_gfx::{SkeletonBuffer, VulkanRenderer};
 use winit::{
     application::ApplicationHandler,
     dpi::LogicalSize,
@@ -83,19 +83,19 @@ pub struct Application {
     /// Gizmo rendering resources (mesh and material handles)
     pub(crate) gizmo_resources: Option<renderer::GizmoResources>,
     /// Sky rendering pipeline handle (fullscreen procedural sky)
-    pub(crate) sky_pipeline: Option<katla_vulkan::PipelineHandle>,
+    pub(crate) sky_pipeline: Option<katla_gfx::PipelineHandle>,
     /// Grid rendering pipeline handle (infinite editor grid)
-    pub(crate) grid_pipeline: Option<katla_vulkan::PipelineHandle>,
+    pub(crate) grid_pipeline: Option<katla_gfx::PipelineHandle>,
     /// UI renderer (owns UI buffers, textures, descriptors, and pipeline)
     pub(crate) ui_renderer: Option<crate::rendering::UIRenderer>,
     /// UI draw data for current frame (shared with render graph)
     pub(crate) ui_draw_data: Rc<RefCell<Option<crate::rendering::UiDrawData>>>,
     /// Main scene viewport handle
-    pub(crate) main_viewport: Option<katla_vulkan::SafeViewportHandle>,
+    pub(crate) main_viewport: Option<katla_gfx::SafeViewportHandle>,
     /// Preview viewport handle (for model preview panel)
-    pub(crate) preview_viewport: Option<katla_vulkan::SafeViewportHandle>,
+    pub(crate) preview_viewport: Option<katla_gfx::SafeViewportHandle>,
     /// Viewport manager for multi-viewport support (new system)
-    pub(crate) viewport_manager: katla_vulkan::ViewportManager,
+    pub(crate) viewport_manager: katla_gfx::ViewportManager,
     /// Background asset loader thread
     pub(crate) background_loader: BackgroundLoader,
     /// Next texture ID for thumbnails (custom IDs start at 100)
@@ -231,12 +231,12 @@ impl ApplicationHandler for Application {
                                     self.viewport_manager.get_viewport(viewport_handle)
                                 {
                                     let extent = viewport.get_extent();
-                                    let viewport_images = katla_vulkan::ViewportImages {
+                                    let viewport_images = katla_gfx::ViewportImages {
                                         color_image: viewport.color_image(),
                                         color_view: viewport.color_view(),
                                         depth_image: viewport.depth_image(),
                                         depth_view: viewport.depth_view(),
-                                        extent: katla_vulkan::render_graph::types::Extent2D::new(
+                                        extent: katla_gfx::render_graph::types::Extent2D::new(
                                             extent.width,
                                             extent.height,
                                         ),
@@ -479,7 +479,7 @@ impl Application {
     fn load_demo_scene(
         &mut self,
         renderer: &mut VulkanRenderer,
-        material_registry: &Rc<RefCell<katla_vulkan::MaterialRegistry>>,
+        material_registry: &Rc<RefCell<katla_gfx::MaterialRegistry>>,
     ) {
         // Load Fox model with skeletal animation
         let fox_entity = self.load_fox_model(renderer, material_registry);
@@ -554,7 +554,7 @@ impl Application {
     fn load_fox_model(
         &mut self,
         renderer: &mut VulkanRenderer,
-        material_registry: &Rc<RefCell<katla_vulkan::MaterialRegistry>>,
+        material_registry: &Rc<RefCell<katla_gfx::MaterialRegistry>>,
     ) -> EntityId {
         let fox_path = self.resources.model_path("Fox.glb");
         let fox_transform = Transform::new_from_position(Vec3::new(0.0, 5.0, 0.0))
@@ -631,7 +631,7 @@ impl Application {
     fn load_pbr_models(
         &mut self,
         renderer: &mut VulkanRenderer,
-        material_registry: &Rc<RefCell<katla_vulkan::MaterialRegistry>>,
+        material_registry: &Rc<RefCell<katla_gfx::MaterialRegistry>>,
     ) {
         use crate::components::NameComponent;
 
@@ -799,7 +799,7 @@ impl Application {
                         // Create texture from pixels using TextureManager
                         if let Some(ref mut renderer) = self.renderer {
                             let tm = renderer.texture_manager_mut();
-                            let desc = katla_vulkan::TextureDescriptor::rgba8_srgb(width, height);
+                            let desc = katla_gfx::TextureDescriptor::rgba8_srgb(width, height);
                             let handle = tm.create(&desc, &pixels);
                             ui_renderer.register_texture_handle(texture_id.0, handle, tm);
                         }

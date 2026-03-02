@@ -8,8 +8,8 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use katla_ecs::{EntityId, System, World};
+use katla_gfx::{SkeletonBuffer, SkeletonDescriptorSet, VulkanContext};
 use katla_math::Mat4;
-use katla_vulkan::{SkeletonBuffer, SkeletonDescriptorSet, VulkanContext};
 
 use crate::animation::Skeleton;
 
