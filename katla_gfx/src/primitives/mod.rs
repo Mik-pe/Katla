@@ -17,14 +17,22 @@
 //! // Generate a sphere with radius 1.0, 32 segments, 16 rings
 //! let (vertices, indices) = primitives::generate_sphere(1.0, 32, 16);
 //!
-//! // Generate a 10x10 plane
+//! // Generate a 10x10 plane (XZ, horizontal)
 //! let (vertices, indices) = primitives::generate_plane(10.0, 10.0);
+//!
+//! // Generate a 2x2 XY plane with 4x4 tessellation (vertical, facing +Z)
+//! let (vertices, indices) = primitives::generate_plane_xy(2.0, 2.0, 4);
 //! ```
 
 mod cube;
+mod cylinder;
 mod plane;
 mod sphere;
+mod torus;
 
 pub use cube::generate_cube;
+pub use cylinder::generate_cylinder;
 pub use plane::generate_plane;
+pub use plane::generate_plane_xy;
 pub use sphere::generate_sphere;
+pub use torus::generate_torus;

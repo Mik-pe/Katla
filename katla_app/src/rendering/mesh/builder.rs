@@ -1,12 +1,12 @@
 use std::rc::Rc;
 
 use katla_ecs::{EntityId, World};
-use katla_gfx::{VulkanContext, VulkanRenderer};
+use katla_gfx::{primitives, VulkanContext, VulkanRenderer};
 use katla_math::{Transform, Vec3};
 
 use crate::{
     entities::Model,
-    rendering::{create_checkerboard_material, Material},
+    rendering::{create_checkerboard_material, Material, VertexPBR},
 };
 
 /// Base builder with common options shared across all mesh types.
@@ -162,7 +162,12 @@ impl CubeBuilder {
 
     pub fn build(self, world: &mut World, renderer: &mut VulkanRenderer) -> EntityId {
         let size = self.size.unwrap_or(Vec3::new(1.0, 1.0, 1.0));
-        let mesh = crate::rendering::mesh::create_cube_mesh(self.base.context.clone(), size);
+        let (gfx_vertices, indices) = primitives::generate_cube([size.x(), size.y(), size.z()]);
+        let vertices: Vec<VertexPBR> = gfx_vertices
+            .into_iter()
+            .map(|v| VertexPBR::new(v.position, v.normal, v.tangent, v.tex_coord0))
+            .collect();
+        let mesh = crate::rendering::mesh::Mesh::new(self.base.context.clone(), vertices, indices);
         self.create_entity(world, renderer, mesh)
     }
 }
@@ -197,12 +202,12 @@ impl SphereBuilder {
         let radius = self.radius.unwrap_or(0.5);
         let segments = self.segments.unwrap_or(32);
         let rings = self.rings.unwrap_or(32);
-        let mesh = crate::rendering::mesh::create_sphere_mesh(
-            self.base.context.clone(),
-            radius,
-            segments,
-            rings,
-        );
+        let (gfx_vertices, indices) = primitives::generate_sphere(radius, segments, rings);
+        let vertices: Vec<VertexPBR> = gfx_vertices
+            .into_iter()
+            .map(|v| VertexPBR::new(v.position, v.normal, v.tangent, v.tex_coord0))
+            .collect();
+        let mesh = crate::rendering::mesh::Mesh::new(self.base.context.clone(), vertices, indices);
         self.create_entity(world, renderer, mesh)
     }
 }
@@ -237,12 +242,12 @@ impl CylinderBuilder {
         let height = self.height.unwrap_or(1.0);
         let radius = self.radius.unwrap_or(0.5);
         let segments = self.segments.unwrap_or(32);
-        let mesh = crate::rendering::mesh::create_cylinder_mesh(
-            self.base.context.clone(),
-            height,
-            radius,
-            segments,
-        );
+        let (gfx_vertices, indices) = primitives::generate_cylinder(height, radius, segments);
+        let vertices: Vec<VertexPBR> = gfx_vertices
+            .into_iter()
+            .map(|v| VertexPBR::new(v.position, v.normal, v.tangent, v.tex_coord0))
+            .collect();
+        let mesh = crate::rendering::mesh::Mesh::new(self.base.context.clone(), vertices, indices);
         self.create_entity(world, renderer, mesh)
     }
 }
@@ -270,12 +275,12 @@ impl PlaneBuilder {
     pub fn build(self, world: &mut World, renderer: &mut VulkanRenderer) -> EntityId {
         let size = self.size.unwrap_or(Vec3::new(10.0, 10.0, 1.0));
         let segments = self.segments.unwrap_or(32);
-        let mesh = crate::rendering::mesh::create_plane_mesh(
-            self.base.context.clone(),
-            size.x(),
-            size.y(),
-            segments,
-        );
+        let (gfx_vertices, indices) = primitives::generate_plane_xy(size.x(), size.y(), segments);
+        let vertices: Vec<VertexPBR> = gfx_vertices
+            .into_iter()
+            .map(|v| VertexPBR::new(v.position, v.normal, v.tangent, v.tex_coord0))
+            .collect();
+        let mesh = crate::rendering::mesh::Mesh::new(self.base.context.clone(), vertices, indices);
         self.create_entity(world, renderer, mesh)
     }
 }
@@ -311,13 +316,13 @@ impl TorusBuilder {
         let minor_radius = self.radius.unwrap_or(0.5) * 0.6;
         let segments = self.segments.unwrap_or(32);
         let rings = self.rings.unwrap_or(32);
-        let mesh = crate::rendering::mesh::create_torus_mesh(
-            self.base.context.clone(),
-            major_radius,
-            minor_radius,
-            segments,
-            rings,
-        );
+        let (gfx_vertices, indices) =
+            primitives::generate_torus(major_radius, minor_radius, segments, rings);
+        let vertices: Vec<VertexPBR> = gfx_vertices
+            .into_iter()
+            .map(|v| VertexPBR::new(v.position, v.normal, v.tangent, v.tex_coord0))
+            .collect();
+        let mesh = crate::rendering::mesh::Mesh::new(self.base.context.clone(), vertices, indices);
         self.create_entity(world, renderer, mesh)
     }
 }
