@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use katla_math::Color;
-use katla_vulkan::{BindlessPbrMaterialConfig, TextureDescriptor, VulkanRenderer};
+use katla_gfx::{BindlessPbrMaterialConfig, TextureDescriptor, VulkanRenderer};
 
 use crate::rendering::{Material, VertexPBR};
 
@@ -53,7 +53,7 @@ fn create_checkerboard_material_with_color(
     renderer: &mut VulkanRenderer,
     color: Option<Color>,
 ) -> Material {
-    use katla_vulkan::{
+    use katla_gfx::{
         DEFAULT_ALBEDO_SLOT, DEFAULT_AO_SLOT, DEFAULT_EMISSION_SLOT, DEFAULT_MR_SLOT,
         DEFAULT_NORMAL_SLOT,
     };

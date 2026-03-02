@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 pub mod aabb;
 pub mod color;
 pub mod constants;
@@ -56,27 +54,3 @@ pub use self::utils::*;
 pub use self::vec2::Vec2;
 pub use self::vec3::Vec3;
 pub use self::vec4::Vec4;
-
-pub fn mat4_mul_vec3(a: &Mat4, b: &Vec3) -> Vec3 {
-    let row0 = a.extract_row(0);
-    let row1 = a.extract_row(1);
-    let row2 = a.extract_row(2);
-    Vec3::new(
-        b.dot(Vec3::new(row0.x(), row0.y(), row0.z())) + row0.w(),
-        b.dot(Vec3::new(row1.x(), row1.y(), row1.z())) + row1.w(),
-        b.dot(Vec3::new(row2.x(), row2.y(), row2.z())) + row2.w(),
-    )
-}
-
-pub fn mat4_mul_vec4(a: &Mat4, b: &Vec4) -> Vec4 {
-    let row0 = a.extract_row(0);
-    let row1 = a.extract_row(1);
-    let row2 = a.extract_row(2);
-    let row3 = a.extract_row(3);
-    Vec4::new(
-        Vec4::dot(&row0, b),
-        Vec4::dot(&row1, b),
-        Vec4::dot(&row2, b),
-        Vec4::dot(&row3, b),
-    )
-}

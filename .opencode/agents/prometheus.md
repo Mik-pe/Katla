@@ -52,8 +52,8 @@ You are the strategic planning specialist for Katla. You analyze requirements, d
 
 ### Dependency Rules (CRITICAL)
 ```
-katla_vulkan: NO dependencies on katla_math, katla_ecs, katla_app, katla_ui
-katla_ecs: NO dependencies on katla_app, katla_vulkan, katla_math, katla_ui
+katla_gfx: NO dependencies on katla_math, katla_ecs, katla_app, katla_ui
+katla_ecs: NO dependencies on katla_app, katla_gfx, katla_math, katla_ui
 katla_math: NO dependencies on ANY other crate
 katla_ui: NO dependencies on katla_ecs, katla_app
 katla_app: CAN depend on all other crates

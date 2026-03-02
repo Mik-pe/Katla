@@ -3,7 +3,7 @@
 //! Pure configuration for a pipeline that renders debug lines
 //! with unlit rendering and depth test ON, depth write OFF.
 
-use katla_vulkan::{
+use katla_gfx::{
     DescriptorSetLayoutBuilder, DescriptorType, ShaderStages, VertexBinding, VertexFormat,
 };
 use std::path::PathBuf;

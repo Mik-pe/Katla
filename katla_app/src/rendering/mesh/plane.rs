@@ -1,5 +1,5 @@
 use crate::rendering::{Mesh, VertexPBR};
-use katla_vulkan::VulkanContext;
+use katla_gfx::VulkanContext;
 
 pub fn create_plane_vertices(width: f32, height: f32, segments: u32) -> Vec<VertexPBR> {
     let mut vertices = Vec::new();

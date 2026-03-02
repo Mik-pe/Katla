@@ -16,7 +16,7 @@
 //! ```
 
 use katla_math::{Color, Mat4, Vec3};
-use katla_vulkan::{
+use katla_gfx::{
     IndexBuffer, IndexType, MaterialHandle, MeshHandle, VertexBuffer, VulkanContext,
 };
 use std::rc::Rc;
@@ -391,11 +391,11 @@ impl Default for DebugDraw {
 }
 
 /// Get the vertex binding for debug vertices.
-pub fn debug_vertex_binding() -> katla_vulkan::VertexBinding {
-    katla_vulkan::VertexBinding {
+pub fn debug_vertex_binding() -> katla_gfx::VertexBinding {
+    katla_gfx::VertexBinding {
         formats: vec![
-            katla_vulkan::VertexFormat::RGB32f, // position
-            katla_vulkan::VertexFormat::RGB32f, // color
+            katla_gfx::VertexFormat::RGB32f, // position
+            katla_gfx::VertexFormat::RGB32f, // color
         ],
     }
 }

@@ -4,7 +4,7 @@ pub mod render_graph;
 
 use log::{debug, error, info};
 
-use katla_vulkan::{
+use katla_gfx::{
     DrawCall, DrawList, FrameUniforms, IndexBuffer, IndexType, MaterialHandle, MeshHandle,
     ParticleDispatch, ParticleRender, VertexBuffer, VulkanContext,
 };
@@ -94,9 +94,9 @@ pub fn setup_render_graph(app: &mut Application) {
     let viewport_size = app.window.as_ref().unwrap().inner_size();
 
     // Initialize main viewport using ViewportManager
-    let main_builder = katla_vulkan::ViewportBuilder::new()
+    let main_builder = katla_gfx::ViewportBuilder::new()
         .size(viewport_size.width, viewport_size.height)
-        .with_depth(katla_vulkan::DepthFormat::D32SfloatS8Uint)
+        .with_depth(katla_gfx::DepthFormat::D32SfloatS8Uint)
         .clear_color(0.3, 0.5, 0.3, 1.0) // Dark green
         .label("main");
 
@@ -148,12 +148,12 @@ pub fn setup_render_graph(app: &mut Application) {
     // Get viewport images for render graph
     let viewport_images = if let Some(viewport) = app.viewport_manager.get_viewport(main_viewport) {
         let extent = viewport.get_extent();
-        katla_vulkan::ViewportImages {
+        katla_gfx::ViewportImages {
             color_image: viewport.color_image(),
             color_view: viewport.color_view(),
             depth_image: viewport.depth_image(),
             depth_view: viewport.depth_view(),
-            extent: katla_vulkan::render_graph::types::Extent2D::new(extent.width, extent.height),
+            extent: katla_gfx::render_graph::types::Extent2D::new(extent.width, extent.height),
         }
     } else {
         panic!("Main viewport not found in ViewportManager");
@@ -162,9 +162,9 @@ pub fn setup_render_graph(app: &mut Application) {
     render_graph::build_render_graph(renderer, viewport_images, sky_pipeline, grid_pipeline);
 
     // Initialize preview viewport using ViewportManager
-    let preview_builder = katla_vulkan::ViewportBuilder::new()
+    let preview_builder = katla_gfx::ViewportBuilder::new()
         .size(512, 512)
-        .with_depth(katla_vulkan::DepthFormat::D32SfloatS8Uint)
+        .with_depth(katla_gfx::DepthFormat::D32SfloatS8Uint)
         .clear_color(0.15, 0.15, 0.18, 1.0) // Dark gray
         .label("preview");
 
@@ -579,7 +579,7 @@ pub fn render_frame(app: &mut Application) {
         if let Some(draw_data) = draw_data {
             // Create a raw pointer to the UI renderer for the callback
             let ui_renderer_ptr: *const crate::rendering::UIRenderer = ui_renderer as *const _;
-            let callback = std::rc::Rc::new(move |ctx: &katla_vulkan::PassExecutionContext| {
+            let callback = std::rc::Rc::new(move |ctx: &katla_gfx::PassExecutionContext| {
                 // SAFETY: The UI renderer is valid for the lifetime of the frame
                 unsafe {
                     (*ui_renderer_ptr).draw(ctx, &draw_data);

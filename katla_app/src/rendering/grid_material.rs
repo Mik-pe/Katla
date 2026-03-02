@@ -4,7 +4,7 @@
 //! on the XZ plane at Y=0. Uses Ben Golus's "Best Darn Grid Shader" algorithm
 //! for anti-aliased, perspective-correct grid lines.
 
-use katla_vulkan::{DescriptorSetLayoutBuilder, DescriptorType, ShaderStages, VertexBinding};
+use katla_gfx::{DescriptorSetLayoutBuilder, DescriptorType, ShaderStages, VertexBinding};
 use std::path::PathBuf;
 
 /// Grid material that renders an infinite editor grid.

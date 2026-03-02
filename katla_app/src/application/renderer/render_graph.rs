@@ -1,9 +1,9 @@
 //! Render graph setup for the application layer.
 //!
 //! This module defines the render graph passes that the application needs.
-//! The application just says "draw stuff" and katla_vulkan handles the complexity.
+//! The application just says "draw stuff" and katla_gfx handles the complexity.
 
-use katla_vulkan::{PipelineHandle, ViewportImages, VulkanRenderer};
+use katla_gfx::{PipelineHandle, ViewportImages, VulkanRenderer};
 /// Build the render graph with all application passes.
 ///
 /// This function creates the render graph with sky, grid, geometry, composite, UI, and present passes.

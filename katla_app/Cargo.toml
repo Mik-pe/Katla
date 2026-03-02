@@ -6,7 +6,7 @@ edition = "2021"
 
 [dependencies]
 katla_math = { path = "../katla_math" }
-katla_vulkan = { path = "../katla_vulkan" }
+katla_gfx = { path = "../katla_gfx" }
 katla_ecs = { path = "../katla_ecs" }
 katla_ui = { path = "../katla_ui" }
 katla_derive = { path = "../katla_derive" }

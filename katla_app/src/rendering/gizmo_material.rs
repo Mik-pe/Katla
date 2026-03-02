@@ -3,7 +3,7 @@
 //! Pure configuration for a pipeline that renders gizmos (translate/rotate/scale handles)
 //! with unlit rendering and always-on-top depth behavior.
 
-use katla_vulkan::{
+use katla_gfx::{
     DescriptorSetLayoutBuilder, DescriptorType, ShaderStages, VertexBinding, VertexFormat,
 };
 use std::path::PathBuf;

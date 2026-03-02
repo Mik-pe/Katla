@@ -1,4 +1,4 @@
-use katla_vulkan::{VertexBinding, VertexFormat};
+use katla_gfx::{VertexBinding, VertexFormat};
 
 #[repr(C)]
 #[derive(Default, Debug, Clone)]

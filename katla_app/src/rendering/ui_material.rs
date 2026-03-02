@@ -4,7 +4,7 @@
 //! Vertices use screen coordinates (pixels) and the shader transforms to NDC
 //! using a uniform buffer containing the screen size.
 
-use katla_vulkan::{
+use katla_gfx::{
     DescriptorSetLayoutBuilder, DescriptorType, ShaderStages, VertexBinding, VertexFormat,
 };
 use std::path::PathBuf;

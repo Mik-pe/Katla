@@ -1,11 +1,11 @@
 use std::rc::Rc;
 
 use katla_ecs::{EntityId, World};
-use katla_math::Transform;
-use katla_vulkan::{
+use katla_gfx::{
     ImageFormat, MaterialHandle, MaterialRegistry, MeshHandle, TextureDescriptor, TextureHandle,
     TextureManager, VulkanContext, VulkanRenderer,
 };
+use katla_math::Transform;
 use log::{debug, info, warn};
 
 use crate::{
@@ -172,8 +172,8 @@ impl Model {
         transform: Transform,
         material_registry: &std::cell::RefCell<MaterialRegistry>,
     ) -> Self {
-        use katla_vulkan::material::PbrTextureSet;
-        use katla_vulkan::{
+        use katla_gfx::material::PbrTextureSet;
+        use katla_gfx::{
             DEFAULT_ALBEDO_SLOT, DEFAULT_AO_SLOT, DEFAULT_EMISSION_SLOT, DEFAULT_MR_SLOT,
             DEFAULT_NORMAL_SLOT,
         };
@@ -468,15 +468,15 @@ impl Model {
     pub fn load_texture_from_gltf(
         image: &gltf::image::Data,
         context: &Rc<VulkanContext>,
-    ) -> Option<Rc<katla_vulkan::Texture>> {
+    ) -> Option<Rc<katla_gfx::Texture>> {
         match image.format {
-            gltf::image::Format::R8G8B8 => Some(Rc::new(katla_vulkan::Texture::create_image_rgb(
+            gltf::image::Format::R8G8B8 => Some(Rc::new(katla_gfx::Texture::create_image_rgb(
                 context.clone(),
                 image.width,
                 image.height,
                 &image.pixels,
             ))),
-            gltf::image::Format::R8G8B8A8 => Some(Rc::new(katla_vulkan::Texture::create_image(
+            gltf::image::Format::R8G8B8A8 => Some(Rc::new(katla_gfx::Texture::create_image(
                 context.clone(),
                 image.width,
                 image.height,

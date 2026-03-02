@@ -12,7 +12,7 @@
       "WebSearch",
       "Bash(1)",
       "Bash(RUST_LOG=\"info,katla_app::application=debug\" timeout 5 cargo run:*)",
-      "Bash(RUST_LOG=\"info,katla_app::application=debug,katla_vulkan=debug\" timeout 5 cargo run:*)",
+      "Bash(RUST_LOG=\"info,katla_app::application=debug,katla_gfx=debug\" timeout 5 cargo run:*)",
       "Bash(curl:*)",
       "mcp__web-reader__webReader",
       "mcp__web-search-prime__webSearchPrime"

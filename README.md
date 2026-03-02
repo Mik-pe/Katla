@@ -18,7 +18,7 @@ A Vulkan game engine in Rust. Playground for graphics experiments. 🐒
 
 | Crate | Description |
 |-------|-------------|
-| `katla_vulkan` | Vulkan wrapper, render graph, materials |
+| `katla_gfx` | Vulkan wrapper, render graph, materials |
 | `katla_ecs` | Entity component system |
 | `katla_math` | SIMD math library |
 | `katla_ui` | Immediate mode UI system |

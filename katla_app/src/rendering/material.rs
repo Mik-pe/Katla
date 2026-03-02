@@ -1,10 +1,10 @@
-//! Re-export of the unified Material type from katla_vulkan.
+//! Re-export of the unified Material type from katla_gfx.
 //!
-//! This module provides a direct re-export of katla_vulkan::Material
+//! This module provides a direct re-export of katla_gfx::Material
 //! without any additional compatibility layers.
 
 // Re-export the unified Material type and related types
-pub use katla_vulkan::{
+pub use katla_gfx::{
     material::PbrTextureSet, vulkan::material::Material, MaterialHandle, MaterialTemplate, Texture,
     VertexBinding,
 };
