@@ -65,56 +65,52 @@ impl Model {
     fn register_with_renderer(
         first_mesh: Option<&mut Mesh>,
         material: Material,
-        renderer: Option<&mut VulkanRenderer>,
+        renderer: &mut VulkanRenderer,
     ) -> (MeshHandle, MaterialHandle) {
-        if let Some(r) = renderer {
-            // Register mesh - take buffers from first mesh
-            let mesh_h = if let Some(mesh) = first_mesh {
-                let vertex_buffer = mesh.vertex_buffer.take();
-                let index_buffer = mesh.index_buffer.take();
-                r.register_mesh(vertex_buffer, index_buffer)
-            } else {
-                MeshHandle::NONE
-            };
+        // Register mesh - take buffers from first mesh
+        let mesh_h = if let Some(mesh) = first_mesh {
+            let vertex_buffer = mesh.vertex_buffer.take();
+            let index_buffer = mesh.index_buffer.take();
+            renderer.register_mesh(vertex_buffer, index_buffer)
+        } else {
+            MeshHandle::NONE
+        };
 
-            // Register material with optional PBR textures
-            let (
+        // Register material with optional PBR textures
+        let (
+            pipeline,
+            _texture,
+            vertex_binding,
+            pbr_textures,
+            texture_indices,
+            emission_index,
+            is_bindless,
+        ) = material.get_registration_data();
+
+        // Vertex binding and pipeline are required for material registration
+        let vertex_binding = vertex_binding.expect("Material must have vertex binding");
+
+        // Use PBR registration if PBR textures are present
+        let mat_h = if let Some(pbr) = pbr_textures {
+            renderer.register_material_pbr(
                 pipeline,
-                _texture,
                 vertex_binding,
-                pbr_textures,
+                is_bindless,
+                pbr,
                 texture_indices,
                 emission_index,
-                is_bindless,
-            ) = material.get_registration_data();
-
-            // Vertex binding and pipeline are required for material registration
-            let vertex_binding = vertex_binding.expect("Material must have vertex binding");
-
-            // Use PBR registration if PBR textures are present
-            let mat_h = if let Some(pbr) = pbr_textures {
-                r.register_material_pbr(
-                    pipeline,
-                    vertex_binding,
-                    is_bindless,
-                    pbr,
-                    texture_indices,
-                    emission_index,
-                )
-            } else {
-                r.register_material_full(
-                    pipeline,
-                    vertex_binding,
-                    is_bindless,
-                    texture_indices,
-                    emission_index,
-                )
-            };
-
-            (mesh_h, mat_h)
+            )
         } else {
-            (MeshHandle::NONE, MaterialHandle::NONE)
-        }
+            renderer.register_material_full(
+                pipeline,
+                vertex_binding,
+                is_bindless,
+                texture_indices,
+                emission_index,
+            )
+        };
+
+        (mesh_h, mat_h)
     }
 
     /// Create a model with explicit PBR material values.
@@ -122,7 +118,7 @@ impl Model {
         world: &mut World,
         mut meshes: Vec<Mesh>,
         material: Material,
-        renderer: Option<&mut VulkanRenderer>,
+        renderer: &mut VulkanRenderer,
         transform: Transform,
         color: Option<katla_math::Color>,
         metallic: f32,
@@ -168,7 +164,7 @@ impl Model {
         world: &mut World,
         model: Rc<GLTFModel>,
         context: Rc<VulkanContext>,
-        mut renderer: Option<&mut VulkanRenderer>,
+        renderer: &mut VulkanRenderer,
         transform: Transform,
         material_registry: &std::cell::RefCell<MaterialRegistry>,
     ) -> Self {
@@ -184,23 +180,7 @@ impl Model {
         // Get default texture handles (static, don't need mutable access)
         let (default_handles, loaded_handles) = {
             // Get TextureManager from renderer - required for texture creation
-            let texture_manager = match renderer.as_mut() {
-                Some(r) => r.texture_manager_mut(),
-                None => {
-                    warn!("Renderer not available, creating model without textures");
-                    return Self::new_with_pbr(
-                        world,
-                        vec![],
-                        Material::new("gltf_default"),
-                        None,
-                        transform,
-                        None,
-                        0.0,
-                        0.5,
-                        1.0,
-                    );
-                }
-            };
+            let texture_manager = renderer.texture_manager_mut();
 
             // Get default texture handles from TextureManager
             let defaults = (
@@ -287,87 +267,75 @@ impl Model {
         }
 
         // Register textures with bindless manager and get indices
-        let (texture_indices, emission_index, albedo_tex_rc) = match renderer {
-            Some(ref mut r) => {
-                // Get views from TextureManager
-                let tm = r.texture_manager();
-                let views = (
-                    tm.get_view(albedo_handle),
-                    tm.get_view(normal_handle),
-                    tm.get_view(mr_handle),
-                    tm.get_view(occlusion_handle),
-                    tm.get_view(emission_handle),
-                    tm.get_texture_rc(albedo_handle),
-                );
+        let (texture_indices, emission_index, albedo_tex_rc) = {
+            // Get views from TextureManager
+            let tm = renderer.texture_manager();
+            let views = (
+                tm.get_view(albedo_handle),
+                tm.get_view(normal_handle),
+                tm.get_view(mr_handle),
+                tm.get_view(occlusion_handle),
+                tm.get_view(emission_handle),
+                tm.get_texture_rc(albedo_handle),
+            );
 
-                match views {
+            match views {
+                (
+                    Some(albedo_view),
+                    Some(normal_view),
+                    Some(mr_view),
+                    Some(ao_view),
+                    Some(emiss_view),
+                    albedo_rc,
+                ) => {
+                    // Get bindless_manager and register textures
+                    let bindless = renderer.bindless_manager_mut();
+                    let albedo_idx = bindless
+                        .register_texture(albedo_view)
+                        .unwrap_or(DEFAULT_ALBEDO_SLOT);
+                    let normal_idx = bindless
+                        .register_texture(normal_view)
+                        .unwrap_or(DEFAULT_NORMAL_SLOT);
+                    let mr_idx = bindless
+                        .register_texture(mr_view)
+                        .unwrap_or(DEFAULT_MR_SLOT);
+                    let ao_idx = bindless
+                        .register_texture(ao_view)
+                        .unwrap_or(DEFAULT_AO_SLOT);
+                    let emiss_idx = bindless
+                        .register_texture(emiss_view)
+                        .unwrap_or(DEFAULT_EMISSION_SLOT);
+
+                    debug!(
+                        "  Bindless texture slots: albedo={}, normal={}, mr={}, ao={}, emission={}",
+                        albedo_idx, normal_idx, mr_idx, ao_idx, emiss_idx
+                    );
+
+                    // Track bindless slots in TextureManager
+                    let tm = renderer.texture_manager_mut();
+                    tm.register_bindless_slot(albedo_handle, albedo_idx);
+                    tm.register_bindless_slot(normal_handle, normal_idx);
+                    tm.register_bindless_slot(mr_handle, mr_idx);
+                    tm.register_bindless_slot(occlusion_handle, ao_idx);
+                    tm.register_bindless_slot(emission_handle, emiss_idx);
+
                     (
-                        Some(albedo_view),
-                        Some(normal_view),
-                        Some(mr_view),
-                        Some(ao_view),
-                        Some(emiss_view),
+                        [albedo_idx, normal_idx, mr_idx, ao_idx],
+                        emiss_idx,
                         albedo_rc,
-                    ) => {
-                        // Get bindless_manager and register textures
-                        let bindless = r.bindless_manager_mut();
-                        let albedo_idx = bindless
-                            .register_texture(albedo_view)
-                            .unwrap_or(DEFAULT_ALBEDO_SLOT);
-                        let normal_idx = bindless
-                            .register_texture(normal_view)
-                            .unwrap_or(DEFAULT_NORMAL_SLOT);
-                        let mr_idx = bindless
-                            .register_texture(mr_view)
-                            .unwrap_or(DEFAULT_MR_SLOT);
-                        let ao_idx = bindless
-                            .register_texture(ao_view)
-                            .unwrap_or(DEFAULT_AO_SLOT);
-                        let emiss_idx = bindless
-                            .register_texture(emiss_view)
-                            .unwrap_or(DEFAULT_EMISSION_SLOT);
-
-                        debug!(
-                            "  Bindless texture slots: albedo={}, normal={}, mr={}, ao={}, emission={}",
-                            albedo_idx, normal_idx, mr_idx, ao_idx, emiss_idx
-                        );
-
-                        // Track bindless slots in TextureManager
-                        let tm = r.texture_manager_mut();
-                        tm.register_bindless_slot(albedo_handle, albedo_idx);
-                        tm.register_bindless_slot(normal_handle, normal_idx);
-                        tm.register_bindless_slot(mr_handle, mr_idx);
-                        tm.register_bindless_slot(occlusion_handle, ao_idx);
-                        tm.register_bindless_slot(emission_handle, emiss_idx);
-
-                        (
-                            [albedo_idx, normal_idx, mr_idx, ao_idx],
-                            emiss_idx,
-                            albedo_rc,
-                        )
-                    }
-                    _ => (
-                        [
-                            DEFAULT_ALBEDO_SLOT,
-                            DEFAULT_NORMAL_SLOT,
-                            DEFAULT_MR_SLOT,
-                            DEFAULT_AO_SLOT,
-                        ],
-                        DEFAULT_EMISSION_SLOT,
-                        None,
-                    ),
+                    )
                 }
+                _ => (
+                    [
+                        DEFAULT_ALBEDO_SLOT,
+                        DEFAULT_NORMAL_SLOT,
+                        DEFAULT_MR_SLOT,
+                        DEFAULT_AO_SLOT,
+                    ],
+                    DEFAULT_EMISSION_SLOT,
+                    None,
+                ),
             }
-            None => (
-                [
-                    DEFAULT_ALBEDO_SLOT,
-                    DEFAULT_NORMAL_SLOT,
-                    DEFAULT_MR_SLOT,
-                    DEFAULT_AO_SLOT,
-                ],
-                DEFAULT_EMISSION_SLOT,
-                None,
-            ),
         };
 
         // Create PbrTextureSet with the loaded texture handles
@@ -378,61 +346,6 @@ impl Model {
             occlusion_handle,
             emission_handle,
         );
-
-        // Create material based on skinning detection
-        let material = {
-            if has_skinning {
-                // Skinned mesh material selection
-                if let Some(template) = material_registry
-                    .borrow()
-                    .get_template("gltf_skinned_pbr_bindless")
-                {
-                    info!("  Using gltf_skinned_pbr_bindless template");
-                    Material::from_template_skinned_pbr_bindless(
-                        template,
-                        pbr_textures,
-                        None,
-                        texture_indices,
-                        emission_index,
-                    )
-                } else {
-                    warn!("  Template 'gltf_skinned_pbr_bindless' not found, falling back to gltf_skinned");
-                    if let Some(template) = material_registry.borrow().get_template("gltf_skinned")
-                    {
-                        Material::from_template_skinned_with_bindless(
-                            template,
-                            albedo_tex_rc,
-                            None,
-                            texture_indices,
-                            emission_index,
-                        )
-                    } else {
-                        panic!("Neither 'gltf_skinned_pbr_bindless' nor 'gltf_skinned' templates found. Ensure materials are loaded.");
-                    }
-                }
-            } else {
-                // Use full PBR template for static models
-                if let Some(template) = material_registry.borrow().get_template("gltf_pbr_bindless")
-                {
-                    info!("  Using gltf_pbr_bindless template");
-                    Material::from_template_pbr_bindless(
-                        template,
-                        pbr_textures,
-                        None,
-                        texture_indices,
-                        emission_index,
-                    )
-                } else {
-                    warn!("  Template 'gltf_pbr_bindless' not found, falling back to gltf_default");
-                    if let Some(template) = material_registry.borrow().get_template("gltf_default")
-                    {
-                        Material::from_template_with_optional_texture(template, albedo_tex_rc, None)
-                    } else {
-                        panic!("Neither 'gltf_pbr_bindless' nor 'gltf_default' templates found. Ensure materials are loaded.");
-                    }
-                }
-            }
-        };
 
         // Get root transform before moving model to mesh creation
         let root_transform = model.root_transform.clone();

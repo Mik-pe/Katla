@@ -21,12 +21,8 @@ pub fn render_debug_ui(app: &mut Application, dt: f32) {
     let scale_factor = app.scale_factor;
 
     // Get physical window size and convert to logical for UI layout
-    let physical_size = if let Some(ref window) = app.window {
-        let size = window.inner_size();
-        Vec2::new(size.width as f32, size.height as f32)
-    } else {
-        Vec2::new(1920.0, 1080.0)
-    };
+    let size = window.inner_size();
+    let physical_size = Vec2::new(size.width as f32, size.height as f32);
 
     // UI uses logical coordinates - convert physical to logical
     let screen_size = physical_size / scale_factor;
@@ -139,40 +135,6 @@ pub fn render_debug_ui(app: &mut Application, dt: f32) {
                 app.editor_ui.open_panel(panel);
             }
         }
-
-        // Update grid visibility by rebuilding render graph
-        // Grid toggle requires render graph rebuild since passes own their pipelines
-        if let Some(ref mut renderer) = &mut app.renderer {
-            let sky_pipeline = app.sky_pipeline;
-            let grid_pipeline = if app.editor_ui.show_grid {
-                app.grid_pipeline
-            } else {
-                None
-            };
-            // Get viewport images and rebuild render graph
-            if let Some(viewport_handle) = app.main_viewport {
-                if let Some(viewport) = app.viewport_manager.get_viewport(viewport_handle) {
-                    let extent = viewport.get_extent();
-                    let viewport_images = katla_gfx::ViewportImages {
-                        color_image: viewport.color_image(),
-                        color_view: viewport.color_view(),
-                        depth_image: viewport.depth_image(),
-                        depth_view: viewport.depth_view(),
-                        extent: katla_gfx::render_graph::types::Extent2D::new(
-                            extent.width,
-                            extent.height,
-                        ),
-                    };
-
-                    super::renderer::render_graph::build_render_graph(
-                        renderer,
-                        viewport_images,
-                        sky_pipeline,
-                        grid_pipeline,
-                    );
-                }
-            }
-        }
     }
 
     // Pass UI data to renderer if we have data and a renderer
@@ -235,12 +197,12 @@ pub fn render_debug_ui(app: &mut Application, dt: f32) {
             ui_renderer.update_screen_size(screen_size.x(), screen_size.y());
 
             // Store UI data for render graph to pick up
-            *app.ui_draw_data.borrow_mut() = Some(crate::rendering::UiDrawData {
+            *app.ui_draw_data.borrow_mut() = crate::rendering::UiDrawData {
                 vertex_data: vertex_bytes,
                 index_data: index_bytes,
                 screen_size: [physical_size.x(), physical_size.y()],
                 commands: ui_commands,
-            });
+            };
         }
     }
 
@@ -262,21 +224,19 @@ pub fn render_debug_ui(app: &mut Application, dt: f32) {
     }
 
     // Update OS cursor based on UI request
-    if let Some(ref window) = app.window {
-        use winit::window::CursorIcon;
-        let cursor_icon = match app.ui_context.input.cursor {
-            katla_ui::input::MouseCursor::Arrow => CursorIcon::Default,
-            katla_ui::input::MouseCursor::Text => CursorIcon::Text,
-            katla_ui::input::MouseCursor::ResizeHorizontal => CursorIcon::EwResize,
-            katla_ui::input::MouseCursor::ResizeVertical => CursorIcon::NsResize,
-            katla_ui::input::MouseCursor::ResizeDiagonal => CursorIcon::NwseResize,
-            katla_ui::input::MouseCursor::ResizeDiagonal2 => CursorIcon::NeswResize,
-            katla_ui::input::MouseCursor::Hand => CursorIcon::Pointer,
-            katla_ui::input::MouseCursor::Crosshair => CursorIcon::Crosshair,
-            katla_ui::input::MouseCursor::NotAllowed => CursorIcon::NotAllowed,
-        };
-        window.set_cursor(cursor_icon);
-    }
+    use winit::window::CursorIcon;
+    let cursor_icon = match app.ui_context.input.cursor {
+        katla_ui::input::MouseCursor::Arrow => CursorIcon::Default,
+        katla_ui::input::MouseCursor::Text => CursorIcon::Text,
+        katla_ui::input::MouseCursor::ResizeHorizontal => CursorIcon::EwResize,
+        katla_ui::input::MouseCursor::ResizeVertical => CursorIcon::NsResize,
+        katla_ui::input::MouseCursor::ResizeDiagonal => CursorIcon::NwseResize,
+        katla_ui::input::MouseCursor::ResizeDiagonal2 => CursorIcon::NeswResize,
+        katla_ui::input::MouseCursor::Hand => CursorIcon::Pointer,
+        katla_ui::input::MouseCursor::Crosshair => CursorIcon::Crosshair,
+        katla_ui::input::MouseCursor::NotAllowed => CursorIcon::NotAllowed,
+    };
+    window.set_cursor(cursor_icon);
 
     // Clear input state for next frame
     app.ui_context.input.clear_frame_state();
@@ -479,10 +439,7 @@ pub fn collect_children_recursive(
 
 /// Spawn a model from the editor UI.
 pub fn spawn_model(app: &mut Application, model_type: SpawnableModel, position: Vec3) {
-    let context = match &app.renderer {
-        Some(r) => r.context.clone(),
-        None => return,
-    };
+    let context = app.renderer.context.clone();
 
     // Create mesh using MeshBuilder (creates entity internally)
     let builder = MeshBuilder::new(context.clone()).position(position);
@@ -524,10 +481,7 @@ pub fn spawn_model_from_path(app: &mut Application, path: std::path::PathBuf, po
     use crate::entities::Model;
     use std::rc::Rc;
 
-    let context = match &app.renderer {
-        Some(r) => r.context.clone(),
-        None => return,
-    };
+    let context = app.renderer.context.clone();
 
     // Clone material registry Rc before mutable borrow
     let material_registry = Rc::clone(&app.renderer.as_ref().unwrap().material_registry);

@@ -38,7 +38,7 @@
 //! let draw_list = ui.end();
 //!
 //! // Render the draw list with your renderer
-//! ui_renderer.render(draw_list);
+//! my_renderer.render(draw_list);
 //! ```
 
 mod context;

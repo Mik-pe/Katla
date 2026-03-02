@@ -10,22 +10,18 @@
 
 pub mod builder;
 pub mod editor;
-pub mod renderer;
 
-use std::{
-    cell::RefCell, collections::HashMap, ffi::CString, path::PathBuf, rc::Rc, time::Instant,
-};
+use std::{cell::RefCell, collections::HashMap, path::PathBuf, rc::Rc, time::Instant};
 
 use log::{debug, info, warn};
 use winit::keyboard::ModifiersState;
 
 pub use builder::*;
 use katla_ecs::{input::Action, EntityId, World};
-use katla_math::{Transform, Vec2, Vec3};
 use katla_gfx::{SkeletonBuffer, VulkanRenderer};
+use katla_math::{Transform, Vec2, Vec3};
 use winit::{
     application::ApplicationHandler,
-    dpi::LogicalSize,
     event::{DeviceEvent, DeviceId, ElementState, WindowEvent},
     event_loop::ActiveEventLoop,
     keyboard::{KeyCode, PhysicalKey},
@@ -33,8 +29,8 @@ use winit::{
 };
 
 use crate::{
-    animation::{AnimationManager, Skeleton},
-    components::{DirectionalLight, DrawableComponent, PointLight, TransformComponent},
+    animation::AnimationManager,
+    components::{DirectionalLight, PointLight, TransformComponent},
     entities::{Camera, Model},
     gui_state::GuiState,
     input::{InputBinding, InputMapper, KeyCombo, MouseCombo},
@@ -52,8 +48,8 @@ struct ApplicationInfo {
 
 /// Main application struct containing all engine state.
 pub struct Application {
-    pub(crate) window: Option<Window>,
-    pub(crate) renderer: Option<VulkanRenderer>,
+    pub(crate) window: Window,
+    pub(crate) renderer: VulkanRenderer,
     pub(crate) camera: Rc<RefCell<Camera>>,
     pub(crate) gltf_cache: FileCache<GLTFModel, Box<dyn Fn(&PathBuf) -> GLTFModel>>,
     pub(crate) material_manager: MaterialManager,
@@ -80,22 +76,8 @@ pub struct Application {
     pub(crate) gui_state: GuiState,
     /// DPI scale factor (physical pixels per logical pixel)
     pub(crate) scale_factor: f32,
-    /// Gizmo rendering resources (mesh and material handles)
-    pub(crate) gizmo_resources: Option<renderer::GizmoResources>,
-    /// Sky rendering pipeline handle (fullscreen procedural sky)
-    pub(crate) sky_pipeline: Option<katla_gfx::PipelineHandle>,
-    /// Grid rendering pipeline handle (infinite editor grid)
-    pub(crate) grid_pipeline: Option<katla_gfx::PipelineHandle>,
     /// UI renderer (owns UI buffers, textures, descriptors, and pipeline)
     pub(crate) ui_renderer: Option<crate::rendering::UIRenderer>,
-    /// UI draw data for current frame (shared with render graph)
-    pub(crate) ui_draw_data: Rc<RefCell<Option<crate::rendering::UiDrawData>>>,
-    /// Main scene viewport handle
-    pub(crate) main_viewport: Option<katla_gfx::SafeViewportHandle>,
-    /// Preview viewport handle (for model preview panel)
-    pub(crate) preview_viewport: Option<katla_gfx::SafeViewportHandle>,
-    /// Viewport manager for multi-viewport support (new system)
-    pub(crate) viewport_manager: katla_gfx::ViewportManager,
     /// Background asset loader thread
     pub(crate) background_loader: BackgroundLoader,
     /// Next texture ID for thumbnails (custom IDs start at 100)
@@ -110,44 +92,20 @@ pub struct Application {
 
 impl ApplicationHandler for Application {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
-        if self.window.is_none() {
-            // Create window
-            let window = event_loop
-                .create_window(
-                    Window::default_attributes()
-                        .with_title(&self.info.name)
-                        .with_resizable(true)
-                        .with_maximized(true)
-                        .with_min_inner_size(LogicalSize {
-                            width: 800.0,
-                            height: 600.0,
-                        }),
-                )
-                .unwrap();
+        // Enable IME for text input (required for receiving text input events)
+        self.window.set_ime_allowed(true);
 
-            // Enable IME for text input (required for receiving text input events)
-            window.set_ime_allowed(true);
+        // Get initial DPI scale factor
+        self.scale_factor = self.window.scale_factor() as f32;
 
-            // Get initial DPI scale factor
-            self.scale_factor = window.scale_factor() as f32;
+        // Clone Rc before any mutable borrows
+        let material_registry = self.renderer.material_registry.clone();
 
-            // Initialize renderer
-            let mut renderer = self.init_renderer(event_loop, &window);
+        // Load demo scene
+        self.load_demo_scene(&material_registry);
 
-            // Clone Rc before any mutable borrows
-            let material_registry = Rc::clone(&renderer.material_registry);
-
-            // Load demo scene
-            self.load_demo_scene(&mut renderer, &material_registry);
-
-            self.window = Some(window);
-            self.material_manager.set_context(renderer.context.clone());
-
-            self.renderer = Some(renderer);
-
-            // Setup render graph
-            renderer::setup_render_graph(self);
-        }
+        self.material_manager
+            .set_context(self.renderer.context.clone());
     }
 
     fn device_event(
@@ -200,200 +158,142 @@ impl ApplicationHandler for Application {
             }
         }
 
-        if let Some(_renderer) = &mut self.renderer {
-            match event {
-                WindowEvent::Resized(logical_size) => {
-                    let new_width = logical_size.width;
-                    let new_height = logical_size.height as f32;
+        match event {
+            WindowEvent::Resized(logical_size) => {
+                let new_width = logical_size.width;
+                let new_height = logical_size.height as f32;
 
-                    if new_width > 0 && new_height > 0.0 {
-                        if let Some(ref mut renderer) = self.renderer {
-                            info!(
-                                "=== Window resized to {}x{}, recreating swapchain ===",
-                                new_width, new_height as u32
-                            );
-                            // Wait for GPU to finish before destroying old resources
-                            renderer.wait_for_device();
-                            renderer.recreate_swapchain();
-                            let _ = renderer.init_viewport_target(new_width, new_height as u32);
-                            let _ = renderer.init_output_target(new_width, new_height as u32);
+                if new_width > 0 && new_height > 0.0 {
+                    // Wait for GPU to finish before destroying old resources
+                    self.renderer.wait_for_device();
+                    self.renderer.recreate_swapchain();
 
-                            // Rebuild render graph with existing pipelines
-                            let sky_pipeline = self.sky_pipeline;
-                            let grid_pipeline = if self.editor_ui.show_grid {
-                                self.grid_pipeline
-                            } else {
-                                None
-                            };
-                            // Get viewport images and rebuild render graph
-                            if let Some(viewport_handle) = self.main_viewport {
-                                if let Some(viewport) =
-                                    self.viewport_manager.get_viewport(viewport_handle)
-                                {
-                                    let extent = viewport.get_extent();
-                                    let viewport_images = katla_gfx::ViewportImages {
-                                        color_image: viewport.color_image(),
-                                        color_view: viewport.color_view(),
-                                        depth_image: viewport.depth_image(),
-                                        depth_view: viewport.depth_view(),
-                                        extent: katla_gfx::render_graph::types::Extent2D::new(
-                                            extent.width,
-                                            extent.height,
-                                        ),
-                                    };
+                    if let Some(viewport_extent) = self.renderer.viewport_extent() {
+                        let aspect = viewport_extent.width as f32 / viewport_extent.height as f32;
+                        self.camera
+                            .borrow_mut()
+                            .aspect_ratio_changed(&mut self.world, aspect);
+                    }
+                    info!("=== Resize complete ===");
+                }
+            }
+            WindowEvent::CursorMoved { position, .. } => {
+                // Convert physical pixels to logical pixels for UI
+                let logical_x = position.x as f32 / self.scale_factor;
+                let logical_y = position.y as f32 / self.scale_factor;
+                self.ui_context
+                    .input
+                    .set_mouse_pos(Vec2::new(logical_x, logical_y));
+            }
+            WindowEvent::MouseWheel { delta, .. } => {
+                let scroll = match delta {
+                    winit::event::MouseScrollDelta::LineDelta(x, y) => {
+                        Vec2::new(x * 20.0, y * 20.0)
+                    }
+                    winit::event::MouseScrollDelta::PixelDelta(pos) => {
+                        // Convert physical to logical pixels
+                        Vec2::new(
+                            pos.x as f32 / self.scale_factor,
+                            pos.y as f32 / self.scale_factor,
+                        )
+                    }
+                };
+                self.ui_context.input.scroll_delta = scroll;
+            }
+            WindowEvent::CloseRequested => {
+                event_loop.exit();
+            }
+            WindowEvent::KeyboardInput { event, .. } => {
+                if let PhysicalKey::Code(keycode) = event.physical_key {
+                    let key_combo = KeyCombo::with_modifiers(keycode, self.current_modifiers);
+                    let binding = InputBinding::Keyboard(key_combo);
 
-                                    renderer::render_graph::build_render_graph(
-                                        renderer,
-                                        viewport_images,
-                                        sky_pipeline,
-                                        grid_pipeline,
-                                    );
-                                }
-                            }
-
-                            if let Some(viewport_extent) = renderer.viewport_extent() {
-                                let aspect =
-                                    viewport_extent.width as f32 / viewport_extent.height as f32;
-                                self.camera
-                                    .borrow_mut()
-                                    .aspect_ratio_changed(&mut self.world, aspect);
-                            }
-                            info!("=== Resize complete ===");
+                    if let Some(action) = self.input_mapper.get_action(&binding) {
+                        // Only send keyboard input to game when viewport is focused
+                        if self.editor_ui.focused_panel == crate::ui::FocusedPanel::Viewport {
+                            let pressed = matches!(event.state, ElementState::Pressed);
+                            self.world.get_input_mut().set_action_state(action, pressed);
                         }
                     }
-                }
-                WindowEvent::CursorMoved { position, .. } => {
-                    // Convert physical pixels to logical pixels for UI
-                    let logical_x = position.x as f32 / self.scale_factor;
-                    let logical_y = position.y as f32 / self.scale_factor;
-                    self.ui_context
-                        .input
-                        .set_mouse_pos(Vec2::new(logical_x, logical_y));
-                }
-                WindowEvent::MouseWheel { delta, .. } => {
-                    let scroll = match delta {
-                        winit::event::MouseScrollDelta::LineDelta(x, y) => {
-                            Vec2::new(x * 20.0, y * 20.0)
-                        }
-                        winit::event::MouseScrollDelta::PixelDelta(pos) => {
-                            // Convert physical to logical pixels
-                            Vec2::new(
-                                pos.x as f32 / self.scale_factor,
-                                pos.y as f32 / self.scale_factor,
-                            )
-                        }
-                    };
-                    self.ui_context.input.scroll_delta = scroll;
-                }
-                WindowEvent::CloseRequested => {
-                    event_loop.exit();
-                }
-                WindowEvent::KeyboardInput { event, .. } => {
-                    if let PhysicalKey::Code(keycode) = event.physical_key {
-                        let key_combo = KeyCombo::with_modifiers(keycode, self.current_modifiers);
-                        let binding = InputBinding::Keyboard(key_combo);
 
-                        if let Some(action) = self.input_mapper.get_action(&binding) {
-                            // Only send keyboard input to game when viewport is focused
-                            if self.editor_ui.focused_panel == crate::ui::FocusedPanel::Viewport {
-                                let pressed = matches!(event.state, ElementState::Pressed);
-                                self.world.get_input_mut().set_action_state(action, pressed);
-                            }
-                        }
-
-                        let ui_key = Self::winit_to_ui_key(keycode);
-                        if let Some(key) = ui_key {
-                            match event.state {
-                                ElementState::Pressed => self.ui_context.input.add_key_press(key),
-                                ElementState::Released => {
-                                    self.ui_context.input.add_key_release(key)
-                                }
-                            }
-                        }
-
-                        // Handle text input from key event (for UI text fields)
-                        if event.state == ElementState::Pressed {
-                            if let Some(text) = &event.text {
-                                for c in text.chars() {
-                                    self.ui_context.input.add_char(c);
-                                }
-                            }
-                        }
-
-                        if event.state == ElementState::Pressed {
-                            // Only process game-specific keys when viewport is focused
-                            if self.editor_ui.focused_panel == crate::ui::FocusedPanel::Viewport {
-                                match keycode {
-                                    KeyCode::Escape => event_loop.exit(),
-                                    _ => {}
-                                }
-                            }
+                    let ui_key = Self::winit_to_ui_key(keycode);
+                    if let Some(key) = ui_key {
+                        match event.state {
+                            ElementState::Pressed => self.ui_context.input.add_key_press(key),
+                            ElementState::Released => self.ui_context.input.add_key_release(key),
                         }
                     }
-                }
-                WindowEvent::ModifiersChanged(modifiers) => {
-                    self.current_modifiers = modifiers.state();
-                }
-                WindowEvent::Ime(event) => {
-                    // Handle text input for UI widgets (text fields, search filters, etc.)
-                    if let winit::event::Ime::Preedit(_, _) | winit::event::Ime::Commit(_) = event {
-                        // For Commit events, add each character to the UI input
-                        if let winit::event::Ime::Commit(text) = event {
+
+                    // Handle text input from key event (for UI text fields)
+                    if event.state == ElementState::Pressed {
+                        if let Some(text) = &event.text {
                             for c in text.chars() {
                                 self.ui_context.input.add_char(c);
                             }
                         }
                     }
-                }
-                WindowEvent::ScaleFactorChanged { scale_factor, .. } => {
-                    self.scale_factor = scale_factor as f32;
-                    debug!("DPI scale factor changed to {}", self.scale_factor);
-                }
-                WindowEvent::RedrawRequested => {
-                    debug!("RedrawRequested received");
-                    self.timer.add_timestamp();
-                    let dt = self.timer.get_delta() as f32;
 
-                    // Update world (runs animation systems)
-                    debug!("Updating world...");
-                    self.world.update(dt);
-                    debug!("World updated");
-
-                    // Upload skeleton transforms to GPU buffers
-                    debug!("Uploading skeleton transforms...");
-                    renderer::upload_skeleton_transforms(self);
-                    debug!("Skeleton transforms uploaded");
-
-                    // Poll background loader for completed asset loads
-                    self.poll_background_loader();
-
-                    // Render using render graph
-                    debug!("Rendering frame...");
-                    renderer::render_frame(self);
-                    debug!("Frame rendered");
-
-                    // Render debug UI overlay
-                    debug!("Rendering UI...");
-                    editor::render_debug_ui(self, dt);
-                    debug!("UI rendered");
-
-                    // Handle max_frames limit
-                    if let Some(max) = self.info.max_frames {
-                        self.frame_count += 1;
-                        if self.frame_count >= max {
-                            info!("Rendered {} frames, exiting", self.frame_count);
-                            // Call cleanup directly since exiting() may not be triggered
-                            self.cleanup_on_exit();
-                            event_loop.exit();
+                    if event.state == ElementState::Pressed {
+                        // Only process game-specific keys when viewport is focused
+                        if self.editor_ui.focused_panel == crate::ui::FocusedPanel::Viewport {
+                            match keycode {
+                                KeyCode::Escape => event_loop.exit(),
+                                _ => {}
+                            }
                         }
                     }
-
-                    if let Some(window) = &self.window {
-                        window.request_redraw();
+                }
+            }
+            WindowEvent::ModifiersChanged(modifiers) => {
+                self.current_modifiers = modifiers.state();
+            }
+            WindowEvent::Ime(event) => {
+                // Handle text input for UI widgets (text fields, search filters, etc.)
+                if let winit::event::Ime::Preedit(_, _) | winit::event::Ime::Commit(_) = event {
+                    // For Commit events, add each character to the UI input
+                    if let winit::event::Ime::Commit(text) = event {
+                        for c in text.chars() {
+                            self.ui_context.input.add_char(c);
+                        }
                     }
                 }
-                _ => {}
             }
+            WindowEvent::ScaleFactorChanged { scale_factor, .. } => {
+                self.scale_factor = scale_factor as f32;
+                debug!("DPI scale factor changed to {}", self.scale_factor);
+            }
+            WindowEvent::RedrawRequested => {
+                debug!("RedrawRequested received");
+                self.timer.add_timestamp();
+                let dt = self.timer.get_delta() as f32;
+
+                // Update world (runs animation systems)
+                debug!("Updating world...");
+                self.world.update(dt);
+                debug!("World updated");
+
+                // Poll background loader for completed asset loads
+                self.poll_background_loader();
+
+                // Render debug UI overlay
+                debug!("Rendering UI...");
+                editor::render_debug_ui(self, dt);
+                debug!("UI rendered");
+
+                // Handle max_frames limit
+                if let Some(max) = self.info.max_frames {
+                    self.frame_count += 1;
+                    if self.frame_count >= max {
+                        info!("Rendered {} frames, exiting", self.frame_count);
+                        // Call cleanup directly since exiting() may not be triggered
+                        self.cleanup_on_exit();
+                        event_loop.exit();
+                    }
+                }
+
+                self.window.request_redraw();
+            }
+            _ => {}
         }
     }
 
@@ -425,15 +325,11 @@ impl Application {
             info!("Saved GUI state to disk");
         }
 
-        if let Some(ref mut renderer) = self.renderer {
-            renderer.wait_for_device();
-        }
+        self.renderer.wait_for_device();
 
         self.material_manager.destroy();
 
-        if let Some(mut renderer) = self.renderer.take() {
-            renderer.destroy();
-        }
+        self.renderer.destroy();
     }
 }
 
@@ -442,81 +338,45 @@ impl Application {
         // Logger is now initialized in main() before building the application
     }
 
-    /// Initialize the Vulkan renderer and load materials.
-    fn init_renderer(&mut self, event_loop: &ActiveEventLoop, window: &Window) -> VulkanRenderer {
-        let engine_name = CString::new("Katla Engine").unwrap();
-        let mut renderer = VulkanRenderer::init(
-            event_loop,
-            window,
-            self.info.validation_layer_enabled,
-            CString::new(self.info.name.as_str()).unwrap(),
-            engine_name,
-        )
-        .expect("Failed to initialize Vulkan renderer");
-
-        // Load bindless material templates using the high-level wrapper
-        let bindless_count = renderer
-            .load_bindless_materials(&self.resources.materials)
-            .expect("Failed to load bindless materials");
-
-        info!(
-            "Loaded {} bindless material templates from {}",
-            bindless_count,
-            self.resources.materials.display()
-        );
-
-        renderer
-            .material_registry
-            .borrow_mut()
-            .enable_hot_reload(&self.resources.root, 100)
-            .expect("Failed to enable hot reload");
-        info!("Hot reload enabled for materials and shaders");
-
-        renderer
-    }
-
     /// Load the demo scene with models, lights, and particles.
-    fn load_demo_scene(
-        &mut self,
-        renderer: &mut VulkanRenderer,
-        material_registry: &Rc<RefCell<katla_gfx::MaterialRegistry>>,
-    ) {
+    fn load_demo_scene(&mut self, material_registry: &Rc<RefCell<katla_gfx::MaterialRegistry>>) {
         // Load Fox model with skeletal animation
-        let fox_entity = self.load_fox_model(renderer, material_registry);
+        let fox_entity = self.load_fox_model(material_registry);
 
+        let context = self.renderer.context.clone();
         // Create scene meshes
-        let cube = MeshBuilder::new(renderer.context.clone())
+        let cube = MeshBuilder::new(context.clone())
             .position(Vec3::new(15.0, 5.0, -15.0))
             .color([1.0, 0.3, 0.3])
-            .build(&mut self.world, renderer);
+            .build(&mut self.world, &mut self.renderer);
 
-        let _sphere = MeshBuilder::new(renderer.context.clone())
+        let _sphere = MeshBuilder::new(context.clone())
             .position(Vec3::new(30.0, 5.0, 0.0))
             .color([0.3, 1.0, 0.3])
             .sphere()
-            .build(&mut self.world, renderer);
+            .build(&mut self.world, &mut self.renderer);
 
-        let _cylinder = MeshBuilder::new(renderer.context.clone())
+        let _cylinder = MeshBuilder::new(context.clone())
             .position(Vec3::new(-30.0, 5.0, 0.0))
             .color([0.3, 0.3, 1.0])
             .cylinder()
-            .build(&mut self.world, renderer);
+            .build(&mut self.world, &mut self.renderer);
 
-        let _plane = MeshBuilder::new(renderer.context.clone())
+        let _plane = MeshBuilder::new(context.clone())
             .position(Vec3::new(0.0, -5.0, 0.0))
             .color([0.8, 0.8, 0.8])
             .plane()
             .size(Vec3::new(10.0, 10.0, 1.0))
-            .build(&mut self.world, renderer);
+            .build(&mut self.world, &mut self.renderer);
 
-        let torus = MeshBuilder::new(renderer.context.clone())
+        let torus = MeshBuilder::new(context.clone())
             .position(Vec3::new(0.0, 15.0, 0.0))
             .color([1.0, 0.8, 0.3])
             .torus()
-            .build(&mut self.world, renderer);
+            .build(&mut self.world, &mut self.renderer);
 
         // Load PBR test models
-        self.load_pbr_models(renderer, material_registry);
+        self.load_pbr_models(&mut self.renderer, material_registry);
 
         // Setup parent-child relationships
         self.setup_entity_hierarchy(fox_entity, torus, cube);
@@ -531,7 +391,7 @@ impl Application {
         // Create particle emitter
         let particle_emitter = crate::entities::create_particle_emitter(
             &mut self.world,
-            renderer.context.clone(),
+            context.clone(),
             Vec3::new(0.0, 10.0, 0.0),
             100.0,
         );
@@ -542,31 +402,30 @@ impl Application {
             .world
             .get_component_mut::<crate::components::ParticleEmitter>(particle_emitter)
         {
-            emitter.register_with_renderer(renderer);
+            emitter.register_with_renderer(&mut self.renderer);
             debug!("Registered particle emitter with renderer");
         }
 
         // Setup checkerboard material
-        self.setup_checkerboard_material(renderer);
+        self.setup_checkerboard_material();
     }
 
     /// Load Fox model with skeletal animation.
     fn load_fox_model(
         &mut self,
-        renderer: &mut VulkanRenderer,
         material_registry: &Rc<RefCell<katla_gfx::MaterialRegistry>>,
     ) -> EntityId {
         let fox_path = self.resources.model_path("Fox.glb");
         let fox_transform = Transform::new_from_position(Vec3::new(0.0, 5.0, 0.0))
             .with_scale(Vec3::new(0.05, 0.05, 0.05));
-        let context = renderer.context.clone();
+        let context = self.renderer.context.clone();
         let fox_model = self.gltf_cache.read(fox_path);
 
         let fox = Model::from_gltf(
             &mut self.world,
             fox_model.clone(),
             context,
-            Some(renderer),
+            &mut self.renderer,
             fox_transform,
             material_registry,
         );
@@ -584,45 +443,6 @@ impl Application {
         );
 
         debug!("Fox animation setup complete for entity {:?}", fox.entity);
-
-        // Setup GPU skeleton buffer
-        if let Some(skeleton) = self.world.get_component::<Skeleton>(fox.entity) {
-            let joint_count = skeleton.joint_transforms.len();
-            debug!("Fox has {} joints, creating skeleton buffer", joint_count);
-
-            let skeleton_buffer = Rc::new(RefCell::new(SkeletonBuffer::new(
-                renderer.context.clone(),
-                joint_count,
-            )));
-
-            if let Some(drawable) = self.world.get_component::<DrawableComponent>(fox.entity) {
-                if let Some(material_handle) = drawable.material_handle {
-                    if let Some(skeleton_layout) = renderer.get_skeleton_set_layout(material_handle)
-                    {
-                        if let Some(skeleton_handle) =
-                            renderer.register_skeleton(skeleton_buffer.clone(), skeleton_layout)
-                        {
-                            debug!("Registered skeleton with handle {:?}", skeleton_handle);
-
-                            if let Some(drawable) = self
-                                .world
-                                .get_component_mut::<DrawableComponent>(fox.entity)
-                            {
-                                drawable.skeleton_handle = Some(skeleton_handle);
-                            }
-
-                            self.skeleton_buffers.insert(fox.entity, skeleton_buffer);
-                        } else {
-                            warn!("Failed to register skeleton with renderer");
-                        }
-                    } else {
-                        warn!("Material does not have skeleton_set_layout");
-                    }
-                }
-            }
-        } else {
-            warn!("Fox entity has no Skeleton component");
-        }
 
         fox.entity
     }
@@ -764,8 +584,8 @@ impl Application {
     }
 
     /// Setup checkerboard material.
-    fn setup_checkerboard_material(&mut self, renderer: &mut VulkanRenderer) {
-        let checkerboard = create_checkerboard_material(renderer);
+    fn setup_checkerboard_material(&mut self) {
+        let checkerboard = create_checkerboard_material(&mut self.renderer);
         self.material_manager
             .register_material("checkerboard", checkerboard);
         debug!("Registered checkerboard material");
@@ -797,12 +617,11 @@ impl Application {
                     // Register with UI renderer
                     if let Some(ref mut ui_renderer) = self.ui_renderer {
                         // Create texture from pixels using TextureManager
-                        if let Some(ref mut renderer) = self.renderer {
-                            let tm = renderer.texture_manager_mut();
-                            let desc = katla_gfx::TextureDescriptor::rgba8_srgb(width, height);
-                            let handle = tm.create(&desc, &pixels);
-                            ui_renderer.register_texture_handle(texture_id.0, handle, tm);
-                        }
+
+                        let tm = self.renderer.texture_manager_mut();
+                        let desc = katla_gfx::TextureDescriptor::rgba8_srgb(width, height);
+                        let handle = tm.create(&desc, &pixels);
+                        ui_renderer.register_texture_handle(texture_id.0, handle, tm);
                     }
 
                     // Update the thumbnail cache entry
