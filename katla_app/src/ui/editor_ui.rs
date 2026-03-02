@@ -10,8 +10,6 @@
 mod asset_browser;
 mod hierarchy;
 mod inspector;
-mod model_preview;
-mod model_preview_panel;
 mod preferences;
 mod status_bar;
 mod toolbar;
@@ -37,7 +35,6 @@ use crate::{
 
 use super::theme::Theme;
 use asset_browser::{build_asset_browser, AssetAction, AssetBrowserState, AssetType};
-use model_preview::ModelPreviewState;
 
 pub use asset_browser::ThumbnailState;
 pub use preferences::PanelState;
@@ -169,8 +166,6 @@ pub struct EditorUI {
     pub theme: Theme,
     /// Asset browser panel state.
     pub asset_browser: AssetBrowserState,
-    /// Model preview panel state.
-    pub model_preview: ModelPreviewState,
     /// Currently focused panel (receives keyboard input).
     pub focused_panel: FocusedPanel,
     /// Viewport grid state (layout and viewport assignments).
@@ -200,7 +195,6 @@ impl EditorUI {
             toolbar_state: ToolbarState::default(),
             theme: Theme::catppuccin(),
             asset_browser: AssetBrowserState::new(),
-            model_preview: ModelPreviewState::new(),
             focused_panel: FocusedPanel::Viewport,
             viewport_grid_state: ViewportGridState::new(),
             viewport_texture_ids: [Some(katla_ui::TextureId::VIEWPORT), None, None, None],
@@ -615,6 +609,10 @@ impl EditorUI {
                         }
                     }
                 }
+                AssetAction::ModelPreviewRequested(_path) => {
+                    // Model preview functionality removed - log for now
+                    log::debug!("Model preview requested but feature is disabled");
+                }
                 AssetAction::CreateFolder(parent_path) => {
                     // Create "New Folder" in the specified directory
                     let mut new_folder = parent_path.join("New Folder");
@@ -664,17 +662,6 @@ impl EditorUI {
                         log::info!("Open file: {:?}", path);
                         // TODO: Open file in appropriate editor
                     }
-                }
-                AssetAction::ModelPreviewRequested(path) => {
-                    // Request model preview in the preview panel
-                    log::info!("Model preview requested: {:?}", path);
-                    let load_id = loader.request_model(path.clone());
-                    self.model_preview.model_path = Some(path);
-                    self.model_preview.load_state = model_preview::LoadState::Loading;
-                    self.model_preview.load_id = Some(load_id);
-                    self.model_preview.visible = true;
-                    self.model_preview.model = None;
-                    self.model_preview.stats = None;
                 }
                 AssetAction::CopyPath(path) => {
                     // Copy path as string (log for now, clipboard not implemented)
@@ -726,6 +713,10 @@ impl EditorUI {
                             self.asset_browser.scan_directory(thumbnail_texture_ids);
                         }
                     }
+                }
+                AssetAction::ModelPreviewRequested(_path) => {
+                    // Model preview functionality removed - log for now
+                    log::debug!("Model preview requested but feature is disabled");
                 }
             }
         }
@@ -789,15 +780,6 @@ impl EditorUI {
             for action in actions {
                 self.apply_preferences_action(action);
             }
-        }
-
-        // === MODEL PREVIEW PANEL (overlay) ===
-        if self.model_preview.visible {
-            ui.add(model_preview_panel::ModelPreviewPanel::new(
-                screen_size,
-                &mut self.model_preview,
-                &self.theme,
-            ));
         }
 
         // === DRAG PREVIEW (rendered last to appear above all panels) ===

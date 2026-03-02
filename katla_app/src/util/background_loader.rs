@@ -79,7 +79,7 @@ pub enum LoadResult {
         id: LoadId,
         path: PathBuf,
         /// PBR vertex data (position, normal, uv, tangent)
-        vertices: Vec<crate::rendering::VertexPBR>,
+        vertices: Vec<katla_gfx::VertexPBR>,
         /// Index buffer
         indices: Vec<u32>,
     },

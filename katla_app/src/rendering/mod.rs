@@ -1,23 +1,2 @@
-pub mod debug_draw;
-pub mod debug_line_material;
-pub mod gizmo_material;
-pub mod grid_material;
-pub mod material;
-pub mod material_helpers;
-pub mod material_manager;
-pub mod sky_material;
-pub mod ui_material;
-pub mod ui_renderer;
-pub mod vertextypes;
-
-pub use debug_draw::{debug_vertex_binding, DebugDraw, DebugVertex};
-pub use debug_line_material::DebugLineMaterial;
-pub use gizmo_material::GizmoMaterial;
-pub use grid_material::GridMaterial;
-pub use material::*;
-pub use material_helpers::{create_checkerboard_material, create_colored_checkerboard_material};
-pub use material_manager::MaterialManager;
-pub use sky_material::SkyMaterial;
-pub use ui_material::UiMaterial;
-pub use ui_renderer::{UIRenderer, UiDrawCommand, UiDrawData};
-pub use vertextypes::*;
+// Rendering module - public re-exports are empty after Material removal
+// This module is kept for future rendering utilities

@@ -17,9 +17,9 @@ use log::{debug, info, warn};
 use winit::keyboard::ModifiersState;
 
 pub use builder::*;
-use katla_ecs::{input::Action, EntityId, World};
-use katla_gfx::{SkeletonBuffer, VulkanRenderer};
-use katla_math::{Transform, Vec2, Vec3};
+use katla_ecs::{input::Action, World};
+use katla_gfx::VulkanRenderer;
+use katla_math::Vec2;
 use winit::{
     application::ApplicationHandler,
     event::{DeviceEvent, DeviceId, ElementState, WindowEvent},
@@ -29,13 +29,10 @@ use winit::{
 };
 
 use crate::{
-    animation::AnimationManager,
-    components::{DirectionalLight, PointLight, TransformComponent},
-    entities::{Camera, Model},
+    entities::Camera,
     gui_state::GuiState,
     input::{InputBinding, InputMapper, KeyCombo, MouseCombo},
     preferences::Preferences,
-    rendering::{create_checkerboard_material, MaterialManager, MeshBuilder},
     resources::ResourceManager,
     util::{BackgroundLoader, FileCache, GLTFModel, Timer},
 };
@@ -52,7 +49,6 @@ pub struct Application {
     pub(crate) renderer: VulkanRenderer,
     pub(crate) camera: Rc<RefCell<Camera>>,
     pub(crate) gltf_cache: FileCache<GLTFModel, Box<dyn Fn(&PathBuf) -> GLTFModel>>,
-    pub(crate) material_manager: MaterialManager,
     pub(crate) timer: Timer,
     pub(crate) info: ApplicationInfo,
     pub(crate) world: World,
@@ -60,8 +56,6 @@ pub struct Application {
     pub(crate) current_modifiers: ModifiersState,
     pub(crate) frame_count: usize,
     pub(crate) resources: ResourceManager,
-    /// Skeleton buffers for animated meshes, indexed by entity ID
-    pub(crate) skeleton_buffers: HashMap<EntityId, Rc<RefCell<SkeletonBuffer>>>,
     /// Immediate mode UI context
     pub(crate) ui_context: katla_ui::UiContext,
     /// Debug overlay UI (simplified stats)
@@ -76,8 +70,6 @@ pub struct Application {
     pub(crate) gui_state: GuiState,
     /// DPI scale factor (physical pixels per logical pixel)
     pub(crate) scale_factor: f32,
-    /// UI renderer (owns UI buffers, textures, descriptors, and pipeline)
-    pub(crate) ui_renderer: Option<crate::rendering::UIRenderer>,
     /// Background asset loader thread
     pub(crate) background_loader: BackgroundLoader,
     /// Next texture ID for thumbnails (custom IDs start at 100)
@@ -86,26 +78,15 @@ pub struct Application {
     pub(crate) thumbnail_texture_ids: HashMap<PathBuf, katla_ui::TextureId>,
     /// Application start time for double-click timestamp calculation
     pub(crate) start_time: Instant,
-    /// Immediate-mode 3D debug drawing context
-    pub debug_draw: crate::rendering::DebugDraw,
 }
 
 impl ApplicationHandler for Application {
-    fn resumed(&mut self, event_loop: &ActiveEventLoop) {
+    fn resumed(&mut self, _event_loop: &ActiveEventLoop) {
         // Enable IME for text input (required for receiving text input events)
         self.window.set_ime_allowed(true);
 
         // Get initial DPI scale factor
         self.scale_factor = self.window.scale_factor() as f32;
-
-        // Clone Rc before any mutable borrows
-        let material_registry = self.renderer.material_registry.clone();
-
-        // Load demo scene
-        self.load_demo_scene(&material_registry);
-
-        self.material_manager
-            .set_context(self.renderer.context.clone());
     }
 
     fn device_event(
@@ -236,10 +217,7 @@ impl ApplicationHandler for Application {
                     if event.state == ElementState::Pressed {
                         // Only process game-specific keys when viewport is focused
                         if self.editor_ui.focused_panel == crate::ui::FocusedPanel::Viewport {
-                            match keycode {
-                                KeyCode::Escape => event_loop.exit(),
-                                _ => {}
-                            }
+                            if keycode == KeyCode::Escape { event_loop.exit() }
                         }
                     }
                 }
@@ -327,8 +305,6 @@ impl Application {
 
         self.renderer.wait_for_device();
 
-        self.material_manager.destroy();
-
         self.renderer.destroy();
     }
 }
@@ -336,259 +312,6 @@ impl Application {
 impl Application {
     pub fn init(&mut self) {
         // Logger is now initialized in main() before building the application
-    }
-
-    /// Load the demo scene with models, lights, and particles.
-    fn load_demo_scene(&mut self, material_registry: &Rc<RefCell<katla_gfx::MaterialRegistry>>) {
-        // Load Fox model with skeletal animation
-        let fox_entity = self.load_fox_model(material_registry);
-
-        let context = self.renderer.context.clone();
-        // Create scene meshes
-        let cube = MeshBuilder::new(context.clone())
-            .position(Vec3::new(15.0, 5.0, -15.0))
-            .color([1.0, 0.3, 0.3])
-            .build(&mut self.world, &mut self.renderer);
-
-        let _sphere = MeshBuilder::new(context.clone())
-            .position(Vec3::new(30.0, 5.0, 0.0))
-            .color([0.3, 1.0, 0.3])
-            .sphere()
-            .build(&mut self.world, &mut self.renderer);
-
-        let _cylinder = MeshBuilder::new(context.clone())
-            .position(Vec3::new(-30.0, 5.0, 0.0))
-            .color([0.3, 0.3, 1.0])
-            .cylinder()
-            .build(&mut self.world, &mut self.renderer);
-
-        let _plane = MeshBuilder::new(context.clone())
-            .position(Vec3::new(0.0, -5.0, 0.0))
-            .color([0.8, 0.8, 0.8])
-            .plane()
-            .size(Vec3::new(10.0, 10.0, 1.0))
-            .build(&mut self.world, &mut self.renderer);
-
-        let torus = MeshBuilder::new(context.clone())
-            .position(Vec3::new(0.0, 15.0, 0.0))
-            .color([1.0, 0.8, 0.3])
-            .torus()
-            .build(&mut self.world, &mut self.renderer);
-
-        // Load PBR test models
-        self.load_pbr_models(&mut self.renderer, material_registry);
-
-        // Setup parent-child relationships
-        self.setup_entity_hierarchy(fox_entity, torus, cube);
-
-        // Add lighting
-        self.setup_lighting(cube);
-
-        // Add ambient light resource
-        self.world
-            .insert_resource(crate::components::AmbientLight::gray(0.15));
-
-        // Create particle emitter
-        let particle_emitter = crate::entities::create_particle_emitter(
-            &mut self.world,
-            context.clone(),
-            Vec3::new(0.0, 10.0, 0.0),
-            100.0,
-        );
-        debug!("Created particle emitter entity");
-
-        // Register particle emitter with renderer for handle-based dispatch
-        if let Some(emitter) = self
-            .world
-            .get_component_mut::<crate::components::ParticleEmitter>(particle_emitter)
-        {
-            emitter.register_with_renderer(&mut self.renderer);
-            debug!("Registered particle emitter with renderer");
-        }
-
-        // Setup checkerboard material
-        self.setup_checkerboard_material();
-    }
-
-    /// Load Fox model with skeletal animation.
-    fn load_fox_model(
-        &mut self,
-        material_registry: &Rc<RefCell<katla_gfx::MaterialRegistry>>,
-    ) -> EntityId {
-        let fox_path = self.resources.model_path("Fox.glb");
-        let fox_transform = Transform::new_from_position(Vec3::new(0.0, 5.0, 0.0))
-            .with_scale(Vec3::new(0.05, 0.05, 0.05));
-        let context = self.renderer.context.clone();
-        let fox_model = self.gltf_cache.read(fox_path);
-
-        let fox = Model::from_gltf(
-            &mut self.world,
-            fox_model.clone(),
-            context,
-            &mut self.renderer,
-            fox_transform,
-            material_registry,
-        );
-
-        info!(
-            "Fox model entity: {:?} loaded, setting up animation...",
-            fox.entity
-        );
-
-        AnimationManager::setup_animated_model(
-            &mut self.world,
-            fox.entity,
-            &fox_model,
-            Some("Run"),
-        );
-
-        debug!("Fox animation setup complete for entity {:?}", fox.entity);
-
-        fox.entity
-    }
-
-    /// Load PBR test models (Avocado and DamagedHelmet).
-    fn load_pbr_models(
-        &mut self,
-        renderer: &mut VulkanRenderer,
-        material_registry: &Rc<RefCell<katla_gfx::MaterialRegistry>>,
-    ) {
-        use crate::components::NameComponent;
-
-        // Load Avocado model for PBR testing
-        let avocado_path = self.resources.model_path("Avocado.glb");
-        let avocado_transform = Transform::new_from_position(Vec3::new(-15.0, 5.0, 15.0))
-            .with_scale(Vec3::new(20.0, 20.0, 20.0));
-        let avocado_model = self.gltf_cache.read(avocado_path);
-        let avocado = Model::from_gltf(
-            &mut self.world,
-            avocado_model.clone(),
-            renderer.context.clone(),
-            Some(renderer),
-            avocado_transform,
-            material_registry,
-        );
-        if let Some(name_comp) = self
-            .world
-            .get_component_mut::<NameComponent>(avocado.entity)
-        {
-            name_comp.name = "Avocado (PBR Test)".to_string();
-        }
-        info!(
-            "Avocado model loaded for PBR testing (entity {})",
-            avocado.entity.id()
-        );
-
-        // Load DamagedHelmet for PBR testing
-        let helmet_path = self.resources.model_path("DamagedHelmet.glb");
-        let helmet_transform = Transform::new_from_position(Vec3::new(-10.0, 5.0, 15.0))
-            .with_scale(Vec3::new(3.0, 3.0, 3.0));
-        let helmet_model = self.gltf_cache.read(helmet_path);
-        let helmet = Model::from_gltf(
-            &mut self.world,
-            helmet_model.clone(),
-            renderer.context.clone(),
-            Some(renderer),
-            helmet_transform,
-            material_registry,
-        );
-        if let Some(name_comp) = self.world.get_component_mut::<NameComponent>(helmet.entity) {
-            name_comp.name = "DamagedHelmet (Full PBR)".to_string();
-        }
-        info!(
-            "DamagedHelmet model loaded with full PBR textures (entity {})",
-            helmet.entity.id()
-        );
-
-        // Load Lantern model for non-indexed geometry testing
-        let lantern_path = self.resources.model_path("Lantern.glb");
-        let lantern_transform = Transform::new_from_position(Vec3::new(15.0, 5.0, 15.0))
-            .with_scale(Vec3::new(1.0, 1.0, 1.0));
-        let lantern_model = self.gltf_cache.read(lantern_path);
-        let lantern = Model::from_gltf(
-            &mut self.world,
-            lantern_model.clone(),
-            renderer.context.clone(),
-            Some(renderer),
-            lantern_transform,
-            material_registry,
-        );
-        if let Some(name_comp) = self
-            .world
-            .get_component_mut::<NameComponent>(lantern.entity)
-        {
-            name_comp.name = "Lantern (Non-indexed Test)".to_string();
-        }
-        info!(
-            "Lantern model loaded for non-indexed geometry testing (entity {})",
-            lantern.entity.id()
-        );
-    }
-
-    /// Setup entity parent-child relationships.
-    fn setup_entity_hierarchy(&mut self, fox_entity: EntityId, torus: EntityId, _cube: EntityId) {
-        use crate::components::{Children, NameComponent, Parent};
-
-        // Make torus a child of fox
-        if let Some(torus_name) = self.world.get_component_mut::<NameComponent>(torus) {
-            torus_name.name = "Torus (Fox child)".to_string();
-        }
-        self.world.add_component(torus, Parent::new(fox_entity));
-
-        let existing_children = self
-            .world
-            .get_component::<Children>(fox_entity)
-            .map(|c| c.children.clone())
-            .unwrap_or_default();
-        let mut children = existing_children;
-        children.push(torus);
-        self.world
-            .add_component(fox_entity, Children::new(children));
-    }
-
-    /// Setup scene lighting.
-    fn setup_lighting(&mut self, cube: EntityId) {
-        use crate::components::{Children, NameComponent, Parent};
-
-        let _sun = self.world.spawn((
-            DirectionalLight::new(Vec3::new(-0.3, -1.0, -0.2), [1.0, 0.95, 0.8], 1.0),
-            NameComponent::new("Sun Light"),
-        ));
-
-        let _red_light = self.world.spawn((
-            TransformComponent {
-                transform: Transform::new_from_position(Vec3::new(10.0, 10.0, 10.0)),
-            },
-            PointLight::new([1.0, 0.3, 0.3], 5.0, 20.0),
-            NameComponent::new("Red Point Light"),
-        ));
-
-        let blue_light = self.world.spawn((
-            TransformComponent {
-                transform: Transform::new_from_position(Vec3::new(-10.0, 8.0, 10.0)),
-            },
-            PointLight::new([0.3, 0.5, 1.0], 4.0, 25.0),
-            NameComponent::new("Blue Point Light"),
-        ));
-
-        // Make blue light a child of cube
-        self.world.add_component(blue_light, Parent::new(cube));
-        let existing_children = self
-            .world
-            .get_component::<Children>(cube)
-            .map(|c| c.children.clone())
-            .unwrap_or_default();
-        let mut cube_children = existing_children;
-        cube_children.push(blue_light);
-        self.world.add_component(cube, Children::new(cube_children));
-    }
-
-    /// Setup checkerboard material.
-    fn setup_checkerboard_material(&mut self) {
-        let checkerboard = create_checkerboard_material(&mut self.renderer);
-        self.material_manager
-            .register_material("checkerboard", checkerboard);
-        debug!("Registered checkerboard material");
     }
 
     /// Poll the background loader and process completed loads.
@@ -605,7 +328,7 @@ impl Application {
                     path,
                     width,
                     height,
-                    pixels,
+                    pixels: _,
                     ..
                 } => {
                     debug!("Thumbnail loaded: {:?} ({}x{})", path, width, height);
@@ -613,16 +336,6 @@ impl Application {
                     // Create texture ID for this thumbnail
                     let texture_id = TextureId::custom(self.next_thumbnail_texture_id);
                     self.next_thumbnail_texture_id += 1;
-
-                    // Register with UI renderer
-                    if let Some(ref mut ui_renderer) = self.ui_renderer {
-                        // Create texture from pixels using TextureManager
-
-                        let tm = self.renderer.texture_manager_mut();
-                        let desc = katla_gfx::TextureDescriptor::rgba8_srgb(width, height);
-                        let handle = tm.create(&desc, &pixels);
-                        ui_renderer.register_texture_handle(texture_id.0, handle, tm);
-                    }
 
                     // Update the thumbnail cache entry
                     if let Some(entry) = self.background_loader.get_thumbnail_mut(&path) {
@@ -658,16 +371,6 @@ impl Application {
                     ..
                 } => {
                     debug!("Model loaded: {:?}", path);
-
-                    // Check if this is for the model preview
-                    if self.editor_ui.model_preview.model_path.as_ref() == Some(&path) {
-                        // Load the model via FileCache (main thread, ensures proper data ownership)
-                        let model = self.gltf_cache.read(path.clone());
-                        // Update model preview with loaded model
-
-                        self.editor_ui.model_preview.on_model_loaded(model);
-                        info!("Model preview loaded: {:?}", path);
-                    }
                 }
                 LoadResult::ShaderSourceLoaded { path, source, .. } => {
                     debug!("Shader source loaded: {:?} ({} bytes)", path, source.len());
@@ -675,11 +378,6 @@ impl Application {
                 }
                 LoadResult::Failed { path, error, .. } => {
                     warn!("Failed to load {:?}: {}", path, error);
-
-                    // Check if this is for the model preview
-                    if self.editor_ui.model_preview.model_path.as_ref() == Some(&path) {
-                        self.editor_ui.model_preview.on_model_failed(error.clone());
-                    }
 
                     // Update asset browser entry to show failed state
                     for asset in self.editor_ui.asset_browser.assets.iter_mut() {

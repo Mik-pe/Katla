@@ -8,11 +8,11 @@ use katla_ecs::EntityId;
 use katla_math::{Vec2, Vec3};
 
 use crate::components::{
-    Children, DirectionalLight, DrawableComponent, EditorHidden, NameComponent, Parent,
-    ParticleEmitter, PointLight, TransformComponent,
+    Children, DirectionalLight, DrawableComponent, EditorHidden, NameComponent, Parent, PointLight,
+    TransformComponent,
 };
-use crate::rendering::MeshBuilder;
-use crate::ui::{EditorAction, EntityInfo, SpawnableModel};
+
+use crate::ui::{EditorAction, EntityInfo};
 
 use super::Application;
 
@@ -21,7 +21,7 @@ pub fn render_debug_ui(app: &mut Application, dt: f32) {
     let scale_factor = app.scale_factor;
 
     // Get physical window size and convert to logical for UI layout
-    let size = window.inner_size();
+    let size = app.window.inner_size();
     let physical_size = Vec2::new(size.width as f32, size.height as f32);
 
     // UI uses logical coordinates - convert physical to logical
@@ -37,7 +37,7 @@ pub fn render_debug_ui(app: &mut Application, dt: f32) {
     // Render UI (editor or debug overlay based on mode)
     // We extract the vertices immediately to release the borrow on editor_ui
     let scale_factor = app.scale_factor;
-    let (vertices, indices, commands, use_editor) = if app.use_editor_ui {
+    let (_vertices, _indices, _commands, use_editor) = if app.use_editor_ui {
         let draw_list = app.editor_ui.render(
             &mut app.ui_context,
             &app.preferences,
@@ -82,12 +82,14 @@ pub fn render_debug_ui(app: &mut Application, dt: f32) {
     // Process editor actions
     for action in editor_actions {
         match action {
-            EditorAction::SpawnModel(model_type, position) => {
-                spawn_model(app, model_type, position);
+            EditorAction::SpawnModel(_model_type, _position) => {
+                //TODO: Implement
             }
-            EditorAction::SpawnModelAtPath { path, position } => {
-                // Load model from file path
-                spawn_model_from_path(app, path, position);
+            EditorAction::SpawnModelAtPath {
+                path: _,
+                position: _,
+            } => {
+                //TODO: Implement
             }
             EditorAction::DeleteEntity(entity_id) => {
                 // Cascade delete: collect all children first, then delete in reverse order
@@ -137,89 +139,8 @@ pub fn render_debug_ui(app: &mut Application, dt: f32) {
         }
     }
 
-    // Pass UI data to renderer if we have data and a renderer
-    if !vertices.is_empty() {
-        use crate::rendering::ui_material::UiShaderVertex;
-
-        // Convert vertices to shader format (logical coordinates)
-        // NDC transform happens in the shader using uniform buffer with logical screen size
-        let shader_vertices: Vec<UiShaderVertex> = vertices
-            .iter()
-            .map(|v| {
-                UiShaderVertex::new(
-                    [v.position.x(), v.position.y()], // Logical coordinates
-                    [v.uv.x(), v.uv.y()],
-                    [v.color.r, v.color.g, v.color.b, v.color.a],
-                )
-            })
-            .collect();
-
-        // Convert vertices to raw bytes
-        let vertex_bytes = unsafe {
-            std::slice::from_raw_parts(
-                shader_vertices.as_ptr() as *const u8,
-                shader_vertices.len() * std::mem::size_of::<UiShaderVertex>(),
-            )
-        }
-        .to_vec();
-
-        // Convert indices to raw bytes
-        let index_bytes = unsafe {
-            std::slice::from_raw_parts(
-                indices.as_ptr() as *const u8,
-                indices.len() * std::mem::size_of::<u32>(),
-            )
-        }
-        .to_vec();
-
-        // Convert commands to renderer format
-        // Scale clip rects from logical to physical for Vulkan scissor testing
-        let ui_commands: Vec<crate::rendering::UiDrawCommand> = commands
-            .iter()
-            .map(|cmd| crate::rendering::UiDrawCommand {
-                index_offset: cmd.index_offset,
-                index_count: cmd.index_count,
-                clip_rect: [
-                    cmd.clip_rect.min.x() * scale_factor,
-                    cmd.clip_rect.min.y() * scale_factor,
-                    cmd.clip_rect.width() * scale_factor,
-                    cmd.clip_rect.height() * scale_factor,
-                ],
-                texture_id: cmd.texture.0, // Pass texture ID for dynamic binding
-            })
-            .collect();
-
-        // Pass to renderer
-        // Use physical size for viewport/scissor (Vulkan operates in physical pixels)
-        // But use logical size for UI uniform (vertices are in logical coords)
-        if let Some(ref ui_renderer) = app.ui_renderer {
-            // Update screen size uniform for shader NDC transform (logical size!)
-            ui_renderer.update_screen_size(screen_size.x(), screen_size.y());
-
-            // Store UI data for render graph to pick up
-            *app.ui_draw_data.borrow_mut() = crate::rendering::UiDrawData {
-                vertex_data: vertex_bytes,
-                index_data: index_bytes,
-                screen_size: [physical_size.x(), physical_size.y()],
-                commands: ui_commands,
-            };
-        }
-    }
-
     // Update font atlas texture if needed (render may have added new glyphs)
     if app.ui_context.fonts.atlas_needs_update() {
-        if let Some(ref mut ui_renderer) = app.ui_renderer {
-            // Check if atlas was resized
-            if app.ui_context.fonts.atlas_was_resized() {
-                let (new_width, new_height) = app.ui_context.fonts.atlas_size();
-                let atlas_data = app.ui_context.fonts.atlas_data().to_vec();
-                ui_renderer.resize_font_atlas(new_width, new_height, &atlas_data);
-                app.ui_context.fonts.clear_atlas_resized();
-            } else {
-                let atlas_data = app.ui_context.fonts.atlas_data().to_vec();
-                ui_renderer.update_font_atlas(&atlas_data);
-            }
-        }
         app.ui_context.fonts.mark_atlas_updated();
     }
 
@@ -236,7 +157,7 @@ pub fn render_debug_ui(app: &mut Application, dt: f32) {
         katla_ui::input::MouseCursor::Crosshair => CursorIcon::Crosshair,
         katla_ui::input::MouseCursor::NotAllowed => CursorIcon::NotAllowed,
     };
-    window.set_cursor(cursor_icon);
+    app.window.set_cursor(cursor_icon);
 
     // Clear input state for next frame
     app.ui_context.input.clear_frame_state();
@@ -244,10 +165,7 @@ pub fn render_debug_ui(app: &mut Application, dt: f32) {
 
 /// Collect entity information for the editor UI in tree order.
 pub fn collect_entity_info(app: &Application) -> Vec<EntityInfo> {
-    use crate::animation::Skeleton;
-
     // First pass: collect all entities with transforms and their relationships
-    // EntityData: (name, position, rotation, scale, entity_type, components)
     type EntityData = (String, Vec3, Vec3, Vec3, String, Vec<String>);
     let mut entity_data: HashMap<EntityId, EntityData> = HashMap::new();
     let mut parent_map: HashMap<EntityId, EntityId> = HashMap::new();
@@ -303,13 +221,6 @@ pub fn collect_entity_info(app: &Application) -> Vec<EntityInfo> {
         }
         if app
             .world
-            .get_component::<ParticleEmitter>(entity_id)
-            .is_some()
-        {
-            components.push("ParticleEmitter".to_string());
-        }
-        if app
-            .world
             .get_component::<DirectionalLight>(entity_id)
             .is_some()
         {
@@ -324,18 +235,9 @@ pub fn collect_entity_info(app: &Application) -> Vec<EntityInfo> {
         if app.world.get_component::<Children>(entity_id).is_some() {
             components.push("Children".to_string());
         }
-        if app.world.get_component::<Skeleton>(entity_id).is_some() {
-            components.push("Skeleton".to_string());
-        }
 
         // Determine entity type based on primary component
         let entity_type = if app
-            .world
-            .get_component::<ParticleEmitter>(entity_id)
-            .is_some()
-        {
-            "Particle Emitter".to_string()
-        } else if app
             .world
             .get_component::<DirectionalLight>(entity_id)
             .is_some()
@@ -435,87 +337,4 @@ pub fn collect_children_recursive(
             collect_children_recursive(app, *child_id, result);
         }
     }
-}
-
-/// Spawn a model from the editor UI.
-pub fn spawn_model(app: &mut Application, model_type: SpawnableModel, position: Vec3) {
-    let context = app.renderer.context.clone();
-
-    // Create mesh using MeshBuilder (creates entity internally)
-    let builder = MeshBuilder::new(context.clone()).position(position);
-
-    let spawned_id = match model_type {
-        SpawnableModel::Cube => builder
-            .cube()
-            .build(&mut app.world, app.renderer.as_mut().unwrap()),
-        SpawnableModel::Sphere => builder
-            .sphere()
-            .build(&mut app.world, app.renderer.as_mut().unwrap()),
-        SpawnableModel::Cylinder => builder
-            .cylinder()
-            .build(&mut app.world, app.renderer.as_mut().unwrap()),
-        SpawnableModel::Plane => builder
-            .plane()
-            .build(&mut app.world, app.renderer.as_mut().unwrap()),
-        SpawnableModel::Torus => builder
-            .torus()
-            .build(&mut app.world, app.renderer.as_mut().unwrap()),
-    };
-
-    // Update the name component with a more descriptive name
-    let name = format!("{}_{}", model_type.name(), spawned_id.id());
-    if let Some(name_comp) = app.world.get_component_mut::<NameComponent>(spawned_id) {
-        name_comp.name = name;
-    }
-
-    info!(
-        "Spawned {} (entity {}) at {:?}",
-        model_type.name(),
-        spawned_id.id(),
-        position
-    );
-}
-
-/// Spawn a model from a file path (e.g., .glb file).
-pub fn spawn_model_from_path(app: &mut Application, path: std::path::PathBuf, position: Vec3) {
-    use crate::entities::Model;
-    use std::rc::Rc;
-
-    let context = app.renderer.context.clone();
-
-    // Clone material registry Rc before mutable borrow
-    let material_registry = Rc::clone(&app.renderer.as_ref().unwrap().material_registry);
-
-    // Load the GLTF model using the file cache
-    let model = app.gltf_cache.read(path.clone());
-
-    // Create transform for the model
-    let transform = katla_math::Transform::new_from_position(position);
-
-    // Create entity with the loaded model using the smart unified importer
-    let entity = Model::from_gltf(
-        &mut app.world,
-        model.clone(),
-        context,
-        app.renderer.as_mut(),
-        transform,
-        &material_registry,
-    );
-
-    // Update name with filename
-    let name = path
-        .file_stem()
-        .and_then(|s| s.to_str())
-        .unwrap_or("Model")
-        .to_string();
-    if let Some(name_comp) = app.world.get_component_mut::<NameComponent>(entity.entity) {
-        name_comp.name = format!("{}_{}", name, entity.entity.id());
-    }
-
-    info!(
-        "Spawned model from {:?} (entity {}) at {:?}",
-        path,
-        entity.entity.id(),
-        position
-    );
 }

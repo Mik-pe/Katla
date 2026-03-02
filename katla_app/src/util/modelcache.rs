@@ -6,12 +6,12 @@ use gltf::Document;
 use katla_math::{Mat4, Quat, Sphere, Vec3};
 use log::{debug, warn};
 
-use crate::rendering::{VertexPBR, VertexSkinned};
 use crate::util::gltf_material::GltfMaterialInfo;
 use crate::util::gltf_parser::{
     build_skinned_vertex_data, build_vertex_data, generate_smooth_normals, AttributeParser,
     ParsedAttributes,
 };
+use katla_gfx::{VertexPBR, VertexPBRSkinned};
 
 #[derive(Clone)]
 pub struct GLTFModel {
@@ -21,7 +21,7 @@ pub struct GLTFModel {
     /// Parsed material info for each material in the GLTF file.
     pub materials: Vec<GltfMaterialInfo>,
     pub vertex_data: Vec<VertexPBR>,
-    pub skinned_vertex_data: Vec<VertexSkinned>,
+    pub skinned_vertex_data: Vec<VertexPBRSkinned>,
     pub has_skinning: bool,
     pub index_data: Vec<u8>,
     pub index_stride: u8,
@@ -166,7 +166,7 @@ impl GLTFModel {
     fn parse_node_skinned(
         &self,
         node: &gltf::Node,
-    ) -> (Vec<VertexSkinned>, Vec<u8>, u8, Sphere, bool) {
+    ) -> (Vec<VertexPBRSkinned>, Vec<u8>, u8, Sphere, bool) {
         let mut positions = vec![];
         let mut normals = vec![];
         let mut tex_coords = vec![];
@@ -332,7 +332,7 @@ impl GLTFModel {
                 let translation = Vec3::new(t[0], t[1], t[2]);
                 let rotation = Quat::new_from_xyzw(r[0], r[1], r[2], r[3]);
                 let scale = Vec3::new(s[0], s[1], s[2]);
-                root_transform = root_transform * Mat4::from_trs(translation, rotation, scale);
+                root_transform *= Mat4::from_trs(translation, rotation, scale);
 
                 // Collect this node and all its descendants
                 collect_all_nodes(&node, &mut all_nodes);
@@ -496,12 +496,12 @@ impl GLTFModel {
     }
 
     /// Get skinned vertex data (borrowed slice).
-    pub fn vertskinned(&self) -> &[VertexSkinned] {
+    pub fn vertskinned(&self) -> &[VertexPBRSkinned] {
         &self.skinned_vertex_data
     }
 
     /// Get skinned vertex data (owned copy).
-    pub fn vertskinned_owned(&self) -> Vec<VertexSkinned> {
+    pub fn vertskinned_owned(&self) -> Vec<VertexPBRSkinned> {
         self.skinned_vertex_data.clone()
     }
 

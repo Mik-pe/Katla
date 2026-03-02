@@ -1736,7 +1736,6 @@ pub fn build_asset_browser(
                 ) {
                     clicked_action = Some("Delete");
                     *open = false;
-                    return;
                 }
             }
             Some(_) => {
@@ -1790,7 +1789,6 @@ pub fn build_asset_browser(
                 ) {
                     clicked_action = Some("Delete");
                     *open = false;
-                    return;
                 }
             }
             None => {
@@ -1824,7 +1822,6 @@ pub fn build_asset_browser(
                 ) {
                     clicked_action = Some("Show in Explorer");
                     *open = false;
-                    return;
                 }
             }
         },
