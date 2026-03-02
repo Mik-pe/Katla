@@ -5,8 +5,10 @@ pub mod error;
 pub mod handle;
 pub mod material;
 pub mod pipeline;
+pub mod primitives;
 pub mod renderer;
 pub mod texture;
+pub mod vertex;
 
 // Internal implementation (not public)
 pub(crate) mod vulkan;
@@ -65,7 +67,35 @@ pub use renderer::{
 // Texture management
 pub use texture::{ImageFormat, TextureDescriptor, TextureManager, TextureUsage};
 
-// Context - advanced escape hatch for low-level Vulkan access.
-// Use this only when you need direct access to Vulkan device, allocator,
-// or other low-level resources that aren't exposed through the high-level API.
+// Vertex types
+pub use vertex::{
+    Vertex, VertexPBR, VertexPBRSkinned, VertexPosition, VertexPositionColor, VertexPositionNormal,
+    VertexPositionNormalUV,
+};
+
+/// Low-level Vulkan context - an escape hatch for advanced use cases.
+///
+/// `VulkanContext` provides direct access to Vulkan device, allocator, and other
+/// low-level resources. Use this only when the high-level API is insufficient.
+///
+/// # When to use the high-level API instead
+///
+/// Most operations should use [`VulkanRenderer`] methods:
+/// - [`VulkanRenderer::create_mesh()`] for mesh creation
+/// - [`VulkanRenderer::register_material()`] for material registration
+/// - [`VulkanRenderer::texture_manager()`] for texture operations
+/// - [`VulkanRenderer::create_viewport()`] for render targets
+///
+/// # When to use VulkanContext (escape hatch)
+///
+/// - Implementing custom render passes not covered by the high-level API
+/// - Direct GPU memory allocation for specialized buffers
+/// - Accessing Vulkan physical device properties and limits
+/// - Integrating with external Vulkan libraries
+///
+/// [`VulkanRenderer`]: renderer::VulkanRenderer
+/// [`VulkanRenderer::create_mesh()`]: renderer::VulkanRenderer::create_mesh
+/// [`VulkanRenderer::register_material()`]: renderer::VulkanRenderer::register_material
+/// [`VulkanRenderer::texture_manager()`]: renderer::VulkanRenderer::texture_manager
+/// [`VulkanRenderer::create_viewport()`]: renderer::VulkanRenderer::create_viewport
 pub use vulkan::context::{ValidationLevel, VulkanContext};
