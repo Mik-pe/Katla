@@ -11,7 +11,7 @@ use crate::vulkan::pipeline_state::{DescriptorType, ShaderStages};
 
 /// A single descriptor binding in a descriptor set layout.
 #[derive(Debug, Clone, Hash)]
-pub struct LayoutBinding {
+pub(crate) struct LayoutBinding {
     /// Binding number.
     pub binding: u32,
     /// Descriptor type.
@@ -24,7 +24,11 @@ pub struct LayoutBinding {
 
 impl LayoutBinding {
     /// Create a new layout binding.
-    pub fn new(binding: u32, descriptor_type: DescriptorType, shader_stages: ShaderStages) -> Self {
+    pub(crate) fn new(
+        binding: u32,
+        descriptor_type: DescriptorType,
+        shader_stages: ShaderStages,
+    ) -> Self {
         Self {
             binding,
             descriptor_type,
@@ -34,7 +38,7 @@ impl LayoutBinding {
     }
 
     /// Set the descriptor count (for array bindings).
-    pub fn with_count(mut self, count: u32) -> Self {
+    pub(crate) fn with_count(mut self, count: u32) -> Self {
         self.descriptor_count = count;
         self
     }
@@ -51,19 +55,19 @@ impl LayoutBinding {
 
 /// Builder for creating descriptor set layouts.
 #[derive(Debug, Clone, Default)]
-pub struct DescriptorSetLayoutBuilder {
+pub(crate) struct DescriptorSetLayoutBuilder {
     bindings: Vec<LayoutBinding>,
     push_descriptor: bool,
 }
 
 impl DescriptorSetLayoutBuilder {
     /// Create a new descriptor set layout builder.
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self::default()
     }
 
     /// Add a binding to the descriptor set layout.
-    pub fn add_binding(
+    pub(crate) fn add_binding(
         mut self,
         binding: u32,
         descriptor_type: DescriptorType,
@@ -75,7 +79,7 @@ impl DescriptorSetLayoutBuilder {
     }
 
     /// Add a binding with a custom descriptor count.
-    pub fn add_binding_with_count(
+    pub(crate) fn add_binding_with_count(
         mut self,
         binding: u32,
         descriptor_type: DescriptorType,
@@ -90,7 +94,7 @@ impl DescriptorSetLayoutBuilder {
     }
 
     /// Add a pre-built layout binding.
-    pub fn add_layout_binding(mut self, binding: LayoutBinding) -> Self {
+    pub(crate) fn add_layout_binding(mut self, binding: LayoutBinding) -> Self {
         self.bindings.push(binding);
         self
     }
@@ -99,7 +103,7 @@ impl DescriptorSetLayoutBuilder {
     ///
     /// Push descriptors don't require descriptor set allocation - they're
     /// updated via vkCmdPushDescriptorSetKHR during command buffer recording.
-    pub fn with_push_descriptor(mut self, enabled: bool) -> Self {
+    pub(crate) fn with_push_descriptor(mut self, enabled: bool) -> Self {
         self.push_descriptor = enabled;
         self
     }
@@ -131,12 +135,12 @@ impl DescriptorSetLayoutBuilder {
     }
 
     /// Get the bindings for this layout (for hashing/caching).
-    pub fn bindings(&self) -> &[LayoutBinding] {
+    pub(crate) fn bindings(&self) -> &[LayoutBinding] {
         &self.bindings
     }
 
     /// Check if this layout uses push descriptors.
-    pub fn is_push_descriptor(&self) -> bool {
+    pub(crate) fn is_push_descriptor(&self) -> bool {
         self.push_descriptor
     }
 }

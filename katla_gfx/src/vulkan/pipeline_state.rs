@@ -1,13 +1,18 @@
-//! Wrapper types for pipeline creation.
+//! Internal wrapper types for pipeline creation.
 //!
-//! This module provides wrapper enums and structs for Vulkan pipeline state,
-//! avoiding the need to expose `ash::vk` types in the public API.
+//! This module provides internal wrapper enums and structs for Vulkan pipeline state
+//! that are not exposed in the public API. For Katla-native types, see `pipeline.rs`.
 
 use ash::vk;
 
+// Re-export Katla-native types from pipeline module for internal use
+pub(crate) use crate::pipeline::{
+    BlendFactor, BlendOp, CompareOp, CullMode, FrontFace, PolygonMode,
+};
+
 /// Descriptor type for descriptor set layout bindings.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum DescriptorType {
+pub(crate) enum DescriptorType {
     /// Uniform buffer.
     UniformBuffer,
     /// Storage buffer.
@@ -29,6 +34,7 @@ pub enum DescriptorType {
 }
 
 impl From<DescriptorType> for vk::DescriptorType {
+    #[inline]
     fn from(ty: DescriptorType) -> Self {
         match ty {
             DescriptorType::UniformBuffer => vk::DescriptorType::UNIFORM_BUFFER,
@@ -44,173 +50,9 @@ impl From<DescriptorType> for vk::DescriptorType {
     }
 }
 
-/// Compare operation for depth/stencil tests.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum CompareOp {
-    /// Never passes.
-    Never,
-    /// Passes if value is less.
-    Less,
-    /// Passes if values are equal.
-    Equal,
-    /// Passes if value is less or equal.
-    LessOrEqual,
-    /// Passes if value is greater.
-    Greater,
-    /// Passes if values are not equal.
-    NotEqual,
-    /// Passes if value is greater or equal.
-    GreaterOrEqual,
-    /// Always passes.
-    Always,
-}
-
-impl From<CompareOp> for vk::CompareOp {
-    fn from(op: CompareOp) -> Self {
-        match op {
-            CompareOp::Never => vk::CompareOp::NEVER,
-            CompareOp::Less => vk::CompareOp::LESS,
-            CompareOp::Equal => vk::CompareOp::EQUAL,
-            CompareOp::LessOrEqual => vk::CompareOp::LESS_OR_EQUAL,
-            CompareOp::Greater => vk::CompareOp::GREATER,
-            CompareOp::NotEqual => vk::CompareOp::NOT_EQUAL,
-            CompareOp::GreaterOrEqual => vk::CompareOp::GREATER_OR_EQUAL,
-            CompareOp::Always => vk::CompareOp::ALWAYS,
-        }
-    }
-}
-
-/// Culling mode for rasterization.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum CullMode {
-    /// No culling.
-    None,
-    /// Cull front-facing primitives.
-    Front,
-    /// Cull back-facing primitives.
-    Back,
-    /// Cull all primitives.
-    FrontAndBack,
-}
-
-impl From<CullMode> for vk::CullModeFlags {
-    fn from(mode: CullMode) -> Self {
-        match mode {
-            CullMode::None => vk::CullModeFlags::NONE,
-            CullMode::Front => vk::CullModeFlags::FRONT,
-            CullMode::Back => vk::CullModeFlags::BACK,
-            CullMode::FrontAndBack => vk::CullModeFlags::FRONT_AND_BACK,
-        }
-    }
-}
-
-/// Front face winding order.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum FrontFace {
-    /// Counter-clockwise winding is front-facing.
-    CounterClockwise,
-    /// Clockwise winding is front-facing.
-    Clockwise,
-}
-
-impl From<FrontFace> for vk::FrontFace {
-    fn from(face: FrontFace) -> Self {
-        match face {
-            // This implementation is correct.
-            // We flip the winding order for front-facing primitives, since we use a right-handed coordinate system.
-            FrontFace::CounterClockwise => vk::FrontFace::CLOCKWISE,
-            FrontFace::Clockwise => vk::FrontFace::COUNTER_CLOCKWISE,
-        }
-    }
-}
-
-/// Blend factor for color blending.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum BlendFactor {
-    /// Zero.
-    Zero,
-    /// One.
-    One,
-    /// Source color.
-    SrcColor,
-    /// One minus source color.
-    OneMinusSrcColor,
-    /// Destination color.
-    DstColor,
-    /// One minus destination color.
-    OneMinusDstColor,
-    /// Source alpha.
-    SrcAlpha,
-    /// One minus source alpha.
-    OneMinusSrcAlpha,
-    /// Destination alpha.
-    DstAlpha,
-    /// One minus destination alpha.
-    OneMinusDstAlpha,
-    /// Constant color.
-    ConstantColor,
-    /// One minus constant color.
-    OneMinusConstantColor,
-    /// Constant alpha.
-    ConstantAlpha,
-    /// One minus constant alpha.
-    OneMinusConstantAlpha,
-    /// Source alpha saturate.
-    SrcAlphaSaturate,
-}
-
-impl From<BlendFactor> for vk::BlendFactor {
-    fn from(factor: BlendFactor) -> Self {
-        match factor {
-            BlendFactor::Zero => vk::BlendFactor::ZERO,
-            BlendFactor::One => vk::BlendFactor::ONE,
-            BlendFactor::SrcColor => vk::BlendFactor::SRC_COLOR,
-            BlendFactor::OneMinusSrcColor => vk::BlendFactor::ONE_MINUS_SRC_COLOR,
-            BlendFactor::DstColor => vk::BlendFactor::DST_COLOR,
-            BlendFactor::OneMinusDstColor => vk::BlendFactor::ONE_MINUS_DST_COLOR,
-            BlendFactor::SrcAlpha => vk::BlendFactor::SRC_ALPHA,
-            BlendFactor::OneMinusSrcAlpha => vk::BlendFactor::ONE_MINUS_SRC_ALPHA,
-            BlendFactor::DstAlpha => vk::BlendFactor::DST_ALPHA,
-            BlendFactor::OneMinusDstAlpha => vk::BlendFactor::ONE_MINUS_DST_ALPHA,
-            BlendFactor::ConstantColor => vk::BlendFactor::CONSTANT_COLOR,
-            BlendFactor::OneMinusConstantColor => vk::BlendFactor::ONE_MINUS_CONSTANT_COLOR,
-            BlendFactor::ConstantAlpha => vk::BlendFactor::CONSTANT_ALPHA,
-            BlendFactor::OneMinusConstantAlpha => vk::BlendFactor::ONE_MINUS_CONSTANT_ALPHA,
-            BlendFactor::SrcAlphaSaturate => vk::BlendFactor::SRC_ALPHA_SATURATE,
-        }
-    }
-}
-
-/// Blend operation.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum BlendOp {
-    /// Add.
-    Add,
-    /// Subtract.
-    Subtract,
-    /// Reverse subtract.
-    ReverseSubtract,
-    /// Min.
-    Min,
-    /// Max.
-    Max,
-}
-
-impl From<BlendOp> for vk::BlendOp {
-    fn from(op: BlendOp) -> Self {
-        match op {
-            BlendOp::Add => vk::BlendOp::ADD,
-            BlendOp::Subtract => vk::BlendOp::SUBTRACT,
-            BlendOp::ReverseSubtract => vk::BlendOp::REVERSE_SUBTRACT,
-            BlendOp::Min => vk::BlendOp::MIN,
-            BlendOp::Max => vk::BlendOp::MAX,
-        }
-    }
-}
-
 /// Primitive topology for input assembly.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PrimitiveTopology {
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub(crate) enum PrimitiveTopology {
     /// Point list.
     PointList,
     /// Line list.
@@ -226,6 +68,7 @@ pub enum PrimitiveTopology {
 }
 
 impl From<PrimitiveTopology> for vk::PrimitiveTopology {
+    #[inline]
     fn from(topology: PrimitiveTopology) -> Self {
         match topology {
             PrimitiveTopology::PointList => vk::PrimitiveTopology::POINT_LIST,
@@ -238,30 +81,9 @@ impl From<PrimitiveTopology> for vk::PrimitiveTopology {
     }
 }
 
-/// Polygon mode for rasterization.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PolygonMode {
-    /// Fill polygons.
-    Fill,
-    /// Draw polygon edges as lines.
-    Line,
-    /// Draw polygon vertices as points.
-    Point,
-}
-
-impl From<PolygonMode> for vk::PolygonMode {
-    fn from(mode: PolygonMode) -> Self {
-        match mode {
-            PolygonMode::Fill => vk::PolygonMode::FILL,
-            PolygonMode::Line => vk::PolygonMode::LINE,
-            PolygonMode::Point => vk::PolygonMode::POINT,
-        }
-    }
-}
-
 /// Dynamic state for pipelines.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum DynamicState {
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub(crate) enum DynamicState {
     /// Viewport.
     Viewport,
     /// Scissor.
@@ -283,6 +105,7 @@ pub enum DynamicState {
 }
 
 impl From<DynamicState> for vk::DynamicState {
+    #[inline]
     fn from(state: DynamicState) -> Self {
         match state {
             DynamicState::Viewport => vk::DynamicState::VIEWPORT,
@@ -299,8 +122,8 @@ impl From<DynamicState> for vk::DynamicState {
 }
 
 /// Color component flags for blending.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub struct ColorComponentFlags {
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub(crate) struct ColorComponentFlags {
     pub r: bool,
     pub g: bool,
     pub b: bool,
@@ -309,7 +132,7 @@ pub struct ColorComponentFlags {
 
 impl ColorComponentFlags {
     /// All components enabled.
-    pub const ALL: Self = Self {
+    pub(crate) const ALL: Self = Self {
         r: true,
         g: true,
         b: true,
@@ -339,6 +162,7 @@ impl ColorComponentFlags {
 }
 
 impl From<ColorComponentFlags> for vk::ColorComponentFlags {
+    #[inline]
     fn from(flags: ColorComponentFlags) -> Self {
         let mut result = vk::ColorComponentFlags::empty();
         if flags.r {
@@ -358,8 +182,8 @@ impl From<ColorComponentFlags> for vk::ColorComponentFlags {
 }
 
 /// Vertex input rate.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum VertexInputRate {
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub(crate) enum VertexInputRate {
     /// Vertex rate.
     Vertex,
     /// Instance rate.
@@ -367,6 +191,7 @@ pub enum VertexInputRate {
 }
 
 impl From<VertexInputRate> for vk::VertexInputRate {
+    #[inline]
     fn from(rate: VertexInputRate) -> Self {
         match rate {
             VertexInputRate::Vertex => vk::VertexInputRate::VERTEX,
@@ -375,12 +200,13 @@ impl From<VertexInputRate> for vk::VertexInputRate {
     }
 }
 
-/// Shader stage flags for pipeline creation.
+/// Shader stage flags for pipeline creation (extended version with all stages).
 ///
 /// This type wraps Vulkan shader stage flags and provides a type-safe API
 /// for specifying which shader stages are used in various operations.
+/// For the simpler Katla-native version, see [`ShaderStageFlags`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
-pub struct ShaderStages {
+pub(crate) struct ShaderStages {
     pub vertex: bool,
     pub fragment: bool,
     pub compute: bool,
@@ -391,7 +217,7 @@ pub struct ShaderStages {
 
 impl ShaderStages {
     /// No shader stages.
-    pub const NONE: Self = Self {
+    pub(crate) const NONE: Self = Self {
         vertex: false,
         fragment: false,
         compute: false,
@@ -401,7 +227,7 @@ impl ShaderStages {
     };
 
     /// Vertex shader stage only.
-    pub const VERTEX: Self = Self {
+    pub(crate) const VERTEX: Self = Self {
         vertex: true,
         fragment: false,
         compute: false,
@@ -411,7 +237,7 @@ impl ShaderStages {
     };
 
     /// Fragment shader stage only.
-    pub const FRAGMENT: Self = Self {
+    pub(crate) const FRAGMENT: Self = Self {
         vertex: false,
         fragment: true,
         compute: false,
@@ -421,7 +247,7 @@ impl ShaderStages {
     };
 
     /// Compute shader stage only.
-    pub const COMPUTE: Self = Self {
+    pub(crate) const COMPUTE: Self = Self {
         vertex: false,
         fragment: false,
         compute: true,
@@ -431,7 +257,7 @@ impl ShaderStages {
     };
 
     /// Geometry shader stage only.
-    pub const GEOMETRY: Self = Self {
+    pub(crate) const GEOMETRY: Self = Self {
         vertex: false,
         fragment: false,
         compute: false,
@@ -441,7 +267,7 @@ impl ShaderStages {
     };
 
     /// Tessellation control shader stage only.
-    pub const TESSELLATION_CONTROL: Self = Self {
+    pub(crate) const TESSELLATION_CONTROL: Self = Self {
         vertex: false,
         fragment: false,
         compute: false,
@@ -451,7 +277,7 @@ impl ShaderStages {
     };
 
     /// Tessellation evaluation shader stage only.
-    pub const TESSELLATION_EVALUATION: Self = Self {
+    pub(crate) const TESSELLATION_EVALUATION: Self = Self {
         vertex: false,
         fragment: false,
         compute: false,
@@ -461,7 +287,7 @@ impl ShaderStages {
     };
 
     /// Vertex and fragment shader stages (common for graphics pipelines).
-    pub const VERTEX_FRAGMENT: Self = Self {
+    pub(crate) const VERTEX_FRAGMENT: Self = Self {
         vertex: true,
         fragment: true,
         compute: false,
@@ -471,7 +297,7 @@ impl ShaderStages {
     };
 
     /// All graphics shader stages.
-    pub const ALL_GRAPHICS: Self = Self {
+    pub(crate) const ALL_GRAPHICS: Self = Self {
         vertex: true,
         fragment: true,
         compute: false,
@@ -481,12 +307,14 @@ impl ShaderStages {
     };
 
     /// Create a new ShaderStages with all stages disabled.
-    pub fn new() -> Self {
+    #[inline]
+    pub(crate) fn new() -> Self {
         Self::default()
     }
 
     /// Check if any shader stage is enabled.
-    pub fn is_empty(&self) -> bool {
+    #[inline]
+    pub(crate) fn is_empty(&self) -> bool {
         !self.vertex
             && !self.fragment
             && !self.compute
@@ -496,7 +324,8 @@ impl ShaderStages {
     }
 
     /// Combine two ShaderStages with bitwise OR.
-    pub fn union(self, other: Self) -> Self {
+    #[inline]
+    pub(crate) fn union(self, other: Self) -> Self {
         Self {
             vertex: self.vertex || other.vertex,
             fragment: self.fragment || other.fragment,
@@ -509,6 +338,7 @@ impl ShaderStages {
 }
 
 impl From<ShaderStages> for vk::ShaderStageFlags {
+    #[inline]
     fn from(stages: ShaderStages) -> Self {
         let mut flags = vk::ShaderStageFlags::empty();
         if stages.vertex {
@@ -553,64 +383,10 @@ mod tests {
     }
 
     #[test]
-    fn test_compare_op_conversion() {
-        let op = CompareOp::Greater;
-        let vk_op: vk::CompareOp = op.into();
-        assert_eq!(vk_op, vk::CompareOp::GREATER);
-    }
-
-    #[test]
-    fn test_cull_mode_conversion() {
-        let mode = CullMode::None;
-        let vk_mode: vk::CullModeFlags = mode.into();
-        assert_eq!(vk_mode, vk::CullModeFlags::NONE);
-
-        let mode = CullMode::Back;
-        let vk_mode: vk::CullModeFlags = mode.into();
-        assert_eq!(vk_mode, vk::CullModeFlags::BACK);
-    }
-
-    #[test]
-    fn test_front_face_conversion() {
-        let face = FrontFace::CounterClockwise;
-        let vk_face: vk::FrontFace = face.into();
-        assert_eq!(vk_face, vk::FrontFace::CLOCKWISE);
-
-        let face = FrontFace::Clockwise;
-        let vk_face: vk::FrontFace = face.into();
-        assert_eq!(vk_face, vk::FrontFace::COUNTER_CLOCKWISE);
-    }
-
-    #[test]
-    fn test_blend_factor_conversion() {
-        let factor = BlendFactor::SrcAlpha;
-        let vk_factor: vk::BlendFactor = factor.into();
-        assert_eq!(vk_factor, vk::BlendFactor::SRC_ALPHA);
-
-        let factor = BlendFactor::OneMinusSrcAlpha;
-        let vk_factor: vk::BlendFactor = factor.into();
-        assert_eq!(vk_factor, vk::BlendFactor::ONE_MINUS_SRC_ALPHA);
-    }
-
-    #[test]
-    fn test_blend_op_conversion() {
-        let op = BlendOp::Add;
-        let vk_op: vk::BlendOp = op.into();
-        assert_eq!(vk_op, vk::BlendOp::ADD);
-    }
-
-    #[test]
     fn test_primitive_topology_conversion() {
         let topo = PrimitiveTopology::TriangleList;
         let vk_topo: vk::PrimitiveTopology = topo.into();
         assert_eq!(vk_topo, vk::PrimitiveTopology::TRIANGLE_LIST);
-    }
-
-    #[test]
-    fn test_polygon_mode_conversion() {
-        let mode = PolygonMode::Fill;
-        let vk_mode: vk::PolygonMode = mode.into();
-        assert_eq!(vk_mode, vk::PolygonMode::FILL);
     }
 
     #[test]
@@ -641,6 +417,16 @@ mod tests {
         assert_eq!(
             vk_flags,
             vk::ColorComponentFlags::R | vk::ColorComponentFlags::G | vk::ColorComponentFlags::B
+        );
+    }
+
+    #[test]
+    fn test_shader_stages_conversion() {
+        let stages = ShaderStages::VERTEX_FRAGMENT;
+        let vk_stages: vk::ShaderStageFlags = stages.into();
+        assert_eq!(
+            vk_stages,
+            vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT
         );
     }
 }

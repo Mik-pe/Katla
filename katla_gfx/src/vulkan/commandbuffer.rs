@@ -224,11 +224,9 @@ impl CommandBuffer {
     /// * `attributes` - The vertex attribute set to bind
     ///
     /// # Example
-    /// ```no_run
-    /// # use katla_gfx::CommandBuffer;
-    /// # use katla_gfx::vulkan::vertex_attr_set::VertexAttributeSet;
-    /// # let command_buffer: CommandBuffer = unsafe { std::mem::zeroed() };
-    /// # let attributes: VertexAttributeSet = unsafe { std::mem::zeroed() };
+    /// ```ignore
+    /// let command_buffer: CommandBuffer = unsafe { std::mem::zeroed() };
+    /// let attributes: VertexAttributeSet = unsafe { std::mem::zeroed() };
     /// command_buffer.bind_vertex_attributes(&attributes);
     /// ```
     pub fn bind_vertex_attributes(&self, attributes: &VertexAttributeSet) {
@@ -260,26 +258,6 @@ impl CommandBuffer {
     /// # Arguments
     /// * `attributes` - The vertex attribute set to bind from
     /// * `attr_types` - Slice of attribute types to bind (order matters for binding locations)
-    ///
-    /// # Example
-    /// ```no_run
-    /// # use katla_gfx::CommandBuffer;
-    /// # use katla_gfx::vulkan::vertex_attr_set::VertexAttributeSet;
-    /// # use katla_gfx::vulkan::vertex_attribute::AttributeType;
-    /// # let command_buffer: CommandBuffer = unsafe { std::mem::zeroed() };
-    /// # let attributes: VertexAttributeSet = unsafe { std::mem::zeroed() };
-    /// // Depth-only pass: only position needed
-    /// command_buffer.bind_attributes_subset(&attributes, &[AttributeType::Position]);
-    ///
-    /// // Shadow mapping: position only
-    /// command_buffer.bind_attributes_subset(&attributes, &[AttributeType::Position]);
-    ///
-    /// // Deferred G-buffer fill: position + normal
-    /// command_buffer.bind_attributes_subset(
-    ///     &attributes,
-    ///     &[AttributeType::Position, AttributeType::Normal],
-    /// );
-    /// ```
     pub fn bind_attributes_subset(
         &self,
         attributes: &VertexAttributeSet,
@@ -316,14 +294,6 @@ impl CommandBuffer {
     /// * `group_count_x` - Number of local workgroups in the X dimension
     /// * `group_count_y` - Number of local workgroups in the Y dimension
     /// * `group_count_z` - Number of local workgroups in the Z dimension
-    ///
-    /// # Example
-    /// ```no_run
-    /// # use katla_gfx::CommandBuffer;
-    /// # let command_buffer: CommandBuffer = unsafe { std::mem::zeroed() };
-    /// // Dispatch 256 workgroups in X, 1 in Y, 1 in Z (for 65536 particles with workgroup_size 256)
-    /// command_buffer.dispatch(256, 1, 1);
-    /// ```
     pub fn dispatch(&self, group_count_x: u32, group_count_y: u32, group_count_z: u32) {
         unsafe {
             self.device.cmd_dispatch(

@@ -17,11 +17,11 @@ use super::descriptor::TextureDescriptor;
 
 /// Default texture slot indices.
 /// These match BindlessTextureManager's default slots for consistency.
-pub const DEFAULT_ALBEDO_SLOT: u32 = 0;
-pub const DEFAULT_NORMAL_SLOT: u32 = 1;
-pub const DEFAULT_MR_SLOT: u32 = 2;
-pub const DEFAULT_OCCLUSION_SLOT: u32 = 3;
-pub const DEFAULT_EMISSION_SLOT: u32 = 4;
+pub(crate) const DEFAULT_ALBEDO_SLOT: u32 = 0;
+pub(crate) const DEFAULT_NORMAL_SLOT: u32 = 1;
+pub(crate) const DEFAULT_MR_SLOT: u32 = 2;
+pub(crate) const DEFAULT_OCCLUSION_SLOT: u32 = 3;
+pub(crate) const DEFAULT_EMISSION_SLOT: u32 = 4;
 
 /// Centralized texture creation and storage.
 ///

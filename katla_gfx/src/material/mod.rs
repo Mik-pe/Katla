@@ -8,12 +8,15 @@ mod cache;
 mod config;
 mod definition;
 
-// Re-export public API
-pub use cache::{MaterialCacheError, MaterialCacheStats, MaterialPipelineCache};
-pub use config::{
+// Internal types (not public API)
+pub(crate) use cache::{MaterialCacheError, MaterialCacheStats, MaterialPipelineCache};
+pub(crate) use config::{
     BindlessPbrMaterialConfig, BindlessSkinnedPbrMaterialConfig, DynamicMaterialConfig,
-    FullPbrMaterialConfig, PbrMaterialConfig, SkinnedPbrMaterialConfig,
+    FullPbrMaterialConfig, SkinnedPbrMaterialConfig,
 };
+
+// Public API
+pub use config::{PbrMaterialConfig, PbrMaterialFlags};
 pub use definition::{MaterialDefinition, MaterialDomain, MaterialKey};
 
 // Re-export from vulkan for public API

@@ -18,20 +18,21 @@ pub use types::{
     DrawCall, DrawList, FrameUniforms, InstanceData, ParticleDispatch, ParticleRender,
 };
 
+use crate::vulkan::material::MaterialRegistry;
 use crate::{
-    BindlessTextureManager, IndexBuffer, MAX_BINDLESS_TEXTURES, Material, MaterialPipelineCache,
-    MaterialRegistry, RendererError, SkeletonDescriptorSet, StorageDescriptorSet,
-    StorageUniformManager, SwapData, TextureManager, VertexBuffer, VulkanContext, VulkanFrameCtx,
+    BindlessTextureManager, IndexBuffer, MAX_BINDLESS_TEXTURES, Material, RendererError,
+    SkeletonDescriptorSet, StorageDescriptorSet, StorageUniformManager, SwapData, TextureManager,
+    VertexBuffer, VulkanContext, VulkanFrameCtx, material::MaterialPipelineCache,
     viewport::Viewport,
 };
-use ash::vk::{self, Extent2D};
+use ash::vk;
 use log::{error, info, warn};
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 use std::{cell::RefCell, ffi::CString, rc::Rc};
 
 use crate::sync::{COLOR_SUBRESOURCE_RANGE, DEPTH_SUBRESOURCE_RANGE};
 
-pub struct FrameData {
+pub(crate) struct FrameData {
     pub image_index: u32,
 }
 
@@ -83,7 +84,27 @@ pub struct VulkanRenderer {
     viewports: Vec<Viewport>,
 }
 
-pub const FRAMES_IN_FLIGHT: usize = 2;
+/// Number of frames that can be processed concurrently.
+/// This is an implementation detail for double-buffering.
+pub(crate) const FRAMES_IN_FLIGHT: usize = 2;
+
+/// Default bindless texture slot indices.
+///
+/// These slots are reserved for default textures in the bindless texture array.
+/// Use these when registering fallback textures or when a material lacks a texture.
+#[derive(Debug, Clone, Copy)]
+pub struct BindlessDefaults {
+    /// Default albedo/diffuse texture slot (white texture).
+    pub albedo: u32,
+    /// Default normal map slot (flat normal pointing +Z).
+    pub normal: u32,
+    /// Default metallic/roughness slot (non-metal, medium roughness).
+    pub metallic_roughness: u32,
+    /// Default ambient occlusion slot (white = no occlusion).
+    pub occlusion: u32,
+    /// Default emission slot (black = no emission).
+    pub emission: u32,
+}
 
 impl VulkanRenderer {
     pub fn init(
@@ -182,6 +203,20 @@ impl VulkanRenderer {
         &self.bindless_manager
     }
 
+    /// Get default bindless texture slot indices.
+    ///
+    /// These slots are reserved for default textures in the bindless texture array.
+    /// Use these values when a material lacks a specific texture type.
+    pub fn bindless_defaults(&self) -> BindlessDefaults {
+        BindlessDefaults {
+            albedo: crate::vulkan::bindless_texture::DEFAULT_ALBEDO_SLOT,
+            normal: crate::vulkan::bindless_texture::DEFAULT_NORMAL_SLOT,
+            metallic_roughness: crate::vulkan::bindless_texture::DEFAULT_MR_SLOT,
+            occlusion: crate::vulkan::bindless_texture::DEFAULT_AO_SLOT,
+            emission: crate::vulkan::bindless_texture::DEFAULT_EMISSION_SLOT,
+        }
+    }
+
     /// Get the bindless texture manager mutably.
     pub fn bindless_manager_mut(&mut self) -> &mut BindlessTextureManager {
         &mut self.bindless_manager
@@ -276,8 +311,10 @@ impl VulkanRenderer {
     }
 
     /// Get output dimensions.
-    pub fn output_extent(&self) -> Option<Extent2D> {
-        self.output_target.as_ref().map(|t| t.extent)
+    pub fn output_extent(&self) -> Option<crate::Size2D> {
+        self.output_target
+            .as_ref()
+            .map(|t| crate::Size2D::from(t.extent))
     }
 
     // ========================================================================
@@ -359,9 +396,9 @@ impl VulkanRenderer {
     }
 
     /// Get viewport dimensions.
-    pub fn viewport_extent(&self) -> Option<Extent2D> {
+    pub fn viewport_extent(&self) -> Option<crate::Size2D> {
         self.get_render_target_first(Self::VIEWPORT_TEXTURE_ID)
-            .map(|t| t.extent)
+            .map(|t| crate::Size2D::from(t.extent))
     }
 
     // ========================================================================
@@ -410,7 +447,7 @@ impl VulkanRenderer {
     }
 
     /// Get the viewport extent (by handle).
-    pub fn get_viewport_extent(&self, handle: ViewportHandle) -> Option<crate::Extent2D> {
+    pub fn get_viewport_extent(&self, handle: ViewportHandle) -> Option<crate::Size2D> {
         self.viewports.get(handle.0).map(|v| v.get_extent())
     }
 

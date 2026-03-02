@@ -43,7 +43,10 @@ pub enum VertexFormat {
     RGBA32u,
     RGBA32i,
     RGBA32f,
-    RGBA16u, // For joint indices (u16 x 4)
+    RGBA16u,  // For joint indices (u16 x 4)
+    RGBA8u,   // Four unsigned bytes, not normalized
+    RGBA8un,  // Four unsigned bytes, normalized to [0, 1]
+    RGBA16un, // Four unsigned shorts, normalized to [0, 1]
 }
 
 impl VertexFormat {
@@ -62,6 +65,9 @@ impl VertexFormat {
             VertexFormat::RGBA32i => vk::Format::R32G32B32A32_SINT,
             VertexFormat::RGBA32f => vk::Format::R32G32B32A32_SFLOAT,
             VertexFormat::RGBA16u => vk::Format::R16G16B16A16_UINT,
+            VertexFormat::RGBA8u => vk::Format::R8G8B8A8_UINT,
+            VertexFormat::RGBA8un => vk::Format::R8G8B8A8_UNORM,
+            VertexFormat::RGBA16un => vk::Format::R16G16B16A16_UNORM,
         }
     }
 
@@ -72,7 +78,8 @@ impl VertexFormat {
             RG32u | RG32i | RG32f => 8,
             RGB32u | RGB32i | RGB32f => 12,
             RGBA32u | RGBA32i | RGBA32f => 16,
-            RGBA16u => 8, // 4 x u16 = 8 bytes
+            RGBA16u | RGBA16un => 8, // 4 x u16 = 8 bytes
+            RGBA8u | RGBA8un => 4,   // 4 x u8 = 4 bytes
         }
     }
 }

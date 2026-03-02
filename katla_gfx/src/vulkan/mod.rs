@@ -20,15 +20,17 @@ pub mod vertexbuffer;
 
 // Re-export commonly used types from submodules for internal crate access
 pub use bda::DeviceAddressBuffer;
-pub use bindless_texture::{
-    BindlessTextureManager, DEFAULT_ALBEDO_SLOT, DEFAULT_AO_SLOT, DEFAULT_EMISSION_SLOT,
-    DEFAULT_MR_SLOT, DEFAULT_NORMAL_SLOT, DEFAULT_TEXTURE_COUNT,
+pub use bindless_texture::BindlessTextureManager;
+pub(crate) use bindless_texture::{
+    DEFAULT_ALBEDO_SLOT, DEFAULT_AO_SLOT, DEFAULT_EMISSION_SLOT, DEFAULT_MR_SLOT,
+    DEFAULT_NORMAL_SLOT, DEFAULT_TEXTURE_COUNT,
 };
-pub use commandbuffer::CommandBuffer;
+pub(crate) use commandbuffer::CommandBuffer;
 pub use commandpool::CommandPool;
-pub use context::{ValidationMessage, ValidationMessageType, ValidationSeverity};
-pub use descriptor::{DescriptorSetLayoutBuilder, LayoutBinding};
-pub use descriptor_set::{DescriptorSet, DescriptorSetBuilder};
+pub use context::ValidationLevel;
+pub(crate) use context::{ValidationMessage, ValidationMessageType, ValidationSeverity};
+pub(crate) use descriptor::{DescriptorSetLayoutBuilder, LayoutBinding};
+pub(crate) use descriptor_set::{DescriptorSet, DescriptorSetBuilder};
 pub use material::storage_uniform::{
     FrameUniforms, ObjectUniforms, StorageDescriptorSet, StorageUniformLayout,
     StorageUniformManager,
@@ -41,9 +43,14 @@ pub use particle_buffer::{
     EmitterConfig, EmitterConfigBuffer, MAX_PARTICLES, ParticleBuffer, ParticleData,
     calculate_workgroup_count,
 };
-pub use pipeline_state::{
-    BlendFactor, BlendOp, ColorComponentFlags, CompareOp, CullMode, DescriptorType, DynamicState,
-    FrontFace, PolygonMode, PrimitiveTopology, ShaderStages, VertexInputRate,
+// Internal pipeline state types - not exposed publicly
+pub(crate) use pipeline_state::{
+    ColorComponentFlags, DescriptorType, DynamicState, PrimitiveTopology, ShaderStages,
+    VertexInputRate,
+};
+// Re-export Katla-native types from pipeline module for internal use
+pub(crate) use crate::pipeline::{
+    BlendFactor, BlendOp, CompareOp, CullMode, FrontFace, PolygonMode,
 };
 pub use queue::Queue;
 pub use skeleton_buffer::{JointMatrix, MAX_JOINTS, SkeletonBuffer};

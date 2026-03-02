@@ -23,7 +23,7 @@
 //! ui.image(renderer.viewport_texture(viewport));
 //! ```
 
-use ash::vk::Extent2D;
+use crate::Size2D;
 use log::info;
 
 use crate::renderer::DrawList;
@@ -150,11 +150,8 @@ impl ViewportBuilder {
     }
 
     /// Get the viewport extent.
-    pub fn extent(&self) -> Extent2D {
-        Extent2D {
-            width: self.width,
-            height: self.height,
-        }
+    pub fn extent(&self) -> crate::Size2D {
+        crate::Size2D::new(self.width, self.height)
     }
 
     /// Get the clear color.
@@ -213,7 +210,7 @@ pub struct Viewport {
     /// Debug label.
     pub label: String,
     /// Viewport extent.
-    pub extent: Extent2D,
+    pub extent: crate::Size2D,
     /// Output mode.
     pub output_mode: OutputMode,
     /// Render target (color + depth).
@@ -257,7 +254,7 @@ impl Viewport {
     }
 
     /// Get the color image view (for UI sampling).
-    pub fn get_extent(&self) -> Extent2D {
+    pub fn get_extent(&self) -> crate::Size2D {
         self.extent
     }
 
