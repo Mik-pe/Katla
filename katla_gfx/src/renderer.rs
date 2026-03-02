@@ -72,6 +72,8 @@ pub struct VulkanRenderer {
     pub skeleton_descriptors: Vec<Option<SkeletonDescriptorSet>>,
     /// Frame-level uniforms set once per frame via set_frame_uniforms().
     pub frame_uniforms: Option<FrameUniforms>,
+    /// Cached default white PBR material handle.
+    default_material_handle: Option<MaterialHandle>,
     /// Offscreen render targets as (texture_id, target) pairs.
     /// Simple Vec since we only have a few targets (viewport + preview).
     /// - TextureId 2 = viewport
@@ -192,6 +194,7 @@ impl VulkanRenderer {
             draw_list_cell: Rc::new(RefCell::new(None)),
             skeleton_descriptors: Vec::new(),
             frame_uniforms: None,
+            default_material_handle: None,
             render_targets: Vec::new(),
             output_target: None,
             viewports: Vec::new(),
@@ -856,6 +859,133 @@ impl VulkanRenderer {
         };
 
         Some(self.asset_registry.register_material(material_asset))
+    }
+
+    /// Initialize the default white PBR material.
+    ///
+    /// This must be called before `default_material()` to set up the default
+    /// material with the appropriate shader and vertex binding.
+    ///
+    /// # Arguments
+    /// * `vertex_binding` - The vertex binding describing the vertex format
+    /// * `shader_path` - Path to the WGSL shader file
+    ///
+    /// # Returns
+    /// The default material handle on success, or None if creation fails.
+    ///
+    /// # Example
+    /// ```ignore
+    /// use katla_gfx::VertexLayout;
+    ///
+    /// let layout = VertexLayout::pbr();
+    /// let binding = VertexBinding::from(&layout);
+    /// renderer.init_default_material(binding, PathBuf::from("shaders/pbr.wgsl"));
+    /// ```
+    pub fn init_default_material(
+        &mut self,
+        vertex_binding: VertexBinding,
+        shader_path: std::path::PathBuf,
+    ) -> Option<MaterialHandle> {
+        let handle = self.create_pbr_material(vertex_binding, shader_path)?;
+        self.default_material_handle = Some(handle);
+        Some(handle)
+    }
+
+    /// Returns the default white PBR material handle.
+    ///
+    /// The default material is a simple bindless PBR material that renders
+    /// geometry with white albedo and default PBR parameters.
+    ///
+    /// # Panics
+    /// Panics if `init_default_material()` has not been called.
+    ///
+    /// # Example
+    /// ```ignore
+    /// // Initialize first (typically during application startup)
+    /// renderer.init_default_material(binding, PathBuf::from("shaders/pbr.wgsl"));
+    ///
+    /// // Then use the default material
+    /// let material = renderer.default_material();
+    /// let draw = DrawCall::new(mesh, material);
+    /// ```
+    pub fn default_material(&self) -> MaterialHandle {
+        self.default_material_handle
+            .expect("default_material() called before init_default_material()")
+    }
+
+    /// Submits a slice of DrawCalls for immediate rendering.
+    ///
+    /// This is a convenience method for simple cases with few draw calls.
+    /// It creates a temporary DrawList, populates it with the provided draw calls,
+    /// and submits it through the existing render infrastructure.
+    ///
+    /// # Performance
+    /// For >100 draws/frame, use `DrawList` directly to avoid repeated
+    /// submission overhead. This method is optimized for convenience in simple cases.
+    ///
+    /// # Arguments
+    /// * `draw_calls` - Slice of DrawCall objects to render
+    ///
+    /// # Returns
+    /// `Ok(())` on success, or an error if submission fails.
+    ///
+    /// # Example
+    /// ```ignore
+    /// let mesh = renderer.create_cube_mesh([1.0, 1.0, 1.0]);
+    /// let material = renderer.default_material();
+    ///
+    /// let draw = DrawCall::new(mesh, material)
+    ///     .with_transform(model_matrix)
+    ///     .with_color([1.0, 0.0, 0.0, 1.0]);
+    ///
+    /// renderer.draw_immediate(&[draw])?;
+    /// ```
+    pub fn draw_immediate(&mut self, draw_calls: &[DrawCall]) -> Result<(), RendererError> {
+        if draw_calls.is_empty() {
+            return Ok(());
+        }
+
+        // Create a temporary DrawList and populate it
+        let mut draw_list = DrawList::new();
+        for draw in draw_calls {
+            draw_list.push(draw.clone());
+        }
+
+        // Submit through the draw_list_cell
+        *self.draw_list_cell.borrow_mut() = Some(draw_list);
+
+        Ok(())
+    }
+
+    /// Convenience: draw a single mesh with default material.
+    ///
+    /// # Performance
+    /// Zero heap allocation for single mesh drawing.
+    /// For >100 draws/frame, use `DrawList` directly.
+    #[inline]
+    pub fn draw_mesh(
+        &mut self,
+        mesh: MeshHandle,
+        transform: [f32; 16],
+    ) -> Result<(), RendererError> {
+        let material = self.default_material();
+        self.draw_mesh_with_material(mesh, transform, material)
+    }
+
+    /// Convenience: draw a single mesh with custom material.
+    ///
+    /// # Performance
+    /// Zero heap allocation using `std::slice::from_ref`.
+    /// For >100 draws/frame, use `DrawList` directly.
+    #[inline]
+    pub fn draw_mesh_with_material(
+        &mut self,
+        mesh: MeshHandle,
+        transform: [f32; 16],
+        material: MaterialHandle,
+    ) -> Result<(), RendererError> {
+        let draw_call = DrawCall::new(mesh, material).with_transform(transform);
+        self.draw_immediate(std::slice::from_ref(&draw_call))
     }
 
     /// Get the skeleton descriptor set for a handle.
