@@ -19,10 +19,10 @@ pub use types::{
 };
 
 use crate::{
-    viewport::Viewport, BindlessTextureManager, IndexBuffer, Material, MaterialPipelineCache,
+    BindlessTextureManager, IndexBuffer, MAX_BINDLESS_TEXTURES, Material, MaterialPipelineCache,
     MaterialRegistry, RendererError, SkeletonDescriptorSet, StorageDescriptorSet,
     StorageUniformManager, SwapData, TextureManager, VertexBuffer, VulkanContext, VulkanFrameCtx,
-    MAX_BINDLESS_TEXTURES,
+    viewport::Viewport,
 };
 use ash::vk::{self, Extent2D};
 use log::{error, info, warn};

@@ -11,7 +11,7 @@ use crate::vulkan::pipeline_state::{DescriptorType, ShaderStages};
 
 /// A single descriptor binding in a descriptor set layout.
 #[derive(Debug, Clone, Hash)]
-pub struct DescriptorBinding {
+pub struct LayoutBinding {
     /// Binding number.
     pub binding: u32,
     /// Descriptor type.
@@ -22,8 +22,8 @@ pub struct DescriptorBinding {
     pub shader_stages: ShaderStages,
 }
 
-impl DescriptorBinding {
-    /// Create a new descriptor binding.
+impl LayoutBinding {
+    /// Create a new layout binding.
     pub fn new(binding: u32, descriptor_type: DescriptorType, shader_stages: ShaderStages) -> Self {
         Self {
             binding,
@@ -52,7 +52,7 @@ impl DescriptorBinding {
 /// Builder for creating descriptor set layouts.
 #[derive(Debug, Clone, Default)]
 pub struct DescriptorSetLayoutBuilder {
-    bindings: Vec<DescriptorBinding>,
+    bindings: Vec<LayoutBinding>,
     push_descriptor: bool,
 }
 
@@ -69,11 +69,8 @@ impl DescriptorSetLayoutBuilder {
         descriptor_type: DescriptorType,
         shader_stages: ShaderStages,
     ) -> Self {
-        self.bindings.push(DescriptorBinding::new(
-            binding,
-            descriptor_type,
-            shader_stages,
-        ));
+        self.bindings
+            .push(LayoutBinding::new(binding, descriptor_type, shader_stages));
         self
     }
 
@@ -86,14 +83,14 @@ impl DescriptorSetLayoutBuilder {
         shader_stages: ShaderStages,
     ) -> Self {
         self.bindings.push(
-            DescriptorBinding::new(binding, descriptor_type, shader_stages)
+            LayoutBinding::new(binding, descriptor_type, shader_stages)
                 .with_count(descriptor_count),
         );
         self
     }
 
-    /// Add a pre-built descriptor binding.
-    pub fn add_descriptor_binding(mut self, binding: DescriptorBinding) -> Self {
+    /// Add a pre-built layout binding.
+    pub fn add_layout_binding(mut self, binding: LayoutBinding) -> Self {
         self.bindings.push(binding);
         self
     }
@@ -134,7 +131,7 @@ impl DescriptorSetLayoutBuilder {
     }
 
     /// Get the bindings for this layout (for hashing/caching).
-    pub fn bindings(&self) -> &[DescriptorBinding] {
+    pub fn bindings(&self) -> &[LayoutBinding] {
         &self.bindings
     }
 
@@ -154,25 +151,22 @@ mod tests {
     use crate::vulkan::pipeline_state::DescriptorType;
 
     #[test]
-    fn test_descriptor_binding_creation() {
-        let binding =
-            DescriptorBinding::new(0, DescriptorType::UniformBuffer, ShaderStages::VERTEX);
+    fn test_layout_binding_creation() {
+        let binding = LayoutBinding::new(0, DescriptorType::UniformBuffer, ShaderStages::VERTEX);
         assert_eq!(binding.binding, 0);
         assert_eq!(binding.descriptor_count, 1);
     }
 
     #[test]
-    fn test_descriptor_binding_with_count() {
-        let binding =
-            DescriptorBinding::new(0, DescriptorType::UniformBuffer, ShaderStages::VERTEX)
-                .with_count(10);
+    fn test_layout_binding_with_count() {
+        let binding = LayoutBinding::new(0, DescriptorType::UniformBuffer, ShaderStages::VERTEX)
+            .with_count(10);
         assert_eq!(binding.descriptor_count, 10);
     }
 
     #[test]
-    fn test_descriptor_binding_into_vk() {
-        let binding =
-            DescriptorBinding::new(0, DescriptorType::StorageBuffer, ShaderStages::COMPUTE);
+    fn test_layout_binding_into_vk() {
+        let binding = LayoutBinding::new(0, DescriptorType::StorageBuffer, ShaderStages::COMPUTE);
         let vk_binding = binding.into_vk();
         assert_eq!(vk_binding.binding, 0);
         assert_eq!(

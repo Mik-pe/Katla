@@ -8,14 +8,14 @@ pub mod viewport;
 pub mod vulkan;
 
 // Internal re-exports for crate-wide access
-pub(crate) use vulkan::bindless_texture::MAX_BINDLESS_TEXTURES;
-pub(crate) use vulkan::context::VulkanFrameCtx;
 pub(crate) use vulkan::BindlessTextureManager;
 pub(crate) use vulkan::SwapData;
+pub(crate) use vulkan::bindless_texture::MAX_BINDLESS_TEXTURES;
+pub(crate) use vulkan::context::VulkanFrameCtx;
 // Now public - needed by katla_app
 pub use material::MaterialRegistry;
-pub use vulkan::material::template::Material;
 pub use vulkan::material::SkeletonDescriptorSet;
+pub use vulkan::material::template::Material;
 pub use vulkan::skeleton_buffer::SkeletonBuffer;
 pub use vulkan::texture::Texture;
 
@@ -32,8 +32,8 @@ pub use material::{
     SkinnedPbrMaterialConfig,
 };
 pub use renderer::{
-    AssetRegistry, DrawCall, DrawList, FrameData, FrameUniforms, InstanceData, ParticleDispatch,
-    ParticleRender, VulkanRenderer, FRAMES_IN_FLIGHT,
+    AssetRegistry, DrawCall, DrawList, FRAMES_IN_FLIGHT, FrameData, FrameUniforms, InstanceData,
+    ParticleDispatch, ParticleRender, VulkanRenderer,
 };
 pub use texture::{ImageFormat, TextureDescriptor, TextureManager, TextureUsage};
 
@@ -66,6 +66,6 @@ pub use vulkan::material::{
 pub use vulkan::bda::DeviceAddressBuffer;
 pub use vulkan::material::buffer_descriptor::UniformBuffer;
 pub use vulkan::material::compute_pipeline::ComputePipeline;
-pub use vulkan::particle_buffer::{EmitterConfig, ParticleBuffer, MAX_PARTICLES};
+pub use vulkan::particle_buffer::{EmitterConfig, MAX_PARTICLES, ParticleBuffer};
 // Command buffer (needed for render graph execution)
 pub use vulkan::commandbuffer::CommandBuffer;
