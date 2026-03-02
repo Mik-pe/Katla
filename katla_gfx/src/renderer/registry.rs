@@ -75,26 +75,6 @@ impl AssetRegistry {
         let id = self.next_material_id;
         self.next_material_id += 1;
 
-        // Push None slots until we reach the required index
-        while self.materials.len() <= id {
-            self.materials.push(None);
-        }
-
-        self.materials[id] = Some(material);
-        MaterialHandle::new(id as u32)
-    }
-
-    /// Register a material with PBR textures and return a handle.
-    ///
-    /// Textures are managed externally via bindless texture system.
-    pub(crate) fn register_material_pbr(
-        &mut self,
-        material: MaterialAsset,
-        _pbr_textures: crate::vulkan::material::PbrTextureSet,
-    ) -> MaterialHandle {
-        let id = self.next_material_id;
-        self.next_material_id += 1;
-
         while self.materials.len() <= id {
             self.materials.push(None);
         }

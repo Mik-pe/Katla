@@ -4,7 +4,6 @@
 //! supporting loading from files, bulk loading from directories, and
 //! event-driven template hot reload using filesystem watching.
 
-use super::super::context::VulkanContext;
 use super::{
     load_material_from_file, FileWatcher, MaterialDescriptor, MaterialError, MaterialTemplate,
     ShaderReflection,
@@ -88,7 +87,6 @@ impl MaterialRegistry {
     pub fn load_directory(
         &mut self,
         dir: &Path,
-        context: &Rc<VulkanContext>,
         cache: &mut MaterialPipelineCache,
     ) -> Result<usize, MaterialError> {
         let dir_entries = fs::read_dir(dir).map_err(|e| {
@@ -110,7 +108,7 @@ impl MaterialRegistry {
                 continue;
             }
 
-            match self.load_material(&path, context, cache) {
+            match self.load_material(&path, cache) {
                 Ok(_) => loaded += 1,
                 Err(e) => {
                     debug!("Failed to load material {}: {}", path.display(), e);
@@ -125,7 +123,6 @@ impl MaterialRegistry {
     pub(crate) fn load_directory_bindless(
         &mut self,
         dir: &Path,
-        context: &Rc<VulkanContext>,
         cache: &mut MaterialPipelineCache,
         bindless_layout: crate::sync::VkDescriptorSetLayout,
     ) -> Result<usize, MaterialError> {
@@ -148,7 +145,7 @@ impl MaterialRegistry {
                 continue;
             }
 
-            match self.load_material_bindless(&path, context, cache, bindless_layout) {
+            match self.load_material_bindless(&path, cache, bindless_layout) {
                 Ok(_) => loaded += 1,
                 Err(e) => {
                     debug!("Failed to load bindless material {}: {}", path.display(), e);
@@ -163,7 +160,6 @@ impl MaterialRegistry {
     pub fn load_material(
         &mut self,
         path: &Path,
-        _context: &Rc<VulkanContext>,
         cache: &mut MaterialPipelineCache,
     ) -> Result<Rc<MaterialTemplate>, MaterialError> {
         let descriptor = load_material_from_file(path)?;
@@ -221,7 +217,6 @@ impl MaterialRegistry {
     pub(crate) fn load_material_bindless(
         &mut self,
         path: &Path,
-        _context: &Rc<VulkanContext>,
         cache: &mut MaterialPipelineCache,
         bindless_layout: crate::sync::VkDescriptorSetLayout,
     ) -> Result<Rc<MaterialTemplate>, MaterialError> {
@@ -303,7 +298,6 @@ impl MaterialRegistry {
     /// Check for file changes and reload modified materials
     pub fn check_reload(
         &mut self,
-        context: &Rc<VulkanContext>,
         cache: &mut MaterialPipelineCache,
     ) -> Result<Vec<String>, MaterialError> {
         let changed_paths: Vec<PathBuf> = {
@@ -323,7 +317,7 @@ impl MaterialRegistry {
                 self.templates.remove(&name);
                 self.template_paths.remove(&name);
 
-                match self.load_material(&path, context, cache) {
+                match self.load_material(&path, cache) {
                     Ok(_) => {
                         reloaded.push(name);
                     }
@@ -340,10 +334,9 @@ impl MaterialRegistry {
     /// Convenience method for hot reload - returns count of reloaded materials
     pub fn check_hot_reload(
         &mut self,
-        context: &Rc<VulkanContext>,
         cache: &mut MaterialPipelineCache,
     ) -> Result<usize, MaterialError> {
-        Ok(self.check_reload(context, cache)?.len())
+        Ok(self.check_reload(cache)?.len())
     }
 
     /// Find a template name by its file path
