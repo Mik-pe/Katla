@@ -23,7 +23,6 @@
 //! ui.image(renderer.viewport_texture(viewport));
 //! ```
 
-use crate::Size2D;
 use log::info;
 
 use crate::renderer::DrawList;

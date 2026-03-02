@@ -37,12 +37,6 @@ impl LayoutBinding {
         }
     }
 
-    /// Set the descriptor count (for array bindings).
-    pub(crate) fn with_count(mut self, count: u32) -> Self {
-        self.descriptor_count = count;
-        self
-    }
-
     /// Convert to Vulkan vk::DescriptorSetLayoutBinding.
     pub fn into_vk(self) -> vk::DescriptorSetLayoutBinding<'static> {
         vk::DescriptorSetLayoutBinding::default()
@@ -75,36 +69,6 @@ impl DescriptorSetLayoutBuilder {
     ) -> Self {
         self.bindings
             .push(LayoutBinding::new(binding, descriptor_type, shader_stages));
-        self
-    }
-
-    /// Add a binding with a custom descriptor count.
-    pub(crate) fn add_binding_with_count(
-        mut self,
-        binding: u32,
-        descriptor_type: DescriptorType,
-        descriptor_count: u32,
-        shader_stages: ShaderStages,
-    ) -> Self {
-        self.bindings.push(
-            LayoutBinding::new(binding, descriptor_type, shader_stages)
-                .with_count(descriptor_count),
-        );
-        self
-    }
-
-    /// Add a pre-built layout binding.
-    pub(crate) fn add_layout_binding(mut self, binding: LayoutBinding) -> Self {
-        self.bindings.push(binding);
-        self
-    }
-
-    /// Enable push descriptor mode for this layout.
-    ///
-    /// Push descriptors don't require descriptor set allocation - they're
-    /// updated via vkCmdPushDescriptorSetKHR during command buffer recording.
-    pub(crate) fn with_push_descriptor(mut self, enabled: bool) -> Self {
-        self.push_descriptor = enabled;
         self
     }
 
@@ -156,16 +120,9 @@ mod tests {
 
     #[test]
     fn test_layout_binding_creation() {
-        let binding = LayoutBinding::new(0, DescriptorType::UniformBuffer, ShaderStages::VERTEX);
+        let binding = LayoutBinding::new(0, DescriptorType::StorageBuffer, ShaderStages::VERTEX);
         assert_eq!(binding.binding, 0);
         assert_eq!(binding.descriptor_count, 1);
-    }
-
-    #[test]
-    fn test_layout_binding_with_count() {
-        let binding = LayoutBinding::new(0, DescriptorType::UniformBuffer, ShaderStages::VERTEX)
-            .with_count(10);
-        assert_eq!(binding.descriptor_count, 10);
     }
 
     #[test]
@@ -183,12 +140,8 @@ mod tests {
     #[test]
     fn test_descriptor_set_layout_builder() {
         let builder = DescriptorSetLayoutBuilder::new()
-            .add_binding(0, DescriptorType::UniformBuffer, ShaderStages::VERTEX)
-            .add_binding(
-                1,
-                DescriptorType::CombinedImageSampler,
-                ShaderStages::FRAGMENT,
-            );
+            .add_binding(0, DescriptorType::StorageBuffer, ShaderStages::VERTEX)
+            .add_binding(1, DescriptorType::SampledImage, ShaderStages::FRAGMENT);
 
         assert_eq!(builder.bindings.len(), 2);
         assert_eq!(builder.bindings[0].binding, 0);

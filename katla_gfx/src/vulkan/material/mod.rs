@@ -4,7 +4,6 @@ pub mod builder;
 pub mod compute_pipeline;
 pub mod descriptor;
 pub mod file_watcher;
-pub mod materialbuilder;
 pub mod parameters;
 pub mod reflection;
 pub mod registry;
@@ -12,13 +11,9 @@ pub mod shadermodule;
 pub mod skeleton_descriptor;
 pub mod storage_uniform;
 pub mod template;
-pub mod uniform_layout;
 
 // Explicit exports from asset module
 pub use asset::{load_material_from_file, AssetError};
-
-// Explicit exports from buffer_descriptor module
-pub use buffer_descriptor::UniformBuffer;
 
 // Explicit exports from builder module
 pub use builder::{Pipeline, PipelineBuilder, PipelineError};
@@ -34,9 +29,6 @@ pub use descriptor::{
 
 // Explicit exports from file_watcher module
 pub use file_watcher::{FileWatcher, WatcherError};
-
-// Explicit exports from materialbuilder module
-pub use materialbuilder::{MaterialBuildError, MaterialBuilder};
 
 // Explicit exports from parameters module
 pub use parameters::{MaterialParameters, ParameterError};
@@ -61,9 +53,6 @@ pub use storage_uniform::{
 
 // Explicit exports from template module
 pub use template::{InstanceError, Material, MaterialTemplate};
-
-// Explicit exports from uniform_layout module
-pub use uniform_layout::UniformLayout;
 
 use ash::vk;
 use std::rc::Rc;

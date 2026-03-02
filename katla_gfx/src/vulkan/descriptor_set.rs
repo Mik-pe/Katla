@@ -82,13 +82,6 @@ impl BufferSource for crate::vulkan::particle_buffer::EmitterConfigBuffer {
     }
 }
 
-impl<T: Copy> BufferSource for crate::vulkan::material::buffer_descriptor::UniformBuffer<T> {
-    fn buffer(&self) -> crate::sync::VkBuffer {
-        // Access the inherent method on UniformBuffer, not the trait method
-        <Self as crate::vulkan::material::buffer_descriptor::BufferDescriptorSource>::buffer(self)
-    }
-}
-
 /// Owned descriptor set with automatic cleanup.
 ///
 /// Contains the descriptor set and its pool. When dropped, both are destroyed.
@@ -103,23 +96,6 @@ impl DescriptorSet {
     /// Get the raw Vulkan descriptor set handle.
     pub(crate) fn vk(&self) -> vk::DescriptorSet {
         self.set
-    }
-
-    /// Create from existing pool allocation (for advanced use cases).
-    ///
-    /// # Safety
-    /// The pool must remain valid for the lifetime of this DescriptorSet.
-    pub(crate) unsafe fn from_raw(
-        set: vk::DescriptorSet,
-        pool: vk::DescriptorPool,
-        device: ash::Device,
-    ) -> Self {
-        Self {
-            set,
-            pool,
-            owned_layout: None,
-            device,
-        }
     }
 }
 
@@ -170,6 +146,10 @@ impl<'a> DescriptorSetBuilder<'a> {
             flags: DescriptorSetFlags::default(),
         }
     }
+
+    // ========================================================================
+    // Buffer bindings
+    // ========================================================================
 
     /// Set creation flags.
     pub(crate) fn with_flags(mut self, flags: DescriptorSetFlags) -> Self {

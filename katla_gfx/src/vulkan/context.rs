@@ -85,7 +85,6 @@ impl From<vk::DebugUtilsMessageTypeFlagsEXT> for ValidationMessageType {
 #[derive(Debug, Clone)]
 pub(crate) struct ValidationMessage {
     pub severity: ValidationSeverity,
-    pub message_type: ValidationMessageType,
     pub message: String,
     /// VUID (Vulkan Unique ID) if present, e.g., "VUID-vkCmdDraw-None-02700"
     pub vuid: Option<String>,
@@ -159,10 +158,6 @@ impl ValidationCallbackStorage {
         callback: Box<dyn FnMut(&str, ValidationLevel) + Send + Sync>,
     ) {
         self.simplified_callback = Some(callback);
-    }
-
-    fn take_messages(&mut self) -> Vec<ValidationMessage> {
-        std::mem::take(&mut self.messages)
     }
 }
 
@@ -863,14 +858,6 @@ impl VulkanContext {
         storage.set_callback(callback);
     }
 
-    /// Get all validation messages that have been captured (internal use).
-    ///
-    /// This clears the internal message buffer, so each call returns only new messages.
-    pub(crate) fn take_validation_messages(&self) -> Vec<ValidationMessage> {
-        let mut storage = self.validation_callback.lock().unwrap();
-        storage.take_messages()
-    }
-
     /// Set up default logging callback that logs validation messages at appropriate levels.
     ///
     /// - Error messages → `error!`
@@ -1293,7 +1280,6 @@ unsafe extern "system" fn debug_callback(
 
         // Convert to Rust types
         let severity = ValidationSeverity::from(message_severity);
-        let message_type = ValidationMessageType::from(message_types);
         let message = CStr::from_ptr(callback_data.p_message)
             .to_string_lossy()
             .to_string();
@@ -1319,7 +1305,6 @@ unsafe extern "system" fn debug_callback(
 
         let validation_msg = ValidationMessage {
             severity,
-            message_type,
             message,
             vuid,
         };

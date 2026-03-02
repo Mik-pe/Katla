@@ -1,7 +1,6 @@
 //! GPU storage primitives.
 
 pub use crate::vulkan::bda::DeviceAddressBuffer;
-pub use crate::vulkan::material::buffer_descriptor::UniformBuffer;
 pub use crate::vulkan::particle_buffer::{
     calculate_workgroup_count, EmitterConfig, EmitterConfigBuffer, ParticleBuffer, ParticleData,
     MAX_PARTICLES,
