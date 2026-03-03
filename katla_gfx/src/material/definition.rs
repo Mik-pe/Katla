@@ -9,7 +9,7 @@ use crate::vulkan::vertexbinding::VertexBinding;
 
 pub use crate::vulkan::material::descriptor::{RenderState, ShaderSource};
 
-use super::template::MaterialTemplateConfig;
+use super::template::MaterialDefinition;
 
 /// Material domain for render pass organization.
 ///
@@ -55,8 +55,8 @@ pub struct MaterialKey {
 }
 
 impl MaterialKey {
-    /// Create a key from a MaterialTemplateConfig.
-    pub fn from_template_config(config: &MaterialTemplateConfig) -> Self {
+    /// Create a key from a MaterialDefinition.
+    pub fn from_template_config(config: &MaterialDefinition) -> Self {
         static EMPTY_SHADER: ShaderSource = ShaderSource::WgslString(String::new());
         let vertex_shader = config.vertex_shader().unwrap_or(&EMPTY_SHADER);
         let fragment_shader = config.fragment_shader().unwrap_or(&EMPTY_SHADER);

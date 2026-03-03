@@ -9,7 +9,7 @@ use crate::sync::VkRenderPass;
 use crate::vulkan::context::VulkanContext;
 use crate::vulkan::material::{MaterialPipeline, Pipeline, PipelineBuilder, ShaderModule};
 
-use super::template::MaterialTemplateConfig;
+use super::template::MaterialDefinition;
 use super::{MaterialDomain, MaterialKey};
 
 /// Error type for material pipeline cache operations.
@@ -73,14 +73,14 @@ impl MaterialPipelineCache {
     /// Otherwise, creates a new pipeline, caches it, and returns the new handle.
     ///
     /// # Arguments
-    /// * `config` - MaterialTemplateConfig to create pipeline for
+    /// * `config` - MaterialDefinition to create pipeline for
     ///
     /// # Returns
     /// * `Ok(PipelineHandle)` - Handle to the cached or newly created pipeline
     /// * `Err(MaterialCacheError)` - If pipeline creation fails
     pub(crate) fn get_or_create(
         &mut self,
-        config: &MaterialTemplateConfig,
+        config: &MaterialDefinition,
     ) -> Result<PipelineHandle, MaterialCacheError> {
         let key = MaterialKey::from_template_config(config);
 
@@ -102,11 +102,11 @@ impl MaterialPipelineCache {
     /// the bindless texture array instead of individual texture descriptors.
     ///
     /// # Arguments
-    /// * `config` - MaterialTemplateConfig to create pipeline for
+    /// * `config` - MaterialDefinition to create pipeline for
     /// * `bindless_layout` - Descriptor set layout from BindlessTextureManager
     pub(crate) fn get_or_create_bindless(
         &mut self,
-        config: &MaterialTemplateConfig,
+        config: &MaterialDefinition,
         bindless_layout: crate::sync::VkDescriptorSetLayout,
     ) -> Result<PipelineHandle, MaterialCacheError> {
         let key = MaterialKey::from_template_config(config);
@@ -144,7 +144,7 @@ impl MaterialPipelineCache {
     /// Create a bindless pipeline for a material config.
     fn create_bindless_pipeline(
         &self,
-        config: &MaterialTemplateConfig,
+        config: &MaterialDefinition,
         bindless_layout: crate::sync::VkDescriptorSetLayout,
     ) -> Result<MaterialPipeline, MaterialCacheError> {
         let render_state = config.render_state();
@@ -251,7 +251,7 @@ impl MaterialPipelineCache {
     /// Create a pipeline for a material config.
     fn create_pipeline_for_material(
         &self,
-        config: &MaterialTemplateConfig,
+        config: &MaterialDefinition,
     ) -> Result<MaterialPipeline, MaterialCacheError> {
         let render_state = config.render_state();
         let vertex_binding = config.vertex_binding().ok_or_else(|| {
@@ -443,7 +443,7 @@ impl MaterialPipelineCache {
     }
 
     /// Check if a pipeline exists for the given material config.
-    pub(crate) fn contains(&self, config: &MaterialTemplateConfig) -> bool {
+    pub(crate) fn contains(&self, config: &MaterialDefinition) -> bool {
         let key = MaterialKey::from_template_config(config);
         self.cache.contains_key(&key)
     }
@@ -457,7 +457,7 @@ impl MaterialPipelineCache {
     /// Remove a specific pipeline from the cache.
     ///
     /// Returns true if the pipeline was in the cache and was removed.
-    pub(crate) fn remove(&mut self, config: &MaterialTemplateConfig) -> bool {
+    pub(crate) fn remove(&mut self, config: &MaterialDefinition) -> bool {
         let key = MaterialKey::from_template_config(config);
         if let Some(handle) = self.cache.remove(&key) {
             self.storage.remove(handle.index());

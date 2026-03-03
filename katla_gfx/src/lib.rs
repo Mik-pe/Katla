@@ -36,6 +36,9 @@ pub(crate) use vulkan::vertexbuffer::{IndexBuffer, VertexBuffer};
 // Public re-exports of wrapper types for cross-crate use
 pub use sync::{VkImage, VkImageView};
 
+// Public re-exports of pipeline state types for advanced use
+pub use vulkan::pipeline_state::{DynamicState, PrimitiveTopology, ShaderStages};
+
 // Size type (Katla-native)
 mod size;
 
@@ -51,10 +54,7 @@ pub use handle::{
 };
 
 // Material system
-pub use material::{
-    MaterialDomain, MaterialInstance, MaterialKey, MaterialTemplateConfig, RenderState,
-    ShaderSource,
-};
+pub use material::{Material, MaterialDefinition, MaterialDomain, RenderState, ShaderSource};
 
 // Pipeline building - Katla-native types only
 pub use pipeline::{
@@ -76,9 +76,6 @@ pub use vertex::{
 pub use render_pass::{
     AttachmentInfo, AttachmentResources, BarrierKind, ClearValue, LoadOp, StoreOp,
 };
-
-// Vulkan command buffer (needed for render pass execution)
-pub use vulkan::commandbuffer::CommandBuffer;
 
 /// Low-level Vulkan context - an escape hatch for advanced use cases.
 ///

@@ -113,9 +113,9 @@ impl ShaderSet {
 /// # Example
 ///
 /// ```ignore
-/// use katla_gfx::{MaterialTemplateConfig, ShaderSource, RenderState, MaterialDomain};
+/// use katla_gfx::{MaterialDefinition, ShaderSource, RenderState, MaterialDomain};
 ///
-/// let config = MaterialTemplateConfig::new()
+/// let config = MaterialDefinition::new()
 ///     .with_shaders(
 ///         ShaderSource::WgslFile("vertex.wgsl".into()),
 ///         ShaderSource::WgslFile("fragment.wgsl".into()),
@@ -126,7 +126,7 @@ impl ShaderSet {
 /// let template = config.build();
 /// ```
 #[derive(Clone, Debug)]
-pub struct MaterialTemplateConfig {
+pub struct MaterialDefinition {
     vertex_shader: Option<ShaderSource>,
     fragment_shader: Option<ShaderSource>,
     vertex_binding: Option<VertexBinding>,
@@ -144,7 +144,7 @@ pub struct MaterialTemplateConfig {
     depth_format: ImageFormat,
 }
 
-impl Default for MaterialTemplateConfig {
+impl Default for MaterialDefinition {
     fn default() -> Self {
         Self {
             vertex_shader: None,
@@ -162,7 +162,7 @@ impl Default for MaterialTemplateConfig {
     }
 }
 
-impl MaterialTemplateConfig {
+impl MaterialDefinition {
     /// Create a new template config with default values.
     pub fn new() -> Self {
         Self::default()
@@ -377,7 +377,7 @@ pub struct MaterialTemplate {
 
 impl MaterialTemplate {
     /// Create a MaterialTemplate from configuration.
-    pub fn new(config: MaterialTemplateConfig) -> Self {
+    pub fn new(config: MaterialDefinition) -> Self {
         config.build()
     }
 
@@ -552,7 +552,7 @@ mod tests {
 
         #[test]
         fn test_new() {
-            let config = MaterialTemplateConfig::new();
+            let config = MaterialDefinition::new();
             assert!(config.vertex_shader.is_none());
             assert!(config.fragment_shader.is_none());
             assert!(config.vertex_binding.is_none());
@@ -563,7 +563,7 @@ mod tests {
 
         #[test]
         fn test_with_vertex_shader() {
-            let config = MaterialTemplateConfig::new()
+            let config = MaterialDefinition::new()
                 .with_vertex_shader(ShaderSource::WgslString("vertex".to_string()));
             assert!(config.vertex_shader.is_some());
             assert!(config.fragment_shader.is_none());
@@ -571,7 +571,7 @@ mod tests {
 
         #[test]
         fn test_with_fragment_shader() {
-            let config = MaterialTemplateConfig::new()
+            let config = MaterialDefinition::new()
                 .with_fragment_shader(ShaderSource::WgslString("fragment".to_string()));
             assert!(config.vertex_shader.is_none());
             assert!(config.fragment_shader.is_some());
@@ -579,7 +579,7 @@ mod tests {
 
         #[test]
         fn test_with_shaders() {
-            let config = MaterialTemplateConfig::new().with_shaders(
+            let config = MaterialDefinition::new().with_shaders(
                 ShaderSource::WgslString("vertex".to_string()),
                 ShaderSource::WgslString("fragment".to_string()),
             );
@@ -590,7 +590,7 @@ mod tests {
         #[test]
         fn test_with_vertex_binding() {
             let binding = create_test_vertex_binding();
-            let config = MaterialTemplateConfig::new().with_vertex_binding(binding);
+            let config = MaterialDefinition::new().with_vertex_binding(binding);
             assert!(config.vertex_binding.is_some());
         }
 
@@ -602,19 +602,19 @@ mod tests {
                 cull_backfaces: true,
                 alpha_blending: true,
             };
-            let config = MaterialTemplateConfig::new().with_render_state(state.clone());
+            let config = MaterialDefinition::new().with_render_state(state.clone());
             assert_eq!(config.render_state(), &state);
         }
 
         #[test]
         fn test_with_domain() {
-            let config = MaterialTemplateConfig::new().with_domain(MaterialDomain::Ui);
+            let config = MaterialDefinition::new().with_domain(MaterialDomain::Ui);
             assert_eq!(config.domain(), MaterialDomain::Ui);
         }
 
         #[test]
         fn test_chained_builders() {
-            let config = MaterialTemplateConfig::new()
+            let config = MaterialDefinition::new()
                 .with_shaders(
                     ShaderSource::WgslString("vertex".to_string()),
                     ShaderSource::WgslString("fragment".to_string()),
@@ -635,7 +635,7 @@ mod tests {
 
         #[test]
         fn test_new_from_config() {
-            let config = MaterialTemplateConfig::new()
+            let config = MaterialDefinition::new()
                 .with_shaders(
                     ShaderSource::WgslString("vertex".to_string()),
                     ShaderSource::WgslString("fragment".to_string()),
@@ -654,7 +654,7 @@ mod tests {
 
         #[test]
         fn test_build_from_config() {
-            let template = MaterialTemplateConfig::new()
+            let template = MaterialDefinition::new()
                 .with_shaders(
                     ShaderSource::WgslString("vertex".to_string()),
                     ShaderSource::WgslString("fragment".to_string()),
@@ -673,7 +673,7 @@ mod tests {
 
         #[test]
         fn test_empty_config_build() {
-            let template = MaterialTemplateConfig::new().build();
+            let template = MaterialDefinition::new().build();
 
             // Empty config should still produce a valid template
             assert!(template.descriptor_set_layouts().is_empty());

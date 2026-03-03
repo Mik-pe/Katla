@@ -9,7 +9,7 @@ use super::{
     load_material_from_file,
 };
 use crate::material::DescriptorSetLayout as MaterialDescriptorSetLayout;
-use crate::material::{MaterialPipelineCache, MaterialTemplateConfig};
+use crate::material::{MaterialDefinition, MaterialPipelineCache};
 use crate::sync::VkDescriptorSetLayout;
 use crate::vulkan::context::VulkanContext;
 use crate::vulkan::descriptor::DescriptorSetLayoutBuilder;
@@ -107,7 +107,7 @@ fn build_descriptor_layouts(
     layouts
 }
 
-/// Build MaterialTemplateConfig directly from a MaterialDescriptor.
+/// Build MaterialDefinition directly from a MaterialDescriptor.
 fn build_template_config(
     context: &Rc<VulkanContext>,
     descriptor: &MaterialDescriptor,
@@ -115,11 +115,11 @@ fn build_template_config(
     uses_bindless: bool,
     uses_skeleton: bool,
     uses_pbr: bool,
-) -> MaterialTemplateConfig {
+) -> MaterialDefinition {
     let descriptor_layouts =
         build_descriptor_layouts(context, uses_bindless, uses_skeleton, uses_pbr);
 
-    let mut config = MaterialTemplateConfig::new()
+    let mut config = MaterialDefinition::new()
         .with_shaders(
             descriptor.vertex_shader.clone(),
             descriptor.fragment_shader.clone(),

@@ -31,7 +31,7 @@ impl From<DescriptorType> for vk::DescriptorType {
 
 /// Primitive topology for input assembly.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub(crate) enum PrimitiveTopology {
+pub enum PrimitiveTopology {
     /// Triangle list.
     TriangleList,
 }
@@ -47,7 +47,7 @@ impl From<PrimitiveTopology> for vk::PrimitiveTopology {
 
 /// Dynamic state for pipelines.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub(crate) enum DynamicState {
+pub enum DynamicState {
     /// Viewport.
     Viewport,
     /// Scissor.
@@ -101,7 +101,7 @@ impl From<ColorComponentFlags> for vk::ColorComponentFlags {
 /// for specifying which shader stages are used in various operations.
 /// For the simpler Katla-native version, see [`ShaderStageFlags`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
-pub(crate) struct ShaderStages {
+pub struct ShaderStages {
     pub vertex: bool,
     pub fragment: bool,
     pub compute: bool,
