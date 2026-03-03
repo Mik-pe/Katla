@@ -27,6 +27,9 @@ pub enum RendererError {
 
     /// Initialization failed.
     InitializationFailed(String),
+
+    /// Swapchain error (acquire, present, etc.).
+    SwapchainError(String),
 }
 
 impl fmt::Display for RendererError {
@@ -37,6 +40,7 @@ impl fmt::Display for RendererError {
             RendererError::NotFound(msg) => write!(f, "Not found: {}", msg),
             RendererError::InvalidOperation(msg) => write!(f, "Invalid operation: {}", msg),
             RendererError::InitializationFailed(msg) => write!(f, "Initialization failed: {}", msg),
+            RendererError::SwapchainError(msg) => write!(f, "Swapchain error: {}", msg),
         }
     }
 }

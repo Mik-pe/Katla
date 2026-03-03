@@ -3,6 +3,7 @@
 //! This module delegates frame rendering to VulkanRenderer.
 
 use super::Application;
+use log::error;
 
 impl Application {
     /// Render a single frame.
@@ -14,6 +15,8 @@ impl Application {
     /// - Submitting to GPU
     /// - Presenting to swapchain
     pub fn render_frame(&mut self) {
-        self.renderer.render_frame();
+        if let Err(e) = self.renderer.render_frame() {
+            error!("Render frame error: {}", e);
+        }
     }
 }
