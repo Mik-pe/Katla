@@ -37,8 +37,6 @@ pub struct DeviceAddressBuffer {
     pub(crate) buffer: vk::Buffer,
     /// Memory allocation for this buffer.
     pub(crate) allocation: gpu_allocator::vulkan::Allocation,
-    /// The GPU device address of this buffer.
-    device_address: u64,
     /// Size of the buffer in bytes.
     pub size: u64,
     /// Whether this buffer is persistently mapped.
@@ -75,16 +73,7 @@ impl DeviceAddressBuffer {
             )
             .sharing_mode(vk::SharingMode::EXCLUSIVE);
 
-        let (buffer, allocation) =
-            context.allocate_buffer(&buffer_info, MemoryLocation::CpuToGpu);
-
-        // Get the device address
-        let device_address = unsafe {
-            let buffer_device_address_info = vk::BufferDeviceAddressInfo::default().buffer(buffer);
-            context
-                .device
-                .get_buffer_device_address(&buffer_device_address_info)
-        };
+        let (buffer, allocation) = context.allocate_buffer(&buffer_info, MemoryLocation::CpuToGpu);
 
         // Map the buffer persistently
         let mapped_ptr = unsafe {
@@ -96,18 +85,11 @@ impl DeviceAddressBuffer {
         Ok(Self {
             buffer,
             allocation,
-            device_address,
             size,
             is_persistent: true,
             mapped_ptr: Some(mapped_ptr),
             context,
         })
-    }
-
-    /// Get the GPU device address of this buffer.
-    #[inline]
-    pub(crate) fn device_address(&self) -> u64 {
-        self.device_address
     }
 
     /// Get the size of this buffer in bytes.
@@ -137,26 +119,6 @@ impl DeviceAddressBuffer {
     #[inline]
     pub fn is_persistent(&self) -> bool {
         self.is_persistent
-    }
-
-    /// Write data to the buffer.
-    pub fn write<T: Copy>(&mut self, data: &[T]) {
-        let byte_len = std::mem::size_of_val(data);
-        assert!(
-            byte_len <= self.size as usize,
-            "Data size ({} bytes) exceeds buffer size ({} bytes)",
-            byte_len,
-            self.size
-        );
-
-        unsafe {
-            let mapped = self.map();
-            std::ptr::copy_nonoverlapping(
-                data.as_ptr() as *const u8,
-                mapped.as_mut_ptr(),
-                byte_len,
-            );
-        }
     }
 }
 

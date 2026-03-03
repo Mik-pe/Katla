@@ -11,8 +11,6 @@ pub mod types;
 
 pub use crate::handle::{Handle, MaterialHandle, MeshHandle, SkeletonHandle, TextureHandle};
 use crate::viewport::{ViewportBuilder, ViewportHandle};
-use crate::vulkan::descriptor::DescriptorSetLayoutBuilder;
-use crate::vulkan::pipeline_state::{DescriptorType, ShaderStages};
 pub use registry::AssetRegistry;
 pub use types::{
     DrawCall, DrawList, FrameUniforms, InstanceData, ParticleDispatch, ParticleRender,
@@ -20,40 +18,26 @@ pub use types::{
 
 use crate::material::Material;
 use crate::vulkan::context::VulkanContext;
-use crate::vulkan::material::MaterialRegistry;
 use crate::{
     BindlessTextureManager, IndexBuffer, MAX_BINDLESS_TEXTURES, RendererError,
-    SkeletonDescriptorSet, StorageDescriptorSet, StorageUniformManager, SwapData, TextureManager,
-    VertexBuffer, VulkanFrameCtx, material::MaterialPipelineCache, viewport::Viewport,
+    SkeletonDescriptorSet, StorageUniformManager, SwapData, TextureManager, VertexBuffer,
+    VulkanFrameCtx, viewport::Viewport,
 };
 use ash::vk;
-use log::{error, info, warn};
+use log::{error, info};
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 use std::{cell::RefCell, ffi::CString, rc::Rc};
 
 use crate::sync::{COLOR_SUBRESOURCE_RANGE, DEPTH_SUBRESOURCE_RANGE};
 
-pub(crate) struct FrameData {
-    pub image_index: u32,
-}
-
 pub struct VulkanRenderer {
     pub(crate) context: Rc<VulkanContext>,
     pub(crate) frame_context: VulkanFrameCtx,
     pub(crate) swap_data: SwapData,
-    pub(crate) current_framedata: Option<FrameData>,
     /// Asset registry for managing GPU resources (meshes, materials).
     /// This stores the actual Vulkan buffers and pipelines, while the application
     /// only holds opaque handles (MeshHandle, MaterialHandle).
-    pub(crate) asset_registry: AssetRegistry,
-    /// Material registry for template-based materials with hot reload.
-    /// Loads materials from TOML files and supports runtime shader reloading.
-    /// Wrapped in Rc to allow cloning for safe access during model loading.
-    pub(crate) material_registry: Rc<RefCell<MaterialRegistry>>,
-    /// Material pipeline cache for unified material system.
-    /// Caches pipelines by MaterialKey for deduplication.
-    /// Wrapped in Rc to allow sharing with renderers (UIRenderer).
-    pub(crate) material_cache: Rc<RefCell<MaterialPipelineCache>>,
+    pub asset_registry: AssetRegistry,
     /// Bindless texture manager for efficient texture binding.
     /// All textures are stored in a single array accessed by index.
     /// Texture indices are passed via ObjectUniforms.texture_indices.
@@ -64,8 +48,6 @@ pub struct VulkanRenderer {
     /// Storage uniform manager for storage buffer-based uniforms.
     /// Materials use storage buffers with instance indexing.
     pub(crate) storage_manager: StorageUniformManager,
-    /// Storage descriptor set for binding storage buffers to shaders (set 0).
-    pub(crate) storage_descriptor_set: StorageDescriptorSet,
     /// Draw list cell for geometry pass (shared with render graph).
     pub(crate) draw_list_cell: Rc<RefCell<Option<DrawList>>>,
     /// Skeleton descriptor sets for GPU skeletal animation.
@@ -161,37 +143,14 @@ impl VulkanRenderer {
         // Initialize storage uniform system with standard layout
         let storage_manager = StorageUniformManager::new(context.clone())?;
 
-        // Create standard storage uniform layout (set 0)
-        let uniform_set_layout = DescriptorSetLayoutBuilder::new()
-            .add_binding(
-                0,
-                DescriptorType::StorageBuffer,
-                ShaderStages::VERTEX_FRAGMENT,
-            )
-            .add_binding(
-                1,
-                DescriptorType::StorageBuffer,
-                ShaderStages::VERTEX_FRAGMENT,
-            )
-            .build(&context);
-
-        let storage_descriptor_set =
-            storage_manager.create_descriptor_set(&context, uniform_set_layout?)?;
-
-        info!("Storage uniform system initialized (20KB buffer, 256 objects max)");
-
         Ok(Self {
             context: context.clone(),
             frame_context,
             swap_data,
-            current_framedata: None,
             asset_registry: AssetRegistry::new(),
-            material_registry: Rc::new(RefCell::new(MaterialRegistry::new())),
-            material_cache: Rc::new(RefCell::new(MaterialPipelineCache::new(context.clone()))),
             bindless_manager,
             texture_manager,
             storage_manager,
-            storage_descriptor_set,
             draw_list_cell: Rc::new(RefCell::new(None)),
             skeleton_descriptors: Vec::new(),
             frame_uniforms: None,
@@ -479,47 +438,6 @@ impl VulkanRenderer {
         &mut self.texture_manager
     }
 
-    /// Load bindless materials from a directory.
-    ///
-    /// This is a high-level wrapper that loads all material templates from the given
-    /// directory and creates bindless pipelines for them.
-    ///
-    /// # Arguments
-    /// * `dir` - Path to the directory containing material files
-    ///
-    /// # Returns
-    /// The number of materials loaded.
-    pub fn load_bindless_materials(
-        &mut self,
-        dir: &std::path::Path,
-    ) -> Result<usize, RendererError> {
-        let layout = self.bindless_manager.descriptor_layout();
-        let mut registry = self.material_registry.borrow_mut();
-        let mut cache = self.material_cache.borrow_mut();
-        registry
-            .load_directory_bindless(dir, &mut cache, layout)
-            .map_err(|e| RendererError::InvalidOperation(e.to_string()))
-    }
-
-    /// Enable hot reload for materials and shaders.
-    ///
-    /// This enables automatic reloading of material templates and shaders
-    /// when the source files change on disk.
-    ///
-    /// # Arguments
-    /// * `root` - Root directory to watch for changes
-    /// * `interval_ms` - Polling interval in milliseconds
-    pub fn enable_material_hot_reload(
-        &self,
-        root: &std::path::Path,
-        interval_ms: u64,
-    ) -> Result<(), RendererError> {
-        self.material_registry
-            .borrow_mut()
-            .enable_hot_reload(root, interval_ms)
-            .map_err(|e| RendererError::InvalidOperation(e.to_string()))
-    }
-
     /// Set frame-level uniforms for the current frame.
     ///
     /// This should be called once per frame before `render_frame()`.
@@ -796,15 +714,6 @@ impl VulkanRenderer {
 
         // Destroy all registered assets first (materials, meshes)
         self.asset_registry.destroy();
-
-        // Destroy material templates
-        match self.material_registry.try_borrow_mut() {
-            Ok(mut registry) => registry.destroy(),
-            Err(_) => {
-                // Already borrowed or other issue - log and continue
-                warn!("Warning: Could not access material registry for destruction");
-            }
-        }
 
         // Storage uniform resources will be dropped automatically
         self.context.pre_destroy();

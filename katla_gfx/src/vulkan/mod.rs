@@ -3,7 +3,6 @@ pub mod bindless_texture;
 pub mod commandbuffer;
 pub mod commandpool;
 pub mod context;
-pub mod descriptor;
 pub mod descriptor_set;
 pub mod material;
 pub mod particle_buffer;
@@ -21,7 +20,7 @@ pub mod vertexbuffer;
 // Re-export commonly used types from submodules for internal crate access
 pub(crate) use commandbuffer::CommandBuffer;
 pub use commandpool::CommandPool;
-pub(crate) use descriptor_set::{DescriptorSet, DescriptorSetBuilder};
+pub(crate) use descriptor_set::DescriptorSet;
 // Internal pipeline state types - not exposed publicly
 // Re-export Katla-native types from pipeline module for internal use
 pub use queue::Queue;

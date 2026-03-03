@@ -5,7 +5,6 @@
 //! for common use cases.
 
 use crate::handle::{ResourceStorage, TextureHandle};
-use crate::sync::VkImageView;
 use crate::texture::ImageFormat;
 use crate::vulkan::context::VulkanContext;
 use crate::vulkan::texture::Texture;
@@ -199,13 +198,6 @@ impl TextureManager {
     // ========================================================================
     // Lookup (internal use)
     // ========================================================================
-
-    /// Get the Vulkan image view for a texture handle.
-    ///
-    /// This is for internal use by renderers that need the raw Vulkan handle.
-    pub(crate) fn get_view(&self, handle: TextureHandle) -> Option<VkImageView> {
-        self.textures.get(handle.index()).map(|t| t.image_view)
-    }
 
     /// Get an Rc reference to the Texture for a handle.
     ///

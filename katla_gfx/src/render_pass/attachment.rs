@@ -15,7 +15,7 @@ use crate::vulkan::context::VulkanContext;
 struct Attachment {
     image: VkImage,
     image_view: VkImageView,
-    allocation: Allocation,
+    _allocation: Allocation,
     format: vk::Format,
     extent: vk::Extent2D,
 }
@@ -31,7 +31,7 @@ impl Attachment {
         Self {
             image: VkImage::new(image),
             image_view: VkImageView::new(image_view),
-            allocation,
+            _allocation: allocation,
             format,
             extent,
         }
