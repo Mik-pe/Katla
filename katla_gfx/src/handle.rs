@@ -221,11 +221,6 @@ impl<T> ResourceStorage<T> {
         self.len() == 0
     }
 
-    pub fn clear(&mut self) {
-        self.resources.clear();
-        self.free_indices.clear();
-    }
-
     pub fn iter(&self) -> impl Iterator<Item = &T> {
         self.resources.iter().filter_map(|slot| slot.as_ref())
     }
@@ -309,20 +304,6 @@ mod tests {
         assert_eq!(h4, h2);
         assert_eq!(storage.get(h4), Some(&"fourth"));
         assert_eq!(storage.len(), 3);
-    }
-
-    #[test]
-    fn test_resource_storage_clear() {
-        let mut storage = ResourceStorage::new();
-        storage.insert(1);
-        storage.insert(2);
-        storage.insert(3);
-
-        assert_eq!(storage.len(), 3);
-
-        storage.clear();
-        assert_eq!(storage.len(), 0);
-        assert!(storage.is_empty());
     }
 
     #[test]
