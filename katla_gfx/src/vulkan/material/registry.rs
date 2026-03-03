@@ -5,10 +5,15 @@
 //! event-driven template hot reload using filesystem watching.
 
 use super::{
-    FileWatcher, MaterialDescriptor, MaterialError, MaterialTemplate, ShaderReflection,
-    load_material_from_file,
+    load_material_from_file, FileWatcher, MaterialDescriptor, MaterialError, MaterialTemplate,
+    ShaderReflection,
 };
-use crate::material::{DynamicMaterialConfig, MaterialDefinition, MaterialPipelineCache};
+use crate::material::DescriptorSetLayout as MaterialDescriptorSetLayout;
+use crate::material::{MaterialPipelineCache, MaterialTemplateConfig};
+use crate::sync::VkDescriptorSetLayout;
+use crate::vulkan::context::VulkanContext;
+use crate::vulkan::descriptor::DescriptorSetLayoutBuilder;
+use crate::vulkan::pipeline_state::{DescriptorType, ShaderStages};
 use ash::vk;
 use log::{debug, info};
 use std::{
@@ -18,6 +23,120 @@ use std::{
     path::{Path, PathBuf},
     rc::Rc,
 };
+
+/// Build descriptor layouts for a material config.
+fn build_descriptor_layouts(
+    context: &Rc<VulkanContext>,
+    uses_bindless: bool,
+    uses_skeleton: bool,
+    uses_pbr: bool,
+) -> Vec<MaterialDescriptorSetLayout> {
+    let mut layouts = Vec::new();
+
+    // Set 0: Storage buffers (always present)
+    let set0_builder = DescriptorSetLayoutBuilder::new()
+        .add_binding(
+            0,
+            DescriptorType::StorageBuffer,
+            ShaderStages::VERTEX_FRAGMENT,
+        )
+        .add_binding(
+            1,
+            DescriptorType::StorageBuffer,
+            ShaderStages::VERTEX_FRAGMENT,
+        );
+
+    if let Ok(wrapped) = set0_builder.clone().build(context) {
+        layouts.push(MaterialDescriptorSetLayout::new(wrapped, 0));
+    }
+
+    if uses_bindless {
+        // Set 1 is bindless (provided externally)
+        // Set 2: Skeleton if needed
+        if uses_skeleton {
+            let set2_builder = DescriptorSetLayoutBuilder::new().add_binding(
+                0,
+                DescriptorType::StorageBuffer,
+                ShaderStages::VERTEX_FRAGMENT,
+            );
+            if let Ok(wrapped) = set2_builder.build(context) {
+                layouts.push(MaterialDescriptorSetLayout::new(wrapped, 2));
+            }
+        }
+    } else {
+        // Non-bindless: Set 1 contains textures
+        if uses_pbr {
+            // Full PBR: 5 textures + 5 samplers
+            let set1_builder = DescriptorSetLayoutBuilder::new()
+                .add_binding(0, DescriptorType::SampledImage, ShaderStages::FRAGMENT)
+                .add_binding(1, DescriptorType::Sampler, ShaderStages::FRAGMENT)
+                .add_binding(2, DescriptorType::SampledImage, ShaderStages::FRAGMENT)
+                .add_binding(3, DescriptorType::Sampler, ShaderStages::FRAGMENT)
+                .add_binding(4, DescriptorType::SampledImage, ShaderStages::FRAGMENT)
+                .add_binding(5, DescriptorType::Sampler, ShaderStages::FRAGMENT)
+                .add_binding(6, DescriptorType::SampledImage, ShaderStages::FRAGMENT)
+                .add_binding(7, DescriptorType::Sampler, ShaderStages::FRAGMENT)
+                .add_binding(8, DescriptorType::SampledImage, ShaderStages::FRAGMENT)
+                .add_binding(9, DescriptorType::Sampler, ShaderStages::FRAGMENT);
+            if let Ok(wrapped) = set1_builder.build(context) {
+                layouts.push(MaterialDescriptorSetLayout::new(wrapped, 1));
+            }
+        } else {
+            // Standard: 1 texture + 1 sampler
+            let set1_builder = DescriptorSetLayoutBuilder::new()
+                .add_binding(0, DescriptorType::SampledImage, ShaderStages::FRAGMENT)
+                .add_binding(1, DescriptorType::Sampler, ShaderStages::FRAGMENT);
+            if let Ok(wrapped) = set1_builder.build(context) {
+                layouts.push(MaterialDescriptorSetLayout::new(wrapped, 1));
+            }
+        }
+
+        // Set 2: Skeleton if needed
+        if uses_skeleton {
+            let set2_builder = DescriptorSetLayoutBuilder::new().add_binding(
+                0,
+                DescriptorType::StorageBuffer,
+                ShaderStages::VERTEX_FRAGMENT,
+            );
+            if let Ok(wrapped) = set2_builder.build(context) {
+                layouts.push(MaterialDescriptorSetLayout::new(wrapped, 2));
+            }
+        }
+    }
+
+    layouts
+}
+
+/// Build MaterialTemplateConfig directly from a MaterialDescriptor.
+fn build_template_config(
+    context: &Rc<VulkanContext>,
+    descriptor: &MaterialDescriptor,
+    vertex_binding: crate::VertexBinding,
+    uses_bindless: bool,
+    uses_skeleton: bool,
+    uses_pbr: bool,
+) -> MaterialTemplateConfig {
+    let descriptor_layouts =
+        build_descriptor_layouts(context, uses_bindless, uses_skeleton, uses_pbr);
+
+    let mut config = MaterialTemplateConfig::new()
+        .with_shaders(
+            descriptor.vertex_shader.clone(),
+            descriptor.fragment_shader.clone(),
+        )
+        .with_vertex_binding(vertex_binding)
+        .with_render_state(descriptor.render_state.clone())
+        .with_descriptor_layouts(descriptor_layouts);
+
+    if uses_skeleton {
+        config = config.with_skeleton();
+    }
+    if uses_bindless {
+        config = config.with_bindless();
+    }
+
+    config
+}
 
 /// Central registry for material templates
 pub struct MaterialRegistry {
@@ -180,21 +299,21 @@ impl MaterialRegistry {
             get_pbr_vertex_binding()
         };
 
-        let config = if is_skinned {
-            DynamicMaterialConfig::skinned(&descriptor, vertex_binding)
-        } else if is_pbr_full {
-            DynamicMaterialConfig::full_pbr(&descriptor, vertex_binding)
-        } else {
-            DynamicMaterialConfig::pbr(&descriptor, vertex_binding)
-        };
+        let template_config = build_template_config(
+            cache.context(),
+            &descriptor,
+            vertex_binding,
+            false, // uses_bindless
+            is_skinned,
+            is_pbr_full,
+        );
 
-        let pipeline_handle = cache.get_or_create(&config).map_err(|e| {
+        let pipeline_handle = cache.get_or_create(&template_config).map_err(|e| {
             MaterialError::InvalidDescriptor(format!("Failed to create pipeline: {}", e))
         })?;
 
         let reflection = generate_reflection(&descriptor)?;
 
-        let is_bindless = config.uses_bindless();
         let template = MaterialTemplate::from_cached_pipeline_with_layouts(
             name.clone(),
             descriptor,
@@ -203,7 +322,7 @@ impl MaterialRegistry {
             vk::DescriptorSetLayout::null(),
             None,
             None,
-            is_bindless,
+            false, // is_bindless
         );
 
         self.register_template_with_path(template, path);
@@ -216,7 +335,7 @@ impl MaterialRegistry {
         &mut self,
         path: &Path,
         cache: &mut MaterialPipelineCache,
-        bindless_layout: crate::sync::VkDescriptorSetLayout,
+        bindless_layout: VkDescriptorSetLayout,
     ) -> Result<Rc<MaterialTemplate>, MaterialError> {
         let descriptor = load_material_from_file(path)?;
         let name = descriptor.name.clone();
@@ -234,14 +353,17 @@ impl MaterialRegistry {
             get_pbr_vertex_binding()
         };
 
-        let config = if is_skinned {
-            DynamicMaterialConfig::bindless_skinned(&descriptor, vertex_binding)
-        } else {
-            DynamicMaterialConfig::bindless(&descriptor, vertex_binding)
-        };
+        let template_config = build_template_config(
+            cache.context(),
+            &descriptor,
+            vertex_binding,
+            true, // uses_bindless
+            is_skinned,
+            false, // uses_pbr (not needed for bindless)
+        );
 
         let pipeline_handle = cache
-            .get_or_create_bindless(&config, bindless_layout)
+            .get_or_create_bindless(&template_config, bindless_layout)
             .map_err(|e| {
                 MaterialError::InvalidDescriptor(format!(
                     "Failed to create bindless pipeline: {}",
@@ -259,7 +381,7 @@ impl MaterialRegistry {
             vk::DescriptorSetLayout::null(),
             None,
             None,
-            true,
+            true, // is_bindless
         );
 
         self.register_template_with_path(template, path);

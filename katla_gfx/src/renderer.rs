@@ -23,7 +23,7 @@ use crate::vulkan::material::template::Material;
 use crate::{
     BindlessTextureManager, IndexBuffer, MAX_BINDLESS_TEXTURES, RendererError,
     SkeletonDescriptorSet, StorageDescriptorSet, StorageUniformManager, SwapData, TextureManager,
-    VertexBinding, VertexBuffer, VulkanContext, VulkanFrameCtx, material::MaterialPipelineCache,
+    VertexBuffer, VulkanContext, VulkanFrameCtx, material::MaterialPipelineCache,
     viewport::Viewport,
 };
 use ash::vk;
@@ -775,46 +775,6 @@ impl VulkanRenderer {
         self.create_mesh(&vertices, &indices)
     }
 
-    /// Create a simple PBR material with standard bindless settings.
-    ///
-    /// This is a convenience method that creates a bindless PBR material pipeline
-    /// and registers it with the renderer in one step.
-    ///
-    /// # Arguments
-    /// * `vertex_binding` - Vertex binding describing the vertex format
-    /// * `shader_path` - Path to the WGSL shader file
-    ///
-    /// # Returns
-    /// A `MaterialHandle` that references the registered material, or None if creation fails.
-    ///
-    /// # Example
-    /// ```ignore
-    /// use katla_gfx::{VertexLayout, PbrMaterialConfig};
-    ///
-    /// let layout = VertexLayout::pbr();
-    /// let binding = VertexBinding::from(&layout);
-    /// let handle = renderer.create_pbr_material(binding, PathBuf::from("shaders/pbr.wgsl"))?;
-    /// ```
-    pub fn create_pbr_material(
-        &mut self,
-        vertex_binding: VertexBinding,
-        shader_path: std::path::PathBuf,
-    ) -> Option<MaterialHandle> {
-        use crate::material::PbrMaterialConfig;
-
-        let config = PbrMaterialConfig::bindless(vertex_binding.clone(), shader_path);
-        let layout = self.bindless_manager.descriptor_layout();
-
-        let pipeline = self
-            .material_cache
-            .borrow_mut()
-            .get_or_create_bindless(&config, layout)
-            .ok()?;
-
-        let mut material = Material::from_pipeline_handle(pipeline, vertex_binding, true);
-        self.register_material(&mut material)
-    }
-
     /// Register a unified Material with the renderer.
     ///
     /// This is the preferred method for registering materials. It handles:
@@ -860,36 +820,6 @@ impl VulkanRenderer {
         };
 
         Some(self.asset_registry.register_material(material_asset))
-    }
-
-    /// Initialize the default white PBR material.
-    ///
-    /// This must be called before `default_material()` to set up the default
-    /// material with the appropriate shader and vertex binding.
-    ///
-    /// # Arguments
-    /// * `vertex_binding` - The vertex binding describing the vertex format
-    /// * `shader_path` - Path to the WGSL shader file
-    ///
-    /// # Returns
-    /// The default material handle on success, or None if creation fails.
-    ///
-    /// # Example
-    /// ```ignore
-    /// use katla_gfx::VertexLayout;
-    ///
-    /// let layout = VertexLayout::pbr();
-    /// let binding = VertexBinding::from(&layout);
-    /// renderer.init_default_material(binding, PathBuf::from("shaders/pbr.wgsl"));
-    /// ```
-    pub fn init_default_material(
-        &mut self,
-        vertex_binding: VertexBinding,
-        shader_path: std::path::PathBuf,
-    ) -> Option<MaterialHandle> {
-        let handle = self.create_pbr_material(vertex_binding, shader_path)?;
-        self.default_material_handle = Some(handle);
-        Some(handle)
     }
 
     /// Returns the default white PBR material handle.

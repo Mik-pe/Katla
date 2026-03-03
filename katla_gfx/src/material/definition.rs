@@ -1,14 +1,15 @@
-//! Material definition trait and key types.
+//! Material key types for pipeline caching.
 
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 
-use crate::ImageFormat;
 use crate::vulkan::descriptor::{DescriptorSetLayoutBuilder, LayoutBinding};
 use crate::vulkan::pipeline_state::{DescriptorType, ShaderStages};
 use crate::vulkan::vertexbinding::VertexBinding;
 
 pub use crate::vulkan::material::descriptor::{RenderState, ShaderSource};
+
+use super::template::MaterialTemplateConfig;
 
 /// Material domain for render pass organization.
 ///
@@ -24,99 +25,6 @@ pub enum MaterialDomain {
     PostProcess,
     /// GPU particle rendering (compute-generated geometry)
     Particle,
-}
-
-/// Trait that describes a material's pipeline requirements.
-///
-/// This trait provides all the information needed to create a Vulkan pipeline
-/// without dictating how pipelines are cached or managed.
-///
-/// # Thread Safety
-///
-/// Note: The MaterialDefinition trait does not require `Send + Sync` because material
-/// implementations often contain `Rc<RefCell<MaterialPipeline>>` for pipeline
-/// storage. Materials are typically used on the main render thread only.
-pub trait MaterialDefinition: 'static {
-    // === Required: Shaders ===
-
-    /// Returns the vertex shader source.
-    fn vertex_shader(&self) -> ShaderSource;
-
-    /// Returns the fragment shader source.
-    fn fragment_shader(&self) -> ShaderSource;
-
-    // === Required: Pipeline Config ===
-
-    /// Returns the vertex binding description for this material's vertex format.
-    ///
-    /// For fullscreen/post-process materials, return an empty `VertexBinding`.
-    fn vertex_binding(&self) -> VertexBinding;
-
-    /// Returns the render state (depth, blending, culling configuration).
-    fn render_state(&self) -> RenderState;
-
-    // === Required: Descriptor Layouts ===
-
-    /// Returns descriptor set layout builders for each set needed by this material.
-    ///
-    /// Most materials return a single builder for set 0 (frame/object uniforms).
-    /// Materials with textures or additional resources may need multiple sets.
-    fn descriptor_layouts(&self) -> Vec<DescriptorSetLayoutBuilder>;
-
-    // === Optional: Pipeline Config ===
-
-    /// Returns the color attachment format for this material.
-    ///
-    /// Default is HDR format (R16G16B16A16Sfloat) for proper tonemapping.
-    fn color_format(&self) -> ImageFormat {
-        ImageFormat::R16G16B16A16Sfloat
-    }
-
-    /// Returns the depth attachment format for this material.
-    ///
-    /// Default is D32SfloatS8Uint (depth + stencil).
-    fn depth_format(&self) -> ImageFormat {
-        ImageFormat::D32SfloatS8Uint
-    }
-
-    /// Returns the material domain for render pass organization.
-    ///
-    /// Default is Surface for standard 3D materials.
-    fn domain(&self) -> MaterialDomain {
-        MaterialDomain::Surface
-    }
-
-    // === Optional: Descriptor Layout ===
-
-    /// Returns true if this material uses PBR textures (5 textures).
-    ///
-    /// Default is false (single texture).
-    fn uses_pbr_textures(&self) -> bool {
-        false
-    }
-
-    /// Returns true if this material needs a skeleton descriptor set.
-    ///
-    /// Default is false (no skeletal animation).
-    fn uses_skeleton(&self) -> bool {
-        false
-    }
-
-    /// Returns true if this material uses bindless textures.
-    ///
-    /// Default is false (individual texture descriptors).
-    fn uses_bindless(&self) -> bool {
-        false
-    }
-
-    // === Derived ===
-
-    /// Returns true if this material uses alpha blending.
-    ///
-    /// Derived from render_state().alpha_blending by default.
-    fn is_transparent(&self) -> bool {
-        self.render_state().alpha_blending
-    }
 }
 
 /// Key for pipeline caching and deduplication.
@@ -147,18 +55,25 @@ pub struct MaterialKey {
 }
 
 impl MaterialKey {
-    /// Create a key from a MaterialDefinition implementation.
-    pub fn from_material<M: MaterialDefinition + ?Sized>(material: &M) -> Self {
+    /// Create a key from a MaterialTemplateConfig.
+    pub fn from_template_config(config: &MaterialTemplateConfig) -> Self {
+        static EMPTY_SHADER: ShaderSource = ShaderSource::WgslString(String::new());
+        let vertex_shader = config.vertex_shader().unwrap_or(&EMPTY_SHADER);
+        let fragment_shader = config.fragment_shader().unwrap_or(&EMPTY_SHADER);
+
         Self {
-            vertex_shader_hash: hash_shader(&material.vertex_shader()),
-            fragment_shader_hash: hash_shader(&material.fragment_shader()),
-            vertex_binding_hash: hash_vertex_binding(&material.vertex_binding()),
-            render_state_hash: hash_render_state(&material.render_state()),
-            layout_hash: hash_layouts(&material.descriptor_layouts()),
-            domain: material.domain(),
-            uses_pbr: material.uses_pbr_textures(),
-            uses_skeleton: material.uses_skeleton(),
-            uses_bindless: material.uses_bindless(),
+            vertex_shader_hash: hash_shader(vertex_shader),
+            fragment_shader_hash: hash_shader(fragment_shader),
+            vertex_binding_hash: config
+                .vertex_binding()
+                .map(hash_vertex_binding)
+                .unwrap_or(0),
+            render_state_hash: hash_render_state(config.render_state()),
+            layout_hash: hash_template_layouts(config.descriptor_layouts()),
+            domain: config.domain(),
+            uses_pbr: false,
+            uses_skeleton: config.uses_skeleton(),
+            uses_bindless: config.uses_bindless(),
         }
     }
 }
@@ -166,6 +81,8 @@ impl MaterialKey {
 //=============================================================================
 // Hashing Helpers
 //=============================================================================
+
+use super::template::DescriptorSetLayout;
 
 /// Hash a shader source.
 pub(crate) fn hash_shader(shader: &ShaderSource) -> u64 {
@@ -216,6 +133,16 @@ pub(crate) fn hash_layouts(layouts: &[DescriptorSetLayoutBuilder]) -> u64 {
     layouts.len().hash(&mut hasher);
     for layout in layouts {
         hash_layout(layout, &mut hasher);
+    }
+    hasher.finish()
+}
+
+/// Hash template descriptor layouts by set indices.
+pub(crate) fn hash_template_layouts(layouts: &[DescriptorSetLayout]) -> u64 {
+    let mut hasher = DefaultHasher::new();
+    layouts.len().hash(&mut hasher);
+    for layout in layouts {
+        layout.set_index().hash(&mut hasher);
     }
     hasher.finish()
 }

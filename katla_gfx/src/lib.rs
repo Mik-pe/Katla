@@ -47,10 +47,7 @@ pub use handle::{
 };
 
 // Material system
-pub use material::{
-    MaterialDefinition, MaterialDomain, MaterialInstance, MaterialKey, PbrMaterialConfig,
-    PbrMaterialFlags, RenderState, ShaderSource,
-};
+pub use material::{MaterialDomain, MaterialInstance, MaterialKey, RenderState, ShaderSource};
 
 // Pipeline building - Katla-native types only
 pub use pipeline::{
