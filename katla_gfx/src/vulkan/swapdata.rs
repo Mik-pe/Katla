@@ -60,6 +60,21 @@ impl SwapData {
         self.frame
     }
 
+    /// Get the image available semaphore for the current frame
+    pub fn image_available_semaphore(&self) -> vk::Semaphore {
+        self.image_available_semaphores[self.frame]
+    }
+
+    /// Get the render finished semaphore for a specific swapchain image
+    pub fn render_finished_semaphore(&self, image_index: u32) -> vk::Semaphore {
+        self.render_finished_semaphores[image_index as usize]
+    }
+
+    /// Get the in-flight fence for the current frame
+    pub fn in_flight_fence(&self) -> vk::Fence {
+        self.in_flight_fences[self.frame]
+    }
+
     pub fn destroy(&mut self, device: &Device) {
         unsafe {
             for &semaphore in self

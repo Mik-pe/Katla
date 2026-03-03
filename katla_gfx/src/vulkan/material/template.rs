@@ -9,6 +9,7 @@ use super::{
     ShaderReflection,
 };
 use crate::handle::PipelineHandle;
+use crate::vulkan::context::VulkanContext;
 use crate::{Texture, VertexBinding};
 use ash::vk;
 use std::{collections::HashMap, rc::Rc};
@@ -180,7 +181,7 @@ impl MaterialTemplate {
     }
 
     /// Destroy the template's resources.
-    pub fn destroy(&self, context: &Rc<crate::VulkanContext>) {
+    pub fn destroy(&self, context: &Rc<VulkanContext>) {
         unsafe {
             context
                 .device

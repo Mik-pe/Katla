@@ -21,6 +21,11 @@ impl Queue {
         }
     }
 
+    /// Get the raw Vulkan queue handle.
+    pub fn vk_queue(&self) -> vk::Queue {
+        self.queue
+    }
+
     pub fn submit(
         &self,
         command_buffers: &[&CommandBuffer],
@@ -28,10 +33,10 @@ impl Queue {
         signal_semaphores: &[Semaphore],
         signal_fence: Fence,
     ) {
-        let mut vk_cmd_buffers = Vec::with_capacity(command_buffers.len());
-        for command_buffer in command_buffers {
-            vk_cmd_buffers.push(command_buffer.vk_command_buffer());
-        }
+        let vk_cmd_buffers: Vec<_> = command_buffers
+            .iter()
+            .map(|cb| cb.vk_command_buffer())
+            .collect();
 
         let mut wait_dst_stage_mask = Vec::with_capacity(wait_semaphores.len());
         for _ in wait_semaphores {
