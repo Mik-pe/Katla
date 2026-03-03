@@ -10,7 +10,10 @@ mod types;
 
 // Internal types (not public API)
 pub(crate) use cache::MaterialPipelineCache;
-pub(crate) use template::{DescriptorSetLayout, MaterialTemplateConfig};
+pub(crate) use template::DescriptorSetLayout;
+
+// Public configuration types
+pub use template::MaterialTemplateConfig;
 
 // Public API
 pub use definition::{MaterialDomain, MaterialKey};

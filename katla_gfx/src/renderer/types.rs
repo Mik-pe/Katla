@@ -131,6 +131,9 @@ pub struct DrawCall {
     pub roughness: f32,
     /// Ambient occlusion factor for single-instance mode.
     pub ao: f32,
+    /// Material parameters as array: [metallic, roughness, ao, padding].
+    /// Convenient for GPU upload.
+    pub material_params: [f32; 4],
     /// Whether this draw uses transparency (affects sort order).
     pub transparent: bool,
     /// Optional sorting key (for transparent objects, etc.).
@@ -153,6 +156,7 @@ impl DrawCall {
             metallic: 0.0,
             roughness: 0.5,
             ao: 1.0,
+            material_params: [0.0, 0.5, 1.0, 0.0],
             transparent: false,
             sort_key: None,
             skeleton: None,
@@ -177,6 +181,7 @@ impl DrawCall {
             metallic: 0.0,
             roughness: 0.5,
             ao: 1.0,
+            material_params: [0.0, 0.5, 1.0, 0.0],
             transparent: false,
             sort_key: None,
             skeleton: None,
@@ -213,18 +218,21 @@ impl DrawCall {
     /// Set PBR metallic factor (0.0 = dielectric, 1.0 = metal).
     pub fn with_metallic(mut self, metallic: f32) -> Self {
         self.metallic = metallic;
+        self.material_params[0] = metallic;
         self
     }
 
     /// Set PBR roughness factor (0.0 = smooth, 1.0 = rough).
     pub fn with_roughness(mut self, roughness: f32) -> Self {
         self.roughness = roughness;
+        self.material_params[1] = roughness;
         self
     }
 
     /// Set ambient occlusion factor (0.0 = occluded, 1.0 = no occlusion).
     pub fn with_ao(mut self, ao: f32) -> Self {
         self.ao = ao;
+        self.material_params[2] = ao;
         self
     }
 
@@ -233,6 +241,16 @@ impl DrawCall {
         self.metallic = metallic;
         self.roughness = roughness;
         self.ao = ao;
+        self.material_params = [metallic, roughness, ao, 0.0];
+        self
+    }
+
+    /// Set material parameters directly as an array [metallic, roughness, ao, padding].
+    pub fn with_material_params(mut self, params: [f32; 4]) -> Self {
+        self.metallic = params[0];
+        self.roughness = params[1];
+        self.ao = params[2];
+        self.material_params = params;
         self
     }
 

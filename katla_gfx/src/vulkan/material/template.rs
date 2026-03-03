@@ -207,32 +207,32 @@ impl MaterialTemplate {
 }
 
 //=============================================================================
-// Unified Material Type
+// Unified MaterialInstance Type
 //=============================================================================
 
-/// The unified material type for the application layer.
+/// The unified material instance type for the application layer.
 ///
 /// This type combines pipeline reference, textures, and bindless texture indices
 /// into a single material that can be registered with the renderer.
 ///
 /// # Creation
 ///
-/// Materials can be created from:
-/// - Template name: `Material::new("gltf_pbr_bindless")` (resolved during registration)
-/// - Existing template: `Material::from_template(template)`
-/// - Pipeline handle: `Material::from_pipeline_handle(pipeline, vertex_binding)`
+/// MaterialInstances can be created from:
+/// - Template name: `MaterialInstance::new("gltf_pbr_bindless")` (resolved during registration)
+/// - Existing template: `MaterialInstance::from_template(template)`
+/// - Pipeline handle: `MaterialInstance::from_pipeline_handle(pipeline, vertex_binding)`
 ///
 /// # Builder Pattern
 ///
 /// ```ignore
-/// let material = Material::new("gltf_pbr_bindless")
+/// let material = MaterialInstance::new("gltf_pbr_bindless")
 ///     .with_pbr_textures(pbr_textures)
 ///     .with_bindless_indices([0, 1, 2, 3], 4);
 ///
 /// let handle = renderer.register_material(&mut material)?;
 /// ```
 #[derive(Clone)]
-pub struct Material {
+pub struct MaterialInstance {
     /// Optional template reference (None until resolved)
     template: Option<Rc<MaterialTemplate>>,
     /// Template name for lazy resolution
@@ -257,8 +257,8 @@ pub struct Material {
     pub base_color: Option<[f32; 4]>,
 }
 
-impl Material {
-    /// Create a new material by template name.
+impl MaterialInstance {
+    /// Create a new material instance by template name.
     ///
     /// The template will be resolved when the material is registered
     /// with the renderer via `register_material()`.
@@ -278,7 +278,7 @@ impl Material {
         }
     }
 
-    /// Create a material from an existing template.
+    /// Create a material instance from an existing template.
     pub fn from_template(template: Rc<MaterialTemplate>) -> Self {
         let is_bindless = template.is_bindless();
         Self {
@@ -296,12 +296,12 @@ impl Material {
         }
     }
 
-    /// Create a material from a template reference.
+    /// Create a material instance from a template reference.
     pub fn from_template_ref(template: &Rc<MaterialTemplate>) -> Self {
         Self::from_template(Rc::clone(template))
     }
 
-    /// Create a material from a template with optional texture.
+    /// Create a material instance from a template with optional texture.
     pub fn from_template_with_optional_texture(
         template: &Rc<MaterialTemplate>,
         texture: Option<Rc<Texture>>,
@@ -314,7 +314,7 @@ impl Material {
         material
     }
 
-    /// Create a material from a template with vertex binding.
+    /// Create a material instance from a template with vertex binding.
     pub fn from_template_with_binding(
         template: Rc<MaterialTemplate>,
         vertex_binding: VertexBinding,
@@ -335,7 +335,7 @@ impl Material {
         }
     }
 
-    /// Create a material from a pipeline handle.
+    /// Create a material instance from a pipeline handle.
     pub fn from_pipeline_handle(
         pipeline: PipelineHandle,
         vertex_binding: VertexBinding,
@@ -508,7 +508,7 @@ impl Material {
 
     // === Utility ===
 
-    /// Clone this material (shallow copy of template).
+    /// Clone this material instance (shallow copy of template).
     pub fn clone_material(&self) -> Self {
         Self {
             template: self.template.clone(),
@@ -525,7 +525,7 @@ impl Material {
         }
     }
 
-    /// Generate the uniform buffer data for this material.
+    /// Generate the uniform buffer data for this material instance.
     pub fn generate_uniform_buffer(&self) -> Result<Vec<u8>, InstanceError> {
         let template = self
             .template
