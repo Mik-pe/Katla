@@ -6,10 +6,7 @@
 
 pub use crate::vulkan::material::builder::{Pipeline, PipelineBuilder, PipelineError};
 pub use crate::vulkan::material::shadermodule::{ShaderCache, ShaderError, ShaderModule};
-pub use crate::vulkan::material::{
-    ComputePipeline, ComputePipelineBuilder, ComputePipelineError, MaterialPipeline,
-    MaterialTemplate,
-};
+pub use crate::vulkan::material::{ComputePipeline, ComputePipelineBuilder, ComputePipelineError};
 
 //=============================================================================
 // Vertex Layout Types
