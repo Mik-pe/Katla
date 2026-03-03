@@ -24,7 +24,7 @@ use crate::vulkan::material::template::Material;
 use crate::{
     BindlessTextureManager, IndexBuffer, MAX_BINDLESS_TEXTURES, RendererError,
     SkeletonDescriptorSet, StorageDescriptorSet, StorageUniformManager, SwapData, TextureManager,
-    VertexBuffer, VulkanContext, VulkanFrameCtx, material::MaterialPipelineCache,
+    VertexBuffer, VulkanFrameCtx, material::MaterialPipelineCache,
     viewport::Viewport,
 };
 use ash::vk;

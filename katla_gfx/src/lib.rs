@@ -72,8 +72,7 @@ pub use vertex::{
 
 // Render pass system
 pub use render_pass::{
-    AttachmentInfo, AttachmentResources, BarrierKind, ClearValue, LoadOp, PassExecutor, RenderPass,
-    RenderPassContext, StoreOp,
+    AttachmentInfo, AttachmentResources, BarrierKind, ClearValue, LoadOp, StoreOp,
 };
 
 // Vulkan command buffer (needed for render pass execution)
