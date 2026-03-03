@@ -58,14 +58,7 @@
 //! - Better compatibility with modern rendering techniques
 
 mod attachment;
-mod context;
-mod executor;
-mod pass_trait;
-pub mod passes;
 mod types;
 
 pub use attachment::AttachmentResources;
-pub use context::RenderPassContext;
-pub use executor::PassExecutor;
-pub use pass_trait::RenderPass;
 pub use types::{AttachmentInfo, BarrierKind, ClearValue, LoadOp, StoreOp};
