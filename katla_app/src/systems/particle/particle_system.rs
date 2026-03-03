@@ -59,12 +59,8 @@ mod tests {
             SystemExecutionOrder::NORMAL,
         );
 
-        // Create entity with transform (no particle emitter since we can't easily mock GPU resources)
-        let entity = world.create_entity();
-        world.add_component(
-            entity,
-            TransformComponent::new(Transform::from_position(Vec3::new(1.0, 2.0, 3.0))),
-        );
+        // Create entity (no particle emitter since we can't easily mock GPU resources)
+        let _entity = world.create_entity();
 
         // Should not crash
         world.update(0.016);

@@ -99,8 +99,7 @@ impl ViewportLayout {
 /// state.set_layout(ViewportLayout::Horizontal2);
 /// assert_eq!(state.get_viewport_at(0), Some(viewport_handle_0));
 /// ```
-#[derive(Debug, Clone)]
-#[derive(Default)]
+#[derive(Debug, Clone, Default)]
 pub struct ViewportGridState {
     /// Current layout configuration.
     pub layout: ViewportLayout,
@@ -111,7 +110,6 @@ pub struct ViewportGridState {
     /// Only indices 0 to `layout.viewport_count() - 1` are valid.
     pub active_viewport: Option<usize>,
 }
-
 
 impl ViewportGridState {
     /// Creates a new ViewportGridState with the default (Single) layout.

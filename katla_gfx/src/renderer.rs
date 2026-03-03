@@ -19,8 +19,9 @@ pub use types::{
 };
 
 use crate::vulkan::material::MaterialRegistry;
+use crate::vulkan::material::template::Material;
 use crate::{
-    BindlessTextureManager, IndexBuffer, MAX_BINDLESS_TEXTURES, Material, RendererError,
+    BindlessTextureManager, IndexBuffer, MAX_BINDLESS_TEXTURES, RendererError,
     SkeletonDescriptorSet, StorageDescriptorSet, StorageUniformManager, SwapData, TextureManager,
     VertexBinding, VertexBuffer, VulkanContext, VulkanFrameCtx, material::MaterialPipelineCache,
     viewport::Viewport,
@@ -507,17 +508,18 @@ impl VulkanRenderer {
         light_intensity: f32,
     ) {
         if let Some(viewport) = self.viewports.get_mut(handle.0)
-            && let Some(ref mut manager) = viewport.storage_manager {
-                manager.update_frame_with_lighting(
-                    view_matrix,
-                    proj_matrix,
-                    inv_view_proj,
-                    camera_position,
-                    light_direction,
-                    light_color,
-                    light_intensity,
-                );
-            }
+            && let Some(ref mut manager) = viewport.storage_manager
+        {
+            manager.update_frame_with_lighting(
+                view_matrix,
+                proj_matrix,
+                inv_view_proj,
+                camera_position,
+                light_direction,
+                light_color,
+                light_intensity,
+            );
+        }
     }
 
     pub fn destroy(&mut self) {

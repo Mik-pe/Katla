@@ -459,11 +459,12 @@ impl Material {
         }
 
         if let Some(name) = &self.template_name
-            && let Some(template) = registry.get_template(name) {
-                self.is_bindless = template.is_bindless();
-                self.template = Some(template.clone());
-                return true;
-            }
+            && let Some(template) = registry.get_template(name)
+        {
+            self.is_bindless = template.is_bindless();
+            self.template = Some(template.clone());
+            return true;
+        }
 
         false
     }

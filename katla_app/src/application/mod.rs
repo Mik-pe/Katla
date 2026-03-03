@@ -217,7 +217,9 @@ impl ApplicationHandler for Application {
                     if event.state == ElementState::Pressed {
                         // Only process game-specific keys when viewport is focused
                         if self.editor_ui.focused_panel == crate::ui::FocusedPanel::Viewport {
-                            if keycode == KeyCode::Escape { event_loop.exit() }
+                            if keycode == KeyCode::Escape {
+                                event_loop.exit()
+                            }
                         }
                     }
                 }

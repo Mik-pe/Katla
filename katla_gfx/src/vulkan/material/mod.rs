@@ -22,9 +22,8 @@ pub use builder::{Pipeline, PipelineBuilder};
 pub use compute_pipeline::{ComputePipeline, ComputePipelineBuilder, ComputePipelineError};
 
 // Explicit exports from descriptor module
-pub use descriptor::{
-    MaterialDescriptor, MaterialError, MaterialValue, RenderState, ShaderBinding, ShaderSource, UniformType,
-};
+pub(crate) use descriptor::{MaterialDescriptor, ShaderBinding, UniformType};
+pub use descriptor::{MaterialError, MaterialValue, RenderState, ShaderSource};
 
 // Explicit exports from file_watcher module
 pub use file_watcher::FileWatcher;

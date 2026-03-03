@@ -5,6 +5,7 @@ pub mod entities;
 pub mod error;
 pub mod gui_state;
 pub mod input;
+pub mod material;
 pub mod preferences;
 pub mod rendering;
 pub mod resources;
@@ -14,4 +15,5 @@ mod util;
 
 pub use error::{AppError, AppResult};
 pub use gui_state::GuiState;
+pub use material::{texture_slots, PbrMaterialBuilder, PbrParams};
 pub use preferences::Preferences;
