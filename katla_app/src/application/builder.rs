@@ -2,7 +2,7 @@ use std::ffi::CString;
 use std::{cell::RefCell, collections::HashMap, rc::Rc, time::Instant};
 
 use katla_ecs::{System, SystemExecutionOrder, World};
-use katla_gfx::VulkanRenderer;
+use katla_gfx::renderer::VulkanRenderer;
 use katla_ui::{FontId, ForkAwesome};
 use winit::dpi::LogicalSize;
 use winit::event_loop::{ControlFlow, EventLoop};

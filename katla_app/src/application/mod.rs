@@ -10,6 +10,7 @@
 
 pub mod builder;
 pub mod editor;
+mod renderer;
 
 use std::{cell::RefCell, collections::HashMap, path::PathBuf, rc::Rc, time::Instant};
 
@@ -18,7 +19,7 @@ use winit::keyboard::ModifiersState;
 
 pub use builder::*;
 use katla_ecs::{input::Action, World};
-use katla_gfx::VulkanRenderer;
+use katla_gfx::renderer::VulkanRenderer;
 use katla_math::Vec2;
 use winit::{
     application::ApplicationHandler,
@@ -259,6 +260,11 @@ impl ApplicationHandler for Application {
                 debug!("Rendering UI...");
                 editor::render_debug_ui(self, dt);
                 debug!("UI rendered");
+
+                // Render frame to GPU
+                debug!("Rendering frame...");
+                self.render_frame();
+                debug!("Frame rendered");
 
                 // Handle max_frames limit
                 if let Some(max) = self.info.max_frames {

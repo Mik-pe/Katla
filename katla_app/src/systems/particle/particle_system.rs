@@ -36,6 +36,7 @@ impl System for ParticleSimulationSystem {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::components::TransformComponent;
     use katla_ecs::SystemExecutionOrder;
     use katla_math::{Transform, Vec3};
 
