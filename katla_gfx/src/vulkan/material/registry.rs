@@ -5,8 +5,8 @@
 //! event-driven template hot reload using filesystem watching.
 
 use super::{
-    load_material_from_file, FileWatcher, MaterialDescriptor, MaterialError, MaterialTemplate,
-    ShaderReflection,
+    FileWatcher, MaterialDescriptor, MaterialError, MaterialTemplate, ShaderReflection,
+    load_material_from_file,
 };
 use crate::material::DescriptorSetLayout as MaterialDescriptorSetLayout;
 use crate::material::{MaterialPipelineCache, MaterialTemplateConfig};

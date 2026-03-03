@@ -9,8 +9,8 @@ use crate::sync::VkRenderPass;
 use crate::vulkan::context::VulkanContext;
 use crate::vulkan::material::{MaterialPipeline, Pipeline, PipelineBuilder, ShaderModule};
 
-use super::{MaterialDomain, MaterialKey};
 use super::template::MaterialTemplateConfig;
+use super::{MaterialDomain, MaterialKey};
 
 /// Error type for material pipeline cache operations.
 #[derive(Debug)]

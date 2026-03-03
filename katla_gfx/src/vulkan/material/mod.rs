@@ -46,7 +46,7 @@ pub use skeleton_descriptor::SkeletonDescriptorSet;
 // Explicit exports from storage_uniform module
 
 // Explicit exports from template module
-pub use template::MaterialTemplate;
+pub use template::{MaterialInstance, MaterialTemplate};
 
 use ash::vk;
 use std::rc::Rc;

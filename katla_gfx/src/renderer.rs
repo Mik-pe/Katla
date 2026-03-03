@@ -20,12 +20,11 @@ pub use types::{
 
 use crate::vulkan::context::VulkanContext;
 use crate::vulkan::material::MaterialRegistry;
-use crate::vulkan::material::template::Material;
+use crate::vulkan::material::template::MaterialInstance;
 use crate::{
     BindlessTextureManager, IndexBuffer, MAX_BINDLESS_TEXTURES, RendererError,
     SkeletonDescriptorSet, StorageDescriptorSet, StorageUniformManager, SwapData, TextureManager,
-    VertexBuffer, VulkanFrameCtx, material::MaterialPipelineCache,
-    viewport::Viewport,
+    VertexBuffer, VulkanFrameCtx, material::MaterialPipelineCache, viewport::Viewport,
 };
 use ash::vk;
 use log::{error, info, warn};
@@ -776,7 +775,7 @@ impl VulkanRenderer {
         self.create_mesh(&vertices, &indices)
     }
 
-    /// Register a unified Material with the renderer.
+    /// Register a unified MaterialInstance with the renderer.
     ///
     /// This is the preferred method for registering materials. It handles:
     /// - Template resolution (if material was created by name)
@@ -791,13 +790,13 @@ impl VulkanRenderer {
     ///
     /// # Example
     /// ```ignore
-    /// let material = Material::new("gltf_pbr_bindless")
+    /// let material = MaterialInstance::new("gltf_pbr_bindless")
     ///     .with_pbr_textures(pbr_textures)
     ///     .with_bindless_indices([0, 1, 2, 3], 4);
     ///
     /// let handle = renderer.register_material(&mut material)?;
     /// ```
-    pub fn register_material(&mut self, material: &mut Material) -> Option<MaterialHandle> {
+    pub fn register_material(&mut self, material: &mut MaterialInstance) -> Option<MaterialHandle> {
         use crate::renderer::registry::MaterialAsset;
 
         if !material.is_resolved() {
