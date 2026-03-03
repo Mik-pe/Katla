@@ -205,6 +205,12 @@ impl MaterialTemplateConfig {
         self
     }
 
+    /// Add multiple descriptor set layouts.
+    pub fn with_descriptor_layouts(mut self, layouts: Vec<DescriptorSetLayout>) -> Self {
+        self.descriptor_layouts = layouts;
+        self
+    }
+
     /// Add a push constant range.
     pub fn add_push_constant_range(mut self, range: PushConstantRange) -> Self {
         self.push_constant_ranges.push(range);
@@ -239,6 +245,58 @@ impl MaterialTemplateConfig {
     pub fn with_depth_format(mut self, format: ImageFormat) -> Self {
         self.depth_format = format;
         self
+    }
+
+    // === Accessors ===
+
+    /// Get the vertex shader source.
+    pub fn vertex_shader(&self) -> Option<&ShaderSource> {
+        self.vertex_shader.as_ref()
+    }
+
+    /// Get the fragment shader source.
+    pub fn fragment_shader(&self) -> Option<&ShaderSource> {
+        self.fragment_shader.as_ref()
+    }
+
+    /// Get the vertex binding.
+    pub fn vertex_binding(&self) -> Option<&VertexBinding> {
+        self.vertex_binding.as_ref()
+    }
+
+    /// Get the render state.
+    pub fn render_state(&self) -> &RenderState {
+        &self.render_state
+    }
+
+    /// Get the descriptor layouts.
+    pub fn descriptor_layouts(&self) -> &[DescriptorSetLayout] {
+        &self.descriptor_layouts
+    }
+
+    /// Get the material domain.
+    pub fn domain(&self) -> MaterialDomain {
+        self.domain
+    }
+
+    /// Check if this config uses skeletal animation.
+    pub fn uses_skeleton(&self) -> bool {
+        self.uses_skeleton
+    }
+
+    /// Check if this config uses bindless textures.
+    pub fn uses_bindless(&self) -> bool {
+        self.uses_bindless
+    }
+
+    /// Get the color attachment format.
+    pub fn color_format(&self) -> ImageFormat {
+        self.color_format
+    }
+
+    /// Get the depth attachment format.
+    pub fn depth_format(&self) -> ImageFormat {
+        self.depth_format
     }
 
     /// Build the MaterialTemplate from this configuration.
@@ -545,13 +603,13 @@ mod tests {
                 alpha_blending: true,
             };
             let config = MaterialTemplateConfig::new().with_render_state(state.clone());
-            assert_eq!(config.render_state, state);
+            assert_eq!(config.render_state(), &state);
         }
 
         #[test]
         fn test_with_domain() {
             let config = MaterialTemplateConfig::new().with_domain(MaterialDomain::Ui);
-            assert_eq!(config.domain, MaterialDomain::Ui);
+            assert_eq!(config.domain(), MaterialDomain::Ui);
         }
 
         #[test]
@@ -565,10 +623,10 @@ mod tests {
                 .with_render_state(RenderState::default())
                 .with_domain(MaterialDomain::PostProcess);
 
-            assert!(config.vertex_shader.is_some());
-            assert!(config.fragment_shader.is_some());
-            assert!(config.vertex_binding.is_some());
-            assert_eq!(config.domain, MaterialDomain::PostProcess);
+            assert!(config.vertex_shader().is_some());
+            assert!(config.fragment_shader().is_some());
+            assert!(config.vertex_binding().is_some());
+            assert_eq!(config.domain(), MaterialDomain::PostProcess);
         }
     }
 

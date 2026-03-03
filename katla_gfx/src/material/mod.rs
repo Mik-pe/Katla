@@ -1,21 +1,19 @@
 //! Unified material system.
 //!
-//! Provides a trait-based abstraction for materials, reusing existing types
-//! from the vulkan module. This trait describes a material's pipeline requirements
-//! without dictating implementation details.
+//! Provides material types and pipeline caching. Materials are defined using
+//! MaterialTemplateConfig for flexible, data-driven pipeline creation.
 
 mod cache;
-mod config;
 mod definition;
+mod template;
 mod types;
 
 // Internal types (not public API)
 pub(crate) use cache::MaterialPipelineCache;
-pub(crate) use config::DynamicMaterialConfig;
+pub(crate) use template::{DescriptorSetLayout, MaterialTemplateConfig};
 
 // Public API
-pub use config::{PbrMaterialConfig, PbrMaterialFlags};
-pub use definition::{MaterialDefinition, MaterialDomain, MaterialKey};
+pub use definition::{MaterialDomain, MaterialKey};
 
 /// Type alias for the simple handle-based Material type.
 /// Use this for creating materials with the PbrMaterialBuilder.

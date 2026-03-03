@@ -9,7 +9,8 @@ use crate::sync::VkRenderPass;
 use crate::vulkan::context::VulkanContext;
 use crate::vulkan::material::{MaterialPipeline, Pipeline, PipelineBuilder, ShaderModule};
 
-use super::{MaterialDefinition, MaterialDomain, MaterialKey};
+use super::{MaterialDomain, MaterialKey};
+use super::template::MaterialTemplateConfig;
 
 /// Error type for material pipeline cache operations.
 #[derive(Debug)]
@@ -61,28 +62,33 @@ impl MaterialPipelineCache {
         }
     }
 
-    /// Get or create a pipeline for the given material.
+    /// Get a reference to the Vulkan context.
+    pub(crate) fn context(&self) -> &Rc<VulkanContext> {
+        &self.context
+    }
+
+    /// Get or create a pipeline for the given material config.
     ///
     /// If a compatible pipeline already exists in the cache, returns its handle.
     /// Otherwise, creates a new pipeline, caches it, and returns the new handle.
     ///
     /// # Arguments
-    /// * `material` - MaterialDefinition implementation to create pipeline for
+    /// * `config` - MaterialTemplateConfig to create pipeline for
     ///
     /// # Returns
     /// * `Ok(PipelineHandle)` - Handle to the cached or newly created pipeline
     /// * `Err(MaterialCacheError)` - If pipeline creation fails
-    pub(crate) fn get_or_create<M: MaterialDefinition + ?Sized>(
+    pub(crate) fn get_or_create(
         &mut self,
-        material: &M,
+        config: &MaterialTemplateConfig,
     ) -> Result<PipelineHandle, MaterialCacheError> {
-        let key = MaterialKey::from_material(material);
+        let key = MaterialKey::from_template_config(config);
 
         if let Some(&handle) = self.cache.get(&key) {
             return Ok(handle);
         }
 
-        let pipeline = self.create_pipeline_for_material(material)?;
+        let pipeline = self.create_pipeline_for_material(config)?;
         let handle = PipelineHandle::new(self.storage.insert(pipeline));
 
         self.cache.insert(key, handle);
@@ -96,20 +102,20 @@ impl MaterialPipelineCache {
     /// the bindless texture array instead of individual texture descriptors.
     ///
     /// # Arguments
-    /// * `material` - MaterialDefinition implementation to create pipeline for
+    /// * `config` - MaterialTemplateConfig to create pipeline for
     /// * `bindless_layout` - Descriptor set layout from BindlessTextureManager
-    pub(crate) fn get_or_create_bindless<M: MaterialDefinition + ?Sized>(
+    pub(crate) fn get_or_create_bindless(
         &mut self,
-        material: &M,
+        config: &MaterialTemplateConfig,
         bindless_layout: crate::sync::VkDescriptorSetLayout,
     ) -> Result<PipelineHandle, MaterialCacheError> {
-        let key = MaterialKey::from_material(material);
+        let key = MaterialKey::from_template_config(config);
 
         if let Some(&handle) = self.cache.get(&key) {
             return Ok(handle);
         }
 
-        let pipeline = self.create_bindless_pipeline(material, bindless_layout)?;
+        let pipeline = self.create_bindless_pipeline(config, bindless_layout)?;
         let handle = PipelineHandle::new(self.storage.insert(pipeline));
 
         self.cache.insert(key, handle);
@@ -135,54 +141,51 @@ impl MaterialPipelineCache {
         self.storage.get_mut(handle.index())
     }
 
-    /// Create a bindless pipeline for a material.
-    fn create_bindless_pipeline<M: MaterialDefinition + ?Sized>(
+    /// Create a bindless pipeline for a material config.
+    fn create_bindless_pipeline(
         &self,
-        material: &M,
+        config: &MaterialTemplateConfig,
         bindless_layout: crate::sync::VkDescriptorSetLayout,
     ) -> Result<MaterialPipeline, MaterialCacheError> {
-        let render_state = material.render_state();
-        let vertex_binding = material.vertex_binding();
+        let render_state = config.render_state();
+        let vertex_binding = config.vertex_binding().ok_or_else(|| {
+            MaterialCacheError::InvalidConfiguration("vertex_binding is required".to_string())
+        })?;
 
-        if !material.uses_bindless() {
+        if !config.uses_bindless() {
             return Err(MaterialCacheError::InvalidConfiguration(
                 "get_or_create_bindless() requires uses_bindless() to return true".to_string(),
             ));
         }
 
-        let vert_shader =
-            self.load_shader(&material.vertex_shader(), ash::vk::ShaderStageFlags::VERTEX)?;
-        let frag_shader = self.load_shader(
-            &material.fragment_shader(),
-            ash::vk::ShaderStageFlags::FRAGMENT,
-        )?;
+        let vert_shader_source = config.vertex_shader().ok_or_else(|| {
+            MaterialCacheError::InvalidConfiguration("vertex_shader is required".to_string())
+        })?;
+        let frag_shader_source = config.fragment_shader().ok_or_else(|| {
+            MaterialCacheError::InvalidConfiguration("fragment_shader is required".to_string())
+        })?;
 
-        let layout_builders = material.descriptor_layouts();
+        let vert_shader =
+            self.load_shader(vert_shader_source, ash::vk::ShaderStageFlags::VERTEX)?;
+        let frag_shader =
+            self.load_shader(frag_shader_source, ash::vk::ShaderStageFlags::FRAGMENT)?;
+
+        let layouts = config.descriptor_layouts();
         let mut vk_layouts: Vec<ash::vk::DescriptorSetLayout> = Vec::new();
         let mut wrapped_layouts: Vec<crate::sync::VkDescriptorSetLayout> = Vec::new();
 
-        if let Some(builder) = layout_builders.first() {
-            let wrapped = builder.clone().build(&self.context).map_err(|e| {
-                MaterialCacheError::PipelineCreationFailed(format!(
-                    "Descriptor layout failed: {:?}",
-                    e
-                ))
-            })?;
+        if let Some(layout) = layouts.first() {
+            let wrapped = layout.vk_layout();
             vk_layouts.push(wrapped.vk());
             wrapped_layouts.push(wrapped);
         }
 
         vk_layouts.push(bindless_layout.vk());
 
-        if material.uses_skeleton()
-            && let Some(builder) = layout_builders.get(1)
+        if config.uses_skeleton()
+            && let Some(layout) = layouts.get(1)
         {
-            let wrapped = builder.clone().build(&self.context).map_err(|e| {
-                MaterialCacheError::PipelineCreationFailed(format!(
-                    "Skeleton layout failed: {:?}",
-                    e
-                ))
-            })?;
+            let wrapped = layout.vk_layout();
             vk_layouts.push(wrapped.vk());
             wrapped_layouts.push(wrapped);
         }
@@ -203,7 +206,7 @@ impl MaterialPipelineCache {
                 CompareOp::Greater,
             )
             .with_descriptor_layouts(vk_layouts.clone())
-            .with_rendering_formats(Some(material.color_format()), Some(material.depth_format()));
+            .with_rendering_formats(Some(config.color_format()), Some(config.depth_format()));
 
         if render_state.cull_backfaces {
             pipeline_builder =
@@ -225,13 +228,13 @@ impl MaterialPipelineCache {
             .first()
             .copied()
             .unwrap_or(ash::vk::DescriptorSetLayout::null());
-        let skeleton_set_layout = if material.uses_skeleton() {
+        let skeleton_set_layout = if config.uses_skeleton() {
             vk_layouts.get(2).copied()
         } else {
             None
         };
 
-        let material_pipeline = if material.uses_skeleton() {
+        let material_pipeline = if config.uses_skeleton() {
             MaterialPipeline::new_bindless_skinned(
                 pipeline,
                 uniform_set_layout,
@@ -245,41 +248,42 @@ impl MaterialPipelineCache {
         Ok(material_pipeline)
     }
 
-    /// Create a pipeline for a material using the MaterialDefinition trait directly.
-    fn create_pipeline_for_material<M: MaterialDefinition + ?Sized>(
+    /// Create a pipeline for a material config.
+    fn create_pipeline_for_material(
         &self,
-        material: &M,
+        config: &MaterialTemplateConfig,
     ) -> Result<MaterialPipeline, MaterialCacheError> {
-        let render_state = material.render_state();
-        let vertex_binding = material.vertex_binding();
+        let render_state = config.render_state();
+        let vertex_binding = config.vertex_binding().ok_or_else(|| {
+            MaterialCacheError::InvalidConfiguration("vertex_binding is required".to_string())
+        })?;
 
-        if material.uses_bindless() {
+        if config.uses_bindless() {
             return Err(MaterialCacheError::InvalidConfiguration(
                 "Bindless materials require bindless_layout. Use get_or_create_bindless() instead."
                     .to_string(),
             ));
         }
 
+        let vert_shader_source = config.vertex_shader().ok_or_else(|| {
+            MaterialCacheError::InvalidConfiguration("vertex_shader is required".to_string())
+        })?;
+        let frag_shader_source = config.fragment_shader().ok_or_else(|| {
+            MaterialCacheError::InvalidConfiguration("fragment_shader is required".to_string())
+        })?;
+
         let vert_shader =
-            self.load_shader(&material.vertex_shader(), ash::vk::ShaderStageFlags::VERTEX)?;
-        let frag_shader = self.load_shader(
-            &material.fragment_shader(),
-            ash::vk::ShaderStageFlags::FRAGMENT,
-        )?;
+            self.load_shader(vert_shader_source, ash::vk::ShaderStageFlags::VERTEX)?;
+        let frag_shader =
+            self.load_shader(frag_shader_source, ash::vk::ShaderStageFlags::FRAGMENT)?;
 
-        let layout_builders = material.descriptor_layouts();
-        let mut vk_layouts: Vec<ash::vk::DescriptorSetLayout> =
-            Vec::with_capacity(layout_builders.len());
+        let layouts = config.descriptor_layouts();
+        let mut vk_layouts: Vec<ash::vk::DescriptorSetLayout> = Vec::with_capacity(layouts.len());
         let mut wrapped_layouts: Vec<crate::sync::VkDescriptorSetLayout> =
-            Vec::with_capacity(layout_builders.len());
+            Vec::with_capacity(layouts.len());
 
-        for builder in &layout_builders {
-            let wrapped = builder.clone().build(&self.context).map_err(|e| {
-                MaterialCacheError::PipelineCreationFailed(format!(
-                    "Descriptor layout failed: {:?}",
-                    e
-                ))
-            })?;
+        for layout in layouts {
+            let wrapped = layout.vk_layout();
             vk_layouts.push(wrapped.vk());
             wrapped_layouts.push(wrapped);
         }
@@ -300,7 +304,7 @@ impl MaterialPipelineCache {
                 CompareOp::Greater,
             )
             .with_descriptor_layouts(vk_layouts.clone())
-            .with_rendering_formats(Some(material.color_format()), Some(material.depth_format()));
+            .with_rendering_formats(Some(config.color_format()), Some(config.depth_format()));
 
         if render_state.cull_backfaces {
             pipeline_builder =
@@ -321,8 +325,8 @@ impl MaterialPipelineCache {
         let material_pipeline = self.create_material_pipeline(
             pipeline,
             wrapped_layouts,
-            material.domain(),
-            material.uses_skeleton(),
+            config.domain(),
+            config.uses_skeleton(),
         );
 
         Ok(material_pipeline)
@@ -438,9 +442,9 @@ impl MaterialPipelineCache {
         self.cache.is_empty()
     }
 
-    /// Check if a pipeline exists for the given material.
-    pub(crate) fn contains<M: MaterialDefinition + ?Sized>(&self, material: &M) -> bool {
-        let key = MaterialKey::from_material(material);
+    /// Check if a pipeline exists for the given material config.
+    pub(crate) fn contains(&self, config: &MaterialTemplateConfig) -> bool {
+        let key = MaterialKey::from_template_config(config);
         self.cache.contains_key(&key)
     }
 
@@ -453,8 +457,8 @@ impl MaterialPipelineCache {
     /// Remove a specific pipeline from the cache.
     ///
     /// Returns true if the pipeline was in the cache and was removed.
-    pub(crate) fn remove<M: MaterialDefinition + ?Sized>(&mut self, material: &M) -> bool {
-        let key = MaterialKey::from_material(material);
+    pub(crate) fn remove(&mut self, config: &MaterialTemplateConfig) -> bool {
+        let key = MaterialKey::from_template_config(config);
         if let Some(handle) = self.cache.remove(&key) {
             self.storage.remove(handle.index());
             true

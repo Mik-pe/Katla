@@ -96,7 +96,7 @@ impl UniformType {
 }
 
 /// Render state configuration
-#[derive(Clone, Debug, Default, Hash)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct RenderState {
     pub depth_test: bool,
     pub depth_write: bool,
