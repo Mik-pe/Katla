@@ -3,8 +3,6 @@
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 
-use crate::vulkan::descriptor::{DescriptorSetLayoutBuilder, LayoutBinding};
-use crate::vulkan::pipeline_state::{DescriptorType, ShaderStages};
 use crate::vulkan::vertexbinding::VertexBinding;
 
 pub use crate::vulkan::material::descriptor::{RenderState, ShaderSource};
@@ -127,16 +125,6 @@ pub(crate) fn hash_render_state(state: &RenderState) -> u64 {
     hasher.finish()
 }
 
-/// Hash descriptor layouts.
-pub(crate) fn hash_layouts(layouts: &[DescriptorSetLayoutBuilder]) -> u64 {
-    let mut hasher = DefaultHasher::new();
-    layouts.len().hash(&mut hasher);
-    for layout in layouts {
-        hash_layout(layout, &mut hasher);
-    }
-    hasher.finish()
-}
-
 /// Hash template descriptor layouts by set indices.
 pub(crate) fn hash_template_layouts(layouts: &[DescriptorSetLayout]) -> u64 {
     let mut hasher = DefaultHasher::new();
@@ -145,46 +133,6 @@ pub(crate) fn hash_template_layouts(layouts: &[DescriptorSetLayout]) -> u64 {
         layout.set_index().hash(&mut hasher);
     }
     hasher.finish()
-}
-
-/// Hash a single descriptor set layout.
-pub(crate) fn hash_layout(layout: &DescriptorSetLayoutBuilder, hasher: &mut DefaultHasher) {
-    let bindings = layout.bindings();
-    bindings.len().hash(hasher);
-    for binding in bindings {
-        hash_descriptor_binding(binding, hasher);
-    }
-    // Hash push_descriptor flag
-    layout.is_push_descriptor().hash(hasher);
-}
-
-/// Hash a single descriptor binding.
-pub(crate) fn hash_descriptor_binding(binding: &LayoutBinding, hasher: &mut DefaultHasher) {
-    binding.binding.hash(hasher);
-    hash_descriptor_type(&binding.descriptor_type, hasher);
-    binding.descriptor_count.hash(hasher);
-    hash_shader_stages(&binding.shader_stages, hasher);
-}
-
-/// Hash a descriptor type.
-pub(crate) fn hash_descriptor_type(ty: &DescriptorType, hasher: &mut DefaultHasher) {
-    // Use discriminant for stable hashing across versions
-    let discriminant = match ty {
-        DescriptorType::StorageBuffer => 0u8,
-        DescriptorType::SampledImage => 1,
-        DescriptorType::Sampler => 2,
-    };
-    discriminant.hash(hasher);
-}
-
-/// Hash shader stages.
-pub(crate) fn hash_shader_stages(stages: &ShaderStages, hasher: &mut DefaultHasher) {
-    stages.vertex.hash(hasher);
-    stages.fragment.hash(hasher);
-    stages.compute.hash(hasher);
-    stages.geometry.hash(hasher);
-    stages.tessellation_control.hash(hasher);
-    stages.tessellation_evaluation.hash(hasher);
 }
 
 //=============================================================================
@@ -266,21 +214,4 @@ mod tests {
         assert_ne!(key1, key2);
     }
 
-    #[test]
-    fn test_descriptor_type_hash_stability() {
-        let mut hasher1 = DefaultHasher::new();
-        hash_descriptor_type(&DescriptorType::StorageBuffer, &mut hasher1);
-        let hash1 = hasher1.finish();
-
-        let mut hasher2 = DefaultHasher::new();
-        hash_descriptor_type(&DescriptorType::StorageBuffer, &mut hasher2);
-        let hash2 = hasher2.finish();
-
-        assert_eq!(hash1, hash2);
-        assert_ne!(hash1, {
-            let mut hasher = DefaultHasher::new();
-            hash_descriptor_type(&DescriptorType::SampledImage, &mut hasher);
-            hasher.finish()
-        });
-    }
 }

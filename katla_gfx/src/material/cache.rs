@@ -432,52 +432,6 @@ impl MaterialPipelineCache {
         }
     }
 
-    /// Get the number of cached pipelines.
-    pub(crate) fn len(&self) -> usize {
-        self.cache.len()
-    }
-
-    /// Check if the cache is empty.
-    pub(crate) fn is_empty(&self) -> bool {
-        self.cache.is_empty()
-    }
-
-    /// Check if a pipeline exists for the given material config.
-    pub(crate) fn contains(&self, config: &MaterialDefinition) -> bool {
-        let key = MaterialKey::from_template_config(config);
-        self.cache.contains_key(&key)
-    }
-
-    /// Clear all cached pipelines.
-    pub(crate) fn clear(&mut self) {
-        self.cache.clear();
-        self.storage.clear();
-    }
-
-    /// Remove a specific pipeline from the cache.
-    ///
-    /// Returns true if the pipeline was in the cache and was removed.
-    pub(crate) fn remove(&mut self, config: &MaterialDefinition) -> bool {
-        let key = MaterialKey::from_template_config(config);
-        if let Some(handle) = self.cache.remove(&key) {
-            self.storage.remove(handle.index());
-            true
-        } else {
-            false
-        }
-    }
-
-    /// Get statistics about the cache.
-    pub(crate) fn stats(&self) -> MaterialCacheStats {
-        let mut by_domain = HashMap::new();
-        for key in self.cache.keys() {
-            *by_domain.entry(key.domain).or_insert(0) += 1;
-        }
-        MaterialCacheStats {
-            total_pipelines: self.cache.len(),
-            by_domain,
-        }
-    }
 }
 
 impl Drop for MaterialPipelineCache {
@@ -489,13 +443,4 @@ impl Drop for MaterialPipelineCache {
             );
         }
     }
-}
-
-/// Statistics about the material pipeline cache.
-#[derive(Debug, Clone)]
-pub(crate) struct MaterialCacheStats {
-    /// Total number of cached pipelines
-    pub total_pipelines: usize,
-    /// Pipelines grouped by domain
-    pub by_domain: HashMap<MaterialDomain, usize>,
 }

@@ -21,7 +21,6 @@ pub use types::{
 use crate::material::Material;
 use crate::vulkan::context::VulkanContext;
 use crate::vulkan::material::MaterialRegistry;
-use crate::vulkan::material::template::MaterialInstance;
 use crate::{
     BindlessTextureManager, IndexBuffer, MAX_BINDLESS_TEXTURES, RendererError,
     SkeletonDescriptorSet, StorageDescriptorSet, StorageUniformManager, SwapData, TextureManager,

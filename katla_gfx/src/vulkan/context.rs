@@ -1312,7 +1312,7 @@ unsafe extern "system" fn debug_callback(
         // Extract VUID from p_message_id_name if available (this is the canonical source)
         // Otherwise try to find it in the message text (fallback for older validation layers)
         let vuid = if !callback_data.p_message_id_name.is_null() {
-            let id_name = unsafe { CStr::from_ptr(callback_data.p_message_id_name) };
+            let id_name = CStr::from_ptr(callback_data.p_message_id_name);
             let id_str = id_name.to_string_lossy();
             // Check if it's a VUID (starts with "VUID-")
             if id_str.starts_with("VUID-") {
