@@ -98,11 +98,6 @@ impl ApplicationBuilder {
         .expect("Failed to initialize Vulkan renderer");
 
         renderer
-            .enable_material_hot_reload(&resources.root, 100)
-            .expect("Failed to enable hot reload");
-        log::info!("Hot reload enabled for materials and shaders");
-
-        renderer
     }
 
     pub fn build(self) -> AppResult<(Application, EventLoop<()>)> {

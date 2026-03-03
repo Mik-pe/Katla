@@ -4,7 +4,6 @@
 //! push constants) that can be shared across multiple MaterialInstances.
 
 use crate::handle::PipelineHandle;
-use crate::sync::VkDescriptorSetLayout;
 use crate::texture::ImageFormat;
 use crate::vulkan::material::descriptor::{RenderState, ShaderSource};
 use crate::vulkan::vertexbinding::VertexBinding;
@@ -327,24 +326,13 @@ impl MaterialDefinition {
 /// Wrapper for descriptor set layout.
 #[derive(Clone, Debug)]
 pub struct DescriptorSetLayout {
-    layout: VkDescriptorSetLayout,
     set_index: u32,
 }
 
 impl DescriptorSetLayout {
-    /// Create a new descriptor set layout wrapper.
-    pub(crate) fn new(layout: VkDescriptorSetLayout, set_index: u32) -> Self {
-        Self { layout, set_index }
-    }
-
     /// Get the set index for this layout.
     pub fn set_index(&self) -> u32 {
         self.set_index
-    }
-
-    /// Get the underlying Vulkan layout.
-    pub(crate) fn vk_layout(&self) -> VkDescriptorSetLayout {
-        self.layout
     }
 }
 
@@ -379,38 +367,6 @@ impl MaterialTemplate {
     /// Create a MaterialTemplate from configuration.
     pub fn new(config: MaterialDefinition) -> Self {
         config.build()
-    }
-
-    /// Create a MaterialTemplate from existing components.
-    ///
-    /// This is used internally by the renderer when creating templates
-    /// from cached pipelines.
-    pub(crate) fn from_components(
-        descriptor_set_layouts: Vec<DescriptorSetLayout>,
-        push_constant_ranges: Vec<PushConstantRange>,
-        shaders: ShaderSet,
-        vertex_binding: Option<VertexBinding>,
-        render_state: RenderState,
-        domain: MaterialDomain,
-        uses_skeleton: bool,
-        uses_bindless: bool,
-        color_format: ImageFormat,
-        depth_format: ImageFormat,
-        pipeline: PipelineHandle,
-    ) -> Self {
-        Self {
-            descriptor_set_layouts,
-            push_constant_ranges,
-            shaders,
-            vertex_binding,
-            render_state,
-            domain,
-            uses_skeleton,
-            uses_bindless,
-            color_format,
-            depth_format,
-            pipeline,
-        }
     }
 
     /// Get a descriptor set layout by set index.
@@ -473,13 +429,6 @@ impl MaterialTemplate {
     /// Get the shader set.
     pub fn shaders(&self) -> &ShaderSet {
         &self.shaders
-    }
-
-    /// Set the pipeline handle.
-    ///
-    /// This is used internally when the pipeline is compiled.
-    pub(crate) fn set_pipeline(&mut self, pipeline: PipelineHandle) {
-        self.pipeline = pipeline;
     }
 }
 

@@ -61,26 +61,6 @@ impl From<vk::DebugUtilsMessageSeverityFlagsEXT> for ValidationSeverity {
     }
 }
 
-/// Validation message type (internal).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum ValidationMessageType {
-    General,
-    Validation,
-    Performance,
-}
-
-impl From<vk::DebugUtilsMessageTypeFlagsEXT> for ValidationMessageType {
-    fn from(message_type: vk::DebugUtilsMessageTypeFlagsEXT) -> Self {
-        if message_type.contains(vk::DebugUtilsMessageTypeFlagsEXT::VALIDATION) {
-            ValidationMessageType::Validation
-        } else if message_type.contains(vk::DebugUtilsMessageTypeFlagsEXT::PERFORMANCE) {
-            ValidationMessageType::Performance
-        } else {
-            ValidationMessageType::General
-        }
-    }
-}
-
 /// A validation message from Vulkan validation layers (internal).
 #[derive(Debug, Clone)]
 pub(crate) struct ValidationMessage {
@@ -167,9 +147,7 @@ struct QueueFamilyIndices {
 }
 
 pub struct RenderTexture {
-    pub extent: vk::Extent2D,
     pub(crate) image_view: VkImageView,
-    pub format: vk::Format,
     pub(crate) image: VkImage,
     pub image_memory: Option<Allocation>,
     pub context: Rc<VulkanContext>,
@@ -1073,11 +1051,6 @@ impl VulkanFrameCtx {
     pub fn swapchain_image_views(&self) -> &[VkImageView] {
         &self.swapchain_image_views
     }
-
-    /// Get the current swapchain extent.
-    pub fn swapchain_extent(&self) -> vk::Extent2D {
-        self.swapchain.get_extent()
-    }
 }
 
 unsafe fn pick_physical_device(
@@ -1195,11 +1168,9 @@ fn create_depth_render_texture(context: Rc<VulkanContext>, extent: vk::Extent2D)
         vk::ImageAspectFlags::DEPTH,
     );
     RenderTexture {
-        extent,
         image_view: VkImageView::new(image_view),
         image: VkImage::new(depth_image),
         image_memory: Some(image_memory),
-        format: depth_format,
         context,
     }
 }

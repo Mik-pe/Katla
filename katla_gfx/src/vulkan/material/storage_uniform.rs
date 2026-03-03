@@ -61,7 +61,7 @@ use std::rc::Rc;
 
 use super::super::context::VulkanContext;
 use crate::RendererError;
-use crate::vulkan::{DescriptorSetBuilder, bda::DeviceAddressBuffer};
+use crate::vulkan::bda::DeviceAddressBuffer;
 
 /// Storage buffer descriptor set for uniform buffers.
 ///
@@ -75,41 +75,6 @@ pub struct StorageDescriptorSet {
 }
 
 impl StorageDescriptorSet {
-    /// Create a new storage descriptor set from the uniform manager's buffer.
-    ///
-    /// # Arguments
-    /// * `context` - Vulkan context
-    /// * `storage_buffer` - The storage buffer to create descriptors for
-    /// * `desc_layout` - Descriptor set layout for uniform set (set 0, wrapper type)
-    ///
-    /// # Returns
-    /// A new StorageDescriptorSet with storage buffer bindings
-    pub(crate) fn new(
-        context: &Rc<VulkanContext>,
-        storage_buffer: &DeviceAddressBuffer,
-        desc_layout: crate::sync::VkDescriptorSetLayout,
-    ) -> Result<Self, RendererError> {
-        // Use the unified builder with two bindings to the same buffer
-        let inner = DescriptorSetBuilder::new(context)
-            // Binding 0: frame_data (offset 0, size = FrameUniforms)
-            .storage_buffer_range(
-                0,
-                storage_buffer,
-                0,
-                StorageUniformLayout::FRAME_SIZE as u64,
-            )
-            // Binding 1: objects array (offset 256, size = ObjectUniforms * MAX_OBJECTS)
-            .storage_buffer_range(
-                1,
-                storage_buffer,
-                StorageUniformLayout::OBJECT_ARRAY_OFFSET as u64,
-                (StorageUniformLayout::OBJECT_STRIDE * StorageUniformLayout::MAX_OBJECTS) as u64,
-            )
-            .build(desc_layout)?;
-
-        Ok(Self { inner })
-    }
-
     /// Get the raw Vulkan descriptor set handle.
     pub fn vk_set(&self) -> vk::DescriptorSet {
         self.inner.vk()
@@ -121,6 +86,7 @@ impl StorageDescriptorSet {
 /// Shared across all objects in the buffer.
 /// Total: 320 bytes (3 × mat4x4 + 4 × vec4).
 #[derive(Debug, Clone, Copy)]
+#[allow(dead_code)] // NB: Dead code since we only use this for sizes
 pub struct FrameUniforms {
     /// View matrix (world-to-camera transform) - column-major.
     pub view: [f32; 16],
@@ -149,6 +115,7 @@ pub struct FrameUniforms {
 ///
 /// Total: 112 bytes (1 × mat4x4 + 3 × vec4).
 #[derive(Debug, Clone, Copy)]
+#[allow(dead_code)] // NB: Dead code since we only use this for sizes
 pub struct ObjectUniforms {
     /// Model matrix (object-to-world transform) - column-major.
     pub model: [f32; 16],
@@ -172,12 +139,6 @@ pub struct ObjectUniforms {
 pub struct StorageUniformLayout;
 
 impl StorageUniformLayout {
-    /// Frame uniforms start at offset 0.
-    pub const FRAME_OFFSET: usize = 0;
-
-    /// Size of frame uniforms (3 × mat4x4 + 4 × vec4 = 256 bytes).
-    pub const FRAME_SIZE: usize = std::mem::size_of::<FrameUniforms>();
-
     /// Object array starts after frame uniforms (offset 256).
     pub const OBJECT_ARRAY_OFFSET: usize = 256;
 
@@ -194,21 +155,10 @@ impl StorageUniformLayout {
 }
 
 impl StorageUniformLayout {
-    /// Get total buffer size for maximum number of objects.
-    pub const fn total_size() -> usize {
-        Self::MAX_BUFFER_SIZE
-    }
-
     /// Get offset for object at given index.
     pub const fn object_offset(index: usize) -> usize {
         assert!(index < Self::MAX_OBJECTS, "Object index out of bounds");
         Self::OBJECT_ARRAY_OFFSET + (Self::OBJECT_STRIDE * index)
-    }
-
-    /// Get number of 16-byte aligned slots in object array.
-    pub const fn aligned_slots() -> usize {
-        // 80 bytes / 16 bytes = 5 slots per object
-        Self::OBJECT_STRIDE / 16
     }
 }
 
@@ -463,26 +413,6 @@ impl StorageUniformManager {
     pub fn buffer(&self) -> vk::Buffer {
         self.buffer.buffer
     }
-
-    /// Create a descriptor set for binding this storage buffer to shaders.
-    ///
-    /// Creates a descriptor set with:
-    /// - Binding 0: frame_data (storage buffer, offset 0, size 128)
-    /// - Binding 1: objects array (storage buffer, offset 128)
-    ///
-    /// # Arguments
-    /// * `context` - Vulkan context
-    /// * `desc_layout` - Descriptor set layout for uniform set (set 0, wrapper type)
-    ///
-    /// # Returns
-    /// A StorageDescriptorSet that can be bound to a pipeline
-    pub(crate) fn create_descriptor_set(
-        &self,
-        context: &Rc<VulkanContext>,
-        desc_layout: crate::sync::VkDescriptorSetLayout,
-    ) -> Result<StorageDescriptorSet, RendererError> {
-        StorageDescriptorSet::new(context, &self.buffer, desc_layout)
-    }
 }
 
 #[cfg(test)]
@@ -503,19 +433,11 @@ mod tests {
 
     #[test]
     fn test_layout_constants() {
-        assert_eq!(StorageUniformLayout::FRAME_OFFSET, 0);
-        assert_eq!(StorageUniformLayout::FRAME_SIZE, 256);
         assert_eq!(StorageUniformLayout::OBJECT_ARRAY_OFFSET, 256);
         assert_eq!(StorageUniformLayout::OBJECT_STRIDE, 112);
         assert_eq!(StorageUniformLayout::MAX_OBJECTS, 256);
         // 256 + (112 * 256) = 256 + 28672 = 28928
         assert_eq!(StorageUniformLayout::MAX_BUFFER_SIZE, 28928);
-    }
-
-    #[test]
-    fn test_aligned_object_slots() {
-        // 112 bytes / 16 = 7 slots
-        assert_eq!(StorageUniformLayout::aligned_slots(), 7);
     }
 
     #[test]
@@ -526,11 +448,5 @@ mod tests {
         assert_eq!(StorageUniformLayout::object_offset(1), 368);
         // Object 255: offset 256 + (112 * 255) = 256 + 28560 = 28816
         assert_eq!(StorageUniformLayout::object_offset(255), 28816);
-    }
-
-    #[test]
-    fn test_max_buffer_size() {
-        // Frame (256) + objects (112 * 256) = 28928
-        assert_eq!(StorageUniformLayout::total_size(), 28928);
     }
 }

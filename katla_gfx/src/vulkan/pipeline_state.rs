@@ -5,30 +5,6 @@
 
 use ash::vk;
 
-// Re-export Katla-native types from pipeline module for internal use
-
-/// Descriptor type for descriptor set layout bindings.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub(crate) enum DescriptorType {
-    /// Storage buffer.
-    StorageBuffer,
-    /// Sampled image.
-    SampledImage,
-    /// Sampler.
-    Sampler,
-}
-
-impl From<DescriptorType> for vk::DescriptorType {
-    #[inline]
-    fn from(ty: DescriptorType) -> Self {
-        match ty {
-            DescriptorType::StorageBuffer => vk::DescriptorType::STORAGE_BUFFER,
-            DescriptorType::SampledImage => vk::DescriptorType::SAMPLED_IMAGE,
-            DescriptorType::Sampler => vk::DescriptorType::SAMPLER,
-        }
-    }
-}
-
 /// Primitive topology for input assembly.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum PrimitiveTopology {
@@ -110,98 +86,6 @@ pub struct ShaderStages {
     pub tessellation_evaluation: bool,
 }
 
-impl ShaderStages {
-    /// No shader stages.
-    pub(crate) const NONE: Self = Self {
-        vertex: false,
-        fragment: false,
-        compute: false,
-        geometry: false,
-        tessellation_control: false,
-        tessellation_evaluation: false,
-    };
-
-    /// Vertex shader stage only.
-    pub(crate) const VERTEX: Self = Self {
-        vertex: true,
-        fragment: false,
-        compute: false,
-        geometry: false,
-        tessellation_control: false,
-        tessellation_evaluation: false,
-    };
-
-    /// Fragment shader stage only.
-    pub(crate) const FRAGMENT: Self = Self {
-        vertex: false,
-        fragment: true,
-        compute: false,
-        geometry: false,
-        tessellation_control: false,
-        tessellation_evaluation: false,
-    };
-
-    /// Compute shader stage only.
-    pub(crate) const COMPUTE: Self = Self {
-        vertex: false,
-        fragment: false,
-        compute: true,
-        geometry: false,
-        tessellation_control: false,
-        tessellation_evaluation: false,
-    };
-
-    /// Geometry shader stage only.
-    pub(crate) const GEOMETRY: Self = Self {
-        vertex: false,
-        fragment: false,
-        compute: false,
-        geometry: true,
-        tessellation_control: false,
-        tessellation_evaluation: false,
-    };
-
-    /// Tessellation control shader stage only.
-    pub(crate) const TESSELLATION_CONTROL: Self = Self {
-        vertex: false,
-        fragment: false,
-        compute: false,
-        geometry: false,
-        tessellation_control: true,
-        tessellation_evaluation: false,
-    };
-
-    /// Tessellation evaluation shader stage only.
-    pub(crate) const TESSELLATION_EVALUATION: Self = Self {
-        vertex: false,
-        fragment: false,
-        compute: false,
-        geometry: false,
-        tessellation_control: false,
-        tessellation_evaluation: true,
-    };
-
-    /// Vertex and fragment shader stages (common for graphics pipelines).
-    pub(crate) const VERTEX_FRAGMENT: Self = Self {
-        vertex: true,
-        fragment: true,
-        compute: false,
-        geometry: false,
-        tessellation_control: false,
-        tessellation_evaluation: false,
-    };
-
-    /// All graphics shader stages.
-    pub(crate) const ALL_GRAPHICS: Self = Self {
-        vertex: true,
-        fragment: true,
-        compute: false,
-        geometry: true,
-        tessellation_control: true,
-        tessellation_evaluation: true,
-    };
-}
-
 impl From<ShaderStages> for vk::ShaderStageFlags {
     #[inline]
     fn from(stages: ShaderStages) -> Self {
@@ -237,13 +121,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_descriptor_type_conversion() {
-        let ty = DescriptorType::StorageBuffer;
-        let vk_ty: vk::DescriptorType = ty.into();
-        assert_eq!(vk_ty, vk::DescriptorType::STORAGE_BUFFER);
-    }
-
-    #[test]
     fn test_primitive_topology_conversion() {
         let topo = PrimitiveTopology::TriangleList;
         let vk_topo: vk::PrimitiveTopology = topo.into();
@@ -259,15 +136,5 @@ mod tests {
         let state = DynamicState::Scissor;
         let vk_state: vk::DynamicState = state.into();
         assert_eq!(vk_state, vk::DynamicState::SCISSOR);
-    }
-
-    #[test]
-    fn test_shader_stages_conversion() {
-        let stages = ShaderStages::VERTEX_FRAGMENT;
-        let vk_stages: vk::ShaderStageFlags = stages.into();
-        assert_eq!(
-            vk_stages,
-            vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT
-        );
     }
 }

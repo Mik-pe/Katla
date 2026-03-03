@@ -1,34 +1,5 @@
 use ash::vk::{self};
 
-/// Standard PBR vertex format with position, normal, tangent, and UV
-pub fn get_pbr_vertex_binding() -> VertexBinding {
-    VertexBinding {
-        formats: vec![
-            VertexFormat::RGB32f,  // position
-            VertexFormat::RGB32f,  // normal
-            VertexFormat::RGBA32f, // tangent
-            VertexFormat::RG32f,   // uv
-        ],
-    }
-}
-
-/// Skinned PBR vertex format with skeletal animation support
-///
-/// Adds joint indices (u16x4) and weights (f32x4) for GPU skinning.
-/// Each vertex can be influenced by up to 4 joints.
-pub fn get_skinned_vertex_binding() -> VertexBinding {
-    VertexBinding {
-        formats: vec![
-            VertexFormat::RGB32f,  // position (location 0)
-            VertexFormat::RGB32f,  // normal (location 1)
-            VertexFormat::RGBA32f, // tangent (location 2)
-            VertexFormat::RG32f,   // uv (location 3)
-            VertexFormat::RGBA16u, // joint_indices (location 4) - u16x4, 65k joints max
-            VertexFormat::RGBA32f, // joint_weights (location 5)
-        ],
-    }
-}
-
 #[derive(Clone, Copy, PartialEq, Debug, Hash)]
 pub enum VertexFormat {
     R32u,

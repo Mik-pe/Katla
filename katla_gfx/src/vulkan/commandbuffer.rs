@@ -64,42 +64,6 @@ impl CommandBuffer {
     // Convenience Methods for Wrapper Types
     // ========================================================================
 
-    /// Bind a graphics pipeline using wrapper types.
-    ///
-    /// This is a convenience method that wraps `cmd_bind_pipeline` with the
-    /// GRAPHICS bind point, eliminating repetitive unsafe blocks.
-    pub(crate) fn bind_graphics_pipeline(&self, pipeline: &super::material::MaterialPipeline) {
-        unsafe {
-            self.device.cmd_bind_pipeline(
-                self.command_buffer,
-                vk::PipelineBindPoint::GRAPHICS,
-                pipeline.vk_pipeline().vk_pipeline(),
-            );
-        }
-    }
-
-    /// Bind a graphics pipeline using a raw Pipeline.
-    pub fn bind_graphics_pipeline_raw(&self, pipeline: &super::material::Pipeline) {
-        unsafe {
-            self.device.cmd_bind_pipeline(
-                self.command_buffer,
-                vk::PipelineBindPoint::GRAPHICS,
-                pipeline.vk_pipeline(),
-            );
-        }
-    }
-
-    /// Bind a compute pipeline using wrapper types.
-    pub(crate) fn bind_compute_pipeline(&self, pipeline: &super::material::MaterialPipeline) {
-        unsafe {
-            self.device.cmd_bind_pipeline(
-                self.command_buffer,
-                vk::PipelineBindPoint::COMPUTE,
-                pipeline.vk_pipeline().vk_pipeline(),
-            );
-        }
-    }
-
     pub fn draw_indexed(
         &self,
         index_count: u32,

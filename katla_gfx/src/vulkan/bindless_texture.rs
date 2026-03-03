@@ -265,27 +265,6 @@ impl BindlessTextureManager {
         (views, textures)
     }
 
-    /// Register a texture and get its slot index.
-    ///
-    /// Allocates a free slot, stores the image view, and updates the descriptor set.
-    ///
-    /// # Arguments
-    /// * `image_view` - The texture's image view
-    ///
-    /// # Returns
-    /// The slot index (0..MAX_BINDLESS_TEXTURES), or None if no slots available
-    pub(crate) fn register_texture(&mut self, image_view: VkImageView) -> Option<u32> {
-        let slot = self.free_slots.pop()?;
-        let vk_view: vk::ImageView = image_view.into();
-
-        self.slots[slot as usize] = Some(vk_view);
-
-        // Update the descriptor set for this slot
-        self.update_slot(slot);
-
-        Some(slot)
-    }
-
     /// Unregister a texture, freeing its slot.
     ///
     /// # Arguments
@@ -298,33 +277,6 @@ impl BindlessTextureManager {
             // Note: We don't update the descriptor set here since PARTIALLY_BOUND
             // allows unused slots to remain unbound. The slot will be reused later.
         }
-    }
-
-    /// Update a single slot in the descriptor set.
-    fn update_slot(&mut self, slot: u32) {
-        if let Some(view) = self.slots[slot as usize] {
-            let image_info = [vk::DescriptorImageInfo::default()
-                .image_view(view)
-                .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)];
-
-            let write = vk::WriteDescriptorSet::default()
-                .dst_set(self.descriptor_set.vk())
-                .dst_binding(0)
-                .dst_array_element(slot)
-                .descriptor_type(vk::DescriptorType::SAMPLED_IMAGE)
-                .image_info(&image_info);
-
-            unsafe {
-                self.device.update_descriptor_sets(&[write], &[]);
-            }
-        }
-    }
-
-    /// Get the descriptor set layout.
-    ///
-    /// Use this when creating pipelines that will use bindless textures.
-    pub(crate) fn descriptor_layout(&self) -> VkDescriptorSetLayout {
-        self.descriptor_layout
     }
 
     /// Get the descriptor set for binding to shaders.

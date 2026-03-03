@@ -72,25 +72,9 @@ impl PipelineBuilder {
         }
     }
 
-    pub(crate) fn with_shaders(mut self, vert: vk::ShaderModule, frag: vk::ShaderModule) -> Self {
-        self.vertex_shader = Some(vert);
-        self.fragment_shader = Some(frag);
-        self
-    }
-
     pub fn with_entry_points(mut self, vertex: CString, fragment: CString) -> Self {
         self.vertex_shader_entry_point = vertex;
         self.fragment_shader_entry_point = fragment;
-        self
-    }
-
-    pub(crate) fn with_vertex_input(
-        mut self,
-        bindings: Vec<vk::VertexInputBindingDescription>,
-        attributes: Vec<vk::VertexInputAttributeDescription>,
-    ) -> Self {
-        self.vertex_bindings = bindings;
-        self.vertex_attributes = attributes;
         self
     }
 
@@ -171,11 +155,6 @@ impl PipelineBuilder {
         self.blend_src_alpha = BlendFactor::One;
         self.blend_dst_alpha = BlendFactor::One;
         self.blend_alpha_op = BlendOp::Add;
-        self
-    }
-
-    pub(crate) fn with_descriptor_layouts(mut self, layouts: Vec<vk::DescriptorSetLayout>) -> Self {
-        self.descriptor_layouts = layouts;
         self
     }
 
@@ -387,16 +366,6 @@ pub struct Pipeline {
 }
 
 impl Pipeline {
-    /// Get the raw Vulkan pipeline handle (for internal use).
-    pub(crate) fn vk_pipeline(&self) -> vk::Pipeline {
-        self.handle
-    }
-
-    /// Get the raw Vulkan pipeline layout handle (for internal use).
-    pub(crate) fn vk_layout(&self) -> vk::PipelineLayout {
-        self.layout
-    }
-
     pub fn destroy(&self) {
         unsafe {
             self.device.destroy_pipeline(self.handle, None);
