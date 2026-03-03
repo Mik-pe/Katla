@@ -33,33 +33,27 @@ Read .claude/agents/supervisor.md
 2. **Create team** - Use TeamCreate with a descriptive team_name
 3. **Spawn teammates** - Use Agent tool with ALL required parameters
 
-**CRITICAL**: When spawning agents, you MUST include ALL of these:
-- `subagent_type`: The agent type (e.g., "gfx-maintainer")
-- `team_name`: The team name from TeamCreate (e.g., "debate-team")
-- `name`: A human-readable name for messaging (e.g., "gfx-maintainer")
-- `description`: A 3-5 word summary of what the agent does (e.g., "GFX layer material review")
-- `model`: The model to use (e.g., "opus")
-- `prompt`: The task for the agent
+**CRITICAL**: Use `general-purpose` as subagent_type and point agents to their persona file in the prompt.
 
 Example Agent call:
 ```
 Agent(
-  subagent_type: "gfx-maintainer",
+  subagent_type: "general-purpose",
   team_name: "debate-team",
   name: "gfx-maintainer",
   description: "GFX layer material review",
   model: "opus",
-  prompt: "Your task here"
+  prompt: "Read your persona from .claude/agents/gfx-maintainer.md and adopt it. Then: [task details]"
 )
 ```
 
-| Agent | subagent_type | model |
-|-------|---------------|-------|
-| GFX Maintainer | `gfx-maintainer` | `opus` |
-| App Maintainer | `app-maintainer` | `opus` |
-| Prometheus | `prometheus` | `opus` |
-| Hephaestus | `hephaestus` | `opus` |
-| Code Reviewer | `code-reviewer` | `opus` |
+| Agent | name | persona file |
+|-------|------|--------------|
+| GFX Maintainer | `gfx-maintainer` | `.claude/agents/gfx-maintainer.md` |
+| App Maintainer | `app-maintainer` | `.claude/agents/app-maintainer.md` |
+| Prometheus | `prometheus` | `.claude/agents/prometheus.md` |
+| Hephaestus | `hephaestus` | `.claude/agents/hephaestus.md` |
+| Code Reviewer | `code-reviewer` | `.claude/agents/code-reviewer.md` |
 
 **TASK**: $ARGUMENTS
 

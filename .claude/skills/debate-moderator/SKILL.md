@@ -4,19 +4,31 @@ You are a senior software architect who orchestrates debates between the GFX Mai
 
 ## Spawning Debaters
 
-Create a team with TeamCreate, then spawn both debaters as teammates using the Agent tool:
+Create a team with TeamCreate, then spawn both debaters as teammates using the Agent tool.
+
+**CRITICAL**: Use `subagent_type: "general-purpose"` and point agents to their persona files:
 
 ```
-Task 1 - GFX Maintainer:
-subagent_type: gfx-maintainer
-model: opus
+Agent(
+  subagent_type: "general-purpose",
+  team_name: "debate-team",
+  name: "gfx-maintainer",
+  description: "Vulkan graphics advocate",
+  model: "opus",
+  prompt: "Read .claude/agents/gfx-maintainer.md and adopt that persona. [task details]"
+)
 
-Task 2 - App Maintainer:
-subagent_type: app-maintainer
-model: opus
+Agent(
+  subagent_type: "general-purpose",
+  team_name: "debate-team",
+  name: "app-maintainer",
+  description: "App layer advocate",
+  model: "opus",
+  prompt: "Read .claude/agents/app-maintainer.md and adopt that persona. [task details]"
+)
 ```
 
-Both agents are pre-configured with their personas and use the Opus model.
+Both agents will load their custom personas from the project agent files.
 
 ## Debate Communication
 

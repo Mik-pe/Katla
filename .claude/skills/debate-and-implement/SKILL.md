@@ -12,8 +12,32 @@ Run a debate to reach consensus, then implement the result.
 
 When you need to make an architectural decision:
 1. First run `/debate-moderator` to get consensus on the approach
-2. Then spawn the prometheus agent using Task tool for planning
+2. Then spawn the prometheus agent for planning
 3. Feed the plan to hephaestus agent for implementation
+
+## Spawning Agents
+
+**CRITICAL**: Use `subagent_type: "general-purpose"` and point to project agent files:
+
+```
+Agent(
+  subagent_type: "general-purpose",
+  team_name: "debate-team",
+  name: "prometheus",
+  description: "Strategic planning",
+  model: "opus",
+  prompt: "Read .claude/agents/prometheus.md and adopt that persona. Create an implementation plan for: [consensus decision]"
+)
+
+Agent(
+  subagent_type: "general-purpose",
+  team_name: "debate-team",
+  name: "hephaestus",
+  description: "Implementation executor",
+  model: "opus",
+  prompt: "Read .claude/agents/hephaestus.md and adopt that persona. Implement the plan: [plan details]"
+)
+```
 
 ## Example
 
@@ -21,6 +45,6 @@ When you need to make an architectural decision:
 /debate-moderator
 [debate happens, consensus reached]
 
-Task tool -> prometheus: "Create implementation plan for [consensus decision]"
-Task tool -> hephaestus: "Implement the plan from prometheus"
+Spawn prometheus: "Read .claude/agents/prometheus.md and create an implementation plan for [consensus decision]"
+Spawn hephaestus: "Read .claude/agents/hephaestus.md and implement the plan from prometheus"
 ```
