@@ -109,15 +109,13 @@ impl ViewportCamera {
 /// Resource storing the camera matrices for each viewport slot.
 ///
 /// This is updated by the `ViewportCameraSystem` each frame.
-#[derive(Debug)]
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub struct ViewportCameraMatrices {
     /// View matrix for each slot.
     pub view_matrices: [Option<Mat4>; 4],
     /// Projection matrix for each slot.
     pub projection_matrices: [Option<Mat4>; 4],
 }
-
 
 impl ViewportCameraMatrices {
     /// Creates a new empty matrices resource.

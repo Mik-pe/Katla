@@ -26,7 +26,7 @@ impl ShaderSource {
 
 /// Shader binding types for material descriptors.
 #[derive(Clone, Debug)]
-pub enum ShaderBinding {
+pub(crate) enum ShaderBinding {
     /// Uniform buffer binding
     Uniform { name: String, ty: UniformType },
 
@@ -62,7 +62,7 @@ impl ShaderBinding {
 
 /// Uniform buffer data types
 #[derive(Clone, Debug)]
-pub enum UniformType {
+pub(crate) enum UniformType {
     /// 4x4 matrix (64 bytes)
     Mat4 { count: usize },
 
@@ -138,7 +138,7 @@ impl MaterialValue {
 
 /// Complete material descriptor
 #[derive(Clone)]
-pub struct MaterialDescriptor {
+pub(crate) struct MaterialDescriptor {
     pub name: String,
     pub vertex_shader: ShaderSource,
     pub fragment_shader: ShaderSource,

@@ -168,15 +168,16 @@ impl ShaderCache {
         }
 
         if let Some(extension) = path.extension()
-            && extension == "wgsl" {
-                let shader = ShaderModule::from_wgsl(self.device.clone(), path, stage, "main")?;
-                let module = shader.module;
+            && extension == "wgsl"
+        {
+            let shader = ShaderModule::from_wgsl(self.device.clone(), path, stage, "main")?;
+            let module = shader.module;
 
-                // Prevent drop from destroying the module
-                std::mem::forget(shader);
-                self.shaders.insert(path.to_path_buf(), module);
-                return Ok(module);
-            }
+            // Prevent drop from destroying the module
+            std::mem::forget(shader);
+            self.shaders.insert(path.to_path_buf(), module);
+            return Ok(module);
+        }
 
         let shader = ShaderModule::from_file(self.device.clone(), path, stage, "main")?;
         let module = shader.module;

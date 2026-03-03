@@ -48,16 +48,16 @@ pub use handle::{
 
 // Material system
 pub use material::{
-    MaterialDefinition, MaterialDomain, MaterialKey, PbrMaterialConfig, PbrMaterialFlags,
-    RenderState, ShaderSource,
+    MaterialDefinition, MaterialDomain, MaterialInstance, MaterialKey, PbrMaterialConfig,
+    PbrMaterialFlags, RenderState, ShaderSource,
 };
 
 // Pipeline building - Katla-native types only
 pub use pipeline::{
     BlendFactor, BlendOp, CompareOp, ComputePipeline, ComputePipelineBuilder, ComputePipelineError,
-    CullMode, FrontFace, InstanceError, Material, MaterialPipeline, MaterialTemplate, Pipeline,
-    PipelineBuilder, PipelineError, PolygonMode, ShaderCache, ShaderError, ShaderModule,
-    ShaderStageFlags, VertexAttributeFormat, VertexLayout,
+    CullMode, FrontFace, MaterialPipeline, MaterialTemplate, Pipeline, PipelineBuilder,
+    PipelineError, PolygonMode, ShaderCache, ShaderError, ShaderModule, ShaderStageFlags,
+    VertexAttributeFormat, VertexLayout,
 };
 
 // Rendering

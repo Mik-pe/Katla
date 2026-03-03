@@ -79,17 +79,17 @@ impl UiContext {
         // Handle click-outside-to-close
         if config.close_behavior == super::CloseBehavior::ClickOutside
             && self.input.mouse_clicked(crate::input::mouse_button::LEFT)
-                && !bounds.contains(self.input.mouse_pos)
-            {
-                // For dropdowns, don't close if clicking on the trigger button
-                // This allows toggling the dropdown by clicking the same button
-                if let PopupPosition::BelowButton(trigger) = config.position {
-                    if trigger.contains(self.input.mouse_pos) {
-                        return false;
-                    }
+            && !bounds.contains(self.input.mouse_pos)
+        {
+            // For dropdowns, don't close if clicking on the trigger button
+            // This allows toggling the dropdown by clicking the same button
+            if let PopupPosition::BelowButton(trigger) = config.position {
+                if trigger.contains(self.input.mouse_pos) {
+                    return false;
                 }
-                return true;
             }
+            return true;
+        }
 
         // Handle Escape-to-close
         if self.input.key_pressed(crate::input::KeyCode::Escape) {

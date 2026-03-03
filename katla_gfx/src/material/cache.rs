@@ -175,16 +175,17 @@ impl MaterialPipelineCache {
         vk_layouts.push(bindless_layout.vk());
 
         if material.uses_skeleton()
-            && let Some(builder) = layout_builders.get(1) {
-                let wrapped = builder.clone().build(&self.context).map_err(|e| {
-                    MaterialCacheError::PipelineCreationFailed(format!(
-                        "Skeleton layout failed: {:?}",
-                        e
-                    ))
-                })?;
-                vk_layouts.push(wrapped.vk());
-                wrapped_layouts.push(wrapped);
-            }
+            && let Some(builder) = layout_builders.get(1)
+        {
+            let wrapped = builder.clone().build(&self.context).map_err(|e| {
+                MaterialCacheError::PipelineCreationFailed(format!(
+                    "Skeleton layout failed: {:?}",
+                    e
+                ))
+            })?;
+            vk_layouts.push(wrapped.vk());
+            wrapped_layouts.push(wrapped);
+        }
 
         let mut pipeline_builder = PipelineBuilder::new(self.context.clone())
             .with_shaders(vert_shader.module, frag_shader.module)
