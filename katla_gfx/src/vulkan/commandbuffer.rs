@@ -68,7 +68,7 @@ impl CommandBuffer {
     ///
     /// This is a convenience method that wraps `cmd_bind_pipeline` with the
     /// GRAPHICS bind point, eliminating repetitive unsafe blocks.
-    pub fn bind_graphics_pipeline(&self, pipeline: &super::material::MaterialPipeline) {
+    pub(crate) fn bind_graphics_pipeline(&self, pipeline: &super::material::MaterialPipeline) {
         unsafe {
             self.device.cmd_bind_pipeline(
                 self.command_buffer,
@@ -90,7 +90,7 @@ impl CommandBuffer {
     }
 
     /// Bind a compute pipeline using wrapper types.
-    pub fn bind_compute_pipeline(&self, pipeline: &super::material::MaterialPipeline) {
+    pub(crate) fn bind_compute_pipeline(&self, pipeline: &super::material::MaterialPipeline) {
         unsafe {
             self.device.cmd_bind_pipeline(
                 self.command_buffer,

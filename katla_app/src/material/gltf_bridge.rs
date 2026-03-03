@@ -1,19 +1,19 @@
-//! GLTF material bridge for converting GLTF materials to MaterialInstance.
+//! GLTF material bridge for converting GLTF materials to Material.
 //!
 //! This module provides utilities to bridge GLTF material data with Katla's
 //! material system.
 
 use katla_gfx::handle::{MaterialHandle, TextureHandle};
-use katla_gfx::MaterialInstance;
+use katla_gfx::Material;
 
 use crate::util::gltf_material::GltfMaterialInfo;
 
 use super::builder::PbrMaterialBuilder;
 
-/// Create a MaterialInstance from GLTF material info with a texture array.
+/// Create a Material from GLTF material info with a texture array.
 ///
 /// This function bridges the parsed GLTF material data with Katla's material
-/// system, creating a properly configured MaterialInstance.
+/// system, creating a properly configured Material.
 ///
 /// # Arguments
 /// * `template` - The material template handle to use
@@ -21,12 +21,12 @@ use super::builder::PbrMaterialBuilder;
 /// * `textures` - Slice of texture handles indexed by GLTF texture index
 ///
 /// # Returns
-/// A configured MaterialInstance ready for registration with the renderer.
+/// A configured Material ready for registration with the renderer.
 pub fn create_material_from_gltf(
     template: MaterialHandle,
     gltf_info: &GltfMaterialInfo,
     textures: &[TextureHandle],
-) -> MaterialInstance {
+) -> Material {
     let mut builder = PbrMaterialBuilder::new(template)
         .with_metallic(gltf_info.metallic_factor)
         .with_roughness(gltf_info.roughness_factor);

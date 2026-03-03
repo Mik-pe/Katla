@@ -2,7 +2,7 @@
 
 use bytemuck::{Pod, Zeroable};
 use katla_gfx::handle::{MaterialHandle, TextureHandle};
-use katla_gfx::MaterialInstance;
+use katla_gfx::Material;
 
 /// Texture slot indices for PBR materials.
 pub mod texture_slots {
@@ -31,7 +31,7 @@ pub struct PbrParams {
 /// Builder for creating PBR (Physically Based Rendering) materials.
 ///
 /// This builder provides a convenient API for configuring PBR materials
-/// with textures and scalar parameters. It builds a `MaterialInstance`
+/// with textures and scalar parameters. It builds a `Material`
 /// with all configured properties.
 pub struct PbrMaterialBuilder {
     /// Reference to the material template (pipeline + descriptor layouts)
@@ -141,12 +141,12 @@ impl PbrMaterialBuilder {
         self
     }
 
-    /// Build the final MaterialInstance.
+    /// Build the final Material.
     ///
-    /// Creates a `MaterialInstance` from the template and applies all configured
+    /// Creates a `Material` from the template and applies all configured
     /// textures and scalar parameters.
-    pub fn build(self) -> MaterialInstance {
-        let mut material = MaterialInstance::new(self.template);
+    pub fn build(self) -> Material {
+        let mut material = Material::new(self.template);
 
         // Apply textures to their slots
         if let Some(texture) = self.albedo {
