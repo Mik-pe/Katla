@@ -21,7 +21,19 @@ You are NOT a debater. You are the decision-maker who:
 
 1. **Clean up existing teams** - If TeamCreate fails with "already leading team", run TeamDelete first
 2. **Create fresh team** - Use TeamCreate with a descriptive team_name
-3. **Spawn debaters** - Use Agent with ALL parameters including `description`
+3. **Spawn debaters** - Use Agent with `subagent_type: "general-purpose"` and include the persona file path in the prompt
+
+Example spawn:
+```
+Agent(
+  subagent_type: "general-purpose",
+  team_name: "debate-team",
+  name: "gfx-maintainer",
+  description: "GFX layer advocate",
+  model: "opus",
+  prompt: "Read .claude/agents/gfx-maintainer.md and adopt that persona. Your task: [details]"
+)
+```
 
 ## Unbiased Moderation
 
