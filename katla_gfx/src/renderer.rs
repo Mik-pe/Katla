@@ -18,6 +18,7 @@ pub use types::{
     DrawCall, DrawList, FrameUniforms, InstanceData, ParticleDispatch, ParticleRender,
 };
 
+use crate::vulkan::context::VulkanContext;
 use crate::vulkan::material::MaterialRegistry;
 use crate::vulkan::material::template::Material;
 use crate::{

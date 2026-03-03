@@ -282,6 +282,119 @@ impl CommandBuffer {
     }
 
     //=========================================================================
+    // Dynamic Rendering (Vulkan 1.3)
+    //=========================================================================
+
+    /// Begin a dynamic rendering pass.
+    ///
+    /// Vulkan 1.3 dynamic rendering eliminates the need for render pass objects,
+    /// allowing direct rendering to attachments specified at command buffer time.
+    ///
+    /// # Arguments
+    /// * `color_attachments` - Slice of color attachment info
+    /// * `depth_attachment` - Optional depth attachment info
+    /// * `stencil_attachment` - Optional stencil attachment info
+    /// * `render_area` - Area to render to
+    /// * `layer_count` - Number of layers to render
+    pub fn begin_rendering(
+        &self,
+        color_attachments: &[vk::RenderingAttachmentInfo],
+        depth_attachment: Option<&vk::RenderingAttachmentInfo>,
+        stencil_attachment: Option<&vk::RenderingAttachmentInfo>,
+        render_area: vk::Rect2D,
+        layer_count: u32,
+    ) {
+        let mut rendering_info = vk::RenderingInfo::default()
+            .render_area(render_area)
+            .layer_count(layer_count)
+            .color_attachments(color_attachments);
+
+        if let Some(depth) = depth_attachment {
+            rendering_info = rendering_info.depth_attachment(depth);
+        }
+
+        if let Some(stencil) = stencil_attachment {
+            rendering_info = rendering_info.stencil_attachment(stencil);
+        }
+
+        unsafe {
+            self.device
+                .cmd_begin_rendering(self.command_buffer, &rendering_info);
+        }
+    }
+
+    /// End a dynamic rendering pass.
+    pub fn end_rendering(&self) {
+        unsafe {
+            self.device.cmd_end_rendering(self.command_buffer);
+        }
+    }
+
+    //=========================================================================
+    // Buffer Binding
+    //=========================================================================
+
+    /// Bind a single vertex buffer at binding 0.
+    ///
+    /// # Arguments
+    /// * `buffer` - The vertex buffer to bind
+    /// * `offset` - Byte offset into the buffer
+    pub fn bind_vertex_buffer(&self, buffer: vk::Buffer, offset: vk::DeviceSize) {
+        unsafe {
+            self.device
+                .cmd_bind_vertex_buffers(self.command_buffer, 0, &[buffer], &[offset]);
+        }
+    }
+
+    /// Bind an index buffer.
+    ///
+    /// # Arguments
+    /// * `buffer` - The index buffer to bind
+    /// * `offset` - Byte offset into the buffer
+    /// * `index_type` - Type of indices (UINT16 or UINT32)
+    pub fn bind_index_buffer(
+        &self,
+        buffer: vk::Buffer,
+        offset: vk::DeviceSize,
+        index_type: vk::IndexType,
+    ) {
+        unsafe {
+            self.device
+                .cmd_bind_index_buffer(self.command_buffer, buffer, offset, index_type);
+        }
+    }
+
+    //=========================================================================
+    // Descriptor Set Binding
+    //=========================================================================
+
+    /// Bind descriptor sets to a graphics pipeline.
+    ///
+    /// # Arguments
+    /// * `pipeline_layout` - The pipeline layout
+    /// * `first_set` - First set number to bind
+    /// * `descriptor_sets` - Slice of descriptor sets to bind
+    /// * `dynamic_offsets` - Dynamic offset values for dynamic descriptors
+    pub fn bind_descriptor_sets(
+        &self,
+        pipeline_layout: vk::PipelineLayout,
+        first_set: u32,
+        descriptor_sets: &[vk::DescriptorSet],
+        dynamic_offsets: &[u32],
+    ) {
+        unsafe {
+            self.device.cmd_bind_descriptor_sets(
+                self.command_buffer,
+                vk::PipelineBindPoint::GRAPHICS,
+                pipeline_layout,
+                first_set,
+                descriptor_sets,
+                dynamic_offsets,
+            );
+        }
+    }
+
+    //=========================================================================
     // Compute Pipeline Methods
     //=========================================================================
 

@@ -1,2 +1,7 @@
-// Rendering module - public re-exports are empty after Material removal
-// This module is kept for future rendering utilities
+//! Rendering utilities for the application.
+//!
+//! This module provides rendering-related types and utilities.
+
+pub mod pipeline;
+
+pub use pipeline::{AttachmentSize, FixedPipeline, FixedPipelineBuilder};

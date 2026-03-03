@@ -5,6 +5,7 @@ pub mod error;
 pub mod handle;
 pub mod material;
 pub mod pipeline;
+pub mod render_pass;
 pub mod renderer;
 pub mod texture;
 pub mod vertex;
@@ -32,6 +33,9 @@ pub(crate) use vulkan::texture::Texture;
 pub(crate) use vulkan::vertexbinding::VertexBinding;
 pub(crate) use vulkan::vertexbuffer::{IndexBuffer, VertexBuffer};
 
+// Public re-exports of wrapper types for cross-crate use
+pub use sync::{VkImage, VkImageView};
+
 // Size type (Katla-native)
 mod size;
 
@@ -57,12 +61,6 @@ pub use pipeline::{
     VertexAttributeFormat, VertexLayout,
 };
 
-// Rendering
-pub use renderer::{
-    AssetRegistry, BindlessDefaults, DrawCall, DrawList, FrameUniforms, InstanceData,
-    ParticleDispatch, ParticleRender, VulkanRenderer,
-};
-
 // Texture management
 pub use texture::{ImageFormat, TextureDescriptor, TextureManager, TextureUsage};
 
@@ -71,6 +69,15 @@ pub use vertex::{
     Vertex, VertexPBR, VertexPBRSkinned, VertexPosition, VertexPositionColor, VertexPositionNormal,
     VertexPositionNormalUV,
 };
+
+// Render pass system
+pub use render_pass::{
+    AttachmentInfo, AttachmentResources, BarrierKind, ClearValue, LoadOp, PassExecutor, RenderPass,
+    RenderPassContext, StoreOp,
+};
+
+// Vulkan command buffer (needed for render pass execution)
+pub use vulkan::commandbuffer::CommandBuffer;
 
 /// Low-level Vulkan context - an escape hatch for advanced use cases.
 ///

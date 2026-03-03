@@ -327,6 +327,13 @@ impl BindlessTextureManager {
         self.descriptor_layout
     }
 
+    /// Get the descriptor set for binding to shaders.
+    ///
+    /// This should be bound to set 1 after binding the pipeline.
+    pub fn descriptor_set(&self) -> VkDescriptorSet {
+        self.descriptor_set
+    }
+
     /// Get the number of currently used slots.
     pub fn used_slot_count(&self) -> u32 {
         MAX_BINDLESS_TEXTURES - self.free_slots.len() as u32
