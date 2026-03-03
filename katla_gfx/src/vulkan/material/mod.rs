@@ -46,7 +46,7 @@ pub use skeleton_descriptor::SkeletonDescriptorSet;
 // Explicit exports from storage_uniform module
 
 // Explicit exports from template module
-pub use template::{MaterialInstance, MaterialTemplate};
+pub(crate) use template::MaterialTemplate;
 
 use ash::vk;
 use std::rc::Rc;
@@ -148,7 +148,7 @@ impl PbrTextureSet {
     }
 }
 
-pub struct MaterialPipeline {
+pub(crate) struct MaterialPipeline {
     pipeline: Option<Pipeline>,
     desc_layout: Option<vk::DescriptorSetLayout>,
     /// Additional descriptor set layouts (e.g., push descriptor layouts for UI).

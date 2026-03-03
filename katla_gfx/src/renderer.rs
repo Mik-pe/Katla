@@ -41,7 +41,7 @@ pub struct VulkanRenderer {
     pub context: Rc<VulkanContext>,
     pub frame_context: VulkanFrameCtx,
     pub swap_data: SwapData,
-    pub current_framedata: Option<FrameData>,
+    pub(crate) current_framedata: Option<FrameData>,
     /// Asset registry for managing GPU resources (meshes, materials).
     /// This stores the actual Vulkan buffers and pipelines, while the application
     /// only holds opaque handles (MeshHandle, MaterialHandle).

@@ -52,7 +52,7 @@ impl std::error::Error for InstanceError {}
 ///
 /// The pipeline is referenced by handle from the MaterialPipelineCache,
 /// which owns all pipelines centrally.
-pub struct MaterialTemplate {
+pub(crate) struct MaterialTemplate {
     name: String,
     descriptor: MaterialDescriptor,
     pipeline: PipelineHandle,
@@ -232,7 +232,7 @@ impl MaterialTemplate {
 /// let handle = renderer.register_material(&mut material)?;
 /// ```
 #[derive(Clone)]
-pub struct MaterialInstance {
+pub(crate) struct MaterialInstance {
     /// Optional template reference (None until resolved)
     template: Option<Rc<MaterialTemplate>>,
     /// Template name for lazy resolution
