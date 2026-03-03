@@ -46,7 +46,7 @@ impl std::error::Error for MaterialCacheError {}
 /// This cache deduplicates pipeline creation by reusing existing pipelines
 /// when materials have compatible configurations. Pipelines are stored in
 /// a central `ResourceStorage` and referenced by opaque `PipelineHandle`.
-pub(crate) struct MaterialPipelineCache {
+pub struct MaterialPipelineCache {
     context: Rc<VulkanContext>,
     cache: HashMap<MaterialKey, PipelineHandle>,
     storage: ResourceStorage<MaterialPipeline>,

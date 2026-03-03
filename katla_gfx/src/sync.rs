@@ -40,7 +40,7 @@ pub(crate) const DEPTH_SUBRESOURCE_RANGE: vk::ImageSubresourceRange = vk::ImageS
 macro_rules! define_vk_wrapper {
     ($name:ident, $vk_type:ty) => {
         #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-        pub(crate) struct $name(pub $vk_type);
+        pub struct $name(pub $vk_type);
 
         unsafe impl Send for $name {}
         unsafe impl Sync for $name {}
