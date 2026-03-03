@@ -46,34 +46,34 @@ pub struct VulkanRenderer {
     /// Asset registry for managing GPU resources (meshes, materials).
     /// This stores the actual Vulkan buffers and pipelines, while the application
     /// only holds opaque handles (MeshHandle, MaterialHandle).
-    pub asset_registry: AssetRegistry,
+    pub(crate) asset_registry: AssetRegistry,
     /// Material registry for template-based materials with hot reload.
     /// Loads materials from TOML files and supports runtime shader reloading.
     /// Wrapped in Rc to allow cloning for safe access during model loading.
-    pub material_registry: Rc<RefCell<MaterialRegistry>>,
+    pub(crate) material_registry: Rc<RefCell<MaterialRegistry>>,
     /// Material pipeline cache for unified material system.
     /// Caches pipelines by MaterialKey for deduplication.
     /// Wrapped in Rc to allow sharing with renderers (UIRenderer).
-    pub material_cache: Rc<RefCell<MaterialPipelineCache>>,
+    pub(crate) material_cache: Rc<RefCell<MaterialPipelineCache>>,
     /// Bindless texture manager for efficient texture binding.
     /// All textures are stored in a single array accessed by index.
     /// Texture indices are passed via ObjectUniforms.texture_indices.
-    pub bindless_manager: BindlessTextureManager,
+    pub(crate) bindless_manager: BindlessTextureManager,
     /// Centralized texture manager for handle-based texture creation.
     /// Provides a clean API for creating and looking up textures by handle.
-    pub texture_manager: TextureManager,
+    pub(crate) texture_manager: TextureManager,
     /// Storage uniform manager for storage buffer-based uniforms.
     /// Materials use storage buffers with instance indexing.
-    pub storage_manager: StorageUniformManager,
+    pub(crate) storage_manager: StorageUniformManager,
     /// Storage descriptor set for binding storage buffers to shaders (set 0).
-    pub storage_descriptor_set: StorageDescriptorSet,
+    pub(crate) storage_descriptor_set: StorageDescriptorSet,
     /// Draw list cell for geometry pass (shared with render graph).
-    pub draw_list_cell: Rc<RefCell<Option<DrawList>>>,
+    pub(crate) draw_list_cell: Rc<RefCell<Option<DrawList>>>,
     /// Skeleton descriptor sets for GPU skeletal animation.
     /// Indexed by SkeletonHandle.
-    pub skeleton_descriptors: Vec<Option<SkeletonDescriptorSet>>,
+    pub(crate) skeleton_descriptors: Vec<Option<SkeletonDescriptorSet>>,
     /// Frame-level uniforms set once per frame via set_frame_uniforms().
-    pub frame_uniforms: Option<FrameUniforms>,
+    pub(crate) frame_uniforms: Option<FrameUniforms>,
     /// Cached default white PBR material handle.
     default_material_handle: Option<MaterialHandle>,
     /// Offscreen render targets as (texture_id, target) pairs.
@@ -223,7 +223,7 @@ impl VulkanRenderer {
     /// 3. Record command buffer with render passes
     /// 4. Submit command buffer to GPU
     /// 5. Present to swapchain
-    pub fn render_frame(&mut self) {
+    pub fn render_frame(&mut self) -> Result<(), RendererError> {
         let frame_index = self.swap_data.current_frame();
         let extent = self.frame_context.swapchain.get_extent();
         let swapchain = self.frame_context.swapchain.swapchain;
@@ -232,13 +232,11 @@ impl VulkanRenderer {
         self.swap_data.wait_for_fence(&self.context.device);
 
         // Acquire next swapchain image
-        let (image_index, _suboptimal) = unsafe {
-            let swapchain_loader = self
-                .context
-                .swapchain_loader
-                .as_ref()
-                .expect("Swapchain loader required");
+        let swapchain_loader = self.context.swapchain_loader.as_ref().ok_or_else(|| {
+            RendererError::SwapchainError("Swapchain loader not initialized".into())
+        })?;
 
+        let (image_index, _suboptimal) = unsafe {
             swapchain_loader
                 .acquire_next_image(
                     swapchain,
@@ -246,7 +244,12 @@ impl VulkanRenderer {
                     self.swap_data.image_available_semaphore(),
                     vk::Fence::null(),
                 )
-                .expect("Failed to acquire swapchain image")
+                .map_err(|e| {
+                    RendererError::SwapchainError(format!(
+                        "Failed to acquire swapchain image: {:?}",
+                        e
+                    ))
+                })?
         };
 
         // Begin command buffer recording
@@ -259,8 +262,10 @@ impl VulkanRenderer {
             self.context
                 .device
                 .begin_command_buffer(command_buffer.vk_command_buffer(), &begin_info)
-                .expect("Failed to begin command buffer");
-        };
+                .map_err(|e| {
+                    RendererError::VulkanError(format!("Failed to begin command buffer: {:?}", e))
+                })?;
+        }
 
         // Transition swapchain image from undefined to color attachment optimal
         let swapchain_images = self.frame_context.swapchain_images();
@@ -365,21 +370,29 @@ impl VulkanRenderer {
             self.context
                 .device
                 .end_command_buffer(command_buffer.vk_command_buffer())
-                .expect("Failed to end command buffer");
+                .map_err(|e| {
+                    RendererError::VulkanError(format!("Failed to end command buffer: {:?}", e))
+                })?;
         }
 
         // Submit command buffer to GPU
-        self.submit_command_buffer(frame_index, image_index);
+        self.submit_command_buffer(frame_index, image_index)?;
 
         // Present to swapchain
-        self.present_swapchain(image_index);
+        self.present_swapchain(image_index)?;
 
         // Step to next frame
         self.swap_data.step_frame();
+
+        Ok(())
     }
 
     /// Submit command buffer to GPU queue.
-    fn submit_command_buffer(&mut self, frame_index: usize, image_index: u32) {
+    fn submit_command_buffer(
+        &mut self,
+        frame_index: usize,
+        image_index: u32,
+    ) -> Result<(), RendererError> {
         let command_buffer = &self.frame_context.command_buffers[frame_index];
 
         let wait_semaphore = self.swap_data.image_available_semaphore();
@@ -391,7 +404,9 @@ impl VulkanRenderer {
             self.context
                 .device
                 .reset_fences(std::slice::from_ref(&in_flight_fence))
-                .expect("Failed to reset fence");
+                .map_err(|e| {
+                    RendererError::VulkanError(format!("Failed to reset fence: {:?}", e))
+                })?;
         }
 
         // Submit command buffer
@@ -401,10 +416,12 @@ impl VulkanRenderer {
             &[signal_semaphore],
             in_flight_fence,
         );
+
+        Ok(())
     }
 
     /// Present the swapchain image to screen.
-    fn present_swapchain(&self, image_index: u32) {
+    fn present_swapchain(&self, image_index: u32) -> Result<(), RendererError> {
         let signal_semaphore = self.swap_data.render_finished_semaphore(image_index);
 
         let present_info = vk::PresentInfoKHR::default()
@@ -414,14 +431,19 @@ impl VulkanRenderer {
             ))
             .image_indices(std::slice::from_ref(&image_index));
 
+        let swapchain_loader = self.context.swapchain_loader.as_ref().ok_or_else(|| {
+            RendererError::SwapchainError("Swapchain loader not initialized".into())
+        })?;
+
         unsafe {
-            self.context
-                .swapchain_loader
-                .as_ref()
-                .unwrap()
+            swapchain_loader
                 .queue_present(self.context.gfx_queue.vk_queue(), &present_info)
-                .expect("Failed to present swapchain");
+                .map_err(|e| {
+                    RendererError::SwapchainError(format!("Failed to present swapchain: {:?}", e))
+                })?;
         }
+
+        Ok(())
     }
 
     /// Get the bindless texture manager.
@@ -477,6 +499,25 @@ impl VulkanRenderer {
         let mut cache = self.material_cache.borrow_mut();
         registry
             .load_directory_bindless(dir, &mut cache, layout)
+            .map_err(|e| RendererError::InvalidOperation(e.to_string()))
+    }
+
+    /// Enable hot reload for materials and shaders.
+    ///
+    /// This enables automatic reloading of material templates and shaders
+    /// when the source files change on disk.
+    ///
+    /// # Arguments
+    /// * `root` - Root directory to watch for changes
+    /// * `interval_ms` - Polling interval in milliseconds
+    pub fn enable_material_hot_reload(
+        &self,
+        root: &std::path::Path,
+        interval_ms: u64,
+    ) -> Result<(), RendererError> {
+        self.material_registry
+            .borrow_mut()
+            .enable_hot_reload(root, interval_ms)
             .map_err(|e| RendererError::InvalidOperation(e.to_string()))
     }
 

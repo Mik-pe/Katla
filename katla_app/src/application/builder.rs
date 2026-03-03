@@ -98,9 +98,7 @@ impl ApplicationBuilder {
         .expect("Failed to initialize Vulkan renderer");
 
         renderer
-            .material_registry
-            .borrow_mut()
-            .enable_hot_reload(&resources.root, 100)
+            .enable_material_hot_reload(&resources.root, 100)
             .expect("Failed to enable hot reload");
         log::info!("Hot reload enabled for materials and shaders");
 
