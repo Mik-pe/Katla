@@ -13,8 +13,8 @@ pub use crate::handle::{Handle, MaterialHandle, MeshHandle, SkeletonHandle, Text
 use crate::viewport::{ViewportBuilder, ViewportHandle};
 pub use registry::AssetRegistry;
 pub use types::{
-    DrawCall, DrawList, FrameUniforms, InstanceData, ParticleDispatch, ParticleRender,
-    UiDrawCommand, UiDrawList,
+    DrawCall, DrawList, FrameUniforms, InstanceData, ParticleDispatch, ParticleRender, UIDrawList,
+    UiDrawCommand,
 };
 
 use crate::material::Material;

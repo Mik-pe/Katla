@@ -49,7 +49,7 @@ pub fn render_debug_ui(app: &mut Application, dt: f32) {
             fps,
             app.frame_count,
             &mut app.background_loader,
-            &app.thumbnail_texture_ids,
+            &app.thumbnail_texture_handles,
         )
     } else {
         app.debug_overlay.render(
@@ -62,36 +62,18 @@ pub fn render_debug_ui(app: &mut Application, dt: f32) {
         )
     };
 
-    // Convert UI draw commands to GPU format and submit
+    // Use UIRenderer to convert and draw list
     if !draw_list.is_empty() {
-        let commands: Vec<UiDrawCommand> = draw_list
-            .commands
-            .iter()
-            .map(|cmd| {
-                let clip_rect = if cmd.clip_rect.min.x() < f32::MAX / 2.0 {
-                    Some([
-                        cmd.clip_rect.min.x(),
-                        cmd.clip_rect.min.y(),
-                        cmd.clip_rect.width(),
-                        cmd.clip_rect.height(),
-                    ])
-                } else {
-                    None
-                };
-                let texture_index = match cmd.texture {
-                    katla_ui::TextureId::NONE => 0,
-                    katla_ui::TextureId::FONT_ATLAS => 1,
-                    other => other.0 as u32,
-                };
-                UiDrawCommand::new(cmd.index_offset, cmd.index_count, clip_rect, texture_index)
-            })
-            .collect();
+        // Convert the UI draw list to GPU format using UIRenderer
+        // Use the existing UIRenderer from the UI module
+        let ui_renderer = crate::ui::UIRenderer::new();
+        let gpu_draw_list = ui_renderer.convert_draw_list(&draw_list);
 
         app.renderer.render_ui(
-            &draw_list.vertex_bytes(),
-            draw_list.vertex_count() as u32,
-            &draw_list.indices,
-            &commands,
+            &gpu_draw_list.vertex_bytes(),
+            gpu_draw_list.vertex_count() as u32,
+            &gpu_draw_list.indices,
+            &gpu_draw_list.commands,
             [screen_size.x(), screen_size.y()],
         );
     }

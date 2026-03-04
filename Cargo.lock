@@ -1315,7 +1315,6 @@ dependencies = [
  "ab_glyph",
  "bitflags 2.11.0",
  "bytemuck",
- "katla_gfx",
  "katla_math",
  "log",
 ]

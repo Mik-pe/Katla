@@ -253,8 +253,7 @@ impl ApplicationBuilder {
             gui_state,
             scale_factor: 1.0, // Will be updated when window is created
             background_loader: BackgroundLoader::new(),
-            next_thumbnail_texture_id: 100, // Custom texture IDs start at 100
-            thumbnail_texture_ids: HashMap::new(),
+            thumbnail_texture_handles: HashMap::new(),
             start_time: Instant::now(),
         };
 

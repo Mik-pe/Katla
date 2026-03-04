@@ -15,6 +15,7 @@
 //! Without gamma correction, text can appear too thin (light fonts) or too thick
 //! (dark fonts on light backgrounds).
 
+use crate::types::TextureId;
 use ab_glyph::{Font, FontRef, Glyph, PxScale, ScaleFont};
 use katla_math::{Rect2D, Vec2};
 use std::collections::HashMap;
@@ -235,6 +236,8 @@ pub struct FontSystem {
     atlas_resized: bool,
     /// Padding around glyphs in atlas.
     glyph_padding: u32,
+    /// Texture ID for the font atlas (set by application after registering with renderer).
+    font_atlas_id: TextureId,
 }
 
 impl FontSystem {
@@ -277,6 +280,7 @@ impl FontSystem {
             atlas_dirty: true, // Mark dirty so renderer uploads the white pixel
             atlas_resized: false,
             glyph_padding: 1,
+            font_atlas_id: TextureId::NONE,
         }
     }
 
@@ -308,7 +312,20 @@ impl FontSystem {
             atlas_dirty: true,
             atlas_resized: false,
             glyph_padding: 1,
+            font_atlas_id: TextureId::NONE,
         }
+    }
+
+    /// Get the font atlas texture ID.
+    pub fn atlas_id(&self) -> TextureId {
+        self.font_atlas_id
+    }
+
+    /// Set the font atlas texture ID.
+    ///
+    /// This should be called after registering the atlas texture with the renderer.
+    pub fn set_atlas_id(&mut self, id: TextureId) {
+        self.font_atlas_id = id;
     }
 
     /// Add a font from bytes (TTF/OTF data).

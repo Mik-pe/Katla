@@ -203,7 +203,7 @@ impl Drop for RenderTexture {
 ///
 /// // Normal usage: access context through renderer
 /// # let renderer: VulkanRenderer = unsafe { std::mem::zeroed() };
-/// let context: &Rc<VulkanContext> = &renderer.context;
+/// let context: &Rc<VulkanContext> = renderer.context();
 ///
 /// // Escape hatch: query device limits for advanced features
 /// let limits = unsafe {

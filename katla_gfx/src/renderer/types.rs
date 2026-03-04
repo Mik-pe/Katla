@@ -7,6 +7,7 @@ use crate::handle::{
     DescriptorSetHandle, MaterialHandle, MeshHandle, PipelineHandle, PipelineLayoutHandle,
     SkeletonHandle,
 };
+use crate::vertex::VertexUI;
 
 pub use crate::handle::{Handle, TextureHandle};
 
@@ -544,7 +545,7 @@ pub fn compute_distance_from_camera(model_matrix: &[f32; 16], camera_position: [
 ///
 /// Each command represents a batch of primitives that share the same texture
 /// and clipping rectangle.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Copy)]
 pub struct UiDrawCommand {
     /// Starting index in the index buffer.
     pub index_offset: u32,
@@ -553,9 +554,9 @@ pub struct UiDrawCommand {
     /// Clipping rectangle in pixels: [x, y, width, height].
     /// None = no clipping (draw to full screen).
     pub clip_rect: Option<[f32; 4]>,
-    /// Texture index in the bindless texture array.
-    /// 0 = white pixel / no texture.
-    pub texture_index: u32,
+    /// Texture handle for this batch.
+    /// Use `TextureHandle::NONE` for solid color rendering (no texture).
+    pub texture: TextureHandle,
 }
 
 impl UiDrawCommand {
@@ -564,54 +565,60 @@ impl UiDrawCommand {
         index_offset: u32,
         index_count: u32,
         clip_rect: Option<[f32; 4]>,
-        texture_index: u32,
+        texture: TextureHandle,
     ) -> Self {
         Self {
             index_offset,
             index_count,
             clip_rect,
-            texture_index,
+            texture,
         }
     }
 }
 
-/// A complete draw list for UI rendering.
+/// A complete UI draw list for rendering.
 ///
-/// Contains a mesh (vertices/indices), material, and a list of draw commands.
-/// Each command references a range of indices in the mesh.
-#[derive(Clone, Debug)]
-pub struct UiDrawList {
-    /// Mesh containing all UI vertices and indices.
-    pub mesh: MeshHandle,
-    /// Material for UI rendering (orthographic, alpha blending).
-    pub material: MaterialHandle,
-    /// Draw commands (batches).
+/// Contains all vertices, indices, and draw commands needed to render
+/// a UI frame. Created by katla_app by converting `katla_ui::DrawList`.
+#[derive(Clone, Debug, Default)]
+pub struct UIDrawList {
+    /// All vertices in the draw list.
+    pub vertices: Vec<VertexUI>,
+    /// All indices in the draw list (triangles).
+    pub indices: Vec<u32>,
+    /// Draw commands (batches grouped by texture/clip).
     pub commands: Vec<UiDrawCommand>,
 }
 
-impl UiDrawList {
-    /// Create a new UI draw list.
-    pub fn new(mesh: MeshHandle, material: MaterialHandle) -> Self {
-        Self {
-            mesh,
-            material,
-            commands: Vec::new(),
-        }
+impl UIDrawList {
+    /// Create a new empty UI draw list.
+    pub fn new() -> Self {
+        Self::default()
     }
 
-    /// Add a draw command to the list.
-    pub fn add_command(&mut self, command: UiDrawCommand) {
-        self.commands.push(command);
-    }
-
-    /// Check if the draw list is empty (no commands).
+    /// Check if the draw list is empty.
     pub fn is_empty(&self) -> bool {
-        self.commands.is_empty()
+        self.indices.is_empty()
     }
 
-    /// Get the total number of commands.
+    /// Get the total number of vertices.
+    pub fn vertex_count(&self) -> usize {
+        self.vertices.len()
+    }
+
+    /// Get the total number of indices.
+    pub fn index_count(&self) -> usize {
+        self.indices.len()
+    }
+
+    /// Get the number of draw commands.
     pub fn command_count(&self) -> usize {
         self.commands.len()
+    }
+
+    /// Get vertex data as bytes for GPU upload.
+    pub fn vertex_bytes(&self) -> &[u8] {
+        bytemuck::cast_slice(&self.vertices)
     }
 }
 

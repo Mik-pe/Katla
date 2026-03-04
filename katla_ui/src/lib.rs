@@ -45,11 +45,11 @@ mod context;
 mod draw_list;
 mod icons;
 pub mod input;
-pub mod material;
 pub mod response;
 mod sense;
 mod style;
 mod text;
+mod types;
 mod widget;
 pub mod widgets;
 
@@ -57,12 +57,12 @@ pub use context::{
     z_index, CloseBehavior, GraphOptions, LayoutDirection, LayoutState, Popup, PopupPosition,
     PopupStyle, ScrollArea, ScrollAreaState, UiContext, WindowState, ZGuard,
 };
-pub use draw_list::{DrawCommand, DrawList, TextureId};
+pub use draw_list::DrawList;
 pub use icons::ForkAwesome;
 pub use input::{mouse_button, KeyCode, MouseCursor, UiInputState};
-pub use katla_gfx::VertexUI;
 pub use response::Response;
 pub use sense::Sense;
 pub use style::{FontSize, UiStyle, UiTheme};
 pub use text::{CachedGlyph, FontError, FontId, FontSystem};
+pub use types::{ClipRect, DrawCmd, TextureId, Vertex};
 pub use widget::Widget;

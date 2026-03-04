@@ -84,16 +84,16 @@ impl<'a> Widget for ViewportGrid<'a> {
                 let slot_index = self.state.layout.slot_index(row, col).unwrap();
                 let viewport_bounds = self.get_viewport_bounds(row, col);
 
-                // Get the texture ID for this slot
-                let texture_id = self.texture_ids[slot_index].unwrap_or(TextureId::NONE);
+                // Get the texture handle for this slot
+                let texture = self.texture_ids[slot_index].unwrap_or(TextureId::NONE);
 
                 // Draw the viewport image
                 ui.draw_image(
                     viewport_bounds,
+                    Vec2::new(0.0, 0.0),
                     Vec2::new(0.0, 1.0),
-                    Vec2::new(1.0, 0.0),
                     Color::OPAQUE_IMAGE,
-                    texture_id,
+                    texture,
                 );
 
                 // Draw border (highlight if hovered/active)

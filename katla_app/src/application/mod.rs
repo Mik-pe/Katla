@@ -73,10 +73,8 @@ pub struct Application {
     pub(crate) scale_factor: f32,
     /// Background asset loader thread
     pub(crate) background_loader: BackgroundLoader,
-    /// Next texture ID for thumbnails (custom IDs start at 100)
-    pub(crate) next_thumbnail_texture_id: u64,
-    /// Mapping of thumbnail paths to their uploaded texture IDs
-    pub(crate) thumbnail_texture_ids: HashMap<PathBuf, katla_ui::TextureId>,
+    /// Mapping of thumbnail paths to their uploaded texture handles
+    pub(crate) thumbnail_texture_handles: HashMap<PathBuf, katla_gfx::TextureHandle>,
     /// Application start time for double-click timestamp calculation
     pub(crate) start_time: Instant,
 }
@@ -326,7 +324,6 @@ impl Application {
     fn poll_background_loader(&mut self) {
         use crate::ui::ThumbnailState;
         use crate::util::LoadResult;
-        use katla_ui::TextureId;
 
         let results = self.background_loader.poll();
 
@@ -341,22 +338,23 @@ impl Application {
                 } => {
                     debug!("Thumbnail loaded: {:?} ({}x{})", path, width, height);
 
-                    // Create texture ID for this thumbnail
-                    let texture_id = TextureId::custom(self.next_thumbnail_texture_id);
-                    self.next_thumbnail_texture_id += 1;
+                    // TODO: Upload texture to renderer and get TextureHandle
+                    // For now, use NONE as placeholder until texture upload is implemented
+                    let texture_handle = katla_gfx::TextureHandle::NONE;
 
                     // Update the thumbnail cache entry
                     if let Some(entry) = self.background_loader.get_thumbnail_mut(&path) {
                         entry.uploaded = true;
                     }
 
-                    // Store texture ID for this path (persists across directory navigations)
-                    self.thumbnail_texture_ids.insert(path.clone(), texture_id);
+                    // Store texture handle for this path (persists across directory navigations)
+                    self.thumbnail_texture_handles
+                        .insert(path.clone(), texture_handle);
 
                     // Update asset browser entries with this thumbnail
                     for asset in self.editor_ui.asset_browser.assets.iter_mut() {
                         if asset.path == path {
-                            asset.thumbnail_state = ThumbnailState::Loaded { texture_id };
+                            asset.thumbnail_state = ThumbnailState::Loaded { texture_handle };
                             debug!("Updated thumbnail state for {:?}", path);
                             break;
                         }

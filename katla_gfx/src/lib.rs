@@ -79,7 +79,7 @@ pub use render_pass::{
 };
 
 // UI rendering types
-pub use renderer::UiDrawCommand;
+pub use renderer::{UIDrawList, UiDrawCommand};
 
 // Renderer
 pub use renderer::VulkanRenderer;

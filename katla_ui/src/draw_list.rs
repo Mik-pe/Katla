@@ -3,68 +3,8 @@
 //! The draw list collects all UI primitives (rectangles, text, images)
 //! into batches that can be efficiently rendered by the GPU.
 
-use katla_gfx::VertexUI;
+use crate::types::{ClipRect, DrawCmd, TextureId, Vertex};
 use katla_math::{Color, Rect2D, Vec2};
-
-/// Identifier for a texture in the UI system.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
-pub struct TextureId(pub u64);
-
-impl TextureId {
-    /// No texture (solid color rendering).
-    pub const NONE: TextureId = TextureId(0);
-
-    /// Default font atlas texture.
-    pub const FONT_ATLAS: TextureId = TextureId(1);
-
-    /// Game viewport texture (rendered scene).
-    pub const VIEWPORT: TextureId = TextureId(2);
-
-    /// Reserved texture IDs start here.
-    pub const CUSTOM_START: u64 = 100;
-
-    /// Create a custom texture ID.
-    pub fn custom(id: u64) -> Self {
-        TextureId(Self::CUSTOM_START + id)
-    }
-}
-
-/// A draw command in the list.
-///
-/// Each command represents a batch of primitives that share
-/// the same texture and clipping rectangle.
-#[derive(Debug, Clone)]
-pub struct DrawCommand {
-    /// Texture to use for this batch (None = solid color).
-    pub texture: TextureId,
-    /// Clipping rectangle for scissor test.
-    pub clip_rect: Rect2D,
-    /// Number of indices to draw for this command.
-    pub index_count: u32,
-    /// Starting index in the index buffer.
-    pub index_offset: u32,
-    /// Z-index for render order (higher = rendered on top).
-    pub z_index: u32,
-}
-
-impl DrawCommand {
-    /// Create a new draw command.
-    pub fn new(
-        texture: TextureId,
-        clip_rect: Rect2D,
-        index_count: u32,
-        index_offset: u32,
-        z_index: u32,
-    ) -> Self {
-        Self {
-            texture,
-            clip_rect,
-            index_count,
-            index_offset,
-            z_index,
-        }
-    }
-}
 
 /// A list of draw commands and vertex data for UI rendering.
 ///
@@ -73,19 +13,31 @@ impl DrawCommand {
 #[derive(Debug, Clone, Default)]
 pub struct DrawList {
     /// All vertices in the draw list.
-    pub vertices: Vec<VertexUI>,
+    pub vertices: Vec<Vertex>,
     /// All indices in the draw list.
     pub indices: Vec<u32>,
     /// Draw commands (batches).
-    pub commands: Vec<DrawCommand>,
+    pub commands: Vec<DrawCmd>,
     /// Current clip rectangle for new commands.
     current_clip: Rect2D,
     /// Current texture for batching.
     current_texture: TextureId,
-    /// Current Z-index for render order.
+    /// Current Z-index for render order (used for sorting before finalization).
     current_z: u32,
     /// Scratch buffer for circle/polygon tessellation (avoids per-frame allocation).
     scratch_points: Vec<Vec2>,
+    /// Pending batches keyed by (texture, clip, z) for sorting before finalization.
+    pending_batches: Vec<PendingBatch>,
+}
+
+/// Internal batch being accumulated before finalization.
+#[derive(Debug, Clone)]
+struct PendingBatch {
+    texture: TextureId,
+    clip_rect: Rect2D,
+    z_index: u32,
+    index_start: u32,
+    index_count: u32,
 }
 
 impl DrawList {
@@ -99,6 +51,7 @@ impl DrawList {
             current_texture: TextureId::NONE,
             current_z: 0,
             scratch_points: Vec::new(),
+            pending_batches: Vec::new(),
         }
     }
 
@@ -111,6 +64,7 @@ impl DrawList {
         self.current_texture = TextureId::NONE;
         self.current_z = 0;
         self.scratch_points.clear();
+        self.pending_batches.clear();
     }
 
     /// Set the current Z-index for subsequent draw commands.
@@ -158,20 +112,20 @@ impl DrawList {
         let color_arr = color.to_bytes();
 
         // Four corners
-        self.vertices.push(VertexUI::position_only(
-            [bounds.min.x(), bounds.min.y()],
+        self.vertices.push(Vertex::position_only(
+            Vec2::new(bounds.min.x(), bounds.min.y()),
             color_arr,
         ));
-        self.vertices.push(VertexUI::position_only(
-            [bounds.max.x(), bounds.min.y()],
+        self.vertices.push(Vertex::position_only(
+            Vec2::new(bounds.max.x(), bounds.min.y()),
             color_arr,
         ));
-        self.vertices.push(VertexUI::position_only(
-            [bounds.max.x(), bounds.max.y()],
+        self.vertices.push(Vertex::position_only(
+            Vec2::new(bounds.max.x(), bounds.max.y()),
             color_arr,
         ));
-        self.vertices.push(VertexUI::position_only(
-            [bounds.min.x(), bounds.max.y()],
+        self.vertices.push(Vertex::position_only(
+            Vec2::new(bounds.min.x(), bounds.max.y()),
             color_arr,
         ));
 
@@ -202,24 +156,24 @@ impl DrawList {
         let color_arr = color.to_bytes();
 
         // Four corners with UVs
-        self.vertices.push(VertexUI::new(
-            [bounds.min.x(), bounds.min.y()],
-            [uv.min.x(), uv.min.y()],
+        self.vertices.push(Vertex::new(
+            Vec2::new(bounds.min.x(), bounds.min.y()),
+            Vec2::new(uv.min.x(), uv.min.y()),
             color_arr,
         ));
-        self.vertices.push(VertexUI::new(
-            [bounds.max.x(), bounds.min.y()],
-            [uv.max.x(), uv.min.y()],
+        self.vertices.push(Vertex::new(
+            Vec2::new(bounds.max.x(), bounds.min.y()),
+            Vec2::new(uv.max.x(), uv.min.y()),
             color_arr,
         ));
-        self.vertices.push(VertexUI::new(
-            [bounds.max.x(), bounds.max.y()],
-            [uv.max.x(), uv.max.y()],
+        self.vertices.push(Vertex::new(
+            Vec2::new(bounds.max.x(), bounds.max.y()),
+            Vec2::new(uv.max.x(), uv.max.y()),
             color_arr,
         ));
-        self.vertices.push(VertexUI::new(
-            [bounds.min.x(), bounds.max.y()],
-            [uv.min.x(), uv.max.y()],
+        self.vertices.push(Vertex::new(
+            Vec2::new(bounds.min.x(), bounds.max.y()),
+            Vec2::new(uv.min.x(), uv.max.y()),
             color_arr,
         ));
 
@@ -241,7 +195,7 @@ impl DrawList {
     /// * `uv_min` - Top-left UV coordinate (0-1 for atlas, any range for viewport)
     /// * `uv_max` - Bottom-right UV coordinate
     /// * `color` - Tint color (use Color::WHITE for no tint)
-    /// * `texture` - Texture to sample from
+    /// * `texture` - Texture ID to sample from
     pub fn add_image(
         &mut self,
         bounds: Rect2D,
@@ -256,24 +210,24 @@ impl DrawList {
         let color_arr = color.to_bytes();
 
         // Four corners with UVs
-        self.vertices.push(VertexUI::new(
-            [bounds.min.x(), bounds.min.y()],
-            [uv_min.x(), uv_min.y()],
+        self.vertices.push(Vertex::new(
+            Vec2::new(bounds.min.x(), bounds.min.y()),
+            uv_min,
             color_arr,
         ));
-        self.vertices.push(VertexUI::new(
-            [bounds.max.x(), bounds.min.y()],
-            [uv_max.x(), uv_min.y()],
+        self.vertices.push(Vertex::new(
+            Vec2::new(bounds.max.x(), bounds.min.y()),
+            Vec2::new(uv_max.x(), uv_min.y()),
             color_arr,
         ));
-        self.vertices.push(VertexUI::new(
-            [bounds.max.x(), bounds.max.y()],
-            [uv_max.x(), uv_max.y()],
+        self.vertices.push(Vertex::new(
+            Vec2::new(bounds.max.x(), bounds.max.y()),
+            uv_max,
             color_arr,
         ));
-        self.vertices.push(VertexUI::new(
-            [bounds.min.x(), bounds.max.y()],
-            [uv_min.x(), uv_max.y()],
+        self.vertices.push(Vertex::new(
+            Vec2::new(bounds.min.x(), bounds.max.y()),
+            Vec2::new(uv_min.x(), uv_max.y()),
             color_arr,
         ));
 
@@ -303,8 +257,7 @@ impl DrawList {
 
         // Add all vertices
         for &point in points {
-            self.vertices
-                .push(VertexUI::position_only([point.x(), point.y()], color_arr));
+            self.vertices.push(Vertex::position_only(point, color_arr));
         }
 
         // Triangulate using fan method
@@ -365,36 +318,55 @@ impl DrawList {
         self.scratch_points = points;
     }
 
-    /// Flush the current batch into a draw command.
+    /// Flush the current batch into pending batches.
     fn flush_batch(&mut self) {
         let index_count = self.indices.len() as u32;
 
         // Find where this batch starts
         let index_offset = self
-            .commands
+            .pending_batches
             .last()
-            .map(|c| c.index_offset + c.index_count)
+            .map(|b| b.index_start + b.index_count)
             .unwrap_or(0);
 
-        // Only create a command if there are new indices
+        // Only create a batch if there are new indices
         let batch_index_count = index_count - index_offset;
         if batch_index_count > 0 {
-            self.commands.push(DrawCommand::new(
-                self.current_texture,
-                self.current_clip,
-                batch_index_count,
-                index_offset,
-                self.current_z,
-            ));
+            self.pending_batches.push(PendingBatch {
+                texture: self.current_texture,
+                clip_rect: self.current_clip,
+                z_index: self.current_z,
+                index_start: index_offset,
+                index_count: batch_index_count,
+            });
         }
     }
 
-    /// Finalize the draw list, flushing any pending batch and sorting by Z-index.
+    /// Finalize the draw list, sorting by Z-index and converting to GPU commands.
     pub fn finalize(&mut self) {
         self.flush_batch();
 
-        // Sort commands by Z-index (stable sort preserves order within same Z)
-        self.commands.sort_by_key(|c| c.z_index);
+        // Sort batches by Z-index (stable sort preserves order within same Z)
+        self.pending_batches.sort_by_key(|b| b.z_index);
+
+        // Convert to GPU commands
+        self.commands = self
+            .pending_batches
+            .iter()
+            .map(|batch| {
+                let clip_rect = if batch.clip_rect.min.x() < f32::MAX / 2.0 {
+                    Some(ClipRect::from_rect(&batch.clip_rect).to_array())
+                } else {
+                    None
+                };
+                DrawCmd::new(
+                    batch.index_start,
+                    batch.index_count,
+                    clip_rect,
+                    batch.texture,
+                )
+            })
+            .collect();
     }
 
     /// Check if the draw list is empty.
@@ -427,6 +399,10 @@ impl DrawList {
         bytemuck::cast_slice(&self.indices)
     }
 }
+
+// Safety: Vertex is POD and can be safely cast to bytes
+unsafe impl bytemuck::Pod for Vertex {}
+unsafe impl bytemuck::Zeroable for Vertex {}
 
 #[cfg(test)]
 mod tests {
@@ -506,5 +482,16 @@ mod tests {
         list.clear();
 
         assert!(list.is_empty());
+    }
+
+    #[test]
+    fn test_vertex_size() {
+        // Vertex uses katla_math::Vec2 which is [f32; 4] for alignment
+        // This is converted to 20-byte VertexUI for GPU upload
+        // pos: 16 bytes (Vec2 = [f32; 4])
+        // uv: 16 bytes (Vec2 = [f32; 4])
+        // color: 4 bytes ([u8; 4])
+        // Total: 36 bytes + padding = 48 bytes
+        assert_eq!(std::mem::size_of::<Vertex>(), 48);
     }
 }

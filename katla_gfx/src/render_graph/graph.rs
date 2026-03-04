@@ -343,6 +343,8 @@ pub struct ExecutionContext<'a> {
 struct PassExecutionData {
     /// Draw lists to render in this pass.
     draw_lists: Vec<DrawList>,
+    /// UI draw lists to render in this pass.
+    ui_draw_lists: Vec<crate::renderer::types::UIDrawList>,
     /// Whether dispatch was requested.
     dispatch: Option<(u32, u32, u32)>,
     /// Custom uniform data.
@@ -441,6 +443,18 @@ impl<'a> PassHandle<'a> {
             .or_insert_with(PassExecutionData::default)
             .draw_lists
             .push(draw_list.clone());
+        self
+    }
+
+    /// Submit a UI draw list for rendering in this pass.
+    ///
+    /// Can be called multiple times to submit multiple UI draw lists.
+    pub fn draw_ui(&mut self, ui_draw_list: &crate::renderer::types::UIDrawList) -> &mut Self {
+        self.pending
+            .entry(self.index)
+            .or_insert_with(PassExecutionData::default)
+            .ui_draw_lists
+            .push(ui_draw_list.clone());
         self
     }
 

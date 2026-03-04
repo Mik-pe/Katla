@@ -1,5 +1,6 @@
 //! Utility widgets: progress bar, tooltip, color rect, image.
 
+use crate::types::TextureId;
 use katla_math::{Color, Rect2D, Vec2};
 
 use super::super::UiContext;
@@ -60,20 +61,89 @@ impl UiContext {
             self.style.font_size,
         );
     }
+}
 
-    /// Draw a color preview rectangle.
-    pub fn color_rect(&mut self, color: Color, bounds: Rect2D) {
-        self.draw_rect(bounds, color);
-        self.draw_rect_border(bounds, Color::TRANSPARENT, self.style.border, 1.0);
+/// Keep on screen near mouse.
+pub fn keep_on_screen(size: Vec2, tip_pos: Vec2, screen_size: Vec2) -> Vec2 {
+    let mut tip_pos = tip_pos;
+
+    // Keep on screen horizontally
+    if tip_pos.x() + size.x() > screen_size.x() {
+        tip_pos = Vec2::new(tip_pos.x() - size.x() - 20.0, tip_pos.y());
+    }
+    if tip_pos.y() + size.y() > screen_size.y() {
+        tip_pos = Vec2::new(tip_pos.x(), tip_pos.y() - size.y() - 20.0);
     }
 
-    /// Draw an image/texture in the given bounds.
-    ///
-    /// The texture is stretched to fill the bounds.
-    /// Use UV rect to display a portion of the texture.
+    tip_pos
+}
+
+/// Draw a tooltip.
+pub fn tooltip(ui: &mut UiContext, text: &str, tip_pos: Vec2) {
+    let text_size = ui.measure_text(text, ui.style.font_size);
+    let padding = 8.0;
+    let tip_size = Vec2::new(text_size.x() + padding * 2.0, text_size.y() + padding * 2.0);
+
+    let tip_pos = keep_on_screen(tip_size, tip_pos, ui.screen_size);
+
+    let bounds = Rect2D::from_origin_size(tip_pos, tip_size);
+
+    // Draw tooltip
+    ui.draw_rect(bounds, ui.style.window_bg);
+    ui.draw_rect_border(bounds, Color::TRANSPARENT, ui.style.border, 1.0);
+
+    // Draw text
+    ui.draw_text(
+        text,
+        Vec2::new(bounds.min.x() + padding, bounds.min.y() + padding),
+        ui.style.text_color,
+        ui.style.font_size,
+    );
+}
+
+/// Image widget for displaying textures.
+pub struct Image {
+    texture: TextureId,
+    bounds: Rect2D,
+    uv: Option<Rect2D>,
+    tint: Option<Color>,
+}
+
+impl Image {
+    /// Create a new image widget.
+    pub fn new(texture: TextureId) -> Self {
+        Self {
+            texture,
+            bounds: Rect2D::default(),
+            uv: None,
+            tint: None,
+        }
+    }
+
+    /// Set the bounds.
+    pub fn bounds(mut self, bounds: Rect2D) -> Self {
+        self.bounds = bounds;
+        self
+    }
+
+    /// Set the UV rectangle.
+    pub fn uv(mut self, uv: Rect2D) -> Self {
+        self.uv = Some(uv);
+        self
+    }
+
+    /// Set the tint color.
+    pub fn tint(mut self, color: Color) -> Self {
+        self.tint = Some(color);
+        self
+    }
+}
+
+impl UiContext {
+    /// Draw an image.
     pub fn image(
         &mut self,
-        texture: crate::TextureId,
+        texture: TextureId,
         bounds: Rect2D,
         uv: Option<Rect2D>,
         tint: Option<Color>,
@@ -88,7 +158,7 @@ impl UiContext {
     /// Draw an image with a border (useful for viewport frames).
     pub fn image_bordered(
         &mut self,
-        texture: crate::TextureId,
+        texture: TextureId,
         bounds: Rect2D,
         uv: Option<Rect2D>,
         tint: Option<Color>,

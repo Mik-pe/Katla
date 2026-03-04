@@ -6,21 +6,25 @@
 //! - [`GeometryPass`] - Renders 3D geometry with color and depth outputs
 //! - [`FullscreenPass`] - Post-processing and compute-like fullscreen effects
 //! - [`ShadowPass`] - Shadow mapping for directional, point, and spot lights
+//! - [`UIPass`] - 2D UI rendering with alpha blending
 //! - [`LightType`] - Light type enumeration for shadow passes
 //!
 //! # Example
 //!
 //! ```ignore
-//! use katla_gfx::render_graph::{FrameGraph, GeometryPass, FullscreenPass};
+//! use katla_gfx::render_graph::{FrameGraph, GeometryPass, UIPass};
 //!
 //! let graph = FrameGraph::builder()
 //!     .add_pass(GeometryPass::new("geometry")
 //!         .write_color("color", ImageFormat::R16G16B16A16Sfloat)
 //!         .write_depth("depth", ImageFormat::D32Sfloat))
-//!     .add_pass(FullscreenPass::new("tonemap")
-//!         .read("color")
-//!         .write("output", ImageFormat::R8G8B8A8Srgb))
+//!     .add_pass(UIPass::new("ui")
+//!         .write("color"))  // Composited on top
 //!     .build(&renderer)?;
+//!
+//! graph.execute(&renderer, |ctx| {
+//!     ctx.pass("ui").draw_ui(&ui_draw_list);
+//! })?;
 //! ```
 //!
 //! Each pass template uses string-based resource names for convenience.
@@ -29,11 +33,14 @@
 mod fullscreen;
 mod geometry;
 mod shadow;
+mod ui;
 
 pub use fullscreen::FullscreenPass;
 pub use geometry::GeometryPass;
 pub use shadow::{LightType, ShadowPass};
+pub use ui::UIPass;
 
 pub(crate) use fullscreen::FullscreenPassData;
 pub(crate) use geometry::GeometryPassData;
 pub(crate) use shadow::ShadowPassData;
+pub(crate) use ui::UIPassData;
