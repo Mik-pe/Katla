@@ -8,6 +8,7 @@ katla_math = { path = "../katla_math" }
 katla_gfx = { path = "../katla_gfx" }
 log = "0.4"
 bitflags = "2.6"
+bytemuck = { version = "1.21", features = ["derive"] }
 
 # Font handling
 ab_glyph = "0.2"

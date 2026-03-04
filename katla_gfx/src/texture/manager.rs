@@ -253,6 +253,36 @@ impl TextureManager {
         self.bindless_slots.get(&handle).copied()
     }
 
+    /// Alias for get_bindless_slot for API consistency.
+    pub fn get_bindless_index(&self, handle: TextureHandle) -> Option<u32> {
+        self.get_bindless_slot(handle)
+    }
+
+    /// Update texture data in-place.
+    ///
+    /// The data size must match the current texture dimensions.
+    /// Uses a staging buffer for GPU upload.
+    pub fn update_data(&self, handle: TextureHandle, data: &[u8]) -> Result<(), vk::Result> {
+        if let Some(texture) = self.get_texture(handle) {
+            texture.update_data(data);
+            Ok(())
+        } else {
+            Err(vk::Result::ERROR_INVALID_OPAQUE_CAPTURE_ADDRESS)
+        }
+    }
+
+    /// Resize a texture with new dimensions and data.
+    ///
+    /// This recreates the internal image and updates the image view.
+    /// Any registered descriptors are automatically updated.
+    pub fn resize(&mut self, handle: TextureHandle, width: u32, height: u32, data: &[u8]) -> bool {
+        if let Some(texture) = self.get_texture_mut(handle) {
+            texture.resize(width, height, data)
+        } else {
+            false
+        }
+    }
+
     /// Remove a bindless slot registration.
     pub fn unregister_bindless_slot(&mut self, handle: TextureHandle) {
         self.bindless_slots.remove(&handle);

@@ -45,6 +45,7 @@ mod context;
 mod draw_list;
 mod icons;
 pub mod input;
+pub mod material;
 pub mod response;
 mod sense;
 mod style;

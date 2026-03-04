@@ -68,6 +68,25 @@ pub struct VulkanRenderer {
     /// Viewport system (new unified API).
     /// Application layer manages which handle is "main" vs "preview".
     viewports: Vec<Viewport>,
+    /// Cached UI render state (lazy initialized).
+    ui_state: Option<UiRenderState>,
+    /// Pending UI data for next frame (set by render_ui, consumed by render_frame).
+    pending_ui: Option<UiFrameData>,
+}
+
+/// Cached UI mesh and material handles.
+struct UiRenderState {
+    mesh: MeshHandle,
+    material: MaterialHandle,
+}
+
+/// Pending UI frame data passed from render_ui() to render_frame().
+struct UiFrameData {
+    vertex_bytes: Vec<u8>,
+    vertex_count: u32,
+    indices: Vec<u32>,
+    commands: Vec<UiDrawCommand>,
+    screen_size: [f32; 2],
 }
 
 /// Number of frames that can be processed concurrently.
@@ -159,6 +178,8 @@ impl VulkanRenderer {
             render_targets: Vec::new(),
             output_target: None,
             viewports: Vec::new(),
+            ui_state: None,
+            pending_ui: None,
         })
     }
 
@@ -1204,6 +1225,38 @@ impl VulkanRenderer {
         self.skeleton_descriptors
             .get(handle.index() as usize)?
             .as_ref()
+    }
+
+    /// Queue UI for rendering in the next frame.
+    ///
+    /// Call this before `render_frame()` each frame. The data is consumed
+    /// during `render_frame()` and rendered as an overlay.
+    ///
+    /// # Arguments
+    /// * `vertex_bytes` - Raw vertex data (VertexUI as bytes)
+    /// * `vertex_count` - Number of vertices
+    /// * `indices` - Index data (u32)
+    /// * `commands` - Draw commands with clip rects and texture indices
+    /// * `screen_size` - Screen dimensions [width, height] in pixels
+    pub fn render_ui(
+        &mut self,
+        vertex_bytes: &[u8],
+        vertex_count: u32,
+        indices: &[u32],
+        commands: &[UiDrawCommand],
+        screen_size: [f32; 2],
+    ) {
+        if vertex_bytes.is_empty() || indices.is_empty() || commands.is_empty() {
+            return;
+        }
+
+        self.pending_ui = Some(UiFrameData {
+            vertex_bytes: vertex_bytes.to_vec(),
+            vertex_count,
+            indices: indices.to_vec(),
+            commands: commands.to_vec(),
+            screen_size,
+        });
     }
 }
 

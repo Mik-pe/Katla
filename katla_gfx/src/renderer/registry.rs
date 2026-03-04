@@ -88,6 +88,11 @@ impl AssetRegistry {
         self.meshes.get(handle.index() as usize)?.as_ref()
     }
 
+    /// Get a mutable mesh by handle (for dynamic updates).
+    pub fn get_mesh_mut(&mut self, handle: MeshHandle) -> Option<&mut MeshAsset> {
+        self.meshes.get_mut(handle.index() as usize)?.as_mut()
+    }
+
     /// Get a material by handle (immutable).
     pub fn get_material(&self, handle: MaterialHandle) -> Option<&MaterialAsset> {
         self.materials.get(handle.index() as usize)?.as_ref()
