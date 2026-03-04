@@ -48,6 +48,8 @@ struct ApplicationInfo {
 pub struct Application {
     pub(crate) window: Window,
     pub(crate) renderer: VulkanRenderer,
+    /// Frame graph for rendering (built once at startup)
+    pub(crate) frame_graph: katla_gfx::FrameGraph,
     pub(crate) camera: Rc<RefCell<Camera>>,
     pub(crate) gltf_cache: FileCache<GLTFModel, Box<dyn Fn(&PathBuf) -> GLTFModel>>,
     pub(crate) timer: Timer,

@@ -17,6 +17,9 @@ use super::resource::GraphResourceHandle;
 /// Converts a user-friendly pass template into the internal representation
 /// used by the frame graph builder.
 ///
+/// This trait is `pub(crate)` - it's an implementation detail. Users interact
+/// with pass templates (GeometryPass, etc.) directly, not this trait.
+///
 /// # Example
 ///
 /// ```ignore
@@ -39,7 +42,7 @@ use super::resource::GraphResourceHandle;
 ///     }
 /// }
 /// ```
-pub trait PassBuilder: Any {
+pub(crate) trait PassBuilder: Any {
     /// Convert this pass template into an internal pass builder.
     ///
     /// This method consumes the pass template and produces an `InternalPassBuilder`

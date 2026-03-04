@@ -23,10 +23,11 @@ impl Default for PassType {
 }
 
 /// Pass execution callback type.
-pub type PassExecFn = Box<dyn FnOnce(&mut PassContext) -> Result<(), RenderGraphError> + 'static>;
+pub(crate) type PassExecFn =
+    Box<dyn FnOnce(&mut PassContext) -> Result<(), RenderGraphError> + 'static>;
 
 /// Context provided during pass execution.
-pub struct PassContext {
+pub(crate) struct PassContext {
     /// Command buffer for recording commands.
     pub cmd: Option<ash::vk::CommandBuffer>,
     /// Resources available for reading.
@@ -197,13 +198,16 @@ mod tests {
 
     #[test]
     fn test_pass_desc_convenience_constructors() {
-        let graphics = PassDesc::graphics("graphics_pass", vec![], vec![], Box::new(|_ctx| Ok(())));
+        let graphics =
+            PassDesc::graphics("graphics_pass", vec![], vec![], Box::new(|_ctx| Ok(())));
         assert_eq!(graphics.pass_type, PassType::Graphics);
 
-        let compute = PassDesc::compute("compute_pass", vec![], vec![], Box::new(|_ctx| Ok(())));
+        let compute =
+            PassDesc::compute("compute_pass", vec![], vec![], Box::new(|_ctx| Ok(())));
         assert_eq!(compute.pass_type, PassType::Compute);
 
-        let transfer = PassDesc::transfer("transfer_pass", vec![], vec![], Box::new(|_ctx| Ok(())));
+        let transfer =
+            PassDesc::transfer("transfer_pass", vec![], vec![], Box::new(|_ctx| Ok(())));
         assert_eq!(transfer.pass_type, PassType::Transfer);
     }
 }
