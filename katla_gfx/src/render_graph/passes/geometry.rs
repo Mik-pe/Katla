@@ -6,6 +6,7 @@ use std::collections::HashMap;
 
 use crate::render_graph::builder::{InternalPassBuilder, PassBuilder};
 use crate::render_graph::error::RenderGraphError;
+use crate::render_graph::pass::PassType;
 use crate::render_graph::resource::GraphResourceHandle;
 use crate::render_pass::{ClearValue, LoadOp, StoreOp};
 use crate::texture::ImageFormat;
@@ -286,6 +287,7 @@ impl PassBuilder for GeometryPass {
 
         InternalPassBuilder {
             name: self.name,
+            pass_type: PassType::Graphics,
             reads,
             writes,
             build_fn: Box::new(move |resource_map: &HashMap<String, GraphResourceHandle>| {
@@ -439,6 +441,7 @@ mod tests {
         let builder = pass.as_builder();
 
         assert_eq!(builder.name, "geometry");
+        assert_eq!(builder.pass_type, PassType::Graphics);
         assert_eq!(builder.reads, vec!["shadow_map"]);
         assert_eq!(builder.writes, vec!["color", "depth"]);
     }
