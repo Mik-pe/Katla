@@ -7,6 +7,8 @@
 use std::fmt;
 use std::io;
 
+use crate::render_graph::RenderGraphError;
+
 /// Unified error type for the Vulkan renderer.
 ///
 /// This enum wraps various error types that can occur during rendering,
@@ -30,6 +32,9 @@ pub enum RendererError {
 
     /// Swapchain error (acquire, present, etc.).
     SwapchainError(String),
+
+    /// Render graph error.
+    RenderGraphError(String),
 }
 
 impl fmt::Display for RendererError {
@@ -41,6 +46,7 @@ impl fmt::Display for RendererError {
             RendererError::InvalidOperation(msg) => write!(f, "Invalid operation: {}", msg),
             RendererError::InitializationFailed(msg) => write!(f, "Initialization failed: {}", msg),
             RendererError::SwapchainError(msg) => write!(f, "Swapchain error: {}", msg),
+            RendererError::RenderGraphError(msg) => write!(f, "Render graph error: {}", msg),
         }
     }
 }
@@ -60,6 +66,12 @@ impl From<ash::vk::Result> for RendererError {
 impl From<io::Error> for RendererError {
     fn from(error: io::Error) -> Self {
         RendererError::IoError(error.to_string())
+    }
+}
+
+impl From<RenderGraphError> for RendererError {
+    fn from(error: RenderGraphError) -> Self {
+        RendererError::RenderGraphError(error.to_string())
     }
 }
 

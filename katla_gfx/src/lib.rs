@@ -13,6 +13,9 @@ pub mod vertex;
 // Internal implementation (primitive mesh generators - use VulkanRenderer::create_*_mesh instead)
 pub(crate) mod primitives;
 
+// Render graph system
+pub mod render_graph;
+
 // Internal implementation (not public)
 pub(crate) mod vulkan;
 
@@ -73,6 +76,18 @@ pub use vertex::{
 // Render pass system
 pub use render_pass::{
     AttachmentInfo, AttachmentResources, BarrierKind, ClearValue, LoadOp, StoreOp,
+};
+
+// UI rendering types
+pub use renderer::UiDrawCommand;
+
+// Renderer
+pub use renderer::VulkanRenderer;
+
+// Render graph system
+pub use render_graph::{
+    ExecutionContext, FrameGraph, FrameGraphBuilder, FullscreenPass, GeometryPass, LightType,
+    PassBuilder, PassHandle, RenderGraphError, ShadowPass,
 };
 
 /// Low-level Vulkan context - an escape hatch for advanced use cases.
