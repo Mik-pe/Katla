@@ -8,7 +8,6 @@ use std::any::Any;
 use std::collections::HashMap;
 
 use super::error::RenderGraphError;
-use super::pass::PassType;
 use super::resource::GraphResourceHandle;
 
 /// Pass builder trait.
@@ -28,7 +27,6 @@ use super::resource::GraphResourceHandle;
 ///     fn as_builder(self) -> InternalPassBuilder {
 ///         InternalPassBuilder {
 ///             name: self.name,
-///             pass_type: PassType::Graphics,
 ///             reads: self.reads,
 ///             writes: self.writes,
 ///             build_fn: Box::new(move |resource_map| {
@@ -58,9 +56,6 @@ pub trait PassBuilder: Any {
 pub(crate) struct InternalPassBuilder {
     /// Human-readable name for debugging.
     pub name: String,
-
-    /// Type of pass (graphics, compute, transfer).
-    pub pass_type: PassType,
 
     /// Resource names this pass reads from.
     pub reads: Vec<String>,
@@ -111,7 +106,6 @@ mod tests {
         fn as_builder(self) -> InternalPassBuilder {
             InternalPassBuilder {
                 name: self.name,
-                pass_type: PassType::Graphics,
                 reads: self.reads,
                 writes: self.writes,
                 build_fn: Box::new(|_resource_map| Ok(Box::new(()))),
@@ -126,7 +120,6 @@ mod tests {
         let builder = pass.as_builder();
 
         assert_eq!(builder.name, "test");
-        assert_eq!(builder.pass_type, PassType::Graphics);
         assert_eq!(builder.reads, vec!["input"]);
         assert_eq!(builder.writes, vec!["output"]);
     }

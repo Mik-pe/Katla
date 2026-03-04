@@ -39,8 +39,3 @@ pub use fullscreen::FullscreenPass;
 pub use geometry::GeometryPass;
 pub use shadow::{LightType, ShadowPass};
 pub use ui::UIPass;
-
-pub(crate) use fullscreen::FullscreenPassData;
-pub(crate) use geometry::GeometryPassData;
-pub(crate) use shadow::ShadowPassData;
-pub(crate) use ui::UIPassData;

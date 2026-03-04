@@ -63,13 +63,6 @@ pub const MAX_BINDLESS_TEXTURES: u32 = 4096;
 /// Number of reserved slots for default textures.
 pub(crate) const DEFAULT_TEXTURE_COUNT: u32 = 5;
 
-/// Default texture slot indices.
-pub(crate) const DEFAULT_ALBEDO_SLOT: u32 = 0;
-pub(crate) const DEFAULT_NORMAL_SLOT: u32 = 1;
-pub(crate) const DEFAULT_MR_SLOT: u32 = 2;
-pub(crate) const DEFAULT_AO_SLOT: u32 = 3;
-pub(crate) const DEFAULT_EMISSION_SLOT: u32 = 4;
-
 /// Bindless texture manager.
 ///
 /// Manages a single descriptor set with a texture array and shared sampler.
@@ -302,20 +295,6 @@ impl BindlessTextureManager {
         Ok(slot)
     }
 
-    /// Unregister a texture, freeing its slot.
-    ///
-    /// # Arguments
-    /// * `slot` - The slot index returned by register_texture
-    pub fn unregister_texture(&mut self, slot: u32) {
-        if (slot as usize) < self.slots.len() && self.slots[slot as usize].is_some() {
-            self.slots[slot as usize] = None;
-            self.free_slots.push(slot);
-
-            // Note: We don't update the descriptor set here since PARTIALLY_BOUND
-            // allows unused slots to remain unbound. The slot will be reused later.
-        }
-    }
-
     /// Get the descriptor set for binding to shaders.
     ///
     /// This should be bound to set 1 after binding the pipeline.
@@ -323,20 +302,6 @@ impl BindlessTextureManager {
         self.descriptor_set
     }
 
-    /// Get the number of currently used slots.
-    pub fn used_slot_count(&self) -> u32 {
-        MAX_BINDLESS_TEXTURES - self.free_slots.len() as u32
-    }
-
-    /// Get the number of free slots.
-    pub fn free_slot_count(&self) -> u32 {
-        self.free_slots.len() as u32
-    }
-
-    /// Check if a slot is in use.
-    pub fn is_slot_used(&self, slot: u32) -> bool {
-        (slot as usize) < self.slots.len() && self.slots[slot as usize].is_some()
-    }
 }
 
 impl Drop for BindlessTextureManager {
