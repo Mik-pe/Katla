@@ -3,8 +3,8 @@
 //! This test module demonstrates the render graph API and verifies
 //! that all types work together correctly.
 
-use katla_gfx::*;
 use katla_gfx::texture::ImageFormat;
+use katla_gfx::*;
 
 #[test]
 fn test_render_graph_api_compilation() {

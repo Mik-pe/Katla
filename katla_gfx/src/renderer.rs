@@ -963,13 +963,67 @@ impl VulkanRenderer {
     where
         F: FnOnce(&mut crate::render_graph::Frame),
     {
-        // TODO: Implement actual frame graph execution
-        // This would:
-        // 1. Begin frame (acquire swapchain image)
-        // 2. Execute the frame graph
-        // 3. End frame (submit and present)
-        let _ = (frame_graph, f);
-        todo!("render() not yet implemented")
+        // 1. Wait for previous frame to complete
+        self.swap_data.wait_for_fence(&self.context.device);
+
+        // 2. Acquire next swapchain image
+        let (image_index, _is_suboptimal) = unsafe {
+            self.frame_context
+                .swapchain
+                .swapchain_loader
+                .acquire_next_image(
+                    self.frame_context.swapchain.swapchain,
+                    u64::MAX,
+                    self.swap_data.image_available_semaphore(),
+                    vk::Fence::null(),
+                )
+                .expect("Failed to acquire swapchain image")
+        };
+
+        // 3. Reset command buffer for this frame
+        let frame_idx = self.swap_data.current_frame();
+        let cmd = self.frame_context.command_buffers[frame_idx].vk_command_buffer();
+        unsafe {
+            self.context
+                .device
+                .reset_command_buffer(cmd, vk::CommandBufferResetFlags::empty());
+        }
+
+        // 4. Execute frame graph (records commands into the command buffer)
+        frame_graph
+            .execute(self, f)
+            .expect("Frame graph execution failed");
+
+        // 5. Submit command buffer with synchronization
+        let render_finished_semaphore = self.swap_data.render_finished_semaphore(image_index);
+        let wait_semaphores = [self.swap_data.image_available_semaphore()];
+        let signal_semaphores = [render_finished_semaphore];
+        let swapchains = [self.frame_context.swapchain.swapchain];
+        let image_indices = [image_index];
+
+        self.context.gfx_queue.submit(
+            &[&self.frame_context.command_buffers[frame_idx]],
+            &wait_semaphores,
+            &signal_semaphores,
+            self.swap_data.in_flight_fence(),
+        );
+
+        // 6. Present to swapchain
+        let present_info = vk::PresentInfoKHR::default()
+            .wait_semaphores(&signal_semaphores)
+            .swapchains(&swapchains)
+            .image_indices(&image_indices);
+
+        unsafe {
+            self.frame_context
+                .swapchain
+                .swapchain_loader
+                .queue_present(self.context.gfx_queue.vk_queue(), &present_info)
+                .expect("Failed to present");
+        }
+
+        // 7. Advance to next frame
+        self.swap_data.step_frame();
     }
 }
 

@@ -38,3 +38,4 @@ mod ui;
 pub use fullscreen::FullscreenPass;
 pub use geometry::GeometryPass;
 pub use shadow::{LightType, ShadowPass};
+pub use ui::UIPass;
