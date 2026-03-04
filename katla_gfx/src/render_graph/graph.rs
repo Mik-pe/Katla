@@ -6,11 +6,12 @@
 use std::collections::HashMap;
 
 use super::builder::{InternalPassBuilder, PassBuilder};
+use super::compiler::{ExecutionPlan, GraphCompiler};
 use super::error::RenderGraphError;
 use super::pass::PassDesc;
-use super::resource::GraphResourceHandle;
-use crate::renderer::types::DrawList;
+use super::resource::{GraphResourceHandle, ResourceState};
 use crate::renderer::VulkanRenderer;
+use crate::renderer::types::DrawList;
 
 /// Executable render graph.
 ///
@@ -44,6 +45,9 @@ pub struct FrameGraph {
     /// Pass name -> index mapping for execution context.
     pass_names: HashMap<String, usize>,
 
+    /// Compiled execution plan (sorted passes, barriers).
+    execution_plan: Option<ExecutionPlan>,
+
     /// Whether the graph has been compiled.
     compiled: bool,
 }
@@ -55,6 +59,7 @@ impl FrameGraph {
             passes: Vec::new(),
             resource_names: HashMap::new(),
             pass_names: HashMap::new(),
+            execution_plan: None,
             compiled: false,
         }
     }
@@ -65,18 +70,33 @@ impl FrameGraph {
         self.pass_names.insert(pass.name.clone(), index);
         self.passes.push(pass);
         self.compiled = false;
+        self.execution_plan = None;
     }
 
     /// Import a resource into the graph.
     pub(crate) fn import_resource(&mut self, name: impl Into<String>, handle: GraphResourceHandle) {
         self.resource_names.insert(name.into(), handle);
         self.compiled = false;
+        self.execution_plan = None;
     }
 
     /// Compile the graph for execution.
     pub(crate) fn compile(&mut self) -> Result<(), RenderGraphError> {
-        // TODO: Implement dependency analysis and topological sort
-        // TODO: Compute resource barriers between passes
+        if self.compiled {
+            return Ok(());
+        }
+
+        // Build initial resource states (all undefined initially)
+        let mut initial_states = HashMap::new();
+        for handle in self.resource_names.values() {
+            initial_states.insert(*handle, ResourceState::Undefined);
+        }
+
+        // Use the graph compiler to analyze dependencies and compute barriers
+        let compiler = GraphCompiler::from_pass_descs(&self.passes);
+        let execution_plan = compiler.compile(&initial_states)?;
+
+        self.execution_plan = Some(execution_plan);
         self.compiled = true;
         Ok(())
     }
@@ -113,6 +133,21 @@ impl FrameGraph {
     /// Get the number of passes in the graph.
     pub fn pass_count(&self) -> usize {
         self.passes.len()
+    }
+
+    /// Get the execution plan (after compilation).
+    pub(crate) fn execution_plan(&self) -> Option<&ExecutionPlan> {
+        self.execution_plan.as_ref()
+    }
+
+    /// Get a pass by index.
+    pub(crate) fn pass(&self, index: usize) -> Option<&PassDesc> {
+        self.passes.get(index)
+    }
+
+    /// Get all passes.
+    pub(crate) fn passes(&self) -> &[PassDesc] {
+        &self.passes
     }
 }
 

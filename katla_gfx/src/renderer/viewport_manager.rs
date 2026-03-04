@@ -86,5 +86,4 @@ impl ViewportManager {
     pub(crate) fn clear(&mut self) {
         self.viewports.clear();
     }
-
 }

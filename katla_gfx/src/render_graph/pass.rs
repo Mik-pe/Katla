@@ -198,16 +198,13 @@ mod tests {
 
     #[test]
     fn test_pass_desc_convenience_constructors() {
-        let graphics =
-            PassDesc::graphics("graphics_pass", vec![], vec![], Box::new(|_ctx| Ok(())));
+        let graphics = PassDesc::graphics("graphics_pass", vec![], vec![], Box::new(|_ctx| Ok(())));
         assert_eq!(graphics.pass_type, PassType::Graphics);
 
-        let compute =
-            PassDesc::compute("compute_pass", vec![], vec![], Box::new(|_ctx| Ok(())));
+        let compute = PassDesc::compute("compute_pass", vec![], vec![], Box::new(|_ctx| Ok(())));
         assert_eq!(compute.pass_type, PassType::Compute);
 
-        let transfer =
-            PassDesc::transfer("transfer_pass", vec![], vec![], Box::new(|_ctx| Ok(())));
+        let transfer = PassDesc::transfer("transfer_pass", vec![], vec![], Box::new(|_ctx| Ok(())));
         assert_eq!(transfer.pass_type, PassType::Transfer);
     }
 }

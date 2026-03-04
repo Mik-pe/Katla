@@ -301,7 +301,6 @@ impl BindlessTextureManager {
     pub fn descriptor_set(&self) -> VkDescriptorSet {
         self.descriptor_set
     }
-
 }
 
 impl Drop for BindlessTextureManager {
