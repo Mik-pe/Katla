@@ -5,9 +5,7 @@
 //! away from VulkanRenderer.
 
 use crate::viewport::{Viewport, ViewportBuilder, ViewportHandle};
-use crate::{RendererError, Size2D, VulkanContext};
-use ash::vk;
-use log::error;
+use crate::{Size2D, VulkanContext};
 use std::rc::Rc;
 
 /// Viewport manager for managing viewports and render targets.
@@ -34,19 +32,6 @@ impl ViewportManager {
     /// Returns a builder for configuring and creating a viewport.
     pub(crate) fn create(&mut self) -> ViewportBuilder {
         ViewportBuilder::new()
-    }
-
-    /// Register a created viewport.
-    ///
-    /// # Arguments
-    /// * `viewport` - The viewport to register
-    ///
-    /// # Returns
-    /// A handle to the registered viewport.
-    pub(crate) fn register_viewport(&mut self, viewport: Viewport) -> ViewportHandle {
-        let handle = ViewportHandle(self.viewports.len());
-        self.viewports.push(viewport);
-        handle
     }
 
     /// Get the number of viewports.
@@ -78,12 +63,6 @@ impl ViewportManager {
         self.get(handle).map(|v| v.get_extent())
     }
 
-    /// Check if a viewport is ready for rendering.
-    pub(crate) fn is_ready(&self, handle: ViewportHandle) -> bool {
-        self.get(handle)
-            .is_some_and(|v| v.storage_manager.is_some() && v.storage_descriptor.is_some())
-    }
-
     /// Destroy a viewport and free its resources.
     ///
     /// # Arguments
@@ -108,13 +87,4 @@ impl ViewportManager {
         self.viewports.clear();
     }
 
-    /// Get an iterator over all viewports.
-    pub(crate) fn iter(&self) -> impl Iterator<Item = &Viewport> {
-        self.viewports.iter()
-    }
-
-    /// Get a mutable iterator over all viewports.
-    pub(crate) fn iter_mut(&mut self) -> impl Iterator<Item = &mut Viewport> {
-        self.viewports.iter_mut()
-    }
 }

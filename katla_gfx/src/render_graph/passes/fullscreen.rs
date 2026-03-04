@@ -9,7 +9,6 @@ use crate::texture::ImageFormat;
 
 use super::super::builder::{InternalPassBuilder, PassBuilder};
 use super::super::error::RenderGraphError;
-use super::super::pass::PassType;
 use super::super::resource::GraphResourceHandle;
 
 /// Fullscreen/compute pass template.
@@ -75,7 +74,6 @@ impl PassBuilder for FullscreenPass {
 
         InternalPassBuilder {
             name: self.name,
-            pass_type: PassType::Graphics,
             reads: self.reads.clone(),
             writes,
             build_fn: Box::new(move |resource_map: &HashMap<String, GraphResourceHandle>| {
@@ -171,7 +169,6 @@ mod tests {
         let builder = pass.as_builder();
 
         assert_eq!(builder.name, "tone_map");
-        assert_eq!(builder.pass_type, PassType::Graphics);
         assert_eq!(builder.reads, vec!["hdr_color"]);
         assert_eq!(builder.writes, vec!["ldr_output"]);
     }

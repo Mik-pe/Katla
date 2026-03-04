@@ -8,7 +8,6 @@ use crate::texture::ImageFormat;
 
 use super::super::builder::{InternalPassBuilder, PassBuilder};
 use super::super::error::RenderGraphError;
-use super::super::pass::PassType;
 use super::super::resource::GraphResourceHandle;
 
 /// Type of light for shadow mapping.
@@ -93,7 +92,6 @@ impl PassBuilder for ShadowPass {
 
         InternalPassBuilder {
             name: self.name,
-            pass_type: PassType::Graphics,
             reads: Vec::new(),
             writes,
             build_fn: Box::new(move |resource_map: &HashMap<String, GraphResourceHandle>| {
@@ -173,7 +171,6 @@ mod tests {
         let builder = pass.as_builder();
 
         assert_eq!(builder.name, "shadows");
-        assert_eq!(builder.pass_type, PassType::Graphics);
         assert!(builder.reads.is_empty());
         assert_eq!(builder.writes, vec!["shadow_map"]);
     }
