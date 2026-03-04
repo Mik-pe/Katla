@@ -56,9 +56,10 @@ pub use context::{
     z_index, CloseBehavior, GraphOptions, LayoutDirection, LayoutState, Popup, PopupPosition,
     PopupStyle, ScrollArea, ScrollAreaState, UiContext, WindowState, ZGuard,
 };
-pub use draw_list::{DrawCommand, DrawList, TextureId, UiVertex};
+pub use draw_list::{DrawCommand, DrawList, TextureId};
 pub use icons::ForkAwesome;
 pub use input::{mouse_button, KeyCode, MouseCursor, UiInputState};
+pub use katla_gfx::VertexUI;
 pub use response::Response;
 pub use sense::Sense;
 pub use style::{FontSize, UiStyle, UiTheme};
