@@ -32,9 +32,6 @@ pub(crate) use vulkan::swapdata::SwapData;
 pub(crate) use vulkan::vertexbinding::VertexBinding;
 pub(crate) use vulkan::vertexbuffer::{IndexBuffer, VertexBuffer};
 
-// Public re-exports of wrapper types for cross-crate use
-pub use sync::{VkImage, VkImageView};
-
 // Public re-exports of pipeline state types for advanced use
 pub use vulkan::pipeline_state::{DynamicState, PrimitiveTopology, ShaderStages};
 

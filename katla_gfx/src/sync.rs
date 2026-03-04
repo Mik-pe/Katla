@@ -88,9 +88,7 @@ macro_rules! define_vk_wrapper {
 
 define_vk_wrapper!(VkSemaphore, vk::Semaphore);
 define_vk_wrapper!(VkFence, vk::Fence);
-define_vk_wrapper!(VkImageView, vk::ImageView);
 define_vk_wrapper!(VkSampler, vk::Sampler);
-define_vk_wrapper!(VkImage, vk::Image);
 define_vk_wrapper!(VkRenderPass, vk::RenderPass, default);
 define_vk_wrapper!(VkDescriptorSet, vk::DescriptorSet);
 define_vk_wrapper!(VkDescriptorSetLayout, vk::DescriptorSetLayout);
@@ -101,12 +99,74 @@ define_vk_wrapper!(VkBuffer, vk::Buffer, default);
 define_vk_wrapper!(VkShaderModule, vk::ShaderModule);
 
 //=============================================================================
+// Crate-local wrapper types (not public API)
+//=============================================================================
+
+/// Wrapper for Vulkan image handle (crate-local).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub(crate) struct VkImage(pub vk::Image);
+
+unsafe impl Send for VkImage {}
+unsafe impl Sync for VkImage {}
+
+impl VkImage {
+    pub(crate) fn new(handle: vk::Image) -> Self {
+        Self(handle)
+    }
+
+    pub(crate) fn vk(&self) -> vk::Image {
+        self.0
+    }
+}
+
+impl From<vk::Image> for VkImage {
+    fn from(handle: vk::Image) -> Self {
+        Self(handle)
+    }
+}
+
+impl From<VkImage> for vk::Image {
+    fn from(wrapper: VkImage) -> Self {
+        wrapper.0
+    }
+}
+
+/// Wrapper for Vulkan image view handle (crate-local).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub(crate) struct VkImageView(pub vk::ImageView);
+
+unsafe impl Send for VkImageView {}
+unsafe impl Sync for VkImageView {}
+
+impl VkImageView {
+    pub(crate) fn new(handle: vk::ImageView) -> Self {
+        Self(handle)
+    }
+
+    pub(crate) fn vk(&self) -> vk::ImageView {
+        self.0
+    }
+}
+
+impl From<vk::ImageView> for VkImageView {
+    fn from(handle: vk::ImageView) -> Self {
+        Self(handle)
+    }
+}
+
+impl From<VkImageView> for vk::ImageView {
+    fn from(wrapper: VkImageView) -> Self {
+        wrapper.0
+    }
+}
+
+//=============================================================================
 // Dynamic Rendering Types (Vulkan 1.3)
 //=============================================================================
 
 /// Wrapper for Vulkan 1.3 Viewport.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
-pub struct Viewport {
+pub struct VkViewport {
     pub x: f32,
     pub y: f32,
     pub width: f32,
@@ -115,7 +175,7 @@ pub struct Viewport {
     pub max_depth: f32,
 }
 
-impl Viewport {
+impl VkViewport {
     /// Create a new viewport.
     pub fn new(x: f32, y: f32, width: f32, height: f32, min_depth: f32, max_depth: f32) -> Self {
         Self {
@@ -141,8 +201,8 @@ impl Viewport {
     }
 }
 
-impl From<Viewport> for vk::Viewport {
-    fn from(viewport: Viewport) -> Self {
+impl From<VkViewport> for vk::Viewport {
+    fn from(viewport: VkViewport) -> Self {
         vk::Viewport::default()
             .x(viewport.x)
             .y(viewport.y)

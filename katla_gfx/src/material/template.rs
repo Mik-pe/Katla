@@ -5,8 +5,9 @@
 
 use crate::handle::PipelineHandle;
 use crate::texture::ImageFormat;
-use crate::vulkan::material::descriptor::{RenderState, ShaderSource};
 use crate::vulkan::vertexbinding::VertexBinding;
+
+use super::{RenderState, ShaderSource};
 
 use super::MaterialDomain;
 
