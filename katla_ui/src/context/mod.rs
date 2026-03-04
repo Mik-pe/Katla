@@ -685,7 +685,7 @@ mod tests {
 
         // Simulate two characters with advances
         let char1_advance = 8.5f32;
-        let char2_advance = 5.3f32;
+        let _char2_advance = 5.3f32;
 
         // Position 1: 50.1 (bin Zero)
         let pos1 = 50.1;
