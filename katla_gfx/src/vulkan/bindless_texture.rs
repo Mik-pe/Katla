@@ -265,6 +265,43 @@ impl BindlessTextureManager {
         (views, textures)
     }
 
+    /// Register a texture with the bindless system.
+    ///
+    /// Allocates a slot and updates the descriptor set with the texture's image view.
+    ///
+    /// # Arguments
+    /// * `image_view` - The Vulkan image view to register
+    ///
+    /// # Returns
+    /// The slot index for this texture, or an error if no slots are available.
+    pub fn register_texture(&mut self, image_view: vk::ImageView) -> Result<u32, RendererError> {
+        // Allocate a slot
+        let slot = self.free_slots.pop().ok_or_else(|| {
+            RendererError::InvalidOperation("No free bindless texture slots available".into())
+        })?;
+
+        // Update the slot
+        self.slots[slot as usize] = Some(image_view);
+
+        // Update descriptor set for this slot
+        let image_info = [vk::DescriptorImageInfo::default()
+            .image_view(image_view)
+            .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)];
+
+        let write = vk::WriteDescriptorSet::default()
+            .dst_set(self.descriptor_set.vk())
+            .dst_binding(0)
+            .dst_array_element(slot)
+            .descriptor_type(vk::DescriptorType::SAMPLED_IMAGE)
+            .image_info(&image_info);
+
+        unsafe {
+            self.device.update_descriptor_sets(&[write], &[]);
+        }
+
+        Ok(slot)
+    }
+
     /// Unregister a texture, freeing its slot.
     ///
     /// # Arguments

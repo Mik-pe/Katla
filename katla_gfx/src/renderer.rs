@@ -20,11 +20,12 @@ pub use types::{
 };
 
 use crate::material::Material;
+use crate::texture::{TextureDescriptor, TextureManager};
 use crate::vulkan::context::VulkanContext;
 use crate::{
     BindlessTextureManager, IndexBuffer, MAX_BINDLESS_TEXTURES, RendererError,
-    SkeletonDescriptorSet, StorageUniformManager, SwapData, TextureManager, VertexBuffer,
-    VulkanFrameCtx, viewport::Viewport,
+    SkeletonDescriptorSet, StorageUniformManager, SwapData, VertexBuffer, VulkanFrameCtx,
+    viewport::Viewport,
 };
 use ash::vk;
 use log::{error, info};
@@ -95,24 +96,6 @@ struct UiFrameData {
 /// Number of frames that can be processed concurrently.
 /// This is an implementation detail for double-buffering.
 pub(crate) const FRAMES_IN_FLIGHT: usize = 2;
-
-/// Default bindless texture slot indices.
-///
-/// These slots are reserved for default textures in the bindless texture array.
-/// Use these when registering fallback textures or when a material lacks a texture.
-#[derive(Debug, Clone, Copy)]
-pub struct BindlessDefaults {
-    /// Default albedo/diffuse texture slot (white texture).
-    pub albedo: u32,
-    /// Default normal map slot (flat normal pointing +Z).
-    pub normal: u32,
-    /// Default metallic/roughness slot (non-metal, medium roughness).
-    pub metallic_roughness: u32,
-    /// Default ambient occlusion slot (white = no occlusion).
-    pub occlusion: u32,
-    /// Default emission slot (black = no emission).
-    pub emission: u32,
-}
 
 impl VulkanRenderer {
     pub fn init(
@@ -436,38 +419,85 @@ impl VulkanRenderer {
         Ok(())
     }
 
-    /// Get the bindless texture manager.
-    pub fn bindless_manager(&self) -> &BindlessTextureManager {
-        &self.bindless_manager
-    }
+    // ========================================================================
+    // Texture Creation API
+    // ========================================================================
 
-    /// Get default bindless texture slot indices.
+    /// Create a texture from a descriptor and pixel data.
     ///
-    /// These slots are reserved for default textures in the bindless texture array.
-    /// Use these values when a material lacks a specific texture type.
-    pub fn bindless_defaults(&self) -> BindlessDefaults {
-        BindlessDefaults {
-            albedo: crate::vulkan::bindless_texture::DEFAULT_ALBEDO_SLOT,
-            normal: crate::vulkan::bindless_texture::DEFAULT_NORMAL_SLOT,
-            metallic_roughness: crate::vulkan::bindless_texture::DEFAULT_MR_SLOT,
-            occlusion: crate::vulkan::bindless_texture::DEFAULT_AO_SLOT,
-            emission: crate::vulkan::bindless_texture::DEFAULT_EMISSION_SLOT,
+    /// This is the primary method for texture creation. The texture is
+    /// automatically registered with the bindless system.
+    ///
+    /// # Arguments
+    /// * `desc` - Texture descriptor specifying dimensions, format, and usage
+    /// * `data` - Pixel data (must match descriptor dimensions and format)
+    ///
+    /// # Returns
+    /// A TextureHandle for the created texture.
+    ///
+    /// # Example
+    /// ```ignore
+    /// use katla_gfx::{TextureDescriptor, VulkanRenderer};
+    ///
+    /// let desc = TextureDescriptor::rgba8_srgb(512, 512);
+    /// let texture = renderer.create_texture(&desc, &pixel_data);
+    /// ```
+    pub fn create_texture(&mut self, desc: &TextureDescriptor, data: &[u8]) -> TextureHandle {
+        let handle = self.texture_manager.create(desc, data);
+
+        if let Some(texture) = self.texture_manager.get_texture_rc(handle) {
+            let slot = self
+                .bindless_manager
+                .register_texture(texture.image_view().vk())
+                .expect("Failed to register texture with bindless system");
+            self.texture_manager.register_bindless_slot(handle, slot);
         }
+
+        handle
     }
 
-    /// Get the bindless texture manager mutably.
-    pub fn bindless_manager_mut(&mut self) -> &mut BindlessTextureManager {
-        &mut self.bindless_manager
+    /// Create an RGBA8 SRGB texture from pixel data.
+    ///
+    /// Convenience method for the most common texture type.
+    pub fn create_texture_rgba(&mut self, width: u32, height: u32, data: &[u8]) -> TextureHandle {
+        let desc = TextureDescriptor::rgba8_srgb(width, height);
+        self.create_texture(&desc, data)
     }
 
-    /// Get the texture manager.
-    pub fn texture_manager(&self) -> &TextureManager {
-        &self.texture_manager
+    /// Create an RGBA8 UNORM texture (for linear data like normal maps).
+    pub fn create_texture_unorm(&mut self, width: u32, height: u32, data: &[u8]) -> TextureHandle {
+        let desc = TextureDescriptor::rgba8_unorm(width, height);
+        self.create_texture(&desc, data)
     }
 
-    /// Get the texture manager mutably.
-    pub fn texture_manager_mut(&mut self) -> &mut TextureManager {
-        &mut self.texture_manager
+    /// Create a 1x1 solid color texture.
+    ///
+    /// Useful for placeholder or fallback textures.
+    pub fn create_texture_solid(&mut self, color: [u8; 4]) -> TextureHandle {
+        self.texture_manager.create_solid(color)
+    }
+
+    /// Create a texture from RGB data (converts to RGBA internally).
+    pub fn create_texture_from_rgb(
+        &mut self,
+        width: u32,
+        height: u32,
+        rgb_data: &[u8],
+    ) -> TextureHandle {
+        self.texture_manager
+            .create_from_rgb(width, height, rgb_data)
+    }
+
+    /// Create an empty texture (no initial data).
+    ///
+    /// Useful for render targets or textures that will be filled later.
+    pub fn create_texture_empty(&mut self, desc: &TextureDescriptor) -> TextureHandle {
+        self.texture_manager.create_empty(desc)
+    }
+
+    /// Get the default white texture.
+    pub fn default_texture(&self) -> TextureHandle {
+        self.texture_manager.default_white()
     }
 
     /// Set frame-level uniforms for the current frame.
@@ -479,27 +509,6 @@ impl VulkanRenderer {
     /// * `uniforms` - Frame uniforms containing view/proj matrices, camera position, and lighting
     pub fn set_frame_uniforms(&mut self, uniforms: FrameUniforms) {
         self.frame_uniforms = Some(uniforms);
-    }
-
-    /// Update frame uniforms in storage buffer.
-    ///
-    /// Should be called once per frame before rendering.
-    ///
-    /// # Arguments
-    /// * `view` - View matrix (world-to-camera) - column-major [f32; 16]
-    /// * `proj` - Projection matrix (camera-to-clip) - column-major [f32; 16]
-    pub fn update_storage_frame(&mut self, view: &[f32; 16], proj: &[f32; 16]) {
-        self.storage_manager.update_frame(view, proj);
-    }
-
-    /// Update object uniforms in storage buffer.
-    ///
-    /// # Arguments
-    /// * `index` - Object index (0-255)
-    /// * `model` - Model matrix (object-to-world) - column-major [f32; 16]
-    /// * `color` - Color tint (RGBA)
-    pub fn update_storage_object(&mut self, index: usize, model: &[f32; 16], color: &[f32; 4]) {
-        self.storage_manager.update_object(index, model, color);
     }
 
     /// Initialize or resize the output render target.
@@ -526,6 +535,12 @@ impl VulkanRenderer {
         Ok(())
     }
 
+    /// Get the swapchain extent (primary window size).
+    pub fn swapchain_extent(&self) -> crate::Size2D {
+        let ext = self.frame_context.swapchain.get_extent();
+        crate::Size2D::new(ext.width, ext.height)
+    }
+
     /// Get output dimensions.
     pub fn output_extent(&self) -> Option<crate::Size2D> {
         self.output_target
@@ -538,8 +553,8 @@ impl VulkanRenderer {
     // ========================================================================
 
     /// Texture IDs for built-in render targets.
-    pub const VIEWPORT_TEXTURE_ID: u64 = 2;
-    pub const PREVIEW_TEXTURE_ID: u64 = 101;
+    pub(crate) const VIEWPORT_TEXTURE_ID: u64 = 2;
+    pub(crate) const PREVIEW_TEXTURE_ID: u64 = 101;
 
     /// Create or resize a render target for the given texture ID.
     ///
@@ -548,7 +563,7 @@ impl VulkanRenderer {
     /// * `width` - Width in pixels
     /// * `height` - Height in pixels
     /// * `count` - Number of targets to create (1 for single-buffered, FRAMES_IN_FLIGHT for double-buffered)
-    pub fn init_render_target(
+    pub(crate) fn init_render_target(
         &mut self,
         texture_id: u64,
         width: u32,
@@ -580,7 +595,7 @@ impl VulkanRenderer {
     }
 
     /// Get a render target by texture ID.
-    pub fn get_render_target(&self, texture_id: u64) -> Option<&ViewportRenderTarget> {
+    pub(crate) fn get_render_target(&self, texture_id: u64) -> Option<&ViewportRenderTarget> {
         self.render_targets
             .iter()
             .find(|(id, _)| *id == texture_id)
@@ -588,37 +603,22 @@ impl VulkanRenderer {
     }
 
     /// Get the first render target for a texture ID (alias for get_render_target).
-    pub fn get_render_target_first(&self, texture_id: u64) -> Option<&ViewportRenderTarget> {
+    pub(crate) fn get_render_target_first(&self, texture_id: u64) -> Option<&ViewportRenderTarget> {
         self.get_render_target(texture_id)
     }
 
     /// Check if a render target exists for the given texture ID.
-    pub fn has_render_target(&self, texture_id: u64) -> bool {
+    pub(crate) fn has_render_target(&self, texture_id: u64) -> bool {
         self.render_targets.iter().any(|(id, _)| *id == texture_id)
     }
 
     /// Remove a render target.
-    pub fn remove_render_target(&mut self, texture_id: u64) {
+    pub(crate) fn remove_render_target(&mut self, texture_id: u64) {
         self.render_targets.retain(|(id, _)| *id != texture_id);
     }
 
     // ========================================================================
-    // Viewport Render Target (Convenience Methods)
-    // ========================================================================
-
-    /// Initialize viewport render target (double-buffered for frames in flight).
-    pub fn init_viewport_target(&mut self, width: u32, height: u32) -> Result<(), vk::Result> {
-        self.init_render_target(Self::VIEWPORT_TEXTURE_ID, width, height, 1)
-    }
-
-    /// Get viewport dimensions.
-    pub fn viewport_extent(&self) -> Option<crate::Size2D> {
-        self.get_render_target_first(Self::VIEWPORT_TEXTURE_ID)
-            .map(|t| crate::Size2D::from(t.extent))
-    }
-
-    // ========================================================================
-    // Viewport System (New Unified API)
+    // Viewport System
     // ========================================================================
 
     /// Create a viewport builder for configuring a new viewport.
@@ -658,8 +658,8 @@ impl VulkanRenderer {
         self.viewport_manager.texture_id(handle)
     }
 
-    /// Get the viewport extent (by handle).
-    pub fn get_viewport_extent(&self, handle: ViewportHandle) -> Option<crate::Size2D> {
+    /// Get the viewport extent by handle.
+    pub fn viewport_extent(&self, handle: ViewportHandle) -> Option<crate::Size2D> {
         self.viewport_manager.extent(handle)
     }
 

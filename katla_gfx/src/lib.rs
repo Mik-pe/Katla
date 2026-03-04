@@ -65,7 +65,7 @@ pub use pipeline::{
 };
 
 // Texture management
-pub use texture::{ImageFormat, TextureDescriptor, TextureManager, TextureUsage};
+pub use texture::{ImageFormat, TextureDescriptor, TextureUsage};
 
 // Vertex types
 pub use vertex::{
@@ -100,7 +100,7 @@ pub use render_graph::{
 /// Most operations should use [`VulkanRenderer`] methods:
 /// - [`VulkanRenderer::create_mesh()`] for mesh creation
 /// - [`VulkanRenderer::register_material()`] for material registration
-/// - [`VulkanRenderer::texture_manager()`] for texture operations
+/// - [`VulkanRenderer::create_texture()`] for texture operations
 /// - [`VulkanRenderer::create_viewport()`] for render targets
 ///
 /// # When to use VulkanContext (escape hatch)
@@ -113,6 +113,6 @@ pub use render_graph::{
 /// [`VulkanRenderer`]: renderer::VulkanRenderer
 /// [`VulkanRenderer::create_mesh()`]: renderer::VulkanRenderer::create_mesh
 /// [`VulkanRenderer::register_material()`]: renderer::VulkanRenderer::register_material
-/// [`VulkanRenderer::texture_manager()`]: renderer::VulkanRenderer::texture_manager
+/// [`VulkanRenderer::create_texture()`]: renderer::VulkanRenderer::create_texture
 /// [`VulkanRenderer::create_viewport()`]: renderer::VulkanRenderer::create_viewport
 pub use vulkan::context::{ValidationLevel, VulkanContext};
