@@ -561,6 +561,13 @@ impl Texture {
         let pixel_data: [u8; 4] = [0, 0, 0, 255];
         Self::create_image(context, 1, 1, ImageFormat::R8G8B8A8Unorm, &pixel_data)
     }
+
+    /// Get the image view for this texture.
+    ///
+    /// Used for binding the texture to descriptors or the bindless system.
+    pub fn image_view(&self) -> &VkImageView {
+        &self.image_view
+    }
 }
 
 #[cfg(test)]
