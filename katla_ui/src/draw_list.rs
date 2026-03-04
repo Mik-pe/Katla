@@ -3,6 +3,7 @@
 //! The draw list collects all UI primitives (rectangles, text, images)
 //! into batches that can be efficiently rendered by the GPU.
 
+use katla_gfx::VertexUI;
 use katla_math::{Color, Rect2D, Vec2};
 
 /// Identifier for a texture in the UI system.
@@ -25,42 +26,6 @@ impl TextureId {
     /// Create a custom texture ID.
     pub fn custom(id: u64) -> Self {
         TextureId(Self::CUSTOM_START + id)
-    }
-}
-
-/// A single vertex in the UI draw list.
-#[repr(C)]
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct UiVertex {
-    /// Position in screen coordinates (pixels).
-    pub position: Vec2,
-    /// Texture coordinates (0.0 - 1.0). Use (0, 0) for solid colors.
-    pub uv: Vec2,
-    /// Vertex color (multiplied with texture if present).
-    pub color: Color,
-}
-
-impl UiVertex {
-    /// Create a new vertex.
-    #[inline]
-    pub fn new(position: Vec2, uv: Vec2, color: Color) -> Self {
-        Self {
-            position,
-            uv,
-            color,
-        }
-    }
-
-    /// Create a position-only vertex (solid color, uses white pixel).
-    /// UV points to the white pixel at (0,0) in the font atlas.
-    #[inline]
-    pub fn position_only(position: Vec2, color: Color) -> Self {
-        const WHITE_PIXEL_UV: f32 = 0.0;
-        Self {
-            position,
-            uv: Vec2::new(WHITE_PIXEL_UV, WHITE_PIXEL_UV),
-            color,
-        }
     }
 }
 
@@ -108,7 +73,7 @@ impl DrawCommand {
 #[derive(Debug, Clone, Default)]
 pub struct DrawList {
     /// All vertices in the draw list.
-    pub vertices: Vec<UiVertex>,
+    pub vertices: Vec<VertexUI>,
     /// All indices in the draw list.
     pub indices: Vec<u32>,
     /// Draw commands (batches).
@@ -186,23 +151,24 @@ impl DrawList {
         self.set_texture(TextureId::NONE);
 
         let vertex_offset = self.vertices.len() as u32;
+        let color_arr = [color.r, color.g, color.b, color.a];
 
         // Four corners
-        self.vertices.push(UiVertex::position_only(
-            Vec2::new(bounds.min.x(), bounds.min.y()),
-            color,
+        self.vertices.push(VertexUI::position_only(
+            [bounds.min.x(), bounds.min.y()],
+            color_arr,
         ));
-        self.vertices.push(UiVertex::position_only(
-            Vec2::new(bounds.max.x(), bounds.min.y()),
-            color,
+        self.vertices.push(VertexUI::position_only(
+            [bounds.max.x(), bounds.min.y()],
+            color_arr,
         ));
-        self.vertices.push(UiVertex::position_only(
-            Vec2::new(bounds.max.x(), bounds.max.y()),
-            color,
+        self.vertices.push(VertexUI::position_only(
+            [bounds.max.x(), bounds.max.y()],
+            color_arr,
         ));
-        self.vertices.push(UiVertex::position_only(
-            Vec2::new(bounds.min.x(), bounds.max.y()),
-            color,
+        self.vertices.push(VertexUI::position_only(
+            [bounds.min.x(), bounds.max.y()],
+            color_arr,
         ));
 
         // Two triangles
@@ -229,27 +195,28 @@ impl DrawList {
         self.set_texture(texture);
 
         let vertex_offset = self.vertices.len() as u32;
+        let color_arr = [color.r, color.g, color.b, color.a];
 
         // Four corners with UVs
-        self.vertices.push(UiVertex::new(
-            Vec2::new(bounds.min.x(), bounds.min.y()),
-            Vec2::new(uv.min.x(), uv.min.y()),
-            color,
+        self.vertices.push(VertexUI::new(
+            [bounds.min.x(), bounds.min.y()],
+            [uv.min.x(), uv.min.y()],
+            color_arr,
         ));
-        self.vertices.push(UiVertex::new(
-            Vec2::new(bounds.max.x(), bounds.min.y()),
-            Vec2::new(uv.max.x(), uv.min.y()),
-            color,
+        self.vertices.push(VertexUI::new(
+            [bounds.max.x(), bounds.min.y()],
+            [uv.max.x(), uv.min.y()],
+            color_arr,
         ));
-        self.vertices.push(UiVertex::new(
-            Vec2::new(bounds.max.x(), bounds.max.y()),
-            Vec2::new(uv.max.x(), uv.max.y()),
-            color,
+        self.vertices.push(VertexUI::new(
+            [bounds.max.x(), bounds.max.y()],
+            [uv.max.x(), uv.max.y()],
+            color_arr,
         ));
-        self.vertices.push(UiVertex::new(
-            Vec2::new(bounds.min.x(), bounds.max.y()),
-            Vec2::new(uv.min.x(), uv.max.y()),
-            color,
+        self.vertices.push(VertexUI::new(
+            [bounds.min.x(), bounds.max.y()],
+            [uv.min.x(), uv.max.y()],
+            color_arr,
         ));
 
         // Two triangles
@@ -282,27 +249,28 @@ impl DrawList {
         self.set_texture(texture);
 
         let vertex_offset = self.vertices.len() as u32;
+        let color_arr = [color.r, color.g, color.b, color.a];
 
         // Four corners with UVs
-        self.vertices.push(UiVertex::new(
-            Vec2::new(bounds.min.x(), bounds.min.y()),
-            uv_min,
-            color,
+        self.vertices.push(VertexUI::new(
+            [bounds.min.x(), bounds.min.y()],
+            [uv_min.x(), uv_min.y()],
+            color_arr,
         ));
-        self.vertices.push(UiVertex::new(
-            Vec2::new(bounds.max.x(), bounds.min.y()),
-            Vec2::new(uv_max.x(), uv_min.y()),
-            color,
+        self.vertices.push(VertexUI::new(
+            [bounds.max.x(), bounds.min.y()],
+            [uv_max.x(), uv_min.y()],
+            color_arr,
         ));
-        self.vertices.push(UiVertex::new(
-            Vec2::new(bounds.max.x(), bounds.max.y()),
-            uv_max,
-            color,
+        self.vertices.push(VertexUI::new(
+            [bounds.max.x(), bounds.max.y()],
+            [uv_max.x(), uv_max.y()],
+            color_arr,
         ));
-        self.vertices.push(UiVertex::new(
-            Vec2::new(bounds.min.x(), bounds.max.y()),
-            Vec2::new(uv_min.x(), uv_max.y()),
-            color,
+        self.vertices.push(VertexUI::new(
+            [bounds.min.x(), bounds.max.y()],
+            [uv_min.x(), uv_max.y()],
+            color_arr,
         ));
 
         // Two triangles
@@ -327,10 +295,12 @@ impl DrawList {
         self.set_texture(TextureId::NONE);
 
         let vertex_offset = self.vertices.len() as u32;
+        let color_arr = [color.r, color.g, color.b, color.a];
 
         // Add all vertices
         for &point in points {
-            self.vertices.push(UiVertex::position_only(point, color));
+            self.vertices
+                .push(VertexUI::position_only([point.x(), point.y()], color_arr));
         }
 
         // Triangulate using fan method
@@ -436,6 +406,16 @@ impl DrawList {
     /// Get the number of draw commands.
     pub fn command_count(&self) -> usize {
         self.commands.len()
+    }
+
+    /// Get vertex data as bytes for GPU upload.
+    pub fn vertex_bytes(&self) -> Vec<u8> {
+        bytemuck::cast_slice(&self.vertices).to_vec()
+    }
+
+    /// Get index data as bytes for GPU upload.
+    pub fn index_bytes(&self) -> Vec<u8> {
+        bytemuck::cast_slice(&self.indices).to_vec()
     }
 }
 

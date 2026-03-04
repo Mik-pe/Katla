@@ -131,6 +131,16 @@ impl VertexLayout {
         ])
     }
 
+    /// UI vertex layout: position (2D), uv, color.
+    /// Used for immediate mode UI rendering.
+    pub fn ui() -> Self {
+        Self::new(vec![
+            VertexAttributeFormat::Float2, // position (screen coordinates)
+            VertexAttributeFormat::Float2, // uv
+            VertexAttributeFormat::Float4, // color (RGBA)
+        ])
+    }
+
     /// Get the attribute formats.
     pub fn formats(&self) -> &[VertexAttributeFormat] {
         &self.formats
@@ -464,6 +474,57 @@ impl Vertex for VertexPositionColor {
     }
 }
 
+/// UI vertex format for 2D screen-space rendering.
+///
+/// Used for immediate mode UI rendering with orthographic projection.
+///
+/// # Memory Layout
+/// - `position`: 8 bytes (2 x f32, screen coordinates in pixels)
+/// - `uv`: 8 bytes (2 x f32, texture coordinates 0.0-1.0)
+/// - `color`: 16 bytes (4 x f32, RGBA)
+/// - Total: 32 bytes
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct VertexUI {
+    /// Position in screen coordinates (pixels).
+    pub position: [f32; 2],
+    /// Texture coordinates (0.0 - 1.0).
+    pub uv: [f32; 2],
+    /// Vertex color (RGBA, multiplied with texture if present).
+    pub color: [f32; 4],
+}
+
+impl VertexUI {
+    /// Create a new UI vertex.
+    #[inline]
+    pub const fn new(position: [f32; 2], uv: [f32; 2], color: [f32; 4]) -> Self {
+        Self {
+            position,
+            uv,
+            color,
+        }
+    }
+
+    /// Create a position-only vertex for solid color rendering.
+    ///
+    /// UV is set to (0, 0) which should point to a white pixel in the font atlas.
+    #[inline]
+    pub const fn position_only(position: [f32; 2], color: [f32; 4]) -> Self {
+        Self {
+            position,
+            uv: [0.0, 0.0],
+            color,
+        }
+    }
+}
+
+impl Vertex for VertexUI {
+    #[inline]
+    fn layout() -> VertexLayout {
+        VertexLayout::ui()
+    }
+}
+
 //=============================================================================
 // Tests
 //=============================================================================
@@ -503,6 +564,11 @@ mod tests {
     }
 
     #[test]
+    fn test_vertex_ui_size() {
+        assert_eq!(std::mem::size_of::<VertexUI>(), 32);
+    }
+
+    #[test]
     fn test_vertex_pbr_layout() {
         let layout = VertexPBR::layout();
         assert_eq!(layout.len(), 4);
@@ -531,6 +597,21 @@ mod tests {
     }
 
     #[test]
+    fn test_vertex_ui_layout() {
+        let layout = VertexUI::layout();
+        assert_eq!(layout.len(), 3);
+        assert_eq!(
+            layout.formats(),
+            &[
+                VertexAttributeFormat::Float2, // position
+                VertexAttributeFormat::Float2, // uv
+                VertexAttributeFormat::Float4, // color
+            ]
+        );
+        assert_eq!(layout.stride(), 32); // 8 + 8 + 16
+    }
+
+    #[test]
     fn test_vertex_pbr_creation() {
         let vertex = VertexPBR::new(
             [1.0, 2.0, 3.0],
@@ -542,6 +623,22 @@ mod tests {
         assert_eq!(vertex.normal, [0.0, 1.0, 0.0]);
         assert_eq!(vertex.tangent, [1.0, 0.0, 0.0, 1.0]);
         assert_eq!(vertex.tex_coord0, [0.5, 0.5]);
+    }
+
+    #[test]
+    fn test_vertex_ui_creation() {
+        let vertex = VertexUI::new([10.0, 20.0], [0.5, 0.5], [1.0, 0.0, 0.0, 1.0]);
+        assert_eq!(vertex.position, [10.0, 20.0]);
+        assert_eq!(vertex.uv, [0.5, 0.5]);
+        assert_eq!(vertex.color, [1.0, 0.0, 0.0, 1.0]);
+    }
+
+    #[test]
+    fn test_vertex_ui_position_only() {
+        let vertex = VertexUI::position_only([100.0, 200.0], [0.5, 0.5, 0.5, 1.0]);
+        assert_eq!(vertex.position, [100.0, 200.0]);
+        assert_eq!(vertex.uv, [0.0, 0.0]); // White pixel UV
+        assert_eq!(vertex.color, [0.5, 0.5, 0.5, 1.0]);
     }
 
     #[test]
