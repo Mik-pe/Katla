@@ -155,7 +155,7 @@ impl DrawList {
         self.set_texture(TextureId::NONE);
 
         let vertex_offset = self.vertices.len() as u32;
-        let color_arr = [color.r, color.g, color.b, color.a];
+        let color_arr = color.to_bytes();
 
         // Four corners
         self.vertices.push(VertexUI::position_only(
@@ -199,7 +199,7 @@ impl DrawList {
         self.set_texture(texture);
 
         let vertex_offset = self.vertices.len() as u32;
-        let color_arr = [color.r, color.g, color.b, color.a];
+        let color_arr = color.to_bytes();
 
         // Four corners with UVs
         self.vertices.push(VertexUI::new(
@@ -253,7 +253,7 @@ impl DrawList {
         self.set_texture(texture);
 
         let vertex_offset = self.vertices.len() as u32;
-        let color_arr = [color.r, color.g, color.b, color.a];
+        let color_arr = color.to_bytes();
 
         // Four corners with UVs
         self.vertices.push(VertexUI::new(
@@ -299,7 +299,7 @@ impl DrawList {
         self.set_texture(TextureId::NONE);
 
         let vertex_offset = self.vertices.len() as u32;
-        let color_arr = [color.r, color.g, color.b, color.a];
+        let color_arr = color.to_bytes();
 
         // Add all vertices
         for &point in points {
