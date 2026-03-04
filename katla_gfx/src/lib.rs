@@ -50,6 +50,8 @@ pub use handle::{
 };
 
 // Material system
+pub use material::UiMaterialConfig;
+pub use material::ui_shader;
 pub use material::{Material, MaterialDefinition, MaterialDomain, RenderState, ShaderSource};
 
 // Pipeline building - Katla-native types only
@@ -65,7 +67,7 @@ pub use texture::{ImageFormat, TextureDescriptor, TextureManager, TextureUsage};
 // Vertex types
 pub use vertex::{
     Vertex, VertexPBR, VertexPBRSkinned, VertexPosition, VertexPositionColor, VertexPositionNormal,
-    VertexPositionNormalUV,
+    VertexPositionNormalUV, VertexUI,
 };
 
 // Render pass system

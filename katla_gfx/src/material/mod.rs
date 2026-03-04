@@ -8,6 +8,7 @@ mod render_state;
 mod shader_source;
 mod template;
 mod types;
+mod ui;
 
 // Public configuration types
 pub use template::MaterialDefinition;
@@ -19,3 +20,6 @@ pub use shader_source::ShaderSource;
 
 // Public material type
 pub use types::Material;
+
+// UI material primitives
+pub use ui::{UiMaterialConfig, ui_shader};

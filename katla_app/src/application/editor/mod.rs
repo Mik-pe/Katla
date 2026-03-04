@@ -5,6 +5,7 @@ use std::collections::{HashMap, HashSet};
 use log::info;
 
 use katla_ecs::EntityId;
+use katla_gfx::renderer::UiDrawCommand;
 use katla_math::{Vec2, Vec3};
 
 use crate::components::{
@@ -35,10 +36,11 @@ pub fn render_debug_ui(app: &mut Application, dt: f32) {
     let entity_info = collect_entity_info(app);
 
     // Render UI (editor or debug overlay based on mode)
-    // We extract the vertices immediately to release the borrow on editor_ui
     let scale_factor = app.scale_factor;
-    let (_vertices, _indices, _commands, use_editor) = if app.use_editor_ui {
-        let draw_list = app.editor_ui.render(
+    let use_editor = app.use_editor_ui;
+
+    let draw_list = if use_editor {
+        app.editor_ui.render(
             &mut app.ui_context,
             &app.preferences,
             screen_size,
@@ -48,29 +50,51 @@ pub fn render_debug_ui(app: &mut Application, dt: f32) {
             app.frame_count,
             &mut app.background_loader,
             &app.thumbnail_texture_ids,
-        );
-        (
-            draw_list.vertices.clone(),
-            draw_list.indices.clone(),
-            draw_list.commands.clone(),
-            true,
         )
     } else {
-        let draw_list = app.debug_overlay.render(
+        app.debug_overlay.render(
             &mut app.ui_context,
             screen_size,
             scale_factor,
             fps,
             app.frame_count,
             entity_count,
-        );
-        (
-            draw_list.vertices.clone(),
-            draw_list.indices.clone(),
-            draw_list.commands.clone(),
-            false,
         )
     };
+
+    // Convert UI draw commands to GPU format and submit
+    if !draw_list.is_empty() {
+        let commands: Vec<UiDrawCommand> = draw_list
+            .commands
+            .iter()
+            .map(|cmd| {
+                let clip_rect = if cmd.clip_rect.min.x() < f32::MAX / 2.0 {
+                    Some([
+                        cmd.clip_rect.min.x(),
+                        cmd.clip_rect.min.y(),
+                        cmd.clip_rect.width(),
+                        cmd.clip_rect.height(),
+                    ])
+                } else {
+                    None
+                };
+                let texture_index = match cmd.texture {
+                    katla_ui::TextureId::NONE => 0,
+                    katla_ui::TextureId::FONT_ATLAS => 1,
+                    other => other.0 as u32,
+                };
+                UiDrawCommand::new(cmd.index_offset, cmd.index_count, clip_rect, texture_index)
+            })
+            .collect();
+
+        app.renderer.render_ui(
+            &draw_list.vertex_bytes(),
+            draw_list.vertex_count() as u32,
+            &draw_list.indices,
+            &commands,
+            [screen_size.x(), screen_size.y()],
+        );
+    }
 
     // Extract editor actions (safe now since editor_ui borrow is released)
     let editor_actions = if use_editor {

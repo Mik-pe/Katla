@@ -15,7 +15,7 @@ Agent(
   name: "gfx-maintainer",
   description: "Vulkan graphics advocate",
   model: "opus",
-  prompt: "Read .claude/agents/gfx-maintainer.md and adopt that persona. [task details]"
+  prompt: "Read .claude/skills/gfx-maintainer/SKILL.md and adopt that persona. [task details]"
 )
 
 Agent(
@@ -24,7 +24,7 @@ Agent(
   name: "app-maintainer",
   description: "App layer advocate",
   model: "opus",
-  prompt: "Read .claude/agents/app-maintainer.md and adopt that persona. [task details]"
+  prompt: "Read .claude/skills/app-maintainer/SKILL.md and adopt that persona. [task details]"
 )
 ```
 
