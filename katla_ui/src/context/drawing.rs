@@ -2,9 +2,9 @@
 //!
 //! Low-level drawing functions for rectangles, text, images, lines, and icons.
 
+use crate::types::TextureId;
 use katla_math::{Color, Rect2D, Vec2};
 
-use crate::draw_list::TextureId;
 use crate::text::{FontId, SubpixelBin};
 use crate::FontSize;
 
@@ -67,14 +67,14 @@ impl UiContext {
         );
     }
 
-    /// Draw a textured image with explicit texture.
+    /// Draw a textured image with explicit texture ID.
     ///
     /// # Arguments
     /// * `bounds` - Screen position and size
     /// * `uv_min` - Top-left UV coordinate
     /// * `uv_max` - Bottom-right UV coordinate
     /// * `color` - Tint color (use Color::WHITE for no tint)
-    /// * `texture` - Texture to sample from (TextureId::FONT_ATLAS, VIEWPORT, or custom)
+    /// * `texture` - Texture ID (mapped to handle by katla_app)
     pub fn draw_image(
         &mut self,
         bounds: Rect2D,
@@ -104,6 +104,9 @@ impl UiContext {
     ///
     /// Supports multiline text with `\n` characters.
     pub fn draw_text(&mut self, text: &str, position: Vec2, color: Color, size: f32) {
+        // Get the font atlas texture handle
+        let font_atlas = self.fonts.atlas_id();
+
         // Calculate subpixel bin from TEXT START position.
         // All characters share the same bin so the text moves as a unit.
         let (floor_x, subpixel_bin) = SubpixelBin::new(position.x());
@@ -148,12 +151,8 @@ impl UiContext {
 
                 // Draw glyph as textured quad
                 self.draw_list.set_clip(self.clip_rect());
-                self.draw_list.add_textured_rect(
-                    bounds,
-                    glyph.uv_rect,
-                    color,
-                    TextureId::FONT_ATLAS,
-                );
+                self.draw_list
+                    .add_textured_rect(bounds, glyph.uv_rect, color, font_atlas);
 
                 cursor_offset += glyph.advance;
             } else {
@@ -258,6 +257,9 @@ impl UiContext {
         color: Color,
         ref_font: FontId,
     ) {
+        // Get the font atlas texture handle
+        let font_atlas = self.fonts.atlas_id();
+
         // Get text font metrics
         let text_ascent = self
             .fonts
@@ -285,12 +287,8 @@ impl UiContext {
                     Vec2::new((position.x() + glyph.offset_x).round(), icon_top_y.round());
                 let bounds = katla_math::Rect2D::from_origin_size(glyph_pos, glyph.size);
                 self.draw_list.set_clip(self.clip_rect());
-                self.draw_list.add_textured_rect(
-                    bounds,
-                    glyph.uv_rect,
-                    color,
-                    TextureId::FONT_ATLAS,
-                );
+                self.draw_list
+                    .add_textured_rect(bounds, glyph.uv_rect, color, font_atlas);
             }
         }
     }

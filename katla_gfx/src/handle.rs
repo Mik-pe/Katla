@@ -58,7 +58,7 @@ impl<T> Handle<T> {
         }
     }
 
-    pub(crate) fn index(&self) -> u32 {
+    pub fn index(&self) -> u32 {
         self.index
     }
 }

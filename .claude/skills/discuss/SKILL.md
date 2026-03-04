@@ -42,8 +42,8 @@ Agent(
   subagent_type: "general-purpose",
   team_name: "debate-team",
   name: "gfx-maintainer",
-  model: "opus",
-  prompt: """Read .claude/agents/gfx-maintainer.md and adopt that persona completely.
+  model: "Opus",
+  prompt: """YOU MUST READ .claude/agents/gfx-maintainer.md and adopt that persona completely.
 
 Your task: DEBATE THIS TOPIC with app-maintainer: $ARGUMENTS
 
@@ -55,8 +55,8 @@ Agent(
   subagent_type: "general-purpose",
   team_name: "debate-team",
   name: "app-maintainer",
-  model: "opus",
-  prompt: """Read .claude/agents/app-maintainer.md and adopt that persona completely.
+  model: "Opus",
+  prompt: """YOU MUST READ .claude/agents/app-maintainer.md and adopt that persona completely.
 
 Your task: DEBATE THIS TOPIC with gfx-maintainer: $ARGUMENTS
 
@@ -105,7 +105,7 @@ Agent(
   team_name: "debate-team",
   name: "prometheus",
   model: "sonnet",
-  prompt: """Read .claude/agents/prometheus.md and adopt that persona completely.
+  prompt: """YOU MUST READ .claude/agents/prometheus.md and adopt that persona completely.
 
 Your task: Create an implementation plan based on this consensus:
 
@@ -126,8 +126,8 @@ Agent(
   subagent_type: "general-purpose",
   team_name: "debate-team",
   name: "hephaestus",
-  model: "opus",
-  prompt: """Read .claude/agents/hephaestus.md and adopt that persona completely.
+  model: "Opus",
+  prompt: """YOU MUST READ .claude/agents/hephaestus.md and adopt that persona completely.
 
 Your task: Implement this plan:
 

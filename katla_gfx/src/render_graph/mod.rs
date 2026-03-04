@@ -11,6 +11,7 @@
 //! - [`GeometryPass`] - Geometry render pass template
 //! - [`FullscreenPass`] - Fullscreen/compute pass template
 //! - [`ShadowPass`] - Shadow mapping pass template
+//! - [`UIPass`] - UI render pass template
 //! - [`LightType`] - Light type enumeration for shadow passes
 
 mod builder;

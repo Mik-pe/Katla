@@ -17,6 +17,7 @@ mod viewport;
 mod viewport_grid;
 
 use katla_ecs::EntityId;
+use katla_gfx::TextureHandle;
 use katla_math::{Color, Rect2D, Vec2, Vec3};
 use katla_ui::{DrawList, FontSize, TextureId, UiContext};
 use std::path::PathBuf;
@@ -171,6 +172,7 @@ pub struct EditorUI {
     /// Viewport grid state (layout and viewport assignments).
     pub viewport_grid_state: ViewportGridState,
     /// Texture IDs for each viewport slot (set by application during setup).
+    /// These are converted from TextureHandle using TextureId::from_handle_index().
     pub viewport_texture_ids: [Option<katla_ui::TextureId>; 4],
 }
 
@@ -197,7 +199,7 @@ impl EditorUI {
             asset_browser: AssetBrowserState::new(),
             focused_panel: FocusedPanel::Viewport,
             viewport_grid_state: ViewportGridState::new(),
-            viewport_texture_ids: [Some(katla_ui::TextureId::VIEWPORT), None, None, None],
+            viewport_texture_ids: [None, None, None, None],
         }
     }
 
@@ -292,7 +294,7 @@ impl EditorUI {
         fps: f32,
         frame_count: usize,
         loader: &mut crate::util::BackgroundLoader,
-        thumbnail_texture_ids: &std::collections::HashMap<std::path::PathBuf, TextureId>,
+        thumbnail_texture_handles: &std::collections::HashMap<std::path::PathBuf, TextureHandle>,
     ) {
         let screen_size = ui.screen_size();
 
@@ -577,7 +579,7 @@ impl EditorUI {
             asset_browser_bounds,
             &mut self.focused_panel,
             loader,
-            thumbnail_texture_ids,
+            thumbnail_texture_handles,
         );
 
         // Process asset browser actions
@@ -625,7 +627,7 @@ impl EditorUI {
                         log::warn!("Failed to create folder: {}", e);
                     } else {
                         log::info!("Created folder: {:?}", new_folder);
-                        self.asset_browser.scan_directory(thumbnail_texture_ids);
+                        self.asset_browser.scan_directory(thumbnail_texture_handles);
                     }
                 }
                 AssetAction::Delete(path) => {
@@ -634,13 +636,13 @@ impl EditorUI {
                             log::warn!("Failed to delete folder: {}", e);
                         } else {
                             log::info!("Deleted folder: {:?}", path);
-                            self.asset_browser.scan_directory(thumbnail_texture_ids);
+                            self.asset_browser.scan_directory(thumbnail_texture_handles);
                         }
                     } else if let Err(e) = std::fs::remove_file(&path) {
                         log::warn!("Failed to delete file: {}", e);
                     } else {
                         log::info!("Deleted file: {:?}", path);
-                        self.asset_browser.scan_directory(thumbnail_texture_ids);
+                        self.asset_browser.scan_directory(thumbnail_texture_handles);
                     }
                 }
                 AssetAction::Rename { old_path, new_path } => {
@@ -650,14 +652,15 @@ impl EditorUI {
                             log::warn!("Failed to rename {:?} to {:?}: {}", old_path, new_path, e);
                         } else {
                             log::info!("Renamed {:?} to {:?}", old_path, new_path);
-                            self.asset_browser.scan_directory(thumbnail_texture_ids);
+                            self.asset_browser.scan_directory(thumbnail_texture_handles);
                         }
                     }
                 }
                 AssetAction::Open(path) => {
                     // Navigate into folder or open file
                     if path.is_dir() {
-                        self.asset_browser.navigate_to(&path, thumbnail_texture_ids);
+                        self.asset_browser
+                            .navigate_to(&path, thumbnail_texture_handles);
                     } else {
                         log::info!("Open file: {:?}", path);
                         // TODO: Open file in appropriate editor
@@ -710,7 +713,7 @@ impl EditorUI {
                             log::warn!("Failed to move {:?} to {:?}: {}", asset_path, dest_path, e);
                         } else {
                             log::info!("Moved {:?} to {:?}", asset_path, dest_path);
-                            self.asset_browser.scan_directory(thumbnail_texture_ids);
+                            self.asset_browser.scan_directory(thumbnail_texture_handles);
                         }
                     }
                 }
@@ -853,7 +856,7 @@ impl EditorUI {
         fps: f32,
         frame_count: usize,
         loader: &'a mut crate::util::BackgroundLoader,
-        thumbnail_texture_ids: &'a std::collections::HashMap<std::path::PathBuf, TextureId>,
+        thumbnail_texture_handles: &'a std::collections::HashMap<std::path::PathBuf, TextureHandle>,
     ) -> &'a DrawList {
         // Apply theme to UI style
         self.theme.apply_to_style(&mut ui.style);
@@ -869,7 +872,7 @@ impl EditorUI {
             fps,
             frame_count,
             loader,
-            thumbnail_texture_ids,
+            thumbnail_texture_handles,
         );
         ui.end()
     }

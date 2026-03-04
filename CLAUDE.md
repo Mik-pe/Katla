@@ -47,6 +47,7 @@ cargo run -- -s               # Run in limited-frame mode (25 frames) for valida
 
 - **Task Continuity**: When working with tasks, continue through the task list without asking for confirmation between tasks. If there are pending tasks, proceed to the next one automatically.
 - **No Backwards Compatibility**: When introducing new APIs or patterns, don't maintain backwards compatibility or deprecation paths. Just remove the old code and update all usages to the new approach.
+- **No Hybrid Implementations**: Avoid having multiple ways of doing the same thing. Similar implementations doing the same work are maintenance burden and bug magnets. When adding new code, look for existing patterns to follow. When replacing old code, remove it entirely—don't leave hybrid states with old and new coexisting.
 - **No AI Slop comments**: Avoid adding comments that are obvious or can be inferred from the code itself. Avoid adding comments that have to do with the current issue at hand.
 
 ## Git Commit Conventions
@@ -118,7 +119,7 @@ git commit -m "Summary line
 - **Complexity**: Avoid overly complex types, Result<Rc<Option<RefCell<Option<T>>>>
 - **Error Handling**: `Option<T>`, `Result<T, E>`, avoid `unwrap()` in production
 - **Documentation**: `///` for public APIs, `//!` for module-level
-- **Visibility**: Use `pub(crate)` for internal APIs that are public within the crate
+- **Visibility**: Prefer `pub(crate)` until we know something should be part of the public API. Only promote to `pub` when there's a clear external use case. Keep the public API surface small and intentional.
 - **Performance**: Mark hot path functions with `#[inline]`, prefer stack allocation
 - **Logging**: Use appropriate log levels (see Logging Guidelines below)
 

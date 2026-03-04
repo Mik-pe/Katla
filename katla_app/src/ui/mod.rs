@@ -4,10 +4,12 @@
 
 mod debug_overlay;
 mod editor_ui;
+pub mod renderer;
 pub mod theme;
 
 pub use debug_overlay::DebugOverlay;
 pub use editor_ui::{
     EditorAction, EditorUI, EntityInfo, FocusedPanel, SpawnableModel, ThumbnailState,
 };
+pub use renderer::UIRenderer;
 pub use theme::Theme;
