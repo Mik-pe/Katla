@@ -6,8 +6,10 @@
 //! - `viewport` - Viewport system management (TODO: extract from lib.rs)
 //! - `ui` - UI buffer and texture management (TODO: extract from lib.rs)
 
+pub mod mesh_manager;
 pub mod registry;
 pub mod types;
+pub mod viewport_manager;
 
 pub use crate::handle::{Handle, MaterialHandle, MeshHandle, SkeletonHandle, TextureHandle};
 use crate::viewport::{ViewportBuilder, ViewportHandle};
@@ -35,9 +37,11 @@ pub struct VulkanRenderer {
     pub(crate) context: Rc<VulkanContext>,
     pub(crate) frame_context: VulkanFrameCtx,
     pub(crate) swap_data: SwapData,
-    /// Asset registry for managing GPU resources (meshes, materials).
-    /// This stores the actual Vulkan buffers and pipelines, while the application
-    /// only holds opaque handles (MeshHandle, MaterialHandle).
+    /// Mesh manager for mesh creation and storage.
+    pub(crate) mesh_manager: mesh_manager::MeshManager,
+    /// Asset registry for managing GPU resources (materials).
+    /// This stores the actual pipelines, while the application
+    /// only holds opaque handles (MaterialHandle).
     pub asset_registry: AssetRegistry,
     /// Bindless texture manager for efficient texture binding.
     /// All textures are stored in a single array accessed by index.
@@ -65,9 +69,8 @@ pub struct VulkanRenderer {
     render_targets: Vec<(u64, ViewportRenderTarget)>,
     /// Output render target for final composition (UI renders here, then present_pass copies to swapchain).
     output_target: Option<OutputRenderTarget>,
-    /// Viewport system (new unified API).
-    /// Application layer manages which handle is "main" vs "preview".
-    viewports: Vec<Viewport>,
+    /// Viewport manager for viewport and render target management.
+    pub(crate) viewport_manager: viewport_manager::ViewportManager,
     /// Cached UI render state (lazy initialized).
     ui_state: Option<UiRenderState>,
     /// Pending UI data for next frame (set by render_ui, consumed by render_frame).
@@ -163,10 +166,17 @@ impl VulkanRenderer {
         // Initialize storage uniform system with standard layout
         let storage_manager = StorageUniformManager::new(context.clone())?;
 
+        // Initialize mesh manager
+        let mesh_manager = mesh_manager::MeshManager::new(context.clone());
+
+        // Initialize viewport manager
+        let viewport_manager = viewport_manager::ViewportManager::new(context.clone());
+
         Ok(Self {
             context: context.clone(),
             frame_context,
             swap_data,
+            mesh_manager,
             asset_registry: AssetRegistry::new(),
             bindless_manager,
             texture_manager,
@@ -177,7 +187,7 @@ impl VulkanRenderer {
             default_material_handle: None,
             render_targets: Vec::new(),
             output_target: None,
-            viewports: Vec::new(),
+            viewport_manager,
             ui_state: None,
             pending_ui: None,
         })
@@ -623,74 +633,68 @@ impl VulkanRenderer {
     ///     .label("preview")
     ///     .build(&mut renderer)?;
     /// ```
-    pub fn create_viewport(&self) -> ViewportBuilder {
-        ViewportBuilder::new()
+    pub fn create_viewport(&mut self) -> ViewportBuilder {
+        self.viewport_manager.create()
     }
 
     /// Get the number of viewports.
     pub fn viewport_count(&self) -> usize {
-        self.viewports.len()
+        self.viewport_manager.count()
     }
 
     /// Get viewport by handle.
     pub fn get_viewport(&self, handle: ViewportHandle) -> Option<&Viewport> {
-        self.viewports.get(handle.0)
+        self.viewport_manager.get(handle)
     }
 
     /// Get mutable viewport by handle.
     pub fn get_viewport_mut(&mut self, handle: ViewportHandle) -> Option<&mut Viewport> {
-        self.viewports.get_mut(handle.0)
+        self.viewport_manager.get_mut(handle)
     }
 
     /// Get the texture ID for a viewport (for UI sampling).
     /// Returns a u64 that can be used with katla_ui::TextureId::custom(id).
     pub fn viewport_texture_id(&self, handle: ViewportHandle) -> Option<u64> {
-        self.viewports.get(handle.0).map(|_| {
-            // Generate a unique texture ID based on viewport index
-            // Using range 200+ to avoid conflicts with existing texture IDs
-            200 + handle.0 as u64
-        })
+        self.viewport_manager.texture_id(handle)
     }
 
     /// Get the viewport extent (by handle).
     pub fn get_viewport_extent(&self, handle: ViewportHandle) -> Option<crate::Size2D> {
-        self.viewports.get(handle.0).map(|v| v.get_extent())
+        self.viewport_manager.extent(handle)
     }
 
     /// Set frame uniforms for a viewport.
     pub fn set_viewport_uniforms(&mut self, handle: ViewportHandle, uniforms: FrameUniforms) {
-        if let Some(viewport) = self.viewports.get_mut(handle.0) {
+        if let Some(viewport) = self.viewport_manager.get_mut(handle) {
             viewport.set_frame_uniforms(uniforms);
         }
     }
 
     /// Set the draw list for a viewport.
-    pub fn set_viewport_draw_list(&self, handle: ViewportHandle, draw_list: DrawList) {
-        if let Some(viewport) = self.viewports.get(handle.0) {
+    pub fn set_viewport_draw_list(&mut self, handle: ViewportHandle, draw_list: DrawList) {
+        if let Some(viewport) = self.viewport_manager.get_mut(handle) {
             viewport.set_draw_list(draw_list);
         }
     }
 
     /// Clear the draw list for a viewport.
-    pub fn clear_viewport_draw_list(&self, handle: ViewportHandle) {
-        if let Some(viewport) = self.viewports.get(handle.0) {
+    pub fn clear_viewport_draw_list(&mut self, handle: ViewportHandle) {
+        if let Some(viewport) = self.viewport_manager.get_mut(handle) {
             viewport.clear_draw_list();
         }
     }
 
     /// Destroy a viewport by handle.
     pub fn destroy_viewport(&mut self, handle: ViewportHandle) {
-        if handle.0 < self.viewports.len() {
-            // Remove the viewport (Drop handles cleanup)
-            self.viewports.remove(handle.0);
+        if self.viewport_manager.destroy(handle) {
             info!("Viewport {} destroyed", handle.0);
         }
     }
 
     /// Check if a viewport is ready for rendering.
     pub fn is_viewport_ready(&self, handle: ViewportHandle) -> bool {
-        self.viewports
-            .get(handle.0)
+        self.viewport_manager
+            .get(handle)
             .is_some_and(|v| v.storage_manager.is_some() && v.storage_descriptor.is_some())
     }
 
@@ -709,7 +713,7 @@ impl VulkanRenderer {
         light_color: &[f32; 4],
         light_intensity: f32,
     ) {
-        if let Some(viewport) = self.viewports.get_mut(handle.0)
+        if let Some(viewport) = self.viewport_manager.get_mut(handle)
             && let Some(ref mut manager) = viewport.storage_manager
         {
             manager.update_frame_with_lighting(
@@ -732,7 +736,7 @@ impl VulkanRenderer {
         self.render_targets.clear();
 
         // Destroy all viewports (Drop handles cleanup for ViewportRenderTarget)
-        self.viewports.clear();
+        self.viewport_manager.clear();
 
         // Destroy all registered assets first (materials, meshes)
         self.asset_registry.destroy();
@@ -783,74 +787,8 @@ impl VulkanRenderer {
         T: bytemuck::Pod,
         U: bytemuck::Pod,
     {
-        use crate::renderer::registry::MeshAsset;
-        use crate::vulkan::*;
-
-        // Convert vertices to bytes
-        let vertex_bytes = unsafe {
-            std::slice::from_raw_parts(
-                vertices.as_ptr() as *const u8,
-                std::mem::size_of_val(vertices),
-            )
-        };
-
-        // Convert indices to bytes
-        let index_bytes = unsafe {
-            std::slice::from_raw_parts(
-                indices.as_ptr() as *const u8,
-                std::mem::size_of_val(indices),
-            )
-        };
-
-        // Determine index type
-        let index_type = match std::mem::size_of::<U>() {
-            1 => IndexType::Uint8,
-            2 => IndexType::Uint16,
-            4 => IndexType::Uint32,
-            _ => IndexType::None,
-        };
-
-        // Determine index count
-        let index_count = match index_type {
-            IndexType::Uint8 => index_bytes.len() as u32,
-            IndexType::Uint16 => (index_bytes.len() as u32) / 2,
-            IndexType::Uint32 => (index_bytes.len() as u32) / 4,
-            IndexType::None => 0_u32,
-        };
-
-        // Create vertex buffer and upload data
-        let vertex_buffer = if !vertex_bytes.is_empty() {
-            let mut vb = VertexBuffer::new(
-                self.context.clone(),
-                vertex_bytes.len() as u64,
-                vertices.len() as u32,
-            );
-            vb.upload_data(vertex_bytes);
-            Some(vb)
-        } else {
-            None
-        };
-
-        // Create index buffer and upload data
-        let index_buffer = if !index_bytes.is_empty() {
-            let mut ib = IndexBuffer::new(
-                self.context.clone(),
-                index_bytes.len() as u64,
-                index_type,
-                index_count,
-            );
-            ib.upload_data(index_bytes);
-            Some(ib)
-        } else {
-            None
-        };
-
-        let mesh_asset = MeshAsset {
-            vertex_buffer,
-            index_buffer,
-        };
-
-        self.asset_registry.register_mesh(mesh_asset)
+        self.mesh_manager
+            .create_mesh(&mut self.asset_registry, vertices, indices)
     }
 
     /// Register a mesh with pre-existing buffers.
@@ -869,14 +807,8 @@ impl VulkanRenderer {
         vertex_buffer: Option<VertexBuffer>,
         index_buffer: Option<IndexBuffer>,
     ) -> MeshHandle {
-        use crate::renderer::registry::MeshAsset;
-
-        let mesh_asset = MeshAsset {
-            vertex_buffer,
-            index_buffer,
-        };
-
-        self.asset_registry.register_mesh(mesh_asset)
+        self.mesh_manager
+            .register_mesh(&mut self.asset_registry, vertex_buffer, index_buffer)
     }
 
     /// Create a cube mesh with the given size.
@@ -887,8 +819,8 @@ impl VulkanRenderer {
     /// # Returns
     /// A `MeshHandle` that references the registered mesh.
     pub fn create_cube_mesh(&mut self, size: [f32; 3]) -> MeshHandle {
-        let (vertices, indices) = crate::primitives::generate_cube(size);
-        self.create_mesh(&vertices, &indices)
+        self.mesh_manager
+            .create_cube(&mut self.asset_registry, size)
     }
 
     /// Create a UV sphere mesh.
@@ -901,8 +833,8 @@ impl VulkanRenderer {
     /// # Returns
     /// A `MeshHandle` that references the registered mesh.
     pub fn create_sphere_mesh(&mut self, radius: f32, segments: u32, rings: u32) -> MeshHandle {
-        let (vertices, indices) = crate::primitives::generate_sphere(radius, segments, rings);
-        self.create_mesh(&vertices, &indices)
+        self.mesh_manager
+            .create_sphere(&mut self.asset_registry, radius, segments, rings)
     }
 
     /// Create a plane mesh on the XZ plane.
@@ -914,8 +846,8 @@ impl VulkanRenderer {
     /// # Returns
     /// A `MeshHandle` that references the registered mesh.
     pub fn create_plane_mesh(&mut self, width: f32, height: f32) -> MeshHandle {
-        let (vertices, indices) = crate::primitives::generate_plane(width, height);
-        self.create_mesh(&vertices, &indices)
+        self.mesh_manager
+            .create_plane(&mut self.asset_registry, width, height)
     }
 
     /// Create a cylinder mesh standing on Y axis.
@@ -928,8 +860,8 @@ impl VulkanRenderer {
     /// # Returns
     /// A `MeshHandle` that references the registered mesh.
     pub fn create_cylinder_mesh(&mut self, height: f32, radius: f32, segments: u32) -> MeshHandle {
-        let (vertices, indices) = crate::primitives::generate_cylinder(height, radius, segments);
-        self.create_mesh(&vertices, &indices)
+        self.mesh_manager
+            .create_cylinder(&mut self.asset_registry, height, radius, segments)
     }
 
     /// Create a torus (donut) mesh on the XZ plane.
@@ -949,9 +881,13 @@ impl VulkanRenderer {
         segments: u32,
         rings: u32,
     ) -> MeshHandle {
-        let (vertices, indices) =
-            crate::primitives::generate_torus(major_radius, minor_radius, segments, rings);
-        self.create_mesh(&vertices, &indices)
+        self.mesh_manager.create_torus(
+            &mut self.asset_registry,
+            major_radius,
+            minor_radius,
+            segments,
+            rings,
+        )
     }
 
     /// Create a plane on the XY axis (vertical, facing +Z).
@@ -964,8 +900,8 @@ impl VulkanRenderer {
     /// # Returns
     /// A `MeshHandle` that references the registered mesh.
     pub fn create_plane_xy_mesh(&mut self, width: f32, height: f32, segments: u32) -> MeshHandle {
-        let (vertices, indices) = crate::primitives::generate_plane_xy(width, height, segments);
-        self.create_mesh(&vertices, &indices)
+        self.mesh_manager
+            .create_plane_xy(&mut self.asset_registry, width, height, segments)
     }
 
     /// Create a dynamic mesh from raw vertex and index data.
@@ -986,46 +922,12 @@ impl VulkanRenderer {
         vertex_count: u32,
         indices: &[u32],
     ) -> MeshHandle {
-        use crate::renderer::registry::MeshAsset;
-        use crate::vulkan::IndexType;
-
-        // Create vertex buffer
-        let vertex_buffer = if !vertex_data.is_empty() {
-            let mut vb =
-                VertexBuffer::new(self.context.clone(), vertex_data.len() as u64, vertex_count);
-            vb.upload_data(vertex_data);
-            Some(vb)
-        } else {
-            None
-        };
-
-        // Create index buffer (always u32 for UI)
-        let index_bytes = unsafe {
-            std::slice::from_raw_parts(
-                indices.as_ptr() as *const u8,
-                std::mem::size_of_val(indices),
-            )
-        };
-
-        let index_buffer = if !indices.is_empty() {
-            let mut ib = IndexBuffer::new(
-                self.context.clone(),
-                index_bytes.len() as u64,
-                IndexType::Uint32,
-                indices.len() as u32,
-            );
-            ib.upload_data(index_bytes);
-            Some(ib)
-        } else {
-            None
-        };
-
-        let mesh_asset = MeshAsset {
-            vertex_buffer,
-            index_buffer,
-        };
-
-        self.asset_registry.register_mesh(mesh_asset)
+        self.mesh_manager.create_mesh_dynamic(
+            &mut self.asset_registry,
+            vertex_data,
+            vertex_count,
+            indices,
+        )
     }
 
     /// Update a dynamic mesh with new vertex and index data.
@@ -1045,31 +947,16 @@ impl VulkanRenderer {
         &mut self,
         mesh: MeshHandle,
         vertex_data: &[u8],
-        _vertex_count: u32,
+        vertex_count: u32,
         indices: &[u32],
     ) -> Result<(), RendererError> {
-        let mesh_asset = self
-            .asset_registry
-            .get_mesh_mut(mesh)
-            .ok_or_else(|| RendererError::NotFound("Mesh handle not found".to_string()))?;
-
-        // Update vertex buffer
-        if let Some(ref mut vb) = mesh_asset.vertex_buffer {
-            vb.upload_data(vertex_data);
-        }
-
-        // Update index buffer
-        if let Some(ref mut ib) = mesh_asset.index_buffer {
-            let index_bytes = unsafe {
-                std::slice::from_raw_parts(
-                    indices.as_ptr() as *const u8,
-                    std::mem::size_of_val(indices),
-                )
-            };
-            ib.upload_data(index_bytes);
-        }
-
-        Ok(())
+        self.mesh_manager.update_mesh_dynamic(
+            &mut self.asset_registry,
+            mesh,
+            vertex_data,
+            vertex_count,
+            indices,
+        )
     }
 
     /// Register a Material with the renderer.
