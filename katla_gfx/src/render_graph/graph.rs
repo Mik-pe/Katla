@@ -3,13 +3,11 @@
 //! This module provides the executable [`FrameGraph`] and [`ExecutionContext`]
 //! types for render graph execution.
 
-use std::any::Any;
 use std::collections::HashMap;
 
 use super::builder::PassBuilder;
 use super::error::RenderGraphError;
 use super::pass::PassDesc;
-use super::pass::PassType;
 use super::resource::GraphResourceHandle;
 use crate::renderer::VulkanRenderer;
 use crate::renderer::types::DrawList;
