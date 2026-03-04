@@ -1,6 +1,5 @@
 pub mod builder;
 pub mod compute_pipeline;
-pub(crate) mod descriptor;
 pub mod shadermodule;
 pub mod skeleton_descriptor;
 pub mod storage_uniform;

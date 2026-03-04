@@ -152,7 +152,7 @@ impl CommandBuffer {
     ///
     /// # Arguments
     /// * `viewports` - Slice of viewport structures to set (wrapper type)
-    pub fn set_viewport(&self, viewports: &[VkViewport]) {
+    pub(crate) fn set_viewport(&self, viewports: &[VkViewport]) {
         let vk_viewports: Vec<vk::Viewport> = viewports.iter().map(|v| (*v).into()).collect();
         unsafe {
             self.device
