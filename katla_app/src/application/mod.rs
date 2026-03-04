@@ -148,12 +148,11 @@ impl ApplicationHandler for Application {
                     self.renderer.wait_for_device();
                     self.renderer.recreate_swapchain();
 
-                    if let Some(viewport_extent) = self.renderer.viewport_extent() {
-                        let aspect = viewport_extent.width as f32 / viewport_extent.height as f32;
-                        self.camera
-                            .borrow_mut()
-                            .aspect_ratio_changed(&mut self.world, aspect);
-                    }
+                    let extent = self.renderer.swapchain_extent();
+                    let aspect = extent.width as f32 / extent.height as f32;
+                    self.camera
+                        .borrow_mut()
+                        .aspect_ratio_changed(&mut self.world, aspect);
                     info!("=== Resize complete ===");
                 }
             }
