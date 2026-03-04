@@ -84,10 +84,10 @@ pub use renderer::{UIDrawList, UiDrawCommand};
 // Renderer
 pub use renderer::VulkanRenderer;
 
-// Render graph system
+// Render graph system - minimal public API
 pub use render_graph::{
-    ExecutionContext, FrameGraph, FrameGraphBuilder, FullscreenPass, GeometryPass, LightType,
-    PassBuilder, PassHandle, RenderGraphError, ShadowPass,
+    Frame, FrameGraph, FrameGraphBuilder, FullscreenPass, GeometryPass, LightType,
+    RenderGraphError, ShadowPass,
 };
 
 /// Low-level Vulkan context - an escape hatch for advanced use cases.

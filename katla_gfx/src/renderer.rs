@@ -188,237 +188,6 @@ impl VulkanRenderer {
         &self.context
     }
 
-    /// Render a single frame to the swapchain.
-    ///
-    /// This method handles the complete frame rendering pipeline:
-    /// 1. Wait for previous frame to complete
-    /// 2. Acquire next swapchain image
-    /// 3. Record command buffer with render passes
-    /// 4. Submit command buffer to GPU
-    /// 5. Present to swapchain
-    pub fn render_frame(&mut self) -> Result<(), RendererError> {
-        let frame_index = self.swap_data.current_frame();
-        let extent = self.frame_context.swapchain.get_extent();
-        let swapchain = self.frame_context.swapchain.swapchain;
-
-        // Wait for previous frame to complete
-        self.swap_data.wait_for_fence(&self.context.device);
-
-        // Acquire next swapchain image
-        let swapchain_loader = self.context.swapchain_loader.as_ref().ok_or_else(|| {
-            RendererError::SwapchainError("Swapchain loader not initialized".into())
-        })?;
-
-        let (image_index, _suboptimal) = unsafe {
-            swapchain_loader
-                .acquire_next_image(
-                    swapchain,
-                    u64::MAX,
-                    self.swap_data.image_available_semaphore(),
-                    vk::Fence::null(),
-                )
-                .map_err(|e| {
-                    RendererError::SwapchainError(format!(
-                        "Failed to acquire swapchain image: {:?}",
-                        e
-                    ))
-                })?
-        };
-
-        // Begin command buffer recording
-        let command_buffer = &self.frame_context.command_buffers[frame_index];
-
-        let begin_info = vk::CommandBufferBeginInfo::default()
-            .flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT);
-
-        unsafe {
-            self.context
-                .device
-                .begin_command_buffer(command_buffer.vk_command_buffer(), &begin_info)
-                .map_err(|e| {
-                    RendererError::VulkanError(format!("Failed to begin command buffer: {:?}", e))
-                })?;
-        }
-
-        // Transition swapchain image from undefined to color attachment optimal
-        let swapchain_images = self.frame_context.swapchain_images();
-        let swapchain_image: vk::Image = swapchain_images[image_index as usize].into();
-
-        let color_barrier = vk::ImageMemoryBarrier::default()
-            .old_layout(vk::ImageLayout::UNDEFINED)
-            .new_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
-            .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
-            .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
-            .image(swapchain_image)
-            .subresource_range(vk::ImageSubresourceRange {
-                aspect_mask: vk::ImageAspectFlags::COLOR,
-                base_mip_level: 0,
-                level_count: 1,
-                base_array_layer: 0,
-                layer_count: 1,
-            })
-            .src_access_mask(vk::AccessFlags::empty())
-            .dst_access_mask(vk::AccessFlags::COLOR_ATTACHMENT_WRITE);
-
-        unsafe {
-            self.context.device.cmd_pipeline_barrier(
-                command_buffer.vk_command_buffer(),
-                vk::PipelineStageFlags::TOP_OF_PIPE,
-                vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
-                vk::DependencyFlags::empty(),
-                &[],
-                &[],
-                &[color_barrier],
-            )
-        }
-
-        // Begin rendering with dynamic rendering (Vulkan 1.3)
-        let swapchain_image_views = self.frame_context.swapchain_image_views();
-        let swapchain_image_view: vk::ImageView =
-            swapchain_image_views[image_index as usize].into();
-
-        let color_attachment = vk::RenderingAttachmentInfo::default()
-            .image_view(swapchain_image_view)
-            .image_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
-            .load_op(vk::AttachmentLoadOp::CLEAR)
-            .store_op(vk::AttachmentStoreOp::STORE)
-            .clear_value(vk::ClearValue {
-                color: vk::ClearColorValue {
-                    float32: [0.05, 0.1, 1.0, 1.0],
-                },
-            });
-
-        let render_info = vk::RenderingInfo::default()
-            .render_area(vk::Rect2D {
-                offset: vk::Offset2D { x: 0, y: 0 },
-                extent,
-            })
-            .layer_count(1)
-            .color_attachments(std::slice::from_ref(&color_attachment));
-
-        unsafe {
-            self.context
-                .device
-                .cmd_begin_rendering(command_buffer.vk_command_buffer(), &render_info);
-        }
-
-        // End rendering
-        unsafe {
-            self.context
-                .device
-                .cmd_end_rendering(command_buffer.vk_command_buffer())
-        }
-
-        // Transition swapchain image to present layout
-        let present_barrier = vk::ImageMemoryBarrier::default()
-            .old_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
-            .new_layout(vk::ImageLayout::PRESENT_SRC_KHR)
-            .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
-            .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
-            .image(swapchain_image)
-            .subresource_range(vk::ImageSubresourceRange {
-                aspect_mask: vk::ImageAspectFlags::COLOR,
-                base_mip_level: 0,
-                level_count: 1,
-                base_array_layer: 0,
-                layer_count: 1,
-            })
-            .src_access_mask(vk::AccessFlags::COLOR_ATTACHMENT_WRITE)
-            .dst_access_mask(vk::AccessFlags::empty());
-
-        unsafe {
-            self.context.device.cmd_pipeline_barrier(
-                command_buffer.vk_command_buffer(),
-                vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
-                vk::PipelineStageFlags::BOTTOM_OF_PIPE,
-                vk::DependencyFlags::empty(),
-                &[],
-                &[],
-                &[present_barrier],
-            )
-        }
-
-        // End command buffer
-        unsafe {
-            self.context
-                .device
-                .end_command_buffer(command_buffer.vk_command_buffer())
-                .map_err(|e| {
-                    RendererError::VulkanError(format!("Failed to end command buffer: {:?}", e))
-                })?;
-        }
-
-        // Submit command buffer to GPU
-        self.submit_command_buffer(frame_index, image_index)?;
-
-        // Present to swapchain
-        self.present_swapchain(image_index)?;
-
-        // Step to next frame
-        self.swap_data.step_frame();
-
-        Ok(())
-    }
-
-    /// Submit command buffer to GPU queue.
-    fn submit_command_buffer(
-        &mut self,
-        frame_index: usize,
-        image_index: u32,
-    ) -> Result<(), RendererError> {
-        let command_buffer = &self.frame_context.command_buffers[frame_index];
-
-        let wait_semaphore = self.swap_data.image_available_semaphore();
-        let signal_semaphore = self.swap_data.render_finished_semaphore(image_index);
-        let in_flight_fence = self.swap_data.in_flight_fence();
-
-        // Reset fence
-        unsafe {
-            self.context
-                .device
-                .reset_fences(std::slice::from_ref(&in_flight_fence))
-                .map_err(|e| {
-                    RendererError::VulkanError(format!("Failed to reset fence: {:?}", e))
-                })?;
-        }
-
-        // Submit command buffer
-        self.context.gfx_queue.submit(
-            &[command_buffer],
-            &[wait_semaphore],
-            &[signal_semaphore],
-            in_flight_fence,
-        );
-
-        Ok(())
-    }
-
-    /// Present the swapchain image to screen.
-    fn present_swapchain(&self, image_index: u32) -> Result<(), RendererError> {
-        let signal_semaphore = self.swap_data.render_finished_semaphore(image_index);
-
-        let present_info = vk::PresentInfoKHR::default()
-            .wait_semaphores(std::slice::from_ref(&signal_semaphore))
-            .swapchains(std::slice::from_ref(
-                &self.frame_context.swapchain.swapchain,
-            ))
-            .image_indices(std::slice::from_ref(&image_index));
-
-        let swapchain_loader = self.context.swapchain_loader.as_ref().ok_or_else(|| {
-            RendererError::SwapchainError("Swapchain loader not initialized".into())
-        })?;
-
-        unsafe {
-            swapchain_loader
-                .queue_present(self.context.gfx_queue.vk_queue(), &present_info)
-                .map_err(|e| {
-                    RendererError::SwapchainError(format!("Failed to present swapchain: {:?}", e))
-                })?;
-        }
-
-        Ok(())
-    }
-
     // ========================================================================
     // Texture Creation API
     // ========================================================================
@@ -1144,6 +913,63 @@ impl VulkanRenderer {
             commands: commands.to_vec(),
             screen_size,
         });
+    }
+
+    // ========================================================================
+    // Render Graph System
+    // ========================================================================
+
+    /// Create a frame graph builder for configuring a render pipeline.
+    ///
+    /// Frame graphs are built once at startup and executed every frame.
+    /// They define the structure of your rendering pipeline (passes,
+    /// resources, dependencies) and handle automatic barrier generation.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// let frame_graph = renderer.create_frame_graph()
+    ///     .add_pass(GeometryPass::new("geometry")
+    ///         .write_color("color", ImageFormat::R16G16B16A16Sfloat)
+    ///         .write_depth("depth", ImageFormat::D32Sfloat))
+    ///     .add_pass(FullscreenPass::new("tonemap")
+    ///         .read("color")
+    ///         .write_backbuffer())
+    ///     .build()?;
+    /// ```
+    pub fn create_frame_graph(&self) -> crate::render_graph::FrameGraphBuilder {
+        crate::render_graph::FrameGraphBuilder::new()
+    }
+
+    /// Execute a frame graph with the given submission callback.
+    ///
+    /// This is the main rendering entry point when using frame graphs.
+    /// The callback receives a [`Frame`] for submitting draw lists to passes.
+    ///
+    /// # Arguments
+    /// * `frame_graph` - The compiled frame graph to execute
+    /// * `f` - Callback for submitting work to passes
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// renderer.render(&frame_graph, |frame| {
+    ///     frame.submit("geometry", &opaque_draw_list);
+    ///     frame.submit("geometry", &transparent_draw_list);
+    ///     // Passes without draw lists (like tonemap) run automatically
+    /// });
+    /// ```
+    pub fn render<F>(&mut self, frame_graph: &mut crate::render_graph::FrameGraph, f: F)
+    where
+        F: FnOnce(&mut crate::render_graph::Frame),
+    {
+        // TODO: Implement actual frame graph execution
+        // This would:
+        // 1. Begin frame (acquire swapchain image)
+        // 2. Execute the frame graph
+        // 3. End frame (submit and present)
+        let _ = (frame_graph, f);
+        todo!("render() not yet implemented")
     }
 }
 

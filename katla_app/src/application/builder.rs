@@ -100,6 +100,23 @@ impl ApplicationBuilder {
         renderer
     }
 
+    /// Build the frame graph for the application.
+    fn build_frame_graph(renderer: &VulkanRenderer) -> AppResult<katla_gfx::FrameGraph> {
+        use katla_gfx::{FrameGraphBuilder, GeometryPass, FullscreenPass, ImageFormat};
+
+        let graph = renderer.create_frame_graph()
+            .add_pass(GeometryPass::new("geometry")
+                .write_color("color", ImageFormat::R16G16B16A16Sfloat)
+                .write_depth("depth", ImageFormat::D32Sfloat))
+            .add_pass(FullscreenPass::new("tonemap")
+                .read("color")
+                .write("backbuffer", ImageFormat::B8G8R8A8Srgb))
+            .build()
+            .map_err(|e| crate::error::AppError::Graphics { message: e.to_string() })?;
+
+        Ok(graph)
+    }
+
     pub fn build(self) -> AppResult<(Application, EventLoop<()>)> {
         let event_loop = Self::build_event_loop();
 
@@ -223,9 +240,13 @@ impl ApplicationBuilder {
 
         let renderer = Self::init_renderer(&event_loop, &window, &info, &resources);
 
+        // Build the frame graph once at startup
+        let frame_graph = Self::build_frame_graph(&renderer)?;
+
         let app = Application {
             window,
             renderer,
+            frame_graph,
             camera,
             gltf_cache: FileCache::new(gltf_loader),
             timer: Timer::new(100),

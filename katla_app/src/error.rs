@@ -17,6 +17,9 @@ pub enum AppError {
     /// Failed to initialize renderer
     RendererInitFailed { reason: String },
 
+    /// Graphics/rendering error
+    Graphics { message: String },
+
     /// IO error
     Io { source: std::io::Error },
 
@@ -38,6 +41,9 @@ impl fmt::Display for AppError {
             }
             Self::RendererInitFailed { reason } => {
                 write!(f, "Failed to initialize renderer: {}", reason)
+            }
+            Self::Graphics { message } => {
+                write!(f, "Graphics error: {}", message)
             }
             Self::Io { source } => {
                 write!(f, "IO error: {}", source)

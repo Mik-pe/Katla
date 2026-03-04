@@ -1,16 +1,16 @@
 //! Frame graph execution types.
 //!
-//! This module provides the executable [`FrameGraph`] and [`ExecutionContext`]
+//! This module provides the executable [`FrameGraph`] and [`Frame`]
 //! types for render graph execution.
 
 use std::collections::HashMap;
 
-use super::builder::PassBuilder;
+use super::builder::{InternalPassBuilder, PassBuilder};
 use super::error::RenderGraphError;
 use super::pass::PassDesc;
 use super::resource::GraphResourceHandle;
-use crate::renderer::VulkanRenderer;
 use crate::renderer::types::DrawList;
+use crate::renderer::VulkanRenderer;
 
 /// Executable render graph.
 ///
@@ -19,17 +19,20 @@ use crate::renderer::types::DrawList;
 /// # Example
 ///
 /// ```ignore
-/// // Build once
-/// let graph = FrameGraph::builder()
+/// // Build once at startup
+/// let frame_graph = renderer.create_frame_graph()
 ///     .add_pass(GeometryPass::new("geometry")
 ///         .write_color("color", ImageFormat::R16G16B16A16Sfloat)
 ///         .write_depth("depth", ImageFormat::D32Sfloat))
-///     .build(&renderer)?;
+///     .add_pass(FullscreenPass::new("tonemap")
+///         .read("color")
+///         .write_backbuffer())
+///     .build()?;
 ///
 /// // Execute every frame
-/// graph.execute(&renderer, |ctx| {
-///     ctx.pass("geometry").draw_list(&draw_list);
-/// })?;
+/// renderer.render(&frame_graph, |frame| {
+///     frame.submit("geometry", &draw_list);
+/// });
 /// ```
 pub struct FrameGraph {
     /// Pass descriptors in execution order.
@@ -46,23 +49,8 @@ pub struct FrameGraph {
 }
 
 impl FrameGraph {
-    /// Create a builder for constructing a frame graph.
-    ///
-    /// # Example
-    ///
-    /// ```ignore
-    /// let graph = FrameGraph::builder()
-    ///     .add_pass(GeometryPass::new("geometry")
-    ///         .write_color("color", ImageFormat::R16G16B16A16Sfloat)
-    ///         .write_depth("depth", ImageFormat::D32Sfloat))
-    ///     .build()?;
-    /// ```
-    pub fn builder() -> FrameGraphBuilder {
-        FrameGraphBuilder::new()
-    }
-
     /// Create a new empty frame graph.
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             passes: Vec::new(),
             resource_names: HashMap::new(),
@@ -72,9 +60,7 @@ impl FrameGraph {
     }
 
     /// Add a pass to the graph.
-    ///
-    /// Passes are executed in the order they are added.
-    pub fn add_pass(&mut self, pass: PassDesc) {
+    pub(crate) fn add_pass(&mut self, pass: PassDesc) {
         let index = self.passes.len();
         self.pass_names.insert(pass.name.clone(), index);
         self.passes.push(pass);
@@ -82,71 +68,45 @@ impl FrameGraph {
     }
 
     /// Import a resource into the graph.
-    ///
-    /// Resources are referenced by name during execution.
-    pub fn import_resource(&mut self, name: impl Into<String>, handle: GraphResourceHandle) {
+    pub(crate) fn import_resource(&mut self, name: impl Into<String>, handle: GraphResourceHandle) {
         self.resource_names.insert(name.into(), handle);
         self.compiled = false;
     }
 
     /// Compile the graph for execution.
-    ///
-    /// This analyzes dependencies and computes the execution order.
-    /// Currently a no-op placeholder - will add topological sort and
-    /// barrier computation in the future.
-    pub fn compile(&mut self) -> Result<(), RenderGraphError> {
+    pub(crate) fn compile(&mut self) -> Result<(), RenderGraphError> {
         // TODO: Implement dependency analysis and topological sort
         // TODO: Compute resource barriers between passes
         self.compiled = true;
         Ok(())
     }
 
-    /// Execute the graph with the given closure.
+    /// Execute the graph with the given frame context.
     ///
-    /// The closure receives an [`ExecutionContext`] for configuring passes.
-    ///
-    /// # Arguments
-    ///
-    /// * `renderer` - VulkanRenderer for GPU access
-    /// * `f` - Execution callback with ExecutionContext
-    ///
-    /// # Example
-    ///
-    /// ```ignore
-    /// graph.execute(&renderer, |ctx| {
-    ///     ctx.pass("geometry")
-    ///         .draw_list(&opaque);
-    ///     ctx.pass("transparent")
-    ///         .draw_list(&transparent);
-    /// })?;
-    /// ```
-    pub fn execute<F>(&mut self, renderer: &VulkanRenderer, f: F) -> Result<(), RenderGraphError>
-    where
-        F: FnOnce(&mut ExecutionContext),
-    {
+    /// Called internally by `VulkanRenderer::render()`.
+    pub(crate) fn execute(
+        &mut self,
+        renderer: &VulkanRenderer,
+        f: impl FnOnce(&mut Frame),
+    ) -> Result<(), RenderGraphError> {
         if !self.compiled {
             self.compile()?;
         }
 
-        // Create execution context
-        let mut ctx = ExecutionContext::new(self, renderer);
-
-        // User callback to configure passes
-        f(&mut ctx);
-
-        // Execute all passes in order
-        ctx.execute_passes()?;
+        let mut frame = Frame::new(self, renderer);
+        f(&mut frame);
+        frame.execute_passes()?;
 
         Ok(())
     }
 
     /// Get a resource handle by name.
-    pub fn resource_handle(&self, name: &str) -> Option<GraphResourceHandle> {
+    pub(crate) fn resource_handle(&self, name: &str) -> Option<GraphResourceHandle> {
         self.resource_names.get(name).copied()
     }
 
     /// Get a pass index by name.
-    pub fn pass_index(&self, name: &str) -> Option<usize> {
+    pub(crate) fn pass_index(&self, name: &str) -> Option<usize> {
         self.pass_names.get(name).copied()
     }
 
@@ -164,34 +124,39 @@ impl Default for FrameGraph {
 
 /// Builder for constructing a frame graph.
 ///
-/// Provides a fluent API for adding passes and resources before building
-/// the executable [`FrameGraph`].
+/// Created by [`VulkanRenderer::create_frame_graph()`].
+/// Provides a fluent API for adding passes before building the executable [`FrameGraph`].
 ///
 /// # Example
 ///
 /// ```ignore
-/// let graph = FrameGraph::builder()
+/// let frame_graph = renderer.create_frame_graph()
 ///     .add_pass(GeometryPass::new("geometry")
 ///         .write_color("color", ImageFormat::R16G16B16A16Sfloat)
 ///         .write_depth("depth", ImageFormat::D32Sfloat))
 ///     .add_pass(FullscreenPass::new("tonemap")
 ///         .read("color")
-///         .write("output", ImageFormat::R8G8B8A8Srgb))
+///         .write_backbuffer())
 ///     .build()?;
 /// ```
 pub struct FrameGraphBuilder {
     /// Internal pass builders from pass templates.
-    pass_builders: Vec<super::builder::InternalPassBuilder>,
+    pass_builders: Vec<InternalPassBuilder>,
+
     /// Resource declarations (name -> handle mapping).
     resources: HashMap<String, GraphResourceHandle>,
+
+    /// Whether this builder writes to the backbuffer.
+    writes_backbuffer: bool,
 }
 
 impl FrameGraphBuilder {
     /// Create a new frame graph builder.
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             pass_builders: Vec::new(),
             resources: HashMap::new(),
+            writes_backbuffer: false,
         }
     }
 
@@ -199,16 +164,17 @@ impl FrameGraphBuilder {
     ///
     /// Takes any type implementing the [`PassBuilder`] trait, such as
     /// [`GeometryPass`], [`FullscreenPass`], or [`ShadowPass`].
-    ///
-    /// # Example
-    ///
-    /// ```ignore
-    /// let builder = FrameGraph::builder()
-    ///     .add_pass(GeometryPass::new("geometry")
-    ///         .write_color("color", ImageFormat::R16G16B16A16Sfloat));
-    /// ```
     pub fn add_pass(mut self, pass: impl PassBuilder + 'static) -> Self {
         self.pass_builders.push(pass.as_builder());
+        self
+    }
+
+    /// Declare that this graph writes to the backbuffer (swapchain).
+    ///
+    /// This is typically called by pass templates that output to the screen,
+    /// such as a final tonemap pass.
+    pub(crate) fn writes_backbuffer(mut self) -> Self {
+        self.writes_backbuffer = true;
         self
     }
 
@@ -216,11 +182,6 @@ impl FrameGraphBuilder {
     ///
     /// Resources are referenced by name during graph construction and
     /// resolved to handles at build time.
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - Resource name for graph reference
-    /// * `handle` - External resource handle
     pub fn import_resource(mut self, name: impl Into<String>, handle: GraphResourceHandle) -> Self {
         self.resources.insert(name.into(), handle);
         self
@@ -228,17 +189,8 @@ impl FrameGraphBuilder {
 
     /// Build the frame graph.
     ///
-    /// Resolves string resource names to handles and creates the
-    /// executable [`FrameGraph`].
-    ///
-    /// # Example
-    ///
-    /// ```ignore
-    /// let graph = FrameGraph::builder()
-    ///     .add_pass(GeometryPass::new("geometry")
-    ///         .write_color("color", ImageFormat::R16G16B16A16Sfloat))
-    ///     .build()?;
-    /// ```
+    /// Validates pass dependencies, allocates transient resources,
+    /// and creates the executable [`FrameGraph`].
     pub fn build(self) -> Result<FrameGraph, RenderGraphError> {
         let mut graph = FrameGraph::new();
 
@@ -249,11 +201,11 @@ impl FrameGraphBuilder {
 
         // Build passes
         for pass_builder in self.pass_builders {
-            // Resolve resource names to handles
-            let mut resource_map = HashMap::new();
+            // TODO: Resolve resource names to handles
+            // TODO: Allocate transient resources
+            // TODO: Validate dependencies
 
-            // For now, use a dummy handle for each resource name
-            // In a full implementation, this would allocate actual resources
+            let mut resource_map = HashMap::new();
             for read_name in &pass_builder.reads {
                 if !resource_map.contains_key(read_name) {
                     resource_map.insert(
@@ -274,7 +226,7 @@ impl FrameGraphBuilder {
             // Call the build function
             let _pass_data = (pass_builder.build_fn)(&resource_map)?;
 
-            // Create PassDesc (simplified - in full implementation would use pass_data)
+            // Create PassDesc
             let reads: Vec<_> = pass_builder
                 .reads
                 .iter()
@@ -308,24 +260,22 @@ impl Default for FrameGraphBuilder {
     }
 }
 
-/// Execution context for graph passes.
+/// Frame context for submitting work to passes.
 ///
-/// Provides autocomplete-friendly access to passes by name during execution.
+/// Passed to the closure in [`VulkanRenderer::render()`]. Provides a simple
+/// API for submitting draw lists to named passes.
 ///
 /// # Example
 ///
 /// ```ignore
-/// graph.execute(&renderer, |ctx| {
-///     ctx.pass("geometry")
-///         .set_frame_uniforms(&uniforms)
-///         .draw_list(&opaque_draw_list);
-///
-///     ctx.pass("lighting")
-///         .push_uniform(&light_data)
-///         .dispatch();
-/// })?;
+/// renderer.render(&frame_graph, |frame| {
+///     frame.submit("geometry", &opaque_draw_list);
+///     frame.submit("geometry", &transparent_draw_list);
+///     frame.submit("shadows", &shadow_draw_list);
+///     // Passes without draw lists (like tonemap) run automatically
+/// });
 /// ```
-pub struct ExecutionContext<'a> {
+pub struct Frame<'a> {
     /// Reference to the frame graph.
     graph: &'a FrameGraph,
 
@@ -341,16 +291,19 @@ pub struct ExecutionContext<'a> {
 struct PassExecutionData {
     /// Draw lists to render in this pass.
     draw_lists: Vec<DrawList>,
+
     /// UI draw lists to render in this pass.
     ui_draw_lists: Vec<crate::renderer::types::UIDrawList>,
+
     /// Whether dispatch was requested.
     dispatch: Option<(u32, u32, u32)>,
+
     /// Custom uniform data.
     uniform_data: Vec<u8>,
 }
 
-impl<'a> ExecutionContext<'a> {
-    /// Create a new execution context.
+impl<'a> Frame<'a> {
+    /// Create a new frame context.
     pub(crate) fn new(graph: &'a FrameGraph, renderer: &'a VulkanRenderer) -> Self {
         Self {
             graph,
@@ -359,40 +312,83 @@ impl<'a> ExecutionContext<'a> {
         }
     }
 
-    /// Access a pass by name.
+    /// Submit a draw list to a pass.
     ///
-    /// Returns a [`PassHandle`] for configuring pass execution.
+    /// Can be called multiple times for the same pass to submit multiple draw lists.
     ///
     /// # Panics
     ///
     /// Panics if the pass name doesn't exist in the graph.
-    pub fn pass(&mut self, name: &str) -> PassHandle<'_> {
+    pub fn submit(&mut self, pass: &str, draw_list: &DrawList) -> &mut Self {
         let index = self
             .graph
-            .pass_index(name)
-            .unwrap_or_else(|| panic!("Pass '{}' not found in graph", name));
+            .pass_index(pass)
+            .unwrap_or_else(|| panic!("Pass '{}' not found in graph", pass));
 
-        PassHandle {
-            index,
-            pending: &mut self.pending,
-        }
+        self.pending
+            .entry(index)
+            .or_insert_with(PassExecutionData::default)
+            .draw_lists
+            .push(draw_list.clone());
+        self
     }
 
-    /// Try to access a pass by name (non-panicking).
+    /// Submit a UI draw list to a pass.
     ///
-    /// Returns `None` if the pass doesn't exist.
-    pub fn try_pass(&mut self, name: &str) -> Option<PassHandle<'_>> {
-        self.graph.pass_index(name).map(|index| PassHandle {
-            index,
-            pending: &mut self.pending,
-        })
+    /// Can be called multiple times for the same pass to submit multiple UI draw lists.
+    pub fn submit_ui(
+        &mut self,
+        pass: &str,
+        ui_draw_list: &crate::renderer::types::UIDrawList,
+    ) -> &mut Self {
+        let index = self
+            .graph
+            .pass_index(pass)
+            .unwrap_or_else(|| panic!("Pass '{}' not found in graph", pass));
+
+        self.pending
+            .entry(index)
+            .or_insert_with(PassExecutionData::default)
+            .ui_draw_lists
+            .push(ui_draw_list.clone());
+        self
+    }
+
+    /// Dispatch compute workgroups for a pass.
+    ///
+    /// Only valid for compute passes.
+    pub fn dispatch(&mut self, pass: &str, x: u32, y: u32, z: u32) -> &mut Self {
+        let index = self
+            .graph
+            .pass_index(pass)
+            .unwrap_or_else(|| panic!("Pass '{}' not found in graph", pass));
+
+        self.pending
+            .entry(index)
+            .or_insert_with(PassExecutionData::default)
+            .dispatch = Some((x, y, z));
+        self
+    }
+
+    /// Push uniform data for a pass.
+    ///
+    /// The data is copied into the pass's uniform buffer.
+    pub fn push_uniform(&mut self, pass: &str, data: &[u8]) -> &mut Self {
+        let index = self
+            .graph
+            .pass_index(pass)
+            .unwrap_or_else(|| panic!("Pass '{}' not found in graph", pass));
+
+        self.pending
+            .entry(index)
+            .or_insert_with(PassExecutionData::default)
+            .uniform_data
+            .extend_from_slice(data);
+        self
     }
 
     /// Execute all passes in order.
-    ///
-    /// This is called internally after the user callback completes.
     fn execute_passes(&mut self) -> Result<(), RenderGraphError> {
-        // Execute passes in order
         for (index, _pass) in self.graph.passes.iter().enumerate() {
             if let Some(data) = self.pending.remove(&index) {
                 self.execute_pass(index, data)?;
@@ -414,69 +410,7 @@ impl<'a> ExecutionContext<'a> {
         // 2. Set up render pass / compute pass
         // 3. Execute draw calls or dispatch
         // 4. Insert barriers between passes
-
-        // For now, this is a placeholder
         Ok(())
-    }
-}
-
-/// Handle for configuring pass execution.
-///
-/// Returned by [`ExecutionContext::pass()`].
-pub struct PassHandle<'a> {
-    /// Pass index in the graph.
-    index: usize,
-
-    /// Reference to pending execution data.
-    pending: &'a mut HashMap<usize, PassExecutionData>,
-}
-
-impl<'a> PassHandle<'a> {
-    /// Submit a draw list for rendering in this pass.
-    ///
-    /// Can be called multiple times to submit multiple draw lists.
-    pub fn draw_list(&mut self, draw_list: &DrawList) -> &mut Self {
-        self.pending
-            .entry(self.index)
-            .or_insert_with(PassExecutionData::default)
-            .draw_lists
-            .push(draw_list.clone());
-        self
-    }
-
-    /// Submit a UI draw list for rendering in this pass.
-    ///
-    /// Can be called multiple times to submit multiple UI draw lists.
-    pub fn draw_ui(&mut self, ui_draw_list: &crate::renderer::types::UIDrawList) -> &mut Self {
-        self.pending
-            .entry(self.index)
-            .or_insert_with(PassExecutionData::default)
-            .ui_draw_lists
-            .push(ui_draw_list.clone());
-        self
-    }
-
-    /// Dispatch compute workgroups.
-    ///
-    /// Only valid for compute passes.
-    pub fn dispatch(&mut self, x: u32, y: u32, z: u32) -> &mut Self {
-        self.pending
-            .entry(self.index)
-            .or_insert_with(PassExecutionData::default)
-            .dispatch = Some((x, y, z));
-        self
-    }
-
-    /// Push uniform data for this pass.
-    ///
-    /// The data is copied into the pass's uniform buffer.
-    pub fn push_uniform(&mut self, data: &[u8]) -> &mut Self {
-        self.pending
-            .entry(self.index)
-            .or_insert_with(PassExecutionData::default)
-            .uniform_data
-            .extend_from_slice(data);
-        self
     }
 }
 
@@ -498,31 +432,16 @@ mod tests {
     }
 
     #[test]
-    fn test_frame_graph_import_resource() {
-        let mut graph = FrameGraph::new();
-        let handle = GraphResourceHandle::new(0);
-        graph.import_resource("color", handle);
-
-        assert_eq!(graph.resource_handle("color"), Some(handle));
-        assert_eq!(graph.resource_handle("depth"), None);
+    fn test_frame_graph_builder_new() {
+        let builder = FrameGraphBuilder::new();
+        assert!(builder.pass_builders.is_empty());
+        assert!(!builder.writes_backbuffer);
     }
 
     #[test]
-    fn test_frame_graph_add_pass() {
-        let mut graph = FrameGraph::new();
-        let pass = PassDesc::graphics("geometry", vec![], vec![], Box::new(|_ctx| Ok(())));
-        graph.add_pass(pass);
-
-        assert_eq!(graph.pass_count(), 1);
-        assert_eq!(graph.pass_index("geometry"), Some(0));
-    }
-
-    #[test]
-    fn test_frame_graph_compile() {
-        let mut graph = FrameGraph::new();
-        let result = graph.compile();
-        assert!(result.is_ok());
-        assert!(graph.compiled);
+    fn test_frame_graph_builder_default() {
+        let builder = FrameGraphBuilder::default();
+        assert!(builder.pass_builders.is_empty());
     }
 
     #[test]
