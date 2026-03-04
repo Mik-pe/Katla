@@ -166,7 +166,7 @@ impl From<VkImageView> for vk::ImageView {
 
 /// Wrapper for Vulkan 1.3 Viewport.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
-pub struct VkViewport {
+pub(crate) struct VkViewport {
     pub x: f32,
     pub y: f32,
     pub width: f32,
@@ -177,7 +177,14 @@ pub struct VkViewport {
 
 impl VkViewport {
     /// Create a new viewport.
-    pub fn new(x: f32, y: f32, width: f32, height: f32, min_depth: f32, max_depth: f32) -> Self {
+    pub(crate) fn new(
+        x: f32,
+        y: f32,
+        width: f32,
+        height: f32,
+        min_depth: f32,
+        max_depth: f32,
+    ) -> Self {
         Self {
             x,
             y,
@@ -189,7 +196,7 @@ impl VkViewport {
     }
 
     /// Create a viewport from position and size (uses default depth range 0.0-1.0).
-    pub fn from_rect(x: f32, y: f32, width: f32, height: f32) -> Self {
+    pub(crate) fn from_rect(x: f32, y: f32, width: f32, height: f32) -> Self {
         Self {
             x,
             y,

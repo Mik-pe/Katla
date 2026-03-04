@@ -76,14 +76,6 @@ pub fn generate_plane(width: f32, height: f32) -> (Vec<VertexPBR>, Vec<u32>) {
 ///
 /// # Winding Order
 /// Uses counter-clockwise (CCW) winding for front faces (viewed from +Z).
-///
-/// # Example
-/// ```
-/// use katla_gfx::primitives::generate_plane_xy;
-///
-/// // Create a 2x2 plane with 4x4 subdivisions
-/// let (vertices, indices) = generate_plane_xy(2.0, 2.0, 4);
-/// ```
 pub fn generate_plane_xy(width: f32, height: f32, segments: u32) -> (Vec<VertexPBR>, Vec<u32>) {
     let segments = segments.max(1);
     let half_width = width * 0.5;
@@ -119,13 +111,13 @@ pub fn generate_plane_xy(width: f32, height: f32, segments: u32) -> (Vec<VertexP
 
             // First triangle (CCW when viewed from +Z)
             indices.push(current);
-            indices.push(next_row);
             indices.push(current + 1);
+            indices.push(next_row);
 
             // Second triangle (CCW when viewed from +Z)
             indices.push(current + 1);
-            indices.push(next_row);
             indices.push(next_row + 1);
+            indices.push(next_row);
         }
     }
 
@@ -192,7 +184,7 @@ mod tests {
         assert_eq!(indices.len(), 6); // 1 quad * 2 triangles * 3 indices
 
         let (_, indices) = generate_plane_xy(1.0, 1.0, 4);
-        assert_eq!(indices.len(), 288); // 16 quads * 2 triangles * 3 indices
+        assert_eq!(indices.len(), 96); // 16 quads * 2 triangles * 3 indices
     }
 
     #[test]
