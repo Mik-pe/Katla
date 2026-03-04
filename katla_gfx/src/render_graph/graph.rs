@@ -3,11 +3,13 @@
 //! This module provides the executable [`FrameGraph`] and [`ExecutionContext`]
 //! types for render graph execution.
 
+use std::any::Any;
 use std::collections::HashMap;
 
 use super::builder::PassBuilder;
 use super::error::RenderGraphError;
 use super::pass::PassDesc;
+use super::pass::PassType;
 use super::resource::GraphResourceHandle;
 use crate::renderer::VulkanRenderer;
 use crate::renderer::types::DrawList;
@@ -275,7 +277,24 @@ impl FrameGraphBuilder {
             let _pass_data = (pass_builder.build_fn)(&resource_map)?;
 
             // Create PassDesc (simplified - in full implementation would use pass_data)
-            let pass = PassDesc::new(pass_builder.name);
+            let reads: Vec<_> = pass_builder
+                .reads
+                .iter()
+                .filter_map(|n| resource_map.get(n).copied())
+                .collect();
+            let writes: Vec<_> = pass_builder
+                .writes
+                .iter()
+                .filter_map(|n| resource_map.get(n).copied())
+                .collect();
+
+            let pass = PassDesc::new(
+                pass_builder.name,
+                pass_builder.pass_type,
+                reads,
+                writes,
+                Box::new(|_ctx| Ok(())),
+            );
 
             graph.add_pass(pass);
         }
@@ -493,7 +512,7 @@ mod tests {
     #[test]
     fn test_frame_graph_add_pass() {
         let mut graph = FrameGraph::new();
-        let pass = PassDesc::new("geometry");
+        let pass = PassDesc::graphics("geometry", vec![], vec![], Box::new(|_ctx| Ok(())));
         graph.add_pass(pass);
 
         assert_eq!(graph.pass_count(), 1);
