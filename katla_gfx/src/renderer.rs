@@ -14,6 +14,7 @@ use crate::viewport::{ViewportBuilder, ViewportHandle};
 pub use registry::AssetRegistry;
 pub use types::{
     DrawCall, DrawList, FrameUniforms, InstanceData, ParticleDispatch, ParticleRender,
+    UiDrawCommand, UiDrawList,
 };
 
 use crate::material::Material;
@@ -944,6 +945,110 @@ impl VulkanRenderer {
     pub fn create_plane_xy_mesh(&mut self, width: f32, height: f32, segments: u32) -> MeshHandle {
         let (vertices, indices) = crate::primitives::generate_plane_xy(width, height, segments);
         self.create_mesh(&vertices, &indices)
+    }
+
+    /// Create a dynamic mesh from raw vertex and index data.
+    ///
+    /// This method creates a mesh that can be updated every frame.
+    /// The buffers are created with CPU-accessible memory for fast updates.
+    ///
+    /// # Arguments
+    /// * `vertex_data` - Raw vertex data in bytes
+    /// * `vertex_count` - Number of vertices
+    /// * `indices` - Index data (u32)
+    ///
+    /// # Returns
+    /// A `MeshHandle` that references the registered mesh.
+    pub fn create_mesh_dynamic(
+        &mut self,
+        vertex_data: &[u8],
+        vertex_count: u32,
+        indices: &[u32],
+    ) -> MeshHandle {
+        use crate::renderer::registry::MeshAsset;
+        use crate::vulkan::IndexType;
+
+        // Create vertex buffer
+        let vertex_buffer = if !vertex_data.is_empty() {
+            let mut vb =
+                VertexBuffer::new(self.context.clone(), vertex_data.len() as u64, vertex_count);
+            vb.upload_data(vertex_data);
+            Some(vb)
+        } else {
+            None
+        };
+
+        // Create index buffer (always u32 for UI)
+        let index_bytes = unsafe {
+            std::slice::from_raw_parts(
+                indices.as_ptr() as *const u8,
+                std::mem::size_of_val(indices),
+            )
+        };
+
+        let index_buffer = if !indices.is_empty() {
+            let mut ib = IndexBuffer::new(
+                self.context.clone(),
+                index_bytes.len() as u64,
+                IndexType::Uint32,
+                indices.len() as u32,
+            );
+            ib.upload_data(index_bytes);
+            Some(ib)
+        } else {
+            None
+        };
+
+        let mesh_asset = MeshAsset {
+            vertex_buffer,
+            index_buffer,
+        };
+
+        self.asset_registry.register_mesh(mesh_asset)
+    }
+
+    /// Update a dynamic mesh with new vertex and index data.
+    ///
+    /// The mesh must have been created with `create_mesh_dynamic`.
+    /// This method updates the existing buffers with new data.
+    ///
+    /// # Arguments
+    /// * `mesh` - Handle to the mesh to update
+    /// * `vertex_data` - New vertex data in bytes
+    /// * `vertex_count` - Number of vertices
+    /// * `indices` - New index data (u32)
+    ///
+    /// # Returns
+    /// `Ok(())` on success, `Err` if mesh not found or buffers too small.
+    pub fn update_mesh_dynamic(
+        &mut self,
+        mesh: MeshHandle,
+        vertex_data: &[u8],
+        _vertex_count: u32,
+        indices: &[u32],
+    ) -> Result<(), RendererError> {
+        let mesh_asset = self
+            .asset_registry
+            .get_mesh_mut(mesh)
+            .ok_or_else(|| RendererError::NotFound("Mesh handle not found".to_string()))?;
+
+        // Update vertex buffer
+        if let Some(ref mut vb) = mesh_asset.vertex_buffer {
+            vb.upload_data(vertex_data);
+        }
+
+        // Update index buffer
+        if let Some(ref mut ib) = mesh_asset.index_buffer {
+            let index_bytes = unsafe {
+                std::slice::from_raw_parts(
+                    indices.as_ptr() as *const u8,
+                    std::mem::size_of_val(indices),
+                )
+            };
+            ib.upload_data(index_bytes);
+        }
+
+        Ok(())
     }
 
     /// Register a Material with the renderer.

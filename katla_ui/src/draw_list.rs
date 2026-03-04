@@ -84,6 +84,8 @@ pub struct DrawList {
     current_texture: TextureId,
     /// Current Z-index for render order.
     current_z: u32,
+    /// Scratch buffer for circle/polygon tessellation (avoids per-frame allocation).
+    scratch_points: Vec<Vec2>,
 }
 
 impl DrawList {
@@ -96,6 +98,7 @@ impl DrawList {
             current_clip: Rect2D::from_size(Vec2::new(f32::MAX, f32::MAX)),
             current_texture: TextureId::NONE,
             current_z: 0,
+            scratch_points: Vec::new(),
         }
     }
 
@@ -107,6 +110,7 @@ impl DrawList {
         self.current_clip = Rect2D::from_size(Vec2::new(f32::MAX, f32::MAX));
         self.current_texture = TextureId::NONE;
         self.current_z = 0;
+        self.scratch_points.clear();
     }
 
     /// Set the current Z-index for subsequent draw commands.
@@ -343,17 +347,22 @@ impl DrawList {
             return;
         }
 
-        let points: Vec<Vec2> = (0..segments)
-            .map(|i| {
-                let angle = (i as f32 / segments as f32) * std::f32::consts::TAU;
-                Vec2::new(
-                    center.x() + radius * angle.cos(),
-                    center.y() + radius * angle.sin(),
-                )
-            })
-            .collect();
+        // Use scratch buffer to avoid per-frame allocation
+        self.scratch_points.clear();
+        self.scratch_points.reserve(segments as usize);
 
+        for i in 0..segments {
+            let angle = (i as f32 / segments as f32) * std::f32::consts::TAU;
+            self.scratch_points.push(Vec2::new(
+                center.x() + radius * angle.cos(),
+                center.y() + radius * angle.sin(),
+            ));
+        }
+
+        // Take ownership temporarily to avoid borrow conflict
+        let points = std::mem::take(&mut self.scratch_points);
         self.add_convex_poly(&points, color);
+        self.scratch_points = points;
     }
 
     /// Flush the current batch into a draw command.
@@ -409,13 +418,13 @@ impl DrawList {
     }
 
     /// Get vertex data as bytes for GPU upload.
-    pub fn vertex_bytes(&self) -> Vec<u8> {
-        bytemuck::cast_slice(&self.vertices).to_vec()
+    pub fn vertex_bytes(&self) -> &[u8] {
+        bytemuck::cast_slice(&self.vertices)
     }
 
     /// Get index data as bytes for GPU upload.
-    pub fn index_bytes(&self) -> Vec<u8> {
-        bytemuck::cast_slice(&self.indices).to_vec()
+    pub fn index_bytes(&self) -> &[u8] {
+        bytemuck::cast_slice(&self.indices)
     }
 }
 
