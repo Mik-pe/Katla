@@ -3,10 +3,10 @@
 //! This module handles the compilation of WGSL shaders into SPIR-V and
 //! the creation of Vulkan graphics pipelines for rendering.
 
+use crate::StorageDescriptorSet;
 use crate::vulkan::bindless_texture::BindlessTextureManager;
 use crate::vulkan::context::VulkanContext;
 use crate::vulkan::material::shadermodule::ShaderCache;
-use crate::StorageDescriptorSet;
 use ash::vk;
 use std::{cell::RefCell, path::Path, path::PathBuf, rc::Rc};
 
@@ -98,15 +98,20 @@ impl MaterialCompiler {
                 .stage_flags(vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT),
         ];
 
-        let storage_layout_info = vk::DescriptorSetLayoutCreateInfo::default()
-            .bindings(&storage_bindings);
+        let storage_layout_info =
+            vk::DescriptorSetLayoutCreateInfo::default().bindings(&storage_bindings);
 
         let storage_descriptor_layout = unsafe {
             context
                 .device
                 .create_descriptor_set_layout(&storage_layout_info, None)
         }
-        .map_err(|e| MaterialError::ShaderCompilation(format!("Failed to create storage descriptor layout: {:?}", e)))?;
+        .map_err(|e| {
+            MaterialError::ShaderCompilation(format!(
+                "Failed to create storage descriptor layout: {:?}",
+                e
+            ))
+        })?;
 
         Ok(Self {
             shader_cache: Rc::new(RefCell::new(ShaderCache::new(context.device.clone()))),
@@ -153,9 +158,9 @@ impl MaterialCompiler {
         let material_asset = crate::renderer::registry::MaterialAsset {
             pipeline: registry.register_pipeline(pipeline),
             vertex_binding,
-            texture_indices: [0, 0, 0, 0], // Default textures
-            emission_index: 0,
-            uses_bindless: true,
+            material_data: crate::renderer::registry::MaterialData::default(), // Default material params
+            material_descriptor_set: None,
+            material_descriptor_layout: None,
         };
 
         Ok(registry.register_material(material_asset))
@@ -185,7 +190,8 @@ impl MaterialCompiler {
         _options: &MaterialOptions,
     ) -> Result<Vec<vk::DescriptorSetLayout>, MaterialError> {
         Ok(vec![
-            self.storage_descriptor_layout.expect("Storage descriptor layout not initialized"),
+            self.storage_descriptor_layout
+                .expect("Storage descriptor layout not initialized"),
             self.bindless_descriptor_layout,
         ])
     }
@@ -205,17 +211,12 @@ impl MaterialCompiler {
             .with_shaders(vert_module, frag_module)
             .with_vertex_binding(vertex_binding.clone())
             .with_descriptor_layouts(layouts.to_vec())
-            // Add push constant range for object_index and material_index
-            .add_push_constant_range(
-                vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT,
-                0,
-                8, // u32 object_index + u32 material_index
-            )
+            // Note: No push constants - WGSL shaders use instance_index instead
             // TODO: Use offscreen HDR format once render graph supports intermediate textures
             // For now, render directly to swapchain format
             .with_rendering_formats(
                 Some(crate::texture::ImageFormat::B8G8R8A8Srgb),
-                Some(crate::texture::ImageFormat::D32Sfloat),
+                Some(crate::texture::ImageFormat::D32SfloatS8Uint),
             );
 
         // Configure render state from options
@@ -235,16 +236,20 @@ impl MaterialCompiler {
             builder = builder.with_polygon_mode(PolygonMode::Line);
         }
 
-        builder
-            .build(crate::sync::VkRenderPass::default())
-            .map_err(|e: crate::vulkan::material::builder::PipelineError| MaterialError::PipelineCreation(e.to_string()))
+        builder.build(crate::sync::VkRenderPass::default()).map_err(
+            |e: crate::vulkan::material::builder::PipelineError| {
+                MaterialError::PipelineCreation(e.to_string())
+            },
+        )
     }
 
     /// Clean up descriptor layouts.
     pub(crate) fn destroy(&mut self) {
         if let Some(layout) = self.storage_descriptor_layout.take() {
             unsafe {
-                self.context.device.destroy_descriptor_set_layout(layout, None);
+                self.context
+                    .device
+                    .destroy_descriptor_set_layout(layout, None);
             }
         }
     }
@@ -309,6 +314,11 @@ impl<'a> MaterialBuilder<'a> {
                 MaterialType::Auto,
                 self.options,
             )
-            .map_err(|e| crate::RendererError::InitializationFailed(format!("Material compilation failed: {}", e)))
+            .map_err(|e| {
+                crate::RendererError::InitializationFailed(format!(
+                    "Material compilation failed: {}",
+                    e
+                ))
+            })
     }
 }

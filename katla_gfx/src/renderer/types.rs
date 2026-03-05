@@ -111,6 +111,11 @@ impl InstanceData {
 /// Contains all per-object information needed to render without exposing Vulkan types.
 /// Frame-level data (view/proj matrices, lighting) is set separately via `set_frame_uniforms()`.
 ///
+/// # Instance Index
+/// Each draw call has an `instance_index` that specifies which slot in the storage
+/// buffer (Set 0, Binding 1) contains its per-object data. This is allocated by the
+/// FrameContext and used by the shader via `@builtin(instance_index)`.
+///
 /// # Instancing
 /// When `instances` is non-empty, the draw call uses GPU instancing:
 /// - All instances share the same mesh and material
@@ -122,6 +127,9 @@ pub struct DrawCall {
     pub mesh: MeshHandle,
     /// Material/shader to use.
     pub material: MaterialHandle,
+    /// Instance index for storage buffer lookup (Set 0, Binding 1).
+    /// The shader uses this to index objects[instance_index].
+    pub instance_index: u32,
     /// Model matrix for single-instance mode (when instances is empty).
     pub model_matrix: [f32; 16],
     /// Optional material color for single-instance mode.
@@ -152,6 +160,7 @@ impl DrawCall {
         Self {
             mesh,
             material,
+            instance_index: 0, // Will be set by FrameContext
             model_matrix: [0.0; 16],
             color: None,
             metallic: 0.0,
@@ -177,6 +186,7 @@ impl DrawCall {
         Self {
             mesh,
             material,
+            instance_index: 0,       // Will be set by FrameContext
             model_matrix: [0.0; 16], // Not used in instanced mode
             color: None,
             metallic: 0.0,
@@ -274,6 +284,15 @@ impl DrawCall {
     /// Set skeleton handle for GPU skinning.
     pub fn with_skeleton(mut self, skeleton: SkeletonHandle) -> Self {
         self.skeleton = Some(skeleton);
+        self
+    }
+
+    /// Set the instance index for storage buffer lookup.
+    ///
+    /// This specifies which slot in the storage buffer (Set 0, Binding 1)
+    /// contains this draw call's per-object data.
+    pub fn with_instance_index(mut self, index: u32) -> Self {
+        self.instance_index = index;
         self
     }
 }

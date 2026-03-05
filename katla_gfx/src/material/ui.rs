@@ -18,6 +18,9 @@ use super::RenderState;
 pub mod ui_shader {
     /// UI vertex shader source (WGSL).
     ///
+    /// NOTE: This is a legacy shader string that uses push constants.
+    /// The actual UI shader (resources/shaders/ui/ui.wgsl) uses uniform buffers.
+    /// This embedded string is kept for reference but is not used by the current pipeline.
     /// Uses an orthographic projection matrix passed via push constants.
     /// Transforms screen coordinates (pixels) to clip space.
     pub const VERTEX: &str = r#"
@@ -52,6 +55,9 @@ fn main(input: VertexInput) -> VertexOutput {
 
     /// UI fragment shader source (WGSL).
     ///
+    /// NOTE: This is a legacy shader string that uses push constants.
+    /// The actual UI shader (resources/shaders/ui/ui.wgsl) uses uniform buffers.
+    /// This embedded string is kept for reference but is not used by the current pipeline.
     /// Samples from bindless texture array using texture index.
     /// Multiplies texture color with vertex color for tinting.
     pub const FRAGMENT: &str = r#"

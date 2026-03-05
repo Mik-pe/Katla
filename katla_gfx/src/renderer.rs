@@ -25,19 +25,20 @@ use crate::vulkan::context::VulkanContext;
 use crate::{
     BindlessTextureManager, IndexBuffer, MAX_BINDLESS_TEXTURES, RendererError,
     SkeletonDescriptorSet, StorageDescriptorSet, StorageUniformManager, SwapData, VertexBuffer,
-    VulkanFrameCtx,
-    viewport::Viewport,
+    VulkanFrameCtx, viewport::Viewport,
 };
 use ash::vk;
 use log::{error, info};
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 use std::{cell::RefCell, ffi::CString, rc::Rc};
 
+use crate::MaterialBuilder;
 use crate::barrier::ImageBarrier;
 use crate::sync::{COLOR_SUBRESOURCE_RANGE, DEPTH_SUBRESOURCE_RANGE};
 use crate::vulkan::material::compiler::MaterialCompiler;
-use crate::MaterialBuilder;
 
+/// Transpose a 4x4 matrix from row-major to column-major format.
+///
 pub struct VulkanRenderer {
     pub(crate) context: Rc<VulkanContext>,
     pub(crate) frame_context: VulkanFrameCtx,
@@ -67,7 +68,7 @@ pub struct VulkanRenderer {
     /// Indexed by SkeletonHandle.
     pub(crate) skeleton_descriptors: Vec<Option<SkeletonDescriptorSet>>,
     /// Frame-level uniforms set once per frame via set_frame_uniforms().
-    pub(crate) frame_uniforms: Option<FrameUniforms>,
+    pub(crate) frame_uniforms: FrameUniforms,
     /// Cached default white PBR material handle.
     default_material_handle: Option<MaterialHandle>,
     /// Offscreen render targets as (texture_id, target) pairs.
@@ -178,15 +179,14 @@ impl VulkanRenderer {
         let viewport_manager = viewport_manager::ViewportManager::new(context.clone());
 
         // Initialize material compiler
-        let material_compiler = MaterialCompiler::new(
-            context.clone(),
-            &bindless_manager,
-            &storage_descriptor_set,
-        )
-        .map_err(|e| {
-            error!("Failed to create material compiler: {:?}", e);
-            RendererError::InitializationFailed("Failed to create material compiler".to_string())
-        })?;
+        let material_compiler =
+            MaterialCompiler::new(context.clone(), &bindless_manager, &storage_descriptor_set)
+                .map_err(|e| {
+                    error!("Failed to create material compiler: {:?}", e);
+                    RendererError::InitializationFailed(
+                        "Failed to create material compiler".to_string(),
+                    )
+                })?;
         info!("Material compiler initialized");
 
         Ok(Self {
@@ -201,7 +201,7 @@ impl VulkanRenderer {
             storage_descriptor_set,
             draw_list_cell: Rc::new(RefCell::new(None)),
             skeleton_descriptors: Vec::new(),
-            frame_uniforms: None,
+            frame_uniforms: FrameUniforms::default(),
             default_material_handle: None,
             render_targets: Vec::new(),
             output_target: None,
@@ -313,7 +313,71 @@ impl VulkanRenderer {
     /// # Arguments
     /// * `uniforms` - Frame uniforms containing view/proj matrices, camera position, and lighting
     pub fn set_frame_uniforms(&mut self, uniforms: FrameUniforms) {
-        self.frame_uniforms = Some(uniforms);
+        // Write frame uniforms to storage buffer so shaders can read them
+        self.storage_manager.update_from_frame_uniforms(&uniforms);
+
+        // Store for reference
+        self.frame_uniforms = uniforms;
+    }
+
+    /// Execute draw calls from FrameContext and prepare them for rendering.
+    ///
+    /// This method writes all per-object data from draw calls to the storage buffer.
+    /// Frame uniforms should be set separately via `set_frame_uniforms()`.
+    ///
+    /// This method writes all per-object data from draw calls to the storage buffer.
+    /// Frame uniforms should be set separately via `set_frame_uniforms()`.
+    ///
+    /// # Arguments
+    /// * `draw_list` - The DrawList from FrameContext containing draw calls with instance_index
+    ///
+    /// # Example
+    /// ```ignore
+    /// // In application render loop
+    /// let mut frame = FrameContext::new();
+    /// frame.set_camera(&view, &proj);
+    /// frame.draw(mesh, material)
+    ///     .with_transform(transform)
+    ///     .submit();
+    ///
+    /// // Set frame uniforms
+    /// renderer.set_frame_uniforms(&frame.frame_uniforms().unwrap());
+    ///
+    /// // Execute draw calls (writes to storage buffer)
+    /// renderer.execute_draw_calls(&frame.draw_list());
+    ///
+    /// // Render with frame graph
+    /// renderer.render(&mut frame_graph, |frame| {
+    ///     frame.submit("geometry", &frame.draw_list());
+    /// });
+    /// ```
+    pub fn execute_draw_calls(&mut self, draw_list: &DrawList) {
+        // Write all per-object data to storage buffer
+        for draw_call in &draw_list.draws {
+            let index = draw_call.instance_index as usize;
+
+            // Extract material parameters
+            let color = draw_call.color.unwrap_or([1.0, 1.0, 1.0, 1.0]);
+            let metallic = draw_call.metallic;
+            let roughness = draw_call.roughness;
+            let ao = draw_call.ao;
+            let emission_idx = draw_call.material_params[3]; // emission index stored in w component
+
+            // Note: Texture indices will come from MaterialAsset in future
+            let texture_indices = [0u32, 0, 0, 0]; // Default textures for now
+
+            // Write to storage buffer at instance_index
+            self.storage_manager.update_object_bindless(
+                index,
+                &draw_call.model_matrix,
+                &color,
+                metallic,
+                roughness,
+                ao,
+                emission_idx,
+                texture_indices,
+            );
+        }
     }
 
     /// Initialize or resize the output render target.
@@ -389,7 +453,9 @@ impl VulkanRenderer {
                     ..Default::default()
                 },
             )
-            .map_err(|e| RendererError::InitializationFailed(format!("Material compilation failed: {}", e)))
+            .map_err(|e| {
+                RendererError::InitializationFailed(format!("Material compilation failed: {}", e))
+            })
     }
 
     /// Create a UI material with default settings.
@@ -423,7 +489,9 @@ impl VulkanRenderer {
                     ..Default::default()
                 },
             )
-            .map_err(|e| RendererError::InitializationFailed(format!("Material compilation failed: {}", e)))
+            .map_err(|e| {
+                RendererError::InitializationFailed(format!("Material compilation failed: {}", e))
+            })
     }
 
     /// Create a material with custom options using the builder pattern.
@@ -866,6 +934,43 @@ impl VulkanRenderer {
         )
     }
 
+    /// Update object transform data in the storage buffer.
+    ///
+    /// This updates the object uniforms at the given index in the storage buffer.
+    /// The shader will use this data when rendering with the corresponding instance_index.
+    ///
+    /// # Arguments
+    /// * `index` - Object index (0-255)
+    /// * `model_matrix` - Model matrix (object-to-world) - column-major [f32; 16]
+    /// * `color` - Base color tint (RGBA)
+    /// * `metallic` - Metallic factor (0.0 = dielectric, 1.0 = metal)
+    /// * `roughness` - Roughness factor (0.0 = smooth, 1.0 = rough)
+    /// * `ao` - Ambient occlusion factor (0.0 = full occlusion, 1.0 = none)
+    /// * `normal_scale` - Normal map scale factor
+    /// * `texture_indices` - Texture indices for bindless [albedo, normal, mr, ao]
+    pub fn update_object_storage(
+        &mut self,
+        index: usize,
+        model_matrix: &[f32; 16],
+        color: &[f32; 4],
+        metallic: f32,
+        roughness: f32,
+        ao: f32,
+        normal_scale: f32,
+        texture_indices: [u32; 4],
+    ) {
+        self.storage_manager.update_object_bindless(
+            index,
+            model_matrix,
+            color,
+            metallic,
+            roughness,
+            ao,
+            normal_scale,
+            texture_indices,
+        );
+    }
+
     /// Register a Material with the renderer.
     ///
     /// This method registers a material instance for use in rendering.
@@ -906,9 +1011,16 @@ impl VulkanRenderer {
         let material_asset = MaterialAsset {
             pipeline,
             vertex_binding,
-            texture_indices,
-            emission_index: 0,
-            uses_bindless: is_bindless,
+            material_data: crate::renderer::registry::MaterialData {
+                color: [1.0, 1.0, 1.0, 1.0],
+                metallic: 0.0,
+                roughness: 0.5,
+                ao: 1.0,
+                texture_indices,
+                emission_index: 0,
+            },
+            material_descriptor_set: None,
+            material_descriptor_layout: None,
         };
 
         self.asset_registry.register_material(material_asset)
@@ -1141,11 +1253,6 @@ impl VulkanRenderer {
             vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
         );
 
-        // 5.5. Update storage buffer with frame uniforms (camera, lighting)
-        if let Some(ref frame_uniforms) = self.frame_uniforms {
-            self.storage_manager.update_from_frame_uniforms(frame_uniforms);
-        }
-
         // 6. Execute frame graph (records commands into the command buffer)
         frame_graph
             .execute(self, image_index, f)
@@ -1169,7 +1276,7 @@ impl VulkanRenderer {
                 .expect("Failed to end command buffer");
         }
 
-        // 9. Submit command buffer with synchronization
+        // 8. Submit command buffer with synchronization
         let render_finished_semaphore = self.swap_data.render_finished_semaphore(image_index);
         let wait_semaphores = [self.swap_data.image_available_semaphore()];
         let signal_semaphores = [render_finished_semaphore];
@@ -1183,7 +1290,7 @@ impl VulkanRenderer {
             self.swap_data.in_flight_fence(),
         );
 
-        // 10. Present to swapchain
+        // 9. Present to swapchain
         let present_info = vk::PresentInfoKHR::default()
             .wait_semaphores(&signal_semaphores)
             .swapchains(&swapchains)
@@ -1197,7 +1304,7 @@ impl VulkanRenderer {
                 .expect("Failed to present");
         }
 
-        // 11. Advance to next frame
+        // 10. Advance to next frame
         self.swap_data.step_frame();
     }
 }

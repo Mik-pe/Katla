@@ -79,8 +79,8 @@
 //! ```
 
 use crate::sync::{
-    AccessFlags2, DEPTH_SUBRESOURCE_RANGE,
-    DependencyInfo, ImageMemoryBarrier2, PipelineStage2Flags, VkImage,
+    AccessFlags2, DEPTH_SUBRESOURCE_RANGE, DependencyInfo, ImageMemoryBarrier2,
+    PipelineStage2Flags, VkImage,
 };
 use ash::vk;
 
@@ -204,7 +204,13 @@ impl ImageBarrier {
         image: vk::Image,
         new_layout: vk::ImageLayout,
     ) {
-        Self::transition(cmd_buffer, device, image, vk::ImageLayout::UNDEFINED, new_layout);
+        Self::transition(
+            cmd_buffer,
+            device,
+            image,
+            vk::ImageLayout::UNDEFINED,
+            new_layout,
+        );
     }
 
     /// Transition from UNDEFINED with custom subresource range.
@@ -235,7 +241,12 @@ impl ImageBarrier {
     fn deduce_transition_masks(
         old_layout: vk::ImageLayout,
         new_layout: vk::ImageLayout,
-    ) -> (PipelineStage2Flags, PipelineStage2Flags, AccessFlags2, AccessFlags2) {
+    ) -> (
+        PipelineStage2Flags,
+        PipelineStage2Flags,
+        AccessFlags2,
+        AccessFlags2,
+    ) {
         // UNDEFINED -> TRANSFER_DST_OPTIMAL
         if old_layout == vk::ImageLayout::UNDEFINED
             && new_layout == vk::ImageLayout::TRANSFER_DST_OPTIMAL

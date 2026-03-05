@@ -33,6 +33,8 @@ pub enum RenderGraphError {
     InvalidMaterialHandle(crate::handle::MaterialHandle),
     /// Invalid pipeline handle.
     InvalidPipelineHandle(crate::handle::PipelineHandle),
+    /// Invalid skeleton handle.
+    InvalidSkeletonHandle(crate::handle::SkeletonHandle),
 }
 
 impl fmt::Display for RenderGraphError {
@@ -59,8 +61,15 @@ impl fmt::Display for RenderGraphError {
             Self::VulkanError(msg) => write!(f, "Vulkan error: {}", msg),
             Self::NotCompiled => write!(f, "Render graph has not been compiled"),
             Self::InvalidMeshHandle(handle) => write!(f, "Invalid mesh handle: {}", handle.index()),
-            Self::InvalidMaterialHandle(handle) => write!(f, "Invalid material handle: {}", handle.index()),
-            Self::InvalidPipelineHandle(handle) => write!(f, "Invalid pipeline handle: {}", handle.index()),
+            Self::InvalidMaterialHandle(handle) => {
+                write!(f, "Invalid material handle: {}", handle.index())
+            }
+            Self::InvalidPipelineHandle(handle) => {
+                write!(f, "Invalid pipeline handle: {}", handle.index())
+            }
+            Self::InvalidSkeletonHandle(handle) => {
+                write!(f, "Invalid skeleton handle: {}", handle.index())
+            }
         }
     }
 }

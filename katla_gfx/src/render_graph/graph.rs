@@ -13,7 +13,7 @@ use super::resource::{GraphResourceHandle, ResourceState};
 use crate::renderer::VulkanRenderer;
 use crate::renderer::types::DrawList;
 use ash::vk;
-use bytemuck::{Pod, Zeroable};
+use bytemuck::Zeroable;
 
 /// Executable render graph.
 ///
@@ -288,7 +288,11 @@ struct PassExecutionData {
 
 impl<'a> Frame<'a> {
     /// Create a new frame context.
-    pub(crate) fn new(graph: &'a FrameGraph, renderer: &'a VulkanRenderer, image_index: u32) -> Self {
+    pub(crate) fn new(
+        graph: &'a FrameGraph,
+        renderer: &'a VulkanRenderer,
+        image_index: u32,
+    ) -> Self {
         Self {
             graph,
             renderer,
@@ -392,7 +396,9 @@ impl<'a> Frame<'a> {
         _cmd: &crate::vulkan::commandbuffer::CommandBuffer,
         pass_index: usize,
     ) -> Result<(), RenderGraphError> {
-        let execution_plan = self.graph.execution_plan()
+        let execution_plan = self
+            .graph
+            .execution_plan()
             .ok_or(RenderGraphError::NotCompiled)?;
 
         let barriers = execution_plan.barriers_for_pass(pass_index);
@@ -413,8 +419,17 @@ impl<'a> Frame<'a> {
         pass: &PassDesc,
         data: PassExecutionData,
     ) -> Result<(), RenderGraphError> {
-        // For MVP: render directly to swapchain
-        let swapchain_view = self.renderer.frame_context.swapchain_image_views[self.image_index as usize].vk();
+        log::debug!("execute_graphics_pass: beginning render pass");
+
+        // For MVP: render directly to swapchain with depth buffer
+        let swapchain_view =
+            self.renderer.frame_context.swapchain_image_views[self.image_index as usize].vk();
+        let depth_view = self
+            .renderer
+            .frame_context
+            .depth_render_texture
+            .image_view
+            .vk();
 
         let extent = self.renderer.frame_context.swapchain.get_extent();
         let render_area = vk::Rect2D {
@@ -429,13 +444,29 @@ impl<'a> Frame<'a> {
             .load_op(vk::AttachmentLoadOp::CLEAR)
             .store_op(vk::AttachmentStoreOp::STORE)
             .clear_value(vk::ClearValue {
-                color: vk::ClearColorValue { float32: [0.1, 0.1, 0.1, 1.0] },
+                color: vk::ClearColorValue {
+                    float32: [0.1, 0.1, 0.1, 1.0],
+                },
             });
 
-        // Begin dynamic rendering
+        // Set up depth attachment (reverse Z: 0.0 = far, 1.0 = near)
+        let depth_attachment = vk::RenderingAttachmentInfo::default()
+            .image_view(depth_view)
+            .image_layout(vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL)
+            .load_op(vk::AttachmentLoadOp::CLEAR)
+            .store_op(vk::AttachmentStoreOp::STORE)
+            .clear_value(vk::ClearValue {
+                depth_stencil: vk::ClearDepthStencilValue {
+                    // Reverse Z: clear to 0.0 (farthest)
+                    depth: 0.0,
+                    stencil: 0,
+                },
+            });
+
+        // Begin dynamic rendering with depth attachment
         cmd.begin_rendering(
             &[color_attachment],
-            None, // depth for later
+            Some(&depth_attachment),
             None,
             render_area,
             1,
@@ -494,17 +525,23 @@ impl<'a> Frame<'a> {
         draw_call: &crate::renderer::types::DrawCall,
     ) -> Result<(), RenderGraphError> {
         // Get mesh from registry
-        let mesh = self.renderer.asset_registry
+        let mesh = self
+            .renderer
+            .asset_registry
             .get_mesh(draw_call.mesh)
             .ok_or(RenderGraphError::InvalidMeshHandle(draw_call.mesh))?;
 
         // Get material from registry
-        let material = self.renderer.asset_registry
+        let material = self
+            .renderer
+            .asset_registry
             .get_material(draw_call.material)
             .ok_or(RenderGraphError::InvalidMaterialHandle(draw_call.material))?;
 
         // Get pipeline handles from registry
-        let (pipeline, layout) = self.renderer.asset_registry
+        let (pipeline, layout) = self
+            .renderer
+            .asset_registry
             .get_pipeline_vk_handles(material.pipeline)
             .ok_or_else(|| RenderGraphError::InvalidPipelineHandle(material.pipeline))?;
 
@@ -528,71 +565,46 @@ impl<'a> Frame<'a> {
         }
 
         // Bind descriptor sets
-        self.bind_descriptor_sets(cmd, layout, material)?;
+        self.bind_descriptor_sets(cmd, layout, material, draw_call)?;
 
-        // Push constants (object transform index)
-        self.push_object_constants(cmd, layout, draw_call)?;
-
-        // Draw indexed
+        // Draw indexed (instance_index is used instead of push constants)
         let index_count = mesh.index_buffer.as_ref().map(|ib| ib.count()).unwrap_or(0);
-        cmd.draw_indexed(index_count, 1, 0, 0, 0);
+        cmd.draw_indexed(index_count, 1, 0, 0, draw_call.instance_index);
 
         Ok(())
     }
 
     /// Bind descriptor sets for a draw call.
+    ///
+    /// Descriptor set layout:
+    /// - Set 0: Storage uniforms (frame_data + objects array) - always bound
+    /// - Set 1: Bindless textures - always bound for current materials
+    /// - Set 2: Skeleton joint matrices - bound only for skinned mesh draws
     fn bind_descriptor_sets(
         &mut self,
         cmd: &crate::vulkan::commandbuffer::CommandBuffer,
         pipeline_layout: vk::PipelineLayout,
         material: &crate::renderer::registry::MaterialAsset,
+        draw_call: &crate::renderer::types::DrawCall,
     ) -> Result<(), RenderGraphError> {
         // Set 0: Storage uniforms (frame_data + objects array)
         let storage_ds = self.renderer.storage_descriptor_set.vk_set();
         cmd.bind_descriptor_sets(pipeline_layout, 0, &[storage_ds], &[]);
 
-        // Set 1: Bindless textures
-        if material.uses_bindless {
-            let bindless_ds = self.renderer.bindless_manager.descriptor_set().vk();
-            cmd.bind_descriptor_sets(pipeline_layout, 1, &[bindless_ds], &[]);
+        // Set 1: Bindless textures (all current materials use bindless)
+        let bindless_ds = self.renderer.bindless_manager.descriptor_set().vk();
+        cmd.bind_descriptor_sets(pipeline_layout, 1, &[bindless_ds], &[]);
+
+        // Set 2: Skeleton joint matrices (only when draw_call has skeleton)
+        if let Some(skeleton_handle) = draw_call.skeleton {
+            let skeleton_ds = self
+                .renderer
+                .get_skeleton_descriptor(skeleton_handle)
+                .ok_or_else(|| RenderGraphError::InvalidSkeletonHandle(skeleton_handle))?;
+            cmd.bind_descriptor_sets(pipeline_layout, 2, &[skeleton_ds.vk_set()], &[]);
         }
 
         Ok(())
-    }
-
-    /// Push object constants for a draw call.
-    fn push_object_constants(
-        &mut self,
-        cmd: &crate::vulkan::commandbuffer::CommandBuffer,
-        pipeline_layout: vk::PipelineLayout,
-        draw_call: &crate::renderer::types::DrawCall,
-    ) -> Result<(), RenderGraphError> {
-        #[repr(C)]
-        #[derive(Copy, Clone, Pod, Zeroable)]
-        struct PushConstants {
-            object_index: u32,
-            material_index: u32,
-        }
-
-        let constants = PushConstants {
-            object_index: 0, // TODO: Use actual object index from draw call
-            material_index: draw_call.material.index() as u32,
-        };
-
-        cmd.push_constants(
-            pipeline_layout,
-            vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT,
-            0,
-            &constants,
-        );
-
-        Ok(())
-    }
-
-    /// Get the object descriptor set for instance data.
-    fn get_object_descriptor_set(&self) -> Option<vk::DescriptorSet> {
-        // TODO: Create or get object descriptor set from storage uniform manager
-        None
     }
 }
 
