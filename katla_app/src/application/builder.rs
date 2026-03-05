@@ -283,6 +283,7 @@ impl ApplicationBuilder {
             background_loader: BackgroundLoader::new(),
             thumbnail_texture_handles: HashMap::new(),
             start_time: Instant::now(),
+            default_material_handle: katla_gfx::MaterialHandle::NONE,
             cleaned_up: false,
         };
 
