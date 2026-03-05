@@ -32,6 +32,7 @@ use log::{error, info};
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 use std::{cell::RefCell, ffi::CString, rc::Rc};
 
+use crate::barrier::ImageBarrier;
 use crate::sync::{COLOR_SUBRESOURCE_RANGE, DEPTH_SUBRESOURCE_RANGE};
 
 pub struct VulkanRenderer {
@@ -996,33 +997,7 @@ impl VulkanRenderer {
 
         // 5. Transition swapchain image to COLOR_ATTACHMENT_OPTIMAL for rendering
         let swapchain_image = self.frame_context.swapchain_images[image_index as usize].vk();
-        let initial_barrier = vk::ImageMemoryBarrier::default()
-            .old_layout(vk::ImageLayout::UNDEFINED)
-            .new_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
-            .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
-            .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
-            .image(swapchain_image)
-            .subresource_range(vk::ImageSubresourceRange {
-                aspect_mask: vk::ImageAspectFlags::COLOR,
-                base_mip_level: 0,
-                level_count: 1,
-                base_array_layer: 0,
-                layer_count: 1,
-            })
-            .src_access_mask(vk::AccessFlags::COLOR_ATTACHMENT_WRITE)
-            .dst_access_mask(vk::AccessFlags::COLOR_ATTACHMENT_READ | vk::AccessFlags::COLOR_ATTACHMENT_WRITE);
-
-        unsafe {
-            self.context.device.cmd_pipeline_barrier(
-                cmd,
-                vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
-                vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
-                vk::DependencyFlags::empty(),
-                &[],
-                &[],
-                &[initial_barrier],
-            );
-        }
+        ImageBarrier::to_color_attachment(&cmd, &self.context.device, swapchain_image);
 
         // 6. Execute frame graph (records commands into the command buffer)
         frame_graph
@@ -1031,33 +1006,7 @@ impl VulkanRenderer {
 
         // 7. Transition swapchain image from COLOR_ATTACHMENT_OPTIMAL to PRESENT_SRC_KHR
         let swapchain_image = self.frame_context.swapchain_images[image_index as usize].vk();
-        let barrier = vk::ImageMemoryBarrier::default()
-            .old_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
-            .new_layout(vk::ImageLayout::PRESENT_SRC_KHR)
-            .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
-            .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
-            .image(swapchain_image)
-            .subresource_range(vk::ImageSubresourceRange {
-                aspect_mask: vk::ImageAspectFlags::COLOR,
-                base_mip_level: 0,
-                level_count: 1,
-                base_array_layer: 0,
-                layer_count: 1,
-            })
-            .src_access_mask(vk::AccessFlags::empty())
-            .dst_access_mask(vk::AccessFlags::empty());
-
-        unsafe {
-            self.context.device.cmd_pipeline_barrier(
-                cmd,
-                vk::PipelineStageFlags::TOP_OF_PIPE,
-                vk::PipelineStageFlags::BOTTOM_OF_PIPE,
-                vk::DependencyFlags::empty(),
-                &[],
-                &[],
-                &[barrier],
-            );
-        }
+        ImageBarrier::to_present_src(&cmd, &self.context.device, swapchain_image);
 
         // 8. End command buffer
         unsafe {
@@ -1202,40 +1151,10 @@ impl ViewportRenderTarget {
 
             // Transition color to shader read only (since we blit to it, not render to it)
             // This matches the expected old_layout in the blit barrier
-            let color_barrier = vk::ImageMemoryBarrier::default()
-                .old_layout(vk::ImageLayout::UNDEFINED)
-                .new_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
-                .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
-                .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
-                .image(color_image)
-                .subresource_range(COLOR_SUBRESOURCE_RANGE)
-                .src_access_mask(vk::AccessFlags::empty())
-                .dst_access_mask(vk::AccessFlags::SHADER_READ);
+            ImageBarrier::to_shader_read(&cmd, &context.device, color_image);
 
             // Transition depth to depth stencil attachment optimal
-            let depth_barrier = vk::ImageMemoryBarrier::default()
-                .old_layout(vk::ImageLayout::UNDEFINED)
-                .new_layout(vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL)
-                .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
-                .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
-                .image(depth_image)
-                .subresource_range(DEPTH_SUBRESOURCE_RANGE)
-                .src_access_mask(vk::AccessFlags::empty())
-                .dst_access_mask(
-                    vk::AccessFlags::DEPTH_STENCIL_ATTACHMENT_READ
-                        | vk::AccessFlags::DEPTH_STENCIL_ATTACHMENT_WRITE,
-                );
-
-            context.device.cmd_pipeline_barrier(
-                cmd,
-                vk::PipelineStageFlags::TOP_OF_PIPE,
-                vk::PipelineStageFlags::FRAGMENT_SHADER
-                    | vk::PipelineStageFlags::EARLY_FRAGMENT_TESTS,
-                vk::DependencyFlags::empty(),
-                &[],
-                &[],
-                &[color_barrier, depth_barrier],
-            );
+            ImageBarrier::to_depth_attachment(&cmd, &context.device, depth_image);
 
             context.end_single_time_commands(cmd_buffer);
 
@@ -1336,25 +1255,7 @@ impl OutputRenderTarget {
             let cmd_buffer = context.begin_single_time_commands();
             let cmd = cmd_buffer.vk_command_buffer();
 
-            let color_barrier = vk::ImageMemoryBarrier::default()
-                .old_layout(vk::ImageLayout::UNDEFINED)
-                .new_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
-                .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
-                .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
-                .image(color_image)
-                .subresource_range(COLOR_SUBRESOURCE_RANGE)
-                .src_access_mask(vk::AccessFlags::empty())
-                .dst_access_mask(vk::AccessFlags::COLOR_ATTACHMENT_WRITE);
-
-            context.device.cmd_pipeline_barrier(
-                cmd,
-                vk::PipelineStageFlags::TOP_OF_PIPE,
-                vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
-                vk::DependencyFlags::empty(),
-                &[],
-                &[],
-                &[color_barrier],
-            );
+            ImageBarrier::to_color_attachment(&cmd, &context.device, color_image);
 
             context.end_single_time_commands(cmd_buffer);
 

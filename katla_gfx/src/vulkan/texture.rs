@@ -1,8 +1,7 @@
 use super::context::VulkanContext;
 use crate::VulkanFrameCtx;
-use crate::sync::{
-    DependencyInfo, ImageMemoryBarrier2, VkDescriptorSet, VkImage, VkImageView, VkSampler,
-};
+use crate::barrier::ImageBarrier;
+use crate::sync::{VkDescriptorSet, VkImage, VkImageView, VkSampler};
 use crate::texture::ImageFormat;
 
 use std::mem::ManuallyDrop;
@@ -45,52 +44,14 @@ impl Texture {
         old_layout: vk::ImageLayout,
         new_layout: vk::ImageLayout,
     ) {
-        let subresource_range = vk::ImageSubresourceRange::default()
-            .aspect_mask(vk::ImageAspectFlags::COLOR)
-            .base_mip_level(0)
-            .level_count(1)
-            .base_array_layer(0)
-            .layer_count(1);
-
-        let src_stage_mask;
-        let dst_stage_mask;
-        let src_access_mask;
-        let dst_access_mask;
-
-        if old_layout == vk::ImageLayout::UNDEFINED
-            && new_layout == vk::ImageLayout::TRANSFER_DST_OPTIMAL
-        {
-            src_access_mask = vk::AccessFlags2::empty();
-            dst_access_mask = vk::AccessFlags2::TRANSFER_WRITE;
-            src_stage_mask = vk::PipelineStageFlags2::TOP_OF_PIPE;
-            dst_stage_mask = vk::PipelineStageFlags2::TRANSFER;
-        } else if old_layout == vk::ImageLayout::TRANSFER_DST_OPTIMAL
-            && new_layout == vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL
-        {
-            src_access_mask = vk::AccessFlags2::TRANSFER_WRITE;
-            dst_access_mask = vk::AccessFlags2::SHADER_READ;
-            src_stage_mask = vk::PipelineStageFlags2::TRANSFER;
-            dst_stage_mask = vk::PipelineStageFlags2::FRAGMENT_SHADER;
-        } else {
-            panic!("unsupported layout transition!");
-        }
-
-        // Modern Vulkan 1.3 barrier using Synchronization2
-        let barrier = ImageMemoryBarrier2::new(VkImage::new(image))
-            .src_stage(src_stage_mask)
-            .dst_stage(dst_stage_mask)
-            .src_access(src_access_mask)
-            .dst_access(dst_access_mask)
-            .old_layout(old_layout)
-            .new_layout(new_layout)
-            .subresource_range(subresource_range);
-
-        let dep_info = DependencyInfo::new().add_image_barrier(barrier);
-        dep_info.build(|dep_info| unsafe {
-            context
-                .device
-                .cmd_pipeline_barrier2(command_buffer, dep_info);
-        });
+        // Use the automatic transition deduction with default subresource range
+        ImageBarrier::transition(
+            &command_buffer,
+            &context.device,
+            image,
+            old_layout,
+            new_layout,
+        );
     }
 
     fn copy_buffer_to_image(
@@ -354,30 +315,14 @@ impl Texture {
             std::ptr::copy_nonoverlapping(pixel_data.as_ptr(), map, total_size as usize);
 
             let command_buffer = self.context.begin_single_time_commands();
+            let cmd = command_buffer.vk_command_buffer();
 
             // Transition from SHADER_READ_ONLY to TRANSFER_DST
-            let subresource_range = vk::ImageSubresourceRange::default()
-                .aspect_mask(vk::ImageAspectFlags::COLOR)
-                .base_mip_level(0)
-                .level_count(1)
-                .base_array_layer(0)
-                .layer_count(1);
-
-            let barrier = ImageMemoryBarrier2::new(self.image)
-                .src_stage(vk::PipelineStageFlags2::FRAGMENT_SHADER)
-                .dst_stage(vk::PipelineStageFlags2::TRANSFER)
-                .src_access(vk::AccessFlags2::SHADER_READ)
-                .dst_access(vk::AccessFlags2::TRANSFER_WRITE)
-                .old_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
-                .new_layout(vk::ImageLayout::TRANSFER_DST_OPTIMAL)
-                .subresource_range(subresource_range);
-
-            let dep_info = DependencyInfo::new().add_image_barrier(barrier);
-            dep_info.build(|dep_info| {
-                self.context
-                    .device
-                    .cmd_pipeline_barrier2(command_buffer.vk_command_buffer(), dep_info);
-            });
+            ImageBarrier::shader_read_to_transfer_dst(
+                &cmd,
+                &self.context.device,
+                self.image.vk(),
+            );
 
             // Copy buffer to image
             let extent = vk::Extent3D {
@@ -387,7 +332,7 @@ impl Texture {
             };
             Self::copy_buffer_to_image(
                 &self.context,
-                command_buffer.vk_command_buffer(),
+                cmd,
                 staging_buffer,
                 self.image.vk(),
                 vk::ImageLayout::TRANSFER_DST_OPTIMAL,
@@ -395,21 +340,11 @@ impl Texture {
             );
 
             // Transition from TRANSFER_DST to SHADER_READ_ONLY
-            let barrier = ImageMemoryBarrier2::new(self.image)
-                .src_stage(vk::PipelineStageFlags2::TRANSFER)
-                .dst_stage(vk::PipelineStageFlags2::FRAGMENT_SHADER)
-                .src_access(vk::AccessFlags2::TRANSFER_WRITE)
-                .dst_access(vk::AccessFlags2::SHADER_READ)
-                .old_layout(vk::ImageLayout::TRANSFER_DST_OPTIMAL)
-                .new_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
-                .subresource_range(subresource_range);
-
-            let dep_info = DependencyInfo::new().add_image_barrier(barrier);
-            dep_info.build(|dep_info| {
-                self.context
-                    .device
-                    .cmd_pipeline_barrier2(command_buffer.vk_command_buffer(), dep_info);
-            });
+            ImageBarrier::transfer_dst_to_shader_read(
+                &cmd,
+                &self.context.device,
+                self.image.vk(),
+            );
 
             self.context.end_single_time_commands(command_buffer);
             self.context.free_buffer(staging_buffer, staging_allocation);
