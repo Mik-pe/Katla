@@ -35,6 +35,8 @@ use std::{cell::RefCell, ffi::CString, rc::Rc};
 
 use crate::barrier::ImageBarrier;
 use crate::sync::{COLOR_SUBRESOURCE_RANGE, DEPTH_SUBRESOURCE_RANGE};
+use crate::vulkan::material::compiler::MaterialCompiler;
+use crate::MaterialBuilder;
 
 pub struct VulkanRenderer {
     pub(crate) context: Rc<VulkanContext>,
@@ -81,6 +83,8 @@ pub struct VulkanRenderer {
     ui_state: Option<UiRenderState>,
     /// Pending UI data for next frame (set by render_ui, consumed by render_frame).
     pending_ui: Option<UiFrameData>,
+    /// Material compiler for compiling materials from shaders.
+    pub(crate) material_compiler: MaterialCompiler,
 }
 
 /// Cached UI mesh and material handles.
@@ -173,6 +177,18 @@ impl VulkanRenderer {
         // Initialize viewport manager
         let viewport_manager = viewport_manager::ViewportManager::new(context.clone());
 
+        // Initialize material compiler
+        let material_compiler = MaterialCompiler::new(
+            context.clone(),
+            &bindless_manager,
+            &storage_descriptor_set,
+        )
+        .map_err(|e| {
+            error!("Failed to create material compiler: {:?}", e);
+            RendererError::InitializationFailed("Failed to create material compiler".to_string())
+        })?;
+        info!("Material compiler initialized");
+
         Ok(Self {
             context: context.clone(),
             frame_context,
@@ -192,6 +208,7 @@ impl VulkanRenderer {
             viewport_manager,
             ui_state: None,
             pending_ui: None,
+            material_compiler,
         })
     }
 
@@ -334,6 +351,105 @@ impl VulkanRenderer {
         self.output_target
             .as_ref()
             .map(|t| crate::Size2D::from(t.extent))
+    }
+
+    // ========================================================================
+    // Material Creation API
+    // ========================================================================
+
+    /// Create a PBR material with default settings.
+    ///
+    /// This is a convenience method for creating standard PBR materials with
+    /// sensible defaults: depth testing enabled, backface culling enabled,
+    /// opaque rendering.
+    ///
+    /// # Arguments
+    /// * `shader_path` - Path to WGSL shader file
+    ///
+    /// # Returns
+    /// A MaterialHandle for the created material.
+    ///
+    /// # Example
+    /// ```ignore
+    /// let material = renderer.create_pbr_material("shaders/model.wgsl")?;
+    /// ```
+    pub fn create_pbr_material(
+        &mut self,
+        shader_path: impl AsRef<std::path::Path>,
+    ) -> Result<MaterialHandle, RendererError> {
+        use crate::vulkan::material::compiler::{MaterialOptions, VertexType};
+
+        self.material_compiler
+            .compile(
+                &mut self.asset_registry,
+                shader_path.as_ref(),
+                crate::vulkan::material::compiler::MaterialType::Pbr,
+                MaterialOptions {
+                    vertex_type: VertexType::Pbr,
+                    ..Default::default()
+                },
+            )
+            .map_err(|e| RendererError::InitializationFailed(format!("Material compilation failed: {}", e)))
+    }
+
+    /// Create a UI material with default settings.
+    ///
+    /// UI materials use premultiplied alpha blending and disable depth writing.
+    ///
+    /// # Arguments
+    /// * `shader_path` - Path to WGSL shader file
+    ///
+    /// # Returns
+    /// A MaterialHandle for the created material.
+    ///
+    /// # Example
+    /// ```ignore
+    /// let material = renderer.create_ui_material("shaders/ui.wgsl")?;
+    /// ```
+    pub fn create_ui_material(
+        &mut self,
+        shader_path: impl AsRef<std::path::Path>,
+    ) -> Result<MaterialHandle, RendererError> {
+        use crate::vulkan::material::compiler::{MaterialOptions, VertexType};
+
+        self.material_compiler
+            .compile(
+                &mut self.asset_registry,
+                shader_path.as_ref(),
+                crate::vulkan::material::compiler::MaterialType::Ui,
+                MaterialOptions {
+                    alpha_blended: true,
+                    vertex_type: VertexType::Ui,
+                    ..Default::default()
+                },
+            )
+            .map_err(|e| RendererError::InitializationFailed(format!("Material compilation failed: {}", e)))
+    }
+
+    /// Create a material with custom options using the builder pattern.
+    ///
+    /// This is the advanced API for materials requiring custom configuration
+    /// (alpha blending, double-sided rendering, wireframe mode, etc.).
+    ///
+    /// # Arguments
+    /// * `shader_path` - Path to WGSL shader file
+    ///
+    /// # Returns
+    /// A MaterialBuilder for configuring the material.
+    ///
+    /// # Example
+    /// ```ignore
+    /// let material = renderer
+    ///     .material_builder("shaders/grass.wgsl")
+    ///     .alpha_blended()
+    ///     .double_sided()
+    ///     .build()?;
+    /// ```
+    pub fn material_builder(
+        &mut self,
+        shader_path: impl AsRef<std::path::Path>,
+    ) -> MaterialBuilder<'_> {
+        MaterialBuilder::new(self, shader_path.as_ref().to_path_buf())
     }
 
     // ========================================================================
@@ -528,6 +644,9 @@ impl VulkanRenderer {
 
         // Destroy all registered assets first (materials, meshes)
         self.asset_registry.destroy();
+
+        // Destroy material compiler (cleans up descriptor layouts)
+        self.material_compiler.destroy();
 
         // Storage uniform resources will be dropped automatically
         self.context.pre_destroy();
