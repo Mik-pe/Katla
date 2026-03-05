@@ -48,6 +48,9 @@ impl SwapData {
             device
                 .wait_for_fences(&[self.in_flight_fences[self.frame]], true, u64::MAX)
                 .unwrap();
+            device
+                .reset_fences(&[self.in_flight_fences[self.frame]])
+                .unwrap();
         }
     }
 

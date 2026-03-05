@@ -366,6 +366,16 @@ pub struct Pipeline {
 }
 
 impl Pipeline {
+    /// Get the raw Vulkan pipeline handle.
+    pub(crate) fn vk_pipeline(&self) -> vk::Pipeline {
+        self.handle
+    }
+
+    /// Get the raw Vulkan pipeline layout.
+    pub(crate) fn vk_layout(&self) -> vk::PipelineLayout {
+        self.layout
+    }
+
     pub fn destroy(&self) {
         unsafe {
             self.device.destroy_pipeline(self.handle, None);

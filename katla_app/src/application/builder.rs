@@ -283,6 +283,7 @@ impl ApplicationBuilder {
             background_loader: BackgroundLoader::new(),
             thumbnail_texture_handles: HashMap::new(),
             start_time: Instant::now(),
+            cleaned_up: false,
         };
 
         Ok((app, event_loop))
