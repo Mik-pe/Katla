@@ -21,6 +21,8 @@ pub use builder::*;
 use katla_ecs::{input::Action, World};
 use katla_gfx::renderer::VulkanRenderer;
 use katla_math::Vec2;
+
+use crate::components::TransformComponent;
 use winit::{
     application::ApplicationHandler,
     event::{DeviceEvent, DeviceId, ElementState, WindowEvent},
@@ -261,6 +263,43 @@ impl ApplicationHandler for Application {
                 debug!("Rendering UI...");
                 editor::render_debug_ui(self, dt);
                 debug!("UI rendered");
+
+                // Update frame uniforms from camera
+                let camera = self.camera.borrow();
+                let view_mat = camera.get_view_mat(&self.world);
+                let proj_mat = camera.get_proj_mat(&self.world);
+                // Inverse view-projection for sky rendering (clip-space to world-space)
+                let inv_view_proj = (proj_mat * view_mat).inverse();
+
+                let camera_pos = if let Some(transform) =
+                    self.world.get_component::<TransformComponent>(camera.entity)
+                {
+                    [
+                        transform.transform.position.x(),
+                        transform.transform.position.y(),
+                        transform.transform.position.z(),
+                        1.0,
+                    ]
+                } else {
+                    [0.0, 5.0, 5.0, 1.0]
+                };
+                drop(camera);
+
+                // Default directional light (from above and to the right)
+                let light_dir = [0.3, 1.0, 0.2, 0.0];
+                let light_color = [1.0, 0.98, 0.95, 1.0];
+                let light_intensity = 3.0;
+
+                use katla_gfx::renderer::FrameUniforms;
+                self.renderer.set_frame_uniforms(FrameUniforms {
+                    view_matrix: view_mat.to_array(),
+                    proj_matrix: proj_mat.to_array(),
+                    inv_view_proj_matrix: inv_view_proj.to_array(),
+                    camera_position: camera_pos,
+                    light_direction: light_dir,
+                    light_color: light_color,
+                    light_intensity,
+                });
 
                 // Render frame to GPU
                 debug!("Rendering frame...");

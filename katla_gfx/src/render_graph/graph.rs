@@ -547,18 +547,14 @@ impl<'a> Frame<'a> {
         pipeline_layout: vk::PipelineLayout,
         material: &crate::renderer::registry::MaterialAsset,
     ) -> Result<(), RenderGraphError> {
-        // Set 0: Frame uniforms (from StorageUniformManager)
-        // TODO: Wire up frame descriptor set from storage manager
-        // For now, we skip set 0 binding
+        // Set 0: Storage uniforms (frame_data + objects array)
+        let storage_ds = self.renderer.storage_descriptor_set.vk_set();
+        cmd.bind_descriptor_sets(pipeline_layout, 0, &[storage_ds], &[]);
 
-        // Set 1: Object uniforms (transforms, material params)
-        // TODO: Wire up object descriptor set from storage manager
-        // For now, we skip set 1 binding
-
-        // Set 2: Bindless textures
+        // Set 1: Bindless textures
         if material.uses_bindless {
             let bindless_ds = self.renderer.bindless_manager.descriptor_set().vk();
-            cmd.bind_descriptor_sets(pipeline_layout, 2, &[bindless_ds], &[]);
+            cmd.bind_descriptor_sets(pipeline_layout, 1, &[bindless_ds], &[]);
         }
 
         Ok(())

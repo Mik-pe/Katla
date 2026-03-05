@@ -75,6 +75,111 @@ pub struct StorageDescriptorSet {
 }
 
 impl StorageDescriptorSet {
+    /// Create a storage descriptor set from a storage uniform manager.
+    ///
+    /// Creates a descriptor set layout and descriptor set that binds the
+    /// storage buffer to bindings 0 (frame_data) and 1 (objects array).
+    ///
+    /// # Arguments
+    /// * `context` - Vulkan context
+    /// * `storage_buffer` - The storage buffer containing frame and object uniforms
+    /// * `buffer_size` - Total size of the storage buffer
+    ///
+    /// # Returns
+    /// A new StorageDescriptorSet, or an error if creation fails
+    pub fn new(
+        context: &Rc<VulkanContext>,
+        storage_buffer: vk::Buffer,
+        buffer_size: vk::DeviceSize,
+    ) -> Result<Self, RendererError> {
+        // Create descriptor set layout
+        // Binding 0: frame_data (storage buffer, first 256 bytes)
+        // Binding 1: objects array (storage buffer, starting at offset 256)
+        let bindings = [
+            vk::DescriptorSetLayoutBinding::default()
+                .binding(0)
+                .descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
+                .descriptor_count(1)
+                .stage_flags(vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT),
+            vk::DescriptorSetLayoutBinding::default()
+                .binding(1)
+                .descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
+                .descriptor_count(1)
+                .stage_flags(vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT),
+        ];
+
+        let layout_info = vk::DescriptorSetLayoutCreateInfo::default().bindings(&bindings);
+
+        let descriptor_layout = unsafe {
+            context
+                .device
+                .create_descriptor_set_layout(&layout_info, None)?
+        };
+
+        // Create descriptor pool
+        let pool_sizes = [
+            vk::DescriptorPoolSize::default()
+                .ty(vk::DescriptorType::STORAGE_BUFFER)
+                .descriptor_count(2), // 2 storage buffer bindings
+        ];
+
+        let pool_info = vk::DescriptorPoolCreateInfo::default()
+            .pool_sizes(&pool_sizes)
+            .max_sets(1)
+            .flags(vk::DescriptorPoolCreateFlags::empty());
+
+        let descriptor_pool = unsafe { context.device.create_descriptor_pool(&pool_info, None)? };
+
+        // Allocate descriptor set
+        let layouts = [descriptor_layout];
+        let alloc_info = vk::DescriptorSetAllocateInfo::default()
+            .descriptor_pool(descriptor_pool)
+            .set_layouts(&layouts);
+
+        let descriptor_sets = unsafe { context.device.allocate_descriptor_sets(&alloc_info)? };
+        let descriptor_set = descriptor_sets[0];
+
+        // Write buffer descriptors
+        // Binding 0: frame_data (offset 0, size 256)
+        let frame_buffer_info = [vk::DescriptorBufferInfo::default()
+            .buffer(storage_buffer)
+            .offset(0)
+            .range(256)];
+
+        let frame_write = vk::WriteDescriptorSet::default()
+            .dst_set(descriptor_set)
+            .dst_binding(0)
+            .dst_array_element(0)
+            .descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
+            .buffer_info(&frame_buffer_info);
+
+        // Binding 1: objects array (offset 256, remaining buffer)
+        let objects_buffer_info = [vk::DescriptorBufferInfo::default()
+            .buffer(storage_buffer)
+            .offset(256)
+            .range(buffer_size - 256)];
+
+        let objects_write = vk::WriteDescriptorSet::default()
+            .dst_set(descriptor_set)
+            .dst_binding(1)
+            .dst_array_element(0)
+            .descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
+            .buffer_info(&objects_buffer_info);
+
+        unsafe {
+            context.device.update_descriptor_sets(&[frame_write, objects_write], &[]);
+        }
+
+        Ok(Self {
+            inner: crate::vulkan::DescriptorSet::from_raw(
+                descriptor_set,
+                descriptor_pool,
+                Some(descriptor_layout),
+                context.device.clone(),
+            ),
+        })
+    }
+
     /// Get the raw Vulkan descriptor set handle.
     pub fn vk_set(&self) -> vk::DescriptorSet {
         self.inner.vk()
