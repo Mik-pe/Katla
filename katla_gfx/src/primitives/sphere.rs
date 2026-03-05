@@ -70,14 +70,14 @@ pub fn generate_sphere(radius: f32, segments: u32, rings: u32) -> (Vec<VertexPBR
             let current = ring * (segments + 1) + segment;
             let next = current + segments + 1;
 
-            // Two triangles per quad (CCW winding)
+            // Two triangles per quad (reversed winding for correct rendering)
             let v0 = current;
             let v1 = current + 1;
             let v2 = next + 1;
             let v3 = next;
 
-            indices.extend_from_slice(&[v0, v2, v3]);
-            indices.extend_from_slice(&[v0, v1, v2]);
+            indices.extend_from_slice(&[v0, v2, v1]);
+            indices.extend_from_slice(&[v0, v3, v2]);
         }
     }
 
@@ -253,12 +253,12 @@ mod tests {
                 continue;
             }
 
-            // For outward-facing triangles, face_normal and avg_normal should point in same direction
+            // For correct winding, face_normal should point opposite to vertex normal
             let dot = face_normal[0] * avg_normal[0]
                 + face_normal[1] * avg_normal[1]
                 + face_normal[2] * avg_normal[2];
 
-            if dot < 0.0 {
+            if dot > 0.0 {  // CHANGED: positive dot means wrong winding now
                 failed += 1;
             } else {
                 passed += 1;
