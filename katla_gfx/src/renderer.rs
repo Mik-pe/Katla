@@ -997,7 +997,12 @@ impl VulkanRenderer {
 
         // 5. Transition swapchain image to COLOR_ATTACHMENT_OPTIMAL for rendering
         let swapchain_image = self.frame_context.swapchain_images[image_index as usize].vk();
-        ImageBarrier::to_color_attachment(&cmd, &self.context.device, swapchain_image);
+        ImageBarrier::transition_from_undefined(
+            &cmd,
+            &self.context.device,
+            swapchain_image,
+            vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+        );
 
         // 6. Execute frame graph (records commands into the command buffer)
         frame_graph
@@ -1006,7 +1011,13 @@ impl VulkanRenderer {
 
         // 7. Transition swapchain image from COLOR_ATTACHMENT_OPTIMAL to PRESENT_SRC_KHR
         let swapchain_image = self.frame_context.swapchain_images[image_index as usize].vk();
-        ImageBarrier::to_present_src(&cmd, &self.context.device, swapchain_image);
+        ImageBarrier::transition(
+            &cmd,
+            &self.context.device,
+            swapchain_image,
+            vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+            vk::ImageLayout::PRESENT_SRC_KHR,
+        );
 
         // 8. End command buffer
         unsafe {
@@ -1151,10 +1162,21 @@ impl ViewportRenderTarget {
 
             // Transition color to shader read only (since we blit to it, not render to it)
             // This matches the expected old_layout in the blit barrier
-            ImageBarrier::to_shader_read(&cmd, &context.device, color_image);
+            ImageBarrier::transition_from_undefined(
+                &cmd,
+                &context.device,
+                color_image,
+                vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+            );
 
             // Transition depth to depth stencil attachment optimal
-            ImageBarrier::to_depth_attachment(&cmd, &context.device, depth_image);
+            ImageBarrier::transition_from_undefined_with_range(
+                &cmd,
+                &context.device,
+                depth_image,
+                vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+                DEPTH_SUBRESOURCE_RANGE,
+            );
 
             context.end_single_time_commands(cmd_buffer);
 
@@ -1255,7 +1277,12 @@ impl OutputRenderTarget {
             let cmd_buffer = context.begin_single_time_commands();
             let cmd = cmd_buffer.vk_command_buffer();
 
-            ImageBarrier::to_color_attachment(&cmd, &context.device, color_image);
+            ImageBarrier::transition_from_undefined(
+                &cmd,
+                &context.device,
+                color_image,
+                vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+            );
 
             context.end_single_time_commands(cmd_buffer);
 
