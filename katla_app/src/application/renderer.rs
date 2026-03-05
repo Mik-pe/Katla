@@ -27,6 +27,8 @@ impl Application {
         use crate::components::{DrawableComponent, TransformComponent};
 
         let mut draw_list = DrawList::new();
+        let entity_count = self.world.entity_ids().count();
+        let mut drawable_count = 0;
 
         for entity_id in self.world.entity_ids() {
             // Get drawable and transform components
@@ -54,6 +56,11 @@ impl Application {
                 .with_transform(transform.transform.make_mat4().to_array());
 
             draw_list.push(draw_call);
+            drawable_count += 1;
+        }
+
+        if drawable_count > 0 {
+            log::info!("Collected {} draw calls from {} entities", drawable_count, entity_count);
         }
 
         draw_list

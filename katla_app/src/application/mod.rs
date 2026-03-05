@@ -269,7 +269,7 @@ impl ApplicationHandler for Application {
                 let view_mat = camera.get_view_mat(&self.world);
                 let proj_mat = camera.get_proj_mat(&self.world);
                 // Inverse view-projection for sky rendering (clip-space to world-space)
-                let inv_view_proj = (proj_mat * view_mat).inverse();
+                let inv_view_proj = (proj_mat.clone() * view_mat.clone()).inverse();
 
                 let camera_pos = if let Some(transform) =
                     self.world.get_component::<TransformComponent>(camera.entity)
@@ -365,6 +365,12 @@ impl Application {
 impl Application {
     pub fn init(&mut self) {
         // Logger is now initialized in main() before building the application
+        println!("Application::init() called");
+
+        // TODO: Set up default materials and test scene when material system is complete
+        // The material system needs shader compilation pipeline to be wired up
+
+        println!("Application::init() completed");
     }
 
     /// Poll the background loader and process completed loads.
