@@ -963,7 +963,7 @@ impl VulkanRenderer {
     where
         F: FnOnce(&mut crate::render_graph::Frame),
     {
-        // 1. Wait for previous frame to complete
+        // 1. Wait for previous frame to complete (also resets the fence)
         self.swap_data.wait_for_fence(&self.context.device);
 
         // 2. Acquire next swapchain image
@@ -980,21 +980,94 @@ impl VulkanRenderer {
                 .expect("Failed to acquire swapchain image")
         };
 
-        // 3. Reset command buffer for this frame
+        // 3. Get command buffer for this frame
         let frame_idx = self.swap_data.current_frame();
         let cmd = self.frame_context.command_buffers[frame_idx].vk_command_buffer();
+
+        // 4. Begin command buffer
+        let begin_info = vk::CommandBufferBeginInfo::default()
+            .flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT);
         unsafe {
             self.context
                 .device
-                .reset_command_buffer(cmd, vk::CommandBufferResetFlags::empty());
+                .begin_command_buffer(cmd, &begin_info)
+                .expect("Failed to begin command buffer");
         }
 
-        // 4. Execute frame graph (records commands into the command buffer)
+        // 5. Transition swapchain image to COLOR_ATTACHMENT_OPTIMAL for rendering
+        let swapchain_image = self.frame_context.swapchain_images[image_index as usize].vk();
+        let initial_barrier = vk::ImageMemoryBarrier::default()
+            .old_layout(vk::ImageLayout::UNDEFINED)
+            .new_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
+            .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+            .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+            .image(swapchain_image)
+            .subresource_range(vk::ImageSubresourceRange {
+                aspect_mask: vk::ImageAspectFlags::COLOR,
+                base_mip_level: 0,
+                level_count: 1,
+                base_array_layer: 0,
+                layer_count: 1,
+            })
+            .src_access_mask(vk::AccessFlags::COLOR_ATTACHMENT_WRITE)
+            .dst_access_mask(vk::AccessFlags::COLOR_ATTACHMENT_READ | vk::AccessFlags::COLOR_ATTACHMENT_WRITE);
+
+        unsafe {
+            self.context.device.cmd_pipeline_barrier(
+                cmd,
+                vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
+                vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
+                vk::DependencyFlags::empty(),
+                &[],
+                &[],
+                &[initial_barrier],
+            );
+        }
+
+        // 6. Execute frame graph (records commands into the command buffer)
         frame_graph
-            .execute(self, f)
+            .execute(self, image_index, f)
             .expect("Frame graph execution failed");
 
-        // 5. Submit command buffer with synchronization
+        // 7. Transition swapchain image from COLOR_ATTACHMENT_OPTIMAL to PRESENT_SRC_KHR
+        let swapchain_image = self.frame_context.swapchain_images[image_index as usize].vk();
+        let barrier = vk::ImageMemoryBarrier::default()
+            .old_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
+            .new_layout(vk::ImageLayout::PRESENT_SRC_KHR)
+            .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+            .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+            .image(swapchain_image)
+            .subresource_range(vk::ImageSubresourceRange {
+                aspect_mask: vk::ImageAspectFlags::COLOR,
+                base_mip_level: 0,
+                level_count: 1,
+                base_array_layer: 0,
+                layer_count: 1,
+            })
+            .src_access_mask(vk::AccessFlags::empty())
+            .dst_access_mask(vk::AccessFlags::empty());
+
+        unsafe {
+            self.context.device.cmd_pipeline_barrier(
+                cmd,
+                vk::PipelineStageFlags::TOP_OF_PIPE,
+                vk::PipelineStageFlags::BOTTOM_OF_PIPE,
+                vk::DependencyFlags::empty(),
+                &[],
+                &[],
+                &[barrier],
+            );
+        }
+
+        // 8. End command buffer
+        unsafe {
+            self.context
+                .device
+                .end_command_buffer(cmd)
+                .expect("Failed to end command buffer");
+        }
+
+        // 9. Submit command buffer with synchronization
         let render_finished_semaphore = self.swap_data.render_finished_semaphore(image_index);
         let wait_semaphores = [self.swap_data.image_available_semaphore()];
         let signal_semaphores = [render_finished_semaphore];
@@ -1008,7 +1081,7 @@ impl VulkanRenderer {
             self.swap_data.in_flight_fence(),
         );
 
-        // 6. Present to swapchain
+        // 10. Present to swapchain
         let present_info = vk::PresentInfoKHR::default()
             .wait_semaphores(&signal_semaphores)
             .swapchains(&swapchains)
@@ -1022,7 +1095,7 @@ impl VulkanRenderer {
                 .expect("Failed to present");
         }
 
-        // 7. Advance to next frame
+        // 11. Advance to next frame
         self.swap_data.step_frame();
     }
 }

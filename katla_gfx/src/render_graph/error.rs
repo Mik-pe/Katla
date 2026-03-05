@@ -25,6 +25,14 @@ pub enum RenderGraphError {
     PipelineNotSet(String),
     /// Vulkan error.
     VulkanError(String),
+    /// Graph not compiled.
+    NotCompiled,
+    /// Invalid mesh handle.
+    InvalidMeshHandle(crate::handle::MeshHandle),
+    /// Invalid material handle.
+    InvalidMaterialHandle(crate::handle::MaterialHandle),
+    /// Invalid pipeline handle.
+    InvalidPipelineHandle(crate::handle::PipelineHandle),
 }
 
 impl fmt::Display for RenderGraphError {
@@ -49,6 +57,10 @@ impl fmt::Display for RenderGraphError {
             }
             Self::PipelineNotSet(name) => write!(f, "Pipeline not set for pass '{}'", name),
             Self::VulkanError(msg) => write!(f, "Vulkan error: {}", msg),
+            Self::NotCompiled => write!(f, "Render graph has not been compiled"),
+            Self::InvalidMeshHandle(handle) => write!(f, "Invalid mesh handle: {}", handle.index()),
+            Self::InvalidMaterialHandle(handle) => write!(f, "Invalid material handle: {}", handle.index()),
+            Self::InvalidPipelineHandle(handle) => write!(f, "Invalid pipeline handle: {}", handle.index()),
         }
     }
 }

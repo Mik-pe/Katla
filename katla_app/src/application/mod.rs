@@ -79,6 +79,8 @@ pub struct Application {
     pub(crate) thumbnail_texture_handles: HashMap<PathBuf, katla_gfx::TextureHandle>,
     /// Application start time for double-click timestamp calculation
     pub(crate) start_time: Instant,
+    /// Flag to prevent double cleanup
+    cleaned_up: bool,
 }
 
 impl ApplicationHandler for Application {
@@ -292,6 +294,11 @@ impl Application {
     /// Cleanup resources on exit.
     /// Called both from exiting() and directly before event_loop.exit() for max_frames mode.
     fn cleanup_on_exit(&mut self) {
+        if self.cleaned_up {
+            return;
+        }
+        self.cleaned_up = true;
+
         // Save preferences before exit
         if let Err(e) = self.preferences.save() {
             warn!("Failed to save preferences: {}", e);

@@ -4,7 +4,9 @@
 //! for referencing them. This keeps ash::vk types contained within katla_gfx.
 
 use crate::handle::{MaterialHandle, MeshHandle, PipelineHandle};
+use crate::vulkan::material::builder::Pipeline;
 use crate::{IndexBuffer, VertexBinding, VertexBuffer};
+use ash::vk;
 
 /// Mesh representation containing Vulkan buffers.
 pub struct MeshAsset {
@@ -16,7 +18,7 @@ pub struct MeshAsset {
 
 /// Material representation using opaque handles.
 pub struct MaterialAsset {
-    /// Pipeline handle (references pipeline in MaterialPipelineCache).
+    /// Pipeline handle (references pipeline in registry).
     pub pipeline: PipelineHandle,
     /// Vertex binding description.
     pub vertex_binding: VertexBinding,
@@ -37,10 +39,14 @@ pub struct AssetRegistry {
     meshes: Vec<Option<MeshAsset>>,
     /// Material storage.
     materials: Vec<Option<MaterialAsset>>,
+    /// Pipeline storage - actual Pipeline objects.
+    pipelines: Vec<Option<Pipeline>>,
     /// Next mesh ID to allocate.
     next_mesh_id: usize,
-    /// Next material ID to allocate.
+    /// next material ID to allocate.
     next_material_id: usize,
+    /// Next pipeline ID to allocate.
+    next_pipeline_id: usize,
 }
 
 impl AssetRegistry {
@@ -49,8 +55,10 @@ impl AssetRegistry {
         Self {
             meshes: Vec::new(),
             materials: Vec::new(),
+            pipelines: Vec::new(),
             next_mesh_id: 0,
             next_material_id: 0,
+            next_pipeline_id: 0,
         }
     }
 
@@ -108,13 +116,37 @@ impl AssetRegistry {
         &mut self,
         handle: MaterialHandle,
         new_pipeline: PipelineHandle,
-    ) -> bool {
-        if let Some(material) = self.get_material_mut(handle) {
+    ) {
+        if let Some(Some(material)) = self.materials.get_mut(handle.index() as usize) {
             material.pipeline = new_pipeline;
-            true
-        } else {
-            false
         }
+    }
+
+    /// Register a pipeline and return a handle.
+    pub(crate) fn register_pipeline(&mut self, pipeline: Pipeline) -> PipelineHandle {
+        let id = self.next_pipeline_id;
+        self.next_pipeline_id += 1;
+
+        while self.pipelines.len() <= id {
+            self.pipelines.push(None);
+        }
+
+        self.pipelines[id] = Some(pipeline);
+        PipelineHandle::new(id as u32)
+    }
+
+    /// Get a pipeline by handle.
+    pub fn get_pipeline(&self, handle: PipelineHandle) -> Option<&Pipeline> {
+        self.pipelines.get(handle.index() as usize)?.as_ref()
+    }
+
+    /// Get the Vulkan pipeline and layout handles for rendering.
+    pub(crate) fn get_pipeline_vk_handles(
+        &self,
+        handle: PipelineHandle,
+    ) -> Option<(vk::Pipeline, vk::PipelineLayout)> {
+        let pipeline = self.pipelines.get(handle.index() as usize)?.as_ref()?;
+        Some((pipeline.vk_pipeline(), pipeline.vk_layout()))
     }
 
     /// Get the number of registered meshes.
@@ -131,30 +163,20 @@ impl AssetRegistry {
     pub fn clear(&mut self) {
         self.meshes.clear();
         self.materials.clear();
+        self.pipelines.clear();
         self.next_mesh_id = 0;
         self.next_material_id = 0;
+        self.next_pipeline_id = 0;
     }
-}
 
-impl Default for AssetRegistry {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl AssetRegistry {
     /// Destroy all registered assets and free GPU resources.
     pub fn destroy(&mut self) {
         self.materials.clear();
         self.meshes.clear();
+        self.pipelines.clear();
         self.next_mesh_id = 0;
         self.next_material_id = 0;
+        self.next_pipeline_id = 0;
     }
 }
 
-impl Drop for AssetRegistry {
-    fn drop(&mut self) {
-        // Clean up any remaining assets as a safety net
-        self.destroy();
-    }
-}
