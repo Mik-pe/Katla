@@ -81,6 +81,8 @@ pub struct Application {
     pub(crate) thumbnail_texture_handles: HashMap<PathBuf, katla_gfx::TextureHandle>,
     /// Application start time for double-click timestamp calculation
     pub(crate) start_time: Instant,
+    /// Default PBR material handle for geometry rendering
+    pub(crate) default_material_handle: katla_gfx::MaterialHandle,
     /// Flag to prevent double cleanup
     cleaned_up: bool,
 }
@@ -367,10 +369,47 @@ impl Application {
         // Logger is now initialized in main() before building the application
         println!("Application::init() called");
 
-        // TODO: Set up default materials and test scene when material system is complete
-        // The material system needs shader compilation pipeline to be wired up
+        // Initialize default PBR material
+        let shader_path = self.resources.shader_path("model_pbr.wgsl");
+        info!("Loading default PBR material from: {}", shader_path.display());
+
+        self.default_material_handle = self.renderer
+            .create_pbr_material(&shader_path)
+            .expect("Failed to create default PBR material");
+
+        info!("Default PBR material loaded successfully");
 
         println!("Application::init() completed");
+    }
+
+    /// Get the default PBR material handle.
+    pub fn default_material(&self) -> katla_gfx::MaterialHandle {
+        self.default_material_handle
+    }
+
+    /// Spawn a test cube entity with the default material.
+    ///
+    /// Creates a cube mesh and spawns an entity with DrawableComponent and TransformComponent.
+    /// Returns the entity ID of the spawned cube.
+    pub fn spawn_test_cube(&mut self, position: [f32; 3], size: [f32; 3]) -> katla_ecs::EntityId {
+        use crate::components::{DrawableComponent, TransformComponent};
+        use katla_ecs::EntityId;
+        use katla_math::Vec3;
+
+        // Create cube mesh
+        let mesh_handle = self.renderer.create_cube_mesh(size);
+        let material_handle = self.default_material();
+
+        // Spawn entity with transform and drawable components
+        let entity_id = self.world.spawn((
+            TransformComponent {
+                transform: katla_math::Transform::from_position(Vec3::new(position[0], position[1], position[2])),
+            },
+            DrawableComponent::with_handles(mesh_handle, material_handle),
+        ));
+
+        info!("Spawned test cube at {:?} with size {:?}", position, size);
+        entity_id
     }
 
     /// Poll the background loader and process completed loads.
