@@ -318,10 +318,12 @@ impl Texture {
             let cmd = command_buffer.vk_command_buffer();
 
             // Transition from SHADER_READ_ONLY to TRANSFER_DST
-            ImageBarrier::shader_read_to_transfer_dst(
+            ImageBarrier::transition(
                 &cmd,
                 &self.context.device,
                 self.image.vk(),
+                vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+                vk::ImageLayout::TRANSFER_DST_OPTIMAL,
             );
 
             // Copy buffer to image
@@ -340,10 +342,12 @@ impl Texture {
             );
 
             // Transition from TRANSFER_DST to SHADER_READ_ONLY
-            ImageBarrier::transfer_dst_to_shader_read(
+            ImageBarrier::transition(
                 &cmd,
                 &self.context.device,
                 self.image.vk(),
+                vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+                vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
             );
 
             self.context.end_single_time_commands(command_buffer);
