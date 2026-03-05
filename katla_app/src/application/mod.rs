@@ -379,6 +379,9 @@ impl Application {
 
         info!("Default PBR material loaded successfully");
 
+        // Set up default test scene
+        self.setup_default_scene();
+
         println!("Application::init() completed");
     }
 
@@ -410,6 +413,116 @@ impl Application {
 
         info!("Spawned test cube at {:?} with size {:?}", position, size);
         entity_id
+    }
+
+    /// Spawn a sphere entity with the default material.
+    pub fn spawn_sphere(&mut self, position: [f32; 3], radius: f32, segments: u32, rings: u32) -> katla_ecs::EntityId {
+        use crate::components::{DrawableComponent, TransformComponent};
+        use katla_ecs::EntityId;
+        use katla_math::Vec3;
+
+        let mesh_handle = self.renderer.create_sphere_mesh(radius, segments, rings);
+        let material_handle = self.default_material();
+
+        let entity_id = self.world.spawn((
+            TransformComponent {
+                transform: katla_math::Transform::from_position(Vec3::new(position[0], position[1], position[2])),
+            },
+            DrawableComponent::with_handles(mesh_handle, material_handle),
+        ));
+
+        info!("Spawned sphere at {:?} with radius {}", position, radius);
+        entity_id
+    }
+
+    /// Spawn a cylinder entity with the default material.
+    pub fn spawn_cylinder(&mut self, position: [f32; 3], height: f32, radius: f32, segments: u32) -> katla_ecs::EntityId {
+        use crate::components::{DrawableComponent, TransformComponent};
+        use katla_ecs::EntityId;
+        use katla_math::Vec3;
+
+        let mesh_handle = self.renderer.create_cylinder_mesh(height, radius, segments);
+        let material_handle = self.default_material();
+
+        let entity_id = self.world.spawn((
+            TransformComponent {
+                transform: katla_math::Transform::from_position(Vec3::new(position[0], position[1], position[2])),
+            },
+            DrawableComponent::with_handles(mesh_handle, material_handle),
+        ));
+
+        info!("Spawned cylinder at {:?}", position);
+        entity_id
+    }
+
+    /// Spawn a plane entity with the default material.
+    pub fn spawn_plane(&mut self, position: [f32; 3], width: f32, height: f32) -> katla_ecs::EntityId {
+        use crate::components::{DrawableComponent, TransformComponent};
+        use katla_ecs::EntityId;
+        use katla_math::Vec3;
+
+        let mesh_handle = self.renderer.create_plane_mesh(width, height);
+        let material_handle = self.default_material();
+
+        let entity_id = self.world.spawn((
+            TransformComponent {
+                transform: katla_math::Transform::from_position(Vec3::new(position[0], position[1], position[2])),
+            },
+            DrawableComponent::with_handles(mesh_handle, material_handle),
+        ));
+
+        info!("Spawned plane at {:?}", position);
+        entity_id
+    }
+
+    /// Spawn a torus entity with the default material.
+    pub fn spawn_torus(&mut self, position: [f32; 3], radius: f32, tube_radius: f32, segments: u32, tube_segments: u32) -> katla_ecs::EntityId {
+        use crate::components::{DrawableComponent, TransformComponent};
+        use katla_ecs::EntityId;
+        use katla_math::Vec3;
+
+        let mesh_handle = self.renderer.create_torus_mesh(radius, tube_radius, segments, tube_segments);
+        let material_handle = self.default_material();
+
+        let entity_id = self.world.spawn((
+            TransformComponent {
+                transform: katla_math::Transform::from_position(Vec3::new(position[0], position[1], position[2])),
+            },
+            DrawableComponent::with_handles(mesh_handle, material_handle),
+        ));
+
+        info!("Spawned torus at {:?}", position);
+        entity_id
+    }
+
+    /// Set up a default test scene with various primitives.
+    ///
+    /// Creates a visually interesting scene with multiple objects for testing.
+    pub fn setup_default_scene(&mut self) {
+        info!("Setting up default scene...");
+
+        // Ground plane
+        self.spawn_plane([0.0, -1.0, 0.0], 20.0, 20.0);
+
+        // Center cube
+        self.spawn_test_cube([0.0, 0.0, -5.0], [1.0, 1.0, 1.0]);
+
+        // Sphere to the left
+        self.spawn_sphere([-3.0, 0.0, -5.0], 0.7, 32, 16);
+
+        // Cylinder to the right
+        self.spawn_cylinder([3.0, 0.0, -5.0], 1.5, 0.5, 32);
+
+        // Torus in front
+        self.spawn_torus([0.0, 0.5, -2.0], 0.8, 0.2, 32, 16);
+
+        // Floating cube above
+        self.spawn_test_cube([0.0, 2.5, -5.0], [0.5, 0.5, 0.5]);
+
+        // Distant plane as backdrop
+        self.spawn_plane([0.0, 2.0, -8.0], 10.0, 5.0);
+
+        info!("Default scene setup complete - {} entities spawned", self.world.entity_ids().count());
     }
 
     /// Poll the background loader and process completed loads.

@@ -88,8 +88,27 @@ pub fn render_debug_ui(app: &mut Application, dt: f32) {
     // Process editor actions
     for action in editor_actions {
         match action {
-            EditorAction::SpawnModel(_model_type, _position) => {
-                //TODO: Implement
+            EditorAction::SpawnModel(model_type, position) => {
+                use crate::ui::SpawnableModel;
+
+                let pos = [position.x(), position.y(), position.z()];
+                match model_type {
+                    SpawnableModel::Cube => {
+                        app.spawn_test_cube(pos, [1.0, 1.0, 1.0]);
+                    }
+                    SpawnableModel::Sphere => {
+                        app.spawn_sphere(pos, 0.7, 32, 16);
+                    }
+                    SpawnableModel::Cylinder => {
+                        app.spawn_cylinder(pos, 1.5, 0.5, 32);
+                    }
+                    SpawnableModel::Plane => {
+                        app.spawn_plane(pos, 5.0, 5.0);
+                    }
+                    SpawnableModel::Torus => {
+                        app.spawn_torus(pos, 0.8, 0.2, 32, 16);
+                    }
+                }
             }
             EditorAction::SpawnModelAtPath {
                 path: _,
