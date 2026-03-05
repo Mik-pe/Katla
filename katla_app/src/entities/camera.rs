@@ -54,7 +54,8 @@ impl Camera {
         let to = self.get_view_rotation(world) * fwd;
         if let Some(transform) = world.get_component::<TransformComponent>(self.entity) {
             let pos = transform.transform.position;
-            Mat4::create_lookat(pos, pos + to, Vec3::new(0.0, 1.0, 0.0))
+            // create_lookat returns camera-to-world transform, need inverse for world-to-camera
+            Mat4::create_lookat(pos, pos + to, Vec3::new(0.0, 1.0, 0.0)).inverse()
         } else {
             Mat4::identity()
         }

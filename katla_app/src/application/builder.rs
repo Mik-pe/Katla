@@ -102,19 +102,16 @@ impl ApplicationBuilder {
 
     /// Build the frame graph for the application.
     fn build_frame_graph(renderer: &VulkanRenderer) -> AppResult<katla_gfx::FrameGraph> {
-        use katla_gfx::{FrameGraphBuilder, FullscreenPass, GeometryPass, ImageFormat};
+        use katla_gfx::{FrameGraphBuilder, GeometryPass, ImageFormat};
 
+        // Single-pass frame graph: geometry pass renders directly to swapchain
+        // (The execute_graphics_pass implementation hardcodes swapchain as the render target)
         let graph = renderer
             .create_frame_graph()
             .add_pass(
                 GeometryPass::new("geometry")
-                    .write_color("color", ImageFormat::R16G16B16A16Sfloat)
+                    .write_color("color", ImageFormat::B8G8R8A8Srgb) // Swapchain format
                     .write_depth("depth", ImageFormat::D32Sfloat),
-            )
-            .add_pass(
-                FullscreenPass::new("tonemap")
-                    .read("color")
-                    .write("backbuffer", ImageFormat::B8G8R8A8Srgb),
             )
             .build()
             .map_err(|e| crate::error::AppError::Graphics {
