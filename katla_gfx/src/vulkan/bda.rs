@@ -120,6 +120,16 @@ impl DeviceAddressBuffer {
     pub fn is_persistent(&self) -> bool {
         self.is_persistent
     }
+
+    /// Flush a range of mapped memory to make CPU writes visible to the GPU.
+    ///
+    /// # Arguments
+    /// * `offset` - Offset from the start of the buffer (in bytes)
+    /// * `size` - Size of the range to flush (in bytes)
+    pub fn flush(&self, offset: u64, size: u64) {
+        self.context
+            .flush_mapped_memory(&self.allocation, offset, size);
+    }
 }
 
 impl Drop for DeviceAddressBuffer {

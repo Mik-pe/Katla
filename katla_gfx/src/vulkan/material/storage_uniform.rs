@@ -63,6 +63,24 @@ use super::super::context::VulkanContext;
 use crate::RendererError;
 use crate::vulkan::bda::DeviceAddressBuffer;
 
+/// Object data for bulk storage buffer updates.
+///
+/// Used by `update_objects_bulk` to efficiently write multiple objects at once.
+/// Matches the layout of InstanceData but without exposing Vulkan types.
+#[derive(Clone, Copy, Debug)]
+pub struct ObjectData {
+    /// Model matrix (object to world) - column-major [f32; 16]
+    pub model_matrix: [f32; 16],
+    /// Base color tint (RGBA)
+    pub color: [f32; 4],
+    /// PBR metallic factor (0.0 = dielectric, 1.0 = metal)
+    pub metallic: f32,
+    /// PBR roughness factor (0.0 = smooth, 1.0 = rough)
+    pub roughness: f32,
+    /// Ambient occlusion factor (0.0 = full occlusion, 1.0 = none)
+    pub ao: f32,
+}
+
 /// Storage buffer descriptor set for uniform buffers.
 ///
 /// Contains descriptor set and pool for binding the storage buffer
@@ -167,7 +185,9 @@ impl StorageDescriptorSet {
             .buffer_info(&objects_buffer_info);
 
         unsafe {
-            context.device.update_descriptor_sets(&[frame_write, objects_write], &[]);
+            context
+                .device
+                .update_descriptor_sets(&[frame_write, objects_write], &[]);
         }
 
         Ok(Self {
@@ -362,6 +382,9 @@ impl StorageUniformManager {
                 light_intensity: [light_intensity, 0.0, 0.0, 0.0],
             };
         }
+        // Flush frame uniforms to make CPU writes visible to GPU
+        self.buffer
+            .flush(0, std::mem::size_of::<FrameUniforms>() as u64);
     }
 
     /// Update frame uniforms from a FrameUniforms struct.
@@ -492,6 +515,45 @@ impl StorageUniformManager {
                 material_params: [metallic, roughness, ao, emission_idx],
                 texture_indices,
             };
+        }
+        // Flush object data to make CPU writes visible to GPU
+        self.buffer
+            .flush(offset as u64, std::mem::size_of::<ObjectUniforms>() as u64);
+    }
+
+    /// Bulk update multiple objects at once for efficient instancing.
+    ///
+    /// This is more efficient than calling `update_object_bindless` multiple times
+    /// because it maps the buffer only once and writes all data in a batch.
+    ///
+    /// # Arguments
+    /// * `start_index` - First object index to update
+    /// * `objects` - Slice of object data to write (must fit within MAX_OBJECTS)
+    ///
+    /// # Panics
+    /// Panics if start_index + objects.len() >= MAX_OBJECTS
+    pub fn update_objects_bulk(&mut self, start_index: usize, objects: &[ObjectData]) {
+        let end_index = start_index + objects.len();
+        assert!(
+            end_index <= StorageUniformLayout::MAX_OBJECTS,
+            "Bulk update exceeds MAX_OBJECTS"
+        );
+
+        // Map buffer once and write all objects
+        unsafe {
+            let mapped = self.buffer.map();
+            let base_ptr = mapped.as_ptr() as usize + StorageUniformLayout::OBJECT_ARRAY_OFFSET;
+
+            for (i, obj) in objects.iter().enumerate() {
+                let offset = i * StorageUniformLayout::OBJECT_STRIDE;
+                let object_ptr = (base_ptr + offset) as *mut ObjectUniforms;
+                *object_ptr = ObjectUniforms {
+                    model: obj.model_matrix,
+                    base_color: obj.color,
+                    material_params: [obj.metallic, obj.roughness, obj.ao, 0.0],
+                    texture_indices: [0, 0, 0, 0], // Default texture indices
+                };
+            }
         }
     }
 

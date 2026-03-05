@@ -373,6 +373,28 @@ impl VulkanContext {
         allocation.mapped_ptr().unwrap().cast().as_ptr()
     }
 
+    /// Flush mapped memory ranges to make CPU writes visible to the GPU.
+    ///
+    /// This is required for non-coherent memory types. For coherent memory, this is a no-op.
+    pub fn flush_mapped_memory(
+        &self,
+        allocation: &Allocation,
+        offset: vk::DeviceSize,
+        size: vk::DeviceSize,
+    ) {
+        unsafe {
+            let memory = allocation.memory();
+            let flush_range = vk::MappedMemoryRange::default()
+                .memory(memory)
+                .offset(allocation.offset() + offset)
+                .size(size);
+
+            self.device
+                .flush_mapped_memory_ranges(&[flush_range])
+                .expect("Failed to flush mapped memory");
+        }
+    }
+
     pub fn create_image(
         &self,
         image_create_info: vk::ImageCreateInfo,
@@ -1167,6 +1189,30 @@ fn create_depth_render_texture(context: Rc<VulkanContext>, extent: vk::Extent2D)
         depth_format,
         vk::ImageAspectFlags::DEPTH,
     );
+
+    // Transition depth buffer from UNDEFINED to DEPTH_STENCIL_ATTACHMENT_OPTIMAL
+    use crate::barrier::ImageBarrier;
+    let cmd_buffer = context.begin_single_time_commands();
+    let cmd = cmd_buffer.vk_command_buffer();
+
+    let depth_range = vk::ImageSubresourceRange {
+        aspect_mask: vk::ImageAspectFlags::DEPTH | vk::ImageAspectFlags::STENCIL,
+        base_mip_level: 0,
+        level_count: 1,
+        base_array_layer: 0,
+        layer_count: 1,
+    };
+
+    ImageBarrier::transition_from_undefined_with_range(
+        &cmd,
+        &context.device,
+        depth_image,
+        vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+        depth_range,
+    );
+
+    context.end_single_time_commands(cmd_buffer);
+
     RenderTexture {
         image_view: VkImageView::new(image_view),
         image: VkImage::new(depth_image),
