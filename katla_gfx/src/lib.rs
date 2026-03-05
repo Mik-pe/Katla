@@ -55,9 +55,7 @@ pub use handle::{
 };
 
 // Material system
-pub use material::UiMaterialConfig;
-pub use material::ui_shader;
-pub use material::{Material, MaterialDefinition, MaterialDomain, RenderState, ShaderSource};
+pub use material::{Material, MaterialDomain, RenderState, ShaderSource};
 
 // Material creation API
 pub use vulkan::material::compiler::{MaterialBuilder, MaterialOptions, VertexType};

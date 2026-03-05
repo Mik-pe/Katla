@@ -1,7 +1,7 @@
 //! Unified material system.
 //!
-//! Provides material types and pipeline caching. Materials are defined using
-//! MaterialDefinition for flexible, data-driven pipeline creation.
+//! Provides material types for rendering. Materials are created using the
+//! VulkanRenderer material creation API (see `vulkan::material::compiler`).
 
 mod definition;
 mod render_state;
@@ -10,9 +10,6 @@ mod template;
 mod types;
 mod ui;
 
-// Public configuration types
-pub use template::MaterialDefinition;
-
 // Public API
 pub use definition::MaterialDomain;
 pub use render_state::RenderState;
@@ -20,6 +17,3 @@ pub use shader_source::ShaderSource;
 
 // Public material type
 pub use types::Material;
-
-// UI material primitives
-pub use ui::{UiMaterialConfig, ui_shader};
