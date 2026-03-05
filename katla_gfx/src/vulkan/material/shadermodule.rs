@@ -96,6 +96,8 @@ impl ShaderModule {
         .validate(&wgsl_module)
         .unwrap();
         let entry_point = entry_point.into();
+        let naga_stage = shader_stage_to_naga(stage);
+
         let options = spv::Options {
             flags: WriterFlags::LABEL_VARYINGS | WriterFlags::CLAMP_FRAG_DEPTH,
             ..Default::default()
@@ -105,7 +107,7 @@ impl ShaderModule {
             &module_info,
             &options,
             Some(&spv::PipelineOptions {
-                shader_stage: shader_stage_to_naga(stage),
+                shader_stage: naga_stage,
                 entry_point: entry_point.clone(),
             }),
         )
@@ -145,7 +147,7 @@ impl Drop for ShaderModule {
 
 pub struct ShaderCache {
     device: Device,
-    shaders: std::collections::HashMap<PathBuf, vk::ShaderModule>,
+    shaders: std::collections::HashMap<(PathBuf, vk::ShaderStageFlags), vk::ShaderModule>,
 }
 
 impl ShaderCache {
@@ -156,36 +158,49 @@ impl ShaderCache {
         }
     }
 
+    /// Get the entry point name for a given shader stage from a WGSL file.
+    fn get_entry_point(stage: vk::ShaderStageFlags) -> &'static str {
+        match stage {
+            vk::ShaderStageFlags::VERTEX => "vs_main",
+            vk::ShaderStageFlags::FRAGMENT => "fs_main",
+            vk::ShaderStageFlags::COMPUTE => "cs_main",
+            _ => "main",
+        }
+    }
+
     pub fn load_shader(
         &mut self,
         path: impl AsRef<Path>,
         stage: vk::ShaderStageFlags,
     ) -> Result<vk::ShaderModule, ShaderError> {
         let path = path.as_ref();
+        let cache_key = (path.to_path_buf(), stage);
 
-        if let Some(&module) = self.shaders.get(path) {
+        if let Some(&module) = self.shaders.get(&cache_key) {
             return Ok(module);
         }
 
         if let Some(extension) = path.extension()
             && extension == "wgsl"
         {
-            let shader = ShaderModule::from_wgsl(self.device.clone(), path, stage, "main")?;
+            let entry_point = Self::get_entry_point(stage);
+            let shader = ShaderModule::from_wgsl(self.device.clone(), path, stage, entry_point)?;
             let module = shader.module;
 
             // Prevent drop from destroying the module
             std::mem::forget(shader);
-            self.shaders.insert(path.to_path_buf(), module);
+            self.shaders.insert(cache_key, module);
             return Ok(module);
         }
 
-        let shader = ShaderModule::from_file(self.device.clone(), path, stage, "main")?;
+        let entry_point = Self::get_entry_point(stage);
+        let shader = ShaderModule::from_file(self.device.clone(), path, stage, entry_point)?;
         let module = shader.module;
 
         // Prevent drop from destroying the module
         std::mem::forget(shader);
 
-        self.shaders.insert(path.to_path_buf(), module);
+        self.shaders.insert(cache_key, module);
         Ok(module)
     }
 

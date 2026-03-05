@@ -72,7 +72,7 @@ impl Default for MaterialOptions {
 pub(crate) struct MaterialCompiler {
     shader_cache: Rc<RefCell<ShaderCache>>,
     context: Rc<VulkanContext>,
-    storage_descriptor_layout: vk::DescriptorSetLayout,
+    storage_descriptor_layout: Option<vk::DescriptorSetLayout>,
     bindless_descriptor_layout: vk::DescriptorSetLayout,
 }
 
@@ -111,7 +111,7 @@ impl MaterialCompiler {
         Ok(Self {
             shader_cache: Rc::new(RefCell::new(ShaderCache::new(context.device.clone()))),
             context,
-            storage_descriptor_layout,
+            storage_descriptor_layout: Some(storage_descriptor_layout),
             bindless_descriptor_layout,
         })
     }
@@ -185,7 +185,7 @@ impl MaterialCompiler {
         _options: &MaterialOptions,
     ) -> Result<Vec<vk::DescriptorSetLayout>, MaterialError> {
         Ok(vec![
-            self.storage_descriptor_layout,
+            self.storage_descriptor_layout.expect("Storage descriptor layout not initialized"),
             self.bindless_descriptor_layout,
         ])
     }
@@ -205,8 +205,16 @@ impl MaterialCompiler {
             .with_shaders(vert_module, frag_module)
             .with_vertex_binding(vertex_binding.clone())
             .with_descriptor_layouts(layouts.to_vec())
+            // Add push constant range for object_index and material_index
+            .add_push_constant_range(
+                vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT,
+                0,
+                8, // u32 object_index + u32 material_index
+            )
+            // TODO: Use offscreen HDR format once render graph supports intermediate textures
+            // For now, render directly to swapchain format
             .with_rendering_formats(
-                Some(crate::texture::ImageFormat::R16G16B16A16Sfloat),
+                Some(crate::texture::ImageFormat::B8G8R8A8Srgb),
                 Some(crate::texture::ImageFormat::D32Sfloat),
             );
 
@@ -234,10 +242,10 @@ impl MaterialCompiler {
 
     /// Clean up descriptor layouts.
     pub(crate) fn destroy(&mut self) {
-        unsafe {
-            self.context
-                .device
-                .destroy_descriptor_set_layout(self.storage_descriptor_layout, None);
+        if let Some(layout) = self.storage_descriptor_layout.take() {
+            unsafe {
+                self.context.device.destroy_descriptor_set_layout(layout, None);
+            }
         }
     }
 }
