@@ -7,6 +7,7 @@ use crate::pipeline::{BlendFactor, BlendOp, CompareOp, CullMode, FrontFace, Poly
 use crate::sync::VkRenderPass;
 use crate::texture::ImageFormat;
 use crate::vulkan::pipeline_state::{DynamicState, PrimitiveTopology};
+use crate::vulkan::vertexbinding::VertexBinding;
 
 pub struct PipelineBuilder {
     context: Rc<VulkanContext>,
@@ -75,6 +76,35 @@ impl PipelineBuilder {
     pub fn with_entry_points(mut self, vertex: CString, fragment: CString) -> Self {
         self.vertex_shader_entry_point = vertex;
         self.fragment_shader_entry_point = fragment;
+        self
+    }
+
+    pub fn with_vertex_shader(mut self, shader: vk::ShaderModule) -> Self {
+        self.vertex_shader = Some(shader);
+        self
+    }
+
+    pub fn with_fragment_shader(mut self, shader: vk::ShaderModule) -> Self {
+        self.fragment_shader = Some(shader);
+        self
+    }
+
+    pub fn with_shaders(mut self, vertex: vk::ShaderModule, fragment: vk::ShaderModule) -> Self {
+        self.vertex_shader = Some(vertex);
+        self.fragment_shader = Some(fragment);
+        self
+    }
+
+    pub fn with_vertex_binding(mut self, binding: VertexBinding) -> Self {
+        let binding_desc = binding.get_binding_desc(0);
+        let attribute_descs = binding.get_attribute_desc(0);
+        self.vertex_bindings.push(binding_desc);
+        self.vertex_attributes.extend(attribute_descs);
+        self
+    }
+
+    pub fn with_descriptor_layouts(mut self, layouts: Vec<vk::DescriptorSetLayout>) -> Self {
+        self.descriptor_layouts = layouts;
         self
     }
 

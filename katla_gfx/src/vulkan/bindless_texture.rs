@@ -301,6 +301,11 @@ impl BindlessTextureManager {
     pub fn descriptor_set(&self) -> VkDescriptorSet {
         self.descriptor_set
     }
+
+    /// Get the descriptor set layout for pipeline creation.
+    pub fn descriptor_set_layout(&self) -> vk::DescriptorSetLayout {
+        self.descriptor_layout.vk()
+    }
 }
 
 impl Drop for BindlessTextureManager {

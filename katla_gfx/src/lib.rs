@@ -59,6 +59,9 @@ pub use material::UiMaterialConfig;
 pub use material::ui_shader;
 pub use material::{Material, MaterialDefinition, MaterialDomain, RenderState, ShaderSource};
 
+// Material creation API
+pub use vulkan::material::compiler::{MaterialBuilder, MaterialOptions, VertexType};
+
 // Pipeline building - Katla-native types only
 pub use pipeline::{
     BlendFactor, BlendOp, CompareOp, ComputePipeline, ComputePipelineBuilder, ComputePipelineError,

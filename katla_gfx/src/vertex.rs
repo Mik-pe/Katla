@@ -141,6 +141,12 @@ impl VertexLayout {
         ])
     }
 
+    /// Simple vertex layout: position only.
+    /// Used for debug geometry and simple primitives.
+    pub fn simple() -> Self {
+        Self::new(vec![VertexAttributeFormat::Float3])
+    }
+
     /// Get the attribute formats.
     pub fn formats(&self) -> &[VertexAttributeFormat] {
         &self.formats
