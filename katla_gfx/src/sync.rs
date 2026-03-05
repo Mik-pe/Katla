@@ -4,7 +4,9 @@
 //! `ash::vk` types in the public API of katla_gfx.
 
 use ash::vk;
-use ash::vk::AccessFlags2;
+
+// Re-export Vulkan 1.3 synchronization types for barrier helpers
+pub(crate) use ash::vk::AccessFlags2;
 
 /// Type alias for Vulkan pipeline stage flags 2.
 pub(crate) type PipelineStage2Flags = ash::vk::PipelineStageFlags2;

@@ -20,6 +20,7 @@ pub mod render_graph;
 pub(crate) mod vulkan;
 
 // Internal modules (implementation details)
+pub(crate) mod barrier;
 pub(crate) mod buffer;
 pub(crate) mod mesh;
 pub(crate) mod sync;
