@@ -273,8 +273,9 @@ impl ApplicationHandler for Application {
                 // Inverse view-projection for sky rendering (clip-space to world-space)
                 let inv_view_proj = (proj_mat.clone() * view_mat.clone()).inverse();
 
-                let camera_pos = if let Some(transform) =
-                    self.world.get_component::<TransformComponent>(camera.entity)
+                let camera_pos = if let Some(transform) = self
+                    .world
+                    .get_component::<TransformComponent>(camera.entity)
                 {
                     [
                         transform.transform.position.x(),
@@ -371,9 +372,13 @@ impl Application {
 
         // Initialize default PBR material
         let shader_path = self.resources.shader_path("model_pbr.wgsl");
-        info!("Loading default PBR material from: {}", shader_path.display());
+        info!(
+            "Loading default PBR material from: {}",
+            shader_path.display()
+        );
 
-        self.default_material_handle = self.renderer
+        self.default_material_handle = self
+            .renderer
             .create_pbr_material(&shader_path)
             .expect("Failed to create default PBR material");
 
@@ -406,7 +411,11 @@ impl Application {
         // Spawn entity with transform and drawable components
         let entity_id = self.world.spawn((
             TransformComponent {
-                transform: katla_math::Transform::from_position(Vec3::new(position[0], position[1], position[2])),
+                transform: katla_math::Transform::from_position(Vec3::new(
+                    position[0],
+                    position[1],
+                    position[2],
+                )),
             },
             DrawableComponent::with_handles(mesh_handle, material_handle),
         ));
@@ -416,7 +425,13 @@ impl Application {
     }
 
     /// Spawn a sphere entity with the default material.
-    pub fn spawn_sphere(&mut self, position: [f32; 3], radius: f32, segments: u32, rings: u32) -> katla_ecs::EntityId {
+    pub fn spawn_sphere(
+        &mut self,
+        position: [f32; 3],
+        radius: f32,
+        segments: u32,
+        rings: u32,
+    ) -> katla_ecs::EntityId {
         use crate::components::{DrawableComponent, TransformComponent};
         use katla_ecs::EntityId;
         use katla_math::Vec3;
@@ -426,7 +441,11 @@ impl Application {
 
         let entity_id = self.world.spawn((
             TransformComponent {
-                transform: katla_math::Transform::from_position(Vec3::new(position[0], position[1], position[2])),
+                transform: katla_math::Transform::from_position(Vec3::new(
+                    position[0],
+                    position[1],
+                    position[2],
+                )),
             },
             DrawableComponent::with_handles(mesh_handle, material_handle),
         ));
@@ -436,7 +455,13 @@ impl Application {
     }
 
     /// Spawn a cylinder entity with the default material.
-    pub fn spawn_cylinder(&mut self, position: [f32; 3], height: f32, radius: f32, segments: u32) -> katla_ecs::EntityId {
+    pub fn spawn_cylinder(
+        &mut self,
+        position: [f32; 3],
+        height: f32,
+        radius: f32,
+        segments: u32,
+    ) -> katla_ecs::EntityId {
         use crate::components::{DrawableComponent, TransformComponent};
         use katla_ecs::EntityId;
         use katla_math::Vec3;
@@ -446,7 +471,11 @@ impl Application {
 
         let entity_id = self.world.spawn((
             TransformComponent {
-                transform: katla_math::Transform::from_position(Vec3::new(position[0], position[1], position[2])),
+                transform: katla_math::Transform::from_position(Vec3::new(
+                    position[0],
+                    position[1],
+                    position[2],
+                )),
             },
             DrawableComponent::with_handles(mesh_handle, material_handle),
         ));
@@ -456,7 +485,12 @@ impl Application {
     }
 
     /// Spawn a plane entity with the default material.
-    pub fn spawn_plane(&mut self, position: [f32; 3], width: f32, height: f32) -> katla_ecs::EntityId {
+    pub fn spawn_plane(
+        &mut self,
+        position: [f32; 3],
+        width: f32,
+        height: f32,
+    ) -> katla_ecs::EntityId {
         use crate::components::{DrawableComponent, TransformComponent};
         use katla_ecs::EntityId;
         use katla_math::Vec3;
@@ -466,7 +500,11 @@ impl Application {
 
         let entity_id = self.world.spawn((
             TransformComponent {
-                transform: katla_math::Transform::from_position(Vec3::new(position[0], position[1], position[2])),
+                transform: katla_math::Transform::from_position(Vec3::new(
+                    position[0],
+                    position[1],
+                    position[2],
+                )),
             },
             DrawableComponent::with_handles(mesh_handle, material_handle),
         ));
@@ -476,17 +514,30 @@ impl Application {
     }
 
     /// Spawn a torus entity with the default material.
-    pub fn spawn_torus(&mut self, position: [f32; 3], radius: f32, tube_radius: f32, segments: u32, tube_segments: u32) -> katla_ecs::EntityId {
+    pub fn spawn_torus(
+        &mut self,
+        position: [f32; 3],
+        radius: f32,
+        tube_radius: f32,
+        segments: u32,
+        tube_segments: u32,
+    ) -> katla_ecs::EntityId {
         use crate::components::{DrawableComponent, TransformComponent};
         use katla_ecs::EntityId;
         use katla_math::Vec3;
 
-        let mesh_handle = self.renderer.create_torus_mesh(radius, tube_radius, segments, tube_segments);
+        let mesh_handle =
+            self.renderer
+                .create_torus_mesh(radius, tube_radius, segments, tube_segments);
         let material_handle = self.default_material();
 
         let entity_id = self.world.spawn((
             TransformComponent {
-                transform: katla_math::Transform::from_position(Vec3::new(position[0], position[1], position[2])),
+                transform: katla_math::Transform::from_position(Vec3::new(
+                    position[0],
+                    position[1],
+                    position[2],
+                )),
             },
             DrawableComponent::with_handles(mesh_handle, material_handle),
         ));
@@ -522,7 +573,10 @@ impl Application {
         // Distant plane as backdrop
         self.spawn_plane([0.0, 2.0, -8.0], 10.0, 5.0);
 
-        info!("Default scene setup complete - {} entities spawned", self.world.entity_ids().count());
+        info!(
+            "Default scene setup complete - {} entities spawned",
+            self.world.entity_ids().count()
+        );
     }
 
     /// Poll the background loader and process completed loads.
