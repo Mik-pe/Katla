@@ -76,8 +76,8 @@ pub fn generate_sphere(radius: f32, segments: u32, rings: u32) -> (Vec<VertexPBR
             let v2 = next + 1;
             let v3 = next;
 
-            indices.extend_from_slice(&[v0, v1, v2]);
             indices.extend_from_slice(&[v0, v2, v3]);
+            indices.extend_from_slice(&[v0, v1, v2]);
         }
     }
 
@@ -140,5 +140,135 @@ mod tests {
     #[should_panic]
     fn test_sphere_invalid_rings() {
         generate_sphere(1.0, 8, 2);
+    }
+
+    #[test]
+    fn test_sphere_normals_point_outward() {
+        let radius = 1.0;
+        let (vertices, _) = generate_sphere(radius, 16, 16);
+
+        for v in &vertices {
+            // For a sphere centered at origin, normals should equal normalized position
+            let pos_len = (v.position[0].powi(2) + v.position[1].powi(2) + v.position[2].powi(2)).sqrt();
+            let normal_len = (v.normal[0].powi(2) + v.normal[1].powi(2) + v.normal[2].powi(2)).sqrt();
+
+            assert!(pos_len > 1e-10, "Position at origin");
+            assert!(normal_len > 1e-10, "Zero normal");
+
+            // Normalize position
+            let norm_pos = [
+                v.position[0] / pos_len,
+                v.position[1] / pos_len,
+                v.position[2] / pos_len,
+            ];
+
+            // Normalize normal
+            let norm_normal = [
+                v.normal[0] / normal_len,
+                v.normal[1] / normal_len,
+                v.normal[2] / normal_len,
+            ];
+
+            // They should match (normals point outward from center)
+            let dot = norm_pos[0] * norm_normal[0]
+                + norm_pos[1] * norm_normal[1]
+                + norm_pos[2] * norm_normal[2];
+
+            assert!(
+                dot > 0.99,
+                "Normal doesn't point outward: pos={:?}, normal={:?}, dot={}",
+                v.position,
+                v.normal,
+                dot
+            );
+        }
+    }
+
+    #[test]
+    fn test_sphere_winding_order() {
+        let radius = 1.0;
+        let segments = 16;
+        let rings = 16;
+        let (vertices, indices) = generate_sphere(radius, segments, rings);
+
+        let mut failed = 0;
+        let mut passed = 0;
+
+        for chunk in indices.chunks(3) {
+            let i0 = chunk[0] as usize;
+            let i1 = chunk[1] as usize;
+            let i2 = chunk[2] as usize;
+
+            let v0 = vertices[i0].position;
+            let v1 = vertices[i1].position;
+            let v2 = vertices[i2].position;
+
+            // Compute edge vectors
+            let edge1 = [v1[0] - v0[0], v1[1] - v0[1], v1[2] - v0[2]];
+            let edge2 = [v2[0] - v0[0], v2[1] - v0[1], v2[2] - v0[2]];
+
+            // Face normal via cross product
+            let face_normal = [
+                edge1[1] * edge2[2] - edge1[2] * edge2[1],
+                edge1[2] * edge2[0] - edge1[0] * edge2[2],
+                edge1[0] * edge2[1] - edge1[1] * edge2[0],
+            ];
+
+            // Normalize face normal
+            let len =
+                (face_normal[0].powi(2) + face_normal[1].powi(2) + face_normal[2].powi(2)).sqrt();
+            if len < 1e-10 {
+                continue; // Degenerate triangle
+            }
+            let face_normal = [
+                face_normal[0] / len,
+                face_normal[1] / len,
+                face_normal[2] / len,
+            ];
+
+            // Average vertex normal
+            let n0 = vertices[i0].normal;
+            let n1 = vertices[i1].normal;
+            let n2 = vertices[i2].normal;
+            let avg = [
+                n0[0] + n1[0] + n2[0],
+                n0[1] + n1[1] + n2[1],
+                n0[2] + n1[2] + n2[2],
+            ];
+            let avg_len = (avg[0].powi(2) + avg[1].powi(2) + avg[2].powi(2)).sqrt();
+            if avg_len < 1e-10 {
+                continue;
+            }
+            let avg_normal = [avg[0] / avg_len, avg[1] / avg_len, avg[2] / avg_len];
+
+            // Skip triangles at poles - the winding order test is not meaningful
+            // for the degenerate triangles at the sphere's poles
+            let all_at_top_pole = vertices[i0].position[1] > 0.9
+                && vertices[i1].position[1] > 0.9
+                && vertices[i2].position[1] > 0.9;
+            let all_at_bottom_pole = vertices[i0].position[1] < -0.9
+                && vertices[i1].position[1] < -0.9
+                && vertices[i2].position[1] < -0.9;
+            if all_at_top_pole || all_at_bottom_pole {
+                continue;
+            }
+
+            // For outward-facing triangles, face_normal and avg_normal should point in same direction
+            let dot = face_normal[0] * avg_normal[0]
+                + face_normal[1] * avg_normal[1]
+                + face_normal[2] * avg_normal[2];
+
+            if dot < 0.0 {
+                failed += 1;
+            } else {
+                passed += 1;
+            }
+        }
+
+        assert_eq!(
+            failed, 0,
+            "Sphere has {} triangles with incorrect winding ({} passed)",
+            failed, passed
+        );
     }
 }

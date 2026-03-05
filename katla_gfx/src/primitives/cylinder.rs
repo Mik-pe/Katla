@@ -223,6 +223,49 @@ mod tests {
     }
 
     #[test]
+    fn test_cylinder_normals_point_outward() {
+        let height = 2.0;
+        let radius = 1.0;
+        let (vertices, _) = generate_cylinder(height, radius, 16);
+
+        for v in &vertices {
+            let (normal, position) = (v.normal, v.position);
+
+            // Use the normal to determine which part we're checking
+            let expected_dir = if normal[1] < -0.9 {
+                // Bottom cap - normal should point down
+                [0.0, -1.0, 0.0]
+            } else if normal[1] > 0.9 {
+                // Top cap - normal should point up
+                [0.0, 1.0, 0.0]
+            } else {
+                // Side - normal should point outward radially
+                let dx = position[0];
+                let dz = position[2];
+                let len = (dx * dx + dz * dz).sqrt();
+                if len < 1e-10 {
+                    continue;
+                }
+                [dx / len, 0.0, dz / len]
+            };
+
+            // Check that normal matches expected direction
+            let dot = normal[0] * expected_dir[0]
+                + normal[1] * expected_dir[1]
+                + normal[2] * expected_dir[2];
+
+            assert!(
+                dot > 0.9,
+                "Normal doesn't point outward: pos={:?}, normal={:?}, expected={:?}, dot={}",
+                position,
+                normal,
+                expected_dir,
+                dot
+            );
+        }
+    }
+
+    #[test]
     fn test_cylinder_winding_order() {
         let height = 2.0;
         let radius = 1.0;
