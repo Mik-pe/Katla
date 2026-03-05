@@ -24,7 +24,8 @@ use crate::texture::{TextureDescriptor, TextureManager};
 use crate::vulkan::context::VulkanContext;
 use crate::{
     BindlessTextureManager, IndexBuffer, MAX_BINDLESS_TEXTURES, RendererError,
-    SkeletonDescriptorSet, StorageUniformManager, SwapData, VertexBuffer, VulkanFrameCtx,
+    SkeletonDescriptorSet, StorageDescriptorSet, StorageUniformManager, SwapData, VertexBuffer,
+    VulkanFrameCtx,
     viewport::Viewport,
 };
 use ash::vk;
@@ -55,6 +56,9 @@ pub struct VulkanRenderer {
     /// Storage uniform manager for storage buffer-based uniforms.
     /// Materials use storage buffers with instance indexing.
     pub(crate) storage_manager: StorageUniformManager,
+    /// Storage descriptor set for binding frame and object uniforms.
+    /// Contains the storage buffer bound at two offsets (frame_data at 0, objects at 256).
+    pub(crate) storage_descriptor_set: StorageDescriptorSet,
     /// Draw list cell for geometry pass (shared with render graph).
     pub(crate) draw_list_cell: Rc<RefCell<Option<DrawList>>>,
     /// Skeleton descriptor sets for GPU skeletal animation.
@@ -150,6 +154,19 @@ impl VulkanRenderer {
         // Initialize storage uniform system with standard layout
         let storage_manager = StorageUniformManager::new(context.clone())?;
 
+        // Create storage descriptor set for binding frame and object uniforms
+        let storage_descriptor_set = StorageDescriptorSet::new(
+            &context,
+            storage_manager.buffer(),
+            storage_manager.buffer_size(),
+        )
+        .map_err(|e| {
+            error!("Failed to create storage descriptor set: {:?}", e);
+            RendererError::InitializationFailed(
+                "Failed to create storage descriptor set".to_string(),
+            )
+        })?;
+
         // Initialize mesh manager
         let mesh_manager = mesh_manager::MeshManager::new(context.clone());
 
@@ -165,6 +182,7 @@ impl VulkanRenderer {
             bindless_manager,
             texture_manager,
             storage_manager,
+            storage_descriptor_set,
             draw_list_cell: Rc::new(RefCell::new(None)),
             skeleton_descriptors: Vec::new(),
             frame_uniforms: None,
@@ -1003,6 +1021,11 @@ impl VulkanRenderer {
             swapchain_image,
             vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
         );
+
+        // 5.5. Update storage buffer with frame uniforms (camera, lighting)
+        if let Some(ref frame_uniforms) = self.frame_uniforms {
+            self.storage_manager.update_from_frame_uniforms(frame_uniforms);
+        }
 
         // 6. Execute frame graph (records commands into the command buffer)
         frame_graph

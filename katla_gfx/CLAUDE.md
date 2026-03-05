@@ -1,5 +1,34 @@
 # katla_gfx
 
+## Descriptor Set Layout
+
+The rendering pipeline uses a **3-set descriptor layout** for efficient resource binding:
+
+```wgsl
+// Set 0: Per-Frame Data (shared across all draws)
+@group(0) @binding(0) var<storage, read> frame_data: FrameUniforms;
+// Camera (view/proj), lighting, time, etc.
+
+// Set 1: Per-Object Data (indexed by instance_index)
+@group(1) @binding(0) var<storage, read> objects: array<ObjectUniforms>;
+// Model matrix, material params, texture indices
+
+// Set 2: Global Resources (bindless textures, skinning, etc.)
+@group(2) @binding(0) var bindless_textures: binding_array<texture_2d<f32>, 4096>;
+@group(2) @binding(1) var shared_sampler: sampler;
+@group(2) @binding(2) var<storage, read> skeleton_data: array<SkeletonUniforms>; // for skinned meshes
+```
+
+**Why this layout?**
+- **Set 0** updates once per frame (camera moves, lighting changes)
+- **Set 1** uses instance indexing - no per-draw descriptor updates
+- **Set 2** contains bindless textures and optional features (skinning)
+
+**Implementation:**
+- `StorageUniformManager` - Manages Set 0 (frame) + Set 1 (objects) in one buffer
+- `BindlessTextureManager` - Manages Set 2 (textures + sampler)
+- `SkeletonDescriptorSet` - Optional Set 2 binding for skinned meshes
+
 ## Image Barriers
 
 Use `ImageBarrier` helpers - never manually construct `vk::ImageMemoryBarrier`.
