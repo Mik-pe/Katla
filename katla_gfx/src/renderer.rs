@@ -321,12 +321,24 @@ impl VulkanRenderer {
 
     /// Set frame-level uniforms for the current frame.
     ///
-    /// This should be called once per frame before `render_frame()`.
+    /// This should be called once per frame before `render_frame()` or `execute_draw_calls()`.
     /// The uniforms are used by all draw calls in the frame.
+    ///
+    /// **Important:** This must be called before `execute_draw_calls()` as it selects
+    /// the appropriate per-frame storage buffer. The recommended order is:
+    /// 1. `set_frame_uniforms()` - selects frame buffer and writes frame data
+    /// 2. `execute_draw_calls()` - writes per-object data to the same buffer
+    /// 3. `render()` - renders using the prepared data
     ///
     /// # Arguments
     /// * `uniforms` - Frame uniforms containing view/proj matrices, camera position, and lighting
     pub fn set_frame_uniforms(&mut self, uniforms: FrameUniforms) {
+        // Select per-frame buffer BEFORE any data writes
+        // This must happen first since set_frame_uniforms() and execute_draw_calls()
+        // are called before render()
+        let frame_idx = self.swap_data.current_frame();
+        self.storage_manager.start_frame(frame_idx);
+
         // Write frame uniforms to storage buffer for current frame
         self.storage_manager.update_from_frame_uniforms(&uniforms);
 
@@ -367,9 +379,8 @@ impl VulkanRenderer {
     /// });
     /// ```
     pub fn execute_draw_calls(&mut self, draw_list: &DrawList) {
-        // Note: render() calls start_frame() to select the correct per-frame buffer
-        // before executing the frame graph. This ensures all data writes
-        // (set_frame_uniforms, execute_draw_calls) go to the correct buffer.
+        // Note: set_frame_uniforms() must be called before this method
+        // as it calls start_frame() to select the correct per-frame buffer
 
         // Write all per-object data to storage buffer
         for draw_call in &draw_list.draws {
@@ -1453,9 +1464,8 @@ impl VulkanRenderer {
         // 1. Wait for previous frame to complete (also resets the fence)
         self.swap_data.wait_for_fence(&self.context.device);
 
-        // 2. Select per-frame storage buffer (must happen before any data writes)
+        // 2. Get frame index (start_frame() was already called in set_frame_uniforms())
         let frame_idx = self.swap_data.current_frame();
-        self.storage_manager.start_frame(frame_idx);
 
         // 3. Acquire next swapchain image
         let (image_index, _is_suboptimal) = unsafe {
