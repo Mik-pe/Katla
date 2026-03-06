@@ -59,9 +59,9 @@ pub struct VulkanRenderer {
     /// Storage uniform manager for storage buffer-based uniforms.
     /// Materials use storage buffers with instance indexing.
     pub(crate) storage_manager: StorageUniformManager,
-    /// Storage descriptor set for binding frame and object uniforms.
-    /// Contains the storage buffer bound at two offsets (frame_data at 0, objects at 256).
-    pub(crate) storage_descriptor_set: StorageDescriptorSet,
+    /// Per-frame storage descriptor sets for binding frame and object uniforms.
+    /// Each set contains the storage buffer bound at two offsets (frame_data at 0, objects at 256).
+    pub(crate) storage_descriptor_sets: Vec<StorageDescriptorSet>,
     /// Draw list cell for geometry pass (shared with render graph).
     pub(crate) draw_list_cell: Rc<RefCell<Option<DrawList>>>,
     /// Skeleton descriptor sets for GPU skeletal animation.
@@ -164,20 +164,26 @@ impl VulkanRenderer {
         info!("Texture manager initialized");
 
         // Initialize storage uniform system with standard layout
-        let storage_manager = StorageUniformManager::new(context.clone())?;
+        let storage_manager =
+            StorageUniformManager::new(context.clone(), FRAMES_IN_FLIGHT)?;
 
-        // Create storage descriptor set for binding frame and object uniforms
-        let storage_descriptor_set = StorageDescriptorSet::new(
-            &context,
-            storage_manager.buffer(),
-            storage_manager.buffer_size(),
-        )
-        .map_err(|e| {
-            error!("Failed to create storage descriptor set: {:?}", e);
-            RendererError::InitializationFailed(
-                "Failed to create storage descriptor set".to_string(),
+        // Create per-frame storage descriptor sets for binding frame and object uniforms
+        let mut storage_descriptor_sets = Vec::with_capacity(FRAMES_IN_FLIGHT);
+        for frame_idx in 0..FRAMES_IN_FLIGHT {
+            let descriptor_set = StorageDescriptorSet::new(
+                &context,
+                storage_manager.buffer(frame_idx),
+                storage_manager.buffer_size(),
             )
-        })?;
+            .map_err(|e| {
+                error!("Failed to create storage descriptor set: {:?}", e);
+                RendererError::InitializationFailed(format!(
+                    "Failed to create storage descriptor set for frame {}: {:?}",
+                    frame_idx, e
+                ))
+            })?;
+            storage_descriptor_sets.push(descriptor_set);
+        }
 
         // Initialize mesh manager
         let mesh_manager = mesh_manager::MeshManager::new(context.clone());
@@ -185,15 +191,16 @@ impl VulkanRenderer {
         // Initialize viewport manager
         let viewport_manager = viewport_manager::ViewportManager::new(context.clone());
 
-        // Initialize material compiler
-        let material_compiler =
-            MaterialCompiler::new(context.clone(), &bindless_manager, &storage_descriptor_set)
-                .map_err(|e| {
-                    error!("Failed to create material compiler: {:?}", e);
-                    RendererError::InitializationFailed(
-                        "Failed to create material compiler".to_string(),
-                    )
-                })?;
+        // Initialize material compiler (use first descriptor set for compilation)
+        let material_compiler = MaterialCompiler::new(
+            context.clone(),
+            &bindless_manager,
+            &storage_descriptor_sets[0],
+        )
+        .map_err(|e| {
+            error!("Failed to create material compiler: {:?}", e);
+            RendererError::InitializationFailed("Failed to create material compiler".to_string())
+        })?;
         info!("Material compiler initialized");
 
         Ok(Self {
@@ -205,7 +212,7 @@ impl VulkanRenderer {
             bindless_manager,
             texture_manager,
             storage_manager,
-            storage_descriptor_set,
+            storage_descriptor_sets,
             draw_list_cell: Rc::new(RefCell::new(None)),
             skeleton_descriptors: Vec::new(),
             frame_uniforms: FrameUniforms::default(),
@@ -320,7 +327,7 @@ impl VulkanRenderer {
     /// # Arguments
     /// * `uniforms` - Frame uniforms containing view/proj matrices, camera position, and lighting
     pub fn set_frame_uniforms(&mut self, uniforms: FrameUniforms) {
-        // Write frame uniforms to storage buffer so shaders can read them
+        // Write frame uniforms to storage buffer for current frame
         self.storage_manager.update_from_frame_uniforms(&uniforms);
 
         // Store for reference
@@ -1458,6 +1465,9 @@ impl VulkanRenderer {
 
         // 3. Get command buffer for this frame
         let frame_idx = self.swap_data.current_frame();
+
+        // 4. Start frame for storage manager (selects per-frame buffer)
+        self.storage_manager.start_frame(frame_idx);
         let cmd = self.frame_context.command_buffers[frame_idx].vk_command_buffer();
 
         // 4. Begin command buffer
