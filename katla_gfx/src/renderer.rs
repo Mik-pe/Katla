@@ -327,27 +327,11 @@ impl VulkanRenderer {
     /// # Arguments
     /// * `uniforms` - Frame uniforms containing view/proj matrices, camera position, and lighting
     pub fn set_frame_uniforms(&mut self, uniforms: FrameUniforms) {
-        // Ensure we're writing to the correct per-frame buffer
-        self.begin_frame();
-
         // Write frame uniforms to storage buffer for current frame
         self.storage_manager.update_from_frame_uniforms(&uniforms);
 
         // Store for reference
         self.frame_uniforms = uniforms;
-    }
-
-    /// Begin a new frame.
-    ///
-    /// This selects the appropriate per-frame storage buffer and must be called
-    /// before `set_frame_uniforms()` and `execute_draw_calls()` to ensure data
-    /// is written to the correct buffer.
-    ///
-    /// This is called automatically by `execute_draw_calls()`, but can also be
-    /// called explicitly if needed (e.g., if not using `execute_draw_calls()`).
-    pub fn begin_frame(&mut self) {
-        let frame_idx = self.swap_data.current_frame();
-        self.storage_manager.start_frame(frame_idx);
     }
 
     /// Execute draw calls from FrameContext and prepare them for rendering.
@@ -383,8 +367,9 @@ impl VulkanRenderer {
     /// });
     /// ```
     pub fn execute_draw_calls(&mut self, draw_list: &DrawList) {
-        // Note: begin_frame() should have been called already (via set_frame_uniforms())
-        // This ensures we're writing to the correct per-frame buffer
+        // Note: render() calls start_frame() to select the correct per-frame buffer
+        // before executing the frame graph. This ensures all data writes
+        // (set_frame_uniforms, execute_draw_calls) go to the correct buffer.
 
         // Write all per-object data to storage buffer
         for draw_call in &draw_list.draws {
@@ -1468,7 +1453,11 @@ impl VulkanRenderer {
         // 1. Wait for previous frame to complete (also resets the fence)
         self.swap_data.wait_for_fence(&self.context.device);
 
-        // 2. Acquire next swapchain image
+        // 2. Select per-frame storage buffer (must happen before any data writes)
+        let frame_idx = self.swap_data.current_frame();
+        self.storage_manager.start_frame(frame_idx);
+
+        // 3. Acquire next swapchain image
         let (image_index, _is_suboptimal) = unsafe {
             self.frame_context
                 .swapchain
@@ -1482,15 +1471,10 @@ impl VulkanRenderer {
                 .expect("Failed to acquire swapchain image")
         };
 
-        // 3. Get command buffer for this frame
-        let frame_idx = self.swap_data.current_frame();
-
-        // Note: start_frame() was already called in execute_draw_calls() to ensure
-        // data is written to the correct buffer before rendering begins
-
+        // 4. Get command buffer for this frame
         let cmd = self.frame_context.command_buffers[frame_idx].vk_command_buffer();
 
-        // 4. Begin command buffer
+        // 5. Begin command buffer
         let begin_info = vk::CommandBufferBeginInfo::default()
             .flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT);
         unsafe {
@@ -1536,7 +1520,7 @@ impl VulkanRenderer {
                 .expect("Failed to end command buffer");
         }
 
-        // 8. Submit command buffer with synchronization
+        // 9. Submit command buffer with synchronization
         let render_finished_semaphore = self.swap_data.render_finished_semaphore(image_index);
         let wait_semaphores = [self.swap_data.image_available_semaphore()];
         let signal_semaphores = [render_finished_semaphore];
@@ -1550,7 +1534,7 @@ impl VulkanRenderer {
             self.swap_data.in_flight_fence(),
         );
 
-        // 9. Present to swapchain
+        // 10. Present to swapchain
         let present_info = vk::PresentInfoKHR::default()
             .wait_semaphores(&signal_semaphores)
             .swapchains(&swapchains)
