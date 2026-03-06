@@ -1481,11 +1481,13 @@ impl VulkanRenderer {
         }
 
         // 5. Transition swapchain image to COLOR_ATTACHMENT_OPTIMAL for rendering
+        // Swapchain images are reused across frames, transitioning from PRESENT_SRC_KHR after previous present.
         let swapchain_image = self.frame_context.swapchain_images[image_index as usize].vk();
-        ImageBarrier::transition_from_undefined(
+        ImageBarrier::transition(
             &cmd,
             &self.context.device,
             swapchain_image,
+            vk::ImageLayout::PRESENT_SRC_KHR,
             vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
         );
 
