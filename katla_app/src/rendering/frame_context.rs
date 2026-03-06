@@ -362,7 +362,8 @@ mod tests {
         let proj = [
             1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
         ];
-        frame.set_camera(&view, &proj);
+        let camera_pos = [0.0, 0.0, 0.0, 1.0];
+        frame.set_camera(&view, &proj, &camera_pos);
 
         let uniforms = frame.frame_uniforms();
         assert_eq!(uniforms.view_matrix, view);

@@ -196,11 +196,7 @@ pub(crate) struct GeometryPassData {
 impl PassBuilder for GeometryPass {
     fn as_builder(self) -> InternalPassBuilder {
         // Collect write resource names (color only - depth is implicit)
-        let writes: Vec<String> = self
-            .color_outputs
-            .iter()
-            .map(|o| o.name.clone())
-            .collect();
+        let writes: Vec<String> = self.color_outputs.iter().map(|o| o.name.clone()).collect();
 
         // Clone reads for the builder
         let reads = self.reads.clone();
@@ -209,7 +205,11 @@ impl PassBuilder for GeometryPass {
         let color_outputs = self.color_outputs;
         let material = self.material;
 
-        // Extract output format from first color attachment (for material format inference)
+        // Extract output format from first color attachment (for material format inference).
+        //
+        // Note: When using `ImageFormat::Auto` materials with multiple render targets (MRT),
+        // only the first color attachment's format is used for compilation. Mixed-format MRT
+        // is not supported with Auto materials - use explicit format materials for that case.
         let output_format = color_outputs.first().map(|o| o.format);
 
         InternalPassBuilder {
@@ -311,14 +311,13 @@ mod tests {
 
     #[test]
     fn test_geometry_pass_custom_load_store() {
-        let pass = GeometryPass::new("test")
-            .write_color_with(
-                "color",
-                ImageFormat::R16G16B16A16Sfloat,
-                LoadOp::Load,
-                StoreOp::DontCare,
-                ClearValue::OPAQUE_BLACK,
-            );
+        let pass = GeometryPass::new("test").write_color_with(
+            "color",
+            ImageFormat::R16G16B16A16Sfloat,
+            LoadOp::Load,
+            StoreOp::DontCare,
+            ClearValue::OPAQUE_BLACK,
+        );
 
         assert_eq!(pass.color_output_count(), 1);
     }

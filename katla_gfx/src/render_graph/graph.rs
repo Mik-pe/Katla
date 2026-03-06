@@ -54,7 +54,9 @@ impl TransientTexture {
 impl Drop for TransientTexture {
     fn drop(&mut self) {
         unsafe {
-            self.context.device.destroy_image_view(self.image_view.vk(), None);
+            self.context
+                .device
+                .destroy_image_view(self.image_view.vk(), None);
             self.context.device.destroy_image(self.image, None);
             if let Some(allocation) = self.allocation.take() {
                 self.context.allocator.borrow_mut().free(allocation).ok();
@@ -142,8 +144,14 @@ impl FrameGraph {
         for pass in &self.passes {
             if let Some(material_handle) = pass.material {
                 if let Some(format) = pass.output_format {
-                    renderer.ensure_material_compiled(material_handle, format)
-                        .map_err(|e| RenderGraphError::InvalidConfiguration(format!("Material compilation failed: {}", e)))?;
+                    renderer
+                        .ensure_material_compiled(material_handle, format)
+                        .map_err(|e| {
+                            RenderGraphError::InvalidConfiguration(format!(
+                                "Material compilation failed: {}",
+                                e
+                            ))
+                        })?;
                 }
             }
         }
@@ -166,17 +174,30 @@ impl FrameGraph {
         // Initialize transient textures on first use
         self.initialize_transient_textures(renderer)?;
 
-        // Update tonemap params for all tonemap passes BEFORE creating frame
-        // This avoids borrowing conflicts since frame would hold an immutable reference
+        // Update tonemap params for fullscreen passes BEFORE creating frame.
+        //
+        // Note: This must happen here (not during pass execution) because we need &mut VulkanRenderer
+        // to update storage buffers. Once Frame is created, we only have &VulkanRenderer.
         for pass in &self.passes {
             if let Some(ref params) = pass.tonemap_params {
                 if let Some(hdr_index) = params.hdr_texture_index {
                     let mode_value = params.mode as u32;
                     renderer.storage_manager.update_object_bindless(
                         0,
-                        &[1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0],
-                        &[params.exposure, params.gamma, mode_value as f32, hdr_index as f32],
-                        0.0, 0.0, 1.0, 0.0,
+                        &[
+                            1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0,
+                            0.0, 1.0,
+                        ],
+                        &[
+                            params.exposure,
+                            params.gamma,
+                            mode_value as f32,
+                            hdr_index as f32,
+                        ],
+                        0.0,
+                        0.0,
+                        1.0,
+                        0.0,
                         [0, 0, 0, 0],
                     );
                 }
@@ -311,7 +332,9 @@ impl FrameGraph {
                     .context
                     .device
                     .create_image_view(&view_info, None)
-                    .map_err(|e| RenderGraphError::VulkanError(format!("Failed to create image view: {}", e)))?
+                    .map_err(|e| {
+                        RenderGraphError::VulkanError(format!("Failed to create image view: {}", e))
+                    })?
             };
 
             self.transient_textures.insert(
@@ -362,7 +385,9 @@ impl FrameGraph {
 
         renderer
             .register_bindless_texture(texture.image_view.vk())
-            .map_err(|e| RenderGraphError::VulkanError(format!("Failed to register bindless texture: {}", e)))
+            .map_err(|e| {
+                RenderGraphError::VulkanError(format!("Failed to register bindless texture: {}", e))
+            })
     }
 
     /// Update tonemap parameters for a pass.
@@ -390,10 +415,9 @@ impl FrameGraph {
         pass_name: &str,
         texture_index: u32,
     ) -> Result<(), RenderGraphError> {
-        let pass_idx = self
-            .pass_names
-            .get(pass_name)
-            .ok_or_else(|| RenderGraphError::ResourceNotFound(format!("Pass '{}' not found", pass_name)))?;
+        let pass_idx = self.pass_names.get(pass_name).ok_or_else(|| {
+            RenderGraphError::ResourceNotFound(format!("Pass '{}' not found", pass_name))
+        })?;
 
         if let Some(ref mut params) = self.passes[*pass_idx].tonemap_params {
             params.hdr_texture_index = Some(texture_index);
@@ -720,7 +744,10 @@ impl<'a> Frame<'a> {
                 continue;
             };
 
-            let current_state = self.resource_states.get(write_name).copied()
+            let current_state = self
+                .resource_states
+                .get(write_name)
+                .copied()
                 .unwrap_or(super::resource::ResourceState::Undefined);
 
             let required_state = super::resource::ResourceState::ColorAttachment;
@@ -759,7 +786,8 @@ impl<'a> Frame<'a> {
                 }
 
                 // Update tracked state
-                self.resource_states.insert(write_name.clone(), required_state);
+                self.resource_states
+                    .insert(write_name.clone(), required_state);
             }
         }
 
@@ -775,7 +803,10 @@ impl<'a> Frame<'a> {
                 continue;
             };
 
-            let current_state = self.resource_states.get(read_name).copied()
+            let current_state = self
+                .resource_states
+                .get(read_name)
+                .copied()
                 .unwrap_or(super::resource::ResourceState::Undefined);
 
             let required_state = super::resource::ResourceState::ShaderRead;
@@ -814,7 +845,8 @@ impl<'a> Frame<'a> {
                 }
 
                 // Update tracked state
-                self.resource_states.insert(read_name.clone(), required_state);
+                self.resource_states
+                    .insert(read_name.clone(), required_state);
             }
         }
 
@@ -845,9 +877,8 @@ impl<'a> Frame<'a> {
         // 3. Otherwise, error - passes must explicitly declare their output
         let color_attachment = if pass.writes.contains(&BACKBUFFER_NAME.to_string()) {
             // Explicit backbuffer write - use swapchain
-            let swapchain_view = self.renderer.frame_context.swapchain_image_views
-                [self.image_index as usize]
-                .vk();
+            let swapchain_view =
+                self.renderer.frame_context.swapchain_image_views[self.image_index as usize].vk();
             vk::RenderingAttachmentInfo::default()
                 .image_view(swapchain_view)
                 .image_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
@@ -979,9 +1010,9 @@ impl<'a> Frame<'a> {
             .ok_or(RenderGraphError::InvalidMaterialHandle(draw_call.material))?;
 
         // Get pipeline handles from registry
-        let pipeline_handle = material.pipeline.ok_or_else(|| {
-            RenderGraphError::InvalidMaterialHandle(draw_call.material)
-        })?;
+        let pipeline_handle = material
+            .pipeline
+            .ok_or_else(|| RenderGraphError::InvalidMaterialHandle(draw_call.material))?;
         let (pipeline, layout) = self
             .renderer
             .asset_registry
@@ -1074,9 +1105,8 @@ impl<'a> Frame<'a> {
         // 2. If pass writes to a transient texture, use that
         let color_attachment = if pass.writes.contains(&BACKBUFFER_NAME.to_string()) {
             // Explicit backbuffer write - use swapchain
-            let swapchain_view = renderer.frame_context.swapchain_image_views
-                [self.image_index as usize]
-                .vk();
+            let swapchain_view =
+                renderer.frame_context.swapchain_image_views[self.image_index as usize].vk();
             vk::RenderingAttachmentInfo::default()
                 .image_view(swapchain_view)
                 .image_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
