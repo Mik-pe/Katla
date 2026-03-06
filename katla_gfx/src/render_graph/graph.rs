@@ -1061,8 +1061,8 @@ impl<'a> Frame<'a> {
         material: &crate::renderer::registry::MaterialAsset,
         draw_call: &crate::renderer::types::DrawCall,
     ) -> Result<(), RenderGraphError> {
-        // Set 0: Storage uniforms (frame_data + objects array)
-        let storage_ds = self.renderer.storage_descriptor_set.vk_set();
+        // Set 0: Storage uniforms (frame_data + objects array) - use per-frame descriptor set
+        let storage_ds = self.renderer.storage_descriptor_sets[self.renderer.storage_manager.current_frame()].vk_set();
         cmd.bind_descriptor_sets(pipeline_layout, 0, &[storage_ds], &[]);
 
         // Set 1: Bindless textures (all current materials use bindless)
@@ -1178,8 +1178,8 @@ impl<'a> Frame<'a> {
             );
         }
 
-        // Bind descriptor sets (storage uniforms + bindless textures)
-        let storage_ds = renderer.storage_descriptor_set.vk_set();
+        // Bind descriptor sets (storage uniforms + bindless textures) - use per-frame descriptor set
+        let storage_ds = renderer.storage_descriptor_sets[renderer.storage_manager.current_frame()].vk_set();
         cmd.bind_descriptor_sets(layout, 0, &[storage_ds], &[]);
 
         let bindless_ds = renderer.bindless_manager.descriptor_set().vk();

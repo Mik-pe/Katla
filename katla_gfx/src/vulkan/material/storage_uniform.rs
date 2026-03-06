@@ -289,49 +289,98 @@ impl StorageUniformLayout {
 
 /// Storage uniform manager.
 ///
-/// Manages a persistently mapped buffer containing frame uniforms
-/// and an array of per-object uniforms accessed via instance_index.
+/// Manages persistently mapped buffers containing frame uniforms
+/// and arrays of per-object uniforms accessed via instance_index.
+///
+/// This manager holds `FRAMES_IN_FLIGHT` separate buffers to support
+/// double-buffering. Use `start_frame()` to select the active frame
+/// before any storage operations.
+///
+/// # Frame Lifecycle
+/// ```ignore
+/// storage_manager.start_frame(frame_index);  // Select active frame
+/// storage_manager.update_frame(...);           // No frame_index needed
+/// storage_manager.update_object_bindless(...); // No frame_index needed
+/// // Next frame: call start_frame again with new index
+/// ```
 pub struct StorageUniformManager {
-    /// Persistent storage buffer.
-    buffer: DeviceAddressBuffer,
+    /// Per-frame storage buffers (one for each frame in flight).
+    buffers: Vec<DeviceAddressBuffer>,
+    /// Currently active frame index (selects which buffer operations use).
+    current_frame: usize,
 }
 
 impl StorageUniformManager {
-    /// Create a new storage uniform manager.
+    /// Create a new storage uniform manager with per-frame buffers.
     ///
-    /// Creates a persistently mapped buffer.
-    /// Buffer size is ~20KB (20608 bytes) to support up to 256 objects.
+    /// Creates `FRAMES_IN_FLIGHT` persistently mapped buffers to support
+    /// double-buffered rendering. Buffer size is ~28KB (28928 bytes) to support
+    /// up to 256 objects.
     ///
     /// # Arguments
     /// * `context` - Vulkan context for buffer creation
+    /// * `frames_in_flight` - Number of concurrent frames (typically 2 for double-buffering)
     ///
     /// # Returns
     /// A new StorageUniformManager, or an error if buffer creation fails
     ///
     /// # Errors
     /// Returns `RendererError::VulkanError` if allocation fails
-    pub fn new(context: Rc<VulkanContext>) -> Result<Self, RendererError> {
-        let buffer = DeviceAddressBuffer::new_persistent(
-            context,
-            StorageUniformLayout::MAX_BUFFER_SIZE as u64,
-        )?;
+    pub fn new(context: Rc<VulkanContext>, frames_in_flight: usize) -> Result<Self, RendererError> {
+        let mut buffers = Vec::with_capacity(frames_in_flight);
+        for _ in 0..frames_in_flight {
+            buffers.push(DeviceAddressBuffer::new_persistent(
+                context.clone(),
+                StorageUniformLayout::MAX_BUFFER_SIZE as u64,
+            )?);
+        }
 
-        Ok(Self { buffer })
+        Ok(Self {
+            buffers,
+            current_frame: 0,
+        })
+    }
+
+    /// Start a new frame - selects which buffer subsequent operations will use.
+    ///
+    /// Must be called once per frame before any update methods.
+    ///
+    /// # Arguments
+    /// * `frame_index` - Frame index (0 to frames_in_flight-1)
+    ///
+    /// # Panics
+    /// Panics if frame_index >= frames_in_flight
+    pub fn start_frame(&mut self, frame_index: usize) {
+        assert!(
+            frame_index < self.buffers.len(),
+            "Frame index {} out of bounds (max {})",
+            frame_index,
+            self.buffers.len()
+        );
+        self.current_frame = frame_index;
+    }
+
+    /// Get the currently active frame index.
+    pub fn current_frame(&self) -> usize {
+        self.current_frame
+    }
+
+    /// Get the number of frames in flight.
+    pub fn frames_in_flight(&self) -> usize {
+        self.buffers.len()
     }
 
     /// Update frame uniforms (view, projection, and lighting).
     ///
-    /// This writes the frame data to the start of the buffer
+    /// This writes the frame data to the start of the current frame's buffer
     /// (offset 0, 256 bytes total). Should be called once per frame.
+    ///
+    /// # Note
+    /// `start_frame()` must be called before this method to select the active frame.
     ///
     /// # Arguments
     /// * `view` - View matrix (world-to-camera)
     /// * `proj` - Projection matrix (camera-to-clip)
-    ///
-    /// # Note
-    /// This computes a default inverse view-projection matrix. For accurate
-    /// sky rendering, use `update_frame_with_lighting()` with the correct
-    /// inverse VP matrix.
     pub fn update_frame(&mut self, view: &[f32; 16], proj: &[f32; 16]) {
         // Default inverse VP (identity - won't work correctly for sky)
         let default_inv_vp = [0.0f32; 16];
@@ -351,6 +400,9 @@ impl StorageUniformManager {
 
     /// Update frame uniforms with full lighting parameters.
     ///
+    /// # Note
+    /// `start_frame()` must be called before this method to select the active frame.
+    ///
     /// # Arguments
     /// * `view` - View matrix (world-to-camera)
     /// * `proj` - Projection matrix (camera-to-clip) - column-major [f32; 16]
@@ -369,8 +421,9 @@ impl StorageUniformManager {
         light_color: &[f32; 4],
         light_intensity: f32,
     ) {
+        let buffer = &mut self.buffers[self.current_frame];
         unsafe {
-            let mapped = self.buffer.map();
+            let mapped = buffer.map();
             let frame_ptr = mapped.as_ptr() as *mut FrameUniforms;
             *frame_ptr = FrameUniforms {
                 view: *view,
@@ -383,14 +436,13 @@ impl StorageUniformManager {
             };
         }
         // Flush frame uniforms to make CPU writes visible to GPU
-        self.buffer
-            .flush(0, std::mem::size_of::<FrameUniforms>() as u64);
+        buffer.flush(0, std::mem::size_of::<FrameUniforms>() as u64);
     }
 
     /// Update frame uniforms from a FrameUniforms struct.
     ///
-    /// # Arguments
-    /// * `frame` - Frame uniforms from the rendering module
+    /// # Note
+    /// `start_frame()` must be called before this method to select the active frame.
     pub fn update_from_frame_uniforms(&mut self, frame: &crate::renderer::FrameUniforms) {
         self.update_frame_with_lighting(
             &frame.view_matrix,
@@ -408,6 +460,9 @@ impl StorageUniformManager {
     /// Writes per-object data (model matrix + color) to the object array.
     /// Automatically handles object index lookup and offset calculation.
     ///
+    /// # Note
+    /// `start_frame()` must be called before this method to select the active frame.
+    ///
     /// # Arguments
     /// * `index` - Object index (0-255)
     /// * `model` - Model matrix (object-to-world) - column-major [f32; 16]
@@ -421,6 +476,9 @@ impl StorageUniformManager {
     }
 
     /// Update object uniforms with PBR material parameters.
+    ///
+    /// # Note
+    /// `start_frame()` must be called before this method to select the active frame.
     ///
     /// # Arguments
     /// * `index` - Object index (0-255)
@@ -443,6 +501,9 @@ impl StorageUniformManager {
     }
 
     /// Update object uniforms with full PBR material parameters including normal scale.
+    ///
+    /// # Note
+    /// `start_frame()` must be called before this method to select the active frame.
     ///
     /// # Arguments
     /// * `index` - Object index (0-255)
@@ -477,6 +538,9 @@ impl StorageUniformManager {
 
     /// Update object uniforms with bindless texture indices.
     ///
+    /// # Note
+    /// `start_frame()` must be called before this method to select the active frame.
+    ///
     /// # Arguments
     /// * `index` - Object index (0-255)
     /// * `model` - Model matrix in column-major format (object-to-world)
@@ -506,8 +570,9 @@ impl StorageUniformManager {
         let offset = StorageUniformLayout::object_offset(index);
 
         // Map and write object uniforms at calculated offset
+        let buffer = &mut self.buffers[self.current_frame];
         unsafe {
-            let mapped = self.buffer.map();
+            let mapped = buffer.map();
             let object_ptr = (mapped.as_ptr() as usize + offset) as *mut ObjectUniforms;
             *object_ptr = ObjectUniforms {
                 model: *model,
@@ -517,14 +582,16 @@ impl StorageUniformManager {
             };
         }
         // Flush object data to make CPU writes visible to GPU
-        self.buffer
-            .flush(offset as u64, std::mem::size_of::<ObjectUniforms>() as u64);
+        buffer.flush(offset as u64, std::mem::size_of::<ObjectUniforms>() as u64);
     }
 
     /// Bulk update multiple objects at once for efficient instancing.
     ///
     /// This is more efficient than calling `update_object_bindless` multiple times
     /// because it maps the buffer only once and writes all data in a batch.
+    ///
+    /// # Note
+    /// `start_frame()` must be called before this method to select the active frame.
     ///
     /// # Arguments
     /// * `start_index` - First object index to update
@@ -540,8 +607,9 @@ impl StorageUniformManager {
         );
 
         // Map buffer once and write all objects
+        let buffer = &mut self.buffers[self.current_frame];
         unsafe {
-            let mapped = self.buffer.map();
+            let mapped = buffer.map();
             let base_ptr = mapped.as_ptr() as usize + StorageUniformLayout::OBJECT_ARRAY_OFFSET;
 
             for (i, obj) in objects.iter().enumerate() {
@@ -563,22 +631,37 @@ impl StorageUniformManager {
         StorageUniformLayout::MAX_OBJECTS
     }
 
-    /// Get total buffer size in bytes.
-    #[inline]
-    pub fn buffer_size(&self) -> u64 {
-        self.buffer.size()
-    }
-
-    /// Check if buffer is persistently mapped.
+    /// Check if buffers are persistently mapped.
     #[inline]
     pub fn is_persistent(&self) -> bool {
-        self.buffer.is_persistent()
+        self.buffers.first().map_or(false, |b| b.is_persistent())
     }
 
-    /// Get the underlying buffer handle for descriptor creation.
+    /// Get the underlying buffer handle for the current frame.
+    ///
+    /// For descriptor set creation - use this during initialization
+    /// to get each frame's buffer handle.
+    ///
+    /// # Note
+    /// `start_frame()` must be called before this method to select the active frame.
     #[inline]
-    pub fn buffer(&self) -> vk::Buffer {
-        self.buffer.buffer
+    pub fn current_buffer(&self) -> vk::Buffer {
+        self.buffers[self.current_frame].buffer
+    }
+
+    /// Get buffer handle for a specific frame (for descriptor set initialization).
+    ///
+    /// # Arguments
+    /// * `frame_index` - Frame index (0 to frames_in_flight-1)
+    #[inline]
+    pub fn buffer(&self, frame_index: usize) -> vk::Buffer {
+        self.buffers[frame_index].buffer
+    }
+
+    /// Get total buffer size in bytes (same for all frames).
+    #[inline]
+    pub fn buffer_size(&self) -> u64 {
+        StorageUniformLayout::MAX_BUFFER_SIZE as u64
     }
 }
 
