@@ -25,9 +25,9 @@ fn test_render_graph_api_compilation() {
 #[test]
 fn test_geometry_pass_builder() {
     // Test that GeometryPass builds correctly.
+    // Note: Depth is handled automatically using the global depth buffer.
     let _pass = GeometryPass::new("test_geometry")
         .write_color("color", ImageFormat::R16G16B16A16Sfloat)
-        .write_depth("depth", ImageFormat::D32Sfloat)
         .read("shadow_map");
 }
 

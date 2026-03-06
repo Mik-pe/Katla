@@ -107,6 +107,13 @@ struct UiFrameData {
 /// This is an implementation detail for double-buffering.
 pub(crate) const FRAMES_IN_FLIGHT: usize = 2;
 
+/// Maximum number of objects that can be drawn per frame.
+///
+/// This is the limit of the storage buffer array that holds per-object data.
+/// Each draw call uses one slot indexed by `instance_index`. If you exceed
+/// this limit, `execute_draw_calls` will panic with a clear message.
+pub const MAX_OBJECTS_PER_FRAME: u32 = 256;
+
 impl VulkanRenderer {
     pub fn init(
         display: &dyn HasDisplayHandle,
@@ -325,11 +332,12 @@ impl VulkanRenderer {
     /// This method writes all per-object data from draw calls to the storage buffer.
     /// Frame uniforms should be set separately via `set_frame_uniforms()`.
     ///
-    /// This method writes all per-object data from draw calls to the storage buffer.
-    /// Frame uniforms should be set separately via `set_frame_uniforms()`.
-    ///
     /// # Arguments
     /// * `draw_list` - The DrawList from FrameContext containing draw calls with instance_index
+    ///
+    /// # Panics
+    ///
+    /// Panics if any draw call's `instance_index` exceeds `MAX_OBJECTS_PER_FRAME`.
     ///
     /// # Example
     /// ```ignore
@@ -355,6 +363,15 @@ impl VulkanRenderer {
         // Write all per-object data to storage buffer
         for draw_call in &draw_list.draws {
             let index = draw_call.instance_index as usize;
+
+            // Bounds check with clear error message
+            if index >= MAX_OBJECTS_PER_FRAME as usize {
+                panic!(
+                    "Instance index {} exceeds MAX_OBJECTS_PER_FRAME ({}). \
+                    Increase the limit or reduce the number of draw calls per frame.",
+                    index, MAX_OBJECTS_PER_FRAME
+                );
+            }
 
             // Extract material parameters
             let color = draw_call.color.unwrap_or([1.0, 1.0, 1.0, 1.0]);
@@ -514,7 +531,12 @@ impl VulkanRenderer {
     ) -> Result<u32, RendererError> {
         self.bindless_manager
             .register_texture(image_view)
-            .map_err(|e| RendererError::InitializationFailed(format!("Failed to register bindless texture: {}", e)))
+            .map_err(|e| {
+                RendererError::InitializationFailed(format!(
+                    "Failed to register bindless texture: {}",
+                    e
+                ))
+            })
     }
 
     /// Set the HDR texture index for tonemapping.
@@ -553,7 +575,9 @@ impl VulkanRenderer {
         // This is a documented contract between the renderer and fullscreen shaders.
         self.storage_manager.update_object_bindless(
             0, // object index 0 is reserved for tonemap params
-            &[1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0], // identity matrix (not used)
+            &[
+                1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
+            ], // identity matrix (not used)
             &[1.0, 1.0, 1.0, 1.0], // white color (not used)
             0.0, // metallic (not used)
             0.0, // roughness (not used)
@@ -1163,9 +1187,9 @@ impl VulkanRenderer {
         &mut self,
         shader_path: std::path::PathBuf,
     ) -> Result<crate::handle::PipelineHandle, RendererError> {
-        use crate::vulkan::material::shadermodule::ShaderCache;
-        use crate::vulkan::material::builder::PipelineBuilder;
         use crate::pipeline::{CullMode, FrontFace};
+        use crate::vulkan::material::builder::PipelineBuilder;
+        use crate::vulkan::material::shadermodule::ShaderCache;
         use ash::vk;
 
         // Create storage descriptor layout for fullscreen pass
@@ -1182,12 +1206,15 @@ impl VulkanRenderer {
                 .stage_flags(vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT),
         ];
 
-        let storage_layout_info = vk::DescriptorSetLayoutCreateInfo::default().bindings(&storage_bindings);
+        let storage_layout_info =
+            vk::DescriptorSetLayoutCreateInfo::default().bindings(&storage_bindings);
         let storage_layout = unsafe {
             self.context
                 .device
                 .create_descriptor_set_layout(&storage_layout_info, None)
-                .map_err(|e| RendererError::InitializationFailed(format!("Descriptor layout: {:?}", e)))?
+                .map_err(|e| {
+                    RendererError::InitializationFailed(format!("Descriptor layout: {:?}", e))
+                })?
         };
 
         let bindless_layout = self.bindless_manager.descriptor_set_layout();
@@ -1200,7 +1227,9 @@ impl VulkanRenderer {
             .map_err(|e| RendererError::InitializationFailed(format!("Vertex shader: {:?}", e)))?;
         let frag_module = cache
             .load_shader(&shader_path, vk::ShaderStageFlags::FRAGMENT)
-            .map_err(|e| RendererError::InitializationFailed(format!("Fragment shader: {:?}", e)))?;
+            .map_err(|e| {
+                RendererError::InitializationFailed(format!("Fragment shader: {:?}", e))
+            })?;
         drop(cache);
 
         // Build pipeline with fullscreen-specific settings
@@ -1216,9 +1245,9 @@ impl VulkanRenderer {
                 Some(crate::texture::ImageFormat::D32SfloatS8Uint),
             );
 
-        let pipeline = builder
-            .build_dynamic()
-            .map_err(|e| RendererError::InitializationFailed(format!("Pipeline creation: {:?}", e)))?;
+        let pipeline = builder.build_dynamic().map_err(|e| {
+            RendererError::InitializationFailed(format!("Pipeline creation: {:?}", e))
+        })?;
 
         Ok(self.asset_registry.register_pipeline(pipeline))
     }

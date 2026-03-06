@@ -34,9 +34,8 @@ use std::collections::{HashMap, HashSet};
 /// - Iterate: O(n) with excellent cache locality
 ///
 /// # Example
-/// ```rust
-/// use katla_ecs::sparse_set::SparseSet;
-///
+/// ```rust,ignore
+/// // SparseSet is internal API - this demonstrates usage
 /// let mut set = SparseSet::new();
 /// set.insert(0, "value1");
 /// set.insert(1, "value2");
