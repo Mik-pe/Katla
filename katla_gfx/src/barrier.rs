@@ -332,6 +332,18 @@ impl ImageBarrier {
             );
         }
 
+        // COLOR_ATTACHMENT_OPTIMAL -> SHADER_READ_ONLY_OPTIMAL (render-to-texture)
+        if old_layout == vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL
+            && new_layout == vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL
+        {
+            return (
+                PipelineStage2Flags::COLOR_ATTACHMENT_OUTPUT,
+                PipelineStage2Flags::FRAGMENT_SHADER,
+                AccessFlags2::COLOR_ATTACHMENT_WRITE,
+                AccessFlags2::SHADER_READ,
+            );
+        }
+
         panic!(
             "Unsupported layout transition: {:?} -> {:?}",
             old_layout, new_layout
@@ -557,5 +569,24 @@ mod tests {
             AccessFlags2::DEPTH_STENCIL_ATTACHMENT_READ
                 | AccessFlags2::DEPTH_STENCIL_ATTACHMENT_WRITE
         );
+    }
+
+    /// Test the render-to-texture workflow (HDR rendering).
+    ///
+    /// Pattern for HDR rendering with tonemapping:
+    /// 1. Render to HDR color attachment (COLOR_ATTACHMENT_OPTIMAL)
+    /// 2. Transition to SHADER_READ_ONLY for tonemap pass sampling
+    /// 3. Tonemap pass samples HDR and outputs to swapchain
+    #[test]
+    fn test_workflow_render_to_texture() {
+        // COLOR_ATTACHMENT -> SHADER_READ_ONLY (for post-processing sampling)
+        let (src_stage, dst_stage, src_access, dst_access) = ImageBarrier::deduce_transition_masks(
+            vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+            vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+        );
+        assert_eq!(src_stage, PipelineStage2Flags::COLOR_ATTACHMENT_OUTPUT);
+        assert_eq!(dst_stage, PipelineStage2Flags::FRAGMENT_SHADER);
+        assert_eq!(src_access, AccessFlags2::COLOR_ATTACHMENT_WRITE);
+        assert_eq!(dst_access, AccessFlags2::SHADER_READ);
     }
 }

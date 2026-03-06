@@ -35,7 +35,7 @@ mod geometry;
 mod shadow;
 mod ui;
 
-pub use fullscreen::FullscreenPass;
+pub use fullscreen::{FullscreenPass, TonemapOperator, TonemapParams};
 pub use geometry::GeometryPass;
 pub use shadow::{LightType, ShadowPass};
 pub use ui::UIPass;

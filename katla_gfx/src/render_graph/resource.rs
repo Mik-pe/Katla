@@ -3,6 +3,39 @@
 use std::marker::PhantomData;
 
 use ash::vk;
+use crate::texture::ImageFormat;
+
+/// Transient resource types for render graph.
+#[derive(Clone, Debug, PartialEq)]
+pub enum GraphResourceType {
+    /// Color attachment for rendering (supports HDR formats).
+    ColorAttachment {
+        /// Clear value as [R, G, B, A]. None = don't clear.
+        clear_value: Option<[f32; 4]>,
+    },
+    /// Depth-stencil attachment.
+    DepthAttachment {
+        /// Clear value (0.0 = far, 1.0 = near for reverse Z).
+        clear_value: f32,
+    },
+    /// Sampled image for shader reading (textures).
+    SampledImage,
+}
+
+/// Descriptor for creating a transient resource in the render graph.
+#[derive(Clone, Debug)]
+pub struct GraphResourceDesc {
+    /// Resource name (used for pass read/write declarations).
+    pub name: String,
+    /// Resource type and parameters.
+    pub resource_type: GraphResourceType,
+    /// Image format (for texture resources).
+    pub format: ImageFormat,
+    /// Width in pixels.
+    pub width: u32,
+    /// Height in pixels.
+    pub height: u32,
+}
 
 /// Resource state for barrier tracking.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

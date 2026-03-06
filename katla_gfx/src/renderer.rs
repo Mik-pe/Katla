@@ -421,27 +421,42 @@ impl VulkanRenderer {
     // Material Creation API
     // ========================================================================
 
-    /// Create a PBR material with default settings.
+    /// Create a PBR material with configurable color format.
     ///
     /// This is a convenience method for creating standard PBR materials with
     /// sensible defaults: depth testing enabled, backface culling enabled,
     /// opaque rendering.
     ///
+    /// Uses swapchain color format (B8G8R8A8Srgb) by default. Specify HDR format
+    /// for rendering to intermediate textures (e.g., for tonemapping passes).
+    ///
     /// # Arguments
     /// * `shader_path` - Path to WGSL shader file
+    /// * `color_format` - Optional color attachment format. None = swapchain format (LDR),
+    ///                   Some(ImageFormat::R16G16B16A16Sfloat) = HDR rendering
     ///
     /// # Returns
     /// A MaterialHandle for the created material.
     ///
     /// # Example
     /// ```ignore
-    /// let material = renderer.create_pbr_material("shaders/model.wgsl")?;
+    /// // LDR material (default, for swapchain rendering)
+    /// let ldr_material = renderer.create_pbr_material("shaders/model.wgsl", None)?;
+    ///
+    /// // HDR material (for intermediate render targets)
+    /// let hdr_material = renderer.create_pbr_material(
+    ///     "shaders/model.wgsl",
+    ///     Some(ImageFormat::R16G16B16A16Sfloat),
+    /// )?;
     /// ```
     pub fn create_pbr_material(
         &mut self,
         shader_path: impl AsRef<std::path::Path>,
+        color_format: Option<crate::texture::ImageFormat>,
     ) -> Result<MaterialHandle, RendererError> {
         use crate::vulkan::material::compiler::{MaterialOptions, VertexType};
+
+        let format = color_format.unwrap_or(crate::texture::ImageFormat::B8G8R8A8Srgb);
 
         self.material_compiler
             .compile(
@@ -450,12 +465,102 @@ impl VulkanRenderer {
                 crate::vulkan::material::compiler::MaterialType::Pbr,
                 MaterialOptions {
                     vertex_type: VertexType::Pbr,
+                    color_format: format,
                     ..Default::default()
                 },
             )
             .map_err(|e| {
                 RendererError::InitializationFailed(format!("Material compilation failed: {}", e))
             })
+    }
+
+    /// Ensure a material is compiled for a specific format.
+    ///
+    /// If the material was created with `ImageFormat::Auto`, this will compile
+    /// it for the specified format. If already compiled, this does nothing.
+    ///
+    /// This is called automatically by the frame graph before execution.
+    pub(crate) fn ensure_material_compiled(
+        &mut self,
+        material: MaterialHandle,
+        format: crate::texture::ImageFormat,
+    ) -> Result<(), RendererError> {
+        self.material_compiler
+            .compile_deferred_material(&mut self.asset_registry, material, format)
+            .map_err(|e| {
+                RendererError::InitializationFailed(format!("Material compilation failed: {}", e))
+            })
+    }
+
+    /// Register a texture image view with the bindless texture system.
+    ///
+    /// Returns the bindless slot index that can be used to sample this texture
+    /// from shaders using the bindless texture array.
+    ///
+    /// # Arguments
+    /// * `image_view` - Vulkan image view handle
+    ///
+    /// # Returns
+    /// The bindless texture slot index (u32)
+    ///
+    /// # Example
+    /// ```ignore
+    /// let slot = renderer.register_bindless_texture(image_view)?;
+    /// // Pass slot to shader via object_uniforms.texture_indices.x
+    /// ```
+    pub fn register_bindless_texture(
+        &mut self,
+        image_view: vk::ImageView,
+    ) -> Result<u32, RendererError> {
+        self.bindless_manager
+            .register_texture(image_view)
+            .map_err(|e| RendererError::InitializationFailed(format!("Failed to register bindless texture: {}", e)))
+    }
+
+    /// Set the HDR texture index for tonemapping.
+    ///
+    /// Sets object[0].texture_indices.x to the HDR texture bindless index.
+    /// The tonemap shader reads from objects[0] to get the HDR texture index.
+    ///
+    /// # Arguments
+    /// * `hdr_texture_index` - Bindless texture index for HDR color attachment
+    /// Set the HDR texture index for tonemapping.
+    ///
+    /// This method sets up object[0] in the storage buffer to pass the HDR texture index
+    /// to fullscreen shaders (like the tonemap pass). The tonemap shader reads from
+    /// `objects[0].texture_indices.x` to get the bindless texture slot.
+    ///
+    /// # Contract
+    /// - Object index 0 is reserved for fullscreen/post-processing shader parameters
+    /// - The HDR texture must already be registered with the bindless system
+    /// - Tonemap shaders must read from `objects[0].texture_indices.x`
+    ///
+    /// # Arguments
+    /// * `hdr_texture_index` - Bindless texture slot index for the HDR color attachment
+    ///
+    /// # Example
+    /// ```ignore
+    /// // Register HDR texture with bindless
+    /// let hdr_slot = frame_graph.register_transient_texture_bindless(&mut renderer, "hdr_color")?;
+    ///
+    /// // Set up tonemap shader to sample from HDR texture
+    /// renderer.set_hdr_texture_index(hdr_slot);
+    /// ```
+    pub fn set_hdr_texture_index(&mut self, hdr_texture_index: u32) {
+        // Set object[0] texture indices (HDR texture in x, others unused)
+        //
+        // Note: Object index 0 is reserved for fullscreen/post-processing shader parameters.
+        // This is a documented contract between the renderer and fullscreen shaders.
+        self.storage_manager.update_object_bindless(
+            0, // object index 0 is reserved for tonemap params
+            &[1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0], // identity matrix (not used)
+            &[1.0, 1.0, 1.0, 1.0], // white color (not used)
+            0.0, // metallic (not used)
+            0.0, // roughness (not used)
+            1.0, // ao (not used)
+            0.0, // emission index (not used)
+            [hdr_texture_index, 0, 0, 0], // HDR texture index in x
+        );
     }
 
     /// Create a UI material with default settings.
@@ -1009,7 +1114,9 @@ impl VulkanRenderer {
         ];
 
         let material_asset = MaterialAsset {
-            pipeline,
+            pipeline: Some(pipeline),
+            fully_compiled: true,
+            shader_path: None,
             vertex_binding,
             material_data: crate::renderer::registry::MaterialData {
                 color: [1.0, 1.0, 1.0, 1.0],
@@ -1024,6 +1131,96 @@ impl VulkanRenderer {
         };
 
         self.asset_registry.register_material(material_asset)
+    }
+
+    /// Compile a fullscreen/post-processing shader and return its pipeline handle.
+    ///
+    /// This is intended for post-processing effects like tonemapping, bloom, etc.
+    /// The shader should generate a fullscreen triangle using `@builtin(vertex_index)`
+    /// and sample from input textures.
+    ///
+    /// # Arguments
+    ///
+    /// * `shader_path` - Path to the WGSL shader file (contains both vertex and fragment)
+    ///
+    /// # Returns
+    ///
+    /// A `PipelineHandle` that can be passed to `FullscreenPass::pipeline()`.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// let tonemap_pipeline = renderer.compile_fullscreen_shader(PathBuf::from("shaders/tonemapping.wgsl"))?;
+    ///
+    /// let graph = renderer.create_frame_graph()
+    ///     .add_pass(FullscreenPass::new("tonemap")
+    ///         .read("hdr_color")
+    ///         .write_backbuffer()
+    ///         .pipeline(tonemap_pipeline))
+    ///     .build()?;
+    /// ```
+    pub fn compile_fullscreen_shader(
+        &mut self,
+        shader_path: std::path::PathBuf,
+    ) -> Result<crate::handle::PipelineHandle, RendererError> {
+        use crate::vulkan::material::shadermodule::ShaderCache;
+        use crate::vulkan::material::builder::PipelineBuilder;
+        use crate::pipeline::{CullMode, FrontFace};
+        use ash::vk;
+
+        // Create storage descriptor layout for fullscreen pass
+        let storage_bindings = [
+            vk::DescriptorSetLayoutBinding::default()
+                .binding(0)
+                .descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
+                .descriptor_count(1)
+                .stage_flags(vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT),
+            vk::DescriptorSetLayoutBinding::default()
+                .binding(1)
+                .descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
+                .descriptor_count(1)
+                .stage_flags(vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT),
+        ];
+
+        let storage_layout_info = vk::DescriptorSetLayoutCreateInfo::default().bindings(&storage_bindings);
+        let storage_layout = unsafe {
+            self.context
+                .device
+                .create_descriptor_set_layout(&storage_layout_info, None)
+                .map_err(|e| RendererError::InitializationFailed(format!("Descriptor layout: {:?}", e)))?
+        };
+
+        let bindless_layout = self.bindless_manager.descriptor_set_layout();
+
+        // Load shaders (fullscreen shaders use same module for both stages)
+        let mut cache = self.material_compiler.shader_cache.borrow_mut();
+
+        let vert_module = cache
+            .load_shader(&shader_path, vk::ShaderStageFlags::VERTEX)
+            .map_err(|e| RendererError::InitializationFailed(format!("Vertex shader: {:?}", e)))?;
+        let frag_module = cache
+            .load_shader(&shader_path, vk::ShaderStageFlags::FRAGMENT)
+            .map_err(|e| RendererError::InitializationFailed(format!("Fragment shader: {:?}", e)))?;
+        drop(cache);
+
+        // Build pipeline with fullscreen-specific settings
+        let mut builder = PipelineBuilder::new(self.context.clone())
+            .with_shaders(vert_module, frag_module)
+            .with_descriptor_layouts(vec![storage_layout, bindless_layout])
+            // No vertex binding - fullscreen triangle generated in shader
+            .with_depth_test(false, false, crate::pipeline::CompareOp::Always)
+            .with_cull_mode(CullMode::None, FrontFace::CounterClockwise)
+            // Render to swapchain format (output is LDR SRGB)
+            .with_rendering_formats(
+                Some(crate::texture::ImageFormat::B8G8R8A8Srgb),
+                Some(crate::texture::ImageFormat::D32SfloatS8Uint),
+            );
+
+        let pipeline = builder
+            .build_dynamic()
+            .map_err(|e| RendererError::InitializationFailed(format!("Pipeline creation: {:?}", e)))?;
+
+        Ok(self.asset_registry.register_pipeline(pipeline))
     }
 
     /// Returns the default white PBR material handle.

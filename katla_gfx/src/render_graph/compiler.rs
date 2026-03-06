@@ -5,87 +5,45 @@
 //!
 //! # Overview
 //!
-//! - [`ExecutionPlan`] - Contains sorted pass indices and computed barriers
+//! - [`ExecutionPlan`] - Contains sorted pass indices and pre-computed barriers
 //! - [`GraphCompiler`] - Analyzes dependencies and creates execution plans
-//! - [`ResourceBarrier`] - Describes a resource state transition
 //!
 //! # Algorithm
 //!
 //! 1. **Dependency Analysis**: Build a directed graph from pass read/write relationships
 //! 2. **Topological Sort**: Order passes so dependencies execute first
 //! 3. **Cycle Detection**: Detect and report cyclic dependencies
-//! 4. **Barrier Computation**: Calculate required resource barriers between passes
+
+//!
+//! The frame graph compiler focuses on pass ordering and dependency analysis.
+//! Barrier computation is handled separately in the graph execution layer.
+
+//! when transient resources exist.
 
 use std::collections::{HashMap, HashSet, VecDeque};
 
 use super::error::RenderGraphError;
 use super::pass::{PassDesc, PassType};
-use super::resource::{GraphResourceHandle, ResourceState};
-
-/// Describes a resource barrier between passes.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ResourceBarrier {
-    pub resource: GraphResourceHandle,
-    pub src_state: ResourceState,
-    pub dst_state: ResourceState,
-    pub src_pass: Option<usize>,
-    pub dst_pass: usize,
-}
-
-impl ResourceBarrier {
-    pub fn new(
-        resource: GraphResourceHandle,
-        src_state: ResourceState,
-        dst_state: ResourceState,
-        src_pass: Option<usize>,
-        dst_pass: usize,
-    ) -> Self {
-        Self {
-            resource,
-            src_state,
-            dst_state,
-            src_pass,
-            dst_pass,
-        }
-    }
-}
 
 /// Compiled execution plan for a render graph.
 ///
 /// Contains:
 /// - Topologically sorted pass indices
-/// - Pre-computed barriers for each pass
 /// - Resource state tracking info
 #[derive(Debug, Clone)]
 pub struct ExecutionPlan {
     sorted_passes: Vec<usize>,
-    barriers: HashMap<usize, Vec<ResourceBarrier>>,
-    resource_initial_states: HashMap<GraphResourceHandle, ResourceState>,
 }
 
 impl ExecutionPlan {
     fn new() -> Self {
         Self {
             sorted_passes: Vec::new(),
-            barriers: HashMap::new(),
-            resource_initial_states: HashMap::new(),
         }
     }
 
     pub fn sorted_passes(&self) -> &[usize] {
         &self.sorted_passes
-    }
-
-    pub fn barriers_for_pass(&self, pass_index: usize) -> Option<&[ResourceBarrier]> {
-        self.barriers.get(&pass_index).map(Vec::as_slice)
-    }
-
-    pub fn all_barriers(&self) -> &HashMap<usize, Vec<ResourceBarrier>> {
-        &self.barriers
-    }
-
-    pub fn resource_initial_states(&self) -> &HashMap<GraphResourceHandle, ResourceState> {
-        &self.resource_initial_states
     }
 }
 
@@ -100,8 +58,8 @@ struct DependencyNode {
 #[derive(Debug, Clone)]
 pub struct PassInfo {
     pub name: String,
-    pub reads: Vec<GraphResourceHandle>,
-    pub writes: Vec<GraphResourceHandle>,
+    pub reads: Vec<String>,
+    pub writes: Vec<String>,
     pub pass_type: PassType,
 }
 
@@ -120,8 +78,10 @@ impl From<&PassDesc> for PassInfo {
 #[derive(Debug)]
 pub struct GraphCompiler {
     passes: Vec<PassInfo>,
-    resource_writers: HashMap<GraphResourceHandle, Vec<usize>>,
-    resource_readers: HashMap<GraphResourceHandle, Vec<usize>>,
+    /// Maps resource name -> pass indices that write to it
+    resource_writers: HashMap<String, Vec<usize>>,
+    /// Maps resource name -> pass indices that read from it
+    resource_readers: HashMap<String, Vec<usize>>,
     dependency_graph: Vec<DependencyNode>,
 }
 
@@ -153,13 +113,13 @@ impl GraphCompiler {
         for (pass_idx, pass) in self.passes.iter().enumerate() {
             for resource in &pass.writes {
                 self.resource_writers
-                    .entry(*resource)
+                    .entry(resource.clone())
                     .or_default()
                     .push(pass_idx);
             }
             for resource in &pass.reads {
                 self.resource_readers
-                    .entry(*resource)
+                    .entry(resource.clone())
                     .or_default()
                     .push(pass_idx);
             }
@@ -305,71 +265,13 @@ impl GraphCompiler {
         None
     }
 
-    /// Compute barriers for resource state transitions.
-    ///
-    /// Analyzes resource usage across passes and generates barriers
-    /// for each state transition.
-    pub fn compute_barriers(
-        &self,
-        sorted_passes: &[usize],
-        resource_states: &HashMap<GraphResourceHandle, ResourceState>,
-    ) -> HashMap<usize, Vec<ResourceBarrier>> {
-        let mut barriers: HashMap<usize, Vec<ResourceBarrier>> = HashMap::new();
-        let mut current_states: HashMap<GraphResourceHandle, ResourceState> =
-            resource_states.iter().map(|(&r, &s)| (r, s)).collect();
-
-        for &pass_idx in sorted_passes {
-            let pass = &self.passes[pass_idx];
-            let mut pass_barriers = Vec::new();
-
-            for &resource in &pass.reads {
-                let dst_state = ResourceState::ShaderRead;
-                if let Some(&src_state) = current_states.get(&resource) {
-                    if src_state != dst_state && src_state != ResourceState::Undefined {
-                        pass_barriers.push(ResourceBarrier::new(
-                            resource, src_state, dst_state, None, pass_idx,
-                        ));
-                    }
-                }
-                current_states.insert(resource, dst_state);
-            }
-
-            for &resource in &pass.writes {
-                let dst_state = match pass.pass_type {
-                    PassType::Graphics => ResourceState::ColorAttachment,
-                    PassType::Compute => ResourceState::ShaderWrite,
-                    PassType::Transfer => ResourceState::TransferDst,
-                };
-
-                if let Some(&src_state) = current_states.get(&resource) {
-                    if src_state != dst_state && src_state != ResourceState::Undefined {
-                        pass_barriers.push(ResourceBarrier::new(
-                            resource, src_state, dst_state, None, pass_idx,
-                        ));
-                    }
-                }
-                current_states.insert(resource, dst_state);
-            }
-
-            if !pass_barriers.is_empty() {
-                barriers.insert(pass_idx, pass_barriers);
-            }
-        }
-
-        barriers
-    }
-
     /// Compile the render graph into an execution plan.
     ///
     /// This is the main entry point that:
     /// 1. Analyzes dependencies
     /// 2. Detects cycles
     /// 3. Topologically sorts passes
-    /// 4. Computes barriers
-    pub fn compile(
-        mut self,
-        resource_states: &HashMap<GraphResourceHandle, ResourceState>,
-    ) -> Result<ExecutionPlan, RenderGraphError> {
+    pub fn compile(mut self) -> Result<ExecutionPlan, RenderGraphError> {
         self.analyze_dependencies();
 
         if let Some(cycle) = self.detect_cycle() {
@@ -384,12 +286,8 @@ impl GraphCompiler {
             .topological_sort()
             .map_err(RenderGraphError::DependencyCycle)?;
 
-        let barriers = self.compute_barriers(&sorted_passes, resource_states);
-
         let mut plan = ExecutionPlan::new();
         plan.sorted_passes = sorted_passes;
-        plan.barriers = barriers;
-        plan.resource_initial_states = resource_states.iter().map(|(&r, &s)| (r, s)).collect();
 
         Ok(plan)
     }
@@ -399,32 +297,21 @@ impl GraphCompiler {
 mod tests {
     use super::*;
 
-    fn make_resource(id: u32) -> GraphResourceHandle {
-        GraphResourceHandle::new(id)
-    }
-
-    fn make_pass(
-        name: &str,
-        reads: Vec<GraphResourceHandle>,
-        writes: Vec<GraphResourceHandle>,
-    ) -> PassInfo {
+    fn make_pass(name: &str, reads: Vec<&str>, writes: Vec<&str>) -> PassInfo {
         PassInfo {
             name: name.to_string(),
-            reads,
-            writes,
+            reads: reads.iter().map(|s| s.to_string()).collect(),
+            writes: writes.iter().map(|s| s.to_string()).collect(),
             pass_type: PassType::Graphics,
         }
     }
 
     #[test]
     fn test_topological_sort_simple() {
-        let r0 = make_resource(0);
-        let r1 = make_resource(1);
-
         let passes = vec![
-            make_pass("A", vec![], vec![r0]),
-            make_pass("B", vec![r0], vec![r1]),
-            make_pass("C", vec![r1], vec![]),
+            make_pass("A", vec![], vec!["r0"]),
+            make_pass("B", vec!["r0"], vec!["r1"]),
+            make_pass("C", vec!["r1"], vec![]),
         ];
 
         let mut compiler = GraphCompiler::new(passes);
@@ -441,12 +328,9 @@ mod tests {
 
     #[test]
     fn test_topological_sort_independent_passes() {
-        let r0 = make_resource(0);
-        let r1 = make_resource(1);
-
         let passes = vec![
-            make_pass("A", vec![], vec![r0]),
-            make_pass("B", vec![], vec![r1]),
+            make_pass("A", vec![], vec!["r0"]),
+            make_pass("B", vec![], vec!["r1"]),
             make_pass("C", vec![], vec![]),
         ];
 
@@ -459,11 +343,9 @@ mod tests {
 
     #[test]
     fn test_cycle_detection_no_cycle() {
-        let r0 = make_resource(0);
-
         let passes = vec![
-            make_pass("A", vec![], vec![r0]),
-            make_pass("B", vec![r0], vec![]),
+            make_pass("A", vec![], vec!["r0"]),
+            make_pass("B", vec!["r0"], vec![]),
         ];
 
         let mut compiler = GraphCompiler::new(passes);
@@ -474,20 +356,17 @@ mod tests {
 
     #[test]
     fn test_cycle_detection_with_cycle() {
-        let r0 = make_resource(0);
-        let r1 = make_resource(1);
-
         let passes = vec![
             PassInfo {
                 name: "A".to_string(),
-                reads: vec![r1],
-                writes: vec![r0],
+                reads: vec!["r1".to_string()],
+                writes: vec!["r0".to_string()],
                 pass_type: PassType::Compute,
             },
             PassInfo {
                 name: "B".to_string(),
-                reads: vec![r0],
-                writes: vec![r1],
+                reads: vec!["r0".to_string()],
+                writes: vec!["r1".to_string()],
                 pass_type: PassType::Compute,
             },
         ];
@@ -499,66 +378,15 @@ mod tests {
     }
 
     #[test]
-    fn test_barrier_computation() {
-        let r0 = make_resource(0);
-
-        let passes = vec![
-            make_pass("A", vec![], vec![r0]),
-            make_pass("B", vec![r0], vec![]),
-        ];
-
-        let mut compiler = GraphCompiler::new(passes);
-        compiler.analyze_dependencies();
-        let sorted = compiler.topological_sort().unwrap();
-
-        let mut initial_states = HashMap::new();
-        initial_states.insert(r0, ResourceState::Undefined);
-
-        let barriers = compiler.compute_barriers(&sorted, &initial_states);
-
-        let pass_b_barriers = barriers.get(&1);
-        if let Some(barriers) = pass_b_barriers {
-            assert!(barriers.iter().any(|b| b.resource == r0));
-        }
-    }
-
-    #[test]
-    fn test_barrier_state_transition() {
-        let r0 = make_resource(0);
-
-        let barrier = ResourceBarrier::new(
-            r0,
-            ResourceState::ColorAttachment,
-            ResourceState::ShaderRead,
-            Some(0),
-            1,
-        );
-
-        assert_eq!(barrier.resource, r0);
-        assert_eq!(barrier.src_state, ResourceState::ColorAttachment);
-        assert_eq!(barrier.dst_state, ResourceState::ShaderRead);
-        assert_eq!(barrier.src_pass, Some(0));
-        assert_eq!(barrier.dst_pass, 1);
-    }
-
-    #[test]
     fn test_compile_full_workflow() {
-        let r0 = make_resource(0);
-        let r1 = make_resource(1);
-
         let passes = vec![
-            make_pass("Geometry", vec![], vec![r0]),
-            make_pass("Lighting", vec![r0], vec![r1]),
-            make_pass("PostProcess", vec![r1], vec![]),
+            make_pass("Geometry", vec![], vec!["r0"]),
+            make_pass("Lighting", vec!["r0"], vec!["r1"]),
+            make_pass("PostProcess", vec!["r1"], vec![]),
         ];
 
         let compiler = GraphCompiler::new(passes);
-
-        let mut initial_states = HashMap::new();
-        initial_states.insert(r0, ResourceState::Undefined);
-        initial_states.insert(r1, ResourceState::Undefined);
-
-        let plan = compiler.compile(&initial_states).unwrap();
+        let plan = compiler.compile().unwrap();
 
         assert_eq!(plan.sorted_passes().len(), 3);
 
@@ -572,44 +400,24 @@ mod tests {
 
     #[test]
     fn test_execution_plan_accessors() {
-        let r0 = make_resource(0);
-
-        let passes = vec![make_pass("A", vec![], vec![r0])];
-
+        let passes = vec![make_pass("A", vec![], vec!["r0"])];
         let compiler = GraphCompiler::new(passes);
-
-        let mut initial_states = HashMap::new();
-        initial_states.insert(r0, ResourceState::Undefined);
-
-        let plan = compiler.compile(&initial_states).unwrap();
+        let plan = compiler.compile().unwrap();
 
         assert_eq!(plan.sorted_passes(), &[0]);
-        assert!(plan.resource_initial_states().contains_key(&r0));
     }
 
     #[test]
     fn test_complex_dependency_chain() {
-        let r0 = make_resource(0);
-        let r1 = make_resource(1);
-        let r2 = make_resource(2);
-        let r3 = make_resource(3);
-
         let passes = vec![
-            make_pass("Shadow", vec![], vec![r0]),
-            make_pass("Geometry", vec![r0], vec![r1, r2]),
-            make_pass("Lighting", vec![r0, r1], vec![r3]),
-            make_pass("PostProcess", vec![r3], vec![]),
+            make_pass("Shadow", vec![], vec!["r0"]),
+            make_pass("Geometry", vec!["r0"], vec!["r1", "r2"]),
+            make_pass("Lighting", vec!["r0", "r1"], vec!["r3"]),
+            make_pass("PostProcess", vec!["r3"], vec![]),
         ];
 
         let compiler = GraphCompiler::new(passes);
-
-        let mut initial_states = HashMap::new();
-        initial_states.insert(r0, ResourceState::Undefined);
-        initial_states.insert(r1, ResourceState::Undefined);
-        initial_states.insert(r2, ResourceState::Undefined);
-        initial_states.insert(r3, ResourceState::Undefined);
-
-        let plan = compiler.compile(&initial_states).unwrap();
+        let plan = compiler.compile().unwrap();
 
         assert_eq!(plan.sorted_passes().len(), 4);
 

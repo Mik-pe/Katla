@@ -101,17 +101,60 @@ impl ApplicationBuilder {
     }
 
     /// Build the frame graph for the application.
-    fn build_frame_graph(renderer: &VulkanRenderer) -> AppResult<katla_gfx::FrameGraph> {
-        use katla_gfx::{FrameGraphBuilder, GeometryPass, ImageFormat};
+    ///
+    /// Uses HDR intermediate rendering with tonemapping:
+    /// 1. Geometry pass renders to HDR texture (R16G16B16A16Sfloat)
+    /// 2. Tonemap pass samples HDR and outputs LDR to swapchain
+    fn build_frame_graph(
+        renderer: &mut VulkanRenderer,
+        resources: &ResourceManager,
+    ) -> AppResult<katla_gfx::FrameGraph> {
+        use katla_gfx::{FrameGraphBuilder, FullscreenPass, GeometryPass, GraphResourceDesc, GraphResourceType, ImageFormat};
 
-        // Single-pass frame graph: geometry pass renders directly to swapchain
-        // (The execute_graphics_pass implementation hardcodes swapchain as the render target)
+        let extent = renderer.swapchain_extent();
+
+        // Compile tonemap shader for post-processing
+        let tonemap_shader_path = resources.shader_path("tonemapping.wgsl");
+        let tonemap_pipeline = renderer
+            .compile_fullscreen_shader(tonemap_shader_path)
+            .map_err(|e| crate::error::AppError::Graphics {
+                message: format!("Failed to compile tonemap shader: {}", e),
+            })?;
+
+        // We'll get the HDR texture index after registering with bindless
+        // For now, use None - it will be set during app init
+        let tonemap_params = katla_gfx::TonemapParams {
+            exposure: 1.0,
+            gamma: 2.2,
+            mode: katla_gfx::TonemapOperator::Aces,
+            hdr_texture_index: None, // Will be set after registration
+        };
+
         let graph = renderer
             .create_frame_graph()
+            // Create HDR color texture for geometry pass output
+            .create_resource(GraphResourceDesc {
+                name: "hdr_color".to_string(),
+                resource_type: GraphResourceType::ColorAttachment {
+                    clear_value: Some([0.1, 0.1, 0.1, 1.0]),
+                },
+                format: ImageFormat::R16G16B16A16Sfloat,
+                width: extent.width,
+                height: extent.height,
+            })
+            // Geometry pass: renders scene to HDR color texture
+            // Note: Depth is implicit and uses the global depth buffer
             .add_pass(
                 GeometryPass::new("geometry")
-                    .write_color("color", ImageFormat::B8G8R8A8Srgb) // Swapchain format
-                    .write_depth("depth", ImageFormat::D32Sfloat),
+                    .write_color("hdr_color", ImageFormat::R16G16B16A16Sfloat),
+            )
+            // Tonemap pass: samples HDR color and outputs to backbuffer (swapchain)
+            .add_pass(
+                FullscreenPass::new("tonemap")
+                    .read("hdr_color")
+                    .write_backbuffer()
+                    .pipeline(tonemap_pipeline)
+                    .tonemap(tonemap_params),
             )
             .build()
             .map_err(|e| crate::error::AppError::Graphics {
@@ -242,10 +285,10 @@ impl ApplicationBuilder {
             )
             .unwrap();
 
-        let renderer = Self::init_renderer(&event_loop, &window, &info, &resources);
+        let mut renderer = Self::init_renderer(&event_loop, &window, &info, &resources);
 
-        // Build the frame graph once at startup
-        let frame_graph = Self::build_frame_graph(&renderer)?;
+        // Build the frame graph once at startup (needs mutable renderer to compile shader)
+        let frame_graph = Self::build_frame_graph(&mut renderer, &resources)?;
 
         let app = Application {
             window,
@@ -281,6 +324,7 @@ impl ApplicationBuilder {
             thumbnail_texture_handles: HashMap::new(),
             start_time: Instant::now(),
             default_material_handle: katla_gfx::MaterialHandle::NONE,
+            hdr_texture_index: None,
             cleaned_up: false,
         };
 

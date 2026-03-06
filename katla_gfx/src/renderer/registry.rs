@@ -49,7 +49,14 @@ impl Default for MaterialData {
 /// Material representation using opaque handles.
 pub struct MaterialAsset {
     /// Pipeline handle (references pipeline in registry).
-    pub pipeline: PipelineHandle,
+    /// - Some(PipelineHandle) when fully_compiled = true
+    /// - None when fully_compiled = false (deferred compilation)
+    pub pipeline: Option<PipelineHandle>,
+    /// Whether this material has been fully compiled.
+    /// When false, the pipeline will be compiled on-demand when first used.
+    pub fully_compiled: bool,
+    /// Shader path for deferred compilation (set when fully_compiled = false).
+    pub shader_path: Option<std::path::PathBuf>,
     /// Vertex binding description.
     pub vertex_binding: VertexBinding,
     /// Per-material data (color, metallic, roughness, etc.)
@@ -148,7 +155,7 @@ impl AssetRegistry {
         new_pipeline: PipelineHandle,
     ) {
         if let Some(Some(material)) = self.materials.get_mut(handle.index() as usize) {
-            material.pipeline = new_pipeline;
+            material.pipeline = Some(new_pipeline);
         }
     }
 

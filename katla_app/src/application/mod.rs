@@ -83,6 +83,8 @@ pub struct Application {
     pub(crate) start_time: Instant,
     /// Default PBR material handle for geometry rendering
     pub(crate) default_material_handle: katla_gfx::MaterialHandle,
+    /// HDR texture bindless index for tonemapping
+    pub(crate) hdr_texture_index: Option<u32>,
     /// Flag to prevent double cleanup
     cleaned_up: bool,
 }
@@ -266,44 +268,6 @@ impl ApplicationHandler for Application {
                 editor::render_debug_ui(self, dt);
                 debug!("UI rendered");
 
-                // Update frame uniforms from camera
-                let camera = self.camera.borrow();
-                let view_mat = camera.get_view_mat(&self.world);
-                let proj_mat = camera.get_proj_mat(&self.world);
-                // Inverse view-projection for sky rendering (clip-space to world-space)
-                let inv_view_proj = (proj_mat.clone() * view_mat.clone()).inverse();
-
-                let camera_pos = if let Some(transform) = self
-                    .world
-                    .get_component::<TransformComponent>(camera.entity)
-                {
-                    [
-                        transform.transform.position.x(),
-                        transform.transform.position.y(),
-                        transform.transform.position.z(),
-                        1.0,
-                    ]
-                } else {
-                    [0.0, 5.0, 5.0, 1.0]
-                };
-                drop(camera);
-
-                // Default directional light (from above and to the right)
-                let light_dir = [0.3, 1.0, 0.2, 0.0];
-                let light_color = [1.0, 0.98, 0.95, 1.0];
-                let light_intensity = 3.0;
-
-                use katla_gfx::renderer::FrameUniforms;
-                self.renderer.set_frame_uniforms(FrameUniforms {
-                    view_matrix: view_mat.to_array(),
-                    proj_matrix: proj_mat.to_array(),
-                    inv_view_proj_matrix: inv_view_proj.to_array(),
-                    camera_position: camera_pos,
-                    light_direction: light_dir,
-                    light_color: light_color,
-                    light_intensity,
-                });
-
                 // Render frame to GPU
                 debug!("Rendering frame...");
                 self.render_frame();
@@ -377,12 +341,38 @@ impl Application {
             shader_path.display()
         );
 
+        // Create HDR PBR material for rendering to HDR intermediate
         self.default_material_handle = self
             .renderer
-            .create_pbr_material(&shader_path)
-            .expect("Failed to create default PBR material");
+            .create_pbr_material(
+                &shader_path,
+                Some(katla_gfx::ImageFormat::R16G16B16A16Sfloat),
+            )
+            .expect("Failed to create default HDR PBR material");
 
-        info!("Default PBR material loaded successfully");
+        info!("Default HDR PBR material loaded successfully");
+
+        // Initialize transient textures and register HDR texture with bindless system
+        self.frame_graph
+            .initialize_transient_textures(&self.renderer)
+            .expect("Failed to initialize transient textures");
+
+        // Register HDR texture with bindless system for tonemapping
+        let hdr_texture_index = self
+            .frame_graph
+            .register_transient_texture_bindless(&mut self.renderer, "hdr_color")
+            .expect("Failed to register HDR texture with bindless system");
+
+        // Set HDR texture index on tonemap pass
+        self.frame_graph
+            .set_tonemap_texture_index("tonemap", hdr_texture_index)
+            .expect("Failed to set tonemap texture index");
+
+        self.hdr_texture_index = Some(hdr_texture_index);
+        info!(
+            "HDR texture registered with bindless system at index {}",
+            hdr_texture_index
+        );
 
         // Set up default test scene
         self.setup_default_scene();

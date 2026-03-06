@@ -41,9 +41,9 @@ mod resource;
 // Public API - minimal surface
 pub use error::RenderGraphError;
 pub use graph::{Frame, FrameGraph, FrameGraphBuilder};
-pub use passes::{FullscreenPass, GeometryPass, LightType, ShadowPass, UIPass};
+pub use passes::{FullscreenPass, GeometryPass, LightType, ShadowPass, TonemapOperator, TonemapParams, UIPass};
+pub use resource::{GraphResourceDesc, GraphResourceHandle, GraphResourceType, ResourceState};
 
 // Internal - for pass template implementation
 pub(crate) use builder::{InternalPassBuilder, PassBuilder};
-pub(crate) use pass::{PassContext, PassDesc, PassType};
-pub(crate) use resource::{GraphResourceHandle, ResourceState};
+pub(crate) use pass::{PassDesc, PassType};

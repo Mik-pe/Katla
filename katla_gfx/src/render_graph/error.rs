@@ -19,6 +19,8 @@ pub enum RenderGraphError {
         to: ResourceState,
         resource: String,
     },
+    /// Invalid configuration.
+    InvalidConfiguration(String),
     /// Allocation failed.
     AllocationFailed(usize),
     /// Pipeline not set.
@@ -49,6 +51,9 @@ impl fmt::Display for RenderGraphError {
                     "Invalid state transition: {:?} -> {:?} for resource '{}'",
                     from, to, resource
                 )
+            }
+            Self::InvalidConfiguration(msg) => {
+                write!(f, "Invalid configuration: {}", msg)
             }
             Self::AllocationFailed(size) => {
                 write!(

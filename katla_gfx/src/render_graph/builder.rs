@@ -71,6 +71,18 @@ pub(crate) struct InternalPassBuilder {
     /// Resource names this pass writes to.
     pub writes: Vec<String>,
 
+    /// Optional pipeline handle (for fullscreen/compute passes).
+    pub pipeline: Option<crate::handle::PipelineHandle>,
+
+    /// Optional tonemap parameters (for HDR tonemapping passes).
+    pub tonemap_params: Option<crate::render_graph::passes::TonemapParams>,
+
+    /// Optional material handle (for geometry passes).
+    pub material: Option<crate::handle::MaterialHandle>,
+
+    /// Output color format (for material format inference).
+    pub output_format: Option<crate::texture::ImageFormat>,
+
     /// Build function that converts string names to handles.
     ///
     /// Called during graph compilation with a map from resource names
@@ -117,6 +129,10 @@ mod tests {
                 pass_type: PassType::Graphics,
                 reads: self.reads,
                 writes: self.writes,
+                pipeline: None,
+                tonemap_params: None,
+                material: None,
+                output_format: None,
                 build_fn: Box::new(|_resource_map| Ok(Box::new(()))),
             }
         }
