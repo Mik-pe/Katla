@@ -1481,13 +1481,15 @@ impl VulkanRenderer {
         }
 
         // 5. Transition swapchain image to COLOR_ATTACHMENT_OPTIMAL for rendering
-        // Swapchain images are reused across frames, transitioning from PRESENT_SRC_KHR after previous present.
+        // Use transition_from_undefined for swapchain images because:
+        // - After acquire_next_image, the actual layout is platform-specific
+        // - We use load_op=CLEAR so we don't care about preserving contents
+        // - Works correctly after swapchain recreation (images start as UNDEFINED)
         let swapchain_image = self.frame_context.swapchain_images[image_index as usize].vk();
-        ImageBarrier::transition(
+        ImageBarrier::transition_from_undefined(
             &cmd,
             &self.context.device,
             swapchain_image,
-            vk::ImageLayout::PRESENT_SRC_KHR,
             vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
         );
 
