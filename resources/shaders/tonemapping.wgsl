@@ -67,17 +67,16 @@ fn vs_main(@builtin(vertex_index) vertex_index: u32) -> VertexOutput {
     var out: VertexOutput;
 
     // Generate fullscreen triangle
-    // Vertex 0: (-1, -1) -> UV (0, 1)
-    // Vertex 1: (3, -1)  -> UV (2, 1)
-    // Vertex 2: (-1, 3)  -> UV (0, -1)
+    // Vertex 0: (-1, -1) -> UV (0, 0)
+    // Vertex 1: (3, -1)  -> UV (2, 0)
+    // Vertex 2: (-1, 3)  -> UV (0, 2)
     let uv = vec2f(
         f32((vertex_index << 1u) & 2u),
         f32(vertex_index & 2u),
     );
 
     out.clip_position = vec4f(uv * 2.0 - 1.0, 0.0, 1.0);
-    // Flip Y for Vulkan coordinate system
-    out.uv = vec2f(uv.x, 1.0 - uv.y);
+    out.uv = uv;
 
     return out;
 }

@@ -327,11 +327,27 @@ impl VulkanRenderer {
     /// # Arguments
     /// * `uniforms` - Frame uniforms containing view/proj matrices, camera position, and lighting
     pub fn set_frame_uniforms(&mut self, uniforms: FrameUniforms) {
+        // Ensure we're writing to the correct per-frame buffer
+        self.begin_frame();
+
         // Write frame uniforms to storage buffer for current frame
         self.storage_manager.update_from_frame_uniforms(&uniforms);
 
         // Store for reference
         self.frame_uniforms = uniforms;
+    }
+
+    /// Begin a new frame.
+    ///
+    /// This selects the appropriate per-frame storage buffer and must be called
+    /// before `set_frame_uniforms()` and `execute_draw_calls()` to ensure data
+    /// is written to the correct buffer.
+    ///
+    /// This is called automatically by `execute_draw_calls()`, but can also be
+    /// called explicitly if needed (e.g., if not using `execute_draw_calls()`).
+    pub fn begin_frame(&mut self) {
+        let frame_idx = self.swap_data.current_frame();
+        self.storage_manager.start_frame(frame_idx);
     }
 
     /// Execute draw calls from FrameContext and prepare them for rendering.
@@ -367,6 +383,9 @@ impl VulkanRenderer {
     /// });
     /// ```
     pub fn execute_draw_calls(&mut self, draw_list: &DrawList) {
+        // Note: begin_frame() should have been called already (via set_frame_uniforms())
+        // This ensures we're writing to the correct per-frame buffer
+
         // Write all per-object data to storage buffer
         for draw_call in &draw_list.draws {
             let index = draw_call.instance_index as usize;
@@ -1466,8 +1485,9 @@ impl VulkanRenderer {
         // 3. Get command buffer for this frame
         let frame_idx = self.swap_data.current_frame();
 
-        // 4. Start frame for storage manager (selects per-frame buffer)
-        self.storage_manager.start_frame(frame_idx);
+        // Note: start_frame() was already called in execute_draw_calls() to ensure
+        // data is written to the correct buffer before rendering begins
+
         let cmd = self.frame_context.command_buffers[frame_idx].vk_command_buffer();
 
         // 4. Begin command buffer
