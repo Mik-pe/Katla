@@ -172,6 +172,10 @@ impl PassBuilder for UIPass {
             pass_type: PassType::Graphics,
             reads,
             writes,
+            pipeline: None,
+            tonemap_params: None,
+            material: None,
+            output_format: None,
             build_fn: Box::new(move |resource_map: &HashMap<String, GraphResourceHandle>| {
                 // Resolve color output name to handle
                 let color = if let Some(output) = color_output {

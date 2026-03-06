@@ -96,6 +96,10 @@ impl PassBuilder for ShadowPass {
             pass_type: PassType::Graphics,
             reads: Vec::new(),
             writes,
+            pipeline: None,
+            tonemap_params: None,
+            material: None,
+            output_format: None,
             build_fn: Box::new(move |resource_map: &HashMap<String, GraphResourceHandle>| {
                 let depth = self
                     .depth_output

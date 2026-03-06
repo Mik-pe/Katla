@@ -4,6 +4,7 @@
 //! the creation of Vulkan graphics pipelines for rendering.
 
 use crate::StorageDescriptorSet;
+use crate::texture::ImageFormat;
 use crate::vulkan::bindless_texture::BindlessTextureManager;
 use crate::vulkan::context::VulkanContext;
 use crate::vulkan::material::shadermodule::ShaderCache;
@@ -55,6 +56,10 @@ pub struct MaterialOptions {
     pub double_sided: bool,
     pub wireframe: bool,
     pub vertex_type: VertexType,
+    /// Color attachment format for this material.
+    /// Default is B8G8R8A8Srgb (swapchain format).
+    /// Use R16G16B16A16Sfloat for HDR rendering.
+    pub color_format: ImageFormat,
 }
 
 impl Default for MaterialOptions {
@@ -64,13 +69,14 @@ impl Default for MaterialOptions {
             double_sided: false,
             wireframe: false,
             vertex_type: VertexType::Pbr,
+            color_format: ImageFormat::B8G8R8A8Srgb,
         }
     }
 }
 
 /// Compiles material definitions into Vulkan pipelines.
 pub(crate) struct MaterialCompiler {
-    shader_cache: Rc<RefCell<ShaderCache>>,
+    pub(crate) shader_cache: Rc<RefCell<ShaderCache>>,
     context: Rc<VulkanContext>,
     storage_descriptor_layout: Option<vk::DescriptorSetLayout>,
     bindless_descriptor_layout: vk::DescriptorSetLayout,
@@ -122,6 +128,9 @@ impl MaterialCompiler {
     }
 
     /// Compile a material from a shader file.
+    ///
+    /// If `options.color_format` is `ImageFormat::Auto`, creates a deferred material
+    /// that will be compiled on-demand when first used with a specific format.
     pub(crate) fn compile(
         &mut self,
         registry: &mut crate::renderer::registry::AssetRegistry,
@@ -131,6 +140,21 @@ impl MaterialCompiler {
     ) -> Result<crate::handle::MaterialHandle, MaterialError> {
         // 1. Determine vertex binding
         let vertex_binding = self.get_vertex_binding(&options.vertex_type)?;
+
+        // Check if this is a deferred material (Auto format)
+        if options.color_format == crate::texture::ImageFormat::Auto {
+            // Create deferred material - pipeline will be compiled on-demand
+            let material_asset = crate::renderer::registry::MaterialAsset {
+                pipeline: None,
+                fully_compiled: false,
+                shader_path: Some(shader_path.to_path_buf()),
+                vertex_binding,
+                material_data: crate::renderer::registry::MaterialData::default(),
+                material_descriptor_set: None,
+                material_descriptor_layout: None,
+            };
+            return Ok(registry.register_material(material_asset));
+        }
 
         // 2. Load shaders (WGSL file contains both vert and frag)
         let mut cache = self.shader_cache.borrow_mut();
@@ -156,14 +180,86 @@ impl MaterialCompiler {
 
         // 5. Register and return handle
         let material_asset = crate::renderer::registry::MaterialAsset {
-            pipeline: registry.register_pipeline(pipeline),
+            pipeline: Some(registry.register_pipeline(pipeline)),
+            fully_compiled: true,
+            shader_path: None,
             vertex_binding,
-            material_data: crate::renderer::registry::MaterialData::default(), // Default material params
+            material_data: crate::renderer::registry::MaterialData::default(),
             material_descriptor_set: None,
             material_descriptor_layout: None,
         };
 
         Ok(registry.register_material(material_asset))
+    }
+
+    /// Compile a deferred material for a specific format.
+    ///
+    /// Takes a material that was created with `ImageFormat::Auto` and compiles
+    /// it for the specified render target format.
+    pub(crate) fn compile_deferred_material(
+        &mut self,
+        registry: &mut crate::renderer::registry::AssetRegistry,
+        material_handle: crate::handle::MaterialHandle,
+        format: crate::texture::ImageFormat,
+    ) -> Result<(), MaterialError> {
+        // Get the material asset (immutable borrow)
+        let (shader_path, vertex_binding) = {
+            let material = registry
+                .get_material(material_handle)
+                .ok_or_else(|| MaterialError::ShaderCompilation(format!("Material handle {:?} not found", material_handle)))?;
+
+            // Check if already compiled
+            if material.fully_compiled {
+                return Ok(());
+            }
+
+            let shader_path = material
+                .shader_path
+                .as_ref()
+                .ok_or_else(|| MaterialError::ShaderCompilation("Deferred material has no shader path".to_string()))?
+                .clone();
+
+            (shader_path, material.vertex_binding.clone())
+        };
+
+        // Load shaders
+        let mut cache = self.shader_cache.borrow_mut();
+        let vert_module = cache
+            .load_shader(&shader_path, vk::ShaderStageFlags::VERTEX)
+            .map_err(|e| MaterialError::ShaderCompilation(format!("Vertex shader: {:?}", e)))?;
+        let frag_module = cache
+            .load_shader(&shader_path, vk::ShaderStageFlags::FRAGMENT)
+            .map_err(|e| MaterialError::ShaderCompilation(format!("Fragment shader: {:?}", e)))?;
+        drop(cache);
+
+        // Create options with the specified format
+        let options = MaterialOptions {
+            color_format: format,
+            ..Default::default()
+        };
+
+        // Build descriptor layouts
+        let layouts = self.build_descriptor_layouts(&options)?;
+
+        // Build pipeline
+        let pipeline = self.build_pipeline(
+            &options,
+            vert_module,
+            frag_module,
+            &layouts,
+            &vertex_binding,
+        )?;
+
+        // Register the pipeline
+        let pipeline_handle = registry.register_pipeline(pipeline);
+
+        // Update the material asset with the compiled pipeline
+        if let Some(material) = registry.get_material_mut(material_handle) {
+            material.pipeline = Some(pipeline_handle);
+            material.fully_compiled = true;
+        }
+
+        Ok(())
     }
 
     fn get_vertex_binding(
@@ -211,11 +307,8 @@ impl MaterialCompiler {
             .with_shaders(vert_module, frag_module)
             .with_vertex_binding(vertex_binding.clone())
             .with_descriptor_layouts(layouts.to_vec())
-            // Note: No push constants - WGSL shaders use instance_index instead
-            // TODO: Use offscreen HDR format once render graph supports intermediate textures
-            // For now, render directly to swapchain format
             .with_rendering_formats(
-                Some(crate::texture::ImageFormat::B8G8R8A8Srgb),
+                Some(options.color_format),
                 Some(crate::texture::ImageFormat::D32SfloatS8Uint),
             );
 
@@ -301,6 +394,12 @@ impl<'a> MaterialBuilder<'a> {
     /// Set custom vertex type.
     pub fn with_vertex_type(mut self, vertex_type: VertexType) -> Self {
         self.options.vertex_type = vertex_type;
+        self
+    }
+
+    /// Set color attachment format.
+    pub fn with_color_format(mut self, format: ImageFormat) -> Self {
+        self.options.color_format = format;
         self
     }
 

@@ -12,6 +12,49 @@ use super::super::error::RenderGraphError;
 use super::super::pass::PassType;
 use super::super::resource::GraphResourceHandle;
 
+/// Tonemapping operators for fullscreen post-processing.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TonemapOperator {
+    /// ACES Filmic - cinematic look with good highlight rolloff
+    Aces = 0,
+    /// Reinhard - simple, preserves colors well
+    Reinhard = 1,
+    /// TonyMcMapface - popular, good balance of contrast and highlights
+    TonyMcMapface = 2,
+    /// Linear - no tonemapping, just gamma correction
+    Linear = 3,
+}
+
+impl Default for TonemapOperator {
+    fn default() -> Self {
+        Self::Aces
+    }
+}
+
+/// Tonemap parameters for fullscreen passes.
+#[derive(Clone, Copy, Debug)]
+pub struct TonemapParams {
+    /// HDR exposure multiplier
+    pub exposure: f32,
+    /// Gamma correction value (typically 2.2)
+    pub gamma: f32,
+    /// Tonemapping operator
+    pub mode: TonemapOperator,
+    /// Bindless texture index for HDR source (None = not a tonemap pass)
+    pub hdr_texture_index: Option<u32>,
+}
+
+impl Default for TonemapParams {
+    fn default() -> Self {
+        Self {
+            exposure: 1.0,
+            gamma: 2.2,
+            mode: TonemapOperator::Aces,
+            hdr_texture_index: None,
+        }
+    }
+}
+
 /// Fullscreen/compute pass template.
 ///
 /// Post-processing, lighting, and compute-like work.
@@ -37,6 +80,7 @@ pub struct FullscreenPass {
     reads: Vec<String>,
     writes: Vec<(String, ImageFormat)>,
     pipeline: Option<PipelineHandle>,
+    tonemap_params: Option<TonemapParams>,
 }
 
 impl FullscreenPass {
@@ -47,6 +91,7 @@ impl FullscreenPass {
             reads: Vec::new(),
             writes: Vec::new(),
             pipeline: None,
+            tonemap_params: None,
         }
     }
 
@@ -62,9 +107,45 @@ impl FullscreenPass {
         self
     }
 
+    /// Write directly to the backbuffer (swapchain).
+    ///
+    /// This is the final output that presents to the screen.
+    pub fn write_backbuffer(mut self) -> Self {
+        self.writes.push(("backbuffer".to_string(), ImageFormat::B8G8R8A8Srgb));
+        self
+    }
+
     /// Set the graphics pipeline.
     pub fn pipeline(mut self, pipeline: PipelineHandle) -> Self {
         self.pipeline = Some(pipeline);
+        self
+    }
+
+    /// Configure tonemap parameters for HDR->LDR conversion.
+    ///
+    /// When set, the pass will automatically configure object[0] in the storage buffer
+    /// with these parameters. The tonemap shader reads from `objects[0]` to get:
+    /// - `texture_indices.x` = HDR texture bindless slot
+    /// - Custom exposure, gamma, and mode values
+    ///
+    /// # Arguments
+    /// * `params` - Tonemap configuration
+    ///
+    /// # Example
+    /// ```ignore
+    /// FullscreenPass::new("tonemap")
+    ///     .read("hdr_color")
+    ///     .write_backbuffer()
+    ///     .pipeline(pipeline)
+    ///     .tonemap(TonemapParams {
+    ///         exposure: 1.2,
+    ///         gamma: 2.2,
+    ///         mode: TonemapOperator::Aces,
+    ///         hdr_texture_index: Some(hdr_slot),
+    ///     });
+    /// ```
+    pub fn tonemap(mut self, params: TonemapParams) -> Self {
+        self.tonemap_params = Some(params);
         self
     }
 }
@@ -78,6 +159,10 @@ impl PassBuilder for FullscreenPass {
             pass_type: PassType::Graphics,
             reads: self.reads.clone(),
             writes,
+            pipeline: self.pipeline,
+            tonemap_params: self.tonemap_params,
+            material: None,
+            output_format: None,
             build_fn: Box::new(move |resource_map: &HashMap<String, GraphResourceHandle>| {
                 let reads: Vec<GraphResourceHandle> = self
                     .reads
@@ -94,17 +179,22 @@ impl PassBuilder for FullscreenPass {
                     .writes
                     .iter()
                     .map(|(n, _)| {
-                        resource_map
-                            .get(n)
-                            .copied()
-                            .ok_or_else(|| RenderGraphError::ResourceNotFound(n.clone()))
-                    })
-                    .collect::<Result<Vec<_>, RenderGraphError>>()?;
+                                if n == "backbuffer" {
+                                    Ok(GraphResourceHandle::NONE)
+                                } else {
+                                    resource_map
+                                        .get(n)
+                                        .copied()
+                                        .ok_or_else(|| RenderGraphError::ResourceNotFound(n.clone()))
+                                }
+                            })
+                            .collect::<Result<Vec<_>, RenderGraphError>>()?;
 
                 Ok(Box::new(FullscreenPassData {
                     reads,
                     writes,
                     pipeline: self.pipeline,
+                    tonemap_params: self.tonemap_params,
                 }))
             }),
         }
@@ -116,6 +206,7 @@ pub(crate) struct FullscreenPassData {
     pub reads: Vec<GraphResourceHandle>,
     pub writes: Vec<GraphResourceHandle>,
     pub pipeline: Option<PipelineHandle>,
+    pub tonemap_params: Option<TonemapParams>,
 }
 
 #[cfg(test)]
@@ -129,6 +220,7 @@ mod tests {
         assert!(pass.reads.is_empty());
         assert!(pass.writes.is_empty());
         assert!(pass.pipeline.is_none());
+        assert!(pass.tonemap_params.is_none());
     }
 
     #[test]
@@ -158,6 +250,37 @@ mod tests {
 
         assert!(pass.pipeline.is_some());
         assert_eq!(pass.pipeline.unwrap().index(), 42);
+    }
+
+    #[test]
+    fn test_tonemap_params_default() {
+        let params = TonemapParams::default();
+        assert_eq!(params.exposure, 1.0);
+        assert_eq!(params.gamma, 2.2);
+        assert_eq!(params.mode, TonemapOperator::Aces);
+        assert!(params.hdr_texture_index.is_none());
+    }
+
+    #[test]
+    fn test_fullscreen_pass_tonemap() {
+        let params = TonemapParams {
+            exposure: 1.5,
+            gamma: 2.4,
+            mode: TonemapOperator::Reinhard,
+            hdr_texture_index: Some(5),
+        };
+        let pass = FullscreenPass::new("tonemap")
+            .read("hdr_color")
+            .write_backbuffer()
+            .pipeline(PipelineHandle::new(1))
+            .tonemap(params);
+
+        assert!(pass.tonemap_params.is_some());
+        let tonemap = pass.tonemap_params.unwrap();
+        assert_eq!(tonemap.exposure, 1.5);
+        assert_eq!(tonemap.gamma, 2.4);
+        assert_eq!(tonemap.mode, TonemapOperator::Reinhard);
+        assert_eq!(tonemap.hdr_texture_index, Some(5));
     }
 
     #[test]

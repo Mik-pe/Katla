@@ -89,8 +89,8 @@ pub use renderer::VulkanRenderer;
 
 // Render graph system - minimal public API
 pub use render_graph::{
-    Frame, FrameGraph, FrameGraphBuilder, FullscreenPass, GeometryPass, LightType,
-    RenderGraphError, ShadowPass,
+    Frame, FrameGraph, FrameGraphBuilder, FullscreenPass, GeometryPass, GraphResourceDesc,
+    GraphResourceType, LightType, RenderGraphError, ShadowPass, TonemapOperator, TonemapParams,
 };
 
 /// Low-level Vulkan context - an escape hatch for advanced use cases.

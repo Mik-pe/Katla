@@ -414,6 +414,15 @@ impl Pipeline {
     }
 }
 
+impl Drop for Pipeline {
+    fn drop(&mut self) {
+        unsafe {
+            self.device.destroy_pipeline(self.handle, None);
+            self.device.destroy_pipeline_layout(self.layout, None);
+        }
+    }
+}
+
 #[derive(Debug)]
 pub enum PipelineError {
     MissingVertexShader,
