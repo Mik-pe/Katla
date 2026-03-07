@@ -83,16 +83,15 @@ pub fn generate_sphere(radius: f32, segments: u32, rings: u32) -> (Vec<VertexPBR
         // Position is at the pole top
         let position = [0.0, radius, 0.0];
 
-        // Normal points toward this segment's direction (slightly offset from straight up)
-        // This prevents the pinching artifact when interpolating normals
-        let normal = [cos_phi * 0.01, 1.0, sin_phi * 0.01];
-
-        // Normalize the normal
-        let len = (normal[0] * normal[0] + normal[1] * normal[1] + normal[2] * normal[2]).sqrt();
-        let normal = [normal[0] / len, normal[1] / len, normal[2] / len];
+        // Normal points toward this segment's direction, matching the first ring's normals
+        // Use the same theta as ring 1 (first ring after poles)
+        let theta = std::f32::consts::PI / rings as f32;
+        let sin_theta = theta.sin();
+        let cos_theta = theta.cos();
+        let normal = [cos_phi * sin_theta, cos_theta, sin_phi * sin_theta];
 
         // Tangent points along the longitude direction
-        let tangent = [-sin_phi, 0.0, cos_phi, 1.0];
+        let tangent = [-sin_phi * sin_theta, 0.0, cos_phi * sin_theta, 1.0];
 
         // UV coordinates
         let u = segment as f32 / segments as f32;
@@ -110,15 +109,15 @@ pub fn generate_sphere(radius: f32, segments: u32, rings: u32) -> (Vec<VertexPBR
         // Position is at the pole bottom
         let position = [0.0, -radius, 0.0];
 
-        // Normal points toward this segment's direction (slightly offset from straight down)
-        let normal = [cos_phi * 0.01, -1.0, sin_phi * 0.01];
-
-        // Normalize the normal
-        let len = (normal[0] * normal[0] + normal[1] * normal[1] + normal[2] * normal[2]).sqrt();
-        let normal = [normal[0] / len, normal[1] / len, normal[2] / len];
+        // Normal points toward this segment's direction, matching the last ring's normals
+        // Use the same theta as ring (rings-1) (last ring before poles)
+        let theta = std::f32::consts::PI * (rings - 1) as f32 / rings as f32;
+        let sin_theta = theta.sin();
+        let cos_theta = theta.cos();
+        let normal = [cos_phi * sin_theta, cos_theta, sin_phi * sin_theta];
 
         // Tangent points along the longitude direction
-        let tangent = [-sin_phi, 0.0, cos_phi, 1.0];
+        let tangent = [-sin_phi * sin_theta, 0.0, cos_phi * sin_theta, 1.0];
 
         // UV coordinates
         let u = segment as f32 / segments as f32;
