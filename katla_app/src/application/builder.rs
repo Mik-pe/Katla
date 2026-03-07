@@ -103,15 +103,29 @@ impl ApplicationBuilder {
     /// Build the frame graph for the application.
     ///
     /// Uses HDR intermediate rendering with tonemapping:
-    /// 1. Geometry pass renders to HDR texture (R16G16B16A16Sfloat)
-    /// 2. Tonemap pass samples HDR and outputs LDR to swapchain
+    /// 1. Sky pass renders procedural sky to HDR texture
+    /// 2. Geometry pass renders scene to HDR texture (R16G16B16A16Sfloat)
+    /// 3. Tonemap pass samples HDR and outputs LDR to swapchain
     fn build_frame_graph(
         renderer: &mut VulkanRenderer,
         resources: &ResourceManager,
     ) -> AppResult<katla_gfx::FrameGraph> {
-        use katla_gfx::{FrameGraphBuilder, FullscreenPass, GeometryPass, GraphResourceDesc, GraphResourceType, ImageFormat};
+        use katla_gfx::{FrameGraphBuilder, FullscreenPass, GeometryPass, GraphResourceDesc, GraphResourceType};
+        use katla_gfx::texture::ImageFormat as TextureImageFormat;
+        use katla_gfx::render_pass::{LoadOp, StoreOp, ClearValue};
 
         let extent = renderer.swapchain_extent();
+
+        // Compile sky shader (procedural fullscreen sky) with HDR output format
+        let sky_shader_path = resources.shader_path("sky.wgsl");
+        let sky_pipeline = renderer
+            .compile_fullscreen_shader_with_format(
+                sky_shader_path,
+                TextureImageFormat::R16G16B16A16Sfloat,
+            )
+            .map_err(|e| crate::error::AppError::Graphics {
+                message: format!("Failed to compile sky shader: {}", e),
+            })?;
 
         // Compile tonemap shader for post-processing
         let tonemap_shader_path = resources.shader_path("tonemapping.wgsl");
@@ -124,7 +138,7 @@ impl ApplicationBuilder {
         // We'll get the HDR texture index after registering with bindless
         // For now, use None - it will be set during app init
         let tonemap_params = katla_gfx::TonemapParams {
-            exposure: 1.0,
+            exposure: 0.4,
             gamma: 2.2,
             mode: katla_gfx::TonemapOperator::Aces,
             hdr_texture_index: None, // Will be set after registration
@@ -138,15 +152,28 @@ impl ApplicationBuilder {
                 resource_type: GraphResourceType::ColorAttachment {
                     clear_value: Some([0.1, 0.1, 0.1, 1.0]),
                 },
-                format: ImageFormat::R16G16B16A16Sfloat,
+                format: TextureImageFormat::R16G16B16A16Sfloat,
                 width: extent.width,
                 height: extent.height,
             })
+            // Sky pass: renders procedural sky (depth=1.0 so geometry appears in front)
+            .add_pass(
+                FullscreenPass::new("sky")
+                    .write("hdr_color", TextureImageFormat::R16G16B16A16Sfloat)
+                    .pipeline(sky_pipeline),
+            )
             // Geometry pass: renders scene to HDR color texture
+            // Loads existing contents (sky pass) and writes geometry on top
             // Note: Depth is implicit and uses the global depth buffer
             .add_pass(
                 GeometryPass::new("geometry")
-                    .write_color("hdr_color", ImageFormat::R16G16B16A16Sfloat),
+                    .write_color_with(
+                        "hdr_color",
+                        TextureImageFormat::R16G16B16A16Sfloat,
+                        LoadOp::Load,
+                        StoreOp::Store,
+                        ClearValue::OPAQUE_BLACK,
+                    ),
             )
             // Tonemap pass: samples HDR color and outputs to backbuffer (swapchain)
             .add_pass(

@@ -50,7 +50,7 @@ impl Application {
             // Default lighting (sunlight)
             light_direction: [0.3, 1.0, 0.2, 0.0],
             light_color: [1.0, 0.98, 0.95, 0.0],
-            light_intensity: 3.0,
+            light_intensity: 1.0,
         };
         frame.set_frame_uniforms(frame_uniforms);
 
