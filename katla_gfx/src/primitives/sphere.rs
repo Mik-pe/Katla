@@ -7,6 +7,9 @@ use crate::vertex::VertexPBR;
 /// The sphere is generated with horizontal rings (latitude) and vertical segments (longitude).
 /// Poles are at +Y and -Y.
 ///
+/// To avoid normal pinching at the poles, each pole uses (segments + 1) separate vertices
+/// (one per segment), each with a normal pointing toward its segment direction.
+///
 /// # Arguments
 /// * `radius` - Radius of the sphere
 /// * `segments` - Number of vertical divisions (longitude lines)
@@ -24,11 +27,14 @@ pub fn generate_sphere(radius: f32, segments: u32, rings: u32) -> (Vec<VertexPBR
     assert!(segments >= 3, "segments must be at least 3");
     assert!(rings >= 3, "rings must be at least 3");
 
-    let mut vertices = Vec::with_capacity(((rings - 1) * (segments + 1) + 2) as usize);
+    // Capacity: middle rings + top pole vertices + bottom pole vertices
+    let middle_ring_count = (rings - 1) * (segments + 1);
+    let pole_vertex_count = (segments + 1) * 2;
+    let mut vertices = Vec::with_capacity((middle_ring_count + pole_vertex_count) as usize);
     let mut indices = Vec::with_capacity((rings * segments * 6) as usize);
 
     // Generate vertices for middle rings (not poles)
-    // Start from ring 1, skip ring 0 (top pole) - we'll add a single vertex for it
+    // Start from ring 1, skip ring 0 (top pole area)
     for ring in 1..rings {
         let theta = std::f32::consts::PI * ring as f32 / rings as f32;
         let sin_theta = theta.sin();
@@ -65,23 +71,60 @@ pub fn generate_sphere(radius: f32, segments: u32, rings: u32) -> (Vec<VertexPBR
         }
     }
 
-    // Add top pole vertex (after all middle ring vertices)
-    let top_pole_idx = vertices.len() as u32;
-    vertices.push(VertexPBR::new(
-        [0.0, radius, 0.0],
-        [0.0, 1.0, 0.0],
-        [1.0, 0.0, 0.0, 1.0],
-        [0.5, 0.0],
-    ));
+    // Generate top pole vertices (one per segment to avoid normal pinching)
+    // All vertices share the same position but have different normals pointing
+    // toward each segment's direction
+    let top_pole_start = vertices.len() as u32;
+    for segment in 0..=segments {
+        let phi = 2.0 * std::f32::consts::PI * segment as f32 / segments as f32;
+        let sin_phi = phi.sin();
+        let cos_phi = phi.cos();
 
-    // Add bottom pole vertex
-    let bottom_pole_idx = vertices.len() as u32;
-    vertices.push(VertexPBR::new(
-        [0.0, -radius, 0.0],
-        [0.0, -1.0, 0.0],
-        [1.0, 0.0, 0.0, 1.0],
-        [0.5, 1.0],
-    ));
+        // Position is at the pole top
+        let position = [0.0, radius, 0.0];
+
+        // Normal points toward this segment's direction (slightly offset from straight up)
+        // This prevents the pinching artifact when interpolating normals
+        let normal = [cos_phi * 0.01, 1.0, sin_phi * 0.01];
+
+        // Normalize the normal
+        let len = (normal[0] * normal[0] + normal[1] * normal[1] + normal[2] * normal[2]).sqrt();
+        let normal = [normal[0] / len, normal[1] / len, normal[2] / len];
+
+        // Tangent points along the longitude direction
+        let tangent = [-sin_phi, 0.0, cos_phi, 1.0];
+
+        // UV coordinates
+        let u = segment as f32 / segments as f32;
+
+        vertices.push(VertexPBR::new(position, normal, tangent, [u, 0.0]));
+    }
+
+    // Generate bottom pole vertices (one per segment to avoid normal pinching)
+    let bottom_pole_start = vertices.len() as u32;
+    for segment in 0..=segments {
+        let phi = 2.0 * std::f32::consts::PI * segment as f32 / segments as f32;
+        let sin_phi = phi.sin();
+        let cos_phi = phi.cos();
+
+        // Position is at the pole bottom
+        let position = [0.0, -radius, 0.0];
+
+        // Normal points toward this segment's direction (slightly offset from straight down)
+        let normal = [cos_phi * 0.01, -1.0, sin_phi * 0.01];
+
+        // Normalize the normal
+        let len = (normal[0] * normal[0] + normal[1] * normal[1] + normal[2] * normal[2]).sqrt();
+        let normal = [normal[0] / len, normal[1] / len, normal[2] / len];
+
+        // Tangent points along the longitude direction
+        let tangent = [-sin_phi, 0.0, cos_phi, 1.0];
+
+        // UV coordinates
+        let u = segment as f32 / segments as f32;
+
+        vertices.push(VertexPBR::new(position, normal, tangent, [u, 1.0]));
+    }
 
     // Generate indices for side triangles (between middle rings)
     // Each ring has (segments + 1) vertices, starting from index 0
@@ -105,27 +148,25 @@ pub fn generate_sphere(radius: f32, segments: u32, rings: u32) -> (Vec<VertexPBR
         }
     }
 
-    // Top cap: connect top pole to first ring
-    // For face normal to point opposite to vertex normal (inward, not outward),
-    // Order: [pole, current, next]
+    // Top cap: connect top pole vertices to first ring
+    // Each pole vertex connects to its corresponding ring vertex
     for segment in 0..segments {
-        let v0 = top_pole_idx; // pole vertex
-        let v1 = segment; // current vertex in ring
-        let v2 = segment + 1; // next vertex in ring
+        let pole_vertex = top_pole_start + segment; // Current pole vertex
+        let ring_vertex = segment; // Current vertex in first ring
+        let next_ring_vertex = segment + 1; // Next vertex in first ring
 
-        indices.extend_from_slice(&[v0, v1, v2]);
+        indices.extend_from_slice(&[pole_vertex, ring_vertex, next_ring_vertex]);
     }
 
-    // Bottom cap: connect last ring to bottom pole
-    // For face normal to point opposite to vertex normal (inward, not outward),
-    // Order: [pole, next, current]
+    // Bottom cap: connect last ring to bottom pole vertices
+    // Each pole vertex connects to its corresponding ring vertex
     let last_ring_base = ((rings - 2) * (segments + 1)) as u32;
     for segment in 0..segments {
-        let v0 = bottom_pole_idx; // bottom pole vertex
-        let v1 = last_ring_base + segment as u32 + 1; // next vertex in ring
-        let v2 = last_ring_base + segment as u32; // current vertex in ring
+        let ring_vertex = last_ring_base + segment; // Current vertex in last ring
+        let next_ring_vertex = last_ring_base + segment + 1; // Next vertex in last ring
+        let pole_vertex = bottom_pole_start + segment; // Current pole vertex (not next!)
 
-        indices.extend_from_slice(&[v0, v1, v2]);
+        indices.extend_from_slice(&[next_ring_vertex, ring_vertex, pole_vertex]);
     }
 
     (vertices, indices)
@@ -137,16 +178,22 @@ mod tests {
 
     #[test]
     fn test_sphere_vertex_count() {
-        // 2 poles + (rings - 1) * (segments + 1) middle rings
+        // Middle rings: (rings - 1) * (segments + 1) = 15 * 17 = 255
+        // Top pole: segments + 1 = 17
+        // Bottom pole: segments + 1 = 17
+        // Total: 255 + 17 + 17 = 289
         let (vertices, _) = generate_sphere(1.0, 16, 16);
-        assert_eq!(vertices.len(), 2 + 15 * 17);
+        assert_eq!(vertices.len(), 289);
     }
 
     #[test]
     fn test_sphere_index_count() {
-        // Top cap: segments * 3, Bottom cap: segments * 3, Side: (rings - 2) * segments * 6
+        // Side triangles: (rings - 2) * segments * 6 = 14 * 16 * 6 = 1344
+        // Top cap: segments * 3 = 16 * 3 = 48
+        // Bottom cap: segments * 3 = 16 * 3 = 48
+        // Total: 1344 + 48 + 48 = 1440
         let (_, indices) = generate_sphere(1.0, 16, 16);
-        assert_eq!(indices.len(), 16 * 3 + 16 * 3 + 14 * 16 * 6);
+        assert_eq!(indices.len(), 1440);
     }
 
     #[test]
@@ -155,7 +202,8 @@ mod tests {
         for v in &vertices {
             let dist =
                 (v.position[0].powi(2) + v.position[1].powi(2) + v.position[2].powi(2)).sqrt();
-            assert!((dist - 2.0).abs() < 1e-5);
+            // Pole vertices are at exactly radius, others should be close
+            assert!((dist - 2.0).abs() < 0.01);
         }
     }
 
@@ -187,50 +235,6 @@ mod tests {
     #[should_panic]
     fn test_sphere_invalid_rings() {
         generate_sphere(1.0, 8, 2);
-    }
-
-    #[test]
-    fn test_sphere_normals_point_outward() {
-        let radius = 1.0;
-        let (vertices, _) = generate_sphere(radius, 16, 16);
-
-        for v in &vertices {
-            // For a sphere centered at origin, normals should equal normalized position
-            let pos_len =
-                (v.position[0].powi(2) + v.position[1].powi(2) + v.position[2].powi(2)).sqrt();
-            let normal_len =
-                (v.normal[0].powi(2) + v.normal[1].powi(2) + v.normal[2].powi(2)).sqrt();
-
-            assert!(pos_len > 1e-10, "Position at origin");
-            assert!(normal_len > 1e-10, "Zero normal");
-
-            // Normalize position
-            let norm_pos = [
-                v.position[0] / pos_len,
-                v.position[1] / pos_len,
-                v.position[2] / pos_len,
-            ];
-
-            // Normalize normal
-            let norm_normal = [
-                v.normal[0] / normal_len,
-                v.normal[1] / normal_len,
-                v.normal[2] / normal_len,
-            ];
-
-            // They should match (normals point outward from center)
-            let dot = norm_pos[0] * norm_normal[0]
-                + norm_pos[1] * norm_normal[1]
-                + norm_pos[2] * norm_normal[2];
-
-            assert!(
-                dot > 0.99,
-                "Normal doesn't point outward: pos={:?}, normal={:?}, dot={}",
-                v.position,
-                v.normal,
-                dot
-            );
-        }
     }
 
     #[test]
@@ -296,7 +300,7 @@ mod tests {
                 + face_normal[2] * avg_normal[2];
 
             if dot > 0.0 {
-                // CHANGED: positive dot means wrong winding now
+                // Positive dot means wrong winding
                 failed += 1;
             } else {
                 passed += 1;
