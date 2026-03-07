@@ -164,8 +164,7 @@ impl VulkanRenderer {
         info!("Texture manager initialized");
 
         // Initialize storage uniform system with standard layout
-        let storage_manager =
-            StorageUniformManager::new(context.clone(), FRAMES_IN_FLIGHT)?;
+        let storage_manager = StorageUniformManager::new(context.clone(), FRAMES_IN_FLIGHT)?;
 
         // Create per-frame storage descriptor sets for binding frame and object uniforms
         let mut storage_descriptor_sets = Vec::with_capacity(FRAMES_IN_FLIGHT);

@@ -1,8 +1,8 @@
 //! Pass types for render graph execution.
 
-use crate::render_pass::{LoadOp, StoreOp, ClearValue};
-use crate::texture::ImageFormat;
 use super::error::RenderGraphError;
+use crate::render_pass::{ClearValue, LoadOp, StoreOp};
+use crate::texture::ImageFormat;
 
 /// Type of render pass.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -22,8 +22,7 @@ impl Default for PassType {
 }
 
 /// Pass execution callback type.
-pub(crate) type PassExecFn =
-    Box<dyn FnOnce() -> Result<(), RenderGraphError> + 'static>;
+pub(crate) type PassExecFn = Box<dyn FnOnce() -> Result<(), RenderGraphError> + 'static>;
 
 /// Internal pass descriptor.
 pub(crate) struct PassDesc {
@@ -72,29 +71,17 @@ impl PassDesc {
     }
 
     /// Create a graphics pass descriptor.
-    pub fn graphics(
-        name: impl Into<String>,
-        reads: Vec<String>,
-        writes: Vec<String>,
-    ) -> Self {
+    pub fn graphics(name: impl Into<String>, reads: Vec<String>, writes: Vec<String>) -> Self {
         Self::new(name, PassType::Graphics, reads, writes)
     }
 
     /// Create a compute pass descriptor.
-    pub fn compute(
-        name: impl Into<String>,
-        reads: Vec<String>,
-        writes: Vec<String>,
-    ) -> Self {
+    pub fn compute(name: impl Into<String>, reads: Vec<String>, writes: Vec<String>) -> Self {
         Self::new(name, PassType::Compute, reads, writes)
     }
 
     /// Create a transfer pass descriptor.
-    pub fn transfer(
-        name: impl Into<String>,
-        reads: Vec<String>,
-        writes: Vec<String>,
-    ) -> Self {
+    pub fn transfer(name: impl Into<String>, reads: Vec<String>, writes: Vec<String>) -> Self {
         Self::new(name, PassType::Transfer, reads, writes)
     }
 }

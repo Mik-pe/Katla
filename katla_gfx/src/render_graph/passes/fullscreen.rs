@@ -111,7 +111,8 @@ impl FullscreenPass {
     ///
     /// This is the final output that presents to the screen.
     pub fn write_backbuffer(mut self) -> Self {
-        self.writes.push(("backbuffer".to_string(), ImageFormat::B8G8R8A8Srgb));
+        self.writes
+            .push(("backbuffer".to_string(), ImageFormat::B8G8R8A8Srgb));
         self
     }
 
@@ -179,16 +180,16 @@ impl PassBuilder for FullscreenPass {
                     .writes
                     .iter()
                     .map(|(n, _)| {
-                                if n == "backbuffer" {
-                                    Ok(GraphResourceHandle::NONE)
-                                } else {
-                                    resource_map
-                                        .get(n)
-                                        .copied()
-                                        .ok_or_else(|| RenderGraphError::ResourceNotFound(n.clone()))
-                                }
-                            })
-                            .collect::<Result<Vec<_>, RenderGraphError>>()?;
+                        if n == "backbuffer" {
+                            Ok(GraphResourceHandle::NONE)
+                        } else {
+                            resource_map
+                                .get(n)
+                                .copied()
+                                .ok_or_else(|| RenderGraphError::ResourceNotFound(n.clone()))
+                        }
+                    })
+                    .collect::<Result<Vec<_>, RenderGraphError>>()?;
 
                 Ok(Box::new(FullscreenPassData {
                     reads,

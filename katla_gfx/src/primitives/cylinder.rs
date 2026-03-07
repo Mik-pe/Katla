@@ -147,11 +147,11 @@ pub fn generate_cylinder(height: f32, radius: f32, segments: u32) -> (Vec<Vertex
     }
 
     // Top cap indices - face normal should point up (+Y)
-    // center -> next -> current gives correct face normal direction
+    // center -> current -> next gives correct face normal direction (CCW when viewed from above)
     for segment in 0..segments {
         let current = top_ring_start + segment;
         let next = top_ring_start + segment + 1;
-        indices.extend_from_slice(&[top_center_idx, next, current]);
+        indices.extend_from_slice(&[top_center_idx, current, next]);
     }
 
     (vertices, indices)
@@ -302,7 +302,11 @@ mod tests {
 
         // Normalize
         let len = (face_normal[0].powi(2) + face_normal[1].powi(2) + face_normal[2].powi(2)).sqrt();
-        let face_normal = [face_normal[0] / len, face_normal[1] / len, face_normal[2] / len];
+        let face_normal = [
+            face_normal[0] / len,
+            face_normal[1] / len,
+            face_normal[2] / len,
+        ];
 
         // For the first side triangle (near +X axis), the face normal should point OUTWARD from the cylinder
         // i.e., face_normal should have a positive dot product with the vertex position
@@ -319,7 +323,9 @@ mod tests {
         assert!(
             dot < 0.0,
             "Side triangle has incorrect winding. face_normal={:?}, vertex_normal={:?}, dot={}",
-            face_normal, vertex_normal, dot
+            face_normal,
+            vertex_normal,
+            dot
         );
     }
 
@@ -372,7 +378,9 @@ mod tests {
             assert!(
                 dot < 0.0,
                 "Side triangle has incorrect winding. face_normal={:?}, vertex_normal={:?}, dot={}",
-                face_normal, n0, dot
+                face_normal,
+                n0,
+                dot
             );
         }
     }

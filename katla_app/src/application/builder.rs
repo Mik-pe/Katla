@@ -110,9 +110,11 @@ impl ApplicationBuilder {
         renderer: &mut VulkanRenderer,
         resources: &ResourceManager,
     ) -> AppResult<katla_gfx::FrameGraph> {
-        use katla_gfx::{FrameGraphBuilder, FullscreenPass, GeometryPass, GraphResourceDesc, GraphResourceType};
+        use katla_gfx::render_pass::{ClearValue, LoadOp, StoreOp};
         use katla_gfx::texture::ImageFormat as TextureImageFormat;
-        use katla_gfx::render_pass::{LoadOp, StoreOp, ClearValue};
+        use katla_gfx::{
+            FrameGraphBuilder, FullscreenPass, GeometryPass, GraphResourceDesc, GraphResourceType,
+        };
 
         let extent = renderer.swapchain_extent();
 
@@ -165,16 +167,13 @@ impl ApplicationBuilder {
             // Geometry pass: renders scene to HDR color texture
             // Loads existing contents (sky pass) and writes geometry on top
             // Note: Depth is implicit and uses the global depth buffer
-            .add_pass(
-                GeometryPass::new("geometry")
-                    .write_color_with(
-                        "hdr_color",
-                        TextureImageFormat::R16G16B16A16Sfloat,
-                        LoadOp::Load,
-                        StoreOp::Store,
-                        ClearValue::OPAQUE_BLACK,
-                    ),
-            )
+            .add_pass(GeometryPass::new("geometry").write_color_with(
+                "hdr_color",
+                TextureImageFormat::R16G16B16A16Sfloat,
+                LoadOp::Load,
+                StoreOp::Store,
+                ClearValue::OPAQUE_BLACK,
+            ))
             // Tonemap pass: samples HDR color and outputs to backbuffer (swapchain)
             .add_pass(
                 FullscreenPass::new("tonemap")

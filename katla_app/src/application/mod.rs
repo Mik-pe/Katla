@@ -390,15 +390,23 @@ impl Application {
     /// Creates a cube mesh and spawns an entity with DrawableComponent and TransformComponent.
     /// Returns the entity ID of the spawned cube.
     pub fn spawn_test_cube(&mut self, position: [f32; 3], size: [f32; 3]) -> katla_ecs::EntityId {
+        self.spawn_test_cube_with_color(position, size, katla_math::Color::WHITE)
+    }
+
+    /// Spawn a test cube entity with a specific color.
+    pub fn spawn_test_cube_with_color(
+        &mut self,
+        position: [f32; 3],
+        size: [f32; 3],
+        color: katla_math::Color,
+    ) -> katla_ecs::EntityId {
         use crate::components::{DrawableComponent, TransformComponent};
         use katla_ecs::EntityId;
         use katla_math::Vec3;
 
-        // Create cube mesh
         let mesh_handle = self.renderer.create_cube_mesh(size);
         let material_handle = self.default_material();
 
-        // Spawn entity with transform and drawable components
         let entity_id = self.world.spawn((
             TransformComponent {
                 transform: katla_math::Transform::from_position(Vec3::new(
@@ -407,7 +415,7 @@ impl Application {
                     position[2],
                 )),
             },
-            DrawableComponent::with_handles(mesh_handle, material_handle),
+            DrawableComponent::with_handles_and_color(mesh_handle, material_handle, color),
         ));
 
         info!("Spawned test cube at {:?} with size {:?}", position, size);
@@ -421,6 +429,18 @@ impl Application {
         radius: f32,
         segments: u32,
         rings: u32,
+    ) -> katla_ecs::EntityId {
+        self.spawn_sphere_with_color(position, radius, segments, rings, katla_math::Color::WHITE)
+    }
+
+    /// Spawn a sphere entity with a specific color.
+    pub fn spawn_sphere_with_color(
+        &mut self,
+        position: [f32; 3],
+        radius: f32,
+        segments: u32,
+        rings: u32,
+        color: katla_math::Color,
     ) -> katla_ecs::EntityId {
         use crate::components::{DrawableComponent, TransformComponent};
         use katla_ecs::EntityId;
@@ -437,7 +457,7 @@ impl Application {
                     position[2],
                 )),
             },
-            DrawableComponent::with_handles(mesh_handle, material_handle),
+            DrawableComponent::with_handles_and_color(mesh_handle, material_handle, color),
         ));
 
         info!("Spawned sphere at {:?} with radius {}", position, radius);
@@ -451,6 +471,18 @@ impl Application {
         height: f32,
         radius: f32,
         segments: u32,
+    ) -> katla_ecs::EntityId {
+        self.spawn_cylinder_with_color(position, height, radius, segments, katla_math::Color::WHITE)
+    }
+
+    /// Spawn a cylinder entity with a specific color.
+    pub fn spawn_cylinder_with_color(
+        &mut self,
+        position: [f32; 3],
+        height: f32,
+        radius: f32,
+        segments: u32,
+        color: katla_math::Color,
     ) -> katla_ecs::EntityId {
         use crate::components::{DrawableComponent, TransformComponent};
         use katla_ecs::EntityId;
@@ -467,7 +499,7 @@ impl Application {
                     position[2],
                 )),
             },
-            DrawableComponent::with_handles(mesh_handle, material_handle),
+            DrawableComponent::with_handles_and_color(mesh_handle, material_handle, color),
         ));
 
         info!("Spawned cylinder at {:?}", position);
@@ -480,6 +512,17 @@ impl Application {
         position: [f32; 3],
         width: f32,
         height: f32,
+    ) -> katla_ecs::EntityId {
+        self.spawn_plane_with_color(position, width, height, katla_math::Color::WHITE)
+    }
+
+    /// Spawn a plane entity with a specific color.
+    pub fn spawn_plane_with_color(
+        &mut self,
+        position: [f32; 3],
+        width: f32,
+        height: f32,
+        color: katla_math::Color,
     ) -> katla_ecs::EntityId {
         use crate::components::{DrawableComponent, TransformComponent};
         use katla_ecs::EntityId;
@@ -496,7 +539,7 @@ impl Application {
                     position[2],
                 )),
             },
-            DrawableComponent::with_handles(mesh_handle, material_handle),
+            DrawableComponent::with_handles_and_color(mesh_handle, material_handle, color),
         ));
 
         info!("Spawned plane at {:?}", position);
@@ -511,6 +554,26 @@ impl Application {
         tube_radius: f32,
         segments: u32,
         tube_segments: u32,
+    ) -> katla_ecs::EntityId {
+        self.spawn_torus_with_color(
+            position,
+            radius,
+            tube_radius,
+            segments,
+            tube_segments,
+            katla_math::Color::WHITE,
+        )
+    }
+
+    /// Spawn a torus entity with a specific color.
+    pub fn spawn_torus_with_color(
+        &mut self,
+        position: [f32; 3],
+        radius: f32,
+        tube_radius: f32,
+        segments: u32,
+        tube_segments: u32,
+        color: katla_math::Color,
     ) -> katla_ecs::EntityId {
         use crate::components::{DrawableComponent, TransformComponent};
         use katla_ecs::EntityId;
@@ -529,7 +592,7 @@ impl Application {
                     position[2],
                 )),
             },
-            DrawableComponent::with_handles(mesh_handle, material_handle),
+            DrawableComponent::with_handles_and_color(mesh_handle, material_handle, color),
         ));
 
         info!("Spawned torus at {:?}", position);
@@ -540,28 +603,51 @@ impl Application {
     ///
     /// Creates a visually interesting scene with multiple objects for testing.
     pub fn setup_default_scene(&mut self) {
+        use katla_math::Color;
+
         info!("Setting up default scene...");
 
-        // Ground plane
-        self.spawn_plane([0.0, -1.0, 0.0], 20.0, 20.0);
+        // Ground plane - nice dark gray
+        self.spawn_plane_with_color([0.0, -1.0, 0.0], 20.0, 20.0, Color::from_u8(40, 44, 52));
 
-        // Center cube
-        self.spawn_test_cube([0.0, 0.0, -5.0], [1.0, 1.0, 1.0]);
+        // Center cube - vibrant coral/orange
+        self.spawn_test_cube_with_color(
+            [0.0, 0.0, -5.0],
+            [1.0, 1.0, 1.0],
+            Color::from_u8(255, 120, 80),
+        );
 
-        // Sphere to the left
-        self.spawn_sphere([-3.0, 0.0, -5.0], 0.7, 32, 16);
+        // Sphere to the left - bright cyan
+        self.spawn_sphere_with_color([-3.0, 0.0, -5.0], 0.7, 32, 16, Color::from_u8(80, 220, 255));
 
-        // Cylinder to the right
-        self.spawn_cylinder([3.0, 0.0, -5.0], 1.5, 0.5, 32);
+        // Cylinder to the right - magenta/pink
+        self.spawn_cylinder_with_color(
+            [3.0, 0.0, -5.0],
+            1.5,
+            0.5,
+            32,
+            Color::from_u8(255, 80, 200),
+        );
 
-        // Torus in front
-        self.spawn_torus([0.0, 0.5, -2.0], 0.8, 0.2, 32, 16);
+        // Torus in front - lime green
+        self.spawn_torus_with_color(
+            [0.0, 0.5, -2.0],
+            0.8,
+            0.2,
+            32,
+            16,
+            Color::from_u8(150, 255, 100),
+        );
 
-        // Floating cube above
-        self.spawn_test_cube([0.0, 2.5, -5.0], [0.5, 0.5, 0.5]);
+        // Floating cube above - golden yellow
+        self.spawn_test_cube_with_color(
+            [0.0, 2.5, -5.0],
+            [0.5, 0.5, 0.5],
+            Color::from_u8(255, 220, 80),
+        );
 
-        // Distant plane as backdrop
-        self.spawn_plane([0.0, 2.0, -8.0], 10.0, 5.0);
+        // Distant plane as backdrop - deep purple/blue
+        self.spawn_plane_with_color([0.0, 2.0, -8.0], 10.0, 5.0, Color::from_u8(60, 40, 100));
 
         info!(
             "Default scene setup complete - {} entities spawned",
