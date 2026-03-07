@@ -106,10 +106,19 @@ impl Application {
             };
 
             // Submit draw via FrameContext (instance allocation is automatic)
-            frame
+            let mut draw = frame
                 .draw(mesh_handle, material_handle)
-                .with_transform(transform.transform.make_mat4().to_array())
-                .submit();
+                .with_transform(transform.transform.make_mat4().to_array());
+
+            // Add color if present
+            if let Some(color) = drawable.color {
+                draw = draw.with_color(color.to_array());
+            }
+
+            // Add PBR material parameters
+            draw = draw.with_pbr(drawable.metallic, drawable.roughness, drawable.ao);
+
+            draw.submit();
 
             drawable_count += 1;
         }
