@@ -256,27 +256,78 @@ mod tests {
         // For each face, verify the normal points outward by checking
         // that normal dot view_direction is positive when viewed from outside
         let test_cases = [
-            ([0.0, 0.0, 1.0], [[-0.5, -0.5, 0.5], [0.5, -0.5, 0.5], [0.5, 0.5, 0.5], [-0.5, 0.5, 0.5]]), // Front (+Z)
-            ([0.0, 0.0, -1.0], [[0.5, -0.5, -0.5], [-0.5, -0.5, -0.5], [-0.5, 0.5, -0.5], [0.5, 0.5, -0.5]]), // Back (-Z)
-            ([0.0, 1.0, 0.0], [[-0.5, 0.5, 0.5], [0.5, 0.5, 0.5], [0.5, 0.5, -0.5], [-0.5, 0.5, -0.5]]), // Top (+Y)
-            ([0.0, -1.0, 0.0], [[-0.5, -0.5, -0.5], [0.5, -0.5, -0.5], [0.5, -0.5, 0.5], [-0.5, -0.5, 0.5]]), // Bottom (-Y)
-            ([1.0, 0.0, 0.0], [[0.5, -0.5, 0.5], [0.5, -0.5, -0.5], [0.5, 0.5, -0.5], [0.5, 0.5, 0.5]]), // Right (+X)
-            ([-1.0, 0.0, 0.0], [[-0.5, -0.5, -0.5], [-0.5, -0.5, 0.5], [-0.5, 0.5, 0.5], [-0.5, 0.5, -0.5]]), // Left (-X)
+            (
+                [0.0, 0.0, 1.0],
+                [
+                    [-0.5, -0.5, 0.5],
+                    [0.5, -0.5, 0.5],
+                    [0.5, 0.5, 0.5],
+                    [-0.5, 0.5, 0.5],
+                ],
+            ), // Front (+Z)
+            (
+                [0.0, 0.0, -1.0],
+                [
+                    [0.5, -0.5, -0.5],
+                    [-0.5, -0.5, -0.5],
+                    [-0.5, 0.5, -0.5],
+                    [0.5, 0.5, -0.5],
+                ],
+            ), // Back (-Z)
+            (
+                [0.0, 1.0, 0.0],
+                [
+                    [-0.5, 0.5, 0.5],
+                    [0.5, 0.5, 0.5],
+                    [0.5, 0.5, -0.5],
+                    [-0.5, 0.5, -0.5],
+                ],
+            ), // Top (+Y)
+            (
+                [0.0, -1.0, 0.0],
+                [
+                    [-0.5, -0.5, -0.5],
+                    [0.5, -0.5, -0.5],
+                    [0.5, -0.5, 0.5],
+                    [-0.5, -0.5, 0.5],
+                ],
+            ), // Bottom (-Y)
+            (
+                [1.0, 0.0, 0.0],
+                [
+                    [0.5, -0.5, 0.5],
+                    [0.5, -0.5, -0.5],
+                    [0.5, 0.5, -0.5],
+                    [0.5, 0.5, 0.5],
+                ],
+            ), // Right (+X)
+            (
+                [-1.0, 0.0, 0.0],
+                [
+                    [-0.5, -0.5, -0.5],
+                    [-0.5, -0.5, 0.5],
+                    [-0.5, 0.5, 0.5],
+                    [-0.5, 0.5, -0.5],
+                ],
+            ), // Left (-X)
         ];
 
         let mut vertex_idx = 0;
         for (view_dir, corners) in test_cases {
             for corner in corners {
                 let v = &vertices[vertex_idx];
-                let normal_dot_view =
-                    v.normal[0] * view_dir[0] +
-                    v.normal[1] * view_dir[1] +
-                    v.normal[2] * view_dir[2];
+                let normal_dot_view = v.normal[0] * view_dir[0]
+                    + v.normal[1] * view_dir[1]
+                    + v.normal[2] * view_dir[2];
 
                 // Normal should point in same direction as view (positive dot product)
-                assert!(normal_dot_view > 0.5,
+                assert!(
+                    normal_dot_view > 0.5,
                     "Normal {:?} at position {:?} doesn't point outward for face {:?}",
-                    v.normal, v.position, view_dir);
+                    v.normal,
+                    v.position,
+                    view_dir
+                );
                 vertex_idx += 1;
             }
         }

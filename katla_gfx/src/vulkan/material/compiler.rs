@@ -204,9 +204,12 @@ impl MaterialCompiler {
     ) -> Result<(), MaterialError> {
         // Get the material asset (immutable borrow)
         let (shader_path, vertex_binding) = {
-            let material = registry
-                .get_material(material_handle)
-                .ok_or_else(|| MaterialError::ShaderCompilation(format!("Material handle {:?} not found", material_handle)))?;
+            let material = registry.get_material(material_handle).ok_or_else(|| {
+                MaterialError::ShaderCompilation(format!(
+                    "Material handle {:?} not found",
+                    material_handle
+                ))
+            })?;
 
             // Check if already compiled
             if material.fully_compiled {
@@ -216,7 +219,11 @@ impl MaterialCompiler {
             let shader_path = material
                 .shader_path
                 .as_ref()
-                .ok_or_else(|| MaterialError::ShaderCompilation("Deferred material has no shader path".to_string()))?
+                .ok_or_else(|| {
+                    MaterialError::ShaderCompilation(
+                        "Deferred material has no shader path".to_string(),
+                    )
+                })?
                 .clone();
 
             (shader_path, material.vertex_binding.clone())

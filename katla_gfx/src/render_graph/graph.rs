@@ -10,8 +10,8 @@ use super::builder::{InternalPassBuilder, PassBuilder};
 use super::compiler::{ExecutionPlan, GraphCompiler};
 use super::error::RenderGraphError;
 use super::pass::PassDesc;
-use super::resource::{GraphResourceDesc, GraphResourceHandle};
 use super::passes::geometry::GeometryPassData;
+use super::resource::{GraphResourceDesc, GraphResourceHandle};
 use crate::renderer::VulkanRenderer;
 use crate::renderer::types::DrawList;
 use crate::sync::VkImageView;
@@ -914,7 +914,8 @@ impl<'a> Frame<'a> {
             // Check if this is a transient texture
             if let Some(transient) = self.graph.transient_texture(color_name) {
                 // Check if pass specified load/store ops for this attachment
-                let (load_op, store_op, clear_value) = pass.color_attachments
+                let (load_op, store_op, clear_value) = pass
+                    .color_attachments
                     .iter()
                     .find(|(name, ..)| name == color_name)
                     .map(|(_, _, load_op, store_op, clear_value)| {
@@ -922,22 +923,32 @@ impl<'a> Frame<'a> {
                             match load_op {
                                 crate::render_pass::LoadOp::Load => vk::AttachmentLoadOp::LOAD,
                                 crate::render_pass::LoadOp::Clear => vk::AttachmentLoadOp::CLEAR,
-                                crate::render_pass::LoadOp::DontCare => vk::AttachmentLoadOp::NONE_EXT,
+                                crate::render_pass::LoadOp::DontCare => {
+                                    vk::AttachmentLoadOp::NONE_EXT
+                                }
                             },
                             match store_op {
                                 crate::render_pass::StoreOp::Store => vk::AttachmentStoreOp::STORE,
-                                crate::render_pass::StoreOp::DontCare => vk::AttachmentStoreOp::NONE_EXT,
+                                crate::render_pass::StoreOp::DontCare => {
+                                    vk::AttachmentStoreOp::NONE_EXT
+                                }
                             },
                             match clear_value {
-                                crate::render_pass::ClearValue::Color(c) => vk::ClearColorValue { float32: *c },
-                                _ => vk::ClearColorValue { float32: [0.0, 0.0, 0.0, 1.0] },
+                                crate::render_pass::ClearValue::Color(c) => {
+                                    vk::ClearColorValue { float32: *c }
+                                }
+                                _ => vk::ClearColorValue {
+                                    float32: [0.0, 0.0, 0.0, 1.0],
+                                },
                             },
                         )
                     })
                     .unwrap_or((
                         vk::AttachmentLoadOp::CLEAR,
                         vk::AttachmentStoreOp::STORE,
-                        vk::ClearColorValue { float32: [0.1, 0.1, 0.1, 1.0] },
+                        vk::ClearColorValue {
+                            float32: [0.1, 0.1, 0.1, 1.0],
+                        },
                     ));
 
                 vk::RenderingAttachmentInfo::default()
@@ -1106,7 +1117,9 @@ impl<'a> Frame<'a> {
         draw_call: &crate::renderer::types::DrawCall,
     ) -> Result<(), RenderGraphError> {
         // Set 0: Storage uniforms (frame_data + objects array) - use per-frame descriptor set
-        let storage_ds = self.renderer.storage_descriptor_sets[self.renderer.storage_manager.current_frame()].vk_set();
+        let storage_ds = self.renderer.storage_descriptor_sets
+            [self.renderer.storage_manager.current_frame()]
+        .vk_set();
         cmd.bind_descriptor_sets(pipeline_layout, 0, &[storage_ds], &[]);
 
         // Set 1: Bindless textures (all current materials use bindless)
@@ -1166,7 +1179,8 @@ impl<'a> Frame<'a> {
             // Check if this is a transient texture
             if let Some(transient) = self.graph.transient_texture(color_name) {
                 // Check if pass specified load/store ops for this attachment
-                let (load_op, store_op, clear_value) = pass.color_attachments
+                let (load_op, store_op, clear_value) = pass
+                    .color_attachments
                     .iter()
                     .find(|(name, ..)| name == color_name)
                     .map(|(_, _, load_op, store_op, clear_value)| {
@@ -1174,22 +1188,32 @@ impl<'a> Frame<'a> {
                             match load_op {
                                 crate::render_pass::LoadOp::Load => vk::AttachmentLoadOp::LOAD,
                                 crate::render_pass::LoadOp::Clear => vk::AttachmentLoadOp::CLEAR,
-                                crate::render_pass::LoadOp::DontCare => vk::AttachmentLoadOp::NONE_EXT,
+                                crate::render_pass::LoadOp::DontCare => {
+                                    vk::AttachmentLoadOp::NONE_EXT
+                                }
                             },
                             match store_op {
                                 crate::render_pass::StoreOp::Store => vk::AttachmentStoreOp::STORE,
-                                crate::render_pass::StoreOp::DontCare => vk::AttachmentStoreOp::NONE_EXT,
+                                crate::render_pass::StoreOp::DontCare => {
+                                    vk::AttachmentStoreOp::NONE_EXT
+                                }
                             },
                             match clear_value {
-                                crate::render_pass::ClearValue::Color(c) => vk::ClearColorValue { float32: *c },
-                                _ => vk::ClearColorValue { float32: [0.0, 0.0, 0.0, 1.0] },
+                                crate::render_pass::ClearValue::Color(c) => {
+                                    vk::ClearColorValue { float32: *c }
+                                }
+                                _ => vk::ClearColorValue {
+                                    float32: [0.0, 0.0, 0.0, 1.0],
+                                },
                             },
                         )
                     })
                     .unwrap_or((
                         vk::AttachmentLoadOp::CLEAR,
                         vk::AttachmentStoreOp::STORE,
-                        vk::ClearColorValue { float32: [0.1, 0.1, 0.1, 1.0] },
+                        vk::ClearColorValue {
+                            float32: [0.1, 0.1, 0.1, 1.0],
+                        },
                     ));
 
                 vk::RenderingAttachmentInfo::default()
@@ -1247,7 +1271,8 @@ impl<'a> Frame<'a> {
         }
 
         // Bind descriptor sets (storage uniforms + bindless textures) - use per-frame descriptor set
-        let storage_ds = renderer.storage_descriptor_sets[renderer.storage_manager.current_frame()].vk_set();
+        let storage_ds =
+            renderer.storage_descriptor_sets[renderer.storage_manager.current_frame()].vk_set();
         cmd.bind_descriptor_sets(layout, 0, &[storage_ds], &[]);
 
         let bindless_ds = renderer.bindless_manager.descriptor_set().vk();

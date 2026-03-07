@@ -2,8 +2,8 @@
 
 use std::marker::PhantomData;
 
-use ash::vk;
 use crate::texture::ImageFormat;
+use ash::vk;
 
 /// Transient resource types for render graph.
 #[derive(Clone, Debug, PartialEq)]
