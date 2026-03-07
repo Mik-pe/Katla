@@ -11,6 +11,7 @@ use super::compiler::{ExecutionPlan, GraphCompiler};
 use super::error::RenderGraphError;
 use super::pass::PassDesc;
 use super::resource::{GraphResourceDesc, GraphResourceHandle};
+use super::passes::geometry::GeometryPassData;
 use crate::renderer::VulkanRenderer;
 use crate::renderer::types::DrawList;
 use crate::sync::VkImageView;
@@ -527,8 +528,8 @@ impl FrameGraphBuilder {
                 }
             }
 
-            // Call the build function to validate resource references
-            let _pass_data = (pass_builder.build_fn)(&resource_map)?;
+            // Call the build function to validate resource references and get pass data
+            let pass_data = (pass_builder.build_fn)(&resource_map)?;
 
             // Create PassDesc with string-based resource references
             let mut pass = PassDesc::new(
@@ -542,6 +543,26 @@ impl FrameGraphBuilder {
             pass.tonemap_params = pass_builder.tonemap_params;
             pass.material = pass_builder.material;
             pass.output_format = pass_builder.output_format;
+
+            // Extract color attachment info from pass data (for geometry passes)
+            if let Some(geom_data) = pass_data.downcast_ref::<GeometryPassData>() {
+                // Convert resolved handles back to resource names for color attachments
+                for (handle, format, load_op, store_op, clear_value) in &geom_data.colors {
+                    // Find the resource name for this handle
+                    for (name, candidate_handle) in &resource_map {
+                        if *candidate_handle == *handle {
+                            pass.color_attachments.push((
+                                name.clone(),
+                                *format,
+                                *load_op,
+                                *store_op,
+                                *clear_value,
+                            ));
+                            break;
+                        }
+                    }
+                }
+            }
 
             graph.add_pass(pass);
         }
@@ -874,7 +895,7 @@ impl<'a> Frame<'a> {
         // Determine color attachment:
         // 1. If pass writes to "backbuffer", use swapchain directly
         // 2. If pass writes to a transient texture, use that
-        // 3. Otherwise, error - passes must explicitly declare their output
+        // 3. Use load_op from pass.color_attachments if available, otherwise default to CLEAR
         let color_attachment = if pass.writes.contains(&BACKBUFFER_NAME.to_string()) {
             // Explicit backbuffer write - use swapchain
             let swapchain_view =
@@ -892,16 +913,39 @@ impl<'a> Frame<'a> {
         } else if let Some(color_name) = pass.writes.first() {
             // Check if this is a transient texture
             if let Some(transient) = self.graph.transient_texture(color_name) {
+                // Check if pass specified load/store ops for this attachment
+                let (load_op, store_op, clear_value) = pass.color_attachments
+                    .iter()
+                    .find(|(name, ..)| name == color_name)
+                    .map(|(_, _, load_op, store_op, clear_value)| {
+                        (
+                            match load_op {
+                                crate::render_pass::LoadOp::Load => vk::AttachmentLoadOp::LOAD,
+                                crate::render_pass::LoadOp::Clear => vk::AttachmentLoadOp::CLEAR,
+                                crate::render_pass::LoadOp::DontCare => vk::AttachmentLoadOp::NONE_EXT,
+                            },
+                            match store_op {
+                                crate::render_pass::StoreOp::Store => vk::AttachmentStoreOp::STORE,
+                                crate::render_pass::StoreOp::DontCare => vk::AttachmentStoreOp::NONE_EXT,
+                            },
+                            match clear_value {
+                                crate::render_pass::ClearValue::Color(c) => vk::ClearColorValue { float32: *c },
+                                _ => vk::ClearColorValue { float32: [0.0, 0.0, 0.0, 1.0] },
+                            },
+                        )
+                    })
+                    .unwrap_or((
+                        vk::AttachmentLoadOp::CLEAR,
+                        vk::AttachmentStoreOp::STORE,
+                        vk::ClearColorValue { float32: [0.1, 0.1, 0.1, 1.0] },
+                    ));
+
                 vk::RenderingAttachmentInfo::default()
                     .image_view(transient.image_view.vk())
                     .image_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
-                    .load_op(vk::AttachmentLoadOp::CLEAR)
-                    .store_op(vk::AttachmentStoreOp::STORE)
-                    .clear_value(vk::ClearValue {
-                        color: vk::ClearColorValue {
-                            float32: [0.1, 0.1, 0.1, 1.0],
-                        },
-                    })
+                    .load_op(load_op)
+                    .store_op(store_op)
+                    .clear_value(vk::ClearValue { color: clear_value })
             } else {
                 return Err(RenderGraphError::ResourceNotFound(format!(
                     "Color target '{}' not found. Use 'backbuffer' for swapchain or create a transient resource.",
@@ -1103,6 +1147,7 @@ impl<'a> Frame<'a> {
         // Determine color attachment:
         // 1. If pass writes to "backbuffer", use swapchain directly
         // 2. If pass writes to a transient texture, use that
+        // 3. Use load_op from pass.color_attachments if available, otherwise default to CLEAR
         let color_attachment = if pass.writes.contains(&BACKBUFFER_NAME.to_string()) {
             // Explicit backbuffer write - use swapchain
             let swapchain_view =
@@ -1120,16 +1165,39 @@ impl<'a> Frame<'a> {
         } else if let Some(color_name) = pass.writes.first() {
             // Check if this is a transient texture
             if let Some(transient) = self.graph.transient_texture(color_name) {
+                // Check if pass specified load/store ops for this attachment
+                let (load_op, store_op, clear_value) = pass.color_attachments
+                    .iter()
+                    .find(|(name, ..)| name == color_name)
+                    .map(|(_, _, load_op, store_op, clear_value)| {
+                        (
+                            match load_op {
+                                crate::render_pass::LoadOp::Load => vk::AttachmentLoadOp::LOAD,
+                                crate::render_pass::LoadOp::Clear => vk::AttachmentLoadOp::CLEAR,
+                                crate::render_pass::LoadOp::DontCare => vk::AttachmentLoadOp::NONE_EXT,
+                            },
+                            match store_op {
+                                crate::render_pass::StoreOp::Store => vk::AttachmentStoreOp::STORE,
+                                crate::render_pass::StoreOp::DontCare => vk::AttachmentStoreOp::NONE_EXT,
+                            },
+                            match clear_value {
+                                crate::render_pass::ClearValue::Color(c) => vk::ClearColorValue { float32: *c },
+                                _ => vk::ClearColorValue { float32: [0.0, 0.0, 0.0, 1.0] },
+                            },
+                        )
+                    })
+                    .unwrap_or((
+                        vk::AttachmentLoadOp::CLEAR,
+                        vk::AttachmentStoreOp::STORE,
+                        vk::ClearColorValue { float32: [0.1, 0.1, 0.1, 1.0] },
+                    ));
+
                 vk::RenderingAttachmentInfo::default()
                     .image_view(transient.image_view.vk())
                     .image_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
-                    .load_op(vk::AttachmentLoadOp::CLEAR)
-                    .store_op(vk::AttachmentStoreOp::STORE)
-                    .clear_value(vk::ClearValue {
-                        color: vk::ClearColorValue {
-                            float32: [0.1, 0.1, 0.1, 1.0],
-                        },
-                    })
+                    .load_op(load_op)
+                    .store_op(store_op)
+                    .clear_value(vk::ClearValue { color: clear_value })
             } else {
                 return Err(RenderGraphError::ResourceNotFound(format!(
                     "Color target '{}' not found. Use 'backbuffer' for swapchain or create a transient resource.",

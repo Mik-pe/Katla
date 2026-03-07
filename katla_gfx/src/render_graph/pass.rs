@@ -1,5 +1,7 @@
 //! Pass types for render graph execution.
 
+use crate::render_pass::{LoadOp, StoreOp, ClearValue};
+use crate::texture::ImageFormat;
 use super::error::RenderGraphError;
 
 /// Type of render pass.
@@ -43,6 +45,8 @@ pub(crate) struct PassDesc {
     pub material: Option<crate::handle::MaterialHandle>,
     /// Output color format (for material format inference).
     pub output_format: Option<crate::texture::ImageFormat>,
+    /// Color attachment load/store ops for each write target.
+    pub color_attachments: Vec<(String, ImageFormat, LoadOp, StoreOp, ClearValue)>,
 }
 
 impl PassDesc {
@@ -63,6 +67,7 @@ impl PassDesc {
             tonemap_params: None,
             material: None,
             output_format: None,
+            color_attachments: Vec::new(),
         }
     }
 

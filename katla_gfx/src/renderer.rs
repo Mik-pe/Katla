@@ -1209,6 +1209,30 @@ impl VulkanRenderer {
         &mut self,
         shader_path: std::path::PathBuf,
     ) -> Result<crate::handle::PipelineHandle, RendererError> {
+        self.compile_fullscreen_shader_with_format(
+            shader_path,
+            crate::texture::ImageFormat::B8G8R8A8Srgb,
+        )
+    }
+
+    /// Compile a fullscreen/post-processing shader with custom color format.
+    ///
+    /// Unlike `compile_fullscreen_shader()` which uses swapchain format,
+    /// this allows specifying a custom color format for rendering to
+    /// intermediate textures (e.g., HDR render targets).
+    ///
+    /// # Arguments
+    /// * `shader_path` - Path to the WGSL shader file (contains both vertex and fragment)
+    /// * `color_format` - Color attachment format for rendering
+    ///
+    /// # Returns
+    ///
+    /// A `PipelineHandle` that can be passed to `FullscreenPass::pipeline()`.
+    pub fn compile_fullscreen_shader_with_format(
+        &mut self,
+        shader_path: std::path::PathBuf,
+        color_format: crate::texture::ImageFormat,
+    ) -> Result<crate::handle::PipelineHandle, RendererError> {
         use crate::pipeline::{CullMode, FrontFace};
         use crate::vulkan::material::builder::PipelineBuilder;
         use crate::vulkan::material::shadermodule::ShaderCache;
@@ -1261,9 +1285,9 @@ impl VulkanRenderer {
             // No vertex binding - fullscreen triangle generated in shader
             .with_depth_test(false, false, crate::pipeline::CompareOp::Always)
             .with_cull_mode(CullMode::None, FrontFace::CounterClockwise)
-            // Render to swapchain format (output is LDR SRGB)
+            // Use specified color format
             .with_rendering_formats(
-                Some(crate::texture::ImageFormat::B8G8R8A8Srgb),
+                Some(color_format),
                 Some(crate::texture::ImageFormat::D32SfloatS8Uint),
             );
 

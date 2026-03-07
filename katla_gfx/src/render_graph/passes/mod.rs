@@ -31,7 +31,7 @@
 //! Names are resolved to handles at graph build time with zero runtime overhead.
 
 mod fullscreen;
-mod geometry;
+pub(crate) mod geometry;
 mod shadow;
 mod ui;
 

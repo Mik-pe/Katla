@@ -52,8 +52,8 @@ fn vs_main(@builtin(vertex_index) vertex_index: u32) -> VertexOutput {
 
     let pos = positions[vertex_index];
 
-    // Set depth to far plane (1.0 in NDC)
-    out.clip_position = vec4f(pos, 1.0, 1.0);
+    // Set depth to far plane (0.0 in reverse-Z, so geometry appears in front)
+    out.clip_position = vec4f(pos, 0.0, 1.0);
     out.ndc_pos = pos;
 
     return out;
@@ -62,7 +62,8 @@ fn vs_main(@builtin(vertex_index) vertex_index: u32) -> VertexOutput {
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4f {
     // Convert NDC to world space direction using inverse VP
-    let ndc = vec4f(in.ndc_pos, 1.0, 1.0);
+    // Use Z=0.0 for reverse-Z (far plane)
+    let ndc = vec4f(in.ndc_pos, 0.0, 1.0);
     let world_pos = frame_data.inv_view_proj * ndc;
 
     // Safe division - avoid divide by zero
