@@ -148,13 +148,13 @@ pub fn generate_sphere(radius: f32, segments: u32, rings: u32) -> (Vec<VertexPBR
     }
 
     // Top cap: connect top pole vertices to first ring
-    // Each pole vertex connects to its corresponding ring vertex
+    // Each triangle uses the pole vertex whose normal matches the ring segment
     for segment in 0..segments {
-        let pole_vertex = top_pole_start + segment; // Current pole vertex
+        let pole_vertex = top_pole_start + segment + 1; // Next pole vertex (not current!)
         let ring_vertex = segment; // Current vertex in first ring
         let next_ring_vertex = segment + 1; // Next vertex in first ring
 
-        indices.extend_from_slice(&[pole_vertex, ring_vertex, next_ring_vertex]);
+        indices.extend_from_slice(&[ring_vertex, next_ring_vertex, pole_vertex]);
     }
 
     // Bottom cap: connect last ring to bottom pole vertices
