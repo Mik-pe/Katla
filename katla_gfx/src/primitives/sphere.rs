@@ -71,27 +71,24 @@ pub fn generate_sphere(radius: f32, segments: u32, rings: u32) -> (Vec<VertexPBR
         }
     }
 
-    // Generate top pole vertices (one per segment to avoid normal pinching)
-    // All vertices share the same position but have different normals pointing
-    // toward each segment's direction
+    // Generate top pole vertices (one per segment for UV continuity)
+    // Normal is the normalized position
     let top_pole_start = vertices.len() as u32;
+
     for segment in 0..=segments {
         let phi = 2.0 * std::f32::consts::PI * segment as f32 / segments as f32;
-        let sin_phi = phi.sin();
-        let cos_phi = phi.cos();
 
-        // Position is at the pole top
+        // Position at pole top
         let position = [0.0, radius, 0.0];
 
-        // Normal points toward this segment's direction, matching the first ring's normals
-        // Use the same theta as ring 1 (first ring after poles)
-        let theta = std::f32::consts::PI / rings as f32;
-        let sin_theta = theta.sin();
-        let cos_theta = theta.cos();
-        let normal = [cos_phi * sin_theta, cos_theta, sin_phi * sin_theta];
+        // Normal = normalize(position)
+        let len =
+            (position[0] * position[0] + position[1] * position[1] + position[2] * position[2])
+                .sqrt();
+        let normal = [position[0] / len, position[1] / len, position[2] / len];
 
         // Tangent points along the longitude direction
-        let tangent = [-sin_phi * sin_theta, 0.0, cos_phi * sin_theta, 1.0];
+        let tangent = [-phi.sin(), 0.0, phi.cos(), 1.0];
 
         // UV coordinates
         let u = segment as f32 / segments as f32;
@@ -99,25 +96,24 @@ pub fn generate_sphere(radius: f32, segments: u32, rings: u32) -> (Vec<VertexPBR
         vertices.push(VertexPBR::new(position, normal, tangent, [u, 0.0]));
     }
 
-    // Generate bottom pole vertices (one per segment to avoid normal pinching)
+    // Generate bottom pole vertices (one per segment for UV continuity)
+    // Normal is the normalized position
     let bottom_pole_start = vertices.len() as u32;
+
     for segment in 0..=segments {
         let phi = 2.0 * std::f32::consts::PI * segment as f32 / segments as f32;
-        let sin_phi = phi.sin();
-        let cos_phi = phi.cos();
 
-        // Position is at the pole bottom
+        // Position at pole bottom
         let position = [0.0, -radius, 0.0];
 
-        // Normal points toward this segment's direction, matching the last ring's normals
-        // Use the same theta as ring (rings-1) (last ring before poles)
-        let theta = std::f32::consts::PI * (rings - 1) as f32 / rings as f32;
-        let sin_theta = theta.sin();
-        let cos_theta = theta.cos();
-        let normal = [cos_phi * sin_theta, cos_theta, sin_phi * sin_theta];
+        // Normal = normalize(position)
+        let len =
+            (position[0] * position[0] + position[1] * position[1] + position[2] * position[2])
+                .sqrt();
+        let normal = [position[0] / len, position[1] / len, position[2] / len];
 
         // Tangent points along the longitude direction
-        let tangent = [-sin_phi * sin_theta, 0.0, cos_phi * sin_theta, 1.0];
+        let tangent = [-phi.sin(), 0.0, phi.cos(), 1.0];
 
         // UV coordinates
         let u = segment as f32 / segments as f32;
@@ -311,5 +307,77 @@ mod tests {
             "Sphere has {} triangles with incorrect winding ({} passed)",
             failed, passed
         );
+    }
+
+    #[test]
+    fn test_sphere_pole_tangent_validity() {
+        // Tangents should be normalized and non-degenerate at poles
+        let radius = 1.0;
+        let segments = 16;
+        let rings = 16;
+        let (vertices, _) = generate_sphere(radius, segments, rings);
+
+        let middle_ring_count = (rings - 1) * (segments + 1);
+        let top_pole_start = middle_ring_count as usize;
+        let bottom_pole_start = top_pole_start + (segments + 1) as usize;
+
+        // Check top pole tangents
+        for i in 0..=segments {
+            let v = &vertices[top_pole_start + i as usize];
+            let tx = v.tangent[0];
+            let ty = v.tangent[1];
+            let tz = v.tangent[2];
+            let len = (tx * tx + ty * ty + tz * tz).sqrt();
+            // Tangents should be normalized (or close to it)
+            assert!(
+                (len - 1.0).abs() < 0.01,
+                "Top pole vertex {} has non-unit tangent: len={}",
+                i,
+                len
+            );
+        }
+
+        // Check bottom pole tangents
+        for i in 0..=segments {
+            let v = &vertices[bottom_pole_start + i as usize];
+            let tx = v.tangent[0];
+            let ty = v.tangent[1];
+            let tz = v.tangent[2];
+            let len = (tx * tx + ty * ty + tz * tz).sqrt();
+            assert!(
+                (len - 1.0).abs() < 0.01,
+                "Bottom pole vertex {} has non-unit tangent: len={}",
+                i,
+                len
+            );
+        }
+    }
+
+    #[test]
+    fn test_sphere_normal_is_normalized_position() {
+        // All normals should be the normalized position for a sphere centered at origin
+        let radius = 2.0;
+        let segments = 16;
+        let rings = 16;
+        let (vertices, _) = generate_sphere(radius, segments, rings);
+
+        for v in &vertices {
+            // Compute expected normal = normalize(position)
+            let pos = v.position;
+            let len = (pos[0] * pos[0] + pos[1] * pos[1] + pos[2] * pos[2]).sqrt();
+            let expected = [pos[0] / len, pos[1] / len, pos[2] / len];
+
+            // Check normal matches
+            let dx = (v.normal[0] - expected[0]).abs();
+            let dy = (v.normal[1] - expected[1]).abs();
+            let dz = (v.normal[2] - expected[2]).abs();
+
+            assert!(
+                dx < 1e-5 && dy < 1e-5 && dz < 1e-5,
+                "Normal {:?} doesn't match normalized position {:?}",
+                v.normal,
+                expected
+            );
+        }
     }
 }

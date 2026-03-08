@@ -394,6 +394,7 @@ impl Application {
     }
 
     /// Spawn a test cube entity with a specific color.
+    /// Color is expected in sRGB (perceptual) space and converted to linear for PBR.
     pub fn spawn_test_cube_with_color(
         &mut self,
         position: [f32; 3],
@@ -407,6 +408,9 @@ impl Application {
         let mesh_handle = self.renderer.create_cube_mesh(size);
         let material_handle = self.default_material();
 
+        // Convert sRGB to linear for correct PBR rendering
+        let linear_color = color.to_linear();
+
         let entity_id = self.world.spawn((
             TransformComponent {
                 transform: katla_math::Transform::from_position(Vec3::new(
@@ -415,7 +419,7 @@ impl Application {
                     position[2],
                 )),
             },
-            DrawableComponent::with_handles_and_color(mesh_handle, material_handle, color),
+            DrawableComponent::with_handles_and_color(mesh_handle, material_handle, linear_color),
         ));
 
         info!("Spawned test cube at {:?} with size {:?}", position, size);
@@ -434,6 +438,7 @@ impl Application {
     }
 
     /// Spawn a sphere entity with a specific color.
+    /// Color is expected in sRGB (perceptual) space and converted to linear for PBR.
     pub fn spawn_sphere_with_color(
         &mut self,
         position: [f32; 3],
@@ -449,6 +454,9 @@ impl Application {
         let mesh_handle = self.renderer.create_sphere_mesh(radius, segments, rings);
         let material_handle = self.default_material();
 
+        // Convert sRGB to linear for correct PBR rendering
+        let linear_color = color.to_linear();
+
         let entity_id = self.world.spawn((
             TransformComponent {
                 transform: katla_math::Transform::from_position(Vec3::new(
@@ -457,11 +465,103 @@ impl Application {
                     position[2],
                 )),
             },
-            DrawableComponent::with_handles_and_color(mesh_handle, material_handle, color),
+            DrawableComponent::with_handles_and_color(mesh_handle, material_handle, linear_color),
         ));
 
         info!("Spawned sphere at {:?} with radius {}", position, radius);
         entity_id
+    }
+
+    /// Spawn a sphere entity with PBR material properties.
+    /// Color is expected in sRGB (perceptual) space and converted to linear for PBR.
+    pub fn spawn_sphere_with_material(
+        &mut self,
+        position: [f32; 3],
+        radius: f32,
+        segments: u32,
+        rings: u32,
+        color: katla_math::Color,
+        metallic: f32,
+        roughness: f32,
+    ) -> katla_ecs::EntityId {
+        use crate::components::{DrawableComponent, TransformComponent};
+        use katla_ecs::EntityId;
+        use katla_math::Vec3;
+
+        let mesh_handle = self.renderer.create_sphere_mesh(radius, segments, rings);
+        let material_handle = self.default_material();
+
+        // Convert sRGB to linear for correct PBR rendering
+        let linear_color = color.to_linear();
+
+        let entity_id = self.world.spawn((
+            TransformComponent {
+                transform: katla_math::Transform::from_position(Vec3::new(
+                    position[0],
+                    position[1],
+                    position[2],
+                )),
+            },
+            DrawableComponent::with_handles_and_material(
+                mesh_handle,
+                material_handle,
+                Some(linear_color),
+                metallic,
+                roughness,
+                1.0, // ao
+            ),
+        ));
+
+        entity_id
+    }
+
+    /// Spawn a grid of spheres showcasing PBR material properties.
+    ///
+    /// Creates a grid where:
+    /// - X-axis: Roughness (0.0 → 1.0)
+    /// - Y-axis: Metallic (0.0 → 1.0)
+    ///
+    /// This is the standard PBR material showcase pattern used by most engines.
+    pub fn spawn_pbr_material_grid(
+        &mut self,
+        center: [f32; 3],
+        grid_size: usize,
+        sphere_radius: f32,
+        spacing: f32,
+    ) {
+        use katla_math::Color;
+
+        let half_grid = (grid_size - 1) as f32 / 2.0;
+
+        for y in 0..grid_size {
+            for x in 0..grid_size {
+                let metallic = y as f32 / (grid_size - 1).max(1) as f32;
+                let roughness = x as f32 / (grid_size - 1).max(1) as f32;
+
+                let pos_x = center[0] + (x as f32 - half_grid) * spacing;
+                let pos_y = center[1] + (y as f32 - half_grid) * spacing;
+                let pos_z = center[2];
+
+                // Cool blue color - shifts to cyan for metals
+                // spawn_sphere_with_material expects sRGB and converts to linear internally
+                let base_color = Color::rgb(0.4 + metallic * 0.2, 0.6 + metallic * 0.2, 1.0);
+
+                self.spawn_sphere_with_material(
+                    [pos_x, pos_y, pos_z],
+                    sphere_radius,
+                    32,
+                    16,
+                    base_color,
+                    metallic,
+                    roughness,
+                );
+            }
+        }
+
+        info!(
+            "Spawned PBR material grid ({}x{}) at {:?}",
+            grid_size, grid_size, center
+        );
     }
 
     /// Spawn a cylinder entity with the default material.
@@ -476,6 +576,7 @@ impl Application {
     }
 
     /// Spawn a cylinder entity with a specific color.
+    /// Color is expected in sRGB (perceptual) space and converted to linear for PBR.
     pub fn spawn_cylinder_with_color(
         &mut self,
         position: [f32; 3],
@@ -491,6 +592,9 @@ impl Application {
         let mesh_handle = self.renderer.create_cylinder_mesh(height, radius, segments);
         let material_handle = self.default_material();
 
+        // Convert sRGB to linear for correct PBR rendering
+        let linear_color = color.to_linear();
+
         let entity_id = self.world.spawn((
             TransformComponent {
                 transform: katla_math::Transform::from_position(Vec3::new(
@@ -499,7 +603,7 @@ impl Application {
                     position[2],
                 )),
             },
-            DrawableComponent::with_handles_and_color(mesh_handle, material_handle, color),
+            DrawableComponent::with_handles_and_color(mesh_handle, material_handle, linear_color),
         ));
 
         info!("Spawned cylinder at {:?}", position);
@@ -517,6 +621,7 @@ impl Application {
     }
 
     /// Spawn a plane entity with a specific color.
+    /// Color is expected in sRGB (perceptual) space and converted to linear for PBR.
     pub fn spawn_plane_with_color(
         &mut self,
         position: [f32; 3],
@@ -531,6 +636,9 @@ impl Application {
         let mesh_handle = self.renderer.create_plane_mesh(width, height);
         let material_handle = self.default_material();
 
+        // Convert sRGB to linear for correct PBR rendering
+        let linear_color = color.to_linear();
+
         let entity_id = self.world.spawn((
             TransformComponent {
                 transform: katla_math::Transform::from_position(Vec3::new(
@@ -539,7 +647,7 @@ impl Application {
                     position[2],
                 )),
             },
-            DrawableComponent::with_handles_and_color(mesh_handle, material_handle, color),
+            DrawableComponent::with_handles_and_color(mesh_handle, material_handle, linear_color),
         ));
 
         info!("Spawned plane at {:?}", position);
@@ -566,6 +674,7 @@ impl Application {
     }
 
     /// Spawn a torus entity with a specific color.
+    /// Color is expected in sRGB (perceptual) space and converted to linear for PBR.
     pub fn spawn_torus_with_color(
         &mut self,
         position: [f32; 3],
@@ -584,6 +693,9 @@ impl Application {
                 .create_torus_mesh(radius, tube_radius, segments, tube_segments);
         let material_handle = self.default_material();
 
+        // Convert sRGB to linear for correct PBR rendering
+        let linear_color = color.to_linear();
+
         let entity_id = self.world.spawn((
             TransformComponent {
                 transform: katla_math::Transform::from_position(Vec3::new(
@@ -592,7 +704,7 @@ impl Application {
                     position[2],
                 )),
             },
-            DrawableComponent::with_handles_and_color(mesh_handle, material_handle, color),
+            DrawableComponent::with_handles_and_color(mesh_handle, material_handle, linear_color),
         ));
 
         info!("Spawned torus at {:?}", position);
@@ -610,19 +722,22 @@ impl Application {
         // Ground plane - nice dark gray
         self.spawn_plane_with_color([0.0, -1.0, 0.0], 20.0, 20.0, Color::from_u8(40, 44, 52));
 
+        // PBR material grid - metallic (Y) x roughness (X)
+        self.spawn_pbr_material_grid([0.0, 2.0, -6.0], 5, 0.4, 1.2);
+
         // Center cube - vibrant coral/orange
         self.spawn_test_cube_with_color(
-            [0.0, 0.0, -5.0],
+            [-5.0, 0.0, -5.0],
             [1.0, 1.0, 1.0],
             Color::from_u8(255, 120, 80),
         );
 
         // Sphere to the left - bright cyan
-        self.spawn_sphere_with_color([-3.0, 0.0, -5.0], 0.7, 32, 16, Color::from_u8(80, 220, 255));
+        self.spawn_sphere_with_color([-7.0, 0.0, -5.0], 0.7, 32, 16, Color::from_u8(80, 220, 255));
 
         // Cylinder to the right - magenta/pink
         self.spawn_cylinder_with_color(
-            [3.0, 0.0, -5.0],
+            [5.0, 0.0, -5.0],
             1.5,
             0.5,
             32,
@@ -631,7 +746,7 @@ impl Application {
 
         // Torus in front - lime green
         self.spawn_torus_with_color(
-            [0.0, 0.5, -2.0],
+            [7.0, 0.5, -3.0],
             0.8,
             0.2,
             32,
@@ -639,15 +754,8 @@ impl Application {
             Color::from_u8(150, 255, 100),
         );
 
-        // Floating cube above - golden yellow
-        self.spawn_test_cube_with_color(
-            [0.0, 2.5, -5.0],
-            [0.5, 0.5, 0.5],
-            Color::from_u8(255, 220, 80),
-        );
-
         // Distant plane as backdrop - deep purple/blue
-        self.spawn_plane_with_color([0.0, 2.0, -8.0], 10.0, 5.0, Color::from_u8(60, 40, 100));
+        self.spawn_plane_with_color([0.0, 2.0, -10.0], 15.0, 8.0, Color::from_u8(60, 40, 100));
 
         info!(
             "Default scene setup complete - {} entities spawned",
