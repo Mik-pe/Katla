@@ -475,11 +475,11 @@ impl Texture {
 
     /// Create a default metallic/roughness texture.
     /// GLTF packed format: G = roughness, B = metallic
-    /// Default: roughness = 0.5 (128), metallic = 0.0 (0)
+    /// Default: white (1, 1, 1) so material params control the values
     /// Note: MR textures are LINEAR data, not SRGB.
     pub fn create_default_metallic_roughness(context: Rc<VulkanContext>) -> Self {
-        // R = unused (0), G = roughness 0.5 (128), B = metallic 0 (0), A = unused (255)
-        let pixel_data: [u8; 4] = [0, 128, 0, 255];
+        // White: G=1, B=1 - material params multiply with 1.0
+        let pixel_data: [u8; 4] = [255, 255, 255, 255];
         Self::create_image(context, 1, 1, ImageFormat::R8G8B8A8Unorm, &pixel_data)
     }
 
