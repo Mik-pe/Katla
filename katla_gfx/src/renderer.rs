@@ -663,12 +663,20 @@ impl VulkanRenderer {
     /// # Returns
     /// A MaterialBuilder for configuring the material.
     ///
-    /// # Example
+    /// # When to use this
+    ///
+    /// Most applications should use `create_pbr_material()` instead.
+    /// This method is intended for:
+    /// - GLTF model loaders that need custom vertex types (Skinned)
+    /// - Advanced material configuration beyond PBR defaults
+    /// - Custom render targets with specific color formats
+    ///
+    /// # Example (GLTF loading with skinned meshes)
     /// ```ignore
     /// let material = renderer
-    ///     .material_builder("shaders/grass.wgsl")
-    ///     .alpha_blended()
-    ///     .double_sided()
+    ///     .material_builder(&shader_path)
+    ///     .with_vertex_type(VertexType::Skinned)
+    ///     .with_color_format(ImageFormat::R16G16B16A16Sfloat)
     ///     .build()?;
     /// ```
     pub fn material_builder(
