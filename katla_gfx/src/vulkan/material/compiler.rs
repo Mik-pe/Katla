@@ -47,6 +47,7 @@ pub enum VertexType {
     Pbr,
     Ui,
     Simple,
+    Skinned,
 }
 
 /// Options for material creation.
@@ -80,6 +81,10 @@ pub(crate) struct MaterialCompiler {
     context: Rc<VulkanContext>,
     storage_descriptor_layout: Option<vk::DescriptorSetLayout>,
     bindless_descriptor_layout: vk::DescriptorSetLayout,
+    /// Skeleton descriptor layout (Set 2 for skinned meshes)
+    skeleton_descriptor_layout: vk::DescriptorSetLayout,
+    /// Shared descriptor pool for skeleton descriptor sets
+    skeleton_descriptor_pool: vk::DescriptorPool,
 }
 
 impl MaterialCompiler {
@@ -119,11 +124,57 @@ impl MaterialCompiler {
             ))
         })?;
 
+        // Skeleton descriptor layout (set 2 for skinned meshes)
+        let skeleton_binding = [vk::DescriptorSetLayoutBinding::default()
+            .binding(0)
+            .descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
+            .descriptor_count(1)
+            .stage_flags(vk::ShaderStageFlags::VERTEX)];
+
+        let skeleton_layout_info =
+            vk::DescriptorSetLayoutCreateInfo::default().bindings(&skeleton_binding);
+
+        let skeleton_descriptor_layout = unsafe {
+            context
+                .device
+                .create_descriptor_set_layout(&skeleton_layout_info, None)
+        }
+        .map_err(|e| {
+            MaterialError::ShaderCompilation(format!(
+                "Failed to create skeleton descriptor layout: {:?}",
+                e
+            ))
+        })?;
+
+        // Skeleton descriptor pool (shared across all skeletons)
+        // Max 1024 skeletons - should be more than enough for most scenes
+        let skeleton_pool_sizes = [vk::DescriptorPoolSize::default()
+            .ty(vk::DescriptorType::STORAGE_BUFFER)
+            .descriptor_count(1024)];
+
+        let skeleton_pool_info = vk::DescriptorPoolCreateInfo::default()
+            .max_sets(1024)
+            .pool_sizes(&skeleton_pool_sizes);
+
+        let skeleton_descriptor_pool = unsafe {
+            context
+                .device
+                .create_descriptor_pool(&skeleton_pool_info, None)
+        }
+        .map_err(|e| {
+            MaterialError::ShaderCompilation(format!(
+                "Failed to create skeleton descriptor pool: {:?}",
+                e
+            ))
+        })?;
+
         Ok(Self {
             shader_cache: Rc::new(RefCell::new(ShaderCache::new(context.device.clone()))),
             context,
             storage_descriptor_layout: Some(storage_descriptor_layout),
             bindless_descriptor_layout,
+            skeleton_descriptor_layout,
+            skeleton_descriptor_pool,
         })
     }
 
@@ -285,18 +336,38 @@ impl MaterialCompiler {
             VertexType::Simple => {
                 crate::vulkan::vertexbinding::VertexBinding::from(&VertexLayout::position())
             }
+            VertexType::Skinned => {
+                crate::vulkan::vertexbinding::VertexBinding::from(&VertexLayout::pbr_skinned())
+            }
         })
     }
 
     fn build_descriptor_layouts(
         &self,
-        _options: &MaterialOptions,
+        options: &MaterialOptions,
     ) -> Result<Vec<vk::DescriptorSetLayout>, MaterialError> {
-        Ok(vec![
+        let mut layouts = vec![
             self.storage_descriptor_layout
                 .expect("Storage descriptor layout not initialized"),
             self.bindless_descriptor_layout,
-        ])
+        ];
+
+        // Add skeleton layout for skinned materials
+        if matches!(options.vertex_type, VertexType::Skinned) {
+            layouts.push(self.skeleton_descriptor_layout);
+        }
+
+        Ok(layouts)
+    }
+
+    /// Get the skeleton descriptor pool for allocating skeleton descriptor sets.
+    pub(crate) fn skeleton_descriptor_pool(&self) -> vk::DescriptorPool {
+        self.skeleton_descriptor_pool
+    }
+
+    /// Get the skeleton descriptor layout.
+    pub(crate) fn skeleton_descriptor_layout(&self) -> vk::DescriptorSetLayout {
+        self.skeleton_descriptor_layout
     }
 
     fn build_pipeline(
@@ -343,7 +414,7 @@ impl MaterialCompiler {
         )
     }
 
-    /// Clean up descriptor layouts.
+    /// Clean up descriptor layouts and pool.
     pub(crate) fn destroy(&mut self) {
         if let Some(layout) = self.storage_descriptor_layout.take() {
             unsafe {
@@ -351,6 +422,16 @@ impl MaterialCompiler {
                     .device
                     .destroy_descriptor_set_layout(layout, None);
             }
+        }
+
+        // Destroy skeleton descriptor layout and pool
+        unsafe {
+            self.context
+                .device
+                .destroy_descriptor_set_layout(self.skeleton_descriptor_layout, None);
+            self.context
+                .device
+                .destroy_descriptor_pool(self.skeleton_descriptor_pool, None);
         }
     }
 }

@@ -170,36 +170,6 @@ impl FrameContext {
         }
     }
 
-    /// Submit a skinned mesh draw call (allocates 1 instance slot).
-    ///
-    /// The skeleton handle will be used to bind Set 2 (joint matrices).
-    ///
-    /// # Arguments
-    /// * `mesh` - Mesh handle to draw (must have skinning attributes)
-    /// * `material` - Material handle to use
-    /// * `skeleton` - Skeleton handle with joint matrices
-    pub fn draw_skinned(
-        &mut self,
-        mesh: MeshHandle,
-        material: MaterialHandle,
-        skeleton: SkeletonHandle,
-    ) -> DrawBuilder {
-        let instance_idx = self.alloc_instance(1);
-        DrawBuilder {
-            frame: self,
-            instance_index: instance_idx,
-            mesh,
-            material,
-            skeleton: Some(skeleton),
-            transform: None,
-            color: None,
-            metallic: None,
-            roughness: None,
-            ao: None,
-            instances: Vec::new(),
-        }
-    }
-
     /// Allocate instance slots and return the starting index.
     fn alloc_instance(&mut self, count: u32) -> u32 {
         let start_idx = self.next_instance_index;
@@ -252,7 +222,7 @@ impl FrameContext {
 
 /// Fluent builder for configuring draw calls.
 ///
-/// Created by `FrameContext::draw()`, `draw_instanced()`, or `draw_skinned()`.
+/// Created by `FrameContext::draw()` or `draw_instanced()`.
 /// Use the builder methods to configure the draw call, then call `submit()`.
 pub struct DrawBuilder<'a> {
     /// Reference to parent frame context
@@ -302,6 +272,17 @@ impl<'a> DrawBuilder<'a> {
         self.metallic = Some(metallic);
         self.roughness = Some(roughness);
         self.ao = Some(ao);
+        self
+    }
+
+    /// Set skeleton handle for GPU skeletal animation.
+    ///
+    /// When set, the skeleton's joint matrices (Set 2) will be bound during rendering.
+    ///
+    /// # Arguments
+    /// * `skeleton` - Skeleton handle with joint matrices
+    pub fn with_skeleton(mut self, skeleton: SkeletonHandle) -> Self {
+        self.skeleton = Some(skeleton);
         self
     }
 
