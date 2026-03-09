@@ -4,11 +4,13 @@
 pub mod error;
 pub mod handle;
 pub mod material;
-pub mod pipeline;
 pub mod render_pass;
 pub mod renderer;
 pub mod texture;
 pub mod vertex;
+
+// Internal modules (pipeline state is implementation detail)
+pub(crate) mod pipeline;
 
 // Internal implementation (primitive mesh generators - use VulkanRenderer::create_*_mesh instead)
 pub(crate) mod primitives;
@@ -38,9 +40,6 @@ pub(crate) use vulkan::swapdata::SwapData;
 pub(crate) use vulkan::vertexbinding::VertexBinding;
 pub(crate) use vulkan::vertexbuffer::{IndexBuffer, VertexBuffer};
 
-// Public re-exports of pipeline state types for advanced use
-pub use vulkan::pipeline_state::{DynamicState, PrimitiveTopology, ShaderStages};
-
 // Size type (Katla-native)
 mod size;
 
@@ -50,32 +49,19 @@ pub use crate::size::Size2D;
 pub use error::RendererError;
 
 // Handles
-pub use handle::{
-    DescriptorSetHandle, Handle, MaterialHandle, MeshHandle, PipelineHandle, PipelineLayoutHandle,
-    SkeletonHandle, TextureHandle,
-};
+pub use handle::{Handle, MaterialHandle, MeshHandle, SkeletonHandle, TextureHandle};
 
 // Material system
 pub use material::{Material, MaterialDomain, RenderState, ShaderSource};
 
-// Material creation API
+// Material creation API (used by application layer)
 pub use vulkan::material::compiler::{MaterialBuilder, MaterialOptions, VertexType};
-
-// Pipeline building - Katla-native types only
-pub use pipeline::{
-    BlendFactor, BlendOp, CompareOp, ComputePipeline, ComputePipelineBuilder, ComputePipelineError,
-    CullMode, FrontFace, Pipeline, PipelineBuilder, PipelineError, PolygonMode, ShaderCache,
-    ShaderError, ShaderModule, ShaderStageFlags, VertexAttributeFormat, VertexLayout,
-};
 
 // Texture management
 pub use texture::{ImageFormat, TextureDescriptor, TextureUsage};
 
 // Vertex types
-pub use vertex::{
-    Vertex, VertexPBR, VertexPBRSkinned, VertexPosition, VertexPositionColor, VertexPositionNormal,
-    VertexPositionNormalUV, VertexUI,
-};
+pub use vertex::{VertexPBR, VertexPBRSkinned, VertexUI};
 
 // Render pass system
 pub use render_pass::{
