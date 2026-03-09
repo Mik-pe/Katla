@@ -19,7 +19,7 @@ use winit::keyboard::ModifiersState;
 
 pub use builder::*;
 use katla_ecs::{input::Action, World};
-use katla_gfx::renderer::VulkanRenderer;
+use katla_gfx::{renderer::VulkanRenderer, TextureHandle};
 use katla_math::Vec2;
 
 use crate::components::TransformComponent;
@@ -711,6 +711,258 @@ impl Application {
         entity_id
     }
 
+    /// Spawn a GLTF model from file. Handles both static and skinned meshes.
+    ///
+    /// # Arguments
+    /// * `path` - Path to the GLTF file
+    /// * `position` - World position to spawn at
+    /// * `default_animation` - Optional animation name to play automatically
+    ///
+    /// # Returns
+    /// The entity ID of the spawned model, or None if loading failed
+    pub fn spawn_gltf_model(
+        &mut self,
+        path: impl AsRef<std::path::Path>,
+        position: [f32; 3],
+        default_animation: Option<&str>,
+    ) -> Option<katla_ecs::EntityId> {
+        use crate::components::{DrawableComponent, TransformComponent};
+        use katla_math::Vec3;
+
+        // 1. Load model from cache
+        let path_buf = path.as_ref().to_path_buf();
+        let model = self.gltf_cache.read(path_buf);
+
+        // 2. Convert indices to u32 (generate sequential indices for non-indexed geometry)
+        let vertex_count = if model.has_skinning {
+            model.skinned_vertex_data.len()
+        } else {
+            model.vertex_data.len()
+        };
+        let indices = Self::convert_indices_to_u32_with_vertex_count(
+            &model.index_data,
+            model.index_stride,
+            vertex_count,
+        );
+
+        debug!(
+            "Model '{}' index conversion: {} bytes input (stride {}), {} indices output, {} vertices",
+            path.as_ref().display(),
+            model.index_data.len(),
+            model.index_stride,
+            indices.len(),
+            vertex_count
+        );
+
+        // 3. Create mesh (skinned or regular)
+        let mesh_handle = if model.has_skinning {
+            self.renderer
+                .create_mesh(&model.skinned_vertex_data, &indices)
+        } else {
+            self.renderer.create_mesh(&model.vertex_data, &indices)
+        };
+
+        // 4. Create material (skinned or regular)
+        let shader_path = if model.has_skinning {
+            self.resources.shader_path("model_pbr_skinned.wgsl")
+        } else {
+            self.resources.shader_path("model_pbr.wgsl")
+        };
+
+        let material_handle = if model.has_skinning {
+            self.renderer
+                .material_builder(&shader_path)
+                .with_vertex_type(katla_gfx::VertexType::Skinned)
+                .with_color_format(katla_gfx::ImageFormat::R16G16B16A16Sfloat)
+                .build()
+                .ok()?
+        } else {
+            self.renderer
+                .create_pbr_material(
+                    &shader_path,
+                    Some(katla_gfx::ImageFormat::R16G16B16A16Sfloat),
+                )
+                .ok()?
+        };
+
+        // 5. Upload textures and set texture indices
+        let texture_indices = self.upload_gltf_textures(&model);
+
+        // Set texture indices on material
+        self.renderer
+            .set_material_texture_indices(material_handle, texture_indices);
+
+        // 6. Spawn entity
+        let entity = self.world.spawn((
+            TransformComponent {
+                transform: katla_math::Transform::from_position(Vec3::new(
+                    position[0],
+                    position[1],
+                    position[2],
+                )),
+            },
+            DrawableComponent::with_handles(mesh_handle, material_handle),
+        ));
+
+        // 7. If skinned, set up animation
+        if model.has_skinning {
+            // Get joint count from skin
+            let joint_count = model
+                .document
+                .skins()
+                .next()
+                .map(|s| s.joints().count())
+                .unwrap_or(0);
+
+            if joint_count > 0 {
+                // Create GPU skeleton
+                let skeleton_handle = self.renderer.create_skeleton(joint_count).ok()?;
+
+                // Add skeleton handle to drawable
+                if let Some(drawable) = self.world.get_component_mut::<DrawableComponent>(entity) {
+                    drawable.skeleton_handle = Some(skeleton_handle);
+                }
+
+                // Set up CPU animation components
+                crate::animation::AnimationManager::setup_animated_model(
+                    &mut self.world,
+                    entity,
+                    &model,
+                    default_animation,
+                );
+
+                info!(
+                    "Spawned animated model '{}' with {} joints",
+                    path.as_ref().display(),
+                    joint_count
+                );
+            }
+        } else {
+            info!("Spawned static model '{}'", path.as_ref().display());
+        }
+
+        Some(entity)
+    }
+
+    /// Upload textures from a GLTF model and return bindless texture indices.
+    ///
+    /// Returns [albedo, normal, metallic_roughness, ao] indices.
+    fn upload_gltf_textures(&mut self, model: &crate::util::GLTFModel) -> [u32; 4] {
+        use katla_gfx::TextureHandle;
+
+        let default_index = 0u32; // Default white texture
+        let mut albedo_index = default_index;
+        let mut normal_index = default_index;
+        let mut mr_index = default_index;
+        let mut ao_index = default_index;
+
+        // Get first material if available
+        let material_info = model.materials.first();
+
+        if let Some(mat) = material_info {
+            // Upload albedo texture
+            if let Some(tex_idx) = mat.base_color_texture {
+                if let Some(image) = model.images.get(tex_idx) {
+                    let handle = self.upload_gltf_image(image, true);
+                    albedo_index = self.get_bindless_index(handle);
+                    debug!(
+                        "Uploaded albedo texture {} -> bindless {}",
+                        tex_idx, albedo_index
+                    );
+                }
+            }
+
+            // Upload normal texture
+            if let Some(tex_idx) = mat.normal_texture {
+                if let Some(image) = model.images.get(tex_idx) {
+                    let handle = self.upload_gltf_image(image, false);
+                    normal_index = self.get_bindless_index(handle);
+                    debug!(
+                        "Uploaded normal texture {} -> bindless {}",
+                        tex_idx, normal_index
+                    );
+                }
+            }
+
+            // Upload metallic/roughness texture
+            if let Some(tex_idx) = mat.metallic_roughness_texture {
+                if let Some(image) = model.images.get(tex_idx) {
+                    let handle = self.upload_gltf_image(image, false);
+                    mr_index = self.get_bindless_index(handle);
+                    debug!("Uploaded MR texture {} -> bindless {}", tex_idx, mr_index);
+                }
+            }
+
+            // Upload AO texture
+            if let Some(tex_idx) = mat.occlusion_texture {
+                if let Some(image) = model.images.get(tex_idx) {
+                    let handle = self.upload_gltf_image(image, false);
+                    ao_index = self.get_bindless_index(handle);
+                    debug!("Uploaded AO texture {} -> bindless {}", tex_idx, ao_index);
+                }
+            }
+        }
+
+        [albedo_index, normal_index, mr_index, ao_index]
+    }
+
+    /// Upload a single GLTF image to the GPU.
+    fn upload_gltf_image(&mut self, image: &gltf::image::Data, srgb: bool) -> TextureHandle {
+        // Convert RGB to RGBA if needed (Vulkan requires 4-channel alignment)
+        let pixels = if image.format == gltf::image::Format::R8G8B8 {
+            let mut rgba = Vec::with_capacity(image.pixels.len() / 3 * 4);
+            for chunk in image.pixels.chunks(3) {
+                rgba.extend_from_slice(&[chunk[0], chunk[1], chunk[2], 255]);
+            }
+            rgba
+        } else {
+            image.pixels.clone()
+        };
+
+        if srgb {
+            self.renderer
+                .create_texture_rgba(image.width, image.height, &pixels)
+        } else {
+            self.renderer
+                .create_texture_unorm(image.width, image.height, &pixels)
+        }
+    }
+
+    /// Get the bindless texture index for a texture handle.
+    fn get_bindless_index(&self, handle: katla_gfx::TextureHandle) -> u32 {
+        // The texture manager assigns bindless indices during texture creation
+        // We need to query the texture manager for the bindless slot
+        self.renderer.get_texture_bindless_index(handle)
+    }
+
+    /// Convert index data from bytes to u32 based on stride.
+    ///
+    /// For non-indexed geometry (empty index_data), generates sequential indices
+    /// [0, 1, 2, ... vertex_count-1] for the given vertex count.
+    fn convert_indices_to_u32_with_vertex_count(
+        index_data: &[u8],
+        index_stride: u8,
+        vertex_count: usize,
+    ) -> Vec<u32> {
+        if index_data.is_empty() || index_stride == 0 {
+            // Generate sequential indices for non-indexed geometry
+            return (0..vertex_count as u32).collect();
+        }
+
+        match index_stride {
+            1 => index_data.iter().map(|&b| b as u32).collect(),
+            2 => index_data
+                .chunks(2)
+                .map(|chunk| u16::from_le_bytes([chunk[0], chunk[1]]) as u32)
+                .collect(),
+            4 => index_data
+                .chunks(4)
+                .map(|chunk| u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
+                .collect(),
+            _ => Vec::new(),
+        }
+    }
+
     /// Set up a default test scene with various primitives.
     ///
     /// Creates a visually interesting scene with multiple objects for testing.
@@ -756,6 +1008,17 @@ impl Application {
 
         // Distant plane as backdrop - deep purple/blue
         self.spawn_plane_with_color([0.0, 2.0, -10.0], 15.0, 8.0, Color::from_u8(60, 40, 100));
+
+        // Add animated Fox - scale down and position
+        if let Some(fox) =
+            self.spawn_gltf_model("resources/models/Fox.glb", [3.0, 0.0, 0.0], Some("Run"))
+        {
+            // Scale down the fox (it's huge by default)
+            if let Some(transform) = self.world.get_component_mut::<TransformComponent>(fox) {
+                transform.transform.scale = katla_math::Vec3::new(0.01, 0.01, 0.01);
+            }
+            info!("Spawned animated Fox with Run animation");
+        }
 
         info!(
             "Default scene setup complete - {} entities spawned",

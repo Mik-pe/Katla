@@ -78,7 +78,8 @@ impl Application {
     /// Collect drawable components from the ECS world and submit to FrameContext.
     ///
     /// This automatically allocates instance indices and builds the draw list.
-    fn collect_draws_with_context(&self, frame: &mut FrameContext) {
+    fn collect_draws_with_context(&mut self, frame: &mut FrameContext) {
+        use crate::animation::Skeleton;
         use crate::components::{DrawableComponent, TransformComponent};
 
         let entity_count = self.world.entity_ids().count();
@@ -105,10 +106,31 @@ impl Application {
                 None => continue,
             };
 
+            // Check for skeleton - upload if present
+            if let Some(skeleton_handle) = drawable.skeleton_handle {
+                // Get Skeleton component and upload joint matrices
+                if let Some(skeleton) = self.world.get_component::<Skeleton>(entity_id) {
+                    // Convert Mat4 to [f32; 16] format for GPU
+                    let matrices: Vec<[f32; 16]> = skeleton
+                        .joint_transforms
+                        .iter()
+                        .map(|m| m.to_array())
+                        .collect();
+
+                    // Upload to GPU
+                    self.renderer.update_skeleton(skeleton_handle, &matrices);
+                }
+            }
+
             // Submit draw via FrameContext (instance allocation is automatic)
             let mut draw = frame
                 .draw(mesh_handle, material_handle)
                 .with_transform(transform.transform.make_mat4().to_array());
+
+            // Add skeleton if present (for skinned meshes)
+            if let Some(skeleton_handle) = drawable.skeleton_handle {
+                draw = draw.with_skeleton(skeleton_handle);
+            }
 
             // Add color if present
             if let Some(color) = drawable.color {

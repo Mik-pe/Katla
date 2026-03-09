@@ -23,7 +23,7 @@ use crate::material::Material;
 use crate::texture::{TextureDescriptor, TextureManager};
 use crate::vulkan::context::VulkanContext;
 use crate::{
-    BindlessTextureManager, IndexBuffer, MAX_BINDLESS_TEXTURES, RendererError,
+    BindlessTextureManager, IndexBuffer, MAX_BINDLESS_TEXTURES, RendererError, SkeletonBuffer,
     SkeletonDescriptorSet, StorageDescriptorSet, StorageUniformManager, SwapData, VertexBuffer,
     VulkanFrameCtx, viewport::Viewport,
 };
@@ -67,6 +67,9 @@ pub struct VulkanRenderer {
     /// Skeleton descriptor sets for GPU skeletal animation.
     /// Indexed by SkeletonHandle.
     pub(crate) skeleton_descriptors: Vec<Option<SkeletonDescriptorSet>>,
+    /// Skeleton buffers for GPU skeletal animation.
+    /// Indexed by SkeletonHandle.
+    pub(crate) skeleton_buffers: Vec<Option<Rc<RefCell<SkeletonBuffer>>>>,
     /// Frame-level uniforms set once per frame via set_frame_uniforms().
     pub(crate) frame_uniforms: FrameUniforms,
     /// Cached default white PBR material handle.
@@ -214,6 +217,7 @@ impl VulkanRenderer {
             storage_descriptor_sets,
             draw_list_cell: Rc::new(RefCell::new(None)),
             skeleton_descriptors: Vec::new(),
+            skeleton_buffers: Vec::new(),
             frame_uniforms: FrameUniforms::default(),
             default_material_handle: None,
             render_targets: Vec::new(),
@@ -401,8 +405,12 @@ impl VulkanRenderer {
             let ao = draw_call.ao;
             let emission_idx = draw_call.material_params[3]; // emission index stored in w component
 
-            // Note: Texture indices will come from MaterialAsset in future
-            let texture_indices = [0u32, 0, 0, 0]; // Default textures for now
+            // Get texture indices from material
+            let texture_indices = self
+                .asset_registry
+                .get_material(draw_call.material)
+                .map(|m| m.material_data.texture_indices)
+                .unwrap_or([0, 0, 0, 0]);
 
             // Write to storage buffer at instance_index
             self.storage_manager.update_object_bindless(
@@ -1149,13 +1157,21 @@ impl VulkanRenderer {
             .clone();
         let is_bindless = material.is_bindless();
 
-        // Extract texture indices from material (convert handles to u32 indices)
+        // Convert texture handles to bindless indices
         let texture_handles = material.texture_slots();
         let texture_indices = [
-            texture_handles[0].index(),
-            texture_handles[1].index(),
-            texture_handles[2].index(),
-            texture_handles[3].index(),
+            self.texture_manager
+                .get_bindless_index(texture_handles[0])
+                .unwrap_or(0),
+            self.texture_manager
+                .get_bindless_index(texture_handles[1])
+                .unwrap_or(0),
+            self.texture_manager
+                .get_bindless_index(texture_handles[2])
+                .unwrap_or(0),
+            self.texture_manager
+                .get_bindless_index(texture_handles[3])
+                .unwrap_or(0),
         ];
 
         let material_asset = MaterialAsset {
@@ -1176,6 +1192,27 @@ impl VulkanRenderer {
         };
 
         self.asset_registry.register_material(material_asset)
+    }
+
+    /// Set texture indices for a material.
+    ///
+    /// Updates the material's texture indices for bindless sampling.
+    /// Texture indices are obtained from `create_texture_*` methods.
+    ///
+    /// # Arguments
+    /// * `material` - Material handle to update
+    /// * `indices` - [albedo, normal, metallic_roughness, ao] texture indices
+    pub fn set_material_texture_indices(&mut self, material: MaterialHandle, indices: [u32; 4]) {
+        if let Some(mat) = self.asset_registry.get_material_mut(material) {
+            mat.material_data.texture_indices = indices;
+        }
+    }
+
+    /// Get the bindless texture index for a texture handle.
+    ///
+    /// Returns 0 if the texture isn't registered with bindless.
+    pub fn get_texture_bindless_index(&self, handle: TextureHandle) -> u32 {
+        self.texture_manager.get_bindless_index(handle).unwrap_or(0)
     }
 
     /// Compile a fullscreen/post-processing shader and return its pipeline handle.
@@ -1402,6 +1439,57 @@ impl VulkanRenderer {
         self.skeleton_descriptors
             .get(handle.index() as usize)?
             .as_ref()
+    }
+
+    /// Create a new skeleton for GPU skeletal animation.
+    ///
+    /// Allocates a storage buffer for joint matrices and creates a descriptor set
+    /// for binding to shaders (Set 2).
+    ///
+    /// # Arguments
+    /// * `joint_count` - Number of joints in the skeleton
+    ///
+    /// # Returns
+    /// A SkeletonHandle for the created skeleton, or an error if creation fails.
+    pub fn create_skeleton(&mut self, joint_count: usize) -> Result<SkeletonHandle, RendererError> {
+        use crate::vulkan::skeleton_buffer::SkeletonBuffer;
+
+        let buffer = Rc::new(RefCell::new(SkeletonBuffer::new(
+            self.context.clone(),
+            joint_count,
+        )));
+
+        let pool = self.material_compiler.skeleton_descriptor_pool();
+        let layout = self.material_compiler.skeleton_descriptor_layout();
+
+        let descriptor_set =
+            SkeletonDescriptorSet::new(self.context.clone(), buffer.clone(), pool, layout)
+                .map_err(|e| {
+                    RendererError::InitializationFailed(format!(
+                        "Failed to create skeleton descriptor: {:?}",
+                        e
+                    ))
+                })?;
+
+        let handle = SkeletonHandle::new(self.skeleton_descriptors.len() as u32);
+        self.skeleton_descriptors.push(Some(descriptor_set));
+        self.skeleton_buffers.push(Some(buffer));
+
+        Ok(handle)
+    }
+
+    /// Update skeleton joint matrices on the GPU.
+    ///
+    /// Uploads the current pose to the skeleton's storage buffer.
+    /// Call this each frame after computing animation but before rendering.
+    ///
+    /// # Arguments
+    /// * `handle` - Skeleton handle from `create_skeleton()`
+    /// * `matrices` - Joint matrices as column-major [f32; 16] arrays (one per joint)
+    pub fn update_skeleton(&mut self, handle: SkeletonHandle, matrices: &[[f32; 16]]) {
+        if let Some(Some(buffer)) = self.skeleton_buffers.get(handle.index() as usize) {
+            buffer.borrow_mut().update(matrices);
+        }
     }
 
     /// Queue UI for rendering in the next frame.

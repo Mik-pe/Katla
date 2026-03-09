@@ -33,6 +33,7 @@ pub(crate) use vulkan::context::VulkanFrameCtx;
 pub(crate) use vulkan::material::SkeletonDescriptorSet;
 pub(crate) use vulkan::material::storage_uniform::StorageDescriptorSet;
 pub(crate) use vulkan::material::storage_uniform::StorageUniformManager;
+pub(crate) use vulkan::skeleton_buffer::SkeletonBuffer;
 pub(crate) use vulkan::swapdata::SwapData;
 pub(crate) use vulkan::vertexbinding::VertexBinding;
 pub(crate) use vulkan::vertexbuffer::{IndexBuffer, VertexBuffer};
