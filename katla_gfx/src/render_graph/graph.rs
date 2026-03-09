@@ -29,8 +29,6 @@ pub struct TransientTexture {
     pub allocation: Option<Allocation>,
     /// Image view for rendering/sampling.
     pub image_view: VkImageView,
-    /// Image format.
-    pub format: vk::Format,
 }
 
 impl TransientTexture {
@@ -40,14 +38,13 @@ impl TransientTexture {
         image: vk::Image,
         allocation: Option<Allocation>,
         image_view: VkImageView,
-        format: vk::Format,
+        _format: vk::Format,
     ) -> Self {
         Self {
             context,
             image,
             allocation,
             image_view,
-            format,
         }
     }
 }
@@ -215,11 +212,6 @@ impl FrameGraph {
         Ok(())
     }
 
-    /// Get a resource handle by name.
-    pub(crate) fn resource_handle(&self, name: &str) -> Option<GraphResourceHandle> {
-        self.resource_names.get(name).copied()
-    }
-
     /// Get a pass index by name.
     pub(crate) fn pass_index(&self, name: &str) -> Option<usize> {
         self.pass_names.get(name).copied()
@@ -230,29 +222,9 @@ impl FrameGraph {
         self.passes.len()
     }
 
-    /// Get the execution plan (after compilation).
-    pub(crate) fn execution_plan(&self) -> Option<&ExecutionPlan> {
-        self.execution_plan.as_ref()
-    }
-
     /// Get a pass by index.
     pub(crate) fn pass(&self, index: usize) -> Option<&PassDesc> {
         self.passes.get(index)
-    }
-
-    /// Get all passes.
-    pub(crate) fn passes(&self) -> &[PassDesc] {
-        &self.passes
-    }
-
-    /// Get all transient resource descriptors.
-    pub(crate) fn transient_resources(&self) -> &[GraphResourceDesc] {
-        &self.transient_resources
-    }
-
-    /// Get a transient resource descriptor by name.
-    pub(crate) fn transient_resource(&self, name: &str) -> Option<&GraphResourceDesc> {
-        self.transient_resources.iter().find(|r| r.name == name)
     }
 
     /// Get a transient texture by name.
@@ -451,9 +423,6 @@ pub struct FrameGraphBuilder {
 
     /// Transient resource descriptors (created/managed by frame graph).
     transient_resources: Vec<GraphResourceDesc>,
-
-    /// Whether this builder writes to the backbuffer.
-    writes_backbuffer: bool,
 }
 
 impl FrameGraphBuilder {
@@ -463,7 +432,6 @@ impl FrameGraphBuilder {
             pass_builders: Vec::new(),
             resources: HashMap::new(),
             transient_resources: Vec::new(),
-            writes_backbuffer: false,
         }
     }
 
@@ -472,12 +440,6 @@ impl FrameGraphBuilder {
     /// Takes any type implementing the [`PassBuilder`] trait.
     pub fn add_pass(mut self, pass: impl PassBuilder + 'static) -> Self {
         self.pass_builders.push(pass.as_builder());
-        self
-    }
-
-    /// Declare that this graph writes to the backbuffer (swapchain).
-    pub(crate) fn writes_backbuffer(mut self) -> Self {
-        self.writes_backbuffer = true;
         self
     }
 
@@ -722,10 +684,6 @@ impl<'a> Frame<'a> {
                         self.execute_graphics_pass(&cmd, pass, data)?;
                     }
                 }
-                super::pass::PassType::Compute => {
-                    self.execute_compute_pass(&cmd, pass, data)?;
-                }
-                super::pass::PassType::Transfer => {}
             }
         }
 
@@ -1018,17 +976,6 @@ impl<'a> Frame<'a> {
         Ok(())
     }
 
-    /// Execute a compute pass.
-    fn execute_compute_pass(
-        &self,
-        _cmd: &crate::vulkan::commandbuffer::CommandBuffer,
-        _pass: &PassDesc,
-        _data: PassExecutionData,
-    ) -> Result<(), RenderGraphError> {
-        // TODO: Implement compute pass execution
-        Ok(())
-    }
-
     /// Execute a draw list.
     fn execute_draw_list(
         &mut self,
@@ -1307,7 +1254,6 @@ mod tests {
     fn test_frame_graph_builder_new() {
         let builder = FrameGraphBuilder::new();
         assert!(builder.pass_builders.is_empty());
-        assert!(!builder.writes_backbuffer);
     }
 
     #[test]

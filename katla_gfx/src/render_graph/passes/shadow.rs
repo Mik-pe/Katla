@@ -7,7 +7,6 @@ use std::collections::HashMap;
 use crate::texture::ImageFormat;
 
 use super::super::builder::{InternalPassBuilder, PassBuilder};
-use super::super::error::RenderGraphError;
 use super::super::pass::PassType;
 use super::super::resource::GraphResourceHandle;
 
@@ -100,34 +99,17 @@ impl PassBuilder for ShadowPass {
             tonemap_params: None,
             material: None,
             output_format: None,
-            build_fn: Box::new(move |resource_map: &HashMap<String, GraphResourceHandle>| {
-                let depth = self
-                    .depth_output
-                    .as_ref()
-                    .map(|(n, _)| {
-                        resource_map
-                            .get(n)
-                            .copied()
-                            .ok_or_else(|| RenderGraphError::ResourceNotFound(n.clone()))
-                    })
-                    .transpose()?;
-
-                Ok(Box::new(ShadowPassData {
-                    depth,
-                    resolution: self.resolution,
-                    light_type: self.light_type,
-                }))
+            build_fn: Box::new(move |_resource_map: &HashMap<String, GraphResourceHandle>| {
+                // Shadow pass data is currently unused but kept for future extensibility
+                Ok(Box::new(ShadowPassData))
             }),
         }
     }
 }
 
 /// Internal data for a shadow pass.
-pub(crate) struct ShadowPassData {
-    pub depth: Option<GraphResourceHandle>,
-    pub resolution: (u32, u32),
-    pub light_type: LightType,
-}
+#[derive(Debug)]
+pub(crate) struct ShadowPassData;
 
 #[cfg(test)]
 mod tests {

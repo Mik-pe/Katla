@@ -189,8 +189,6 @@ pub(crate) struct GeometryPassData {
         StoreOp,
         ClearValue,
     )>,
-    /// Read dependencies with resolved handles.
-    pub(crate) reads: Vec<GraphResourceHandle>,
 }
 
 impl PassBuilder for GeometryPass {
@@ -245,21 +243,8 @@ impl PassBuilder for GeometryPass {
                     })
                     .collect::<Result<Vec<_>, RenderGraphError>>()?;
 
-                // Resolve read names to handles
-                let resolved_reads = self
-                    .reads
-                    .iter()
-                    .map(|name| {
-                        resource_map
-                            .get(name)
-                            .copied()
-                            .ok_or_else(|| RenderGraphError::ResourceNotFound(name.clone()))
-                    })
-                    .collect::<Result<Vec<_>, RenderGraphError>>()?;
-
                 Ok(Box::new(GeometryPassData {
                     colors,
-                    reads: resolved_reads,
                 }))
             }),
         }

@@ -26,15 +26,6 @@
 //!
 //! For vertex layout types, see the [`vertex`] module.
 
-// Re-export vertex layout types for internal use
-pub use crate::vertex::{VertexAttributeFormat, VertexLayout};
-
-// Internal pipeline types (not part of public API)
-pub(crate) use crate::vulkan::material::builder::{Pipeline, PipelineBuilder, PipelineError};
-pub(crate) use crate::vulkan::material::shadermodule::{ShaderCache, ShaderError, ShaderModule};
-pub(crate) use crate::vulkan::material::{
-    ComputePipeline, ComputePipelineBuilder, ComputePipelineError,
-};
 
 //=============================================================================
 // Katla-native Pipeline State Enums

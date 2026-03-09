@@ -92,12 +92,6 @@ impl DeviceAddressBuffer {
         })
     }
 
-    /// Get the size of this buffer in bytes.
-    #[inline]
-    pub fn size(&self) -> u64 {
-        self.size
-    }
-
     /// Map the buffer for CPU access.
     ///
     /// If the buffer is persistently mapped, returns the persistent mapping.
