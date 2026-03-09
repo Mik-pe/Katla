@@ -123,7 +123,7 @@ impl FrameContext {
     /// # Arguments
     /// * `mesh` - Mesh handle to draw
     /// * `material` - Material handle to use
-    pub fn draw(&mut self, mesh: MeshHandle, material: MaterialHandle) -> DrawBuilder {
+    pub fn draw(&mut self, mesh: MeshHandle, material: MaterialHandle) -> DrawBuilder<'_> {
         let instance_idx = self.alloc_instance(1);
         DrawBuilder {
             frame: self,
@@ -153,7 +153,7 @@ impl FrameContext {
         mesh: MeshHandle,
         material: MaterialHandle,
         instances: Vec<InstanceData>,
-    ) -> DrawBuilder {
+    ) -> DrawBuilder<'_> {
         let start_idx = self.alloc_instance(instances.len() as u32);
         DrawBuilder {
             frame: self,
@@ -290,7 +290,7 @@ impl<'a> DrawBuilder<'a> {
     ///
     /// This writes the per-object data to the storage buffer (at the allocated
     /// instance index) and adds the draw call to the frame's draw list.
-    pub fn submit(mut self) {
+    pub fn submit(self) {
         // Default values
         let transform = self.transform.unwrap_or([
             1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,

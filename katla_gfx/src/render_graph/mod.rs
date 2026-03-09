@@ -47,5 +47,3 @@ pub use passes::{
 pub use resource::{GraphResourceDesc, GraphResourceHandle, GraphResourceType, ResourceState};
 
 // Internal - for pass template implementation
-pub(crate) use builder::{InternalPassBuilder, PassBuilder};
-pub(crate) use pass::{PassDesc, PassType};

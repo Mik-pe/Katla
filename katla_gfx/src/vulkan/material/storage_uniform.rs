@@ -634,7 +634,7 @@ impl StorageUniformManager {
     /// Check if buffers are persistently mapped.
     #[inline]
     pub fn is_persistent(&self) -> bool {
-        self.buffers.first().map_or(false, |b| b.is_persistent())
+        self.buffers.first().is_some_and(|b| b.is_persistent())
     }
 
     /// Get the underlying buffer handle for the current frame.

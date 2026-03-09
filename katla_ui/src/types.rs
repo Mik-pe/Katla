@@ -15,7 +15,7 @@
 //!   UIDrawList { VertexUI, indices, UiDrawCommand }
 //! ```
 
-use katla_math::{Color, Rect2D, Vec2};
+use katla_math::{Rect2D, Vec2};
 
 /// Opaque texture identifier.
 ///
