@@ -62,7 +62,10 @@ impl Application {
             .set_frame_uniforms(frame.frame_uniforms().clone());
 
         // Execute draw calls (writes per-object data to storage buffer)
-        self.renderer.execute_draw_calls(frame.draw_list());
+        if let Err(e) = self.renderer.execute_draw_calls(frame.draw_list()) {
+            log::error!("Failed to execute draw calls: {}", e);
+            return; // Skip rendering this frame
+        }
 
         // Render using the frame graph
         let draw_list = frame.take_draw_list();

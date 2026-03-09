@@ -35,6 +35,9 @@ pub enum RendererError {
 
     /// Render graph error.
     RenderGraphError(String),
+
+    /// Exceeded maximum objects per frame limit.
+    ObjectLimitExceeded { index: usize, limit: usize },
 }
 
 impl fmt::Display for RendererError {
@@ -47,6 +50,13 @@ impl fmt::Display for RendererError {
             RendererError::InitializationFailed(msg) => write!(f, "Initialization failed: {}", msg),
             RendererError::SwapchainError(msg) => write!(f, "Swapchain error: {}", msg),
             RendererError::RenderGraphError(msg) => write!(f, "Render graph error: {}", msg),
+            RendererError::ObjectLimitExceeded { index, limit } => {
+                write!(
+                    f,
+                    "Instance index {} exceeds MAX_OBJECTS_PER_FRAME ({}). Increase the limit or reduce draw calls per frame.",
+                    index, limit
+                )
+            }
         }
     }
 }

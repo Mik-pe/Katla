@@ -32,10 +32,9 @@ use log::{error, info};
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 use std::{cell::RefCell, ffi::CString, rc::Rc};
 
-use crate::MaterialBuilder;
 use crate::barrier::ImageBarrier;
 use crate::sync::{COLOR_SUBRESOURCE_RANGE, DEPTH_SUBRESOURCE_RANGE};
-use crate::vulkan::material::compiler::MaterialCompiler;
+use crate::vulkan::material::compiler::{MaterialBuilder, MaterialCompiler};
 
 /// Transpose a 4x4 matrix from row-major to column-major format.
 ///
@@ -114,7 +113,7 @@ pub(crate) const FRAMES_IN_FLIGHT: usize = 2;
 ///
 /// This is the limit of the storage buffer array that holds per-object data.
 /// Each draw call uses one slot indexed by `instance_index`. If you exceed
-/// this limit, `execute_draw_calls` will panic with a clear message.
+/// this limit, `execute_draw_calls` will return a `RendererError::ObjectLimitExceeded`.
 pub const MAX_OBJECTS_PER_FRAME: u32 = 256;
 
 impl VulkanRenderer {
@@ -357,9 +356,10 @@ impl VulkanRenderer {
     /// # Arguments
     /// * `draw_list` - The DrawList from FrameContext containing draw calls with instance_index
     ///
-    /// # Panics
+    /// # Errors
     ///
-    /// Panics if any draw call's `instance_index` exceeds `MAX_OBJECTS_PER_FRAME`.
+    /// Returns `RendererError::ObjectLimitExceeded` if any draw call's `instance_index`
+    /// exceeds `MAX_OBJECTS_PER_FRAME`.
     ///
     /// # Example
     /// ```ignore
@@ -374,14 +374,14 @@ impl VulkanRenderer {
     /// renderer.set_frame_uniforms(&frame.frame_uniforms().unwrap());
     ///
     /// // Execute draw calls (writes to storage buffer)
-    /// renderer.execute_draw_calls(&frame.draw_list());
+    /// renderer.execute_draw_calls(&frame.draw_list())?;
     ///
     /// // Render with frame graph
     /// renderer.render(&mut frame_graph, |frame| {
     ///     frame.submit("geometry", &frame.draw_list());
-    /// });
+    /// })?;
     /// ```
-    pub fn execute_draw_calls(&mut self, draw_list: &DrawList) {
+    pub fn execute_draw_calls(&mut self, draw_list: &DrawList) -> Result<(), RendererError> {
         // Note: set_frame_uniforms() must be called before this method
         // as it calls start_frame() to select the correct per-frame buffer
 
@@ -391,11 +391,10 @@ impl VulkanRenderer {
 
             // Bounds check with clear error message
             if index >= MAX_OBJECTS_PER_FRAME as usize {
-                panic!(
-                    "Instance index {} exceeds MAX_OBJECTS_PER_FRAME ({}). \
-                    Increase the limit or reduce the number of draw calls per frame.",
-                    index, MAX_OBJECTS_PER_FRAME
-                );
+                return Err(RendererError::ObjectLimitExceeded {
+                    index,
+                    limit: MAX_OBJECTS_PER_FRAME as usize,
+                });
             }
 
             // Extract material parameters
@@ -424,6 +423,7 @@ impl VulkanRenderer {
                 texture_indices,
             );
         }
+        Ok(())
     }
 
     /// Initialize or resize the output render target.
@@ -1092,43 +1092,6 @@ impl VulkanRenderer {
         )
     }
 
-    /// Update object transform data in the storage buffer.
-    ///
-    /// This updates the object uniforms at the given index in the storage buffer.
-    /// The shader will use this data when rendering with the corresponding instance_index.
-    ///
-    /// # Arguments
-    /// * `index` - Object index (0-255)
-    /// * `model_matrix` - Model matrix (object-to-world) - column-major [f32; 16]
-    /// * `color` - Base color tint (RGBA)
-    /// * `metallic` - Metallic factor (0.0 = dielectric, 1.0 = metal)
-    /// * `roughness` - Roughness factor (0.0 = smooth, 1.0 = rough)
-    /// * `ao` - Ambient occlusion factor (0.0 = full occlusion, 1.0 = none)
-    /// * `normal_scale` - Normal map scale factor
-    /// * `texture_indices` - Texture indices for bindless [albedo, normal, mr, ao]
-    pub fn update_object_storage(
-        &mut self,
-        index: usize,
-        model_matrix: &[f32; 16],
-        color: &[f32; 4],
-        metallic: f32,
-        roughness: f32,
-        ao: f32,
-        normal_scale: f32,
-        texture_indices: [u32; 4],
-    ) {
-        self.storage_manager.update_object_bindless(
-            index,
-            model_matrix,
-            color,
-            metallic,
-            roughness,
-            ao,
-            normal_scale,
-            texture_indices,
-        );
-    }
-
     /// Register a Material with the renderer.
     ///
     /// This method registers a material instance for use in rendering.
@@ -1356,81 +1319,66 @@ impl VulkanRenderer {
             .expect("default_material() called before init_default_material()")
     }
 
-    /// Submits a slice of DrawCalls for immediate rendering.
+    /// Simple immediate mode draw - the happy path for basic rendering.
     ///
-    /// This is a convenience method for simple cases with few draw calls.
-    /// It creates a temporary DrawList, populates it with the provided draw calls,
-    /// and submits it through the existing render infrastructure.
-    ///
-    /// # Performance
-    /// For >100 draws/frame, use `DrawList` directly to avoid repeated
-    /// submission overhead. This method is optimized for convenience in simple cases.
+    /// This method combines three steps into one:
+    /// 1. Sets frame uniforms (camera, lighting)
+    /// 2. Writes draw call data to GPU storage buffer
+    /// 3. Returns a DrawList for submission to render passes
     ///
     /// # Arguments
+    /// * `uniforms` - Frame-level data (view/proj matrices, lighting)
     /// * `draw_calls` - Slice of DrawCall objects to render
     ///
     /// # Returns
-    /// `Ok(())` on success, or an error if submission fails.
+    /// A DrawList that can be passed to `frame.submit()` in the render callback.
     ///
     /// # Example
     /// ```ignore
+    /// // Setup
     /// let mesh = renderer.create_cube_mesh([1.0, 1.0, 1.0]);
     /// let material = renderer.default_material();
     ///
-    /// let draw = DrawCall::new(mesh, material)
-    ///     .with_transform(model_matrix)
-    ///     .with_color([1.0, 0.0, 0.0, 1.0]);
+    /// // Render loop
+    /// let draw_list = renderer.draw(
+    ///     &frame_uniforms,
+    ///     &[DrawCall::new(mesh, material)
+    ///         .with_transform(model_matrix)
+    ///         .with_color([1.0, 0.0, 0.0, 1.0])]
+    /// )?;
     ///
-    /// renderer.draw_immediate(&[draw])?;
+    /// renderer.render(&mut frame_graph, |frame| {
+    ///     frame.submit("geometry", &draw_list);
+    /// })?;
     /// ```
-    pub fn draw_immediate(&mut self, draw_calls: &[DrawCall]) -> Result<(), RendererError> {
-        if draw_calls.is_empty() {
-            return Ok(());
-        }
+    ///
+    /// # Performance Note
+    /// For complex scenes with >100 draw calls, use `DrawList` directly with
+    /// `set_frame_uniforms()` + `execute_draw_calls()` for better control.
+    pub fn draw(
+        &mut self,
+        uniforms: &FrameUniforms,
+        draw_calls: &[DrawCall],
+    ) -> Result<DrawList, RendererError> {
+        // Set frame uniforms
+        self.set_frame_uniforms(uniforms.clone());
 
-        // Create a temporary DrawList and populate it
+        // Build draw list
         let mut draw_list = DrawList::new();
         for draw in draw_calls {
             draw_list.push(draw.clone());
         }
 
-        // Submit through the draw_list_cell
-        *self.draw_list_cell.borrow_mut() = Some(draw_list);
+        // Write to storage buffer
+        self.execute_draw_calls(&draw_list)?;
 
-        Ok(())
-    }
-
-    /// Convenience: draw a single mesh with default material.
-    ///
-    /// # Performance
-    /// Zero heap allocation for single mesh drawing.
-    /// For >100 draws/frame, use `DrawList` directly.
-    #[inline]
-    pub fn draw_mesh(
-        &mut self,
-        mesh: MeshHandle,
-        transform: [f32; 16],
-    ) -> Result<(), RendererError> {
-        let material = self.default_material();
-        self.draw_mesh_with_material(mesh, transform, material)
+        Ok(draw_list)
     }
 
     /// Convenience: draw a single mesh with custom material.
     ///
     /// # Performance
     /// Zero heap allocation using `std::slice::from_ref`.
-    /// For >100 draws/frame, use `DrawList` directly.
-    #[inline]
-    pub fn draw_mesh_with_material(
-        &mut self,
-        mesh: MeshHandle,
-        transform: [f32; 16],
-        material: MaterialHandle,
-    ) -> Result<(), RendererError> {
-        let draw_call = DrawCall::new(mesh, material).with_transform(transform);
-        self.draw_immediate(std::slice::from_ref(&draw_call))
-    }
-
     /// Get the skeleton descriptor set for a handle.
     pub fn get_skeleton_descriptor(
         &self,
