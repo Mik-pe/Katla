@@ -19,7 +19,7 @@ mod viewport_grid;
 use katla_ecs::EntityId;
 use katla_gfx::TextureHandle;
 use katla_math::{Color, Rect2D, Vec2, Vec3};
-use katla_ui::{DrawList, FontSize, TextureId, UiContext};
+use katla_ui::{DrawList, FontSize, UiContext};
 use std::path::PathBuf;
 
 use crate::{
@@ -716,10 +716,6 @@ impl EditorUI {
                             self.asset_browser.scan_directory(thumbnail_texture_handles);
                         }
                     }
-                }
-                AssetAction::ModelPreviewRequested(_path) => {
-                    // Model preview functionality removed - log for now
-                    log::debug!("Model preview requested but feature is disabled");
                 }
             }
         }

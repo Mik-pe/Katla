@@ -79,8 +79,7 @@
 //! ```
 
 use crate::sync::{
-    AccessFlags2, DEPTH_SUBRESOURCE_RANGE, DependencyInfo, ImageMemoryBarrier2,
-    PipelineStage2Flags, VkImage,
+    AccessFlags2, DependencyInfo, ImageMemoryBarrier2, PipelineStage2Flags, VkImage,
 };
 use ash::vk;
 

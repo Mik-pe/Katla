@@ -1155,7 +1155,7 @@ impl VulkanRenderer {
             .vertex_binding()
             .expect("Material must have vertex binding")
             .clone();
-        let is_bindless = material.is_bindless();
+        let _is_bindless = material.is_bindless();
 
         // Convert texture handles to bindless indices
         let texture_handles = material.texture_slots();
@@ -1271,7 +1271,7 @@ impl VulkanRenderer {
     ) -> Result<crate::handle::PipelineHandle, RendererError> {
         use crate::pipeline::{CullMode, FrontFace};
         use crate::vulkan::material::builder::PipelineBuilder;
-        use crate::vulkan::material::shadermodule::ShaderCache;
+
         use ash::vk;
 
         // Create storage descriptor layout for fullscreen pass
@@ -1315,7 +1315,7 @@ impl VulkanRenderer {
         drop(cache);
 
         // Build pipeline with fullscreen-specific settings
-        let mut builder = PipelineBuilder::new(self.context.clone())
+        let builder = PipelineBuilder::new(self.context.clone())
             .with_shaders(vert_module, frag_module)
             .with_descriptor_layouts(vec![storage_layout, bindless_layout])
             // No vertex binding - fullscreen triangle generated in shader

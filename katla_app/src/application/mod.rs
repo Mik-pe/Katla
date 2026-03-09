@@ -222,13 +222,11 @@ impl ApplicationHandler for Application {
                         }
                     }
 
-                    if event.state == ElementState::Pressed {
-                        // Only process game-specific keys when viewport is focused
-                        if self.editor_ui.focused_panel == crate::ui::FocusedPanel::Viewport {
-                            if keycode == KeyCode::Escape {
-                                event_loop.exit()
-                            }
-                        }
+                    if event.state == ElementState::Pressed
+                        && self.editor_ui.focused_panel == crate::ui::FocusedPanel::Viewport
+                        && keycode == KeyCode::Escape
+                    {
+                        event_loop.exit()
                     }
                 }
             }
@@ -402,7 +400,7 @@ impl Application {
         color: katla_math::Color,
     ) -> katla_ecs::EntityId {
         use crate::components::{DrawableComponent, TransformComponent};
-        use katla_ecs::EntityId;
+
         use katla_math::Vec3;
 
         let mesh_handle = self.renderer.create_cube_mesh(size);
@@ -448,7 +446,7 @@ impl Application {
         color: katla_math::Color,
     ) -> katla_ecs::EntityId {
         use crate::components::{DrawableComponent, TransformComponent};
-        use katla_ecs::EntityId;
+
         use katla_math::Vec3;
 
         let mesh_handle = self.renderer.create_sphere_mesh(radius, segments, rings);
@@ -485,7 +483,7 @@ impl Application {
         roughness: f32,
     ) -> katla_ecs::EntityId {
         use crate::components::{DrawableComponent, TransformComponent};
-        use katla_ecs::EntityId;
+
         use katla_math::Vec3;
 
         let mesh_handle = self.renderer.create_sphere_mesh(radius, segments, rings);
@@ -586,7 +584,7 @@ impl Application {
         color: katla_math::Color,
     ) -> katla_ecs::EntityId {
         use crate::components::{DrawableComponent, TransformComponent};
-        use katla_ecs::EntityId;
+
         use katla_math::Vec3;
 
         let mesh_handle = self.renderer.create_cylinder_mesh(height, radius, segments);
@@ -630,7 +628,7 @@ impl Application {
         color: katla_math::Color,
     ) -> katla_ecs::EntityId {
         use crate::components::{DrawableComponent, TransformComponent};
-        use katla_ecs::EntityId;
+
         use katla_math::Vec3;
 
         let mesh_handle = self.renderer.create_plane_mesh(width, height);
@@ -685,7 +683,7 @@ impl Application {
         color: katla_math::Color,
     ) -> katla_ecs::EntityId {
         use crate::components::{DrawableComponent, TransformComponent};
-        use katla_ecs::EntityId;
+
         use katla_math::Vec3;
 
         let mesh_handle =
@@ -848,8 +846,6 @@ impl Application {
     ///
     /// Returns [albedo, normal, metallic_roughness, ao] indices.
     fn upload_gltf_textures(&mut self, model: &crate::util::GLTFModel) -> [u32; 4] {
-        use katla_gfx::TextureHandle;
-
         let default_index = 0u32; // Default white texture
         let mut albedo_index = default_index;
         let mut normal_index = default_index;

@@ -126,11 +126,11 @@ pub fn generate_sphere(radius: f32, segments: u32, rings: u32) -> (Vec<VertexPBR
     // We have (rings - 1) middle rings, and we connect adjacent rings
     for ring in 0..(rings - 2) {
         for segment in 0..segments {
-            let ring_base = (ring * (segments + 1)) as u32;
-            let next_ring_base = ((ring + 1) * (segments + 1)) as u32;
+            let ring_base = ring * (segments + 1);
+            let next_ring_base = (ring + 1) * (segments + 1);
 
-            let current = ring_base + segment as u32;
-            let next = next_ring_base + segment as u32;
+            let current = ring_base + segment;
+            let next = next_ring_base + segment;
 
             // Two triangles per quad (0,1,2) and (0,2,3)
             let v0 = current;
@@ -155,7 +155,7 @@ pub fn generate_sphere(radius: f32, segments: u32, rings: u32) -> (Vec<VertexPBR
 
     // Bottom cap: connect last ring to bottom pole vertices
     // Each pole vertex connects to its corresponding ring vertex
-    let last_ring_base = ((rings - 2) * (segments + 1)) as u32;
+    let last_ring_base = (rings - 2) * (segments + 1);
     for segment in 0..segments {
         let ring_vertex = last_ring_base + segment;
         let next_ring_vertex = last_ring_base + segment + 1;

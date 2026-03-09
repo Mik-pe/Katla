@@ -255,10 +255,10 @@ impl GraphCompiler {
         }
 
         for i in 0..num_passes {
-            if state[i] == VisitState::Unvisited {
-                if let Some(cycle) = dfs(i, &self.dependency_graph, &mut state, &mut path) {
-                    return Some(cycle);
-                }
+            if state[i] == VisitState::Unvisited
+                && let Some(cycle) = dfs(i, &self.dependency_graph, &mut state, &mut path)
+            {
+                return Some(cycle);
             }
         }
 

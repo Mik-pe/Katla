@@ -85,7 +85,7 @@ impl ApplicationBuilder {
         event_loop: &EventLoop<()>,
         window: &Window,
         info: &ApplicationInfo,
-        resources: &ResourceManager,
+        _resources: &ResourceManager,
     ) -> VulkanRenderer {
         let engine_name = CString::new("Katla Engine").unwrap();
         let renderer = VulkanRenderer::init(
@@ -112,9 +112,7 @@ impl ApplicationBuilder {
     ) -> AppResult<katla_gfx::FrameGraph> {
         use katla_gfx::render_pass::{ClearValue, LoadOp, StoreOp};
         use katla_gfx::texture::ImageFormat as TextureImageFormat;
-        use katla_gfx::{
-            FrameGraphBuilder, FullscreenPass, GeometryPass, GraphResourceDesc, GraphResourceType,
-        };
+        use katla_gfx::{FullscreenPass, GeometryPass, GraphResourceDesc, GraphResourceType};
 
         let extent = renderer.swapchain_extent();
 

@@ -7,7 +7,7 @@
 use std::collections::HashMap;
 
 use katla_gfx::{TextureHandle, UIDrawList, UiDrawCommand, VertexUI};
-use katla_ui::{DrawCmd, DrawList, TextureId, Vertex};
+use katla_ui::{DrawList, TextureId};
 
 /// UI renderer that converts UI draw lists for GPU rendering.
 ///

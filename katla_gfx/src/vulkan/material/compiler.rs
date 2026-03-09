@@ -91,7 +91,7 @@ impl MaterialCompiler {
     pub(crate) fn new(
         context: Rc<VulkanContext>,
         bindless_manager: &BindlessTextureManager,
-        storage_descriptor_set: &StorageDescriptorSet,
+        _storage_descriptor_set: &StorageDescriptorSet,
     ) -> Result<Self, MaterialError> {
         let bindless_descriptor_layout = bindless_manager.descriptor_set_layout();
 
@@ -186,7 +186,7 @@ impl MaterialCompiler {
         &mut self,
         registry: &mut crate::renderer::registry::AssetRegistry,
         shader_path: &Path,
-        material_type: MaterialType,
+        _material_type: MaterialType,
         options: MaterialOptions,
     ) -> Result<crate::handle::MaterialHandle, MaterialError> {
         // 1. Determine vertex binding

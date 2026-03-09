@@ -5,7 +5,6 @@ use std::collections::{HashMap, HashSet};
 use log::info;
 
 use katla_ecs::EntityId;
-use katla_gfx::renderer::UiDrawCommand;
 use katla_math::{Vec2, Vec3};
 
 use crate::components::{
@@ -67,10 +66,10 @@ pub fn render_debug_ui(app: &mut Application, dt: f32) {
         // Convert the UI draw list to GPU format using UIRenderer
         // Use the existing UIRenderer from the UI module
         let ui_renderer = crate::ui::UIRenderer::new();
-        let gpu_draw_list = ui_renderer.convert_draw_list(&draw_list);
+        let gpu_draw_list = ui_renderer.convert_draw_list(draw_list);
 
         app.renderer.render_ui(
-            &gpu_draw_list.vertex_bytes(),
+            gpu_draw_list.vertex_bytes(),
             gpu_draw_list.vertex_count() as u32,
             &gpu_draw_list.indices,
             &gpu_draw_list.commands,

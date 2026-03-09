@@ -225,7 +225,7 @@ impl<'a> Widget for PreferencesPanel<'a> {
 
         let title_bounds =
             Rect2D::from_origin_size(panel_bounds.min, Vec2::new(panel_width, title_bar_height));
-        let title_color = if self.state.dragging || (can_drag && !self.state.dragging) {
+        let title_color = if self.state.dragging || can_drag {
             theme.background_light
         } else {
             theme.panel_header

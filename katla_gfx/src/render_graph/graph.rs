@@ -143,17 +143,17 @@ impl FrameGraph {
     /// compile the material for the pass's output format.
     fn resolve_materials(&mut self, renderer: &mut VulkanRenderer) -> Result<(), RenderGraphError> {
         for pass in &self.passes {
-            if let Some(material_handle) = pass.material {
-                if let Some(format) = pass.output_format {
-                    renderer
-                        .ensure_material_compiled(material_handle, format)
-                        .map_err(|e| {
-                            RenderGraphError::InvalidConfiguration(format!(
-                                "Material compilation failed: {}",
-                                e
-                            ))
-                        })?;
-                }
+            if let Some(material_handle) = pass.material
+                && let Some(format) = pass.output_format
+            {
+                renderer
+                    .ensure_material_compiled(material_handle, format)
+                    .map_err(|e| {
+                        RenderGraphError::InvalidConfiguration(format!(
+                            "Material compilation failed: {}",
+                            e
+                        ))
+                    })?;
             }
         }
         Ok(())
@@ -180,28 +180,28 @@ impl FrameGraph {
         // Note: This must happen here (not during pass execution) because we need &mut VulkanRenderer
         // to update storage buffers. Once Frame is created, we only have &VulkanRenderer.
         for pass in &self.passes {
-            if let Some(ref params) = pass.tonemap_params {
-                if let Some(hdr_index) = params.hdr_texture_index {
-                    let mode_value = params.mode as u32;
-                    renderer.storage_manager.update_object_bindless(
-                        0,
-                        &[
-                            1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0,
-                            0.0, 1.0,
-                        ],
-                        &[
-                            params.exposure,
-                            params.gamma,
-                            mode_value as f32,
-                            hdr_index as f32,
-                        ],
-                        0.0,
-                        0.0,
+            if let Some(ref params) = pass.tonemap_params
+                && let Some(hdr_index) = params.hdr_texture_index
+            {
+                let mode_value = params.mode as u32;
+                renderer.storage_manager.update_object_bindless(
+                    0,
+                    &[
+                        1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0,
                         1.0,
-                        0.0,
-                        [0, 0, 0, 0],
-                    );
-                }
+                    ],
+                    &[
+                        params.exposure,
+                        params.gamma,
+                        mode_value as f32,
+                        hdr_index as f32,
+                    ],
+                    0.0,
+                    0.0,
+                    1.0,
+                    0.0,
+                    [0, 0, 0, 0],
+                );
             }
         }
 
@@ -647,7 +647,7 @@ impl<'a> Frame<'a> {
 
         self.pending
             .entry(index)
-            .or_insert_with(PassExecutionData::default)
+            .or_default()
             .draw_lists
             .push(draw_list.clone());
         self
@@ -666,7 +666,7 @@ impl<'a> Frame<'a> {
 
         self.pending
             .entry(index)
-            .or_insert_with(PassExecutionData::default)
+            .or_default()
             .ui_draw_lists
             .push(ui_draw_list.clone());
         self
@@ -679,10 +679,7 @@ impl<'a> Frame<'a> {
             .pass_index(pass)
             .unwrap_or_else(|| panic!("Pass '{}' not found in graph", pass));
 
-        self.pending
-            .entry(index)
-            .or_insert_with(PassExecutionData::default)
-            .dispatch = Some((x, y, z));
+        self.pending.entry(index).or_default().dispatch = Some((x, y, z));
         self
     }
 
@@ -695,7 +692,7 @@ impl<'a> Frame<'a> {
 
         self.pending
             .entry(index)
-            .or_insert_with(PassExecutionData::default)
+            .or_default()
             .uniform_data
             .extend_from_slice(data);
         self
@@ -1067,12 +1064,12 @@ impl<'a> Frame<'a> {
         // Get pipeline handles from registry
         let pipeline_handle = material
             .pipeline
-            .ok_or_else(|| RenderGraphError::InvalidMaterialHandle(draw_call.material))?;
+            .ok_or(RenderGraphError::InvalidMaterialHandle(draw_call.material))?;
         let (pipeline, layout) = self
             .renderer
             .asset_registry
             .get_pipeline_vk_handles(pipeline_handle)
-            .ok_or_else(|| RenderGraphError::InvalidPipelineHandle(pipeline_handle))?;
+            .ok_or(RenderGraphError::InvalidPipelineHandle(pipeline_handle))?;
 
         // Bind graphics pipeline
         unsafe {
@@ -1113,7 +1110,7 @@ impl<'a> Frame<'a> {
         &mut self,
         cmd: &crate::vulkan::commandbuffer::CommandBuffer,
         pipeline_layout: vk::PipelineLayout,
-        material: &crate::renderer::registry::MaterialAsset,
+        _material: &crate::renderer::registry::MaterialAsset,
         draw_call: &crate::renderer::types::DrawCall,
     ) -> Result<(), RenderGraphError> {
         // Set 0: Storage uniforms (frame_data + objects array) - use per-frame descriptor set
@@ -1131,7 +1128,7 @@ impl<'a> Frame<'a> {
             let skeleton_ds = self
                 .renderer
                 .get_skeleton_descriptor(skeleton_handle)
-                .ok_or_else(|| RenderGraphError::InvalidSkeletonHandle(skeleton_handle))?;
+                .ok_or(RenderGraphError::InvalidSkeletonHandle(skeleton_handle))?;
             cmd.bind_descriptor_sets(pipeline_layout, 2, &[skeleton_ds.vk_set()], &[]);
         }
 
@@ -1259,7 +1256,7 @@ impl<'a> Frame<'a> {
         let (pipeline, layout) = renderer
             .asset_registry
             .get_pipeline_vk_handles(pipeline_handle)
-            .ok_or_else(|| RenderGraphError::InvalidPipelineHandle(pipeline_handle))?;
+            .ok_or(RenderGraphError::InvalidPipelineHandle(pipeline_handle))?;
 
         // Bind graphics pipeline
         unsafe {
