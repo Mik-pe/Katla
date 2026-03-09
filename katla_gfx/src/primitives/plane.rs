@@ -54,8 +54,8 @@ pub fn generate_plane(width: f32, height: f32) -> (Vec<VertexPBR>, Vec<u32>) {
 
     // Two triangles (CCW winding when viewed from above)
     let indices = vec![
-        0, 1, 2, // First triangle
-        0, 2, 3, // Second triangle
+        0, 2, 1, // First triangle
+        0, 3, 2, // Second triangle
     ];
 
     (vertices, indices)
@@ -167,6 +167,67 @@ mod tests {
         }
     }
 
+    #[test]
+    fn test_plane_triangle_winding() {
+        let (vertices, indices) = generate_plane(1.0, 1.0);
+
+        // Check each triangle's winding by computing the geometric normal
+        // from CCW vertex order and comparing with the stored normal
+        for tri in indices.chunks(3) {
+            let v0 = &vertices[tri[0] as usize];
+            let v1 = &vertices[tri[1] as usize];
+            let v2 = &vertices[tri[2] as usize];
+
+            // Compute edge vectors
+            let e1 = [
+                v1.position[0] - v0.position[0],
+                v1.position[1] - v0.position[1],
+                v1.position[2] - v0.position[2],
+            ];
+            let e2 = [
+                v2.position[0] - v0.position[0],
+                v2.position[1] - v0.position[1],
+                v2.position[2] - v0.position[2],
+            ];
+
+            // Cross product gives geometric normal (should match stored normal for CCW)
+            let geo_normal = [
+                e1[1] * e2[2] - e1[2] * e2[1],
+                e1[2] * e2[0] - e1[0] * e2[2],
+                e1[0] * e2[1] - e1[1] * e2[0],
+            ];
+
+            // Normalize
+            let len =
+                (geo_normal[0].powi(2) + geo_normal[1].powi(2) + geo_normal[2].powi(2)).sqrt();
+            let geo_normal = [
+                geo_normal[0] / len,
+                geo_normal[1] / len,
+                geo_normal[2] / len,
+            ];
+
+            // Use v0's stored normal
+            let stored_normal = v0.normal;
+
+            // Dot product should be close to 1.0 (normals point same direction)
+            let dot = stored_normal[0] * geo_normal[0]
+                + stored_normal[1] * geo_normal[1]
+                + stored_normal[2] * geo_normal[2];
+
+            assert!(
+                dot > 0.99,
+                "Triangle winding error: geometric normal {:?} doesn't match stored normal {:?} (dot={}) \
+                for triangle with vertices: {:?}, {:?}, {:?}",
+                geo_normal,
+                stored_normal,
+                dot,
+                v0.position,
+                v1.position,
+                v2.position
+            );
+        }
+    }
+
     // === XY Plane Tests ===
 
     #[test]
@@ -223,33 +284,62 @@ mod tests {
     }
 
     #[test]
-    fn test_plane_xy_winding_order() {
+    fn test_plane_xy_triangle_winding() {
         let (vertices, indices) = generate_plane_xy(2.0, 2.0, 2);
 
-        for chunk in indices.chunks(3) {
-            let i0 = chunk[0] as usize;
-            let i1 = chunk[1] as usize;
-            let i2 = chunk[2] as usize;
-
-            let v0 = vertices[i0].position;
-            let v1 = vertices[i1].position;
-            let v2 = vertices[i2].position;
+        // Check each triangle's winding by computing the geometric normal
+        // from CCW vertex order and comparing with the stored normal
+        for tri in indices.chunks(3) {
+            let v0 = &vertices[tri[0] as usize];
+            let v1 = &vertices[tri[1] as usize];
+            let v2 = &vertices[tri[2] as usize];
 
             // Compute edge vectors
-            let edge1 = [v1[0] - v0[0], v1[1] - v0[1], v1[2] - v0[2]];
-            let edge2 = [v2[0] - v0[0], v2[1] - v0[1], v2[2] - v0[2]];
-
-            // Cross product (edge1 x edge2)
-            let face_normal = [
-                edge1[1] * edge2[2] - edge1[2] * edge2[1],
-                edge1[2] * edge2[0] - edge1[0] * edge2[2],
-                edge1[0] * edge2[1] - edge1[1] * edge2[0],
+            let e1 = [
+                v1.position[0] - v0.position[0],
+                v1.position[1] - v0.position[1],
+                v1.position[2] - v0.position[2],
+            ];
+            let e2 = [
+                v2.position[0] - v0.position[0],
+                v2.position[1] - v0.position[1],
+                v2.position[2] - v0.position[2],
             ];
 
-            // For CCW winding when viewed from +Z, the face normal should point +Z
+            // Cross product gives geometric normal (should match stored normal for CCW)
+            let geo_normal = [
+                e1[1] * e2[2] - e1[2] * e2[1],
+                e1[2] * e2[0] - e1[0] * e2[2],
+                e1[0] * e2[1] - e1[1] * e2[0],
+            ];
+
+            // Normalize
+            let len =
+                (geo_normal[0].powi(2) + geo_normal[1].powi(2) + geo_normal[2].powi(2)).sqrt();
+            let geo_normal = [
+                geo_normal[0] / len,
+                geo_normal[1] / len,
+                geo_normal[2] / len,
+            ];
+
+            // Use v0's stored normal
+            let stored_normal = v0.normal;
+
+            // Dot product should be close to 1.0 (normals point same direction)
+            let dot = stored_normal[0] * geo_normal[0]
+                + stored_normal[1] * geo_normal[1]
+                + stored_normal[2] * geo_normal[2];
+
             assert!(
-                face_normal[2] > 0.0,
-                "Face normal should point +Z for CCW winding"
+                dot > 0.99,
+                "Triangle winding error: geometric normal {:?} doesn't match stored normal {:?} (dot={}) \
+                for triangle with vertices: {:?}, {:?}, {:?}",
+                geo_normal,
+                stored_normal,
+                dot,
+                v0.position,
+                v1.position,
+                v2.position
             );
         }
     }

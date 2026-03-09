@@ -209,9 +209,9 @@ fn add_face(vertices: &mut Vec<VertexPBR>, indices: &mut Vec<u32>, face: &[Verte
     let base = vertices.len() as u32;
     vertices.extend_from_slice(face);
 
-    // Two triangles in CCW order
-    indices.extend_from_slice(&[base, base + 2, base + 1]);
-    indices.extend_from_slice(&[base, base + 3, base + 2]);
+    // Two triangles in CCW order (0,1,2) and (0,2,3)
+    indices.extend_from_slice(&[base, base + 1, base + 2]);
+    indices.extend_from_slice(&[base, base + 2, base + 3]);
 }
 
 #[cfg(test)]
@@ -330,6 +330,71 @@ mod tests {
                 );
                 vertex_idx += 1;
             }
+        }
+    }
+
+    #[test]
+    fn test_cube_triangle_winding() {
+        let (vertices, indices) = generate_cube([1.0, 1.0, 1.0]);
+
+        // Check each triangle's winding by computing the geometric normal
+        // from CCW vertex order and comparing with the stored normal
+        for tri in indices.chunks(3) {
+            let v0 = &vertices[tri[0] as usize];
+            let v1 = &vertices[tri[1] as usize];
+            let v2 = &vertices[tri[2] as usize];
+
+            // Compute edge vectors
+            let e1 = [
+                v1.position[0] - v0.position[0],
+                v1.position[1] - v0.position[1],
+                v1.position[2] - v0.position[2],
+            ];
+            let e2 = [
+                v2.position[0] - v0.position[0],
+                v2.position[1] - v0.position[1],
+                v2.position[2] - v0.position[2],
+            ];
+
+            // Cross product gives geometric normal (should match stored normal for CCW)
+            let geo_normal = [
+                e1[1] * e2[2] - e1[2] * e2[1],
+                e1[2] * e2[0] - e1[0] * e2[2],
+                e1[0] * e2[1] - e1[1] * e2[0],
+            ];
+
+            // Normalize
+            let len =
+                (geo_normal[0].powi(2) + geo_normal[1].powi(2) + geo_normal[2].powi(2)).sqrt();
+            let geo_normal = if len > 1e-10 {
+                [
+                    geo_normal[0] / len,
+                    geo_normal[1] / len,
+                    geo_normal[2] / len,
+                ]
+            } else {
+                geo_normal
+            };
+
+            // Use v0's stored normal (all vertices on a face have the same normal)
+            let stored_normal = v0.normal;
+
+            // Dot product should be close to 1.0 (normals point same direction)
+            let dot = stored_normal[0] * geo_normal[0]
+                + stored_normal[1] * geo_normal[1]
+                + stored_normal[2] * geo_normal[2];
+
+            assert!(
+                dot > 0.99,
+                "Triangle winding error: geometric normal {:?} doesn't match stored normal {:?} (dot={}) \
+                for triangle with vertices: {:?}, {:?}, {:?}",
+                geo_normal,
+                stored_normal,
+                dot,
+                v0.position,
+                v1.position,
+                v2.position
+            );
         }
     }
 }

@@ -91,14 +91,14 @@ pub fn generate_torus(
             let current = segment * (rings + 1) + ring;
             let next = current + rings + 1;
 
-            // Two triangles per quad (CCW winding)
+            // Two triangles per quad (0,1,2) and (0,2,3) for proper CCW winding
             let v0 = current;
             let v1 = current + 1;
             let v2 = next + 1;
             let v3 = next;
 
-            indices.extend_from_slice(&[v0, v3, v2]);
-            indices.extend_from_slice(&[v0, v2, v1]);
+            indices.extend_from_slice(&[v0, v1, v2]);
+            indices.extend_from_slice(&[v0, v2, v3]);
         }
     }
 
@@ -186,5 +186,73 @@ mod tests {
     #[should_panic]
     fn test_torus_invalid_rings() {
         generate_torus(1.0, 0.3, 8, 2);
+    }
+
+    #[test]
+    fn test_torus_triangle_winding() {
+        let major_radius = 1.0;
+        let minor_radius = 0.3;
+        let segments = 16;
+        let rings = 16;
+        let (vertices, indices) = generate_torus(major_radius, minor_radius, segments, rings);
+
+        // Check each triangle's winding by computing the geometric normal
+        // from CCW vertex order and comparing with the stored normal
+        for tri in indices.chunks(3) {
+            let v0 = &vertices[tri[0] as usize];
+            let v1 = &vertices[tri[1] as usize];
+            let v2 = &vertices[tri[2] as usize];
+
+            // Compute edge vectors
+            let e1 = [
+                v1.position[0] - v0.position[0],
+                v1.position[1] - v0.position[1],
+                v1.position[2] - v0.position[2],
+            ];
+            let e2 = [
+                v2.position[0] - v0.position[0],
+                v2.position[1] - v0.position[1],
+                v2.position[2] - v0.position[2],
+            ];
+
+            // Cross product gives geometric normal (should match stored normal for CCW)
+            let geo_normal = [
+                e1[1] * e2[2] - e1[2] * e2[1],
+                e1[2] * e2[0] - e1[0] * e2[2],
+                e1[0] * e2[1] - e1[1] * e2[0],
+            ];
+
+            // Normalize
+            let len =
+                (geo_normal[0].powi(2) + geo_normal[1].powi(2) + geo_normal[2].powi(2)).sqrt();
+            if len < 1e-10 {
+                continue; // Skip degenerate triangles
+            }
+            let geo_normal = [
+                geo_normal[0] / len,
+                geo_normal[1] / len,
+                geo_normal[2] / len,
+            ];
+
+            // Use v0's stored normal
+            let stored_normal = v0.normal;
+
+            // Dot product should be close to 1.0 (normals point same direction)
+            let dot = stored_normal[0] * geo_normal[0]
+                + stored_normal[1] * geo_normal[1]
+                + stored_normal[2] * geo_normal[2];
+
+            assert!(
+                dot > 0.95,
+                "Triangle winding error: geometric normal {:?} doesn't match stored normal {:?} (dot={}) \
+                for triangle with vertices: {:?}, {:?}, {:?}",
+                geo_normal,
+                stored_normal,
+                dot,
+                v0.position,
+                v1.position,
+                v2.position
+            );
+        }
     }
 }
