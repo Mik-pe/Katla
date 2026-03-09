@@ -4,17 +4,12 @@ use naga::{
     front::wgsl,
 };
 use std::{
-    ffi::CString,
     io::Cursor,
     path::{Path, PathBuf},
 };
 
-use crate::vulkan::pipeline_state::ShaderStages;
-
 pub struct ShaderModule {
     pub(crate) module: vk::ShaderModule,
-    pub stage: vk::ShaderStageFlags,
-    pub entry_point: CString,
     device: Device,
 }
 
@@ -31,8 +26,8 @@ impl ShaderModule {
     pub fn from_bytes(
         device: Device,
         bytes: &[u8],
-        stage: vk::ShaderStageFlags,
-        entry_point: &str,
+        _stage: vk::ShaderStageFlags,
+        _entry_point: &str,
     ) -> Result<Self, ShaderError> {
         let mut cursor = Cursor::new(bytes);
         let code = read_spv(&mut cursor).map_err(ShaderError::InvalidSpirv)?;
@@ -43,8 +38,6 @@ impl ShaderModule {
 
         Ok(Self {
             module,
-            stage,
-            entry_point: CString::new(entry_point).unwrap(),
             device,
         })
     }
@@ -66,17 +59,6 @@ impl ShaderModule {
         entry_point: impl Into<String>,
     ) -> Result<Self, ShaderError> {
         Self::from_wgsl_string_impl(device, wgsl_str, stage, entry_point)
-    }
-
-    /// Create a shader module from WGSL source string using wrapper types.
-    pub fn from_wgsl_string_wrapped(
-        device: Device,
-        wgsl_str: &str,
-        stage: ShaderStages,
-        entry_point: impl Into<String>,
-    ) -> Result<Self, ShaderError> {
-        let vk_stage: vk::ShaderStageFlags = stage.into();
-        Self::from_wgsl_string_impl(device, wgsl_str, vk_stage, entry_point)
     }
 
     fn from_wgsl_string_impl(
@@ -124,16 +106,6 @@ impl ShaderModule {
     ) -> Result<Self, ShaderError> {
         let bytes = std::fs::read(path.as_ref()).map_err(ShaderError::IoError)?;
         Self::from_bytes(device, &bytes, stage, entry_point)
-    }
-
-    pub fn stage_info<'a>(
-        &'a self,
-        entry_point: &'a CString,
-    ) -> vk::PipelineShaderStageCreateInfo<'a> {
-        vk::PipelineShaderStageCreateInfo::default()
-            .stage(self.stage)
-            .module(self.module)
-            .name(entry_point)
     }
 }
 

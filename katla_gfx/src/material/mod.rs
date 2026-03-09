@@ -6,7 +6,6 @@
 mod definition;
 mod render_state;
 mod shader_source;
-mod template;
 mod types;
 mod ui;
 

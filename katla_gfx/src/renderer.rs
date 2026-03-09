@@ -61,8 +61,6 @@ pub struct VulkanRenderer {
     /// Per-frame storage descriptor sets for binding frame and object uniforms.
     /// Each set contains the storage buffer bound at two offsets (frame_data at 0, objects at 256).
     pub(crate) storage_descriptor_sets: Vec<StorageDescriptorSet>,
-    /// Draw list cell for geometry pass (shared with render graph).
-    pub(crate) draw_list_cell: Rc<RefCell<Option<DrawList>>>,
     /// Skeleton descriptor sets for GPU skeletal animation.
     /// Indexed by SkeletonHandle.
     pub(crate) skeleton_descriptors: Vec<Option<SkeletonDescriptorSet>>,
@@ -73,36 +71,12 @@ pub struct VulkanRenderer {
     pub(crate) frame_uniforms: FrameUniforms,
     /// Cached default white PBR material handle.
     default_material_handle: Option<MaterialHandle>,
-    /// Offscreen render targets as (texture_id, target) pairs.
-    /// Simple Vec since we only have a few targets (viewport + preview).
-    /// - TextureId 2 = viewport
-    /// - TextureId 101 = preview
-    render_targets: Vec<(u64, ViewportRenderTarget)>,
     /// Output render target for final composition (UI renders here, then present_pass copies to swapchain).
     output_target: Option<OutputRenderTarget>,
     /// Viewport manager for viewport and render target management.
     pub(crate) viewport_manager: viewport_manager::ViewportManager,
-    /// Cached UI render state (lazy initialized).
-    ui_state: Option<UiRenderState>,
-    /// Pending UI data for next frame (set by render_ui, consumed by render_frame).
-    pending_ui: Option<UiFrameData>,
     /// Material compiler for compiling materials from shaders.
     pub(crate) material_compiler: MaterialCompiler,
-}
-
-/// Cached UI mesh and material handles.
-struct UiRenderState {
-    mesh: MeshHandle,
-    material: MaterialHandle,
-}
-
-/// Pending UI frame data passed from render_ui() to render_frame().
-struct UiFrameData {
-    vertex_bytes: Vec<u8>,
-    vertex_count: u32,
-    indices: Vec<u32>,
-    commands: Vec<UiDrawCommand>,
-    screen_size: [f32; 2],
 }
 
 /// Number of frames that can be processed concurrently.
@@ -190,7 +164,7 @@ impl VulkanRenderer {
         let mesh_manager = mesh_manager::MeshManager::new(context.clone());
 
         // Initialize viewport manager
-        let viewport_manager = viewport_manager::ViewportManager::new(context.clone());
+        let viewport_manager = viewport_manager::ViewportManager::new();
 
         // Initialize material compiler (use first descriptor set for compilation)
         let material_compiler = MaterialCompiler::new(
@@ -214,16 +188,12 @@ impl VulkanRenderer {
             texture_manager,
             storage_manager,
             storage_descriptor_sets,
-            draw_list_cell: Rc::new(RefCell::new(None)),
             skeleton_descriptors: Vec::new(),
             skeleton_buffers: Vec::new(),
             frame_uniforms: FrameUniforms::default(),
             default_material_handle: None,
-            render_targets: Vec::new(),
             output_target: None,
             viewport_manager,
-            ui_state: None,
-            pending_ui: None,
             material_compiler,
         })
     }
@@ -687,75 +657,6 @@ impl VulkanRenderer {
     }
 
     // ========================================================================
-    // Render Target Management (Unified)
-    // ========================================================================
-
-    /// Texture IDs for built-in render targets.
-    pub(crate) const VIEWPORT_TEXTURE_ID: u64 = 2;
-    pub(crate) const PREVIEW_TEXTURE_ID: u64 = 101;
-
-    /// Create or resize a render target for the given texture ID.
-    ///
-    /// # Arguments
-    /// * `texture_id` - Unique ID for this render target (e.g., 2 for viewport, 101 for preview)
-    /// * `width` - Width in pixels
-    /// * `height` - Height in pixels
-    /// * `count` - Number of targets to create (1 for single-buffered, FRAMES_IN_FLIGHT for double-buffered)
-    pub(crate) fn init_render_target(
-        &mut self,
-        texture_id: u64,
-        width: u32,
-        height: u32,
-        _count: usize, // Ignored - we only need one target per texture_id
-    ) -> Result<(), vk::Result> {
-        // Check if we need to resize
-        let needs_resize = self
-            .render_targets
-            .iter()
-            .find(|(id, _)| *id == texture_id)
-            .map(|(_, t)| t.extent.width != width || t.extent.height != height)
-            .unwrap_or(true);
-
-        if needs_resize {
-            // Remove old target if exists
-            self.render_targets.retain(|(id, _)| *id != texture_id);
-
-            // Create new target
-            let target = ViewportRenderTarget::new(self.context.clone(), width, height)?;
-            self.render_targets.push((texture_id, target));
-
-            info!(
-                "Render target {} created/resized to {}x{}",
-                texture_id, width, height
-            );
-        }
-        Ok(())
-    }
-
-    /// Get a render target by texture ID.
-    pub(crate) fn get_render_target(&self, texture_id: u64) -> Option<&ViewportRenderTarget> {
-        self.render_targets
-            .iter()
-            .find(|(id, _)| *id == texture_id)
-            .map(|(_, t)| t)
-    }
-
-    /// Get the first render target for a texture ID (alias for get_render_target).
-    pub(crate) fn get_render_target_first(&self, texture_id: u64) -> Option<&ViewportRenderTarget> {
-        self.get_render_target(texture_id)
-    }
-
-    /// Check if a render target exists for the given texture ID.
-    pub(crate) fn has_render_target(&self, texture_id: u64) -> bool {
-        self.render_targets.iter().any(|(id, _)| *id == texture_id)
-    }
-
-    /// Remove a render target.
-    pub(crate) fn remove_render_target(&mut self, texture_id: u64) {
-        self.render_targets.retain(|(id, _)| *id != texture_id);
-    }
-
-    // ========================================================================
     // Viewport System
     // ========================================================================
 
@@ -869,9 +770,6 @@ impl VulkanRenderer {
     pub fn destroy(&mut self) {
         // Destroy output render target (Drop handles cleanup)
         self.output_target = None;
-
-        // Destroy all render targets (Drop handles cleanup)
-        self.render_targets.clear();
 
         // Destroy all viewports (Drop handles cleanup for ViewportRenderTarget)
         self.viewport_manager.clear();
@@ -1450,8 +1348,7 @@ impl VulkanRenderer {
 
     /// Queue UI for rendering in the next frame.
     ///
-    /// Call this before `render_frame()` each frame. The data is consumed
-    /// during `render_frame()` and rendered as an overlay.
+    /// NOTE: UI rendering is not yet implemented. This is a no-op.
     ///
     /// # Arguments
     /// * `vertex_bytes` - Raw vertex data (VertexUI as bytes)
@@ -1462,22 +1359,16 @@ impl VulkanRenderer {
     pub fn render_ui(
         &mut self,
         vertex_bytes: &[u8],
-        vertex_count: u32,
+        _vertex_count: u32,
         indices: &[u32],
         commands: &[UiDrawCommand],
-        screen_size: [f32; 2],
+        _screen_size: [f32; 2],
     ) {
+        // UI rendering is not yet implemented
         if vertex_bytes.is_empty() || indices.is_empty() || commands.is_empty() {
             return;
         }
-
-        self.pending_ui = Some(UiFrameData {
-            vertex_bytes: vertex_bytes.to_vec(),
-            vertex_count,
-            indices: indices.to_vec(),
-            commands: commands.to_vec(),
-            screen_size,
-        });
+        // No-op: UI system pending implementation
     }
 
     // ========================================================================

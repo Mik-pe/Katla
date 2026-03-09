@@ -8,7 +8,6 @@ use crate::handle::PipelineHandle;
 use crate::texture::ImageFormat;
 
 use super::super::builder::{InternalPassBuilder, PassBuilder};
-use super::super::error::RenderGraphError;
 use super::super::pass::PassType;
 use super::super::resource::GraphResourceHandle;
 
@@ -164,51 +163,17 @@ impl PassBuilder for FullscreenPass {
             tonemap_params: self.tonemap_params,
             material: None,
             output_format: None,
-            build_fn: Box::new(move |resource_map: &HashMap<String, GraphResourceHandle>| {
-                let reads: Vec<GraphResourceHandle> = self
-                    .reads
-                    .iter()
-                    .map(|n| {
-                        resource_map
-                            .get(n)
-                            .copied()
-                            .ok_or_else(|| RenderGraphError::ResourceNotFound(n.clone()))
-                    })
-                    .collect::<Result<Vec<_>, RenderGraphError>>()?;
-
-                let writes: Vec<GraphResourceHandle> = self
-                    .writes
-                    .iter()
-                    .map(|(n, _)| {
-                        if n == "backbuffer" {
-                            Ok(GraphResourceHandle::NONE)
-                        } else {
-                            resource_map
-                                .get(n)
-                                .copied()
-                                .ok_or_else(|| RenderGraphError::ResourceNotFound(n.clone()))
-                        }
-                    })
-                    .collect::<Result<Vec<_>, RenderGraphError>>()?;
-
-                Ok(Box::new(FullscreenPassData {
-                    reads,
-                    writes,
-                    pipeline: self.pipeline,
-                    tonemap_params: self.tonemap_params,
-                }))
+            build_fn: Box::new(move |_resource_map: &HashMap<String, GraphResourceHandle>| {
+                // Fullscreen pass data is currently unused but kept for future extensibility
+                Ok(Box::new(FullscreenPassData))
             }),
         }
     }
 }
 
 /// Internal data for a fullscreen pass.
-pub(crate) struct FullscreenPassData {
-    pub reads: Vec<GraphResourceHandle>,
-    pub writes: Vec<GraphResourceHandle>,
-    pub pipeline: Option<PipelineHandle>,
-    pub tonemap_params: Option<TonemapParams>,
-}
+#[derive(Debug)]
+pub(crate) struct FullscreenPassData;
 
 #[cfg(test)]
 mod tests {

@@ -73,22 +73,6 @@ impl PipelineBuilder {
         }
     }
 
-    pub fn with_entry_points(mut self, vertex: CString, fragment: CString) -> Self {
-        self.vertex_shader_entry_point = vertex;
-        self.fragment_shader_entry_point = fragment;
-        self
-    }
-
-    pub fn with_vertex_shader(mut self, shader: vk::ShaderModule) -> Self {
-        self.vertex_shader = Some(shader);
-        self
-    }
-
-    pub fn with_fragment_shader(mut self, shader: vk::ShaderModule) -> Self {
-        self.fragment_shader = Some(shader);
-        self
-    }
-
     pub fn with_shaders(mut self, vertex: vk::ShaderModule, fragment: vk::ShaderModule) -> Self {
         self.vertex_shader = Some(vertex);
         self.fragment_shader = Some(fragment);
@@ -105,11 +89,6 @@ impl PipelineBuilder {
 
     pub fn with_descriptor_layouts(mut self, layouts: Vec<vk::DescriptorSetLayout>) -> Self {
         self.descriptor_layouts = layouts;
-        self
-    }
-
-    pub fn with_topology(mut self, topology: PrimitiveTopology) -> Self {
-        self.topology = topology;
         self
     }
 
@@ -131,41 +110,6 @@ impl PipelineBuilder {
         self
     }
 
-    pub fn with_line_width(mut self, width: f32) -> Self {
-        self.line_width = width;
-        self
-    }
-
-    pub fn with_blending(mut self, enable: bool, src: BlendFactor, dst: BlendFactor) -> Self {
-        self.blend_enable = enable;
-        self.blend_src_color = src;
-        self.blend_dst_color = dst;
-        self.blend_src_alpha = BlendFactor::One;
-        self.blend_dst_alpha = BlendFactor::Zero;
-        self
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    pub fn with_blending_advanced(
-        mut self,
-        enable: bool,
-        src_color: BlendFactor,
-        dst_color: BlendFactor,
-        color_op: BlendOp,
-        src_alpha: BlendFactor,
-        dst_alpha: BlendFactor,
-        alpha_op: BlendOp,
-    ) -> Self {
-        self.blend_enable = enable;
-        self.blend_src_color = src_color;
-        self.blend_dst_color = dst_color;
-        self.blend_color_op = color_op;
-        self.blend_src_alpha = src_alpha;
-        self.blend_dst_alpha = dst_alpha;
-        self.blend_alpha_op = alpha_op;
-        self
-    }
-
     pub fn with_alpha_blending(mut self) -> Self {
         self.blend_enable = true;
         self.blend_src_color = BlendFactor::SrcAlpha;
@@ -177,32 +121,6 @@ impl PipelineBuilder {
         self
     }
 
-    pub fn with_additive_blending(mut self) -> Self {
-        self.blend_enable = true;
-        self.blend_src_color = BlendFactor::SrcAlpha;
-        self.blend_dst_color = BlendFactor::One;
-        self.blend_color_op = BlendOp::Add;
-        self.blend_src_alpha = BlendFactor::One;
-        self.blend_dst_alpha = BlendFactor::One;
-        self.blend_alpha_op = BlendOp::Add;
-        self
-    }
-
-    pub fn add_push_constant_range(
-        mut self,
-        stages: vk::ShaderStageFlags,
-        offset: u32,
-        size: u32,
-    ) -> Self {
-        self.push_constant_ranges.push(
-            vk::PushConstantRange::default()
-                .stage_flags(stages)
-                .offset(offset)
-                .size(size),
-        );
-        self
-    }
-
     pub fn with_rendering_formats(
         mut self,
         color_format: Option<ImageFormat>,
@@ -210,11 +128,6 @@ impl PipelineBuilder {
     ) -> Self {
         self.color_format = color_format.map(|f| f.into());
         self.depth_format = depth_format.map(|f| f.into());
-        self
-    }
-
-    pub fn with_dynamic_states(mut self, states: Vec<DynamicState>) -> Self {
-        self.dynamic_states = states;
         self
     }
 

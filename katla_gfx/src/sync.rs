@@ -178,25 +178,6 @@ pub(crate) struct VkViewport {
 }
 
 impl VkViewport {
-    /// Create a new viewport.
-    pub(crate) fn new(
-        x: f32,
-        y: f32,
-        width: f32,
-        height: f32,
-        min_depth: f32,
-        max_depth: f32,
-    ) -> Self {
-        Self {
-            x,
-            y,
-            width,
-            height,
-            min_depth,
-            max_depth,
-        }
-    }
-
     /// Create a viewport from position and size (uses default depth range 0.0-1.0).
     pub(crate) fn from_rect(x: f32, y: f32, width: f32, height: f32) -> Self {
         Self {

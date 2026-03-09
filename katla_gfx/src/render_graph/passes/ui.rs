@@ -5,11 +5,12 @@
 use std::collections::HashMap;
 
 use crate::render_graph::builder::{InternalPassBuilder, PassBuilder};
-use crate::render_graph::error::RenderGraphError;
 use crate::render_graph::pass::PassType;
 use crate::render_graph::resource::GraphResourceHandle;
 use crate::render_pass::{ClearValue, LoadOp, StoreOp};
 use crate::texture::ImageFormat;
+
+#[allow(dead_code)]
 
 /// UI render pass template.
 ///
@@ -47,14 +48,6 @@ pub struct UIPass {
 struct ColorOutput {
     /// Resource name.
     name: String,
-    /// Image format.
-    format: ImageFormat,
-    /// Load operation.
-    load_op: LoadOp,
-    /// Store operation.
-    store_op: StoreOp,
-    /// Clear value.
-    clear_value: ClearValue,
 }
 
 impl UIPass {
@@ -73,47 +66,38 @@ impl UIPass {
 
     /// Write to a color attachment.
     ///
-    /// By default, the attachment uses LoadOp (preserves existing content)
-    /// and StoreOp::Store.
-    ///
     /// # Arguments
     ///
     /// * `name` - Resource name for graph reference.
-    /// * `format` - Image format for the color attachment.
     pub fn write(mut self, name: impl Into<String>) -> Self {
         self.color_output = Some(ColorOutput {
             name: name.into(),
-            format: ImageFormat::B8G8R8A8Srgb, // Standard swapchain format
-            load_op: LoadOp::Load,
-            store_op: StoreOp::Store,
-            clear_value: ClearValue::TRANSPARENT_BLACK,
         });
         self
     }
 
-    /// Write to a color attachment with custom format and operations.
+    /// Write to a color attachment.
+    ///
+    /// Alias for write() method for API consistency.
     ///
     /// # Arguments
     ///
     /// * `name` - Resource name for graph reference.
-    /// * `format` - Image format for the color attachment.
-    /// * `load_op` - How the attachment is loaded.
-    /// * `store_op` - How the attachment is stored.
-    /// * `clear_value` - Clear value if load_op is Clear.
+    /// * `format` - Image format (unused, kept for API compatibility).
+    /// * `load_op` - Load operation (unused, kept for API compatibility).
+    /// * `store_op` - Store operation (unused, kept for API compatibility).
+    /// * `clear_value` - Clear value (unused, kept for API compatibility).
+    #[allow(clippy::too_many_arguments)]
     pub fn write_with(
         mut self,
         name: impl Into<String>,
-        format: ImageFormat,
-        load_op: LoadOp,
-        store_op: StoreOp,
-        clear_value: ClearValue,
+        _format: ImageFormat,
+        _load_op: LoadOp,
+        _store_op: StoreOp,
+        _clear_value: ClearValue,
     ) -> Self {
         self.color_output = Some(ColorOutput {
             name: name.into(),
-            format,
-            load_op,
-            store_op,
-            clear_value,
         });
         self
     }
@@ -143,18 +127,7 @@ impl UIPass {
 
 /// Internal data for a UI pass after name resolution.
 #[derive(Debug)]
-pub(crate) struct UIPassData {
-    /// Color attachment with resolved handle.
-    pub(crate) color: Option<(
-        GraphResourceHandle,
-        ImageFormat,
-        LoadOp,
-        StoreOp,
-        ClearValue,
-    )>,
-    /// Read dependencies with resolved handles.
-    pub(crate) reads: Vec<GraphResourceHandle>,
-}
+pub(crate) struct UIPassData;
 
 impl PassBuilder for UIPass {
     fn as_builder(self) -> InternalPassBuilder {
@@ -163,9 +136,6 @@ impl PassBuilder for UIPass {
 
         // Clone reads for the builder
         let reads = self.reads.clone();
-
-        // Store pass data for the build function
-        let color_output = self.color_output;
 
         InternalPassBuilder {
             name: self.name,
@@ -176,40 +146,9 @@ impl PassBuilder for UIPass {
             tonemap_params: None,
             material: None,
             output_format: None,
-            build_fn: Box::new(move |resource_map: &HashMap<String, GraphResourceHandle>| {
-                // Resolve color output name to handle
-                let color = if let Some(output) = color_output {
-                    let handle = resource_map
-                        .get(&output.name)
-                        .copied()
-                        .ok_or_else(|| RenderGraphError::ResourceNotFound(output.name.clone()))?;
-                    Some((
-                        handle,
-                        output.format,
-                        output.load_op,
-                        output.store_op,
-                        output.clear_value,
-                    ))
-                } else {
-                    None
-                };
-
-                // Resolve read names to handles
-                let resolved_reads = self
-                    .reads
-                    .iter()
-                    .map(|name| {
-                        resource_map
-                            .get(name)
-                            .copied()
-                            .ok_or_else(|| RenderGraphError::ResourceNotFound(name.clone()))
-                    })
-                    .collect::<Result<Vec<_>, RenderGraphError>>()?;
-
-                Ok(Box::new(UIPassData {
-                    color,
-                    reads: resolved_reads,
-                }))
+            build_fn: Box::new(move |_resource_map: &HashMap<String, GraphResourceHandle>| {
+                // UI pass data is currently unused but kept for future extensibility
+                Ok(Box::new(UIPassData))
             }),
         }
     }

@@ -1063,16 +1063,6 @@ impl VulkanFrameCtx {
             // self.depth_render_texture.destroy();
         }
     }
-
-    /// Get the swapchain images.
-    pub fn swapchain_images(&self) -> &[VkImage] {
-        &self.swapchain_images
-    }
-
-    /// Get the swapchain image views.
-    pub fn swapchain_image_views(&self) -> &[VkImageView] {
-        &self.swapchain_image_views
-    }
 }
 
 unsafe fn pick_physical_device(

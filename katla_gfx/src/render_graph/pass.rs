@@ -1,6 +1,5 @@
 //! Pass types for render graph execution.
 
-use super::error::RenderGraphError;
 use crate::render_pass::{ClearValue, LoadOp, StoreOp};
 use crate::texture::ImageFormat;
 
@@ -9,10 +8,6 @@ use crate::texture::ImageFormat;
 pub(crate) enum PassType {
     /// Graphics pass (rendering to attachments).
     Graphics,
-    /// Compute pass (GPU computation).
-    Compute,
-    /// Transfer pass (copying data).
-    Transfer,
 }
 
 impl Default for PassType {
@@ -20,9 +15,6 @@ impl Default for PassType {
         Self::Graphics
     }
 }
-
-/// Pass execution callback type.
-pub(crate) type PassExecFn = Box<dyn FnOnce() -> Result<(), RenderGraphError> + 'static>;
 
 /// Internal pass descriptor.
 pub(crate) struct PassDesc {
@@ -34,8 +26,6 @@ pub(crate) struct PassDesc {
     pub writes: Vec<String>,
     /// Pass type (graphics, compute, transfer).
     pub pass_type: PassType,
-    /// Execution callback.
-    pub execute: PassExecFn,
     /// Optional pipeline handle (for fullscreen/compute passes).
     pub pipeline: Option<crate::handle::PipelineHandle>,
     /// Optional tonemap parameters (for HDR tonemapping passes).
@@ -61,28 +51,12 @@ impl PassDesc {
             reads,
             writes,
             pass_type,
-            execute: Box::new(|| Ok(())),
             pipeline: None,
             tonemap_params: None,
             material: None,
             output_format: None,
             color_attachments: Vec::new(),
         }
-    }
-
-    /// Create a graphics pass descriptor.
-    pub fn graphics(name: impl Into<String>, reads: Vec<String>, writes: Vec<String>) -> Self {
-        Self::new(name, PassType::Graphics, reads, writes)
-    }
-
-    /// Create a compute pass descriptor.
-    pub fn compute(name: impl Into<String>, reads: Vec<String>, writes: Vec<String>) -> Self {
-        Self::new(name, PassType::Compute, reads, writes)
-    }
-
-    /// Create a transfer pass descriptor.
-    pub fn transfer(name: impl Into<String>, reads: Vec<String>, writes: Vec<String>) -> Self {
-        Self::new(name, PassType::Transfer, reads, writes)
     }
 }
 
@@ -98,8 +72,6 @@ mod tests {
     #[test]
     fn test_pass_type_equality() {
         assert_eq!(PassType::Graphics, PassType::Graphics);
-        assert_ne!(PassType::Graphics, PassType::Compute);
-        assert_ne!(PassType::Compute, PassType::Transfer);
     }
 
     #[test]
@@ -120,14 +92,9 @@ mod tests {
     }
 
     #[test]
-    fn test_pass_desc_convenience_constructors() {
-        let graphics = PassDesc::graphics("graphics_pass", vec![], vec![]);
-        assert_eq!(graphics.pass_type, PassType::Graphics);
-
-        let compute = PassDesc::compute("compute_pass", vec![], vec![]);
-        assert_eq!(compute.pass_type, PassType::Compute);
-
-        let transfer = PassDesc::transfer("transfer_pass", vec![], vec![]);
-        assert_eq!(transfer.pass_type, PassType::Transfer);
+    fn test_pass_desc_new_default() {
+        let desc = PassDesc::new("test", PassType::default(), vec![], vec![]);
+        assert_eq!(desc.name, "test");
+        assert_eq!(desc.pass_type, PassType::Graphics);
     }
 }

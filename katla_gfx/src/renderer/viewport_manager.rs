@@ -5,24 +5,20 @@
 //! away from VulkanRenderer.
 
 use crate::viewport::{Viewport, ViewportBuilder, ViewportHandle};
-use crate::{Size2D, VulkanContext};
-use std::rc::Rc;
+use crate::Size2D;
 
 /// Viewport manager for managing viewports and render targets.
 ///
 /// Handles viewport creation, lookup, and lifecycle management.
 pub(crate) struct ViewportManager {
-    /// Vulkan context for resource creation.
-    context: Rc<VulkanContext>,
     /// Viewport storage.
     viewports: Vec<Viewport>,
 }
 
 impl ViewportManager {
     /// Create a new viewport manager.
-    pub(crate) fn new(context: Rc<VulkanContext>) -> Self {
+    pub(crate) fn new() -> Self {
         Self {
-            context,
             viewports: Vec::new(),
         }
     }

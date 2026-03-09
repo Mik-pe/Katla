@@ -14,18 +14,14 @@ use std::{cell::RefCell, path::Path, path::PathBuf, rc::Rc};
 /// Error types for material compilation.
 #[derive(Debug)]
 pub enum MaterialError {
-    ShaderNotFound(PathBuf),
     ShaderCompilation(String),
-    VertexBindingRequired(String),
     PipelineCreation(String),
 }
 
 impl std::fmt::Display for MaterialError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::ShaderNotFound(p) => write!(f, "Shader not found: {:?}", p),
             Self::ShaderCompilation(s) => write!(f, "Shader compilation failed: {}", s),
-            Self::VertexBindingRequired(s) => write!(f, "Vertex binding required: {}", s),
             Self::PipelineCreation(s) => write!(f, "Pipeline creation failed: {}", s),
         }
     }

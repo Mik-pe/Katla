@@ -23,7 +23,7 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 
 use super::error::RenderGraphError;
-use super::pass::{PassDesc, PassType};
+use super::pass::PassDesc;
 
 /// Compiled execution plan for a render graph.
 ///
@@ -41,10 +41,6 @@ impl ExecutionPlan {
             sorted_passes: Vec::new(),
         }
     }
-
-    pub fn sorted_passes(&self) -> &[usize] {
-        &self.sorted_passes
-    }
 }
 
 /// Dependency graph node.
@@ -60,7 +56,6 @@ pub struct PassInfo {
     pub name: String,
     pub reads: Vec<String>,
     pub writes: Vec<String>,
-    pub pass_type: PassType,
 }
 
 impl From<&PassDesc> for PassInfo {
@@ -69,7 +64,6 @@ impl From<&PassDesc> for PassInfo {
             name: desc.name.clone(),
             reads: desc.reads.clone(),
             writes: desc.writes.clone(),
-            pass_type: desc.pass_type,
         }
     }
 }
@@ -302,7 +296,6 @@ mod tests {
             name: name.to_string(),
             reads: reads.iter().map(|s| s.to_string()).collect(),
             writes: writes.iter().map(|s| s.to_string()).collect(),
-            pass_type: PassType::Graphics,
         }
     }
 
@@ -361,13 +354,11 @@ mod tests {
                 name: "A".to_string(),
                 reads: vec!["r1".to_string()],
                 writes: vec!["r0".to_string()],
-                pass_type: PassType::Compute,
             },
             PassInfo {
                 name: "B".to_string(),
                 reads: vec!["r0".to_string()],
                 writes: vec!["r1".to_string()],
-                pass_type: PassType::Compute,
             },
         ];
 
@@ -388,11 +379,11 @@ mod tests {
         let compiler = GraphCompiler::new(passes);
         let plan = compiler.compile().unwrap();
 
-        assert_eq!(plan.sorted_passes().len(), 3);
+        assert_eq!(plan.sorted_passes.len(), 3);
 
-        let geo_pos = plan.sorted_passes().iter().position(|&i| i == 0).unwrap();
-        let light_pos = plan.sorted_passes().iter().position(|&i| i == 1).unwrap();
-        let post_pos = plan.sorted_passes().iter().position(|&i| i == 2).unwrap();
+        let geo_pos = plan.sorted_passes.iter().position(|&i| i == 0).unwrap();
+        let light_pos = plan.sorted_passes.iter().position(|&i| i == 1).unwrap();
+        let post_pos = plan.sorted_passes.iter().position(|&i| i == 2).unwrap();
 
         assert!(geo_pos < light_pos);
         assert!(light_pos < post_pos);
@@ -404,7 +395,7 @@ mod tests {
         let compiler = GraphCompiler::new(passes);
         let plan = compiler.compile().unwrap();
 
-        assert_eq!(plan.sorted_passes(), &[0]);
+        assert_eq!(plan.sorted_passes, &[0]);
     }
 
     #[test]
@@ -419,12 +410,12 @@ mod tests {
         let compiler = GraphCompiler::new(passes);
         let plan = compiler.compile().unwrap();
 
-        assert_eq!(plan.sorted_passes().len(), 4);
+        assert_eq!(plan.sorted_passes.len(), 4);
 
-        let shadow_pos = plan.sorted_passes().iter().position(|&i| i == 0).unwrap();
-        let geo_pos = plan.sorted_passes().iter().position(|&i| i == 1).unwrap();
-        let light_pos = plan.sorted_passes().iter().position(|&i| i == 2).unwrap();
-        let post_pos = plan.sorted_passes().iter().position(|&i| i == 3).unwrap();
+        let shadow_pos = plan.sorted_passes.iter().position(|&i| i == 0).unwrap();
+        let geo_pos = plan.sorted_passes.iter().position(|&i| i == 1).unwrap();
+        let light_pos = plan.sorted_passes.iter().position(|&i| i == 2).unwrap();
+        let post_pos = plan.sorted_passes.iter().position(|&i| i == 3).unwrap();
 
         assert!(shadow_pos < geo_pos, "Shadow should come before Geometry");
         assert!(geo_pos < light_pos, "Geometry should come before Lighting");
