@@ -132,36 +132,36 @@ pub fn generate_sphere(radius: f32, segments: u32, rings: u32) -> (Vec<VertexPBR
             let current = ring_base + segment as u32;
             let next = next_ring_base + segment as u32;
 
-            // Two triangles per quad
+            // Two triangles per quad (0,1,2) and (0,2,3)
             let v0 = current;
             let v1 = current + 1;
             let v2 = next + 1;
             let v3 = next;
 
-            indices.extend_from_slice(&[v0, v2, v1]);
-            indices.extend_from_slice(&[v0, v3, v2]);
+            indices.extend_from_slice(&[v0, v1, v2]);
+            indices.extend_from_slice(&[v0, v2, v3]);
         }
     }
 
     // Top cap: connect top pole vertices to first ring
     // Each triangle uses the pole vertex whose normal matches the ring segment
     for segment in 0..segments {
-        let pole_vertex = top_pole_start + segment + 1; // Next pole vertex (not current!)
-        let ring_vertex = segment; // Current vertex in first ring
-        let next_ring_vertex = segment + 1; // Next vertex in first ring
+        let pole_vertex = top_pole_start + segment + 1;
+        let ring_vertex = segment;
+        let next_ring_vertex = segment + 1;
 
-        indices.extend_from_slice(&[ring_vertex, next_ring_vertex, pole_vertex]);
+        indices.extend_from_slice(&[ring_vertex, pole_vertex, next_ring_vertex]);
     }
 
     // Bottom cap: connect last ring to bottom pole vertices
     // Each pole vertex connects to its corresponding ring vertex
     let last_ring_base = ((rings - 2) * (segments + 1)) as u32;
     for segment in 0..segments {
-        let ring_vertex = last_ring_base + segment; // Current vertex in last ring
-        let next_ring_vertex = last_ring_base + segment + 1; // Next vertex in last ring
-        let pole_vertex = bottom_pole_start + segment; // Current pole vertex (not next!)
+        let ring_vertex = last_ring_base + segment;
+        let next_ring_vertex = last_ring_base + segment + 1;
+        let pole_vertex = bottom_pole_start + segment;
 
-        indices.extend_from_slice(&[next_ring_vertex, ring_vertex, pole_vertex]);
+        indices.extend_from_slice(&[next_ring_vertex, pole_vertex, ring_vertex]);
     }
 
     (vertices, indices)
@@ -233,80 +233,70 @@ mod tests {
     }
 
     #[test]
-    fn test_sphere_winding_order() {
+    fn test_sphere_triangle_winding() {
         let radius = 1.0;
         let segments = 16;
         let rings = 16;
         let (vertices, indices) = generate_sphere(radius, segments, rings);
 
-        let mut failed = 0;
-        let mut passed = 0;
-
-        for chunk in indices.chunks(3) {
-            let i0 = chunk[0] as usize;
-            let i1 = chunk[1] as usize;
-            let i2 = chunk[2] as usize;
-
-            let v0 = vertices[i0].position;
-            let v1 = vertices[i1].position;
-            let v2 = vertices[i2].position;
+        // Check each triangle's winding by computing the geometric normal
+        // from CCW vertex order and comparing with the stored normal
+        for tri in indices.chunks(3) {
+            let v0 = &vertices[tri[0] as usize];
+            let v1 = &vertices[tri[1] as usize];
+            let v2 = &vertices[tri[2] as usize];
 
             // Compute edge vectors
-            let edge1 = [v1[0] - v0[0], v1[1] - v0[1], v1[2] - v0[2]];
-            let edge2 = [v2[0] - v0[0], v2[1] - v0[1], v2[2] - v0[2]];
-
-            // Face normal via cross product
-            let face_normal = [
-                edge1[1] * edge2[2] - edge1[2] * edge2[1],
-                edge1[2] * edge2[0] - edge1[0] * edge2[2],
-                edge1[0] * edge2[1] - edge1[1] * edge2[0],
+            let e1 = [
+                v1.position[0] - v0.position[0],
+                v1.position[1] - v0.position[1],
+                v1.position[2] - v0.position[2],
+            ];
+            let e2 = [
+                v2.position[0] - v0.position[0],
+                v2.position[1] - v0.position[1],
+                v2.position[2] - v0.position[2],
             ];
 
-            // Normalize face normal
+            // Cross product gives geometric normal (should match stored normal for CCW)
+            let geo_normal = [
+                e1[1] * e2[2] - e1[2] * e2[1],
+                e1[2] * e2[0] - e1[0] * e2[2],
+                e1[0] * e2[1] - e1[1] * e2[0],
+            ];
+
+            // Normalize
             let len =
-                (face_normal[0].powi(2) + face_normal[1].powi(2) + face_normal[2].powi(2)).sqrt();
+                (geo_normal[0].powi(2) + geo_normal[1].powi(2) + geo_normal[2].powi(2)).sqrt();
             if len < 1e-10 {
-                continue; // Degenerate triangle
+                continue; // Skip degenerate triangles (poles)
             }
-            let face_normal = [
-                face_normal[0] / len,
-                face_normal[1] / len,
-                face_normal[2] / len,
+            let geo_normal = [
+                geo_normal[0] / len,
+                geo_normal[1] / len,
+                geo_normal[2] / len,
             ];
 
-            // Average vertex normal
-            let n0 = vertices[i0].normal;
-            let n1 = vertices[i1].normal;
-            let n2 = vertices[i2].normal;
-            let avg = [
-                n0[0] + n1[0] + n2[0],
-                n0[1] + n1[1] + n2[1],
-                n0[2] + n1[2] + n2[2],
-            ];
-            let avg_len = (avg[0].powi(2) + avg[1].powi(2) + avg[2].powi(2)).sqrt();
-            if avg_len < 1e-10 {
-                continue;
-            }
-            let avg_normal = [avg[0] / avg_len, avg[1] / avg_len, avg[2] / avg_len];
+            // Use v0's stored normal
+            let stored_normal = v0.normal;
 
-            // For correct winding, face_normal should point opposite to vertex normal
-            let dot = face_normal[0] * avg_normal[0]
-                + face_normal[1] * avg_normal[1]
-                + face_normal[2] * avg_normal[2];
+            // Dot product should be close to 1.0 (normals point same direction)
+            let dot = stored_normal[0] * geo_normal[0]
+                + stored_normal[1] * geo_normal[1]
+                + stored_normal[2] * geo_normal[2];
 
-            if dot > 0.0 {
-                // Positive dot means wrong winding
-                failed += 1;
-            } else {
-                passed += 1;
-            }
+            assert!(
+                dot > 0.95,
+                "Triangle winding error: geometric normal {:?} doesn't match stored normal {:?} (dot={}) \
+                for triangle with vertices: {:?}, {:?}, {:?}",
+                geo_normal,
+                stored_normal,
+                dot,
+                v0.position,
+                v1.position,
+                v2.position
+            );
         }
-
-        assert_eq!(
-            failed, 0,
-            "Sphere has {} triangles with incorrect winding ({} passed)",
-            failed, passed
-        );
     }
 
     #[test]

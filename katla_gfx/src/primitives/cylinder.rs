@@ -67,11 +67,9 @@ pub fn generate_cylinder(height: f32, radius: f32, segments: u32) -> (Vec<Vertex
         let lower_right = (segment + 1) * 2;
         let upper_right = (segment + 1) * 2 + 1;
 
-        // Reversed winding order for correct front face rendering
-        // First triangle: lower_left -> lower_right -> upper_left
-        indices.extend_from_slice(&[lower_left, lower_right, upper_left]);
-        // Second triangle: upper_left -> lower_right -> upper_right
-        indices.extend_from_slice(&[upper_left, lower_right, upper_right]);
+        // Two triangles in CCW order (0,1,2) and (0,2,3) for proper outward normals
+        indices.extend_from_slice(&[lower_left, upper_left, upper_right]);
+        indices.extend_from_slice(&[lower_left, upper_right, lower_right]);
     }
 
     // Bottom cap center vertex
@@ -107,11 +105,11 @@ pub fn generate_cylinder(height: f32, radius: f32, segments: u32) -> (Vec<Vertex
     }
 
     // Bottom cap indices - face normal should point down (-Y)
-    // center -> current -> next gives correct face normal direction
+    // current -> next -> center gives CCW winding when viewed from outside
     for segment in 0..segments {
         let current = bottom_ring_start + segment;
         let next = bottom_ring_start + segment + 1;
-        indices.extend_from_slice(&[bottom_center_idx, current, next]);
+        indices.extend_from_slice(&[current, next, bottom_center_idx]);
     }
 
     // Top cap center vertex
@@ -147,11 +145,11 @@ pub fn generate_cylinder(height: f32, radius: f32, segments: u32) -> (Vec<Vertex
     }
 
     // Top cap indices - face normal should point up (+Y)
-    // center -> current -> next gives correct face normal direction (CCW when viewed from above)
+    // current -> center -> next gives CCW winding when viewed from outside
     for segment in 0..segments {
         let current = top_ring_start + segment;
         let next = top_ring_start + segment + 1;
-        indices.extend_from_slice(&[top_center_idx, current, next]);
+        indices.extend_from_slice(&[current, top_center_idx, next]);
     }
 
     (vertices, indices)
@@ -267,120 +265,68 @@ mod tests {
     }
 
     #[test]
-    fn test_cylinder_side_triangle_winding() {
-        // RED phase: This test should FAIL with current code, demonstrating the bug
-        // We check a specific side triangle to verify CCW winding when viewed from outside
-
+    fn test_cylinder_triangle_winding() {
         let height = 2.0;
         let radius = 1.0;
         let segments = 16;
         let (vertices, indices) = generate_cylinder(height, radius, segments);
 
-        // First side triangle uses indices [0, 1, 2]
-        // Vertex 0: lower at segment 0 (angle=0), position=[r, 0, 0], normal=[1, 0, 0]
-        // Vertex 1: upper at segment 0 (angle=0), position=[r, h, 0], normal=[1, 0, 0]
-        // Vertex 2: lower at segment 1 (angle=2π/16), position=[r*cos(2π/16), 0, r*sin(2π/16)], normal points outward
-
-        let i0 = indices[0] as usize;
-        let i1 = indices[1] as usize;
-        let i2 = indices[2] as usize;
-
-        let v0 = vertices[i0].position;
-        let v1 = vertices[i1].position;
-        let v2 = vertices[i2].position;
-
-        // Compute edge vectors
-        let edge1 = [v1[0] - v0[0], v1[1] - v0[1], v1[2] - v0[2]];
-        let edge2 = [v2[0] - v0[0], v2[1] - v0[1], v2[2] - v0[2]];
-
-        // Face normal via cross product (edge1 × edge2)
-        let face_normal = [
-            edge1[1] * edge2[2] - edge1[2] * edge2[1],
-            edge1[2] * edge2[0] - edge1[0] * edge2[2],
-            edge1[0] * edge2[1] - edge1[1] * edge2[0],
-        ];
-
-        // Normalize
-        let len = (face_normal[0].powi(2) + face_normal[1].powi(2) + face_normal[2].powi(2)).sqrt();
-        let face_normal = [
-            face_normal[0] / len,
-            face_normal[1] / len,
-            face_normal[2] / len,
-        ];
-
-        // For the first side triangle (near +X axis), the face normal should point OUTWARD from the cylinder
-        // i.e., face_normal should have a positive dot product with the vertex position
-        // The vertex position is roughly [+r, 0, 0], so face_normal should have positive X
-
-        // Check that face normal points in the same direction as the vertex normal
-        let vertex_normal = vertices[i0].normal;
-        let dot = face_normal[0] * vertex_normal[0]
-            + face_normal[1] * vertex_normal[1]
-            + face_normal[2] * vertex_normal[2];
-
-        // After fixing, the face normal will point opposite to vertex normal
-        // (which is correct for the rendering pipeline)
-        assert!(
-            dot < 0.0,
-            "Side triangle has incorrect winding. face_normal={:?}, vertex_normal={:?}, dot={}",
-            face_normal,
-            vertex_normal,
-            dot
-        );
-    }
-
-    #[test]
-    fn test_cylinder_winding_order() {
-        let height = 2.0;
-        let radius = 1.0;
-        let segments = 16;
-        let (vertices, indices) = generate_cylinder(height, radius, segments);
-
-        // Only check side triangles (first 32 triangles = segments * 2)
-        let side_triangle_count = (segments * 2) as usize;
-        for chunk in indices[..side_triangle_count * 3].chunks(3) {
-            let i0 = chunk[0] as usize;
-            let i1 = chunk[1] as usize;
-            let i2 = chunk[2] as usize;
-
-            let v0 = vertices[i0].position;
-            let v1 = vertices[i1].position;
-            let v2 = vertices[i2].position;
+        // Check each triangle's winding by computing the geometric normal
+        // from CCW vertex order and comparing with the stored normal
+        for tri in indices.chunks(3) {
+            let v0 = &vertices[tri[0] as usize];
+            let v1 = &vertices[tri[1] as usize];
+            let v2 = &vertices[tri[2] as usize];
 
             // Compute edge vectors
-            let edge1 = [v1[0] - v0[0], v1[1] - v0[1], v1[2] - v0[2]];
-            let edge2 = [v2[0] - v0[0], v2[1] - v0[1], v2[2] - v0[2]];
-
-            // Face normal via cross product
-            let face_normal = [
-                edge1[1] * edge2[2] - edge1[2] * edge2[1],
-                edge1[2] * edge2[0] - edge1[0] * edge2[2],
-                edge1[0] * edge2[1] - edge1[1] * edge2[0],
+            let e1 = [
+                v1.position[0] - v0.position[0],
+                v1.position[1] - v0.position[1],
+                v1.position[2] - v0.position[2],
+            ];
+            let e2 = [
+                v2.position[0] - v0.position[0],
+                v2.position[1] - v0.position[1],
+                v2.position[2] - v0.position[2],
             ];
 
-            // Normalize face normal
+            // Cross product gives geometric normal (should match stored normal for CCW)
+            let geo_normal = [
+                e1[1] * e2[2] - e1[2] * e2[1],
+                e1[2] * e2[0] - e1[0] * e2[2],
+                e1[0] * e2[1] - e1[1] * e2[0],
+            ];
+
+            // Normalize
             let len =
-                (face_normal[0].powi(2) + face_normal[1].powi(2) + face_normal[2].powi(2)).sqrt();
+                (geo_normal[0].powi(2) + geo_normal[1].powi(2) + geo_normal[2].powi(2)).sqrt();
             if len < 1e-10 {
-                continue; // Degenerate triangle
+                continue; // Skip degenerate triangles (cap centers)
             }
-            let face_normal = [
-                face_normal[0] / len,
-                face_normal[1] / len,
-                face_normal[2] / len,
+            let geo_normal = [
+                geo_normal[0] / len,
+                geo_normal[1] / len,
+                geo_normal[2] / len,
             ];
 
-            // Check against first vertex normal
-            let n0 = vertices[i0].normal;
-            let dot = face_normal[0] * n0[0] + face_normal[1] * n0[1] + face_normal[2] * n0[2];
+            // Use v0's stored normal
+            let stored_normal = v0.normal;
 
-            // After fixing, dot should be negative (face normal opposite to vertex normal)
+            // Dot product should be close to 1.0 (normals point same direction)
+            let dot = stored_normal[0] * geo_normal[0]
+                + stored_normal[1] * geo_normal[1]
+                + stored_normal[2] * geo_normal[2];
+
             assert!(
-                dot < 0.0,
-                "Side triangle has incorrect winding. face_normal={:?}, vertex_normal={:?}, dot={}",
-                face_normal,
-                n0,
-                dot
+                dot > 0.95,
+                "Triangle winding error: geometric normal {:?} doesn't match stored normal {:?} (dot={}) \
+                for triangle with vertices: {:?}, {:?}, {:?}",
+                geo_normal,
+                stored_normal,
+                dot,
+                v0.position,
+                v1.position,
+                v2.position
             );
         }
     }

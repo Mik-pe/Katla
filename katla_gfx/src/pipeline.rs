@@ -254,9 +254,8 @@ impl From<FrontFace> for ash::vk::FrontFace {
     #[inline]
     fn from(face: FrontFace) -> Self {
         match face {
-            // Flip winding order for right-handed coordinate system.
-            FrontFace::CounterClockwise => ash::vk::FrontFace::CLOCKWISE,
-            FrontFace::Clockwise => ash::vk::FrontFace::COUNTER_CLOCKWISE,
+            FrontFace::CounterClockwise => ash::vk::FrontFace::COUNTER_CLOCKWISE,
+            FrontFace::Clockwise => ash::vk::FrontFace::CLOCKWISE,
         }
     }
 }
@@ -391,14 +390,13 @@ mod tests {
 
     #[test]
     fn test_front_face_conversion() {
-        // Note: Winding order is flipped for right-handed coordinate system
         assert_eq!(
             ash::vk::FrontFace::from(FrontFace::CounterClockwise),
-            ash::vk::FrontFace::CLOCKWISE
+            ash::vk::FrontFace::COUNTER_CLOCKWISE
         );
         assert_eq!(
             ash::vk::FrontFace::from(FrontFace::Clockwise),
-            ash::vk::FrontFace::COUNTER_CLOCKWISE
+            ash::vk::FrontFace::CLOCKWISE
         );
     }
 
