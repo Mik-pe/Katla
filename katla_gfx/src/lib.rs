@@ -60,7 +60,7 @@ pub use vulkan::material::compiler::{MaterialBuilder, MaterialOptions, VertexTyp
 // Texture management
 pub use texture::{ImageFormat, TextureDescriptor, TextureUsage};
 
-// Vertex types
+// Vertex types (public module for discoverability and extensibility)
 pub use vertex::{VertexPBR, VertexPBRSkinned, VertexUI};
 
 // Render pass system
@@ -99,6 +99,29 @@ pub use render_graph::{
 /// - Direct GPU memory allocation for specialized buffers
 /// - Accessing Vulkan physical device properties and limits
 /// - Integrating with external Vulkan libraries
+///
+/// # Example: Custom pipeline state
+///
+/// If you need pipeline state configuration beyond what `create_pbr_material()` provides,
+/// you can use the low-level Vulkan context:
+///
+/// ```ignore
+/// use katla_gfx::{VulkanContext, PipelineHandle};
+/// use ash::vk;
+///
+/// // Get the context (escape hatch)
+/// let context = renderer.context();
+/// let device = context.device();
+///
+/// // Create custom pipeline state with specific blend modes
+/// let blend_state = vk::PipelineColorBlendAttachmentState::default()
+///     .blend_enable(true)
+///     .src_color_blend_factor(vk::BlendFactor::SRC_ALPHA)
+///     .dst_color_blend_factor(vk::BlendFactor::ONE_MINUS_SRC_ALPHA)
+///     .color_blend_op(vk::BlendOp::ADD);
+///
+/// // ... use with Vulkan API directly
+/// ```
 ///
 /// [`VulkanRenderer`]: renderer::VulkanRenderer
 /// [`VulkanRenderer::create_mesh()`]: renderer::VulkanRenderer::create_mesh
