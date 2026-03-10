@@ -264,43 +264,11 @@ impl VulkanRenderer {
         handle
     }
 
-    /// Create an RGBA8 SRGB texture from pixel data.
-    ///
-    /// Convenience method for the most common texture type.
-    pub fn create_texture_rgba(&mut self, width: u32, height: u32, data: &[u8]) -> TextureHandle {
-        let desc = TextureDescriptor::rgba8_srgb(width, height);
-        self.create_texture(&desc, data)
-    }
-
-    /// Create an RGBA8 UNORM texture (for linear data like normal maps).
-    pub fn create_texture_unorm(&mut self, width: u32, height: u32, data: &[u8]) -> TextureHandle {
-        let desc = TextureDescriptor::rgba8_unorm(width, height);
-        self.create_texture(&desc, data)
-    }
-
     /// Create a 1x1 solid color texture.
     ///
     /// Useful for placeholder or fallback textures.
     pub fn create_texture_solid(&mut self, color: [u8; 4]) -> TextureHandle {
         self.texture_manager.create_solid(color)
-    }
-
-    /// Create a texture from RGB data (converts to RGBA internally).
-    pub fn create_texture_from_rgb(
-        &mut self,
-        width: u32,
-        height: u32,
-        rgb_data: &[u8],
-    ) -> TextureHandle {
-        self.texture_manager
-            .create_from_rgb(width, height, rgb_data)
-    }
-
-    /// Create an empty texture (no initial data).
-    ///
-    /// Useful for render targets or textures that will be filled later.
-    pub fn create_texture_empty(&mut self, desc: &TextureDescriptor) -> TextureHandle {
-        self.texture_manager.create_empty(desc)
     }
 
     /// Get the default white texture.
@@ -325,21 +293,10 @@ impl VulkanRenderer {
     /// # Returns
     /// The texture handle for the font atlas.
     pub fn create_ui_font_atlas(&mut self, width: u32, height: u32, data: &[u8]) -> TextureHandle {
-        // Use RGBA8 UNORM for font atlas (linear color space for accurate text rendering)
-        let handle = self.create_texture_unorm(width, height, data);
+        let desc = TextureDescriptor::rgba8_unorm(width, height);
+        let handle = self.create_texture(&desc, data);
 
-        // Register with bindless system for shader access
-        if let Some(texture) = self.texture_manager.get_texture_rc(handle) {
-            let slot = self
-                .bindless_manager
-                .register_texture(texture.image_view().vk())
-                .expect("Failed to register font atlas with bindless system");
-            self.texture_manager.register_bindless_slot(handle, slot);
-        }
-
-        // Store handle in UI renderer
         self.ui_renderer.set_font_atlas(handle);
-
         handle
     }
 
@@ -356,25 +313,14 @@ impl VulkanRenderer {
 
         if let Some(handle) = current_handle {
             if let Some(texture) = self.texture_manager.get_texture_rc(handle) {
-                // Check if size matches
                 if texture.width == width && texture.height == height {
-                    // Same size - just update data
                     texture.update_data(data);
                 } else {
-                    // Size changed - need to create new texture
-                    log::info!(
-                        "Font atlas resized from {}x{} to {}x{}",
-                        texture.width,
-                        texture.height,
-                        width,
-                        height
-                    );
-                    self.create_ui_font_atlas(width, height, data);
+                    let new_handle = self.create_ui_font_atlas(width, height, data);
+                    self.ui_renderer.set_font_atlas(new_handle);
                 }
             }
         } else {
-            log::warn!("update_ui_font_atlas called but no font atlas exists yet");
-            // Create new atlas if none exists
             self.create_ui_font_atlas(width, height, data);
         }
     }
@@ -602,47 +548,7 @@ impl VulkanRenderer {
             })
     }
 
-    /// Create a PBR material with default settings.
-    ///
-    /// Convenience method for `compile_material()` with PBR vertex type.
-    ///
-    /// # Arguments
-    /// * `shader_path` - Path to WGSL shader file
-    /// * `color_format` - Optional color attachment format. None = swapchain format (LDR),
-    ///                   Some(ImageFormat::R16G16B16A16Sfloat) = HDR rendering
-    ///
-    /// # Returns
-    /// A MaterialHandle for the created material.
-    ///
-    /// # Example
-    /// ```ignore
-    /// // LDR material (default, for swapchain rendering)
-    /// let ldr_material = renderer.create_pbr_material("shaders/model.wgsl", None)?;
-    ///
-    /// // HDR material (for intermediate render targets)
-    /// let hdr_material = renderer.create_pbr_material(
-    ///     "shaders/model.wgsl",
-    ///     Some(ImageFormat::R16G16B16A16Sfloat),
-    /// )?;
-    /// ```
-    pub fn create_pbr_material(
-        &mut self,
-        shader_path: impl AsRef<std::path::Path>,
-        color_format: Option<crate::texture::ImageFormat>,
-    ) -> Result<MaterialHandle, RendererError> {
-        use crate::vulkan::material::compiler::{MaterialOptions, VertexType};
 
-        let format = color_format.unwrap_or(crate::texture::ImageFormat::B8G8R8A8Srgb);
-
-        self.compile_material(
-            shader_path,
-            MaterialOptions {
-                vertex_type: VertexType::Pbr,
-                color_format: format,
-                ..Default::default()
-            },
-        )
-    }
 
     /// Ensure a material is compiled for a specific format.
     ///
@@ -740,36 +646,6 @@ impl VulkanRenderer {
         );
     }
 
-    /// Create a UI material with default settings.
-    ///
-    /// UI materials use premultiplied alpha blending and disable depth writing.
-    ///
-    /// # Arguments
-    /// * `shader_path` - Path to WGSL shader file
-    ///
-    /// # Returns
-    /// A MaterialHandle for the created material.
-    ///
-    /// # Example
-    /// ```ignore
-    /// let material = renderer.create_ui_material("shaders/ui.wgsl")?;
-    /// ```
-    pub fn create_ui_material(
-        &mut self,
-        shader_path: impl AsRef<std::path::Path>,
-    ) -> Result<MaterialHandle, RendererError> {
-        use crate::vulkan::material::compiler::{MaterialOptions, VertexType};
-
-        self.compile_material(
-            shader_path,
-            MaterialOptions {
-                alpha_blended: true,
-                vertex_type: VertexType::Ui,
-                ..Default::default()
-            },
-        )
-    }
-
     /// Create a material with custom options using the builder pattern.
     ///
     /// This is the advanced API for materials requiring custom configuration
@@ -783,7 +659,7 @@ impl VulkanRenderer {
     ///
     /// # When to use this
     ///
-    /// Most applications should use `create_pbr_material()` instead.
+    /// Most applications should use `compile_material()` with `MaterialOptions`.
     /// This method is intended for:
     /// - GLTF model loaders that need custom vertex types (Skinned)
     /// - Advanced material configuration beyond PBR defaults

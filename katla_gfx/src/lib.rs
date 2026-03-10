@@ -199,7 +199,7 @@ pub use render_graph::{
 /// you can use the low-level Vulkan context:
 ///
 /// ```ignore
-/// use katla_gfx::{VulkanContext, PipelineHandle};
+/// use katla_gfx::{VulkanContext, MaterialOptions, VertexType};
 /// use ash::vk;
 ///
 /// // Get the context (escape hatch)
@@ -217,8 +217,8 @@ pub use render_graph::{
 /// ```
 ///
 /// [`VulkanRenderer`]: renderer::VulkanRenderer
+/// [`VulkanRenderer::compile_material()`]: renderer::VulkanRenderer::compile_material
 /// [`VulkanRenderer::create_mesh()`]: renderer::VulkanRenderer::create_mesh
-/// [`VulkanRenderer::register_material()`]: renderer::VulkanRenderer::register_material
 /// [`VulkanRenderer::create_texture()`]: renderer::VulkanRenderer::create_texture
-/// [`VulkanRenderer::create_viewport()`]: renderer::VulkanRenderer::create_viewport
+/// [`VulkanRenderer::create_skeleton()`]: renderer::VulkanRenderer::create_skeleton
 pub use vulkan::context::{ValidationLevel, VulkanContext};
