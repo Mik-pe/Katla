@@ -631,13 +631,6 @@ impl<'a> Frame<'a> {
             .pass_index(pass)
             .unwrap_or_else(|| panic!("Pass '{}' not found in graph", pass));
 
-        log::info!("submit_ui: submitting UI draw list with {} vertices, {} indices, {} commands to pass '{}'",
-            ui_draw_list.vertex_count(),
-            ui_draw_list.index_count(),
-            ui_draw_list.command_count(),
-            pass
-        );
-
         self.pending
             .entry(index)
             .or_default()
