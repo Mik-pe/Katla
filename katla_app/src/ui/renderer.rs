@@ -85,11 +85,17 @@ impl UIRenderer {
     ///
     /// * `draw_list` - The UI draw list from katla_ui
     /// * `screen_size` - Screen size for coordinate transformation (logical pixels)
+    /// * `scale_factor` - DPI scale factor (physical pixels per logical pixel)
     ///
     /// # Returns
     ///
     /// A `UIDrawList` ready for GPU submission.
-    pub fn convert_draw_list(&self, draw_list: &DrawList, screen_size: [f32; 2]) -> UIDrawList {
+    pub fn convert_draw_list(
+        &self,
+        draw_list: &DrawList,
+        screen_size: [f32; 2],
+        scale_factor: f32,
+    ) -> UIDrawList {
         // Convert vertices
         let vertices: Vec<VertexUI> = draw_list
             .vertices
@@ -119,6 +125,7 @@ impl UIRenderer {
             indices,
             commands,
             screen_size,
+            scale_factor,
         }
     }
 
@@ -171,12 +178,13 @@ mod tests {
         let renderer = UIRenderer::new();
         let draw_list = DrawList::new();
 
-        let gpu_list = renderer.convert_draw_list(&draw_list, [1920.0, 1080.0]);
+        let gpu_list = renderer.convert_draw_list(&draw_list, [1920.0, 1080.0], 1.0);
 
         assert!(gpu_list.vertices.is_empty());
         assert!(gpu_list.indices.is_empty());
         assert!(gpu_list.commands.is_empty());
         assert_eq!(gpu_list.screen_size, [1920.0, 1080.0]);
+        assert_eq!(gpu_list.scale_factor, 1.0);
     }
 
     #[test]
@@ -192,12 +200,44 @@ mod tests {
         );
         draw_list.finalize();
 
-        let gpu_list = renderer.convert_draw_list(&draw_list, [1920.0, 1080.0]);
+        let gpu_list = renderer.convert_draw_list(&draw_list, [1920.0, 1080.0], 1.0);
 
         // Should have 4 vertices and 6 indices (2 triangles)
         assert_eq!(gpu_list.vertex_count(), 4);
         assert_eq!(gpu_list.index_count(), 6);
         assert_eq!(gpu_list.command_count(), 1);
         assert_eq!(gpu_list.screen_size, [1920.0, 1080.0]);
+        assert_eq!(gpu_list.scale_factor, 1.0);
+    }
+
+    #[test]
+    fn test_hidpi_scale_factor_in_draw_list() {
+        // Test that scale_factor is included in UIDrawList for HiDPI coordinate conversion
+        use katla_math::{Color, Rect2D, Vec2};
+        let renderer = UIRenderer::new();
+        let mut draw_list = DrawList::new();
+
+        // Add a rect with clipping
+        draw_list.set_clip(Rect2D::from_origin_size(
+            Vec2::new(10.0, 20.0),
+            Vec2::new(100.0, 50.0),
+        ));
+        draw_list.add_rect(
+            Rect2D::from_origin_size(Vec2::new(0.0, 0.0), Vec2::new(100.0, 50.0)),
+            Color::RED,
+        );
+        draw_list.finalize();
+
+        // Convert with a 2.0 scale factor (HiDPI display)
+        let scale_factor = 2.0;
+        let gpu_list = renderer.convert_draw_list(&draw_list, [1920.0, 1080.0], scale_factor);
+
+        // Verify scale_factor is stored
+        assert_eq!(gpu_list.scale_factor, scale_factor);
+
+        // Verify clip_rect is in logical pixels (not scaled yet)
+        // The actual scaling happens in execute_ui_draw_list when setting Vulkan scissor
+        let clip_rect = gpu_list.commands[0].clip_rect;
+        assert_eq!(clip_rect, Some([10.0, 20.0, 100.0, 50.0]));
     }
 }

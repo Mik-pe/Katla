@@ -68,7 +68,11 @@ pub fn generate_ui_draw_list(app: &mut Application, dt: f32) -> Option<UIDrawLis
     // Convert to GPU format if not empty
     if !draw_list.is_empty() {
         let ui_renderer = crate::ui::UIRenderer::new();
-        let result = ui_renderer.convert_draw_list(draw_list, [screen_size.x(), screen_size.y()]);
+        let result = ui_renderer.convert_draw_list(
+            draw_list,
+            [screen_size.x(), screen_size.y()],
+            scale_factor,
+        );
         Some(result)
     } else {
         None

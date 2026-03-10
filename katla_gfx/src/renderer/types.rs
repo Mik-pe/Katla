@@ -610,6 +610,9 @@ pub struct UIDrawList {
     /// Screen size for coordinate transformation (logical pixels, not physical).
     /// This must match the coordinate space used by vertex positions.
     pub screen_size: [f32; 2],
+    /// DPI scale factor (physical pixels per logical pixel).
+    /// Used to convert clip_rect from logical to physical pixels for Vulkan scissor.
+    pub scale_factor: f32,
 }
 
 impl UIDrawList {
