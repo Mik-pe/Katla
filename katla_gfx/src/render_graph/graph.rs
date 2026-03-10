@@ -12,7 +12,7 @@ use super::error::RenderGraphError;
 use super::pass::PassDesc;
 use super::passes::geometry::GeometryPassData;
 use super::resource::{GraphResourceDesc, GraphResourceHandle};
-use crate::handle::PipelineHandle;
+use crate::handle::{PipelineHandle, TextureHandle};
 use crate::renderer::VulkanRenderer;
 use crate::renderer::types::DrawList;
 use crate::sync::VkImageView;
@@ -1093,8 +1093,20 @@ impl<'a> Frame<'a> {
         // Get swapchain extent for scissor (physical pixels)
         let extent = self.renderer.frame_context.swapchain.get_extent();
 
+        // Get font atlas handle for fallback when texture is NONE
+        let font_atlas_handle = self
+            .renderer
+            .ui_renderer
+            .font_atlas_handle()
+            .ok_or_else(|| {
+                RenderGraphError::InvalidConfiguration(
+                    "UI font atlas not initialized".to_string(),
+                )
+            })?;
+
         // Bind UI descriptor sets (font atlas, sampler, uniforms)
         // Use screen_size from draw list (logical pixels, matches vertex coordinates)
+        // Bind set 0 once (font atlas, uniforms don't change per frame)
         self.bind_ui_descriptor_sets(
             cmd,
             pipeline_handle,
@@ -1102,8 +1114,27 @@ impl<'a> Frame<'a> {
             ui_draw_list.screen_size,
         )?;
 
-        // Execute each draw command with scissor clipping
+        // Track current texture to avoid redundant descriptor updates
+        let mut current_texture = None;  // Use None to indicate no texture has been bound yet
+
+        // Execute each draw command with scissor clipping and dynamic texture binding
         for draw_cmd in &ui_draw_list.commands {
+            // Update dynamic texture (set 1) if it changed or this is the first draw
+            if current_texture.is_none() || draw_cmd.texture != current_texture.unwrap() {
+                let texture_handle = if draw_cmd.texture == TextureHandle::NONE {
+                    font_atlas_handle // Fall back to font atlas for solid color rendering
+                } else {
+                    draw_cmd.texture
+                };
+
+                self.push_ui_dynamic_texture(
+                    cmd,
+                    pipeline_layout,
+                    texture_handle,
+                )?;
+                current_texture = Some(draw_cmd.texture);
+            }
+
             // Set scissor for clipping (if specified)
             // clip_rect is in logical pixels, convert to physical pixels for Vulkan scissor
             if let Some([x, y, width, height]) = draw_cmd.clip_rect {
@@ -1207,7 +1238,6 @@ impl<'a> Frame<'a> {
     }
 
     /// Bind UI descriptor sets (Set 0: font atlas, sampler, uniforms).
-    /// Also pushes Set 1 (dynamic texture placeholder) using VK_KHR_push_descriptor.
     fn bind_ui_descriptor_sets(
         &mut self,
         cmd: &crate::vulkan::commandbuffer::CommandBuffer,
@@ -1216,7 +1246,7 @@ impl<'a> Frame<'a> {
         screen_size: [f32; 2],
     ) -> Result<(), RenderGraphError> {
         // Get the pipeline to access its descriptor set layouts (separate borrow to avoid conflicts)
-        let (descriptor_set_layout, font_atlas_handle) = {
+        let descriptor_set_layout = {
             let pipeline = self
                 .renderer
                 .asset_registry
@@ -1230,17 +1260,7 @@ impl<'a> Frame<'a> {
                 ));
             }
 
-            let font_atlas_handle =
-                self.renderer
-                    .ui_renderer
-                    .font_atlas_handle()
-                    .ok_or_else(|| {
-                        RenderGraphError::InvalidConfiguration(
-                            "UI font atlas not initialized".to_string(),
-                        )
-                    })?;
-
-            (descriptor_set_layouts[0], font_atlas_handle)
+            descriptor_set_layouts[0]
         };
 
         // Now we can mutate the renderer state
@@ -1248,23 +1268,34 @@ impl<'a> Frame<'a> {
         let descriptor_set =
             self.get_or_create_ui_descriptor_set(frame_idx, descriptor_set_layout, screen_size)?;
 
-        // Bind descriptor set 0
+        // Bind descriptor set 0 (font atlas, sampler, uniforms)
         cmd.bind_descriptor_sets(pipeline_layout, 0, &[descriptor_set], &[]);
 
-        // Push descriptor set 1 (dynamic texture placeholder)
-        // The UI shader uses set 1 for dynamic textures (viewport, thumbnails, etc.)
-        // For now, we push the font atlas as a placeholder since we're not using dynamic textures yet
-        let font_texture = self
+        Ok(())
+    }
+
+    /// Push a dynamic texture to descriptor set 1 for UI rendering.
+    /// This is called per draw command to bind the correct texture (font atlas or viewport).
+    fn push_ui_dynamic_texture(
+        &self,
+        cmd: &crate::vulkan::commandbuffer::CommandBuffer,
+        pipeline_layout: vk::PipelineLayout,
+        texture_handle: TextureHandle,
+    ) -> Result<(), RenderGraphError> {
+        let texture = self
             .renderer
             .texture_manager
-            .get_texture_rc(font_atlas_handle)
+            .get_texture_rc(texture_handle)
             .ok_or_else(|| {
-                RenderGraphError::InvalidConfiguration("Font atlas texture not found".to_string())
+                RenderGraphError::InvalidConfiguration(format!(
+                    "Texture not found for handle {:?}",
+                    texture_handle
+                ))
             })?;
 
         let image_info = vk::DescriptorImageInfo::default()
-            .sampler(font_texture.image_sampler.vk())
-            .image_view(font_texture.image_view.vk())
+            .sampler(texture.image_sampler.vk())
+            .image_view(texture.image_view.vk())
             .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL);
 
         let push_write = vk::WriteDescriptorSet::default()
