@@ -261,15 +261,18 @@ impl ApplicationHandler for Application {
                 // Poll background loader for completed asset loads
                 self.poll_background_loader();
 
-                // Render debug UI overlay
-                debug!("Rendering UI...");
-                editor::render_debug_ui(self, dt);
-                debug!("UI rendered");
+                // Generate UI draw list BEFORE frame graph execution
+                debug!("Generating UI draw list...");
+                let ui_draw_list = editor::generate_ui_draw_list(self, dt);
+                debug!("UI draw list generated");
 
-                // Render frame to GPU
+                // Render frame to GPU (includes UI if present)
                 debug!("Rendering frame...");
-                self.render_frame();
+                self.render_frame(ui_draw_list);
                 debug!("Frame rendered");
+
+                // Process editor actions after UI rendering
+                editor::process_editor_actions(self);
 
                 // Handle max_frames limit
                 if let Some(max) = self.info.max_frames {

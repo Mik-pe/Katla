@@ -5,13 +5,13 @@
 
 use super::Application;
 use crate::rendering::FrameContext;
-use katla_gfx::renderer::FrameUniforms;
+use katla_gfx::renderer::{FrameUniforms, UIDrawList};
 
 impl Application {
     /// Render a single frame using the frame graph.
     ///
     /// Uses FrameContext for draw submission with automatic instance allocation.
-    pub fn render_frame(&mut self) {
+    pub fn render_frame(&mut self, ui_draw_list: Option<UIDrawList>) {
         // Create frame context for this frame
         let mut frame = FrameContext::new();
 
@@ -74,6 +74,11 @@ impl Application {
             // Submit draw list to the geometry pass
             if !draw_list.is_empty() {
                 frame.submit("geometry", &draw_list);
+            }
+
+            // Submit UI draw list to the UI pass
+            if let Some(ref ui_list) = ui_draw_list {
+                frame.submit_ui("ui", ui_list);
             }
         });
     }

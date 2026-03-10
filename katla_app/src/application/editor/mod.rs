@@ -5,6 +5,7 @@ use std::collections::{HashMap, HashSet};
 use log::info;
 
 use katla_ecs::EntityId;
+use katla_gfx::renderer::UIDrawList;
 use katla_math::{Vec2, Vec3};
 
 use crate::components::{
@@ -16,8 +17,11 @@ use crate::ui::{EditorAction, EntityInfo};
 
 use super::Application;
 
-/// Render debug UI overlay with stats and controls.
-pub fn render_debug_ui(app: &mut Application, dt: f32) {
+/// Generate UI draw list for the current frame.
+///
+/// Returns a GPU-ready UIDrawList that can be submitted to the frame graph's UI pass.
+/// This should be called BEFORE frame graph execution.
+pub fn generate_ui_draw_list(app: &mut Application, dt: f32) -> Option<UIDrawList> {
     let scale_factor = app.scale_factor;
 
     // Get physical window size and convert to logical for UI layout
@@ -61,24 +65,20 @@ pub fn render_debug_ui(app: &mut Application, dt: f32) {
         )
     };
 
-    // Use UIRenderer to convert and draw list
+    // Convert to GPU format if not empty
     if !draw_list.is_empty() {
-        // Convert the UI draw list to GPU format using UIRenderer
-        // Use the existing UIRenderer from the UI module
         let ui_renderer = crate::ui::UIRenderer::new();
-        let gpu_draw_list = ui_renderer.convert_draw_list(draw_list);
-
-        app.renderer.render_ui(
-            gpu_draw_list.vertex_bytes(),
-            gpu_draw_list.vertex_count() as u32,
-            &gpu_draw_list.indices,
-            &gpu_draw_list.commands,
-            [screen_size.x(), screen_size.y()],
-        );
+        Some(ui_renderer.convert_draw_list(draw_list))
+    } else {
+        None
     }
+}
 
-    // Extract editor actions (safe now since editor_ui borrow is released)
-    let editor_actions = if use_editor {
+/// Process editor actions after UI rendering.
+///
+/// Should be called after generate_ui_draw_list to extract any editor actions.
+pub fn process_editor_actions(app: &mut Application) {
+    let editor_actions = if app.use_editor_ui {
         app.editor_ui.take_actions()
     } else {
         Vec::new()
