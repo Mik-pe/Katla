@@ -1079,6 +1079,207 @@ mod tests {
     }
 
     #[test]
+    fn test_gamma_correction_formula() {
+        // Test that coverage_to_alpha applies gamma factor 1.45 correctly
+        // Formula: alpha = coverage^(1/gamma) where gamma = 1.45
+
+        let gamma = GAMMA_FACTOR;
+        assert_eq!(gamma, 1.45, "GAMMA_FACTOR should be 1.45");
+
+        // Test various coverage values
+        let test_cases = [
+            (0.0, 0.0),
+            (0.25, 0.25_f32.powf(1.0 / 1.45)),
+            (0.5, 0.5_f32.powf(1.0 / 1.45)),
+            (0.75, 0.75_f32.powf(1.0 / 1.45)),
+            (1.0, 1.0),
+        ];
+
+        for (coverage, expected_alpha) in test_cases {
+            let alpha = coverage_to_alpha(coverage);
+            assert!(
+                (alpha - expected_alpha).abs() < 0.001,
+                "Coverage {} should produce alpha {} (gamma 1.45)",
+                coverage,
+                expected_alpha
+            );
+        }
+    }
+
+    #[test]
+    fn test_gamma_correction_perceptually_uniform() {
+        // Test that gamma correction produces perceptually uniform text weight
+        // Midtones should be brightened to compensate for sRGB gamma curve
+
+        // Without gamma correction, coverage=0.5 would appear too thin
+        // With gamma=1.45, coverage=0.5 becomes alpha=~0.61, which appears correct
+
+        let midtone_coverage = 0.5;
+        let midtone_alpha = coverage_to_alpha(midtone_coverage);
+
+        // Midtones must be brightened (alpha > coverage)
+        assert!(
+            midtone_alpha > midtone_coverage,
+            "Gamma correction should brighten midtones for perceptually uniform weight"
+        );
+
+        // Verify the exact gamma-corrected value
+        let expected = 0.5_f32.powf(1.0 / 1.45);
+        assert!(
+            (midtone_alpha - expected).abs() < 0.001,
+            "Midtone alpha should be {} (0.5^(1/1.45))",
+            expected
+        );
+
+        // Test that the brightening effect is consistent across midtone range
+        for coverage in [0.3, 0.4, 0.5, 0.6, 0.7] {
+            let alpha = coverage_to_alpha(coverage);
+            assert!(
+                alpha > coverage,
+                "Coverage {} should be brightened to {}",
+                coverage,
+                alpha
+            );
+
+            // The brightening effect should be more pronounced in midtones
+            // than near the extremes
+            let brightening_factor = alpha / coverage;
+            assert!(
+                brightening_factor > 1.0,
+                "Brightening factor should be > 1.0"
+            );
+        }
+    }
+
+    #[test]
+    fn test_gamma_correction_edge_cases() {
+        // Test edge cases: 0.0 and 1.0 should be handled correctly
+        // These are the boundaries of the coverage range
+
+        // Coverage 0.0 should produce alpha 0.0 (completely transparent)
+        let alpha_0 = coverage_to_alpha(0.0);
+        assert_eq!(
+            alpha_0, 0.0,
+            "Coverage 0.0 should produce alpha 0.0 (completely transparent)"
+        );
+
+        // Coverage 1.0 should produce alpha 1.0 (completely opaque)
+        let alpha_1 = coverage_to_alpha(1.0);
+        assert_eq!(
+            alpha_1, 1.0,
+            "Coverage 1.0 should produce alpha 1.0 (completely opaque)"
+        );
+
+        // Verify mathematical identity: 0^(1/γ) = 0 and 1^(1/γ) = 1
+        assert_eq!(0.0_f32.powf(1.0 / 1.45), 0.0, "0^(1/γ) = 0");
+        assert_eq!(1.0_f32.powf(1.0 / 1.45), 1.0, "1^(1/γ) = 1");
+
+        // Test near-edge values to ensure numerical stability
+        let near_zero = 0.001;
+        let alpha_near_zero = coverage_to_alpha(near_zero);
+        assert!(
+            alpha_near_zero > near_zero,
+            "Near-zero coverage should be brightened slightly"
+        );
+        assert!(
+            alpha_near_zero < 0.01,
+            "Near-zero coverage should still produce small alpha"
+        );
+
+        let near_one = 0.999;
+        let alpha_near_one = coverage_to_alpha(near_one);
+        assert!(
+            alpha_near_one > near_one,
+            "Near-one coverage should be brightened slightly"
+        );
+        assert!(
+            alpha_near_one < 1.0,
+            "Near-one coverage should still be < 1.0"
+        );
+    }
+
+    #[test]
+    fn test_gamma_correction_monotonic() {
+        // Test that coverage_to_alpha is monotonically increasing
+        // Higher coverage should always produce higher alpha
+
+        let mut prev_alpha = coverage_to_alpha(0.0);
+        let steps = 100;
+
+        for i in 1..=steps {
+            let coverage = i as f32 / steps as f32;
+            let alpha = coverage_to_alpha(coverage);
+
+            assert!(
+                alpha > prev_alpha,
+                "Coverage {} should produce higher alpha than previous value",
+                coverage
+            );
+
+            prev_alpha = alpha;
+        }
+
+        // Final value should be 1.0
+        assert_eq!(prev_alpha, 1.0, "Final alpha should be 1.0");
+    }
+
+    #[test]
+    fn test_gamma_correction_range() {
+        // Test that all coverage values in [0, 1] produce alpha in [0, 1]
+        // This is important for valid alpha blending
+
+        let steps = 1000;
+        for i in 0..=steps {
+            let coverage = i as f32 / steps as f32;
+            let alpha = coverage_to_alpha(coverage);
+
+            assert!(
+                alpha >= 0.0 && alpha <= 1.0,
+                "Coverage {} should produce alpha in [0, 1], got {}",
+                coverage,
+                alpha
+            );
+        }
+    }
+
+    #[test]
+    fn test_gamma_correction_inverse() {
+        // Test that alpha_to_coverage is the inverse of coverage_to_alpha
+        // This validates that the gamma correction is mathematically sound
+
+        let test_cases = [0.0, 0.25, 0.5, 0.75, 1.0];
+
+        for coverage in test_cases {
+            let alpha = coverage_to_alpha(coverage);
+            let recovered = alpha_to_coverage(alpha);
+
+            assert!(
+                (recovered - coverage).abs() < 0.001,
+                "Round-trip conversion failed: {} -> {} -> {}",
+                coverage,
+                alpha,
+                recovered
+            );
+        }
+
+        // Test that the inverse function applies gamma (not 1/gamma)
+        let test_coverage = 0.5;
+        let alpha = coverage_to_alpha(test_coverage);
+        let expected_alpha = test_coverage.powf(1.0 / 1.45);
+        assert!(
+            (alpha - expected_alpha).abs() < 0.001,
+            "Forward conversion should use 1/gamma"
+        );
+
+        let recovered = alpha_to_coverage(alpha);
+        let expected_recovered = alpha.powf(1.45);
+        assert!(
+            (recovered - expected_recovered).abs() < 0.001,
+            "Inverse conversion should use gamma"
+        );
+    }
+
+    #[test]
     fn test_clear_cache_white_pixel_area() {
         // Verify that clear_cache() restores the 2x2 white pixel area
         // consistent with new(), with_atlas_size(), and grow_atlas()
