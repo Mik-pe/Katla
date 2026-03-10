@@ -1,0 +1,117 @@
+{
+  "groupId": "button-interaction",
+  "testedAt": "2026-03-10T19:59:00Z",
+  "credentials": {
+    "account": "N/A (native desktop app)",
+    "namespace": "N/A (native desktop app)"
+  },
+  "toolsUsed": ["cargo test", "cargo run"],
+  "assertions": [
+    {
+      "id": "VAL-OPACITY-003",
+      "title": "Button Visual Appearance",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Run button state unit tests",
+          "expected": "All button state tests pass",
+          "observed": "13 button-related unit tests passed successfully"
+        },
+        {
+          "action": "Examine button color implementation",
+          "expected": "Buttons use distinct colors for normal, hovered, active states",
+          "observed": "button_normal=0x404040, button_hovered=0x505050, button_active=0x606060 (dark theme)"
+        },
+        {
+          "action": "Run manual visual verification with cargo run -- -s",
+          "expected": "Application renders 25 frames with visible UI",
+          "observed": "Application rendered 25 frames successfully, no Vulkan validation errors"
+        },
+        {
+          "action": "Verify button text centering",
+          "expected": "Text is centered within button bounds",
+          "observed": "Text position calculated as: center - text_size * 0.5 for both X and Y"
+        }
+      ],
+      "evidence": {
+        "unitTests": [
+          "test_button_normal_state_color",
+          "test_button_hovered_state_color",
+          "test_button_active_state_color",
+          "test_button_custom_colors",
+          "test_multiple_buttons_independent_states"
+        ],
+        "colorValues": {
+          "normal": "0x404040 (dark gray)",
+          "hovered": "0x505050 (lighter gray)",
+          "active": "0x606060 (lightest gray)",
+          "text": "text_color (primary color from theme)"
+        },
+        "consoleErrors": "none",
+        "vulkanValidation": "clean - no validation layer errors",
+        "visualOutput": "Application rendered successfully for 25 frames"
+      },
+      "issues": null
+    },
+    {
+      "id": "FLOW-003",
+      "title": "Button Interaction State Change",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Test button hover detection",
+          "expected": "update_hover() correctly detects mouse over button bounds",
+          "observed": "Hover state changes when mouse position enters/leaves button bounds"
+        },
+        {
+          "action": "Test button press-to-active transition",
+          "expected": "Press sets active_id for next frame",
+          "observed": "Mouse press on hovered button sets active_id, button becomes active in next frame"
+        },
+        {
+          "action": "Test button click on release",
+          "expected": "Click triggers on release while hovering",
+          "observed": "Mouse release while hovering triggers clicked=true, active_id cleared"
+        },
+        {
+          "action": "Test button click canceled when not hovering",
+          "expected": "Click does NOT trigger if mouse moved away before release",
+          "observed": "Mouse release outside button bounds does NOT trigger clicked=true"
+        },
+        {
+          "action": "Test button state transitions",
+          "expected": "Normal -> hovered -> active -> clicked transitions work correctly",
+          "observed": "All state transitions verified: normal->hovered->active->clicked->normal"
+        },
+        {
+          "action": "Test button visual feedback during state changes",
+          "expected": "Background color changes with state",
+          "observed": "Color changes per state: normal (button_normal) -> hovered (button_hovered) -> active (button_active)"
+        }
+      ],
+      "evidence": {
+        "unitTests": [
+          "test_button_hovered_state_color",
+          "test_button_active_state_color",
+          "test_button_click_on_release_while_hovering",
+          "test_button_no_click_if_not_hovering_on_release",
+          "test_button_state_transitions"
+        ],
+        "pipelineSteps": [
+          "button() generates widget ID",
+          "update_hover() checks mouse position against bounds",
+          "Hover state determines color (button_hovered vs button_normal)",
+          "Click handling: press sets active_id, release checks hover and triggers clicked",
+          "draw_rect() renders background with state color",
+          "draw_text() renders centered label"
+        ],
+        "consoleErrors": "none",
+        "testResults": "All 13 button unit tests passed"
+      },
+      "issues": null
+    }
+  ],
+  "frictions": [],
+  "blockers": [],
+  "summary": "Tested 2 assertions for button interaction and visual appearance: 2 passed. All unit tests (13 total) passed successfully. Manual verification with cargo run -- -s completed without errors. Button state management works correctly with proper hover detection, active state tracking, and click-on-release behavior. Visual appearance uses distinct colors for each state (normal=0x404040, hovered=0x505050, active=0x606060). Text is properly centered within button bounds. No blockers or frictions encountered during testing."
+}
