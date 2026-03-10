@@ -149,10 +149,7 @@ impl DebugOverlay {
 
         // Stats section
         for text in &stats {
-            ui.add(
-                Label::new(text)
-                    .at_cursor_width(ui, window_width - padding * 2.0)
-            );
+            ui.add(Label::new(text).at_cursor_width(ui, window_width - padding * 2.0));
             ui.spacing(line_height);
         }
 
@@ -195,13 +192,7 @@ impl DebugOverlay {
             ui.cursor(),
             Vec2::new(window_width - padding * 2.0, button_height),
         );
-        if ui
-            .add(
-                Button::new(btn_text)
-                    .id("settings_btn"),
-            )
-            .clicked
-        {
+        if ui.add(Button::new(btn_text).id("settings_btn")).clicked {
             self.settings_visible = !self.settings_visible;
         }
 
@@ -295,10 +286,7 @@ impl DebugOverlay {
         ));
 
         // === Render Mode (Selectable buttons) ===
-        ui.add(
-            Label::new("Render Mode:")
-                .at_cursor_width(ui, panel_width - padding * 2.0),
-        );
+        ui.add(Label::new("Render Mode:").at_cursor_width(ui, panel_width - padding * 2.0));
         ui.spacing(line_height + 4.0);
 
         // Three buttons in a row for render modes
@@ -308,7 +296,8 @@ impl DebugOverlay {
             .iter()
             .enumerate()
         {
-            let btn_bounds = Rect2D::from_origin_size(ui.cursor(), Vec2::new(btn_width, button_height));
+            let btn_bounds =
+                Rect2D::from_origin_size(ui.cursor(), Vec2::new(btn_width, button_height));
             let is_selected = *mode == self.render_mode;
             if ui
                 .selectable(
@@ -327,15 +316,14 @@ impl DebugOverlay {
         ui.spacing(button_height + 12.0);
 
         // === Quality (Selectable buttons) ===
-        ui.add(
-            Label::new("Quality:").at_cursor_width(ui, panel_width - padding * 2.0),
-        );
+        ui.add(Label::new("Quality:").at_cursor_width(ui, panel_width - padding * 2.0));
         ui.spacing(line_height + 4.0);
 
         ui.begin_row();
         let btn_width = (panel_width - padding * 2.0 - 12.0) / 4.0;
         for (i, quality) in QualityLevel::all().iter().enumerate() {
-            let btn_bounds = Rect2D::from_origin_size(ui.cursor(), Vec2::new(btn_width, button_height));
+            let btn_bounds =
+                Rect2D::from_origin_size(ui.cursor(), Vec2::new(btn_width, button_height));
             let is_selected = *quality == self.quality;
             if ui
                 .selectable(

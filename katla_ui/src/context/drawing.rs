@@ -435,10 +435,7 @@ impl UiContext {
     pub fn text_input_size(&self, placeholder: &str, min_width: f32) -> Vec2 {
         let text_size = self.measure_text(placeholder, self.style.font_size);
         let width = text_size.x() + self.style.text_input_padding * 2.0 + 8.0;
-        Vec2::new(
-            width.max(min_width),
-            self.style.button_height_medium,
-        )
+        Vec2::new(width.max(min_width), self.style.button_height_medium)
     }
 
     /// Calculate the size needed for a label.

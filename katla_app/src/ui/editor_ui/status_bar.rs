@@ -84,7 +84,12 @@ impl<'a> Widget for StatusBar<'a> {
 
         // Frame count
         let frame_text = format!("Frame: {}", self.frame_count);
-        ui.draw_text(&frame_text, ui.cursor(), self.theme.text_secondary, font_size);
+        ui.draw_text(
+            &frame_text,
+            ui.cursor(),
+            self.theme.text_secondary,
+            font_size,
+        );
         ui.spacing(100.0);
 
         // Separator
@@ -93,7 +98,12 @@ impl<'a> Widget for StatusBar<'a> {
 
         // Entities
         let entity_text = format!("Entities: {}", self.entity_count);
-        ui.draw_text(&entity_text, ui.cursor(), self.theme.text_secondary, font_size);
+        ui.draw_text(
+            &entity_text,
+            ui.cursor(),
+            self.theme.text_secondary,
+            font_size,
+        );
         ui.spacing(100.0);
 
         // Separator

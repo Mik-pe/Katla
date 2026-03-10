@@ -513,7 +513,8 @@ fn build_appearance_tab(
     ui.label_auto_colored("View Options", theme.text_secondary);
     ui.spacing(24.0);
 
-    let grid_btn_bounds = Rect2D::from_origin_size(ui.cursor(), Vec2::new(content_width, row_height));
+    let grid_btn_bounds =
+        Rect2D::from_origin_size(ui.cursor(), Vec2::new(content_width, row_height));
     if ui
         .toggle_button(
             "pref_grid_toggle",
@@ -530,7 +531,8 @@ fn build_appearance_tab(
     }
     ui.spacing(row_height + 4.0);
 
-    let stats_btn_bounds = Rect2D::from_origin_size(ui.cursor(), Vec2::new(content_width, row_height));
+    let stats_btn_bounds =
+        Rect2D::from_origin_size(ui.cursor(), Vec2::new(content_width, row_height));
     if ui
         .toggle_button(
             "pref_stats_toggle",
@@ -564,7 +566,8 @@ fn build_appearance_tab(
 
     ui.begin_grid(4, scale_btn_width, spacing);
     for (scale, label) in font_scales.iter() {
-        let btn_bounds = Rect2D::from_origin_size(ui.cursor(), Vec2::new(scale_btn_width, row_height));
+        let btn_bounds =
+            Rect2D::from_origin_size(ui.cursor(), Vec2::new(scale_btn_width, row_height));
 
         let is_selected = (font_scale - scale).abs() < 0.01;
 
@@ -620,7 +623,8 @@ fn build_editor_tab(
     ui.label_auto_colored("Editor Settings", theme.text_secondary);
     ui.spacing(24.0);
 
-    let snap_btn_bounds = Rect2D::from_origin_size(ui.cursor(), Vec2::new(content_width, row_height));
+    let snap_btn_bounds =
+        Rect2D::from_origin_size(ui.cursor(), Vec2::new(content_width, row_height));
     if ui
         .toggle_button(
             "pref_snap_toggle",
@@ -735,11 +739,13 @@ fn build_keybindings_tab(
     ];
 
     for (key, desc) in shortcuts {
-        let row_bounds = Rect2D::from_origin_size(ui.cursor(), Vec2::new(content_width, row_height));
+        let row_bounds =
+            Rect2D::from_origin_size(ui.cursor(), Vec2::new(content_width, row_height));
         ui.draw_rect(row_bounds, theme.button_bg);
 
         let badge_width = 60.0;
-        let badge_bounds = Rect2D::from_origin_size(ui.cursor(), Vec2::new(badge_width, row_height));
+        let badge_bounds =
+            Rect2D::from_origin_size(ui.cursor(), Vec2::new(badge_width, row_height));
         ui.draw_rect(badge_bounds, theme.background_light);
         let key_size = ui.measure_text(key, ui.scaled_font_size(FontSize::Small));
         ui.draw_text(
