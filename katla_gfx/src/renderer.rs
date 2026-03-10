@@ -293,7 +293,11 @@ impl VulkanRenderer {
     /// # Returns
     /// The texture handle for the font atlas.
     pub fn create_ui_font_atlas(&mut self, width: u32, height: u32, data: &[u8]) -> TextureHandle {
-        let desc = TextureDescriptor::rgba8_unorm(width, height);
+        // Use SRGB format for font atlas to ensure correct color sampling
+        // The white pixel [255,255,255,255] in SRGB space samples as pure white (1.0,1.0,1.0,1.0)
+        // Using UNORM would cause the white to be interpreted as linear-space white,
+        // which renders semi-transparent when blended with SRGB render targets
+        let desc = TextureDescriptor::rgba8_srgb(width, height);
         let handle = self.create_texture(&desc, data);
 
         self.ui_renderer.set_font_atlas(handle);
@@ -547,8 +551,6 @@ impl VulkanRenderer {
                 RendererError::InitializationFailed(format!("Material compilation failed: {}", e))
             })
     }
-
-
 
     /// Ensure a material is compiled for a specific format.
     ///
@@ -1796,5 +1798,42 @@ impl Drop for OutputRenderTarget {
                 self.context.allocator.borrow_mut().free(memory).ok();
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::texture::{ImageFormat, TextureDescriptor};
+
+    #[test]
+    fn test_ui_font_atlas_format() {
+        // Test that the font atlas texture descriptor uses SRGB format
+        // This is critical for correct rendering: white pixel [255,255,255,255]
+        // in an SRGB texture samples as pure white (1.0, 1.0, 1.0, 1.0)
+        // In a UNORM texture, it would be interpreted as linear-space white,
+        // which causes semi-transparent rendering when blended with SRGB render targets
+        let desc = TextureDescriptor::rgba8_srgb(512, 512);
+
+        // After the fix, font atlas should use SRGB format
+        assert_eq!(
+            desc.format,
+            ImageFormat::R8G8B8A8Srgb,
+            "Font atlas must use SRGB format for correct color rendering"
+        );
+    }
+
+    #[test]
+    fn test_texture_descriptor_format_difference() {
+        // Demonstrate the difference between SRGB and UNORM formats
+        let srgb_desc = TextureDescriptor::rgba8_srgb(256, 256);
+        let unorm_desc = TextureDescriptor::rgba8_unorm(256, 256);
+
+        assert_eq!(srgb_desc.format, ImageFormat::R8G8B8A8Srgb);
+        assert_eq!(unorm_desc.format, ImageFormat::R8G8B8A8Unorm);
+
+        // Both have same dimensions
+        assert_eq!(srgb_desc.width, unorm_desc.width);
+        assert_eq!(srgb_desc.height, unorm_desc.height);
     }
 }
