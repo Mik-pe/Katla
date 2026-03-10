@@ -139,7 +139,12 @@ impl UiContext {
     pub fn label_auto(&mut self, text: &str) -> crate::Response {
         let text_size = self.measure_text(text, self.style.font_size);
         let bounds = Rect2D::from_origin_size(self.cursor(), text_size);
-        self.draw_text(text, self.cursor(), self.style.text_color, self.style.font_size);
+        self.draw_text(
+            text,
+            self.cursor(),
+            self.style.text_color,
+            self.style.font_size,
+        );
         let response = crate::Response::new(bounds);
         // Advance cursor
         self.cursor = katla_math::Vec2::new(

@@ -149,15 +149,18 @@ impl ApplicationBuilder {
 
         // Compile UI shader for editor UI rendering
         let ui_shader_path = resources.shader_path("ui/ui.wgsl");
-        let ui_material = renderer.compile_material(ui_shader_path, katla_gfx::MaterialOptions {
-            vertex_type: katla_gfx::VertexType::Ui,
-            alpha_blended: true,
-            ..Default::default()
-        }).map_err(|e| {
-            crate::error::AppError::Graphics {
+        let ui_material = renderer
+            .compile_material(
+                ui_shader_path,
+                katla_gfx::MaterialOptions {
+                    vertex_type: katla_gfx::VertexType::Ui,
+                    alpha_blended: true,
+                    ..Default::default()
+                },
+            )
+            .map_err(|e| crate::error::AppError::Graphics {
                 message: format!("Failed to compile UI shader: {}", e),
-            }
-        })?;
+            })?;
 
         let graph = renderer
             .create_frame_graph()
@@ -168,6 +171,17 @@ impl ApplicationBuilder {
                     clear_value: Some([0.1, 0.1, 0.1, 1.0]),
                 },
                 format: TextureImageFormat::R16G16B16A16Sfloat,
+                width: extent.width,
+                height: extent.height,
+            })
+            // Create LDR texture for tonemap pass output (to be displayed in viewport)
+            // Use B8G8R8A8Srgb to match backbuffer format (tonemap shader expects this)
+            .create_resource(GraphResourceDesc {
+                name: "ldr_color".to_string(),
+                resource_type: GraphResourceType::ColorAttachment {
+                    clear_value: Some([0.0, 0.0, 0.0, 1.0]),
+                },
+                format: TextureImageFormat::B8G8R8A8Srgb,
                 width: extent.width,
                 height: extent.height,
             })
@@ -187,16 +201,15 @@ impl ApplicationBuilder {
                 StoreOp::Store,
                 ClearValue::OPAQUE_BLACK,
             ))
-            // Tonemap pass: samples HDR color and outputs to backbuffer
+            // Tonemap pass: samples HDR color and outputs to LDR texture
             .add_pass(
                 FullscreenPass::new("tonemap")
                     .read("hdr_color")
-                    .write_backbuffer()
+                    .write("ldr_color", TextureImageFormat::R8G8B8A8Unorm)
                     .pipeline(tonemap_pipeline)
                     .tonemap(tonemap_params),
             )
-            // UI pass: draws editor UI on top of tonemapped content
-            // Uses LOAD to preserve tonemapped content, then draws UI on top
+            // UI pass: draws editor UI to backbuffer
             .add_pass(UIPass::new("ui").write("backbuffer").material(ui_material))
             .build()
             .map_err(|e| crate::error::AppError::Graphics {

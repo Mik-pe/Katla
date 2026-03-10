@@ -73,10 +73,8 @@ impl<'a> Button<'a> {
     /// ui.add(Button::new("Click Me").at_cursor(ui));
     /// ```
     pub fn at_cursor(mut self, ui: &UiContext) -> Self {
-        self.bounds = Rect2D::from_origin_size(
-            ui.cursor(),
-            Vec2::new(100.0, ui.style.button_height_medium),
-        );
+        self.bounds =
+            Rect2D::from_origin_size(ui.cursor(), Vec2::new(100.0, ui.style.button_height_medium));
         self
     }
 
@@ -841,10 +839,7 @@ impl ProgressBar {
 impl crate::Widget for ProgressBar {
     fn ui(self, ui: &mut UiContext) -> Response {
         // Background
-        ui.draw_rect(
-            self.bounds,
-            self.bg_color.unwrap_or(ui.style.slider_track),
-        );
+        ui.draw_rect(self.bounds, self.bg_color.unwrap_or(ui.style.slider_track));
 
         // Fill
         let fill_width = self.bounds.width() * self.progress;
@@ -1054,12 +1049,7 @@ impl<'a, 'b> crate::Widget for Dropdown<'a, 'b> {
         );
 
         // Border
-        ui.draw_rect_border(
-            self.bounds,
-            Color::TRANSPARENT,
-            ui.style.input_border,
-            1.0,
-        );
+        ui.draw_rect_border(self.bounds, Color::TRANSPARENT, ui.style.input_border, 1.0);
 
         // Text (placeholder or selected option)
         let text = if has_selection {
@@ -1080,7 +1070,10 @@ impl<'a, 'b> crate::Widget for Dropdown<'a, 'b> {
 
         // Dropdown arrow
         let arrow = '▼';
-        let arrow_size = ui.measure_text(&arrow.to_string(), ui.scaled_font_size(crate::FontSize::XSmall));
+        let arrow_size = ui.measure_text(
+            &arrow.to_string(),
+            ui.scaled_font_size(crate::FontSize::XSmall),
+        );
         let arrow_pos = Vec2::new(
             self.bounds.max.x() - arrow_size.x() - 8.0,
             self.bounds.center().y() - arrow_size.y() * 0.5,

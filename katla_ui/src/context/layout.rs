@@ -391,10 +391,7 @@ impl UiContext {
     /// Advances the cursor below the column. Must be paired with `begin_column()`.
     pub fn end_column(&mut self) {
         if let Some(layout) = self.layout_stack.pop() {
-            self.cursor = Vec2::new(
-                layout.start_pos.x(),
-                layout.cursor.y() + layout.spacing,
-            );
+            self.cursor = Vec2::new(layout.start_pos.x(), layout.cursor.y() + layout.spacing);
         }
     }
 
@@ -451,17 +448,22 @@ impl UiContext {
             // Calculate how many rows were used based on cursor position
             let items_per_row = item_width + layout.spacing;
             let total_width = num_columns as f32 * items_per_row - layout.spacing;
-            let rows_used = ((layout.cursor.x() - layout.start_pos.x()) / total_width).ceil() as f32;
+            let rows_used =
+                ((layout.cursor.x() - layout.start_pos.x()) / total_width).ceil() as f32;
 
             // Move cursor to below the last row
             self.cursor = Vec2::new(
                 layout.start_pos.x(),
-                layout.cursor.y() + rows_used * (item_width + layout.spacing) - layout.cursor.y() + layout.start_pos.y(),
+                layout.cursor.y() + rows_used * (item_width + layout.spacing) - layout.cursor.y()
+                    + layout.start_pos.y(),
             );
 
             // Fallback: just move down by one item height if calculation is complex
             if self.cursor.y() <= layout.start_pos.y() {
-                self.cursor = Vec2::new(layout.start_pos.x(), layout.cursor.y() + item_width + layout.spacing);
+                self.cursor = Vec2::new(
+                    layout.start_pos.x(),
+                    layout.cursor.y() + item_width + layout.spacing,
+                );
             }
         }
     }

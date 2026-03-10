@@ -220,6 +220,12 @@ impl EditorUI {
         self.font_scale = scale.clamp(0.5, 3.0);
     }
 
+    /// Set the viewport texture (tonemapped LDR output) for rendering in the viewport widget.
+    pub fn set_viewport_texture(&mut self, bindless_index: u32) {
+        // Convert bindless index to TextureId for UI rendering
+        self.viewport_texture_ids = [Some(katla_ui::TextureId::from_handle_index(bindless_index)), None, None, None];
+    }
+
     /// Get the current theme key (for preferences).
     pub fn theme_key(&self) -> &'static str {
         match self.theme.name {

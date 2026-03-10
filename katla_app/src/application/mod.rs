@@ -379,6 +379,19 @@ impl Application {
             hdr_texture_index
         );
 
+        // Register LDR (tonemapped) texture with bindless system for viewport rendering
+        let ldr_texture_index = self
+            .frame_graph
+            .register_transient_texture_bindless(&mut self.renderer, "ldr_color")
+            .expect("Failed to register LDR texture with bindless system");
+
+        // Store LDR texture index for UI viewport rendering
+        self.editor_ui.set_viewport_texture(ldr_texture_index);
+        info!(
+            "LDR (tonemapped) texture registered with bindless system at index {}",
+            ldr_texture_index
+        );
+
         // Set up default test scene
         self.setup_default_scene();
 

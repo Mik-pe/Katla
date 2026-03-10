@@ -1,0 +1,11 @@
+commands:
+  install: cargo build
+  typecheck: cargo check
+  build: cargo build
+  test: cargo test --workspace
+  lint: cargo clippy
+  fmt: cargo fmt
+  fmt-check: cargo fmt --check
+  run-limited: cargo run -- -s
+
+services: {}
