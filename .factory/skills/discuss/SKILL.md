@@ -1,3 +1,12 @@
+---
+name: discuss
+description: >-
+  Full debate-to-delivery pipeline with supervisor orchestration. Runs debates 
+  between perspectives, creates implementation plans, and executes changes 
+  for architectural decisions.
+model: inherit
+---
+
 # Discuss - Debate to Delivery Pipeline
 
 Run the full debate-to-delivery pipeline with supervisor orchestration using Agent Teams.

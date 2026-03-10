@@ -1,3 +1,12 @@
+---
+name: debate-and-implement
+description: >-
+  Full debate-to-delivery pipeline. Orchestrates debate between perspectives, 
+  creates implementation plans, and executes the changes. Use for 
+  architectural decisions requiring consensus.
+model: inherit
+---
+
 # Debate and Implement
 
 Run a debate to reach consensus, then implement the result.
