@@ -84,11 +84,12 @@ impl UIRenderer {
     /// # Arguments
     ///
     /// * `draw_list` - The UI draw list from katla_ui
+    /// * `screen_size` - Screen size for coordinate transformation (logical pixels)
     ///
     /// # Returns
     ///
     /// A `UIDrawList` ready for GPU submission.
-    pub fn convert_draw_list(&self, draw_list: &DrawList) -> UIDrawList {
+    pub fn convert_draw_list(&self, draw_list: &DrawList, screen_size: [f32; 2]) -> UIDrawList {
         // Convert vertices
         let vertices: Vec<VertexUI> = draw_list
             .vertices
@@ -117,6 +118,7 @@ impl UIRenderer {
             vertices,
             indices,
             commands,
+            screen_size,
         }
     }
 
@@ -169,11 +171,12 @@ mod tests {
         let renderer = UIRenderer::new();
         let draw_list = DrawList::new();
 
-        let gpu_list = renderer.convert_draw_list(&draw_list);
+        let gpu_list = renderer.convert_draw_list(&draw_list, [1920.0, 1080.0]);
 
         assert!(gpu_list.vertices.is_empty());
         assert!(gpu_list.indices.is_empty());
         assert!(gpu_list.commands.is_empty());
+        assert_eq!(gpu_list.screen_size, [1920.0, 1080.0]);
     }
 
     #[test]
@@ -189,11 +192,12 @@ mod tests {
         );
         draw_list.finalize();
 
-        let gpu_list = renderer.convert_draw_list(&draw_list);
+        let gpu_list = renderer.convert_draw_list(&draw_list, [1920.0, 1080.0]);
 
         // Should have 4 vertices and 6 indices (2 triangles)
         assert_eq!(gpu_list.vertex_count(), 4);
         assert_eq!(gpu_list.index_count(), 6);
         assert_eq!(gpu_list.command_count(), 1);
+        assert_eq!(gpu_list.screen_size, [1920.0, 1080.0]);
     }
 }

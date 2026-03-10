@@ -103,6 +103,7 @@ impl PassBuilder for ShadowPass {
                 // Shadow pass data is currently unused but kept for future extensibility
                 Ok(Box::new(ShadowPassData))
             }),
+            uses_depth: true,
         }
     }
 }

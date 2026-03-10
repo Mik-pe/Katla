@@ -358,6 +358,36 @@ impl CommandBuffer {
         }
     }
 
+    /// Push descriptor set for VK_KHR_push_descriptor extension.
+    ///
+    /// Push descriptors are a lightweight alternative to descriptor sets that
+    /// don't require allocation from a pool. They're pushed directly into the
+    /// command buffer and are only valid for that command.
+    ///
+    /// # Arguments
+    ///
+    /// * `device` - Vulkan device with push descriptor extension
+    /// * `pipeline_layout` - Pipeline layout for compatibility
+    /// * `set` - Descriptor set number (e.g., 1 for push descriptors)
+    /// * `descriptor_writes` - Descriptor writes to push
+    pub fn push_descriptor_set_khr(
+        &self,
+        device: &ash::khr::push_descriptor::Device,
+        pipeline_layout: vk::PipelineLayout,
+        set: u32,
+        descriptor_writes: &[vk::WriteDescriptorSet],
+    ) {
+        unsafe {
+            device.cmd_push_descriptor_set(
+                self.command_buffer,
+                vk::PipelineBindPoint::GRAPHICS,
+                pipeline_layout,
+                set,
+                descriptor_writes,
+            );
+        }
+    }
+
     //=========================================================================
     // Compute Pipeline Methods
     //=========================================================================

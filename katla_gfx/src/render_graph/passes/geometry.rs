@@ -247,6 +247,7 @@ impl PassBuilder for GeometryPass {
                     colors,
                 }))
             }),
+            uses_depth: true,
         }
     }
 }

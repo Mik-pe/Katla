@@ -81,6 +81,8 @@ pub(crate) struct MaterialCompiler {
     skeleton_descriptor_layout: vk::DescriptorSetLayout,
     /// Shared descriptor pool for skeleton descriptor sets
     skeleton_descriptor_pool: vk::DescriptorPool,
+    /// UI descriptor set layouts (created per UI material, tracked for cleanup)
+    ui_descriptor_layouts: Vec<vk::DescriptorSetLayout>,
 }
 
 impl MaterialCompiler {
@@ -171,6 +173,7 @@ impl MaterialCompiler {
             bindless_descriptor_layout,
             skeleton_descriptor_layout,
             skeleton_descriptor_pool,
+            ui_descriptor_layouts: Vec::new(),
         })
     }
 
@@ -339,9 +342,14 @@ impl MaterialCompiler {
     }
 
     fn build_descriptor_layouts(
-        &self,
+        &mut self,
         options: &MaterialOptions,
     ) -> Result<Vec<vk::DescriptorSetLayout>, MaterialError> {
+        // UI materials use a completely different descriptor set layout
+        if matches!(options.vertex_type, VertexType::Ui) {
+            return self.build_ui_descriptor_layout();
+        }
+
         let mut layouts = vec![
             self.storage_descriptor_layout
                 .expect("Storage descriptor layout not initialized"),
@@ -354,6 +362,76 @@ impl MaterialCompiler {
         }
 
         Ok(layouts)
+    }
+
+    /// Build UI descriptor set layouts.
+    ///
+    /// UI shader uses:
+    /// - Set 0: UI resources (font atlas, sampler, uniforms)
+    /// - Set 1: Dynamic texture (push descriptors, optional)
+    fn build_ui_descriptor_layout(&mut self) -> Result<Vec<vk::DescriptorSetLayout>, MaterialError> {
+        // UI descriptor set layout Set 0 (must match shader bindings in ui.wgsl):
+        // - Binding 0: font atlas (texture)
+        // - Binding 1: sampler
+        // - Binding 3: uniforms (screen_size) - Note: binding 3 to match shader!
+        let ui_bindings = [
+            vk::DescriptorSetLayoutBinding::default()
+                .binding(0)
+                .descriptor_type(vk::DescriptorType::SAMPLED_IMAGE)
+                .descriptor_count(1)
+                .stage_flags(vk::ShaderStageFlags::FRAGMENT),
+            vk::DescriptorSetLayoutBinding::default()
+                .binding(1)
+                .descriptor_type(vk::DescriptorType::SAMPLER)
+                .descriptor_count(1)
+                .stage_flags(vk::ShaderStageFlags::FRAGMENT),
+            vk::DescriptorSetLayoutBinding::default()
+                .binding(3)
+                .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
+                .descriptor_count(1)
+                .stage_flags(vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT),
+        ];
+
+        let layout_info = vk::DescriptorSetLayoutCreateInfo::default().bindings(&ui_bindings);
+
+        let ui_layout = unsafe {
+            self.context
+                .device
+                .create_descriptor_set_layout(&layout_info, None)
+                .map_err(|e| {
+                    MaterialError::ShaderCompilation(format!("Failed to create UI descriptor layout: {:?}", e))
+                })?
+        };
+
+        // Set 1: Dynamic texture (push descriptors)
+        // The shader uses Set 1 for per-draw texture sampling (viewport, thumbnails, etc.)
+        let push_texture_bindings = [
+            vk::DescriptorSetLayoutBinding::default()
+                .binding(0)
+                .descriptor_type(vk::DescriptorType::SAMPLED_IMAGE)
+                .descriptor_count(1)
+                .stage_flags(vk::ShaderStageFlags::FRAGMENT),
+        ];
+
+        let push_layout_info = vk::DescriptorSetLayoutCreateInfo::default()
+            .bindings(&push_texture_bindings)
+            .flags(vk::DescriptorSetLayoutCreateFlags::PUSH_DESCRIPTOR_KHR);
+
+        let push_layout = unsafe {
+            self.context
+                .device
+                .create_descriptor_set_layout(&push_layout_info, None)
+                .map_err(|e| {
+                    MaterialError::ShaderCompilation(format!("Failed to create push descriptor layout: {:?}", e))
+                })?
+        };
+
+        // Track these layouts for cleanup (owned by MaterialCompiler)
+        self.ui_descriptor_layouts.push(ui_layout);
+        self.ui_descriptor_layouts.push(push_layout);
+
+        // Return both layouts: Set 0 (UI resources) and Set 1 (push descriptors)
+        Ok(vec![ui_layout, push_layout])
     }
 
     /// Get the skeleton descriptor pool for allocating skeleton descriptor sets.
@@ -380,14 +458,29 @@ impl MaterialCompiler {
         let mut builder = PipelineBuilder::new(self.context.clone())
             .with_shaders(vert_module, frag_module)
             .with_vertex_binding(vertex_binding.clone())
-            .with_descriptor_layouts(layouts.to_vec())
-            .with_rendering_formats(
+            .with_descriptor_layouts(layouts.to_vec());
+
+        // UI materials use different rendering configuration
+        let is_ui = matches!(options.vertex_type, VertexType::Ui);
+
+        if is_ui {
+            // UI rendering: no depth buffer, SRGB color format
+            builder = builder.with_rendering_formats(
+                Some(crate::texture::ImageFormat::B8G8R8A8Srgb),
+                None, // No depth buffer for UI
+            );
+        } else {
+            // Standard rendering with depth buffer
+            builder = builder.with_rendering_formats(
                 Some(options.color_format),
                 Some(crate::texture::ImageFormat::D32SfloatS8Uint),
             );
+        }
 
         // Configure render state from options
-        builder = builder.with_depth_test(true, true, crate::pipeline::CompareOp::Greater);
+        if !is_ui {
+            builder = builder.with_depth_test(true, true, crate::pipeline::CompareOp::Greater);
+        }
 
         if options.double_sided {
             builder = builder.with_cull_mode(CullMode::None, FrontFace::CounterClockwise);
@@ -429,6 +522,17 @@ impl MaterialCompiler {
                 .device
                 .destroy_descriptor_pool(self.skeleton_descriptor_pool, None);
         }
+
+        // Destroy UI descriptor set layouts (created per UI material)
+        for layout in self.ui_descriptor_layouts.drain(..) {
+            unsafe {
+                self.context
+                    .device
+                    .destroy_descriptor_set_layout(layout, None);
+            }
+        }
+
+        // Note: bindless_descriptor_layout is owned by BindlessTextureManager, not us
     }
 }
 

@@ -167,6 +167,7 @@ impl PassBuilder for FullscreenPass {
                 // Fullscreen pass data is currently unused but kept for future extensibility
                 Ok(Box::new(FullscreenPassData))
             }),
+            uses_depth: true,
         }
     }
 }
