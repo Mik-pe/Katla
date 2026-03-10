@@ -431,6 +431,71 @@ mod tests {
     }
 
     #[test]
+    fn test_add_rect_uses_texture_id_none() {
+        // VAL-ATLAS-002: add_rect uses TextureId::NONE for solid color rendering
+        let mut list = DrawList::new();
+        let bounds = Rect2D::from_origin_size(Vec2::new(0.0, 0.0), Vec2::new(100.0, 50.0));
+
+        list.add_rect(bounds, Color::RED);
+        list.finalize();
+
+        // Should have exactly one command
+        assert_eq!(list.command_count(), 1);
+
+        // The command should use TextureId::NONE for solid color rendering
+        let cmd = &list.commands[0];
+        assert_eq!(
+            cmd.texture,
+            TextureId::NONE,
+            "add_rect should use TextureId::NONE"
+        );
+    }
+
+    #[test]
+    fn test_add_rect_vertex_colors() {
+        // VAL-ATLAS-002: Vertex colors are correctly applied in add_rect
+        let mut list = DrawList::new();
+        let bounds = Rect2D::from_origin_size(Vec2::new(0.0, 0.0), Vec2::new(100.0, 50.0));
+
+        let color = Color::new(1.0, 0.5, 0.25, 0.75);
+        list.add_rect(bounds, color);
+        list.finalize();
+
+        // Should have 4 vertices
+        assert_eq!(list.vertex_count(), 4);
+
+        // All vertices should have the same color
+        let expected_color = color.to_bytes();
+        for vertex in &list.vertices {
+            assert_eq!(
+                vertex.color, expected_color,
+                "All vertices should have the same color"
+            );
+        }
+
+        // Color should be: R=255, G=128, B=64, A=191 (0.75 * 255)
+        assert_eq!(expected_color[0], 255, "Red channel should be 255");
+        assert_eq!(expected_color[1], 128, "Green channel should be 128");
+        assert_eq!(expected_color[2], 64, "Blue channel should be 64");
+        assert_eq!(expected_color[3], 191, "Alpha channel should be 191");
+    }
+
+    #[test]
+    fn test_add_rect_vertex_uv_coordinates() {
+        // VAL-ATLAS-002: add_rect creates vertices with UV=(0,0) for solid color rendering
+        let mut list = DrawList::new();
+        let bounds = Rect2D::from_origin_size(Vec2::new(0.0, 0.0), Vec2::new(100.0, 50.0));
+
+        list.add_rect(bounds, Color::WHITE);
+        list.finalize();
+
+        // All vertices should have UV=(0, 0) to sample the white pixel
+        for vertex in &list.vertices {
+            assert_eq!(vertex.uv, Vec2::ZERO, "UV should be (0, 0) for solid color");
+        }
+    }
+
+    #[test]
     fn test_add_two_rects_same_batch() {
         let mut list = DrawList::new();
 
