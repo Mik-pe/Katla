@@ -111,13 +111,13 @@ impl DrawList {
         let vertex_offset = self.vertices.len() as u32;
         let color_arr = color.to_bytes();
 
-        // Four corners
+        // Four corners in counter-clockwise order for screen space (Y-down)
         self.vertices.push(Vertex::position_only(
             Vec2::new(bounds.min.x(), bounds.min.y()),
             color_arr,
         ));
         self.vertices.push(Vertex::position_only(
-            Vec2::new(bounds.max.x(), bounds.min.y()),
+            Vec2::new(bounds.min.x(), bounds.max.y()),
             color_arr,
         ));
         self.vertices.push(Vertex::position_only(
@@ -125,7 +125,7 @@ impl DrawList {
             color_arr,
         ));
         self.vertices.push(Vertex::position_only(
-            Vec2::new(bounds.min.x(), bounds.max.y()),
+            Vec2::new(bounds.max.x(), bounds.min.y()),
             color_arr,
         ));
 
@@ -155,15 +155,15 @@ impl DrawList {
         let vertex_offset = self.vertices.len() as u32;
         let color_arr = color.to_bytes();
 
-        // Four corners with UVs
+        // Four corners with UVs in counter-clockwise order for screen space (Y-down)
         self.vertices.push(Vertex::new(
             Vec2::new(bounds.min.x(), bounds.min.y()),
             Vec2::new(uv.min.x(), uv.min.y()),
             color_arr,
         ));
         self.vertices.push(Vertex::new(
-            Vec2::new(bounds.max.x(), bounds.min.y()),
-            Vec2::new(uv.max.x(), uv.min.y()),
+            Vec2::new(bounds.min.x(), bounds.max.y()),
+            Vec2::new(uv.min.x(), uv.max.y()),
             color_arr,
         ));
         self.vertices.push(Vertex::new(
@@ -172,8 +172,8 @@ impl DrawList {
             color_arr,
         ));
         self.vertices.push(Vertex::new(
-            Vec2::new(bounds.min.x(), bounds.max.y()),
-            Vec2::new(uv.min.x(), uv.max.y()),
+            Vec2::new(bounds.max.x(), bounds.min.y()),
+            Vec2::new(uv.max.x(), uv.min.y()),
             color_arr,
         ));
 
@@ -209,15 +209,15 @@ impl DrawList {
         let vertex_offset = self.vertices.len() as u32;
         let color_arr = color.to_bytes();
 
-        // Four corners with UVs
+        // Four corners with UVs in counter-clockwise order for screen space (Y-down)
         self.vertices.push(Vertex::new(
             Vec2::new(bounds.min.x(), bounds.min.y()),
             uv_min,
             color_arr,
         ));
         self.vertices.push(Vertex::new(
-            Vec2::new(bounds.max.x(), bounds.min.y()),
-            Vec2::new(uv_max.x(), uv_min.y()),
+            Vec2::new(bounds.min.x(), bounds.max.y()),
+            Vec2::new(uv_min.x(), uv_max.y()),
             color_arr,
         ));
         self.vertices.push(Vertex::new(
@@ -226,8 +226,8 @@ impl DrawList {
             color_arr,
         ));
         self.vertices.push(Vertex::new(
-            Vec2::new(bounds.min.x(), bounds.max.y()),
-            Vec2::new(uv_min.x(), uv_max.y()),
+            Vec2::new(bounds.max.x(), bounds.min.y()),
+            Vec2::new(uv_max.x(), uv_min.y()),
             color_arr,
         ));
 
