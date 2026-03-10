@@ -547,13 +547,8 @@ fn build_appearance_tab(
     }
     ui.spacing(row_height + 16.0);
 
-    ui.draw_text(
-        "Font Scale",
-        cursor,
-        theme.text_secondary,
-        ui.scaled_font_size(FontSize::Medium),
-    );
-    cursor = Vec2::new(cursor.x(), cursor.y() + 24.0);
+    ui.label_auto_colored("Font Scale", theme.text_secondary);
+    ui.spacing(24.0);
 
     let font_scales = [
         (0.75, "75%"),
@@ -566,16 +561,10 @@ fn build_appearance_tab(
         (2.0, "200%"),
     ];
     let scale_btn_width = (content_width - 3.0 * spacing) / 4.0;
-    for (i, (scale, label)) in font_scales.iter().enumerate() {
-        let col = i % 4;
-        let row = i / 4;
-        let btn_bounds = Rect2D::from_origin_size(
-            Vec2::new(
-                cursor.x() + col as f32 * (scale_btn_width + spacing),
-                cursor.y() + row as f32 * (row_height + 4.0),
-            ),
-            Vec2::new(scale_btn_width, row_height),
-        );
+
+    ui.begin_grid(4, scale_btn_width, spacing);
+    for (scale, label) in font_scales.iter() {
+        let btn_bounds = Rect2D::from_origin_size(ui.cursor(), Vec2::new(scale_btn_width, row_height));
 
         let is_selected = (font_scale - scale).abs() < 0.01;
 
@@ -614,28 +603,24 @@ fn build_appearance_tab(
             ui.scaled_font_size(FontSize::Small),
         );
     }
+    ui.end_grid();
 
-    cursor.y() + 2.0 * (row_height + 4.0)
+    ui.cursor().y()
 }
 
 fn build_editor_tab(
     ui: &mut UiContext,
     theme: &Theme,
-    mut cursor: Vec2,
+    _cursor: Vec2,
     content_width: f32,
     row_height: f32,
     editor_settings: &EditorSettings,
     pending_actions: &mut Vec<PreferencesAction>,
 ) -> f32 {
-    ui.draw_text(
-        "Editor Settings",
-        cursor,
-        theme.text_secondary,
-        ui.scaled_font_size(FontSize::Medium),
-    );
-    cursor = Vec2::new(cursor.x(), cursor.y() + 24.0);
+    ui.label_auto_colored("Editor Settings", theme.text_secondary);
+    ui.spacing(24.0);
 
-    let snap_btn_bounds = Rect2D::from_origin_size(cursor, Vec2::new(content_width, row_height));
+    let snap_btn_bounds = Rect2D::from_origin_size(ui.cursor(), Vec2::new(content_width, row_height));
     if ui
         .toggle_button(
             "pref_snap_toggle",
@@ -652,35 +637,22 @@ fn build_editor_tab(
             !editor_settings.snap_to_grid,
         ));
     }
-    cursor = Vec2::new(
-        cursor.x(),
-        cursor.y() + row_height + ui.scaled_font_size(FontSize::Medium),
-    );
+    ui.spacing(row_height + ui.scaled_font_size(FontSize::Medium));
 
-    ui.draw_text(
-        "Camera Speed",
-        cursor,
-        theme.text_secondary,
-        ui.scaled_font_size(FontSize::Medium),
-    );
-    cursor = Vec2::new(cursor.x(), cursor.y() + 20.0);
+    ui.label_auto_colored("Camera Speed", theme.text_secondary);
+    ui.spacing(20.0);
 
     let speed_text = format!("{:.0}", editor_settings.camera_speed);
-    ui.draw_text(
-        &speed_text,
-        Vec2::new(cursor.x(), cursor.y()),
-        theme.text_primary,
-        ui.scaled_font_size(FontSize::Medium),
-    );
-    cursor = Vec2::new(cursor.x(), cursor.y() + 20.0);
+    ui.label_auto_colored(&speed_text, theme.text_primary);
+    ui.spacing(20.0);
 
-    let slider_bounds = Rect2D::from_origin_size(cursor, Vec2::new(content_width, 20.0));
+    let slider_bounds = Rect2D::from_origin_size(ui.cursor(), Vec2::new(content_width, 20.0));
     ui.draw_rect(slider_bounds, theme.button_bg);
 
     let fill_percent =
         (editor_settings.camera_speed - ui.scaled_font_size(FontSize::XSmall)) / 190.0;
     let fill_width = content_width * fill_percent;
-    let fill_bounds = Rect2D::from_origin_size(cursor, Vec2::new(fill_width, 20.0));
+    let fill_bounds = Rect2D::from_origin_size(ui.cursor(), Vec2::new(fill_width, 20.0));
     ui.draw_rect(fill_bounds, theme.selection);
 
     ui.add(
@@ -690,23 +662,21 @@ fn build_editor_tab(
     )
     .clicked;
 
-    cursor = Vec2::new(cursor.x(), cursor.y() + 40.0);
+    ui.spacing(40.0);
 
-    ui.draw_text(
+    ui.label_auto_colored(
         &format!("Grid Size: {:.1}", editor_settings.grid_size),
-        cursor,
         theme.text_secondary,
-        ui.scaled_font_size(FontSize::Medium),
     );
-    cursor = Vec2::new(cursor.x(), cursor.y() + 24.0);
+    ui.spacing(24.0);
 
     let sizes = [0.5, 1.0, 2.0, 5.0, ui.scaled_font_size(FontSize::XSmall)];
     let btn_width = (content_width - 4.0 * 8.0) / 5.0;
-    for (i, &size) in sizes.iter().enumerate() {
-        let btn_bounds = Rect2D::from_origin_size(
-            Vec2::new(cursor.x() + i as f32 * (btn_width + 8.0), cursor.y()),
-            Vec2::new(btn_width, row_height),
-        );
+    let spacing = 8.0;
+
+    ui.begin_grid(5, btn_width, spacing);
+    for &size in sizes.iter() {
+        let btn_bounds = Rect2D::from_origin_size(ui.cursor(), Vec2::new(btn_width, row_height));
         let is_selected = (editor_settings.grid_size - size).abs() < 0.01;
         if ui
             .add(
@@ -741,24 +711,20 @@ fn build_editor_tab(
             ui.scaled_font_size(FontSize::Small),
         );
     }
+    ui.end_grid();
 
-    cursor.y() + row_height
+    ui.cursor().y()
 }
 
 fn build_keybindings_tab(
     ui: &mut UiContext,
     theme: &Theme,
-    mut cursor: Vec2,
+    _cursor: Vec2,
     content_width: f32,
     row_height: f32,
 ) -> f32 {
-    ui.draw_text(
-        "Keyboard Shortcuts",
-        cursor,
-        theme.text_secondary,
-        ui.scaled_font_size(FontSize::Medium),
-    );
-    cursor = Vec2::new(cursor.x(), cursor.y() + 24.0);
+    ui.label_auto_colored("Keyboard Shortcuts", theme.text_secondary);
+    ui.spacing(24.0);
 
     let shortcuts = [
         ("Delete", "Delete selected entity"),
@@ -769,11 +735,11 @@ fn build_keybindings_tab(
     ];
 
     for (key, desc) in shortcuts {
-        let row_bounds = Rect2D::from_origin_size(cursor, Vec2::new(content_width, row_height));
+        let row_bounds = Rect2D::from_origin_size(ui.cursor(), Vec2::new(content_width, row_height));
         ui.draw_rect(row_bounds, theme.button_bg);
 
         let badge_width = 60.0;
-        let badge_bounds = Rect2D::from_origin_size(cursor, Vec2::new(badge_width, row_height));
+        let badge_bounds = Rect2D::from_origin_size(ui.cursor(), Vec2::new(badge_width, row_height));
         ui.draw_rect(badge_bounds, theme.background_light);
         let key_size = ui.measure_text(key, ui.scaled_font_size(FontSize::Small));
         ui.draw_text(
@@ -789,71 +755,66 @@ fn build_keybindings_tab(
         ui.draw_text(
             desc,
             Vec2::new(
-                cursor.x() + badge_width + ui.scaled_font_size(FontSize::Medium),
-                cursor.y() + 6.0,
+                ui.cursor().x() + badge_width + ui.scaled_font_size(FontSize::Medium),
+                ui.cursor().y() + 6.0,
             ),
             theme.text_primary,
             ui.scaled_font_size(FontSize::Medium),
         );
 
-        cursor = Vec2::new(cursor.x(), cursor.y() + row_height + 4.0);
+        ui.spacing(row_height + 4.0);
     }
 
-    cursor = Vec2::new(cursor.x(), cursor.y() + 16.0);
-    ui.draw_text(
-        "(Custom keybindings coming soon)",
-        cursor,
-        theme.text_muted,
-        ui.scaled_font_size(FontSize::Small),
-    );
+    ui.spacing(16.0);
+    ui.label_auto_colored("(Custom keybindings coming soon)", theme.text_muted);
 
-    cursor.y() + 16.0
+    ui.cursor().y()
 }
 
-fn build_about_tab(ui: &mut UiContext, theme: &Theme, mut cursor: Vec2, content_width: f32) -> f32 {
-    let center_x = cursor.x() + content_width * 0.5;
+fn build_about_tab(ui: &mut UiContext, theme: &Theme, _cursor: Vec2, content_width: f32) -> f32 {
+    let center_x = ui.cursor().x() + content_width * 0.5;
 
     let title = "Katla Engine";
     let title_size = ui.measure_text(title, ui.scaled_font_size(FontSize::Huge));
     ui.draw_text(
         title,
-        Vec2::new(center_x - title_size.x() * 0.5, cursor.y()),
+        Vec2::new(center_x - title_size.x() * 0.5, ui.cursor().y()),
         theme.text_primary,
         ui.scaled_font_size(FontSize::Huge),
     );
-    cursor = Vec2::new(cursor.x(), cursor.y() + 40.0);
+    ui.spacing(40.0);
 
     let version = "Version 0.1.0";
     let version_size = ui.measure_text(version, ui.scaled_font_size(FontSize::Large));
     ui.draw_text(
         version,
-        Vec2::new(center_x - version_size.x() * 0.5, cursor.y()),
+        Vec2::new(center_x - version_size.x() * 0.5, ui.cursor().y()),
         theme.text_secondary,
         ui.scaled_font_size(FontSize::Large),
     );
-    cursor = Vec2::new(cursor.x(), cursor.y() + 30.0);
+    ui.spacing(30.0);
 
     let desc = "A Vulkan-based 3D game engine\nwritten in Rust with ECS architecture.";
     for line in desc.split('\n') {
         let line_size = ui.measure_text(line, ui.scaled_font_size(FontSize::Medium));
         ui.draw_text(
             line,
-            Vec2::new(center_x - line_size.x() * 0.5, cursor.y()),
+            Vec2::new(center_x - line_size.x() * 0.5, ui.cursor().y()),
             theme.text_muted,
             ui.scaled_font_size(FontSize::Medium),
         );
-        cursor = Vec2::new(cursor.x(), cursor.y() + 20.0);
+        ui.spacing(20.0);
     }
 
-    cursor = Vec2::new(cursor.x(), cursor.y() + 30.0);
+    ui.spacing(30.0);
 
     ui.draw_text(
         "Features",
-        Vec2::new(center_x - 30.0, cursor.y()),
+        Vec2::new(center_x - 30.0, ui.cursor().y()),
         theme.text_secondary,
         ui.scaled_font_size(FontSize::Medium),
     );
-    cursor = Vec2::new(cursor.x(), cursor.y() + 24.0);
+    ui.spacing(24.0);
 
     let features = [
         "Vulkan 1.3 with Dynamic Rendering",
@@ -870,13 +831,13 @@ fn build_about_tab(ui: &mut UiContext, theme: &Theme, mut cursor: Vec2, content_
         ui.draw_icon_label(
             check_icon,
             feature,
-            Vec2::new(center_x - 100.0, cursor.y()),
+            Vec2::new(center_x - 100.0, ui.cursor().y()),
             font_size,
             font_size,
             theme.success,
         );
-        cursor = Vec2::new(cursor.x(), cursor.y() + 18.0);
+        ui.spacing(18.0);
     }
 
-    cursor.y()
+    ui.cursor().y()
 }
