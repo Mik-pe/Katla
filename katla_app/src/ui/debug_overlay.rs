@@ -140,25 +140,26 @@ impl DebugOverlay {
 
         let window = ui.begin_window_with_title("debug_window", Some("Debug Stats"), window_bounds);
 
-        let mut cursor = Vec2::new(
+        // Use vertical layout for stats window
+        ui.begin_column();
+        ui.set_cursor(Vec2::new(
             window.bounds.min.x() + padding,
             window.bounds.min.y() + title_height + padding,
-        );
+        ));
 
         // Stats section
         for text in &stats {
-            let label_bounds = Rect2D::from_origin_size(
-                cursor,
-                Vec2::new(window_width - padding * 2.0, line_height),
+            ui.add(
+                Label::new(text)
+                    .at_cursor_width(ui, window_width - padding * 2.0)
             );
-            ui.add(Label::new(text).bounds(label_bounds));
-            cursor = Vec2::new(cursor.x(), cursor.y() + line_height);
+            ui.spacing(line_height);
         }
 
         // FPS Graph
-        cursor = Vec2::new(cursor.x(), cursor.y() + graph_spacing);
+        ui.spacing(graph_spacing);
         let fps_graph_bounds = Rect2D::from_origin_size(
-            cursor,
+            ui.cursor(),
             Vec2::new(window_width - padding * 2.0, graph_height),
         );
         ui.graph(
@@ -170,9 +171,9 @@ impl DebugOverlay {
         );
 
         // Frame Time Graph
-        cursor = Vec2::new(cursor.x(), cursor.y() + graph_height + graph_spacing);
+        ui.spacing(graph_height + graph_spacing);
         let frame_time_bounds = Rect2D::from_origin_size(
-            cursor,
+            ui.cursor(),
             Vec2::new(window_width - padding * 2.0, graph_height),
         );
         ui.graph(
@@ -184,20 +185,19 @@ impl DebugOverlay {
         );
 
         // Settings toggle button
-        cursor = Vec2::new(cursor.x(), cursor.y() + graph_height + padding);
-        let button_bounds = Rect2D::from_origin_size(
-            cursor,
-            Vec2::new(window_width - padding * 2.0, button_height),
-        );
+        ui.spacing(graph_height + padding);
         let btn_text = if self.settings_visible {
             "[Close Settings]"
         } else {
             "[Settings]"
         };
+        let button_bounds = Rect2D::from_origin_size(
+            ui.cursor(),
+            Vec2::new(window_width - padding * 2.0, button_height),
+        );
         if ui
             .add(
                 Button::new(btn_text)
-                    .bounds(button_bounds)
                     .id("settings_btn"),
             )
             .clicked
@@ -205,6 +205,7 @@ impl DebugOverlay {
             self.settings_visible = !self.settings_visible;
         }
 
+        ui.end_column();
         ui.end_window();
 
         // === Settings Panel ===
