@@ -946,6 +946,53 @@ mod tests {
     }
 
     #[test]
+    fn test_font_atlas_white_pixel() {
+        // Verify the font atlas has a white pixel at (0,0) for solid color rendering
+        let sys = FontSystem::new();
+        let data = sys.atlas_data();
+
+        // Check that the first pixel (0,0) is white [255, 255, 255, 255]
+        // This white pixel is sampled by solid color quads (UV=(0,0))
+        assert_eq!(data[0], 255); // R
+        assert_eq!(data[1], 255); // G
+        assert_eq!(data[2], 255); // B
+        assert_eq!(data[3], 255); // A
+
+        // Verify the reserved 2x2 white pixel area is initialized
+        for y in 0..2u32 {
+            for x in 0..2u32 {
+                let idx = (y * sys.atlas_width + x) as usize * 4;
+                assert_eq!(
+                    data[idx], 255,
+                    "White pixel area at ({},{}) should have R=255",
+                    x, y
+                );
+                assert_eq!(
+                    data[idx + 1],
+                    255,
+                    "White pixel area at ({},{}) should have G=255",
+                    x,
+                    y
+                );
+                assert_eq!(
+                    data[idx + 2],
+                    255,
+                    "White pixel area at ({},{}) should have B=255",
+                    x,
+                    y
+                );
+                assert_eq!(
+                    data[idx + 3],
+                    255,
+                    "White pixel area at ({},{}) should have A=255",
+                    x,
+                    y
+                );
+            }
+        }
+    }
+
+    #[test]
     fn test_subpixel_bin_zero() {
         let (floor, bin) = SubpixelBin::new(10.0);
         assert_eq!(floor, 10);
