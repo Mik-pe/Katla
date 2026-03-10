@@ -19,6 +19,9 @@ use crate::vulkan::context::VulkanContext;
 use ash::vk;
 use gpu_allocator::vulkan::Allocation;
 
+/// Special resource name for the swapchain backbuffer.
+const BACKBUFFER_NAME: &str = "backbuffer";
+
 /// Transient texture created and managed by the frame graph.
 pub struct TransientTexture {
     /// Vulkan context for cleanup.
@@ -669,6 +672,15 @@ impl<'a> Frame<'a> {
         for (index, pass) in self.graph.passes.iter().enumerate() {
             let data = self.pending.remove(&index).unwrap_or_default();
 
+            log::debug!(
+                "Executing pass '{}' (index {}): pipeline={:?}, draw_lists={}, writes={:?}",
+                pass.name,
+                index,
+                pass.pipeline,
+                data.draw_lists.len(),
+                pass.writes
+            );
+
             // Insert pre-pass barriers
             self.insert_barriers(&cmd, index)?;
 
@@ -684,6 +696,18 @@ impl<'a> Frame<'a> {
                         self.execute_graphics_pass(&cmd, pass, data)?;
                     }
                 }
+            }
+
+            // Track backbuffer state if this pass wrote to it
+            if pass.writes.contains(&BACKBUFFER_NAME.to_string()) {
+                log::debug!(
+                    "Pass '{}' wrote to backbuffer, tracking state",
+                    pass.name
+                );
+                self.resource_states.insert(
+                    BACKBUFFER_NAME.to_string(),
+                    super::resource::ResourceState::ColorAttachment,
+                );
             }
         }
 
@@ -851,14 +875,32 @@ impl<'a> Frame<'a> {
         // 1. If pass writes to "backbuffer", use swapchain directly
         // 2. If pass writes to a transient texture, use that
         // 3. Use load_op from pass.color_attachments if available, otherwise default to CLEAR
+        //    For backbuffer: use LOAD if a previous pass already wrote to it
         let color_attachment = if pass.writes.contains(&BACKBUFFER_NAME.to_string()) {
             // Explicit backbuffer write - use swapchain
             let swapchain_view =
                 self.renderer.frame_context.swapchain_image_views[self.image_index as usize].vk();
+
+            // Check if a previous pass already wrote to the backbuffer
+            let backbuffer_written = self.resource_states.contains_key(BACKBUFFER_NAME);
+            let load_op = if backbuffer_written {
+                log::debug!(
+                    "Pass '{}': Using LOAD for backbuffer (previous pass wrote to it)",
+                    pass.name
+                );
+                vk::AttachmentLoadOp::LOAD
+            } else {
+                log::debug!(
+                    "Pass '{}': Using CLEAR for backbuffer (first write)",
+                    pass.name
+                );
+                vk::AttachmentLoadOp::CLEAR
+            };
+
             vk::RenderingAttachmentInfo::default()
                 .image_view(swapchain_view)
                 .image_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
-                .load_op(vk::AttachmentLoadOp::CLEAR)
+                .load_op(load_op)
                 .store_op(vk::AttachmentStoreOp::STORE)
                 .clear_value(vk::ClearValue {
                     color: vk::ClearColorValue {

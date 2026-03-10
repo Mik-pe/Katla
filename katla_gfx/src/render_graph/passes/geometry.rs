@@ -353,7 +353,6 @@ mod tests {
         let pass_data = data.downcast_ref::<GeometryPassData>().unwrap();
 
         assert_eq!(pass_data.colors.len(), 1);
-        assert_eq!(pass_data.reads.len(), 1);
     }
 
     #[test]

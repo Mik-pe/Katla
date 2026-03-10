@@ -102,14 +102,16 @@ impl ApplicationBuilder {
 
     /// Build the frame graph for the application.
     ///
-    /// Uses HDR intermediate rendering with tonemapping:
+    /// Uses HDR intermediate rendering with tonemapping and UI compositing:
     /// 1. Sky pass renders procedural sky to HDR texture
     /// 2. Geometry pass renders scene to HDR texture (R16G16B16A16Sfloat)
-    /// 3. Tonemap pass samples HDR and outputs LDR to swapchain
+    /// 3. Tonemap pass samples HDR and outputs LDR to backbuffer
+    /// 4. UI pass draws editor UI on top of backbuffer (LOAD mode)
     fn build_frame_graph(
         renderer: &mut VulkanRenderer,
         resources: &ResourceManager,
     ) -> AppResult<katla_gfx::FrameGraph> {
+        use katla_gfx::render_graph::UIPass;
         use katla_gfx::render_pass::{ClearValue, LoadOp, StoreOp};
         use katla_gfx::texture::ImageFormat as TextureImageFormat;
         use katla_gfx::{FullscreenPass, GeometryPass, GraphResourceDesc, GraphResourceType};
@@ -172,13 +174,19 @@ impl ApplicationBuilder {
                 StoreOp::Store,
                 ClearValue::OPAQUE_BLACK,
             ))
-            // Tonemap pass: samples HDR color and outputs to backbuffer (swapchain)
+            // Tonemap pass: samples HDR color and outputs to backbuffer
             .add_pass(
                 FullscreenPass::new("tonemap")
                     .read("hdr_color")
                     .write_backbuffer()
                     .pipeline(tonemap_pipeline)
                     .tonemap(tonemap_params),
+            )
+            // UI pass: draws editor UI on top of tonemapped content
+            // Uses LOAD to preserve tonemapped content, then draws UI on top
+            .add_pass(
+                UIPass::new("ui")
+                    .write("backbuffer"),
             )
             .build()
             .map_err(|e| crate::error::AppError::Graphics {
