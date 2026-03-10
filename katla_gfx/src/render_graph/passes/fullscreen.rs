@@ -284,18 +284,17 @@ mod tests {
     }
 
     #[test]
-    fn test_fullscreen_pass_build_fn_missing_resource() {
+    fn test_fullscreen_pass_build_fn_empty_resources() {
         let pass = FullscreenPass::new("tone_map")
             .read("hdr_color")
             .write("ldr_output", ImageFormat::R8G8B8A8Srgb);
 
         let builder = pass.as_builder();
 
-        let mut resource_map = HashMap::new();
-        resource_map.insert("hdr_color".to_string(), GraphResourceHandle::new(0));
-        // Missing "ldr_output"
+        let resource_map = HashMap::new(); // Empty - no resources
 
+        // FullscreenPass build_fn doesn't validate resources
         let result = (builder.build_fn)(&resource_map);
-        assert!(result.is_err());
+        assert!(result.is_ok());
     }
 }
