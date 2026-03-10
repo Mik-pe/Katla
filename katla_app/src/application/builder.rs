@@ -149,7 +149,11 @@ impl ApplicationBuilder {
 
         // Compile UI shader for editor UI rendering
         let ui_shader_path = resources.shader_path("ui/ui.wgsl");
-        let ui_material = renderer.create_ui_material(ui_shader_path).map_err(|e| {
+        let ui_material = renderer.compile_material(ui_shader_path, katla_gfx::MaterialOptions {
+            vertex_type: katla_gfx::VertexType::Ui,
+            alpha_blended: true,
+            ..Default::default()
+        }).map_err(|e| {
             crate::error::AppError::Graphics {
                 message: format!("Failed to compile UI shader: {}", e),
             }

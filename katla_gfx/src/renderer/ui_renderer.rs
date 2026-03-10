@@ -5,11 +5,11 @@
 
 use crate::TextureHandle;
 use crate::renderer::UiFrameResources;
+use crate::texture::TextureDescriptor;
 
 /// UI rendering subsystem.
 ///
 /// Owns all UI-specific GPU resources and provides font atlas management.
-/// Wraps a reference to VulkanRenderer for low-level graphics operations.
 pub struct UIRenderer {
     /// Per-frame UI rendering resources (vertex/index buffers, descriptor sets, uniform buffer).
     ui_resources: UiFrameResources,
@@ -29,7 +29,6 @@ impl UIRenderer {
     /// Set the font atlas texture handle.
     ///
     /// Called by VulkanRenderer after creating the font atlas texture.
-    /// This is an internal method - use VulkanRenderer::create_ui_font_atlas() instead.
     pub(crate) fn set_font_atlas(&mut self, handle: TextureHandle) {
         log::debug!("Font atlas handle set to: {:?}", handle);
         self.font_atlas = Some(handle);

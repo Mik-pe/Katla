@@ -345,9 +345,13 @@ impl Application {
         // Create HDR PBR material for rendering to HDR intermediate
         self.default_material_handle = self
             .renderer
-            .create_pbr_material(
+            .compile_material(
                 &shader_path,
-                Some(katla_gfx::ImageFormat::R16G16B16A16Sfloat),
+                katla_gfx::MaterialOptions {
+                    vertex_type: katla_gfx::VertexType::Pbr,
+                    color_format: katla_gfx::ImageFormat::R16G16B16A16Sfloat,
+                    ..Default::default()
+                },
             )
             .expect("Failed to create default HDR PBR material");
 
@@ -779,9 +783,13 @@ impl Application {
                 .ok()?
         } else {
             self.renderer
-                .create_pbr_material(
+                .compile_material(
                     &shader_path,
-                    Some(katla_gfx::ImageFormat::R16G16B16A16Sfloat),
+                    katla_gfx::MaterialOptions {
+                        vertex_type: katla_gfx::VertexType::Pbr,
+                        color_format: katla_gfx::ImageFormat::R16G16B16A16Sfloat,
+                        ..Default::default()
+                    },
                 )
                 .ok()?
         };
@@ -919,11 +927,11 @@ impl Application {
         };
 
         if srgb {
-            self.renderer
-                .create_texture_rgba(image.width, image.height, &pixels)
+            let desc = katla_gfx::TextureDescriptor::rgba8_srgb(image.width, image.height);
+            self.renderer.create_texture(&desc, &pixels)
         } else {
-            self.renderer
-                .create_texture_unorm(image.width, image.height, &pixels)
+            let desc = katla_gfx::TextureDescriptor::rgba8_unorm(image.width, image.height);
+            self.renderer.create_texture(&desc, &pixels)
         }
     }
 
