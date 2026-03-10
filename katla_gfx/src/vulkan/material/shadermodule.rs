@@ -36,10 +36,7 @@ impl ShaderModule {
         let module = unsafe { device.create_shader_module(&create_info, None) }
             .map_err(ShaderError::CreationFailed)?;
 
-        Ok(Self {
-            module,
-            device,
-        })
+        Ok(Self { module, device })
     }
 
     pub fn from_wgsl(

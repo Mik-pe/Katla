@@ -4,8 +4,8 @@
 //! and render targets. This module organizes viewport-related functionality
 //! away from VulkanRenderer.
 
-use crate::viewport::{Viewport, ViewportBuilder, ViewportHandle};
 use crate::Size2D;
+use crate::viewport::{Viewport, ViewportBuilder, ViewportHandle};
 
 /// Viewport manager for managing viewports and render targets.
 ///

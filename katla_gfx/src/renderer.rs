@@ -9,6 +9,7 @@
 pub mod mesh_manager;
 pub mod registry;
 pub mod types;
+pub mod ui_renderer;
 pub mod viewport_manager;
 
 pub use crate::handle::{Handle, MaterialHandle, MeshHandle, SkeletonHandle, TextureHandle};
@@ -37,8 +38,6 @@ use crate::sync::{COLOR_SUBRESOURCE_RANGE, DEPTH_SUBRESOURCE_RANGE};
 use crate::vulkan::material::compiler::{MaterialBuilder, MaterialCompiler};
 
 /// Per-frame UI rendering resources.
-/// Stored in a RefCell for interior mutability - UI code needs mutable access
-/// during frame execution while the renderer is immutably borrowed.
 #[derive(Default)]
 pub struct UiFrameResources {
     /// Per-frame UI vertex buffers.
@@ -92,10 +91,14 @@ pub struct VulkanRenderer {
     pub(crate) viewport_manager: viewport_manager::ViewportManager,
     /// Material compiler for compiling materials from shaders.
     pub(crate) material_compiler: MaterialCompiler,
+    /// UI rendering subsystem - owns UI resources and font atlas.
+    pub ui_renderer: ui_renderer::UIRenderer,
     /// Cached UI descriptor set layout (reused across frames).
+    /// DEPRECATED: No longer used, kept for compatibility during migration.
+    #[deprecated(note = "UI descriptor sets are now managed by UIRenderer")]
     pub(crate) ui_descriptor_set_layout: Option<vk::DescriptorSetLayout>,
-    /// Per-frame UI rendering resources (interior mutability for frame access).
-    pub(crate) ui_resources: Rc<RefCell<UiFrameResources>>,
+    /// Per-frame UI rendering resources.
+    pub(crate) ui_resources: UiFrameResources,
     /// Font atlas texture handle for UI rendering.
     pub(crate) ui_font_atlas: Option<TextureHandle>,
 }
@@ -216,8 +219,9 @@ impl VulkanRenderer {
             output_target: None,
             viewport_manager,
             material_compiler,
+            ui_renderer: ui_renderer::UIRenderer::new(),
             ui_descriptor_set_layout: None,
-            ui_resources: Rc::new(RefCell::new(UiFrameResources::default())),
+            ui_resources: UiFrameResources::default(),
             ui_font_atlas: None,
         })
     }
@@ -316,10 +320,13 @@ impl VulkanRenderer {
     }
 
     // ========================================================================
-    // UI Font Atlas Management
+    // UI Font Atlas Management (DEPRECATED - use UIRenderer instead)
     // ========================================================================
 
     /// Create or update the UI font atlas texture from pixel data.
+    ///
+    /// # DEPRECATED
+    /// Use `renderer.ui_renderer.create_font_atlas(&mut renderer, width, height, data)` instead.
     ///
     /// # Arguments
     /// * `width` - Atlas width in pixels
@@ -328,12 +335,8 @@ impl VulkanRenderer {
     ///
     /// # Returns
     /// The texture handle for the font atlas.
-    pub fn create_ui_font_atlas(
-        &mut self,
-        width: u32,
-        height: u32,
-        data: &[u8],
-    ) -> TextureHandle {
+    #[deprecated(note = "Use `renderer.ui_renderer.create_font_atlas()` instead")]
+    pub fn create_ui_font_atlas(&mut self, width: u32, height: u32, data: &[u8]) -> TextureHandle {
         // Use RGBA8 UNORM for font atlas (linear color space for accurate text rendering)
         let handle = self.create_texture_unorm(width, height, data);
 
@@ -352,12 +355,16 @@ impl VulkanRenderer {
 
     /// Update the UI font atlas texture with new pixel data.
     ///
+    /// # DEPRECATED
+    /// Use `renderer.ui_renderer.update_font_atlas(&mut renderer, width, height, data)` instead.
+    ///
     /// Use this when the atlas has been resized or new glyphs have been added.
     ///
     /// # Arguments
     /// * `width` - Atlas width in pixels
     /// * `height` - Atlas height in pixels
     /// * `data` - RGBA pixel data
+    #[deprecated(note = "Use `renderer.ui_renderer.update_font_atlas()` instead")]
     pub fn update_ui_font_atlas(&mut self, width: u32, height: u32, data: &[u8]) {
         if let Some(handle) = self.ui_font_atlas {
             if let Some(texture) = self.texture_manager.get_texture_rc(handle) {
@@ -367,7 +374,13 @@ impl VulkanRenderer {
                     texture.update_data(data);
                 } else {
                     // Size changed - need to create new texture
-                    log::info!("Font atlas resized from {}x{} to {}x{}", texture.width, texture.height, width, height);
+                    log::info!(
+                        "Font atlas resized from {}x{} to {}x{}",
+                        texture.width,
+                        texture.height,
+                        width,
+                        height
+                    );
                     self.create_ui_font_atlas(width, height, data);
                 }
             }
@@ -377,6 +390,10 @@ impl VulkanRenderer {
     }
 
     /// Get the font atlas texture handle.
+    ///
+    /// # DEPRECATED
+    /// Use `renderer.ui_renderer.font_atlas()` instead.
+    #[deprecated(note = "Use `renderer.ui_renderer.font_atlas()` instead")]
     pub fn ui_font_atlas(&self) -> Option<TextureHandle> {
         self.ui_font_atlas
     }
@@ -546,6 +563,73 @@ impl VulkanRenderer {
     ///
     /// # Example
     /// ```ignore
+    /// use katla_gfx::vulkan::material::compiler::{MaterialOptions, VertexType};
+    ///
+    /// // PBR material (default settings)
+    /// let pbr = renderer.compile_material("shaders/pbr.wgsl", MaterialOptions {
+    ///     vertex_type: VertexType::Pbr,
+    ///     ..Default::default()
+    /// })?;
+    ///
+    /// // UI material with alpha blending
+    /// let ui = renderer.compile_material("shaders/ui.wgsl", MaterialOptions {
+    ///     vertex_type: VertexType::Ui,
+    ///     alpha_blended: true,
+    ///     ..Default::default()
+    /// })?;
+    ///
+    /// // Skinned mesh material for GLTF models
+    /// let skinned = renderer.compile_material("shaders/skinned.wgsl", MaterialOptions {
+    ///     vertex_type: VertexType::Skinned,
+    ///     ..Default::default()
+    /// })?;
+    ///
+    /// // HDR material for intermediate render targets
+    /// let hdr = renderer.compile_material("shaders/pbr.wgsl", MaterialOptions {
+    ///     vertex_type: VertexType::Pbr,
+    ///     color_format: ImageFormat::R16G16B16A16Sfloat,
+    ///     ..Default::default()
+    /// })?;
+    /// ```
+    pub fn compile_material(
+        &mut self,
+        shader_path: impl AsRef<std::path::Path>,
+        options: crate::vulkan::material::compiler::MaterialOptions,
+    ) -> Result<MaterialHandle, RendererError> {
+        use crate::vulkan::material::compiler::MaterialType;
+
+        let material_type = match options.vertex_type {
+            crate::vulkan::material::compiler::VertexType::Pbr => MaterialType::Pbr,
+            crate::vulkan::material::compiler::VertexType::Ui => MaterialType::Ui,
+            _ => MaterialType::Auto,
+        };
+
+        self.material_compiler
+            .compile(
+                &mut self.asset_registry,
+                shader_path.as_ref(),
+                material_type,
+                options,
+            )
+            .map_err(|e| {
+                RendererError::InitializationFailed(format!("Material compilation failed: {}", e))
+            })
+    }
+
+    /// Create a PBR material with default settings.
+    ///
+    /// Convenience method for `compile_material()` with PBR vertex type.
+    ///
+    /// # Arguments
+    /// * `shader_path` - Path to WGSL shader file
+    /// * `color_format` - Optional color attachment format. None = swapchain format (LDR),
+    ///                   Some(ImageFormat::R16G16B16A16Sfloat) = HDR rendering
+    ///
+    /// # Returns
+    /// A MaterialHandle for the created material.
+    ///
+    /// # Example
+    /// ```ignore
     /// // LDR material (default, for swapchain rendering)
     /// let ldr_material = renderer.create_pbr_material("shaders/model.wgsl", None)?;
     ///
@@ -564,20 +648,14 @@ impl VulkanRenderer {
 
         let format = color_format.unwrap_or(crate::texture::ImageFormat::B8G8R8A8Srgb);
 
-        self.material_compiler
-            .compile(
-                &mut self.asset_registry,
-                shader_path.as_ref(),
-                crate::vulkan::material::compiler::MaterialType::Pbr,
-                MaterialOptions {
-                    vertex_type: VertexType::Pbr,
-                    color_format: format,
-                    ..Default::default()
-                },
-            )
-            .map_err(|e| {
-                RendererError::InitializationFailed(format!("Material compilation failed: {}", e))
-            })
+        self.compile_material(
+            shader_path,
+            MaterialOptions {
+                vertex_type: VertexType::Pbr,
+                color_format: format,
+                ..Default::default()
+            },
+        )
     }
 
     /// Ensure a material is compiled for a specific format.
@@ -696,20 +774,14 @@ impl VulkanRenderer {
     ) -> Result<MaterialHandle, RendererError> {
         use crate::vulkan::material::compiler::{MaterialOptions, VertexType};
 
-        self.material_compiler
-            .compile(
-                &mut self.asset_registry,
-                shader_path.as_ref(),
-                crate::vulkan::material::compiler::MaterialType::Ui,
-                MaterialOptions {
-                    alpha_blended: true,
-                    vertex_type: VertexType::Ui,
-                    ..Default::default()
-                },
-            )
-            .map_err(|e| {
-                RendererError::InitializationFailed(format!("Material compilation failed: {}", e))
-            })
+        self.compile_material(
+            shader_path,
+            MaterialOptions {
+                alpha_blended: true,
+                vertex_type: VertexType::Ui,
+                ..Default::default()
+            },
+        )
     }
 
     /// Create a material with custom options using the builder pattern.
@@ -872,7 +944,7 @@ impl VulkanRenderer {
 
         // Clean up UI resources
         {
-            let mut ui_resources = self.ui_resources.borrow_mut();
+            let mut ui_resources = &mut self.ui_resources;
             // Vertex and index buffers have Drop impls that clean up themselves
             ui_resources.vertex_buffers.clear();
             ui_resources.index_buffers.clear();
@@ -1305,6 +1377,13 @@ impl VulkanRenderer {
         let pipeline = builder.build_dynamic().map_err(|e| {
             RendererError::InitializationFailed(format!("Pipeline creation: {:?}", e))
         })?;
+
+        // The pipeline now holds the descriptor layouts, so we can destroy our temporary copy
+        unsafe {
+            self.context
+                .device
+                .destroy_descriptor_set_layout(storage_layout, None);
+        }
 
         Ok(self.asset_registry.register_pipeline(pipeline))
     }

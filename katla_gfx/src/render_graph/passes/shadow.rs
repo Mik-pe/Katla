@@ -99,10 +99,12 @@ impl PassBuilder for ShadowPass {
             tonemap_params: None,
             material: None,
             output_format: None,
-            build_fn: Box::new(move |_resource_map: &HashMap<String, GraphResourceHandle>| {
-                // Shadow pass data is currently unused but kept for future extensibility
-                Ok(Box::new(ShadowPassData))
-            }),
+            build_fn: Box::new(
+                move |_resource_map: &HashMap<String, GraphResourceHandle>| {
+                    // Shadow pass data is currently unused but kept for future extensibility
+                    Ok(Box::new(ShadowPassData))
+                },
+            ),
             uses_depth: true,
         }
     }

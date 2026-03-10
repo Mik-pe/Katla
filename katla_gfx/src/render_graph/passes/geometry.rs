@@ -243,9 +243,7 @@ impl PassBuilder for GeometryPass {
                     })
                     .collect::<Result<Vec<_>, RenderGraphError>>()?;
 
-                Ok(Box::new(GeometryPassData {
-                    colors,
-                }))
+                Ok(Box::new(GeometryPassData { colors }))
             }),
             uses_depth: true,
         }
