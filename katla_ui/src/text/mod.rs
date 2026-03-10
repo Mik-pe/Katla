@@ -880,16 +880,22 @@ impl FontSystem {
     /// Clear the glyph cache and atlas.
     pub fn clear_cache(&mut self) {
         self.glyph_cache.clear();
-        self.atlas_cursor_x = 1; // Start after white pixel
+        self.atlas_cursor_x = 4; // Start after reserved 2x2 white pixel area + margin
         self.atlas_cursor_y = 0;
         self.atlas_row_height = 0;
         self.atlas_data.fill(0);
 
-        // Restore white pixel at (0,0) for solid color rendering
-        self.atlas_data[0] = 255;
-        self.atlas_data[1] = 255;
-        self.atlas_data[2] = 255;
-        self.atlas_data[3] = 255;
+        // Restore 2x2 white pixel area for solid color rendering
+        // This gives a safety margin for linear filtering
+        for y in 0..2u32 {
+            for x in 0..2u32 {
+                let idx = (y * self.atlas_width + x) as usize * 4;
+                self.atlas_data[idx] = 255; // R
+                self.atlas_data[idx + 1] = 255; // G
+                self.atlas_data[idx + 2] = 255; // B
+                self.atlas_data[idx + 3] = 255; // A
+            }
+        }
 
         self.atlas_dirty = true;
     }
@@ -1070,5 +1076,114 @@ mod tests {
         // Extremes should stay the same
         assert!((coverage_to_alpha(0.0) - 0.0).abs() < 0.001);
         assert!((coverage_to_alpha(1.0) - 1.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_clear_cache_white_pixel_area() {
+        // Verify that clear_cache() restores the 2x2 white pixel area
+        // consistent with new(), with_atlas_size(), and grow_atlas()
+        let mut sys = FontSystem::new();
+
+        // Modify the atlas data to corrupt the white pixel area
+        sys.atlas_data[0] = 0;
+        sys.atlas_data[1] = 0;
+        sys.atlas_data[2] = 0;
+        sys.atlas_data[3] = 0;
+
+        // Clear cache should restore the white pixel area
+        sys.clear_cache();
+
+        // Verify the 2x2 white pixel area is restored
+        for y in 0..2u32 {
+            for x in 0..2u32 {
+                let idx = (y * sys.atlas_width + x) as usize * 4;
+                assert_eq!(
+                    sys.atlas_data[idx], 255,
+                    "White pixel area at ({},{}) should have R=255 after clear_cache()",
+                    x, y
+                );
+                assert_eq!(
+                    sys.atlas_data[idx + 1],
+                    255,
+                    "White pixel area at ({},{}) should have G=255 after clear_cache()",
+                    x,
+                    y
+                );
+                assert_eq!(
+                    sys.atlas_data[idx + 2],
+                    255,
+                    "White pixel area at ({},{}) should have B=255 after clear_cache()",
+                    x,
+                    y
+                );
+                assert_eq!(
+                    sys.atlas_data[idx + 3],
+                    255,
+                    "White pixel area at ({},{}) should have A=255 after clear_cache()",
+                    x,
+                    y
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_clear_cache_cursor_position() {
+        // Verify that clear_cache() resets atlas_cursor_x to 4
+        // (after the reserved 2x2 white pixel area + margin)
+        let mut sys = FontSystem::new();
+
+        // Move the cursor to some position
+        sys.atlas_cursor_x = 100;
+        sys.atlas_cursor_y = 50;
+
+        // Clear cache should reset cursor to start position
+        sys.clear_cache();
+
+        // Cursor should be at 4 (after 2x2 white pixel area + margin)
+        assert_eq!(
+            sys.atlas_cursor_x, 4,
+            "atlas_cursor_x should be 4 after clear_cache() to reserve 2x2 white pixel area"
+        );
+        assert_eq!(
+            sys.atlas_cursor_y, 0,
+            "atlas_cursor_y should be 0 after clear_cache()"
+        );
+    }
+
+    #[test]
+    fn test_initialization_consistency() {
+        // Verify that all initialization paths (new, with_atlas_size, clear_cache)
+        // produce consistent atlas state
+
+        // Test new()
+        let sys1 = FontSystem::new();
+        assert_eq!(sys1.atlas_cursor_x, 4);
+        assert_white_pixel_area(&sys1);
+
+        // Test with_atlas_size()
+        let sys2 = FontSystem::with_atlas_size(512, 512);
+        assert_eq!(sys2.atlas_cursor_x, 4);
+        assert_white_pixel_area(&sys2);
+
+        // Test clear_cache()
+        let mut sys3 = FontSystem::new();
+        sys3.atlas_cursor_x = 100;
+        sys3.clear_cache();
+        assert_eq!(sys3.atlas_cursor_x, 4);
+        assert_white_pixel_area(&sys3);
+    }
+
+    fn assert_white_pixel_area(sys: &FontSystem) {
+        // Helper to verify the 2x2 white pixel area
+        for y in 0..2u32 {
+            for x in 0..2u32 {
+                let idx = (y * sys.atlas_width + x) as usize * 4;
+                assert_eq!(sys.atlas_data[idx], 255, "R should be 255");
+                assert_eq!(sys.atlas_data[idx + 1], 255, "G should be 255");
+                assert_eq!(sys.atlas_data[idx + 2], 255, "B should be 255");
+                assert_eq!(sys.atlas_data[idx + 3], 255, "A should be 255");
+            }
+        }
     }
 }
