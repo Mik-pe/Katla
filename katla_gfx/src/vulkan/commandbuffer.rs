@@ -358,11 +358,13 @@ impl CommandBuffer {
         }
     }
 
-    /// Push descriptor set for VK_KHR_push_descriptor extension.
+    /// Push descriptor set for VK_KHR_push_descriptor extension (internal).
     ///
     /// Push descriptors are a lightweight alternative to descriptor sets that
     /// don't require allocation from a pool. They're pushed directly into the
     /// command buffer and are only valid for that command.
+    ///
+    /// This is an internal optimization for UI rendering - not exposed in the public API.
     ///
     /// # Arguments
     ///
@@ -370,7 +372,7 @@ impl CommandBuffer {
     /// * `pipeline_layout` - Pipeline layout for compatibility
     /// * `set` - Descriptor set number (e.g., 1 for push descriptors)
     /// * `descriptor_writes` - Descriptor writes to push
-    pub fn push_descriptor_set_khr(
+    pub(crate) fn push_descriptor_set_khr(
         &self,
         device: &ash::khr::push_descriptor::Device,
         pipeline_layout: vk::PipelineLayout,

@@ -8,6 +8,7 @@ use crate::handle::PipelineHandle;
 use crate::texture::ImageFormat;
 
 use super::super::builder::{InternalPassBuilder, PassBuilder};
+use super::super::graph::BACKBUFFER_NAME;
 use super::super::pass::PassType;
 use super::super::resource::GraphResourceHandle;
 
@@ -111,7 +112,7 @@ impl FullscreenPass {
     /// This is the final output that presents to the screen.
     pub fn write_backbuffer(mut self) -> Self {
         self.writes
-            .push(("backbuffer".to_string(), ImageFormat::B8G8R8A8Srgb));
+            .push((BACKBUFFER_NAME.to_string(), ImageFormat::B8G8R8A8Srgb));
         self
     }
 
@@ -163,10 +164,12 @@ impl PassBuilder for FullscreenPass {
             tonemap_params: self.tonemap_params,
             material: None,
             output_format: None,
-            build_fn: Box::new(move |_resource_map: &HashMap<String, GraphResourceHandle>| {
-                // Fullscreen pass data is currently unused but kept for future extensibility
-                Ok(Box::new(FullscreenPassData))
-            }),
+            build_fn: Box::new(
+                move |_resource_map: &HashMap<String, GraphResourceHandle>| {
+                    // Fullscreen pass data is currently unused but kept for future extensibility
+                    Ok(Box::new(FullscreenPassData))
+                },
+            ),
             uses_depth: true,
         }
     }

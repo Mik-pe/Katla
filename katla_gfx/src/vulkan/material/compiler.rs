@@ -81,6 +81,8 @@ pub(crate) struct MaterialCompiler {
     skeleton_descriptor_layout: vk::DescriptorSetLayout,
     /// Shared descriptor pool for skeleton descriptor sets
     skeleton_descriptor_pool: vk::DescriptorPool,
+    /// Flag to prevent double-free of skeleton resources
+    skeleton_descriptor_destroyed: bool,
     /// UI descriptor set layouts (created per UI material, tracked for cleanup)
     ui_descriptor_layouts: Vec<vk::DescriptorSetLayout>,
 }
@@ -173,6 +175,7 @@ impl MaterialCompiler {
             bindless_descriptor_layout,
             skeleton_descriptor_layout,
             skeleton_descriptor_pool,
+            skeleton_descriptor_destroyed: false,
             ui_descriptor_layouts: Vec::new(),
         })
     }
@@ -369,7 +372,9 @@ impl MaterialCompiler {
     /// UI shader uses:
     /// - Set 0: UI resources (font atlas, sampler, uniforms)
     /// - Set 1: Dynamic texture (push descriptors, optional)
-    fn build_ui_descriptor_layout(&mut self) -> Result<Vec<vk::DescriptorSetLayout>, MaterialError> {
+    fn build_ui_descriptor_layout(
+        &mut self,
+    ) -> Result<Vec<vk::DescriptorSetLayout>, MaterialError> {
         // UI descriptor set layout Set 0 (must match shader bindings in ui.wgsl):
         // - Binding 0: font atlas (texture)
         // - Binding 1: sampler
@@ -399,19 +404,20 @@ impl MaterialCompiler {
                 .device
                 .create_descriptor_set_layout(&layout_info, None)
                 .map_err(|e| {
-                    MaterialError::ShaderCompilation(format!("Failed to create UI descriptor layout: {:?}", e))
+                    MaterialError::ShaderCompilation(format!(
+                        "Failed to create UI descriptor layout: {:?}",
+                        e
+                    ))
                 })?
         };
 
         // Set 1: Dynamic texture (push descriptors)
         // The shader uses Set 1 for per-draw texture sampling (viewport, thumbnails, etc.)
-        let push_texture_bindings = [
-            vk::DescriptorSetLayoutBinding::default()
-                .binding(0)
-                .descriptor_type(vk::DescriptorType::SAMPLED_IMAGE)
-                .descriptor_count(1)
-                .stage_flags(vk::ShaderStageFlags::FRAGMENT),
-        ];
+        let push_texture_bindings = [vk::DescriptorSetLayoutBinding::default()
+            .binding(0)
+            .descriptor_type(vk::DescriptorType::SAMPLED_IMAGE)
+            .descriptor_count(1)
+            .stage_flags(vk::ShaderStageFlags::FRAGMENT)];
 
         let push_layout_info = vk::DescriptorSetLayoutCreateInfo::default()
             .bindings(&push_texture_bindings)
@@ -422,7 +428,10 @@ impl MaterialCompiler {
                 .device
                 .create_descriptor_set_layout(&push_layout_info, None)
                 .map_err(|e| {
-                    MaterialError::ShaderCompilation(format!("Failed to create push descriptor layout: {:?}", e))
+                    MaterialError::ShaderCompilation(format!(
+                        "Failed to create push descriptor layout: {:?}",
+                        e
+                    ))
                 })?
         };
 
@@ -504,7 +513,9 @@ impl MaterialCompiler {
     }
 
     /// Clean up descriptor layouts and pool.
+    /// This is idempotent - can be called multiple times safely.
     pub(crate) fn destroy(&mut self) {
+        // Destroy storage descriptor layout (only if not already destroyed)
         if let Some(layout) = self.storage_descriptor_layout.take() {
             unsafe {
                 self.context
@@ -514,16 +525,22 @@ impl MaterialCompiler {
         }
 
         // Destroy skeleton descriptor layout and pool
-        unsafe {
-            self.context
-                .device
-                .destroy_descriptor_set_layout(self.skeleton_descriptor_layout, None);
-            self.context
-                .device
-                .destroy_descriptor_pool(self.skeleton_descriptor_pool, None);
+        // Note: We use a flag to prevent double-free since these are not Option types
+        // Destroy is idempotent because skeleton_descriptor_destroyed prevents double-free
+        if !self.skeleton_descriptor_destroyed {
+            unsafe {
+                self.context
+                    .device
+                    .destroy_descriptor_set_layout(self.skeleton_descriptor_layout, None);
+                self.context
+                    .device
+                    .destroy_descriptor_pool(self.skeleton_descriptor_pool, None);
+            }
+            self.skeleton_descriptor_destroyed = true;
         }
 
         // Destroy UI descriptor set layouts (created per UI material)
+        // drain() removes all elements, so this is idempotent
         for layout in self.ui_descriptor_layouts.drain(..) {
             unsafe {
                 self.context
@@ -594,18 +611,6 @@ impl<'a> MaterialBuilder<'a> {
     /// Build the material.
     pub fn build(self) -> Result<crate::handle::MaterialHandle, crate::RendererError> {
         self.renderer
-            .material_compiler
-            .compile(
-                &mut self.renderer.asset_registry,
-                &self.shader_path,
-                MaterialType::Auto,
-                self.options,
-            )
-            .map_err(|e| {
-                crate::RendererError::InitializationFailed(format!(
-                    "Material compilation failed: {}",
-                    e
-                ))
-            })
+            .compile_material(&self.shader_path, self.options)
     }
 }

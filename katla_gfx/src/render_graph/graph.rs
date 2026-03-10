@@ -21,7 +21,7 @@ use ash::vk;
 use gpu_allocator::vulkan::Allocation;
 
 /// Special resource name for the swapchain backbuffer.
-const BACKBUFFER_NAME: &str = "backbuffer";
+pub const BACKBUFFER_NAME: &str = "backbuffer";
 
 /// Transient texture created and managed by the frame graph.
 pub struct TransientTexture {
@@ -554,7 +554,8 @@ pub struct Frame<'a> {
     graph: &'a FrameGraph,
 
     /// Reference to the Vulkan renderer.
-    renderer: &'a VulkanRenderer,
+    /// Mutable reference allows access to per-frame resources like UI buffers.
+    renderer: &'a mut VulkanRenderer,
 
     /// Current swapchain image index being rendered to.
     image_index: u32,
@@ -586,7 +587,7 @@ impl<'a> Frame<'a> {
     /// Create a new frame context.
     pub(crate) fn new(
         graph: &'a FrameGraph,
-        renderer: &'a VulkanRenderer,
+        renderer: &'a mut VulkanRenderer,
         image_index: u32,
     ) -> Self {
         // Initialize all transient resources as Undefined
@@ -692,7 +693,7 @@ impl<'a> Frame<'a> {
                     // Check if this is a fullscreen pass (needs mutable renderer access)
                     if pass.pipeline.is_some() && data.draw_lists.is_empty() {
                         if let Some(pipeline) = pass.pipeline {
-                            self.execute_fullscreen_pass(self.renderer, &cmd, pass, pipeline)?;
+                            self.execute_fullscreen_pass(&cmd, pass, pipeline)?;
                         }
                     } else {
                         self.execute_graphics_pass(&cmd, pass, data)?;
@@ -702,10 +703,7 @@ impl<'a> Frame<'a> {
 
             // Track backbuffer state if this pass wrote to it
             if pass.writes.contains(&BACKBUFFER_NAME.to_string()) {
-                log::debug!(
-                    "Pass '{}' wrote to backbuffer, tracking state",
-                    pass.name
-                );
+                log::debug!("Pass '{}' wrote to backbuffer, tracking state", pass.name);
                 self.resource_states.insert(
                     BACKBUFFER_NAME.to_string(),
                     super::resource::ResourceState::ColorAttachment,
@@ -736,8 +734,8 @@ impl<'a> Frame<'a> {
 
         // Process writes first (color attachments)
         for write_name in &pass.writes {
-            // Skip "backbuffer" - it's managed by the swapchain
-            if write_name == "backbuffer" {
+            // Skip backbuffer - it's managed by the swapchain
+            if write_name == BACKBUFFER_NAME {
                 continue;
             }
 
@@ -795,8 +793,8 @@ impl<'a> Frame<'a> {
 
         // Process reads (shader resources)
         for read_name in &pass.reads {
-            // Skip "backbuffer" - not read by shaders
-            if read_name == "backbuffer" {
+            // Skip backbuffer - not read by shaders
+            if read_name == BACKBUFFER_NAME {
                 continue;
             }
 
@@ -869,9 +867,6 @@ impl<'a> Frame<'a> {
             offset: vk::Offset2D { x: 0, y: 0 },
             extent,
         };
-
-        // Special resource name for writing directly to swapchain/backbuffer
-        const BACKBUFFER_NAME: &str = "backbuffer";
 
         // Determine color attachment:
         // 1. If pass writes to "backbuffer", use swapchain directly
@@ -976,18 +971,20 @@ impl<'a> Frame<'a> {
                 .depth_render_texture
                 .image_view
                 .vk();
-            Some(vk::RenderingAttachmentInfo::default()
-                .image_view(depth_view)
-                .image_layout(vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL)
-                .load_op(vk::AttachmentLoadOp::CLEAR)
-                .store_op(vk::AttachmentStoreOp::STORE)
-                .clear_value(vk::ClearValue {
-                    depth_stencil: vk::ClearDepthStencilValue {
-                        // Reverse Z: clear to 0.0 (farthest)
-                        depth: 0.0,
-                        stencil: 0,
-                    },
-                }))
+            Some(
+                vk::RenderingAttachmentInfo::default()
+                    .image_view(depth_view)
+                    .image_layout(vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL)
+                    .load_op(vk::AttachmentLoadOp::CLEAR)
+                    .store_op(vk::AttachmentStoreOp::STORE)
+                    .clear_value(vk::ClearValue {
+                        depth_stencil: vk::ClearDepthStencilValue {
+                            // Reverse Z: clear to 0.0 (farthest)
+                            depth: 0.0,
+                            stencil: 0,
+                        },
+                    }),
+            )
         } else {
             None
         };
@@ -1086,7 +1083,8 @@ impl<'a> Frame<'a> {
 
         // Get or create per-frame UI buffers and upload data
         let frame_idx = self.renderer.storage_manager.current_frame();
-        let (vertex_buffer, index_buffer) = self.get_or_update_ui_buffers(frame_idx, ui_draw_list)?;
+        let (vertex_buffer, index_buffer) =
+            self.get_or_update_ui_buffers(frame_idx, ui_draw_list)?;
 
         // Bind vertex and index buffers
         cmd.bind_vertex_buffer(vertex_buffer.0, 0);
@@ -1097,7 +1095,12 @@ impl<'a> Frame<'a> {
 
         // Bind UI descriptor sets (font atlas, sampler, uniforms)
         // Use screen_size from draw list (logical pixels, matches vertex coordinates)
-        self.bind_ui_descriptor_sets(cmd, pipeline_handle, pipeline_layout, ui_draw_list.screen_size)?;
+        self.bind_ui_descriptor_sets(
+            cmd,
+            pipeline_handle,
+            pipeline_layout,
+            ui_draw_list.screen_size,
+        )?;
 
         // Execute each draw command with scissor clipping
         for draw_cmd in &ui_draw_list.commands {
@@ -1112,7 +1115,10 @@ impl<'a> Frame<'a> {
                 cmd.set_scissor(&[scissor]);
             } else {
                 // No clipping - reset to full screen
-                cmd.set_scissor(&[crate::sync::Rect2D::from_extent(extent.width, extent.height)]);
+                cmd.set_scissor(&[crate::sync::Rect2D::from_extent(
+                    extent.width,
+                    extent.height,
+                )]);
             }
 
             // Draw indexed
@@ -1129,7 +1135,10 @@ impl<'a> Frame<'a> {
         }
 
         // Reset scissor to full screen for next pass
-        cmd.set_scissor(&[crate::sync::Rect2D::from_extent(extent.width, extent.height)]);
+        cmd.set_scissor(&[crate::sync::Rect2D::from_extent(
+            extent.width,
+            extent.height,
+        )]);
 
         Ok(())
     }
@@ -1142,17 +1151,14 @@ impl<'a> Frame<'a> {
         &mut self,
         frame_idx: usize,
         ui_draw_list: &crate::renderer::types::UIDrawList,
-    ) -> Result<(
-        (vk::Buffer, u32),
-        vk::Buffer,
-    ), RenderGraphError> {
+    ) -> Result<((vk::Buffer, u32), vk::Buffer), RenderGraphError> {
         use crate::vulkan::{IndexBuffer, IndexType, VertexBuffer};
 
         let vertex_bytes = bytemuck::cast_slice(&ui_draw_list.vertices);
         let index_bytes = bytemuck::cast_slice(&ui_draw_list.indices);
 
-        // Access UI resources through RefCell
-        let mut ui_resources = self.renderer.ui_resources.borrow_mut();
+        // Access UI resources directly (Frame has mutable reference to renderer)
+        let ui_resources = &mut self.renderer.ui_resources;
 
         // Ensure we have storage for this frame (grow as needed)
         while ui_resources.vertex_buffers.len() <= frame_idx {
@@ -1189,7 +1195,10 @@ impl<'a> Frame<'a> {
             );
             ib.upload_data(index_bytes);
             ui_resources.index_buffers[frame_idx] = Some(ib);
-            ui_resources.index_buffers[frame_idx].as_ref().unwrap().object()
+            ui_resources.index_buffers[frame_idx]
+                .as_ref()
+                .unwrap()
+                .object()
         };
 
         Ok((vb_handle, ib_handle))
@@ -1219,15 +1228,17 @@ impl<'a> Frame<'a> {
                 ));
             }
 
-            let font_atlas_handle = self.renderer.ui_font_atlas
-                .ok_or_else(|| RenderGraphError::InvalidConfiguration("UI font atlas not initialized".to_string()))?;
+            let font_atlas_handle = self.renderer.ui_font_atlas.ok_or_else(|| {
+                RenderGraphError::InvalidConfiguration("UI font atlas not initialized".to_string())
+            })?;
 
             (descriptor_set_layouts[0], font_atlas_handle)
         };
 
         // Now we can mutate the renderer state
         let frame_idx = self.renderer.storage_manager.current_frame();
-        let descriptor_set = self.get_or_create_ui_descriptor_set(frame_idx, descriptor_set_layout, screen_size)?;
+        let descriptor_set =
+            self.get_or_create_ui_descriptor_set(frame_idx, descriptor_set_layout, screen_size)?;
 
         // Bind descriptor set 0
         cmd.bind_descriptor_sets(pipeline_layout, 0, &[descriptor_set], &[]);
@@ -1235,8 +1246,13 @@ impl<'a> Frame<'a> {
         // Push descriptor set 1 (dynamic texture placeholder)
         // The UI shader uses set 1 for dynamic textures (viewport, thumbnails, etc.)
         // For now, we push the font atlas as a placeholder since we're not using dynamic textures yet
-        let font_texture = self.renderer.texture_manager.get_texture_rc(font_atlas_handle)
-            .ok_or_else(|| RenderGraphError::InvalidConfiguration("Font atlas texture not found".to_string()))?;
+        let font_texture = self
+            .renderer
+            .texture_manager
+            .get_texture_rc(font_atlas_handle)
+            .ok_or_else(|| {
+                RenderGraphError::InvalidConfiguration("Font atlas texture not found".to_string())
+            })?;
 
         let image_info = vk::DescriptorImageInfo::default()
             .sampler(font_texture.image_sampler.vk())
@@ -1265,7 +1281,7 @@ impl<'a> Frame<'a> {
         screen_size: [f32; 2],
     ) -> Result<vk::DescriptorSet, RenderGraphError> {
         // Check if we already have a descriptor set for this frame with the same layout
-        let mut ui_resources = self.renderer.ui_resources.borrow_mut();
+        let ui_resources = &mut self.renderer.ui_resources;
 
         // Ensure we have storage for this frame
         while ui_resources.descriptor_sets.len() <= frame_idx {
@@ -1277,7 +1293,7 @@ impl<'a> Frame<'a> {
             .as_ref()
             .map(|ds| ds.vk());
 
-        drop(ui_resources); // Release borrow before calling update
+        let _ = ui_resources; // Release borrow before calling update
 
         if let Some(ds_handle) = descriptor_set_handle {
             // Update uniform buffer with new screen size
@@ -1307,7 +1323,12 @@ impl<'a> Frame<'a> {
                 .context
                 .device
                 .create_descriptor_pool(&pool_info, None)
-                .map_err(|e| RenderGraphError::InvalidConfiguration(format!("Failed to create UI descriptor pool: {:?}", e)))?
+                .map_err(|e| {
+                    RenderGraphError::InvalidConfiguration(format!(
+                        "Failed to create UI descriptor pool: {:?}",
+                        e
+                    ))
+                })?
         };
 
         let layouts = [layout];
@@ -1320,7 +1341,12 @@ impl<'a> Frame<'a> {
                 .context
                 .device
                 .allocate_descriptor_sets(&allocate_info)
-                .map_err(|e| RenderGraphError::InvalidConfiguration(format!("Failed to allocate UI descriptor set: {:?}", e)))?
+                .map_err(|e| {
+                    RenderGraphError::InvalidConfiguration(format!(
+                        "Failed to allocate UI descriptor set: {:?}",
+                        e
+                    ))
+                })?
         };
 
         let descriptor_set = descriptor_sets[0];
@@ -1334,11 +1360,11 @@ impl<'a> Frame<'a> {
         );
 
         // Store descriptor set (owns pool, automatic cleanup)
-        let mut ui_resources = self.renderer.ui_resources.borrow_mut();
+        let ui_resources = &mut self.renderer.ui_resources;
         if frame_idx < ui_resources.descriptor_sets.len() {
             ui_resources.descriptor_sets[frame_idx] = Some(descriptor_set_wrapper);
         }
-        drop(ui_resources);
+        let _ = ui_resources;
 
         // Update descriptor set with resources
         self.update_ui_descriptor_set(descriptor_set, screen_size)?;
@@ -1353,11 +1379,17 @@ impl<'a> Frame<'a> {
         screen_size: [f32; 2],
     ) -> Result<(), RenderGraphError> {
         // Get font atlas texture
-        let font_atlas_handle = self.renderer.ui_font_atlas
-            .ok_or_else(|| RenderGraphError::InvalidConfiguration("UI font atlas not initialized".to_string()))?;
+        let font_atlas_handle = self.renderer.ui_font_atlas.ok_or_else(|| {
+            RenderGraphError::InvalidConfiguration("UI font atlas not initialized".to_string())
+        })?;
 
-        let font_texture = self.renderer.texture_manager.get_texture_rc(font_atlas_handle)
-            .ok_or_else(|| RenderGraphError::InvalidConfiguration("Font atlas texture not found".to_string()))?;
+        let font_texture = self
+            .renderer
+            .texture_manager
+            .get_texture_rc(font_atlas_handle)
+            .ok_or_else(|| {
+                RenderGraphError::InvalidConfiguration("Font atlas texture not found".to_string())
+            })?;
 
         // Create or update uniform buffer for screen size
         let uniform_data = [screen_size[0], screen_size[1], 0.0, 0.0];
@@ -1365,7 +1397,7 @@ impl<'a> Frame<'a> {
 
         // Access UI resources through RefCell
         let uniform_buffer = {
-            let mut ui_resources = self.renderer.ui_resources.borrow_mut();
+            let ui_resources = &mut self.renderer.ui_resources;
 
             // Create or reuse uniform buffer
             if ui_resources.uniform_buffer.is_none() {
@@ -1374,7 +1406,10 @@ impl<'a> Frame<'a> {
                     .usage(vk::BufferUsageFlags::UNIFORM_BUFFER)
                     .sharing_mode(vk::SharingMode::EXCLUSIVE);
 
-                let (uniform_buffer, uniform_allocation) = self.renderer.context.allocate_buffer(&uniform_buffer_info, gpu_allocator::MemoryLocation::CpuToGpu);
+                let (uniform_buffer, uniform_allocation) = self.renderer.context.allocate_buffer(
+                    &uniform_buffer_info,
+                    gpu_allocator::MemoryLocation::CpuToGpu,
+                );
                 ui_resources.uniform_buffer = Some((uniform_buffer, uniform_allocation));
             }
 
@@ -1384,18 +1419,19 @@ impl<'a> Frame<'a> {
 
         // Now get the allocation for mapping
         let uniform_ptr = {
-            let ui_resources = self.renderer.ui_resources.borrow();
-            let allocation = &ui_resources.uniform_buffer.as_ref().unwrap().1;
+            let allocation = &self
+                .renderer
+                .ui_resources
+                .uniform_buffer
+                .as_ref()
+                .unwrap()
+                .1;
             self.renderer.context.map_buffer(allocation)
         };
 
         // Update uniform data
         unsafe {
-            std::ptr::copy_nonoverlapping(
-                uniform_bytes.as_ptr(),
-                uniform_ptr,
-                uniform_bytes.len(),
-            );
+            std::ptr::copy_nonoverlapping(uniform_bytes.as_ptr(), uniform_ptr, uniform_bytes.len());
         }
 
         // Prepare descriptor writes
@@ -1434,7 +1470,10 @@ impl<'a> Frame<'a> {
         ];
 
         unsafe {
-            self.renderer.context.device.update_descriptor_sets(&writes, &[]);
+            self.renderer
+                .context
+                .device
+                .update_descriptor_sets(&writes, &[]);
         }
 
         Ok(())
@@ -1460,10 +1499,12 @@ impl<'a> Frame<'a> {
             .get_material(draw_call.material)
             .ok_or(RenderGraphError::InvalidMaterialHandle(draw_call.material))?;
 
-        // Get pipeline handles from registry
+        // Clone pipeline_handle to avoid holding borrow across bind_descriptor_sets
         let pipeline_handle = material
             .pipeline
             .ok_or(RenderGraphError::InvalidMaterialHandle(draw_call.material))?;
+
+        // Get pipeline handles from registry
         let (pipeline, layout) = self
             .renderer
             .asset_registry
@@ -1489,11 +1530,17 @@ impl<'a> Frame<'a> {
             cmd.bind_index_buffer(ib.object(), 0, vk::IndexType::UINT32);
         }
 
+        // Extract needed data before borrows end
+        let index_count = mesh.index_buffer.as_ref().map(|ib| ib.count()).unwrap_or(0);
+        let skeleton = draw_call.skeleton;
+
+        // Material borrow ends here, allowing &mut self call below
+        let _ = material;
+
         // Bind descriptor sets
-        self.bind_descriptor_sets(cmd, layout, material, draw_call)?;
+        self.bind_descriptor_sets(cmd, layout, draw_call)?;
 
         // Draw indexed (instance_index is used instead of push constants)
-        let index_count = mesh.index_buffer.as_ref().map(|ib| ib.count()).unwrap_or(0);
         cmd.draw_indexed(index_count, 1, 0, 0, draw_call.instance_index);
 
         Ok(())
@@ -1509,7 +1556,6 @@ impl<'a> Frame<'a> {
         &mut self,
         cmd: &crate::vulkan::commandbuffer::CommandBuffer,
         pipeline_layout: vk::PipelineLayout,
-        _material: &crate::renderer::registry::MaterialAsset,
         draw_call: &crate::renderer::types::DrawCall,
     ) -> Result<(), RenderGraphError> {
         // Set 0: Storage uniforms (frame_data + objects array) - use per-frame descriptor set
@@ -1537,21 +1583,17 @@ impl<'a> Frame<'a> {
     /// Execute a fullscreen pass (draws a fullscreen triangle).
     fn execute_fullscreen_pass(
         &mut self,
-        renderer: &VulkanRenderer,
         cmd: &crate::vulkan::commandbuffer::CommandBuffer,
         pass: &PassDesc,
         pipeline_handle: crate::handle::PipelineHandle,
     ) -> Result<(), RenderGraphError> {
         log::debug!("execute_fullscreen_pass: beginning render pass");
 
-        let extent = renderer.frame_context.swapchain.get_extent();
+        let extent = self.renderer.frame_context.swapchain.get_extent();
         let render_area = vk::Rect2D {
             offset: vk::Offset2D { x: 0, y: 0 },
             extent,
         };
-
-        // Special resource name for writing directly to swapchain/backbuffer
-        const BACKBUFFER_NAME: &str = "backbuffer";
 
         // Determine color attachment:
         // 1. If pass writes to "backbuffer", use swapchain directly
@@ -1560,7 +1602,7 @@ impl<'a> Frame<'a> {
         let color_attachment = if pass.writes.contains(&BACKBUFFER_NAME.to_string()) {
             // Explicit backbuffer write - use swapchain
             let swapchain_view =
-                renderer.frame_context.swapchain_image_views[self.image_index as usize].vk();
+                self.renderer.frame_context.swapchain_image_views[self.image_index as usize].vk();
             vk::RenderingAttachmentInfo::default()
                 .image_view(swapchain_view)
                 .image_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
@@ -1652,14 +1694,15 @@ impl<'a> Frame<'a> {
         )]);
 
         // Get pipeline from registry
-        let (pipeline, layout) = renderer
+        let (pipeline, layout) = self
+            .renderer
             .asset_registry
             .get_pipeline_vk_handles(pipeline_handle)
             .ok_or(RenderGraphError::InvalidPipelineHandle(pipeline_handle))?;
 
         // Bind graphics pipeline
         unsafe {
-            renderer.context.device.cmd_bind_pipeline(
+            self.renderer.context.device.cmd_bind_pipeline(
                 cmd.vk_command_buffer(),
                 vk::PipelineBindPoint::GRAPHICS,
                 pipeline,
@@ -1667,11 +1710,12 @@ impl<'a> Frame<'a> {
         }
 
         // Bind descriptor sets (storage uniforms + bindless textures) - use per-frame descriptor set
-        let storage_ds =
-            renderer.storage_descriptor_sets[renderer.storage_manager.current_frame()].vk_set();
+        let storage_ds = self.renderer.storage_descriptor_sets
+            [self.renderer.storage_manager.current_frame()]
+        .vk_set();
         cmd.bind_descriptor_sets(layout, 0, &[storage_ds], &[]);
 
-        let bindless_ds = renderer.bindless_manager.descriptor_set().vk();
+        let bindless_ds = self.renderer.bindless_manager.descriptor_set().vk();
         cmd.bind_descriptor_sets(layout, 1, &[bindless_ds], &[]);
 
         // Draw fullscreen triangle (3 vertices, no index buffer)

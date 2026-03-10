@@ -111,9 +111,11 @@ impl ApplicationBuilder {
         resources: &ResourceManager,
     ) -> AppResult<katla_gfx::FrameGraph> {
         use katla_gfx::render_graph::UIPass;
+        use katla_gfx::render_graph::{
+            FullscreenPass, GeometryPass, GraphResourceDesc, GraphResourceType,
+        };
         use katla_gfx::render_pass::{ClearValue, LoadOp, StoreOp};
         use katla_gfx::texture::ImageFormat as TextureImageFormat;
-        use katla_gfx::render_graph::{FullscreenPass, GeometryPass, GraphResourceDesc, GraphResourceType};
 
         let extent = renderer.swapchain_extent();
 
@@ -147,11 +149,11 @@ impl ApplicationBuilder {
 
         // Compile UI shader for editor UI rendering
         let ui_shader_path = resources.shader_path("ui/ui.wgsl");
-        let ui_material = renderer
-            .create_ui_material(ui_shader_path)
-            .map_err(|e| crate::error::AppError::Graphics {
+        let ui_material = renderer.create_ui_material(ui_shader_path).map_err(|e| {
+            crate::error::AppError::Graphics {
                 message: format!("Failed to compile UI shader: {}", e),
-            })?;
+            }
+        })?;
 
         let graph = renderer
             .create_frame_graph()
@@ -191,11 +193,7 @@ impl ApplicationBuilder {
             )
             // UI pass: draws editor UI on top of tonemapped content
             // Uses LOAD to preserve tonemapped content, then draws UI on top
-            .add_pass(
-                UIPass::new("ui")
-                    .write("backbuffer")
-                    .material(ui_material),
-            )
+            .add_pass(UIPass::new("ui").write("backbuffer").material(ui_material))
             .build()
             .map_err(|e| crate::error::AppError::Graphics {
                 message: e.to_string(),
@@ -330,8 +328,13 @@ impl ApplicationBuilder {
         // Upload initial font atlas texture to GPU
         let (atlas_width, atlas_height) = ui_context.fonts.atlas_size();
         let atlas_data = ui_context.fonts.atlas_data();
-        let font_atlas_handle = renderer.create_ui_font_atlas(atlas_width, atlas_height, atlas_data);
-        ui_context.fonts.set_atlas_id(katla_ui::TextureId::from_handle_index(font_atlas_handle.index()));
+        let font_atlas_handle =
+            renderer.create_ui_font_atlas(atlas_width, atlas_height, atlas_data);
+        ui_context
+            .fonts
+            .set_atlas_id(katla_ui::TextureId::from_handle_index(
+                font_atlas_handle.index(),
+            ));
         log::info!(
             "Uploaded font atlas texture: {}x{}, handle={:?}",
             atlas_width,

@@ -84,9 +84,7 @@ impl UIPass {
     ///
     /// * `name` - Resource name for graph reference.
     pub fn write(mut self, name: impl Into<String>) -> Self {
-        self.color_output = Some(ColorOutput {
-            name: name.into(),
-        });
+        self.color_output = Some(ColorOutput { name: name.into() });
         self
     }
 
@@ -110,9 +108,7 @@ impl UIPass {
         _store_op: StoreOp,
         _clear_value: ClearValue,
     ) -> Self {
-        self.color_output = Some(ColorOutput {
-            name: name.into(),
-        });
+        self.color_output = Some(ColorOutput { name: name.into() });
         self
     }
 
@@ -165,10 +161,12 @@ impl PassBuilder for UIPass {
             tonemap_params: None,
             material,
             output_format: None,
-            build_fn: Box::new(move |_resource_map: &HashMap<String, GraphResourceHandle>| {
-                // UI pass data is currently unused but kept for future extensibility
-                Ok(Box::new(UIPassData))
-            }),
+            build_fn: Box::new(
+                move |_resource_map: &HashMap<String, GraphResourceHandle>| {
+                    // UI pass data is currently unused but kept for future extensibility
+                    Ok(Box::new(UIPassData))
+                },
+            ),
             uses_depth: false, // UI passes don't use depth testing
         }
     }

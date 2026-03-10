@@ -1,4 +1,97 @@
 //! Katla Graphics Library
+//!
+//! This is the graphics API layer for the Katla engine. It provides a Vulkan-based
+//! rendering system with a focus on ergonomics and performance.
+//!
+//! # Getting Started
+//!
+//! ## Creating the Renderer
+//!
+//! ```ignore
+//! let renderer = VulkanRenderer::init(
+//!     &event_loop,
+//!     &window,
+//!     true,  // validation layers
+//!     CString::new("My App").unwrap(),
+//!     CString::new("Katla Engine").unwrap(),
+//! )?;
+//! ```
+//!
+//! ## Creating Materials
+//!
+//! See [`material::API`](material/API.html) for complete material creation guide.
+//!
+//! ```ignore
+//! use katla_gfx::{MaterialOptions, VertexType};
+//!
+//! let material = renderer.compile_material(
+//!     "shaders/pbr.wgsl",
+//!     MaterialOptions {
+//!         vertex_type: VertexType::Pbr,
+//!         ..Default::default()
+//!     },
+//! )?;
+//! ```
+//!
+//! ## Building Frame Graphs
+//!
+//! See [`render_graph::API`](render_graph/API.html) for frame graph usage guide.
+//!
+//! ```ignore
+//! let graph = renderer.create_frame_graph()
+//!     .add_pass(GeometryPass::new("geometry")
+//!         .write_color("color", ImageFormat::R16G16B16A16Sfloat)
+//!         .write_depth("depth", ImageFormat::D32Sfloat))
+//!     .build()?;
+//!
+//! renderer.render(&mut graph, |frame| {
+//!     frame.submit("geometry", &draw_list);
+//! })?;
+//! ```
+//!
+//! # API Organization
+//!
+//! ## Core Types
+//!
+//! - [`VulkanRenderer`] - Main renderer, create once at startup
+//! - [`MaterialHandle`] / [`MeshHandle`] / [`TextureHandle`] - Opaque resource handles
+//! - [`RendererError`] - Error type for renderer operations
+//!
+//! ## Material System
+//!
+//! - [`compile_material()`](VulkanRenderer::method.compile_material) - Create materials from shaders
+//! - [`MaterialOptions`] - Configure material properties
+//! - [`VertexType`] - Select vertex format (PBR, UI, Skinned, Simple)
+//!
+//! ## Frame Graph
+//!
+//! - [`FrameGraph`] - Compiled render pipeline
+//! - [`FrameGraphBuilder`] - Builder for creating frame graphs
+//! - [`GeometryPass`] - 3D geometry rendering
+//! - [`FullscreenPass`] - Post-processing effects
+//! - [`UIPass`] - 2D UI rendering
+//! - [`ShadowPass`] - Shadow map generation
+//!
+//! # Documentation Guides
+//!
+//! - [Material API Guide](material/API.html) - Creating and using materials
+//! - [Frame Graph API Guide](render_graph/API.html) - Building render pipelines
+//!
+//! # Module Organization
+//!
+//! The library is organized into:
+//!
+//! - **Public API** - [`renderer`], [`render_graph`], [`material`], [`texture`]
+//! - **Internal** - `vulkan`, `pipeline`, `sync` (implementation details)
+//!
+//! # Resource Handles
+//!
+//! Most resources use opaque handles for type safety and flexibility:
+//! - [`MeshHandle`] - Created via [`VulkanRenderer::create_mesh()`]
+//! - [`MaterialHandle`] - Created via [`VulkanRenderer::compile_material()`]
+//! - [`TextureHandle`] - Created via [`VulkanRenderer::create_texture()`]
+//! - [`SkeletonHandle`] - Created via [`VulkanRenderer::create_skeleton()`]
+//!
 
 // Public modules
 pub mod error;
