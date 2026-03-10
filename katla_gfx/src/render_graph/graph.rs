@@ -1105,12 +1105,14 @@ impl<'a> Frame<'a> {
         // Execute each draw command with scissor clipping
         for draw_cmd in &ui_draw_list.commands {
             // Set scissor for clipping (if specified)
+            // clip_rect is in logical pixels, convert to physical pixels for Vulkan scissor
             if let Some([x, y, width, height]) = draw_cmd.clip_rect {
+                let scale = ui_draw_list.scale_factor;
                 let scissor = crate::sync::Rect2D::new(
-                    x.max(0.0) as i32,
-                    y.max(0.0) as i32,
-                    width.max(0.0) as u32,
-                    height.max(0.0) as u32,
+                    (x * scale).max(0.0) as i32,
+                    (y * scale).max(0.0) as i32,
+                    (width * scale).max(0.0) as u32,
+                    (height * scale).max(0.0) as u32,
                 );
                 cmd.set_scissor(&[scissor]);
             } else {
@@ -1228,10 +1230,15 @@ impl<'a> Frame<'a> {
                 ));
             }
 
-            let font_atlas_handle = self.renderer.ui_renderer.font_atlas_handle()
-                .ok_or_else(|| {
-                    RenderGraphError::InvalidConfiguration("UI font atlas not initialized".to_string())
-                })?;
+            let font_atlas_handle =
+                self.renderer
+                    .ui_renderer
+                    .font_atlas_handle()
+                    .ok_or_else(|| {
+                        RenderGraphError::InvalidConfiguration(
+                            "UI font atlas not initialized".to_string(),
+                        )
+                    })?;
 
             (descriptor_set_layouts[0], font_atlas_handle)
         };
@@ -1380,7 +1387,10 @@ impl<'a> Frame<'a> {
         screen_size: [f32; 2],
     ) -> Result<(), RenderGraphError> {
         // Get font atlas texture
-        let font_atlas_handle = self.renderer.ui_renderer.font_atlas_handle()
+        let font_atlas_handle = self
+            .renderer
+            .ui_renderer
+            .font_atlas_handle()
             .ok_or_else(|| {
                 RenderGraphError::InvalidConfiguration("UI font atlas not initialized".to_string())
             })?;
