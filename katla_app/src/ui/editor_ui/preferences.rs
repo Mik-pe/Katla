@@ -442,15 +442,12 @@ fn build_appearance_tab(
     font_scale: f32,
     pending_actions: &mut Vec<PreferencesAction>,
 ) -> f32 {
-    ui.draw_text(
-        "Color Theme",
-        cursor,
-        theme.text_secondary,
-        ui.scaled_font_size(FontSize::Medium),
-    );
-    cursor = Vec2::new(cursor.x(), cursor.y() + 20.0);
+    ui.label_auto_colored("Color Theme", theme.text_secondary);
+    ui.spacing(20.0);
 
     let col_width = (content_width - spacing) / 2.0;
+    let row_height = 24.0;
+
     let theme_names = [
         ("catppuccin", "Catppuccin"),
         ("nord", "Nord"),
@@ -467,16 +464,10 @@ fn build_appearance_tab(
         ("solarized_dark", "Solarized Dark"),
     ];
 
-    for (i, (key, display_name)) in theme_names.iter().enumerate() {
-        let col = i % 2;
-        let row = i / 2;
-        let btn_bounds = Rect2D::from_origin_size(
-            Vec2::new(
-                cursor.x() + col as f32 * (col_width + spacing),
-                cursor.y() + row as f32 * (row_height + 4.0),
-            ),
-            Vec2::new(col_width, row_height),
-        );
+    // Use grid layout for theme buttons
+    ui.begin_grid(2, col_width, spacing);
+    for (key, display_name) in theme_names.iter() {
+        let btn_bounds = Rect2D::from_origin_size(ui.cursor(), Vec2::new(col_width, row_height));
 
         let is_selected = *key == current_theme_key;
 
@@ -515,18 +506,14 @@ fn build_appearance_tab(
             ui.scaled_font_size(FontSize::Small),
         );
     }
+    ui.end_grid();
 
-    cursor = Vec2::new(cursor.x(), cursor.y() + 7.0 * (row_height + 4.0) + 16.0);
+    ui.spacing(row_height * 7.0 + 4.0 + 16.0);
 
-    ui.draw_text(
-        "View Options",
-        cursor,
-        theme.text_secondary,
-        ui.scaled_font_size(FontSize::Medium),
-    );
-    cursor = Vec2::new(cursor.x(), cursor.y() + 24.0);
+    ui.label_auto_colored("View Options", theme.text_secondary);
+    ui.spacing(24.0);
 
-    let grid_btn_bounds = Rect2D::from_origin_size(cursor, Vec2::new(content_width, row_height));
+    let grid_btn_bounds = Rect2D::from_origin_size(ui.cursor(), Vec2::new(content_width, row_height));
     if ui
         .toggle_button(
             "pref_grid_toggle",
@@ -541,9 +528,9 @@ fn build_appearance_tab(
     {
         pending_actions.push(PreferencesAction::ToggleGrid);
     }
-    cursor = Vec2::new(cursor.x(), cursor.y() + row_height + 4.0);
+    ui.spacing(row_height + 4.0);
 
-    let stats_btn_bounds = Rect2D::from_origin_size(cursor, Vec2::new(content_width, row_height));
+    let stats_btn_bounds = Rect2D::from_origin_size(ui.cursor(), Vec2::new(content_width, row_height));
     if ui
         .toggle_button(
             "pref_stats_toggle",
@@ -558,7 +545,7 @@ fn build_appearance_tab(
     {
         pending_actions.push(PreferencesAction::ToggleStats);
     }
-    cursor = Vec2::new(cursor.x(), cursor.y() + row_height + 16.0);
+    ui.spacing(row_height + 16.0);
 
     ui.draw_text(
         "Font Scale",

@@ -93,14 +93,6 @@ pub struct VulkanRenderer {
     pub(crate) material_compiler: MaterialCompiler,
     /// UI rendering subsystem - owns UI resources and font atlas.
     pub ui_renderer: ui_renderer::UIRenderer,
-    /// Cached UI descriptor set layout (reused across frames).
-    /// DEPRECATED: No longer used, kept for compatibility during migration.
-    #[deprecated(note = "UI descriptor sets are now managed by UIRenderer")]
-    pub(crate) ui_descriptor_set_layout: Option<vk::DescriptorSetLayout>,
-    /// Per-frame UI rendering resources.
-    pub(crate) ui_resources: UiFrameResources,
-    /// Font atlas texture handle for UI rendering.
-    pub(crate) ui_font_atlas: Option<TextureHandle>,
 }
 
 /// Number of frames that can be processed concurrently.
@@ -220,9 +212,6 @@ impl VulkanRenderer {
             viewport_manager,
             material_compiler,
             ui_renderer: ui_renderer::UIRenderer::new(),
-            ui_descriptor_set_layout: None,
-            ui_resources: UiFrameResources::default(),
-            ui_font_atlas: None,
         })
     }
 
@@ -320,13 +309,13 @@ impl VulkanRenderer {
     }
 
     // ========================================================================
-    // UI Font Atlas Management (DEPRECATED - use UIRenderer instead)
+    // UI Font Atlas Management
     // ========================================================================
 
     /// Create or update the UI font atlas texture from pixel data.
     ///
-    /// # DEPRECATED
-    /// Use `renderer.ui_renderer.create_font_atlas(&mut renderer, width, height, data)` instead.
+    /// Creates a texture with the given dimensions and uploads the pixel data.
+    /// The texture is automatically registered with the bindless system for shader access.
     ///
     /// # Arguments
     /// * `width` - Atlas width in pixels
@@ -335,7 +324,6 @@ impl VulkanRenderer {
     ///
     /// # Returns
     /// The texture handle for the font atlas.
-    #[deprecated(note = "Use `renderer.ui_renderer.create_font_atlas()` instead")]
     pub fn create_ui_font_atlas(&mut self, width: u32, height: u32, data: &[u8]) -> TextureHandle {
         // Use RGBA8 UNORM for font atlas (linear color space for accurate text rendering)
         let handle = self.create_texture_unorm(width, height, data);
@@ -349,14 +337,13 @@ impl VulkanRenderer {
             self.texture_manager.register_bindless_slot(handle, slot);
         }
 
-        self.ui_font_atlas = Some(handle);
+        // Store handle in UI renderer
+        self.ui_renderer.set_font_atlas(handle);
+
         handle
     }
 
     /// Update the UI font atlas texture with new pixel data.
-    ///
-    /// # DEPRECATED
-    /// Use `renderer.ui_renderer.update_font_atlas(&mut renderer, width, height, data)` instead.
     ///
     /// Use this when the atlas has been resized or new glyphs have been added.
     ///
@@ -364,9 +351,10 @@ impl VulkanRenderer {
     /// * `width` - Atlas width in pixels
     /// * `height` - Atlas height in pixels
     /// * `data` - RGBA pixel data
-    #[deprecated(note = "Use `renderer.ui_renderer.update_font_atlas()` instead")]
     pub fn update_ui_font_atlas(&mut self, width: u32, height: u32, data: &[u8]) {
-        if let Some(handle) = self.ui_font_atlas {
+        let current_handle = self.ui_renderer.font_atlas();
+
+        if let Some(handle) = current_handle {
             if let Some(texture) = self.texture_manager.get_texture_rc(handle) {
                 // Check if size matches
                 if texture.width == width && texture.height == height {
@@ -386,16 +374,14 @@ impl VulkanRenderer {
             }
         } else {
             log::warn!("update_ui_font_atlas called but no font atlas exists yet");
+            // Create new atlas if none exists
+            self.create_ui_font_atlas(width, height, data);
         }
     }
 
     /// Get the font atlas texture handle.
-    ///
-    /// # DEPRECATED
-    /// Use `renderer.ui_renderer.font_atlas()` instead.
-    #[deprecated(note = "Use `renderer.ui_renderer.font_atlas()` instead")]
     pub fn ui_font_atlas(&self) -> Option<TextureHandle> {
-        self.ui_font_atlas
+        self.ui_renderer.font_atlas()
     }
 
     /// Set frame-level uniforms for the current frame.
@@ -944,7 +930,7 @@ impl VulkanRenderer {
 
         // Clean up UI resources
         {
-            let mut ui_resources = &mut self.ui_resources;
+            let ui_resources = self.ui_renderer.ui_resources_mut();
             // Vertex and index buffers have Drop impls that clean up themselves
             ui_resources.vertex_buffers.clear();
             ui_resources.index_buffers.clear();
@@ -1536,26 +1522,6 @@ impl VulkanRenderer {
     /// NOTE: UI rendering is not yet implemented. This is a no-op.
     ///
     /// # Arguments
-    /// * `vertex_bytes` - Raw vertex data (VertexUI as bytes)
-    /// * `vertex_count` - Number of vertices
-    /// * `indices` - Index data (u32)
-    /// * `commands` - Draw commands with clip rects and texture indices
-    /// * `screen_size` - Screen dimensions [width, height] in pixels
-    pub fn render_ui(
-        &mut self,
-        vertex_bytes: &[u8],
-        _vertex_count: u32,
-        indices: &[u32],
-        commands: &[UiDrawCommand],
-        _screen_size: [f32; 2],
-    ) {
-        // UI rendering is not yet implemented
-        if vertex_bytes.is_empty() || indices.is_empty() || commands.is_empty() {
-            return;
-        }
-        // No-op: UI system pending implementation
-    }
-
     // ========================================================================
     // Render Graph System
     // ========================================================================

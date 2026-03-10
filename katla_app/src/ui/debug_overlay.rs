@@ -286,189 +286,166 @@ impl DebugOverlay {
 
         let window = ui.begin_window_with_title("settings_panel", Some("Settings"), panel_bounds);
 
-        let mut cursor = Vec2::new(
+        // Use begin_column() for vertical layout
+        ui.begin_column();
+        ui.set_cursor(Vec2::new(
             window.bounds.min.x() + padding,
             window.bounds.min.y() + title_height + padding,
-        );
+        ));
 
         // === Render Mode (Selectable buttons) ===
+        ui.add(
+            Label::new("Render Mode:")
+                .at_cursor_width(ui, panel_width - padding * 2.0),
+        );
+        ui.spacing(line_height + 4.0);
+
+        // Three buttons in a row for render modes
+        ui.begin_row();
+        let btn_width = (panel_width - padding * 2.0 - 8.0) / 3.0;
+        for (i, mode) in [RenderMode::Solid, RenderMode::Wireframe, RenderMode::Points]
+            .iter()
+            .enumerate()
         {
-            let label_bounds = Rect2D::from_origin_size(
-                cursor,
-                Vec2::new(panel_width - padding * 2.0, line_height),
-            );
-            ui.add(Label::new("Render Mode:").bounds(label_bounds));
-            cursor = Vec2::new(cursor.x(), cursor.y() + line_height + 4.0);
-
-            // Three buttons in a row for render modes
-            let btn_width = (panel_width - padding * 2.0 - 8.0) / 3.0;
-            for (i, mode) in [RenderMode::Solid, RenderMode::Wireframe, RenderMode::Points]
-                .iter()
-                .enumerate()
-            {
-                let btn_bounds = Rect2D::from_origin_size(
-                    Vec2::new(cursor.x() + i as f32 * (btn_width + 4.0), cursor.y()),
-                    Vec2::new(btn_width, button_height),
-                );
-                let is_selected = *mode == self.render_mode;
-                if ui
-                    .selectable(
-                        &format!("render_{}", i),
-                        mode.as_str(),
-                        is_selected,
-                        btn_bounds,
-                    )
-                    .clicked
-                {
-                    self.render_mode = *mode;
-                }
-            }
-            cursor = Vec2::new(cursor.x(), cursor.y() + button_height + 12.0);
-        }
-
-        // === Quality (Selectable buttons) ===
-        {
-            let label_bounds = Rect2D::from_origin_size(
-                cursor,
-                Vec2::new(panel_width - padding * 2.0, line_height),
-            );
-            ui.add(Label::new("Quality:").bounds(label_bounds));
-            cursor = Vec2::new(cursor.x(), cursor.y() + line_height + 4.0);
-
-            let btn_width = (panel_width - padding * 2.0 - 12.0) / 4.0;
-            for (i, quality) in QualityLevel::all().iter().enumerate() {
-                let btn_bounds = Rect2D::from_origin_size(
-                    Vec2::new(cursor.x() + i as f32 * (btn_width + 4.0), cursor.y()),
-                    Vec2::new(btn_width, button_height),
-                );
-                let is_selected = *quality == self.quality;
-                if ui
-                    .selectable(
-                        &format!("qual_{}", i),
-                        quality.as_str(),
-                        is_selected,
-                        btn_bounds,
-                    )
-                    .clicked
-                {
-                    self.quality = *quality;
-                }
-            }
-            cursor = Vec2::new(cursor.x(), cursor.y() + button_height + 12.0);
-        }
-
-        // === Volume Slider ===
-        {
-            let label_bounds = Rect2D::from_origin_size(
-                cursor,
-                Vec2::new(panel_width - padding * 2.0, line_height),
-            );
-            ui.add(
-                Label::new(&format!("Volume: {:.0}%", self.volume * 100.0)).bounds(label_bounds),
-            );
-            cursor = Vec2::new(cursor.x(), cursor.y() + line_height + 2.0);
-
-            let slider_bounds = Rect2D::from_origin_size(
-                cursor,
-                Vec2::new(panel_width - padding * 2.0, ui.style.checkbox_size),
-            );
-            ui.add(
-                Slider::new(&mut self.volume, 0.0..=1.0)
-                    .bounds(slider_bounds)
-                    .id("volume_slider"),
-            );
-            cursor = Vec2::new(cursor.x(), cursor.y() + 28.0);
-        }
-
-        // === Sensitivity Slider ===
-        {
-            let label_bounds = Rect2D::from_origin_size(
-                cursor,
-                Vec2::new(panel_width - padding * 2.0, line_height),
-            );
-            ui.add(
-                Label::new(&format!("Sensitivity: {:.1}", self.sensitivity)).bounds(label_bounds),
-            );
-            cursor = Vec2::new(cursor.x(), cursor.y() + line_height + 2.0);
-
-            let slider_bounds = Rect2D::from_origin_size(
-                cursor,
-                Vec2::new(panel_width - padding * 2.0, ui.style.checkbox_size),
-            );
-            ui.add(
-                Slider::new(&mut self.sensitivity, 0.1..=3.0)
-                    .bounds(slider_bounds)
-                    .id("sens_slider"),
-            );
-            cursor = Vec2::new(cursor.x(), cursor.y() + 28.0);
-        }
-
-        // === Ambient Slider ===
-        {
-            let label_bounds = Rect2D::from_origin_size(
-                cursor,
-                Vec2::new(panel_width - padding * 2.0, line_height),
-            );
-            ui.add(
-                Label::new(&format!("Ambient: {:.2}", self.ambient_intensity)).bounds(label_bounds),
-            );
-            cursor = Vec2::new(cursor.x(), cursor.y() + line_height + 2.0);
-
-            let slider_bounds = Rect2D::from_origin_size(
-                cursor,
-                Vec2::new(panel_width - padding * 2.0, ui.style.checkbox_size),
-            );
-            ui.add(
-                Slider::new(&mut self.ambient_intensity, 0.0..=1.0)
-                    .bounds(slider_bounds)
-                    .id("ambient_slider"),
-            );
-            cursor = Vec2::new(cursor.x(), cursor.y() + 28.0);
-        }
-
-        // === Checkboxes ===
-        {
-            let checkbox_bounds = Rect2D::from_origin_size(
-                cursor,
-                Vec2::new(panel_width - padding * 2.0, line_height),
-            );
-            ui.add(
-                Checkbox::new(&mut self.vsync, "VSync Enabled")
-                    .bounds(checkbox_bounds)
-                    .id("vsync_check"),
-            );
-            cursor = Vec2::new(cursor.x(), cursor.y() + line_height + 4.0);
-
-            let checkbox_bounds = Rect2D::from_origin_size(
-                cursor,
-                Vec2::new(panel_width - padding * 2.0, line_height),
-            );
-            ui.add(
-                Checkbox::new(&mut self.show_fps, "Show FPS in Title")
-                    .bounds(checkbox_bounds)
-                    .id("fps_check"),
-            );
-            cursor = Vec2::new(cursor.x(), cursor.y() + 12.0);
-        }
-
-        // === Close Button ===
-        {
-            let button_bounds = Rect2D::from_origin_size(
-                cursor,
-                Vec2::new(panel_width - padding * 2.0, button_height),
-            );
+            let btn_bounds = Rect2D::from_origin_size(ui.cursor(), Vec2::new(btn_width, button_height));
+            let is_selected = *mode == self.render_mode;
             if ui
-                .add(
-                    Button::new("Close Panel")
-                        .bounds(button_bounds)
-                        .id("close_settings"),
+                .selectable(
+                    &format!("render_{}", i),
+                    mode.as_str(),
+                    is_selected,
+                    btn_bounds,
                 )
                 .clicked
             {
-                self.settings_visible = false;
+                self.render_mode = *mode;
             }
+            ui.spacing(btn_width + 4.0);
+        }
+        ui.end_row();
+        ui.spacing(button_height + 12.0);
+
+        // === Quality (Selectable buttons) ===
+        ui.add(
+            Label::new("Quality:").at_cursor_width(ui, panel_width - padding * 2.0),
+        );
+        ui.spacing(line_height + 4.0);
+
+        ui.begin_row();
+        let btn_width = (panel_width - padding * 2.0 - 12.0) / 4.0;
+        for (i, quality) in QualityLevel::all().iter().enumerate() {
+            let btn_bounds = Rect2D::from_origin_size(ui.cursor(), Vec2::new(btn_width, button_height));
+            let is_selected = *quality == self.quality;
+            if ui
+                .selectable(
+                    &format!("qual_{}", i),
+                    quality.as_str(),
+                    is_selected,
+                    btn_bounds,
+                )
+                .clicked
+            {
+                self.quality = *quality;
+            }
+            ui.spacing(btn_width + 4.0);
+        }
+        ui.end_row();
+        ui.spacing(button_height + 12.0);
+
+        // === Volume Slider ===
+        ui.add(
+            Label::new(&format!("Volume: {:.0}%", self.volume * 100.0))
+                .at_cursor_width(ui, panel_width - padding * 2.0),
+        );
+        ui.spacing(line_height + 2.0);
+
+        let slider_bounds = Rect2D::from_origin_size(
+            ui.cursor(),
+            Vec2::new(panel_width - padding * 2.0, ui.style.checkbox_size),
+        );
+        ui.add(
+            Slider::new(&mut self.volume, 0.0..=1.0)
+                .bounds(slider_bounds)
+                .id("volume_slider"),
+        );
+        ui.spacing(28.0);
+
+        // === Sensitivity Slider ===
+        ui.add(
+            Label::new(&format!("Sensitivity: {:.1}", self.sensitivity))
+                .at_cursor_width(ui, panel_width - padding * 2.0),
+        );
+        ui.spacing(line_height + 2.0);
+
+        let slider_bounds = Rect2D::from_origin_size(
+            ui.cursor(),
+            Vec2::new(panel_width - padding * 2.0, ui.style.checkbox_size),
+        );
+        ui.add(
+            Slider::new(&mut self.sensitivity, 0.1..=3.0)
+                .bounds(slider_bounds)
+                .id("sens_slider"),
+        );
+        ui.spacing(28.0);
+
+        // === Ambient Slider ===
+        ui.add(
+            Label::new(&format!("Ambient: {:.2}", self.ambient_intensity))
+                .at_cursor_width(ui, panel_width - padding * 2.0),
+        );
+        ui.spacing(line_height + 2.0);
+
+        let slider_bounds = Rect2D::from_origin_size(
+            ui.cursor(),
+            Vec2::new(panel_width - padding * 2.0, ui.style.checkbox_size),
+        );
+        ui.add(
+            Slider::new(&mut self.ambient_intensity, 0.0..=1.0)
+                .bounds(slider_bounds)
+                .id("ambient_slider"),
+        );
+        ui.spacing(28.0);
+
+        // === Checkboxes ===
+        let checkbox_bounds = Rect2D::from_origin_size(
+            ui.cursor(),
+            Vec2::new(panel_width - padding * 2.0, line_height),
+        );
+        ui.add(
+            Checkbox::new(&mut self.vsync, "VSync Enabled")
+                .bounds(checkbox_bounds)
+                .id("vsync_check"),
+        );
+        ui.spacing(line_height + 4.0);
+
+        let checkbox_bounds = Rect2D::from_origin_size(
+            ui.cursor(),
+            Vec2::new(panel_width - padding * 2.0, line_height),
+        );
+        ui.add(
+            Checkbox::new(&mut self.show_fps, "Show FPS in Title")
+                .bounds(checkbox_bounds)
+                .id("fps_check"),
+        );
+        ui.spacing(12.0);
+
+        // === Close Button ===
+        let button_bounds = Rect2D::from_origin_size(
+            ui.cursor(),
+            Vec2::new(panel_width - padding * 2.0, button_height),
+        );
+        if ui
+            .add(
+                Button::new("Close Panel")
+                    .bounds(button_bounds)
+                    .id("close_settings"),
+            )
+            .clicked
+        {
+            self.settings_visible = false;
         }
 
+        ui.end_column();
         ui.end_window();
     }
 

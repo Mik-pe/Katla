@@ -86,17 +86,17 @@ impl<'a> Widget for Toolbar<'a> {
         let original_button_normal = ui.style.button_normal;
         ui.style.button_normal = Color::TRANSPARENT;
 
-        // Internal padding for non-menu items
         let padding = 4.0;
-
-        // No padding between menu items - menu bar should be tight
         let menu_item_width = 50.0;
         let button_height = self.height;
-        let mut cursor = Vec2::new(0.0, 0.0); // Start from left edge
+
+        // Use begin_row() for horizontal layout
+        ui.begin_row();
+        ui.set_cursor(Vec2::new(0.0, 0.0));
 
         // === FILE MENU ===
         let file_bounds =
-            Rect2D::from_origin_size(cursor, Vec2::new(menu_item_width, button_height));
+            Rect2D::from_origin_size(ui.cursor(), Vec2::new(menu_item_width, button_height));
         ui.menu_bar_dropdown(
             "file_menu",
             "File",
@@ -104,15 +104,12 @@ impl<'a> Widget for Toolbar<'a> {
             &mut self.state.file_menu_open,
             |ui, open| {
                 if ui.menu_item_clicked("New Scene") {
-                    // TODO: Implement new scene
                     *open = false;
                 }
                 if ui.menu_item_clicked("Open...") {
-                    // TODO: Implement open scene
                     *open = false;
                 }
                 if ui.menu_item_clicked("Save") {
-                    // TODO: Implement save scene
                     *open = false;
                 }
                 ui.menu_separator();
@@ -121,11 +118,11 @@ impl<'a> Widget for Toolbar<'a> {
                 }
             },
         );
-        cursor = Vec2::new(cursor.x() + menu_item_width, cursor.y());
+        ui.spacing(menu_item_width);
 
         // === EDIT MENU ===
         let edit_bounds =
-            Rect2D::from_origin_size(cursor, Vec2::new(menu_item_width, button_height));
+            Rect2D::from_origin_size(ui.cursor(), Vec2::new(menu_item_width, button_height));
         ui.menu_bar_dropdown(
             "edit_menu",
             "Edit",
@@ -133,11 +130,9 @@ impl<'a> Widget for Toolbar<'a> {
             &mut self.state.edit_menu_open,
             |ui, open| {
                 if ui.menu_item_clicked("Undo") {
-                    // TODO: Implement undo
                     *open = false;
                 }
                 if ui.menu_item_clicked("Redo") {
-                    // TODO: Implement redo
                     *open = false;
                 }
                 ui.menu_separator();
@@ -149,11 +144,11 @@ impl<'a> Widget for Toolbar<'a> {
                 }
             },
         );
-        cursor = Vec2::new(cursor.x() + menu_item_width, cursor.y());
+        ui.spacing(menu_item_width);
 
         // === VIEW MENU ===
         let view_bounds =
-            Rect2D::from_origin_size(cursor, Vec2::new(menu_item_width, button_height));
+            Rect2D::from_origin_size(ui.cursor(), Vec2::new(menu_item_width, button_height));
         let show_grid = self.preferences.show_grid;
         let show_stats = self.preferences.show_stats;
         ui.menu_bar_dropdown(
@@ -172,10 +167,10 @@ impl<'a> Widget for Toolbar<'a> {
                 }
             },
         );
-        cursor = Vec2::new(cursor.x() + menu_item_width, cursor.y());
+        ui.spacing(menu_item_width);
 
         // === CREATE MENU ===
-        let create_bounds = Rect2D::from_origin_size(cursor, Vec2::new(60.0, button_height));
+        let create_bounds = Rect2D::from_origin_size(ui.cursor(), Vec2::new(60.0, button_height));
         ui.menu_bar_dropdown(
             "create_menu",
             "Create",
@@ -192,11 +187,11 @@ impl<'a> Widget for Toolbar<'a> {
                 }
             },
         );
-        cursor = Vec2::new(cursor.x() + 60.0 + padding, cursor.y());
+        ui.spacing(60.0 + padding);
 
         // === HELP MENU ===
         let help_bounds =
-            Rect2D::from_origin_size(cursor, Vec2::new(menu_item_width, button_height));
+            Rect2D::from_origin_size(ui.cursor(), Vec2::new(menu_item_width, button_height));
         ui.menu_bar_dropdown(
             "help_menu",
             "Help",
@@ -208,17 +203,17 @@ impl<'a> Widget for Toolbar<'a> {
                 }
             },
         );
-        cursor = Vec2::new(cursor.x() + menu_item_width, cursor.y());
 
-        // Separator line before play controls
-        cursor = Vec2::new(cursor.x() + padding * 2.0, cursor.y());
+        ui.end_row();
+
+        // Separator line after menus
+        let current_x = ui.cursor().x();
         ui.draw_line(
-            Vec2::new(cursor.x(), padding),
-            Vec2::new(cursor.x(), self.height - padding),
+            Vec2::new(current_x + padding, padding),
+            Vec2::new(current_x + padding, self.height - padding),
             theme.separator,
             1.0,
         );
-        cursor = Vec2::new(cursor.x() + padding * 2.0, cursor.y());
 
         // Title in center (only show if there's enough space)
         let title = "Katla Engine";

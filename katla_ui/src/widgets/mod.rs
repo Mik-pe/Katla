@@ -63,6 +63,48 @@ impl<'a> Button<'a> {
         self
     }
 
+    /// Position the button at the current cursor position.
+    ///
+    /// Uses the current UI cursor for positioning and updates the cursor
+    /// after adding the button (in vertical layouts).
+    ///
+    /// # Example
+    /// ```ignore
+    /// ui.add(Button::new("Click Me").at_cursor(ui));
+    /// ```
+    pub fn at_cursor(mut self, ui: &UiContext) -> Self {
+        self.bounds = Rect2D::from_origin_size(
+            ui.cursor(),
+            Vec2::new(100.0, ui.style.button_height_medium),
+        );
+        self
+    }
+
+    /// Position the button at the current cursor with custom size.
+    ///
+    /// # Example
+    /// ```ignore
+    /// ui.add(Button::new("Wide Button").at_cursor_sized(ui, 150.0, 28.0));
+    /// ```
+    pub fn at_cursor_sized(mut self, ui: &UiContext, width: f32, height: f32) -> Self {
+        self.bounds = Rect2D::from_origin_size(ui.cursor(), Vec2::new(width, height));
+        self
+    }
+
+    /// Set the button width.
+    pub fn width(mut self, width: f32) -> Self {
+        let height = self.bounds.height();
+        self.bounds = Rect2D::from_size(Vec2::new(width, height));
+        self
+    }
+
+    /// Set the button height.
+    pub fn height(mut self, height: f32) -> Self {
+        let width = self.bounds.width();
+        self.bounds = Rect2D::from_size(Vec2::new(width, height));
+        self
+    }
+
     /// Set a custom ID (for unique identification).
     pub fn id(mut self, id: &'a str) -> Self {
         self.id = Some(id);
@@ -407,6 +449,29 @@ impl<'a> Label<'a> {
         self.color = Some(color);
         self
     }
+
+    /// Position the label at the current cursor position.
+    ///
+    /// Measures the text and positions at the current cursor.
+    ///
+    /// # Example
+    /// ```ignore
+    /// ui.add(Label::new("Hello").at_cursor(ui));
+    /// ```
+    pub fn at_cursor(mut self, ui: &UiContext) -> Self {
+        let text_size = ui.measure_text(self.text, ui.style.font_size);
+        self.bounds = Rect2D::from_origin_size(ui.cursor(), text_size);
+        self
+    }
+
+    /// Position the label at the current cursor with custom width.
+    ///
+    /// Useful for creating right-aligned labels.
+    pub fn at_cursor_width(mut self, ui: &UiContext, width: f32) -> Self {
+        let text_size = ui.measure_text(self.text, ui.style.font_size);
+        self.bounds = Rect2D::from_origin_size(ui.cursor(), Vec2::new(width, text_size.y()));
+        self
+    }
 }
 
 impl<'a> crate::Widget for Label<'a> {
@@ -594,5 +659,452 @@ impl crate::Widget for Spacer {
         let bounds =
             Rect2D::from_origin_size(ui.cursor, katla_math::Vec2::new(self.width, self.height));
         Response::new(bounds)
+    }
+}
+
+// =============================================================================
+// RadioButton Widget
+// =============================================================================
+
+/// A radio button for selecting one option from a group.
+///
+/// # Example
+///
+/// ```ignore
+/// use katla_ui::widgets::RadioButton;
+///
+/// let mut selected = 0;
+/// if ui.add(RadioButton::new(&mut selected, 0, "Option A")).changed {
+///     println!("Selected: {}", selected);
+/// }
+/// ui.add(RadioButton::new(&mut selected, 1, "Option B"));
+/// ui.add(RadioButton::new(&mut selected, 2, "Option C"));
+/// ```
+pub struct RadioButton<'a> {
+    value: &'a mut usize,
+    index: usize,
+    label: &'a str,
+    bounds: Rect2D,
+}
+
+impl<'a> RadioButton<'a> {
+    /// Create a new radio button.
+    ///
+    /// # Arguments
+    /// * `value` - Mutable reference to the selected index
+    /// * `index` - This button's index value
+    /// * `label` - Text label for the button
+    pub fn new(value: &'a mut usize, index: usize, label: &'a str) -> Self {
+        Self {
+            value,
+            index,
+            label,
+            bounds: Rect2D::from_size(Vec2::new(150.0, 20.0)),
+        }
+    }
+
+    /// Set the button bounds.
+    pub fn bounds(mut self, bounds: Rect2D) -> Self {
+        self.bounds = bounds;
+        self
+    }
+}
+
+impl<'a> crate::Widget for RadioButton<'a> {
+    fn ui(self, ui: &mut UiContext) -> Response {
+        let is_selected = *self.value == self.index;
+        let hovered = ui.is_hovered(self.bounds);
+
+        // Generate ID before any mutable borrows
+        let id = ui.generate_id(self.label);
+
+        // Draw radio circle as a rectangle border + fill (simplified)
+        let center_x = self.bounds.min.x() + 10.0;
+        let center_y = self.bounds.center().y();
+        let radius = 8.0;
+
+        // Outer circle (border rect)
+        let outer_bounds = Rect2D::from_origin_size(
+            Vec2::new(center_x - radius, center_y - radius),
+            Vec2::new(radius * 2.0, radius * 2.0),
+        );
+        ui.draw_rect_border(
+            outer_bounds,
+            Color::TRANSPARENT,
+            if is_selected {
+                ui.style.checkbox_check
+            } else if hovered {
+                ui.style.text_color
+            } else {
+                ui.style.checkbox_border
+            },
+            1.0,
+        );
+
+        // Inner circle (filled when selected)
+        if is_selected {
+            let inner_radius = radius * 0.5;
+            let inner_bounds = Rect2D::from_origin_size(
+                Vec2::new(center_x - inner_radius, center_y - inner_radius),
+                Vec2::new(inner_radius * 2.0, inner_radius * 2.0),
+            );
+            ui.draw_rect(inner_bounds, ui.style.checkbox_check);
+        }
+
+        // Label
+        let label_pos = Vec2::new(center_x + radius + 8.0, self.bounds.min.y());
+        ui.draw_text(
+            self.label,
+            label_pos,
+            ui.style.text_color,
+            ui.style.font_size,
+        );
+
+        // Handle clicks
+        let clicked = ui.button_behavior(id, self.bounds);
+
+        let mut response = Response::new(self.bounds);
+        response.clicked = clicked;
+        response.hovered = hovered;
+        response.changed = clicked && !is_selected;
+
+        if response.changed {
+            *self.value = self.index;
+        }
+
+        response
+    }
+}
+
+// =============================================================================
+// ProgressBar Widget
+// =============================================================================
+
+/// A progress bar widget.
+///
+/// # Example
+///
+/// ```ignore
+/// use katla_ui::widgets::ProgressBar;
+///
+/// let progress = 0.75; // 75%
+/// ui.add(ProgressBar::new(progress).bounds(my_bounds));
+/// ```
+pub struct ProgressBar {
+    progress: f32,
+    bounds: Rect2D,
+    color: Option<Color>,
+    bg_color: Option<Color>,
+    show_percentage: bool,
+}
+
+impl ProgressBar {
+    /// Create a new progress bar.
+    ///
+    /// # Arguments
+    /// * `progress` - Progress value from 0.0 to 1.0
+    pub fn new(progress: f32) -> Self {
+        Self {
+            progress: progress.clamp(0.0, 1.0),
+            bounds: Rect2D::from_size(Vec2::new(200.0, 20.0)),
+            color: None,
+            bg_color: None,
+            show_percentage: false,
+        }
+    }
+
+    /// Set the progress bar bounds.
+    pub fn bounds(mut self, bounds: Rect2D) -> Self {
+        self.bounds = bounds;
+        self
+    }
+
+    /// Set the fill color.
+    pub fn color(mut self, color: Color) -> Self {
+        self.color = Some(color);
+        self
+    }
+
+    /// Set the background color.
+    pub fn bg_color(mut self, color: Color) -> Self {
+        self.bg_color = Some(color);
+        self
+    }
+
+    /// Show percentage text.
+    pub fn show_percentage(mut self, show: bool) -> Self {
+        self.show_percentage = show;
+        self
+    }
+}
+
+impl crate::Widget for ProgressBar {
+    fn ui(self, ui: &mut UiContext) -> Response {
+        // Background
+        ui.draw_rect(
+            self.bounds,
+            self.bg_color.unwrap_or(ui.style.slider_track),
+        );
+
+        // Fill
+        let fill_width = self.bounds.width() * self.progress;
+        if fill_width > 0.0 {
+            let fill_bounds = Rect2D::from_origin_size(
+                self.bounds.min,
+                Vec2::new(fill_width, self.bounds.height()),
+            );
+            ui.draw_rect(fill_bounds, self.color.unwrap_or(ui.style.slider_grab));
+        }
+
+        // Percentage text
+        if self.show_percentage {
+            let text = format!("{}%", (self.progress * 100.0) as u32);
+            let text_size = ui.measure_text(&text, ui.scaled_font_size(crate::FontSize::Small));
+            let text_pos = Vec2::new(
+                self.bounds.center().x() - text_size.x() * 0.5,
+                self.bounds.center().y() - text_size.y() * 0.5,
+            );
+            ui.draw_text(
+                &text,
+                text_pos,
+                Color::WHITE,
+                ui.scaled_font_size(crate::FontSize::Small),
+            );
+        }
+
+        Response::new(self.bounds)
+    }
+}
+
+// =============================================================================
+// Collapsible Widget
+// =============================================================================
+
+/// A collapsible section/tree node widget.
+///
+/// # Example
+///
+/// ```ignore
+/// use katla_ui::widgets::Collapsible;
+///
+/// let mut expanded = true;
+/// ui.add(Collapsible::new(&mut expanded, "Section", |ui| {
+///     ui.label_auto("Content inside...");
+/// }));
+/// ```
+pub struct Collapsible<'a, F>
+where
+    F: FnOnce(&mut UiContext),
+{
+    expanded: &'a mut bool,
+    label: &'a str,
+    content: F,
+    bounds: Rect2D,
+    default_open: bool,
+}
+
+impl<'a, F> Collapsible<'a, F>
+where
+    F: FnOnce(&mut UiContext),
+{
+    /// Create a new collapsible section.
+    pub fn new(expanded: &'a mut bool, label: &'a str, content: F) -> Self {
+        Self {
+            expanded,
+            label,
+            content,
+            bounds: Rect2D::from_size(Vec2::new(200.0, 24.0)),
+            default_open: false,
+        }
+    }
+
+    /// Set the header bounds.
+    pub fn bounds(mut self, bounds: Rect2D) -> Self {
+        self.bounds = bounds;
+        self
+    }
+
+    /// Set whether the section is open by default.
+    pub fn default_open(mut self, open: bool) -> Self {
+        self.default_open = open;
+        self
+    }
+}
+
+impl<'a, F> crate::Widget for Collapsible<'a, F>
+where
+    F: FnOnce(&mut UiContext),
+{
+    fn ui(self, ui: &mut UiContext) -> Response {
+        let id = ui.generate_id(self.label);
+        let hovered = ui.is_hovered(self.bounds);
+
+        // Draw background on hover
+        if hovered {
+            ui.draw_rect(self.bounds, ui.style.menu_hovered);
+        }
+
+        // Arrow icon (▶ or ▼)
+        let arrow = if *self.expanded { '▼' } else { '▶' };
+        let arrow_pos = Vec2::new(self.bounds.min.x() + 4.0, self.bounds.min.y() + 4.0);
+        ui.draw_text(
+            &arrow.to_string(),
+            arrow_pos,
+            ui.style.text_disabled,
+            ui.scaled_font_size(crate::FontSize::Small),
+        );
+
+        // Label
+        let label_pos = Vec2::new(self.bounds.min.x() + 20.0, self.bounds.min.y() + 4.0);
+        ui.draw_text(
+            self.label,
+            label_pos,
+            ui.style.text_color,
+            ui.scaled_font_size(crate::FontSize::Small),
+        );
+
+        // Handle click
+        let clicked = ui.button_behavior(id, self.bounds);
+
+        let mut response = Response::new(self.bounds);
+        response.hovered = hovered;
+        response.clicked = clicked;
+
+        if clicked {
+            *self.expanded = !*self.expanded;
+        }
+
+        // Render content if expanded
+        if *self.expanded {
+            let content_bounds = Rect2D::from_origin_size(
+                Vec2::new(self.bounds.min.x() + 20.0, self.bounds.max.y()),
+                Vec2::new(self.bounds.width() - 20.0, 100.0),
+            );
+            (self.content)(ui);
+        }
+
+        response
+    }
+}
+
+// =============================================================================
+// Dropdown/Select Widget
+// =============================================================================
+
+/// A dropdown/select menu widget.
+///
+/// # Example
+///
+/// ```ignore
+/// use katla_ui::widgets::Dropdown;
+///
+/// let mut selected = 1;
+/// let options = ["Option A", "Option B", "Option C"];
+/// if ui.add(Dropdown::new(&mut selected, "Select...", &options)).changed {
+///     println!("Selected: {}", options[selected]);
+/// }
+/// ```
+pub struct Dropdown<'a, 'b> {
+    selected: &'a mut usize,
+    placeholder: &'b str,
+    options: &'b [&'b str],
+    bounds: Rect2D,
+}
+
+impl<'a, 'b> Dropdown<'a, 'b> {
+    /// Create a new dropdown.
+    ///
+    /// # Arguments
+    /// * `selected` - Mutable reference to selected index
+    /// * `placeholder` - Text to show when nothing is selected
+    /// * `options` - Slice of option strings
+    pub fn new(selected: &'a mut usize, placeholder: &'b str, options: &'b [&'b str]) -> Self {
+        Self {
+            selected,
+            placeholder,
+            options,
+            bounds: Rect2D::from_size(Vec2::new(150.0, 24.0)),
+        }
+    }
+
+    /// Set the dropdown bounds.
+    pub fn bounds(mut self, bounds: Rect2D) -> Self {
+        self.bounds = bounds;
+        self
+    }
+}
+
+impl<'a, 'b> crate::Widget for Dropdown<'a, 'b> {
+    fn ui(self, ui: &mut UiContext) -> Response {
+        // This is a simplified implementation - in a real UI you'd want a popup
+        // For now, we'll just show the current selection with click-to-cycle behavior
+
+        let id = ui.generate_id(self.placeholder);
+        let hovered = ui.is_hovered(self.bounds);
+        let has_selection = *self.selected < self.options.len();
+
+        // Background
+        ui.draw_rect(
+            self.bounds,
+            if hovered {
+                ui.style.input_bg
+            } else {
+                ui.style.window_bg
+            },
+        );
+
+        // Border
+        ui.draw_rect_border(
+            self.bounds,
+            Color::TRANSPARENT,
+            ui.style.input_border,
+            1.0,
+        );
+
+        // Text (placeholder or selected option)
+        let text = if has_selection {
+            self.options[*self.selected]
+        } else {
+            self.placeholder
+        };
+        let text_pos = Vec2::new(
+            self.bounds.min.x() + 4.0,
+            self.bounds.center().y() - ui.style.font_size * 0.5,
+        );
+        let text_color = if has_selection {
+            ui.style.input_text
+        } else {
+            ui.style.text_disabled
+        };
+        ui.draw_text(text, text_pos, text_color, ui.style.font_size);
+
+        // Dropdown arrow
+        let arrow = '▼';
+        let arrow_size = ui.measure_text(&arrow.to_string(), ui.scaled_font_size(crate::FontSize::XSmall));
+        let arrow_pos = Vec2::new(
+            self.bounds.max.x() - arrow_size.x() - 8.0,
+            self.bounds.center().y() - arrow_size.y() * 0.5,
+        );
+        ui.draw_text(
+            &arrow.to_string(),
+            arrow_pos,
+            ui.style.text_disabled,
+            ui.scaled_font_size(crate::FontSize::XSmall),
+        );
+
+        // Handle click - cycle through options
+        let clicked = ui.button_behavior(id, self.bounds);
+
+        let mut response = Response::new(self.bounds);
+        response.hovered = hovered;
+        response.clicked = clicked;
+        response.changed = false;
+
+        if clicked && !self.options.is_empty() {
+            *self.selected = (*self.selected + 1) % self.options.len();
+            response.changed = true;
+        }
+
+        response
     }
 }

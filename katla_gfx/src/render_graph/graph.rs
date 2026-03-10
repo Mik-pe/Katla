@@ -1157,8 +1157,8 @@ impl<'a> Frame<'a> {
         let vertex_bytes = bytemuck::cast_slice(&ui_draw_list.vertices);
         let index_bytes = bytemuck::cast_slice(&ui_draw_list.indices);
 
-        // Access UI resources directly (Frame has mutable reference to renderer)
-        let ui_resources = &mut self.renderer.ui_resources;
+        // Access UI resources through UIRenderer
+        let ui_resources = self.renderer.ui_renderer.ui_resources_mut();
 
         // Ensure we have storage for this frame (grow as needed)
         while ui_resources.vertex_buffers.len() <= frame_idx {
@@ -1228,9 +1228,10 @@ impl<'a> Frame<'a> {
                 ));
             }
 
-            let font_atlas_handle = self.renderer.ui_font_atlas.ok_or_else(|| {
-                RenderGraphError::InvalidConfiguration("UI font atlas not initialized".to_string())
-            })?;
+            let font_atlas_handle = self.renderer.ui_renderer.font_atlas_handle()
+                .ok_or_else(|| {
+                    RenderGraphError::InvalidConfiguration("UI font atlas not initialized".to_string())
+                })?;
 
             (descriptor_set_layouts[0], font_atlas_handle)
         };
@@ -1281,7 +1282,7 @@ impl<'a> Frame<'a> {
         screen_size: [f32; 2],
     ) -> Result<vk::DescriptorSet, RenderGraphError> {
         // Check if we already have a descriptor set for this frame with the same layout
-        let ui_resources = &mut self.renderer.ui_resources;
+        let ui_resources = self.renderer.ui_renderer.ui_resources_mut();
 
         // Ensure we have storage for this frame
         while ui_resources.descriptor_sets.len() <= frame_idx {
@@ -1360,7 +1361,7 @@ impl<'a> Frame<'a> {
         );
 
         // Store descriptor set (owns pool, automatic cleanup)
-        let ui_resources = &mut self.renderer.ui_resources;
+        let ui_resources = self.renderer.ui_renderer.ui_resources_mut();
         if frame_idx < ui_resources.descriptor_sets.len() {
             ui_resources.descriptor_sets[frame_idx] = Some(descriptor_set_wrapper);
         }
@@ -1379,9 +1380,10 @@ impl<'a> Frame<'a> {
         screen_size: [f32; 2],
     ) -> Result<(), RenderGraphError> {
         // Get font atlas texture
-        let font_atlas_handle = self.renderer.ui_font_atlas.ok_or_else(|| {
-            RenderGraphError::InvalidConfiguration("UI font atlas not initialized".to_string())
-        })?;
+        let font_atlas_handle = self.renderer.ui_renderer.font_atlas_handle()
+            .ok_or_else(|| {
+                RenderGraphError::InvalidConfiguration("UI font atlas not initialized".to_string())
+            })?;
 
         let font_texture = self
             .renderer
@@ -1397,7 +1399,7 @@ impl<'a> Frame<'a> {
 
         // Access UI resources through RefCell
         let uniform_buffer = {
-            let ui_resources = &mut self.renderer.ui_resources;
+            let ui_resources = self.renderer.ui_renderer.ui_resources_mut();
 
             // Create or reuse uniform buffer
             if ui_resources.uniform_buffer.is_none() {
@@ -1421,7 +1423,8 @@ impl<'a> Frame<'a> {
         let uniform_ptr = {
             let allocation = &self
                 .renderer
-                .ui_resources
+                .ui_renderer
+                .ui_resources_mut()
                 .uniform_buffer
                 .as_ref()
                 .unwrap()

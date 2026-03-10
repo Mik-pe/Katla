@@ -67,135 +67,138 @@ impl<'a> Widget for Inspector<'a> {
             .selected_entity
             .and_then(|id| self.entities.iter().find(|e| e.id == id));
 
-        let mut cursor = Vec2::new(
-            self.bounds.min.x() + 8.0,
-            self.bounds.min.y() + header_height + 8.0,
-        );
         let line_height = 20.0;
         let label_width = 60.0;
-        let _value_width = self.bounds.width() - label_width - 24.0;
+        let value_width = self.bounds.width() - label_width - 24.0;
+
+        // Use begin_column() for vertical layout
+        ui.begin_column();
+        ui.set_cursor(Vec2::new(
+            self.bounds.min.x() + 8.0,
+            self.bounds.min.y() + header_height + 8.0,
+        ));
 
         if let Some(entity) = selected {
+            // Entity name
             ui.draw_text(
                 &entity.name,
-                cursor,
+                ui.cursor(),
                 self.theme.text_primary,
                 ui.scaled_font_size(FontSize::Large),
             );
-            cursor = Vec2::new(cursor.x(), cursor.y() + line_height + 8.0);
+            ui.spacing(line_height + 8.0);
 
+            // Separator
             ui.draw_line(
-                Vec2::new(self.bounds.min.x() + 8.0, cursor.y()),
-                Vec2::new(self.bounds.max.x() - 8.0, cursor.y()),
+                Vec2::new(self.bounds.min.x() + 8.0, ui.cursor().y()),
+                Vec2::new(self.bounds.max.x() - 8.0, ui.cursor().y()),
                 self.theme.separator,
                 1.0,
             );
-            cursor = Vec2::new(cursor.x(), cursor.y() + 8.0);
+            ui.spacing(8.0);
 
+            // Transform section
             ui.draw_text(
                 "Transform",
-                cursor,
+                ui.cursor(),
                 self.theme.text_accent,
                 ui.scaled_font_size(FontSize::Medium),
             );
-            cursor = Vec2::new(cursor.x(), cursor.y() + line_height);
+            ui.spacing(line_height);
 
-            let pos_label_bounds =
-                Rect2D::from_origin_size(cursor, Vec2::new(label_width, line_height));
-            ui.add(Label::new("Position:").bounds(pos_label_bounds));
-            let pos_value_bounds = Rect2D::from_origin_size(
-                Vec2::new(cursor.x() + label_width, cursor.y()),
-                Vec2::new(_value_width, line_height),
-            );
+            // Position row (label + value on same line)
+            ui.begin_row();
+            ui.add(Label::new("Position:").at_cursor_width(ui, label_width));
+            ui.same_line();
             let pos_text = format!(
                 "({:.2}, {:.2}, {:.2})",
                 entity.position.x(),
                 entity.position.y(),
                 entity.position.z()
             );
-            ui.add(Label::new(&pos_text).bounds(pos_value_bounds));
-            cursor = Vec2::new(cursor.x(), cursor.y() + line_height);
+            ui.add(Label::new(&pos_text).at_cursor_width(ui, value_width));
+            ui.end_row();
 
-            let rot_label_bounds =
-                Rect2D::from_origin_size(cursor, Vec2::new(label_width, line_height));
-            ui.add(Label::new("Rotation:").bounds(rot_label_bounds));
-            let rot_value_bounds = Rect2D::from_origin_size(
-                Vec2::new(cursor.x() + label_width, cursor.y()),
-                Vec2::new(_value_width, line_height),
-            );
+            // Rotation row
+            ui.begin_row();
+            ui.add(Label::new("Rotation:").at_cursor_width(ui, label_width));
+            ui.same_line();
             let rot_text = format!(
                 "({:.1}, {:.1}, {:.1})",
                 entity.rotation.x(),
                 entity.rotation.y(),
                 entity.rotation.z()
             );
-            ui.add(Label::new(&rot_text).bounds(rot_value_bounds));
-            cursor = Vec2::new(cursor.x(), cursor.y() + line_height);
+            ui.add(Label::new(&rot_text).at_cursor_width(ui, value_width));
+            ui.end_row();
 
-            let scale_label_bounds =
-                Rect2D::from_origin_size(cursor, Vec2::new(label_width, line_height));
-            ui.add(Label::new("Scale:").bounds(scale_label_bounds));
-            let scale_value_bounds = Rect2D::from_origin_size(
-                Vec2::new(cursor.x() + label_width, cursor.y()),
-                Vec2::new(_value_width, line_height),
-            );
+            // Scale row
+            ui.begin_row();
+            ui.add(Label::new("Scale:").at_cursor_width(ui, label_width));
+            ui.same_line();
             let scale_text = format!(
                 "({:.2}, {:.2}, {:.2})",
                 entity.scale.x(),
                 entity.scale.y(),
                 entity.scale.z()
             );
-            ui.add(Label::new(&scale_text).bounds(scale_value_bounds));
-            cursor = Vec2::new(cursor.x(), cursor.y() + line_height + 8.0);
+            ui.add(Label::new(&scale_text).at_cursor_width(ui, value_width));
+            ui.end_row();
 
+            ui.spacing(line_height + 8.0);
+
+            // Separator
             ui.draw_line(
-                Vec2::new(self.bounds.min.x() + 8.0, cursor.y()),
-                Vec2::new(self.bounds.max.x() - 8.0, cursor.y()),
+                Vec2::new(self.bounds.min.x() + 8.0, ui.cursor().y()),
+                Vec2::new(self.bounds.max.x() - 8.0, ui.cursor().y()),
                 self.theme.separator,
                 1.0,
             );
-            cursor = Vec2::new(cursor.x(), cursor.y() + 8.0);
+            ui.spacing(8.0);
 
+            // Type section
             ui.draw_text(
                 "Type",
-                cursor,
+                ui.cursor(),
                 self.theme.text_accent,
                 ui.scaled_font_size(FontSize::Medium),
             );
-            cursor = Vec2::new(cursor.x(), cursor.y() + line_height);
+            ui.spacing(line_height);
 
             let type_text = format!("  {}", entity.entity_type);
             ui.draw_text(
                 &type_text,
-                cursor,
+                ui.cursor(),
                 self.theme.text_secondary,
                 ui.scaled_font_size(FontSize::Medium),
             );
-            cursor = Vec2::new(cursor.x(), cursor.y() + line_height + 8.0);
+            ui.spacing(line_height + 8.0);
 
+            // Components section
             ui.draw_text(
                 "Components",
-                cursor,
+                ui.cursor(),
                 self.theme.text_accent,
                 ui.scaled_font_size(FontSize::Medium),
             );
-            cursor = Vec2::new(cursor.x(), cursor.y() + line_height);
+            ui.spacing(line_height);
 
             for component_name in &entity.components {
                 let comp_text = format!("  {}", component_name);
                 ui.draw_text(
                     &comp_text,
-                    cursor,
+                    ui.cursor(),
                     self.theme.text_secondary,
                     ui.scaled_font_size(FontSize::Medium),
                 );
-                cursor = Vec2::new(cursor.x(), cursor.y() + line_height);
+                ui.spacing(line_height);
             }
 
-            cursor = Vec2::new(cursor.x(), cursor.y() + 8.0);
+            ui.spacing(8.0);
 
+            // Delete button
             let delete_bounds = Rect2D::from_origin_size(
-                Vec2::new(self.bounds.min.x() + 8.0, cursor.y()),
+                Vec2::new(self.bounds.min.x() + 8.0, ui.cursor().y()),
                 Vec2::new(self.bounds.width() - 16.0, 28.0),
             );
             if ui
@@ -211,6 +214,7 @@ impl<'a> Widget for Inspector<'a> {
                 *self.selected_entity = None;
             }
         } else {
+            // No entity selected
             let no_selection = "No entity selected";
             let no_sel_size = ui.measure_text(no_selection, ui.scaled_font_size(FontSize::Medium));
             let no_sel_pos = Vec2::new(
@@ -224,6 +228,8 @@ impl<'a> Widget for Inspector<'a> {
                 ui.scaled_font_size(FontSize::Medium),
             );
         }
+
+        ui.end_column();
 
         Response::default()
     }
