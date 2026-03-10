@@ -1012,6 +1012,11 @@ impl<'a> Frame<'a> {
             self.execute_draw_list(cmd, draw_list)?;
         }
 
+        // Execute UI draw lists
+        for ui_draw_list in &data.ui_draw_lists {
+            self.execute_ui_draw_list(cmd, ui_draw_list)?;
+        }
+
         // End rendering
         cmd.end_rendering();
 
@@ -1026,6 +1031,29 @@ impl<'a> Frame<'a> {
     ) -> Result<(), RenderGraphError> {
         for draw_call in &draw_list.draws {
             self.execute_draw_call(cmd, draw_call)?;
+        }
+        Ok(())
+    }
+
+    /// Execute a UI draw list.
+    fn execute_ui_draw_list(
+        &mut self,
+        _cmd: &crate::vulkan::commandbuffer::CommandBuffer,
+        ui_draw_list: &crate::renderer::types::UIDrawList,
+    ) -> Result<(), RenderGraphError> {
+        // TODO: Implement UI rendering
+        // Requires:
+        // 1. UI pipeline with alpha blending
+        // 2. UI vertex/index buffers
+        // 3. UI descriptor sets (font atlas, sampler, screen_size uniform)
+        // 4. Per-command texture binding (push descriptors for dynamic textures)
+        if !ui_draw_list.is_empty() {
+            log::debug!(
+                "UI draw list has {} vertices, {} indices, {} commands (not yet rendered)",
+                ui_draw_list.vertex_count(),
+                ui_draw_list.index_count(),
+                ui_draw_list.command_count()
+            );
         }
         Ok(())
     }

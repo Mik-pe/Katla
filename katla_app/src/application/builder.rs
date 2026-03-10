@@ -102,11 +102,10 @@ impl ApplicationBuilder {
 
     /// Build the frame graph for the application.
     ///
-    /// Uses HDR intermediate rendering with tonemapping and UI compositing:
+    /// Uses HDR intermediate rendering with tonemapping:
     /// 1. Sky pass renders procedural sky to HDR texture
     /// 2. Geometry pass renders scene to HDR texture (R16G16B16A16Sfloat)
     /// 3. Tonemap pass samples HDR and outputs LDR to backbuffer
-    /// 4. UI pass draws editor UI on top of backbuffer (LOAD mode)
     fn build_frame_graph(
         renderer: &mut VulkanRenderer,
         resources: &ResourceManager,
@@ -114,7 +113,7 @@ impl ApplicationBuilder {
         use katla_gfx::render_graph::UIPass;
         use katla_gfx::render_pass::{ClearValue, LoadOp, StoreOp};
         use katla_gfx::texture::ImageFormat as TextureImageFormat;
-        use katla_gfx::{FullscreenPass, GeometryPass, GraphResourceDesc, GraphResourceType};
+        use katla_gfx::render_graph::{FullscreenPass, GeometryPass, GraphResourceDesc, GraphResourceType};
 
         let extent = renderer.swapchain_extent();
 
