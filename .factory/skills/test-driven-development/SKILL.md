@@ -1,3 +1,12 @@
+---
+name: test-driven-development
+description: >-
+  Test-driven development practices for bug fixing and feature iteration. 
+  Guides through writing failing tests, implementing solutions, and verifying 
+  correctness.
+model: inherit
+---
+
 # Test-Driven Development
 
 Practices for using TDD to find bugs and iterate on implementations.
