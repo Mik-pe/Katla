@@ -66,16 +66,11 @@ pub fn generate_ui_draw_list(app: &mut Application, dt: f32) -> Option<UIDrawLis
     };
 
     // Convert to GPU format if not empty
-    log::info!("generate_ui_draw_list: draw_list.is_empty() = {}, use_editor = {}", draw_list.is_empty(), use_editor);
-
     if !draw_list.is_empty() {
         let ui_renderer = crate::ui::UIRenderer::new();
         let result = ui_renderer.convert_draw_list(draw_list, [screen_size.x(), screen_size.y()]);
-        log::info!("generate_ui_draw_list: converted to GPU format: {} vertices, {} indices, {} commands",
-            result.vertex_count(), result.index_count(), result.command_count());
         Some(result)
     } else {
-        log::info!("generate_ui_draw_list: draw list is empty, returning None");
         None
     }
 }

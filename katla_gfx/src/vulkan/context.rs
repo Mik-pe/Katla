@@ -238,6 +238,10 @@ pub struct VulkanContext {
     debug_utils_loader: DebugInstance,
     debug_callback: Option<vk::DebugUtilsMessengerEXT>,
     validation_callback: Arc<Mutex<ValidationCallbackStorage>>,
+    /// Whether VK_KHR_push_descriptor is enabled for per-draw texture binding in UI.
+    pub push_descriptor_enabled: bool,
+    /// Cached KHR push descriptor function pointer for efficient access.
+    pub push_descriptor_khr: Option<ash::khr::push_descriptor::Device>,
 }
 pub struct VulkanFrameCtx {
     pub context: Rc<VulkanContext>,
@@ -682,6 +686,9 @@ impl VulkanContext {
 
         let allocator = ManuallyDrop::new(RefCell::new(Allocator::new(&create_info).unwrap()));
 
+        // Create push descriptor device before moving instance/device
+        let push_descriptor_khr = Some(ash::khr::push_descriptor::Device::new(&instance, &device));
+
         Self {
             _entry: entry,
             instance,
@@ -700,6 +707,8 @@ impl VulkanContext {
             debug_utils_loader,
             debug_callback,
             validation_callback,
+            push_descriptor_enabled: true,
+            push_descriptor_khr,
         }
     }
 
@@ -810,6 +819,9 @@ impl VulkanContext {
 
         let allocator = ManuallyDrop::new(RefCell::new(Allocator::new(&create_info).unwrap()));
 
+        // Create push descriptor device before moving instance/device
+        let push_descriptor_khr = Some(ash::khr::push_descriptor::Device::new(&instance, &device));
+
         Self {
             _entry: entry,
             instance,
@@ -828,6 +840,8 @@ impl VulkanContext {
             debug_utils_loader,
             debug_callback,
             validation_callback,
+            push_descriptor_enabled: true,
+            push_descriptor_khr,
         }
     }
 
