@@ -90,6 +90,9 @@ pub(crate) struct InternalPassBuilder {
     pub build_fn: Box<
         dyn FnOnce(&HashMap<String, GraphResourceHandle>) -> Result<Box<dyn Any>, RenderGraphError>,
     >,
+
+    /// Whether this pass uses depth testing (default true for graphics passes).
+    pub uses_depth: bool,
 }
 
 #[cfg(test)]
@@ -134,6 +137,7 @@ mod tests {
                 material: None,
                 output_format: None,
                 build_fn: Box::new(|_resource_map| Ok(Box::new(()))),
+                uses_depth: true,
             }
         }
     }

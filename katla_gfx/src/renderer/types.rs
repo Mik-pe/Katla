@@ -607,6 +607,9 @@ pub struct UIDrawList {
     pub indices: Vec<u32>,
     /// Draw commands (batches grouped by texture/clip).
     pub commands: Vec<UiDrawCommand>,
+    /// Screen size for coordinate transformation (logical pixels, not physical).
+    /// This must match the coordinate space used by vertex positions.
+    pub screen_size: [f32; 2],
 }
 
 impl UIDrawList {

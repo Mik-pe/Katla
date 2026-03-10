@@ -4,6 +4,7 @@
 
 use std::collections::HashMap;
 
+use crate::handle::MaterialHandle;
 use crate::render_graph::builder::{InternalPassBuilder, PassBuilder};
 use crate::render_graph::pass::PassType;
 use crate::render_graph::resource::GraphResourceHandle;
@@ -41,6 +42,8 @@ pub struct UIPass {
     color_output: Option<ColorOutput>,
     /// Resources read by this pass.
     reads: Vec<String>,
+    /// UI material handle for rendering.
+    material: Option<MaterialHandle>,
 }
 
 /// Describes a color attachment output for UI.
@@ -61,7 +64,18 @@ impl UIPass {
             name: name.into(),
             color_output: None,
             reads: Vec::new(),
+            material: None,
         }
+    }
+
+    /// Set the UI material for this pass.
+    ///
+    /// # Arguments
+    ///
+    /// * `material` - Material handle for UI rendering.
+    pub fn material(mut self, material: MaterialHandle) -> Self {
+        self.material = Some(material);
+        self
     }
 
     /// Write to a color attachment.
@@ -137,6 +151,11 @@ impl PassBuilder for UIPass {
         // Clone reads for the builder
         let reads = self.reads.clone();
 
+        // Clone material handle
+        let material = self.material;
+
+        let name = self.name.clone();
+
         InternalPassBuilder {
             name: self.name,
             pass_type: PassType::Graphics,
@@ -144,12 +163,13 @@ impl PassBuilder for UIPass {
             writes,
             pipeline: None,
             tonemap_params: None,
-            material: None,
+            material,
             output_format: None,
             build_fn: Box::new(move |_resource_map: &HashMap<String, GraphResourceHandle>| {
                 // UI pass data is currently unused but kept for future extensibility
                 Ok(Box::new(UIPassData))
             }),
+            uses_depth: false, // UI passes don't use depth testing
         }
     }
 }
@@ -183,6 +203,14 @@ mod tests {
     }
 
     #[test]
+    fn test_ui_pass_material() {
+        let material = MaterialHandle::new(0);
+        let pass = UIPass::new("ui").write("color").material(material);
+
+        assert_eq!(pass.material, Some(material));
+    }
+
+    #[test]
     fn test_ui_pass_builder_trait() {
         let pass = UIPass::new("ui").write("color").read("font_atlas");
 
@@ -192,6 +220,16 @@ mod tests {
         assert_eq!(builder.pass_type, PassType::Graphics);
         assert_eq!(builder.reads, vec!["font_atlas"]);
         assert_eq!(builder.writes, vec!["color"]);
+    }
+
+    #[test]
+    fn test_ui_pass_builder_with_material() {
+        let material = MaterialHandle::new(42);
+        let pass = UIPass::new("ui").write("color").material(material);
+
+        let builder = pass.as_builder();
+
+        assert_eq!(builder.material, Some(material));
     }
 
     #[test]

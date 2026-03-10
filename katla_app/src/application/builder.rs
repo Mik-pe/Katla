@@ -145,6 +145,14 @@ impl ApplicationBuilder {
             hdr_texture_index: None, // Will be set after registration
         };
 
+        // Compile UI shader for editor UI rendering
+        let ui_shader_path = resources.shader_path("ui/ui.wgsl");
+        let ui_material = renderer
+            .create_ui_material(ui_shader_path)
+            .map_err(|e| crate::error::AppError::Graphics {
+                message: format!("Failed to compile UI shader: {}", e),
+            })?;
+
         let graph = renderer
             .create_frame_graph()
             // Create HDR color texture for geometry pass output
@@ -185,7 +193,8 @@ impl ApplicationBuilder {
             // Uses LOAD to preserve tonemapped content, then draws UI on top
             .add_pass(
                 UIPass::new("ui")
-                    .write("backbuffer"),
+                    .write("backbuffer")
+                    .material(ui_material),
             )
             .build()
             .map_err(|e| crate::error::AppError::Graphics {
@@ -317,6 +326,18 @@ impl ApplicationBuilder {
             .unwrap();
 
         let mut renderer = Self::init_renderer(&event_loop, &window, &info, &resources);
+
+        // Upload initial font atlas texture to GPU
+        let (atlas_width, atlas_height) = ui_context.fonts.atlas_size();
+        let atlas_data = ui_context.fonts.atlas_data();
+        let font_atlas_handle = renderer.create_ui_font_atlas(atlas_width, atlas_height, atlas_data);
+        ui_context.fonts.set_atlas_id(katla_ui::TextureId::from_handle_index(font_atlas_handle.index()));
+        log::info!(
+            "Uploaded font atlas texture: {}x{}, handle={:?}",
+            atlas_width,
+            atlas_height,
+            font_atlas_handle
+        );
 
         // Build the frame graph once at startup (needs mutable renderer to compile shader)
         let frame_graph = Self::build_frame_graph(&mut renderer, &resources)?;

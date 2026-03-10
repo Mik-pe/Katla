@@ -66,10 +66,16 @@ pub fn generate_ui_draw_list(app: &mut Application, dt: f32) -> Option<UIDrawLis
     };
 
     // Convert to GPU format if not empty
+    log::info!("generate_ui_draw_list: draw_list.is_empty() = {}, use_editor = {}", draw_list.is_empty(), use_editor);
+
     if !draw_list.is_empty() {
         let ui_renderer = crate::ui::UIRenderer::new();
-        Some(ui_renderer.convert_draw_list(draw_list))
+        let result = ui_renderer.convert_draw_list(draw_list, [screen_size.x(), screen_size.y()]);
+        log::info!("generate_ui_draw_list: converted to GPU format: {} vertices, {} indices, {} commands",
+            result.vertex_count(), result.index_count(), result.command_count());
+        Some(result)
     } else {
+        log::info!("generate_ui_draw_list: draw list is empty, returning None");
         None
     }
 }
@@ -165,6 +171,19 @@ pub fn process_editor_actions(app: &mut Application) {
 
     // Update font atlas texture if needed (render may have added new glyphs)
     if app.ui_context.fonts.atlas_needs_update() {
+        let (width, height) = app.ui_context.fonts.atlas_size();
+        let data = app.ui_context.fonts.atlas_data();
+
+        // Check if atlas was resized (needs new texture)
+        if app.ui_context.fonts.atlas_was_resized() {
+            // Create new texture with new size
+            app.renderer.create_ui_font_atlas(width, height, data);
+            app.ui_context.fonts.clear_atlas_resized();
+        } else {
+            // Update existing texture
+            app.renderer.update_ui_font_atlas(width, height, data);
+        }
+
         app.ui_context.fonts.mark_atlas_updated();
     }
 

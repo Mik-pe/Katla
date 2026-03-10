@@ -36,6 +36,21 @@ use crate::barrier::ImageBarrier;
 use crate::sync::{COLOR_SUBRESOURCE_RANGE, DEPTH_SUBRESOURCE_RANGE};
 use crate::vulkan::material::compiler::{MaterialBuilder, MaterialCompiler};
 
+/// Per-frame UI rendering resources.
+/// Stored in a RefCell for interior mutability - UI code needs mutable access
+/// during frame execution while the renderer is immutably borrowed.
+#[derive(Default)]
+pub struct UiFrameResources {
+    /// Per-frame UI vertex buffers.
+    pub vertex_buffers: Vec<Option<VertexBuffer>>,
+    /// Per-frame UI index buffers.
+    pub index_buffers: Vec<Option<IndexBuffer>>,
+    /// Per-frame UI descriptor sets (owns both set and pool, automatic cleanup).
+    pub descriptor_sets: Vec<Option<crate::vulkan::descriptor_set::DescriptorSet>>,
+    /// UI uniform buffer (reused across frames).
+    pub uniform_buffer: Option<(vk::Buffer, gpu_allocator::vulkan::Allocation)>,
+}
+
 /// Transpose a 4x4 matrix from row-major to column-major format.
 ///
 pub struct VulkanRenderer {
@@ -77,6 +92,12 @@ pub struct VulkanRenderer {
     pub(crate) viewport_manager: viewport_manager::ViewportManager,
     /// Material compiler for compiling materials from shaders.
     pub(crate) material_compiler: MaterialCompiler,
+    /// Cached UI descriptor set layout (reused across frames).
+    pub(crate) ui_descriptor_set_layout: Option<vk::DescriptorSetLayout>,
+    /// Per-frame UI rendering resources (interior mutability for frame access).
+    pub(crate) ui_resources: Rc<RefCell<UiFrameResources>>,
+    /// Font atlas texture handle for UI rendering.
+    pub(crate) ui_font_atlas: Option<TextureHandle>,
 }
 
 /// Number of frames that can be processed concurrently.
@@ -195,6 +216,9 @@ impl VulkanRenderer {
             output_target: None,
             viewport_manager,
             material_compiler,
+            ui_descriptor_set_layout: None,
+            ui_resources: Rc::new(RefCell::new(UiFrameResources::default())),
+            ui_font_atlas: None,
         })
     }
 
@@ -289,6 +313,72 @@ impl VulkanRenderer {
     /// Get the default white texture.
     pub fn default_texture(&self) -> TextureHandle {
         self.texture_manager.default_white()
+    }
+
+    // ========================================================================
+    // UI Font Atlas Management
+    // ========================================================================
+
+    /// Create or update the UI font atlas texture from pixel data.
+    ///
+    /// # Arguments
+    /// * `width` - Atlas width in pixels
+    /// * `height` - Atlas height in pixels
+    /// * `data` - RGBA pixel data
+    ///
+    /// # Returns
+    /// The texture handle for the font atlas.
+    pub fn create_ui_font_atlas(
+        &mut self,
+        width: u32,
+        height: u32,
+        data: &[u8],
+    ) -> TextureHandle {
+        // Use RGBA8 UNORM for font atlas (linear color space for accurate text rendering)
+        let handle = self.create_texture_unorm(width, height, data);
+
+        // Register with bindless system for shader access
+        if let Some(texture) = self.texture_manager.get_texture_rc(handle) {
+            let slot = self
+                .bindless_manager
+                .register_texture(texture.image_view().vk())
+                .expect("Failed to register font atlas with bindless system");
+            self.texture_manager.register_bindless_slot(handle, slot);
+        }
+
+        self.ui_font_atlas = Some(handle);
+        handle
+    }
+
+    /// Update the UI font atlas texture with new pixel data.
+    ///
+    /// Use this when the atlas has been resized or new glyphs have been added.
+    ///
+    /// # Arguments
+    /// * `width` - Atlas width in pixels
+    /// * `height` - Atlas height in pixels
+    /// * `data` - RGBA pixel data
+    pub fn update_ui_font_atlas(&mut self, width: u32, height: u32, data: &[u8]) {
+        if let Some(handle) = self.ui_font_atlas {
+            if let Some(texture) = self.texture_manager.get_texture_rc(handle) {
+                // Check if size matches
+                if texture.width == width && texture.height == height {
+                    // Same size - just update data
+                    texture.update_data(data);
+                } else {
+                    // Size changed - need to create new texture
+                    log::info!("Font atlas resized from {}x{} to {}x{}", texture.width, texture.height, width, height);
+                    self.create_ui_font_atlas(width, height, data);
+                }
+            }
+        } else {
+            log::warn!("update_ui_font_atlas called but no font atlas exists yet");
+        }
+    }
+
+    /// Get the font atlas texture handle.
+    pub fn ui_font_atlas(&self) -> Option<TextureHandle> {
+        self.ui_font_atlas
     }
 
     /// Set frame-level uniforms for the current frame.
@@ -779,6 +869,22 @@ impl VulkanRenderer {
 
         // Destroy material compiler (cleans up descriptor layouts)
         self.material_compiler.destroy();
+
+        // Clean up UI resources
+        {
+            let mut ui_resources = self.ui_resources.borrow_mut();
+            // Vertex and index buffers have Drop impls that clean up themselves
+            ui_resources.vertex_buffers.clear();
+            ui_resources.index_buffers.clear();
+
+            // Descriptor sets own their pools and clean up automatically via Drop
+            ui_resources.descriptor_sets.clear();
+
+            // Destroy uniform buffer
+            if let Some((buffer, allocation)) = ui_resources.uniform_buffer.take() {
+                self.context.free_buffer(buffer, allocation);
+            }
+        }
 
         // Storage uniform resources will be dropped automatically
         self.context.pre_destroy();

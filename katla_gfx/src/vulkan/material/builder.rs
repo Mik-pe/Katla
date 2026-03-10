@@ -285,10 +285,14 @@ impl PipelineBuilder {
         }
         .map_err(|e| PipelineError::CreationFailed(e.1))?[0];
 
+        // Clone descriptor layouts for storage in the pipeline
+        let descriptor_set_layouts = self.descriptor_layouts.clone();
+
         Ok(Pipeline {
             handle: pipeline,
             layout: pipeline_layout,
             device: self.context.device.clone(),
+            descriptor_set_layouts,
         })
     }
 
@@ -306,6 +310,9 @@ pub struct Pipeline {
     handle: vk::Pipeline,
     layout: vk::PipelineLayout,
     device: ash::Device,
+    /// Descriptor set layouts used when creating this pipeline.
+    /// These must be used when allocating descriptor sets for this pipeline.
+    descriptor_set_layouts: Vec<vk::DescriptorSetLayout>,
 }
 
 impl Pipeline {
@@ -319,10 +326,18 @@ impl Pipeline {
         self.layout
     }
 
+    /// Get the descriptor set layouts used when creating this pipeline.
+    /// These must be used when allocating descriptor sets for this pipeline.
+    pub(crate) fn descriptor_set_layouts(&self) -> &[vk::DescriptorSetLayout] {
+        &self.descriptor_set_layouts
+    }
+
     pub fn destroy(&self) {
         unsafe {
             self.device.destroy_pipeline(self.handle, None);
             self.device.destroy_pipeline_layout(self.layout, None);
+            // Note: Descriptor set layouts are managed by the material compiler
+            // and will be cleaned up separately
         }
     }
 }
@@ -332,6 +347,9 @@ impl Drop for Pipeline {
         unsafe {
             self.device.destroy_pipeline(self.handle, None);
             self.device.destroy_pipeline_layout(self.layout, None);
+            // Note: descriptor_set_layouts are managed by MaterialCompiler
+            // and will be cleaned up there. We don't clean them up here to avoid
+            // double-free for shared layouts used by multiple pipelines.
         }
     }
 }

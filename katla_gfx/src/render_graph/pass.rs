@@ -36,6 +36,8 @@ pub(crate) struct PassDesc {
     pub output_format: Option<crate::texture::ImageFormat>,
     /// Color attachment load/store ops for each write target.
     pub color_attachments: Vec<(String, ImageFormat, LoadOp, StoreOp, ClearValue)>,
+    /// Whether this pass uses depth testing (default true for graphics passes).
+    pub uses_depth: bool,
 }
 
 impl PassDesc {
@@ -56,6 +58,7 @@ impl PassDesc {
             material: None,
             output_format: None,
             color_attachments: Vec::new(),
+            uses_depth: true, // Default to true for graphics passes
         }
     }
 }
