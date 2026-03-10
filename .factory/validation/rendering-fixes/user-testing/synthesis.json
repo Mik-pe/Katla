@@ -1,0 +1,30 @@
+{
+  "milestone": "rendering-fixes",
+  "round": 1,
+  "status": "pass",
+  "assertionsSummary": {
+    "total": 5,
+    "passed": 5,
+    "failed": 0,
+    "blocked": 0
+  },
+  "passedAssertions": [
+    "VAL-OPACITY-001",
+    "VAL-OPACITY-002",
+    "VAL-POS-002",
+    "FLOW-002",
+    "VAL-ATLAS-001"
+  ],
+  "failedAssertions": [],
+  "blockedAssertions": [],
+  "appliedUpdates": [
+    {
+      "target": ".factory/library/user-testing.md",
+      "description": "Created comprehensive testing guidance for native Vulkan desktop application, including testing methodology, isolation strategy, and assertion-specific testing instructions",
+      "source": "setup"
+    }
+  ],
+  "previousRound": null,
+  "summary": "All 5 assertions for the rendering-fixes milestone passed successfully. The flow validator tested transparency/opacity (VAL-OPACITY-001, VAL-OPACITY-002), HiDPI scissor coordinates (VAL-POS-002), clipped content rendering (FLOW-002), and font atlas white pixel (VAL-ATLAS-001). Testing methods included visual inspection (25-frame application run with no Vulkan validation errors), unit tests (all 59 tests passed), and code inspection (verified implementation in draw_list.rs, text/mod.rs, render_graph/graph.rs, and ui_renderer.rs). No frictions or blockers encountered.",
+  "testedAt": "2026-03-10T19:18:00Z"
+}

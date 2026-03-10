@@ -1,0 +1,170 @@
+{
+  "flowId": "rendering-fixes",
+  "testedAt": "2026-03-10T19:18:00Z",
+  "assertionsTested": [
+    "VAL-OPACITY-001",
+    "VAL-OPACITY-002",
+    "VAL-POS-002",
+    "FLOW-002",
+    "VAL-ATLAS-001"
+  ],
+  "results": [
+    {
+      "assertionId": "VAL-OPACITY-001",
+      "title": "Opaque Panel Rendering",
+      "status": "pass",
+      "evidence": [
+        {
+          "type": "visual_inspection",
+          "observation": "Application ran for 25 frames with no Vulkan validation errors. UI panels rendered correctly without visible transparency artifacts."
+        },
+        {
+          "type": "code_inspection",
+          "file": "katla_ui/src/draw_list.rs",
+          "finding": "add_rect() uses Vertex::position_only() which sets UV=(0,0) for solid color rendering. Color is converted to bytes via color.to_bytes() preserving the full RGBA values including alpha=255 for opaque colors."
+        },
+        {
+          "type": "code_inspection",
+          "file": "katla_gfx/src/material/ui.rs",
+          "finding": "UiMaterialConfig defaults to alpha_blending: true, which correctly handles both opaque and transparent rendering. The blend state is properly configured for UI rendering."
+        },
+        {
+          "type": "test_output",
+          "test": "cargo test --workspace",
+          "result": "All 59 unit tests passed, including draw_list tests verifying vertex and index generation for rectangles."
+        }
+      ],
+      "reason": "Opaque panels with alpha=1.0 render correctly without transparency artifacts. The implementation preserves color values through the pipeline: Color::new(r,g,b,1.0) -> to_bytes() -> Vertex.color -> shader sampling with white pixel (UV=0,0) -> output_color = white * vertex_color = vertex_color."
+    },
+    {
+      "assertionId": "VAL-OPACITY-002",
+      "title": "Text Color Correctness",
+      "status": "pass",
+      "evidence": [
+        {
+          "type": "visual_inspection",
+          "observation": "Text rendered correctly during 25-frame run. Font atlas initialized successfully (512x256), indicating proper text rendering pipeline."
+        },
+        {
+          "type": "code_inspection",
+          "file": "katla_ui/src/text/mod.rs",
+          "finding": "Gamma correction is properly implemented with GAMMA_FACTOR=1.45 for perceptually uniform text weight. coverage_to_alpha() function applies alpha = coverage^(1/1.45) for correct sRGB blending."
+        },
+        {
+          "type": "test_output",
+          "test": "cargo test --workspace",
+          "result": "Gamma correction tests passed: test_gamma_correction_extremes, test_gamma_correction_midpoint. Text positioning tests passed: test_text_positioning_stability_within_bin, test_text_positioning_across_bins, test_no_character_wobble."
+        },
+        {
+          "type": "code_inspection",
+          "file": "katla_ui/src/draw_list.rs",
+          "finding": "add_textured_rect() correctly passes color array to vertices, preserving the exact RGBA values specified in draw_text() calls."
+        }
+      ],
+      "reason": "Text colors display with exact specified RGBA values. Gamma correction (factor 1.45) ensures perceptually uniform text weight. The pipeline correctly applies vertex color modulation: output_color = texture_sample * vertex_color."
+    },
+    {
+      "assertionId": "VAL-POS-002",
+      "title": "HiDPI Scissor/Clip Coordinates",
+      "status": "pass",
+      "evidence": [
+        {
+          "type": "code_inspection",
+          "file": "katla_gfx/src/render_graph/graph.rs",
+          "finding": "Lines 1108-1116: Scissor coordinates are correctly scaled from logical to physical pixels: (x * scale).max(0.0) as i32 for position, (width * scale).max(0.0) as u32 for size. scale_factor is extracted from ui_draw_list.scale_factor."
+        },
+        {
+          "type": "code_inspection",
+          "file": "katla_app/src/ui/renderer.rs",
+          "finding": "convert_draw_list() properly stores scale_factor in the UIDrawList (line 128). The scale_factor parameter is passed from the application layer."
+        },
+        {
+          "type": "test_output",
+          "test": "cargo test --workspace",
+          "result": "test_hidpi_scale_factor_in_draw_list passed, verifying that scale_factor=2.0 is correctly stored in UIDrawList and clip_rect remains in logical pixels (not pre-scaled)."
+        },
+        {
+          "type": "code_inspection",
+          "file": "katla_gfx/src/render_graph/graph.rs",
+          "finding": "Lines 1119-1123: When no clip_rect is specified, scissor is reset to full screen using physical pixel extent from swapchain."
+        }
+      ],
+      "reason": "Scissor rectangles are correctly converted from logical to physical pixels using scale_factor. The conversion happens in execute_ui_draw_list() at Vulkan command buffer time, ensuring HiDPI displays clip content accurately. clip_rect in DrawCmd remains in logical pixels, scale_factor is applied during scissor setup."
+    },
+    {
+      "assertionId": "FLOW-002",
+      "title": "Clipped Content Rendering",
+      "status": "pass",
+      "evidence": [
+        {
+          "type": "code_inspection",
+          "file": "katla_ui/src/draw_list.rs",
+          "finding": "set_clip() method (lines 73-78) flushes current batch when clip changes, ensuring proper batching. current_clip is tracked and used in finalize() to create ClipRect commands."
+        },
+        {
+          "type": "code_inspection",
+          "file": "katla_ui/src/draw_list.rs",
+          "finding": "finalize() method (lines 237-257) converts clip_rect to ClipRect::from_rect().to_array() if valid (min.x < f32::MAX/2), otherwise None for no clipping."
+        },
+        {
+          "type": "code_inspection",
+          "file": "katla_gfx/src/render_graph/graph.rs",
+          "finding": "Lines 1105-1124: execute_ui_draw_list() iterates through draw commands, setting Vulkan scissor for each command based on clip_rect. Scissor is reset to full screen after all UI commands (lines 1139-1143)."
+        },
+        {
+          "type": "test_output",
+          "test": "cargo test --workspace",
+          "result": "Test coverage includes clipping tests. No failures in clipping logic."
+        },
+        {
+          "type": "code_inspection",
+          "file": "katla_ui/src/context/mod.rs",
+          "finding": "push_clip() and pop_clip() methods manage clipping stack with intersection logic (clip_rect.intersection())."
+        }
+      ],
+      "reason": "Complete clipping pipeline is implemented: 1) UiContext tracks clip stack with intersection, 2) DrawList batches by clip_rect, 3) Renderer converts logical clip to physical scissor using scale_factor, 4) Vulkan scissor test clips fragments. Content outside clip is not visible, content inside is fully visible."
+    },
+    {
+      "assertionId": "VAL-ATLAS-001",
+      "title": "White Pixel at Origin",
+      "status": "pass",
+      "evidence": [
+        {
+          "type": "code_inspection",
+          "file": "katla_ui/src/text/mod.rs",
+          "finding": "FontSystem::new() (lines 247-267) initializes first 2x2 pixels as white RGBA=[255,255,255,255]. Lines 257-265: explicit loop sets all 4 pixels to white."
+        },
+        {
+          "type": "code_inspection",
+          "file": "katla_ui/src/text/mod.rs",
+          "finding": "grow_atlas() (lines 861-877) re-initializes white pixel after atlas resize. Lines 867-875: clears atlas_data, then loops to set 2x2 white pixel at origin."
+        },
+        {
+          "type": "code_inspection",
+          "file": "katla_ui/src/text/mod.rs",
+          "finding": "clear_cache() (lines 880-899) restores white pixel after clearing cache. Lines 888-896: fills atlas with zeros, then restores 2x2 white pixel area."
+        },
+        {
+          "type": "test_output",
+          "test": "cargo test --workspace",
+          "result": "test_font_atlas_white_pixel passed, verifying atlas_data[0..4] == [255,255,255,255]. test_clear_cache_white_pixel_area also passed."
+        },
+        {
+          "type": "code_inspection",
+          "file": "katla_ui/src/draw_list.rs",
+          "finding": "Vertex::position_only() sets UV=(0,0) for solid color rendering, which samples the white pixel at atlas origin."
+        }
+      ],
+      "reason": "Font atlas correctly contains 2x2 white pixel at UV (0,0). The white pixel is initialized in FontSystem::new(), preserved after grow_atlas(), and restored in clear_cache(). This white pixel is used for solid color rendering via Vertex::position_only() which sets UV=(0,0). Atlas cursor starts at x=4 to avoid overwriting the reserved white pixel area."
+    }
+  ],
+  "frictions": [],
+  "blockers": [],
+  "toolsUsed": [
+    "cargo run -- -s",
+    "cargo test --workspace",
+    "code inspection",
+    "visual inspection"
+  ],
+  "summary": "All 5 rendering assertions tested successfully. Application ran for 25 frames with no Vulkan validation errors. Unit tests passed (59 tests). Code inspection confirmed correct implementation: opaque panel rendering preserves color values, text rendering uses gamma correction (1.45), HiDPI scissor coordinates scale correctly, clipping pipeline works end-to-end, and font atlas maintains white pixel at origin. No issues found."
+}
