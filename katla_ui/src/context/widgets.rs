@@ -76,4 +76,95 @@ impl UiContext {
 
         clicked
     }
+
+    // -------------------------------------------------------------------------
+    // Convenience Widget Methods (Auto-Layout)
+    // -------------------------------------------------------------------------
+
+    /// Add a button at the current cursor position.
+    ///
+    /// This is a convenience method that creates a button with automatic
+    /// positioning. After adding, the cursor advances vertically.
+    ///
+    /// # Example
+    /// ```ignore
+    /// if ui.button_auto("Save Changes").clicked {
+    ///     save_changes();
+    /// }
+    /// ```
+    pub fn button_auto(&mut self, text: &str) -> crate::Response {
+        use crate::widgets::Button;
+        let bounds = Rect2D::from_origin_size(
+            self.cursor(),
+            katla_math::Vec2::new(100.0, self.style.button_height_medium),
+        );
+        let response = self.add(Button::new(text).bounds(bounds));
+        // Advance cursor
+        self.cursor = katla_math::Vec2::new(
+            self.cursor.x(),
+            self.cursor.y() + self.style.button_height_medium + self.style.item_spacing,
+        );
+        response
+    }
+
+    /// Add a button with custom width at the current cursor position.
+    ///
+    /// # Example
+    /// ```ignore
+    /// ui.button_auto_wide("Cancel", 120.0);
+    /// ```
+    pub fn button_auto_wide(&mut self, text: &str, width: f32) -> crate::Response {
+        use crate::widgets::Button;
+        let bounds = Rect2D::from_origin_size(
+            self.cursor(),
+            katla_math::Vec2::new(width, self.style.button_height_medium),
+        );
+        let response = self.add(Button::new(text).bounds(bounds));
+        // Advance cursor
+        self.cursor = katla_math::Vec2::new(
+            self.cursor.x(),
+            self.cursor.y() + self.style.button_height_medium + self.style.item_spacing,
+        );
+        response
+    }
+
+    /// Add a label at the current cursor position.
+    ///
+    /// The label is automatically sized to fit its text.
+    ///
+    /// # Example
+    /// ```ignore
+    /// ui.label_auto("Hello, World!");
+    /// ```
+    pub fn label_auto(&mut self, text: &str) -> crate::Response {
+        let text_size = self.measure_text(text, self.style.font_size);
+        let bounds = Rect2D::from_origin_size(self.cursor(), text_size);
+        self.draw_text(text, self.cursor(), self.style.text_color, self.style.font_size);
+        let response = crate::Response::new(bounds);
+        // Advance cursor
+        self.cursor = katla_math::Vec2::new(
+            self.cursor.x(),
+            self.cursor.y() + text_size.y() + self.style.item_spacing,
+        );
+        response
+    }
+
+    /// Add a label with custom color at the current cursor position.
+    ///
+    /// # Example
+    /// ```ignore
+    /// ui.label_auto_colored("Error:", katla_math::Color::RED);
+    /// ```
+    pub fn label_auto_colored(&mut self, text: &str, color: katla_math::Color) -> crate::Response {
+        let text_size = self.measure_text(text, self.style.font_size);
+        let bounds = Rect2D::from_origin_size(self.cursor(), text_size);
+        self.draw_text(text, self.cursor(), color, self.style.font_size);
+        let response = crate::Response::new(bounds);
+        // Advance cursor
+        self.cursor = katla_math::Vec2::new(
+            self.cursor.x(),
+            self.cursor.y() + text_size.y() + self.style.item_spacing,
+        );
+        response
+    }
 }

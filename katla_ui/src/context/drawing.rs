@@ -387,4 +387,76 @@ impl UiContext {
 
         text_y + text_measure.y()
     }
+
+    // -------------------------------------------------------------------------
+    // Widget Size Query Helpers
+    // -------------------------------------------------------------------------
+
+    /// Calculate the size needed for a button with the given text.
+    ///
+    /// Returns the size including padding.
+    ///
+    /// # Example
+    /// ```ignore
+    /// let btn_size = ui.button_size("Save Changes");
+    /// let bounds = Rect2D::from_origin_size(cursor, btn_size);
+    /// ui.add(Button::new("Save Changes").bounds(bounds));
+    /// ```
+    pub fn button_size(&self, text: &str) -> Vec2 {
+        let text_size = self.measure_text(text, self.style.font_size);
+        let padding = self.style.text_input_padding * 2.0;
+        Vec2::new(
+            text_size.x() + padding + 16.0, // extra space for aesthetics
+            self.style.button_height_medium,
+        )
+    }
+
+    /// Calculate the size needed for a button with custom width.
+    ///
+    /// Returns the size with the specified width and standard button height.
+    pub fn button_size_wide(&self, text: &str, width: f32) -> Vec2 {
+        Vec2::new(width, self.style.button_height_medium)
+    }
+
+    /// Calculate the size needed for a checkbox with label.
+    ///
+    /// Returns the size including the checkbox box and label text.
+    pub fn checkbox_size(&self, label: &str) -> Vec2 {
+        let text_size = self.measure_text(label, self.style.font_size);
+        Vec2::new(
+            self.style.checkbox_size + 8.0 + text_size.x(),
+            self.style.checkbox_size.max(text_size.y()),
+        )
+    }
+
+    /// Calculate the size needed for a text input with placeholder.
+    ///
+    /// Returns the size that would fit the placeholder text or minimum width.
+    pub fn text_input_size(&self, placeholder: &str, min_width: f32) -> Vec2 {
+        let text_size = self.measure_text(placeholder, self.style.font_size);
+        let width = text_size.x() + self.style.text_input_padding * 2.0 + 8.0;
+        Vec2::new(
+            width.max(min_width),
+            self.style.button_height_medium,
+        )
+    }
+
+    /// Calculate the size needed for a label.
+    ///
+    /// Returns the size of the text.
+    pub fn label_size(&self, text: &str) -> Vec2 {
+        self.measure_text(text, self.style.font_size)
+    }
+
+    /// Calculate the size needed for a labeled separator.
+    ///
+    /// Returns the size including the separator line and label.
+    pub fn separator_size(&self, label: Option<&str>, width: f32) -> Vec2 {
+        let height = if label.is_some() {
+            self.scaled_font_size(crate::FontSize::Small) + 8.0
+        } else {
+            8.0
+        };
+        Vec2::new(width, height)
+    }
 }

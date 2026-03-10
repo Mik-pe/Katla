@@ -56,8 +56,16 @@ impl<'a> Widget for StatusBar<'a> {
             1.0,
         );
 
-        let mut cursor = Vec2::new(8.0, bar_bounds.min.y() + 4.0);
+        // Use begin_row() for horizontal layout
+        ui.begin_row();
 
+        let start_x = 8.0;
+        let start_y = bar_bounds.min.y() + 4.0;
+        ui.set_cursor(Vec2::new(start_x, start_y));
+
+        let font_size = ui.scaled_font_size(FontSize::Small);
+
+        // FPS
         let fps_text = format!("FPS: {:.0}", self.fps);
         let fps_color = if self.fps >= 55.0 {
             self.theme.success
@@ -66,56 +74,33 @@ impl<'a> Widget for StatusBar<'a> {
         } else {
             self.theme.error
         };
-        ui.draw_text(
-            &fps_text,
-            cursor,
-            fps_color,
-            ui.scaled_font_size(FontSize::Small),
-        );
+        let fps_size = ui.measure_text(&fps_text, font_size);
+        ui.draw_text(&fps_text, ui.cursor(), fps_color, font_size);
+        ui.spacing(70.0);
 
-        cursor = Vec2::new(cursor.x() + 70.0, cursor.y());
-        ui.draw_text(
-            "|",
-            cursor,
-            self.theme.text_muted,
-            ui.scaled_font_size(FontSize::Small),
-        );
-        cursor = Vec2::new(cursor.x() + 15.0, cursor.y());
+        // Separator
+        ui.draw_text("|", ui.cursor(), self.theme.text_muted, font_size);
+        ui.spacing(15.0);
 
+        // Frame count
         let frame_text = format!("Frame: {}", self.frame_count);
-        ui.draw_text(
-            &frame_text,
-            cursor,
-            self.theme.text_secondary,
-            ui.scaled_font_size(FontSize::Small),
-        );
+        ui.draw_text(&frame_text, ui.cursor(), self.theme.text_secondary, font_size);
+        ui.spacing(100.0);
 
-        cursor = Vec2::new(cursor.x() + 100.0, cursor.y());
-        ui.draw_text(
-            "|",
-            cursor,
-            self.theme.text_muted,
-            ui.scaled_font_size(FontSize::Small),
-        );
-        cursor = Vec2::new(cursor.x() + 15.0, cursor.y());
+        // Separator
+        ui.draw_text("|", ui.cursor(), self.theme.text_muted, font_size);
+        ui.spacing(15.0);
 
+        // Entities
         let entity_text = format!("Entities: {}", self.entity_count);
-        ui.draw_text(
-            &entity_text,
-            cursor,
-            self.theme.text_secondary,
-            ui.scaled_font_size(FontSize::Small),
-        );
+        ui.draw_text(&entity_text, ui.cursor(), self.theme.text_secondary, font_size);
+        ui.spacing(100.0);
 
-        cursor = Vec2::new(cursor.x() + 100.0, cursor.y());
-        ui.draw_text(
-            "|",
-            cursor,
-            self.theme.text_muted,
-            ui.scaled_font_size(FontSize::Small),
-        );
-        cursor = Vec2::new(cursor.x() + 15.0, cursor.y());
+        // Separator
+        ui.draw_text("|", ui.cursor(), self.theme.text_muted, font_size);
+        ui.spacing(15.0);
 
+        // Selection
         let selection_text = if self.selected_count > 0 {
             format!("Selected: {} / {}", self.selected_count, self.total_assets)
         } else {
@@ -123,15 +108,18 @@ impl<'a> Widget for StatusBar<'a> {
         };
         ui.draw_text(
             &selection_text,
-            cursor,
+            ui.cursor(),
             if self.selected_count > 0 {
                 self.theme.highlight
             } else {
                 self.theme.text_secondary
             },
-            ui.scaled_font_size(FontSize::Small),
+            font_size,
         );
 
+        ui.end_row();
+
+        // Right-aligned items (mode and theme)
         let mode_text = if self.is_playing {
             "PLAYING"
         } else {
@@ -142,27 +130,17 @@ impl<'a> Widget for StatusBar<'a> {
         } else {
             self.theme.text_secondary
         };
-        let mode_size = ui.measure_text(mode_text, ui.scaled_font_size(FontSize::Small));
-        let mode_pos = Vec2::new(self.screen_size.x() - mode_size.x() - 8.0, cursor.y());
-        ui.draw_text(
-            mode_text,
-            mode_pos,
-            mode_color,
-            ui.scaled_font_size(FontSize::Small),
-        );
+        let mode_size = ui.measure_text(mode_text, font_size);
+        let mode_pos = Vec2::new(self.screen_size.x() - mode_size.x() - 8.0, start_y);
+        ui.draw_text(mode_text, mode_pos, mode_color, font_size);
 
         let theme_text = format!("Theme: {}", self.theme.name);
-        let theme_size = ui.measure_text(&theme_text, ui.scaled_font_size(FontSize::Small));
+        let theme_size = ui.measure_text(&theme_text, font_size);
         let theme_pos = Vec2::new(
             self.screen_size.x() - mode_size.x() - theme_size.x() - 100.0,
-            cursor.y(),
+            start_y,
         );
-        ui.draw_text(
-            &theme_text,
-            theme_pos,
-            self.theme.text_muted,
-            ui.scaled_font_size(FontSize::Small),
-        );
+        ui.draw_text(&theme_text, theme_pos, self.theme.text_muted, font_size);
 
         Response::default()
     }

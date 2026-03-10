@@ -26,86 +26,13 @@ impl UIRenderer {
         }
     }
 
-    /// Create or update the UI font atlas texture from pixel data.
+    /// Set the font atlas texture handle.
     ///
-    /// This method creates a texture with the given dimensions and uploads the pixel data.
-    /// If a font atlas already exists, it will be replaced.
-    ///
-    /// # Arguments
-    /// * `renderer` - The VulkanRenderer for GPU operations
-    /// * `width` - Texture width in pixels
-    /// * `height` - Texture height in pixels
-    /// * `data` - Raw pixel data (RGBA8 format, 4 bytes per pixel)
-    ///
-    /// # Returns
-    /// A `TextureHandle` for the font atlas texture.
-    ///
-    /// # Example
-    /// ```ignore
-    /// ui_renderer.create_font_atlas(&mut renderer, 512, 512, &font_pixels)?;
-    /// ```
-    pub fn create_font_atlas(
-        &mut self,
-        renderer: &mut crate::VulkanRenderer,
-        width: u32,
-        height: u32,
-        data: &[u8],
-    ) -> Result<TextureHandle, crate::RendererError> {
-        log::debug!("Creating UI font atlas: {}x{} pixels", width, height);
-
-        // Use renderer's texture creation method (automatically registers with bindless)
-        let handle = renderer.create_texture_rgba(width, height, data);
-
-        // Get the bindless index for logging
-        let bindless_idx = renderer.get_texture_bindless_index(handle);
-
-        log::debug!(
-            "Font atlas registered with bindless index: {}",
-            bindless_idx
-        );
-
+    /// Called by VulkanRenderer after creating the font atlas texture.
+    /// This is an internal method - use VulkanRenderer::create_ui_font_atlas() instead.
+    pub(crate) fn set_font_atlas(&mut self, handle: TextureHandle) {
+        log::debug!("Font atlas handle set to: {:?}", handle);
         self.font_atlas = Some(handle);
-
-        Ok(handle)
-    }
-
-    /// Update the UI font atlas texture with new pixel data.
-    ///
-    /// If a font atlas doesn't exist yet, this will create a new one.
-    ///
-    /// # Arguments
-    /// * `renderer` - The VulkanRenderer for GPU operations
-    /// * `width` - Texture width in pixels
-    /// * `height` - Texture height in pixels
-    /// * `data` - Raw pixel data (RGBA8 format, 4 bytes per pixel)
-    ///
-    /// # Example
-    /// ```ignore
-    /// ui_renderer.update_font_atlas(&mut renderer, 512, 512, &new_font_pixels)?;
-    /// ```
-    pub fn update_font_atlas(
-        &mut self,
-        renderer: &mut crate::VulkanRenderer,
-        width: u32,
-        height: u32,
-        data: &[u8],
-    ) -> Result<(), crate::RendererError> {
-        if let Some(_handle) = self.font_atlas {
-            log::debug!("Updating UI font atlas: {}x{} pixels", width, height);
-
-            // For updates, we create a new texture and replace the old one
-            // This is simpler than trying to update in place
-            let new_handle = renderer.create_texture_rgba(width, height, data);
-
-            log::debug!("Font atlas updated successfully");
-
-            self.font_atlas = Some(new_handle);
-        } else {
-            log::warn!("update_font_atlas called but no font atlas exists yet, creating new one");
-            self.create_font_atlas(renderer, width, height, data)?;
-        }
-
-        Ok(())
     }
 
     /// Get the font atlas texture handle.

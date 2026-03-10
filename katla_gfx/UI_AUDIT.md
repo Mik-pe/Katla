@@ -258,10 +258,34 @@ Application Layer
 ## Next Steps
 
 1. ✅ Complete audit (this document)
-2. → Create UIRenderer struct (#15)
-3. → Move font atlas (#11)
-4. → Move UI draw execution (#10)
-5. → Move descriptor sets (#13)
-6. → Update frame graph (#17)
-7. → Remove dead code (#14)
-8. → Test (#16)
+2. ✅ Create UIRenderer struct (#15)
+3. ✅ Move font atlas (#11) - Moved `ui_font_atlas` and `ui_resources` fields to UIRenderer. Fixed API borrowing issues.
+4. ✅ Update frame graph (#17) - Frame graph now accesses UI resources through UIRenderer.
+5. ✅ Remove dead code (#14) - Removed `ui_descriptor_set_layout` field and `render_ui()` method.
+6. ✅ Test (#16) - App runs successfully, UI renders correctly.
+
+## Items Not Moved (Intentional Architecture)
+
+- **UI Draw Execution** (#10): UIRenderer owns data (ui_resources, font_atlas), frame graph executes commands. This separation is clean.
+- **UI Descriptor Layouts** (#13): MaterialCompiler's `build_ui_descriptor_layout()` is for UI MATERIAL SHADERS, not UI rendering. Belongs in MaterialCompiler.
+
+## Summary
+
+**Status**: ✅ UI extraction complete
+
+**Changes Made:**
+- Created `UIRenderer` struct in `renderer/ui_renderer.rs`
+- Moved `ui_resources` and `ui_font_atlas` from VulkanRenderer to UIRenderer
+- Updated frame graph to access UI through `ui_renderer.ui_resources_mut()` and `ui_renderer.font_atlas_handle()`
+- Removed dead code: `ui_descriptor_set_layout` field, `render_ui()` method
+- Fixed API borrowing issues - VulkanRenderer methods delegate to UIRenderer
+
+**API Surface Change:**
+- Before: VulkanRenderer had `create_ui_font_atlas()`, `update_ui_font_atlas()`, `ui_font_atlas` field
+- After: Same methods exist as delegates to `ui_renderer`, plus `renderer.ui_renderer.font_atlas()` direct access
+
+**Files Modified:**
+- `katla_gfx/src/renderer/ui_renderer.rs` - Created new UIRenderer
+- `katla_gfx/src/renderer.rs` - Removed UI fields, added UIRenderer field
+- `katla_gfx/src/render_graph/graph.rs` - Updated to access UI through UIRenderer
+- `katla_gfx/UI_AUDIT.md` - This document
