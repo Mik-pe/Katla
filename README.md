@@ -6,13 +6,14 @@ A Vulkan game engine in Rust. Playground for graphics experiments. 🐒
 
 ## What's Inside 📦
 
-- **Vulkan 1.3** 🔺 - Dynamic rendering, Synchronization2, VMA integration
+- **Vulkan 1.3** 🔺 - Dynamic rendering, Synchronization2, VMA integration, bindless textures
 - **Custom ECS** 🧩 - Sparse set storage, query system, component derive macros
 - **Render graph** 📊 - Resource lifetime management, automatic barrier insertion
 - **PBR materials** 💎 - Hot reload support, template-based definitions
 - **WGSL shaders** ✨ - Compiled via naga at runtime
 - **GLTF support** 🦊 - Skeletal animation, PBR materials, background loading
 - **Editor UI** 🖼️ - Asset browser, entity inspector, transform gizmos
+- **Bindless textures** 🎨 - Single texture array for UI rendering, texture switching via vertex indices, no push descriptor overhead
 
 ## Crates 📚
 
