@@ -4,6 +4,7 @@
 //! for building user interfaces.
 
 mod drawing;
+mod helpers;
 mod interaction;
 mod layout;
 mod popup;

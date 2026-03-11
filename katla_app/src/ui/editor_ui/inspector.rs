@@ -87,15 +87,6 @@ impl<'a> Widget for Inspector<'a> {
             );
             ui.spacing(line_height + 8.0);
 
-            // Separator
-            ui.draw_line(
-                Vec2::new(self.bounds.min.x() + 8.0, ui.cursor().y()),
-                Vec2::new(self.bounds.max.x() - 8.0, ui.cursor().y()),
-                self.theme.separator,
-                1.0,
-            );
-            ui.spacing(8.0);
-
             // Transform section
             ui.draw_text(
                 "Transform",
@@ -104,59 +95,38 @@ impl<'a> Widget for Inspector<'a> {
                 ui.scaled_font_size(FontSize::Medium),
             );
             ui.spacing(line_height);
-
-            // Position row (label + value on same line)
-            ui.begin_row();
-            ui.add(Label::new("Position:").at_cursor_width(ui, label_width));
-            ui.advance_cursor(Vec2::new(label_width, 20.0));
-            let pos_text = format!(
-                "({:.2}, {:.2}, {:.2})",
-                entity.position.x(),
-                entity.position.y(),
-                entity.position.z()
+            
+            ui.property_row(
+                "Position:",
+                &format!(
+                    "({:.2}, {:.2}, {:.2})",
+                    entity.position.x(),
+                    entity.position.y(),
+                    entity.position.z()
+                ),
             );
-            ui.add(Label::new(&pos_text).at_cursor_width(ui, value_width));
-            ui.advance_cursor(Vec2::new(value_width, 20.0));
-            ui.end_row();
-
-            // Rotation row
-            ui.begin_row();
-            ui.add(Label::new("Rotation:").at_cursor_width(ui, label_width));
-            ui.advance_cursor(Vec2::new(label_width, 20.0));
-            let rot_text = format!(
-                "({:.1}, {:.1}, {:.1})",
-                entity.rotation.x(),
-                entity.rotation.y(),
-                entity.rotation.z()
+            ui.property_row(
+                "Rotation:",
+                &format!(
+                    "({:.1}, {:.1}, {:.1})",
+                    entity.rotation.x(),
+                    entity.rotation.y(),
+                    entity.rotation.z()
+                ),
             );
-            ui.add(Label::new(&rot_text).at_cursor_width(ui, value_width));
-            ui.advance_cursor(Vec2::new(value_width, 20.0));
-            ui.end_row();
-
-            // Scale row
-            ui.begin_row();
-            ui.add(Label::new("Scale:").at_cursor_width(ui, label_width));
-            ui.advance_cursor(Vec2::new(label_width, 20.0));
-            let scale_text = format!(
-                "({:.2}, {:.2}, {:.2})",
-                entity.scale.x(),
-                entity.scale.y(),
-                entity.scale.z()
+            ui.property_row(
+                "Scale:",
+                &format!(
+                    "({:.2}, {:.2}, {:.2})",
+                    entity.scale.x(),
+                    entity.scale.y(),
+                    entity.scale.z()
+                ),
             );
-            ui.add(Label::new(&scale_text).at_cursor_width(ui, value_width));
-            ui.advance_cursor(Vec2::new(value_width, 20.0));
-            ui.end_row();
-
             ui.spacing(line_height + 8.0);
 
             // Separator
-            ui.draw_line(
-                Vec2::new(self.bounds.min.x() + 8.0, ui.cursor().y()),
-                Vec2::new(self.bounds.max.x() - 8.0, ui.cursor().y()),
-                self.theme.separator,
-                1.0,
-            );
-            ui.spacing(8.0);
+            ui.separator_line();
 
             // Type section
             ui.draw_text(
@@ -166,15 +136,7 @@ impl<'a> Widget for Inspector<'a> {
                 ui.scaled_font_size(FontSize::Medium),
             );
             ui.spacing(line_height);
-
-            let type_text = format!("  {}", entity.entity_type);
-            ui.draw_text(
-                &type_text,
-                ui.cursor(),
-                self.theme.text_secondary,
-                ui.scaled_font_size(FontSize::Medium),
-            );
-            ui.spacing(line_height + 8.0);
+            ui.label(&entity.entity_type);
 
             // Components section
             ui.draw_text(
@@ -184,16 +146,8 @@ impl<'a> Widget for Inspector<'a> {
                 ui.scaled_font_size(FontSize::Medium),
             );
             ui.spacing(line_height);
-
             for component_name in &entity.components {
-                let comp_text = format!("  {}", component_name);
-                ui.draw_text(
-                    &comp_text,
-                    ui.cursor(),
-                    self.theme.text_secondary,
-                    ui.scaled_font_size(FontSize::Medium),
-                );
-                ui.spacing(line_height);
+                ui.label(component_name);
             }
 
             ui.spacing(8.0);
