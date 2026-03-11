@@ -1,21 +1,25 @@
-// UI shader for screen-space rendering
-// Supports font atlas and dynamic texture sampling via push descriptors
+// UI shader for screen-space rendering using bindless textures
+//
+// All textures (font atlas, viewport, thumbnails) are accessed via a single
+// bindless texture array. The texture index is passed per-vertex.
 //
 // Texture modes (signaled by color.a):
-// - color.a >= 0: Font/text mode - samples from font_atlas, multiplies with color
-// - color.a < 0: Opaque image mode - samples from dynamic_texture, forces alpha = 1.0
+// - color.a >= 0: Font/text mode - samples from bindless array, multiplies with color
+// - color.a < 0: Opaque image mode - samples from bindless array, forces alpha = 1.0
 //   This is used for viewport, thumbnails, and other images that should not blend.
 
 struct UiVertex {
     @location(0) position: vec2f,  // Screen coordinates (pixels)
     @location(1) uv: vec2f,
     @location(2) color: vec4f,
+    @location(3) texture_index: u32,  // Index into bindless texture array
 }
 
 struct VertexOutput {
     @builtin(position) clip_position: vec4f,
     @location(0) uv: vec2f,
     @location(1) color: vec4f,
+    @location(2) texture_index: u32,
 }
 
 // Screen size uniform buffer (set 0, binding 3)
@@ -25,16 +29,14 @@ struct UiUniforms {
 }
 
 // Set 0: Static UI resources (bound once)
-// binding 0: font atlas (SAMPLED_IMAGE)
 // binding 1: sampler
 // binding 3: uniforms (UNIFORM_BUFFER)
-@group(0) @binding(0) var font_atlas: texture_2d<f32>;
 @group(0) @binding(1) var font_sampler: sampler;
 @group(0) @binding(3) var<uniform> uniforms: UiUniforms;
 
-// Set 1: Dynamic texture (push descriptors)
-// This set is pushed per-draw-call to switch between viewport and thumbnails
-@group(1) @binding(0) var dynamic_texture: texture_2d<f32>;
+// Set 1: Bindless texture array (shared with 3D materials)
+// binding 0: texture_2d array (4096 textures)
+@group(1) @binding(0) var bindless_textures: binding_array<texture_2d<f32>, 4096>;
 
 // Sentinel value for opaque image mode (matches Color::OPAQUE_IMAGE_ALPHA in Rust)
 // This is approximately 1.0/255.0 which is the smallest non-zero alpha that can be
@@ -54,24 +56,28 @@ fn vs_main(in: UiVertex) -> VertexOutput {
     out.clip_position = vec4f(ndc_x, ndc_y, 0.0, 1.0);
     out.uv = in.uv;
     out.color = in.color;
+    out.texture_index = in.texture_index;
 
     return out;
 }
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4f {
+    // Sample from the bindless texture array using the per-vertex index
+    let texture = bindless_textures[in.texture_index];
+
     // Check for opaque image mode (special alpha value signals this)
     if (in.color.a <= OPAQUE_IMAGE_ALPHA) {
-        // Opaque image mode - sample from dynamic texture, force alpha = 1.0
+        // Opaque image mode - sample from bindless array, force alpha = 1.0
         // Used for viewport, thumbnails, and other textures that should not blend
-        let tex_color = textureSample(dynamic_texture, font_sampler, in.uv);
+        let tex_color = textureSample(texture, font_sampler, in.uv);
         // Use the absolute value of alpha for any tinting (usually 1.0 anyway)
         let tint = vec4f(in.color.rgb, 1.0);
         // Force output alpha to 1.0 to disable blending
         return vec4f(tex_color.rgb * tint.rgb, 1.0);
     } else {
-        // Font/text mode - sample from font atlas and multiply with vertex color
-        let tex_color = textureSample(font_atlas, font_sampler, in.uv);
+        // Font/text mode - sample from bindless array and multiply with vertex color
+        let tex_color = textureSample(texture, font_sampler, in.uv);
         return in.color * tex_color;
     }
 }

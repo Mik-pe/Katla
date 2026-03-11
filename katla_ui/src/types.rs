@@ -58,13 +58,15 @@ pub struct Vertex {
     pub uv: Vec2,
     /// Vertex color (RGBA as bytes).
     pub color: [u8; 4],
+    /// Bindless texture index (index into the bindless texture array).
+    pub texture_index: u32,
 }
 
 impl Vertex {
     /// Create a new vertex.
     #[inline]
-    pub const fn new(pos: Vec2, uv: Vec2, color: [u8; 4]) -> Self {
-        Self { pos, uv, color }
+    pub const fn new(pos: Vec2, uv: Vec2, color: [u8; 4], texture_index: u32) -> Self {
+        Self { pos, uv, color, texture_index }
     }
 
     /// Create a position-only vertex for solid color rendering.
@@ -76,16 +78,18 @@ impl Vertex {
             pos,
             uv: Vec2::ZERO,
             color,
+            texture_index: 0, // Will be overridden with font atlas index
         }
     }
 
     /// Create from raw arrays (for conversion from GPU types).
     #[inline]
-    pub fn from_raw(position: [f32; 2], uv: [f32; 2], color: [u8; 4]) -> Self {
+    pub fn from_raw(position: [f32; 2], uv: [f32; 2], color: [u8; 4], texture_index: u32) -> Self {
         Self {
             pos: Vec2::new(position[0], position[1]),
             uv: Vec2::new(uv[0], uv[1]),
             color,
+            texture_index,
         }
     }
 }
@@ -188,10 +192,11 @@ mod tests {
 
     #[test]
     fn test_vertex_new() {
-        let v = Vertex::new(Vec2::new(10.0, 20.0), Vec2::new(0.5, 0.5), [255, 0, 0, 255]);
+        let v = Vertex::new(Vec2::new(10.0, 20.0), Vec2::new(0.5, 0.5), [255, 0, 0, 255], 5);
         assert_eq!(v.pos.x(), 10.0);
         assert_eq!(v.uv.y(), 0.5);
         assert_eq!(v.color, [255, 0, 0, 255]);
+        assert_eq!(v.texture_index, 5);
     }
 
     #[test]

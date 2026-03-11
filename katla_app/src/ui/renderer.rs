@@ -94,8 +94,8 @@ impl UIRenderer {
     /// Convert a `katla_ui::DrawList` to a `katla_gfx::UIDrawList`.
     ///
     /// This method:
-    /// 1. Resolves all texture IDs to GPU handles
-    /// 2. Converts vertex data to GPU format
+    /// 1. Resolves all texture IDs to bindless texture indices
+    /// 2. Converts vertex data to GPU format with texture indices
     /// 3. Copies index and command data
     ///
     /// # Arguments
@@ -113,26 +113,62 @@ impl UIRenderer {
         screen_size: [f32; 2],
         scale_factor: f32,
     ) -> UIDrawList {
-        // Convert vertices
+        // Build a map from TextureId to bindless index for this frame
+        let mut texture_to_index: HashMap<TextureId, u32> = HashMap::new();
+
+        // First pass: build texture mapping
+        for cmd in &draw_list.commands {
+            if !texture_to_index.contains_key(&cmd.texture) {
+                let bindless_index = self.texture_id_to_bindless_index(cmd.texture);
+                texture_to_index.insert(cmd.texture, bindless_index);
+            }
+        }
+
+        // Create a mapping from vertex index to texture index
+        let mut vertex_texture_indices: Vec<u32> = vec![0; draw_list.vertices.len()];
+
+        // Assign texture indices to vertices based on which commands use them
+        for cmd in &draw_list.commands {
+            let bindless_index = texture_to_index.get(&cmd.texture).copied().unwrap_or(0);
+            let index_start = cmd.index_offset as usize;
+            let index_end = index_start + cmd.index_count as usize;
+
+            // Mark all vertices referenced by this command with its texture index
+            for i in index_start..index_end {
+                if i < draw_list.indices.len() {
+                    let vertex_idx = draw_list.indices[i] as usize;
+                    if vertex_idx < vertex_texture_indices.len() {
+                        vertex_texture_indices[vertex_idx] = bindless_index;
+                    }
+                }
+            }
+        }
+
+        // Now convert vertices with their texture indices
         let vertices: Vec<VertexUI> = draw_list
             .vertices
             .iter()
-            .map(|v| VertexUI::new([v.pos.x(), v.pos.y()], [v.uv.x(), v.uv.y()], v.color))
+            .enumerate()
+            .map(|(i, v)| {
+                let tex_index = vertex_texture_indices.get(i).copied().unwrap_or(0);
+                VertexUI::new([v.pos.x(), v.pos.y()], [v.uv.x(), v.uv.y()], v.color, tex_index)
+            })
             .collect();
 
         // Copy indices directly
         let indices = draw_list.indices.clone();
 
-        // Convert commands, resolving texture IDs
+        // Convert commands, resolving texture IDs to bindless indices (for validation)
         let commands: Vec<UiDrawCommand> = draw_list
             .commands
             .iter()
             .map(|cmd| {
+                let bindless_index = texture_to_index.get(&cmd.texture).copied().unwrap_or(0);
                 UiDrawCommand::new(
                     cmd.index_offset,
                     cmd.index_count,
                     cmd.clip_rect,
-                    self.resolve_texture(cmd.texture),
+                    TextureHandle::new(bindless_index),
                 )
             })
             .collect();
@@ -143,6 +179,40 @@ impl UIRenderer {
             commands,
             screen_size,
             scale_factor,
+        }
+    }
+
+    /// Convert a TextureId to a bindless texture index.
+    ///
+    /// This maps the texture ID to the corresponding bindless slot index.
+    fn texture_id_to_bindless_index(&self, id: TextureId) -> u32 {
+        const BINDLESS_FLAG: u64 = 1 << 63;
+
+        // Check if this is already a bindless texture (high bit set)
+        if id.0 & BINDLESS_FLAG != 0 {
+            // Extract the bindless index
+            return (id.0 & !BINDLESS_FLAG) as u32;
+        }
+
+        // Check font atlas (slot 0 in bindless system for now)
+        if id == TextureId::FONT_ATLAS {
+            return 0; // Font atlas will be registered at slot 0
+        }
+
+        // For TextureId::NONE, use slot 0 (font atlas has white pixel at (0,0))
+        if id == TextureId::NONE {
+            return 0;
+        }
+
+        // Look up in registry - for now, return a placeholder
+        // In a full implementation, we'd register textures with bindless manager
+        // and track their slot indices
+        if let Some(_handle) = self.texture_registry.get(&id) {
+            // TODO: Return actual bindless index from registered texture
+            // For now, use slot 0 as fallback
+            0
+        } else {
+            0
         }
     }
 
