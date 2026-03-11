@@ -1032,8 +1032,8 @@ pub fn build_asset_browser(
                         ui.image(
                             TextureId::from_handle_index(texture_handle.index()),
                             thumb_bounds,
-                            None,                      // Use default UVs (0-1)
-                            Some(Color::OPAQUE_IMAGE), // Force opaque output
+                            None,               // Use default UVs (0-1)
+                            Some(Color::WHITE), // Force opaque output
                         );
                     }
                     ThumbnailState::Loading => {

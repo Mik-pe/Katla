@@ -37,7 +37,7 @@ impl<'a> Widget for Viewport<'a> {
             self.bounds,
             Vec2::new(0.0, 1.0),
             Vec2::new(1.0, 0.0),
-            Color::OPAQUE_IMAGE,
+            Color::WHITE,
             self.texture_id,
         );
 
