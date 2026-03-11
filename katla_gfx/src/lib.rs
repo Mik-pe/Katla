@@ -49,6 +49,56 @@
 //! })?;
 //! ```
 //!
+//! # Bindless Texture System
+//!
+//! The renderer uses a bindless texture system where all textures are stored in a single
+//! descriptor array accessed by index. This eliminates per-material descriptor bindings
+//! and enables efficient texture management.
+//!
+//! ## Querying Bindless Texture Information
+//!
+//! For advanced use cases such as debugging and texture inspection tools, the API provides
+//! methods to query bindless texture slot information:
+//!
+//! ```ignore
+//! use katla_gfx::{VulkanRenderer, TextureHandle};
+//!
+//! // Get the bindless slot index for a texture handle
+//! if let Some(slot) = renderer.get_bindless_slot(texture_handle) {
+//!     println!("Texture is at bindless slot {}", slot);
+//! }
+//!
+//! // Get the texture handle at a specific slot
+//! if let Some(handle) = renderer.get_texture_at_slot(10) {
+//!     println!("Texture at slot 10: {:?}", handle);
+//! }
+//!
+//! // Iterate over all registered textures with their slots
+//! for (handle, slot) in renderer.iter_bindless_textures() {
+//!     println!("Texture {:?} is at slot {}", handle, slot);
+//! }
+//!
+//! // Get bindless slot utilization statistics
+//! let (occupied, available, total) = renderer.get_bindless_stats();
+//! println!("Bindless slots: {}/{} used", occupied, total);
+//!
+//! // Get the font atlas bindless slot
+//! if let Some(slot) = renderer.get_font_atlas_bindless_slot() {
+//!     println!("Font atlas is at slot {}", slot);
+//! }
+//! ```
+//!
+//! ## Advanced: Direct Bindless Access
+//!
+//! For low-level rendering code, you can access the bindless system directly:
+//!
+//! - [`VulkanRenderer::get_texture_bindless_index()`] - Get slot index for a texture
+//! - [`VulkanRenderer::get_bindless_slot()`] - Get slot index (returns Option)
+//! - [`VulkanRenderer::get_texture_at_slot()`] - Reverse lookup: slot → texture
+//! - [`VulkanRenderer::iter_bindless_textures()`] - Iterate all registered textures
+//! - [`VulkanRenderer::get_bindless_stats()`] - Get slot utilization stats
+//! - [`VulkanRenderer::get_font_atlas_bindless_slot()`] - Get font atlas slot
+//!
 //! # API Organization
 //!
 //! ## Core Types

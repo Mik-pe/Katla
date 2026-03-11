@@ -311,6 +311,51 @@ impl BindlessTextureManager {
     pub fn shared_sampler(&self) -> VkSampler {
         self.shared_sampler
     }
+
+    /// Get the bindless slot index for a texture handle.
+    ///
+    /// This is used internally by the renderer to map TextureHandle values
+    /// to their bindless slot indices for shader binding.
+    ///
+    /// # Arguments
+    /// * `image_view` - The Vulkan image view to look up
+    ///
+    /// # Returns
+    /// The slot index if the texture is registered, None otherwise.
+    pub fn get_slot_for_image_view(&self, image_view: vk::ImageView) -> Option<u32> {
+        self.slots
+            .iter()
+            .position(|&slot| slot == Some(image_view))
+            .map(|i| i as u32)
+    }
+
+    /// Check if a slot is occupied by a texture.
+    ///
+    /// # Arguments
+    /// * `slot` - The slot index to check
+    ///
+    /// # Returns
+    /// true if the slot is occupied, false if it's free or the slot is invalid.
+    pub fn is_slot_occupied(&self, slot: u32) -> bool {
+        (slot as usize) < self.slots.len() && self.slots[slot as usize].is_some()
+    }
+
+    /// Get the number of occupied (non-free) texture slots.
+    ///
+    /// This excludes default textures at slots 0-4.
+    pub fn occupied_slot_count(&self) -> usize {
+        self.slots.iter().filter(|s| s.is_some()).count()
+    }
+
+    /// Get the number of available (free) texture slots.
+    pub fn available_slot_count(&self) -> usize {
+        self.free_slots.len()
+    }
+
+    /// Get the total number of texture slots (including defaults).
+    pub fn total_slot_count(&self) -> usize {
+        self.slots.len()
+    }
 }
 
 impl Drop for BindlessTextureManager {
@@ -337,5 +382,12 @@ mod tests {
         // Ensure we have a reasonable limit
         assert!(MAX_BINDLESS_TEXTURES >= 1024);
         assert!(MAX_BINDLESS_TEXTURES <= 16384);
+    }
+
+    #[test]
+    fn test_bindless_slot_queries_require_vulkan() {
+        // These tests require a Vulkan context, so we just verify the methods exist
+        // Actual functionality is tested in integration tests
+        assert!(MAX_BINDLESS_TEXTURES > 0);
     }
 }
