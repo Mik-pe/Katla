@@ -833,4 +833,146 @@ mod tests {
             "Logical height * scale should equal physical height"
         );
     }
+
+    #[test]
+    fn test_bindless_texture_id_decoding() {
+        // Test that bindless texture IDs (with high bit set) are correctly decoded
+        let renderer = UIRenderer::new();
+
+        const BINDLESS_FLAG: u64 = 1 << 63;
+
+        // Create a bindless texture ID with index 42
+        let bindless_index = 42u32;
+        let texture_id = TextureId::new(BINDLESS_FLAG | (bindless_index as u64));
+
+        // Decode the bindless index
+        let decoded_index = renderer.texture_id_to_bindless_index(texture_id);
+
+        assert_eq!(
+            decoded_index, bindless_index,
+            "Should extract the bindless index from TextureId with high bit set"
+        );
+    }
+
+    #[test]
+    fn test_bindless_texture_id_preserves_index() {
+        // Test that different bindless indices are preserved correctly
+        let renderer = UIRenderer::new();
+
+        const BINDLESS_FLAG: u64 = 1 << 63;
+
+        // Test various bindless indices
+        let test_indices = [0u32, 1, 7, 8, 42, 100, 1000];
+
+        for index in test_indices {
+            let texture_id = TextureId::new(BINDLESS_FLAG | (index as u64));
+            let decoded = renderer.texture_id_to_bindless_index(texture_id);
+
+            assert_eq!(
+                decoded, index,
+                "Bindless index {} should be preserved correctly",
+                index
+            );
+        }
+    }
+
+    #[test]
+    fn test_font_atlas_bindless_slot() {
+        // Test that font atlas returns the registered bindless slot
+        let mut renderer = UIRenderer::new();
+
+        // Set font atlas bindless slot to 11
+        renderer.font_atlas_bindless_slot = Some(11);
+
+        // FONT_ATLAS texture ID should return slot 11
+        let font_atlas_index = renderer.texture_id_to_bindless_index(TextureId::FONT_ATLAS);
+
+        assert_eq!(
+            font_atlas_index, 11,
+            "FONT_ATLAS should return the registered bindless slot"
+        );
+    }
+
+    #[test]
+    fn test_texture_id_none_returns_font_atlas_slot() {
+        // Test that TextureId::NONE uses font atlas slot (for white pixel sampling)
+        let mut renderer = UIRenderer::new();
+
+        // Set font atlas bindless slot to 5
+        renderer.font_atlas_bindless_slot = Some(5);
+
+        // TextureId::NONE should return font atlas slot
+        let none_index = renderer.texture_id_to_bindless_index(TextureId::NONE);
+
+        assert_eq!(
+            none_index, 5,
+            "TextureId::NONE should return font atlas bindless slot for white pixel sampling"
+        );
+    }
+
+    #[test]
+    fn test_viewport_bindless_texture_mapping() {
+        // Test viewport bindless texture IDs are correctly mapped
+        let renderer = UIRenderer::new();
+
+        const BINDLESS_FLAG: u64 = 1 << 63;
+
+        // Simulate LDR texture at bindless index 8 (as seen in logs)
+        let ldr_bindless_index = 8u32;
+        let viewport_texture_id = TextureId::new(BINDLESS_FLAG | (ldr_bindless_index as u64));
+
+        // Verify the texture ID is correctly decoded
+        let decoded_index = renderer.texture_id_to_bindless_index(viewport_texture_id);
+
+        assert_eq!(
+            decoded_index, ldr_bindless_index,
+            "Viewport texture ID should decode to correct bindless index"
+        );
+    }
+
+    #[test]
+    fn test_multi_viewport_bindless_indices() {
+        // Test that multiple viewports can have different bindless indices
+        let renderer = UIRenderer::new();
+
+        const BINDLESS_FLAG: u64 = 1 << 63;
+
+        // Simulate multiple viewports with different bindless indices
+        let viewport_indices = [8u32, 9, 10, 11];
+
+        for (i, &index) in viewport_indices.iter().enumerate() {
+            let texture_id = TextureId::new(BINDLESS_FLAG | (index as u64));
+            let decoded = renderer.texture_id_to_bindless_index(texture_id);
+
+            assert_eq!(
+                decoded, index,
+                "Viewport {} should decode to bindless index {}",
+                i, index
+            );
+        }
+    }
+
+    #[test]
+    fn test_bindless_flag_detection() {
+        // Test that the high bit correctly identifies bindless textures
+        let renderer = UIRenderer::new();
+
+        const BINDLESS_FLAG: u64 = 1 << 63;
+
+        // Bindless texture ID (high bit set)
+        let bindless_id = TextureId::new(BINDLESS_FLAG | 42);
+        assert_eq!(renderer.texture_id_to_bindless_index(bindless_id), 42);
+
+        // Regular texture ID (high bit not set) should not be treated as bindless
+        // This will fall through to the font atlas or registry lookup
+        let regular_id = TextureId::new(42);
+        // Without high bit set, it's not a bindless texture
+        // The function should handle this gracefully (returns 0 or font atlas slot)
+        let regular_decoded = renderer.texture_id_to_bindless_index(regular_id);
+        // Should not equal 42 since high bit is not set
+        assert_ne!(
+            regular_decoded, 42,
+            "Regular texture ID without high bit should not decode to bindless index"
+        );
+    }
 }
