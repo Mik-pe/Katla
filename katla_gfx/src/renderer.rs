@@ -1243,6 +1243,110 @@ impl VulkanRenderer {
         )
     }
 
+    /// Get a debug representation of bindless slot allocation.
+    ///
+    /// Returns a string showing which slots are occupied and which are free.
+    /// Useful for debugging texture allocation issues.
+    ///
+    /// # Example
+    /// ```ignore
+    /// let debug_info = renderer.debug_bindless_slot_allocation();
+    /// println!("{}", debug_info);
+    /// ```
+    pub fn debug_bindless_slot_allocation(&self) -> String {
+        self.bindless_manager.debug_slot_allocation()
+    }
+
+    /// Get a list of all occupied bindless slots.
+    ///
+    /// Returns a vector of (slot, image_view) pairs for all occupied slots.
+    /// Useful for debugging which textures are currently bound.
+    ///
+    /// # Example
+    /// ```ignore
+    /// for (slot, image_view) in renderer.list_occupied_bindless_slots() {
+    ///     println!("Slot {}: ImageView({:?})", slot, image_view);
+    /// }
+    /// ```
+    pub fn list_occupied_bindless_slots(&self) -> Vec<(u32, ash::vk::ImageView)> {
+        self.bindless_manager.list_occupied_slots()
+    }
+
+    /// Get debug information about a specific bindless slot.
+    ///
+    /// Returns a string describing the slot contents.
+    ///
+    /// # Arguments
+    /// * `slot` - The bindless slot index
+    ///
+    /// # Example
+    /// ```ignore
+    /// println!("{}", renderer.debug_bindless_slot_info(5));
+    /// ```
+    pub fn debug_bindless_slot_info(&self, slot: u32) -> String {
+        self.bindless_manager.debug_slot_info(slot)
+    }
+
+    /// Get a debug representation of all registered bindless textures.
+    ///
+    /// Returns a string listing all texture handles with their bindless slots.
+    /// Useful for debugging texture allocation and slot assignments.
+    ///
+    /// # Example
+    /// ```ignore
+    /// let debug_info = renderer.debug_bindless_textures();
+    /// println!("{}", debug_info);
+    /// ```
+    pub fn debug_bindless_textures(&self) -> String {
+        self.texture_manager.debug_bindless_textures()
+    }
+
+    /// Get a list of all texture handles that are not registered with bindless.
+    ///
+    /// Returns texture handles that exist but don't have a bindless slot.
+    /// Useful for finding textures that should be registered but aren't.
+    ///
+    /// # Example
+    /// ```ignore
+    /// for handle in renderer.list_unregistered_textures() {
+    ///     println!("Texture {:?} is not registered with bindless", handle);
+    /// }
+    /// ```
+    pub fn list_unregistered_textures(&self) -> Vec<crate::TextureHandle> {
+        self.texture_manager.list_unregistered_textures()
+    }
+
+    /// Check if a texture is registered with the bindless system.
+    ///
+    /// # Arguments
+    /// * `handle` - The texture handle to check
+    ///
+    /// # Returns
+    /// true if the texture has a bindless slot assigned.
+    ///
+    /// # Example
+    /// ```ignore
+    /// if !renderer.is_bindless_registered(texture_handle) {
+    ///     println!("Texture is not registered with bindless");
+    /// }
+    /// ```
+    pub fn is_bindless_registered(&self, handle: crate::TextureHandle) -> bool {
+        self.texture_manager.is_bindless_registered(handle)
+    }
+
+    /// Get bindless texture registration statistics.
+    ///
+    /// Returns (registered_count, unregistered_count, total_count).
+    ///
+    /// # Example
+    /// ```ignore
+    /// let (registered, unregistered, total) = renderer.get_bindless_registration_stats();
+    /// println!("Bindless: {}/{} registered", registered, total);
+    /// ```
+    pub fn get_bindless_registration_stats(&self) -> (usize, usize, usize) {
+        self.texture_manager.bindless_stats()
+    }
+
     /// Compile a fullscreen/post-processing shader and return its pipeline handle.
     ///
     /// This is intended for post-processing effects like tonemapping, bloom, etc.
