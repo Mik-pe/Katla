@@ -91,8 +91,8 @@ impl<'a> Widget for ViewportGrid<'a> {
                 // Note: Y is flipped (0.0 at bottom, 1.0 at top in texture space)
                 ui.draw_image(
                     viewport_bounds,
-                    Vec2::new(0.0, 1.0),  // Top-left in texture
-                    Vec2::new(1.0, 0.0),  // Bottom-right in texture
+                    Vec2::new(0.0, 1.0), // Top-left in texture
+                    Vec2::new(1.0, 0.0), // Bottom-right in texture
                     Color::OPAQUE_IMAGE,
                     texture,
                 );

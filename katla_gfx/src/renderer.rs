@@ -308,6 +308,22 @@ impl VulkanRenderer {
         let desc = TextureDescriptor::rgba8_srgb(width, height);
         let handle = self.create_texture(&desc, data);
 
+        // Register the font atlas with the bindless texture system
+        if let Some(texture) = self.texture_manager.get_texture_rc(handle) {
+            let bindless_slot = self
+                .register_bindless_texture(texture.image_view.vk())
+                .unwrap_or_else(|e| {
+                    log::error!("Failed to register font atlas with bindless system: {}", e);
+                    // Fall back to slot 0 (should not happen in normal operation)
+                    0
+                });
+            self.ui_renderer.set_font_atlas_bindless_slot(bindless_slot);
+            log::info!(
+                "Font atlas registered with bindless system at slot {}",
+                bindless_slot
+            );
+        }
+
         self.ui_renderer.set_font_atlas(handle);
         handle
     }

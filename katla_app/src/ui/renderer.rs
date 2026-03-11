@@ -4,8 +4,8 @@
 //! - Maps `TextureId` to `TextureHandle`
 //! - Converts `katla_ui::DrawList` to `katla_gfx::UIDrawList`
 
-use std::collections::HashMap;
 use ash::vk;
+use std::collections::HashMap;
 
 use katla_gfx::{TextureHandle, UIDrawList, UiDrawCommand, VertexUI};
 use katla_ui::{DrawList, TextureId};
@@ -20,6 +20,9 @@ pub struct UIRenderer {
     texture_registry: HashMap<TextureId, TextureHandle>,
     /// Font atlas texture handle.
     font_atlas: Option<TextureHandle>,
+    /// Font atlas bindless texture slot index.
+    /// This is the slot allocated by the bindless system for the font atlas.
+    font_atlas_bindless_slot: Option<u32>,
     /// Maps bindless indices to transient texture resources (for viewport rendering).
     /// Stores (image_view, sampler) tuples for textures not in the texture manager.
     transient_textures: HashMap<u32, (vk::ImageView, vk::Sampler)>,
@@ -31,6 +34,7 @@ impl UIRenderer {
         Self {
             texture_registry: HashMap::new(),
             font_atlas: None,
+            font_atlas_bindless_slot: None,
             transient_textures: HashMap::new(),
         }
     }
@@ -56,6 +60,20 @@ impl UIRenderer {
     /// This is a convenience method since the font atlas is frequently accessed.
     pub fn set_font_atlas(&mut self, handle: TextureHandle) {
         self.font_atlas = Some(handle);
+    }
+
+    /// Set the font atlas bindless texture slot.
+    ///
+    /// This stores the bindless slot index allocated for the font atlas texture.
+    pub fn set_font_atlas_bindless_slot(&mut self, slot: u32) {
+        self.font_atlas_bindless_slot = Some(slot);
+    }
+
+    /// Get the font atlas bindless texture slot.
+    ///
+    /// Returns None if the font atlas has not been registered with the bindless system.
+    pub fn font_atlas_bindless_slot(&self) -> Option<u32> {
+        self.font_atlas_bindless_slot
     }
 
     /// Get the font atlas texture handle.
@@ -151,7 +169,12 @@ impl UIRenderer {
             .enumerate()
             .map(|(i, v)| {
                 let tex_index = vertex_texture_indices.get(i).copied().unwrap_or(0);
-                VertexUI::new([v.pos.x(), v.pos.y()], [v.uv.x(), v.uv.y()], v.color, tex_index)
+                VertexUI::new(
+                    [v.pos.x(), v.pos.y()],
+                    [v.uv.x(), v.uv.y()],
+                    v.color,
+                    tex_index,
+                )
             })
             .collect();
 
@@ -194,14 +217,14 @@ impl UIRenderer {
             return (id.0 & !BINDLESS_FLAG) as u32;
         }
 
-        // Check font atlas (slot 0 in bindless system for now)
+        // Check font atlas - use the registered bindless slot
         if id == TextureId::FONT_ATLAS {
-            return 0; // Font atlas will be registered at slot 0
+            return self.font_atlas_bindless_slot.unwrap_or(0);
         }
 
-        // For TextureId::NONE, use slot 0 (font atlas has white pixel at (0,0))
+        // For TextureId::NONE, use font atlas slot (has white pixel at (0,0))
         if id == TextureId::NONE {
-            return 0;
+            return self.font_atlas_bindless_slot.unwrap_or(0);
         }
 
         // Look up in registry - for now, return a placeholder
@@ -209,10 +232,11 @@ impl UIRenderer {
         // and track their slot indices
         if let Some(_handle) = self.texture_registry.get(&id) {
             // TODO: Return actual bindless index from registered texture
-            // For now, use slot 0 as fallback
-            0
+            // For now, use font atlas slot as fallback
+            self.font_atlas_bindless_slot.unwrap_or(0)
         } else {
-            0
+            // Fallback to font atlas slot for unknown textures
+            self.font_atlas_bindless_slot.unwrap_or(0)
         }
     }
 

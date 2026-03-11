@@ -63,6 +63,8 @@ pub struct Application {
     pub(crate) resources: ResourceManager,
     /// Immediate mode UI context
     pub(crate) ui_context: katla_ui::UiContext,
+    /// UI renderer for converting UI draw lists to GPU format
+    pub(crate) ui_renderer: crate::ui::UIRenderer,
     /// Debug overlay UI (simplified stats)
     pub(crate) debug_overlay: crate::ui::DebugOverlay,
     /// Game engine editor UI
@@ -387,7 +389,8 @@ impl Application {
 
         // Store the LDR bindless index for UI viewport rendering
         // The UI will use this index to sample from the transient texture directly
-        self.editor_ui.set_viewport_bindless_index(ldr_bindless_index);
+        self.editor_ui
+            .set_viewport_bindless_index(ldr_bindless_index);
         info!(
             "LDR (tonemapped) texture registered with bindless system at index {}",
             ldr_bindless_index

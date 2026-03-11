@@ -70,7 +70,8 @@ pub fn generate_ui_draw_list(app: &mut Application, dt: f32) -> Option<UIDrawLis
 
     // Convert to GPU format if not empty
     if !draw_list.is_empty() {
-        let mut ui_renderer = crate::ui::UIRenderer::new();
+        // Use the persistent UI renderer from the application
+        let ui_renderer = &mut app.ui_renderer;
 
         // Register the viewport texture if it exists
         if let Some(texture_id) = viewport_texture_id {
@@ -189,6 +190,16 @@ pub fn process_editor_actions(app: &mut Application) {
         if app.ui_context.fonts.atlas_was_resized() {
             // Create new texture with new size
             app.renderer.create_ui_font_atlas(width, height, data);
+
+            // Update the bindless slot in UI renderer
+            if let Some(bindless_slot) = app.renderer.ui_renderer.font_atlas_bindless_slot() {
+                app.ui_renderer.set_font_atlas_bindless_slot(bindless_slot);
+                log::info!(
+                    "Font atlas bindless slot updated after resize: {}",
+                    bindless_slot
+                );
+            }
+
             app.ui_context.fonts.clear_atlas_resized();
         } else {
             // Update existing texture
