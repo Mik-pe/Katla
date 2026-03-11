@@ -26,6 +26,9 @@ pub struct UIRenderer {
     /// Maps bindless indices to transient texture resources (for viewport rendering).
     /// Stores (image_view, sampler) tuples for textures not in the texture manager.
     transient_textures: HashMap<u32, (vk::ImageView, vk::Sampler)>,
+    /// Maps TextureHandle indices to their bindless texture slots.
+    /// This allows us to look up the bindless index for thumbnails and other textures.
+    bindless_slots: HashMap<u32, u32>,
 }
 
 impl UIRenderer {
@@ -36,6 +39,7 @@ impl UIRenderer {
             font_atlas: None,
             font_atlas_bindless_slot: None,
             transient_textures: HashMap::new(),
+            bindless_slots: HashMap::new(),
         }
     }
 
@@ -79,6 +83,21 @@ impl UIRenderer {
     /// Get the font atlas texture handle.
     pub fn font_atlas(&self) -> Option<TextureHandle> {
         self.font_atlas
+    }
+
+    /// Register a bindless slot for a texture handle.
+    ///
+    /// This tracks which bindless slot a texture was registered to,
+    /// allowing lookup by handle index later.
+    pub fn register_bindless_slot(&mut self, handle: TextureHandle, slot: u32) {
+        self.bindless_slots.insert(handle.index(), slot);
+    }
+
+    /// Get the bindless slot for a texture handle.
+    ///
+    /// Returns None if the texture hasn't been registered with bindless.
+    pub fn get_bindless_slot(&self, handle: TextureHandle) -> Option<u32> {
+        self.bindless_slots.get(&handle.index()).copied()
     }
 
     /// Resolve a texture ID to a GPU handle.
@@ -227,12 +246,13 @@ impl UIRenderer {
             return self.font_atlas_bindless_slot.unwrap_or(0);
         }
 
-        // Look up in registry - for now, return a placeholder
-        // In a full implementation, we'd register textures with bindless manager
-        // and track their slot indices
-        if let Some(_handle) = self.texture_registry.get(&id) {
-            // TODO: Return actual bindless index from registered texture
-            // For now, use font atlas slot as fallback
+        // Look up in registry - get the handle and then look up its bindless slot
+        if let Some(handle) = self.texture_registry.get(&id) {
+            // Try to get the bindless slot from our tracking map
+            if let Some(slot) = self.get_bindless_slot(*handle) {
+                return slot;
+            }
+            // Fallback to font atlas slot if not found
             self.font_atlas_bindless_slot.unwrap_or(0)
         } else {
             // Fallback to font atlas slot for unknown textures

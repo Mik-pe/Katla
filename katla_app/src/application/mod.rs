@@ -1063,14 +1063,33 @@ impl Application {
                     path,
                     width,
                     height,
-                    pixels: _,
+                    pixels,
                     ..
                 } => {
                     debug!("Thumbnail loaded: {:?} ({}x{})", path, width, height);
 
-                    // TODO: Upload texture to renderer and get TextureHandle
-                    // For now, use NONE as placeholder until texture upload is implemented
-                    let texture_handle = katla_gfx::TextureHandle::NONE;
+                    // Upload texture to renderer and get TextureHandle
+                    // Use SRGB format for correct color rendering in UI
+                    let desc = katla_gfx::TextureDescriptor::rgba8_srgb(width, height);
+                    let texture_handle = self.renderer.create_texture(&desc, &pixels);
+
+                    // Get the bindless slot for this texture
+                    let bindless_slot = self
+                        .renderer
+                        .texture_manager
+                        .get_bindless_slot(texture_handle)
+                        .unwrap_or_else(|| {
+                            log::warn!(
+                                "Thumbnail texture {:?} (handle {}) has no bindless slot",
+                                path,
+                                texture_handle.index()
+                            );
+                            0 // Fallback to slot 0
+                        });
+
+                    // Register the bindless slot with the UI renderer
+                    self.ui_renderer
+                        .register_bindless_slot(texture_handle, bindless_slot);
 
                     // Update the thumbnail cache entry
                     if let Some(entry) = self.background_loader.get_thumbnail_mut(&path) {
@@ -1085,7 +1104,12 @@ impl Application {
                     for asset in self.editor_ui.asset_browser.assets.iter_mut() {
                         if asset.path == path {
                             asset.thumbnail_state = ThumbnailState::Loaded { texture_handle };
-                            debug!("Updated thumbnail state for {:?}", path);
+                            debug!(
+                                "Updated thumbnail state for {:?} with handle {}, bindless slot {}",
+                                path,
+                                texture_handle.index(),
+                                bindless_slot
+                            );
                             break;
                         }
                     }
