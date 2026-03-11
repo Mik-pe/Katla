@@ -5,7 +5,7 @@
 
 use crate::resources::viewport_state::{ViewportGridState, ViewportLayout};
 use katla_math::{Color, Rect2D, Vec2};
-use katla_ui::{Response, TextureId, UiContext, Widget};
+use katla_ui::{mouse_button, Response, TextureId, UiContext, Widget};
 
 use super::{FocusedPanel, Theme};
 
@@ -76,7 +76,7 @@ impl<'a> Widget for ViewportGrid<'a> {
         let (rows, cols) = self.state.layout.grid_dimensions();
 
         // Check which viewport is hovered
-        let hovered_slot = self.get_slot_at_position(ui.input.mouse_pos);
+        let hovered_slot = self.get_slot_at_position(ui.mouse_pos());
 
         // Draw each viewport in the grid
         for row in 0..rows {
@@ -182,8 +182,7 @@ impl<'a> Widget for ViewportGrid<'a> {
         }
 
         // Handle focus on click
-        if ui.is_hovered(self.bounds) && ui.input.mouse_clicked(katla_ui::input::mouse_button::LEFT)
-        {
+        if ui.is_hovered(self.bounds) && ui.mouse_clicked(mouse_button::LEFT) {
             *self.focused_panel = FocusedPanel::Viewport;
         }
 

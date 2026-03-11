@@ -3,7 +3,6 @@
 use katla_math::{Color, Rect2D, Vec2};
 
 use crate::icons::ForkAwesome;
-use crate::input::mouse_button;
 use crate::Response;
 
 use super::super::UiContext;
@@ -21,19 +20,11 @@ impl UiContext {
         bounds: Rect2D,
     ) -> Response {
         let widget_id = self.generate_id(id);
-
         let hovered = self.update_hover(widget_id, bounds);
         let active = self.active_id == Some(widget_id);
 
-        let clicked = if hovered && self.input.mouse_pressed[mouse_button::LEFT] {
-            self.active_id = Some(widget_id);
-            false
-        } else if active && self.input.mouse_released[mouse_button::LEFT] {
-            self.active_id = None;
-            hovered
-        } else {
-            false
-        };
+        // Handle click using consolidated helper
+        let clicked = self.click_behavior(widget_id, hovered).as_clicked_bool();
 
         // Determine colors based on state
         let bg_color = if selected {
@@ -59,25 +50,8 @@ impl UiContext {
         );
         self.draw_text(label, text_pos, self.style.text_color, self.style.font_size);
 
-        // Check for double-click (on click release)
-        let double_clicked = clicked && self.input.mouse_double_clicked(mouse_button::LEFT);
-
-        // Track drag delta when active
-        let drag_delta = if active {
-            self.input.mouse_delta
-        } else {
-            Vec2::new(0.0, 0.0)
-        };
-
-        Response {
-            clicked,
-            hovered,
-            active,
-            changed: clicked,
-            bounds,
-            drag_delta,
-            double_clicked,
-        }
+        // Use Response builder for consistent construction
+        Response::interactive(clicked, hovered, active, bounds, &self.input)
     }
 
     /// Draw a toggle button with an optional check icon when enabled.
@@ -96,19 +70,11 @@ impl UiContext {
         text_color: Color,
     ) -> Response {
         let widget_id = self.generate_id(id);
-
         let hovered = self.update_hover(widget_id, bounds);
         let active = self.active_id == Some(widget_id);
 
-        let clicked = if hovered && self.input.mouse_pressed[mouse_button::LEFT] {
-            self.active_id = Some(widget_id);
-            false
-        } else if active && self.input.mouse_released[mouse_button::LEFT] {
-            self.active_id = None;
-            hovered
-        } else {
-            false
-        };
+        // Handle click using consolidated helper
+        let clicked = self.click_behavior(widget_id, hovered).as_clicked_bool();
 
         // Draw background
         let bg_color = if checked {
@@ -144,24 +110,7 @@ impl UiContext {
             );
         }
 
-        // Check for double-click
-        let double_clicked = clicked && self.input.mouse_double_clicked(mouse_button::LEFT);
-
-        // Track drag delta when active
-        let drag_delta = if active {
-            self.input.mouse_delta
-        } else {
-            Vec2::new(0.0, 0.0)
-        };
-
-        Response {
-            clicked,
-            hovered,
-            active,
-            changed: clicked,
-            bounds,
-            drag_delta,
-            double_clicked,
-        }
+        // Use Response builder for consistent construction
+        Response::interactive(clicked, hovered, active, bounds, &self.input)
     }
 }

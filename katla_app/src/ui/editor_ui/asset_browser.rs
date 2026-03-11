@@ -14,7 +14,7 @@ use std::time::Instant;
 use katla_gfx::TextureHandle;
 use katla_math::{Color, Rect2D, Vec2};
 use katla_ui::widgets::ImageButton;
-use katla_ui::{ForkAwesome, Popup, ScrollArea, ScrollAreaState, TextureId, UiContext};
+use katla_ui::{mouse_button, ForkAwesome, KeyCode, Popup, ScrollArea, ScrollAreaState, TextureId, UiContext};
 
 use super::FocusedPanel;
 use crate::ui::theme::Theme;
@@ -663,7 +663,7 @@ pub fn build_asset_browser(
     ui.draw_rect(bounds, theme.panel_bg);
 
     // Focus this panel when clicked
-    if ui.is_hovered(bounds) && ui.input.mouse_clicked(katla_ui::input::mouse_button::LEFT) {
+    if ui.is_hovered(bounds) && ui.mouse_clicked(mouse_button::LEFT) {
         *focused_panel = FocusedPanel::AssetBrowser;
     }
 
@@ -804,7 +804,7 @@ pub fn build_asset_browser(
         );
 
         // Click to navigate
-        if is_hovered && !is_last && ui.input.mouse_clicked(katla_ui::input::mouse_button::LEFT) {
+        if is_hovered && !is_last && ui.mouse_clicked(mouse_button::LEFT) {
             clicked_segment = Some(i);
         }
 
@@ -924,11 +924,11 @@ pub fn build_asset_browser(
         // Show text cursor when hovering over search field
         ui.set_mouse_cursor(katla_ui::input::MouseCursor::Text);
 
-        if ui.input.mouse_clicked(katla_ui::input::mouse_button::LEFT) {
+        if ui.mouse_clicked(mouse_button::LEFT) {
             state.search_focused = true;
             state.rename_mode = false; // Close rename if open
         }
-    } else if ui.input.mouse_clicked(katla_ui::input::mouse_button::LEFT) {
+    } else if ui.mouse_clicked(mouse_button::LEFT) {
         state.search_focused = false;
     }
 
@@ -1112,7 +1112,7 @@ pub fn build_asset_browser(
                 // Handle click - skip if mouse is over a popup (context menu)
                 if is_hovered
                     && !ui.has_open_popup()
-                    && ui.input.mouse_clicked(katla_ui::input::mouse_button::LEFT)
+                    && ui.mouse_clicked(mouse_button::LEFT)
                 {
                     clicked_index = Some(i);
                     if asset.asset_type == AssetType::Folder {
@@ -1127,7 +1127,7 @@ pub fn build_asset_browser(
                 // Handle right-click for context menu (skip if popup already open)
                 if is_hovered
                     && !ui.has_open_popup()
-                    && ui.input.mouse_clicked(katla_ui::input::mouse_button::RIGHT)
+                    && ui.mouse_clicked(mouse_button::RIGHT)
                 {
                     right_clicked_index = Some(i);
                     state.selected_index = Some(i);
@@ -1158,25 +1158,25 @@ pub fn build_asset_browser(
             // === MARQUEE SELECTION ===
             // Handle rectangle selection in content area
             {
-                let mouse_in_content = content_bounds.contains(ui.input.mouse_pos);
-                let mouse_down = ui.input.is_mouse_down(katla_ui::input::mouse_button::LEFT);
+                let mouse_in_content = content_bounds.contains(ui.mouse_pos());
+                let mouse_down = ui.mouse_down(mouse_button::LEFT);
 
                 // Start marquee on click in content area (but not on an asset or popup)
                 if mouse_in_content
                     && !ui.has_open_popup()
-                    && ui.input.mouse_clicked(katla_ui::input::mouse_button::LEFT)
+                    && ui.mouse_clicked(mouse_button::LEFT)
                     && clicked_index.is_none()
                 {
-                    state.selection_rect_start = Some(ui.input.mouse_pos);
-                    state.selection_rect_current = Some(ui.input.mouse_pos);
+                    state.selection_rect_start = Some(ui.mouse_pos());
+                    state.selection_rect_current = Some(ui.mouse_pos());
                     state.is_marquee_selecting = false; // Will become true on drag
                 }
 
                 // Update marquee rectangle while dragging
                 if state.selection_rect_start.is_some() && mouse_down {
-                    state.selection_rect_current = Some(ui.input.mouse_pos);
+                    state.selection_rect_current = Some(ui.mouse_pos());
                     let start = state.selection_rect_start.unwrap();
-                    let current = ui.input.mouse_pos;
+                    let current = ui.mouse_pos();
                     let dist = (current - start).length();
                     if dist > state.drag_threshold {
                         state.is_marquee_selecting = true;
@@ -1319,23 +1319,23 @@ pub fn build_asset_browser(
 
             // Start drag if tracked
             if let Some(idx) = drag_start_index {
-                state.start_drag(idx, ui.input.mouse_pos);
+                state.start_drag(idx, ui.mouse_pos());
             }
 
             // === DRAG AND DROP HANDLING ===
             // Update drag state while mouse is held
             if state.drag_asset.is_some()
-                && ui.input.is_mouse_down(katla_ui::input::mouse_button::LEFT)
+                && ui.mouse_down(mouse_button::LEFT)
             {
-                state.update_drag(ui.input.mouse_pos);
+                state.update_drag(ui.mouse_pos());
             }
 
             // Handle drag end - check what we're dropping on
             if state.drag_asset.is_some()
-                && ui.input.mouse_released[katla_ui::input::mouse_button::LEFT]
+                && ui.input.mouse_released[mouse_button::LEFT]
             {
                 let drag_idx = state.drag_asset.unwrap();
-                let mouse_pos = ui.input.mouse_pos;
+                let mouse_pos = ui.mouse_pos();
                 let mouse_in_browser = bounds.contains(mouse_pos);
 
                 if state.is_dragging {
@@ -1414,8 +1414,7 @@ pub fn build_asset_browser(
             }
 
             // Cancel drag on escape
-            if state.drag_asset.is_some() && ui.input.key_pressed(katla_ui::input::KeyCode::Escape)
-            {
+            if state.drag_asset.is_some() && ui.key_pressed(KeyCode::Escape) {
                 state.cancel_drag();
             }
 
@@ -1500,17 +1499,17 @@ pub fn build_asset_browser(
                 let mut should_cancel = false;
 
                 // Commit on Enter
-                if is_focused && ui.input.key_pressed(katla_ui::input::KeyCode::Enter) {
+                if is_focused && ui.key_pressed(KeyCode::Enter) {
                     should_commit = true;
                 }
 
                 // Cancel on Escape
-                if is_focused && ui.input.key_pressed(katla_ui::input::KeyCode::Escape) {
+                if is_focused && ui.key_pressed(KeyCode::Escape) {
                     should_cancel = true;
                 }
 
                 // Commit on click outside
-                if ui.input.mouse_clicked(katla_ui::input::mouse_button::LEFT)
+                if ui.mouse_clicked(mouse_button::LEFT)
                     && !ui.is_hovered(input_bounds)
                 {
                     should_commit = true;
@@ -1539,13 +1538,13 @@ pub fn build_asset_browser(
                 // Use input system's double-click detection + same-item check
                 let is_double = ui
                     .input
-                    .mouse_double_clicked(katla_ui::input::mouse_button::LEFT)
+                    .mouse_double_clicked(mouse_button::LEFT)
                     && state.last_click_index == Some(index);
                 state.last_click_index = Some(index);
 
                 // Check for modifier keys (Ctrl for toggle, Shift for range)
-                let ctrl_held = ui.input.is_key_down(katla_ui::input::KeyCode::Control);
-                let shift_held = ui.input.is_key_down(katla_ui::input::KeyCode::Shift);
+                let ctrl_held = ui.key_down(KeyCode::Control);
+                let shift_held = ui.key_down(KeyCode::Shift);
 
                 if ctrl_held {
                     // Ctrl+Click: Toggle selection
@@ -1660,7 +1659,7 @@ pub fn build_asset_browser(
             }
         }
 
-        if !clicked_on_asset && ui.input.mouse_clicked(katla_ui::input::mouse_button::RIGHT) {
+        if !clicked_on_asset && ui.mouse_clicked(mouse_button::RIGHT) {
             state.context_menu_asset = None;
             state.context_menu_open = true;
         }
@@ -1974,24 +1973,24 @@ pub fn build_asset_browser(
     if !state.search_focused && !state.context_menu_open && !state.rename_mode {
         use katla_ui::input::KeyCode;
 
-        if ui.input.key_pressed(KeyCode::ArrowUp) {
+        if ui.key_pressed(KeyCode::ArrowUp) {
             state.handle_keyboard(KeyCode::ArrowUp, thumbnail_texture_handles);
         }
-        if ui.input.key_pressed(KeyCode::ArrowDown) {
+        if ui.key_pressed(KeyCode::ArrowDown) {
             state.handle_keyboard(KeyCode::ArrowDown, thumbnail_texture_handles);
         }
-        if ui.input.key_pressed(KeyCode::ArrowLeft) {
+        if ui.key_pressed(KeyCode::ArrowLeft) {
             state.handle_keyboard(KeyCode::ArrowLeft, thumbnail_texture_handles);
         }
-        if ui.input.key_pressed(KeyCode::ArrowRight) {
+        if ui.key_pressed(KeyCode::ArrowRight) {
             state.handle_keyboard(KeyCode::ArrowRight, thumbnail_texture_handles);
         }
-        if ui.input.key_pressed(KeyCode::Enter) {
+        if ui.key_pressed(KeyCode::Enter) {
             if let Some(action) = state.handle_keyboard(KeyCode::Enter, thumbnail_texture_handles) {
                 state.pending_actions.push(action);
             }
         }
-        if ui.input.key_pressed(KeyCode::Backspace) {
+        if ui.key_pressed(KeyCode::Backspace) {
             state.handle_keyboard(KeyCode::Backspace, thumbnail_texture_handles);
         }
     }

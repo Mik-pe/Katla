@@ -181,16 +181,16 @@ impl<'a> Widget for PreferencesPanel<'a> {
         );
         let can_drag = ui.is_hovered(title_bounds) && !ui.is_hovered(close_btn_area);
 
-        if ui.input.mouse_clicked(mouse_button::LEFT) && can_drag {
+        if ui.mouse_clicked(mouse_button::LEFT) && can_drag {
             self.state.dragging = true;
-            let mouse_pos = ui.input.mouse_pos;
+            let mouse_pos = ui.mouse_pos();
             self.state.drag_offset =
                 Vec2::new(mouse_pos.x() - panel_pos.x(), mouse_pos.y() - panel_pos.y());
         }
 
         if self.state.dragging {
-            if ui.input.is_mouse_down(mouse_button::LEFT) {
-                let mouse_pos = ui.input.mouse_pos;
+            if ui.mouse_down(mouse_button::LEFT) {
+                let mouse_pos = ui.mouse_pos();
                 let new_pos = Vec2::new(
                     mouse_pos.x() - self.state.drag_offset.x(),
                     mouse_pos.y() - self.state.drag_offset.y(),
@@ -413,8 +413,8 @@ impl<'a> Widget for PreferencesPanel<'a> {
             },
         );
 
-        let mouse_in_panel = ui.input.is_hovered(panel_bounds);
-        let mouse_clicked = ui.input.mouse_clicked(mouse_button::LEFT);
+        let mouse_in_panel = ui.is_hovered(panel_bounds);
+        let mouse_clicked = ui.mouse_clicked(mouse_button::LEFT);
         if !self.state.dragging
             && !self.state.visibility.is_just_opened()
             && mouse_clicked

@@ -3,6 +3,7 @@
 use crate::util::MetricsHistory;
 use katla_math::{Color, Rect2D, Vec2};
 use katla_ui::{
+    mouse_button,
     widgets::{Button, Checkbox, Label, Slider},
     DrawList, GraphOptions, UiContext,
 };
@@ -206,7 +207,7 @@ impl DebugOverlay {
 
         // === Context Menu (right-click anywhere in debug area) ===
         // Open on right-click if no popup already open
-        if ui.input.mouse_clicked(katla_ui::input::mouse_button::RIGHT) && !ui.has_open_popup() {
+        if ui.mouse_clicked(mouse_button::RIGHT) && !ui.has_open_popup() {
             self.context_menu_open = true;
         }
 

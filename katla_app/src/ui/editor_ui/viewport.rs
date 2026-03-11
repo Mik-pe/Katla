@@ -1,5 +1,5 @@
 use katla_math::{Color, Rect2D, Vec2};
-use katla_ui::{FontSize, Response, TextureId, UiContext, Widget};
+use katla_ui::{mouse_button, FontSize, Response, TextureId, UiContext, Widget};
 
 use super::{FocusedPanel, Theme};
 
@@ -28,8 +28,7 @@ impl<'a> Viewport<'a> {
 
 impl<'a> Widget for Viewport<'a> {
     fn ui(self, ui: &mut UiContext) -> Response {
-        if ui.is_hovered(self.bounds) && ui.input.mouse_clicked(katla_ui::input::mouse_button::LEFT)
-        {
+        if ui.is_hovered(self.bounds) && ui.mouse_clicked(mouse_button::LEFT) {
             *self.focused_panel = FocusedPanel::Viewport;
         }
 
