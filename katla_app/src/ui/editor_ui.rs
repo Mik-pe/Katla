@@ -902,6 +902,8 @@ impl Default for EditorUI {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ui::editor_ui::preferences::PreferencesTab;
+    use crate::ui::editor_ui::hierarchy::Hierarchy;
 
     /// Test that preferences panel stays open on the first frame after being opened.
     ///
@@ -1081,6 +1083,173 @@ mod tests {
         assert!(
             editor.preferences_panel_state.visibility.is_visible(),
             "preferences should stay open when no click occurred"
+        );
+    }
+
+    /// Test that clicking a tab in the preferences panel doesn't dismiss the window.
+    ///
+    /// This tests the bug where clicking a tab button would trigger the click-outside
+    /// logic and close the panel before the tab change could take effect.
+    #[test]
+    fn test_preferences_tab_click_does_not_close_panel() {
+        let mut ui = UiContext::new();
+        ui.begin(Vec2::new(800.0, 600.0), 1.0);
+
+        let mut state = PreferencesPanelState {
+            visibility: PanelState::Visible,
+            position: Some(Vec2::new(100.0, 100.0)),
+            dragging: false,
+            drag_offset: Vec2::new(0.0, 0.0),
+            current_tab: PreferencesTab::Appearance,
+            scroll_state: Default::default(),
+        };
+
+        let preferences = crate::Preferences::default();
+        let editor_settings = EditorSettings::default();
+        let theme = Theme::default();
+        let theme_key = "catppuccin";
+        let mut actions = Vec::new();
+
+        // Simulate clicking on the Editor tab (second tab)
+        // The tab is at x=100 + 450/4 = 212.5, y=100+32 = 132
+        let tab_x = 100.0 + 450.0 / 4.0;
+        let tab_y = 100.0 + 32.0;
+
+        // Frame 1: Mouse press on tab button
+        ui.input.mouse_pos = Vec2::new(tab_x + 10.0, tab_y + 10.0);
+        ui.input.mouse_pressed[mouse_button::LEFT] = true;
+        ui.input.mouse_down[mouse_button::LEFT] = true;
+
+        let panel = PreferencesPanel::new(
+            Vec2::new(800.0, 600.0),
+            &mut state,
+            &preferences,
+            &editor_settings,
+            &theme,
+            theme_key,
+            &mut actions,
+        );
+
+        ui.add(panel);
+        ui.end();
+
+        // Frame 2: Mouse release (this is when the button click is registered)
+        ui.input.clear_frame_state();
+        ui.begin(Vec2::new(800.0, 600.0), 1.0);
+        ui.input.mouse_pos = Vec2::new(tab_x + 10.0, tab_y + 10.0);
+        ui.input.mouse_down[mouse_button::LEFT] = false; // Released
+        ui.input.mouse_released[mouse_button::LEFT] = true;
+
+        let panel = PreferencesPanel::new(
+            Vec2::new(800.0, 600.0),
+            &mut state,
+            &preferences,
+            &editor_settings,
+            &theme,
+            theme_key,
+            &mut actions,
+        );
+
+        ui.add(panel);
+
+        // The panel should remain open after tab click
+        assert!(
+            state.visibility.is_visible(),
+            "preferences panel should stay open after clicking tab"
+        );
+
+        // The tab should have changed to Editor
+        assert_eq!(
+            state.current_tab,
+            PreferencesTab::Editor,
+            "tab should change to Editor after clicking it"
+        );
+
+        // No Close action should have been triggered
+        assert!(
+            !actions.iter().any(|a| matches!(a, PreferencesAction::Close)),
+            "tab click should not trigger Close action"
+        );
+    }
+
+    /// Test that clicking an entity in the hierarchy panel selects it.
+    ///
+    /// This tests the bug where hierarchy items couldn't be selected.
+    #[test]
+    fn test_hierarchy_entity_selection_works() {
+        let mut ui = UiContext::new();
+        ui.begin(Vec2::new(800.0, 600.0), 1.0);
+
+        let mut state = HierarchyState::default();
+        let mut selected_entity = None;
+        let mut focused_panel = FocusedPanel::None;
+        let mut pending_actions = Vec::new();
+
+        // Create a temporary world to get valid EntityIds
+        let mut world = katla_ecs::World::new();
+        let entity1 = world.create_entity();
+        let entity2 = world.create_entity();
+
+        let entities = vec![
+            EntityInfo {
+                id: entity1,
+                name: "Cube".to_string(),
+                position: Vec3::new(0.0, 0.0, 0.0),
+                rotation: Vec3::new(0.0, 0.0, 0.0),
+                scale: Vec3::new(1.0, 1.0, 1.0),
+                entity_type: "Mesh".to_string(),
+                components: vec![],
+                depth: 0,
+                has_children: false,
+                parent_id: None,
+            },
+            EntityInfo {
+                id: entity2,
+                name: "Sphere".to_string(),
+                position: Vec3::new(0.0, 0.0, 0.0),
+                rotation: Vec3::new(0.0, 0.0, 0.0),
+                scale: Vec3::new(1.0, 1.0, 1.0),
+                entity_type: "Mesh".to_string(),
+                components: vec![],
+                depth: 0,
+                has_children: false,
+                parent_id: None,
+            },
+        ];
+
+        let bounds = Rect2D::from_origin_size(Vec2::new(0.0, 0.0), Vec2::new(200.0, 400.0));
+        let theme = Theme::default();
+
+        // Simulate clicking on the second entity (Sphere)
+        // Item height is 22.0, header is 24.0
+        let click_y = 24.0 + 4.0 + 22.0 + 11.0; // In the middle of second item
+        ui.input.mouse_pos = Vec2::new(100.0, click_y);
+        ui.input.mouse_pressed[mouse_button::LEFT] = true;
+        ui.input.mouse_down[mouse_button::LEFT] = true;
+
+        let hierarchy = Hierarchy::new(
+            bounds,
+            &mut state,
+            &mut selected_entity,
+            &entities,
+            &mut focused_panel,
+            &mut pending_actions,
+            &theme,
+        );
+
+        ui.add(hierarchy);
+
+        // The entity should be selected
+        assert_eq!(
+            selected_entity,
+            Some(entity2),
+            "clicking entity should select it"
+        );
+
+        // A SelectEntity action should have been emitted
+        assert!(
+            pending_actions.iter().any(|a| matches!(a, EditorAction::SelectEntity(id) if *id == entity2)),
+            "selecting entity should emit SelectEntity action"
         );
     }
 
