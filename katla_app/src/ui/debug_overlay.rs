@@ -150,8 +150,7 @@ impl DebugOverlay {
 
         // Stats section
         for text in &stats {
-            ui.add(Label::new(text).at_cursor_width(ui, window_width - padding * 2.0));
-            ui.spacing(line_height);
+            ui.label(text);
         }
 
         // FPS Graph
@@ -287,8 +286,7 @@ impl DebugOverlay {
         ));
 
         // === Render Mode (Selectable buttons) ===
-        ui.add(Label::new("Render Mode:").at_cursor_width(ui, panel_width - padding * 2.0));
-        ui.spacing(line_height + 4.0);
+        ui.header("Render Mode");
 
         // Three buttons in a row for render modes
         ui.begin_row();
@@ -311,14 +309,13 @@ impl DebugOverlay {
             {
                 self.render_mode = *mode;
             }
-            ui.spacing(btn_width + 4.0);
+            ui.advance_cursor(Vec2::new(btn_width + 4.0, button_height));
         }
         ui.end_row();
-        ui.spacing(button_height + 12.0);
+        ui.spacing(12.0);
 
         // === Quality (Selectable buttons) ===
-        ui.add(Label::new("Quality:").at_cursor_width(ui, panel_width - padding * 2.0));
-        ui.spacing(line_height + 4.0);
+        ui.header("Quality");
 
         ui.begin_row();
         let btn_width = (panel_width - padding * 2.0 - 12.0) / 4.0;
@@ -337,17 +334,13 @@ impl DebugOverlay {
             {
                 self.quality = *quality;
             }
-            ui.spacing(btn_width + 4.0);
+            ui.advance_cursor(Vec2::new(btn_width + 4.0, button_height));
         }
         ui.end_row();
-        ui.spacing(button_height + 12.0);
+        ui.spacing(12.0);
 
         // === Volume Slider ===
-        ui.add(
-            Label::new(&format!("Volume: {:.0}%", self.volume * 100.0))
-                .at_cursor_width(ui, panel_width - padding * 2.0),
-        );
-        ui.spacing(line_height + 2.0);
+        ui.property_row("Volume:", &format!("{:.0}%", self.volume * 100.0));
 
         let slider_bounds = Rect2D::from_origin_size(
             ui.cursor(),
@@ -361,11 +354,7 @@ impl DebugOverlay {
         ui.spacing(28.0);
 
         // === Sensitivity Slider ===
-        ui.add(
-            Label::new(&format!("Sensitivity: {:.1}", self.sensitivity))
-                .at_cursor_width(ui, panel_width - padding * 2.0),
-        );
-        ui.spacing(line_height + 2.0);
+        ui.property_row("Sensitivity:", &format!("{:.1}", self.sensitivity));
 
         let slider_bounds = Rect2D::from_origin_size(
             ui.cursor(),
@@ -379,11 +368,7 @@ impl DebugOverlay {
         ui.spacing(28.0);
 
         // === Ambient Slider ===
-        ui.add(
-            Label::new(&format!("Ambient: {:.2}", self.ambient_intensity))
-                .at_cursor_width(ui, panel_width - padding * 2.0),
-        );
-        ui.spacing(line_height + 2.0);
+        ui.property_row("Ambient:", &format!("{:.2}", self.ambient_intensity));
 
         let slider_bounds = Rect2D::from_origin_size(
             ui.cursor(),
