@@ -605,10 +605,10 @@ impl UiContext {
 
         // Focus on click
         if hovered && self.input.mouse_pressed[mouse_button::LEFT] {
-            self.input.focused_id = Some(widget_id);
+            self.focused_id = Some(widget_id);
         }
 
-        let focused = self.input.focused_id == Some(widget_id);
+        let focused = self.focused_id == Some(widget_id);
         let mut changed = false;
 
         // Handle keyboard input when focused
@@ -635,7 +635,7 @@ impl UiContext {
                 // Could trigger a callback here
             }
             if self.input.key_pressed(KeyCode::Escape) {
-                self.input.focused_id = None;
+                self.focused_id = None;
             }
         }
 
@@ -679,10 +679,10 @@ impl UiContext {
         let hovered = self.update_hover(widget_id, bounds);
 
         if hovered && self.input.mouse_pressed[mouse_button::LEFT] {
-            self.input.focused_id = Some(widget_id);
+            self.focused_id = Some(widget_id);
         }
 
-        let focused = self.input.focused_id == Some(widget_id);
+        let focused = self.focused_id == Some(widget_id);
         let mut changed = false;
 
         if focused {

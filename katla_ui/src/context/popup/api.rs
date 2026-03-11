@@ -39,7 +39,7 @@ impl UiContext {
         if was_just_opened {
             self.popup_opened_this_frame = true;
             self.active_id = None;
-            self.input.focused_id = None;
+            self.focused_id = None;
 
             // Capture mouse position for AtCursor popups
             if matches!(config.position, PopupPosition::AtCursor) {

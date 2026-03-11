@@ -92,8 +92,6 @@ pub struct UiInputState {
     pub any_key_down: bool,
 
     // UI state
-    /// Currently focused widget ID (if any).
-    pub focused_id: Option<u64>,
     /// Whether the UI wants to capture mouse input.
     pub want_capture_mouse: bool,
     /// Whether the UI wants to capture keyboard input.
@@ -121,7 +119,6 @@ impl UiInputState {
             keys_released: Vec::new(),
             held_keys: std::collections::HashSet::new(),
             any_key_down: false,
-            focused_id: None,
             want_capture_mouse: false,
             want_capture_keyboard: false,
             cursor: MouseCursor::Arrow,
