@@ -70,14 +70,19 @@ impl Application {
         // Render using the frame graph
         let draw_list = frame.take_draw_list();
 
+        log::debug!("Submitting {} draw calls to geometry pass", draw_list.len());
+
         self.renderer.render(&mut self.frame_graph, |frame| {
             // Submit draw list to the geometry pass
             if !draw_list.is_empty() {
                 frame.submit("geometry", &draw_list);
+            } else {
+                log::warn!("No draw calls to submit to geometry pass!");
             }
 
             // Submit UI draw list to the UI pass
             if let Some(ref ui_list) = ui_draw_list {
+                log::debug!("Submitting {} UI draw commands", ui_list.commands.len());
                 frame.submit_ui("ui", ui_list);
             }
         });

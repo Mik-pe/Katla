@@ -5,6 +5,7 @@
 //! - Converts `katla_ui::DrawList` to `katla_gfx::UIDrawList`
 
 use std::collections::HashMap;
+use ash::vk;
 
 use katla_gfx::{TextureHandle, UIDrawList, UiDrawCommand, VertexUI};
 use katla_ui::{DrawList, TextureId};
@@ -19,6 +20,9 @@ pub struct UIRenderer {
     texture_registry: HashMap<TextureId, TextureHandle>,
     /// Font atlas texture handle.
     font_atlas: Option<TextureHandle>,
+    /// Maps bindless indices to transient texture resources (for viewport rendering).
+    /// Stores (image_view, sampler) tuples for textures not in the texture manager.
+    transient_textures: HashMap<u32, (vk::ImageView, vk::Sampler)>,
 }
 
 impl UIRenderer {
@@ -27,6 +31,7 @@ impl UIRenderer {
         Self {
             texture_registry: HashMap::new(),
             font_atlas: None,
+            transient_textures: HashMap::new(),
         }
     }
 
@@ -61,7 +66,19 @@ impl UIRenderer {
     /// Resolve a texture ID to a GPU handle.
     ///
     /// Falls back to `TextureHandle::NONE` if the texture is not registered.
+    /// Supports bindless texture IDs (encoded with high bit set).
     pub fn resolve_texture(&self, id: TextureId) -> TextureHandle {
+        const BINDLESS_FLAG: u64 = 1 << 63;
+        const BINDLESS_OFFSET: u32 = 1000; // Bindless indices start at 1000
+
+        // Check if this is a bindless texture (high bit set)
+        if id.0 & BINDLESS_FLAG != 0 {
+            // Extract the bindless index and encode it with an offset
+            // This distinguishes bindless textures from regular texture handles
+            let bindless_index = (id.0 & !BINDLESS_FLAG) as u32;
+            return TextureHandle::new(BINDLESS_OFFSET + bindless_index);
+        }
+
         // Check font atlas first (most common case)
         if id == TextureId::FONT_ATLAS {
             return self.font_atlas.unwrap_or(TextureHandle::NONE);

@@ -68,7 +68,7 @@ pub struct VulkanRenderer {
     pub(crate) bindless_manager: BindlessTextureManager,
     /// Centralized texture manager for handle-based texture creation.
     /// Provides a clean API for creating and looking up textures by handle.
-    pub(crate) texture_manager: TextureManager,
+    pub texture_manager: TextureManager,
     /// Storage uniform manager for storage buffer-based uniforms.
     /// Materials use storage buffers with instance indexing.
     pub(crate) storage_manager: StorageUniformManager,
@@ -274,6 +274,14 @@ impl VulkanRenderer {
     /// Get the default white texture.
     pub fn default_texture(&self) -> TextureHandle {
         self.texture_manager.default_white()
+    }
+
+    /// Get the shared sampler used by the bindless texture system.
+    ///
+    /// This sampler can be used for transient textures that need to be sampled
+    /// (e.g., viewport render targets displayed in the UI).
+    pub fn shared_sampler(&self) -> crate::sync::VkSampler {
+        self.bindless_manager.shared_sampler()
     }
 
     // ========================================================================

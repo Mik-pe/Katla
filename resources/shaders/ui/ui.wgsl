@@ -37,7 +37,9 @@ struct UiUniforms {
 @group(1) @binding(0) var dynamic_texture: texture_2d<f32>;
 
 // Sentinel value for opaque image mode (matches Color::OPAQUE_IMAGE_ALPHA in Rust)
-const OPAQUE_IMAGE_ALPHA: f32 = -1.0;
+// This is approximately 1.0/255.0 which is the smallest non-zero alpha that can be
+// reliably distinguished from 0.0 after round-tripping through byte conversion
+const OPAQUE_IMAGE_ALPHA: f32 = 1.0 / 255.0;
 
 @vertex
 fn vs_main(in: UiVertex) -> VertexOutput {
@@ -58,8 +60,8 @@ fn vs_main(in: UiVertex) -> VertexOutput {
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4f {
-    // Check for opaque image mode (negative alpha signals this)
-    if (in.color.a < 0.0) {
+    // Check for opaque image mode (special alpha value signals this)
+    if (in.color.a <= OPAQUE_IMAGE_ALPHA) {
         // Opaque image mode - sample from dynamic texture, force alpha = 1.0
         // Used for viewport, thumbnails, and other textures that should not blend
         let tex_color = textureSample(dynamic_texture, font_sampler, in.uv);

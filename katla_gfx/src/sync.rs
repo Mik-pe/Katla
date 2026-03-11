@@ -145,7 +145,7 @@ impl VkImageView {
         Self(handle)
     }
 
-    pub(crate) fn vk(&self) -> vk::ImageView {
+    pub fn vk(&self) -> vk::ImageView {
         self.0
     }
 }

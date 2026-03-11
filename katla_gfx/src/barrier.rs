@@ -343,6 +343,19 @@ impl ImageBarrier {
             );
         }
 
+        // SHADER_READ_ONLY_OPTIMAL -> COLOR_ATTACHMENT_OPTIMAL (texture reuse)
+        // Used when a texture that was sampled needs to become a render target again
+        if old_layout == vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL
+            && new_layout == vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL
+        {
+            return (
+                PipelineStage2Flags::FRAGMENT_SHADER,
+                PipelineStage2Flags::COLOR_ATTACHMENT_OUTPUT,
+                AccessFlags2::SHADER_READ,
+                AccessFlags2::COLOR_ATTACHMENT_WRITE,
+            );
+        }
+
         panic!(
             "Unsupported layout transition: {:?} -> {:?}",
             old_layout, new_layout
@@ -587,5 +600,34 @@ mod tests {
         assert_eq!(dst_stage, PipelineStage2Flags::FRAGMENT_SHADER);
         assert_eq!(src_access, AccessFlags2::COLOR_ATTACHMENT_WRITE);
         assert_eq!(dst_access, AccessFlags2::SHADER_READ);
+    }
+
+    /// Test the transient texture reuse workflow.
+    ///
+    /// Pattern for reusing transient textures across frames/passes:
+    /// 1. Render to color attachment (COLOR_ATTACHMENT_OPTIMAL)
+    /// 2. Transition to SHADER_READ_ONLY for sampling (e.g., UI pass)
+    /// 3. Transition back to COLOR_ATTACHMENT for reuse (next frame/pass)
+    #[test]
+    fn test_workflow_transient_texture_reuse() {
+        // Step 1: COLOR_ATTACHMENT -> SHADER_READ_ONLY (for sampling)
+        let (src_stage, dst_stage, src_access, dst_access) = ImageBarrier::deduce_transition_masks(
+            vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+            vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+        );
+        assert_eq!(src_stage, PipelineStage2Flags::COLOR_ATTACHMENT_OUTPUT);
+        assert_eq!(dst_stage, PipelineStage2Flags::FRAGMENT_SHADER);
+        assert_eq!(src_access, AccessFlags2::COLOR_ATTACHMENT_WRITE);
+        assert_eq!(dst_access, AccessFlags2::SHADER_READ);
+
+        // Step 2: SHADER_READ_ONLY -> COLOR_ATTACHMENT (for reuse)
+        let (src_stage, dst_stage, src_access, dst_access) = ImageBarrier::deduce_transition_masks(
+            vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+            vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+        );
+        assert_eq!(src_stage, PipelineStage2Flags::FRAGMENT_SHADER);
+        assert_eq!(dst_stage, PipelineStage2Flags::COLOR_ATTACHMENT_OUTPUT);
+        assert_eq!(src_access, AccessFlags2::SHADER_READ);
+        assert_eq!(dst_access, AccessFlags2::COLOR_ATTACHMENT_WRITE);
     }
 }

@@ -172,7 +172,7 @@ pub struct EditorUI {
     /// Viewport grid state (layout and viewport assignments).
     pub viewport_grid_state: ViewportGridState,
     /// Texture IDs for each viewport slot (set by application during setup).
-    /// These are converted from TextureHandle using TextureId::from_handle_index().
+    /// These can be regular texture IDs or bindless texture IDs (high bit set).
     pub viewport_texture_ids: [Option<katla_ui::TextureId>; 4],
 }
 
@@ -221,9 +221,17 @@ impl EditorUI {
     }
 
     /// Set the viewport texture (tonemapped LDR output) for rendering in the viewport widget.
-    pub fn set_viewport_texture(&mut self, bindless_index: u32) {
-        // Convert bindless index to TextureId for UI rendering
-        self.viewport_texture_ids = [Some(katla_ui::TextureId::from_handle_index(bindless_index)), None, None, None];
+    ///
+    /// This stores the bindless texture index that the UI will use to sample from the transient texture.
+    /// We encode it as a special TextureId with a high bit set to distinguish from regular textures.
+    pub fn set_viewport_bindless_index(&mut self, bindless_index: u32) {
+        // Encode bindless index in TextureId with high bit set (bit 63)
+        // This distinguishes it from regular texture handles
+        const BINDLESS_FLAG: u64 = 1 << 63;
+        let texture_id = katla_ui::TextureId::new(BINDLESS_FLAG | (bindless_index as u64));
+
+        // Store in viewport_texture_ids for the viewport grid widget
+        self.viewport_texture_ids = [Some(texture_id), None, None, None];
     }
 
     /// Get the current theme key (for preferences).
