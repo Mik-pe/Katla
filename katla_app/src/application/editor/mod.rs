@@ -42,6 +42,9 @@ pub fn generate_ui_draw_list(app: &mut Application, dt: f32) -> Option<UIDrawLis
     let scale_factor = app.scale_factor;
     let use_editor = app.use_editor_ui;
 
+    // Store viewport texture ID before rendering (to avoid borrow issues)
+    let viewport_texture_id = app.editor_ui.viewport_texture_ids[0];
+
     let draw_list = if use_editor {
         app.editor_ui.render(
             &mut app.ui_context,
@@ -67,7 +70,16 @@ pub fn generate_ui_draw_list(app: &mut Application, dt: f32) -> Option<UIDrawLis
 
     // Convert to GPU format if not empty
     if !draw_list.is_empty() {
-        let ui_renderer = crate::ui::UIRenderer::new();
+        let mut ui_renderer = crate::ui::UIRenderer::new();
+
+        // Register the viewport texture if it exists
+        if let Some(texture_id) = viewport_texture_id {
+            // Get the actual TextureHandle from the stored index
+            // The texture was registered in Application::init with the texture manager
+            let texture_handle = katla_gfx::TextureHandle::new(texture_id.0 as u32);
+            ui_renderer.register_texture(texture_id, texture_handle);
+        }
+
         let result = ui_renderer.convert_draw_list(
             draw_list,
             [screen_size.x(), screen_size.y()],

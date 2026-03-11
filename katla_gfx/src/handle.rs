@@ -51,7 +51,7 @@ impl<T> Handle<T> {
         self.index != u32::MAX
     }
 
-    pub(crate) fn new(index: u32) -> Self {
+    pub fn new(index: u32) -> Self {
         Self {
             index,
             _marker: PhantomData,

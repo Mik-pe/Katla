@@ -306,6 +306,11 @@ impl BindlessTextureManager {
     pub fn descriptor_set_layout(&self) -> vk::DescriptorSetLayout {
         self.descriptor_layout.vk()
     }
+
+    /// Get the shared sampler used by all textures in the bindless system.
+    pub fn shared_sampler(&self) -> VkSampler {
+        self.shared_sampler
+    }
 }
 
 impl Drop for BindlessTextureManager {

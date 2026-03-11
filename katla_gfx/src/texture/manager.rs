@@ -154,6 +154,20 @@ impl TextureManager {
         self.create(desc, &data)
     }
 
+    /// Create a TextureHandle from existing Vulkan resources (image, image_view, sampler).
+    ///
+    /// This is useful for wrapping transient textures created by the frame graph
+    /// so they can be used by the UI rendering system.
+    ///
+    /// # Arguments
+    /// * `image` - The Vulkan image
+    /// * `image_view` - The Vulkan image view
+    /// * `sampler` - The Vulkan sampler (already wrapped in VkSampler)
+    /// * `format` - The image format
+    /// * `width` - Texture width in pixels
+    /// * `height` - Texture height in pixels
+    ///
+    /// # Returns
     // ========================================================================
     // Default Textures
     // ========================================================================

@@ -12,6 +12,7 @@ use super::error::RenderGraphError;
 use super::pass::PassDesc;
 use super::passes::geometry::GeometryPassData;
 use super::resource::{GraphResourceDesc, GraphResourceHandle};
+use crate::barrier::ImageBarrier;
 use crate::handle::{PipelineHandle, TextureHandle};
 use crate::renderer::VulkanRenderer;
 use crate::renderer::types::DrawList;
@@ -33,6 +34,10 @@ pub struct TransientTexture {
     pub allocation: Option<Allocation>,
     /// Image view for rendering/sampling.
     pub image_view: VkImageView,
+    /// Image format.
+    pub format: vk::Format,
+    /// Image extent.
+    pub extent: vk::Extent2D,
 }
 
 impl TransientTexture {
@@ -42,14 +47,22 @@ impl TransientTexture {
         image: vk::Image,
         allocation: Option<Allocation>,
         image_view: VkImageView,
-        _format: vk::Format,
+        format: vk::Format,
+        extent: vk::Extent2D,
     ) -> Self {
         Self {
             context,
             image,
             allocation,
             image_view,
+            format,
+            extent,
         }
+    }
+
+    /// Get the raw Vulkan image view handle.
+    pub fn image_view_vk(&self) -> vk::ImageView {
+        self.image_view.vk()
     }
 }
 
@@ -232,7 +245,7 @@ impl FrameGraph {
     }
 
     /// Get a transient texture by name.
-    pub(crate) fn transient_texture(&self, name: &str) -> Option<&TransientTexture> {
+    pub fn transient_texture(&self, name: &str) -> Option<&TransientTexture> {
         self.transient_textures.get(name)
     }
 
@@ -322,6 +335,10 @@ impl FrameGraph {
                     Some(allocation),
                     VkImageView::new(image_view),
                     vk_format,
+                    vk::Extent2D {
+                        width: desc.width,
+                        height: desc.height,
+                    },
                 ),
             );
         }
@@ -811,6 +828,9 @@ impl<'a> Frame<'a> {
 
             let required_state = super::resource::ResourceState::ShaderRead;
 
+            log::debug!("Pass {} read {}: current_state={:?}, required_state={:?}",
+                pass.name, read_name, current_state, required_state);
+
             if current_state != required_state {
                 let required_layout = vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL;
 
@@ -988,6 +1008,58 @@ impl<'a> Frame<'a> {
         } else {
             None
         };
+
+        // Transition LDR texture to SHADER_READ_ONLY_OPTIMAL before UI rendering
+        // The UI pass samples from the LDR texture but doesn't declare it as a read dependency
+        // IMPORTANT: This must happen BEFORE begin_rendering - barriers aren't allowed inside render passes
+        match self.graph.transient_texture("ldr_color") {
+            Some(ldr_texture) => {
+                let current_state = self
+                    .resource_states
+                    .get("ldr_color")
+                    .copied()
+                    .unwrap_or(super::resource::ResourceState::Undefined);
+
+                // Only transition if not already in ShaderRead state
+                if current_state != super::resource::ResourceState::ShaderRead {
+                    log::debug!("Transitioning LDR texture from {:?} to SHADER_READ_ONLY_OPTIMAL for UI sampling",
+                        current_state);
+
+                    let cmd_vk = cmd.vk_command_buffer();
+                    let device = &self.renderer.context.device;
+
+                    match current_state {
+                        super::resource::ResourceState::ColorAttachment => {
+                            ImageBarrier::transition(
+                                &cmd_vk,
+                                device,
+                                ldr_texture.image,
+                                vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+                                vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+                            );
+                        }
+                        super::resource::ResourceState::Undefined => {
+                            ImageBarrier::transition_from_undefined(
+                                &cmd_vk,
+                                device,
+                                ldr_texture.image,
+                                vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+                            );
+                        }
+                        _ => {
+                            log::warn!("LDR texture in unexpected state: {:?}", current_state);
+                        }
+                    }
+
+                    // Update tracked state
+                    self.resource_states
+                        .insert("ldr_color".to_string(), super::resource::ResourceState::ShaderRead);
+                }
+            }
+            None => {
+                log::debug!("LDR texture not found for UI sampling");
+            }
+        }
 
         // Begin dynamic rendering
         cmd.begin_rendering(
@@ -1282,6 +1354,38 @@ impl<'a> Frame<'a> {
         pipeline_layout: vk::PipelineLayout,
         texture_handle: TextureHandle,
     ) -> Result<(), RenderGraphError> {
+        // Check if this is a bindless texture (index >= 1000)
+        const BINDLESS_OFFSET: u32 = 1000;
+
+        if texture_handle.index() >= BINDLESS_OFFSET {
+            // This is the LDR viewport texture (bindless index encoded)
+            // Extract the actual bindless index
+            let bindless_index = texture_handle.index() - BINDLESS_OFFSET;
+
+            log::debug!("push_ui_dynamic_texture: bindless texture detected, index={}", bindless_index);
+
+            // For now, we'll look it up from the frame graph's transient textures
+            // In the future, the UI shader should be updated to use bindless directly
+            if let Some(ldr_texture) = self.graph.transient_texture("ldr_color") {
+                let image_info = vk::DescriptorImageInfo::default()
+                    .sampler(self.renderer.shared_sampler().vk())
+                    .image_view(ldr_texture.image_view.vk())
+                    .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL);
+
+                let push_write = vk::WriteDescriptorSet::default()
+                    .dst_set(vk::DescriptorSet::null())
+                    .dst_binding(0)
+                    .dst_array_element(0)
+                    .descriptor_type(vk::DescriptorType::SAMPLED_IMAGE)
+                    .image_info(std::slice::from_ref(&image_info));
+
+                if let Some(push_descriptor_khr) = &self.renderer.context.push_descriptor_khr {
+                    cmd.push_descriptor_set_khr(push_descriptor_khr, pipeline_layout, 1, &[push_write]);
+                }
+            }
+            return Ok(());
+        }
+
         let texture = self
             .renderer
             .texture_manager
@@ -1631,7 +1735,7 @@ impl<'a> Frame<'a> {
         pass: &PassDesc,
         pipeline_handle: crate::handle::PipelineHandle,
     ) -> Result<(), RenderGraphError> {
-        log::debug!("execute_fullscreen_pass: beginning render pass");
+        log::debug!("Executing fullscreen pass: {}", pass.name);
 
         let extent = self.renderer.frame_context.swapchain.get_extent();
         let render_area = vk::Rect2D {

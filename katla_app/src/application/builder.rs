@@ -205,7 +205,7 @@ impl ApplicationBuilder {
             .add_pass(
                 FullscreenPass::new("tonemap")
                     .read("hdr_color")
-                    .write("ldr_color", TextureImageFormat::R8G8B8A8Unorm)
+                    .write("ldr_color", TextureImageFormat::B8G8R8A8Srgb)
                     .pipeline(tonemap_pipeline)
                     .tonemap(tonemap_params),
             )
