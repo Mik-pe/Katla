@@ -89,6 +89,8 @@ pub struct UiContext {
     pub(crate) hovered_id: Option<WidgetId>,
     /// Currently active (pressed) widget.
     pub(crate) active_id: Option<WidgetId>,
+    /// Currently focused widget (for text input).
+    pub(crate) focused_id: Option<WidgetId>,
     /// Whether we're inside a begin()/end() pair.
     in_frame: bool,
     /// Layout cursor for automatic positioning.
@@ -148,6 +150,7 @@ impl UiContext {
             id_counter: 0,
             hovered_id: None,
             active_id: None,
+            focused_id: None,
             in_frame: false,
             cursor: Vec2::new(0.0, 0.0),
             row_height: 0.0,
