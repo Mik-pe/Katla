@@ -76,14 +76,14 @@ impl Vertex {
 
     /// Create a position-only vertex for solid color rendering.
     ///
-    /// UV is set to (0, 0) which should point to a white pixel.
+    /// UV is set to (0, 0) which samples the default white texture.
     #[inline]
     pub fn position_only(pos: Vec2, color: [u8; 4]) -> Self {
         Self {
             pos,
             uv: Vec2::ZERO,
             color,
-            texture_index: 0, // Will be overridden with font atlas index
+            texture_index: 0, // Will be overridden with white texture index
         }
     }
 
@@ -220,12 +220,12 @@ mod tests {
 
     #[test]
     fn test_vertex_position_only_uv_coordinates() {
-        // VAL-ATLAS-002: Vertex::position_only() sets UV to (0,0) for white pixel sampling
+        // VAL-ATLAS-002: Vertex::position_only() sets UV to (0,0) for white texture sampling
         let v = Vertex::position_only(Vec2::new(50.0, 75.0), [255, 255, 255, 255]);
 
-        // UV should be (0, 0) to sample the white pixel at atlas origin
-        assert_eq!(v.uv.x(), 0.0, "UV x should be 0 for white pixel sampling");
-        assert_eq!(v.uv.y(), 0.0, "UV y should be 0 for white pixel sampling");
+        // UV should be (0, 0) to sample the default white texture
+        assert_eq!(v.uv.x(), 0.0, "UV x should be 0 for white texture sampling");
+        assert_eq!(v.uv.y(), 0.0, "UV y should be 0 for white texture sampling");
         assert_eq!(v.uv, Vec2::ZERO, "UV should be exactly (0, 0)");
     }
 

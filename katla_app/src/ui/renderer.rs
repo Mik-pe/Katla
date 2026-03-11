@@ -23,6 +23,9 @@ pub struct UIRenderer {
     /// Font atlas bindless texture slot index.
     /// This is the slot allocated by the bindless system for the font atlas.
     font_atlas_bindless_slot: Option<u32>,
+    /// White texture bindless slot index for solid color rendering.
+    /// This is the default white texture from the bindless system (slot 0).
+    white_texture_bindless_slot: Option<u32>,
     /// Maps bindless indices to transient texture resources (for viewport rendering).
     /// Stores (image_view, sampler) tuples for textures not in the texture manager.
     transient_textures: HashMap<u32, (vk::ImageView, vk::Sampler)>,
@@ -38,6 +41,7 @@ impl UIRenderer {
             texture_registry: HashMap::new(),
             font_atlas: None,
             font_atlas_bindless_slot: None,
+            white_texture_bindless_slot: Some(0), // Default white texture is always at slot 0
             transient_textures: HashMap::new(),
             bindless_slots: HashMap::new(),
         }
@@ -70,6 +74,7 @@ impl UIRenderer {
     ///
     /// This stores the bindless slot index allocated for the font atlas texture.
     pub fn set_font_atlas_bindless_slot(&mut self, slot: u32) {
+        log::debug!("UIRenderer: Setting font atlas bindless slot to {}", slot);
         self.font_atlas_bindless_slot = Some(slot);
     }
 
@@ -78,6 +83,19 @@ impl UIRenderer {
     /// Returns None if the font atlas has not been registered with the bindless system.
     pub fn font_atlas_bindless_slot(&self) -> Option<u32> {
         self.font_atlas_bindless_slot
+    }
+
+    /// Set the white texture bindless slot for solid color rendering.
+    ///
+    /// The default white texture is used for rendering solid color rectangles
+    /// instead of sampling from the font atlas.
+    pub fn set_white_texture_bindless_slot(&mut self, slot: u32) {
+        self.white_texture_bindless_slot = Some(slot);
+    }
+
+    /// Get the white texture bindless slot.
+    pub fn white_texture_bindless_slot(&self) -> Option<u32> {
+        self.white_texture_bindless_slot
     }
 
     /// Get the font atlas texture handle.
@@ -238,12 +256,16 @@ impl UIRenderer {
 
         // Check font atlas - use the registered bindless slot
         if id == TextureId::FONT_ATLAS {
-            return self.font_atlas_bindless_slot.unwrap_or(0);
+            let slot = self.font_atlas_bindless_slot.unwrap_or(0);
+            if self.font_atlas_bindless_slot.is_none() {
+                log::error!("Font atlas bindless slot is None! Text will sample from white texture (slot 0) instead.");
+            }
+            return slot;
         }
 
-        // For TextureId::NONE, use font atlas slot (has white pixel at (0,0))
+        // For TextureId::NONE, use white texture slot for solid color rendering
         if id == TextureId::NONE {
-            return self.font_atlas_bindless_slot.unwrap_or(0);
+            return self.white_texture_bindless_slot.unwrap_or(0);
         }
 
         // Look up in registry - get the handle and then look up its bindless slot
@@ -252,11 +274,11 @@ impl UIRenderer {
             if let Some(slot) = self.get_bindless_slot(*handle) {
                 return slot;
             }
-            // Fallback to font atlas slot if not found
-            self.font_atlas_bindless_slot.unwrap_or(0)
+            // Fallback to white texture slot if not found
+            self.white_texture_bindless_slot.unwrap_or(0)
         } else {
-            // Fallback to font atlas slot for unknown textures
-            self.font_atlas_bindless_slot.unwrap_or(0)
+            // Fallback to white texture slot for unknown textures
+            self.white_texture_bindless_slot.unwrap_or(0)
         }
     }
 
@@ -914,19 +936,32 @@ mod tests {
     }
 
     #[test]
-    fn test_texture_id_none_returns_font_atlas_slot() {
-        // Test that TextureId::NONE uses font atlas slot (for white pixel sampling)
-        let mut renderer = UIRenderer::new();
+    fn test_texture_id_none_returns_white_texture_slot() {
+        // Test that TextureId::NONE uses white texture slot for solid color rendering
+        let renderer = UIRenderer::new();
 
-        // Set font atlas bindless slot to 5
-        renderer.font_atlas_bindless_slot = Some(5);
-
-        // TextureId::NONE should return font atlas slot
+        // White texture is at slot 0 by default
         let none_index = renderer.texture_id_to_bindless_index(TextureId::NONE);
 
         assert_eq!(
-            none_index, 5,
-            "TextureId::NONE should return font atlas bindless slot for white pixel sampling"
+            none_index, 0,
+            "TextureId::NONE should return white texture bindless slot for solid color rendering"
+        );
+    }
+
+    #[test]
+    fn test_texture_id_none_custom_white_slot() {
+        // Test that TextureId::NONE respects custom white texture slot
+        let mut renderer = UIRenderer::new();
+
+        // Set white texture to a different slot
+        renderer.white_texture_bindless_slot = Some(7);
+
+        let none_index = renderer.texture_id_to_bindless_index(TextureId::NONE);
+
+        assert_eq!(
+            none_index, 7,
+            "TextureId::NONE should return the configured white texture slot"
         );
     }
 

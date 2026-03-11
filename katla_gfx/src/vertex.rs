@@ -517,7 +517,7 @@ impl VertexUI {
 
     /// Create a position-only vertex for solid color rendering.
     ///
-    /// UV is set to (0, 0) which should point to a white pixel in the font atlas.
+    /// UV is set to (0, 0) which samples the default white texture.
     #[inline]
     pub const fn position_only(position: [f32; 2], color: [u8; 4]) -> Self {
         Self {
