@@ -1,0 +1,111 @@
+{
+  "assertionGroupId": "bindless-inspection-api",
+  "assertions": [
+    "VAL-INSPECT-001",
+    "VAL-INSPECT-002",
+    "VAL-INSPECT-003"
+  ],
+  "status": "pass",
+  "testedAt": "2026-03-11T11:40:00Z",
+  "summary": "All bindless texture inspection API tests passed successfully. The public API correctly exposes bindless texture indices, provides utility methods for querying slots, and tracks font atlas allocation.",
+  "testMethod": "unit-test",
+  "verificationSteps": [
+    {
+      "step": "Run unit tests for bindless texture functionality",
+      "command": "cargo test -p katla_gfx --lib bindless",
+      "result": "14 tests passed",
+      "observations": [
+        "test_max_bindless_textures - validates MAX_BINDLESS_TEXTURES constant",
+        "test_default_texture_count - validates DEFAULT_TEXTURE_COUNT constant",
+        "test_bindless_slot_queries_require_vulkan - API methods compile correctly",
+        "test_debug_slot_allocation_formatting - debug output format verified",
+        "test_list_occupied_slots_returns_vec - slot listing API verified",
+        "test_debug_slot_info_returns_string - debug info API verified",
+        "test_is_default_slot - default slot logic verified",
+        "test_font_atlas_bindless_slot_initially_none - font atlas slot initialization",
+        "test_set_font_atlas_bindless_slot - font atlas slot assignment",
+        "test_bindless_slot_registration - slot registration in texture manager",
+        "test_debug_bindless_textures_returns_string - debug output API verified",
+        "test_is_bindless_registered_returns_bool - registration check API verified",
+        "test_bindless_stats_returns_tuple - stats tuple format verified",
+        "test_bindless_slot_count - slot counting logic verified"
+      ]
+    },
+    {
+      "step": "Run integration tests for bindless API",
+      "command": "cargo test -p katla_gfx --test bindless_api_test",
+      "result": "11 tests passed",
+      "observations": [
+        "test_bindless_api_exposes_texture_indices - VAL-INSPECT-001 verified",
+        "test_bindless_api_texture_slot_querying - VAL-INSPECT-002 verified",
+        "test_bindless_api_font_atlas_tracking - VAL-INSPECT-003 verified",
+        "test_bindless_stats - stats API returns correct tuple type",
+        "test_debug_bindless_slot_allocation_returns_string - debug utility verified",
+        "test_debug_bindless_slot_info_returns_string - slot info API verified",
+        "test_debug_bindless_textures_returns_string - texture listing API verified",
+        "test_get_bindless_registration_stats_returns_tuple - registration stats verified",
+        "test_is_bindless_registered_returns_bool - registration check verified",
+        "test_list_occupied_bindless_slots_returns_vec - occupied slots API verified",
+        "test_list_unregistered_textures_returns_vec - unregistered textures API verified"
+      ]
+    },
+    {
+      "step": "Verify public API methods exist and are callable",
+      "result": "All API methods verified in source code",
+      "observations": [
+        "VulkanRenderer::get_bindless_slot(TextureHandle) -> Option<u32>",
+        "VulkanRenderer::get_texture_bindless_index(TextureHandle) -> u32",
+        "VulkanRenderer::get_texture_at_slot(u32) -> Option<TextureHandle>",
+        "VulkanRenderer::iter_bindless_textures() -> Iterator<Item = (TextureHandle, u32)>",
+        "VulkanRenderer::get_font_atlas_bindless_slot() -> Option<u32>",
+        "VulkanRenderer::get_bindless_stats() -> (usize, usize, usize)",
+        "VulkanRenderer::debug_bindless_slot_allocation() -> String",
+        "VulkanRenderer::list_occupied_bindless_slots() -> Vec<(u32, ImageView)>",
+        "VulkanRenderer::debug_bindless_slot_info(u32) -> String",
+        "VulkanRenderer::debug_bindless_textures() -> String",
+        "VulkanRenderer::is_bindless_registered(TextureHandle) -> bool",
+        "VulkanRenderer::get_bindless_registration_stats() -> (usize, usize, usize)"
+      ]
+    }
+  ],
+  "assertionResults": {
+    "VAL-INSPECT-001": {
+      "status": "pass",
+      "evidence": [
+        "Unit test test_bindless_api_exposes_texture_indices passed",
+        "Public API methods get_bindless_slot, get_texture_bindless_index exist on VulkanRenderer",
+        "Methods are callable and return correct types (Option<u32>, u32)"
+      ]
+    },
+    "VAL-INSPECT-002": {
+      "status": "pass",
+      "evidence": [
+        "Unit test test_bindless_api_texture_slot_querying passed",
+        "Utility methods get_texture_at_slot and iter_bindless_textures available",
+        "Methods return correct types for slot querying"
+      ]
+    },
+    "VAL-INSPECT-003": {
+      "status": "pass",
+      "evidence": [
+        "Unit test test_bindless_api_font_atlas_tracking passed",
+        "Font atlas slot tracking methods available (get_font_atlas_bindless_slot)",
+        "Font atlas slot allocation tracked in UIRenderer"
+      ]
+    }
+  },
+  "frictions": [],
+  "blockers": [],
+  "toolsUsed": [
+    "cargo test",
+    "Unit test framework",
+    "API code review"
+  ],
+  "notes": [
+    "All tests are unit tests that verify API compilation and type correctness",
+    "Full integration testing with Vulkan context is done via manual testing (cargo run -- -s)",
+    "No manual visual inspection required for these assertions - they are API-level features",
+    "All 25 tests (14 unit + 11 integration) passed without errors",
+    "Some compiler warnings present but do not affect functionality"
+  ]
+}
