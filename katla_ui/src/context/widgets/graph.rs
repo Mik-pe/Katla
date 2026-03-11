@@ -1,4 +1,7 @@
-//! Graph widget for real-time data visualization.
+//! Internal graph widget implementation.
+//!
+//! This module contains rendering logic for real-time data visualization graphs.
+//! This is a private implementation detail.
 
 use katla_math::{Rect2D, Vec2};
 

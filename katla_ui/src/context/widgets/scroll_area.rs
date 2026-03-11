@@ -1,4 +1,7 @@
-//! ScrollArea widget for scrollable content.
+//! Internal scroll area widget implementation.
+//!
+//! This module contains the rendering and interaction logic for scrollable containers.
+//! This is a private implementation detail.
 
 use katla_math::{Rect2D, Vec2};
 

@@ -1,4 +1,7 @@
-//! Container widgets: windows, headers, child regions.
+//! Internal container widget implementations.
+//!
+//! This module contains rendering logic for container widgets like windows
+//! and headers. These are private implementation details.
 
 use katla_math::{Rect2D, Vec2};
 

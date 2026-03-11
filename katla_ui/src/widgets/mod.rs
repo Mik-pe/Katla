@@ -1,20 +1,38 @@
-//! Built-in UI widgets.
+//! Built-in UI widgets - Public builder API.
 //!
-//! This module contains widget implementations that build on top of
-//! the core UI primitives and implement the `Widget` trait.
+//! This module provides the public-facing widget builders using the builder pattern.
+//! These are ergonomic, composable widgets that implement the `Widget` trait.
+//!
+//! # Architecture
+//!
+//! ## Three-Layer System
+//!
+//! 1. **Public Builders** (this module) - User-facing API
+//!    - `Button::new("Click").bounds(my_bounds)`
+//!    - Ergonomic, discoverable, composable
+//!
+//! 2. **Internal Implementation** (`context/widgets/basic.rs` etc.)
+//!    - `UiContext::button()` - actual rendering
+//!    - Private implementation details
+//!
+//! 3. **Convenience Methods** (`context/widgets.rs`)
+//!    - `UiContext::button_auto()` - auto-layout helpers
 //!
 //! # Using Builder Widgets
 //!
 //! ```ignore
 //! use katla_ui::widgets::Button;
 //!
-//! // Builder pattern
-//! if ui.add(Button::new("Click Me")).clicked {
+//! // Basic usage
+//! if ui.add(Button::new("Click Me").bounds(my_bounds)).clicked {
 //!     // handle click
 //! }
 //!
 //! // With options
-//! ui.add(Button::new("Submit").style(MyStyle::Primary));
+//! ui.add(Button::new("Submit")
+//!     .bounds(my_bounds)
+//!     .fill_color(Color::BLUE)
+//!     .hover_color(Color::LIGHT_BLUE));
 //! ```
 
 use crate::{Response, UiContext};

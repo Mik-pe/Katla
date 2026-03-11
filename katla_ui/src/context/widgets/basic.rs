@@ -1,6 +1,14 @@
-//! Basic UI widgets: button, checkbox, slider, text input.
+//! Internal widget implementations.
 //!
-//! These are internal implementations used by the builder widgets in `crate::widgets`.
+//! This module contains the actual rendering and interaction logic for basic widgets.
+//! These are private implementation details called by the public builder widgets
+//! in `crate::widgets`.
+//!
+//! # Architecture
+//!
+//! - **Public API**: `crate::widgets::Button` - builder pattern widgets
+//! - **Implementation**: `UiContext::button()` - internal rendering (this module)
+//! - **Convenience**: `UiContext::button_auto()` - auto-layout helpers (in widgets.rs)
 
 use katla_math::{Color, Rect2D, Vec2};
 
