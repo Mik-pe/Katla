@@ -822,11 +822,16 @@ impl Application {
         // 5. Upload textures and set texture indices
         let texture_indices = self.upload_gltf_textures(&model);
 
-        // Set texture indices on material
+        // Set texture indices on material (only first 4: albedo, normal, mr, ao)
         self.renderer
-            .set_material_texture_indices(material_handle, texture_indices);
+            .set_material_texture_indices(material_handle, [
+                texture_indices[0],
+                texture_indices[1],
+                texture_indices[2],
+                texture_indices[3],
+            ]);
 
-        // 6. Spawn entity
+        // 6. Spawn entity with emission texture index
         let entity = self.world.spawn((
             TransformComponent {
                 transform: katla_math::Transform::from_position(Vec3::new(
@@ -837,6 +842,20 @@ impl Application {
             },
             DrawableComponent::with_handles(mesh_handle, material_handle),
         ));
+
+        // Set emission texture index on drawable component
+        if let Some(drawable) = self.world.get_component_mut::<DrawableComponent>(entity) {
+            drawable.emission = texture_indices[4] as f32;
+
+            // Log if we have an emission texture
+            if texture_indices[4] > 0 {
+                info!(
+                    "Model '{}' has emission texture at bindless index {}",
+                    path.as_ref().display(),
+                    texture_indices[4]
+                );
+            }
+        }
 
         // 7. If skinned, set up animation
         if model.has_skinning {
@@ -878,15 +897,45 @@ impl Application {
         Some(entity)
     }
 
+    /// Spawn a simple particle emitter at the given position.
+    ///
+    /// Creates a particle emitter component with default fire-like settings.
+    /// The emitter will be processed by the particle simulation system.
+    ///
+    /// # Arguments
+    /// * `position` - World position to spawn the emitter at
+    ///
+    /// # Returns
+    /// The entity ID of the spawned emitter
+    pub fn spawn_particle_emitter(&mut self, position: [f32; 3]) -> katla_ecs::EntityId {
+        use crate::components::{ParticleEmitterComponent, TransformComponent};
+        use katla_math::Transform;
+
+        let entity = self.world.spawn((
+            TransformComponent {
+                transform: Transform::from_position(katla_math::Vec3::new(
+                    position[0],
+                    position[1],
+                    position[2],
+                )),
+            },
+            ParticleEmitterComponent::fire(position),
+        ));
+
+        info!("Spawned particle emitter at {:?}", position);
+        entity
+    }
+
     /// Upload textures from a GLTF model and return bindless texture indices.
     ///
-    /// Returns [albedo, normal, metallic_roughness, ao] indices.
-    fn upload_gltf_textures(&mut self, model: &crate::util::GLTFModel) -> [u32; 4] {
+    /// Returns [albedo, normal, metallic_roughness, ao, emission] indices.
+    fn upload_gltf_textures(&mut self, model: &crate::util::GLTFModel) -> [u32; 5] {
         let default_index = 0u32; // Default white texture
         let mut albedo_index = default_index;
         let mut normal_index = default_index;
         let mut mr_index = default_index;
         let mut ao_index = default_index;
+        let mut emission_index = default_index;
 
         // Get first material if available
         let material_info = model.materials.first();
@@ -933,9 +982,21 @@ impl Application {
                     debug!("Uploaded AO texture {} -> bindless {}", tex_idx, ao_index);
                 }
             }
+
+            // Upload emissive texture
+            if let Some(tex_idx) = mat.emission_texture {
+                if let Some(image) = model.images.get(tex_idx) {
+                    let handle = self.upload_gltf_image(image, false);
+                    emission_index = self.get_bindless_index(handle);
+                    debug!(
+                        "Uploaded emissive texture {} -> bindless {}",
+                        tex_idx, emission_index
+                    );
+                }
+            }
         }
 
-        [albedo_index, normal_index, mr_index, ao_index]
+        [albedo_index, normal_index, mr_index, ao_index, emission_index]
     }
 
     /// Upload a single GLTF image to the GPU.
@@ -1051,6 +1112,19 @@ impl Application {
             }
             info!("Spawned animated Fox with Run animation");
         }
+
+        // Add DamagedHelmet - position for viewing
+        if let Some(helmet) = self.spawn_gltf_model("resources/models/DamagedHelmet.glb", [0.0, 1.5, -5.0], None)
+        {
+            // Scale the helmet appropriately
+            if let Some(transform) = self.world.get_component_mut::<TransformComponent>(helmet) {
+                transform.transform.scale = katla_math::Vec3::new(1.0, 1.0, 1.0);
+            }
+            info!("Spawned DamagedHelmet model");
+        }
+
+        // Add particle emitter effect
+        self.spawn_particle_emitter([-3.0, 2.0, -3.0]);
 
         info!(
             "Default scene setup complete - {} entities spawned",
