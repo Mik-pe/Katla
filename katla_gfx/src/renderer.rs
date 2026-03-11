@@ -857,7 +857,10 @@ impl VulkanRenderer {
         }
     }
 
-    pub fn recreate_swapchain(&mut self) {
+    pub fn recreate_swapchain(
+        &mut self,
+        frame_graph: &mut crate::render_graph::FrameGraph,
+    ) -> Vec<(String, u32)> {
         self.wait_for_device();
 
         let old_extent = self.frame_context.swapchain.get_extent();
@@ -868,6 +871,31 @@ impl VulkanRenderer {
 
         let new_extent = self.frame_context.swapchain.get_extent();
         info!("  New extent: {}x{}", new_extent.width, new_extent.height);
+
+        // Recreate transient textures with new dimensions
+        match frame_graph.recreate_transient_textures(self, new_extent.width, new_extent.height) {
+            Ok(mut recreated_textures) => {
+                // Update internal references (tonemap HDR texture)
+                recreated_textures.retain(|(name, slot)| {
+                    if name == "hdr_color" {
+                        // Update tonemap pass with new HDR texture slot
+                        if let Err(e) = frame_graph.set_tonemap_texture_index("tonemap", *slot) {
+                            log::error!("Failed to update tonemap texture index: {}", e);
+                        }
+                    }
+                    true // Keep all entries for app layer
+                });
+                info!(
+                    "Recreated {} transient textures for resize",
+                    recreated_textures.len()
+                );
+                recreated_textures
+            }
+            Err(e) => {
+                log::error!("Failed to recreate transient textures: {}", e);
+                Vec::new()
+            }
+        }
     }
 
     pub fn num_images(&self) -> usize {
