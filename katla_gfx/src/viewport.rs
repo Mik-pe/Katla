@@ -31,7 +31,6 @@ use crate::texture::ImageFormat;
 use crate::vulkan::context::VulkanContext;
 use crate::vulkan::material::storage_uniform::{StorageDescriptorSet, StorageUniformManager};
 use ash::vk;
-use std::cell::RefCell;
 use std::rc::Rc;
 
 // ============================================================================
@@ -218,8 +217,8 @@ pub struct Viewport {
     pub storage_manager: Option<StorageUniformManager>,
     /// Storage descriptor set.
     pub storage_descriptor: Option<StorageDescriptorSet>,
-    /// Draw list cell for render graph.
-    pub draw_list_cell: Rc<RefCell<Option<DrawList>>>,
+    /// Draw list for rendering.
+    pub draw_list: DrawList,
     /// Current frame uniforms.
     pub frame_uniforms: Option<FrameUniforms>,
     /// Clear color.
@@ -242,11 +241,9 @@ impl Viewport {
             extent: builder.extent(),
             output_mode: builder.output_mode,
             render_target,
-            // Initialize draw list cell so render graph can attach a DrawList later
-            draw_list_cell: Rc::new(RefCell::new(None)),
+            draw_list: DrawList::new(),
             storage_manager: None,
             storage_descriptor: None,
-            // No frame uniforms yet
             frame_uniforms: None,
             clear_color: builder.clear_color,
         }
@@ -263,13 +260,13 @@ impl Viewport {
     }
 
     /// Set the draw list for rendering.
-    pub fn set_draw_list(&self, draw_list: DrawList) {
-        *self.draw_list_cell.borrow_mut() = Some(draw_list);
+    pub fn set_draw_list(&mut self, draw_list: DrawList) {
+        self.draw_list = draw_list;
     }
 
     /// Clear the draw list.
-    pub fn clear_draw_list(&self) {
-        *self.draw_list_cell.borrow_mut() = None;
+    pub fn clear_draw_list(&mut self) {
+        self.draw_list.clear();
     }
 }
 

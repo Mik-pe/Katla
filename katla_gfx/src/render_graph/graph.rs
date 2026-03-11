@@ -1293,7 +1293,7 @@ impl<'a> Frame<'a> {
         Ok(())
     }
 
-    /// Get or create per-frame UI vertex and index buffers, updating them with new data.
+    /// Update per-frame UI vertex and index buffers with new data.
     ///
     /// This reuses buffers across frames to avoid memory leaks. Buffers are resized
     /// if needed to accommodate larger data.
@@ -1302,54 +1302,21 @@ impl<'a> Frame<'a> {
         frame_idx: usize,
         ui_draw_list: &crate::renderer::types::UIDrawList,
     ) -> Result<((vk::Buffer, u32), vk::Buffer), RenderGraphError> {
-        use crate::vulkan::{IndexBuffer, IndexType, VertexBuffer};
-
         let vertex_bytes = bytemuck::cast_slice(&ui_draw_list.vertices);
         let index_bytes = bytemuck::cast_slice(&ui_draw_list.indices);
 
         // Access UI resources through UIRenderer
         let ui_resources = self.renderer.ui_renderer.ui_resources_mut();
 
-        // Ensure we have storage for this frame (grow as needed)
-        while ui_resources.vertex_buffers.len() <= frame_idx {
-            ui_resources.vertex_buffers.push(None);
-            ui_resources.index_buffers.push(None);
-        }
+        // Update vertex buffer
+        let vb = &mut ui_resources.vertex_buffers[frame_idx];
+        vb.upload_data(vertex_bytes);
+        let vb_handle = (vb.object(), vb.count());
 
-        // Get or create vertex buffer
-        let vb_handle = if let Some(ref mut vb) = ui_resources.vertex_buffers[frame_idx] {
-            vb.upload_data(vertex_bytes);
-            (vb.object(), vb.count())
-        } else {
-            let mut vb = VertexBuffer::new(
-                self.renderer.context.clone(),
-                1024 * 1024, // 1MB initial size
-                65536,
-            );
-            vb.upload_data(vertex_bytes);
-            ui_resources.vertex_buffers[frame_idx] = Some(vb);
-            let vb_ref = ui_resources.vertex_buffers[frame_idx].as_ref().unwrap();
-            (vb_ref.object(), vb_ref.count())
-        };
-
-        // Get or create index buffer
-        let ib_handle = if let Some(ref mut ib) = ui_resources.index_buffers[frame_idx] {
-            ib.upload_data(index_bytes);
-            ib.object()
-        } else {
-            let mut ib = IndexBuffer::new(
-                self.renderer.context.clone(),
-                1024 * 1024,
-                IndexType::Uint32,
-                65536,
-            );
-            ib.upload_data(index_bytes);
-            ui_resources.index_buffers[frame_idx] = Some(ib);
-            ui_resources.index_buffers[frame_idx]
-                .as_ref()
-                .unwrap()
-                .object()
-        };
+        // Update index buffer
+        let ib = &mut ui_resources.index_buffers[frame_idx];
+        ib.upload_data(index_bytes);
+        let ib_handle = ib.object();
 
         Ok((vb_handle, ib_handle))
     }
@@ -1675,11 +1642,11 @@ impl<'a> Frame<'a> {
         cmd.bind_descriptor_sets(pipeline_layout, 1, &[bindless_ds], &[]);
 
         // Set 2: Skeleton joint matrices (only when draw_call has skeleton)
-        if let Some(skeleton_handle) = draw_call.skeleton {
+        if !draw_call.skeleton.is_none() {
             let skeleton_ds = self
                 .renderer
-                .get_skeleton_descriptor(skeleton_handle)
-                .ok_or(RenderGraphError::InvalidSkeletonHandle(skeleton_handle))?;
+                .get_skeleton_descriptor(draw_call.skeleton)
+                .ok_or(RenderGraphError::InvalidSkeletonHandle(draw_call.skeleton))?;
             cmd.bind_descriptor_sets(pipeline_layout, 2, &[skeleton_ds.vk_set()], &[]);
         }
 

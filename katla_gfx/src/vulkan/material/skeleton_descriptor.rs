@@ -6,7 +6,6 @@
 //! This uses a shared descriptor pool and layout managed by MaterialCompiler.
 
 use ash::vk;
-use std::cell::RefCell;
 use std::rc::Rc;
 
 use crate::RendererError;
@@ -28,10 +27,10 @@ use crate::vulkan::skeleton_buffer::SkeletonBuffer;
 /// let pool = material_compiler.skeleton_descriptor_pool();
 /// let layout = material_compiler.skeleton_descriptor_layout();
 ///
-/// let skeleton_buffer = Rc::new(RefCell::new(SkeletonBuffer::new(context.clone(), joint_count)));
+/// let skeleton_buffer = SkeletonBuffer::new(context.clone(), joint_count);
 /// let descriptor_set = SkeletonDescriptorSet::new(
 ///     context,
-///     skeleton_buffer.clone(),
+///     &skeleton_buffer,
 ///     pool,
 ///     layout,
 /// )?;
@@ -41,8 +40,6 @@ use crate::vulkan::skeleton_buffer::SkeletonBuffer;
 /// ```
 pub struct SkeletonDescriptorSet {
     set: vk::DescriptorSet,
-    #[allow(dead_code)]
-    skeleton_buffer: Rc<RefCell<SkeletonBuffer>>,
 }
 
 impl SkeletonDescriptorSet {
@@ -62,7 +59,7 @@ impl SkeletonDescriptorSet {
     /// A new SkeletonDescriptorSet, or an error if creation fails
     pub fn new(
         context: Rc<VulkanContext>,
-        skeleton_buffer: Rc<RefCell<SkeletonBuffer>>,
+        skeleton_buffer: &SkeletonBuffer,
         pool: vk::DescriptorPool,
         layout: vk::DescriptorSetLayout,
     ) -> Result<Self, RendererError> {
@@ -78,11 +75,10 @@ impl SkeletonDescriptorSet {
         let set = sets[0];
 
         // 2. Write buffer info to binding 0
-        let buffer = skeleton_buffer.borrow();
         let buffer_infos = [vk::DescriptorBufferInfo::default()
-            .buffer(buffer.buffer())
+            .buffer(skeleton_buffer.buffer())
             .offset(0)
-            .range(buffer.size())];
+            .range(skeleton_buffer.size())];
 
         let writes = [vk::WriteDescriptorSet::default()
             .dst_set(set)
@@ -92,21 +88,14 @@ impl SkeletonDescriptorSet {
             .buffer_info(&buffer_infos)];
 
         unsafe { device.update_descriptor_sets(&writes, &[]) };
-        drop(buffer);
 
         Ok(Self {
             set,
-            skeleton_buffer,
         })
     }
 
     /// Get the raw Vulkan descriptor set handle.
     pub fn vk_set(&self) -> vk::DescriptorSet {
         self.set
-    }
-
-    /// Get a reference to the skeleton buffer.
-    pub fn buffer(&self) -> Rc<RefCell<SkeletonBuffer>> {
-        self.skeleton_buffer.clone()
     }
 }

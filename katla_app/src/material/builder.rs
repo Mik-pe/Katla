@@ -36,16 +36,16 @@ pub struct PbrParams {
 pub struct PbrMaterialBuilder {
     /// Reference to the material template (pipeline + descriptor layouts)
     pub(crate) template: MaterialHandle,
-    /// Albedo/base color texture
-    pub(crate) albedo: Option<TextureHandle>,
-    /// Normal map texture
-    pub(crate) normal_map: Option<TextureHandle>,
-    /// Metallic/roughness texture (packed: R=metallic, G=roughness)
-    pub(crate) metallic_roughness: Option<TextureHandle>,
-    /// Emission/glow texture
-    pub(crate) emissive: Option<TextureHandle>,
-    /// Ambient occlusion texture
-    pub(crate) occlusion: Option<TextureHandle>,
+    /// Albedo/base color texture (use TextureHandle::NONE for no texture)
+    pub(crate) albedo: TextureHandle,
+    /// Normal map texture (use TextureHandle::NONE for no texture)
+    pub(crate) normal_map: TextureHandle,
+    /// Metallic/roughness texture (use TextureHandle::NONE for no texture)
+    pub(crate) metallic_roughness: TextureHandle,
+    /// Emission/glow texture (use TextureHandle::NONE for no texture)
+    pub(crate) emissive: TextureHandle,
+    /// Ambient occlusion texture (use TextureHandle::NONE for no texture)
+    pub(crate) occlusion: TextureHandle,
     /// Scalar metallic value (0.0-1.0)
     pub(crate) metallic: f32,
     /// Scalar roughness value (0.0-1.0)
@@ -57,11 +57,11 @@ impl PbrMaterialBuilder {
     pub fn new(template: MaterialHandle) -> Self {
         Self {
             template,
-            albedo: None,
-            normal_map: None,
-            metallic_roughness: None,
-            emissive: None,
-            occlusion: None,
+            albedo: TextureHandle::NONE,
+            normal_map: TextureHandle::NONE,
+            metallic_roughness: TextureHandle::NONE,
+            emissive: TextureHandle::NONE,
+            occlusion: TextureHandle::NONE,
             metallic: 0.0,
             roughness: 0.5,
         }
@@ -73,11 +73,11 @@ impl PbrMaterialBuilder {
     pub fn metal(template: MaterialHandle) -> Self {
         Self {
             template,
-            albedo: None,
-            normal_map: None,
-            metallic_roughness: None,
-            emissive: None,
-            occlusion: None,
+            albedo: TextureHandle::NONE,
+            normal_map: TextureHandle::NONE,
+            metallic_roughness: TextureHandle::NONE,
+            emissive: TextureHandle::NONE,
+            occlusion: TextureHandle::NONE,
             metallic: 1.0,
             roughness: 0.2,
         }
@@ -89,11 +89,11 @@ impl PbrMaterialBuilder {
     pub fn plastic(template: MaterialHandle) -> Self {
         Self {
             template,
-            albedo: None,
-            normal_map: None,
-            metallic_roughness: None,
-            emissive: None,
-            occlusion: None,
+            albedo: TextureHandle::NONE,
+            normal_map: TextureHandle::NONE,
+            metallic_roughness: TextureHandle::NONE,
+            emissive: TextureHandle::NONE,
+            occlusion: TextureHandle::NONE,
             metallic: 0.0,
             roughness: 0.5,
         }
@@ -101,31 +101,31 @@ impl PbrMaterialBuilder {
 
     /// Set the albedo texture.
     pub fn with_albedo(mut self, texture: TextureHandle) -> Self {
-        self.albedo = Some(texture);
+        self.albedo = texture;
         self
     }
 
     /// Set the normal map texture.
     pub fn with_normal_map(mut self, texture: TextureHandle) -> Self {
-        self.normal_map = Some(texture);
+        self.normal_map = texture;
         self
     }
 
     /// Set the metallic/roughness texture.
     pub fn with_metallic_roughness(mut self, texture: TextureHandle) -> Self {
-        self.metallic_roughness = Some(texture);
+        self.metallic_roughness = texture;
         self
     }
 
     /// Set the emissive texture.
     pub fn with_emissive(mut self, texture: TextureHandle) -> Self {
-        self.emissive = Some(texture);
+        self.emissive = texture;
         self
     }
 
     /// Set the ambient occlusion texture.
     pub fn with_occlusion(mut self, texture: TextureHandle) -> Self {
-        self.occlusion = Some(texture);
+        self.occlusion = texture;
         self
     }
 
@@ -149,20 +149,20 @@ impl PbrMaterialBuilder {
         let mut material = Material::new(self.template);
 
         // Apply textures to their slots
-        if let Some(texture) = self.albedo {
-            material.set_texture(texture_slots::ALBEDO, texture);
+        if !self.albedo.is_none() {
+            material.set_texture(texture_slots::ALBEDO, self.albedo);
         }
-        if let Some(texture) = self.normal_map {
-            material.set_texture(texture_slots::NORMAL_MAP, texture);
+        if !self.normal_map.is_none() {
+            material.set_texture(texture_slots::NORMAL_MAP, self.normal_map);
         }
-        if let Some(texture) = self.metallic_roughness {
-            material.set_texture(texture_slots::METALLIC_ROUGHNESS, texture);
+        if !self.metallic_roughness.is_none() {
+            material.set_texture(texture_slots::METALLIC_ROUGHNESS, self.metallic_roughness);
         }
-        if let Some(texture) = self.emissive {
-            material.set_texture(texture_slots::EMISSIVE, texture);
+        if !self.emissive.is_none() {
+            material.set_texture(texture_slots::EMISSIVE, self.emissive);
         }
-        if let Some(texture) = self.occlusion {
-            material.set_texture(texture_slots::OCCLUSION, texture);
+        if !self.occlusion.is_none() {
+            material.set_texture(texture_slots::OCCLUSION, self.occlusion);
         }
 
         // Encode scalar parameters as push constants
@@ -237,9 +237,9 @@ mod tests {
             .with_metallic(0.8)
             .with_roughness(0.3);
 
-        assert_eq!(builder.albedo, Some(albedo));
-        assert_eq!(builder.normal_map, Some(normal));
-        assert_eq!(builder.metallic_roughness, Some(mr));
+        assert_eq!(builder.albedo, albedo);
+        assert_eq!(builder.normal_map, normal);
+        assert_eq!(builder.metallic_roughness, mr);
         assert!((builder.metallic - 0.8).abs() < f32::EPSILON);
         assert!((builder.roughness - 0.3).abs() < f32::EPSILON);
     }
