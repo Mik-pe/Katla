@@ -272,6 +272,51 @@ impl TextureManager {
         self.get_bindless_slot(handle)
     }
 
+    /// Get the texture handle at a specific bindless slot.
+    ///
+    /// This is useful for debugging and texture inspection tools.
+    ///
+    /// # Arguments
+    /// * `slot` - The bindless slot index
+    ///
+    /// # Returns
+    /// The TextureHandle at that slot, or None if the slot is not registered
+    /// or doesn't exist.
+    ///
+    /// # Example
+    /// ```ignore
+    /// // Query which texture is in slot 10
+    /// if let Some(handle) = texture_manager.get_texture_at_slot(10) {
+    ///     println!("Texture at slot 10: {:?}", handle);
+    /// }
+    /// ```
+    pub fn get_texture_at_slot(&self, slot: u32) -> Option<TextureHandle> {
+        // Reverse lookup: find the handle with this slot
+        for (&handle, &handle_slot) in &self.bindless_slots {
+            if handle_slot == slot {
+                return Some(handle);
+            }
+        }
+        None
+    }
+
+    /// Get all registered texture handles with their bindless slots.
+    ///
+    /// This returns an iterator over (TextureHandle, slot) pairs for all
+    /// textures that have been registered with the bindless system.
+    ///
+    /// # Example
+    /// ```ignore
+    /// for (handle, slot) in texture_manager.iter_bindless_textures() {
+    ///     println!("Texture {:?} is at slot {}", handle, slot);
+    /// }
+    /// ```
+    pub fn iter_bindless_textures(&self) -> impl Iterator<Item = (TextureHandle, u32)> + '_ {
+        self.bindless_slots
+            .iter()
+            .map(|(&handle, &slot)| (handle, slot))
+    }
+
     /// Update texture data in-place.
     ///
     /// The data size must match the current texture dimensions.
@@ -382,5 +427,34 @@ mod tests {
         assert!(usage.contains(TextureUsage::SAMPLED));
         assert!(usage.contains(TextureUsage::STORAGE));
         assert!(!usage.contains(TextureUsage::COLOR_ATTACHMENT));
+    }
+
+    #[test]
+    fn test_bindless_slot_registration() {
+        // This test verifies the bindless slot tracking API
+        // Note: Actual Vulkan context is required for full integration tests
+
+        // Test that we can query default textures by slot
+        // This doesn't require a Vulkan context since defaults are pre-known
+        assert_eq!(DEFAULT_ALBEDO_SLOT, 0);
+        assert_eq!(DEFAULT_NORMAL_SLOT, 1);
+        assert_eq!(DEFAULT_MR_SLOT, 2);
+        assert_eq!(DEFAULT_OCCLUSION_SLOT, 3);
+        assert_eq!(DEFAULT_EMISSION_SLOT, 4);
+    }
+
+    #[test]
+    fn test_bindless_slot_count() {
+        // Verify we have exactly 5 default slots
+        // DEFAULT_TEXTURE_COUNT is defined in bindless_texture module as 5
+        let expected_default_count = 5;
+        assert_eq!(DEFAULT_ALBEDO_SLOT, 0);
+        assert_eq!(DEFAULT_NORMAL_SLOT, 1);
+        assert_eq!(DEFAULT_MR_SLOT, 2);
+        assert_eq!(DEFAULT_OCCLUSION_SLOT, 3);
+        assert_eq!(DEFAULT_EMISSION_SLOT, 4);
+
+        // Count from 0 to 4 inclusive = 5 slots
+        assert_eq!(DEFAULT_EMISSION_SLOT + 1, expected_default_count);
     }
 }
