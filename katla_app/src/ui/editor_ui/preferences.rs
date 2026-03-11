@@ -413,7 +413,7 @@ impl<'a> Widget for PreferencesPanel<'a> {
             },
         );
 
-        let mouse_in_panel = ui.is_hovered(panel_bounds);
+        let mouse_in_panel = panel_bounds.contains(ui.mouse_pos());
         let mouse_clicked = ui.mouse_clicked(mouse_button::LEFT);
         if !self.state.dragging
             && !self.state.visibility.is_just_opened()
