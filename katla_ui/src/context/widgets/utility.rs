@@ -1,4 +1,7 @@
-//! Utility widgets: progress bar, tooltip, color rect, image.
+//! Internal utility widget implementations.
+//!
+//! This module contains rendering logic for utility widgets like progress bars
+//! and tooltips. These are private implementation details.
 
 use crate::types::TextureId;
 use katla_math::{Color, Rect2D, Vec2};

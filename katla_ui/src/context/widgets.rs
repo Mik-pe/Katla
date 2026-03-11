@@ -1,12 +1,39 @@
-//! UI widgets module.
+//! Widget behavior helpers and convenience methods.
 //!
-//! Contains all widget implementations organized by category:
-//! - `basic` - label, button, checkbox, slider, text input
-//! - `selectable` - selectable items, toggle buttons
-//! - `container` - windows, headers, child regions
-//! - `utility` - progress bar, tooltip, image
-//! - `graph` - real-time data visualization
-//! - `scroll_area` - scrollable container
+//! This module provides:
+//! - **Interaction helpers**: `click_behavior()`, `is_hovered()`, `update_hover()`
+//! - **Convenience methods**: `button_auto()`, `label_auto()` for auto-layout
+//! - **Internal implementations**: Organized into submodules by widget category
+//!
+//! # Architecture
+//!
+//! ## Three-Layer Widget System
+//!
+//! 1. **Public Builder Widgets** (`crate::widgets`)
+//!    - User-facing builder pattern: `Button::new("Click").bounds(my_bounds)`
+//!    - Ergonomic, composable, discoverable API
+//!
+//! 2. **Internal Implementations** (submodules here)
+//!    - Actual rendering logic: `UiContext::button()`, `UiContext::checkbox()`
+//!    - Private implementation details
+//!    - Called by builder widgets via the `Widget` trait
+//!
+//! 3. **Convenience Methods** (here)
+//!    - Auto-layout helpers: `UiContext::button_auto()`, `UiContext::label_auto()`
+//!    - Simplified common patterns
+//!
+//! # Example Flow
+//!
+//! ```ignore
+//! // User code (layer 1)
+//! ui.add(Button::new("Click").bounds(my_bounds))
+//!
+//! // Button::ui() calls (layer 2)
+//! ui.button_with_colors("Click", my_bounds, None, None)
+//!
+//! // Or convenience method (layer 3)
+//! ui.button_auto("Click")
+//! ```
 
 mod basic;
 mod container;

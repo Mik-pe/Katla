@@ -1,4 +1,8 @@
-//! Selectable widgets: selectable items and toggle buttons.
+//! Internal selectable widget implementations.
+//!
+//! This module contains rendering and interaction logic for selectable widgets.
+//! These are private implementation details called by the public builder widgets
+//! in `crate::widgets`.
 
 use katla_math::{Color, Rect2D, Vec2};
 
