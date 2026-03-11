@@ -107,8 +107,29 @@ When running `cargo run -- -s`, verify:
 
 ## Known Issues
 
-- Scissor coordinates may be incorrect on HiDPI displays (scale_factor != 1.0)
-- All UI elements may appear semi-transparent (under investigation)
+None currently.
+
+## Bindless Texture Migration Testing
+
+When testing after bindless texture migration, additionally verify:
+
+1. **Text Rendering**:
+   - All text (labels, buttons, inputs) renders correctly from font atlas
+   - Icon font (ForkAwesome) renders correctly
+   - No missing or garbled characters
+
+2. **Viewport Rendering**:
+   - 3D scene displays correctly in viewport panel
+   - Multi-viewport layouts work (1x2, 2x1, 2x2)
+   - No texture bleeding between viewports
+
+3. **Thumbnail Rendering**:
+   - Asset browser PNG thumbnails display correctly
+   - Each thumbnail shows correct image
+
+4. **Texture Inspection** (after foundation features):
+   - Bindless indices are queryable
+   - Slot tracking utilities work
 
 ## Testing Tools
 
