@@ -5,7 +5,6 @@
 
 use crate::TextureHandle;
 use crate::renderer::UiFrameResources;
-use crate::texture::TextureDescriptor;
 
 /// UI rendering subsystem.
 ///
