@@ -148,7 +148,7 @@ pub struct DrawCall {
     /// Optional sorting key (for transparent objects, etc.).
     pub sort_key: Option<u64>,
     /// Skeleton handle for GPU skinning (Set 2).
-    pub skeleton: Option<SkeletonHandle>,
+    pub skeleton: SkeletonHandle,
     /// Instance data for GPU instancing.
     /// When non-empty, uses instanced rendering instead of single-draw.
     pub instances: Vec<InstanceData>,
@@ -169,7 +169,7 @@ impl DrawCall {
             material_params: [0.0, 0.5, 1.0, 0.0],
             transparent: false,
             sort_key: None,
-            skeleton: None,
+            skeleton: SkeletonHandle::NONE,
             instances: Vec::new(),
         }
     }
@@ -195,7 +195,7 @@ impl DrawCall {
             material_params: [0.0, 0.5, 1.0, 0.0],
             transparent: false,
             sort_key: None,
-            skeleton: None,
+            skeleton: SkeletonHandle::NONE,
             instances,
         }
     }
@@ -283,7 +283,7 @@ impl DrawCall {
 
     /// Set skeleton handle for GPU skinning.
     pub fn with_skeleton(mut self, skeleton: SkeletonHandle) -> Self {
-        self.skeleton = Some(skeleton);
+        self.skeleton = skeleton;
         self
     }
 

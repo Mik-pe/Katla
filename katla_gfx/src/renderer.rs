@@ -20,6 +20,7 @@ pub use types::{
     UiDrawCommand,
 };
 
+use crate::handle::ResourceStorage;
 use crate::material::Material;
 use crate::texture::{TextureDescriptor, TextureManager};
 use crate::vulkan::context::VulkanContext;
@@ -36,18 +37,49 @@ use std::{cell::RefCell, ffi::CString, rc::Rc};
 use crate::barrier::ImageBarrier;
 use crate::sync::{COLOR_SUBRESOURCE_RANGE, DEPTH_SUBRESOURCE_RANGE};
 use crate::vulkan::material::compiler::{MaterialBuilder, MaterialCompiler};
+use crate::vulkan::IndexType;
 
 /// Per-frame UI rendering resources.
-#[derive(Default)]
 pub struct UiFrameResources {
     /// Per-frame UI vertex buffers.
-    pub vertex_buffers: Vec<Option<VertexBuffer>>,
+    pub vertex_buffers: Vec<VertexBuffer>,
     /// Per-frame UI index buffers.
-    pub index_buffers: Vec<Option<IndexBuffer>>,
+    pub index_buffers: Vec<IndexBuffer>,
     /// Per-frame UI descriptor sets (owns both set and pool, automatic cleanup).
     pub descriptor_sets: Vec<Option<crate::vulkan::descriptor_set::DescriptorSet>>,
     /// UI uniform buffer (reused across frames).
     pub uniform_buffer: Option<(vk::Buffer, gpu_allocator::vulkan::Allocation)>,
+}
+
+impl UiFrameResources {
+    /// Create new UI frame resources with pre-allocated buffers.
+    fn new(context: &Rc<VulkanContext>) -> Self {
+        let mut vertex_buffers = Vec::with_capacity(FRAMES_IN_FLIGHT);
+        let mut index_buffers = Vec::with_capacity(FRAMES_IN_FLIGHT);
+        let mut descriptor_sets = Vec::with_capacity(FRAMES_IN_FLIGHT);
+        
+        for _ in 0..FRAMES_IN_FLIGHT {
+            vertex_buffers.push(VertexBuffer::new(
+                context.clone(),
+                1024 * 1024, // 1MB initial size
+                65536,       // Vertex count
+            ));
+            index_buffers.push(IndexBuffer::new(
+                context.clone(),
+                1024 * 1024,         // 1MB initial size
+                IndexType::Uint32,   // 32-bit indices
+                65536,               // Index count
+            ));
+            descriptor_sets.push(None);
+        }
+        
+        Self {
+            vertex_buffers,
+            index_buffers,
+            descriptor_sets,
+            uniform_buffer: None,
+        }
+    }
 }
 
 /// Transpose a 4x4 matrix from row-major to column-major format.
@@ -76,11 +108,11 @@ pub struct VulkanRenderer {
     /// Each set contains the storage buffer bound at two offsets (frame_data at 0, objects at 256).
     pub(crate) storage_descriptor_sets: Vec<StorageDescriptorSet>,
     /// Skeleton descriptor sets for GPU skeletal animation.
-    /// Indexed by SkeletonHandle.
-    pub(crate) skeleton_descriptors: Vec<Option<SkeletonDescriptorSet>>,
+    /// Indexed by SkeletonHandle via ResourceStorage.
+    pub(crate) skeleton_descriptors: ResourceStorage<SkeletonDescriptorSet>,
     /// Skeleton buffers for GPU skeletal animation.
-    /// Indexed by SkeletonHandle.
-    pub(crate) skeleton_buffers: Vec<Option<Rc<RefCell<SkeletonBuffer>>>>,
+    /// Indexed by SkeletonHandle via ResourceStorage.
+    pub(crate) skeleton_buffers: ResourceStorage<SkeletonBuffer>,
     /// Frame-level uniforms set once per frame via set_frame_uniforms().
     pub(crate) frame_uniforms: FrameUniforms,
     /// Cached default white PBR material handle.
@@ -204,14 +236,14 @@ impl VulkanRenderer {
             texture_manager,
             storage_manager,
             storage_descriptor_sets,
-            skeleton_descriptors: Vec::new(),
-            skeleton_buffers: Vec::new(),
+            skeleton_descriptors: ResourceStorage::new(),
+            skeleton_buffers: ResourceStorage::new(),
             frame_uniforms: FrameUniforms::default(),
             default_material_handle: None,
             output_target: None,
             viewport_manager,
             material_compiler,
-            ui_renderer: ui_renderer::UIRenderer::new(),
+            ui_renderer: ui_renderer::UIRenderer::new(&context),
         })
     }
 
@@ -1586,9 +1618,7 @@ impl VulkanRenderer {
         &self,
         handle: SkeletonHandle,
     ) -> Option<&SkeletonDescriptorSet> {
-        self.skeleton_descriptors
-            .get(handle.index() as usize)?
-            .as_ref()
+        self.skeleton_descriptors.get(handle.index())
     }
 
     /// Create a new skeleton for GPU skeletal animation.
@@ -1604,16 +1634,16 @@ impl VulkanRenderer {
     pub fn create_skeleton(&mut self, joint_count: usize) -> Result<SkeletonHandle, RendererError> {
         use crate::vulkan::skeleton_buffer::SkeletonBuffer;
 
-        let buffer = Rc::new(RefCell::new(SkeletonBuffer::new(
+        let buffer = SkeletonBuffer::new(
             self.context.clone(),
             joint_count,
-        )));
+        );
 
         let pool = self.material_compiler.skeleton_descriptor_pool();
         let layout = self.material_compiler.skeleton_descriptor_layout();
 
         let descriptor_set =
-            SkeletonDescriptorSet::new(self.context.clone(), buffer.clone(), pool, layout)
+            SkeletonDescriptorSet::new(self.context.clone(), &buffer, pool, layout)
                 .map_err(|e| {
                     RendererError::InitializationFailed(format!(
                         "Failed to create skeleton descriptor: {:?}",
@@ -1621,9 +1651,10 @@ impl VulkanRenderer {
                     ))
                 })?;
 
-        let handle = SkeletonHandle::new(self.skeleton_descriptors.len() as u32);
-        self.skeleton_descriptors.push(Some(descriptor_set));
-        self.skeleton_buffers.push(Some(buffer));
+        // Store both the descriptor and the buffer with matching IDs
+        let id = self.skeleton_descriptors.insert(descriptor_set);
+        let _ = self.skeleton_buffers.insert(buffer);
+        let handle = SkeletonHandle::new(id);
 
         Ok(handle)
     }
@@ -1637,8 +1668,8 @@ impl VulkanRenderer {
     /// * `handle` - Skeleton handle from `create_skeleton()`
     /// * `matrices` - Joint matrices as column-major [f32; 16] arrays (one per joint)
     pub fn update_skeleton(&mut self, handle: SkeletonHandle, matrices: &[[f32; 16]]) {
-        if let Some(Some(buffer)) = self.skeleton_buffers.get(handle.index() as usize) {
-            buffer.borrow_mut().update(matrices);
+        if let Some(buffer) = self.skeleton_buffers.get_mut(handle.index()) {
+            buffer.update(matrices);
         }
     }
 

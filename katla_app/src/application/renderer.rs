@@ -110,17 +110,18 @@ impl Application {
             };
 
             // Get mesh and material handles
-            let mesh_handle = match drawable.mesh_handle {
-                Some(h) => h,
-                None => continue,
-            };
-            let material_handle = match drawable.material_handle {
-                Some(h) => h,
-                None => continue,
-            };
+            let mesh_handle = drawable.mesh_handle;
+            if mesh_handle.is_none() {
+                continue;
+            }
+
+            let material_handle = drawable.material_handle;
+            if material_handle.is_none() {
+                continue;
+            }
 
             // Check for skeleton - upload if present
-            if let Some(skeleton_handle) = drawable.skeleton_handle {
+            if !drawable.skeleton_handle.is_none() {
                 // Get Skeleton component and upload joint matrices
                 if let Some(skeleton) = self.world.get_component::<Skeleton>(entity_id) {
                     // Convert Mat4 to [f32; 16] format for GPU
@@ -131,7 +132,7 @@ impl Application {
                         .collect();
 
                     // Upload to GPU
-                    self.renderer.update_skeleton(skeleton_handle, &matrices);
+                    self.renderer.update_skeleton(drawable.skeleton_handle, &matrices);
                 }
             }
 
@@ -141,8 +142,8 @@ impl Application {
                 .with_transform(transform.transform.make_mat4().to_array());
 
             // Add skeleton if present (for skinned meshes)
-            if let Some(skeleton_handle) = drawable.skeleton_handle {
-                draw = draw.with_skeleton(skeleton_handle);
+            if !drawable.skeleton_handle.is_none() {
+                draw = draw.with_skeleton(drawable.skeleton_handle);
             }
 
             // Add color if present

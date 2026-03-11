@@ -854,7 +854,7 @@ impl Application {
 
                 // Add skeleton handle to drawable
                 if let Some(drawable) = self.world.get_component_mut::<DrawableComponent>(entity) {
-                    drawable.skeleton_handle = Some(skeleton_handle);
+                    drawable.skeleton_handle = skeleton_handle;
                 }
 
                 // Set up CPU animation components

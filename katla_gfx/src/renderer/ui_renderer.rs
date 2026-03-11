@@ -3,8 +3,11 @@
 //! The `UIRenderer` owns all UI-specific rendering state and provides a clean API
 //! for UI operations without polluting the core renderer interface.
 
+use std::rc::Rc;
+
 use crate::TextureHandle;
 use crate::renderer::UiFrameResources;
+use crate::vulkan::context::VulkanContext;
 
 /// UI rendering subsystem.
 ///
@@ -21,9 +24,9 @@ pub struct UIRenderer {
 
 impl UIRenderer {
     /// Create a new UI rendering subsystem.
-    pub(crate) fn new() -> Self {
+    pub(crate) fn new(context: &Rc<VulkanContext>) -> Self {
         Self {
-            ui_resources: UiFrameResources::default(),
+            ui_resources: UiFrameResources::new(context),
             font_atlas: None,
             font_atlas_bindless_slot: None,
         }
@@ -71,52 +74,5 @@ impl UIRenderer {
     /// This is used internally by the frame graph when binding UI resources.
     pub(crate) fn font_atlas_handle(&self) -> Option<TextureHandle> {
         self.font_atlas
-    }
-}
-
-impl Default for UIRenderer {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_ui_renderer_new() {
-        let renderer = UIRenderer::new();
-        assert!(renderer.font_atlas().is_none());
-        assert!(renderer.font_atlas_bindless_slot().is_none());
-    }
-
-    #[test]
-    fn test_set_font_atlas() {
-        let mut renderer = UIRenderer::new();
-        let handle = TextureHandle::new(42);
-
-        renderer.set_font_atlas(handle);
-        assert_eq!(renderer.font_atlas(), Some(handle));
-    }
-
-    #[test]
-    fn test_set_font_atlas_bindless_slot() {
-        let mut renderer = UIRenderer::new();
-
-        renderer.set_font_atlas_bindless_slot(5);
-        assert_eq!(renderer.font_atlas_bindless_slot(), Some(5));
-    }
-
-    #[test]
-    fn test_font_atlas_bindless_slot_initially_none() {
-        let renderer = UIRenderer::new();
-        assert!(renderer.font_atlas_bindless_slot().is_none());
-    }
-
-    #[test]
-    fn test_font_atlas_handle_initially_none() {
-        let renderer = UIRenderer::new();
-        assert!(renderer.font_atlas_handle().is_none());
     }
 }
