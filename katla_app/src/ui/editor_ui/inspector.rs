@@ -1,6 +1,6 @@
 use katla_ecs::EntityId;
 use katla_math::{Rect2D, Vec2};
-use katla_ui::{widgets::Button, widgets::Label, FontSize, Response, UiContext, Widget};
+use katla_ui::{mouse_button, widgets::Button, widgets::Label, FontSize, Response, UiContext, Widget};
 
 use super::{EditorAction, EntityInfo, FocusedPanel, Theme};
 
@@ -35,8 +35,7 @@ impl<'a> Inspector<'a> {
 
 impl<'a> Widget for Inspector<'a> {
     fn ui(self, ui: &mut UiContext) -> Response {
-        if ui.is_hovered(self.bounds) && ui.input.mouse_clicked(katla_ui::input::mouse_button::LEFT)
-        {
+        if ui.is_hovered(self.bounds) && ui.mouse_clicked(mouse_button::LEFT) {
             *self.focused_panel = FocusedPanel::Inspector;
         }
 

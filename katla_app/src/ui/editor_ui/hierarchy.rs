@@ -71,7 +71,7 @@ impl<'a> Widget for Hierarchy<'a> {
     fn ui(self, ui: &mut UiContext) -> Response {
         let theme = self.theme.clone();
 
-        if ui.is_hovered(self.bounds) && ui.input.mouse_clicked(mouse_button::LEFT) {
+        if ui.is_hovered(self.bounds) && ui.mouse_clicked(mouse_button::LEFT) {
             *self.focused_panel = FocusedPanel::Hierarchy;
         }
 
@@ -191,7 +191,7 @@ impl<'a> Widget for Hierarchy<'a> {
                             FontId::DEFAULT,
                         );
 
-                        if ui.input.mouse_clicked(mouse_button::LEFT) && triangle_hovered {
+                        if ui.mouse_clicked(mouse_button::LEFT) && triangle_hovered {
                             toggle_entity = Some(entity.id);
                         }
 
@@ -263,14 +263,14 @@ impl<'a> Widget for Hierarchy<'a> {
                     );
                     let select_hovered = ui.is_hovered(select_bounds);
 
-                    if ui.input.mouse_clicked(mouse_button::LEFT)
+                    if ui.mouse_clicked(mouse_button::LEFT)
                         && select_hovered
                         && !ui.has_open_popup()
                     {
                         clicked_entity = Some(entity.id);
                     }
 
-                    if ui.input.mouse_clicked(mouse_button::RIGHT)
+                    if ui.mouse_clicked(mouse_button::RIGHT)
                         && is_hovered
                         && !ui.has_open_popup()
                     {

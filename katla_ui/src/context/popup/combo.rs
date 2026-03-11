@@ -37,22 +37,10 @@ impl UiContext {
 
         // Draw combo box trigger
         let hovered = self.update_hover(combo_id, bounds);
+        let active = self.active_id == Some(combo_id);
 
-        // Toggle on click
-        // Note: On release, we use self.input.is_hovered() directly instead of self.is_hovered()
-        // because self.is_hovered() returns false when active_id is set (which it is during press).
-        let clicked = if hovered && self.input.mouse_pressed[crate::input::mouse_button::LEFT] {
-            self.active_id = Some(combo_id);
-            false
-        } else if self.active_id == Some(combo_id)
-            && self.input.mouse_released[crate::input::mouse_button::LEFT]
-        {
-            self.active_id = None;
-            // Check if mouse is still over combo using raw input check (bypasses active_id block)
-            self.input.is_hovered(bounds)
-        } else {
-            false
-        };
+        // Toggle on click using consolidated helper
+        let clicked = self.click_behavior(combo_id, hovered).as_clicked_bool();
 
         if clicked {
             *open = !*open;

@@ -1,5 +1,6 @@
 use katla_math::{Rect2D, Vec2};
 
+use crate::input::{mouse_button, UiInputState};
 use crate::UiContext;
 
 /// Response from a widget interaction.
@@ -132,6 +133,37 @@ impl Response {
             bounds: self.bounds.union(&other.bounds),
             drag_delta: self.drag_delta + other.drag_delta,
             double_clicked: self.double_clicked || other.double_clicked,
+        }
+    }
+
+    /// Create a response for an interactive widget with automatic double-click and drag tracking.
+    ///
+    /// This is a convenience constructor that handles common widget response patterns.
+    ///
+    /// # Arguments
+    /// * `clicked` - Whether the widget was clicked this frame
+    /// * `hovered` - Whether the widget is being hovered
+    /// * `active` - Whether the widget is active (pressed)
+    /// * `bounds` - Widget bounds
+    /// * `input` - Input state reference for double-click and drag detection
+    pub(crate) fn interactive(
+        clicked: bool,
+        hovered: bool,
+        active: bool,
+        bounds: Rect2D,
+        input: &UiInputState,
+    ) -> Self {
+        let double_clicked = clicked && input.mouse_double_clicked(mouse_button::LEFT);
+        let drag_delta = if active { input.mouse_delta } else { Vec2::new(0.0, 0.0) };
+
+        Self {
+            clicked,
+            hovered,
+            active,
+            changed: clicked,
+            bounds,
+            drag_delta,
+            double_clicked,
         }
     }
 }

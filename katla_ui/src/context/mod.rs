@@ -4,6 +4,7 @@
 //! for building user interfaces.
 
 mod drawing;
+mod interaction;
 mod layout;
 mod popup;
 mod widgets;
@@ -276,6 +277,40 @@ impl UiContext {
     #[inline]
     pub fn set_mouse_cursor(&mut self, cursor: crate::input::MouseCursor) {
         self.input.set_cursor(cursor);
+    }
+
+    // -------------------------------------------------------------------------
+    // Input Shortcuts
+    // -------------------------------------------------------------------------
+
+    /// Check if a mouse button was clicked this frame.
+    #[inline]
+    pub fn mouse_clicked(&self, button: usize) -> bool {
+        self.input.mouse_clicked(button)
+    }
+
+    /// Check if a mouse button is currently down.
+    #[inline]
+    pub fn mouse_down(&self, button: usize) -> bool {
+        self.input.mouse_down[button]
+    }
+
+    /// Get the current mouse position.
+    #[inline]
+    pub fn mouse_pos(&self) -> Vec2 {
+        self.input.mouse_pos
+    }
+
+    /// Check if a key was pressed this frame.
+    #[inline]
+    pub fn key_pressed(&self, key: crate::input::KeyCode) -> bool {
+        self.input.key_pressed(key)
+    }
+
+    /// Check if a key is currently being held down.
+    #[inline]
+    pub fn key_down(&self, key: crate::input::KeyCode) -> bool {
+        self.input.is_key_down(key)
     }
 
     // -------------------------------------------------------------------------

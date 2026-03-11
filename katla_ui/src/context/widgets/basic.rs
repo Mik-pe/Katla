@@ -6,8 +6,9 @@ use katla_math::{Color, Rect2D, Vec2};
 
 use crate::icons::ForkAwesome;
 use crate::input::{mouse_button, KeyCode};
-use crate::Response;
+use crate::response::Response;
 
+use super::super::interaction::ClickResult;
 use super::super::UiContext;
 
 #[cfg(test)]
@@ -364,15 +365,13 @@ impl UiContext {
         let hovered = self.update_hover(widget_id, bounds);
         let active = self.active_id == Some(widget_id);
 
-        // Handle click
-        // Note: On release, we use self.input.is_hovered() directly instead of self.is_hovered()
-        // because self.is_hovered() returns false when active_id is set (which it is during press).
+        // Handle click using unified click behavior
+        // Note: On release, we need to use raw input check to bypass active_id blocking
         let clicked = if hovered && self.input.mouse_pressed[mouse_button::LEFT] {
             self.active_id = Some(widget_id);
             false
         } else if active && self.input.mouse_released[mouse_button::LEFT] {
             self.active_id = None;
-            // Check if mouse is still over button using raw input check (bypasses active_id block)
             self.input.is_hovered(bounds)
         } else {
             false
@@ -390,7 +389,7 @@ impl UiContext {
         // Draw button background
         self.draw_rect(bounds, bg_color);
 
-        // Draw button text - use text_color (primary) which should be visible against backgrounds
+        // Draw button text
         let text_size = self.measure_text(text, self.style.font_size);
         let text_pos = Vec2::new(
             bounds.center().x() - text_size.x() * 0.5,
@@ -398,25 +397,7 @@ impl UiContext {
         );
         self.draw_text(text, text_pos, self.style.text_color, self.style.font_size);
 
-        // Check for double-click (on click release)
-        let double_clicked = clicked && self.input.mouse_double_clicked(mouse_button::LEFT);
-
-        // Track drag delta when active
-        let drag_delta = if active {
-            self.input.mouse_delta
-        } else {
-            Vec2::new(0.0, 0.0)
-        };
-
-        Response {
-            clicked,
-            hovered,
-            active,
-            changed: clicked,
-            bounds,
-            drag_delta,
-            double_clicked,
-        }
+        Response::interactive(clicked, hovered, active, bounds, &self.input)
     }
     pub(crate) fn image_button(
         &mut self,
@@ -443,13 +424,13 @@ impl UiContext {
 
         // Determine colors based on state
         let bg_color = if !enabled {
-            self.style.button_normal * 0.5 // Dimmed when disabled
+            self.style.button_normal * 0.5
         } else if active {
             self.style.button_active
         } else if hovered {
             self.style.button_hovered
         } else {
-            Color::TRANSPARENT // No background by default for icon buttons
+            Color::TRANSPARENT
         };
 
         // Draw button background
@@ -457,36 +438,24 @@ impl UiContext {
 
         // Determine icon color based on state
         let icon_color = if !enabled {
-            self.style.button_text * 0.5 // Dimmed when disabled
+            self.style.button_text * 0.5
         } else if hovered {
             self.style.button_text
         } else {
-            self.style.button_text * 0.8 // Slightly dimmed when not hovered
+            self.style.button_text * 0.8
         };
 
         // Draw icon centered
         let icon_size = bounds.height().min(bounds.width()) * 0.6;
         self.draw_icon_centered(icon, bounds, icon_size, icon_color);
 
-        // Check for double-click (on click release)
-        let double_clicked = clicked && self.input.mouse_double_clicked(mouse_button::LEFT);
-
-        // Track drag delta when active
-        let drag_delta = if active {
-            self.input.mouse_delta
-        } else {
-            Vec2::new(0.0, 0.0)
-        };
-
-        Response {
-            clicked: clicked && enabled,
-            hovered,
-            active,
-            changed: clicked && enabled,
-            bounds,
-            drag_delta,
-            double_clicked: double_clicked && enabled,
+        let mut response = Response::interactive(clicked, hovered, active, bounds, &self.input);
+        if !enabled {
+            response.clicked = false;
+            response.changed = false;
+            response.double_clicked = false;
         }
+        response
     }
 
     /// Draw a checkbox (internal - use `widgets::Checkbox` instead).
@@ -536,38 +505,15 @@ impl UiContext {
             self.draw_icon_centered(ForkAwesome::CHECK, check_bounds, icon_size, Color::WHITE);
         }
 
-        // Draw label (top-left positioning, vertically centered)
+        // Draw label
         let text_size = self.measure_text(label, self.style.font_size);
         let label_pos = Vec2::new(
             check_bounds.max.x() + 8.0,
             bounds.center().y() - text_size.y() * 0.5,
         );
-        self.draw_text(
-            label,
-            label_pos,
-            self.style.text_color,
-            self.style.font_size,
-        );
+        self.draw_text(label, label_pos, self.style.text_color, self.style.font_size);
 
-        // Check for double-click
-        let double_clicked = clicked && self.input.mouse_double_clicked(mouse_button::LEFT);
-
-        // Track drag delta when active
-        let drag_delta = if active {
-            self.input.mouse_delta
-        } else {
-            Vec2::new(0.0, 0.0)
-        };
-
-        Response {
-            clicked,
-            hovered,
-            active,
-            changed: clicked,
-            bounds,
-            drag_delta,
-            double_clicked,
-        }
+        Response::interactive(clicked, hovered, active, bounds, &self.input)
     }
 
     /// Draw a slider (internal - use `widgets::Slider` instead).
@@ -628,22 +574,9 @@ impl UiContext {
         };
         self.draw_rect(grab_bounds, grab_color);
 
-        // Track drag delta when active
-        let drag_delta = if active {
-            self.input.mouse_delta
-        } else {
-            Vec2::new(0.0, 0.0)
-        };
-
-        Response {
-            clicked: false,
-            hovered,
-            active,
-            changed,
-            bounds,
-            drag_delta,
-            double_clicked: false,
-        }
+        let mut response = Response::interactive(false, hovered, active, bounds, &self.input);
+        response.changed = changed;
+        response
     }
 
     /// Draw a separator line.
@@ -727,15 +660,9 @@ impl UiContext {
 
         self.pop_clip();
 
-        Response {
-            clicked: false,
-            hovered,
-            active: focused,
-            changed,
-            bounds,
-            drag_delta: Vec2::new(0.0, 0.0),
-            double_clicked: false,
-        }
+        let mut response = Response::interactive(false, hovered, focused, bounds, &self.input);
+        response.changed = changed;
+        response
     }
 
     /// Draw a multiline text area (internal - use `widgets::TextArea` instead).

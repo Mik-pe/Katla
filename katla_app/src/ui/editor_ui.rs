@@ -19,7 +19,7 @@ mod viewport_grid;
 use katla_ecs::EntityId;
 use katla_gfx::TextureHandle;
 use katla_math::{Color, Rect2D, Vec2, Vec3};
-use katla_ui::{DrawList, FontSize, UiContext};
+use katla_ui::{mouse_button, DrawList, FontSize, UiContext};
 use std::path::PathBuf;
 
 use crate::{
@@ -323,7 +323,7 @@ impl EditorUI {
 
         // === KEYBOARD SHORTCUTS ===
         // Delete key - delete selected entity
-        if ui.input.key_pressed(katla_ui::input::KeyCode::Delete) {
+        if ui.key_pressed(katla_ui::input::KeyCode::Delete) {
             if let Some(entity_id) = self.selected_entity {
                 if entities.iter().any(|e| e.id == entity_id) {
                     self.pending_actions
@@ -334,7 +334,7 @@ impl EditorUI {
         }
 
         // Arrow Up - select previous entity
-        if ui.input.key_pressed(katla_ui::input::KeyCode::ArrowUp) {
+        if ui.key_pressed(katla_ui::input::KeyCode::ArrowUp) {
             if let Some(current_id) = self.selected_entity {
                 if let Some(pos) = visible_entities.iter().position(|id| *id == current_id) {
                     if pos > 0 {
@@ -348,7 +348,7 @@ impl EditorUI {
         }
 
         // Arrow Down - select next entity
-        if ui.input.key_pressed(katla_ui::input::KeyCode::ArrowDown) {
+        if ui.key_pressed(katla_ui::input::KeyCode::ArrowDown) {
             if let Some(current_id) = self.selected_entity {
                 if let Some(pos) = visible_entities.iter().position(|id| *id == current_id) {
                     if pos < visible_entities.len() - 1 {
@@ -362,7 +362,7 @@ impl EditorUI {
         }
 
         // Arrow Right - expand selected entity
-        if ui.input.key_pressed(katla_ui::input::KeyCode::ArrowRight) {
+        if ui.key_pressed(katla_ui::input::KeyCode::ArrowRight) {
             if let Some(entity_id) = self.selected_entity {
                 if !self.hierarchy_state.expanded_entities.contains(&entity_id) {
                     self.hierarchy_state.expanded_entities.insert(entity_id);
@@ -371,7 +371,7 @@ impl EditorUI {
         }
 
         // Arrow Left - collapse selected entity (or select parent)
-        if ui.input.key_pressed(katla_ui::input::KeyCode::ArrowLeft) {
+        if ui.key_pressed(katla_ui::input::KeyCode::ArrowLeft) {
             if let Some(entity_id) = self.selected_entity {
                 if self.hierarchy_state.expanded_entities.contains(&entity_id) {
                     // Collapse if expanded
@@ -388,7 +388,7 @@ impl EditorUI {
         }
 
         // Escape - deselect entity
-        if ui.input.key_pressed(katla_ui::input::KeyCode::Escape) {
+        if ui.key_pressed(katla_ui::input::KeyCode::Escape) {
             self.selected_entity = None;
         }
 
@@ -446,9 +446,9 @@ impl EditorUI {
 
         // Handle ongoing resize
         if let Some(resize_edge) = self.resizing_panel {
-            if ui.input.is_mouse_down(katla_ui::input::mouse_button::LEFT) {
-                let mouse_x = ui.input.mouse_pos.x();
-                let mouse_y = ui.input.mouse_pos.y();
+            if ui.mouse_down(mouse_button::LEFT) {
+                let mouse_x = ui.mouse_pos().x();
+                let mouse_y = ui.mouse_pos().y();
 
                 match resize_edge {
                     PanelResizeEdge::LeftPanelRight => {
@@ -485,17 +485,17 @@ impl EditorUI {
         if self.resizing_panel.is_none() {
             if ui.is_hovered(left_resize_bounds) {
                 ui.set_mouse_cursor(katla_ui::input::MouseCursor::ResizeHorizontal);
-                if ui.input.mouse_clicked(katla_ui::input::mouse_button::LEFT) {
+                if ui.mouse_clicked(mouse_button::LEFT) {
                     self.resizing_panel = Some(PanelResizeEdge::LeftPanelRight);
                 }
             } else if ui.is_hovered(right_resize_bounds) {
                 ui.set_mouse_cursor(katla_ui::input::MouseCursor::ResizeHorizontal);
-                if ui.input.mouse_clicked(katla_ui::input::mouse_button::LEFT) {
+                if ui.mouse_clicked(mouse_button::LEFT) {
                     self.resizing_panel = Some(PanelResizeEdge::RightPanelLeft);
                 }
             } else if ui.is_hovered(asset_resize_bounds) && !self.asset_browser.collapsed {
                 ui.set_mouse_cursor(katla_ui::input::MouseCursor::ResizeVertical);
-                if ui.input.mouse_clicked(katla_ui::input::mouse_button::LEFT) {
+                if ui.mouse_clicked(mouse_button::LEFT) {
                     self.resizing_panel = Some(PanelResizeEdge::AssetBrowserTop);
                 }
             }
@@ -575,7 +575,7 @@ impl EditorUI {
             let max = viewport_bounds.max;
             crate::input::update_active_viewport(
                 &mut self.viewport_grid_state,
-                ui.input.mouse_pos,
+                ui.mouse_pos(),
                 min,
                 max,
             );
@@ -799,7 +799,7 @@ impl EditorUI {
         if self.asset_browser.is_dragging {
             if let Some(drag_idx) = self.asset_browser.drag_asset {
                 if let Some(asset) = self.asset_browser.assets.get(drag_idx) {
-                    let mouse_pos = ui.input.mouse_pos;
+                    let mouse_pos = ui.mouse_pos();
 
                     // Preview size
                     let preview_size = 64.0;

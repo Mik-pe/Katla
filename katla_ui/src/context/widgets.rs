@@ -17,9 +17,8 @@ mod utility;
 
 pub use scroll_area::{ScrollArea, ScrollAreaState};
 
+use crate::context::interaction::ClickResult;
 use katla_math::Rect2D;
-
-use crate::input::mouse_button;
 
 use super::UiContext;
 
@@ -59,22 +58,48 @@ impl UiContext {
         hovered
     }
 
-    /// Handle button behavior (returns true if clicked).
+    /// Handle standard click behavior for interactive widgets.
+    ///
+    /// This consolidates the press -> release -> click pattern used by most widgets.
+    /// Returns a `ClickResult` indicating the interaction state.
+    ///
+    /// # Arguments
+    /// * `id` - Widget ID
+    /// * `hovered` - Whether the widget is currently hovered
+    ///
+    /// # Returns
+    /// * `ClickResult::Pressed` - Mouse pressed on widget (sets active_id)
+    /// * `ClickResult::Clicked` - Mouse released while hovering (clears active_id)
+    /// * `ClickResult::Released` - Mouse released elsewhere (clears active_id)
+    /// * `ClickResult::None` - No interaction
+    pub(crate) fn click_behavior(
+        &mut self,
+        id: super::WidgetId,
+        hovered: bool,
+    ) -> ClickResult {
+        let active = self.active_id == Some(id);
+
+        if hovered && self.input.mouse_pressed[crate::input::mouse_button::LEFT] {
+            self.active_id = Some(id);
+            ClickResult::Pressed
+        } else if active && self.input.mouse_released[crate::input::mouse_button::LEFT] {
+            self.active_id = None;
+            if hovered {
+                ClickResult::Clicked
+            } else {
+                ClickResult::Released
+            }
+        } else {
+            ClickResult::None
+        }
+    }
+
+    /// Legacy button behavior method (returns bool for backwards compatibility).
+    ///
+    /// Prefer using `click_behavior()` for new code.
     pub fn button_behavior(&mut self, id: super::WidgetId, bounds: Rect2D) -> bool {
         let hovered = self.update_hover(id, bounds);
-
-        if hovered && self.input.mouse_pressed[mouse_button::LEFT] {
-            self.active_id = Some(id);
-        }
-
-        let clicked = self.active_id == Some(id) && self.input.mouse_released[mouse_button::LEFT];
-
-        // Only clear active_id if we're the active widget
-        if clicked {
-            self.active_id = None;
-        }
-
-        clicked
+        self.click_behavior(id, hovered).as_clicked_bool()
     }
 
     // -------------------------------------------------------------------------
