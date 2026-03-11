@@ -108,7 +108,6 @@ impl<'a> Widget for Inspector<'a> {
             // Position row (label + value on same line)
             ui.begin_row();
             ui.add(Label::new("Position:").at_cursor_width(ui, label_width));
-            ui.same_line();
             let pos_text = format!(
                 "({:.2}, {:.2}, {:.2})",
                 entity.position.x(),
@@ -121,7 +120,6 @@ impl<'a> Widget for Inspector<'a> {
             // Rotation row
             ui.begin_row();
             ui.add(Label::new("Rotation:").at_cursor_width(ui, label_width));
-            ui.same_line();
             let rot_text = format!(
                 "({:.1}, {:.1}, {:.1})",
                 entity.rotation.x(),
@@ -134,7 +132,6 @@ impl<'a> Widget for Inspector<'a> {
             // Scale row
             ui.begin_row();
             ui.add(Label::new("Scale:").at_cursor_width(ui, label_width));
-            ui.same_line();
             let scale_text = format!(
                 "({:.2}, {:.2}, {:.2})",
                 entity.scale.x(),
