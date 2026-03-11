@@ -19,14 +19,14 @@ impl UiContext {
     /// ui.property_row("Rotation:", "(0.0, 90.0, 0.0)");
     /// ```
     pub fn property_row(&mut self, label: &str, value: &str) {
-        let label_width = 60.0;
-        
-        self.begin_row();
-        self.add(Label::new(label).at_cursor_width(self, label_width));
-        self.advance_cursor(Vec2::new(label_width, 20.0));
-        self.add(Label::new(value).at_cursor_width(self, 0.0)); // 0.0 = measure text
-        self.advance_cursor(Vec2::new(0.0, 20.0));
-        self.end_row();
+        let start_x = self.cursor().x();
+        let text_height = self.measure_text(value, self.style.font_size).y();
+
+        self.draw_text(label, self.cursor(), self.style.text_color, self.style.font_size);
+        self.set_cursor(Vec2::new(start_x + 60.0, self.cursor().y()));
+        self.draw_text(value, self.cursor(), self.style.text_color, self.style.font_size);
+
+        self.set_cursor(Vec2::new(start_x, self.cursor().y() + text_height + 4.0));
     }
 
     /// Display a text label at the current cursor position.
@@ -41,6 +41,57 @@ impl UiContext {
     pub fn label(&mut self, text: &str) {
         self.add(Label::new(text).at_cursor(self));
         self.spacing(20.0);
+    }
+
+    /// Display a text label at the cursor position with auto-coloring.
+    ///
+    /// Convenience wrapper that draws text and advances the cursor automatically.
+    /// Uses the default text color.
+    ///
+    /// # Example
+    /// ```ignore
+    /// ui.text_label("Hello, World!");
+    /// ui.text_label(&format!("Value: {}", x));
+    /// ```
+    pub fn text_label(&mut self, text: &str) {
+        let text_size = self.measure_text(text, self.style.font_size);
+        self.draw_text(text, self.cursor(), self.style.text_color, self.style.font_size);
+        let spacing = 20.0;
+        self.cursor = Vec2::new(
+            self.cursor.x(),
+            self.cursor.y() + text_size.y() + spacing,
+        );
+    }
+
+    /// Display a text label at the cursor position with custom color.
+    ///
+    /// Draws text with the specified color and advances the cursor automatically.
+    ///
+    /// # Example
+    /// ```ignore
+    /// ui.text_label_colored("Error:", Color::RED);
+    /// ui.text_label_colored(&format!("FPS: {:.1}", fps), fps_color);
+    /// ```
+    pub fn text_label_colored(&mut self, text: &str, color: katla_math::Color) {
+        let text_size = self.measure_text(text, self.style.font_size);
+        self.draw_text(text, self.cursor(), color, self.style.font_size);
+        let spacing = 20.0;
+        self.cursor = Vec2::new(
+            self.cursor.x(),
+            self.cursor.y() + text_size.y() + spacing,
+        );
+    }
+
+    /// Display a text label at the cursor position with custom color (alias).
+    ///
+    /// This is a shorter alias for text_label_colored.
+    ///
+    /// # Example
+    /// ```ignore
+    /// ui.label_c("Warning:", Color::YELLOW);
+    /// ```
+    pub fn label_c(&mut self, text: &str, color: katla_math::Color) {
+        self.text_label_colored(text, color);
     }
 
     /// Display a section header with text.
@@ -83,6 +134,20 @@ impl UiContext {
             1.0,
         );
         self.spacing(8.0);
+    }
+
+    /// Display a separator text (vertical bar "|") with spacing.
+    ///
+    /// Commonly used in status bars and toolbars to visually separate items.
+    ///
+    /// # Example
+    /// ```ignore
+    /// ui.text_label("FPS: 60");
+    /// ui.separator_text();
+    /// ui.text_label("Frame: 1234");
+    /// ```
+    pub fn separator_text(&mut self) {
+        self.text_label_colored("|", self.style.text_disabled);
     }
 
     /// Display a named section with header and separator.

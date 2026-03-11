@@ -74,41 +74,18 @@ impl<'a> Widget for StatusBar<'a> {
         } else {
             self.theme.error
         };
-        let fps_size = ui.measure_text(&fps_text, font_size);
-        ui.draw_text(&fps_text, ui.cursor(), fps_color, font_size);
-        ui.spacing(70.0);
-
-        // Separator
-        ui.draw_text("|", ui.cursor(), self.theme.text_muted, font_size);
-        ui.spacing(15.0);
+        ui.text_label_colored(&fps_text, fps_color);
+        ui.separator_text();
 
         // Frame count
         let frame_text = format!("Frame: {}", self.frame_count);
-        ui.draw_text(
-            &frame_text,
-            ui.cursor(),
-            self.theme.text_secondary,
-            font_size,
-        );
-        ui.spacing(100.0);
-
-        // Separator
-        ui.draw_text("|", ui.cursor(), self.theme.text_muted, font_size);
-        ui.spacing(15.0);
+        ui.text_label(&frame_text);
+        ui.separator_text();
 
         // Entities
         let entity_text = format!("Entities: {}", self.entity_count);
-        ui.draw_text(
-            &entity_text,
-            ui.cursor(),
-            self.theme.text_secondary,
-            font_size,
-        );
-        ui.spacing(100.0);
-
-        // Separator
-        ui.draw_text("|", ui.cursor(), self.theme.text_muted, font_size);
-        ui.spacing(15.0);
+        ui.text_label(&entity_text);
+        ui.separator_text();
 
         // Selection
         let selection_text = if self.selected_count > 0 {
@@ -116,16 +93,12 @@ impl<'a> Widget for StatusBar<'a> {
         } else {
             format!("Assets: {}", self.total_assets)
         };
-        ui.draw_text(
-            &selection_text,
-            ui.cursor(),
-            if self.selected_count > 0 {
-                self.theme.highlight
-            } else {
-                self.theme.text_secondary
-            },
-            font_size,
-        );
+        let selection_color = if self.selected_count > 0 {
+            self.theme.highlight
+        } else {
+            self.theme.text_secondary
+        };
+        ui.text_label_colored(&selection_text, selection_color);
 
         ui.end_row();
 
