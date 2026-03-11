@@ -13,7 +13,7 @@ use super::pass::PassDesc;
 use super::passes::geometry::GeometryPassData;
 use super::resource::{GraphResourceDesc, GraphResourceHandle};
 use crate::barrier::ImageBarrier;
-use crate::handle::{PipelineHandle, TextureHandle};
+use crate::handle::PipelineHandle;
 use crate::renderer::VulkanRenderer;
 use crate::renderer::types::DrawList;
 use crate::sync::VkImageView;
@@ -1335,84 +1335,6 @@ impl<'a> Frame<'a> {
         // Bind descriptor set 1 (bindless texture array - shared with 3D materials)
         let bindless_descriptor_set = self.renderer.bindless_manager.descriptor_set();
         cmd.bind_descriptor_sets(pipeline_layout, 1, &[bindless_descriptor_set.vk()], &[]);
-
-        Ok(())
-    }
-
-    /// Push a dynamic texture to descriptor set 1 for UI rendering.
-    /// This is called per draw command to bind the correct texture (font atlas or viewport).
-    fn push_ui_dynamic_texture(
-        &self,
-        cmd: &crate::vulkan::commandbuffer::CommandBuffer,
-        pipeline_layout: vk::PipelineLayout,
-        texture_handle: TextureHandle,
-    ) -> Result<(), RenderGraphError> {
-        // Check if this is a bindless texture (index >= 1000)
-        const BINDLESS_OFFSET: u32 = 1000;
-
-        if texture_handle.index() >= BINDLESS_OFFSET {
-            // This is the LDR viewport texture (bindless index encoded)
-            // Extract the actual bindless index
-            let bindless_index = texture_handle.index() - BINDLESS_OFFSET;
-
-            log::debug!(
-                "push_ui_dynamic_texture: bindless texture detected, index={}",
-                bindless_index
-            );
-
-            // For now, we'll look it up from the frame graph's transient textures
-            // In the future, the UI shader should be updated to use bindless directly
-            if let Some(ldr_texture) = self.graph.transient_texture("ldr_color") {
-                let image_info = vk::DescriptorImageInfo::default()
-                    .sampler(self.renderer.shared_sampler().vk())
-                    .image_view(ldr_texture.image_view.vk())
-                    .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL);
-
-                let push_write = vk::WriteDescriptorSet::default()
-                    .dst_set(vk::DescriptorSet::null())
-                    .dst_binding(0)
-                    .dst_array_element(0)
-                    .descriptor_type(vk::DescriptorType::SAMPLED_IMAGE)
-                    .image_info(std::slice::from_ref(&image_info));
-
-                if let Some(push_descriptor_khr) = &self.renderer.context.push_descriptor_khr {
-                    cmd.push_descriptor_set_khr(
-                        push_descriptor_khr,
-                        pipeline_layout,
-                        1,
-                        &[push_write],
-                    );
-                }
-            }
-            return Ok(());
-        }
-
-        let texture = self
-            .renderer
-            .texture_manager
-            .get_texture_rc(texture_handle)
-            .ok_or_else(|| {
-                RenderGraphError::InvalidConfiguration(format!(
-                    "Texture not found for handle {:?}",
-                    texture_handle
-                ))
-            })?;
-
-        let image_info = vk::DescriptorImageInfo::default()
-            .sampler(texture.image_sampler.vk())
-            .image_view(texture.image_view.vk())
-            .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL);
-
-        let push_write = vk::WriteDescriptorSet::default()
-            .dst_set(vk::DescriptorSet::null()) // Ignored for push descriptors
-            .dst_binding(0)
-            .dst_array_element(0)
-            .descriptor_type(vk::DescriptorType::SAMPLED_IMAGE)
-            .image_info(std::slice::from_ref(&image_info));
-
-        if let Some(push_descriptor_khr) = &self.renderer.context.push_descriptor_khr {
-            cmd.push_descriptor_set_khr(push_descriptor_khr, pipeline_layout, 1, &[push_write]);
-        }
 
         Ok(())
     }
