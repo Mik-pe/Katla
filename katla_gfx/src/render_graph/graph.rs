@@ -1176,9 +1176,10 @@ impl<'a> Frame<'a> {
                 )
             })?;
 
-        // Bind UI descriptor sets (font atlas, sampler, uniforms)
+        // Bind UI descriptor sets (sampler, uniforms, bindless textures)
         // Use screen_size from draw list (logical pixels, matches vertex coordinates)
-        // Bind set 0 once (font atlas, uniforms don't change per frame)
+        // Bind set 0 once (sampler, uniforms don't change per frame)
+        // Bind set 1 once (bindless texture array, shared with 3D materials)
         self.bind_ui_descriptor_sets(
             cmd,
             pipeline_handle,
@@ -1186,27 +1187,8 @@ impl<'a> Frame<'a> {
             ui_draw_list.screen_size,
         )?;
 
-        // Track current texture to avoid redundant descriptor updates
-        let mut current_texture = None;  // Use None to indicate no texture has been bound yet
-
-        // Execute each draw command with scissor clipping and dynamic texture binding
+        // Execute each draw command with scissor clipping
         for draw_cmd in &ui_draw_list.commands {
-            // Update dynamic texture (set 1) if it changed or this is the first draw
-            if current_texture.is_none() || draw_cmd.texture != current_texture.unwrap() {
-                let texture_handle = if draw_cmd.texture == TextureHandle::NONE {
-                    font_atlas_handle // Fall back to font atlas for solid color rendering
-                } else {
-                    draw_cmd.texture
-                };
-
-                self.push_ui_dynamic_texture(
-                    cmd,
-                    pipeline_layout,
-                    texture_handle,
-                )?;
-                current_texture = Some(draw_cmd.texture);
-            }
-
             // Set scissor for clipping (if specified)
             // clip_rect is in logical pixels, convert to physical pixels for Vulkan scissor
             if let Some([x, y, width, height]) = draw_cmd.clip_rect {
@@ -1340,8 +1322,12 @@ impl<'a> Frame<'a> {
         let descriptor_set =
             self.get_or_create_ui_descriptor_set(frame_idx, descriptor_set_layout, screen_size)?;
 
-        // Bind descriptor set 0 (font atlas, sampler, uniforms)
+        // Bind descriptor set 0 (sampler, uniforms)
         cmd.bind_descriptor_sets(pipeline_layout, 0, &[descriptor_set], &[]);
+
+        // Bind descriptor set 1 (bindless texture array - shared with 3D materials)
+        let bindless_descriptor_set = self.renderer.bindless_manager.descriptor_set();
+        cmd.bind_descriptor_sets(pipeline_layout, 1, &[bindless_descriptor_set.vk()], &[]);
 
         Ok(())
     }
@@ -1515,28 +1501,14 @@ impl<'a> Frame<'a> {
         Ok(descriptor_set)
     }
 
-    /// Update UI descriptor set with font atlas, sampler, and uniforms.
+    /// Update UI descriptor set with sampler and uniforms.
     fn update_ui_descriptor_set(
         &mut self,
         descriptor_set: vk::DescriptorSet,
         screen_size: [f32; 2],
     ) -> Result<(), RenderGraphError> {
-        // Get font atlas texture
-        let font_atlas_handle = self
-            .renderer
-            .ui_renderer
-            .font_atlas_handle()
-            .ok_or_else(|| {
-                RenderGraphError::InvalidConfiguration("UI font atlas not initialized".to_string())
-            })?;
-
-        let font_texture = self
-            .renderer
-            .texture_manager
-            .get_texture_rc(font_atlas_handle)
-            .ok_or_else(|| {
-                RenderGraphError::InvalidConfiguration("Font atlas texture not found".to_string())
-            })?;
+        // Get shared sampler from bindless manager
+        let sampler = self.renderer.bindless_manager.shared_sampler();
 
         // Create or update uniform buffer for screen size
         let uniform_data = [screen_size[0], screen_size[1], 0.0, 0.0];
@@ -1589,18 +1561,11 @@ impl<'a> Frame<'a> {
             .range(uniform_bytes.len() as vk::DeviceSize);
 
         let image_info = vk::DescriptorImageInfo::default()
-            .sampler(font_texture.image_sampler.vk())
-            .image_view(font_texture.image_view.vk())
+            .sampler(sampler.vk())
+            .image_view(vk::ImageView::null()) // Null for sampler-only write
             .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL);
 
         let writes = [
-            // Binding 0: font atlas texture
-            vk::WriteDescriptorSet::default()
-                .dst_set(descriptor_set)
-                .dst_binding(0)
-                .dst_array_element(0)
-                .descriptor_type(vk::DescriptorType::SAMPLED_IMAGE)
-                .image_info(std::slice::from_ref(&image_info)),
             // Binding 1: sampler
             vk::WriteDescriptorSet::default()
                 .dst_set(descriptor_set)

@@ -112,6 +112,7 @@ impl DrawList {
         let color_arr = color.to_bytes();
 
         // Four corners in counter-clockwise order for screen space (Y-down)
+        // Note: texture_index will be set during batch conversion based on TextureId
         self.vertices.push(Vertex::position_only(
             Vec2::new(bounds.min.x(), bounds.min.y()),
             color_arr,
@@ -156,25 +157,30 @@ impl DrawList {
         let color_arr = color.to_bytes();
 
         // Four corners with UVs in counter-clockwise order for screen space (Y-down)
+        // Note: texture_index will be set during batch conversion based on TextureId
         self.vertices.push(Vertex::new(
             Vec2::new(bounds.min.x(), bounds.min.y()),
             Vec2::new(uv.min.x(), uv.min.y()),
             color_arr,
+            0, // Will be set during batch conversion
         ));
         self.vertices.push(Vertex::new(
             Vec2::new(bounds.min.x(), bounds.max.y()),
             Vec2::new(uv.min.x(), uv.max.y()),
             color_arr,
+            0, // Will be set during batch conversion
         ));
         self.vertices.push(Vertex::new(
             Vec2::new(bounds.max.x(), bounds.max.y()),
             Vec2::new(uv.max.x(), uv.max.y()),
             color_arr,
+            0, // Will be set during batch conversion
         ));
         self.vertices.push(Vertex::new(
             Vec2::new(bounds.max.x(), bounds.min.y()),
             Vec2::new(uv.max.x(), uv.min.y()),
             color_arr,
+            0, // Will be set during batch conversion
         ));
 
         // Two triangles
@@ -210,25 +216,30 @@ impl DrawList {
         let color_arr = color.to_bytes();
 
         // Four corners with UVs in counter-clockwise order for screen space (Y-down)
+        // Note: texture_index will be set during batch conversion based on TextureId
         self.vertices.push(Vertex::new(
             Vec2::new(bounds.min.x(), bounds.min.y()),
             uv_min,
             color_arr,
+            0, // Will be set during batch conversion
         ));
         self.vertices.push(Vertex::new(
             Vec2::new(bounds.min.x(), bounds.max.y()),
             Vec2::new(uv_min.x(), uv_max.y()),
             color_arr,
+            0, // Will be set during batch conversion
         ));
         self.vertices.push(Vertex::new(
             Vec2::new(bounds.max.x(), bounds.max.y()),
             uv_max,
             color_arr,
+            0, // Will be set during batch conversion
         ));
         self.vertices.push(Vertex::new(
             Vec2::new(bounds.max.x(), bounds.min.y()),
             Vec2::new(uv_max.x(), uv_min.y()),
             color_arr,
+            0, // Will be set during batch conversion
         ));
 
         // Two triangles
@@ -256,6 +267,7 @@ impl DrawList {
         let color_arr = color.to_bytes();
 
         // Add all vertices
+        // Note: texture_index will be set during batch conversion based on TextureId
         for &point in points {
             self.vertices.push(Vertex::position_only(point, color_arr));
         }
@@ -552,11 +564,11 @@ mod tests {
     #[test]
     fn test_vertex_size() {
         // Vertex uses katla_math::Vec2 which is [f32; 4] for alignment
-        // This is converted to 20-byte VertexUI for GPU upload
         // pos: 16 bytes (Vec2 = [f32; 4])
         // uv: 16 bytes (Vec2 = [f32; 4])
         // color: 4 bytes ([u8; 4])
-        // Total: 36 bytes + padding = 48 bytes
+        // texture_index: 4 bytes (u32)
+        // Total: 40 bytes + padding = 48 bytes
         assert_eq!(std::mem::size_of::<Vertex>(), 48);
     }
 }

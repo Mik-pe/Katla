@@ -369,22 +369,16 @@ impl MaterialCompiler {
 
     /// Build UI descriptor set layouts.
     ///
-    /// UI shader uses:
-    /// - Set 0: UI resources (font atlas, sampler, uniforms)
-    /// - Set 1: Dynamic texture (push descriptors, optional)
+    /// UI shader uses bindless textures:
+    /// - Set 0: UI resources (sampler, uniforms)
+    /// - Set 1: Bindless texture array (shared with 3D materials)
     fn build_ui_descriptor_layout(
         &mut self,
     ) -> Result<Vec<vk::DescriptorSetLayout>, MaterialError> {
         // UI descriptor set layout Set 0 (must match shader bindings in ui.wgsl):
-        // - Binding 0: font atlas (texture)
-        // - Binding 1: sampler
-        // - Binding 3: uniforms (screen_size) - Note: binding 3 to match shader!
+        // - Binding 1: sampler (shared)
+        // - Binding 3: uniforms (screen_size)
         let ui_bindings = [
-            vk::DescriptorSetLayoutBinding::default()
-                .binding(0)
-                .descriptor_type(vk::DescriptorType::SAMPLED_IMAGE)
-                .descriptor_count(1)
-                .stage_flags(vk::ShaderStageFlags::FRAGMENT),
             vk::DescriptorSetLayoutBinding::default()
                 .binding(1)
                 .descriptor_type(vk::DescriptorType::SAMPLER)
@@ -411,36 +405,11 @@ impl MaterialCompiler {
                 })?
         };
 
-        // Set 1: Dynamic texture (push descriptors)
-        // The shader uses Set 1 for per-draw texture sampling (viewport, thumbnails, etc.)
-        let push_texture_bindings = [vk::DescriptorSetLayoutBinding::default()
-            .binding(0)
-            .descriptor_type(vk::DescriptorType::SAMPLED_IMAGE)
-            .descriptor_count(1)
-            .stage_flags(vk::ShaderStageFlags::FRAGMENT)];
-
-        let push_layout_info = vk::DescriptorSetLayoutCreateInfo::default()
-            .bindings(&push_texture_bindings)
-            .flags(vk::DescriptorSetLayoutCreateFlags::PUSH_DESCRIPTOR_KHR);
-
-        let push_layout = unsafe {
-            self.context
-                .device
-                .create_descriptor_set_layout(&push_layout_info, None)
-                .map_err(|e| {
-                    MaterialError::ShaderCompilation(format!(
-                        "Failed to create push descriptor layout: {:?}",
-                        e
-                    ))
-                })?
-        };
-
-        // Track these layouts for cleanup (owned by MaterialCompiler)
+        // Track this layout for cleanup (owned by MaterialCompiler)
         self.ui_descriptor_layouts.push(ui_layout);
-        self.ui_descriptor_layouts.push(push_layout);
 
-        // Return both layouts: Set 0 (UI resources) and Set 1 (push descriptors)
-        Ok(vec![ui_layout, push_layout])
+        // Return both layouts: Set 0 (UI resources) and Set 1 (bindless textures)
+        Ok(vec![ui_layout, self.bindless_descriptor_layout])
     }
 
     /// Get the skeleton descriptor pool for allocating skeleton descriptor sets.
