@@ -93,7 +93,7 @@ impl<'a> Widget for ViewportGrid<'a> {
                     viewport_bounds,
                     Vec2::new(0.0, 1.0), // Top-left in texture
                     Vec2::new(1.0, 0.0), // Bottom-right in texture
-                    Color::OPAQUE_IMAGE,
+                    Color::WHITE,
                     texture,
                 );
 

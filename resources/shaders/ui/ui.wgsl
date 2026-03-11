@@ -38,10 +38,6 @@ struct UiUniforms {
 // binding 0: texture_2d array (4096 textures)
 @group(1) @binding(0) var bindless_textures: binding_array<texture_2d<f32>, 4096>;
 
-// Sentinel value for opaque image mode (matches Color::OPAQUE_IMAGE_ALPHA in Rust)
-// This is approximately 1.0/255.0 which is the smallest non-zero alpha that can be
-// reliably distinguished from 0.0 after round-tripping through byte conversion
-const OPAQUE_IMAGE_ALPHA: f32 = 1.0 / 255.0;
 
 @vertex
 fn vs_main(in: UiVertex) -> VertexOutput {
@@ -65,19 +61,6 @@ fn vs_main(in: UiVertex) -> VertexOutput {
 fn fs_main(in: VertexOutput) -> @location(0) vec4f {
     // Sample from the bindless texture array using the per-vertex index
     let texture = bindless_textures[in.texture_index];
-
-    // Check for opaque image mode (special alpha value signals this)
-    if (in.color.a <= OPAQUE_IMAGE_ALPHA) {
-        // Opaque image mode - sample from bindless array, force alpha = 1.0
-        // Used for viewport, thumbnails, and other textures that should not blend
-        let tex_color = textureSample(texture, font_sampler, in.uv);
-        // Use the absolute value of alpha for any tinting (usually 1.0 anyway)
-        let tint = vec4f(in.color.rgb, 1.0);
-        // Force output alpha to 1.0 to disable blending
-        return vec4f(tex_color.rgb * tint.rgb, 1.0);
-    } else {
-        // Font/text mode - sample from bindless array and multiply with vertex color
-        let tex_color = textureSample(texture, font_sampler, in.uv);
-        return in.color * tex_color;
-    }
+    let tex_color = textureSample(texture, font_sampler, in.uv);
+    return in.color * tex_color;
 }
