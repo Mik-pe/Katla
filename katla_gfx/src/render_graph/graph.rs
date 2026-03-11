@@ -346,6 +346,62 @@ impl FrameGraph {
         Ok(())
     }
 
+    /// Recreate transient textures with new dimensions.
+    ///
+    /// This should be called when the window is resized to ensure transient textures
+    /// match the new swapchain dimensions. Old textures are destroyed and new ones
+    /// are created with the updated dimensions.
+    ///
+    /// # Arguments
+    /// * `renderer` - The VulkanRenderer
+    /// * `new_width` - New width in pixels
+    /// * `new_height` - New height in pixels
+    ///
+    /// # Returns
+    /// A vector of (texture_name, bindless_slot) tuples for all recreated textures.
+    /// The caller should update any references to bindless slots (e.g., tonemap params).
+    ///
+    /// # Example
+    /// ```ignore
+    /// // On window resize
+    /// let extent = renderer.swapchain_extent();
+    /// let recreated = frame_graph.recreate_transient_textures(&mut renderer, extent.width, extent.height)?;
+    ///
+    /// // Update tonemap pass with new HDR texture slot
+    /// for (name, slot) in recreated {
+    ///     if name == "hdr_color" {
+    ///         frame_graph.set_tonemap_texture_index("tonemap", slot)?;
+    ///     }
+    /// }
+    /// ```
+    pub fn recreate_transient_textures(
+        &mut self,
+        renderer: &mut VulkanRenderer,
+        new_width: u32,
+        new_height: u32,
+    ) -> Result<Vec<(String, u32)>, RenderGraphError> {
+        // Clear existing transient textures (Drop handles cleanup)
+        self.transient_textures.clear();
+
+        // Update resource descriptors with new dimensions
+        for desc in &mut self.transient_resources {
+            desc.width = new_width;
+            desc.height = new_height;
+        }
+
+        // Recreate textures with new dimensions
+        self.initialize_transient_textures(renderer)?;
+
+        // Re-register all transient textures with bindless system
+        let mut result = Vec::new();
+        for desc in &self.transient_resources {
+            let slot = self.register_transient_texture_bindless(renderer, &desc.name)?;
+            result.push((desc.name.clone(), slot));
+        }
+
+        Ok(result)
+    }
+
     /// Register a transient texture with the bindless texture system.
     ///
     /// This is a convenience method that encapsulates the pattern of:

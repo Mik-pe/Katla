@@ -156,11 +156,19 @@ impl ApplicationHandler for Application {
                 let new_height = logical_size.height as f32;
 
                 if new_width > 0 && new_height > 0.0 {
-                    // Wait for GPU to finish before destroying old resources
-                    self.renderer.wait_for_device();
-                    self.renderer.recreate_swapchain();
+                    // Recreate swapchain and transient textures
+                    let recreated_textures =
+                        self.renderer.recreate_swapchain(&mut self.frame_graph);
 
                     let extent = self.renderer.swapchain_extent();
+
+                    // Update LDR bindless index for UI viewport rendering
+                    for (name, slot) in recreated_textures {
+                        if name == "ldr_color" {
+                            self.editor_ui.set_viewport_bindless_index(slot);
+                        }
+                    }
+
                     let aspect = extent.width as f32 / extent.height as f32;
                     self.camera
                         .borrow_mut()
