@@ -18,6 +18,8 @@ pub struct DrawableComponent {
     pub roughness: f32,
     /// Ambient occlusion factor (0.0 = full occlusion, 1.0 = none)
     pub ao: f32,
+    /// Emission texture bindless index (0 = no emission)
+    pub emission: f32,
 }
 
 impl DrawableComponent {
@@ -31,6 +33,7 @@ impl DrawableComponent {
             metallic: 0.0,
             roughness: 0.5,
             ao: 1.0,
+            emission: 0.0,
         }
     }
 
@@ -48,6 +51,7 @@ impl DrawableComponent {
             metallic: 0.0,
             roughness: 0.5,
             ao: 1.0,
+            emission: 0.0,
         }
     }
 
@@ -68,6 +72,7 @@ impl DrawableComponent {
             metallic,
             roughness,
             ao,
+            emission: 0.0,
         }
     }
 

@@ -154,6 +154,11 @@ impl Application {
             // Add PBR material parameters
             draw = draw.with_pbr(drawable.metallic, drawable.roughness, drawable.ao);
 
+            // Add emission texture index if present
+            if drawable.emission > 0.0 {
+                draw = draw.with_emission(drawable.emission);
+            }
+
             draw.submit();
 
             drawable_count += 1;

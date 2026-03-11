@@ -136,6 +136,7 @@ impl FrameContext {
             metallic: None,
             roughness: None,
             ao: None,
+            emission: None,
             instances: Vec::new(),
         }
     }
@@ -166,6 +167,7 @@ impl FrameContext {
             metallic: None,
             roughness: None,
             ao: None,
+            emission: None,
             instances,
         }
     }
@@ -245,6 +247,8 @@ pub struct DrawBuilder<'a> {
     roughness: Option<f32>,
     /// Ambient occlusion factor
     ao: Option<f32>,
+    /// Emission texture bindless index
+    emission: Option<f32>,
     /// Instance data for instanced rendering
     instances: Vec<InstanceData>,
 }
@@ -275,6 +279,15 @@ impl<'a> DrawBuilder<'a> {
         self
     }
 
+    /// Set emission texture index for self-illumination.
+    ///
+    /// # Arguments
+    /// * `emission` - Emission texture bindless index (0.0 = no emission)
+    pub fn with_emission(mut self, emission: f32) -> Self {
+        self.emission = Some(emission);
+        self
+    }
+
     /// Set skeleton handle for GPU skeletal animation.
     ///
     /// When set, the skeleton's joint matrices (Set 2) will be bound during rendering.
@@ -299,13 +312,14 @@ impl<'a> DrawBuilder<'a> {
         let metallic = self.metallic.unwrap_or(0.0);
         let roughness = self.roughness.unwrap_or(0.5);
         let ao = self.ao.unwrap_or(1.0);
+        let emission = self.emission.unwrap_or(0.0);
 
         if self.instances.is_empty() {
             // Single draw (or skinned mesh)
             let mut draw_call = DrawCall::new(self.mesh, self.material)
                 .with_transform(transform)
                 .with_color(color)
-                .with_pbr(metallic, roughness, ao)
+                .with_material_params([metallic, roughness, ao, emission])
                 .with_instance_index(self.instance_index);
 
             // Add skeleton if present
