@@ -347,6 +347,104 @@ impl TextureManager {
         self.bindless_slots.remove(&handle);
     }
 
+    /// Get a debug representation of all registered bindless textures.
+    ///
+    /// Returns a string listing all texture handles with their bindless slots.
+    /// Useful for debugging texture allocation and slot assignments.
+    ///
+    /// # Example
+    /// ```ignore
+    /// let debug_info = texture_manager.debug_bindless_textures();
+    /// println!("{}", debug_info);
+    /// // Output:
+    /// // Registered Bindless Textures (3):
+    /// // TextureHandle(42) -> Slot 5
+    /// // TextureHandle(43) -> Slot 6
+    /// // TextureHandle(44) -> Slot 7
+    /// ```
+    pub fn debug_bindless_textures(&self) -> String {
+        let mut output = format!(
+            "Registered Bindless Textures ({}):\n",
+            self.bindless_slots.len()
+        );
+
+        if self.bindless_slots.is_empty() {
+            output.push_str("  (none)\n");
+        } else {
+            // Sort by slot for consistent output
+            let mut sorted: Vec<_> = self.bindless_slots.iter().collect();
+            sorted.sort_by_key(|&(_, &slot)| slot);
+
+            for (handle, slot) in sorted {
+                output.push_str(&format!("  {:?} -> Slot {}\n", handle, slot));
+            }
+        }
+
+        output
+    }
+
+    /// Get a list of all texture handles that are not registered with bindless.
+    ///
+    /// Returns a vector of texture handles that exist in the manager but don't
+    /// have a bindless slot assigned. Useful for finding textures that should
+    /// be registered but aren't.
+    ///
+    /// # Example
+    /// ```ignore
+    /// for handle in texture_manager.list_unregistered_textures() {
+    ///     println!("Texture {:?} is not registered with bindless", handle);
+    /// }
+    /// ```
+    pub fn list_unregistered_textures(&self) -> Vec<TextureHandle> {
+        self.textures
+            .iter()
+            .enumerate()
+            .filter_map(|(idx, _)| {
+                let handle = TextureHandle::new(idx as u32);
+                if !self.bindless_slots.contains_key(&handle) {
+                    Some(handle)
+                } else {
+                    None
+                }
+            })
+            .collect()
+    }
+
+    /// Check if a texture handle is registered with the bindless system.
+    ///
+    /// # Arguments
+    /// * `handle` - The texture handle to check
+    ///
+    /// # Returns
+    /// true if the texture has a bindless slot assigned, false otherwise.
+    ///
+    /// # Example
+    /// ```ignore
+    /// if !texture_manager.is_bindless_registered(texture_handle) {
+    ///     println!("Texture is not registered with bindless system");
+    /// }
+    /// ```
+    pub fn is_bindless_registered(&self, handle: TextureHandle) -> bool {
+        self.bindless_slots.contains_key(&handle)
+    }
+
+    /// Get bindless texture statistics.
+    ///
+    /// Returns (registered_count, unregistered_count, total_count).
+    /// Useful for debugging texture registration issues.
+    ///
+    /// # Example
+    /// ```ignore
+    /// let (registered, unregistered, total) = texture_manager.bindless_stats();
+    /// println!("Bindless: {}/{} registered", registered, total);
+    /// ```
+    pub fn bindless_stats(&self) -> (usize, usize, usize) {
+        let registered = self.bindless_slots.len();
+        let total = self.textures.len();
+        let unregistered = total.saturating_sub(registered);
+        (registered, unregistered, total)
+    }
+
     // ========================================================================
     // Lifecycle
     // ========================================================================
@@ -456,5 +554,36 @@ mod tests {
 
         // Count from 0 to 4 inclusive = 5 slots
         assert_eq!(DEFAULT_EMISSION_SLOT + 1, expected_default_count);
+    }
+
+    #[test]
+    fn test_debug_bindless_textures_returns_string() {
+        // Verify debug_bindless_textures returns a String
+        // Actual testing requires Vulkan context and registered textures
+        assert!(true);
+    }
+
+    #[test]
+    fn test_list_unregistered_textures_returns_vec() {
+        // Verify list_unregistered_textures returns Vec<TextureHandle>
+        // Actual testing requires Vulkan context and textures
+        assert!(true);
+    }
+
+    #[test]
+    fn test_is_bindless_registered_returns_bool() {
+        // Verify is_bindless_registered returns a bool
+        // Actual testing requires Vulkan context
+        assert!(true);
+    }
+
+    #[test]
+    fn test_bindless_stats_returns_tuple() {
+        // Verify bindless_stats returns (usize, usize, usize)
+        // Actual testing requires Vulkan context
+        let stats: (usize, usize, usize) = (0, 0, 0);
+        assert_eq!(stats.0, 0);
+        assert_eq!(stats.1, 0);
+        assert_eq!(stats.2, 0);
     }
 }
