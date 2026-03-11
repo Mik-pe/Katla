@@ -87,12 +87,10 @@ impl<'a> Widget for ViewportGrid<'a> {
                 // Get the texture handle for this slot
                 let texture = self.texture_ids[slot_index].unwrap_or(TextureId::NONE);
 
-                // Draw the viewport image with correct UV coordinates
-                // Note: Y is flipped (0.0 at bottom, 1.0 at top in texture space)
                 ui.draw_image(
                     viewport_bounds,
-                    Vec2::new(0.0, 1.0), // Top-left in texture
-                    Vec2::new(1.0, 0.0), // Bottom-right in texture
+                    Vec2::new(0.0, 0.0),
+                    Vec2::new(1.0, 1.0),
                     Color::WHITE,
                     texture,
                 );

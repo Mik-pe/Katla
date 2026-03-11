@@ -1470,4 +1470,194 @@ mod tests {
         );
         ctx.end();
     }
+
+    // === Layout Cursor Tests ===
+
+    /// Test that cursor() returns layout cursor when inside a layout.
+    #[test]
+    fn test_cursor_returns_layout_cursor_when_in_layout() {
+        let mut ctx = UiContext::new();
+        ctx.begin(Vec2::new(800.0, 600.0), 1.0);
+
+        // Set initial cursor position
+        ctx.set_cursor(Vec2::new(100.0, 50.0));
+        assert_eq!(ctx.cursor(), Vec2::new(100.0, 50.0));
+
+        // Begin a horizontal layout
+        ctx.begin_row();
+
+        // Cursor should still return the same position initially
+        assert_eq!(ctx.cursor(), Vec2::new(100.0, 50.0));
+
+        ctx.end_row();
+        ctx.end();
+    }
+
+    /// Test that layout_item advances cursor in horizontal layout.
+    #[test]
+    fn test_layout_item_advances_horizontal_cursor() {
+        let mut ctx = UiContext::new();
+        ctx.begin(Vec2::new(800.0, 600.0), 1.0);
+
+        ctx.set_cursor(Vec2::new(100.0, 50.0));
+        ctx.begin_row();
+
+        // Get bounds for first item
+        let size = Vec2::new(60.0, 24.0);
+        let bounds1 = ctx.layout_item(size);
+
+        // First item should be at initial cursor position
+        assert_eq!(bounds1.min, Vec2::new(100.0, 50.0));
+
+        // Cursor should have advanced horizontally
+        let cursor_after = ctx.cursor();
+        assert!(
+            cursor_after.x() > 100.0,
+            "Cursor should have advanced horizontally, got x={}",
+            cursor_after.x()
+        );
+        assert_eq!(
+            cursor_after.y(),
+            50.0,
+            "Cursor y should stay the same in horizontal layout"
+        );
+
+        // Get bounds for second item
+        let bounds2 = ctx.layout_item(size);
+
+        // Second item should be at the advanced cursor position
+        assert_eq!(bounds2.min.x(), cursor_after.x());
+        assert_ne!(bounds1.min.x(), bounds2.min.x(), "Items should not pile up");
+
+        ctx.end_row();
+        ctx.end();
+    }
+
+    /// Test that layout_item advances cursor in vertical layout.
+    #[test]
+    fn test_layout_item_advances_vertical_cursor() {
+        let mut ctx = UiContext::new();
+        ctx.begin(Vec2::new(800.0, 600.0), 1.0);
+
+        ctx.set_cursor(Vec2::new(100.0, 50.0));
+        ctx.begin_column();
+
+        // Get bounds for first item
+        let size = Vec2::new(60.0, 24.0);
+        let bounds1 = ctx.layout_item(size);
+
+        // First item should be at initial cursor position
+        assert_eq!(bounds1.min, Vec2::new(100.0, 50.0));
+
+        // Cursor should have advanced vertically
+        let cursor_after = ctx.cursor();
+        assert_eq!(
+            cursor_after.x(),
+            100.0,
+            "Cursor x should stay the same in vertical layout"
+        );
+        assert!(
+            cursor_after.y() > 50.0,
+            "Cursor should have advanced vertically, got y={}",
+            cursor_after.y()
+        );
+
+        // Get bounds for second item
+        let bounds2 = ctx.layout_item(size);
+
+        // Second item should be at the advanced cursor position
+        assert_eq!(bounds2.min.y(), cursor_after.y());
+        assert_ne!(bounds1.min.y(), bounds2.min.y(), "Items should not pile up");
+
+        ctx.end_column();
+        ctx.end();
+    }
+
+    /// Test that advance_cursor works in horizontal layout.
+    #[test]
+    fn test_advance_cursor_in_layout() {
+        let mut ctx = UiContext::new();
+        ctx.begin(Vec2::new(800.0, 600.0), 1.0);
+
+        ctx.set_cursor(Vec2::new(100.0, 50.0));
+        ctx.begin_row();
+
+        // Cursor starts at layout start
+        assert_eq!(ctx.cursor(), Vec2::new(100.0, 50.0));
+
+        // Advance cursor manually
+        ctx.advance_cursor(Vec2::new(60.0, 24.0));
+
+        // Cursor should have advanced
+        let cursor_after = ctx.cursor();
+        assert!(
+            cursor_after.x() > 100.0,
+            "Cursor should have advanced horizontally"
+        );
+
+        // Advance again
+        ctx.advance_cursor(Vec2::new(60.0, 24.0));
+
+        // Cursor should have advanced more
+        let cursor_final = ctx.cursor();
+        assert!(
+            cursor_final.x() > cursor_after.x(),
+            "Cursor should have advanced again"
+        );
+
+        ctx.end_row();
+        ctx.end();
+    }
+
+    /// Test that set_cursor works inside a layout.
+    #[test]
+    fn test_set_cursor_in_layout() {
+        let mut ctx = UiContext::new();
+        ctx.begin(Vec2::new(800.0, 600.0), 1.0);
+
+        // Set main cursor before layout
+        ctx.set_cursor(Vec2::new(100.0, 50.0));
+
+        ctx.begin_row();
+
+        // set_cursor inside layout should update layout cursor
+        ctx.set_cursor(Vec2::new(200.0, 100.0));
+
+        // cursor() should return the updated layout cursor
+        assert_eq!(ctx.cursor(), Vec2::new(200.0, 100.0));
+
+        ctx.end_row();
+        ctx.end();
+    }
+
+    /// Test that layouts are independent between panels.
+    #[test]
+    fn test_layouts_dont_interfere() {
+        let mut ctx = UiContext::new();
+        ctx.begin(Vec2::new(800.0, 600.0), 1.0);
+
+        // First "panel" - left side
+        ctx.begin_column();
+        ctx.set_cursor(Vec2::new(10.0, 10.0));
+        let bounds1 = ctx.layout_item(Vec2::new(100.0, 20.0));
+        assert_eq!(bounds1.min, Vec2::new(10.0, 10.0));
+        ctx.end_column();
+
+        // After end_column, main cursor should be updated
+        let cursor_after_first = ctx.cursor();
+        assert!(
+            cursor_after_first.y() > 10.0,
+            "Cursor should have moved down"
+        );
+
+        // Second "panel" - right side (simulating inspector after hierarchy)
+        ctx.begin_column();
+        ctx.set_cursor(Vec2::new(500.0, 10.0)); // Different X position
+        let bounds2 = ctx.layout_item(Vec2::new(100.0, 20.0));
+        // Item should be at the new position, not affected by first panel
+        assert_eq!(bounds2.min, Vec2::new(500.0, 10.0));
+        ctx.end_column();
+
+        ctx.end();
+    }
 }
