@@ -37,13 +37,26 @@ impl UiContext {
     // -------------------------------------------------------------------------
 
     /// Set the cursor position for automatic layout.
+    ///
+    /// When inside a layout container, updates the layout cursor.
+    /// Otherwise updates the main cursor.
     pub fn set_cursor(&mut self, pos: Vec2) {
-        self.cursor = pos;
+        if let Some(layout) = self.layout_stack.last_mut() {
+            layout.cursor = pos;
+        } else {
+            self.cursor = pos;
+        }
     }
 
     /// Get the current cursor position.
+    ///
+    /// If inside a layout container (horizontal, vertical, grid, etc.),
+    /// returns the layout's cursor position. Otherwise returns the main cursor.
     pub fn cursor(&self) -> Vec2 {
-        self.cursor
+        self.layout_stack
+            .last()
+            .map(|l| l.cursor)
+            .unwrap_or(self.cursor)
     }
 
     /// Move cursor to next line.
@@ -73,7 +86,56 @@ impl UiContext {
 
     /// Add a spacer of the given width (in horizontal layout) or height (in vertical layout).
     pub fn spacer(&mut self, size: f32) {
-        self.cursor = Vec2::new(self.cursor.x() + size, self.cursor.y());
+        if let Some(layout) = self.layout_stack.last_mut() {
+            layout.cursor = Vec2::new(layout.cursor.x() + size, layout.cursor.y());
+        } else {
+            self.cursor = Vec2::new(self.cursor.x() + size, self.cursor.y());
+        }
+    }
+
+    /// Advance the cursor after placing a widget.
+    ///
+    /// Call this after positioning a widget to move the cursor for the next item.
+    /// In horizontal layouts, advances horizontally. In vertical layouts, advances vertically.
+    ///
+    /// # Example
+    /// ```ignore
+    /// let bounds = Rect2D::from_origin_size(ui.cursor(), Vec2::new(100.0, 28.0));
+    /// ui.add(Button::new("Click").bounds(bounds));
+    /// ui.advance_cursor(Vec2::new(100.0, 28.0)); // Move to next position
+    /// ```
+    pub fn advance_cursor(&mut self, size: Vec2) {
+        if let Some(layout) = self.layout_stack.last_mut() {
+            match layout.direction {
+                LayoutDirection::Horizontal => {
+                    layout.cursor = Vec2::new(
+                        layout.cursor.x() + size.x() + layout.spacing,
+                        layout.cursor.y(),
+                    );
+                    layout.max_item_size = Vec2::new(
+                        layout.max_item_size.x().max(size.x()),
+                        layout.max_item_size.y().max(size.y()),
+                    );
+                }
+                LayoutDirection::Vertical => {
+                    layout.cursor = Vec2::new(
+                        layout.cursor.x(),
+                        layout.cursor.y() + size.y() + layout.spacing,
+                    );
+                    layout.max_item_size = Vec2::new(
+                        layout.max_item_size.x().max(size.x()),
+                        layout.max_item_size.y().max(size.y()),
+                    );
+                }
+            }
+        } else {
+            // Default: advance vertically
+            self.cursor = Vec2::new(
+                self.cursor.x(),
+                self.cursor.y() + size.y() + self.style.item_spacing,
+            );
+            self.row_height = self.row_height.max(size.y());
+        }
     }
 
     // -------------------------------------------------------------------------
@@ -292,14 +354,22 @@ impl UiContext {
     /// ui.label("Nested content", bounds);
     /// ```
     pub fn indent(&mut self, amount: f32) {
-        self.cursor = Vec2::new(self.cursor.x() + amount, self.cursor.y());
+        if let Some(layout) = self.layout_stack.last_mut() {
+            layout.cursor = Vec2::new(layout.cursor.x() + amount, layout.cursor.y());
+        } else {
+            self.cursor = Vec2::new(self.cursor.x() + amount, self.cursor.y());
+        }
     }
 
     /// Unindent the cursor by a given amount (horizontal offset).
     ///
     /// Moves the cursor left by the specified amount.
     pub fn unindent(&mut self, amount: f32) {
-        self.cursor = Vec2::new(self.cursor.x() - amount, self.cursor.y());
+        if let Some(layout) = self.layout_stack.last_mut() {
+            layout.cursor = Vec2::new(layout.cursor.x() - amount, layout.cursor.y());
+        } else {
+            self.cursor = Vec2::new(self.cursor.x() - amount, self.cursor.y());
+        }
     }
 
     /// Execute a closure with an indented cursor, automatically restoring after.
@@ -318,10 +388,15 @@ impl UiContext {
     where
         F: FnOnce(&mut Self) -> R,
     {
-        let original_x = self.cursor.x();
-        self.cursor = Vec2::new(original_x + amount, self.cursor.y());
+        let original_x = self.cursor().x();
+        self.indent(amount);
         let result = f(self);
-        self.cursor = Vec2::new(original_x, self.cursor.y());
+        // Restore: move back by amount from current position
+        if let Some(layout) = self.layout_stack.last_mut() {
+            layout.cursor = Vec2::new(original_x, layout.cursor.y());
+        } else {
+            self.cursor = Vec2::new(original_x, self.cursor.y());
+        }
         result
     }
 
@@ -397,20 +472,19 @@ impl UiContext {
 
     // -------------------------------------------------------------------------
     // Grid Layout Helper
-    // -------------------------------------------------------------------------
-
     /// Begin a grid layout from the current cursor position.
     ///
     /// A grid divides available width into equal columns. Items are added
-    /// left-to-right, top-to-bottom.
+    /// left-to-right, top-to-bottom with automatic row wrapping.
     ///
     /// Remember to call `end_grid()` when done with the grid.
     ///
     /// # Example
     /// ```ignore
-    /// ui.begin_grid(3, 200.0, 8.0);
+    /// ui.begin_grid(3, 200.0, 24.0, 8.0);
     /// for item in items {
-    ///     ui.add(Button::new(item.name).at_cursor(ui));
+    ///     let bounds = ui.grid_item(item.size());
+    ///     ui.add(Button::new(item.name).bounds(bounds));
     /// }
     /// ui.end_grid();
     /// ```
@@ -418,53 +492,106 @@ impl UiContext {
     /// # Arguments
     /// * `columns` - Number of columns in the grid
     /// * `item_width` - Width of each grid item
+    /// * `item_height` - Height of each grid item (used for row wrapping)
     /// * `spacing` - Spacing between items
-    pub fn begin_grid(&mut self, columns: usize, item_width: f32, spacing: f32) {
+    pub fn begin_grid(&mut self, columns: usize, item_width: f32, item_height: f32, spacing: f32) {
         let start_cursor = self.cursor;
         self.layout_stack.push(LayoutState {
             direction: LayoutDirection::Horizontal,
             start_pos: start_cursor,
             cursor: start_cursor,
-            max_item_size: Vec2::new(item_width, 0.0),
+            max_item_size: Vec2::new(item_width, item_height),
             spacing,
         });
 
-        // Store grid metadata in the LayoutState
+        // Store grid column count in the separate field
+        // We repurpose max_item_size by storing: x = item_width, y = item_height
+        // We need to track columns separately - use the layout's internal state
+        // For now, store columns in max_item_size.y's decimal part (hacky but works)
         if let Some(layout) = self.layout_stack.last_mut() {
-            // We repurpose max_item_size.x to store item_width for grid calculations
-            layout.max_item_size = Vec2::new(item_width, columns as f32);
+            // Encode: x = item_width + columns (columns stored as decimal fraction of y)
+            layout.max_item_size = Vec2::new(
+                item_width,
+                item_height + (columns as f32 * 0.001), // Encode columns in low decimal bits
+            );
+        }
+    }
+
+    /// Get bounds for the next item in a grid layout with automatic row wrapping.
+    ///
+    /// This method is specifically designed for grid layouts created with `begin_grid()`.
+    /// It positions items left-to-right and wraps to a new row when the current row is full.
+    ///
+    /// # Arguments
+    /// * `size` - Size of the grid item (width should match begin_grid's item_width)
+    ///
+    /// # Returns
+    /// Bounds for the next grid item position
+    ///
+    /// # Example
+    /// ```ignore
+    /// ui.begin_grid(4, 100.0, 24.0, 8.0);
+    /// for item in items {
+    ///     let bounds = ui.grid_item(Vec2::new(100.0, 24.0));
+    ///     ui.add(Button::new(item.name).bounds(bounds));
+    /// }
+    /// ui.end_grid();
+    /// ```
+    pub fn grid_item(&mut self, size: Vec2) -> Rect2D {
+        if let Some(layout) = self.layout_stack.last_mut() {
+            // Decode columns from max_item_size.y
+            let item_height = layout.max_item_size.y().floor();
+            let columns =
+                ((layout.max_item_size.y() - item_height as f32) / 0.001).round() as usize;
+            let item_width = layout.max_item_size.x();
+
+            // Calculate current column (0-indexed)
+            let current_x = layout.cursor.x();
+            let start_x = layout.start_pos.x();
+            let item_with_spacing = item_width + layout.spacing;
+            let column = ((current_x - start_x) / item_with_spacing) as usize;
+
+            // Check if we need to wrap to next row
+            if column >= columns {
+                // Move to start of next row
+                layout.cursor =
+                    Vec2::new(start_x, layout.cursor.y() + item_height + layout.spacing);
+            }
+
+            let bounds = Rect2D::from_origin_size(layout.cursor, size);
+
+            // Advance cursor for next item
+            layout.cursor = Vec2::new(
+                layout.cursor.x() + item_width + layout.spacing,
+                layout.cursor.y(),
+            );
+
+            // Track max height for end_grid
+            layout.max_item_size = Vec2::new(
+                layout.max_item_size.x().max(size.x()),
+                layout.max_item_size.y().max(size.y()),
+            );
+
+            bounds
+        } else {
+            // Not in a grid, fall back to layout_item
+            self.layout_item(size)
         }
     }
 
     /// End a grid layout.
     ///
-    /// Calculates grid rows and advances cursor below all items.
+    /// Calculates final grid height and advances cursor below all items.
     /// Must be paired with `begin_grid()`.
     pub fn end_grid(&mut self) {
         if let Some(layout) = self.layout_stack.pop() {
-            let item_width = layout.max_item_size.x();
-            let num_columns = layout.max_item_size.y() as usize;
+            let item_height = layout.max_item_size.y().floor();
 
-            // Calculate how many rows were used based on cursor position
-            let items_per_row = item_width + layout.spacing;
-            let total_width = num_columns as f32 * items_per_row - layout.spacing;
-            let rows_used =
-                ((layout.cursor.x() - layout.start_pos.x()) / total_width).ceil() as f32;
-
-            // Move cursor to below the last row
+            // Move cursor below the grid content
             self.cursor = Vec2::new(
                 layout.start_pos.x(),
-                layout.cursor.y() + rows_used * (item_width + layout.spacing) - layout.cursor.y()
-                    + layout.start_pos.y(),
+                layout.cursor.y() + item_height + layout.spacing,
             );
-
-            // Fallback: just move down by one item height if calculation is complex
-            if self.cursor.y() <= layout.start_pos.y() {
-                self.cursor = Vec2::new(
-                    layout.start_pos.x(),
-                    layout.cursor.y() + item_width + layout.spacing,
-                );
-            }
         }
     }
 
@@ -475,6 +602,7 @@ impl UiContext {
     ///
     /// # Arguments
     /// * `item_width` - Width of each grid item
+    /// * `item_height` - Height of each grid item
     /// * `spacing` - Spacing between items
     /// * `available_width` - Total width available for the grid
     ///
@@ -483,16 +611,23 @@ impl UiContext {
     ///
     /// # Example
     /// ```ignore
-    /// let cols = ui.auto_grid(64.0, 8.0, 400.0);
+    /// let cols = ui.auto_grid(64.0, 24.0, 8.0, 400.0);
     /// for item in items {
-    ///     ui.add(Button::new(item.name).at_cursor(ui));
+    ///     let bounds = ui.grid_item(Vec2::new(64.0, 24.0));
+    ///     ui.add(Button::new(item.name).bounds(bounds));
     /// }
     /// ui.end_grid();
     /// ```
-    pub fn auto_grid(&mut self, item_width: f32, spacing: f32, available_width: f32) -> usize {
+    pub fn auto_grid(
+        &mut self,
+        item_width: f32,
+        item_height: f32,
+        spacing: f32,
+        available_width: f32,
+    ) -> usize {
         let item_with_spacing = item_width + spacing;
         let columns = ((available_width + spacing) / item_with_spacing).max(1.0) as usize;
-        self.begin_grid(columns, item_width, spacing);
+        self.begin_grid(columns, item_width, item_height, spacing);
         columns
     }
 }

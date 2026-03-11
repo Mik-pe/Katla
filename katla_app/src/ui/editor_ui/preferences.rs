@@ -432,7 +432,7 @@ impl<'a> Widget for PreferencesPanel<'a> {
 fn build_appearance_tab(
     ui: &mut UiContext,
     theme: &Theme,
-    mut cursor: Vec2,
+    cursor: Vec2,
     content_width: f32,
     row_height: f32,
     spacing: f32,
@@ -442,6 +442,7 @@ fn build_appearance_tab(
     font_scale: f32,
     pending_actions: &mut Vec<PreferencesAction>,
 ) -> f32 {
+    ui.set_cursor(cursor);
     ui.label_auto_colored("Color Theme", theme.text_secondary);
     ui.spacing(20.0);
 
@@ -464,10 +465,11 @@ fn build_appearance_tab(
         ("solarized_dark", "Solarized Dark"),
     ];
 
-    // Use grid layout for theme buttons
-    ui.begin_grid(2, col_width, spacing);
+    // Use grid layout for theme buttons with proper row wrapping
+    ui.begin_grid(2, col_width, row_height, spacing);
     for (key, display_name) in theme_names.iter() {
-        let btn_bounds = Rect2D::from_origin_size(ui.cursor(), Vec2::new(col_width, row_height));
+        // Use grid_item for proper positioning and row wrapping
+        let btn_bounds = ui.grid_item(Vec2::new(col_width, row_height));
 
         let is_selected = *key == current_theme_key;
 
@@ -564,10 +566,9 @@ fn build_appearance_tab(
     ];
     let scale_btn_width = (content_width - 3.0 * spacing) / 4.0;
 
-    ui.begin_grid(4, scale_btn_width, spacing);
+    ui.begin_grid(4, scale_btn_width, row_height, spacing);
     for (scale, label) in font_scales.iter() {
-        let btn_bounds =
-            Rect2D::from_origin_size(ui.cursor(), Vec2::new(scale_btn_width, row_height));
+        let btn_bounds = ui.grid_item(Vec2::new(scale_btn_width, row_height));
 
         let is_selected = (font_scale - scale).abs() < 0.01;
 
@@ -614,12 +615,13 @@ fn build_appearance_tab(
 fn build_editor_tab(
     ui: &mut UiContext,
     theme: &Theme,
-    _cursor: Vec2,
+    cursor: Vec2,
     content_width: f32,
     row_height: f32,
     editor_settings: &EditorSettings,
     pending_actions: &mut Vec<PreferencesAction>,
 ) -> f32 {
+    ui.set_cursor(cursor);
     ui.label_auto_colored("Editor Settings", theme.text_secondary);
     ui.spacing(24.0);
 
@@ -678,7 +680,7 @@ fn build_editor_tab(
     let btn_width = (content_width - 4.0 * 8.0) / 5.0;
     let spacing = 8.0;
 
-    ui.begin_grid(5, btn_width, spacing);
+    ui.begin_grid(5, btn_width, row_height, spacing);
     for &size in sizes.iter() {
         let btn_bounds = Rect2D::from_origin_size(ui.cursor(), Vec2::new(btn_width, row_height));
         let is_selected = (editor_settings.grid_size - size).abs() < 0.01;
@@ -723,10 +725,11 @@ fn build_editor_tab(
 fn build_keybindings_tab(
     ui: &mut UiContext,
     theme: &Theme,
-    _cursor: Vec2,
+    cursor: Vec2,
     content_width: f32,
     row_height: f32,
 ) -> f32 {
+    ui.set_cursor(cursor);
     ui.label_auto_colored("Keyboard Shortcuts", theme.text_secondary);
     ui.spacing(24.0);
 
@@ -777,8 +780,9 @@ fn build_keybindings_tab(
     ui.cursor().y()
 }
 
-fn build_about_tab(ui: &mut UiContext, theme: &Theme, _cursor: Vec2, content_width: f32) -> f32 {
-    let center_x = ui.cursor().x() + content_width * 0.5;
+fn build_about_tab(ui: &mut UiContext, theme: &Theme, cursor: Vec2, content_width: f32) -> f32 {
+    ui.set_cursor(cursor);
+    let center_x = cursor.x() + content_width * 0.5;
 
     let title = "Katla Engine";
     let title_size = ui.measure_text(title, ui.scaled_font_size(FontSize::Huge));
