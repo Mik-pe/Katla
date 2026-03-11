@@ -828,8 +828,13 @@ impl<'a> Frame<'a> {
 
             let required_state = super::resource::ResourceState::ShaderRead;
 
-            log::debug!("Pass {} read {}: current_state={:?}, required_state={:?}",
-                pass.name, read_name, current_state, required_state);
+            log::debug!(
+                "Pass {} read {}: current_state={:?}, required_state={:?}",
+                pass.name,
+                read_name,
+                current_state,
+                required_state
+            );
 
             if current_state != required_state {
                 let required_layout = vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL;
@@ -1022,8 +1027,10 @@ impl<'a> Frame<'a> {
 
                 // Only transition if not already in ShaderRead state
                 if current_state != super::resource::ResourceState::ShaderRead {
-                    log::debug!("Transitioning LDR texture from {:?} to SHADER_READ_ONLY_OPTIMAL for UI sampling",
-                        current_state);
+                    log::debug!(
+                        "Transitioning LDR texture from {:?} to SHADER_READ_ONLY_OPTIMAL for UI sampling",
+                        current_state
+                    );
 
                     let cmd_vk = cmd.vk_command_buffer();
                     let device = &self.renderer.context.device;
@@ -1052,8 +1059,10 @@ impl<'a> Frame<'a> {
                     }
 
                     // Update tracked state
-                    self.resource_states
-                        .insert("ldr_color".to_string(), super::resource::ResourceState::ShaderRead);
+                    self.resource_states.insert(
+                        "ldr_color".to_string(),
+                        super::resource::ResourceState::ShaderRead,
+                    );
                 }
             }
             None => {
@@ -1171,9 +1180,7 @@ impl<'a> Frame<'a> {
             .ui_renderer
             .font_atlas_handle()
             .ok_or_else(|| {
-                RenderGraphError::InvalidConfiguration(
-                    "UI font atlas not initialized".to_string(),
-                )
+                RenderGraphError::InvalidConfiguration("UI font atlas not initialized".to_string())
             })?;
 
         // Bind UI descriptor sets (sampler, uniforms, bindless textures)
@@ -1348,7 +1355,10 @@ impl<'a> Frame<'a> {
             // Extract the actual bindless index
             let bindless_index = texture_handle.index() - BINDLESS_OFFSET;
 
-            log::debug!("push_ui_dynamic_texture: bindless texture detected, index={}", bindless_index);
+            log::debug!(
+                "push_ui_dynamic_texture: bindless texture detected, index={}",
+                bindless_index
+            );
 
             // For now, we'll look it up from the frame graph's transient textures
             // In the future, the UI shader should be updated to use bindless directly
@@ -1366,7 +1376,12 @@ impl<'a> Frame<'a> {
                     .image_info(std::slice::from_ref(&image_info));
 
                 if let Some(push_descriptor_khr) = &self.renderer.context.push_descriptor_khr {
-                    cmd.push_descriptor_set_khr(push_descriptor_khr, pipeline_layout, 1, &[push_write]);
+                    cmd.push_descriptor_set_khr(
+                        push_descriptor_khr,
+                        pipeline_layout,
+                        1,
+                        &[push_write],
+                    );
                 }
             }
             return Ok(());

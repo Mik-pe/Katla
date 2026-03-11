@@ -15,6 +15,9 @@ pub struct UIRenderer {
     ui_resources: UiFrameResources,
     /// Font atlas texture handle for text rendering.
     font_atlas: Option<TextureHandle>,
+    /// Bindless texture slot index for the font atlas.
+    /// This is the slot allocated by BindlessTextureManager when the font atlas is registered.
+    font_atlas_bindless_slot: Option<u32>,
 }
 
 impl UIRenderer {
@@ -23,6 +26,7 @@ impl UIRenderer {
         Self {
             ui_resources: UiFrameResources::default(),
             font_atlas: None,
+            font_atlas_bindless_slot: None,
         }
     }
 
@@ -32,6 +36,21 @@ impl UIRenderer {
     pub(crate) fn set_font_atlas(&mut self, handle: TextureHandle) {
         log::debug!("Font atlas handle set to: {:?}", handle);
         self.font_atlas = Some(handle);
+    }
+
+    /// Set the font atlas bindless texture slot.
+    ///
+    /// Called by VulkanRenderer after registering the font atlas with the bindless system.
+    pub(crate) fn set_font_atlas_bindless_slot(&mut self, slot: u32) {
+        log::debug!("Font atlas bindless slot set to: {}", slot);
+        self.font_atlas_bindless_slot = Some(slot);
+    }
+
+    /// Get the font atlas bindless texture slot.
+    ///
+    /// Returns None if the font atlas has not been registered with the bindless system yet.
+    pub fn font_atlas_bindless_slot(&self) -> Option<u32> {
+        self.font_atlas_bindless_slot
     }
 
     /// Get the font atlas texture handle.
@@ -59,5 +78,46 @@ impl UIRenderer {
 impl Default for UIRenderer {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_ui_renderer_new() {
+        let renderer = UIRenderer::new();
+        assert!(renderer.font_atlas().is_none());
+        assert!(renderer.font_atlas_bindless_slot().is_none());
+    }
+
+    #[test]
+    fn test_set_font_atlas() {
+        let mut renderer = UIRenderer::new();
+        let handle = TextureHandle::new(42);
+
+        renderer.set_font_atlas(handle);
+        assert_eq!(renderer.font_atlas(), Some(handle));
+    }
+
+    #[test]
+    fn test_set_font_atlas_bindless_slot() {
+        let mut renderer = UIRenderer::new();
+
+        renderer.set_font_atlas_bindless_slot(5);
+        assert_eq!(renderer.font_atlas_bindless_slot(), Some(5));
+    }
+
+    #[test]
+    fn test_font_atlas_bindless_slot_initially_none() {
+        let renderer = UIRenderer::new();
+        assert!(renderer.font_atlas_bindless_slot().is_none());
+    }
+
+    #[test]
+    fn test_font_atlas_handle_initially_none() {
+        let renderer = UIRenderer::new();
+        assert!(renderer.font_atlas_handle().is_none());
     }
 }

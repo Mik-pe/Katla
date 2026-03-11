@@ -66,7 +66,12 @@ impl Vertex {
     /// Create a new vertex.
     #[inline]
     pub const fn new(pos: Vec2, uv: Vec2, color: [u8; 4], texture_index: u32) -> Self {
-        Self { pos, uv, color, texture_index }
+        Self {
+            pos,
+            uv,
+            color,
+            texture_index,
+        }
     }
 
     /// Create a position-only vertex for solid color rendering.
@@ -192,7 +197,12 @@ mod tests {
 
     #[test]
     fn test_vertex_new() {
-        let v = Vertex::new(Vec2::new(10.0, 20.0), Vec2::new(0.5, 0.5), [255, 0, 0, 255], 5);
+        let v = Vertex::new(
+            Vec2::new(10.0, 20.0),
+            Vec2::new(0.5, 0.5),
+            [255, 0, 0, 255],
+            5,
+        );
         assert_eq!(v.pos.x(), 10.0);
         assert_eq!(v.uv.y(), 0.5);
         assert_eq!(v.color, [255, 0, 0, 255]);

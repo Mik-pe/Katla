@@ -347,6 +347,7 @@ impl ApplicationBuilder {
         let atlas_data = ui_context.fonts.atlas_data();
         let font_atlas_handle =
             renderer.create_ui_font_atlas(atlas_width, atlas_height, atlas_data);
+
         ui_context
             .fonts
             .set_atlas_id(katla_ui::TextureId::from_handle_index(
@@ -376,6 +377,7 @@ impl ApplicationBuilder {
             frame_count: 0,
             resources,
             ui_context,
+            ui_renderer: crate::ui::UIRenderer::new(),
             debug_overlay: crate::ui::DebugOverlay::new(),
             editor_ui: {
                 let mut editor = crate::ui::EditorUI::with_theme(theme);
