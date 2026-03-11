@@ -108,6 +108,7 @@ impl<'a> Widget for Inspector<'a> {
             // Position row (label + value on same line)
             ui.begin_row();
             ui.add(Label::new("Position:").at_cursor_width(ui, label_width));
+            ui.advance_cursor(Vec2::new(label_width, 20.0));
             let pos_text = format!(
                 "({:.2}, {:.2}, {:.2})",
                 entity.position.x(),
@@ -115,11 +116,13 @@ impl<'a> Widget for Inspector<'a> {
                 entity.position.z()
             );
             ui.add(Label::new(&pos_text).at_cursor_width(ui, value_width));
+            ui.advance_cursor(Vec2::new(value_width, 20.0));
             ui.end_row();
 
             // Rotation row
             ui.begin_row();
             ui.add(Label::new("Rotation:").at_cursor_width(ui, label_width));
+            ui.advance_cursor(Vec2::new(label_width, 20.0));
             let rot_text = format!(
                 "({:.1}, {:.1}, {:.1})",
                 entity.rotation.x(),
@@ -127,11 +130,13 @@ impl<'a> Widget for Inspector<'a> {
                 entity.rotation.z()
             );
             ui.add(Label::new(&rot_text).at_cursor_width(ui, value_width));
+            ui.advance_cursor(Vec2::new(value_width, 20.0));
             ui.end_row();
 
             // Scale row
             ui.begin_row();
             ui.add(Label::new("Scale:").at_cursor_width(ui, label_width));
+            ui.advance_cursor(Vec2::new(label_width, 20.0));
             let scale_text = format!(
                 "({:.2}, {:.2}, {:.2})",
                 entity.scale.x(),
@@ -139,6 +144,7 @@ impl<'a> Widget for Inspector<'a> {
                 entity.scale.z()
             );
             ui.add(Label::new(&scale_text).at_cursor_width(ui, value_width));
+            ui.advance_cursor(Vec2::new(value_width, 20.0));
             ui.end_row();
 
             ui.spacing(line_height + 8.0);
