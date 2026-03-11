@@ -302,9 +302,7 @@ impl VulkanRenderer {
     /// The texture handle for the font atlas.
     pub fn create_ui_font_atlas(&mut self, width: u32, height: u32, data: &[u8]) -> TextureHandle {
         // Use SRGB format for font atlas to ensure correct color sampling
-        // The white pixel [255,255,255,255] in SRGB space samples as pure white (1.0,1.0,1.0,1.0)
-        // Using UNORM would cause the white to be interpreted as linear-space white,
-        // which renders semi-transparent when blended with SRGB render targets
+        // Text glyphs rendered as SRGB for proper color reproduction
         let desc = TextureDescriptor::rgba8_srgb(width, height);
         let handle = self.create_texture(&desc, data);
 
@@ -2030,13 +2028,10 @@ mod tests {
     #[test]
     fn test_ui_font_atlas_format() {
         // Test that the font atlas texture descriptor uses SRGB format
-        // This is critical for correct rendering: white pixel [255,255,255,255]
-        // in an SRGB texture samples as pure white (1.0, 1.0, 1.0, 1.0)
-        // In a UNORM texture, it would be interpreted as linear-space white,
-        // which causes semi-transparent rendering when blended with SRGB render targets
+        // Font atlas should use SRGB format for proper color reproduction
         let desc = TextureDescriptor::rgba8_srgb(512, 512);
 
-        // After the fix, font atlas should use SRGB format
+        // Font atlas should use SRGB format
         assert_eq!(
             desc.format,
             ImageFormat::R8G8B8A8Srgb,

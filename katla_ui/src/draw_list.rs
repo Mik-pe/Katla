@@ -501,7 +501,7 @@ mod tests {
         list.add_rect(bounds, Color::WHITE);
         list.finalize();
 
-        // All vertices should have UV=(0, 0) to sample the white pixel
+        // All vertices should have UV=(0, 0) to sample the white texture
         for vertex in &list.vertices {
             assert_eq!(vertex.uv, Vec2::ZERO, "UV should be (0, 0) for solid color");
         }

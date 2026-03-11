@@ -350,18 +350,32 @@ impl ApplicationBuilder {
 
         ui_context
             .fonts
-            .set_atlas_id(katla_ui::TextureId::from_handle_index(
-                font_atlas_handle.index(),
-            ));
+            .set_atlas_id(katla_ui::TextureId::FONT_ATLAS);
         log::info!(
-            "Uploaded font atlas texture: {}x{}, handle={:?}",
+            "Uploaded font atlas texture: {}x{}, handle={:?}, handle_index={}",
             atlas_width,
             atlas_height,
-            font_atlas_handle
+            font_atlas_handle,
+            font_atlas_handle.index()
         );
 
         // Build the frame graph once at startup (needs mutable renderer to compile shader)
         let frame_graph = Self::build_frame_graph(&mut renderer, &resources)?;
+
+        // Initialize UI renderer with font atlas bindless slot
+        let mut ui_renderer = crate::ui::UIRenderer::new();
+        match renderer.ui_renderer.font_atlas_bindless_slot() {
+            Some(bindless_slot) => {
+                ui_renderer.set_font_atlas_bindless_slot(bindless_slot);
+                log::info!(
+                    "Font atlas bindless slot initialized: {}",
+                    bindless_slot
+                );
+            }
+            None => {
+                log::error!("Font atlas bindless slot is None! Text will render as solid colors.");
+            }
+        }
 
         let app = Application {
             window,
@@ -377,7 +391,7 @@ impl ApplicationBuilder {
             frame_count: 0,
             resources,
             ui_context,
-            ui_renderer: crate::ui::UIRenderer::new(),
+            ui_renderer,
             debug_overlay: crate::ui::DebugOverlay::new(),
             editor_ui: {
                 let mut editor = crate::ui::EditorUI::with_theme(theme);
