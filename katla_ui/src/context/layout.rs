@@ -29,6 +29,8 @@ pub struct LayoutState {
     pub max_item_size: Vec2,
     /// Spacing between items.
     pub spacing: f32,
+    /// Number of columns for grid layouts (0 for non-grid layouts).
+    pub grid_columns: usize,
 }
 
 impl UiContext {
@@ -167,6 +169,7 @@ impl UiContext {
             cursor: start_cursor,
             max_item_size: Vec2::new(0.0, 0.0),
             spacing: self.style.item_spacing,
+            grid_columns: 0,
         });
 
         f(self);
@@ -203,6 +206,7 @@ impl UiContext {
             cursor: start_cursor,
             max_item_size: Vec2::new(0.0, 0.0),
             spacing: self.style.item_spacing,
+            grid_columns: 0,
         });
 
         f(self);
@@ -421,6 +425,7 @@ impl UiContext {
             cursor: start_cursor,
             max_item_size: Vec2::new(0.0, 0.0),
             spacing: self.style.item_spacing,
+            grid_columns: 0,
         });
     }
 
@@ -458,6 +463,7 @@ impl UiContext {
             cursor: start_cursor,
             max_item_size: Vec2::new(0.0, 0.0),
             spacing: self.style.item_spacing,
+            grid_columns: 0,
         });
     }
 
@@ -502,19 +508,8 @@ impl UiContext {
             cursor: start_cursor,
             max_item_size: Vec2::new(item_width, item_height),
             spacing,
+            grid_columns: columns,
         });
-
-        // Store grid column count in the separate field
-        // We repurpose max_item_size by storing: x = item_width, y = item_height
-        // We need to track columns separately - use the layout's internal state
-        // For now, store columns in max_item_size.y's decimal part (hacky but works)
-        if let Some(layout) = self.layout_stack.last_mut() {
-            // Encode: x = item_width + columns (columns stored as decimal fraction of y)
-            layout.max_item_size = Vec2::new(
-                item_width,
-                item_height + (columns as f32 * 0.001), // Encode columns in low decimal bits
-            );
-        }
     }
 
     /// Get bounds for the next item in a grid layout with automatic row wrapping.
@@ -539,11 +534,9 @@ impl UiContext {
     /// ```
     pub fn grid_item(&mut self, size: Vec2) -> Rect2D {
         if let Some(layout) = self.layout_stack.last_mut() {
-            // Decode columns from max_item_size.y
-            let item_height = layout.max_item_size.y().floor();
-            let columns =
-                ((layout.max_item_size.y() - item_height as f32) / 0.001).round() as usize;
+            let columns = layout.grid_columns;
             let item_width = layout.max_item_size.x();
+            let item_height = layout.max_item_size.y();
 
             // Calculate current column (0-indexed)
             let current_x = layout.cursor.x();
@@ -585,7 +578,7 @@ impl UiContext {
     /// Must be paired with `begin_grid()`.
     pub fn end_grid(&mut self) {
         if let Some(layout) = self.layout_stack.pop() {
-            let item_height = layout.max_item_size.y().floor();
+            let item_height = layout.max_item_size.y();
 
             // Move cursor below the grid content
             self.cursor = Vec2::new(
