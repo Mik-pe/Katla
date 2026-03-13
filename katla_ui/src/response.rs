@@ -154,7 +154,11 @@ impl Response {
         input: &UiInputState,
     ) -> Self {
         let double_clicked = clicked && input.mouse_double_clicked(mouse_button::LEFT);
-        let drag_delta = if active { input.mouse_delta } else { Vec2::new(0.0, 0.0) };
+        let drag_delta = if active {
+            input.mouse_delta
+        } else {
+            Vec2::new(0.0, 0.0)
+        };
 
         Self {
             clicked,

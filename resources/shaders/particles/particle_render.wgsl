@@ -5,6 +5,12 @@
 //
 // Vertex shader generates a quad per particle (no vertex buffer needed).
 // Fragment shader draws soft-edged circles with color from particle data.
+//
+// Descriptor Set Layout:
+// Set 0 (Per-Frame, Shared):
+//   Binding 0: Storage buffer (frame uniforms - camera, lights)
+// Set 1 (Per-Emitter):
+//   Binding 0: Storage buffer (particle data)
 
 // Particle data structure (must match ParticleData in particle_buffer.rs)
 struct ParticleData {
@@ -32,7 +38,7 @@ struct FrameUniforms {
 @group(0) @binding(0)
 var<storage, read> frame_data: FrameUniforms;
 
-// Set 1: Particle buffer
+// Set 1: Particle buffer (per-emitter)
 @group(1) @binding(0)
 var<storage, read> particles: array<ParticleData>;
 
@@ -65,9 +71,17 @@ fn vs_main(
 ) -> VertexOutput {
     var out: VertexOutput;
 
+    // Only render first 1000 particles
+    if (instance_idx >= 1000u) {
+        out.clip_position = vec4f(0.0, 0.0, 0.0, -1.0);
+        out.uv = vec2f(0.0);
+        out.color = vec4f(0.0);
+        return out;
+    }
+
     let particle = particles[instance_idx];
 
-    // Skip dead particles by placing them behind the camera
+    // Skip dead particles
     if (particle.lifetime <= 0.0) {
         out.clip_position = vec4f(0.0, 0.0, 0.0, -1.0);
         out.uv = vec2f(0.0);
@@ -75,39 +89,41 @@ fn vs_main(
         return out;
     }
 
-    // Get quad corner UV
     let corner = get_corner(vertex_id);
     out.uv = corner;
 
-    // Calculate billboard facing camera
-    // Extract right and up vectors from view matrix (camera space)
+    // Extract camera right/up vectors from view matrix
     let view_right = vec3f(frame_data.view[0][0], frame_data.view[1][0], frame_data.view[2][0]);
     let view_up = vec3f(frame_data.view[0][1], frame_data.view[1][1], frame_data.view[2][1]);
 
-    // Scale the billboard
+    // Calculate billboard offset in world space
     let half_size = particle.scale;
+    let billboard_offset = (corner.x * view_right + corner.y * view_up) * half_size;
 
-    // Calculate world position of this vertex
-    let world_offset = (corner.x * view_right + corner.y * view_up) * half_size;
-    let world_pos = particle.position + world_offset;
+    // Particle position in world space
+    let particle_pos = vec3f(particle.position[0], particle.position[1], particle.position[2]);
 
-    // Transform to clip space
-    out.clip_position = frame_data.proj * frame_data.view * vec4f(world_pos, 1.0);
+    // Final world position
+    let world_pos = particle_pos + billboard_offset;
 
-    // Pass through color and alpha
+    // Transform to view space, then clip space
+    let view_pos = frame_data.view * vec4f(world_pos, 1.0);
+    out.clip_position = frame_data.proj * view_pos;
+
+    // Pass through particle color
     out.color = particle.color;
 
     return out;
 }
 
 @fragment
-fn fs_main(in: VertexOutput) -> @location(0) vec4f {
+fn fs_main(input: VertexOutput) -> @location(0) vec4f {
     // Discard dead particles
-    if (in.color.a <= 0.0) {
+    if (input.color.a <= 0.0) {
         discard;
     }
 
-    let uv = in.uv;
+    let uv = input.uv;
 
     // Calculate distance from center for soft circular particle
     let dist = length(uv);
@@ -120,6 +136,10 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
         discard;
     }
 
-    // Output color with soft edge (additive blending for fire effect)
-    return vec4f(in.color.rgb * in.color.a * alpha, in.color.a * alpha * 0.5);
+    // Output color with soft edge
+    // Pre-multiply alpha for proper blending
+    let rgb = input.color.rgb * input.color.a * alpha;
+    let a = input.color.a * alpha * 0.5;  // Reduce overall alpha for transparency
+
+    return vec4f(rgb, a);
 }

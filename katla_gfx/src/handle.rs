@@ -89,6 +89,10 @@ pub struct TextureMarker;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct SkeletonMarker;
 
+/// Marker type for particle emitter handles.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct EmitterMarker;
+
 //=============================================================================
 // Public Handle Type Aliases (Application Layer)
 //=============================================================================
@@ -104,6 +108,9 @@ pub type TextureHandle = Handle<TextureMarker>;
 
 /// Handle to a skeleton resource.
 pub type SkeletonHandle = Handle<SkeletonMarker>;
+
+/// Handle to a particle emitter resource.
+pub type EmitterHandle = Handle<EmitterMarker>;
 
 //=============================================================================
 // Internal Marker Types (Render Layer)

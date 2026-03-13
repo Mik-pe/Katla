@@ -29,6 +29,7 @@ pub struct ApplicationBuilder {
     app_name: String,
     validation_layer_enabled: bool,
     max_frames: Option<usize>,
+    check_black_frames: bool,
     world: World,
 }
 
@@ -55,6 +56,11 @@ impl ApplicationBuilder {
 
     pub fn max_frames(mut self, count: usize) -> Self {
         self.max_frames = Some(count);
+        self
+    }
+
+    pub fn check_black_frames(mut self, enabled: bool) -> Self {
+        self.check_black_frames = enabled;
         self
     }
 
@@ -231,6 +237,7 @@ impl ApplicationBuilder {
             name: self.app_name,
             validation_layer_enabled: self.validation_layer_enabled,
             max_frames: self.max_frames,
+            check_black_frames: self.check_black_frames,
         };
         let mut world = self.world;
         let camera = Rc::new(RefCell::new(Camera::new(&mut world)));
@@ -367,26 +374,23 @@ impl ApplicationBuilder {
         // Build the frame graph once at startup (needs mutable renderer to compile shader)
         let frame_graph = Self::build_frame_graph(&mut renderer, &resources)?;
 
-        // Initialize particle system
-        let mut particle_system = katla_gfx::ParticleSystem::new();
-        match particle_system.init(
-            &mut renderer,
-            resources.shader_path("particles/particle_sim.wgsl"),
-            resources.shader_path("particles/particle_render.wgsl"),
-        ) {
-            Ok(_) => {
+        // Initialize particle system (zero-config - shader paths are built-in)
+        let particle_system = match katla_gfx::ParticleSystem::new(&mut renderer) {
+            Ok(system) => {
                 log::info!("✨ Particle system initialized successfully");
-                log::info!("   - Compute shader: particles/particle_sim.wgsl");
-                log::info!("   - Render shader: particles/particle_render.wgsl");
                 log::info!("   - Max particles per emitter: 65,536");
                 log::info!("   - Memory per emitter: 4MB GPU");
+                Some(system)
             }
             Err(e) => {
                 log::warn!("Failed to initialize particle system: {}", e);
                 log::warn!("Particle effects will be disabled");
-                // Continue without particle system
+                None
             }
-        }
+        };
+
+        // Store particle system in renderer for frame graph access
+        renderer.particle_system = particle_system;
 
         // Initialize UI renderer with font atlas bindless slot
         let mut ui_renderer = crate::ui::UIRenderer::new();
@@ -435,7 +439,8 @@ impl ApplicationBuilder {
             thumbnail_texture_handles: HashMap::new(),
             start_time: Instant::now(),
             default_material_handle: katla_gfx::MaterialHandle::NONE,
-            particle_system: Some(particle_system),
+            // particle_system: None, // TODO: Particle system is temporarily disabled
+            pending_readback: None,
             cleaned_up: false,
         };
 

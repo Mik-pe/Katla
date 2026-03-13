@@ -3,9 +3,9 @@
 //! These methods provide ergonomic wrappers around low-level UI primitives,
 //! reducing boilerplate and ensuring consistent styling across the application.
 
-use katla_math::Vec2;
-use crate::{FontSize, UiContext};
 use crate::widgets::Label;
+use crate::{FontSize, UiContext};
+use katla_math::Vec2;
 
 impl UiContext {
     /// Display a labeled property row (label: value on same line).
@@ -22,9 +22,19 @@ impl UiContext {
         let start_x = self.cursor().x();
         let text_height = self.measure_text(value, self.style.font_size).y();
 
-        self.draw_text(label, self.cursor(), self.style.text_color, self.style.font_size);
+        self.draw_text(
+            label,
+            self.cursor(),
+            self.style.text_color,
+            self.style.font_size,
+        );
         self.set_cursor(Vec2::new(start_x + 60.0, self.cursor().y()));
-        self.draw_text(value, self.cursor(), self.style.text_color, self.style.font_size);
+        self.draw_text(
+            value,
+            self.cursor(),
+            self.style.text_color,
+            self.style.font_size,
+        );
 
         self.set_cursor(Vec2::new(start_x, self.cursor().y() + text_height + 4.0));
     }
@@ -55,12 +65,14 @@ impl UiContext {
     /// ```
     pub fn text_label(&mut self, text: &str) {
         let text_size = self.measure_text(text, self.style.font_size);
-        self.draw_text(text, self.cursor(), self.style.text_color, self.style.font_size);
-        let spacing = 20.0;
-        self.cursor = Vec2::new(
-            self.cursor.x(),
-            self.cursor.y() + text_size.y() + spacing,
+        self.draw_text(
+            text,
+            self.cursor(),
+            self.style.text_color,
+            self.style.font_size,
         );
+        let spacing = 20.0;
+        self.cursor = Vec2::new(self.cursor.x(), self.cursor.y() + text_size.y() + spacing);
     }
 
     /// Display a text label at the cursor position with custom color.
@@ -76,10 +88,7 @@ impl UiContext {
         let text_size = self.measure_text(text, self.style.font_size);
         self.draw_text(text, self.cursor(), color, self.style.font_size);
         let spacing = 20.0;
-        self.cursor = Vec2::new(
-            self.cursor.x(),
-            self.cursor.y() + text_size.y() + spacing,
-        );
+        self.cursor = Vec2::new(self.cursor.x(), self.cursor.y() + text_size.y() + spacing);
     }
 
     /// Display a text label at the cursor position with custom color (alias).
@@ -126,7 +135,7 @@ impl UiContext {
         let clip = self.clip_rect();
         let y = self.cursor().y();
         let padding = 8.0;
-        
+
         self.draw_line(
             Vec2::new(clip.min.x() + padding, y),
             Vec2::new(clip.max.x() - padding, y),

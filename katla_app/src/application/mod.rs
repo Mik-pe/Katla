@@ -44,7 +44,7 @@ struct ApplicationInfo {
     name: String,
     validation_layer_enabled: bool,
     max_frames: Option<usize>, // Some(n) = exit after n frames, None = run indefinitely
-    check_black_frames: bool,    // Check center pixel of swapchain for black frames
+    check_black_frames: bool,  // Check center pixel of swapchain for black frames
 }
 
 /// Main application struct containing all engine state.
@@ -282,8 +282,6 @@ impl ApplicationHandler for Application {
                 // Note: Transient textures are now single-buffered
                 // Bindless indices are set once during initialization
 
-
-
                 // Generate UI draw list BEFORE frame graph execution
                 debug!("Generating UI draw list...");
                 let ui_draw_list = editor::generate_ui_draw_list(self, dt);
@@ -310,7 +308,9 @@ impl ApplicationHandler for Application {
                             let height = extent.height as usize;
 
                             // Save frame as PNG for visual inspection
-                            if let Err(e) = self.save_frame_as_png(prev_frame, &image_data, width, height) {
+                            if let Err(e) =
+                                self.save_frame_as_png(prev_frame, &image_data, width, height)
+                            {
                                 log::error!("Failed to save frame {}: {}", prev_frame, e);
                             }
 
@@ -341,7 +341,11 @@ impl ApplicationHandler for Application {
 
                     // Queue async readback for current frame (will be checked on next frame)
                     if let Err(e) = self.renderer.queue_async_readback(self.frame_count) {
-                        log::error!("Frame {} - Failed to queue async readback: {}", self.frame_count, e);
+                        log::error!(
+                            "Frame {} - Failed to queue async readback: {}",
+                            self.frame_count,
+                            e
+                        );
                     }
                 }
 
@@ -1392,7 +1396,13 @@ impl Application {
     }
 
     /// Save frame data as PNG file for visual inspection
-    fn save_frame_as_png(&self, frame: usize, bgra_data: &[u8], width: usize, height: usize) -> Result<(), Box<dyn std::error::Error>> {
+    fn save_frame_as_png(
+        &self,
+        frame: usize,
+        bgra_data: &[u8],
+        width: usize,
+        height: usize,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         use std::fs;
         use std::path::PathBuf;
 
@@ -1415,8 +1425,9 @@ impl Application {
             .collect();
 
         // Create RGBA image buffer from the converted data
-        let img: image::RgbaImage = image::ImageBuffer::from_raw(width as u32, height as u32, rgba_data)
-            .ok_or("Failed to create image buffer from raw data")?;
+        let img: image::RgbaImage =
+            image::ImageBuffer::from_raw(width as u32, height as u32, rgba_data)
+                .ok_or("Failed to create image buffer from raw data")?;
 
         // Save to file (image crate will handle sRGB properly based on the ColorType)
         img.save(&filename)?;

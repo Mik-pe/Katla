@@ -270,10 +270,7 @@ impl<'a> Widget for Hierarchy<'a> {
                         clicked_entity = Some(entity.id);
                     }
 
-                    if ui.mouse_clicked(mouse_button::RIGHT)
-                        && is_hovered
-                        && !ui.has_open_popup()
-                    {
+                    if ui.mouse_clicked(mouse_button::RIGHT) && is_hovered && !ui.has_open_popup() {
                         right_clicked_entity = Some(entity.id);
                     }
 

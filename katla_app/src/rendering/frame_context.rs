@@ -220,6 +220,17 @@ impl FrameContext {
     pub fn push_draw(&mut self, draw: DrawCall) {
         self.draw_list.push(draw);
     }
+
+    /// Add a particle emitter to the draw list.
+    ///
+    /// Particle emitters will be simulated and rendered automatically
+    /// by the renderer. Emitters are referenced by opaque handle.
+    ///
+    /// # Arguments
+    /// * `emitter` - Handle to the particle emitter
+    pub fn push_particle(&mut self, emitter: katla_gfx::EmitterHandle) {
+        self.draw_list.push_particle(emitter);
+    }
 }
 
 /// Fluent builder for configuring draw calls.
