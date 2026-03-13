@@ -297,17 +297,6 @@ impl ApplicationHandler for Application {
                 // Process editor actions after UI rendering
                 editor::process_editor_actions(self);
 
-                // Handle max_frames limit
-                if let Some(max) = self.info.max_frames {
-                    self.frame_count += 1;
-                    if self.frame_count >= max {
-                        info!("Rendered {} frames, exiting", self.frame_count);
-                        // Call cleanup directly since exiting() may not be triggered
-                        self.cleanup_on_exit();
-                        event_loop.exit();
-                    }
-                }
-
                 // Asynchronous black frame checking:
                 // - On frame N: Queue async readback (non-blocking)
                 // - On frame N+1: Check if readback from frame N is complete and save to disk
@@ -356,6 +345,17 @@ impl ApplicationHandler for Application {
                     }
                 }
 
+                // Handle max_frames limit (after readback to ensure last frame's readback is queued)
+                if let Some(max) = self.info.max_frames {
+                    self.frame_count += 1;
+                    if self.frame_count >= max {
+                        info!("Rendered {} frames, exiting", self.frame_count);
+                        // Call cleanup directly since exiting() may not be triggered
+                        self.cleanup_on_exit();
+                        event_loop.exit();
+                    }
+                }
+
                 self.window.request_redraw();
             }
             _ => {}
@@ -377,6 +377,26 @@ impl Application {
         }
         self.cleaned_up = true;
 
+        // Wait for any pending async readback to complete before destroying resources
+        // This must happen BEFORE wait_for_device() to ensure readback finishes
+        match self.renderer.wait_for_pending_readback() {
+            Ok(Some((frame, image_data))) => {
+                info!("Saving final frame {} before shutdown", frame);
+                let extent = self.renderer.swapchain_extent();
+                let width = extent.width as usize;
+                let height = extent.height as usize;
+                if let Err(e) = self.save_frame_as_png(frame, &image_data, width, height) {
+                    log::error!("Failed to save final frame {}: {}", frame, e);
+                }
+            }
+            Ok(None) => {
+                log::debug!("No pending readback to complete during shutdown");
+            }
+            Err(e) => {
+                log::error!("Failed to wait for pending readback during shutdown: {}", e);
+            }
+        }
+
         // Save preferences before exit
         if let Err(e) = self.preferences.save() {
             warn!("Failed to save preferences: {}", e);
@@ -395,6 +415,7 @@ impl Application {
             info!("Saved GUI state to disk");
         }
 
+        // Wait for device to ensure all GPU operations are complete
         self.renderer.wait_for_device();
 
         // TODO: Destroy particle system first (needs Vulkan context)

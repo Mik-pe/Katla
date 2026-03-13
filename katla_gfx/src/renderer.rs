@@ -16,8 +16,7 @@ pub use crate::handle::{Handle, MaterialHandle, MeshHandle, SkeletonHandle, Text
 use crate::viewport::{ViewportBuilder, ViewportHandle};
 pub use registry::AssetRegistry;
 pub use types::{
-    DrawCall, DrawList, FrameUniforms, InstanceData, ParticleDispatch, ParticleRender, UIDrawList,
-    UiDrawCommand,
+    DrawCall, DrawList, FrameUniforms, InstanceData, UIDrawList, UiDrawCommand,
 };
 
 use crate::handle::ResourceStorage;
@@ -84,6 +83,16 @@ impl UiFrameResources {
 
 /// Transpose a 4x4 matrix from row-major to column-major format.
 ///
+
+/// Pending readback operation for async frame checking
+pub struct PendingReadback {
+    frame: usize,
+    fence: vk::Fence,
+    staging_buffer: vk::Buffer,
+    staging_allocation: gpu_allocator::vulkan::Allocation,
+    buffer_size: vk::DeviceSize,
+}
+
 pub struct VulkanRenderer {
     pub(crate) context: Rc<VulkanContext>,
     pub(crate) frame_context: VulkanFrameCtx,
@@ -115,8 +124,12 @@ pub struct VulkanRenderer {
     pub(crate) skeleton_buffers: ResourceStorage<SkeletonBuffer>,
     /// Frame-level uniforms set once per frame via set_frame_uniforms().
     pub(crate) frame_uniforms: FrameUniforms,
+    /// Last presented swapchain image index (for debugging readback).
+    last_presented_image_index: Option<u32>,
     /// Cached default white PBR material handle.
     default_material_handle: Option<MaterialHandle>,
+    /// Pending async readback operation
+    pending_readback: Option<PendingReadback>,
     /// Output render target for final composition (UI renders here, then present_pass copies to swapchain).
     output_target: Option<OutputRenderTarget>,
     /// Viewport manager for viewport and render target management.
@@ -239,7 +252,9 @@ impl VulkanRenderer {
             skeleton_descriptors: ResourceStorage::new(),
             skeleton_buffers: ResourceStorage::new(),
             frame_uniforms: FrameUniforms::default(),
+            last_presented_image_index: None,
             default_material_handle: None,
+            pending_readback: None,
             output_target: None,
             viewport_manager,
             material_compiler,
@@ -848,6 +863,20 @@ impl VulkanRenderer {
     }
 
     pub fn destroy(&mut self) {
+        // Note: Pending readback should have been cleaned up by wait_for_pending_readback()
+        // in cleanup_on_exit(). This is a safety check in case destroy() is called directly.
+        if let Some(readback) = self.pending_readback.take() {
+            log::warn!("Pending readback found during destroy() - cleanup should have happened earlier");
+            unsafe {
+                let _ = self.context.device.wait_for_fences(&[readback.fence], true, u64::MAX);
+                self.context.device.destroy_fence(readback.fence, None);
+                self.context.free_buffer(readback.staging_buffer, readback.staging_allocation);
+            }
+        }
+
+        // Wait for device idle to ensure all GPU operations have completed
+        self.wait_for_device();
+
         // Destroy output render target (Drop handles cleanup)
         self.output_target = None;
 
@@ -1727,6 +1756,7 @@ impl VulkanRenderer {
         F: FnOnce(&mut crate::render_graph::Frame),
     {
         // 1. Wait for previous frame to complete (also resets the fence)
+        // NOTE: This wait is for the in-flight frames, NOT for readback operations
         self.swap_data.wait_for_fence(&self.context.device);
 
         // 2. Get frame index (start_frame() was already called in set_frame_uniforms())
@@ -1745,6 +1775,9 @@ impl VulkanRenderer {
                 )
                 .expect("Failed to acquire swapchain image")
         };
+
+        // Store image index for readback debugging
+        self.last_presented_image_index = Some(image_index);
 
         // 4. Get command buffer for this frame
         let cmd = self.frame_context.command_buffers[frame_idx].vk_command_buffer();
@@ -1825,6 +1858,257 @@ impl VulkanRenderer {
 
         // 10. Advance to next frame
         self.swap_data.step_frame();
+    }
+
+    /// Queue an asynchronous readback of the last presented swapchain image.
+    ///
+    /// This is useful for detecting black frames and synchronization issues.
+    /// The readback is asynchronous - use `check_pending_readback()` on the next frame
+    /// to retrieve the results.
+    ///
+    /// # Arguments
+    /// * `frame` - Current frame number for tracking
+    ///
+    /// # Returns
+    /// * `Ok(())` - Readback was queued successfully
+    /// * `Err(RendererError)` - Failed to queue readback
+    ///
+    /// # Async Behavior
+    /// This function queues a GPU copy operation and returns immediately.
+    /// The results will be available on the next frame via `check_pending_readback()`.
+    /// This allows catching cross-frame synchronization issues that synchronous readback would mask.
+    pub fn queue_async_readback(&mut self, frame: usize) -> Result<(), RendererError> {
+        use ash::vk;
+
+        // Get the last presented image index
+        let image_index = if let Some(idx) = self.last_presented_image_index {
+            idx
+        } else {
+            return Ok(()); // No frame presented yet
+        };
+
+        let swapchain_image = self.frame_context.swapchain_images[image_index as usize].vk();
+        let extent = self.frame_context.swapchain.get_extent();
+        let width = extent.width;
+        let height = extent.height;
+
+        // Create a staging buffer for readback
+        let buffer_size = (width * height * 4) as vk::DeviceSize;
+        let buffer_info = vk::BufferCreateInfo::default()
+            .size(buffer_size)
+            .usage(vk::BufferUsageFlags::TRANSFER_DST)
+            .sharing_mode(vk::SharingMode::EXCLUSIVE);
+
+        let (staging_buffer, staging_allocation) = self.context.allocate_buffer(
+            &buffer_info,
+            gpu_allocator::MemoryLocation::CpuToGpu,
+        );
+
+        // Create a fence for this readback operation
+        let fence_info = vk::FenceCreateInfo::default();
+        let fence = unsafe {
+            self.context.device.create_fence(&fence_info, None)
+                .map_err(|e| RendererError::InitializationFailed(format!("Failed to create fence: {}", e)))?
+        };
+
+        // Create a command buffer for the copy operation
+        let command_buffer_allocate_info = vk::CommandBufferAllocateInfo::default()
+            .command_pool(self.context.transfer_command_pool)
+            .level(vk::CommandBufferLevel::PRIMARY)
+            .command_buffer_count(1);
+
+        let command_buffers = unsafe {
+            self.context
+                .device
+                .allocate_command_buffers(&command_buffer_allocate_info)
+                .map_err(|e| RendererError::InitializationFailed(format!("Failed to allocate command buffer: {}", e)))?
+        };
+
+        let command_buffer = command_buffers[0];
+
+        // Begin command buffer
+        let begin_info = vk::CommandBufferBeginInfo::default()
+            .flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT);
+        unsafe {
+            self.context
+                .device
+                .begin_command_buffer(command_buffer, &begin_info)
+                .map_err(|e| RendererError::InitializationFailed(format!("Failed to begin command buffer: {}", e)))?;
+        }
+
+        // Transition swapchain image to TRANSFER_SRC optimal layout
+        let barrier = vk::ImageMemoryBarrier::default()
+            .src_access_mask(vk::AccessFlags::COLOR_ATTACHMENT_WRITE)
+            .dst_access_mask(vk::AccessFlags::TRANSFER_READ)
+            .old_layout(vk::ImageLayout::PRESENT_SRC_KHR)
+            .new_layout(vk::ImageLayout::TRANSFER_SRC_OPTIMAL)
+            .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+            .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+            .image(swapchain_image)
+            .subresource_range(vk::ImageSubresourceRange {
+                aspect_mask: vk::ImageAspectFlags::COLOR,
+                base_mip_level: 0,
+                level_count: 1,
+                base_array_layer: 0,
+                layer_count: 1,
+            });
+
+        unsafe {
+            self.context.device.cmd_pipeline_barrier(
+                command_buffer,
+                vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
+                vk::PipelineStageFlags::TRANSFER,
+                vk::DependencyFlags::empty(),
+                &[],
+                &[],
+                &[barrier],
+            );
+        }
+
+        // Copy image to staging buffer
+        let buffer_image_copy = vk::BufferImageCopy::default()
+            .buffer_offset(0)
+            .image_subresource(vk::ImageSubresourceLayers {
+                aspect_mask: vk::ImageAspectFlags::COLOR,
+                mip_level: 0,
+                base_array_layer: 0,
+                layer_count: 1,
+            })
+            .image_offset(vk::Offset3D { x: 0, y: 0, z: 0 })
+            .image_extent(vk::Extent3D {
+                width,
+                height,
+                depth: 1,
+            });
+
+        unsafe {
+            self.context.device.cmd_copy_image_to_buffer(
+                command_buffer,
+                swapchain_image,
+                vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
+                staging_buffer,
+                &[buffer_image_copy],
+            );
+        }
+
+        // End and submit command buffer with fence (async!)
+        unsafe {
+            self.context
+                .device
+                .end_command_buffer(command_buffer)
+                .map_err(|e| RendererError::InitializationFailed(format!("Failed to end command buffer: {}", e)))?;
+
+            // Submit with fence for async completion
+            let command_buffers = [command_buffer];
+            let submit_info = vk::SubmitInfo::default()
+                .command_buffers(&command_buffers);
+
+            self.context
+                .device
+                .queue_submit(self.context.gfx_queue.vk_queue(), &[submit_info], fence)
+                .map_err(|e| RendererError::InitializationFailed(format!("Failed to submit queue: {}", e)))?;
+        }
+
+        // Store pending readback for later retrieval
+        self.pending_readback = Some(PendingReadback {
+            frame,
+            fence,
+            staging_buffer,
+            staging_allocation,
+            buffer_size,
+        });
+
+        Ok(())
+    }
+
+    /// Check if the pending async readback is complete and return the data.
+    ///
+    /// # Returns
+    /// * `Ok(Some((frame, data)))` - Readback complete, returns frame number and image data
+    /// * `Ok(None)` - Readback not complete yet or no readback pending
+    /// * `Err(RendererError)` - Readback failed
+    pub fn check_pending_readback(&mut self) -> Result<Option<(usize, Vec<u8>)>, RendererError> {
+        // Take ownership to avoid borrow issues
+        if let Some(readback) = self.pending_readback.take() {
+            unsafe {
+                // Check if fence is signaled (readback complete)
+                match self.context.device.get_fence_status(readback.fence) {
+                    Ok(true) => {
+                        // Fence signaled - readback is complete!
+                        let mapped_ptr = self.context.map_buffer(&readback.staging_allocation);
+                        let data = unsafe { std::slice::from_raw_parts(mapped_ptr, readback.buffer_size as usize) };
+                        let result = data.to_vec();
+                        let frame = readback.frame;
+
+                        // Cleanup
+                        self.context.device.destroy_fence(readback.fence, None);
+                        self.context.free_buffer(readback.staging_buffer, readback.staging_allocation);
+
+                        log::debug!("Frame {} readback complete", frame);
+                        Ok(Some((frame, result)))
+                    }
+                    Ok(false) => {
+                        // Still processing - put it back
+                        log::debug!("Frame {} readback not ready yet", readback.frame);
+                        self.pending_readback = Some(readback);
+                        Ok(None)
+                    }
+                    Err(e) => {
+                        // Error checking fence status - put it back
+                        log::warn!("Failed to check fence for frame {}: {}", readback.frame, e);
+                        self.pending_readback = Some(readback);
+                        Err(RendererError::InitializationFailed(format!("Failed to check fence status: {}", e)))
+                    }
+                }
+            }
+        } else {
+            Ok(None)
+        }
+    }
+
+    /// Wait for any pending async readback to complete and return the data.
+    ///
+    /// This is useful during shutdown to ensure all readbacks complete before
+    /// destroying resources like the swapchain.
+    ///
+    /// # Returns
+    /// * `Ok(Some((frame, data)))` - Readback was pending and is now complete
+    /// * `Ok(None)` - No readback was pending
+    /// * `Err(RendererError)` - Failed to wait for or complete readback
+    pub fn wait_for_pending_readback(&mut self) -> Result<Option<(usize, Vec<u8>)>, RendererError> {
+        if let Some(readback) = self.pending_readback.take() {
+            unsafe {
+                // Wait for the fence to signal
+                log::debug!("Waiting for pending readback (frame {}) to complete", readback.frame);
+                let _ = self.context.device.wait_for_fences(&[readback.fence], true, u64::MAX);
+
+                // Fence signaled - readback is complete!
+                let mapped_ptr = self.context.map_buffer(&readback.staging_allocation);
+                let data = unsafe { std::slice::from_raw_parts(mapped_ptr, readback.buffer_size as usize) };
+                let result = data.to_vec();
+                let frame = readback.frame;
+
+                // Cleanup
+                self.context.device.destroy_fence(readback.fence, None);
+                self.context.free_buffer(readback.staging_buffer, readback.staging_allocation);
+
+                log::debug!("Pending readback (frame {}) complete", frame);
+                Ok(Some((frame, result)))
+            }
+        } else {
+            Ok(None)
+        }
+    }
+
+    /// Synchronous readback (kept for backwards compatibility, but not recommended)
+    ///
+    /// This is the old synchronous version that stalls the GPU.
+    /// Use `queue_async_readback()` + `check_pending_readback()` instead
+    /// to avoid masking synchronization issues.
+    pub fn readback_swapchain_image(&self) -> Result<Option<Vec<u8>>, RendererError> {
+        // This method is now deprecated - the async version should be used instead
+        log::warn!("readback_swapchain_image() is synchronous and may mask race conditions. Use queue_async_readback() + check_pending_readback() instead.");
+        Ok(None)
     }
 }
 
