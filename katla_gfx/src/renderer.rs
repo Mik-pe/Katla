@@ -7,6 +7,7 @@
 //! - `ui` - UI buffer and texture management (TODO: extract from lib.rs)
 
 pub mod mesh_manager;
+pub mod particle_system;
 pub mod registry;
 pub mod types;
 pub mod ui_renderer;
@@ -14,6 +15,7 @@ pub mod viewport_manager;
 
 pub use crate::handle::{Handle, MaterialHandle, MeshHandle, SkeletonHandle, TextureHandle};
 use crate::viewport::{ViewportBuilder, ViewportHandle};
+pub use particle_system::ParticleSystem;
 pub use registry::AssetRegistry;
 pub use types::{
     DrawCall, DrawList, FrameUniforms, InstanceData, UIDrawList, UiDrawCommand,
@@ -88,6 +90,8 @@ impl UiFrameResources {
 pub struct PendingReadback {
     frame: usize,
     fence: vk::Fence,
+    command_buffer: vk::CommandBuffer,
+    command_pool: vk::CommandPool,
     staging_buffer: vk::Buffer,
     staging_allocation: gpu_allocator::vulkan::Allocation,
     buffer_size: vk::DeviceSize,
@@ -138,6 +142,8 @@ pub struct VulkanRenderer {
     pub(crate) material_compiler: MaterialCompiler,
     /// UI rendering subsystem - owns UI resources and font atlas.
     pub ui_renderer: ui_renderer::UIRenderer,
+    /// Particle system for GPU-based particle effects.
+    pub particle_system: Option<ParticleSystem>,
 }
 
 /// Number of frames that can be processed concurrently.
@@ -259,6 +265,7 @@ impl VulkanRenderer {
             viewport_manager,
             material_compiler,
             ui_renderer: ui_renderer::UIRenderer::new(&context),
+            particle_system: None,
         })
     }
 
@@ -869,6 +876,7 @@ impl VulkanRenderer {
             log::warn!("Pending readback found during destroy() - cleanup should have happened earlier");
             unsafe {
                 let _ = self.context.device.wait_for_fences(&[readback.fence], true, u64::MAX);
+                self.context.device.free_command_buffers(readback.command_pool, &[readback.command_buffer]);
                 self.context.device.destroy_fence(readback.fence, None);
                 self.context.free_buffer(readback.staging_buffer, readback.staging_allocation);
             }
@@ -882,6 +890,12 @@ impl VulkanRenderer {
 
         // Destroy all viewports (Drop handles cleanup for ViewportRenderTarget)
         self.viewport_manager.clear();
+
+        // Destroy particle system (if initialized)
+        if let Some(mut particle_system) = self.particle_system.take() {
+            particle_system.destroy(&self.context);
+            log::info!("Particle system destroyed");
+        }
 
         // Destroy all registered assets first (materials, meshes)
         self.asset_registry.destroy();
@@ -2013,6 +2027,8 @@ impl VulkanRenderer {
         self.pending_readback = Some(PendingReadback {
             frame,
             fence,
+            command_buffer,
+            command_pool: self.context.transfer_command_pool,
             staging_buffer,
             staging_allocation,
             buffer_size,
@@ -2041,6 +2057,7 @@ impl VulkanRenderer {
                         let frame = readback.frame;
 
                         // Cleanup
+                        self.context.device.free_command_buffers(readback.command_pool, &[readback.command_buffer]);
                         self.context.device.destroy_fence(readback.fence, None);
                         self.context.free_buffer(readback.staging_buffer, readback.staging_allocation);
 
@@ -2089,6 +2106,7 @@ impl VulkanRenderer {
                 let frame = readback.frame;
 
                 // Cleanup
+                self.context.device.free_command_buffers(readback.command_pool, &[readback.command_buffer]);
                 self.context.device.destroy_fence(readback.fence, None);
                 self.context.free_buffer(readback.staging_buffer, readback.staging_allocation);
 
