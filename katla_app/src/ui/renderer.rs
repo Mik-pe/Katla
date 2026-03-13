@@ -251,7 +251,13 @@ impl UIRenderer {
         // Check if this is already a bindless texture (high bit set)
         if id.0 & BINDLESS_FLAG != 0 {
             // Extract the bindless index
-            return (id.0 & !BINDLESS_FLAG) as u32;
+            let bindless_index = (id.0 & !BINDLESS_FLAG) as u32;
+            log::trace!(
+                "TextureId {} is bindless texture at slot {}",
+                id.0,
+                bindless_index
+            );
+            return bindless_index;
         }
 
         // Check font atlas - use the registered bindless slot
@@ -275,9 +281,17 @@ impl UIRenderer {
                 return slot;
             }
             // Fallback to white texture slot if not found
+            log::warn!(
+                "TextureId {} found in registry but no bindless slot tracked, falling back to white texture",
+                id.0
+            );
             self.white_texture_bindless_slot.unwrap_or(0)
         } else {
             // Fallback to white texture slot for unknown textures
+            log::warn!(
+                "TextureId {} not in registry, falling back to white texture slot 0",
+                id.0
+            );
             self.white_texture_bindless_slot.unwrap_or(0)
         }
     }

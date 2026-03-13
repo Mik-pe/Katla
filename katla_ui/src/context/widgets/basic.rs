@@ -16,7 +16,6 @@ use crate::icons::ForkAwesome;
 use crate::input::{mouse_button, KeyCode};
 use crate::response::Response;
 
-use super::super::interaction::ClickResult;
 use super::super::UiContext;
 
 #[cfg(test)]

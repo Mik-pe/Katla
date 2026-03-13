@@ -37,7 +37,6 @@ impl UiContext {
 
         // Draw combo box trigger
         let hovered = self.update_hover(combo_id, bounds);
-        let active = self.active_id == Some(combo_id);
 
         // Toggle on click using consolidated helper
         let clicked = self.click_behavior(combo_id, hovered).as_clicked_bool();

@@ -31,7 +31,7 @@ use crate::{
 use ash::vk;
 use log::{error, info};
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
-use std::{cell::RefCell, ffi::CString, rc::Rc};
+use std::{ffi::CString, rc::Rc};
 
 use crate::barrier::ImageBarrier;
 use crate::sync::{COLOR_SUBRESOURCE_RANGE, DEPTH_SUBRESOURCE_RANGE};
@@ -2040,9 +2040,8 @@ impl VulkanRenderer {
                     Ok(true) => {
                         // Fence signaled - readback is complete!
                         let mapped_ptr = self.context.map_buffer(&readback.staging_allocation);
-                        let data = unsafe {
-                            std::slice::from_raw_parts(mapped_ptr, readback.buffer_size as usize)
-                        };
+                        let data =
+                            std::slice::from_raw_parts(mapped_ptr, readback.buffer_size as usize);
                         let result = data.to_vec();
                         let frame = readback.frame;
 
@@ -2101,9 +2100,7 @@ impl VulkanRenderer {
 
                 // Fence signaled - readback is complete!
                 let mapped_ptr = self.context.map_buffer(&readback.staging_allocation);
-                let data = unsafe {
-                    std::slice::from_raw_parts(mapped_ptr, readback.buffer_size as usize)
-                };
+                let data = std::slice::from_raw_parts(mapped_ptr, readback.buffer_size as usize);
                 let result = data.to_vec();
                 let frame = readback.frame;
 

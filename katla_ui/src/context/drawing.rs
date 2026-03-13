@@ -411,13 +411,6 @@ impl UiContext {
         )
     }
 
-    /// Calculate the size needed for a button with custom width.
-    ///
-    /// Returns the size with the specified width and standard button height.
-    pub fn button_size_wide(&self, text: &str, width: f32) -> Vec2 {
-        Vec2::new(width, self.style.button_height_medium)
-    }
-
     /// Calculate the size needed for a checkbox with label.
     ///
     /// Returns the size including the checkbox box and label text.

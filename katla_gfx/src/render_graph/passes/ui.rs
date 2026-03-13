@@ -150,8 +150,6 @@ impl PassBuilder for UIPass {
         // Clone material handle
         let material = self.material;
 
-        let name = self.name.clone();
-
         InternalPassBuilder {
             name: self.name,
             pass_type: PassType::Graphics,

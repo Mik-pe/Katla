@@ -989,10 +989,6 @@ where
 
         // Render content if expanded
         if *self.expanded {
-            let content_bounds = Rect2D::from_origin_size(
-                Vec2::new(self.bounds.min.x() + 20.0, self.bounds.max.y()),
-                Vec2::new(self.bounds.width() - 20.0, 100.0),
-            );
             (self.content)(ui);
         }
 
