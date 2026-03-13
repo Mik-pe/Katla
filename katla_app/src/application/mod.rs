@@ -44,6 +44,7 @@ struct ApplicationInfo {
     name: String,
     validation_layer_enabled: bool,
     max_frames: Option<usize>, // Some(n) = exit after n frames, None = run indefinitely
+    check_black_frames: bool,    // Check center pixel of swapchain for black frames
 }
 
 /// Main application struct containing all engine state.
@@ -85,8 +86,10 @@ pub struct Application {
     pub(crate) start_time: Instant,
     /// Default PBR material handle for geometry rendering
     pub(crate) default_material_handle: katla_gfx::MaterialHandle,
-    /// Particle system for GPU-based particle effects
-    pub(crate) particle_system: Option<katla_gfx::ParticleSystem>,
+    // TODO: Particle system is temporarily disabled
+    // pub(crate) particle_system: Option<katla_gfx::ParticleSystem>,
+    /// Pending readback data from previous frame (for async black frame checking)
+    pending_readback: Option<(usize, Vec<u8>)>,
     /// Flag to prevent double cleanup
     cleaned_up: bool,
 }
@@ -305,6 +308,54 @@ impl ApplicationHandler for Application {
                     }
                 }
 
+                // Asynchronous black frame checking:
+                // - On frame N: Queue async readback (non-blocking)
+                // - On frame N+1: Check if readback from frame N is complete and save to disk
+                // This allows us to catch synchronization issues that synchronous readback would mask
+                if self.info.check_black_frames && self.frame_count > 0 {
+                    // Check if previous frame's async readback is complete
+                    match self.renderer.check_pending_readback() {
+                        Ok(Some((prev_frame, image_data))) => {
+                            let extent = self.renderer.swapchain_extent();
+                            let width = extent.width as usize;
+                            let height = extent.height as usize;
+
+                            // Save frame as PNG for visual inspection
+                            if let Err(e) = self.save_frame_as_png(prev_frame, &image_data, width, height) {
+                                log::error!("Failed to save frame {}: {}", prev_frame, e);
+                            }
+
+                            // Check center pixel (middle of screen)
+                            let center_x = width / 2;
+                            let center_y = height / 2;
+                            let pixel_offset = (center_y * width + center_x) * 4;
+
+                            if pixel_offset + 3 < image_data.len() {
+                                let r = image_data[pixel_offset];
+                                let g = image_data[pixel_offset + 1];
+                                let b = image_data[pixel_offset + 2];
+
+                                // Check if center pixel is mostly black (all channels < 10)
+                                if r < 10 && g < 10 && b < 10 {
+                                    log::error!(
+                                        "BLACK FRAME DETECTED at frame {}! Center pixel: RGB({},{},{})",
+                                        prev_frame, r, g, b
+                                    );
+                                }
+                            }
+                        }
+                        Ok(None) => {}
+                        Err(e) => {
+                            log::error!("Failed to check pending readback: {}", e);
+                        }
+                    }
+
+                    // Queue async readback for current frame (will be checked on next frame)
+                    if let Err(e) = self.renderer.queue_async_readback(self.frame_count) {
+                        log::error!("Frame {} - Failed to queue async readback: {}", self.frame_count, e);
+                    }
+                }
+
                 self.window.request_redraw();
             }
             _ => {}
@@ -346,10 +397,10 @@ impl Application {
 
         self.renderer.wait_for_device();
 
-        // Destroy particle system first (needs Vulkan context)
-        if let Some(mut particle_system) = self.particle_system.take() {
-            particle_system.destroy(self.renderer.context());
-        }
+        // TODO: Destroy particle system first (needs Vulkan context)
+        // if let Some(mut particle_system) = self.particle_system.take() {
+        //     particle_system.destroy(self.renderer.context());
+        // }
 
         // Destroy renderer
         self.renderer.destroy();
@@ -926,17 +977,28 @@ impl Application {
     /// The entity ID of the spawned emitter, or None if particle system is not available
     pub fn spawn_particle_emitter(&mut self, position: [f32; 3]) -> Option<katla_ecs::EntityId> {
         use crate::components::{ParticleEmitterComponent, TransformComponent};
+        use katla_gfx::EmitterConfig;
         use katla_math::Transform;
 
-        // Get particle system reference
+        // TODO: Particle system is temporarily disabled
+        /*
         let particle_system = self.particle_system.as_mut()?;
 
-        // Create GPU emitter
-        let emitter_id = particle_system
-            .create_emitter(&mut self.renderer, 65536)
+        let config = EmitterConfig {
+            position,
+            emit_count: 100, // Fire emit rate
+            velocity_direction: [0.0, 1.0, 0.0],
+            base_lifetime: 3.0,
+            velocity_magnitude: 2.0,
+            velocity_cone_angle: 0.3,
+            base_scale: 0.15,
+            color: [1.0, 0.6, 0.2, 1.0],
+        };
+
+        let handle = particle_system
+            .create_emitter(&mut self.renderer, config)
             .ok()?;
 
-        // Spawn entity with particle emitter component
         let entity = self.world.spawn((
             TransformComponent {
                 transform: Transform::from_position(katla_math::Vec3::new(
@@ -945,14 +1007,13 @@ impl Application {
                     position[2],
                 )),
             },
-            ParticleEmitterComponent::fire(emitter_id, position),
+            ParticleEmitterComponent::fire(handle),
         ));
 
-        info!(
-            "Spawned particle emitter at {:?} (ID: {})",
-            position, emitter_id
-        );
+        info!("Spawned particle emitter at {:?}", position);
         Some(entity)
+        */
+        None
     }
 
     /// Destroy a particle emitter entity and free its GPU resources.
@@ -962,23 +1023,22 @@ impl Application {
     pub fn destroy_particle_emitter(&mut self, entity: katla_ecs::EntityId) -> bool {
         use crate::components::ParticleEmitterComponent;
 
-        // Get emitter ID before cleanup
-        let emitter_id =
+        let handle =
             if let Some(emitter) = self.world.get_component::<ParticleEmitterComponent>(entity) {
-                Some(emitter.emitter_id)
+                Some(emitter.handle)
             } else {
                 None
             };
 
-        // Free GPU resources first
-        if let (Some(id), Some(particle_system)) = (emitter_id, &mut self.particle_system) {
-            particle_system.destroy_emitter(self.renderer.context(), id);
-            info!("Destroyed particle emitter (ID: {})", id);
-        }
+        // TODO: Particle emitter cleanup is temporarily disabled
+        // if let (Some(handle), Some(particle_system)) = (handle, &mut self.particle_system) {
+        //     particle_system.destroy_emitter(self.renderer.context(), handle);
+        //     info!("Destroyed particle emitter {:?}", handle);
+        // }
 
         // Note: Entity cleanup will happen automatically in ECS
         // For now, we just clean up GPU resources
-        emitter_id.is_some()
+        handle.is_some()
     }
 
     /// Upload textures from a GLTF model and return bindless texture indices.
@@ -1308,6 +1368,41 @@ impl Application {
                 }
             }
         }
+    }
+
+    /// Save frame data as PNG file for visual inspection
+    fn save_frame_as_png(&self, frame: usize, bgra_data: &[u8], width: usize, height: usize) -> Result<(), Box<dyn std::error::Error>> {
+        use std::fs;
+        use std::path::PathBuf;
+
+        // Create frames directory if it doesn't exist
+        let frames_dir = PathBuf::from("frames");
+        fs::create_dir_all(&frames_dir)?;
+
+        // Save as PNG using the image library
+        let filename = frames_dir.join(format!("frame_{:04}.png", frame));
+
+        // Convert from BGRA (swapchain format) to RGBA (PNG format)
+        // The swapchain uses B8G8R8A8_SRGB format, so we need to swap channels
+        // IMPORTANT: Force alpha to 255 (fully opaque) since swapchain is OPAQUE
+        let rgba_data: Vec<u8> = bgra_data
+            .chunks_exact(4)
+            .flat_map(|bgra| {
+                // BGRA -> RGBA conversion, force alpha to 255
+                [bgra[2], bgra[1], bgra[0], 255]
+            })
+            .collect();
+
+        // Create RGBA image buffer from the converted data
+        let img: image::RgbaImage = image::ImageBuffer::from_raw(width as u32, height as u32, rgba_data)
+            .ok_or("Failed to create image buffer from raw data")?;
+
+        // Save to file (image crate will handle sRGB properly based on the ColorType)
+        img.save(&filename)?;
+
+        info!("Saved frame {} to {:?} ({}x{} pixels, converted from BGRA_sRGB to RGBA, alpha forced to 255)", 
+              frame, filename, width, height);
+        Ok(())
     }
 
     /// Convert winit KeyCode to UI KeyCode.
