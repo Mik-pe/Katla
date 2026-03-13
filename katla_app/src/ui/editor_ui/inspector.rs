@@ -1,6 +1,8 @@
 use katla_ecs::EntityId;
 use katla_math::{Rect2D, Vec2};
-use katla_ui::{mouse_button, widgets::Button, widgets::Label, FontSize, Response, UiContext, Widget};
+use katla_ui::{
+    mouse_button, widgets::Button, widgets::Label, FontSize, Response, UiContext, Widget,
+};
 
 use super::{EditorAction, EntityInfo, FocusedPanel, Theme};
 
@@ -95,7 +97,7 @@ impl<'a> Widget for Inspector<'a> {
                 ui.scaled_font_size(FontSize::Medium),
             );
             ui.spacing(line_height);
-            
+
             ui.property_row(
                 "Position:",
                 &format!(

@@ -17,9 +17,7 @@ pub use crate::handle::{Handle, MaterialHandle, MeshHandle, SkeletonHandle, Text
 use crate::viewport::{ViewportBuilder, ViewportHandle};
 pub use particle_system::ParticleSystem;
 pub use registry::AssetRegistry;
-pub use types::{
-    DrawCall, DrawList, FrameUniforms, InstanceData, UIDrawList, UiDrawCommand,
-};
+pub use types::{DrawCall, DrawList, FrameUniforms, InstanceData, UIDrawList, UiDrawCommand};
 
 use crate::handle::ResourceStorage;
 use crate::material::Material;
@@ -37,8 +35,8 @@ use std::{cell::RefCell, ffi::CString, rc::Rc};
 
 use crate::barrier::ImageBarrier;
 use crate::sync::{COLOR_SUBRESOURCE_RANGE, DEPTH_SUBRESOURCE_RANGE};
-use crate::vulkan::material::compiler::{MaterialBuilder, MaterialCompiler};
 use crate::vulkan::IndexType;
+use crate::vulkan::material::compiler::{MaterialBuilder, MaterialCompiler};
 
 /// Per-frame UI rendering resources.
 pub struct UiFrameResources {
@@ -58,7 +56,7 @@ impl UiFrameResources {
         let mut vertex_buffers = Vec::with_capacity(FRAMES_IN_FLIGHT);
         let mut index_buffers = Vec::with_capacity(FRAMES_IN_FLIGHT);
         let mut descriptor_sets = Vec::with_capacity(FRAMES_IN_FLIGHT);
-        
+
         for _ in 0..FRAMES_IN_FLIGHT {
             vertex_buffers.push(VertexBuffer::new(
                 context.clone(),
@@ -67,13 +65,13 @@ impl UiFrameResources {
             ));
             index_buffers.push(IndexBuffer::new(
                 context.clone(),
-                1024 * 1024,         // 1MB initial size
-                IndexType::Uint32,   // 32-bit indices
-                65536,               // Index count
+                1024 * 1024,       // 1MB initial size
+                IndexType::Uint32, // 32-bit indices
+                65536,             // Index count
             ));
             descriptor_sets.push(None);
         }
-        
+
         Self {
             vertex_buffers,
             index_buffers,
@@ -90,8 +88,7 @@ impl UiFrameResources {
 pub struct PendingReadback {
     frame: usize,
     fence: vk::Fence,
-    command_buffer: vk::CommandBuffer,
-    command_pool: vk::CommandPool,
+    command_buffer: crate::vulkan::commandbuffer::CommandBuffer,
     staging_buffer: vk::Buffer,
     staging_allocation: gpu_allocator::vulkan::Allocation,
     buffer_size: vk::DeviceSize,
@@ -873,12 +870,18 @@ impl VulkanRenderer {
         // Note: Pending readback should have been cleaned up by wait_for_pending_readback()
         // in cleanup_on_exit(). This is a safety check in case destroy() is called directly.
         if let Some(readback) = self.pending_readback.take() {
-            log::warn!("Pending readback found during destroy() - cleanup should have happened earlier");
+            log::warn!(
+                "Pending readback found during destroy() - cleanup should have happened earlier"
+            );
             unsafe {
-                let _ = self.context.device.wait_for_fences(&[readback.fence], true, u64::MAX);
-                self.context.device.free_command_buffers(readback.command_pool, &[readback.command_buffer]);
+                let _ = self
+                    .context
+                    .device
+                    .wait_for_fences(&[readback.fence], true, u64::MAX);
+                readback.command_buffer.return_to_pool();
                 self.context.device.destroy_fence(readback.fence, None);
-                self.context.free_buffer(readback.staging_buffer, readback.staging_allocation);
+                self.context
+                    .free_buffer(readback.staging_buffer, readback.staging_allocation);
             }
         }
 
@@ -1677,22 +1680,20 @@ impl VulkanRenderer {
     pub fn create_skeleton(&mut self, joint_count: usize) -> Result<SkeletonHandle, RendererError> {
         use crate::vulkan::skeleton_buffer::SkeletonBuffer;
 
-        let buffer = SkeletonBuffer::new(
-            self.context.clone(),
-            joint_count,
-        );
+        let buffer = SkeletonBuffer::new(self.context.clone(), joint_count);
 
         let pool = self.material_compiler.skeleton_descriptor_pool();
         let layout = self.material_compiler.skeleton_descriptor_layout();
 
         let descriptor_set =
-            SkeletonDescriptorSet::new(self.context.clone(), &buffer, pool, layout)
-                .map_err(|e| {
+            SkeletonDescriptorSet::new(self.context.clone(), &buffer, pool, layout).map_err(
+                |e| {
                     RendererError::InitializationFailed(format!(
                         "Failed to create skeleton descriptor: {:?}",
                         e
                     ))
-                })?;
+                },
+            )?;
 
         // Store both the descriptor and the buffer with matching IDs
         let id = self.skeleton_descriptors.insert(descriptor_set);
@@ -1913,42 +1914,32 @@ impl VulkanRenderer {
             .usage(vk::BufferUsageFlags::TRANSFER_DST)
             .sharing_mode(vk::SharingMode::EXCLUSIVE);
 
-        let (staging_buffer, staging_allocation) = self.context.allocate_buffer(
-            &buffer_info,
-            gpu_allocator::MemoryLocation::CpuToGpu,
-        );
+        let (staging_buffer, staging_allocation) = self
+            .context
+            .allocate_buffer(&buffer_info, gpu_allocator::MemoryLocation::CpuToGpu);
 
         // Create a fence for this readback operation
         let fence_info = vk::FenceCreateInfo::default();
         let fence = unsafe {
-            self.context.device.create_fence(&fence_info, None)
-                .map_err(|e| RendererError::InitializationFailed(format!("Failed to create fence: {}", e)))?
+            self.context
+                .device
+                .create_fence(&fence_info, None)
+                .map_err(|e| {
+                    RendererError::InitializationFailed(format!("Failed to create fence: {}", e))
+                })?
         };
 
         // Create a command buffer for the copy operation
-        let command_buffer_allocate_info = vk::CommandBufferAllocateInfo::default()
-            .command_pool(self.context.transfer_command_pool)
-            .level(vk::CommandBufferLevel::PRIMARY)
-            .command_buffer_count(1);
-
-        let command_buffers = unsafe {
-            self.context
-                .device
-                .allocate_command_buffers(&command_buffer_allocate_info)
-                .map_err(|e| RendererError::InitializationFailed(format!("Failed to allocate command buffer: {}", e)))?
-        };
-
-        let command_buffer = command_buffers[0];
+        let command_buffer = crate::vulkan::commandbuffer::CommandBuffer::new(
+            &self.context.device,
+            &crate::vulkan::commandpool::CommandPool {
+                device: self.context.device.clone(),
+                command_pool: self.context.transfer_command_pool,
+            },
+        );
 
         // Begin command buffer
-        let begin_info = vk::CommandBufferBeginInfo::default()
-            .flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT);
-        unsafe {
-            self.context
-                .device
-                .begin_command_buffer(command_buffer, &begin_info)
-                .map_err(|e| RendererError::InitializationFailed(format!("Failed to begin command buffer: {}", e)))?;
-        }
+        command_buffer.begin_single_time_command();
 
         // Transition swapchain image to TRANSFER_SRC optimal layout
         let barrier = vk::ImageMemoryBarrier::default()
@@ -1969,7 +1960,7 @@ impl VulkanRenderer {
 
         unsafe {
             self.context.device.cmd_pipeline_barrier(
-                command_buffer,
+                command_buffer.vk_command_buffer(),
                 vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
                 vk::PipelineStageFlags::TRANSFER,
                 vk::DependencyFlags::empty(),
@@ -1997,7 +1988,7 @@ impl VulkanRenderer {
 
         unsafe {
             self.context.device.cmd_copy_image_to_buffer(
-                command_buffer,
+                command_buffer.vk_command_buffer(),
                 swapchain_image,
                 vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
                 staging_buffer,
@@ -2006,21 +1997,19 @@ impl VulkanRenderer {
         }
 
         // End and submit command buffer with fence (async!)
-        unsafe {
-            self.context
-                .device
-                .end_command_buffer(command_buffer)
-                .map_err(|e| RendererError::InitializationFailed(format!("Failed to end command buffer: {}", e)))?;
+        command_buffer.end_single_time_command();
 
+        unsafe {
             // Submit with fence for async completion
-            let command_buffers = [command_buffer];
-            let submit_info = vk::SubmitInfo::default()
-                .command_buffers(&command_buffers);
+            let command_buffers = [command_buffer.vk_command_buffer()];
+            let submit_info = vk::SubmitInfo::default().command_buffers(&command_buffers);
 
             self.context
                 .device
                 .queue_submit(self.context.gfx_queue.vk_queue(), &[submit_info], fence)
-                .map_err(|e| RendererError::InitializationFailed(format!("Failed to submit queue: {}", e)))?;
+                .map_err(|e| {
+                    RendererError::InitializationFailed(format!("Failed to submit queue: {}", e))
+                })?;
         }
 
         // Store pending readback for later retrieval
@@ -2028,7 +2017,6 @@ impl VulkanRenderer {
             frame,
             fence,
             command_buffer,
-            command_pool: self.context.transfer_command_pool,
             staging_buffer,
             staging_allocation,
             buffer_size,
@@ -2052,14 +2040,17 @@ impl VulkanRenderer {
                     Ok(true) => {
                         // Fence signaled - readback is complete!
                         let mapped_ptr = self.context.map_buffer(&readback.staging_allocation);
-                        let data = unsafe { std::slice::from_raw_parts(mapped_ptr, readback.buffer_size as usize) };
+                        let data = unsafe {
+                            std::slice::from_raw_parts(mapped_ptr, readback.buffer_size as usize)
+                        };
                         let result = data.to_vec();
                         let frame = readback.frame;
 
-                        // Cleanup
-                        self.context.device.free_command_buffers(readback.command_pool, &[readback.command_buffer]);
+                        // Cleanup - use CommandBuffer's return_to_pool method
+                        readback.command_buffer.return_to_pool();
                         self.context.device.destroy_fence(readback.fence, None);
-                        self.context.free_buffer(readback.staging_buffer, readback.staging_allocation);
+                        self.context
+                            .free_buffer(readback.staging_buffer, readback.staging_allocation);
 
                         log::debug!("Frame {} readback complete", frame);
                         Ok(Some((frame, result)))
@@ -2074,7 +2065,10 @@ impl VulkanRenderer {
                         // Error checking fence status - put it back
                         log::warn!("Failed to check fence for frame {}: {}", readback.frame, e);
                         self.pending_readback = Some(readback);
-                        Err(RendererError::InitializationFailed(format!("Failed to check fence status: {}", e)))
+                        Err(RendererError::InitializationFailed(format!(
+                            "Failed to check fence status: {}",
+                            e
+                        )))
                     }
                 }
             }
@@ -2096,19 +2090,28 @@ impl VulkanRenderer {
         if let Some(readback) = self.pending_readback.take() {
             unsafe {
                 // Wait for the fence to signal
-                log::debug!("Waiting for pending readback (frame {}) to complete", readback.frame);
-                let _ = self.context.device.wait_for_fences(&[readback.fence], true, u64::MAX);
+                log::debug!(
+                    "Waiting for pending readback (frame {}) to complete",
+                    readback.frame
+                );
+                let _ = self
+                    .context
+                    .device
+                    .wait_for_fences(&[readback.fence], true, u64::MAX);
 
                 // Fence signaled - readback is complete!
                 let mapped_ptr = self.context.map_buffer(&readback.staging_allocation);
-                let data = unsafe { std::slice::from_raw_parts(mapped_ptr, readback.buffer_size as usize) };
+                let data = unsafe {
+                    std::slice::from_raw_parts(mapped_ptr, readback.buffer_size as usize)
+                };
                 let result = data.to_vec();
                 let frame = readback.frame;
 
-                // Cleanup
-                self.context.device.free_command_buffers(readback.command_pool, &[readback.command_buffer]);
+                // Cleanup - use CommandBuffer's return_to_pool method
+                readback.command_buffer.return_to_pool();
                 self.context.device.destroy_fence(readback.fence, None);
-                self.context.free_buffer(readback.staging_buffer, readback.staging_allocation);
+                self.context
+                    .free_buffer(readback.staging_buffer, readback.staging_allocation);
 
                 log::debug!("Pending readback (frame {}) complete", frame);
                 Ok(Some((frame, result)))
@@ -2125,7 +2128,9 @@ impl VulkanRenderer {
     /// to avoid masking synchronization issues.
     pub fn readback_swapchain_image(&self) -> Result<Option<Vec<u8>>, RendererError> {
         // This method is now deprecated - the async version should be used instead
-        log::warn!("readback_swapchain_image() is synchronous and may mask race conditions. Use queue_async_readback() + check_pending_readback() instead.");
+        log::warn!(
+            "readback_swapchain_image() is synchronous and may mask race conditions. Use queue_async_readback() + check_pending_readback() instead."
+        );
         Ok(None)
     }
 }

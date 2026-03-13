@@ -902,8 +902,8 @@ impl Default for EditorUI {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ui::editor_ui::preferences::PreferencesTab;
     use crate::ui::editor_ui::hierarchy::Hierarchy;
+    use crate::ui::editor_ui::preferences::PreferencesTab;
 
     /// Test that preferences panel stays open on the first frame after being opened.
     ///
@@ -1167,7 +1167,9 @@ mod tests {
 
         // No Close action should have been triggered
         assert!(
-            !actions.iter().any(|a| matches!(a, PreferencesAction::Close)),
+            !actions
+                .iter()
+                .any(|a| matches!(a, PreferencesAction::Close)),
             "tab click should not trigger Close action"
         );
     }
@@ -1248,7 +1250,9 @@ mod tests {
 
         // A SelectEntity action should have been emitted
         assert!(
-            pending_actions.iter().any(|a| matches!(a, EditorAction::SelectEntity(id) if *id == entity2)),
+            pending_actions
+                .iter()
+                .any(|a| matches!(a, EditorAction::SelectEntity(id) if *id == entity2)),
             "selecting entity should emit SelectEntity action"
         );
     }

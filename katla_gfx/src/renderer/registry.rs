@@ -5,8 +5,46 @@
 
 use crate::handle::{MaterialHandle, MeshHandle, PipelineHandle, ResourceStorage};
 use crate::vulkan::material::builder::Pipeline;
+use crate::vulkan::material::compute_pipeline::ComputePipeline;
 use crate::{IndexBuffer, VertexBinding, VertexBuffer};
 use ash::vk;
+
+/// Wrapper for graphics and compute pipelines.
+///
+/// Stores either a graphics pipeline (for rendering) or a compute pipeline (for GPGPU).
+/// Both types have compatible vk::Pipeline and vk::PipelineLayout handles.
+pub enum AnyPipeline {
+    /// Graphics pipeline for rendering geometry.
+    Graphics(Pipeline),
+    /// Compute pipeline for GPGPU operations (particle simulation, etc.).
+    Compute(ComputePipeline),
+}
+
+impl AnyPipeline {
+    /// Get the Vulkan pipeline handle.
+    pub(crate) fn vk_pipeline(&self) -> vk::Pipeline {
+        match self {
+            AnyPipeline::Graphics(p) => p.vk_pipeline(),
+            AnyPipeline::Compute(p) => p.pipeline().vk(),
+        }
+    }
+
+    /// Get the Vulkan pipeline layout handle.
+    pub(crate) fn vk_layout(&self) -> vk::PipelineLayout {
+        match self {
+            AnyPipeline::Graphics(p) => p.vk_layout(),
+            AnyPipeline::Compute(p) => p.pipeline_layout().vk(),
+        }
+    }
+
+    /// Get the descriptor set layouts for this pipeline.
+    pub(crate) fn descriptor_set_layouts(&self) -> Vec<vk::DescriptorSetLayout> {
+        match self {
+            AnyPipeline::Graphics(p) => p.descriptor_set_layouts().to_vec(),
+            AnyPipeline::Compute(p) => p.descriptor_set_layouts().to_vec(),
+        }
+    }
+}
 
 /// Mesh representation containing Vulkan buffers.
 pub struct MeshAsset {
@@ -76,8 +114,8 @@ pub struct AssetRegistry {
     meshes: ResourceStorage<MeshAsset>,
     /// Material storage with slot recycling.
     materials: ResourceStorage<MaterialAsset>,
-    /// Pipeline storage with slot recycling.
-    pipelines: ResourceStorage<Pipeline>,
+    /// Pipeline storage with slot recycling (graphics and compute).
+    pipelines: ResourceStorage<AnyPipeline>,
 }
 
 impl AssetRegistry {
@@ -88,6 +126,21 @@ impl AssetRegistry {
             materials: ResourceStorage::new(),
             pipelines: ResourceStorage::new(),
         }
+    }
+
+    /// Register a graphics pipeline and return a handle.
+    pub(crate) fn register_pipeline(&mut self, pipeline: Pipeline) -> PipelineHandle {
+        let id = self.pipelines.insert(AnyPipeline::Graphics(pipeline));
+        PipelineHandle::new(id)
+    }
+
+    /// Register a compute pipeline and return a handle.
+    pub(crate) fn register_compute_pipeline(
+        &mut self,
+        pipeline: ComputePipeline,
+    ) -> PipelineHandle {
+        let id = self.pipelines.insert(AnyPipeline::Compute(pipeline));
+        PipelineHandle::new(id)
     }
 
     /// Register a mesh and return a handle.
@@ -135,17 +188,6 @@ impl AssetRegistry {
         }
     }
 
-    /// Register a pipeline and return a handle.
-    pub(crate) fn register_pipeline(&mut self, pipeline: Pipeline) -> PipelineHandle {
-        let id = self.pipelines.insert(pipeline);
-        PipelineHandle::new(id)
-    }
-
-    /// Get a pipeline by handle.
-    pub fn get_pipeline(&self, handle: PipelineHandle) -> Option<&Pipeline> {
-        self.pipelines.get(handle.index())
-    }
-
     /// Get the Vulkan pipeline and layout handles for rendering.
     pub(crate) fn get_pipeline_vk_handles(
         &self,
@@ -153,6 +195,19 @@ impl AssetRegistry {
     ) -> Option<(vk::Pipeline, vk::PipelineLayout)> {
         let pipeline = self.pipelines.get(handle.index())?;
         Some((pipeline.vk_pipeline(), pipeline.vk_layout()))
+    }
+
+    /// Check if a pipeline is a compute pipeline.
+    pub(crate) fn is_compute_pipeline(&self, handle: PipelineHandle) -> bool {
+        match self.pipelines.get(handle.index()) {
+            Some(AnyPipeline::Compute(_)) => true,
+            _ => false,
+        }
+    }
+
+    /// Get a pipeline by handle (for render graph access).
+    pub(crate) fn get_pipeline(&self, handle: PipelineHandle) -> Option<&AnyPipeline> {
+        self.pipelines.get(handle.index())
     }
 
     /// Get the number of registered meshes.

@@ -23,6 +23,7 @@ pub use commandpool::CommandPool;
 pub(crate) use descriptor_set::DescriptorSet;
 // Internal pipeline state types - not exposed publicly
 // Re-export Katla-native types from pipeline module for internal use
+pub use particle_buffer::{EmitterConfig, FrameData, ParticleBuffer};
 pub use queue::Queue;
 pub use swapchain::{Swapchain, SwapchainInfo};
 pub use vertexbuffer::{IndexBuffer, IndexType, VertexBuffer};

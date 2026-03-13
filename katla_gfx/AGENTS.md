@@ -110,3 +110,5 @@ ImageBarrier::transition_from_undefined_with_range(cmd, device, image,
 ```
 
 Automatic stage/access mask deduction, Vulkan 1.3 sync2.
+
+Before using `vk::` types, LOOK FOR EXISTING WRAPPERS/HELPERS - they may already implement the resource handling internally.

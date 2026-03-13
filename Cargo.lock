@@ -1262,6 +1262,7 @@ dependencies = [
  "katla_ui",
  "log",
  "notify 7.0.0",
+ "png",
  "winit",
 ]
 

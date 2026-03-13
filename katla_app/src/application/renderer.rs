@@ -93,11 +93,28 @@ impl Application {
     /// This automatically allocates instance indices and builds the draw list.
     fn collect_draws_with_context(&mut self, frame: &mut FrameContext) {
         use crate::animation::Skeleton;
-        use crate::components::{DrawableComponent, TransformComponent};
+        use crate::components::{DrawableComponent, ParticleEmitterComponent, TransformComponent};
 
         let entity_count = self.world.entity_ids().count();
         let mut drawable_count = 0;
+        let mut particle_count = 0;
 
+        // TODO: Collect particle emitters first (they don't use instance allocation)
+        // This is temporarily disabled
+        /*
+        if self.particle_system.is_some() {
+            for entity_id in self.world.entity_ids() {
+                if let Some(emitter) = self.world.get_component::<ParticleEmitterComponent>(entity_id) {
+                    if !emitter.handle.is_none() {
+                        frame.push_particle(emitter.handle);
+                        particle_count += 1;
+                    }
+                }
+            }
+        }
+        */
+
+        // Collect drawable components
         for entity_id in self.world.entity_ids() {
             // Get drawable and transform components
             let drawable = match self.world.get_component::<DrawableComponent>(entity_id) {
@@ -132,7 +149,8 @@ impl Application {
                         .collect();
 
                     // Upload to GPU
-                    self.renderer.update_skeleton(drawable.skeleton_handle, &matrices);
+                    self.renderer
+                        .update_skeleton(drawable.skeleton_handle, &matrices);
                 }
             }
 
@@ -165,8 +183,9 @@ impl Application {
         }
 
         log::debug!(
-            "Submitted {} draw calls from {} entities",
+            "Submitted {} draw calls and {} particle emitters from {} entities",
             drawable_count,
+            particle_count,
             entity_count
         );
     }

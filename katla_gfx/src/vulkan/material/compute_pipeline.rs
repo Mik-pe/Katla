@@ -143,6 +143,11 @@ impl ComputePipeline {
         VkPipelineLayout::new(self.layout)
     }
 
+    /// Get the descriptor set layouts used when creating this pipeline.
+    pub(crate) fn descriptor_set_layouts(&self) -> &[vk::DescriptorSetLayout] {
+        &self.descriptor_layouts
+    }
+
     /// Destroy the pipeline resources.
     pub(crate) fn destroy(&mut self) {
         unsafe {

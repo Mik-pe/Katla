@@ -99,11 +99,7 @@ impl UiContext {
     /// * `ClickResult::Clicked` - Mouse released while hovering (clears active_id)
     /// * `ClickResult::Released` - Mouse released elsewhere (clears active_id)
     /// * `ClickResult::None` - No interaction
-    pub(crate) fn click_behavior(
-        &mut self,
-        id: super::WidgetId,
-        hovered: bool,
-    ) -> ClickResult {
+    pub(crate) fn click_behavior(&mut self, id: super::WidgetId, hovered: bool) -> ClickResult {
         let active = self.active_id == Some(id);
 
         if hovered && self.input.mouse_pressed[crate::input::mouse_button::LEFT] {

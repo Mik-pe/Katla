@@ -4,8 +4,7 @@ use log::info;
 
 use katla_app::animation::{AnimationUpdateSystem, SkeletalAnimationSystem};
 use katla_app::systems::{
-    FlyCameraLookSystem, LightingSystem, ParticleSimulationSystem, PhysicsSystem,
-    TransformHierarchySystem, VelocitySystem,
+    FlyCameraLookSystem, LightingSystem, PhysicsSystem, TransformHierarchySystem, VelocitySystem,
 };
 use katla_ecs::SystemExecutionOrder;
 
@@ -17,6 +16,10 @@ struct Args {
     /// Run in limited-frame mode for validation testing
     #[arg(short, long)]
     single_frame: bool,
+
+    /// Check for black frames by reading back swapchain center pixel
+    #[arg(long)]
+    check_black_frames: bool,
 }
 
 fn main() {
@@ -28,6 +31,9 @@ fn main() {
     info!("Katla 3D Engine starting...");
     if args.single_frame {
         info!("Running in limited-frame mode (25 frames) for validation testing");
+    }
+    if args.check_black_frames {
+        info!("Black frame detection enabled - will check center pixel color");
     }
 
     // Build with conditional configuration
@@ -48,20 +54,21 @@ fn main() {
         .with_system(Box::new(LightingSystem), SystemExecutionOrder::NORMAL)
         .with_system(Box::new(FlyCameraLookSystem), SystemExecutionOrder::NORMAL)
         .with_system(Box::new(PhysicsSystem), SystemExecutionOrder::NORMAL)
-        .with_system(
-            Box::new(ParticleSimulationSystem::new()),
-            SystemExecutionOrder::NORMAL,
-        )
         .with_system(Box::new(VelocitySystem), SystemExecutionOrder::LATE);
 
     let result = if args.single_frame {
         builder
             .with_name("Katla")
             .validation_layer(true)
-            .max_frames(25)
+            .max_frames(100)
+            .check_black_frames(args.check_black_frames)
             .build()
     } else {
-        builder.with_name("Katla").validation_layer(true).build()
+        builder
+            .with_name("Katla")
+            .validation_layer(true)
+            .check_black_frames(args.check_black_frames)
+            .build()
     };
 
     match result {

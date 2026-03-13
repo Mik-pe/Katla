@@ -837,7 +837,7 @@ impl<'a> Frame<'a> {
 
         let cmd_vk = cmd.vk_command_buffer();
         let device = &self.renderer.context.device;
-        let frame_idx = self.renderer.current_frame();
+        let frame_idx = self.renderer.swap_data.current_frame();
 
         // Process writes first (color attachments)
         for write_name in &pass.writes {
@@ -984,7 +984,7 @@ impl<'a> Frame<'a> {
         };
 
         // Get current frame index for per-frame texture selection
-        let frame_idx = self.renderer.current_frame();
+        let frame_idx = self.renderer.swap_data.current_frame();
 
         // Determine color attachment:
         // 1. If pass writes to "backbuffer", use swapchain directly
@@ -1149,30 +1149,35 @@ impl<'a> Frame<'a> {
     /// This MUST be called BEFORE beginning any render pass, as Vulkan doesn't
     /// allow compute dispatches inside a render pass (after vkCmdBeginRendering).
     ///
-    /// Collects all particle dispatches from all draw lists in all pending passes
-    /// and executes them upfront with proper synchronization.
+    /// Collects all particle emitters from all draw lists in all pending passes
+    /// and executes compute simulation dispatches upfront with proper synchronization.
     fn execute_all_particle_dispatches(&mut self) -> Result<(), RenderGraphError> {
         use ash::vk;
 
-        // Collect all particle dispatches from all passes (cloned to avoid borrow issues)
-        let all_dispatches: Vec<_> = self
+        // Collect all particle emitters from all passes
+        let all_emitters: Vec<_> = self
             .pending
             .values()
             .flat_map(|pass_data| {
                 pass_data
                     .draw_lists
                     .iter()
-                    .flat_map(|draw_list| draw_list.particle_dispatches.clone())
+                    .flat_map(|draw_list| draw_list.particle_emitters.iter().copied())
             })
             .collect();
 
-        if all_dispatches.is_empty() {
-            return Ok(()); // No particle dispatches, nothing to do
+        if all_emitters.is_empty() {
+            return Ok(()); // No particle emitters, nothing to do
         }
+
+        // Get particle system
+        let particle_system = self.renderer.particle_system.as_ref().ok_or(
+            RenderGraphError::InvalidConfiguration("Particle system not initialized".to_string()),
+        )?;
 
         log::debug!(
             "Executing {} particle compute dispatches before render passes",
-            all_dispatches.len()
+            all_emitters.len()
         );
 
         let cmd = self.renderer.frame_context.command_buffers
@@ -1180,8 +1185,49 @@ impl<'a> Frame<'a> {
         .clone();
 
         // Execute all compute dispatches
-        for dispatch in &all_dispatches {
-            self.execute_particle_dispatch(&cmd, dispatch)?;
+        for emitter_handle in all_emitters {
+            if let Some((pipeline, pipeline_layout, descriptor_set, config, workgroup_count)) =
+                particle_system.get_compute_dispatch(emitter_handle, &self.renderer.asset_registry)
+            {
+                let compute_pipeline = self
+                    .renderer
+                    .asset_registry
+                    .get_pipeline(pipeline)
+                    .ok_or(RenderGraphError::InvalidPipelineHandle(pipeline))?;
+
+                let vk_pipeline = compute_pipeline.vk_pipeline();
+                let vk_layout = compute_pipeline.vk_layout();
+
+                let cmd_vk = cmd.vk_command_buffer();
+                let device = &self.renderer.context.device;
+
+                // Bind compute pipeline
+                unsafe {
+                    device.cmd_bind_pipeline(cmd_vk, vk::PipelineBindPoint::COMPUTE, vk_pipeline);
+                }
+
+                // Bind descriptor sets
+                // Set 0: Particle buffer + frame data
+                unsafe {
+                    device.cmd_bind_descriptor_sets(
+                        cmd_vk,
+                        vk::PipelineBindPoint::COMPUTE,
+                        vk_layout,
+                        0,
+                        &[descriptor_set],
+                        &[],
+                    );
+                }
+
+                // Dispatch compute shader
+                log::trace!(
+                    "Dispatching particle simulation: {} workgroups",
+                    workgroup_count
+                );
+                unsafe {
+                    device.cmd_dispatch(cmd_vk, workgroup_count, 1, 1);
+                }
+            }
         }
 
         // Insert compute → graphics barrier for synchronization
@@ -1222,9 +1268,9 @@ impl<'a> Frame<'a> {
             self.execute_draw_call(cmd, draw_call)?;
         }
 
-        // Execute particle rendering (after geometry, for proper transparency)
-        for particle_render in &draw_list.particle_renders {
-            self.execute_particle_render(cmd, particle_render)?;
+        // Execute particle rendering for each emitter
+        for emitter_handle in &draw_list.particle_emitters {
+            self.execute_particle_render(cmd, *emitter_handle)?;
         }
 
         Ok(())
@@ -1237,34 +1283,47 @@ impl<'a> Frame<'a> {
     fn execute_particle_render(
         &mut self,
         cmd: &crate::vulkan::commandbuffer::CommandBuffer,
-        render: &crate::renderer::types::ParticleRender,
+        emitter_handle: crate::handle::EmitterHandle,
     ) -> Result<(), RenderGraphError> {
         use ash::vk;
 
-        // Get graphics pipeline from registry
-        let pipeline = self
+        // Get particle system
+        let particle_system = self.renderer.particle_system.as_ref().ok_or(
+            RenderGraphError::InvalidConfiguration("Particle system not initialized".to_string()),
+        )?;
+
+        // Get current frame descriptor set for frame uniforms
+        let frame_descriptor_set = {
+            let frame_idx = self.renderer.swap_data.current_frame();
+            self.renderer.storage_descriptor_sets[frame_idx].vk_set()
+        };
+
+        // Get render data from particle system
+        let (pipeline, pipeline_layout, frame_set, particle_set, particle_count) = particle_system
+            .get_render_data(
+                emitter_handle,
+                frame_descriptor_set,
+                &self.renderer.asset_registry,
+            )
+            .ok_or(RenderGraphError::InvalidConfiguration(
+                "Failed to get particle render data".to_string(),
+            ))?;
+
+        let graphics_pipeline = self
             .renderer
             .asset_registry
-            .get_pipeline(render.pipeline)
-            .ok_or(RenderGraphError::InvalidPipelineHandle(render.pipeline))?;
+            .get_pipeline(pipeline)
+            .ok_or(RenderGraphError::InvalidPipelineHandle(pipeline))?;
 
-        let (graphics_pipeline, pipeline_layout) = match pipeline {
-            crate::renderer::registry::AnyPipeline::Graphics(gp) => {
-                (gp.vk_pipeline(), gp.vk_layout())
-            }
-            _ => {
-                return Err(RenderGraphError::InvalidConfiguration(
-                    "Expected graphics pipeline for particle rendering".to_string(),
-                ));
-            }
-        };
+        let vk_pipeline = graphics_pipeline.vk_pipeline();
+        let vk_layout = graphics_pipeline.vk_layout();
 
         let cmd_vk = cmd.vk_command_buffer();
         let device = &self.renderer.context.device;
 
         // Bind graphics pipeline
         unsafe {
-            device.cmd_bind_pipeline(cmd_vk, vk::PipelineBindPoint::GRAPHICS, graphics_pipeline);
+            device.cmd_bind_pipeline(cmd_vk, vk::PipelineBindPoint::GRAPHICS, vk_pipeline);
         }
 
         // Bind descriptor sets
@@ -1274,177 +1333,17 @@ impl<'a> Frame<'a> {
             device.cmd_bind_descriptor_sets(
                 cmd_vk,
                 vk::PipelineBindPoint::GRAPHICS,
-                pipeline_layout,
+                vk_layout,
                 0,
-                &[render.frame_descriptor_set, render.particle_descriptor_set],
+                &[frame_set, particle_set],
                 &[],
             );
         }
 
         // Draw instanced particles (6 vertices per particle = 2 triangles)
         // Each particle instance generates a quad in the vertex shader
-        cmd.draw_array(6, render.particle_count, 0, 0);
+        cmd.draw_array(6, particle_count, 0, 0);
 
-        Ok(())
-    }
-
-    /// Execute a particle compute shader dispatch.
-    ///
-    /// Dispatches compute workgroups for particle simulation.
-    /// This runs before the geometry pass to update particle positions.
-    fn execute_particle_dispatch(
-        &mut self,
-        cmd: &crate::vulkan::commandbuffer::CommandBuffer,
-        dispatch: &crate::renderer::types::ParticleDispatch,
-    ) -> Result<(), RenderGraphError> {
-        use ash::vk;
-
-        // Get compute pipeline from registry
-        let pipeline = self
-            .renderer
-            .asset_registry
-            .get_pipeline(dispatch.pipeline)
-            .ok_or(RenderGraphError::InvalidPipelineHandle(dispatch.pipeline))?;
-
-        // Verify this is a compute pipeline
-        if !self
-            .renderer
-            .asset_registry
-            .is_compute_pipeline(dispatch.pipeline)
-        {
-            return Err(RenderGraphError::InvalidConfiguration(format!(
-                "Pipeline {:?} is not a compute pipeline",
-                dispatch.pipeline
-            )));
-        }
-
-        let (compute_pipeline, pipeline_layout) = match pipeline {
-            crate::renderer::registry::AnyPipeline::Compute(cp) => {
-                (cp.pipeline().vk(), cp.pipeline_layout().vk())
-            }
-            _ => {
-                return Err(RenderGraphError::InvalidConfiguration(
-                    "Expected compute pipeline".to_string(),
-                ));
-            }
-        };
-
-        let cmd_vk = cmd.vk_command_buffer();
-        let device = &self.renderer.context.device;
-
-        // Bind compute pipeline
-        unsafe {
-            device.cmd_bind_pipeline(cmd_vk, vk::PipelineBindPoint::COMPUTE, compute_pipeline);
-        }
-
-        // Bind Set 0: Particle buffer + frame data
-        unsafe {
-            device.cmd_bind_descriptor_sets(
-                cmd_vk,
-                vk::PipelineBindPoint::COMPUTE,
-                pipeline_layout,
-                0,
-                &[dispatch.descriptor_set],
-                &[],
-            );
-        }
-
-        // Create temporary uniform buffer for emitter config
-        let emitter_buffer_size =
-            std::mem::size_of::<crate::vulkan::particle_buffer::EmitterConfig>();
-        let buffer_info = vk::BufferCreateInfo::default()
-            .size(emitter_buffer_size as u64)
-            .usage(vk::BufferUsageFlags::UNIFORM_BUFFER)
-            .sharing_mode(vk::SharingMode::EXCLUSIVE);
-
-        let emitter_buffer = unsafe {
-            device.create_buffer(&buffer_info, None).map_err(|e| {
-                RenderGraphError::InvalidConfiguration(format!(
-                    "Failed to create emitter buffer: {:?}",
-                    e
-                ))
-            })?
-        };
-
-        let requirements = unsafe { device.get_buffer_memory_requirements(emitter_buffer) };
-
-        let allocation = self
-            .renderer
-            .context
-            .allocator
-            .borrow_mut()
-            .allocate(&gpu_allocator::vulkan::AllocationCreateDesc {
-                name: "emitter_config_temp",
-                requirements,
-                location: gpu_allocator::MemoryLocation::CpuToGpu,
-                linear: true,
-                allocation_scheme: gpu_allocator::vulkan::AllocationScheme::GpuAllocatorManaged,
-            })
-            .map_err(|e| {
-                RenderGraphError::InvalidConfiguration(format!(
-                    "Failed to allocate emitter buffer: {}",
-                    e
-                ))
-            })?;
-
-        unsafe {
-            device
-                .bind_buffer_memory(emitter_buffer, allocation.memory(), allocation.offset())
-                .map_err(|e| {
-                    RenderGraphError::InvalidConfiguration(format!(
-                        "Failed to bind emitter buffer: {:?}",
-                        e
-                    ))
-                })?;
-        }
-
-        // Copy emitter config to buffer
-        if let Some(mapped_ptr) = allocation.mapped_ptr() {
-            let dst = mapped_ptr.as_ptr() as *mut u8;
-            unsafe {
-                std::ptr::copy_nonoverlapping(
-                    &dispatch.emitter_config as *const _ as *const u8,
-                    dst,
-                    emitter_buffer_size,
-                );
-            }
-        }
-
-        // Push Set 1: Emitter config using push descriptors
-        let emitter_buffer_info = [vk::DescriptorBufferInfo::default()
-            .buffer(emitter_buffer)
-            .offset(0)
-            .range(emitter_buffer_size as u64)];
-
-        let push_descriptor_write = vk::WriteDescriptorSet::default()
-            .dst_set(vk::DescriptorSet::null()) // Ignored for push descriptors
-            .dst_binding(0)
-            .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
-            .buffer_info(&emitter_buffer_info);
-
-        unsafe {
-            if let Some(push_descriptor_khr) = &self.renderer.context.push_descriptor_khr {
-                push_descriptor_khr.cmd_push_descriptor_set(
-                    cmd_vk,
-                    vk::PipelineBindPoint::COMPUTE,
-                    pipeline_layout,
-                    1, // Set 1
-                    &[push_descriptor_write],
-                );
-            } else {
-                return Err(RenderGraphError::InvalidConfiguration(
-                    "Push descriptors not enabled".to_string(),
-                ));
-            }
-        }
-
-        // Dispatch compute workgroups
-        cmd.dispatch(dispatch.workgroup_count, 1, 1);
-
-        // Store temporary buffer for cleanup after frame completes
-        self.temporary_buffers.push((emitter_buffer, allocation));
-
-        log::debug!("Particle dispatch complete");
         Ok(())
     }
 
@@ -1942,7 +1841,7 @@ impl<'a> Frame<'a> {
         };
 
         // Get current frame index for per-frame texture selection
-        let frame_idx = self.renderer.current_frame();
+        let frame_idx = self.renderer.swap_data.current_frame();
 
         // Determine color attachment:
         // 1. If pass writes to "backbuffer", use swapchain directly
@@ -2075,6 +1974,23 @@ impl<'a> Frame<'a> {
         cmd.end_rendering();
 
         Ok(())
+    }
+}
+
+impl<'a> Drop for Frame<'a> {
+    fn drop(&mut self) {
+        // Clean up temporary buffers created during this frame
+        for (buffer, allocation) in self.temporary_buffers.drain(..) {
+            unsafe {
+                self.renderer.context.device.destroy_buffer(buffer, None);
+            }
+            self.renderer
+                .context
+                .allocator
+                .borrow_mut()
+                .free(allocation)
+                .ok();
+        }
     }
 }
 

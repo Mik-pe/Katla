@@ -3,10 +3,7 @@
 //! This module provides types that avoid exposing ash::vk to the application layer.
 //! Mesh and material data is registered with the renderer and referenced via opaque handles.
 
-use crate::handle::{
-    DescriptorSetHandle, MaterialHandle, MeshHandle, PipelineHandle, PipelineLayoutHandle,
-    SkeletonHandle,
-};
+use crate::handle::{MaterialHandle, MeshHandle, SkeletonHandle};
 use crate::vertex::VertexUI;
 
 pub use crate::handle::{Handle, TextureHandle};
@@ -305,46 +302,8 @@ impl DrawCall {
 pub struct DrawList {
     /// The draw calls in this list.
     pub draws: Vec<DrawCall>,
-    /// Particle compute dispatches to run before geometry pass.
-    pub particle_dispatches: Vec<ParticleDispatch>,
-    /// Particle renders to draw in geometry pass.
-    pub particle_renders: Vec<ParticleRender>,
-}
-
-/// Data needed to dispatch a particle compute shader.
-///
-/// This is collected from ParticleEmitter components and passed
-/// to the renderer for GPU dispatch.
-#[derive(Clone, Debug)]
-pub struct ParticleDispatch {
-    /// Compute pipeline handle
-    pub pipeline: PipelineHandle,
-    /// Pipeline layout handle
-    pub pipeline_layout: PipelineLayoutHandle,
-    /// Descriptor set handle for particle buffer binding
-    pub descriptor_set: DescriptorSetHandle,
-    /// Frame data: (delta_time, emit_count, max_particles, random_seed)
-    pub frame_data: [f32; 4],
-    /// Number of workgroups to dispatch
-    pub workgroup_count: u32,
-}
-
-/// Data needed to render particles as billboards.
-///
-/// This is collected from ParticleEmitter components and passed
-/// to the renderer for instanced drawing.
-#[derive(Clone, Debug)]
-pub struct ParticleRender {
-    /// Graphics pipeline handle for particle rendering
-    pub pipeline: PipelineHandle,
-    /// Pipeline layout handle
-    pub pipeline_layout: PipelineLayoutHandle,
-    /// Descriptor set handle for frame uniforms (set 0)
-    pub frame_descriptor_set: DescriptorSetHandle,
-    /// Descriptor set handle for particle buffer (set 1)
-    pub particle_descriptor_set: DescriptorSetHandle,
-    /// Number of particles (instances) to draw
-    pub particle_count: u32,
+    /// Particle emitters to simulate and render (referenced by handle)
+    pub particle_emitters: Vec<crate::handle::EmitterHandle>,
 }
 
 impl DrawList {
@@ -352,8 +311,7 @@ impl DrawList {
     pub fn new() -> Self {
         Self {
             draws: Vec::new(),
-            particle_dispatches: Vec::new(),
-            particle_renders: Vec::new(),
+            particle_emitters: Vec::new(),
         }
     }
 
@@ -362,29 +320,21 @@ impl DrawList {
         self.draws.push(draw);
     }
 
-    /// Add a particle dispatch to the list.
-    pub fn push_particle(&mut self, dispatch: ParticleDispatch) {
-        self.particle_dispatches.push(dispatch);
-    }
-
-    /// Add a particle render to the list.
-    pub fn push_particle_render(&mut self, render: ParticleRender) {
-        self.particle_renders.push(render);
+    /// Add a particle emitter to the list.
+    pub fn push_particle(&mut self, emitter: crate::handle::EmitterHandle) {
+        self.particle_emitters.push(emitter);
     }
 
     /// Extend this list with all draws from another list.
     pub fn extend(&mut self, other: &mut DrawList) {
         self.draws.append(&mut other.draws);
-        self.particle_dispatches
-            .append(&mut other.particle_dispatches);
-        self.particle_renders.append(&mut other.particle_renders);
+        self.particle_emitters.append(&mut other.particle_emitters);
     }
 
     /// Clear all draw calls from the list.
     pub fn clear(&mut self) {
         self.draws.clear();
-        self.particle_dispatches.clear();
-        self.particle_renders.clear();
+        self.particle_emitters.clear();
     }
 
     /// Get the number of draw calls in the list.
@@ -397,14 +347,9 @@ impl DrawList {
         self.draws.is_empty()
     }
 
-    /// Check if there are particle dispatches.
+    /// Check if there are particle emitters.
     pub fn has_particles(&self) -> bool {
-        !self.particle_dispatches.is_empty()
-    }
-
-    /// Check if there are particle renders.
-    pub fn has_particle_renders(&self) -> bool {
-        !self.particle_renders.is_empty()
+        !self.particle_emitters.is_empty()
     }
 
     /// Get an iterator over the draw calls.

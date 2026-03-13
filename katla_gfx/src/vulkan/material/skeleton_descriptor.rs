@@ -89,9 +89,7 @@ impl SkeletonDescriptorSet {
 
         unsafe { device.update_descriptor_sets(&writes, &[]) };
 
-        Ok(Self {
-            set,
-        })
+        Ok(Self { set })
     }
 
     /// Get the raw Vulkan descriptor set handle.

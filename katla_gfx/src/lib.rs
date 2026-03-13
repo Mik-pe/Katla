@@ -192,7 +192,9 @@ pub use crate::size::Size2D;
 pub use error::RendererError;
 
 // Handles
-pub use handle::{Handle, MaterialHandle, MeshHandle, SkeletonHandle, TextureHandle};
+pub use handle::{
+    EmitterHandle, Handle, MaterialHandle, MeshHandle, SkeletonHandle, TextureHandle,
+};
 
 // Material system
 pub use material::{Material, MaterialDomain, RenderState, ShaderSource};
@@ -212,10 +214,13 @@ pub use render_pass::{
 };
 
 // UI rendering types
-pub use renderer::{UIDrawList, UiDrawCommand};
+pub use renderer::{ParticleSystem, UIDrawList, UiDrawCommand};
 
 // Renderer
-pub use renderer::VulkanRenderer;
+pub use renderer::{DrawList, VulkanRenderer};
+
+// Particle types (re-exported from vulkan module)
+pub use vulkan::particle_buffer::{EmitterConfig, FrameData};
 
 // Render graph system - minimal public API
 pub use render_graph::{

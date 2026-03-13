@@ -14,7 +14,9 @@ use std::time::Instant;
 use katla_gfx::TextureHandle;
 use katla_math::{Color, Rect2D, Vec2};
 use katla_ui::widgets::ImageButton;
-use katla_ui::{mouse_button, ForkAwesome, KeyCode, Popup, ScrollArea, ScrollAreaState, TextureId, UiContext};
+use katla_ui::{
+    mouse_button, ForkAwesome, KeyCode, Popup, ScrollArea, ScrollAreaState, TextureId, UiContext,
+};
 
 use super::FocusedPanel;
 use crate::ui::theme::Theme;
@@ -1110,10 +1112,7 @@ pub fn build_asset_browser(
                 );
 
                 // Handle click - skip if mouse is over a popup (context menu)
-                if is_hovered
-                    && !ui.has_open_popup()
-                    && ui.mouse_clicked(mouse_button::LEFT)
-                {
+                if is_hovered && !ui.has_open_popup() && ui.mouse_clicked(mouse_button::LEFT) {
                     clicked_index = Some(i);
                     if asset.asset_type == AssetType::Folder {
                         should_navigate = Some(asset.path.clone());
@@ -1125,10 +1124,7 @@ pub fn build_asset_browser(
                 }
 
                 // Handle right-click for context menu (skip if popup already open)
-                if is_hovered
-                    && !ui.has_open_popup()
-                    && ui.mouse_clicked(mouse_button::RIGHT)
-                {
+                if is_hovered && !ui.has_open_popup() && ui.mouse_clicked(mouse_button::RIGHT) {
                     right_clicked_index = Some(i);
                     state.selected_index = Some(i);
                 }
@@ -1324,16 +1320,12 @@ pub fn build_asset_browser(
 
             // === DRAG AND DROP HANDLING ===
             // Update drag state while mouse is held
-            if state.drag_asset.is_some()
-                && ui.mouse_down(mouse_button::LEFT)
-            {
+            if state.drag_asset.is_some() && ui.mouse_down(mouse_button::LEFT) {
                 state.update_drag(ui.mouse_pos());
             }
 
             // Handle drag end - check what we're dropping on
-            if state.drag_asset.is_some()
-                && ui.input.mouse_released[mouse_button::LEFT]
-            {
+            if state.drag_asset.is_some() && ui.input.mouse_released[mouse_button::LEFT] {
                 let drag_idx = state.drag_asset.unwrap();
                 let mouse_pos = ui.mouse_pos();
                 let mouse_in_browser = bounds.contains(mouse_pos);
@@ -1509,9 +1501,7 @@ pub fn build_asset_browser(
                 }
 
                 // Commit on click outside
-                if ui.mouse_clicked(mouse_button::LEFT)
-                    && !ui.is_hovered(input_bounds)
-                {
+                if ui.mouse_clicked(mouse_button::LEFT) && !ui.is_hovered(input_bounds) {
                     should_commit = true;
                 }
 
@@ -1536,9 +1526,7 @@ pub fn build_asset_browser(
             // Process click actions after iteration (to avoid borrow conflicts)
             if let Some(index) = clicked_index {
                 // Use input system's double-click detection + same-item check
-                let is_double = ui
-                    .input
-                    .mouse_double_clicked(mouse_button::LEFT)
+                let is_double = ui.input.mouse_double_clicked(mouse_button::LEFT)
                     && state.last_click_index == Some(index);
                 state.last_click_index = Some(index);
 

@@ -519,7 +519,12 @@ impl UiContext {
             check_bounds.max.x() + 8.0,
             bounds.center().y() - text_size.y() * 0.5,
         );
-        self.draw_text(label, label_pos, self.style.text_color, self.style.font_size);
+        self.draw_text(
+            label,
+            label_pos,
+            self.style.text_color,
+            self.style.font_size,
+        );
 
         Response::interactive(clicked, hovered, active, bounds, &self.input)
     }

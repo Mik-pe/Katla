@@ -4,8 +4,8 @@ use ash::{
 };
 
 pub struct CommandPool {
-    device: Device,
-    command_pool: vk::CommandPool,
+    pub(crate) device: Device,
+    pub(crate) command_pool: vk::CommandPool,
 }
 
 impl CommandPool {
