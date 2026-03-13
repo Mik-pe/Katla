@@ -85,8 +85,6 @@ pub struct Application {
     pub(crate) start_time: Instant,
     /// Default PBR material handle for geometry rendering
     pub(crate) default_material_handle: katla_gfx::MaterialHandle,
-    /// HDR texture bindless index for tonemapping
-    pub(crate) hdr_texture_index: Option<u32>,
     /// Particle system for GPU-based particle effects
     pub(crate) particle_system: Option<katla_gfx::ParticleSystem>,
     /// Flag to prevent double cleanup
@@ -164,9 +162,14 @@ impl ApplicationHandler for Application {
 
                     let extent = self.renderer.swapchain_extent();
 
-                    // Update LDR bindless index for UI viewport rendering
+                    // Update LDR bindless base index for UI viewport rendering
+                    // Update bindless indices for recreated textures
                     for (name, slot) in recreated_textures {
-                        if name == "ldr_color" {
+                        if name == "hdr_color" {
+                            self.frame_graph
+                                .set_tonemap_texture_index("tonemap", slot)
+                                .expect("Failed to update tonemap texture index");
+                        } else if name == "ldr_color" {
                             self.editor_ui.set_viewport_bindless_index(slot);
                         }
                     }
@@ -273,6 +276,11 @@ impl ApplicationHandler for Application {
                 // Poll background loader for completed asset loads
                 self.poll_background_loader();
 
+                // Note: Transient textures are now single-buffered
+                // Bindless indices are set once during initialization
+
+
+
                 // Generate UI draw list BEFORE frame graph execution
                 debug!("Generating UI draw list...");
                 let ui_draw_list = editor::generate_ui_draw_list(self, dt);
@@ -375,27 +383,26 @@ impl Application {
 
         info!("Default HDR PBR material loaded successfully");
 
-        // Initialize transient textures and register HDR texture with bindless system
+        // Initialize transient textures and register with bindless system
         self.frame_graph
             .initialize_transient_textures(&self.renderer)
             .expect("Failed to initialize transient textures");
 
         // Register HDR texture with bindless system for tonemapping
-        let hdr_texture_index = self
+        let hdr_bindless_index = self
             .frame_graph
             .register_transient_texture_bindless(&mut self.renderer, "hdr_color")
             .expect("Failed to register HDR texture with bindless system");
 
-        // Set HDR texture index on tonemap pass
-        self.frame_graph
-            .set_tonemap_texture_index("tonemap", hdr_texture_index)
-            .expect("Failed to set tonemap texture index");
-
-        self.hdr_texture_index = Some(hdr_texture_index);
         info!(
             "HDR texture registered with bindless system at index {}",
-            hdr_texture_index
+            hdr_bindless_index
         );
+
+        // Set HDR texture index on tonemap pass
+        self.frame_graph
+            .set_tonemap_texture_index("tonemap", hdr_bindless_index)
+            .expect("Failed to set tonemap texture index");
 
         // Register LDR (tonemapped) texture with bindless system for viewport rendering
         let ldr_bindless_index = self
@@ -403,14 +410,14 @@ impl Application {
             .register_transient_texture_bindless(&mut self.renderer, "ldr_color")
             .expect("Failed to register LDR texture with bindless system");
 
-        // Store the LDR bindless index for UI viewport rendering
-        // The UI will use this index to sample from the transient texture directly
-        self.editor_ui
-            .set_viewport_bindless_index(ldr_bindless_index);
         info!(
             "LDR (tonemapped) texture registered with bindless system at index {}",
             ldr_bindless_index
         );
+
+        // Set viewport bindless index in editor UI
+        self.editor_ui
+            .set_viewport_bindless_index(ldr_bindless_index);
 
         // Set up default test scene
         self.setup_default_scene();

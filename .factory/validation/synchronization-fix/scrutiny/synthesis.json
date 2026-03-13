@@ -1,0 +1,87 @@
+{
+  "milestone": "synchronization-fix",
+  "round": 1,
+  "status": "pass",
+  "validatorsRun": {
+    "test": {
+      "passed": true,
+      "command": "cargo test --workspace",
+      "exitCode": 0
+    },
+    "typecheck": {
+      "passed": true,
+      "command": "cargo check",
+      "exitCode": 0
+    },
+    "lint": {
+      "passed": true,
+      "command": "cargo clippy",
+      "exitCode": 0
+    }
+  },
+  "reviewsSummary": {
+    "total": 6,
+    "passed": 6,
+    "failed": 0,
+    "failedFeatures": []
+  },
+  "blockingIssues": [],
+  "appliedUpdates": [],
+  "suggestedGuidanceUpdates": [
+    {
+      "target": "AGENTS.md",
+      "suggestion": "Document git workflow pattern for handling concurrent work with git stash. When encountering stashed changes during commit, workers should: (1) Commit only their specific feature changes first, (2) Then restore the stash with git stash pop. This prevents merge conflicts and keeps feature commits atomic.",
+      "evidence": "Feature 'remove-manual-ldr-transition' worker encountered git stash conflict during commit and correctly resolved it by committing only their changes first, then restoring the stash. This pattern is not currently documented in AGENTS.md.",
+      "isSystemic": false
+    },
+    {
+      "target": "gfx-worker skill",
+      "suggestion": "Add explicit guidance for verification-only features (features with no code changes expected). The skill should clarify that for verification tasks, workers should: (1) Perform comprehensive code review of relevant implementations, (2) Run existing tests that validate the specific assertions, (3) Use grep filters to check for specific validation error patterns, (4) Reference the commit from the implementation feature being verified.",
+      "evidence": "Feature 'verify-barrier-correctness' was a verification feature with no code changes. The worker correctly adapted by performing code review instead of writing new code, but this workflow was not explicitly guided by the skill file.",
+      "isSystemic": true
+    },
+    {
+      "target": "gfx-worker skill",
+      "suggestion": "Document that verification tasks should reference the commit from the implementation feature they're verifying, not create their own commits. This makes the traceability chain clear: implementation commit → verification handoff references same commit.",
+      "evidence": "Feature 'verify-barrier-correctness' correctly used commitId 'ed1edb2' (the 'Remove manual LDR texture transition' commit) in the handoff, as verification tasks don't produce their own commits. This pattern should be documented.",
+      "isSystemic": true
+    },
+    {
+      "target": "AGENTS.md",
+      "suggestion": "Add Vulkan development best practice: Use grep filters to check for specific validation error patterns. Document common grep patterns for synchronization errors: 'cargo run -- -s 2>&1 | grep -i \"sync|barrier|layout.*transition|memory.*barrier\"'.",
+      "evidence": "Feature 'verify-barrier-correctness' worker demonstrated good practice by using grep to filter for synchronization errors in Vulkan validation output. This pattern is not documented but should be a standard practice for Vulkan development.",
+      "evidence": "Feature 'verify-barrier-correctness' worker used grep filter: 'cargo run -- -s 2>&1 | grep -i \"sync|barrier|layout.*transition|memory.*barrier\"' to check for synchronization errors. This is a good practice that should be documented.",
+      "isSystemic": false
+    },
+    {
+      "target": "AGENTS.md",
+      "suggestion": "Document that comprehensive debug logging for per-frame updates and graphics state changes is good practice, especially for synchronization and rendering work. Workers should add log::info! or log::debug! statements for: frame indices, bindless slot allocations, barrier insertions, texture layout transitions.",
+      "evidence": "Multiple features (double-buffer-ldr-texture, update-bindless-per-frame) added comprehensive logging for frame indices, bindless slot calculations, and texture initialization. This logging was instrumental in verifying correct behavior and should be encouraged as a pattern.",
+      "isSystemic": true
+    },
+    {
+      "target": ".factory/library/",
+      "suggestion": "Add entry documenting the double-buffering pattern with FRAMES_IN_FLIGHT: 'When FRAMES_IN_FLIGHT > 1, transient textures must be double-buffered (one texture per frame-in-flight). This prevents cross-frame race conditions where Frame N+1 writes to a resource while Frame N is still sampling it. Pattern: (1) Store textures as HashMap<String, Vec<TransientTexture>>, (2) Create FRAMES_IN_FLIGHT instances per resource, (3) Access via transient_texture(name, frame_index).'",
+      "evidence": "Features 'double-buffer-ldr-texture' and 'update-bindless-per-frame' both discovered and applied this pattern, but it was not documented in .factory/library/. The bindless system allocates consecutive slots for per-frame textures (base_slot + frame_index).",
+      "isSystemic": false
+    },
+    {
+      "target": ".factory/library/",
+      "suggestion": "Add entry documenting bindless texture slot allocation behavior: 'register_bindless_texture() allocates consecutive slots when registering multiple textures of the same type. This is used for per-frame resources (e.g., ldr_color[0] at slot 9, ldr_color[1] at slot 10). Worker discovered: the bindless system allocates consecutive slots for textures registered in sequence.'",
+      "evidence": "Feature 'double-buffer-ldr-texture' discovered that register_transient_texture_bindless() allocates consecutive texture slots. This behavior was used to ensure frame N's texture is at base_slot + N, but the pattern is not documented in .factory/library/.",
+      "isSystemic": false
+    }
+  ],
+  "rejectedObservations": [
+    {
+      "observation": "Double-buffering pattern with consecutive bindless slot allocation",
+      "reason": "duplicate - same observation documented twice (from features double-buffer-ldr-texture and update-bindless-per-frame). Will be documented once in library."
+    },
+    {
+      "observation": "Verification task handling in gfx-worker skill",
+      "reason": "ambiguous - the skill's current 'write tests first' guidance could be interpreted as applying to verification tasks. Workers correctly adapted by running existing tests instead of writing new ones. No change needed - the skill is flexible enough.",
+      "reason": "rejected - this is already covered by the suggestion to add explicit verification task guidance. No need for a separate observation."
+    }
+  ],
+  "previousRound": null
+}

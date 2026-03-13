@@ -101,9 +101,9 @@ pub struct FrameGraph {
     /// Transient resource descriptors (for lazy Vulkan resource creation).
     transient_resources: Vec<GraphResourceDesc>,
 
-    /// Created transient textures (name -> Vec<texture> per frame-in-flight).
-    /// Each resource has FRAMES_IN_FLIGHT textures to prevent cross-frame race conditions.
-    transient_textures: HashMap<String, Vec<TransientTexture>>,
+    /// Created transient textures (name -> texture).
+    /// Single-buffered - pipeline barriers provide synchronization within a frame.
+    transient_textures: HashMap<String, TransientTexture>,
 }
 
 impl FrameGraph {
@@ -245,13 +245,12 @@ impl FrameGraph {
         self.passes.get(index)
     }
 
-    /// Get a transient texture by name and frame index.
+    /// Get a transient texture by name.
     ///
-    /// Returns the texture for the specified frame-in-flight index.
-    /// Each transient resource has FRAMES_IN_FLIGHT textures to prevent
-    /// cross-frame race conditions where one frame writes while another samples.
-    pub fn transient_texture(&self, name: &str, frame_index: usize) -> Option<&TransientTexture> {
-        self.transient_textures.get(name).and_then(|textures| textures.get(frame_index))
+    /// Transient textures are single-buffered - synchronization is handled by
+    /// pipeline barriers between passes within a frame.
+    pub fn transient_texture(&self, name: &str) -> Option<&TransientTexture> {
+        self.transient_textures.get(name)
     }
 
     /// Initialize transient textures (create Vulkan resources).
@@ -259,9 +258,9 @@ impl FrameGraph {
     /// Called internally on first use. Can be called explicitly to pre-initialize
     /// transient textures before frame execution (e.g., for bindless registration).
     ///
-    /// Creates FRAMES_IN_FLIGHT textures per transient resource to prevent
-    /// cross-frame race conditions where Frame N+1's tonemap pass overwrites
-    /// ldr_color while Frame N's UI pass is still sampling it.
+    /// Creates one texture per resource - synchronization is handled by pipeline
+    /// barriers between passes within a frame. FRAMES_IN_FLIGHT synchronization
+    /// happens only at the presentation level.
     pub fn initialize_transient_textures(
         &mut self,
         renderer: &VulkanRenderer,
@@ -270,99 +269,90 @@ impl FrameGraph {
             return Ok(()); // Already initialized
         }
 
-        // Use the same FRAMES_IN_FLIGHT constant as the renderer
-        let frames_in_flight = crate::renderer::FRAMES_IN_FLIGHT;
-
         log::info!(
-            "Initializing {} transient textures with {} frames each (double-buffering)",
-            self.transient_resources.len(),
-            frames_in_flight
+            "Initializing {} transient textures (single-buffered)",
+            self.transient_resources.len()
         );
 
         for desc in &self.transient_resources {
-            let mut textures = Vec::with_capacity(frames_in_flight);
+            let vk_format: vk::Format = desc.format.into();
 
-            // Create one texture per frame-in-flight
-            for frame_idx in 0..frames_in_flight {
-                let vk_format: vk::Format = desc.format.into();
+            // Create image
+            let image_info = vk::ImageCreateInfo::default()
+                .image_type(vk::ImageType::TYPE_2D)
+                .extent(vk::Extent3D {
+                    width: desc.width,
+                    height: desc.height,
+                    depth: 1,
+                })
+                .mip_levels(1)
+                .array_layers(1)
+                .format(vk_format)
+                .tiling(vk::ImageTiling::OPTIMAL)
+                .initial_layout(vk::ImageLayout::UNDEFINED)
+                .samples(vk::SampleCountFlags::TYPE_1)
+                .usage(match desc.resource_type {
+                    super::resource::GraphResourceType::ColorAttachment { .. } => {
+                        vk::ImageUsageFlags::COLOR_ATTACHMENT
+                            | vk::ImageUsageFlags::SAMPLED
+                            | vk::ImageUsageFlags::INPUT_ATTACHMENT
+                    }
+                    super::resource::GraphResourceType::DepthAttachment { .. } => {
+                        vk::ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT
+                    }
+                    super::resource::GraphResourceType::SampledImage => {
+                        vk::ImageUsageFlags::SAMPLED | vk::ImageUsageFlags::TRANSFER_DST
+                    }
+                })
+                .sharing_mode(vk::SharingMode::EXCLUSIVE);
 
-                // Create image
-                let image_info = vk::ImageCreateInfo::default()
-                    .image_type(vk::ImageType::TYPE_2D)
-                    .extent(vk::Extent3D {
-                        width: desc.width,
-                        height: desc.height,
-                        depth: 1,
-                    })
-                    .mip_levels(1)
-                    .array_layers(1)
-                    .format(vk_format)
-                    .tiling(vk::ImageTiling::OPTIMAL)
-                    .initial_layout(vk::ImageLayout::UNDEFINED)
-                    .samples(vk::SampleCountFlags::TYPE_1)
-                    .usage(match desc.resource_type {
-                        super::resource::GraphResourceType::ColorAttachment { .. } => {
-                            vk::ImageUsageFlags::COLOR_ATTACHMENT
-                                | vk::ImageUsageFlags::SAMPLED
-                                | vk::ImageUsageFlags::INPUT_ATTACHMENT
-                        }
-                        super::resource::GraphResourceType::DepthAttachment { .. } => {
-                            vk::ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT
-                        }
-                        super::resource::GraphResourceType::SampledImage => {
-                            vk::ImageUsageFlags::SAMPLED | vk::ImageUsageFlags::TRANSFER_DST
-                        }
-                    })
-                    .sharing_mode(vk::SharingMode::EXCLUSIVE);
+            let (image, allocation) = renderer
+                .context
+                .create_image(image_info, gpu_allocator::MemoryLocation::GpuOnly);
 
-                let (image, allocation) = renderer
-                    .context
-                    .create_image(image_info, gpu_allocator::MemoryLocation::GpuOnly);
-
-                // Create image view
-                let view_info = vk::ImageViewCreateInfo::default()
-                    .image(image)
-                    .view_type(vk::ImageViewType::TYPE_2D)
-                    .format(vk_format)
-                    .subresource_range(vk::ImageSubresourceRange {
-                        aspect_mask: if matches!(
-                            desc.resource_type,
-                            super::resource::GraphResourceType::DepthAttachment { .. }
-                        ) {
-                            vk::ImageAspectFlags::DEPTH
-                        } else {
-                            vk::ImageAspectFlags::COLOR
-                        },
-                        base_mip_level: 0,
-                        level_count: 1,
-                        base_array_layer: 0,
-                        layer_count: 1,
-                    });
-
-                let image_view = unsafe {
-                    renderer
-                        .context
-                        .device
-                        .create_image_view(&view_info, None)
-                        .map_err(|e| {
-                            RenderGraphError::VulkanError(format!("Failed to create image view: {}", e))
-                        })?
-                };
-
-                textures.push(TransientTexture::new(
-                    renderer.context.clone(),
-                    image,
-                    Some(allocation),
-                    VkImageView::new(image_view),
-                    vk_format,
-                    vk::Extent2D {
-                        width: desc.width,
-                        height: desc.height,
+            // Create image view
+            let view_info = vk::ImageViewCreateInfo::default()
+                .image(image)
+                .view_type(vk::ImageViewType::TYPE_2D)
+                .format(vk_format)
+                .subresource_range(vk::ImageSubresourceRange {
+                    aspect_mask: if matches!(
+                        desc.resource_type,
+                        super::resource::GraphResourceType::DepthAttachment { .. }
+                    ) {
+                        vk::ImageAspectFlags::DEPTH
+                    } else {
+                        vk::ImageAspectFlags::COLOR
                     },
-                ));
-            }
+                    base_mip_level: 0,
+                    level_count: 1,
+                    base_array_layer: 0,
+                    layer_count: 1,
+                });
 
-            self.transient_textures.insert(desc.name.clone(), textures);
+            let image_view = unsafe {
+                renderer
+                    .context
+                    .device
+                    .create_image_view(&view_info, None)
+                    .map_err(|e| {
+                        RenderGraphError::VulkanError(format!("Failed to create image view: {}", e))
+                    })?
+            };
+
+            let texture = TransientTexture::new(
+                renderer.context.clone(),
+                image,
+                Some(allocation),
+                VkImageView::new(image_view),
+                vk_format,
+                vk::Extent2D {
+                    width: desc.width,
+                    height: desc.height,
+                },
+            );
+
+            self.transient_textures.insert(desc.name.clone(), texture);
         }
 
         Ok(())
@@ -426,67 +416,52 @@ impl FrameGraph {
 
     /// Register a transient texture with the bindless texture system.
     ///
-    /// This is a convenience method that encapsulates the pattern of:
-    /// 1. Looking up all per-frame transient textures by name
-    /// 2. Registering all FRAMES_IN_FLIGHT image views with the bindless system
-    /// 3. Returning the base bindless slot index (frame 0's slot)
+    /// This is a convenience method for registering a single transient texture
+    /// with the bindless system. The texture is registered once and all frames
+    /// sample from the same texture - synchronization is handled by pipeline barriers.
     ///
     /// # Arguments
     /// * `renderer` - The VulkanRenderer (owns the bindless manager), mutably borrowed
     /// * `name` - Name of the transient texture to register
     ///
     /// # Returns
-    /// The base bindless texture slot index (u32) for frame 0. Frame N's texture is at base_slot + N.
+    /// The bindless texture slot index (u32)
     ///
     /// # Example
     /// ```ignore
     /// // Initialize transient textures first
     /// frame_graph.initialize_transient_textures(&renderer)?;
     ///
-    /// // Register HDR texture for tonemapping (all frames)
-    /// let hdr_base_slot = frame_graph.register_transient_texture_bindless(&mut renderer, "hdr_color")?;
-    /// // Frame 0 uses hdr_base_slot, Frame 1 uses hdr_base_slot + 1, etc.
+    /// // Register HDR texture for tonemapping
+    /// let hdr_slot = frame_graph.register_transient_texture_bindless(&mut renderer, "hdr_color")?;
     /// ```
     pub fn register_transient_texture_bindless(
         &self,
         renderer: &mut VulkanRenderer,
         name: &str,
     ) -> Result<u32, RenderGraphError> {
-        let textures = self
+        let texture = self
             .transient_textures
             .get(name)
             .ok_or_else(|| RenderGraphError::ResourceNotFound(name.to_string()))?;
 
         log::info!(
-            "Registering {} per-frame textures for '{}' with bindless system",
-            textures.len(),
+            "Registering transient texture '{}' with bindless system",
             name
         );
 
-        // Register all FRAMES_IN_FLIGHT textures
-        // The bindless system will allocate consecutive slots
-        let mut base_slot = None;
-        for (frame_idx, texture) in textures.iter().enumerate() {
-            let slot = renderer
-                .register_bindless_texture(texture.image_view.vk())
-                .map_err(|e| {
-                    RenderGraphError::VulkanError(format!(
-                        "Failed to register bindless texture for frame {}: {}",
-                        frame_idx, e
-                    ))
-                })?;
+        let slot = renderer
+            .register_bindless_texture(texture.image_view.vk())
+            .map_err(|e| {
+                RenderGraphError::VulkanError(format!(
+                    "Failed to register bindless texture '{}': {}",
+                    name, e
+                ))
+            })?;
 
-            if frame_idx == 0 {
-                base_slot = Some(slot);
-                log::debug!("  Base bindless slot for '{}': {}", name, slot);
-            }
-        }
+        log::debug!("  Bindless slot for '{}': {}", name, slot);
 
-        base_slot.ok_or_else(|| {
-            RenderGraphError::VulkanError(
-                "No transient textures found to register with bindless system".to_string(),
-            )
-        })
+        Ok(slot)
     }
 
     /// Update tonemap parameters for a pass.
@@ -871,8 +846,8 @@ impl<'a> Frame<'a> {
                 continue;
             }
 
-            // Check if this is a transient texture (use frame-indexed texture)
-            let Some(transient) = self.graph.transient_texture(write_name, frame_idx) else {
+            // Check if this is a transient texture
+            let Some(transient) = self.graph.transient_texture(write_name) else {
                 continue;
             };
 
@@ -930,8 +905,8 @@ impl<'a> Frame<'a> {
                 continue;
             }
 
-            // Check if this is a transient texture (use frame-indexed texture)
-            let Some(transient) = self.graph.transient_texture(read_name, frame_idx) else {
+            // Check if this is a transient texture
+            let Some(transient) = self.graph.transient_texture(read_name) else {
                 continue;
             };
 
@@ -1048,8 +1023,8 @@ impl<'a> Frame<'a> {
                     },
                 })
         } else if let Some(color_name) = pass.writes.first() {
-            // Check if this is a transient texture (use frame-indexed texture)
-            if let Some(transient) = self.graph.transient_texture(color_name, frame_idx) {
+            // Check if this is a transient texture
+            if let Some(transient) = self.graph.transient_texture(color_name) {
                 // Check if pass specified load/store ops for this attachment
                 let (load_op, store_op, clear_value) = pass
                     .color_attachments
@@ -1988,8 +1963,8 @@ impl<'a> Frame<'a> {
                     },
                 })
         } else if let Some(color_name) = pass.writes.first() {
-            // Check if this is a transient texture (use frame-indexed texture)
-            if let Some(transient) = self.graph.transient_texture(color_name, frame_idx) {
+            // Check if this is a transient texture
+            if let Some(transient) = self.graph.transient_texture(color_name) {
                 // Check if pass specified load/store ops for this attachment
                 let (load_op, store_op, clear_value) = pass
                     .color_attachments

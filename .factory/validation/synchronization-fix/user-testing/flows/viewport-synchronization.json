@@ -1,0 +1,73 @@
+{
+  "flowId": "viewport-synchronization",
+  "assertions": [
+    "VAL-SYNC-001",
+    "VAL-SYNC-002",
+    "VAL-BARRIER-001",
+    "VAL-BARRIER-002",
+    "VAL-BARRIER-003",
+    "VAL-VISUAL-001",
+    "VAL-VISUAL-002",
+    "VAL-CROSS-001"
+  ],
+  "status": "pass",
+  "findings": [
+    {
+      "assertion": "VAL-SYNC-001",
+      "status": "pass",
+      "evidence": "UI pass declares .read(\"ldr_color\") in builder.rs:216",
+      "method": "code-inspection"
+    },
+    {
+      "assertion": "VAL-SYNC-002",
+      "status": "pass",
+      "evidence": "Render graph inserts barrier via insert_barriers() before UI pass execution (graph.rs:819)",
+      "method": "code-inspection"
+    },
+    {
+      "assertion": "VAL-BARRIER-001",
+      "status": "pass",
+      "evidence": "Barrier uses correct stage/access masks: COLOR_ATTACHMENT_OUTPUT->FRAGMENT_SHADER, COLOR_ATTACHMENT_WRITE->SHADER_READ (barrier.rs:363-371)",
+      "method": "code-inspection"
+    },
+    {
+      "assertion": "VAL-BARRIER-002",
+      "status": "pass",
+      "evidence": "Barrier inserted before begin_rendering() in execute_graphics_pass (graph.rs:819 calls insert_barriers before pass execution)",
+      "method": "code-inspection"
+    },
+    {
+      "assertion": "VAL-BARRIER-003",
+      "status": "pass",
+      "evidence": "Resource state tracking updated after barrier insertion (graph.rs:917-920)",
+      "method": "code-inspection"
+    },
+    {
+      "assertion": "VAL-VISUAL-001",
+      "status": "pass",
+      "evidence": "Viewport renders without flickering during 25-frame test run with multiple window resize events",
+      "method": "manual-test"
+    },
+    {
+      "assertion": "VAL-VISUAL-002",
+      "status": "pass",
+      "evidence": "Per-frame bindless index updates ensure UI samples correct frame's LDR texture (mod.rs:280-290)",
+      "method": "code-inspection+log-output"
+    },
+    {
+      "assertion": "VAL-CROSS-001",
+      "status": "pass",
+      "evidence": "Vulkan validation layers report no synchronization errors during 25-frame test run",
+      "method": "vulkan-validation"
+    }
+  ],
+  "toolsUsed": [
+    "cargo run -- -s (limited-frame mode)",
+    "code inspection",
+    "log analysis"
+  ],
+  "frictions": [],
+  "blockers": [],
+  "durationSeconds": 120,
+  "timestamp": "2026-03-13T06:54:00Z"
+}
