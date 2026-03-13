@@ -101,8 +101,9 @@ pub struct FrameGraph {
     /// Transient resource descriptors (for lazy Vulkan resource creation).
     transient_resources: Vec<GraphResourceDesc>,
 
-    /// Created transient textures (name -> texture).
-    transient_textures: HashMap<String, TransientTexture>,
+    /// Created transient textures (name -> Vec<texture> per frame-in-flight).
+    /// Each resource has FRAMES_IN_FLIGHT textures to prevent cross-frame race conditions.
+    transient_textures: HashMap<String, Vec<TransientTexture>>,
 }
 
 impl FrameGraph {
@@ -169,6 +170,7 @@ impl FrameGraph {
                     })?;
             }
         }
+
         Ok(())
     }
 
@@ -243,15 +245,23 @@ impl FrameGraph {
         self.passes.get(index)
     }
 
-    /// Get a transient texture by name.
-    pub fn transient_texture(&self, name: &str) -> Option<&TransientTexture> {
-        self.transient_textures.get(name)
+    /// Get a transient texture by name and frame index.
+    ///
+    /// Returns the texture for the specified frame-in-flight index.
+    /// Each transient resource has FRAMES_IN_FLIGHT textures to prevent
+    /// cross-frame race conditions where one frame writes while another samples.
+    pub fn transient_texture(&self, name: &str, frame_index: usize) -> Option<&TransientTexture> {
+        self.transient_textures.get(name).and_then(|textures| textures.get(frame_index))
     }
 
     /// Initialize transient textures (create Vulkan resources).
     ///
     /// Called internally on first use. Can be called explicitly to pre-initialize
     /// transient textures before frame execution (e.g., for bindless registration).
+    ///
+    /// Creates FRAMES_IN_FLIGHT textures per transient resource to prevent
+    /// cross-frame race conditions where Frame N+1's tonemap pass overwrites
+    /// ldr_color while Frame N's UI pass is still sampling it.
     pub fn initialize_transient_textures(
         &mut self,
         renderer: &VulkanRenderer,
@@ -260,75 +270,86 @@ impl FrameGraph {
             return Ok(()); // Already initialized
         }
 
+        // Use the same FRAMES_IN_FLIGHT constant as the renderer
+        let frames_in_flight = crate::renderer::FRAMES_IN_FLIGHT;
+
+        log::info!(
+            "Initializing {} transient textures with {} frames each (double-buffering)",
+            self.transient_resources.len(),
+            frames_in_flight
+        );
+
         for desc in &self.transient_resources {
-            let vk_format: vk::Format = desc.format.into();
+            let mut textures = Vec::with_capacity(frames_in_flight);
 
-            // Create image
-            let image_info = vk::ImageCreateInfo::default()
-                .image_type(vk::ImageType::TYPE_2D)
-                .extent(vk::Extent3D {
-                    width: desc.width,
-                    height: desc.height,
-                    depth: 1,
-                })
-                .mip_levels(1)
-                .array_layers(1)
-                .format(vk_format)
-                .tiling(vk::ImageTiling::OPTIMAL)
-                .initial_layout(vk::ImageLayout::UNDEFINED)
-                .samples(vk::SampleCountFlags::TYPE_1)
-                .usage(match desc.resource_type {
-                    super::resource::GraphResourceType::ColorAttachment { .. } => {
-                        vk::ImageUsageFlags::COLOR_ATTACHMENT
-                            | vk::ImageUsageFlags::SAMPLED
-                            | vk::ImageUsageFlags::INPUT_ATTACHMENT
-                    }
-                    super::resource::GraphResourceType::DepthAttachment { .. } => {
-                        vk::ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT
-                    }
-                    super::resource::GraphResourceType::SampledImage => {
-                        vk::ImageUsageFlags::SAMPLED | vk::ImageUsageFlags::TRANSFER_DST
-                    }
-                })
-                .sharing_mode(vk::SharingMode::EXCLUSIVE);
+            // Create one texture per frame-in-flight
+            for frame_idx in 0..frames_in_flight {
+                let vk_format: vk::Format = desc.format.into();
 
-            let (image, allocation) = renderer
-                .context
-                .create_image(image_info, gpu_allocator::MemoryLocation::GpuOnly);
+                // Create image
+                let image_info = vk::ImageCreateInfo::default()
+                    .image_type(vk::ImageType::TYPE_2D)
+                    .extent(vk::Extent3D {
+                        width: desc.width,
+                        height: desc.height,
+                        depth: 1,
+                    })
+                    .mip_levels(1)
+                    .array_layers(1)
+                    .format(vk_format)
+                    .tiling(vk::ImageTiling::OPTIMAL)
+                    .initial_layout(vk::ImageLayout::UNDEFINED)
+                    .samples(vk::SampleCountFlags::TYPE_1)
+                    .usage(match desc.resource_type {
+                        super::resource::GraphResourceType::ColorAttachment { .. } => {
+                            vk::ImageUsageFlags::COLOR_ATTACHMENT
+                                | vk::ImageUsageFlags::SAMPLED
+                                | vk::ImageUsageFlags::INPUT_ATTACHMENT
+                        }
+                        super::resource::GraphResourceType::DepthAttachment { .. } => {
+                            vk::ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT
+                        }
+                        super::resource::GraphResourceType::SampledImage => {
+                            vk::ImageUsageFlags::SAMPLED | vk::ImageUsageFlags::TRANSFER_DST
+                        }
+                    })
+                    .sharing_mode(vk::SharingMode::EXCLUSIVE);
 
-            // Create image view
-            let view_info = vk::ImageViewCreateInfo::default()
-                .image(image)
-                .view_type(vk::ImageViewType::TYPE_2D)
-                .format(vk_format)
-                .subresource_range(vk::ImageSubresourceRange {
-                    aspect_mask: if matches!(
-                        desc.resource_type,
-                        super::resource::GraphResourceType::DepthAttachment { .. }
-                    ) {
-                        vk::ImageAspectFlags::DEPTH
-                    } else {
-                        vk::ImageAspectFlags::COLOR
-                    },
-                    base_mip_level: 0,
-                    level_count: 1,
-                    base_array_layer: 0,
-                    layer_count: 1,
-                });
-
-            let image_view = unsafe {
-                renderer
+                let (image, allocation) = renderer
                     .context
-                    .device
-                    .create_image_view(&view_info, None)
-                    .map_err(|e| {
-                        RenderGraphError::VulkanError(format!("Failed to create image view: {}", e))
-                    })?
-            };
+                    .create_image(image_info, gpu_allocator::MemoryLocation::GpuOnly);
 
-            self.transient_textures.insert(
-                desc.name.clone(),
-                TransientTexture::new(
+                // Create image view
+                let view_info = vk::ImageViewCreateInfo::default()
+                    .image(image)
+                    .view_type(vk::ImageViewType::TYPE_2D)
+                    .format(vk_format)
+                    .subresource_range(vk::ImageSubresourceRange {
+                        aspect_mask: if matches!(
+                            desc.resource_type,
+                            super::resource::GraphResourceType::DepthAttachment { .. }
+                        ) {
+                            vk::ImageAspectFlags::DEPTH
+                        } else {
+                            vk::ImageAspectFlags::COLOR
+                        },
+                        base_mip_level: 0,
+                        level_count: 1,
+                        base_array_layer: 0,
+                        layer_count: 1,
+                    });
+
+                let image_view = unsafe {
+                    renderer
+                        .context
+                        .device
+                        .create_image_view(&view_info, None)
+                        .map_err(|e| {
+                            RenderGraphError::VulkanError(format!("Failed to create image view: {}", e))
+                        })?
+                };
+
+                textures.push(TransientTexture::new(
                     renderer.context.clone(),
                     image,
                     Some(allocation),
@@ -338,8 +359,10 @@ impl FrameGraph {
                         width: desc.width,
                         height: desc.height,
                     },
-                ),
-            );
+                ));
+            }
+
+            self.transient_textures.insert(desc.name.clone(), textures);
         }
 
         Ok(())
@@ -404,39 +427,66 @@ impl FrameGraph {
     /// Register a transient texture with the bindless texture system.
     ///
     /// This is a convenience method that encapsulates the pattern of:
-    /// 1. Looking up a transient texture by name
-    /// 2. Registering its image view with the bindless system
-    /// 3. Returning the bindless slot index
+    /// 1. Looking up all per-frame transient textures by name
+    /// 2. Registering all FRAMES_IN_FLIGHT image views with the bindless system
+    /// 3. Returning the base bindless slot index (frame 0's slot)
     ///
     /// # Arguments
     /// * `renderer` - The VulkanRenderer (owns the bindless manager), mutably borrowed
     /// * `name` - Name of the transient texture to register
     ///
     /// # Returns
-    /// The bindless texture slot index (u32)
+    /// The base bindless texture slot index (u32) for frame 0. Frame N's texture is at base_slot + N.
     ///
     /// # Example
     /// ```ignore
     /// // Initialize transient textures first
     /// frame_graph.initialize_transient_textures(&renderer)?;
     ///
-    /// // Register HDR texture for tonemapping
-    /// let hdr_slot = frame_graph.register_transient_texture_bindless(&mut renderer, "hdr_color")?;
+    /// // Register HDR texture for tonemapping (all frames)
+    /// let hdr_base_slot = frame_graph.register_transient_texture_bindless(&mut renderer, "hdr_color")?;
+    /// // Frame 0 uses hdr_base_slot, Frame 1 uses hdr_base_slot + 1, etc.
     /// ```
     pub fn register_transient_texture_bindless(
         &self,
         renderer: &mut VulkanRenderer,
         name: &str,
     ) -> Result<u32, RenderGraphError> {
-        let texture = self
-            .transient_texture(name)
+        let textures = self
+            .transient_textures
+            .get(name)
             .ok_or_else(|| RenderGraphError::ResourceNotFound(name.to_string()))?;
 
-        renderer
-            .register_bindless_texture(texture.image_view.vk())
-            .map_err(|e| {
-                RenderGraphError::VulkanError(format!("Failed to register bindless texture: {}", e))
-            })
+        log::info!(
+            "Registering {} per-frame textures for '{}' with bindless system",
+            textures.len(),
+            name
+        );
+
+        // Register all FRAMES_IN_FLIGHT textures
+        // The bindless system will allocate consecutive slots
+        let mut base_slot = None;
+        for (frame_idx, texture) in textures.iter().enumerate() {
+            let slot = renderer
+                .register_bindless_texture(texture.image_view.vk())
+                .map_err(|e| {
+                    RenderGraphError::VulkanError(format!(
+                        "Failed to register bindless texture for frame {}: {}",
+                        frame_idx, e
+                    ))
+                })?;
+
+            if frame_idx == 0 {
+                base_slot = Some(slot);
+                log::debug!("  Base bindless slot for '{}': {}", name, slot);
+            }
+        }
+
+        base_slot.ok_or_else(|| {
+            RenderGraphError::VulkanError(
+                "No transient textures found to register with bindless system".to_string(),
+            )
+        })
     }
 
     /// Update tonemap parameters for a pass.
@@ -637,6 +687,8 @@ pub struct Frame<'a> {
 
     /// Current state of transient resources (name -> state).
     resource_states: HashMap<String, super::resource::ResourceState>,
+    /// Per-frame temporary buffers (allocated during this frame, cleaned up after GPU completion).
+    temporary_buffers: Vec<(vk::Buffer, gpu_allocator::vulkan::Allocation)>,
 }
 
 /// Data for a single pass execution.
@@ -675,6 +727,7 @@ impl<'a> Frame<'a> {
             image_index,
             pending: HashMap::new(),
             resource_states,
+            temporary_buffers: Vec::new(),
         }
     }
 
@@ -744,6 +797,12 @@ impl<'a> Frame<'a> {
         // Clone the command buffer to avoid borrowing issues
         let cmd = self.renderer.frame_context.command_buffers[frame_idx].clone();
 
+        // === PHASE 1: Execute compute dispatches (BEFORE any render passes) ===
+        // Vulkan doesn't allow compute dispatches inside a render pass, so we must
+        // execute all particle simulation compute shaders before beginning any rendering.
+        self.execute_all_particle_dispatches()?;
+
+        // === PHASE 2: Execute graphics passes ===
         for (index, pass) in self.graph.passes.iter().enumerate() {
             let data = self.pending.remove(&index).unwrap_or_default();
 
@@ -803,6 +862,7 @@ impl<'a> Frame<'a> {
 
         let cmd_vk = cmd.vk_command_buffer();
         let device = &self.renderer.context.device;
+        let frame_idx = self.renderer.current_frame();
 
         // Process writes first (color attachments)
         for write_name in &pass.writes {
@@ -811,8 +871,8 @@ impl<'a> Frame<'a> {
                 continue;
             }
 
-            // Check if this is a transient texture
-            let Some(transient) = self.graph.transient_texture(write_name) else {
+            // Check if this is a transient texture (use frame-indexed texture)
+            let Some(transient) = self.graph.transient_texture(write_name, frame_idx) else {
                 continue;
             };
 
@@ -870,8 +930,8 @@ impl<'a> Frame<'a> {
                 continue;
             }
 
-            // Check if this is a transient texture
-            let Some(transient) = self.graph.transient_texture(read_name) else {
+            // Check if this is a transient texture (use frame-indexed texture)
+            let Some(transient) = self.graph.transient_texture(read_name, frame_idx) else {
                 continue;
             };
 
@@ -948,9 +1008,12 @@ impl<'a> Frame<'a> {
             extent,
         };
 
+        // Get current frame index for per-frame texture selection
+        let frame_idx = self.renderer.current_frame();
+
         // Determine color attachment:
         // 1. If pass writes to "backbuffer", use swapchain directly
-        // 2. If pass writes to a transient texture, use that
+        // 2. If pass writes to a transient texture, use that (frame-indexed)
         // 3. Use load_op from pass.color_attachments if available, otherwise default to CLEAR
         //    For backbuffer: use LOAD if a previous pass already wrote to it
         let color_attachment = if pass.writes.contains(&BACKBUFFER_NAME.to_string()) {
@@ -985,8 +1048,8 @@ impl<'a> Frame<'a> {
                     },
                 })
         } else if let Some(color_name) = pass.writes.first() {
-            // Check if this is a transient texture
-            if let Some(transient) = self.graph.transient_texture(color_name) {
+            // Check if this is a transient texture (use frame-indexed texture)
+            if let Some(transient) = self.graph.transient_texture(color_name, frame_idx) {
                 // Check if pass specified load/store ops for this attachment
                 let (load_op, store_op, clear_value) = pass
                     .color_attachments
@@ -1106,15 +1169,307 @@ impl<'a> Frame<'a> {
         Ok(())
     }
 
+    /// Execute all particle compute dispatches from all passes.
+    ///
+    /// This MUST be called BEFORE beginning any render pass, as Vulkan doesn't
+    /// allow compute dispatches inside a render pass (after vkCmdBeginRendering).
+    ///
+    /// Collects all particle dispatches from all draw lists in all pending passes
+    /// and executes them upfront with proper synchronization.
+    fn execute_all_particle_dispatches(&mut self) -> Result<(), RenderGraphError> {
+        use ash::vk;
+
+        // Collect all particle dispatches from all passes (cloned to avoid borrow issues)
+        let all_dispatches: Vec<_> = self
+            .pending
+            .values()
+            .flat_map(|pass_data| {
+                pass_data
+                    .draw_lists
+                    .iter()
+                    .flat_map(|draw_list| draw_list.particle_dispatches.clone())
+            })
+            .collect();
+
+        if all_dispatches.is_empty() {
+            return Ok(()); // No particle dispatches, nothing to do
+        }
+
+        log::debug!(
+            "Executing {} particle compute dispatches before render passes",
+            all_dispatches.len()
+        );
+
+        let cmd = self.renderer.frame_context.command_buffers
+            [self.renderer.swap_data.current_frame()]
+        .clone();
+
+        // Execute all compute dispatches
+        for dispatch in &all_dispatches {
+            self.execute_particle_dispatch(&cmd, dispatch)?;
+        }
+
+        // Insert compute → graphics barrier for synchronization
+        // This ensures all compute shader writes are visible to subsequent vertex/fragment shaders
+        let device = &self.renderer.context.device;
+        let cmd_vk = cmd.vk_command_buffer();
+
+        let memory_barrier = vk::MemoryBarrier2::default()
+            .src_stage_mask(vk::PipelineStageFlags2::COMPUTE_SHADER)
+            .dst_stage_mask(
+                vk::PipelineStageFlags2::VERTEX_SHADER | vk::PipelineStageFlags2::FRAGMENT_SHADER,
+            )
+            .src_access_mask(vk::AccessFlags2::SHADER_WRITE)
+            .dst_access_mask(vk::AccessFlags2::SHADER_READ);
+
+        unsafe {
+            device.cmd_pipeline_barrier2(
+                cmd_vk,
+                &vk::DependencyInfo::default().memory_barriers(&[memory_barrier]),
+            );
+        }
+
+        log::debug!("Particle compute dispatches completed, synchronized with graphics pipeline");
+        Ok(())
+    }
+
     /// Execute a draw list.
     fn execute_draw_list(
         &mut self,
         cmd: &crate::vulkan::commandbuffer::CommandBuffer,
         draw_list: &DrawList,
     ) -> Result<(), RenderGraphError> {
+        // NOTE: Particle compute dispatches are executed BEFORE all render passes
+        // in execute_all_particle_dispatches(), so we skip them here.
+
+        // Execute regular draw calls
         for draw_call in &draw_list.draws {
             self.execute_draw_call(cmd, draw_call)?;
         }
+
+        // Execute particle rendering (after geometry, for proper transparency)
+        for particle_render in &draw_list.particle_renders {
+            self.execute_particle_render(cmd, particle_render)?;
+        }
+
+        Ok(())
+    }
+
+    /// Execute particle rendering (instanced billboard quads).
+    ///
+    /// Renders particles as camera-facing billboard quads with soft edges.
+    /// Uses instanced drawing for efficient rendering of many particles.
+    fn execute_particle_render(
+        &mut self,
+        cmd: &crate::vulkan::commandbuffer::CommandBuffer,
+        render: &crate::renderer::types::ParticleRender,
+    ) -> Result<(), RenderGraphError> {
+        use ash::vk;
+
+        // Get graphics pipeline from registry
+        let pipeline = self
+            .renderer
+            .asset_registry
+            .get_pipeline(render.pipeline)
+            .ok_or(RenderGraphError::InvalidPipelineHandle(render.pipeline))?;
+
+        let (graphics_pipeline, pipeline_layout) = match pipeline {
+            crate::renderer::registry::AnyPipeline::Graphics(gp) => {
+                (gp.vk_pipeline(), gp.vk_layout())
+            }
+            _ => {
+                return Err(RenderGraphError::InvalidConfiguration(
+                    "Expected graphics pipeline for particle rendering".to_string(),
+                ));
+            }
+        };
+
+        let cmd_vk = cmd.vk_command_buffer();
+        let device = &self.renderer.context.device;
+
+        // Bind graphics pipeline
+        unsafe {
+            device.cmd_bind_pipeline(cmd_vk, vk::PipelineBindPoint::GRAPHICS, graphics_pipeline);
+        }
+
+        // Bind descriptor sets
+        // Set 0: Frame uniforms (view/proj matrices, camera position)
+        // Set 1: Particle buffer (instance data)
+        unsafe {
+            device.cmd_bind_descriptor_sets(
+                cmd_vk,
+                vk::PipelineBindPoint::GRAPHICS,
+                pipeline_layout,
+                0,
+                &[render.frame_descriptor_set, render.particle_descriptor_set],
+                &[],
+            );
+        }
+
+        // Draw instanced particles (6 vertices per particle = 2 triangles)
+        // Each particle instance generates a quad in the vertex shader
+        cmd.draw_array(6, render.particle_count, 0, 0);
+
+        Ok(())
+    }
+
+    /// Execute a particle compute shader dispatch.
+    ///
+    /// Dispatches compute workgroups for particle simulation.
+    /// This runs before the geometry pass to update particle positions.
+    fn execute_particle_dispatch(
+        &mut self,
+        cmd: &crate::vulkan::commandbuffer::CommandBuffer,
+        dispatch: &crate::renderer::types::ParticleDispatch,
+    ) -> Result<(), RenderGraphError> {
+        use ash::vk;
+
+        // Get compute pipeline from registry
+        let pipeline = self
+            .renderer
+            .asset_registry
+            .get_pipeline(dispatch.pipeline)
+            .ok_or(RenderGraphError::InvalidPipelineHandle(dispatch.pipeline))?;
+
+        // Verify this is a compute pipeline
+        if !self
+            .renderer
+            .asset_registry
+            .is_compute_pipeline(dispatch.pipeline)
+        {
+            return Err(RenderGraphError::InvalidConfiguration(format!(
+                "Pipeline {:?} is not a compute pipeline",
+                dispatch.pipeline
+            )));
+        }
+
+        let (compute_pipeline, pipeline_layout) = match pipeline {
+            crate::renderer::registry::AnyPipeline::Compute(cp) => {
+                (cp.pipeline().vk(), cp.pipeline_layout().vk())
+            }
+            _ => {
+                return Err(RenderGraphError::InvalidConfiguration(
+                    "Expected compute pipeline".to_string(),
+                ));
+            }
+        };
+
+        let cmd_vk = cmd.vk_command_buffer();
+        let device = &self.renderer.context.device;
+
+        // Bind compute pipeline
+        unsafe {
+            device.cmd_bind_pipeline(cmd_vk, vk::PipelineBindPoint::COMPUTE, compute_pipeline);
+        }
+
+        // Bind Set 0: Particle buffer + frame data
+        unsafe {
+            device.cmd_bind_descriptor_sets(
+                cmd_vk,
+                vk::PipelineBindPoint::COMPUTE,
+                pipeline_layout,
+                0,
+                &[dispatch.descriptor_set],
+                &[],
+            );
+        }
+
+        // Create temporary uniform buffer for emitter config
+        let emitter_buffer_size =
+            std::mem::size_of::<crate::vulkan::particle_buffer::EmitterConfig>();
+        let buffer_info = vk::BufferCreateInfo::default()
+            .size(emitter_buffer_size as u64)
+            .usage(vk::BufferUsageFlags::UNIFORM_BUFFER)
+            .sharing_mode(vk::SharingMode::EXCLUSIVE);
+
+        let emitter_buffer = unsafe {
+            device.create_buffer(&buffer_info, None).map_err(|e| {
+                RenderGraphError::InvalidConfiguration(format!(
+                    "Failed to create emitter buffer: {:?}",
+                    e
+                ))
+            })?
+        };
+
+        let requirements = unsafe { device.get_buffer_memory_requirements(emitter_buffer) };
+
+        let allocation = self
+            .renderer
+            .context
+            .allocator
+            .borrow_mut()
+            .allocate(&gpu_allocator::vulkan::AllocationCreateDesc {
+                name: "emitter_config_temp",
+                requirements,
+                location: gpu_allocator::MemoryLocation::CpuToGpu,
+                linear: true,
+                allocation_scheme: gpu_allocator::vulkan::AllocationScheme::GpuAllocatorManaged,
+            })
+            .map_err(|e| {
+                RenderGraphError::InvalidConfiguration(format!(
+                    "Failed to allocate emitter buffer: {}",
+                    e
+                ))
+            })?;
+
+        unsafe {
+            device
+                .bind_buffer_memory(emitter_buffer, allocation.memory(), allocation.offset())
+                .map_err(|e| {
+                    RenderGraphError::InvalidConfiguration(format!(
+                        "Failed to bind emitter buffer: {:?}",
+                        e
+                    ))
+                })?;
+        }
+
+        // Copy emitter config to buffer
+        if let Some(mapped_ptr) = allocation.mapped_ptr() {
+            let dst = mapped_ptr.as_ptr() as *mut u8;
+            unsafe {
+                std::ptr::copy_nonoverlapping(
+                    &dispatch.emitter_config as *const _ as *const u8,
+                    dst,
+                    emitter_buffer_size,
+                );
+            }
+        }
+
+        // Push Set 1: Emitter config using push descriptors
+        let emitter_buffer_info = [vk::DescriptorBufferInfo::default()
+            .buffer(emitter_buffer)
+            .offset(0)
+            .range(emitter_buffer_size as u64)];
+
+        let push_descriptor_write = vk::WriteDescriptorSet::default()
+            .dst_set(vk::DescriptorSet::null()) // Ignored for push descriptors
+            .dst_binding(0)
+            .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
+            .buffer_info(&emitter_buffer_info);
+
+        unsafe {
+            if let Some(push_descriptor_khr) = &self.renderer.context.push_descriptor_khr {
+                push_descriptor_khr.cmd_push_descriptor_set(
+                    cmd_vk,
+                    vk::PipelineBindPoint::COMPUTE,
+                    pipeline_layout,
+                    1, // Set 1
+                    &[push_descriptor_write],
+                );
+            } else {
+                return Err(RenderGraphError::InvalidConfiguration(
+                    "Push descriptors not enabled".to_string(),
+                ));
+            }
+        }
+
+        // Dispatch compute workgroups
+        cmd.dispatch(dispatch.workgroup_count, 1, 1);
+
+        // Store temporary buffer for cleanup after frame completes
+        self.temporary_buffers.push((emitter_buffer, allocation));
+
+        log::debug!("Particle dispatch complete");
         Ok(())
     }
 
@@ -1611,9 +1966,12 @@ impl<'a> Frame<'a> {
             extent,
         };
 
+        // Get current frame index for per-frame texture selection
+        let frame_idx = self.renderer.current_frame();
+
         // Determine color attachment:
         // 1. If pass writes to "backbuffer", use swapchain directly
-        // 2. If pass writes to a transient texture, use that
+        // 2. If pass writes to a transient texture, use that (frame-indexed)
         // 3. Use load_op from pass.color_attachments if available, otherwise default to CLEAR
         let color_attachment = if pass.writes.contains(&BACKBUFFER_NAME.to_string()) {
             // Explicit backbuffer write - use swapchain
@@ -1630,8 +1988,8 @@ impl<'a> Frame<'a> {
                     },
                 })
         } else if let Some(color_name) = pass.writes.first() {
-            // Check if this is a transient texture
-            if let Some(transient) = self.graph.transient_texture(color_name) {
+            // Check if this is a transient texture (use frame-indexed texture)
+            if let Some(transient) = self.graph.transient_texture(color_name, frame_idx) {
                 // Check if pass specified load/store ops for this attachment
                 let (load_op, store_op, clear_value) = pass
                     .color_attachments
