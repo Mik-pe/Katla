@@ -87,6 +87,8 @@ pub struct Application {
     pub(crate) default_material_handle: katla_gfx::MaterialHandle,
     /// HDR texture bindless index for tonemapping
     pub(crate) hdr_texture_index: Option<u32>,
+    /// Particle system for GPU-based particle effects
+    pub(crate) particle_system: Option<katla_gfx::ParticleSystem>,
     /// Flag to prevent double cleanup
     cleaned_up: bool,
 }
@@ -336,6 +338,12 @@ impl Application {
 
         self.renderer.wait_for_device();
 
+        // Destroy particle system first (needs Vulkan context)
+        if let Some(mut particle_system) = self.particle_system.take() {
+            particle_system.destroy(self.renderer.context());
+        }
+
+        // Destroy renderer
         self.renderer.destroy();
     }
 }
@@ -823,13 +831,15 @@ impl Application {
         let texture_indices = self.upload_gltf_textures(&model);
 
         // Set texture indices on material (only first 4: albedo, normal, mr, ao)
-        self.renderer
-            .set_material_texture_indices(material_handle, [
+        self.renderer.set_material_texture_indices(
+            material_handle,
+            [
                 texture_indices[0],
                 texture_indices[1],
                 texture_indices[2],
                 texture_indices[3],
-            ]);
+            ],
+        );
 
         // 6. Spawn entity with emission texture index
         let entity = self.world.spawn((
@@ -906,11 +916,20 @@ impl Application {
     /// * `position` - World position to spawn the emitter at
     ///
     /// # Returns
-    /// The entity ID of the spawned emitter
-    pub fn spawn_particle_emitter(&mut self, position: [f32; 3]) -> katla_ecs::EntityId {
+    /// The entity ID of the spawned emitter, or None if particle system is not available
+    pub fn spawn_particle_emitter(&mut self, position: [f32; 3]) -> Option<katla_ecs::EntityId> {
         use crate::components::{ParticleEmitterComponent, TransformComponent};
         use katla_math::Transform;
 
+        // Get particle system reference
+        let particle_system = self.particle_system.as_mut()?;
+
+        // Create GPU emitter
+        let emitter_id = particle_system
+            .create_emitter(&mut self.renderer, 65536)
+            .ok()?;
+
+        // Spawn entity with particle emitter component
         let entity = self.world.spawn((
             TransformComponent {
                 transform: Transform::from_position(katla_math::Vec3::new(
@@ -919,11 +938,40 @@ impl Application {
                     position[2],
                 )),
             },
-            ParticleEmitterComponent::fire(position),
+            ParticleEmitterComponent::fire(emitter_id, position),
         ));
 
-        info!("Spawned particle emitter at {:?}", position);
-        entity
+        info!(
+            "Spawned particle emitter at {:?} (ID: {})",
+            position, emitter_id
+        );
+        Some(entity)
+    }
+
+    /// Destroy a particle emitter entity and free its GPU resources.
+    ///
+    /// # Arguments
+    /// * `entity` - Entity ID of the particle emitter to destroy
+    pub fn destroy_particle_emitter(&mut self, entity: katla_ecs::EntityId) -> bool {
+        use crate::components::ParticleEmitterComponent;
+
+        // Get emitter ID before cleanup
+        let emitter_id =
+            if let Some(emitter) = self.world.get_component::<ParticleEmitterComponent>(entity) {
+                Some(emitter.emitter_id)
+            } else {
+                None
+            };
+
+        // Free GPU resources first
+        if let (Some(id), Some(particle_system)) = (emitter_id, &mut self.particle_system) {
+            particle_system.destroy_emitter(self.renderer.context(), id);
+            info!("Destroyed particle emitter (ID: {})", id);
+        }
+
+        // Note: Entity cleanup will happen automatically in ECS
+        // For now, we just clean up GPU resources
+        emitter_id.is_some()
     }
 
     /// Upload textures from a GLTF model and return bindless texture indices.
@@ -996,7 +1044,13 @@ impl Application {
             }
         }
 
-        [albedo_index, normal_index, mr_index, ao_index, emission_index]
+        [
+            albedo_index,
+            normal_index,
+            mr_index,
+            ao_index,
+            emission_index,
+        ]
     }
 
     /// Upload a single GLTF image to the GPU.
@@ -1114,7 +1168,8 @@ impl Application {
         }
 
         // Add DamagedHelmet - position for viewing
-        if let Some(helmet) = self.spawn_gltf_model("resources/models/DamagedHelmet.glb", [0.0, 1.5, -5.0], None)
+        if let Some(helmet) =
+            self.spawn_gltf_model("resources/models/DamagedHelmet.glb", [0.0, 1.5, -5.0], None)
         {
             // Scale the helmet appropriately
             if let Some(transform) = self.world.get_component_mut::<TransformComponent>(helmet) {
@@ -1123,11 +1178,26 @@ impl Application {
             info!("Spawned DamagedHelmet model");
         }
 
-        // Add particle emitter effect
-        self.spawn_particle_emitter([-3.0, 2.0, -3.0]);
+        // Add particle emitters with different effects
+        // Fire emitter near the center cube
+        if let Some(_entity) = self.spawn_particle_emitter([-3.0, 2.0, -3.0]) {
+            info!("✨ Fire particle emitter spawned at [-3.0, 2.0, -3.0]");
+        } else {
+            log::warn!("Failed to spawn particle emitter (particle system not available)");
+        }
+
+        // Second emitter near the sphere (different position for variety)
+        if let Some(_entity) = self.spawn_particle_emitter([-7.0, 2.0, -5.0]) {
+            info!("✨ Second particle emitter spawned at [-7.0, 2.0, -5.0]");
+        }
+
+        // Third emitter near the torus
+        if let Some(_entity) = self.spawn_particle_emitter([7.0, 2.5, -3.0]) {
+            info!("✨ Third particle emitter spawned at [7.0, 2.5, -3.0]");
+        }
 
         info!(
-            "Default scene setup complete - {} entities spawned",
+            "Default scene setup complete - {} entities spawned with particle effects",
             self.world.entity_ids().count()
         );
     }
