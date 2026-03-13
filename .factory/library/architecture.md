@@ -82,3 +82,37 @@ output_color = vertex_color * texture_sample(texture, uv)
 5. Result: Efficient solid color rendering without special cases
 
 **Why this matters:** The white pixel must be in the correct color space (SRGB) for the multiplication to work correctly. If the texture format is UNORM, the white pixel samples as linear white which renders semi-transparent.
+
+## Render Graph Synchronization
+
+### Pass Dependencies
+
+Every render pass must declare its resource dependencies explicitly:
+- `.read("resource_name")` - Pass samples from this texture (requires `SHADER_READ_ONLY_OPTIMAL`)
+- `.write("resource_name")` - Pass writes to this texture/color attachment
+
+**Why this matters:** The render graph uses these declarations to automatically insert Vulkan pipeline barriers with correct stage and access masks. Missing dependencies can cause:
+- Race conditions between passes
+- Visual flickering when framerate varies
+- Vulkan validation errors
+
+### Example: UI Pass Sampling Tonemapped Scene
+
+```rust
+// CORRECT - Declares read dependency
+.add_pass(UIPass::new("ui")
+    .read("ldr_color")       // UI samples tonemapped scene
+    .write("backbuffer")     // UI writes to swapchain
+    .material(ui_material))
+
+// WRONG - Missing read dependency causes sync issues
+.add_pass(UIPass::new("ui")
+    .write("backbuffer")     // No read declared - barrier not inserted!
+    .material(ui_material))
+```
+
+When a pass samples a transient texture via bindless, the read dependency MUST be declared so the render graph inserts the correct barrier:
+- `srcStage = COLOR_ATTACHMENT_OUTPUT` (previous pass writes)
+- `dstStage = FRAGMENT_SHADER` (this pass samples)
+- `srcAccess = COLOR_ATTACHMENT_WRITE`
+- `dstAccess = SHADER_READ`

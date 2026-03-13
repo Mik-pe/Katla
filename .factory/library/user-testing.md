@@ -109,6 +109,40 @@ When running `cargo run -- -s`, verify:
 
 None currently.
 
+## Viewport Synchronization Testing
+
+When testing render graph synchronization fixes (viewport flickering), verify:
+
+1. **Viewport Stability**:
+   - 3D scene renders without flickering
+   - No tearing artifacts when framerate varies
+   - Consistent rendering across multiple frames
+
+2. **Variable Framerate Testing**:
+   - Resize window rapidly to cause framerate fluctuations
+   - Move other windows over the application to cause stalls
+   - Verify viewport remains stable during all conditions
+
+3. **Vulkan Validation**:
+   - No synchronization errors in validation output
+   - No missing barrier warnings
+   - No race condition errors
+
+### VAL-SYNC-001/002: Read Dependency and Barrier
+**Test**: Verify UI pass declares `.read("ldr_color")` in builder.rs
+**Expected**: Render graph inserts correct barrier before UI pass
+**Validation**: Code inspection + Vulkan validation (no sync errors)
+
+### VAL-BARRIER-001/002/003: Barrier Correctness
+**Test**: Run with Vulkan validation layers, check for sync errors
+**Expected**: No validation errors, correct stage/access masks
+**Validation**: Vulkan validation output + code inspection
+
+### VAL-VISUAL-001: Viewport Without Flickering
+**Test**: Run `cargo run` and observe viewport under varying conditions
+**Expected**: Stable viewport rendering regardless of framerate
+**Validation**: Visual inspection over 30+ seconds of interaction
+
 ## Bindless Texture Migration Testing
 
 When testing after bindless texture migration, additionally verify:
