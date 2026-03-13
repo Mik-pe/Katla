@@ -12,7 +12,6 @@ use super::error::RenderGraphError;
 use super::pass::PassDesc;
 use super::passes::geometry::GeometryPassData;
 use super::resource::{GraphResourceDesc, GraphResourceHandle};
-use crate::barrier::ImageBarrier;
 use crate::handle::PipelineHandle;
 use crate::renderer::VulkanRenderer;
 use crate::renderer::types::DrawList;
@@ -1069,62 +1068,6 @@ impl<'a> Frame<'a> {
         } else {
             None
         };
-
-        // Transition LDR texture to SHADER_READ_ONLY_OPTIMAL before UI rendering
-        // The UI pass samples from the LDR texture but doesn't declare it as a read dependency
-        // IMPORTANT: This must happen BEFORE begin_rendering - barriers aren't allowed inside render passes
-        match self.graph.transient_texture("ldr_color") {
-            Some(ldr_texture) => {
-                let current_state = self
-                    .resource_states
-                    .get("ldr_color")
-                    .copied()
-                    .unwrap_or(super::resource::ResourceState::Undefined);
-
-                // Only transition if not already in ShaderRead state
-                if current_state != super::resource::ResourceState::ShaderRead {
-                    log::debug!(
-                        "Transitioning LDR texture from {:?} to SHADER_READ_ONLY_OPTIMAL for UI sampling",
-                        current_state
-                    );
-
-                    let cmd_vk = cmd.vk_command_buffer();
-                    let device = &self.renderer.context.device;
-
-                    match current_state {
-                        super::resource::ResourceState::ColorAttachment => {
-                            ImageBarrier::transition(
-                                &cmd_vk,
-                                device,
-                                ldr_texture.image,
-                                vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
-                                vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
-                            );
-                        }
-                        super::resource::ResourceState::Undefined => {
-                            ImageBarrier::transition_from_undefined(
-                                &cmd_vk,
-                                device,
-                                ldr_texture.image,
-                                vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
-                            );
-                        }
-                        _ => {
-                            log::warn!("LDR texture in unexpected state: {:?}", current_state);
-                        }
-                    }
-
-                    // Update tracked state
-                    self.resource_states.insert(
-                        "ldr_color".to_string(),
-                        super::resource::ResourceState::ShaderRead,
-                    );
-                }
-            }
-            None => {
-                log::debug!("LDR texture not found for UI sampling");
-            }
-        }
 
         // Begin dynamic rendering
         cmd.begin_rendering(
