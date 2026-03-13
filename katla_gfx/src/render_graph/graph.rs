@@ -815,6 +815,10 @@ impl<'a> Frame<'a> {
                     super::resource::ResourceState::ColorAttachment,
                 );
             }
+
+            // Insert post-pass barriers for transient textures that will be read by subsequent passes
+            // This ensures proper synchronization between write and read operations
+            self.insert_post_pass_barriers(&cmd, index)?;
         }
 
         Ok(())
@@ -837,7 +841,6 @@ impl<'a> Frame<'a> {
 
         let cmd_vk = cmd.vk_command_buffer();
         let device = &self.renderer.context.device;
-        let frame_idx = self.renderer.swap_data.current_frame();
 
         // Process writes first (color attachments)
         for write_name in &pass.writes {
@@ -968,6 +971,76 @@ impl<'a> Frame<'a> {
         Ok(())
     }
 
+    /// Insert post-pass barriers to ensure proper synchronization.
+    ///
+    /// This method transitions textures written by the current pass to SHADER_READ_ONLY
+    /// if subsequent passes will read them. This fixes the black screen issue during
+    /// high load where the UI samples from ldr_color before it's properly transitioned.
+    fn insert_post_pass_barriers(
+        &mut self,
+        cmd: &crate::vulkan::commandbuffer::CommandBuffer,
+        pass_index: usize,
+    ) -> Result<(), RenderGraphError> {
+        use crate::barrier::ImageBarrier;
+
+        let Some(current_pass) = self.graph.pass(pass_index) else {
+            return Ok(());
+        };
+
+        let cmd_vk = cmd.vk_command_buffer();
+        let device = &self.renderer.context.device;
+
+        // Check if any subsequent pass reads from textures written by this pass
+        for write_name in &current_pass.writes {
+            // Skip backbuffer
+            if write_name == BACKBUFFER_NAME {
+                continue;
+            }
+
+            // Check if this is a transient texture
+            let Some(transient) = self.graph.transient_texture(write_name) else {
+                continue;
+            };
+
+            // Check if any subsequent pass reads from this texture
+            let will_be_read = self.graph.passes[pass_index + 1..]
+                .iter()
+                .any(|pass| pass.reads.contains(write_name));
+
+            if will_be_read {
+                let current_state = self
+                    .resource_states
+                    .get(write_name)
+                    .copied()
+                    .unwrap_or(super::resource::ResourceState::ColorAttachment);
+
+                // Transition to SHADER_READ_ONLY for subsequent reads
+                if current_state == super::resource::ResourceState::ColorAttachment {
+                    log::debug!(
+                        "Post-pass barrier: transitioning '{}' from ColorAttachment to ShaderRead for subsequent pass",
+                        write_name
+                    );
+
+                    ImageBarrier::transition(
+                        &cmd_vk,
+                        device,
+                        transient.image,
+                        vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+                        vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+                    );
+
+                    // Update tracked state
+                    self.resource_states.insert(
+                        write_name.clone(),
+                        super::resource::ResourceState::ShaderRead,
+                    );
+                }
+            }
+        }
+
+        Ok(())
+    }
+
     /// Execute a graphics pass with dynamic rendering.
     fn execute_graphics_pass(
         &mut self,
@@ -982,9 +1055,6 @@ impl<'a> Frame<'a> {
             offset: vk::Offset2D { x: 0, y: 0 },
             extent,
         };
-
-        // Get current frame index for per-frame texture selection
-        let frame_idx = self.renderer.swap_data.current_frame();
 
         // Determine color attachment:
         // 1. If pass writes to "backbuffer", use swapchain directly
@@ -1186,7 +1256,7 @@ impl<'a> Frame<'a> {
 
         // Execute all compute dispatches
         for emitter_handle in all_emitters {
-            if let Some((pipeline, pipeline_layout, descriptor_set, config, workgroup_count)) =
+            if let Some((pipeline, pipeline_layout, descriptor_set, _config, workgroup_count)) =
                 particle_system.get_compute_dispatch(emitter_handle, &self.renderer.asset_registry)
             {
                 let compute_pipeline = self
@@ -1299,7 +1369,7 @@ impl<'a> Frame<'a> {
         };
 
         // Get render data from particle system
-        let (pipeline, pipeline_layout, frame_set, particle_set, particle_count) = particle_system
+        let (pipeline, _pipeline_layout, frame_set, particle_set, particle_count) = particle_system
             .get_render_data(
                 emitter_handle,
                 frame_descriptor_set,
@@ -1402,14 +1472,12 @@ impl<'a> Frame<'a> {
         // Get swapchain extent for scissor (physical pixels)
         let extent = self.renderer.frame_context.swapchain.get_extent();
 
-        // Get font atlas handle for fallback when texture is NONE
-        let font_atlas_handle = self
-            .renderer
-            .ui_renderer
-            .font_atlas_handle()
-            .ok_or_else(|| {
-                RenderGraphError::InvalidConfiguration("UI font atlas not initialized".to_string())
-            })?;
+        // Check font atlas is available
+        if self.renderer.ui_renderer.font_atlas_handle().is_none() {
+            return Err(RenderGraphError::InvalidConfiguration(
+                "UI font atlas not initialized".to_string(),
+            ));
+        }
 
         // Bind UI descriptor sets (sampler, uniforms, bindless textures)
         // Use screen_size from draw list (logical pixels, matches vertex coordinates)
@@ -1777,7 +1845,6 @@ impl<'a> Frame<'a> {
 
         // Extract needed data before borrows end
         let index_count = mesh.index_buffer.as_ref().map(|ib| ib.count()).unwrap_or(0);
-        let skeleton = draw_call.skeleton;
 
         // Material borrow ends here, allowing &mut self call below
         let _ = material;

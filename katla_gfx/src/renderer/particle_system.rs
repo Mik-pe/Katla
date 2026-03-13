@@ -578,7 +578,7 @@ impl ParticleSystem {
             }
         }
 
-        if let Some((buffer, mut allocation)) = self.frame_uniform_buffer.take() {
+        if let Some((buffer, allocation)) = self.frame_uniform_buffer.take() {
             unsafe {
                 context.device.destroy_buffer(buffer, None);
                 context.allocator.borrow_mut().free(allocation).ok();

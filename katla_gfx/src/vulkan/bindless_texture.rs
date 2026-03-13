@@ -373,6 +373,7 @@ impl BindlessTextureManager {
     /// // Slot 6: [OCCUPIED]
     /// // Slots 7-4095: [FREE]
     /// ```
+    #[allow(dead_code)]
     pub fn debug_slot_allocation(&self) -> String {
         let mut output = String::from("Bindless Slot Allocation:\n");
 
@@ -480,11 +481,13 @@ impl BindlessTextureManager {
     ///
     /// # Returns
     /// true if the slot is reserved for default textures (0-4).
+    #[allow(dead_code)]
     pub fn is_default_slot(&self, slot: u32) -> bool {
         slot < DEFAULT_TEXTURE_COUNT
     }
 
     /// Get the number of slots reserved for default textures.
+    #[allow(dead_code)]
     pub fn default_texture_count(&self) -> u32 {
         DEFAULT_TEXTURE_COUNT
     }

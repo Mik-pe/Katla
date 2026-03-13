@@ -6,10 +6,6 @@ use log::info;
 
 use super::context::VulkanContext;
 
-/// Maximum number of particles per emitter.
-/// 64K particles × 64 bytes = 4MB GPU memory per emitter.
-const MAX_PARTICLES: u32 = 65536;
-
 /// Per-particle data structure for GPU simulation.
 ///
 /// Size: 64 bytes (cache-line aligned for optimal GPU access).

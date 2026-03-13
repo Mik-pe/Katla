@@ -197,14 +197,6 @@ impl AssetRegistry {
         Some((pipeline.vk_pipeline(), pipeline.vk_layout()))
     }
 
-    /// Check if a pipeline is a compute pipeline.
-    pub(crate) fn is_compute_pipeline(&self, handle: PipelineHandle) -> bool {
-        match self.pipelines.get(handle.index()) {
-            Some(AnyPipeline::Compute(_)) => true,
-            _ => false,
-        }
-    }
-
     /// Get a pipeline by handle (for render graph access).
     pub(crate) fn get_pipeline(&self, handle: PipelineHandle) -> Option<&AnyPipeline> {
         self.pipelines.get(handle.index())
