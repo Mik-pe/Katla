@@ -435,7 +435,6 @@ impl ApplicationBuilder {
             thumbnail_texture_handles: HashMap::new(),
             start_time: Instant::now(),
             default_material_handle: katla_gfx::MaterialHandle::NONE,
-            hdr_texture_index: None,
             particle_system: Some(particle_system),
             cleaned_up: false,
         };
