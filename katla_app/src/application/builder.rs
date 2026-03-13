@@ -210,7 +210,12 @@ impl ApplicationBuilder {
                     .tonemap(tonemap_params),
             )
             // UI pass: draws editor UI to backbuffer
-            .add_pass(UIPass::new("ui").write("backbuffer").material(ui_material))
+            .add_pass(
+                UIPass::new("ui")
+                    .write("backbuffer")
+                    .read("ldr_color")
+                    .material(ui_material),
+            )
             .build()
             .map_err(|e| crate::error::AppError::Graphics {
                 message: e.to_string(),
@@ -362,15 +367,33 @@ impl ApplicationBuilder {
         // Build the frame graph once at startup (needs mutable renderer to compile shader)
         let frame_graph = Self::build_frame_graph(&mut renderer, &resources)?;
 
+        // Initialize particle system
+        let mut particle_system = katla_gfx::ParticleSystem::new();
+        match particle_system.init(
+            &mut renderer,
+            resources.shader_path("particles/particle_sim.wgsl"),
+            resources.shader_path("particles/particle_render.wgsl"),
+        ) {
+            Ok(_) => {
+                log::info!("✨ Particle system initialized successfully");
+                log::info!("   - Compute shader: particles/particle_sim.wgsl");
+                log::info!("   - Render shader: particles/particle_render.wgsl");
+                log::info!("   - Max particles per emitter: 65,536");
+                log::info!("   - Memory per emitter: 4MB GPU");
+            }
+            Err(e) => {
+                log::warn!("Failed to initialize particle system: {}", e);
+                log::warn!("Particle effects will be disabled");
+                // Continue without particle system
+            }
+        }
+
         // Initialize UI renderer with font atlas bindless slot
         let mut ui_renderer = crate::ui::UIRenderer::new();
         match renderer.ui_renderer.font_atlas_bindless_slot() {
             Some(bindless_slot) => {
                 ui_renderer.set_font_atlas_bindless_slot(bindless_slot);
-                log::info!(
-                    "Font atlas bindless slot initialized: {}",
-                    bindless_slot
-                );
+                log::info!("Font atlas bindless slot initialized: {}", bindless_slot);
             }
             None => {
                 log::error!("Font atlas bindless slot is None! Text will render as solid colors.");
@@ -413,6 +436,7 @@ impl ApplicationBuilder {
             start_time: Instant::now(),
             default_material_handle: katla_gfx::MaterialHandle::NONE,
             hdr_texture_index: None,
+            particle_system: Some(particle_system),
             cleaned_up: false,
         };
 
