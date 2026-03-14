@@ -1,15 +1,15 @@
-//! Viewport manager for viewport and render target management.
+//! Viewport manager for viewport configuration and lifecycle.
 //!
-//! ViewportManager provides a clean internal API for managing viewports
-//! and render targets. This module organizes viewport-related functionality
-//! away from VulkanRenderer.
+//! ViewportManager provides a clean internal API for managing viewport
+//! configuration. All rendering state is managed by the frame graph system.
 
 use crate::Size2D;
 use crate::viewport::{Viewport, ViewportBuilder, ViewportHandle};
 
-/// Viewport manager for managing viewports and render targets.
+/// Viewport manager for managing viewport configuration and lifecycle.
 ///
-/// Handles viewport creation, lookup, and lifecycle management.
+/// Handles viewport creation, lookup, and destruction. Rendering is managed
+/// by the frame graph system.
 pub(crate) struct ViewportManager {
     /// Viewport storage.
     viewports: Vec<Viewport>,
@@ -46,6 +46,9 @@ impl ViewportManager {
     }
 
     /// Get the texture ID for a viewport.
+    ///
+    /// This is used for UI sampling of viewport textures. The texture is
+    /// managed by the frame graph, not the viewport itself.
     pub(crate) fn texture_id(&self, handle: ViewportHandle) -> Option<u64> {
         self.get(handle).map(|_| {
             // Generate a unique texture ID based on viewport index
@@ -71,8 +74,7 @@ impl ViewportManager {
             return false;
         }
 
-        // Mark as destroyed by setting to None (we'll use Option<Viewport> in the future)
-        // For now, just remove it
+        // Remove the viewport
         self.viewports.remove(handle.0);
 
         true
