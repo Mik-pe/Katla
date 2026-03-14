@@ -10,15 +10,16 @@
 // Set 1 (Per-Emitter, Updated via push descriptors):
 //   Binding 0: Uniform buffer (emitter config)
 
+// Maximum particles per emitter (must match buffer size)
+const MAX_PARTICLES: u32 = 65536u;
+
 // Particle data structure (must match ParticleData in particle_buffer.rs)
 struct ParticleData {
     position: vec3f,
-    _pad1: f32,
+    scale: f32,
     velocity: vec3f,
     lifetime: f32,
     color: vec4f,
-    scale: f32,
-    _pad2: vec3f,
 }
 
 // Per-frame data (Set 0, Binding 1)
@@ -30,20 +31,27 @@ struct FrameData {
 }
 
 // Per-emitter configuration (Set 1, Binding 0)
+// std140 layout: vec3 is 16-byte aligned
 struct EmitterConfig {
-    position: vec3f,
-    emit_count: u32,
-    velocity_direction: vec3f,
-    base_lifetime: f32,
-    velocity_magnitude: f32,
-    velocity_cone_angle: f32,
-    base_scale: f32,
-    color: vec4f,
+    position: vec3f,      // offset 0, 16 bytes with _pad1
+    _pad1: u32,
+    emit_count: u32,        // offset 16, 4 bytes
+    _pad2: u32,             // offset 20
+    _pad3: u32,             // offset 24
+    _pad4: u32,             // offset 28 → total 32 bytes (16-byte boundary)
+    velocity_direction: vec3f,  // offset 32, 16 bytes with _pad5
+    _pad5: u32,
+    base_lifetime: f32,   // offset 48
+    velocity_magnitude: f32,  // offset 52
+    velocity_cone_angle: f32,  // offset 56
+    base_scale: f32,      // offset 60
+    color: vec4f,         // offset 64-79 → total 80 bytes
 }
 
 // Set 0: Per-frame resources (shared by all emitters)
+// Use fixed-size array to help SPIR-V generate correct bounds checking
 @group(0) @binding(0)
-var<storage, read_write> particles: array<ParticleData>;
+var<storage, read_write> particles: array<ParticleData, 65536>;
 
 @group(0) @binding(1)
 var<uniform> frame: FrameData;
@@ -101,12 +109,10 @@ fn init_particle(index: u32, seed: u32) -> ParticleData {
 
     var p: ParticleData;
     p.position = emitter.position;
-    p._pad1 = 0.0;
+    p.scale = emitter.base_scale * (0.5 + r3 * 1.0);  // 50-150% variation
     p.velocity = velocity;
     p.lifetime = emitter.base_lifetime * (0.8 + r4 * 0.4);  // ±20% variation
     p.color = emitter.color;
-    p.scale = emitter.base_scale * (0.5 + r3 * 1.0);  // 50-150% variation
-    p._pad2 = vec3f(0.0, 0.0, 0.0);
 
     return p;
 }
@@ -116,35 +122,13 @@ fn cs_main(@builtin(global_invocation_id) global_id: vec3u) {
     let index = global_id.x;
 
     // Guard against out-of-bounds access
-    if (index >= frame.max_particles) {
+    if (index >= MAX_PARTICLES) {
         return;
     }
 
     var particle = particles[index];
 
-    // TODO: Limit initialization to avoid GPU timeout
-    // Only initialize first 1000 particles on first frame
-    if (index < 1000u && particle.lifetime <= 0.0) {
-        let seed = frame.random_seed + index;
-        particle = init_particle(index, seed);
-        particles[index] = particle;
-        return;
-    }
-
-    // Emit new particles (only first N threads handle emission)
-    let emit_this_frame = min(emitter.emit_count, 1000u);  // Cap at 1000
-    if (index < emit_this_frame) {
-        // Always emit new particles in the first N slots
-        // This ensures particles are spawned every frame
-        let seed = frame.random_seed + index;
-        particle = init_particle(index, seed);
-
-        // Write immediately so other threads can see it
-        particles[index] = particle;
-        return;
-    }
-
-    // Check if particle is alive
+    // Check if particle is alive (lifetime > 0 means alive)
     if (particle.lifetime > 0.0) {
         // Update lifetime
         particle.lifetime -= frame.delta_time;
@@ -161,12 +145,36 @@ fn cs_main(@builtin(global_invocation_id) global_id: vec3u) {
                 particle.color.a = particle.lifetime;
             }
         } else {
-            // Particle died - mark as dead (negative lifetime)
-            particle.lifetime = -1.0;
+            // Particle died - mark as dead (lifetime = 0)
+            particle.lifetime = 0.0;
             particle.color.a = 0.0;
         }
-    }
 
-    // Write back
-    particles[index] = particle;
+        // Write back updated particle
+        particles[index] = particle;
+    } else {
+        // Particle is dead - try to emit a new one
+        // Use a ring buffer approach: each frame, emit into a sliding window of slots
+        // The window starts at (random_seed % MAX_PARTICLES) and spans emit_count slots
+        // This ensures exactly emit_count particles are attempted each frame
+
+        let emit_window_start = frame.random_seed % MAX_PARTICLES;
+        let emit_window_end = emit_window_start + emitter.emit_count;
+
+        // Check if this index falls within the emission window (with wraparound)
+        var in_window = false;
+        if (emit_window_end <= MAX_PARTICLES) {
+            // No wraparound
+            in_window = index >= emit_window_start && index < emit_window_end;
+        } else {
+            // Wraparound case: window spans end and beginning of buffer
+            in_window = index >= emit_window_start || index < (emit_window_end % MAX_PARTICLES);
+        }
+
+        if (in_window) {
+            let seed = frame.random_seed + index;
+            particle = init_particle(index, seed);
+            particles[index] = particle;
+        }
+    }
 }
