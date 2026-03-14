@@ -55,26 +55,57 @@ For milestone "rendering-fixes", the assertions require visual verification of:
 - Headless rendering tests validate Vulkan operations
 - Pixel inspection tests verify rendering output
 
-## Flow Validator Guidance: Native Desktop UI
+## Flow Validator Guidance: Native Desktop UI - Multi-Viewport Rendering
 
 ### Isolation Strategy
 - **No user accounts or authentication** - native desktop app
 - **No database** - all state is in-memory
 - **No shared network resources** - standalone application
 - **Parallel testing**: Safe to run multiple instances with different configurations
+- **Max concurrent validators**: 1 (Vulkan context limitation, GPU resource contention)
 
 ### Testing Constraints
 - Each test run is independent (no shared state between runs)
 - Application uses in-memory ECS and rendering state
 - No file I/O conflicts (each run operates independently)
 - Vulkan context is created per application instance
+- GPU is a shared resource - only one validator should run visual tests at a time
 
-### Validation Points
+### Validation Points for Multi-Viewport Rendering
 For each assertion, verify:
-1. **Visual correctness** - Does it look right?
-2. **Vulkan validation** - No validation layer errors
-3. **Data correctness** - Vertex/texture data is correct
-4. **Consistency** - Behavior is consistent across runs
+1. **Integration tests** - Unit/integration tests pass (VAL-MULTI-001, VAL-MULTI-002, VAL-MULTI-003)
+2. **Visual correctness** - Viewports display correctly with proper positioning (VAL-MULTI-004, VAL-MULTI-005, VAL-MULTI-006)
+3. **Vulkan validation** - No synchronization errors (VAL-MULTI-007)
+4. **Stability** - No flickering or artifacts over extended runs (VAL-MULTI-008)
+
+### Testing Approach
+
+**Automated Tests:**
+```bash
+# Run integration tests for viewport pass rendering
+cargo test -p katla_gfx test_viewport_pass_rendering
+cargo test -p katla_gfx test_multiple_viewport_passes
+cargo test -p katla_gfx test_multiple_viewports_independent_cameras
+```
+
+**Visual Verification (limited-frame mode):**
+```bash
+# Run with 2-viewport split-screen
+cargo run -- -s
+
+# Run with 4-viewport grid (if example exists)
+cargo run -- -s
+
+# Run with Vulkan validation layers
+cargo run -- -v -- -s
+```
+
+**Extended Run (for artifact testing):**
+```bash
+# Run for extended period to check for flickering/artifacts
+# Observe for 30+ seconds of stable rendering
+cargo run
+```
 
 ## Visual Testing Checklist
 
