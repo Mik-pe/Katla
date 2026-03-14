@@ -242,6 +242,8 @@ pub struct VulkanContext {
     pub push_descriptor_enabled: bool,
     /// Cached KHR push descriptor function pointer for efficient access.
     pub push_descriptor_khr: Option<ash::khr::push_descriptor::Device>,
+    /// Cached non-coherent atom size for aligned memory flushes.
+    pub non_coherent_atom_size: vk::DeviceSize,
 }
 pub struct VulkanFrameCtx {
     pub context: Rc<VulkanContext>,
@@ -380,18 +382,42 @@ impl VulkanContext {
     /// Flush mapped memory ranges to make CPU writes visible to the GPU.
     ///
     /// This is required for non-coherent memory types. For coherent memory, this is a no-op.
+    ///
+    /// The offset and size are automatically aligned to `non_coherent_atom_size` as required
+    /// by the Vulkan specification. The actual flushed range may be slightly larger than
+    /// requested to ensure proper alignment.
     pub fn flush_mapped_memory(
         &self,
         allocation: &Allocation,
         offset: vk::DeviceSize,
         size: vk::DeviceSize,
     ) {
+        // Align offset down to non_coherent_atom_size
+        let base_offset = allocation.offset() + offset;
+        let aligned_offset = base_offset & !(self.non_coherent_atom_size - 1);
+
+        // Align size up to cover the requested range
+        let end = base_offset + size;
+        let allocation_end = allocation.offset() + allocation.size();
+        let clamped_end = end.min(allocation_end);
+
+        // Calculate aligned size, ensuring it doesn't exceed the allocation bounds
+        let aligned_size = if clamped_end <= aligned_offset {
+            // End is before or at aligned offset, nothing to flush
+            return;
+        } else {
+            let size_needed = clamped_end - aligned_offset;
+            // Round up to alignment
+            ((size_needed + self.non_coherent_atom_size - 1) & !(self.non_coherent_atom_size - 1))
+                .min(allocation_end - aligned_offset)
+        };
+
         unsafe {
             let memory = allocation.memory();
             let flush_range = vk::MappedMemoryRange::default()
                 .memory(memory)
-                .offset(allocation.offset() + offset)
-                .size(size);
+                .offset(aligned_offset)
+                .size(aligned_size);
 
             self.device
                 .flush_mapped_memory_ranges(&[flush_range])
@@ -688,6 +714,10 @@ impl VulkanContext {
         // Create push descriptor device before moving instance/device
         let push_descriptor_khr = Some(ash::khr::push_descriptor::Device::new(&instance, &device));
 
+        // Cache non-coherent atom size for aligned memory flushes
+        let device_properties = unsafe { instance.get_physical_device_properties(physical_device) };
+        let non_coherent_atom_size = device_properties.limits.non_coherent_atom_size;
+
         Self {
             _entry: entry,
             instance,
@@ -708,6 +738,7 @@ impl VulkanContext {
             validation_callback,
             push_descriptor_enabled: true,
             push_descriptor_khr,
+            non_coherent_atom_size,
         }
     }
 
@@ -821,6 +852,10 @@ impl VulkanContext {
         // Create push descriptor device before moving instance/device
         let push_descriptor_khr = Some(ash::khr::push_descriptor::Device::new(&instance, &device));
 
+        // Cache non-coherent atom size for aligned memory flushes
+        let device_properties = unsafe { instance.get_physical_device_properties(physical_device) };
+        let non_coherent_atom_size = device_properties.limits.non_coherent_atom_size;
+
         Self {
             _entry: entry,
             instance,
@@ -841,6 +876,7 @@ impl VulkanContext {
             validation_callback,
             push_descriptor_enabled: true,
             push_descriptor_khr,
+            non_coherent_atom_size,
         }
     }
 
