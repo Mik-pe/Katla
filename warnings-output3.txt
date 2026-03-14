@@ -1,0 +1,166 @@
+   Compiling katla_math v0.1.0 (C:\dev\katla\katla_math)
+warning: type `InternalPassBuilder` is more private than the item `PassBuilder::as_builder`
+  --> katla_gfx\src\render_graph\builder.rs:50:5
+   |
+50 |     fn as_builder(self) -> InternalPassBuilder;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ method `PassBuilder::as_builder` is reachable at visibility `pub`
+   |
+note: but type `InternalPassBuilder` is only usable at visibility `pub(crate)`
+  --> katla_gfx\src\render_graph\builder.rs:61:1
+   |
+61 | pub(crate) struct InternalPassBuilder {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   = note: `#[warn(private_interfaces)]` on by default
+
+warning: type `InternalPassBuilder` is more private than the item `<CompositePass as PassBuilder>::as_builder`
+   --> katla_gfx\src\render_graph\passes\composite.rs:270:5
+    |
+270 |     fn as_builder(self) -> InternalPassBuilder {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ method `<CompositePass as PassBuilder>::as_builder` is reachable at visibility `pub`
+    |
+note: but type `InternalPassBuilder` is only usable at visibility `pub(crate)`
+   --> katla_gfx\src\render_graph\builder.rs:61:1
+    |
+ 61 | pub(crate) struct InternalPassBuilder {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `InternalPassBuilder` is more private than the item `<FullscreenPass as PassBuilder>::as_builder`
+   --> katla_gfx\src\render_graph\passes\fullscreen.rs:155:5
+    |
+155 |     fn as_builder(self) -> InternalPassBuilder {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ method `<FullscreenPass as PassBuilder>::as_builder` is reachable at visibility `pub`
+    |
+note: but type `InternalPassBuilder` is only usable at visibility `pub(crate)`
+   --> katla_gfx\src\render_graph\builder.rs:61:1
+    |
+ 61 | pub(crate) struct InternalPassBuilder {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `InternalPassBuilder` is more private than the item `<GeometryPass as PassBuilder>::as_builder`
+   --> katla_gfx\src\render_graph\passes\geometry.rs:195:5
+    |
+195 |     fn as_builder(self) -> InternalPassBuilder {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ method `<GeometryPass as PassBuilder>::as_builder` is reachable at visibility `pub`
+    |
+note: but type `InternalPassBuilder` is only usable at visibility `pub(crate)`
+   --> katla_gfx\src\render_graph\builder.rs:61:1
+    |
+ 61 | pub(crate) struct InternalPassBuilder {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `InternalPassBuilder` is more private than the item `<ShadowPass as PassBuilder>::as_builder`
+  --> katla_gfx\src\render_graph\passes\shadow.rs:90:5
+   |
+90 |     fn as_builder(self) -> InternalPassBuilder {
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ method `<ShadowPass as PassBuilder>::as_builder` is reachable at visibility `pub`
+   |
+note: but type `InternalPassBuilder` is only usable at visibility `pub(crate)`
+  --> katla_gfx\src\render_graph\builder.rs:61:1
+   |
+61 | pub(crate) struct InternalPassBuilder {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `InternalPassBuilder` is more private than the item `<UIPass as PassBuilder>::as_builder`
+   --> katla_gfx\src\render_graph\passes\ui.rs:143:5
+    |
+143 |     fn as_builder(self) -> InternalPassBuilder {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ method `<UIPass as PassBuilder>::as_builder` is reachable at visibility `pub`
+    |
+note: but type `InternalPassBuilder` is only usable at visibility `pub(crate)`
+   --> katla_gfx\src\render_graph\builder.rs:61:1
+    |
+ 61 | pub(crate) struct InternalPassBuilder {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `InternalPassBuilder` is more private than the item `<ViewportPass as PassBuilder>::as_builder`
+   --> katla_gfx\src\render_graph\passes\viewport.rs:271:5
+    |
+271 |     fn as_builder(self) -> InternalPassBuilder {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ method `<ViewportPass as PassBuilder>::as_builder` is reachable at visibility `pub`
+    |
+note: but type `InternalPassBuilder` is only usable at visibility `pub(crate)`
+   --> katla_gfx\src\render_graph\builder.rs:61:1
+    |
+ 61 | pub(crate) struct InternalPassBuilder {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: method `is_persistent` is never used
+   --> katla_gfx\src\vulkan\bda.rs:115:12
+    |
+ 54 | impl DeviceAddressBuffer {
+    | ------------------------ method in this implementation
+...
+115 |     pub fn is_persistent(&self) -> bool {
+    |            ^^^^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: struct `ObjectData` is never constructed
+  --> katla_gfx\src\vulkan\material\storage_uniform.rs:71:12
+   |
+71 | pub struct ObjectData {
+   |            ^^^^^^^^^^
+
+warning: multiple methods are never used
+   --> katla_gfx\src\vulkan\material\storage_uniform.rs:339:12
+    |
+310 | impl StorageUniformManager {
+    | -------------------------- methods in this implementation
+...
+339 |     pub fn frames_in_flight(&self) -> usize {
+    |            ^^^^^^^^^^^^^^^^
+...
+352 |     pub fn update_frame(&mut self, frame_index: usize, view: &[f32; 16], proj: &[f32; 16]) {
+    |            ^^^^^^^^^^^^
+...
+445 |     pub fn update_object(
+    |            ^^^^^^^^^^^^^
+...
+465 |     pub fn update_object_with_material(
+    |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+499 |     pub fn update_object_with_material_full(
+    |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+584 |     pub fn update_objects_bulk(
+    |            ^^^^^^^^^^^^^^^^^^^
+...
+617 |     pub fn max_objects(&self) -> usize {
+    |            ^^^^^^^^^^^
+...
+623 |     pub fn is_persistent(&self) -> bool {
+    |            ^^^^^^^^^^^^^
+
+warning: constant `DEPTH_SUBRESOURCE_RANGE` is never used
+  --> katla_gfx\src\sync.rs:32:18
+   |
+32 | pub(crate) const DEPTH_SUBRESOURCE_RANGE: vk::ImageSubresourceRange = vk::ImageSubresourceRange {
+   |                  ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: `katla_gfx` (lib) generated 11 warnings
+error[E0599]: no method named `x` found for reference `&sse::quat::Quat` in the current scope
+   --> katla_math\src\sse\quat.rs:190:22
+    |
+190 |         let x = self.x();
+    |                      ^ method not found in `&sse::quat::Quat`
+
+error[E0599]: no method named `y` found for reference `&sse::quat::Quat` in the current scope
+   --> katla_math\src\sse\quat.rs:191:22
+    |
+191 |         let y = self.y();
+    |                      ^ method not found in `&sse::quat::Quat`
+
+error[E0599]: no method named `z` found for reference `&sse::quat::Quat` in the current scope
+   --> katla_math\src\sse\quat.rs:192:22
+    |
+192 |         let z = self.z();
+    |                      ^ method not found in `&sse::quat::Quat`
+
+error[E0599]: no method named `w` found for reference `&sse::quat::Quat` in the current scope
+   --> katla_math\src\sse\quat.rs:193:22
+    |
+193 |         let w = self.w();
+    |                      ^ method not found in `&sse::quat::Quat`
+
+For more information about this error, try `rustc --explain E0599`.
+error: could not compile `katla_math` (lib) due to 4 previous errors

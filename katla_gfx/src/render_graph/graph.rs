@@ -11,6 +11,7 @@ use super::builder::{InternalPassBuilder, PassBuilder};
 use super::compiler::{ExecutionPlan, GraphCompiler};
 use super::error::RenderGraphError;
 use super::pass::PassDesc;
+use super::passes::ViewportRect;
 use super::passes::geometry::GeometryPassData;
 use super::resource::{GraphResourceDesc, GraphResourceHandle};
 use crate::handle::PipelineHandle;
@@ -755,6 +756,14 @@ impl FrameGraphBuilder {
                 }
             }
 
+            // Extract compositing viewport data (for compositing passes)
+            if let Some(comp_data) =
+                pass_data.downcast_ref::<crate::render_graph::passes::CompositePassData>()
+            {
+                // Store viewport data directly (handles are already resolved)
+                pass.compositing_viewports = Some(comp_data.viewports.clone());
+            }
+
             graph.add_pass(pass);
         }
 
@@ -792,6 +801,10 @@ pub struct Frame<'a> {
 
     /// Per-frame temporary buffers (allocated during this frame, cleaned up after GPU completion).
     temporary_buffers: Vec<(vk::Buffer, gpu_allocator::vulkan::Allocation)>,
+
+    /// Compositing descriptor set for this frame (created once per frame, cleaned up on drop).
+    compositing_descriptor_set:
+        Option<Box<crate::render_graph::descriptor_sets::CompositingDescriptorSet>>,
 }
 
 /// Data for a single pass execution.
@@ -832,6 +845,7 @@ impl<'a> Frame<'a> {
             pending: HashMap::new(),
             resource_states,
             temporary_buffers: Vec::new(),
+            compositing_descriptor_set: None,
         }
     }
 
@@ -966,8 +980,16 @@ impl<'a> Frame<'a> {
             // Execute pass based on type
             match pass.pass_type {
                 super::pass::PassType::Graphics => {
-                    // Check if this is a fullscreen pass (needs mutable renderer access)
-                    if pass.pipeline.is_some() && data.draw_lists.is_empty() {
+                    // Check if this is a compositing pass (has material and compositing_viewports)
+                    if pass.material.is_some()
+                        && pass.compositing_viewports.is_some()
+                        && data.draw_lists.is_empty()
+                    {
+                        let material_handle = pass.material.unwrap();
+                        self.execute_compositing_pass(&cmd, pass, material_handle)?;
+                    }
+                    // Check if this is a fullscreen pass (has pipeline, no draw lists)
+                    else if pass.pipeline.is_some() && data.draw_lists.is_empty() {
                         if let Some(pipeline) = pass.pipeline {
                             self.execute_fullscreen_pass(&cmd, pass, pipeline)?;
                         }
@@ -2063,6 +2085,247 @@ impl<'a> Frame<'a> {
         cmd.end_rendering();
 
         Ok(())
+    }
+
+    /// Execute a compositing pass (multi-viewport fullscreen pass).
+    ///
+    /// Compositing passes sample from multiple viewport textures and composite them
+    /// onto the final output using viewport rectangles for positioning.
+    ///
+    /// # Compositing-Specific Behavior
+    ///
+    /// 1. **Update compositing uniforms**: Upload viewport rectangles to storage buffer
+    /// 2. **Bind compositing descriptor set**: Set 2 with viewport texture array
+    /// 3. **Draw fullscreen triangle**: Standard fullscreen draw with compositing shader
+    fn execute_compositing_pass(
+        &mut self,
+        cmd: &crate::vulkan::commandbuffer::CommandBuffer,
+        pass: &PassDesc,
+        material_handle: crate::handle::MaterialHandle,
+    ) -> Result<(), RenderGraphError> {
+        let current_frame = self.current_frame();
+        let viewports =
+            pass.compositing_viewports
+                .as_ref()
+                .ok_or(RenderGraphError::InvalidConfiguration(
+                    "Compositing pass missing viewport data".to_string(),
+                ))?;
+
+        log::debug!(
+            "Compositing pass '{}' execution: frame_idx={}, viewport_count={}, writes={:?}",
+            pass.name,
+            current_frame,
+            viewports.len(),
+            pass.writes
+        );
+
+        let extent = self.renderer.frame_context.swapchain.get_extent();
+
+        // Update compositing uniforms (viewport rectangles and screen size)
+        // We use objects[0] for fullscreen/post-processing passes (similar to tonemap)
+        let viewport_count = viewports.len() as u32;
+        let screen_size = [extent.width as f32, extent.height as f32];
+
+        // Encode viewport count and screen size in objects[0]
+        // base_color.rgb = screen_size (width, height, viewport_count)
+        self.renderer.storage_manager.update_object_bindless(
+            current_frame,
+            0,          // Slot 0 for fullscreen passes
+            &[0.0; 16], // Identity matrix (unused)
+            &[
+                screen_size[0],        // base_color.r = screen width
+                screen_size[1],        // base_color.g = screen height
+                viewport_count as f32, // base_color.b = viewport count
+                0.0,                   // base_color.a = unused
+            ],
+            0.0,
+            0.0,
+            1.0,
+            0.0,
+            [0, 0, 0, 0],
+        );
+
+        // TODO: Pass viewport rectangles via proper uniform buffer
+        // For now, the shader uses a simple hardcoded split-screen layout
+        // This will be enhanced in a follow-up to support arbitrary viewport rectangles
+
+        // Create or update compositing descriptor set with viewport textures
+        let compositing_desc_set =
+            self.get_or_create_compositing_descriptor_set(viewports, current_frame)?;
+
+        // Get swapchain extent for rendering
+        let render_area = vk::Rect2D {
+            offset: vk::Offset2D { x: 0, y: 0 },
+            extent,
+        };
+
+        // Determine color attachment (backbuffer or transient texture)
+        let color_attachment = if pass.writes.contains(&BACKBUFFER_NAME.to_string()) {
+            // Write to backbuffer
+            let swapchain_view =
+                self.renderer.frame_context.swapchain_image_views[self.image_index as usize].vk();
+            vk::RenderingAttachmentInfo::default()
+                .image_view(swapchain_view)
+                .image_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
+                .load_op(vk::AttachmentLoadOp::CLEAR)
+                .store_op(vk::AttachmentStoreOp::STORE)
+                .clear_value(vk::ClearValue {
+                    color: vk::ClearColorValue {
+                        float32: [0.0, 0.0, 0.0, 1.0],
+                    },
+                })
+        } else if let Some(color_name) = pass.writes.first() {
+            // Write to transient texture
+            let frame_idx = self.current_frame();
+            if let Some(transient) = self.graph.transient_texture(color_name, frame_idx) {
+                vk::RenderingAttachmentInfo::default()
+                    .image_view(transient.image_view.vk())
+                    .image_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
+                    .load_op(vk::AttachmentLoadOp::CLEAR)
+                    .store_op(vk::AttachmentStoreOp::STORE)
+                    .clear_value(vk::ClearValue {
+                        color: vk::ClearColorValue {
+                            float32: [0.0, 0.0, 0.0, 1.0],
+                        },
+                    })
+            } else {
+                return Err(RenderGraphError::ResourceNotFound(format!(
+                    "Output target '{}' not found",
+                    color_name
+                )));
+            }
+        } else {
+            return Err(RenderGraphError::InvalidConfiguration(
+                "Compositing pass has no output target".to_string(),
+            ));
+        };
+
+        // Begin dynamic rendering
+        cmd.begin_rendering(
+            &[color_attachment],
+            None, // No depth attachment for compositing
+            None,
+            render_area,
+            1,
+        );
+
+        // Set viewport and scissor
+        cmd.set_viewport(&[crate::sync::VkViewport::from_rect(
+            0.0,
+            0.0,
+            extent.width as f32,
+            extent.height as f32,
+        )]);
+        cmd.set_scissor(&[crate::sync::Rect2D::from_extent(
+            extent.width,
+            extent.height,
+        )]);
+
+        // Get material and pipeline from registry
+        let material = self
+            .renderer
+            .asset_registry
+            .get_material(material_handle)
+            .ok_or(RenderGraphError::InvalidMaterialHandle(material_handle))?;
+
+        let pipeline_handle = material
+            .pipeline
+            .ok_or(RenderGraphError::InvalidMaterialHandle(material_handle))?;
+
+        let (pipeline, layout) = self
+            .renderer
+            .asset_registry
+            .get_pipeline_vk_handles(pipeline_handle)
+            .ok_or(RenderGraphError::InvalidPipelineHandle(pipeline_handle))?;
+
+        // Bind graphics pipeline
+        unsafe {
+            self.renderer.context.device.cmd_bind_pipeline(
+                cmd.vk_command_buffer(),
+                vk::PipelineBindPoint::GRAPHICS,
+                pipeline,
+            );
+        }
+
+        // Bind descriptor sets
+        // Set 0: Storage uniforms (frame_data + objects array)
+        let storage_ds = self.renderer.storage_descriptor_sets[current_frame].vk_set();
+        cmd.bind_descriptor_sets(layout, 0, &[storage_ds], &[]);
+
+        // Set 1: Bindless textures (shared with all materials)
+        let bindless_ds = self.renderer.bindless_manager.descriptor_set().vk();
+        cmd.bind_descriptor_sets(layout, 1, &[bindless_ds], &[]);
+
+        // Set 2: Compositing descriptor set (viewport texture array)
+        cmd.bind_descriptor_sets(layout, 2, &[compositing_desc_set], &[]);
+
+        // Draw fullscreen triangle (3 vertices)
+        cmd.draw_array(3, 1, 0, 0);
+
+        // End rendering
+        cmd.end_rendering();
+
+        Ok(())
+    }
+
+    /// Get or create compositing descriptor set for current frame.
+    ///
+    /// Creates or updates a descriptor set with the viewport texture array.
+    /// The descriptor set is cached per-frame and updated when viewport textures change.
+    fn get_or_create_compositing_descriptor_set(
+        &mut self,
+        viewports: &[(GraphResourceHandle, ViewportRect)],
+        frame_idx: usize,
+    ) -> Result<vk::DescriptorSet, RenderGraphError> {
+        use crate::render_graph::descriptor_sets::CompositingDescriptorSet;
+        use std::rc::Rc;
+
+        // Collect viewport texture image views
+        let mut texture_views = Vec::with_capacity(viewports.len());
+        for (handle, _rect) in viewports {
+            // Find the texture resource name from the handle
+            let resource_name = self
+                .graph
+                .resource_names
+                .iter()
+                .find(|&(_, h)| *h == *handle)
+                .map(|(name, _)| name.clone())
+                .ok_or_else(|| {
+                    RenderGraphError::ResourceNotFound(format!(
+                        "Viewport texture handle {} not found in resource names",
+                        handle.index()
+                    ))
+                })?;
+
+            // Get the transient texture
+            let transient = self
+                .graph
+                .transient_texture(&resource_name, frame_idx)
+                .ok_or_else(|| {
+                    RenderGraphError::ResourceNotFound(format!(
+                        "Viewport texture '{}' not found for frame {}",
+                        resource_name, frame_idx
+                    ))
+                })?;
+
+            texture_views.push(transient.image_view.vk());
+        }
+
+        // Create descriptor set and store it in the frame for cleanup
+        let context = Rc::clone(&self.renderer.context);
+        let desc_set = Box::new(
+            CompositingDescriptorSet::new(&context, &texture_views).map_err(|e| {
+                RenderGraphError::VulkanError(format!(
+                    "Failed to create compositing descriptor set: {}",
+                    e
+                ))
+            })?,
+        );
+
+        let vk_set = desc_set.vk_set();
+        self.compositing_descriptor_set = Some(desc_set);
+
+        Ok(vk_set)
     }
 }
 

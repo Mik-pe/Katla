@@ -1,0 +1,5 @@
+Validation Warning: [ VALIDATION-SETTINGS ] | MessageID = 0x7f1922d7
+vkCreateInstance(): Both GPU Assisted Validation and Normal Core Check Validation are enabled, this is not recommend as it  will be very slow. Once all errors in Core Check are solved, please disable, then only use GPU-AV for best performance.
+
+Application::init() called
+Application::init() completed

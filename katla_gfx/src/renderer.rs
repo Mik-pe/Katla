@@ -38,7 +38,7 @@ use crate::vulkan::IndexType;
 use crate::vulkan::material::compiler::{MaterialBuilder, MaterialCompiler};
 
 /// Per-frame UI rendering resources.
-pub struct UiFrameResources {
+pub(crate) struct UiFrameResources {
     /// Per-frame UI vertex buffers.
     pub vertex_buffers: Vec<VertexBuffer>,
     /// Per-frame UI index buffers.

@@ -4,7 +4,7 @@ use crate::util::MetricsHistory;
 use katla_math::{Color, Rect2D, Vec2};
 use katla_ui::{
     mouse_button,
-    widgets::{Button, Checkbox, Label, Slider},
+    widgets::{Button, Checkbox, Slider},
     DrawList, GraphOptions, UiContext,
 };
 
@@ -188,7 +188,7 @@ impl DebugOverlay {
         } else {
             "[Settings]"
         };
-        let button_bounds = Rect2D::from_origin_size(
+        let _button_bounds = Rect2D::from_origin_size(
             ui.cursor(),
             Vec2::new(window_width - padding * 2.0, button_height),
         );

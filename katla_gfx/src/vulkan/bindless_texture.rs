@@ -322,6 +322,10 @@ impl BindlessTextureManager {
     ///
     /// # Returns
     /// The slot index if the texture is registered, None otherwise.
+    ///
+    /// # Note
+    /// Currently unused but kept for future texture management features.
+    #[allow(dead_code)]
     pub fn get_slot_for_image_view(&self, image_view: vk::ImageView) -> Option<u32> {
         self.slots
             .iter()

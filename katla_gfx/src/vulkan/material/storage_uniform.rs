@@ -68,6 +68,7 @@ use crate::vulkan::bda::DeviceAddressBuffer;
 /// Used by `update_objects_bulk` to efficiently write multiple objects at once.
 /// Matches the layout of InstanceData but without exposing Vulkan types.
 #[derive(Clone, Copy, Debug)]
+#[allow(dead_code)]
 pub struct ObjectData {
     /// Model matrix (object to world) - column-major [f32; 16]
     pub model_matrix: [f32; 16],
@@ -307,6 +308,7 @@ pub struct StorageUniformManager {
     buffers: Vec<DeviceAddressBuffer>,
 }
 
+#[allow(dead_code)]
 impl StorageUniformManager {
     /// Create a new storage uniform manager with per-frame buffers.
     ///
@@ -620,6 +622,7 @@ impl StorageUniformManager {
 
     /// Check if buffers are persistently mapped.
     #[inline]
+    #[allow(dead_code)]
     pub fn is_persistent(&self) -> bool {
         self.buffers.first().is_some_and(|b| b.is_persistent())
     }

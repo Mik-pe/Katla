@@ -12,23 +12,22 @@ use core::arch::x86::*;
 use crate::{Mat3, Mat4, Vec3, Vec4};
 use core::{f32, ops::Index, ops::Mul};
 
+#[allow(dead_code)]
 const QUAT_NORMALIZED_THRESHOLD: f32 = 0.001;
 
 // SSE shuffle control masks - _mm_shuffle_ps(dest, src, mask)
 // Mask format: [dest[3] dest[2] src[1] src[0]] where each nibble selects an element
-const SHUFFLE_X: i32 = 0b00_00_00_00; // Broadcast element 0 (x)
+#[allow(dead_code)]
 const SHUFFLE_Y: i32 = 0b01_01_01_01; // Broadcast element 1 (y)
+#[allow(dead_code)]
 const SHUFFLE_Z: i32 = 0b10_10_10_10; // Broadcast element 2 (z)
+#[allow(dead_code)]
 const SHUFFLE_W: i32 = 0b11_11_11_11; // Broadcast element 3 (w)
-
-// Setter shuffle masks - insert new value while preserving other elements
-const SET_Y_MASK: i32 = 0b11_10_00_00; // [w, z, new_y, x]
-const SET_Z_MASK: i32 = 0b11_00_01_00; // [w, new_z, y, x]
-const SET_W_MASK: i32 = 0b00_10_01_00; // [new_w, z, y, x]
 
 /// Quaternion - SSE implementation
 #[derive(Debug, Clone, Copy)]
 #[repr(C, align(16))]
+#[allow(dead_code)]
 pub struct Quat(pub __m128);
 
 impl Index<usize> for Quat {
@@ -51,6 +50,7 @@ impl Default for Quat {
     }
 }
 
+#[allow(dead_code)]
 impl Quat {
     #[inline]
     pub fn new() -> Quat {
@@ -68,11 +68,13 @@ impl Quat {
     }
 
     #[inline]
+    #[allow(dead_code)]
     fn x(&self) -> f32 {
         unsafe { _mm_cvtss_f32(self.0) }
     }
 
     #[inline]
+    #[allow(dead_code)]
     fn y(&self) -> f32 {
         unsafe {
             let swapped = _mm_shuffle_ps(self.0, self.0, SHUFFLE_Y);
@@ -81,6 +83,7 @@ impl Quat {
     }
 
     #[inline]
+    #[allow(dead_code)]
     fn z(&self) -> f32 {
         unsafe {
             let swapped = _mm_shuffle_ps(self.0, self.0, SHUFFLE_Z);
@@ -89,41 +92,11 @@ impl Quat {
     }
 
     #[inline]
+    #[allow(dead_code)]
     fn w(&self) -> f32 {
         unsafe {
             let swapped = _mm_shuffle_ps(self.0, self.0, SHUFFLE_W);
             _mm_cvtss_f32(swapped)
-        }
-    }
-
-    #[inline]
-    fn set_x(&mut self, val: f32) {
-        unsafe {
-            self.0 = _mm_move_ss(self.0, _mm_set_ss(val));
-        }
-    }
-
-    #[inline]
-    fn set_y(&mut self, val: f32) {
-        unsafe {
-            let tmp = _mm_move_ss(self.0, _mm_set_ss(val));
-            self.0 = _mm_shuffle_ps(tmp, self.0, SET_Y_MASK);
-        }
-    }
-
-    #[inline]
-    fn set_z(&mut self, val: f32) {
-        unsafe {
-            let tmp = _mm_move_ss(self.0, _mm_set_ss(val));
-            self.0 = _mm_shuffle_ps(tmp, self.0, SET_Z_MASK);
-        }
-    }
-
-    #[inline]
-    fn set_w(&mut self, val: f32) {
-        unsafe {
-            let tmp = _mm_move_ss(self.0, _mm_set_ss(val));
-            self.0 = _mm_shuffle_ps(tmp, self.0, SET_W_MASK);
         }
     }
 
@@ -226,8 +199,8 @@ impl Quat {
     }
 
     pub fn rotate_vec3(&self, v: Vec3) -> Vec3 {
-        let u = Vec3::new(self.x(), self.y(), self.z());
-        let s = self.w();
+        let u = Vec3::new(self[0], self[1], self[2]);
+        let s = self[3];
         2.0 * u.dot(v) * u + (s * s - u.dot(u)) * v + 2.0 * s * u.cross(v)
     }
 
@@ -287,10 +260,10 @@ impl Quat {
     }
 
     pub fn to_mat3(self) -> Mat3 {
-        let x = self.x();
-        let y = self.y();
-        let z = self.z();
-        let w = self.w();
+        let x = self[0];
+        let y = self[1];
+        let z = self[2];
+        let w = self[3];
 
         let x2 = x + x;
         let y2 = y + y;
@@ -327,10 +300,10 @@ impl Quat {
     }
 
     pub fn to_euler(self) -> (f32, f32, f32) {
-        let x = self.x();
-        let y = self.y();
-        let z = self.z();
-        let w = self.w();
+        let x = self[0];
+        let y = self[1];
+        let z = self[2];
+        let w = self[3];
 
         // Roll (x-axis rotation)
         let sinr_cosp = 2.0 * (w * x + y * z);
@@ -414,14 +387,14 @@ impl Mul for Quat {
         // result.y = w1*y2 - x1*z2 + y1*w2 + z1*x2
         // result.z = w1*z2 + x1*y2 - y1*x2 + z1*w2
 
-        let x1 = self.x();
-        let y1 = self.y();
-        let z1 = self.z();
-        let w1 = self.w();
-        let x2 = other.x();
-        let y2 = other.y();
-        let z2 = other.z();
-        let w2 = other.w();
+        let x1 = self[0];
+        let y1 = self[1];
+        let z1 = self[2];
+        let w1 = self[3];
+        let x2 = other[0];
+        let y2 = other[1];
+        let z2 = other[2];
+        let w2 = other[3];
 
         Quat::new_from_xyzw(
             w1 * x2 + x1 * w2 + y1 * z2 - z1 * y2,
@@ -436,8 +409,8 @@ impl Mul<Vec3> for Quat {
     type Output = Vec3;
 
     fn mul(self, v: Vec3) -> Self::Output {
-        let q = Vec3::new(self.x(), self.y(), self.z());
+        let q = Vec3::new(self[0], self[1], self[2]);
         let t = 2.0 * q.cross(v);
-        v + (self.w() * t) + q.cross(t)
+        v + (self[3] * t) + q.cross(t)
     }
 }

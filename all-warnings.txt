@@ -1,0 +1,508 @@
+warning: constant `QUAT_NORMALIZED_THRESHOLD` is never used
+  --> katla_math\src\scalar\quat.rs:10:7
+   |
+10 | const QUAT_NORMALIZED_THRESHOLD: f32 = 0.001;
+   |       ^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: struct `Quat` is never constructed
+  --> katla_math\src\scalar\quat.rs:15:12
+   |
+15 | pub struct Quat {
+   |            ^^^^
+
+warning: multiple associated items are never used
+   --> katla_math\src\scalar\quat.rs:43:12
+    |
+ 41 | impl Quat {
+    | --------- associated items in this implementation
+ 42 |     #[inline]
+ 43 |     pub fn new() -> Quat {
+    |            ^^^
+...
+ 53 |     pub fn new_from_xyzw(x: f32, y: f32, z: f32, w: f32) -> Quat {
+    |            ^^^^^^^^^^^^^
+...
+ 58 |     pub fn xyzw(&self) -> (f32, f32, f32, f32) {
+    |            ^^^^
+...
+ 62 |     pub fn from_axis_angle(axis: Vec3, angle: f32) -> Quat {
+    |            ^^^^^^^^^^^^^^^
+...
+ 77 |     pub fn from_rotation_between(from: Vec3, to: Vec3) -> Quat {
+    |            ^^^^^^^^^^^^^^^^^^^^^
+...
+115 |     pub fn new_from_yaw_pitch(yaw: f32, pitch: f32) -> Quat {
+    |            ^^^^^^^^^^^^^^^^^^
+...
+122 |     fn length_squared(&self) -> f32 {
+    |        ^^^^^^^^^^^^^^
+...
+126 |     pub fn is_normalized(&self) -> bool {
+    |            ^^^^^^^^^^^^^
+...
+131 |     pub fn normalize(&mut self) {
+    |            ^^^^^^^^^
+...
+142 |     pub fn inverse(&self) -> Self {
+    |            ^^^^^^^
+...
+151 |     pub fn conjugate(&self) -> Self {
+    |            ^^^^^^^^^
+...
+160 |     pub fn dot(&self, rhs: Quat) -> f32 {
+    |            ^^^
+...
+167 |     pub fn rotate_vec3(&self, v: Vec3) -> Vec3 {
+    |            ^^^^^^^^^^^
+...
+175 |     pub fn slerp(mut a: Quat, mut b: Quat, ratio: f32) -> Self {
+    |            ^^^^^
+...
+203 |     pub fn make_mat4(&self) -> Mat4 {
+    |            ^^^^^^^^^
+...
+247 |     pub fn to_mat3(self) -> Mat3 {
+    |            ^^^^^^^
+...
+279 |     pub fn from_euler(pitch: f32, yaw: f32, roll: f32) -> Quat {
+    |            ^^^^^^^^^^
+...
+287 |     pub fn to_euler(self) -> (f32, f32, f32) {
+    |            ^^^^^^^^
+
+warning: `katla_math` (lib) generated 3 warnings
+warning: associated items `with_capacity`, `dense_capacity`, and `sparse_capacity` are never used
+   --> katla_ecs\src\sparse_set.rs:72:12
+    |
+ 59 | / impl<K, V> SparseSet<K, V>
+ 60 | | where
+ 61 | |     K: std::hash::Hash + Eq + Copy + Clone,
+    | |___________________________________________- associated items in this implementation
+...
+ 72 |       pub fn with_capacity(dense_capacity: usize, sparse_capacity: usize) -> Self {
+    |              ^^^^^^^^^^^^^
+...
+205 |       pub fn dense_capacity(&self) -> usize {
+    |              ^^^^^^^^^^^^^^
+...
+210 |       pub fn sparse_capacity(&self) -> usize {
+    |              ^^^^^^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: methods `is_clicked`, `is_pressed`, and `is_active` are never used
+  --> katla_ui\src\context\interaction.rs:22:12
+   |
+20 | impl ClickResult {
+   | ---------------- methods in this implementation
+21 |     /// Whether this result represents a click.
+22 |     pub fn is_clicked(&self) -> bool {
+   |            ^^^^^^^^^^
+...
+27 |     pub fn is_pressed(&self) -> bool {
+   |            ^^^^^^^^^^
+...
+32 |     pub fn is_active(&self) -> bool {
+   |            ^^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: struct `InteractionState` is never constructed
+  --> katla_ui\src\context\interaction.rs:46:19
+   |
+46 | pub(crate) struct InteractionState {
+   |                   ^^^^^^^^^^^^^^^^
+
+warning: associated items `new` and `button_color` are never used
+  --> katla_ui\src\context\interaction.rs:55:12
+   |
+53 | impl InteractionState {
+   | --------------------- associated items in this implementation
+54 |     /// Create a new interaction state.
+55 |     pub fn new(hovered: bool, active: bool) -> Self {
+   |            ^^^
+...
+60 |     pub fn button_color(
+   |            ^^^^^^^^^^^^
+
+warning: methods `button` and `text_area` are never used
+   --> katla_ui\src\context\widgets\basic.rs:357:19
+    |
+355 | impl UiContext {
+    | -------------- methods in this implementation
+356 |     /// Draw a button (internal - use `widgets::Button` instead).
+357 |     pub(crate) fn button(&mut self, id: &str, text: &str, bounds: Rect2D) -> Response {
+    |                   ^^^^^^
+...
+681 |     pub(crate) fn text_area(&mut self, id: &str, text: &mut String, bounds: Rect2D) -> Response {
+    |                   ^^^^^^^^^
+
+warning: function `keep_on_screen` is never used
+  --> katla_ui\src\context\widgets\utility.rs:70:8
+   |
+70 | pub fn keep_on_screen(size: Vec2, tip_pos: Vec2, screen_size: Vec2) -> Vec2 {
+   |        ^^^^^^^^^^^^^^
+
+warning: function `tooltip` is never used
+  --> katla_ui\src\context\widgets\utility.rs:85:8
+   |
+85 | pub fn tooltip(ui: &mut UiContext, text: &str, tip_pos: Vec2) {
+   |        ^^^^^^^
+
+warning: struct `Image` is never constructed
+   --> katla_ui\src\context\widgets\utility.rs:108:12
+    |
+108 | pub struct Image {
+    |            ^^^^^
+
+warning: associated items `new`, `bounds`, `uv`, and `tint` are never used
+   --> katla_ui\src\context\widgets\utility.rs:117:12
+    |
+115 | impl Image {
+    | ---------- associated items in this implementation
+116 |     /// Create a new image widget.
+117 |     pub fn new(texture: TextureId) -> Self {
+    |            ^^^
+...
+127 |     pub fn bounds(mut self, bounds: Rect2D) -> Self {
+    |            ^^^^^^
+...
+133 |     pub fn uv(mut self, uv: Rect2D) -> Self {
+    |            ^^
+...
+139 |     pub fn tint(mut self, color: Color) -> Self {
+    |            ^^^^
+
+warning: `katla_ecs` (lib) generated 1 warning
+warning: `katla_ui` (lib) generated 8 warnings
+warning: use of deprecated method `winit::event_loop::EventLoop::<T>::create_window`: use `ActiveEventLoop::create_window` instead
+   --> katla_app\src\application\builder.rs:356:14
+    |
+356 |             .create_window(
+    |              ^^^^^^^^^^^^^
+    |
+    = note: `#[warn(deprecated)]` on by default
+
+warning: unused variable: `button_bounds`
+   --> katla_app\src\ui\debug_overlay.rs:191:13
+    |
+191 |         let button_bounds = Rect2D::from_origin_size(
+    |             ^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_button_bounds`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `value_width`
+  --> katla_app\src\ui\editor_ui\inspector.rs:73:13
+   |
+73 |         let value_width = self.bounds.width() - label_width - 24.0;
+   |             ^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_value_width`
+
+warning: unused variable: `row_height`
+   --> katla_app\src\ui\editor_ui\preferences.rs:437:5
+    |
+437 |     row_height: f32,
+    |     ^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_row_height`
+
+warning: type `application::ApplicationInfo` is more private than the item `Application::info`
+  --> katla_app\src\application\mod.rs:59:5
+   |
+59 |     pub(crate) info: ApplicationInfo,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ field `Application::info` is reachable at visibility `pub(crate)`
+   |
+note: but type `application::ApplicationInfo` is only usable at visibility `pub(self)`
+  --> katla_app\src\application\mod.rs:43:1
+   |
+43 | struct ApplicationInfo {
+   | ^^^^^^^^^^^^^^^^^^^^^^
+   = note: `#[warn(private_interfaces)]` on by default
+
+warning: field `sample_buffer` is never read
+   --> katla_app\src\animation\systems.rs:138:5
+    |
+137 | pub struct SkeletalAnimationSystem {
+    |            ----------------------- field in this struct
+138 |     sample_buffer: SampleBuffer,
+    |     ^^^^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: field `pending_readback` is never read
+  --> katla_app\src\application\mod.rs:90:5
+   |
+51 | pub struct Application {
+   |            ----------- field in this struct
+...
+90 |     pending_readback: Option<(usize, Vec<u8>)>,
+   |     ^^^^^^^^^^^^^^^^
+
+warning: variant `Editor` is never constructed
+  --> katla_app\src\ui\editor_ui.rs:75:5
+   |
+73 | pub enum Panel {
+   |          ----- variant in this enum
+74 |     Preferences,
+75 |     Editor,
+   |     ^^^^^^
+   |
+   = note: `Panel` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: fields `path` and `position` are never read
+  --> katla_app\src\ui\editor_ui.rs:84:24
+   |
+84 |     SpawnModelAtPath { path: PathBuf, position: Vec3 },
+   |     ----------------   ^^^^           ^^^^^^^^
+   |     |
+   |     fields in this variant
+   |
+   = note: `EditorAction` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: variant `TogglePlay` is never constructed
+  --> katla_app\src\ui\editor_ui.rs:92:5
+   |
+80 | pub enum EditorAction {
+   |          ------------ variant in this enum
+...
+92 |     TogglePlay,
+   |     ^^^^^^^^^^
+   |
+   = note: `EditorAction` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: fields `visible` and `spawn_menu_state` are never read
+   --> katla_app\src\ui\editor_ui.rs:135:9
+    |
+133 | pub struct EditorUI {
+    |            -------- fields in this struct
+134 |     /// Whether the editor is visible.
+135 |     pub visible: bool,
+    |         ^^^^^^^
+...
+139 |     spawn_menu_state: PanelState,
+    |     ^^^^^^^^^^^^^^^^
+
+warning: methods `max_scroll`, `close_context_menu`, and `commit_rename` are never used
+   --> katla_app\src\ui\editor_ui\asset_browser.rs:455:12
+    |
+218 | impl AssetBrowserState {
+    | ---------------------- methods in this implementation
+...
+455 |     pub fn max_scroll(&self, content_height: f32, visible_height: f32) -> f32 {
+    |            ^^^^^^^^^^
+...
+460 |     pub fn close_context_menu(&mut self) {
+    |            ^^^^^^^^^^^^^^^^^^
+...
+513 |     pub fn commit_rename(&mut self) -> Option<(PathBuf, String)> {
+    |            ^^^^^^^^^^^^^
+
+warning: variant `SetCameraSpeed` is never constructed
+   --> katla_app\src\ui\editor_ui\preferences.rs:124:5
+    |
+118 | pub enum PreferencesAction {
+    |          ----------------- variant in this enum
+...
+124 |     SetCameraSpeed(f32),
+    |     ^^^^^^^^^^^^^^
+    |
+    = note: `PreferencesAction` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: struct `Viewport` is never constructed
+ --> katla_app\src\ui\editor_ui\viewport.rs:6:12
+  |
+6 | pub struct Viewport<'a> {
+  |            ^^^^^^^^
+
+warning: associated function `new` is never used
+  --> katla_app\src\ui\editor_ui\viewport.rs:14:12
+   |
+13 | impl<'a> Viewport<'a> {
+   | --------------------- associated function in this implementation
+14 |     pub fn new(
+   |            ^^^
+
+warning: fields `font_atlas` and `transient_textures` are never read
+  --> katla_app\src\ui\renderer.rs:22:5
+   |
+18 | pub struct UIRenderer {
+   |            ---------- fields in this struct
+...
+22 |     font_atlas: Option<TextureHandle>,
+   |     ^^^^^^^^^^
+...
+31 |     transient_textures: HashMap<u32, (vk::ImageView, vk::Sampler)>,
+   |     ^^^^^^^^^^^^^^^^^^
+
+warning: multiple methods are never used
+   --> katla_app\src\ui\renderer.rs:62:12
+    |
+ 37 | impl UIRenderer {
+    | --------------- methods in this implementation
+...
+ 62 |     pub fn unregister_texture(&mut self, id: TextureId) -> Option<TextureHandle> {
+    |            ^^^^^^^^^^^^^^^^^^
+...
+ 69 |     pub fn set_font_atlas(&mut self, handle: TextureHandle) {
+    |            ^^^^^^^^^^^^^^
+...
+ 84 |     pub fn font_atlas_bindless_slot(&self) -> Option<u32> {
+    |            ^^^^^^^^^^^^^^^^^^^^^^^^
+...
+ 92 |     pub fn set_white_texture_bindless_slot(&mut self, slot: u32) {
+    |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+ 97 |     pub fn white_texture_bindless_slot(&self) -> Option<u32> {
+    |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+102 |     pub fn font_atlas(&self) -> Option<TextureHandle> {
+    |            ^^^^^^^^^^
+...
+125 |     pub fn resolve_texture(&self, id: TextureId) -> TextureHandle {
+    |            ^^^^^^^^^^^^^^^
+...
+300 |     pub fn clear(&mut self) {
+    |            ^^^^^
+
+warning: associated function `all_names` is never used
+   --> katla_app\src\ui\theme.rs:110:12
+    |
+108 | impl Theme {
+    | ---------- associated function in this implementation
+109 |     /// Get all available theme names (keys for preferences).
+110 |     pub fn all_names() -> &'static [&'static str] {
+    |            ^^^^^^^^^
+
+warning: variants `Image`, `Model`, and `ShaderSource` are never constructed
+  --> katla_app\src\util\background_loader.rs:47:5
+   |
+38 | pub enum LoadRequest {
+   |          ----------- variants in this enum
+...
+47 |     Image { id: LoadId, path: PathBuf },
+   |     ^^^^^
+...
+50 |     Model { id: LoadId, path: PathBuf },
+   |     ^^^^^
+...
+53 |     ShaderSource { id: LoadId, path: PathBuf },
+   |     ^^^^^^^^^^^^
+   |
+   = note: `LoadRequest` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: field `pixels` is never read
+  --> katla_app\src\util\background_loader.rs:74:9
+   |
+69 |     ImageLoaded {
+   |     ----------- field in this variant
+...
+74 |         pixels: Vec<u8>, // RGBA8
+   |         ^^^^^^
+   |
+   = note: `LoadResult` has a derived impl for the trait `Debug`, but this is intentionally ignored during dead code analysis
+
+warning: fields `vertices` and `indices` are never read
+  --> katla_app\src\util\background_loader.rs:82:9
+   |
+78 |     ModelLoaded {
+   |     ----------- fields in this variant
+...
+82 |         vertices: Vec<katla_gfx::VertexPBR>,
+   |         ^^^^^^^^
+83 |         /// Index buffer
+84 |         indices: Vec<u32>,
+   |         ^^^^^^^
+   |
+   = note: `LoadResult` has a derived impl for the trait `Debug`, but this is intentionally ignored during dead code analysis
+
+warning: fields `width`, `height`, and `pixels` are never read
+   --> katla_app\src\util\background_loader.rs:106:9
+    |
+104 | pub struct ThumbnailEntry {
+    |            -------------- fields in this struct
+105 |     /// Width in pixels.
+106 |     pub width: u32,
+    |         ^^^^^
+107 |     /// Height in pixels.
+108 |     pub height: u32,
+    |         ^^^^^^
+109 |     /// RGBA8 pixel data.
+110 |     pub pixels: Vec<u8>,
+    |         ^^^^^^
+    |
+    = note: `ThumbnailEntry` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: methods `request_image`, `request_model`, `request_shader`, `get_thumbnail`, and `pending_count` are never used
+   --> katla_app\src\util\background_loader.rs:340:12
+    |
+134 | impl BackgroundLoader {
+    | --------------------- methods in this implementation
+...
+340 |     pub fn request_image(&mut self, path: PathBuf) -> LoadId {
+    |            ^^^^^^^^^^^^^
+...
+356 |     pub fn request_model(&mut self, path: PathBuf) -> LoadId {
+    |            ^^^^^^^^^^^^^
+...
+372 |     pub fn request_shader(&mut self, path: PathBuf) -> LoadId {
+    |            ^^^^^^^^^^^^^^
+...
+428 |     pub fn get_thumbnail(&self, path: &PathBuf) -> Option<&ThumbnailEntry> {
+    |            ^^^^^^^^^^^^^
+...
+448 |     pub fn pending_count(&self) -> usize {
+    |            ^^^^^^^^^^^^^
+
+warning: method `path` is never used
+   --> katla_app\src\util\background_loader.rs:472:12
+    |
+459 | impl LoadResult {
+    | --------------- method in this implementation
+...
+472 |     pub fn path(&self) -> &PathBuf {
+    |            ^^^^
+
+warning: multiple methods are never used
+   --> katla_app\src\util\metrics_history.rs:73:12
+    |
+ 23 | impl MetricsHistory {
+    | ------------------- methods in this implementation
+...
+ 73 |     pub fn values(&self) -> (&[f32], &[f32]) {
+    |            ^^^^^^
+...
+ 84 |     pub fn len(&self) -> usize {
+    |            ^^^
+...
+ 89 |     pub fn is_empty(&self) -> bool {
+    |            ^^^^^^^^
+...
+ 94 |     pub fn min(&self) -> f32 {
+    |            ^^^
+...
+103 |     pub fn max(&self) -> f32 {
+    |            ^^^
+...
+112 |     pub fn mean(&self) -> f32 {
+    |            ^^^^
+...
+121 |     pub fn last(&self) -> Option<f32> {
+    |            ^^^^
+...
+126 |     pub fn clear(&mut self) {
+    |            ^^^^^
+
+warning: `katla_app` (lib) generated 25 warnings (run `cargo fix --lib -p katla_app` to apply 3 suggestions)
+   Compiling game v0.1.0 (C:\dev\katla\game)
+error: linking with `link.exe` failed: exit code: 1120
+  |
+  = note: "C:\\Program Files (x86)\\Microsoft Visual Studio\\18\\BuildTools\\VC\\Tools\\MSVC\\14.50.35717\\bin\\HostX64\\x64\\link.exe" "/NOLOGO" "C:\\dev\\katla\\target\\debug\\deps\\rustczGE3kG\\symbols.o" "<46 object files omitted>" "C:\\dev\\katla\\target\\debug\\deps/{libenv_logger-5cfead65afd8d288,libjiff-ce586c771caed545,libenv_filter-326e9fcdce92cd1d,libregex-2bd99d12c1f59e7b,libregex_automata-ff58b8186259ae09,libaho_corasick-1c1a96952246b9b4,libregex_syntax-28b3157fe2368878,libkatla_app-f4d5d6871293e70f,libdirs-773771df6df435ce,libdirs_sys-751b0ea30cea3dcc,liboption_ext-4bfdf6a19ce6efa2,libwinit-c245a8e6885b4e4e,libunicode_segmentation-c5c4fcb7c0b3ce3b,libtracing-35f63a5295bdbe41,libpin_project_lite-eea255fcb713121b,libtracing_core-a413c14f5fb51db5,libwindows_sys-9c49a94b97a990f5,libwindows_targets-bb32bdba6a0eb073,libsmol_str-3636c50ad0a2f1c9,libcursor_icon-c4fdcaa546f3855f,libdpi-061c7f24d80c142c,libkatla_ui-9059985226c56474,libab_glyph-1fe0b1efa5781b7f,libowned_ttf_parser-820168f8d8dadf63,libttf_parser-eb1c7ec03ac7f29c,libab_glyph_rasterizer-73643029633b2446,libkatla_gfx-2cc75315b4c5efac,libash_window-640441879e32053b,libnaga-37293da4fb851fe2,librustc_hash-54130a1a64c191cd,liblibm-001454b5b35e227b,libhexf_parse-59991ef2494ec15f,libunicode_ident-0d8466e6cfc925bb,libbit_set-aa7eba494b9da509,libbit_vec-c0a25b9bf9083915,libonce_cell-f0fe187af6926dbd,libcodespan_reporting-0ee7e5d841ebb0aa,libunicode_width-788dd3780fdb5d80,libindexmap-711d2b95c3098bf1,libequivalent-a14b16521d1f0bc8,libhashbrown-5f4f034e0361bc61,libfoldhash-54394aef5d7dd0d8,libspirv-582da77fa4b28ffb,libraw_window_handle-a3f9ca8020f1a41e,libgpu_allocator-bfe0a4650e3c37a5,libpresser-b9a9a1635ede94e6,libwindows-052bef6a69d11361,libwindows_core-46ae26c900739cc2,libwindows_strings-45ed782b5b7adb9f,libwindows_result-4df4ac02938ffd2c,libash-664302afef2f879e,liblibloading-0d8cd3b72f7d9caf,libgltf-d976822e9d31fa54,libbase64-b413302b8ce140d6,liburlencoding-4f50d0379b9c32b3,libbyteorder-e2c39f17942e9be2,libgltf_json-a1e25aa560cf989b,libserde_json-88de0a4e66c954b1,libitoa-752d085478019edb,libzmij-0acf7feffbe7479c,libserde-1a6a2fd83b497457,libserde_core-fe7efd8555b9b36c,liblazy_static-ace5a32271f36ef6,libimage-e96dca6bf1b55be6,libimage_webp-76ccf41d2d9cdf65,libqoi-3dfb67bb405ef799,libmoxcms-4d8d32a0e566eef1,libpxfm-a0f11ef25309e820,libtiff-6d0782442c67c040,libfax-79eaa068a98b91c6,libzune_jpeg-6fa539fffb627516,libzune_core-3503b8c10fefa577,libpng-6c92c9c24d0c41e2,libbitflags-4f02b52eb37c0d6c,libflate2-8d2ce0a48146f8ba,libfdeflate-c46522b6e809f2b6,libcrc32fast-415e2703056b9591,libexr-876f676d17217aee,libminiz_oxide-bb772cb6b592e722,libzune_inflate-2d11ec09e5d9d6b8,libsimd_adler32-bb9673e9e8bfb9cd,libbit_field-deb3574dd4552459,liblebe-391aa8ddf9b982a4,libhalf-6ed501d8ed2a7911,libzerocopy-6572bac19245f17d,libsmallvec-76b7b4d9a24433ac,libzune_jpeg-2a36b913ee0d52ac,libzune_core-975a5dfa1bba214a,libgif-ba7be85713b6af69,libcolor_quant-1ab3f876d9478f2b,libweezl-3d84e0a21ca2c497,libbyteorder_lite-8e6b3a38cfa8fa65,libravif-e56fa6dd928d3d56,libloop9-2be334f25c937c98,libavif_serialize-0ba7e672f1ebf237,libquick_error-eb4ba0fc2ea6c0e7,librgb-0d842bab06039824,librav1e-46f0018a1cbcbf48,libprofiling-977883214a34d3be,libav_scenechange-42c532418f8cb47c,liby4m-9d3fb3ead9d44e59,libaligned-3b9bc33f4ab1e9cd,libas_slice-bafdf33d0fca9780,libstable_deref_trait-3ac1e7b0f1b39dfc,libav1_grain-589493a360fb2088,liblog-0050ef45413753f2,libnom-e3c502e05745ba18,libmemchr-77332e285f251f93,libnum_rational-d3ee739ba96b4282,libnum_bigint-ad7b639db739b8f1,libnum_integer-9b44d60d5d5a781b,libanyhow-eefd74e3a402e33e,libmaybe_rayon-6895656c9b804ed8,librayon-1e2e01992552b6cc,librayon_core-c6c4bbea0a3f6a99,libcrossbeam_deque-42d0f581335e2e20,libcrossbeam_epoch-b509383fbcb9996a,libcrossbeam_utils-e398d8fda1e6319a,libcfg_if-286b2523b92067ab,libv_frame-cc6f3b06dd8b990b,libarrayvec-9f6714413d25960b,libaligned_vec-80a6372a35fdbd4e,libequator-6b3156514a340594,libthiserror-f8d687f1fa0b9768,libbitstream_io-749c72dd0edb05fb,libitertools-e47afb05445052b5,libeither-afce26a21a210200,libimgref-3f229d12cd574d9c,libbytemuck-c2ecb69a06f819e2,libnum_traits-55b4a7998bc6937b,libkatla_ecs-78e33ed2cd6cde1c,libkatla_math-41ce71f8d22e7d2f,libclap-d0279059fc462616,libclap_builder-7dd7ebbf6ad4d75f,libstrsim-bfb395fd09896d64,libanstream-41469440d9073633,libanstyle_query-d441c336740f4942,libis_terminal_polyfill-b109f26ea469414a,libanstyle_wincon-189f40811435f744,libonce_cell_polyfill-98689691dbd516da,libwindows_sys-a364392165f1eae6,libwindows_link-145beb72ae921479,libcolorchoice-e55ea0925c735be5,libanstyle_parse-0890e40c0f242d9f,libutf8parse-dc892d6bcbf122d5,libclap_lex-ad227ae74d135af5,libanstyle-2bbb3da15c3127ca}.rlib" "<sysroot>\\lib\\rustlib\\x86_64-pc-windows-msvc\\lib/{libstd-*,libpanic_unwind-*,libcfg_if-*,libwindows_targets-*,librustc_demangle-*,libstd_detect-*,libhashbrown-*,librustc_std_workspace_alloc-*,libunwind-*,librustc_std_workspace_core-*,liballoc-*,libcore-*,libcompiler_builtins-*}.rlib" "C:\\Users\\mikae\\.cargo\\registry\\src\\index.crates.io-1949cf8c6b5b557f\\windows_x86_64_msvc-0.52.6\\lib\\windows.0.52.0.lib" "kernel32.lib" "kernel32.lib" "kernel32.lib" "ntdll.lib" "userenv.lib" "ws2_32.lib" "dbghelp.lib" "/defaultlib:msvcrt" "/NXCOMPAT" "/LIBPATH:C:\\Users\\mikae\\.cargo\\registry\\src\\index.crates.io-1949cf8c6b5b557f\\windows_x86_64_msvc-0.53.1\\lib" "/LIBPATH:C:\\Users\\mikae\\.cargo\\registry\\src\\index.crates.io-1949cf8c6b5b557f\\windows_x86_64_msvc-0.52.6\\lib" "/OUT:C:\\dev\\katla\\target\\debug\\deps\\katla.exe" "/OPT:REF,ICF" "/DEBUG" "/PDBALTPATH:%_PDB%" "/NATVIS:<sysroot>\\lib\\rustlib\\etc\\intrinsic.natvis" "/NATVIS:<sysroot>\\lib\\rustlib\\etc\\liballoc.natvis" "/NATVIS:<sysroot>\\lib\\rustlib\\etc\\libcore.natvis" "/NATVIS:<sysroot>\\lib\\rustlib\\etc\\libstd.natvis" "/NATVIS:C:\\dev\\katla\\target\\debug\\deps\\rustczGE3kG\\katla-0.natvis" "/NATVIS:C:\\dev\\katla\\target\\debug\\deps\\rustczGE3kG\\katla-1.natvis" "/NATVIS:C:\\dev\\katla\\target\\debug\\deps\\rustczGE3kG\\katla-2.natvis"
+  = note: some arguments are omitted. use `--verbose` to show all linker arguments
+  = note: libkatla_app-f4d5d6871293e70f.rlib(katla_app-f4d5d6871293e70f.1ww9lfmj7jmegjyubiww3otia.1yswyhd.rcgu.o) : error LNK2019: unresolved external symbol _ZN9katla_app9animation5clips16AnimationSampler19find_keyframe_index17hd33182b756c4a9c4E.llvm.17094641358172024086 referenced in function _ZN9katla_app9animation8samplers13CachedSampler6sample17he6c2cec7388d4212E
+          libkatla_app-f4d5d6871293e70f.rlib(katla_app-f4d5d6871293e70f.1ww9lfmj7jmegjyubiww3otia.1yswyhd.rcgu.o) : error LNK2019: unresolved external symbol anon.b12c4f4700d2202dade27d1c91cc8bd6.49.llvm.17094641358172024086 referenced in function _ZN9katla_app9animation8samplers13CachedSampler6sample17he6c2cec7388d4212E
+          libkatla_app-f4d5d6871293e70f.rlib(katla_app-f4d5d6871293e70f.1ww9lfmj7jmegjyubiww3otia.1yswyhd.rcgu.o) : error LNK2019: unresolved external symbol anon.b12c4f4700d2202dade27d1c91cc8bd6.48.llvm.17094641358172024086 referenced in function _ZN9katla_app9animation8samplers13CachedSampler6sample17he6c2cec7388d4212E
+          libkatla_app-f4d5d6871293e70f.rlib(katla_app-f4d5d6871293e70f.0ptnz8u8aj4mowcoyi9rcy64t.1yswyhd.rcgu.o) : error LNK2019: unresolved external symbol anon.b145c2fc87d69d9d486df4980ca34163.2.llvm.8615827471577478175 referenced in function _ZN4core4iter8adapters3zip27TrustedRandomAccessNoCoerce4size17h03562cf1025043b8E
+          libkatla_app-f4d5d6871293e70f.rlib(katla_app-f4d5d6871293e70f.0ptnz8u8aj4mowcoyi9rcy64t.1yswyhd.rcgu.o) : error LNK2019: unresolved external symbol anon.b145c2fc87d69d9d486df4980ca34163.1.llvm.8615827471577478175 referenced in function _ZN4core4iter8adapters3zip27TrustedRandomAccessNoCoerce4size17h03562cf1025043b8E
+          C:\dev\katla\target\debug\deps\katla.exe : fatal error LNK1120: 5 unresolved externals
+          
+
+error: could not compile `game` (bin "katla") due to 1 previous error

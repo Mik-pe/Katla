@@ -434,7 +434,7 @@ fn build_appearance_tab(
     theme: &Theme,
     cursor: Vec2,
     content_width: f32,
-    row_height: f32,
+    _row_height: f32,
     spacing: f32,
     current_theme_key: &str,
     show_grid: bool,

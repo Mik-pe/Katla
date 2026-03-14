@@ -257,6 +257,7 @@ impl ViewportPass {
 #[derive(Debug)]
 pub(crate) struct ViewportPassData {
     /// Color attachment with resolved handle.
+    #[allow(dead_code)]
     pub(crate) color: (
         GraphResourceHandle,
         ImageFormat,

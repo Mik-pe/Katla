@@ -1,8 +1,6 @@
 use katla_ecs::EntityId;
 use katla_math::{Rect2D, Vec2};
-use katla_ui::{
-    mouse_button, widgets::Button, widgets::Label, FontSize, Response, UiContext, Widget,
-};
+use katla_ui::{mouse_button, widgets::Button, FontSize, Response, UiContext, Widget};
 
 use super::{EditorAction, EntityInfo, FocusedPanel, Theme};
 
@@ -70,7 +68,7 @@ impl<'a> Widget for Inspector<'a> {
 
         let line_height = 20.0;
         let label_width = 60.0;
-        let value_width = self.bounds.width() - label_width - 24.0;
+        let _value_width = self.bounds.width() - label_width - 24.0;
 
         // Use begin_column() for vertical layout
         ui.begin_column();

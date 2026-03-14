@@ -17,9 +17,6 @@ use crate::vulkan::context::VulkanContext;
 
 use super::EmitterConfig;
 
-/// Maximum particles per buffer
-const MAX_PARTICLES: u32 = 1_048_576; // 1M particles
-
 /// Particle data structure (48 bytes, tightly packed).
 ///
 /// Layout must match WGSL struct exactly.
@@ -107,12 +104,6 @@ pub struct GlobalParticleBuffer {
 
     /// Maximum particles
     max_particles: u32,
-
-    /// Descriptor set for compute pipeline
-    compute_descriptor_set: Option<vk::DescriptorSet>,
-
-    /// Descriptor set for render pipeline
-    render_descriptor_set: Option<vk::DescriptorSet>,
 
     /// Descriptor pool
     descriptor_pool: Option<vk::DescriptorPool>,
@@ -342,8 +333,6 @@ impl GlobalParticleBuffer {
             indirect_buffer,
             indirect_allocation: Some(indirect_allocation),
             max_particles,
-            compute_descriptor_set: None,
-            render_descriptor_set: None,
             descriptor_pool: None,
             compute_layout: None,
             render_layout: None,

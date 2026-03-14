@@ -1,11 +1,13 @@
 //! Pass types for render graph execution.
 
+use crate::render_graph::ViewportRect;
+use crate::render_graph::resource::GraphResourceHandle;
 use crate::render_pass::{ClearValue, LoadOp, StoreOp};
 use crate::texture::ImageFormat;
 
 /// Type of render pass.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum PassType {
+pub enum PassType {
     /// Graphics pass (rendering to attachments).
     Graphics,
 }
@@ -38,6 +40,9 @@ pub(crate) struct PassDesc {
     pub color_attachments: Vec<(String, ImageFormat, LoadOp, StoreOp, ClearValue)>,
     /// Whether this pass uses depth testing (default true for graphics passes).
     pub uses_depth: bool,
+    /// Compositing pass data: viewport textures with rectangles.
+    /// Set for CompositePass, None for other pass types.
+    pub compositing_viewports: Option<Vec<(GraphResourceHandle, ViewportRect)>>,
 }
 
 impl PassDesc {
@@ -59,6 +64,7 @@ impl PassDesc {
             output_format: None,
             color_attachments: Vec::new(),
             uses_depth: true, // Default to true for graphics passes
+            compositing_viewports: None,
         }
     }
 }
