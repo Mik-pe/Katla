@@ -7,6 +7,7 @@
 //! - [`FullscreenPass`] - Post-processing and compute-like fullscreen effects
 //! - [`ShadowPass`] - Shadow mapping for directional, point, and spot lights
 //! - [`UIPass`] - 2D UI rendering with alpha blending
+//! - [`CompositePass`] - Multi-viewport compositing with positioning
 //! - [`LightType`] - Light type enumeration for shadow passes
 //!
 //! # Example
@@ -30,11 +31,13 @@
 //! Each pass template uses string-based resource names for convenience.
 //! Names are resolved to handles at graph build time with zero runtime overhead.
 
+mod composite;
 mod fullscreen;
 pub(crate) mod geometry;
 mod shadow;
 mod ui;
 
+pub use composite::{CompositePass, ViewportRect};
 pub use fullscreen::{FullscreenPass, TonemapOperator, TonemapParams};
 pub use geometry::GeometryPass;
 pub use shadow::{LightType, ShadowPass};
