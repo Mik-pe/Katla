@@ -1,0 +1,36 @@
+{
+  "featureId": "viewport-pass-integration",
+  "reviewedAt": "2026-03-14T21:30:00.000Z",
+  "commitId": "7580576",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "The ViewportPass implementation is well-designed and thoroughly tested. The code follows existing Katla conventions, integrates cleanly with the frame graph architecture, and provides a solid foundation for multi-viewport rendering. All requirements from the feature description are met: viewport passes render to transient textures, multiple viewports can coexist in the same frame graph, and each viewport has independent configuration (extent, format, clear color, camera uniforms). The implementation includes comprehensive unit tests (12 tests) and integration tests (8 tests) covering all major scenarios including split-screen, grid layouts, different formats, and independent camera configurations.",
+    "issues": []
+  },
+  "sharedStateObservations": [
+    {
+      "area": "conventions",
+      "observation": "Worker correctly followed the frame graph pass template pattern from AGENTS.md/library/architecture.md. The ViewportPass implementation matches the existing pattern used by GeometryPass, UIPass, and FullscreenPass: struct with builder methods, PassBuilder trait implementation, explicit resource dependency declaration, and proper error handling. The code demonstrates good understanding of transient texture usage and render graph synchronization.",
+      "evidence": "katla_gfx/src/render_graph/passes/viewport.rs:1-547 - Complete implementation following existing patterns; katla_gfx/tests/viewport_pass_test.rs:1-188 - Integration tests verify multi-viewport scenarios"
+    },
+    {
+      "area": "skills",
+      "observation": "Worker followed the gfx-worker SKILL.md procedure correctly: wrote tests first (TDD approach), implemented the feature to make tests pass, ran cargo test, cargo fmt, and cargo clippy. The skill's verification checklist was completed successfully: code quality (fmt, clippy), testing (unit + integration tests), and functionality (all tests passing). No deviations from the skill procedure.",
+      "evidence": "Handoff shows commands run in correct order: cargo test (unit), cargo test (integration), cargo test --workspace, cargo fmt, cargo clippy. skillFeedback.followedProcedure = true, deviations = []"
+    },
+    {
+      "area": "services",
+      "observation": "All commands used by the worker are already documented in .factory/services.yaml. No new services or commands were introduced that need to be added.",
+      "evidence": "Worker used: cargo test, cargo fmt, cargo clippy - all present in services.yaml under 'test', 'fmt', 'lint' commands"
+    },
+    {
+      "area": "knowledge",
+      "observation": "Worker discovered that the PassBuilder trait is not public, which prevented integration tests from calling as_builder() directly. The worker adapted by simplifying integration tests to only test the public API (resource_desc, name, extent, format, etc.). This is actually correct design - the trait is an implementation detail, not part of the public API surface.",
+      "evidence": "Transcript shows worker initially tried to call as_builder() in tests, then simplified tests to only use public API methods. Integration tests (viewport_pass_test.rs) test resource_desc(), name(), reads() methods instead of InternalPassBuilder details"
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "ViewportPass integration is complete and meets all requirements. The implementation provides a clean API for creating viewport passes that render to transient textures, supports multiple concurrent viewports with independent configurations, and integrates properly with the frame graph's resource management and dependency tracking. Code quality is high with comprehensive test coverage (20 tests total), proper error handling, and good documentation. No blocking issues found."
+}
