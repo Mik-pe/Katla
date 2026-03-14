@@ -300,6 +300,7 @@ impl EditorUI {
     }
 
     /// Build the editor UI.
+    #[allow(clippy::too_many_arguments)]
     pub fn build(
         &mut self,
         ui: &mut UiContext,
@@ -856,6 +857,7 @@ impl EditorUI {
     }
 
     /// Render the editor UI and return the draw list.
+    #[allow(clippy::too_many_arguments)]
     pub fn render<'a>(
         &'a mut self,
         ui: &'a mut UiContext,

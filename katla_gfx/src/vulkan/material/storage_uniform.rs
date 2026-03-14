@@ -380,6 +380,7 @@ impl StorageUniformManager {
     /// * `light_direction` - Normalized direction TO the light
     /// * `light_color` - Light color (RGB)
     /// * `light_intensity` - Light intensity multiplier
+    #[allow(clippy::too_many_arguments)]
     pub fn update_frame_with_lighting(
         &mut self,
         frame_index: usize,
@@ -464,6 +465,7 @@ impl StorageUniformManager {
     /// * `metallic` - Metallic factor (0.0 = dielectric, 1.0 = metal)
     /// * `roughness` - Roughness factor (0.0 = smooth, 1.0 = rough)
     /// * `ao` - Ambient occlusion factor (0.0 = full occlusion, 1.0 = none)
+    #[allow(clippy::too_many_arguments)]
     pub fn update_object_with_material(
         &mut self,
         frame_index: usize,
@@ -498,6 +500,7 @@ impl StorageUniformManager {
     /// * `roughness` - Roughness factor (0.0 = smooth, 1.0 = rough)
     /// * `ao` - Ambient occlusion factor (0.0 = full occlusion, 1.0 = none)
     /// * `emission_idx` - Emission texture index for bindless (0 = no emission)
+    #[allow(clippy::too_many_arguments)]
     pub fn update_object_with_material_full(
         &mut self,
         frame_index: usize,
@@ -535,6 +538,7 @@ impl StorageUniformManager {
     /// * `ao` - Ambient occlusion factor (0.0 = full occlusion, 1.0 = none)
     /// * `emission_idx` - Emission texture index for bindless (0 = no emission)
     /// * `texture_indices` - [albedo_idx, normal_idx, mr_idx, ao_idx]
+    #[allow(clippy::too_many_arguments)]
     pub fn update_object_bindless(
         &mut self,
         frame_index: usize,

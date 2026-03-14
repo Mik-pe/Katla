@@ -39,8 +39,10 @@ pub struct GraphResourceDesc {
 
 /// Resource state for barrier tracking.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Default)]
 pub enum ResourceState {
     /// Undefined (don't care about contents).
+    #[default]
     Undefined,
     /// Color attachment output (render target).
     ColorAttachment,
@@ -96,11 +98,6 @@ impl ResourceState {
     }
 }
 
-impl Default for ResourceState {
-    fn default() -> Self {
-        Self::Undefined
-    }
-}
 
 /// Opaque handle for graph resources (internal use only).
 ///

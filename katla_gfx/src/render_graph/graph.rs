@@ -542,8 +542,7 @@ impl FrameGraph {
 
         // Get frame 0's texture to get the base slot
         let texture = self
-            .transient_textures
-            .get(0)
+            .transient_textures.first()
             .and_then(|textures| textures.get(name))
             .ok_or_else(|| RenderGraphError::ResourceNotFound(name.to_string()))?;
 
@@ -981,12 +980,10 @@ impl<'a> Frame<'a> {
             match pass.pass_type {
                 super::pass::PassType::Graphics => {
                     // Check if this is a compositing pass (has material and compositing_viewports)
-                    if pass.material.is_some()
-                        && pass.compositing_viewports.is_some()
-                        && data.draw_lists.is_empty()
-                    {
-                        let material_handle = pass.material.unwrap();
-                        self.execute_compositing_pass(&cmd, pass, material_handle)?;
+                    if let Some(material_handle) = pass.material {
+                        if pass.compositing_viewports.is_some() && data.draw_lists.is_empty() {
+                            self.execute_compositing_pass(&cmd, pass, material_handle)?;
+                        }
                     }
                     // Check if this is a fullscreen pass (has pipeline, no draw lists)
                     else if pass.pipeline.is_some() && data.draw_lists.is_empty() {

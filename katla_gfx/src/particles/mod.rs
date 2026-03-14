@@ -309,8 +309,8 @@ impl GlobalParticleSystem {
 
     /// Upload emitter configurations to GPU buffer.
     fn upload_emitter_configs(&self) -> Result<(), String> {
-        if let Some((_buffer, allocation)) = &self.emitter_configs_buffer {
-            if let Some(mapped) = allocation.mapped_ptr() {
+        if let Some((_buffer, allocation)) = &self.emitter_configs_buffer
+            && let Some(mapped) = allocation.mapped_ptr() {
                 let dst = mapped.as_ptr() as *mut EmitterConfig;
                 unsafe {
                     std::ptr::copy_nonoverlapping(self.emitters.as_ptr(), dst, self.emitters.len());
@@ -321,14 +321,13 @@ impl GlobalParticleSystem {
                     (self.emitters.len() * std::mem::size_of::<EmitterConfig>()) as u64,
                 );
             }
-        }
         Ok(())
     }
 
     /// Update frame data for push descriptor.
     fn update_frame_data(&self, delta_time: f32, emit_count: u32) -> Result<(), String> {
-        if let Some((_buffer, allocation)) = &self.frame_data_buffer {
-            if let Some(mapped) = allocation.mapped_ptr() {
+        if let Some((_buffer, allocation)) = &self.frame_data_buffer
+            && let Some(mapped) = allocation.mapped_ptr() {
                 let frame_data = FrameData {
                     delta_time,
                     total_emit_count: emit_count,
@@ -348,7 +347,6 @@ impl GlobalParticleSystem {
                     std::mem::size_of::<FrameData>() as u64,
                 );
             }
-        }
         Ok(())
     }
 
@@ -634,8 +632,8 @@ impl GlobalParticleSystem {
         // For now, this is a stub that will be completed when we integrate with the buffer
 
         // Update push descriptors (Set 1)
-        if let Some((frame_buffer, _)) = &self.frame_data_buffer {
-            if let Some((emitter_buffer, _)) = &self.emitter_configs_buffer {
+        if let Some((frame_buffer, _)) = &self.frame_data_buffer
+            && let Some((emitter_buffer, _)) = &self.emitter_configs_buffer {
                 let frame_buffer_info = [vk::DescriptorBufferInfo::default()
                     .buffer(*frame_buffer)
                     .offset(0)
@@ -674,7 +672,6 @@ impl GlobalParticleSystem {
                     );
                 }
             }
-        }
 
         // Dispatch compute shader
         unsafe {

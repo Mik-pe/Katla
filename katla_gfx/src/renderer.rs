@@ -82,7 +82,6 @@ impl UiFrameResources {
 
 /// Transpose a 4x4 matrix from row-major to column-major format.
 ///
-
 /// Pending readback operation for async frame checking
 pub struct PendingReadback {
     frame: usize,
@@ -560,7 +559,7 @@ impl VulkanRenderer {
     /// # Arguments
     /// * `shader_path` - Path to WGSL shader file
     /// * `color_format` - Optional color attachment format. None = swapchain format (LDR),
-    ///                   Some(ImageFormat::R16G16B16A16Sfloat) = HDR rendering
+    ///   Some(ImageFormat::R16G16B16A16Sfloat) = HDR rendering
     ///
     /// # Returns
     /// A MaterialHandle for the created material.
@@ -675,6 +674,7 @@ impl VulkanRenderer {
     ///
     /// # Arguments
     /// * `hdr_texture_index` - Bindless texture index for HDR color attachment
+    ///
     /// Set the HDR texture index for tonemapping.
     ///
     /// This method sets up object[0] in the storage buffer to pass the HDR texture index
@@ -1653,11 +1653,6 @@ impl VulkanRenderer {
         }
     }
 
-    /// Queue UI for rendering in the next frame.
-    ///
-    /// NOTE: UI rendering is not yet implemented. This is a no-op.
-    ///
-    /// # Arguments
     // ========================================================================
     // Render Graph System
     // ========================================================================

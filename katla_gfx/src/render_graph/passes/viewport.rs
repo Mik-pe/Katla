@@ -75,7 +75,7 @@ impl ViewportPass {
     /// # Arguments
     ///
     /// * `name` - Pass name for debugging and execution context reference.
-    ///           This name is also used as the output texture name (e.g., "viewport_0").
+    ///   This name is also used as the output texture name (e.g., "viewport_0").
     ///
     /// # Example
     /// ```ignore

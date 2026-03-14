@@ -1169,13 +1169,14 @@ pub fn build_asset_browser(
                 }
 
                 // Update marquee rectangle while dragging
-                if state.selection_rect_start.is_some() && mouse_down {
-                    state.selection_rect_current = Some(ui.mouse_pos());
-                    let start = state.selection_rect_start.unwrap();
-                    let current = ui.mouse_pos();
-                    let dist = (current - start).length();
-                    if dist > state.drag_threshold {
-                        state.is_marquee_selecting = true;
+                if let Some(start) = state.selection_rect_start {
+                    if mouse_down {
+                        state.selection_rect_current = Some(ui.mouse_pos());
+                        let current = ui.mouse_pos();
+                        let dist = (current - start).length();
+                        if dist > state.drag_threshold {
+                            state.is_marquee_selecting = true;
+                        }
                     }
                 }
 

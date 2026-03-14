@@ -128,6 +128,7 @@ impl From<ValidationSeverity> for ValidationLevel {
 /// Internal storage for validation callbacks.
 struct ValidationCallbackStorage {
     callback: Option<Box<ValidationCallback>>,
+    #[allow(clippy::type_complexity)]
     simplified_callback: Option<Box<dyn FnMut(&str, ValidationLevel) + Send + Sync>>,
     messages: Vec<ValidationMessage>,
 }
@@ -162,6 +163,7 @@ impl ValidationCallbackStorage {
         self.callback = Some(callback);
     }
 
+    #[allow(clippy::type_complexity)]
     fn set_simplified_callback(
         &mut self,
         callback: Box<dyn FnMut(&str, ValidationLevel) + Send + Sync>,

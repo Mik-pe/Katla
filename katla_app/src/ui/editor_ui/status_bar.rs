@@ -16,6 +16,7 @@ pub struct StatusBar<'a> {
 }
 
 impl<'a> StatusBar<'a> {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         screen_size: Vec2,
         height: f32,

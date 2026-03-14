@@ -167,7 +167,24 @@ impl TextureManager {
     /// * `width` - Texture width in pixels
     /// * `height` - Texture height in pixels
     ///
-    /// # Returns
+    /// # Safety
+    /// The caller must ensure that the Vulkan resources are valid and will remain
+    /// valid for the lifetime of the returned TextureHandle. The resources must
+    /// have been created with the same Vulkan device used by this texture manager.
+    pub unsafe fn from_vulkan_resources(
+        &mut self,
+        _image: vk::Image,
+        _image_view: vk::ImageView,
+        _sampler: vk::Sampler,
+        _format: ImageFormat,
+        _width: u32,
+        _height: u32,
+    ) -> TextureHandle {
+        // TODO: Implement wrapping transient textures for UI rendering
+        // For now, return a placeholder handle
+        TextureHandle::new(0)
+    }
+
     // ========================================================================
     // Default Textures
     // ========================================================================

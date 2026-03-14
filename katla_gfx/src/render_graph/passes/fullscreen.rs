@@ -14,8 +14,10 @@ use super::super::resource::GraphResourceHandle;
 
 /// Tonemapping operators for fullscreen post-processing.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Default)]
 pub enum TonemapOperator {
     /// ACES Filmic - cinematic look with good highlight rolloff
+    #[default]
     Aces = 0,
     /// Reinhard - simple, preserves colors well
     Reinhard = 1,
@@ -25,11 +27,6 @@ pub enum TonemapOperator {
     Linear = 3,
 }
 
-impl Default for TonemapOperator {
-    fn default() -> Self {
-        Self::Aces
-    }
-}
 
 /// Tonemap parameters for fullscreen passes.
 #[derive(Clone, Copy, Debug)]

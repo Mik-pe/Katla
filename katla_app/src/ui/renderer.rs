@@ -173,10 +173,9 @@ impl UIRenderer {
 
         // First pass: build texture mapping
         for cmd in &draw_list.commands {
-            if !texture_to_index.contains_key(&cmd.texture) {
-                let bindless_index = self.texture_id_to_bindless_index(cmd.texture);
-                texture_to_index.insert(cmd.texture, bindless_index);
-            }
+            texture_to_index.entry(cmd.texture).or_insert_with(|| {
+                self.texture_id_to_bindless_index(cmd.texture)
+            });
         }
 
         // Create a mapping from vertex index to texture index

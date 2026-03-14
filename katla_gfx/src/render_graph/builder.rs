@@ -47,6 +47,7 @@ pub trait PassBuilder: Any {
     ///
     /// This method consumes the pass template and produces an `InternalPassBuilder`
     /// that the frame graph builder uses to construct the actual pass.
+    #[allow(clippy::wrong_self_convention)]
     fn as_builder(self) -> InternalPassBuilder;
 }
 
@@ -84,6 +85,7 @@ pub struct InternalPassBuilder {
     ///
     /// Called during graph compilation with a map from resource names
     /// to handles. Returns pass-specific data as a boxed `dyn Any`.
+    #[allow(clippy::type_complexity)]
     pub build_fn: Box<
         dyn FnOnce(&HashMap<String, GraphResourceHandle>) -> Result<Box<dyn Any>, RenderGraphError>,
     >,
