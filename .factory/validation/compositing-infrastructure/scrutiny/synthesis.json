@@ -1,0 +1,126 @@
+{
+  "milestone": "compositing-infrastructure",
+  "round": 1,
+  "status": "pass",
+  "validatorsRun": {
+    "test": {
+      "passed": true,
+      "command": "cargo test --workspace",
+      "exitCode": 0,
+      "summary": "515 tests passed across all workspace crates (katla_math: 97, katla_ecs: 314, katla_gfx: 15, katla_ui: 89, katla_app: included in katla_gfx count)"
+    },
+    "typecheck": {
+      "passed": true,
+      "command": "cargo check",
+      "exitCode": 0,
+      "summary": "Typecheck completed successfully with only warnings (no errors)"
+    },
+    "lint": {
+      "passed": true,
+      "command": "cargo clippy",
+      "exitCode": 0,
+      "summary": "Linting completed successfully with only warnings (no errors). Warnings are primarily dead code in unused modules and unused imports in new code."
+    }
+  },
+  "reviewsSummary": {
+    "total": 3,
+    "passed": 3,
+    "failed": 0,
+    "failedFeatures": []
+  },
+  "blockingIssues": [],
+  "appliedUpdates": [
+    {
+      "target": "library",
+      "description": "Document Vulkan descriptor set creation pattern: layout creation with vk::DescriptorSetLayoutCreateInfo, pool allocation, descriptor update with dst_array_element for array bindings, and RAII cleanup with VkDescriptorSetLayout wrapper",
+      "sourceFeature": "compositing-descriptor-set"
+    },
+    {
+      "target": "library",
+      "description": "Document parameter passing pattern via objects[0] for fullscreen shaders (mirrors tonemapping shader approach)",
+      "sourceFeature": "compositing-shader"
+    },
+    {
+      "target": "library",
+      "description": "Document ViewportRect shader format: [x, y, z, w] represents [min_x, min_y, max_x, max_y] for viewport positioning in shaders",
+      "sourceFeature": "composite-pass-template"
+    },
+    {
+      "target": "library",
+      "description": "Document backbuffer output format requirement: B8G8R8A8Srgb format is required for backbuffer rendering in material compilation",
+      "sourceFeature": "composite-pass-template"
+    }
+  ],
+  "suggestedGuidanceUpdates": [
+    {
+      "target": "AGENTS.md",
+      "suggestion": "Add explicit convention for shader documentation style: module-level headers with detailed sections (Bindings, Data Structures, Examples) and extensive use of /// and //! doc comments. This style was used in composite.wgsl and should be the standard for all shader files.",
+      "evidence": "Features compositing-shader and composite-pass-template both used this documentation style consistently. The composite.wgsl file (lines 1-98) demonstrates this pattern with clear sections for Bindings, Data Structures, Alpha Blending, and Examples.",
+      "isSystemic": false
+    },
+    {
+      "target": "AGENTS.md",
+      "suggestion": "Document the fullscreen triangle pattern as a standard shader convention: vertex shader using (-1, -1), (3, -1), (-1, 3) coordinates for fullscreen rendering. This pattern is used in tonemapping.wgsl, ui.wgsl, and now composite.wgsl.",
+      "evidence": "Feature compositing-shader noted this pattern consistency across tonemapping.wgsl and composite.wgsl (lines 217-237). This is a repeatable pattern that should be documented as a convention.",
+      "isSystemic": false
+    },
+    {
+      "target": ".factory/skills/gfx-worker/SKILL.md",
+      "suggestion": "Update shader compilation verification to acknowledge 'cargo check --bin katla' as a valid alternative to 'cargo build' when builds are slow. The current procedure assumes full builds are always feasible.",
+      "evidence": "Feature compositing-shader worker used cargo check with Select-String filter instead of full cargo build due to 180s timeout. This was a justified deviation that should be documented as acceptable practice.",
+      "isSystemic": false
+    },
+    {
+      "target": ".factory/skills/gfx-worker/SKILL.md",
+      "suggestion": "Add explicit mention of 'uses_depth: false' convention for fullscreen rendering passes. The current frame graph pass procedure doesn't explicitly call out this pattern.",
+      "evidence": "Feature composite-pass-template correctly inferred this pattern from FullscreenPass but noted it wasn't explicitly documented. The pass correctly used uses_depth: false (line 314) with explanatory comment.",
+      "isSystemic": false
+    },
+    {
+      "target": ".factory/skills/gfx-worker/SKILL.md",
+      "suggestion": "Reinforce TDD principles in the testing section. The current skill mentions TDD in section 1 but the testing section could be more explicit about writing tests before implementation.",
+      "evidence": "Features compositing-descriptor-set and composite-pass-template both demonstrated excellent TDD practice with comprehensive test coverage. Composite-pass-template had 17 unit tests written alongside implementation covering all functionality.",
+      "isSystemic": false
+    }
+  ],
+  "rejectedObservations": [
+    {
+      "observation": "Worker correctly applied 'No Hybrid Implementations' rule by creating standalone descriptor_sets module",
+      "reason": "duplicate",
+      "details": "This is already documented in AGENTS.md under 'No Hybrid Implementations' rule. The worker followed existing guidance correctly."
+    },
+    {
+      "observation": "Worker properly exported new type through module hierarchy (descriptor_sets/mod.rs → render_graph/mod.rs → lib.rs)",
+      "reason": "duplicate",
+      "details": "This is already documented in AGENTS.md under 'prefer pub(crate) until public API needed' convention. No new guidance needed."
+    },
+    {
+      "observation": "Worker correctly used BACKBUFFER_NAME constant instead of hardcoding 'backbuffer'",
+      "reason": "duplicate",
+      "details": "This pattern is already established in the codebase with existing uses. The worker followed existing patterns correctly."
+    },
+    {
+      "observation": "Worker created comprehensive documentation in .factory/library/compositing-shader.md",
+      "reason": "already-documented",
+      "details": "The worker already captured this knowledge in the library file during implementation. No further action needed."
+    }
+  ],
+  "previousRound": null,
+  "reviewSummaries": {
+    "compositing-descriptor-set": {
+      "status": "pass",
+      "commitId": "ac35e90413423e2f932cf375b9d3ac3ef39e42a4",
+      "summary": "Implementation is complete and well-crafted. All expected behaviors met: descriptor set creation with 0-8 textures, >8 texture limit validation with clear error, correct layout matching WGSL (set 2, binding 0), and update_textures() method. Code quality excellent with comprehensive documentation and proper resource cleanup."
+    },
+    "compositing-shader": {
+      "status": "pass",
+      "commitId": "b45f600",
+      "summary": "Shader implementation is well-structured and comprehensive. Correctly implements fullscreen triangle vertex shader and fragment shader sampling from viewport texture array at set 2 binding 0. Documentation thorough with clear explanations of algorithm and usage examples. Proof-of-concept approach appropriate for this milestone."
+    },
+    "composite-pass-template": {
+      "status": "pass",
+      "commitId": "b6c625b700b048945ae9492f8d7215550ea9e112",
+      "summary": "Implementation is complete, well-tested, and follows all project conventions. Successfully creates builder API for multi-viewport compositing with correct read/write dependencies. All 17 unit tests pass covering ViewportRect, builder API, PassBuilder trait, resource resolution, and error handling."
+    }
+  }
+}

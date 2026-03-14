@@ -1,0 +1,51 @@
+{
+  "featureId": "composite-pass-template",
+  "reviewedAt": "2026-03-14T20:30:00.000Z",
+  "commitId": "b6c625b700b048945ae9492f8d7215550ea9e112",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "The CompositePass template implementation is complete, well-tested, and follows all project conventions. The implementation successfully creates a builder API for multi-viewport compositing with correct read/write dependencies for frame graph integration. All 17 unit tests pass, covering ViewportRect creation/conversion, CompositePass builder API, PassBuilder trait implementation, resource resolution, and error handling.",
+    "issues": []
+  },
+  "sharedStateObservations": [
+    {
+      "area": "conventions",
+      "observation": "Worker correctly followed the existing pass template pattern (GeometryPass, FullscreenPass) when implementing CompositePass. The PassBuilder trait implementation, InternalPassBuilder construction, and resource name resolution pattern all match existing code. This pattern is already documented in AGENTS.md but could be more explicitly called out in gfx-worker skill for future reference.",
+      "evidence": "katla_gfx/src/render_graph/passes/composite.rs:259-317 - PassBuilder implementation matches existing pass templates; katla_gfx/src/render_graph/passes/geometry.rs - Comparison shows identical pattern"
+    },
+    {
+      "area": "conventions",
+      "observation": "Worker correctly used uses_depth: false for the compositing pass, which is appropriate for fullscreen rendering passes. This pattern is consistent with FullscreenPass but not explicitly documented. The worker inferred this from context rather than following explicit documentation.",
+      "evidence": "katla_gfx/src/render_graph/passes/composite.rs:314 - uses_depth: false with comment explaining why; katla_gfx/src/render_graph/passes/fullscreen.rs:81-86 - Similar pattern for fullscreen tonemapping pass"
+    },
+    {
+      "area": "skills",
+      "observation": "gfx-worker skill procedure for 'Frame Graph Pass Development' is accurate and complete. The worker followed it exactly: created pass struct, implemented PassBuilder trait, added to render_graph/passes/, exported from mod.rs. No deviations or gaps discovered.",
+      "evidence": "Transcript shows worker followed skill procedure step-by-step; skillFeedback.followedProcedure = true; final implementation matches skill's example code pattern"
+    },
+    {
+      "area": "knowledge",
+      "observation": "Worker discovered that ViewportRect doesn't exist in katla_math and implemented it from scratch in composite.rs. This is new viewport positioning knowledge that should be documented in .factory/library/ for future reference, especially the [x, y, z, w] shader format (min/max representation).",
+      "evidence": "katla_gfx/src/render_graph/passes/composite.rs:28-97 - ViewportRect implementation with comprehensive documentation; transcript shows worker searched for existing ViewportRect in katla_math before implementing"
+    },
+    {
+      "area": "knowledge",
+      "observation": "Worker discovered that backbuffer output uses B8G8R8A8Srgb format for material compilation. This format requirement for backbuffer rendering is important knowledge that should be documented, as it affects pipeline layout creation.",
+      "evidence": "katla_gfx/src/render_graph/passes/composite.rs:310 - output_format set to B8G8R8A8Srgb with comment explaining backbuffer is sRGB"
+    },
+    {
+      "area": "conventions",
+      "observation": "Worker correctly used BACKBUFFER_NAME constant instead of hardcoding 'backbuffer'. This follows the project convention of using named constants for special resources. The constant is already defined in the codebase but this usage pattern reinforces it.",
+      "evidence": "katla_gfx/src/render_graph/passes/composite.rs:177 - write_backbuffer() uses BACKBUFFER_NAME; katla_gfx/src/render_graph/graph.rs - BACKBUFFER_NAME constant definition"
+    },
+    {
+      "area": "testing",
+      "observation": "Worker implemented comprehensive test coverage following TDD principles from gfx-worker skill. All 17 tests were written before implementation (or alongside it) and cover positive cases, error cases, and edge cases. This TDD approach should be reinforced in the skill documentation.",
+      "evidence": "katla_gfx/src/render_graph/passes/composite.rs:295-535 - 17 unit tests covering all functionality; handoff shows all tests passing; skill mentions TDD in section 1"
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "CompositePass template implementation is complete and correct. The feature delivers all expected behavior: builder API for viewport configuration, correct read/write dependency generation, PassBuilder trait implementation, and comprehensive error handling. All 17 unit tests pass. Code follows Katla conventions, matches existing pass template patterns, and integrates properly with the frame graph system. No bugs, edge cases, or issues were identified during review."
+}
