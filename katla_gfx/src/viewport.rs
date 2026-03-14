@@ -1,37 +1,32 @@
-//! Viewport system for configurable render targets.
+//! Viewport configuration for frame graph rendering.
 //!
-//! Provides a builder-pattern API for creating viewports that can be used for:
-//! - Main scene rendering (offscreen or direct to swapchain)
-//! - Preview/model viewer panels
-//! - Minimaps, reflection probes, etc.
+//! Viewports are configured using the ViewportBuilder pattern and then used
+//! with the frame graph system. The frame graph manages all rendering state
+//! (transient textures, descriptors, uniforms) - Viewport is just configuration.
 //!
 //! # Example
 //!
 //! ```ignore
-//! // Create an offscreen viewport for UI display
+//! // Configure a viewport for split-screen rendering
 //! let viewport = renderer.create_viewport()
-//!     .size(512, 512)
+//!     .size(960, 1080)
 //!     .with_depth(DepthFormat::D32SfloatS8Uint)
 //!     .output_mode(OutputMode::Offscreen)
-//!     .label("preview")
+//!     .clear_color(0.1, 0.1, 0.15, 1.0)
+//!     .label("left_viewport")
 //!     .build(&mut renderer)?;
 //!
-//! // Render to viewport
-//! renderer.render_viewport(viewport, &camera, &draw_list);
-//!
-//! // Get texture for UI
-//! ui.image(renderer.viewport_texture(viewport));
+//! // Use viewport with frame graph
+//! let pass = ViewportPass::new("viewport_0")
+//!     .extent(960, 1080)
+//!     .format(ImageFormat::R16G16B16A16Sfloat)
+//!     .clear_color([0.1, 0.1, 0.15, 1.0]);
 //! ```
 
 use log::info;
 
-use crate::renderer::DrawList;
-use crate::renderer::{FrameUniforms, ViewportRenderTarget};
 use crate::texture::ImageFormat;
-use crate::vulkan::context::VulkanContext;
-use crate::vulkan::material::storage_uniform::{StorageDescriptorSet, StorageUniformManager};
 use ash::vk;
-use std::rc::Rc;
 
 // ============================================================================
 // Public Types
@@ -198,12 +193,11 @@ impl Default for ViewportBuilder {
 // Viewport (Internal)
 // ============================================================================
 
-/// Internal viewport state.
+/// Viewport configuration.
 ///
-/// Holds all resources needed for rendering to a viewport:
-/// - Color and depth render targets
-/// - Compiled render graph
-/// - Storage uniform manager for camera
+/// Viewports are configured using ViewportBuilder and then used with the
+/// frame graph system for rendering. The frame graph manages all rendering
+/// state (textures, descriptors, uniforms) - Viewport is just configuration.
 pub struct Viewport {
     /// Debug label.
     pub label: String,
@@ -211,26 +205,17 @@ pub struct Viewport {
     pub extent: crate::Size2D,
     /// Output mode.
     pub output_mode: OutputMode,
-    /// Render target (color + depth).
-    pub render_target: ViewportRenderTarget,
-    /// Storage uniform manager for camera.
-    pub storage_manager: Option<StorageUniformManager>,
-    /// Storage descriptor set.
-    pub storage_descriptor: Option<StorageDescriptorSet>,
-    /// Draw list for rendering.
-    pub draw_list: DrawList,
-    /// Current frame uniforms.
-    pub frame_uniforms: Option<FrameUniforms>,
     /// Clear color.
     pub clear_color: [f32; 4],
+    /// Depth format.
+    pub depth_format: DepthFormat,
+    /// Color format.
+    pub color_format: ImageFormat,
 }
 
 impl Viewport {
     /// Create a new viewport from builder configuration.
-    pub fn new(builder: &ViewportBuilder, context: &Rc<VulkanContext>) -> Self {
-        // Create render target using existing ViewportRenderTarget
-        let render_target =
-            ViewportRenderTarget::new(context.clone(), builder.width, builder.height).unwrap();
+    pub fn new(builder: &ViewportBuilder) -> Self {
         info!(
             "Created viewport '{}' ({}x{}, depth={:?}, mode={:?})",
             builder.label, builder.width, builder.height, builder.depth_format, builder.output_mode
@@ -240,33 +225,15 @@ impl Viewport {
             label: builder.label.clone(),
             extent: builder.extent(),
             output_mode: builder.output_mode,
-            render_target,
-            draw_list: DrawList::new(),
-            storage_manager: None,
-            storage_descriptor: None,
-            frame_uniforms: None,
             clear_color: builder.clear_color,
+            depth_format: builder.depth_format,
+            color_format: builder.color_format,
         }
     }
 
-    /// Get the color image view (for UI sampling).
+    /// Get the viewport extent.
     pub fn get_extent(&self) -> crate::Size2D {
         self.extent
-    }
-
-    /// Set frame uniforms for this viewport.
-    pub fn set_frame_uniforms(&mut self, uniforms: FrameUniforms) {
-        self.frame_uniforms = Some(uniforms);
-    }
-
-    /// Set the draw list for rendering.
-    pub fn set_draw_list(&mut self, draw_list: DrawList) {
-        self.draw_list = draw_list;
-    }
-
-    /// Clear the draw list.
-    pub fn clear_draw_list(&mut self) {
-        self.draw_list.clear();
     }
 }
 

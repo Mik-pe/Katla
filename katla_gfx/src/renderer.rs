@@ -33,7 +33,7 @@ use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 use std::{ffi::CString, rc::Rc};
 
 use crate::barrier::ImageBarrier;
-use crate::sync::{COLOR_SUBRESOURCE_RANGE, DEPTH_SUBRESOURCE_RANGE};
+use crate::sync::COLOR_SUBRESOURCE_RANGE;
 use crate::vulkan::IndexType;
 use crate::vulkan::material::compiler::{MaterialBuilder, MaterialCompiler};
 
@@ -788,6 +788,9 @@ impl VulkanRenderer {
     }
 
     /// Get the texture ID for a viewport (for UI sampling).
+    ///
+    /// Note: This is a legacy method for UI compatibility. The actual texture
+    /// is managed by the frame graph system, not the viewport itself.
     /// Returns a u64 that can be used with katla_ui::TextureId::custom(id).
     pub fn viewport_texture_id(&self, handle: ViewportHandle) -> Option<u64> {
         self.viewport_manager.texture_id(handle)
@@ -798,70 +801,10 @@ impl VulkanRenderer {
         self.viewport_manager.extent(handle)
     }
 
-    /// Set frame uniforms for a viewport.
-    pub fn set_viewport_uniforms(&mut self, handle: ViewportHandle, uniforms: FrameUniforms) {
-        if let Some(viewport) = self.viewport_manager.get_mut(handle) {
-            viewport.set_frame_uniforms(uniforms);
-        }
-    }
-
-    /// Set the draw list for a viewport.
-    pub fn set_viewport_draw_list(&mut self, handle: ViewportHandle, draw_list: DrawList) {
-        if let Some(viewport) = self.viewport_manager.get_mut(handle) {
-            viewport.set_draw_list(draw_list);
-        }
-    }
-
-    /// Clear the draw list for a viewport.
-    pub fn clear_viewport_draw_list(&mut self, handle: ViewportHandle) {
-        if let Some(viewport) = self.viewport_manager.get_mut(handle) {
-            viewport.clear_draw_list();
-        }
-    }
-
     /// Destroy a viewport by handle.
     pub fn destroy_viewport(&mut self, handle: ViewportHandle) {
         if self.viewport_manager.destroy(handle) {
             info!("Viewport {} destroyed", handle.0);
-        }
-    }
-
-    /// Check if a viewport is ready for rendering.
-    pub fn is_viewport_ready(&self, handle: ViewportHandle) -> bool {
-        self.viewport_manager
-            .get(handle)
-            .is_some_and(|v| v.storage_manager.is_some() && v.storage_descriptor.is_some())
-    }
-
-    /// Update viewport camera and lighting.
-    ///
-    /// Call this each frame before rendering to update the viewport's view/projection
-    /// matrices and lighting parameters.
-    pub fn update_viewport_camera(
-        &mut self,
-        handle: ViewportHandle,
-        view_matrix: &[f32; 16],
-        proj_matrix: &[f32; 16],
-        inv_view_proj: &[f32; 16],
-        camera_position: &[f32; 4],
-        light_direction: &[f32; 4],
-        light_color: &[f32; 4],
-        light_intensity: f32,
-    ) {
-        let frame_idx = self.current_frame();
-        if let Some(viewport) = self.viewport_manager.get_mut(handle)
-            && let Some(ref mut manager) = viewport.storage_manager
-        {
-            manager.update_frame_with_lighting(
-                frame_idx,
-                view_matrix,
-                proj_matrix,
-                inv_view_proj,
-                camera_position,
-                light_direction,
-                light_color,
-                light_intensity,
-            );
         }
     }
 
@@ -890,7 +833,7 @@ impl VulkanRenderer {
         // Destroy output render target (Drop handles cleanup)
         self.output_target = None;
 
-        // Destroy all viewports (Drop handles cleanup for ViewportRenderTarget)
+        // Destroy all viewports
         self.viewport_manager.clear();
 
         // Destroy all registered assets first (materials, meshes)
@@ -2129,162 +2072,6 @@ impl VulkanRenderer {
             "readback_swapchain_image() is synchronous and may mask race conditions. Use queue_async_readback() + check_pending_readback() instead."
         );
         Ok(None)
-    }
-}
-
-/// Offscreen render target for viewport rendering.
-///
-/// This holds the color and depth attachments for rendering the 3D scene
-/// to a texture that can be sampled by the UI viewport panel.
-pub struct ViewportRenderTarget {
-    /// Color attachment image.
-    color_image: vk::Image,
-    color_memory: Option<gpu_allocator::vulkan::Allocation>,
-    /// Color attachment image view (exposed for render graph).
-    pub(crate) color_image_view: vk::ImageView,
-    /// Depth attachment image.
-    depth_image: vk::Image,
-    depth_memory: Option<gpu_allocator::vulkan::Allocation>,
-    depth_image_view: vk::ImageView,
-    /// Render extent.
-    pub extent: vk::Extent2D,
-    /// Sampler for sampling the color texture.
-    sampler: vk::Sampler,
-    /// Context for cleanup.
-    context: Rc<VulkanContext>,
-}
-
-impl ViewportRenderTarget {
-    /// Create a new viewport render target with the given dimensions.
-    pub fn new(context: Rc<VulkanContext>, width: u32, height: u32) -> Result<Self, vk::Result> {
-        unsafe {
-            let extent = vk::Extent2D { width, height };
-            let extent3d = vk::Extent3D {
-                width,
-                height,
-                depth: 1,
-            };
-
-            // Create color image (HDR format for PBR rendering with tonemapping)
-            let color_create_info = vk::ImageCreateInfo::default()
-                .image_type(vk::ImageType::TYPE_2D)
-                .extent(extent3d)
-                .mip_levels(1)
-                .array_layers(1)
-                .format(vk::Format::R16G16B16A16_SFLOAT)
-                .tiling(vk::ImageTiling::OPTIMAL)
-                .initial_layout(vk::ImageLayout::UNDEFINED)
-                .usage(
-                    vk::ImageUsageFlags::COLOR_ATTACHMENT
-                        | vk::ImageUsageFlags::SAMPLED
-                        | vk::ImageUsageFlags::TRANSFER_SRC,
-                )
-                .sharing_mode(vk::SharingMode::EXCLUSIVE)
-                .samples(vk::SampleCountFlags::TYPE_1);
-
-            let (color_image, color_memory) =
-                context.create_image(color_create_info, gpu_allocator::MemoryLocation::GpuOnly);
-
-            // Create color image view
-            let color_view_create_info = vk::ImageViewCreateInfo::default()
-                .image(color_image)
-                .view_type(vk::ImageViewType::TYPE_2D)
-                .format(vk::Format::R16G16B16A16_SFLOAT)
-                .components(vk::ComponentMapping::default())
-                .subresource_range(COLOR_SUBRESOURCE_RANGE);
-
-            let color_image_view = context
-                .device
-                .create_image_view(&color_view_create_info, None)?;
-
-            // Create depth image (D32_SFLOAT_S8_UINT to match pipeline formats)
-            let depth_create_info = vk::ImageCreateInfo::default()
-                .image_type(vk::ImageType::TYPE_2D)
-                .extent(extent3d)
-                .mip_levels(1)
-                .array_layers(1)
-                .format(vk::Format::D32_SFLOAT_S8_UINT)
-                .tiling(vk::ImageTiling::OPTIMAL)
-                .initial_layout(vk::ImageLayout::UNDEFINED)
-                .usage(vk::ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT)
-                .sharing_mode(vk::SharingMode::EXCLUSIVE)
-                .samples(vk::SampleCountFlags::TYPE_1);
-
-            let (depth_image, depth_memory) =
-                context.create_image(depth_create_info, gpu_allocator::MemoryLocation::GpuOnly);
-
-            // Create depth image view
-            let depth_view_create_info = vk::ImageViewCreateInfo::default()
-                .image(depth_image)
-                .view_type(vk::ImageViewType::TYPE_2D)
-                .format(vk::Format::D32_SFLOAT_S8_UINT)
-                .components(vk::ComponentMapping::default())
-                .subresource_range(DEPTH_SUBRESOURCE_RANGE);
-
-            let depth_image_view = context
-                .device
-                .create_image_view(&depth_view_create_info, None)?;
-
-            // Create sampler
-            let sampler = context.create_sampler_clamp_to_edge()?;
-
-            // Transition images to their initial layouts
-            let cmd_buffer = context.begin_single_time_commands();
-            let cmd = cmd_buffer.vk_command_buffer();
-
-            // Transition color to shader read only (since we blit to it, not render to it)
-            // This matches the expected old_layout in the blit barrier
-            ImageBarrier::transition_from_undefined(
-                &cmd,
-                &context.device,
-                color_image,
-                vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
-            );
-
-            // Transition depth to depth stencil attachment optimal
-            ImageBarrier::transition_from_undefined_with_range(
-                &cmd,
-                &context.device,
-                depth_image,
-                vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
-                DEPTH_SUBRESOURCE_RANGE,
-            );
-
-            context.end_single_time_commands(cmd_buffer);
-
-            Ok(Self {
-                color_image,
-                color_memory: Some(color_memory),
-                color_image_view,
-                depth_image,
-                depth_memory: Some(depth_memory),
-                depth_image_view,
-                extent,
-                sampler: sampler.into(),
-                context,
-            })
-        }
-    }
-}
-impl Drop for ViewportRenderTarget {
-    fn drop(&mut self) {
-        unsafe {
-            self.context.device.destroy_sampler(self.sampler, None);
-            self.context
-                .device
-                .destroy_image_view(self.color_image_view, None);
-            self.context.device.destroy_image(self.color_image, None);
-            if let Some(memory) = self.color_memory.take() {
-                self.context.allocator.borrow_mut().free(memory).ok();
-            }
-            self.context
-                .device
-                .destroy_image_view(self.depth_image_view, None);
-            self.context.device.destroy_image(self.depth_image, None);
-            if let Some(memory) = self.depth_memory.take() {
-                self.context.allocator.borrow_mut().free(memory).ok();
-            }
-        }
     }
 }
 
