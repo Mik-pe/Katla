@@ -36,9 +36,11 @@ mod fullscreen;
 pub(crate) mod geometry;
 mod shadow;
 mod ui;
+mod viewport;
 
 pub use composite::{CompositePass, ViewportRect};
 pub use fullscreen::{FullscreenPass, TonemapOperator, TonemapParams};
 pub use geometry::GeometryPass;
 pub use shadow::{LightType, ShadowPass};
 pub use ui::UIPass;
+pub use viewport::ViewportPass;

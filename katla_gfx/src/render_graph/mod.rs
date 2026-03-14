@@ -44,7 +44,8 @@ pub use descriptor_sets::CompositingDescriptorSet;
 pub use error::RenderGraphError;
 pub use graph::{Frame, FrameGraph, FrameGraphBuilder};
 pub use passes::{
-    FullscreenPass, GeometryPass, LightType, ShadowPass, TonemapOperator, TonemapParams, UIPass,
+    CompositePass, FullscreenPass, GeometryPass, LightType, ShadowPass, TonemapOperator,
+    TonemapParams, UIPass, ViewportPass, ViewportRect,
 };
 pub use resource::{GraphResourceDesc, GraphResourceHandle, GraphResourceType, ResourceState};
 
