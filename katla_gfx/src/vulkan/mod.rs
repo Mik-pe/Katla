@@ -5,7 +5,6 @@ pub mod commandpool;
 pub mod context;
 pub mod descriptor_set;
 pub mod material;
-pub mod particle_buffer;
 pub mod pipeline_state;
 pub mod queue;
 pub mod skeleton_buffer;

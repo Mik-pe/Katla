@@ -1,173 +1,290 @@
 ---
 name: gfx-worker
-description: Worker for graphics system changes including shaders, textures, and rendering pipeline modifications
+description: Graphics system worker for shaders, textures, render graph passes, and rendering pipeline modifications
 ---
 
 # GFX Worker
 
-NOTE: Startup and cleanup are handled by `worker-base`. This skill defines the WORK PROCEDURE.
+Graphics system implementation worker for the Katla render engine. Handles shaders, textures, render graph passes, and rendering pipeline modifications.
+
+**NOTE:** Startup and cleanup are handled by `worker-base`. This skill defines the WORK PROCEDURE.
 
 ## When to Use This Skill
 
-Use this worker type for:
-- Shader modifications (WGSL, GLSL)
-- Texture system changes (bindless, descriptors)
-- Rendering pipeline modifications
-- Vulkan API changes
-- Graphics performance optimizations
-- UI rendering infrastructure changes
+Use this worker for features that:
+- Modify `katla_gfx` crate
+- Implement or modify WGSL shaders
+- Create render graph passes or templates
+- Work with textures, descriptors, or Vulkan resources
+- Modify rendering pipeline or frame graph execution
+- Implement graphics debugging or validation features
 
 ## Work Procedure
 
-### 1. Understand the Feature
-- Read the feature description and validation contract assertions
-- Identify all files that need modification:
-  - Shaders: `resources/shaders/`
-  - UI types: `katla_ui/src/types.rs`
-  - UI drawing: `katla_ui/src/context/drawing.rs`
-  - UI draw list: `katla_ui/src/draw_list.rs`
-  - Renderer: `katla_gfx/src/renderer/ui_renderer.rs`
-  - Bindless: `katla_gfx/src/vulkan/bindless_texture.rs`
-  - Render graph: `katla_gfx/src/render_graph/graph.rs`
-- Review existing patterns in similar code
+### 1. Test-Driven Development (TDD)
 
-### 2. Write Tests First (TDD)
-- Write failing tests BEFORE implementation
-- Test the specific behavior being changed
-- Place tests in appropriate crate:
-  - `katla_ui/src/` for UI data structures
-  - `katla_gfx/src/` for rendering infrastructure
-  - `katla_gfx/tests/` for integration tests
-
+**Write tests FIRST:**
 ```rust
 #[test]
-fn test_bindless_texture_registration() {
-    // Test that textures can be registered and return valid indices
+fn test_feature_name() {
+    // Red: Test fails initially
+    let result = feature_api();
+    assert!(result.is_ok());
 }
 ```
 
-### 3. Implement Changes
-- Make minimal, focused changes
-- Follow existing Vulkan patterns in the codebase
-- Maintain architecture boundaries:
-  - `katla_gfx` must NOT depend on `katla_math`, `katla_ecs`, `katla_app`, `katla_ui`
-- Use `pub(crate)` by default
-- Remove old code entirely (no hybrid implementations)
+**Then implement to make tests pass:**
+```rust
+fn feature_api() -> Result<(), Error> {
+    // Green: Implementation makes test pass
+    Ok(())
+}
+```
 
-### 4. Build and Test
+**Why TDD for graphics:**
+- Catches API design issues early
+- Documents expected behavior
+- Prevents "it works on my machine" issues
+- Makes refactoring safer
+
+### 2. Shader Development Pattern
+
+**Step 1: Write WGSL shader**
+- Create file in `resources/shaders/feature.wgsl`
+- Use WGSL syntax and best practices
+- Follow existing shader patterns (see `ui.wgsl`, `tonemapping.wgsl`)
+
+**Step 2: Validate WGSL**
 ```bash
-# Build all crates
-cargo build --workspace
+# Shader compilation happens during build
+cargo build --bin katla
+```
 
-# Run all tests
-cargo test --workspace
+**Step 3: Test shader output**
+```bash
+# Visual verification with Vulkan validation
+cargo run -- -v -- -s
+```
 
-# Check for Vulkan validation errors
+**Common shader issues:**
+- WGSL syntax errors (naga will report)
+- Descriptor layout mismatch (Vulkan validation will report)
+- Incorrect binding numbers (check set/binding match Rust code)
+
+### 3. Frame Graph Pass Development
+
+**Follow existing patterns:**
+```rust
+// 1. Create pass struct
+pub struct FeaturePass {
+    name: String,
+    reads: Vec<String>,
+    writes: Vec<String>,
+    material: Option<MaterialHandle>,
+}
+
+// 2. Implement PassBuilder trait
+impl PassBuilder for FeaturePass {
+    fn as_builder(self) -> InternalPassBuilder {
+        // Generate pass descriptor with correct dependencies
+    }
+}
+
+// 3. Add to render_graph/passes/feature.rs
+// 4. Export from render_graph/passes/mod.rs
+```
+
+**Key principles:**
+- Declare resource reads/writes explicitly
+- Frame graph handles barriers automatically
+- Use transient textures for intermediate results
+- Follow naming conventions: `"resource_name"` format
+
+### 4. Visual Verification
+
+**Use validation mode:**
+```bash
+# 25 frames then exit (good for iterative development)
 cargo run -- -s
+
+# With Vulkan validation layers
+cargo run -- -v -- -s
+
+# Check for black frames (reads back center pixel)
+cargo run -- -s --check-black-frames
 ```
 
-### 5. Visual Verification
-- Run `cargo run -- -s` for limited-frame testing
-- Check console for Vulkan validation errors
-- Verify visual output:
-  - Text renders correctly
-  - Images/textures display properly
-  - No texture bleeding
-  - Correct colors and opacity
+**What to look for:**
+- Black screens (descriptor/shader issue)
+- Flickering (synchronization issue)
+- Corruption (memory/layout issue)
+- Incorrect positioning (rectangle/transform issue)
 
-### 6. Format and Lint
+### 5. Running Tests
+
+**Unit tests:**
 ```bash
-cargo fmt
-cargo clippy
+cargo test -p katla_gfx
+cargo test test_feature_name
 ```
+
+**Integration tests:**
+```bash
+cargo test --workspace
+cargo test -p katla_gfx --test integration_test_name
+```
+
+**With output:**
+```bash
+cargo test -- --nocapture
+cargo test -- --test-threads=1
+```
+
+### 6. Verification Checklist
+
+Before completing a feature:
+
+**Code Quality:**
+- [ ] `cargo fmt` run
+- [ ] `cargo clippy` shows no warnings
+- [ ] Code follows Katla conventions (AGENTS.md)
+- [ ] Public APIs have `///` documentation
+
+**Testing:**
+- [ ] Unit tests added and passing
+- [ ] Integration tests added and passing
+- [ ] Visual verification completed (screenshot if applicable)
+- [ ] Vulkan validation shows no errors
+
+**Functionality:**
+- [ ] Feature works as specified
+- [ ] Edge cases handled (errors, limits, etc.)
+- [ ] No dead code or unused imports
+- [ ] No performance regression (check frame times if relevant)
 
 ## Example Handoff
 
 ```json
 {
-  "salientSummary": "Migrated UI shader to use bindless texture array. Updated vertex struct to include texture_index field. Removed push descriptor code path. All 835 tests pass, no Vulkan validation errors.",
-  "whatWasImplemented": "Modified resources/shaders/ui/ui.wgsl to use binding_array<texture_2d<f32>, 4096> instead of separate font_atlas and dynamic_texture. Added texture_index: u32 to Vertex struct in katla_ui/src/types.rs. Updated UIRenderer to use BindlessTextureManager. Removed push_descriptor_khr calls from UI render path. Cleaned up BINDLESS_OFFSET hack in graph.rs.",
+  "salientSummary": "Implemented CompositingDescriptorSet with fixed texture array bindings (max 8 viewports). Added descriptor set layout (set 2, binding 0), validation for viewport count limits, and update_textures() method. Shader compilation successful, pipeline layout creation works. All tests passing, Vulkan validation clean.",
+  "whatWasImplemented": "Created CompositingDescriptorSet struct in katla_gfx/src/render_graph/descriptor_sets/compositing.rs. Descriptor set uses fixed array of 8 sampler2D bindings at set 2, binding 0. Added validation to enforce max 8 viewport limit (returns Error::TooManyViewports). Implemented update_textures() method to replace viewport textures at runtime. Created unit tests for creation, max limit validation, and empty viewport handling. Descriptor set layout matches WGSL shader expectations.",
   "whatWasLeftUndone": "",
   "verification": {
     "commandsRun": [
       {
-        "command": "cargo test --workspace",
+        "command": "cargo test -p katla_gfx test_compositing_descriptor_set",
         "exitCode": 0,
-        "observation": "All 835 tests passed"
+        "observation": "All 3 tests passed (creation, max limit, empty)"
       },
       {
-        "command": "cargo run -- -s",
+        "command": "cargo build --bin katla",
         "exitCode": 0,
-        "observation": "No Vulkan validation errors. UI renders correctly: text crisp, viewport displays 3D scene, buttons interactive."
+        "observation": "Shader compilation successful, no WGSL errors"
       },
       {
-        "command": "cargo clippy",
+        "command": "cargo run -- -v -- -s",
         "exitCode": 0,
-        "observation": "No warnings"
+        "observation": "Vulkan validation clean, no descriptor layout errors"
       }
     ],
     "interactiveChecks": [
       {
-        "action": "Visual inspection of text rendering",
-        "observed": "All text labels, buttons, and inputs render with correct glyphs. No missing characters."
+        "action": "Created 2-viewport split-screen layout",
+        "observed": "Both viewports rendered correctly at expected screen positions, no visual artifacts"
       },
       {
-        "action": "Visual inspection of viewport",
-        "observed": "3D scene displays correctly in viewport panel. No texture bleeding."
-      },
-      {
-        "action": "Visual inspection of interactive elements",
-        "observed": "Buttons change color on hover/press. Checkboxes toggle correctly. Sliders work."
+        "action": "Created 4-viewport grid layout",
+        "observed": "All 4 viewports rendered in correct quadrants, clean division between viewports"
       }
     ]
   },
   "tests": {
     "added": [
       {
-        "file": "katla_gfx/src/vulkan/bindless_texture.rs",
+        "file": "katla_gfx/src/render_graph/descriptor_sets/compositing.rs",
         "cases": [
           {
-            "name": "test_bindless_registration",
-            "verifies": "Textures can be registered and return valid slot indices"
+            "name": "test_compositing_descriptor_set_creation",
+            "verifies": "Descriptor set creation with valid viewport textures succeeds"
           },
           {
-            "name": "test_bindless_deregistration",
-            "verifies": "Slots are freed when textures are deregistered"
-          }
-        ]
-      },
-      {
-        "file": "katla_ui/src/types.rs",
-        "cases": [
+            "name": "test_compositing_descriptor_set_max_limit",
+            "verifies": "Creating with >8 textures returns Error::TooManyViewports"
+          },
           {
-            "name": "test_vertex_texture_index",
-            "verifies": "Vertex struct includes texture_index field with correct size"
+            "name": "test_compositing_descriptor_set_empty",
+            "verifies": "Creating with 0 textures succeeds (edge case)"
           }
         ]
       }
     ]
   },
-  "discoveredIssues": [],
-  "fulfillsAssertions": ["VAL-TEXT-001", "VAL-IMG-001", "VAL-CROSS-009"]
+  "discoveredIssues": []
 }
 ```
 
 ## When to Return to Orchestrator
 
-- Shader changes require new descriptor layouts that don't exist
-- Texture system changes reveal deeper architectural issues
-- Vulkan validation errors that can't be resolved within feature scope
-- Existing bugs block this feature
-- Requirements are ambiguous or need clarification
-- The change requires breaking public API changes not anticipated
+Return to orchestrator if:
 
-## Key Files Reference
+**Blocking Issues:**
+- Existing bugs in frame graph or render graph block implementation
+- Vulkan SDK issues or missing dependencies
+- Cannot create descriptor sets or pipelines due to existing issues
+- Frame graph compilation fails for unrelated reasons
 
-| Area | Files |
-|------|-------|
-| Shader | `resources/shaders/ui/ui.wgsl` |
-| UI Types | `katla_ui/src/types.rs`, `katla_ui/src/draw_list.rs` |
-| UI Drawing | `katla_ui/src/context/drawing.rs`, `katla_ui/src/context/mod.rs` |
-| UI Renderer | `katla_gfx/src/renderer/ui_renderer.rs`, `katla_gfx/src/renderer.rs` |
-| Bindless | `katla_gfx/src/vulkan/bindless_texture.rs` |
-| Render Graph | `katla_gfx/src/render_graph/graph.rs` |
+**Scope Issues:**
+- Need to modify application layer (game/src/main.rs or katla_app)
+- Feature requires changes outside katla_gfx crate
+- Requirements conflict with existing architecture
+
+**Clarification Needed:**
+- Implementation plan is ambiguous or contradictory
+- Need architectural decision that affects multiple areas
+- Not clear how to integrate with existing systems
+
+**DO NOT return for:**
+- Expected implementation challenges (shader debugging, etc.)
+- Test failures that can be fixed
+- Documentation updates within scope
+- Refactoring within katla_gfx
+- Performance optimization that can be done iteratively
+
+## Common Pitfalls
+
+### DON'T: Ignore TDD
+- Wrong: Write implementation first, then add tests
+- Correct: Write failing tests first, then implement
+
+### DON'T: Skip Visual Verification
+- Wrong: Assume rendering works without checking
+- Correct: Always run `cargo run -- -s` and verify output
+
+### DON'T: Ignore Vulkan Validation
+- Wrong: Suppress or ignore validation errors
+- Correct: Fix all validation errors before completing feature
+
+### DON'T: Break Conventions
+- Wrong: Use different naming or patterns than existing code
+- Correct: Follow existing Katla conventions (AGENTS.md)
+
+### DON'T: Skip Documentation
+- Wrong: Leave public APIs undocumented
+- Correct: Add `///` docs for all public interfaces
+
+## Resources
+
+**Internal:**
+- `C:\dev\katla\AGENTS.md` - Coding conventions and guidelines
+- Mission AGENTS.md - Mission-specific guidance and boundaries
+- `docs/feature-multi-viewport/` - Implementation documentation
+
+**External:**
+- WGSL Spec: https://www.w3.org/TR/WGSL/
+- Vulkan Spec: https://registry.khronos.org/vulkan/specs/1.3/html/
+- Vulkan Guide: https://vkguide.dev/
+
+**Examples:**
+- `katla_gfx/src/render_graph/passes/*.rs` - Existing pass templates
+- `resources/shaders/*.wgsl` - Existing shader implementations
+- `katla_gfx/tests/*.rs` - Integration test examples

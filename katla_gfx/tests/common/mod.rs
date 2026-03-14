@@ -2,6 +2,7 @@
 
 pub mod validation;
 
+use katla_gfx::ValidationMode;
 use katla_gfx::VulkanContext;
 use std::ffi::CString;
 
@@ -25,5 +26,11 @@ pub fn create_headless_context(with_validation_layers: bool) -> VulkanContext {
     let app_name = CString::new("Katla Headless Tests").unwrap();
     let engine_name = CString::new("Katla Engine").unwrap();
 
-    VulkanContext::init_headless(with_validation_layers, app_name, engine_name)
+    let validation_mode = if with_validation_layers {
+        ValidationMode::Enabled
+    } else {
+        ValidationMode::Disabled
+    };
+
+    VulkanContext::init_headless(validation_mode, app_name, engine_name)
 }

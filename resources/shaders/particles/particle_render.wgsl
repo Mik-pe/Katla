@@ -1,29 +1,27 @@
-// GPU Particle Rendering Shaders
+// Modern Particle Rendering - Vertex + Fragment Shaders
 //
-// Renders particles as billboard quads facing the camera.
-// Uses instanced rendering where each instance is a particle.
-//
-// Vertex shader generates a quad per particle (no vertex buffer needed).
-// Fragment shader draws soft-edged circles with color from particle data.
+// Renders particles as camera-facing billboards.
+// Uses vertex ID to generate quad corners (no vertex buffer needed).
 //
 // Descriptor Set Layout:
-// Set 0 (Per-Frame, Shared):
-//   Binding 0: Storage buffer (frame uniforms - camera, lights)
-// Set 1 (Per-Emitter):
+// Set 0 (Global Resources):
 //   Binding 0: Storage buffer (particle data)
+//   Binding 1: Storage buffer (alive particle index list)
+// Set 1 (Per-Frame):
+//   Binding 0: Storage buffer (frame uniforms - camera, lights)
 
-// Particle data structure (must match ParticleData in particle_buffer.rs)
+const MAX_PARTICLES: u32 = 1048576u;
+
+// Particle data structure
 struct ParticleData {
     position: vec3f,
-    _pad1: f32,
+    scale: f32,
     velocity: vec3f,
     lifetime: f32,
     color: vec4f,
-    scale: f32,
-    _pad2: vec3f,
 }
 
-// Frame uniforms for camera (matches StorageUniforms in renderer)
+// Frame uniforms (matches StorageUniforms in renderer)
 struct FrameUniforms {
     view: mat4x4f,
     proj: mat4x4f,
@@ -34,13 +32,17 @@ struct FrameUniforms {
     light_intensity: vec4f,
 }
 
-// Set 0: Frame uniforms (shared with main renderer)
+// Global particle data
 @group(0) @binding(0)
-var<storage, read> frame_data: FrameUniforms;
+var<storage, read> particles: array<ParticleData, MAX_PARTICLES>;
 
-// Set 1: Particle buffer (per-emitter)
+// Alive particle index list
+@group(0) @binding(1)
+var<storage, read> alive_list: array<u32, MAX_PARTICLES>;
+
+// Per-frame data (Set 1: shared with main renderer)
 @group(1) @binding(0)
-var<storage, read> particles: array<ParticleData>;
+var<storage, read> frame_data: FrameUniforms;
 
 struct VertexOutput {
     @builtin(position) clip_position: vec4f,
@@ -49,8 +51,7 @@ struct VertexOutput {
 }
 
 // Quad corners for billboard (6 vertices = 2 triangles)
-// Generated in vertex shader based on vertex ID
-fn get_corner(vertex_id: u32) -> vec2f {
+fn get_quad_corner(vertex_id: u32) -> vec2f {
     // Triangle 1: TL, TR, BL
     // Triangle 2: BL, TR, BR
     let corners = array<vec2f, 6>(
@@ -66,64 +67,77 @@ fn get_corner(vertex_id: u32) -> vec2f {
 
 @vertex
 fn vs_main(
-    @builtin(vertex_index) vertex_id: u32,
-    @builtin(instance_index) instance_idx: u32,
+    @builtin(vertex_id) vertex_id: u32,
 ) -> VertexOutput {
     var out: VertexOutput;
 
-    // Only render first 1000 particles
-    if (instance_idx >= 1000u) {
-        out.clip_position = vec4f(0.0, 0.0, 0.0, -1.0);
+    // Calculate particle index and corner
+    let particle_index = vertex_id / 6u;
+    let corner = get_quad_corner(vertex_id);
+
+    // Safety check (though GPU should only dispatch valid count)
+    if (particle_index >= MAX_PARTICLES) {
+        out.clip_position = vec4f(0.0, 0.0, 2.0, 1.0);
         out.uv = vec2f(0.0);
         out.color = vec4f(0.0);
         return out;
     }
 
-    let particle = particles[instance_idx];
+    let particle_idx = alive_list[particle_index];
+    let particle = particles[particle_idx];
 
     // Skip dead particles
     if (particle.lifetime <= 0.0) {
-        out.clip_position = vec4f(0.0, 0.0, 0.0, -1.0);
+        out.clip_position = vec4f(0.0, 0.0, 2.0, 1.0);
         out.uv = vec2f(0.0);
         out.color = vec4f(0.0);
         return out;
     }
 
-    let corner = get_corner(vertex_id);
     out.uv = corner;
+    out.color = particle.color;
 
     // Extract camera right/up vectors from view matrix
-    let view_right = vec3f(frame_data.view[0][0], frame_data.view[1][0], frame_data.view[2][0]);
-    let view_up = vec3f(frame_data.view[0][1], frame_data.view[1][1], frame_data.view[2][1]);
+    let view_right = vec3f(
+        frame_data.view[0][0],
+        frame_data.view[1][0],
+        frame_data.view[2][0]
+    );
+    let view_up = vec3f(
+        frame_data.view[0][1],
+        frame_data.view[1][1],
+        frame_data.view[2][1]
+    );
 
     // Calculate billboard offset in world space
-    let half_size = particle.scale;
+    let half_size = particle.scale * 0.5;
     let billboard_offset = (corner.x * view_right + corner.y * view_up) * half_size;
 
     // Particle position in world space
-    let particle_pos = vec3f(particle.position[0], particle.position[1], particle.position[2]);
+    let particle_pos = vec3f(
+        particle.position[0],
+        particle.position[1],
+        particle.position[2]
+    );
 
     // Final world position
     let world_pos = particle_pos + billboard_offset;
 
-    // Transform to view space, then clip space
+    // Transform to clip space
     let view_pos = frame_data.view * vec4f(world_pos, 1.0);
     out.clip_position = frame_data.proj * view_pos;
-
-    // Pass through particle color
-    out.color = particle.color;
 
     return out;
 }
 
 @fragment
-fn fs_main(input: VertexOutput) -> @location(0) vec4f {
+fn fs_main(in: VertexOutput) -> @location(0) vec4f {
     // Discard dead particles
-    if (input.color.a <= 0.0) {
+    if (in.color.a <= 0.01) {
         discard;
     }
 
-    let uv = input.uv;
+    let uv = in.uv;
 
     // Calculate distance from center for soft circular particle
     let dist = length(uv);
@@ -138,8 +152,8 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4f {
 
     // Output color with soft edge
     // Pre-multiply alpha for proper blending
-    let rgb = input.color.rgb * input.color.a * alpha;
-    let a = input.color.a * alpha * 0.5;  // Reduce overall alpha for transparency
+    let rgb = in.color.rgb * in.color.a * alpha;
+    let a = in.color.a * alpha * 0.5;  // Reduce overall alpha for transparency
 
     return vec4f(rgb, a);
 }

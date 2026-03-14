@@ -412,7 +412,11 @@ impl StorageUniformManager {
     /// # Arguments
     /// * `frame_index` - Frame index (0 to frames_in_flight-1)
     /// * `frame` - Frame uniforms struct containing all frame data
-    pub fn update_from_frame_uniforms(&mut self, frame_index: usize, frame: &crate::renderer::FrameUniforms) {
+    pub fn update_from_frame_uniforms(
+        &mut self,
+        frame_index: usize,
+        frame: &crate::renderer::FrameUniforms,
+    ) {
         self.update_frame_with_lighting(
             frame_index,
             &frame.view_matrix,
@@ -447,7 +451,8 @@ impl StorageUniformManager {
     ) {
         // Use default PBR material params
         self.update_object_with_material(frame_index, index, model, color, 0.0, 0.5, 1.0);
-    }    /// Update object uniforms with PBR material parameters.
+    }
+    /// Update object uniforms with PBR material parameters.
     ///
     /// # Arguments
     /// * `frame_index` - Frame index (0 to frames_in_flight-1)
@@ -468,7 +473,16 @@ impl StorageUniformManager {
         ao: f32,
     ) {
         // Default normal_scale to 1.0
-        self.update_object_with_material_full(frame_index, index, model, color, metallic, roughness, ao, 1.0);
+        self.update_object_with_material_full(
+            frame_index,
+            index,
+            model,
+            color,
+            metallic,
+            roughness,
+            ao,
+            1.0,
+        );
     }
 
     /// Update object uniforms with full PBR material parameters including normal scale.
@@ -567,7 +581,12 @@ impl StorageUniformManager {
     ///
     /// # Panics
     /// Panics if start_index + objects.len() >= MAX_OBJECTS
-    pub fn update_objects_bulk(&mut self, frame_index: usize, start_index: usize, objects: &[ObjectData]) {
+    pub fn update_objects_bulk(
+        &mut self,
+        frame_index: usize,
+        start_index: usize,
+        objects: &[ObjectData],
+    ) {
         let end_index = start_index + objects.len();
         assert!(
             end_index <= StorageUniformLayout::MAX_OBJECTS,

@@ -27,7 +27,7 @@ const DEFAULT_UI_FONT_SIZES: &[f32] = &[14.0, 16.0];
 #[derive(Default)]
 pub struct ApplicationBuilder {
     app_name: String,
-    validation_layer_enabled: bool,
+    validation_mode: katla_gfx::ValidationMode,
     max_frames: Option<usize>,
     check_black_frames: bool,
     world: World,
@@ -44,7 +44,20 @@ impl ApplicationBuilder {
     }
 
     pub fn validation_layer(mut self, on: bool) -> Self {
-        self.validation_layer_enabled = on;
+        self.validation_mode = if on {
+            katla_gfx::ValidationMode::Enabled
+        } else {
+            katla_gfx::ValidationMode::Disabled
+        };
+        self
+    }
+
+    pub fn gpu_assisted_validation(mut self, on: bool) -> Self {
+        self.validation_mode = if on {
+            katla_gfx::ValidationMode::GpuAssisted
+        } else {
+            katla_gfx::ValidationMode::Disabled
+        };
         self
     }
 
@@ -97,7 +110,7 @@ impl ApplicationBuilder {
         let renderer = VulkanRenderer::init(
             event_loop,
             window,
-            info.validation_layer_enabled,
+            info.validation_mode,
             CString::new(info.name.as_str()).unwrap(),
             engine_name,
         )
@@ -235,7 +248,7 @@ impl ApplicationBuilder {
 
         let info = ApplicationInfo {
             name: self.app_name,
-            validation_layer_enabled: self.validation_layer_enabled,
+            validation_mode: self.validation_mode,
             max_frames: self.max_frames,
             check_black_frames: self.check_black_frames,
         };
@@ -374,12 +387,17 @@ impl ApplicationBuilder {
         // Build the frame graph once at startup (needs mutable renderer to compile shader)
         let frame_graph = Self::build_frame_graph(&mut renderer, &resources)?;
 
-        // Initialize particle system (zero-config - shader paths are built-in)
-        let particle_system = match katla_gfx::ParticleSystem::new(&mut renderer) {
+        // Initialize modern global particle system
+        // Note: Particle system is managed independently, not stored in renderer
+        let _particle_system = match katla_gfx::GlobalParticleSystem::new(
+            renderer.context(),
+            katla_gfx::particles::DEFAULT_MAX_PARTICLES,
+        ) {
             Ok(system) => {
-                log::info!("✨ Particle system initialized successfully");
-                log::info!("   - Max particles per emitter: 65,536");
-                log::info!("   - Memory per emitter: 4MB GPU");
+                log::info!("✨ Modern particle system initialized successfully");
+                log::info!("   - Global particle pool: 1,048,576 particles");
+                log::info!("   - Memory footprint: ~60 MB GPU");
+                log::info!("   - Architecture: Single buffer + atomic counters");
                 Some(system)
             }
             Err(e) => {
@@ -388,9 +406,6 @@ impl ApplicationBuilder {
                 None
             }
         };
-
-        // Store particle system in renderer for frame graph access
-        renderer.particle_system = particle_system;
 
         // Initialize UI renderer with font atlas bindless slot
         let mut ui_renderer = crate::ui::UIRenderer::new();
@@ -439,7 +454,6 @@ impl ApplicationBuilder {
             thumbnail_texture_handles: HashMap::new(),
             start_time: Instant::now(),
             default_material_handle: katla_gfx::MaterialHandle::NONE,
-            // particle_system: None, // TODO: Particle system is temporarily disabled
             pending_readback: None,
             cleaned_up: false,
         };

@@ -7,7 +7,6 @@
 //! - `ui` - UI buffer and texture management (TODO: extract from lib.rs)
 
 pub mod mesh_manager;
-pub mod particle_system;
 pub mod registry;
 pub mod types;
 pub mod ui_renderer;
@@ -15,7 +14,7 @@ pub mod viewport_manager;
 
 pub use crate::handle::{Handle, MaterialHandle, MeshHandle, SkeletonHandle, TextureHandle};
 use crate::viewport::{ViewportBuilder, ViewportHandle};
-pub use particle_system::ParticleSystem;
+pub use crate::vulkan::context::ValidationMode;
 pub use registry::AssetRegistry;
 pub use types::{DrawCall, DrawList, FrameUniforms, InstanceData, UIDrawList, UiDrawCommand};
 
@@ -139,8 +138,6 @@ pub struct VulkanRenderer {
     pub(crate) material_compiler: MaterialCompiler,
     /// UI rendering subsystem - owns UI resources and font atlas.
     pub ui_renderer: ui_renderer::UIRenderer,
-    /// Particle system for GPU-based particle effects.
-    pub particle_system: Option<ParticleSystem>,
 }
 
 /// Number of frames that can be processed concurrently.
@@ -158,20 +155,20 @@ impl VulkanRenderer {
     pub fn init(
         display: &dyn HasDisplayHandle,
         window: &dyn HasWindowHandle,
-        with_validation_layers: bool,
+        validation_mode: ValidationMode,
         app_name: CString,
         engine_name: CString,
     ) -> Result<Self, RendererError> {
         let context = Rc::new(VulkanContext::init(
             display,
             window,
-            with_validation_layers,
+            validation_mode,
             app_name,
             engine_name,
         ));
 
         // Set up validation logging at appropriate log levels
-        if with_validation_layers {
+        if validation_mode.is_enabled() {
             context.setup_validation_logging();
         }
 
@@ -262,7 +259,6 @@ impl VulkanRenderer {
             viewport_manager,
             material_compiler,
             ui_renderer: ui_renderer::UIRenderer::new(&context),
-            particle_system: None,
         })
     }
 
@@ -425,7 +421,8 @@ impl VulkanRenderer {
         let frame_idx = self.swap_data.current_frame();
 
         // Write frame uniforms to storage buffer for current frame
-        self.storage_manager.update_from_frame_uniforms(frame_idx, &uniforms);
+        self.storage_manager
+            .update_from_frame_uniforms(frame_idx, &uniforms);
 
         // Store for reference
         self.frame_uniforms = uniforms;
@@ -895,12 +892,6 @@ impl VulkanRenderer {
 
         // Destroy all viewports (Drop handles cleanup for ViewportRenderTarget)
         self.viewport_manager.clear();
-
-        // Destroy particle system (if initialized)
-        if let Some(mut particle_system) = self.particle_system.take() {
-            particle_system.destroy(&self.context);
-            log::info!("Particle system destroyed");
-        }
 
         // Destroy all registered assets first (materials, meshes)
         self.asset_registry.destroy();

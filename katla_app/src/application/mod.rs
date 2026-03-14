@@ -42,7 +42,7 @@ use crate::{
 
 struct ApplicationInfo {
     name: String,
-    validation_layer_enabled: bool,
+    validation_mode: katla_gfx::ValidationMode,
     max_frames: Option<usize>, // Some(n) = exit after n frames, None = run indefinitely
     check_black_frames: bool,  // Check center pixel of swapchain for black frames
 }
@@ -86,8 +86,6 @@ pub struct Application {
     pub(crate) start_time: Instant,
     /// Default PBR material handle for geometry rendering
     pub(crate) default_material_handle: katla_gfx::MaterialHandle,
-    // TODO: Particle system is temporarily disabled
-    // pub(crate) particle_system: Option<katla_gfx::ParticleSystem>,
     /// Pending readback data from previous frame (for async black frame checking)
     pending_readback: Option<(usize, Vec<u8>)>,
     /// Flag to prevent double cleanup
@@ -289,7 +287,7 @@ impl ApplicationHandler for Application {
 
                 // Render frame to GPU (includes UI if present)
                 debug!("Rendering frame...");
-                self.render_frame(ui_draw_list);
+                self.render_frame(ui_draw_list, dt, self.frame_count);
                 debug!("Frame rendered");
 
                 // Process editor actions after UI rendering
@@ -421,11 +419,6 @@ impl Application {
 
         // Wait for device to ensure all GPU operations are complete
         self.renderer.wait_for_device();
-
-        // TODO: Destroy particle system first (needs Vulkan context)
-        // if let Some(mut particle_system) = self.particle_system.take() {
-        //     particle_system.destroy(self.renderer.context());
-        // }
 
         // Destroy renderer
         self.renderer.destroy();
@@ -995,77 +988,6 @@ impl Application {
     /// Creates a particle emitter component with default fire-like settings.
     /// The emitter will be processed by the particle simulation system.
     ///
-    /// # Arguments
-    /// * `position` - World position to spawn the emitter at
-    ///
-    /// # Returns
-    /// The entity ID of the spawned emitter, or None if particle system is not available
-    pub fn spawn_particle_emitter(&mut self, position: [f32; 3]) -> Option<katla_ecs::EntityId> {
-        use crate::components::{ParticleEmitterComponent, TransformComponent};
-        use katla_gfx::EmitterConfig;
-        use katla_math::Transform;
-
-        // TODO: Particle system is temporarily disabled
-        /*
-        let particle_system = self.particle_system.as_mut()?;
-
-        let config = EmitterConfig {
-            position,
-            emit_count: 100, // Fire emit rate
-            velocity_direction: [0.0, 1.0, 0.0],
-            base_lifetime: 3.0,
-            velocity_magnitude: 2.0,
-            velocity_cone_angle: 0.3,
-            base_scale: 0.15,
-            color: [1.0, 0.6, 0.2, 1.0],
-        };
-
-        let handle = particle_system
-            .create_emitter(&mut self.renderer, config)
-            .ok()?;
-
-        let entity = self.world.spawn((
-            TransformComponent {
-                transform: Transform::from_position(katla_math::Vec3::new(
-                    position[0],
-                    position[1],
-                    position[2],
-                )),
-            },
-            ParticleEmitterComponent::fire(handle),
-        ));
-
-        info!("Spawned particle emitter at {:?}", position);
-        Some(entity)
-        */
-        None
-    }
-
-    /// Destroy a particle emitter entity and free its GPU resources.
-    ///
-    /// # Arguments
-    /// * `entity` - Entity ID of the particle emitter to destroy
-    pub fn destroy_particle_emitter(&mut self, entity: katla_ecs::EntityId) -> bool {
-        use crate::components::ParticleEmitterComponent;
-
-        let handle =
-            if let Some(emitter) = self.world.get_component::<ParticleEmitterComponent>(entity) {
-                Some(emitter.handle)
-            } else {
-                None
-            };
-
-        // TODO: Particle emitter cleanup is temporarily disabled
-        // if let (Some(handle), Some(particle_system)) = (handle, &mut self.particle_system) {
-        //     particle_system.destroy_emitter(self.renderer.context(), handle);
-        //     info!("Destroyed particle emitter {:?}", handle);
-        // }
-
-        // Note: Entity cleanup will happen automatically in ECS
-        // For now, we just clean up GPU resources
-        handle.is_some()
-    }
-
     /// Upload textures from a GLTF model and return bindless texture indices.
     ///
     /// Returns [albedo, normal, metallic_roughness, ao, emission] indices.
@@ -1270,23 +1192,15 @@ impl Application {
             info!("Spawned DamagedHelmet model");
         }
 
-        // Add particle emitters with different effects
+        // TODO: Add particle emitters when modern particle system integration is complete
         // Fire emitter near the center cube
-        if let Some(_entity) = self.spawn_particle_emitter([-3.0, 2.0, -3.0]) {
-            info!("✨ Fire particle emitter spawned at [-3.0, 2.0, -3.0]");
-        } else {
-            log::warn!("Failed to spawn particle emitter (particle system not available)");
-        }
+        // if let Some(_entity) = self.spawn_particle_emitter([-3.0, 2.0, -3.0]) {
+        //     info!("✨ Fire particle emitter spawned at [-3.0, 2.0, -3.0]");
+        // }
 
-        // Second emitter near the sphere (different position for variety)
-        if let Some(_entity) = self.spawn_particle_emitter([-7.0, 2.0, -5.0]) {
-            info!("✨ Second particle emitter spawned at [-7.0, 2.0, -5.0]");
-        }
-
-        // Third emitter near the torus
-        if let Some(_entity) = self.spawn_particle_emitter([7.0, 2.5, -3.0]) {
-            info!("✨ Third particle emitter spawned at [7.0, 2.5, -3.0]");
-        }
+        // Note: Modern particle system (GlobalParticleSystem) is initialized in builder.rs
+        // but ECS integration and spawn methods need to be implemented
+        info!("Modern particle system ready for ECS integration");
 
         info!(
             "Default scene setup complete - {} entities spawned with particle effects",

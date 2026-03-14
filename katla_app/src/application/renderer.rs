@@ -11,7 +11,12 @@ impl Application {
     /// Render a single frame using the frame graph.
     ///
     /// Uses FrameContext for draw submission with automatic instance allocation.
-    pub fn render_frame(&mut self, ui_draw_list: Option<UIDrawList>) {
+    pub fn render_frame(
+        &mut self,
+        ui_draw_list: Option<UIDrawList>,
+        delta_time: f32,
+        frame_count: usize,
+    ) {
         // Get frame-in-flight index for per-frame resource selection
         let frame_idx = self.renderer.current_frame();
 
@@ -19,7 +24,12 @@ impl Application {
         // With per-frame transient textures, the correct slot is base_slot + frame_idx
         if let Some(base_ldr_index) = self.frame_graph.get_ldr_texture_base_index() {
             let actual_ldr_index = base_ldr_index + frame_idx as u32;
-            log::trace!("Viewport bindless index: base={}, frame_idx={}, actual={}", base_ldr_index, frame_idx, actual_ldr_index);
+            log::trace!(
+                "Viewport bindless index: base={}, frame_idx={}, actual={}",
+                base_ldr_index,
+                frame_idx,
+                actual_ldr_index
+            );
             self.editor_ui.set_viewport_bindless_index(actual_ldr_index);
         }
 
@@ -83,6 +93,10 @@ impl Application {
 
         log::debug!("Submitting {} draw calls to geometry pass", draw_list.len());
 
+        // Set delta time and frame count for particle simulation
+        self.frame_graph.set_delta_time(delta_time);
+        self.frame_graph.set_frame_count(frame_count);
+
         self.renderer.render(&mut self.frame_graph, |frame| {
             // Submit draw list to the geometry pass
             if !draw_list.is_empty() {
@@ -104,26 +118,10 @@ impl Application {
     /// This automatically allocates instance indices and builds the draw list.
     fn collect_draws_with_context(&mut self, frame: &mut FrameContext) {
         use crate::animation::Skeleton;
-        use crate::components::{DrawableComponent, ParticleEmitterComponent, TransformComponent};
+        use crate::components::{DrawableComponent, TransformComponent};
 
         let entity_count = self.world.entity_ids().count();
         let mut drawable_count = 0;
-        let mut particle_count = 0;
-
-        // TODO: Collect particle emitters first (they don't use instance allocation)
-        // This is temporarily disabled
-        /*
-        if self.particle_system.is_some() {
-            for entity_id in self.world.entity_ids() {
-                if let Some(emitter) = self.world.get_component::<ParticleEmitterComponent>(entity_id) {
-                    if !emitter.handle.is_none() {
-                        frame.push_particle(emitter.handle);
-                        particle_count += 1;
-                    }
-                }
-            }
-        }
-        */
 
         // Collect drawable components
         for entity_id in self.world.entity_ids() {
@@ -194,9 +192,8 @@ impl Application {
         }
 
         log::debug!(
-            "Submitted {} draw calls and {} particle emitters from {} entities",
+            "Submitted {} draw calls from {} entities",
             drawable_count,
-            particle_count,
             entity_count
         );
     }
