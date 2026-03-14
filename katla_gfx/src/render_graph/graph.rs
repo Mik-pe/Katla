@@ -764,11 +764,6 @@ pub struct Frame<'a> {
     /// Current state of transient resources (name -> state).
     resource_states: HashMap<String, super::resource::ResourceState>,
 
-    /// Current GPU image layouts (name -> layout).
-    /// CRITICAL: Must match actual GPU state for correct barrier old_layout.
-    /// Mismatched old_layout causes undefined behavior (black screens).
-    image_layouts: HashMap<String, vk::ImageLayout>,
-
     /// Per-frame temporary buffers (allocated during this frame, cleaned up after GPU completion).
     temporary_buffers: Vec<(vk::Buffer, gpu_allocator::vulkan::Allocation)>,
 }
@@ -804,26 +799,12 @@ impl<'a> Frame<'a> {
             .map(|desc| (desc.name.clone(), super::resource::ResourceState::Undefined))
             .collect();
 
-        // Initialize GPU layouts from this frame's TransientTexture tracking
-        // Each frame has its own set of transient textures with independent layout tracking
-        let image_layouts: HashMap<String, vk::ImageLayout> = graph
-            .transient_textures
-            .get(frame_idx)
-            .map(|textures| {
-                textures
-                    .iter()
-                    .map(|(name, texture)| (name.clone(), texture.current_layout()))
-                    .collect()
-            })
-            .unwrap_or_default();
-
         Self {
             graph,
             renderer,
             image_index,
             pending: HashMap::new(),
             resource_states,
-            image_layouts,
             temporary_buffers: Vec::new(),
         }
     }
@@ -860,11 +841,16 @@ impl<'a> Frame<'a> {
             .pass_index(pass)
             .unwrap_or_else(|| panic!("Pass '{}' not found in graph", pass));
 
+        let cmd_count = ui_draw_list.commands.len();
         self.pending
             .entry(index)
             .or_default()
             .ui_draw_lists
             .push(ui_draw_list.clone());
+
+        log::trace!("submit_ui: pass='{}', index={}, commands={}, pending UI lists now={}",
+            pass, index, cmd_count, self.pending[&index].ui_draw_lists.len());
+
         self
     }
 
@@ -898,6 +884,8 @@ impl<'a> Frame<'a> {
     fn execute_passes(&mut self) -> Result<(), RenderGraphError> {
         // Use storage_manager.current_frame() consistently for all frame resource selection
         let frame_idx = self.current_frame();
+        log::debug!("=== execute_passes: frame_idx={}, {} passes to execute ===", frame_idx, self.graph.passes.len());
+
         // Clone the command buffer to avoid borrowing issues
         let cmd = self.renderer.frame_context.command_buffers[frame_idx].clone();
 
@@ -910,6 +898,12 @@ impl<'a> Frame<'a> {
         for (index, pass) in self.graph.passes.iter().enumerate() {
             let data = self.pending.remove(&index).unwrap_or_default();
 
+            if pass.name == "ui" {
+                log::trace!("UI pass execution: index={}, frame_idx={}, ui_draw_lists={}, commands={}",
+                    index, self.current_frame(), data.ui_draw_lists.len(),
+                    data.ui_draw_lists.iter().map(|l| l.commands.len()).sum::<usize>());
+            }
+
             log::debug!(
                 "Executing pass '{}' (index {}): pipeline={:?}, draw_lists={}, writes={:?}",
                 pass.name,
@@ -918,6 +912,11 @@ impl<'a> Frame<'a> {
                 data.draw_lists.len(),
                 pass.writes
             );
+
+            // Track which writes happened this frame (for debugging black screen issues)
+            if !pass.writes.is_empty() {
+                log::trace!("Pass '{}' writes to: {:?}", pass.name, pass.writes);
+            }
 
             // Insert pre-pass barriers
             self.insert_barriers(&cmd, index)?;
@@ -998,6 +997,11 @@ impl<'a> Frame<'a> {
                 // This persists across frames via RefCell
                 let old_layout = transient.current_layout();
 
+                log::trace!(
+                    "[Barrier] Pass '{}' write '{}': {:?} -> {:?}",
+                    pass.name, write_name, old_layout, required_layout
+                );
+
                 // Transition using the actual tracked old_layout
                 ImageBarrier::transition(
                     &cmd_vk,
@@ -1010,8 +1014,6 @@ impl<'a> Frame<'a> {
                 // Update tracked state AND GPU layout (persist to TransientTexture for next frame)
                 self.resource_states
                     .insert(write_name.clone(), required_state);
-                self.image_layouts
-                    .insert(write_name.clone(), required_layout);
                 transient.set_layout(required_layout);
             }
         }
@@ -1043,6 +1045,11 @@ impl<'a> Frame<'a> {
                 // This persists across frames via RefCell
                 let old_layout = transient.current_layout();
 
+                log::trace!(
+                    "[Barrier] Pass '{}' read '{}': {:?} -> {:?}",
+                    pass.name, read_name, old_layout, required_layout
+                );
+
                 // Transition using the actual tracked old_layout
                 ImageBarrier::transition(
                     &cmd_vk,
@@ -1055,8 +1062,6 @@ impl<'a> Frame<'a> {
                 // Update tracked state AND GPU layout (persist to TransientTexture for next frame)
                 self.resource_states
                     .insert(read_name.clone(), required_state);
-                self.image_layouts
-                    .insert(read_name.clone(), required_layout);
                 transient.set_layout(required_layout);
             }
         }
@@ -1128,6 +1133,11 @@ impl<'a> Frame<'a> {
                     // This persists across frames via RefCell
                     let old_layout = transient.current_layout();
 
+                    log::trace!(
+                        "[PostBarrier] Pass '{}' -> subsequent reads '{}': {:?} -> SHADER_READ_ONLY",
+                        current_pass.name, write_name, old_layout
+                    );
+
                     // Use the tracked old_layout for correct synchronization
                     ImageBarrier::transition(
                         &cmd_vk,
@@ -1142,8 +1152,6 @@ impl<'a> Frame<'a> {
                         write_name.clone(),
                         super::resource::ResourceState::ShaderRead,
                     );
-                    self.image_layouts
-                        .insert(write_name.clone(), vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL);
                     transient.set_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL);
                 }
             }
@@ -2010,7 +2018,9 @@ impl<'a> Frame<'a> {
         pass: &PassDesc,
         pipeline_handle: crate::handle::PipelineHandle,
     ) -> Result<(), RenderGraphError> {
-        log::debug!("Executing fullscreen pass: {}", pass.name);
+        let current_frame = self.current_frame();
+        log::debug!("Fullscreen pass '{}' execution: frame_idx={}, writes={:?}, reads={:?}",
+            pass.name, current_frame, pass.writes, pass.reads);
 
         let extent = self.renderer.frame_context.swapchain.get_extent();
         let render_area = vk::Rect2D {
@@ -2037,8 +2047,12 @@ impl<'a> Frame<'a> {
                     },
                 })
         } else if let Some(color_name) = pass.writes.first() {
-            // Check if this is a transient texture
-            if let Some(transient) = self.graph.transient_texture(color_name, self.current_frame()) {
+            // Check if this is a transient texture (fullscreen pass like tonemap)
+            let frame_idx = self.current_frame();
+            if let Some(transient) = self.graph.transient_texture(color_name, frame_idx) {
+                log::trace!("Fullscreen pass '{}' writing to '{}' at frame_idx={}, image_view={:?}",
+                    pass.name, color_name, frame_idx, transient.image_view.vk());
+
                 // Check if pass specified load/store ops for this attachment
                 let (load_op, store_op, clear_value) = pass
                     .color_attachments

@@ -19,6 +19,7 @@ impl Application {
         // With per-frame transient textures, the correct slot is base_slot + frame_idx
         if let Some(base_ldr_index) = self.frame_graph.get_ldr_texture_base_index() {
             let actual_ldr_index = base_ldr_index + frame_idx as u32;
+            log::trace!("Viewport bindless index: base={}, frame_idx={}, actual={}", base_ldr_index, frame_idx, actual_ldr_index);
             self.editor_ui.set_viewport_bindless_index(actual_ldr_index);
         }
 

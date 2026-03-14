@@ -448,6 +448,71 @@ impl CommandBuffer {
             );
         }
     }
+
+    //=========================================================================
+    // Barrier Helpers
+    //=========================================================================
+
+    /// Transition an image to a new layout with automatic synchronization.
+    ///
+    /// This is a convenience wrapper around `crate::barrier::ImageBarrier::transition`
+    /// that automatically deduces the correct pipeline stages and access masks.
+    ///
+    /// # Arguments
+    /// * `image` - Vulkan image handle
+    /// * `old_layout` - Current layout of the image
+    /// * `new_layout` - Desired layout after the barrier
+    ///
+    /// # Example
+    /// ```ignore
+    /// use ash::vk;
+    /// use katla_gfx::CommandBuffer;
+    ///
+    /// cmd.transition_image(
+    ///     texture_image,
+    ///     vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+    ///     vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+    /// );
+    /// ```
+    pub fn transition_image(
+        &self,
+        image: vk::Image,
+        old_layout: vk::ImageLayout,
+        new_layout: vk::ImageLayout,
+    ) {
+        use crate::barrier::ImageBarrier;
+
+        ImageBarrier::transition(&self.command_buffer, &self.device, image, old_layout, new_layout);
+    }
+
+    /// Transition an image with a specific subresource range.
+    ///
+    /// Useful for transitioning individual mips, array layers, or depth stencil
+    /// images with different aspect masks.
+    ///
+    /// # Arguments
+    /// * `image` - Vulkan image handle
+    /// * `old_layout` - Current layout of the image
+    /// * `new_layout` - Desired layout after the barrier
+    /// * `subresource_range` - Specific range to transition
+    pub fn transition_image_with_range(
+        &self,
+        image: vk::Image,
+        old_layout: vk::ImageLayout,
+        new_layout: vk::ImageLayout,
+        subresource_range: vk::ImageSubresourceRange,
+    ) {
+        use crate::barrier::ImageBarrier;
+
+        ImageBarrier::transition_with_range(
+            &self.command_buffer,
+            &self.device,
+            image,
+            old_layout,
+            new_layout,
+            subresource_range,
+        );
+    }
 }
 
 #[cfg(test)]

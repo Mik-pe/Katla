@@ -127,6 +127,7 @@ impl ImageBarrier {
     /// | SHADER_READ_ONLY | TRANSFER_DST | FRAGMENT_SHADER | TRANSFER | SHADER_READ | TRANSFER_WRITE |
     /// | UNDEFINED | COLOR_ATTACHMENT | TOP_OF_PIPE | COLOR_ATTACHMENT_OUTPUT | NONE | COLOR_ATTACHMENT_WRITE |
     /// | COLOR_ATTACHMENT | PRESENT_SRC | COLOR_ATTACHMENT_OUTPUT | BOTTOM_OF_PIPE | COLOR_ATTACHMENT_WRITE | NONE |
+    /// | PRESENT_SRC | COLOR_ATTACHMENT | BOTTOM_OF_PIPE | COLOR_ATTACHMENT_OUTPUT | NONE | COLOR_ATTACHMENT_WRITE |
     /// | UNDEFINED | DEPTH_STENCIL_ATTACHMENT | TOP_OF_PIPE | EARLY_FRAGMENT_TESTS | NONE | DEPTH_STENCIL_* |
     /// | UNDEFINED | SHADER_READ_ONLY | TOP_OF_PIPE | FRAGMENT_SHADER | NONE | SHADER_READ |
     ///
@@ -356,6 +357,21 @@ impl ImageBarrier {
             );
         }
 
+        // PRESENT_SRC_KHR -> COLOR_ATTACHMENT_OPTIMAL
+        // Used when transitioning swapchain image from presentation back to rendering.
+        // After presentation completes, the image is in PRESENT_SRC_KHR and needs to
+        // transition back to COLOR_ATTACHMENT for the next frame's rendering.
+        if old_layout == vk::ImageLayout::PRESENT_SRC_KHR
+            && new_layout == vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL
+        {
+            return (
+                PipelineStage2Flags::BOTTOM_OF_PIPE,
+                PipelineStage2Flags::COLOR_ATTACHMENT_OUTPUT,
+                AccessFlags2::NONE,
+                AccessFlags2::COLOR_ATTACHMENT_WRITE,
+            );
+        }
+
         panic!(
             "Unsupported layout transition: {:?} -> {:?}",
             old_layout, new_layout
@@ -417,6 +433,19 @@ mod tests {
         assert_eq!(dst_stage, PipelineStage2Flags::BOTTOM_OF_PIPE);
         assert_eq!(src_access, AccessFlags2::COLOR_ATTACHMENT_WRITE);
         assert_eq!(dst_access, AccessFlags2::NONE);
+    }
+
+    #[test]
+    fn test_deduce_present_to_color_attachment() {
+        let (src_stage, dst_stage, src_access, dst_access) = ImageBarrier::deduce_transition_masks(
+            vk::ImageLayout::PRESENT_SRC_KHR,
+            vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+        );
+
+        assert_eq!(src_stage, PipelineStage2Flags::BOTTOM_OF_PIPE);
+        assert_eq!(dst_stage, PipelineStage2Flags::COLOR_ATTACHMENT_OUTPUT);
+        assert_eq!(src_access, AccessFlags2::NONE);
+        assert_eq!(dst_access, AccessFlags2::COLOR_ATTACHMENT_WRITE);
     }
 
     #[test]

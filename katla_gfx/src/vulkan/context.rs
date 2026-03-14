@@ -585,11 +585,10 @@ impl VulkanContext {
     pub fn end_single_time_commands(&self, command_buffer: super::CommandBuffer) {
         command_buffer.end_single_time_command();
         let command_buffers = vec![&command_buffer];
-        // NOTE: This submits to the graphics queue synchronously. For multi-frame
-        // concurrency, use a separate transfer queue or proper synchronization.
-        self.gfx_queue
-            .submit(&command_buffers, &[], &[], vk::Fence::null());
-        self.gfx_queue.wait_idle();
+
+        // Submit using the unified submit_and_wait pattern
+        self.gfx_queue.submit_and_wait(&command_buffers, &[], &[]);
+
         command_buffer.return_to_pool();
     }
 
