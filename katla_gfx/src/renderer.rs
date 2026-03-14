@@ -421,14 +421,11 @@ impl VulkanRenderer {
     /// # Arguments
     /// * `uniforms` - Frame uniforms containing view/proj matrices, camera position, and lighting
     pub fn set_frame_uniforms(&mut self, uniforms: FrameUniforms) {
-        // Select per-frame buffer BEFORE any data writes
-        // This must happen first since set_frame_uniforms() and execute_draw_calls()
-        // are called before render()
+        // Get frame index from swap_data (the source of truth for frame advancement)
         let frame_idx = self.swap_data.current_frame();
-        self.storage_manager.start_frame(frame_idx);
 
         // Write frame uniforms to storage buffer for current frame
-        self.storage_manager.update_from_frame_uniforms(&uniforms);
+        self.storage_manager.update_from_frame_uniforms(frame_idx, &uniforms);
 
         // Store for reference
         self.frame_uniforms = uniforms;
@@ -468,8 +465,8 @@ impl VulkanRenderer {
     /// })?;
     /// ```
     pub fn execute_draw_calls(&mut self, draw_list: &DrawList) -> Result<(), RendererError> {
-        // Note: set_frame_uniforms() must be called before this method
-        // as it calls start_frame() to select the correct per-frame buffer
+        // Get current frame index from swap_data (source of truth)
+        let frame_idx = self.current_frame();
 
         // Write all per-object data to storage buffer
         for draw_call in &draw_list.draws {
@@ -499,6 +496,7 @@ impl VulkanRenderer {
 
             // Write to storage buffer at instance_index
             self.storage_manager.update_object_bindless(
+                frame_idx,
                 index,
                 &draw_call.model_matrix,
                 &color,
@@ -707,7 +705,9 @@ impl VulkanRenderer {
         //
         // Note: Object index 0 is reserved for fullscreen/post-processing shader parameters.
         // This is a documented contract between the renderer and fullscreen shaders.
+        let frame_idx = self.current_frame();
         self.storage_manager.update_object_bindless(
+            frame_idx,
             0, // object index 0 is reserved for tonemap params
             &[
                 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
@@ -851,10 +851,12 @@ impl VulkanRenderer {
         light_color: &[f32; 4],
         light_intensity: f32,
     ) {
+        let frame_idx = self.current_frame();
         if let Some(viewport) = self.viewport_manager.get_mut(handle)
             && let Some(ref mut manager) = viewport.storage_manager
         {
             manager.update_frame_with_lighting(
+                frame_idx,
                 view_matrix,
                 proj_matrix,
                 inv_view_proj,
@@ -1744,6 +1746,13 @@ impl VulkanRenderer {
     ///         .write_backbuffer())
     ///     .build()?;
     /// ```
+    ///
+    /// Returns the frame index from swap_data, which is the authoritative source.
+    /// This ensures consistency across all frame-indexed resource access.
+    pub fn current_frame(&self) -> usize {
+        self.swap_data.current_frame()
+    }
+
     pub fn create_frame_graph(&self) -> crate::render_graph::FrameGraphBuilder {
         crate::render_graph::FrameGraphBuilder::new()
     }
@@ -1775,7 +1784,7 @@ impl VulkanRenderer {
         self.swap_data.wait_for_fence(&self.context.device);
 
         // 2. Get frame index (start_frame() was already called in set_frame_uniforms())
-        let frame_idx = self.swap_data.current_frame();
+        let frame_idx = self.current_frame();
 
         // 3. Acquire next swapchain image
         let (image_index, _is_suboptimal) = unsafe {

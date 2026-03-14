@@ -3,6 +3,7 @@
 //! This module provides the executable [`FrameGraph`] and [`Frame`]
 //! types for render graph execution.
 
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
@@ -37,6 +38,14 @@ pub struct TransientTexture {
     pub format: vk::Format,
     /// Image extent.
     pub extent: vk::Extent2D,
+    /// Current GPU layout - tracked to ensure correct barrier old_layout.
+    ///
+    /// This is CRITICAL for correct synchronization. Using the wrong old_layout
+    /// in a barrier causes undefined behavior, including black screens.
+    ///
+    /// Uses RefCell for interior mutability so layout can be updated during
+    /// frame execution even though Frame only has an immutable borrow of FrameGraph.
+    current_layout: RefCell<vk::ImageLayout>,
 }
 
 impl TransientTexture {
@@ -56,7 +65,19 @@ impl TransientTexture {
             image_view,
             format,
             extent,
+            // Images are created with UNDEFINED layout
+            current_layout: RefCell::new(vk::ImageLayout::UNDEFINED),
         }
+    }
+
+    /// Get the current tracked GPU layout.
+    pub fn current_layout(&self) -> vk::ImageLayout {
+        *self.current_layout.borrow()
+    }
+
+    /// Update the tracked layout after a barrier transition.
+    pub(crate) fn set_layout(&self, new_layout: vk::ImageLayout) {
+        *self.current_layout.borrow_mut() = new_layout;
     }
 
     /// Get the raw Vulkan image view handle.
@@ -101,9 +122,13 @@ pub struct FrameGraph {
     /// Transient resource descriptors (for lazy Vulkan resource creation).
     transient_resources: Vec<GraphResourceDesc>,
 
-    /// Created transient textures (name -> texture).
-    /// Single-buffered - pipeline barriers provide synchronization within a frame.
-    transient_textures: HashMap<String, TransientTexture>,
+    /// Created transient textures (frame_idx -> name -> texture).
+    /// Double-buffered to match FRAMES_IN_FLIGHT - prevents race conditions
+    /// where frame N+1 modifies layout tracking while frame N is still executing.
+    transient_textures: Vec<HashMap<String, TransientTexture>>,
+
+    /// Base bindless index for LDR texture (actual index = base + frame_idx).
+    ldr_texture_base_index: Option<u32>,
 }
 
 impl FrameGraph {
@@ -116,7 +141,8 @@ impl FrameGraph {
             execution_plan: None,
             compiled: false,
             transient_resources: Vec::new(),
-            transient_textures: HashMap::new(),
+            transient_textures: Vec::new(),
+            ldr_texture_base_index: None,
         }
     }
 
@@ -190,16 +216,31 @@ impl FrameGraph {
         // Initialize transient textures on first use
         self.initialize_transient_textures(renderer)?;
 
+        // Get the frame-in-flight index (single source of truth from storage_manager)
+        let frame_idx = renderer.current_frame();
+
+        log::debug!(
+            "Frame graph execute: frame_idx={}, image_index={}",
+            frame_idx, image_index
+        );
+
         // Update tonemap params for fullscreen passes BEFORE creating frame.
         //
         // Note: This must happen here (not during pass execution) because we need &mut VulkanRenderer
         // to update storage buffers. Once Frame is created, we only have &VulkanRenderer.
+        //
+        // IMPORTANT: hdr_texture_index is a BASE slot. We add frame_idx to get the actual slot
+        // for this frame's texture (since transient textures are now per-frame).
         for pass in &self.passes {
             if let Some(ref params) = pass.tonemap_params
-                && let Some(hdr_index) = params.hdr_texture_index
+                && let Some(hdr_base_index) = params.hdr_texture_index
             {
+                // Add frame_idx to base slot to get the correct per-frame texture
+                let actual_hdr_index = hdr_base_index + frame_idx as u32;
+
                 let mode_value = params.mode as u32;
                 renderer.storage_manager.update_object_bindless(
+                    frame_idx,
                     0,
                     &[
                         1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0,
@@ -209,7 +250,7 @@ impl FrameGraph {
                         params.exposure,
                         params.gamma,
                         mode_value as f32,
-                        hdr_index as f32,
+                        actual_hdr_index as f32,
                     ],
                     0.0,
                     0.0,
@@ -223,7 +264,7 @@ impl FrameGraph {
         // Resolve deferred materials - compile materials for their pass formats
         self.resolve_materials(renderer)?;
 
-        let mut frame = Frame::new(self, renderer, image_index);
+        let mut frame = Frame::new(self, renderer, image_index, frame_idx);
         f(&mut frame);
         frame.execute_passes()?;
 
@@ -233,6 +274,19 @@ impl FrameGraph {
     /// Get a pass index by name.
     pub(crate) fn pass_index(&self, name: &str) -> Option<usize> {
         self.pass_names.get(name).copied()
+    }
+
+    /// Get the base bindless index for the LDR (tonemapped) texture.
+    ///
+    /// With per-frame transient textures, the actual index is `base + frame_idx`.
+    /// Returns None if the LDR texture hasn't been registered with bindless.
+    pub fn get_ldr_texture_base_index(&self) -> Option<u32> {
+        self.ldr_texture_base_index
+    }
+
+    /// Set the base bindless index for the LDR texture.
+    pub fn set_ldr_texture_base_index(&mut self, index: u32) {
+        self.ldr_texture_base_index = Some(index);
     }
 
     /// Get the number of passes in the graph.
@@ -245,12 +299,12 @@ impl FrameGraph {
         self.passes.get(index)
     }
 
-    /// Get a transient texture by name.
+    /// Get a transient texture by name for a specific frame.
     ///
-    /// Transient textures are single-buffered - synchronization is handled by
-    /// pipeline barriers between passes within a frame.
-    pub fn transient_texture(&self, name: &str) -> Option<&TransientTexture> {
-        self.transient_textures.get(name)
+    /// Transient textures are double-buffered to match FRAMES_IN_FLIGHT.
+    /// Each frame has its own set of textures to prevent race conditions.
+    pub fn transient_texture(&self, name: &str, frame_idx: usize) -> Option<&TransientTexture> {
+        self.transient_textures.get(frame_idx)?.get(name)
     }
 
     /// Initialize transient textures (create Vulkan resources).
@@ -258,9 +312,9 @@ impl FrameGraph {
     /// Called internally on first use. Can be called explicitly to pre-initialize
     /// transient textures before frame execution (e.g., for bindless registration).
     ///
-    /// Creates one texture per resource - synchronization is handled by pipeline
-    /// barriers between passes within a frame. FRAMES_IN_FLIGHT synchronization
-    /// happens only at the presentation level.
+    /// Creates FRAMES_IN_FLIGHT sets of textures - one per frame index.
+    /// This prevents race conditions where frame N+1 modifies layout tracking
+    /// while frame N is still executing on the GPU.
     pub fn initialize_transient_textures(
         &mut self,
         renderer: &VulkanRenderer,
@@ -269,12 +323,19 @@ impl FrameGraph {
             return Ok(()); // Already initialized
         }
 
+        const FRAMES_IN_FLIGHT: usize = 2;
+
         log::info!(
-            "Initializing {} transient textures (single-buffered)",
-            self.transient_resources.len()
+            "Initializing {} transient textures ({} frames in flight)",
+            self.transient_resources.len(),
+            FRAMES_IN_FLIGHT
         );
 
-        for desc in &self.transient_resources {
+        // Create one set of textures per frame
+        for frame_idx in 0..FRAMES_IN_FLIGHT {
+            let mut frame_textures = HashMap::new();
+
+            for desc in &self.transient_resources {
             let vk_format: vk::Format = desc.format.into();
 
             // Create image
@@ -352,7 +413,10 @@ impl FrameGraph {
                 },
             );
 
-            self.transient_textures.insert(desc.name.clone(), texture);
+            frame_textures.insert(desc.name.clone(), texture);
+        }
+
+        self.transient_textures.push(frame_textures);
         }
 
         Ok(())
@@ -406,9 +470,10 @@ impl FrameGraph {
 
         // Re-register all transient textures with bindless system
         let mut result = Vec::new();
-        for desc in &self.transient_resources {
-            let slot = self.register_transient_texture_bindless(renderer, &desc.name)?;
-            result.push((desc.name.clone(), slot));
+        let names: Vec<String> = self.transient_resources.iter().map(|d| d.name.clone()).collect();
+        for name in names {
+            let slot = self.register_transient_texture_bindless(renderer, &name)?;
+            result.push((name, slot));
         }
 
         Ok(result)
@@ -416,16 +481,15 @@ impl FrameGraph {
 
     /// Register a transient texture with the bindless texture system.
     ///
-    /// This is a convenience method for registering a single transient texture
-    /// with the bindless system. The texture is registered once and all frames
-    /// sample from the same texture - synchronization is handled by pipeline barriers.
+    /// Registers ALL per-frame instances of the texture (one per FRAMES_IN_FLIGHT).
+    /// Returns the base slot index; frame N's texture is at `base_slot + N`.
     ///
     /// # Arguments
     /// * `renderer` - The VulkanRenderer (owns the bindless manager), mutably borrowed
     /// * `name` - Name of the transient texture to register
     ///
     /// # Returns
-    /// The bindless texture slot index (u32)
+    /// The base bindless texture slot index (u32). Add frame_idx to get the actual slot.
     ///
     /// # Example
     /// ```ignore
@@ -433,24 +497,37 @@ impl FrameGraph {
     /// frame_graph.initialize_transient_textures(&renderer)?;
     ///
     /// // Register HDR texture for tonemapping
-    /// let hdr_slot = frame_graph.register_transient_texture_bindless(&mut renderer, "hdr_color")?;
+    /// let hdr_base_slot = frame_graph.register_transient_texture_bindless(&mut renderer, "hdr_color")?;
+    ///
+    /// // In shader, use: hdr_base_slot + frame_idx
     /// ```
     pub fn register_transient_texture_bindless(
-        &self,
+        &mut self,
         renderer: &mut VulkanRenderer,
         name: &str,
     ) -> Result<u32, RenderGraphError> {
+        let num_frames = self.transient_textures.len();
+        if num_frames == 0 {
+            return Err(RenderGraphError::InvalidConfiguration(
+                "Transient textures not initialized".to_string(),
+            ));
+        }
+
+        // Get frame 0's texture to get the base slot
         let texture = self
             .transient_textures
-            .get(name)
+            .get(0)
+            .and_then(|textures| textures.get(name))
             .ok_or_else(|| RenderGraphError::ResourceNotFound(name.to_string()))?;
 
         log::info!(
-            "Registering transient texture '{}' with bindless system",
-            name
+            "Registering transient texture '{}' ({} frames) with bindless system",
+            name,
+            num_frames
         );
 
-        let slot = renderer
+        // Register frame 0's texture to get base slot
+        let base_slot = renderer
             .register_bindless_texture(texture.image_view.vk())
             .map_err(|e| {
                 RenderGraphError::VulkanError(format!(
@@ -459,9 +536,33 @@ impl FrameGraph {
                 ))
             })?;
 
-        log::debug!("  Bindless slot for '{}': {}", name, slot);
+        log::debug!("  Frame 0: slot {}", base_slot);
 
-        Ok(slot)
+        // Register remaining frames' textures at consecutive slots
+        for frame_idx in 1..num_frames {
+            if let Some(texture) = self
+                .transient_textures
+                .get(frame_idx)
+                .and_then(|textures| textures.get(name))
+            {
+                let slot = renderer
+                    .register_bindless_texture(texture.image_view.vk())
+                    .map_err(|e| {
+                        RenderGraphError::VulkanError(format!(
+                            "Failed to register bindless texture '{}' frame {}: {}",
+                            name, frame_idx, e
+                        ))
+                    })?;
+                log::debug!("  Frame {}: slot {}", frame_idx, slot);
+            }
+        }
+
+        // Track base index for LDR texture (needed for viewport rendering)
+        if name == "ldr_color" {
+            self.ldr_texture_base_index = Some(base_slot);
+        }
+
+        Ok(base_slot)
     }
 
     /// Update tonemap parameters for a pass.
@@ -662,6 +763,12 @@ pub struct Frame<'a> {
 
     /// Current state of transient resources (name -> state).
     resource_states: HashMap<String, super::resource::ResourceState>,
+
+    /// Current GPU image layouts (name -> layout).
+    /// CRITICAL: Must match actual GPU state for correct barrier old_layout.
+    /// Mismatched old_layout causes undefined behavior (black screens).
+    image_layouts: HashMap<String, vk::ImageLayout>,
+
     /// Per-frame temporary buffers (allocated during this frame, cleaned up after GPU completion).
     temporary_buffers: Vec<(vk::Buffer, gpu_allocator::vulkan::Allocation)>,
 }
@@ -688,6 +795,7 @@ impl<'a> Frame<'a> {
         graph: &'a FrameGraph,
         renderer: &'a mut VulkanRenderer,
         image_index: u32,
+        frame_idx: usize,
     ) -> Self {
         // Initialize all transient resources as Undefined
         let resource_states: HashMap<String, super::resource::ResourceState> = graph
@@ -696,14 +804,34 @@ impl<'a> Frame<'a> {
             .map(|desc| (desc.name.clone(), super::resource::ResourceState::Undefined))
             .collect();
 
+        // Initialize GPU layouts from this frame's TransientTexture tracking
+        // Each frame has its own set of transient textures with independent layout tracking
+        let image_layouts: HashMap<String, vk::ImageLayout> = graph
+            .transient_textures
+            .get(frame_idx)
+            .map(|textures| {
+                textures
+                    .iter()
+                    .map(|(name, texture)| (name.clone(), texture.current_layout()))
+                    .collect()
+            })
+            .unwrap_or_default();
+
         Self {
             graph,
             renderer,
             image_index,
             pending: HashMap::new(),
             resource_states,
+            image_layouts,
             temporary_buffers: Vec::new(),
         }
+    }
+
+    /// Get the current frame index from the renderer.
+    /// This is the authoritative source for which frame's resources to use.
+    fn current_frame(&self) -> usize {
+        self.renderer.current_frame()
     }
 
     /// Submit a draw list to a pass.
@@ -768,7 +896,8 @@ impl<'a> Frame<'a> {
 
     /// Execute all passes in order.
     fn execute_passes(&mut self) -> Result<(), RenderGraphError> {
-        let frame_idx = self.renderer.swap_data.current_frame();
+        // Use storage_manager.current_frame() consistently for all frame resource selection
+        let frame_idx = self.current_frame();
         // Clone the command buffer to avoid borrowing issues
         let cmd = self.renderer.frame_context.command_buffers[frame_idx].clone();
 
@@ -850,7 +979,7 @@ impl<'a> Frame<'a> {
             }
 
             // Check if this is a transient texture
-            let Some(transient) = self.graph.transient_texture(write_name) else {
+            let Some(transient) = self.graph.transient_texture(write_name, self.current_frame()) else {
                 continue;
             };
 
@@ -865,39 +994,25 @@ impl<'a> Frame<'a> {
             if current_state != required_state {
                 let required_layout = vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL;
 
-                // Transition from current state to required
-                match current_state {
-                    super::resource::ResourceState::Undefined => {
-                        ImageBarrier::transition_from_undefined(
-                            &cmd_vk,
-                            device,
-                            transient.image,
-                            required_layout,
-                        );
-                    }
-                    super::resource::ResourceState::ShaderRead => {
-                        ImageBarrier::transition(
-                            &cmd_vk,
-                            device,
-                            transient.image,
-                            vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
-                            required_layout,
-                        );
-                    }
-                    _ => {
-                        // For other states, transition from undefined (discard contents)
-                        ImageBarrier::transition_from_undefined(
-                            &cmd_vk,
-                            device,
-                            transient.image,
-                            required_layout,
-                        );
-                    }
-                }
+                // Get the ACTUAL GPU layout from the transient texture
+                // This persists across frames via RefCell
+                let old_layout = transient.current_layout();
 
-                // Update tracked state
+                // Transition using the actual tracked old_layout
+                ImageBarrier::transition(
+                    &cmd_vk,
+                    device,
+                    transient.image,
+                    old_layout,
+                    required_layout,
+                );
+
+                // Update tracked state AND GPU layout (persist to TransientTexture for next frame)
                 self.resource_states
                     .insert(write_name.clone(), required_state);
+                self.image_layouts
+                    .insert(write_name.clone(), required_layout);
+                transient.set_layout(required_layout);
             }
         }
 
@@ -909,7 +1024,7 @@ impl<'a> Frame<'a> {
             }
 
             // Check if this is a transient texture
-            let Some(transient) = self.graph.transient_texture(read_name) else {
+            let Some(transient) = self.graph.transient_texture(read_name, self.current_frame()) else {
                 continue;
             };
 
@@ -921,50 +1036,28 @@ impl<'a> Frame<'a> {
 
             let required_state = super::resource::ResourceState::ShaderRead;
 
-            log::debug!(
-                "Pass {} read {}: current_state={:?}, required_state={:?}",
-                pass.name,
-                read_name,
-                current_state,
-                required_state
-            );
-
             if current_state != required_state {
                 let required_layout = vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL;
 
-                // Transition from current state to required
-                match current_state {
-                    super::resource::ResourceState::Undefined => {
-                        ImageBarrier::transition_from_undefined(
-                            &cmd_vk,
-                            device,
-                            transient.image,
-                            required_layout,
-                        );
-                    }
-                    super::resource::ResourceState::ColorAttachment => {
-                        ImageBarrier::transition(
-                            &cmd_vk,
-                            device,
-                            transient.image,
-                            vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
-                            required_layout,
-                        );
-                    }
-                    _ => {
-                        // For other states, transition from undefined (discard contents)
-                        ImageBarrier::transition_from_undefined(
-                            &cmd_vk,
-                            device,
-                            transient.image,
-                            required_layout,
-                        );
-                    }
-                }
+                // Get the ACTUAL GPU layout from the transient texture
+                // This persists across frames via RefCell
+                let old_layout = transient.current_layout();
 
-                // Update tracked state
+                // Transition using the actual tracked old_layout
+                ImageBarrier::transition(
+                    &cmd_vk,
+                    device,
+                    transient.image,
+                    old_layout,
+                    required_layout,
+                );
+
+                // Update tracked state AND GPU layout (persist to TransientTexture for next frame)
                 self.resource_states
                     .insert(read_name.clone(), required_state);
+                self.image_layouts
+                    .insert(read_name.clone(), required_layout);
+                transient.set_layout(required_layout);
             }
         }
 
@@ -976,6 +1069,17 @@ impl<'a> Frame<'a> {
     /// This method transitions textures written by the current pass to SHADER_READ_ONLY
     /// if subsequent passes will read them. This fixes the black screen issue during
     /// high load where the UI samples from ldr_color before it's properly transitioned.
+    ///
+    /// # Synchronization Details
+    ///
+    /// Uses an execution + memory barrier with:
+    /// - srcStage: COLOR_ATTACHMENT_OUTPUT (waits for color attachment writes)
+    /// - dstStage: FRAGMENT_SHADER (blocks shader sampling)
+    /// - srcAccess: COLOR_ATTACHMENT_WRITE (flush color attachment writes)
+    /// - dstAccess: SHADER_READ (invalidate shader read caches)
+    ///
+    /// This ensures that all color attachment writes are visible before any subsequent
+    /// fragment shader tries to sample from the texture.
     fn insert_post_pass_barriers(
         &mut self,
         cmd: &crate::vulkan::commandbuffer::CommandBuffer,
@@ -998,7 +1102,7 @@ impl<'a> Frame<'a> {
             }
 
             // Check if this is a transient texture
-            let Some(transient) = self.graph.transient_texture(write_name) else {
+            let Some(transient) = self.graph.transient_texture(write_name, self.current_frame()) else {
                 continue;
             };
 
@@ -1015,25 +1119,32 @@ impl<'a> Frame<'a> {
                     .unwrap_or(super::resource::ResourceState::ColorAttachment);
 
                 // Transition to SHADER_READ_ONLY for subsequent reads
-                if current_state == super::resource::ResourceState::ColorAttachment {
-                    log::debug!(
-                        "Post-pass barrier: transitioning '{}' from ColorAttachment to ShaderRead for subsequent pass",
-                        write_name
-                    );
+                // Be more aggressive - transition if state is ColorAttachment OR Undefined
+                // (Undefined means it was just written and hasn't been tracked yet)
+                if current_state == super::resource::ResourceState::ColorAttachment
+                    || current_state == super::resource::ResourceState::Undefined
+                {
+                    // Get the ACTUAL GPU layout from the transient texture
+                    // This persists across frames via RefCell
+                    let old_layout = transient.current_layout();
 
+                    // Use the tracked old_layout for correct synchronization
                     ImageBarrier::transition(
                         &cmd_vk,
                         device,
                         transient.image,
-                        vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+                        old_layout,
                         vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
                     );
 
-                    // Update tracked state
+                    // Update tracked state AND GPU layout (persist to TransientTexture for next frame)
                     self.resource_states.insert(
                         write_name.clone(),
                         super::resource::ResourceState::ShaderRead,
                     );
+                    self.image_layouts
+                        .insert(write_name.clone(), vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL);
+                    transient.set_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL);
                 }
             }
         }
@@ -1048,7 +1159,7 @@ impl<'a> Frame<'a> {
         pass: &PassDesc,
         data: PassExecutionData,
     ) -> Result<(), RenderGraphError> {
-        log::debug!("execute_graphics_pass: beginning render pass");
+        log::debug!("execute_graphics_pass '{}' with frame_idx={}", pass.name, self.current_frame());
 
         let extent = self.renderer.frame_context.swapchain.get_extent();
         let render_area = vk::Rect2D {
@@ -1094,7 +1205,7 @@ impl<'a> Frame<'a> {
                 })
         } else if let Some(color_name) = pass.writes.first() {
             // Check if this is a transient texture
-            if let Some(transient) = self.graph.transient_texture(color_name) {
+            if let Some(transient) = self.graph.transient_texture(color_name, self.current_frame()) {
                 // Check if pass specified load/store ops for this attachment
                 let (load_op, store_op, clear_value) = pass
                     .color_attachments
@@ -1251,7 +1362,7 @@ impl<'a> Frame<'a> {
         );
 
         let cmd = self.renderer.frame_context.command_buffers
-            [self.renderer.swap_data.current_frame()]
+            [self.current_frame()]
         .clone();
 
         // Execute all compute dispatches
@@ -1364,7 +1475,7 @@ impl<'a> Frame<'a> {
 
         // Get current frame descriptor set for frame uniforms
         let frame_descriptor_set = {
-            let frame_idx = self.renderer.swap_data.current_frame();
+            let frame_idx = self.current_frame();
             self.renderer.storage_descriptor_sets[frame_idx].vk_set()
         };
 
@@ -1461,7 +1572,7 @@ impl<'a> Frame<'a> {
         }
 
         // Get or create per-frame UI buffers and upload data
-        let frame_idx = self.renderer.storage_manager.current_frame();
+        let frame_idx = self.renderer.current_frame();
         let (vertex_buffer, index_buffer) =
             self.get_or_update_ui_buffers(frame_idx, ui_draw_list)?;
 
@@ -1588,7 +1699,7 @@ impl<'a> Frame<'a> {
         };
 
         // Now we can mutate the renderer state
-        let frame_idx = self.renderer.storage_manager.current_frame();
+        let frame_idx = self.renderer.current_frame();
         let descriptor_set =
             self.get_or_create_ui_descriptor_set(frame_idx, descriptor_set_layout, screen_size)?;
 
@@ -1872,7 +1983,7 @@ impl<'a> Frame<'a> {
     ) -> Result<(), RenderGraphError> {
         // Set 0: Storage uniforms (frame_data + objects array) - use per-frame descriptor set
         let storage_ds = self.renderer.storage_descriptor_sets
-            [self.renderer.storage_manager.current_frame()]
+            [self.renderer.current_frame()]
         .vk_set();
         cmd.bind_descriptor_sets(pipeline_layout, 0, &[storage_ds], &[]);
 
@@ -1907,9 +2018,6 @@ impl<'a> Frame<'a> {
             extent,
         };
 
-        // Get current frame index for per-frame texture selection
-        let frame_idx = self.renderer.swap_data.current_frame();
-
         // Determine color attachment:
         // 1. If pass writes to "backbuffer", use swapchain directly
         // 2. If pass writes to a transient texture, use that (frame-indexed)
@@ -1930,7 +2038,7 @@ impl<'a> Frame<'a> {
                 })
         } else if let Some(color_name) = pass.writes.first() {
             // Check if this is a transient texture
-            if let Some(transient) = self.graph.transient_texture(color_name) {
+            if let Some(transient) = self.graph.transient_texture(color_name, self.current_frame()) {
                 // Check if pass specified load/store ops for this attachment
                 let (load_op, store_op, clear_value) = pass
                     .color_attachments
@@ -2026,7 +2134,7 @@ impl<'a> Frame<'a> {
 
         // Bind descriptor sets (storage uniforms + bindless textures) - use per-frame descriptor set
         let storage_ds = self.renderer.storage_descriptor_sets
-            [self.renderer.storage_manager.current_frame()]
+            [self.renderer.current_frame()]
         .vk_set();
         cmd.bind_descriptor_sets(layout, 0, &[storage_ds], &[]);
 
