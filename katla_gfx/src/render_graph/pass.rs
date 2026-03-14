@@ -7,16 +7,13 @@ use crate::texture::ImageFormat;
 
 /// Type of render pass.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Default)]
 pub enum PassType {
     /// Graphics pass (rendering to attachments).
+    #[default]
     Graphics,
 }
 
-impl Default for PassType {
-    fn default() -> Self {
-        Self::Graphics
-    }
-}
 
 /// Internal pass descriptor.
 pub(crate) struct PassDesc {

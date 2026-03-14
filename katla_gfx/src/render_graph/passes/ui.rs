@@ -12,7 +12,6 @@ use crate::render_pass::{ClearValue, LoadOp, StoreOp};
 use crate::texture::ImageFormat;
 
 #[allow(dead_code)]
-
 /// UI render pass template.
 ///
 /// Renders 2D UI geometry with alpha blending and optional clipping.

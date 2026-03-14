@@ -82,7 +82,7 @@ pub struct DrawIndirectCommand {
 /// - Counters: 32 bytes
 /// - Emitter configs: 80 KB (1024 × 80 bytes)
 /// - Indirect draw: 16 bytes
-/// Total: ~60 MB
+///   Total: ~60 MB
 pub struct GlobalParticleBuffer {
     context: Rc<VulkanContext>,
 
@@ -377,7 +377,7 @@ impl GlobalParticleBuffer {
             self.context.flush_mapped_memory(
                 self.emitter_allocation.as_ref().unwrap(),
                 0,
-                (configs.len() * std::mem::size_of::<EmitterConfig>()) as u64,
+                std::mem::size_of_val(configs) as u64,
             );
         }
         Ok(())

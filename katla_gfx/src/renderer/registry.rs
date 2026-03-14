@@ -118,6 +118,12 @@ pub struct AssetRegistry {
     pipelines: ResourceStorage<AnyPipeline>,
 }
 
+impl Default for AssetRegistry {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl AssetRegistry {
     /// Create a new empty asset registry.
     pub fn new() -> Self {

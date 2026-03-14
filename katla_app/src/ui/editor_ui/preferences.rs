@@ -429,6 +429,7 @@ impl<'a> Widget for PreferencesPanel<'a> {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn build_appearance_tab(
     ui: &mut UiContext,
     theme: &Theme,
@@ -665,8 +666,7 @@ fn build_editor_tab(
         Button::new("")
             .bounds(slider_bounds)
             .id("camera_speed_slider"),
-    )
-    .clicked;
+    );
 
     ui.spacing(40.0);
 

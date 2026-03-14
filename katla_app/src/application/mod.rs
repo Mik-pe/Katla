@@ -54,6 +54,7 @@ pub struct Application {
     /// Frame graph for rendering (built once at startup)
     pub(crate) frame_graph: katla_gfx::FrameGraph,
     pub(crate) camera: Rc<RefCell<Camera>>,
+    #[allow(clippy::type_complexity)]
     pub(crate) gltf_cache: FileCache<GLTFModel, Box<dyn Fn(&PathBuf) -> GLTFModel>>,
     pub(crate) timer: Timer,
     pub(crate) info: ApplicationInfo,
@@ -588,6 +589,7 @@ impl Application {
 
     /// Spawn a sphere entity with PBR material properties.
     /// Color is expected in sRGB (perceptual) space and converted to linear for PBR.
+    #[allow(clippy::too_many_arguments)]
     pub fn spawn_sphere_with_material(
         &mut self,
         position: [f32; 3],
@@ -608,7 +610,9 @@ impl Application {
         // Convert sRGB to linear for correct PBR rendering
         let linear_color = color.to_linear();
 
-        let entity_id = self.world.spawn((
+        
+
+        self.world.spawn((
             TransformComponent {
                 transform: katla_math::Transform::from_position(Vec3::new(
                     position[0],
@@ -624,9 +628,7 @@ impl Application {
                 roughness,
                 1.0, // ao
             ),
-        ));
-
-        entity_id
+        ))
     }
 
     /// Spawn a grid of spheres showcasing PBR material properties.

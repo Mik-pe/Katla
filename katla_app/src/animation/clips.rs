@@ -241,6 +241,7 @@ impl AnimationSampler {
         self.interpolate_cubic_spline(index, index + 1, h00, h10, h01, h11, dt)
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn interpolate_cubic_vec3(
         values: &[[f32; 3]],
         index0: usize,
@@ -279,6 +280,7 @@ impl AnimationSampler {
         ]
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn interpolate_cubic_spline(
         &self,
         index0: usize,
