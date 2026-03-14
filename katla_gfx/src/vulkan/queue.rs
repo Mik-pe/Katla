@@ -40,7 +40,11 @@ impl Queue {
 
         let mut wait_dst_stage_mask = Vec::with_capacity(wait_semaphores.len());
         for _ in wait_semaphores {
-            wait_dst_stage_mask.push(vk::PipelineStageFlags::ALL_COMMANDS);
+            // Use COLOR_ATTACHMENT_OUTPUT instead of ALL_COMMANDS for swapchain image waits.
+            // This is more precise - we only need to block at the point where we start
+            // writing to the color attachment, not all GPU operations.
+            // Using ALL_COMMANDS can cause unnecessary serialization and timing issues under high load.
+            wait_dst_stage_mask.push(vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT);
         }
 
         let submit_info = vk::SubmitInfo::default()
@@ -53,6 +57,40 @@ impl Queue {
             self.device
                 .queue_submit(self.queue, &[submit_info], signal_fence)
                 .unwrap();
+        }
+    }
+
+    /// Submit command buffers and wait for completion.
+    ///
+    /// Creates a temporary fence, submits the command buffers, waits for completion,
+    /// and destroys the fence. Useful for one-time operations like texture uploads.
+    ///
+    /// # Arguments
+    /// * `command_buffers` - Command buffers to submit
+    /// * `wait_semaphores` - Semaphores to wait on before execution (optional)
+    /// * `signal_semaphores` - Semaphores to signal after completion (optional)
+    pub fn submit_and_wait(
+        &self,
+        command_buffers: &[&CommandBuffer],
+        wait_semaphores: &[Semaphore],
+        signal_semaphores: &[Semaphore],
+    ) {
+        // Create fence for this operation
+        let fence_info = vk::FenceCreateInfo::default();
+        let fence = unsafe {
+            self.device.create_fence(&fence_info, None)
+                .expect("Failed to create fence for submit_and_wait")
+        };
+
+        // Submit with fence
+        self.submit(command_buffers, wait_semaphores, signal_semaphores, fence);
+
+        // Wait for completion
+        unsafe {
+            self.device
+                .wait_for_fences(&[fence], true, u64::MAX)
+                .expect("Failed to wait for fence in submit_and_wait");
+            self.device.destroy_fence(fence, None);
         }
     }
 
