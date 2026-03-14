@@ -12,6 +12,16 @@ impl Application {
     ///
     /// Uses FrameContext for draw submission with automatic instance allocation.
     pub fn render_frame(&mut self, ui_draw_list: Option<UIDrawList>) {
+        // Get frame-in-flight index for per-frame resource selection
+        let frame_idx = self.renderer.current_frame();
+
+        // Update viewport bindless index for this frame's LDR texture
+        // With per-frame transient textures, the correct slot is base_slot + frame_idx
+        if let Some(base_ldr_index) = self.frame_graph.get_ldr_texture_base_index() {
+            let actual_ldr_index = base_ldr_index + frame_idx as u32;
+            self.editor_ui.set_viewport_bindless_index(actual_ldr_index);
+        }
+
         // Create frame context for this frame
         let mut frame = FrameContext::new();
 
