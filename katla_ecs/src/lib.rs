@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 pub mod components;
 pub mod entity;
 pub mod input;

@@ -352,6 +352,7 @@ impl ApplicationBuilder {
                 .unwrap_or_else(|e| panic!("Failed to load GLTF model from {:?}: {}", path, e))
         });
 
+        #[allow(deprecated)]
         let window = event_loop
             .create_window(
                 Window::default_attributes()

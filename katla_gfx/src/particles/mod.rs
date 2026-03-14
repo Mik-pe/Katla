@@ -148,15 +148,6 @@ pub struct GlobalParticleSystem {
     /// Compute pipeline for particle simulation
     compute_pipeline: Option<PipelineHandle>,
 
-    /// Compute pipeline layout
-    compute_pipeline_layout: Option<vk::PipelineLayout>,
-
-    /// Graphics pipeline for rendering particles
-    render_pipeline: Option<PipelineHandle>,
-
-    /// Render pipeline layout
-    render_pipeline_layout: Option<vk::PipelineLayout>,
-
     /// Descriptor set layout for compute (Set 0: static buffers)
     compute_descriptor_layout: Option<vk::DescriptorSetLayout>,
 
@@ -203,9 +194,6 @@ impl GlobalParticleSystem {
         let mut system = Self {
             buffer,
             compute_pipeline: None,
-            compute_pipeline_layout: None,
-            render_pipeline: None,
-            render_pipeline_layout: None,
             compute_descriptor_layout: None,
             render_descriptor_layout: None,
             emitters: Vec::with_capacity(MAX_EMITTERS as usize),

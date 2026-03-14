@@ -42,7 +42,7 @@ use super::resource::GraphResourceHandle;
 ///     }
 /// }
 /// ```
-pub(crate) trait PassBuilder: Any {
+pub trait PassBuilder: Any {
     /// Convert this pass template into an internal pass builder.
     ///
     /// This method consumes the pass template and produces an `InternalPassBuilder`
@@ -55,10 +55,7 @@ pub(crate) trait PassBuilder: Any {
 /// Created from public pass templates at graph build time. Contains
 /// string-based resource references that are resolved to handles
 /// during compilation.
-///
-/// This type is `pub(crate)` - it's an implementation detail within
-/// katla_gfx and not exposed to external users.
-pub(crate) struct InternalPassBuilder {
+pub struct InternalPassBuilder {
     /// Human-readable name for debugging.
     pub name: String,
 

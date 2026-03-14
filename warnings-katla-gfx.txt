@@ -1,0 +1,31 @@
+warning: multiple methods are never used
+   --> katla_gfx\src\vulkan\material\storage_uniform.rs:340:12
+    |
+311 | impl StorageUniformManager {
+    | -------------------------- methods in this implementation
+...
+340 |     pub fn frames_in_flight(&self) -> usize {
+    |            ^^^^^^^^^^^^^^^^
+...
+353 |     pub fn update_frame(&mut self, frame_index: usize, view: &[f32; 16], proj: &[f32; 16]) {
+    |            ^^^^^^^^^^^^
+...
+446 |     pub fn update_object(
+    |            ^^^^^^^^^^^^^
+...
+466 |     pub fn update_object_with_material(
+    |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+500 |     pub fn update_object_with_material_full(
+    |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+585 |     pub fn update_objects_bulk(
+    |            ^^^^^^^^^^^^^^^^^^^
+...
+618 |     pub fn max_objects(&self) -> usize {
+    |            ^^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: `katla_gfx` (lib) generated 1 warning
+    Finished `dev` profile [optimized + debuginfo] target(s) in 0.37s

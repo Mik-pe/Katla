@@ -40,7 +40,7 @@ use crate::{
     util::{BackgroundLoader, FileCache, GLTFModel, Timer},
 };
 
-struct ApplicationInfo {
+pub struct ApplicationInfo {
     name: String,
     validation_mode: katla_gfx::ValidationMode,
     max_frames: Option<usize>, // Some(n) = exit after n frames, None = run indefinitely

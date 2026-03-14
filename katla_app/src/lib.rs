@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 pub mod animation;
 pub mod application;
 pub mod components;

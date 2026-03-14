@@ -1,0 +1,769 @@
+warning: constant `QUAT_NORMALIZED_THRESHOLD` is never used
+  --> katla_math\src\scalar\quat.rs:10:7
+   |
+10 | const QUAT_NORMALIZED_THRESHOLD: f32 = 0.001;
+   |       ^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: struct `Quat` is never constructed
+  --> katla_math\src\scalar\quat.rs:15:12
+   |
+15 | pub struct Quat {
+   |            ^^^^
+
+warning: multiple associated items are never used
+   --> katla_math\src\scalar\quat.rs:43:12
+    |
+ 41 | impl Quat {
+    | --------- associated items in this implementation
+ 42 |     #[inline]
+ 43 |     pub fn new() -> Quat {
+    |            ^^^
+...
+ 53 |     pub fn new_from_xyzw(x: f32, y: f32, z: f32, w: f32) -> Quat {
+    |            ^^^^^^^^^^^^^
+...
+ 58 |     pub fn xyzw(&self) -> (f32, f32, f32, f32) {
+    |            ^^^^
+...
+ 62 |     pub fn from_axis_angle(axis: Vec3, angle: f32) -> Quat {
+    |            ^^^^^^^^^^^^^^^
+...
+ 77 |     pub fn from_rotation_between(from: Vec3, to: Vec3) -> Quat {
+    |            ^^^^^^^^^^^^^^^^^^^^^
+...
+115 |     pub fn new_from_yaw_pitch(yaw: f32, pitch: f32) -> Quat {
+    |            ^^^^^^^^^^^^^^^^^^
+...
+122 |     fn length_squared(&self) -> f32 {
+    |        ^^^^^^^^^^^^^^
+...
+126 |     pub fn is_normalized(&self) -> bool {
+    |            ^^^^^^^^^^^^^
+...
+131 |     pub fn normalize(&mut self) {
+    |            ^^^^^^^^^
+...
+142 |     pub fn inverse(&self) -> Self {
+    |            ^^^^^^^
+...
+151 |     pub fn conjugate(&self) -> Self {
+    |            ^^^^^^^^^
+...
+160 |     pub fn dot(&self, rhs: Quat) -> f32 {
+    |            ^^^
+...
+167 |     pub fn rotate_vec3(&self, v: Vec3) -> Vec3 {
+    |            ^^^^^^^^^^^
+...
+175 |     pub fn slerp(mut a: Quat, mut b: Quat, ratio: f32) -> Self {
+    |            ^^^^^
+...
+203 |     pub fn make_mat4(&self) -> Mat4 {
+    |            ^^^^^^^^^
+...
+247 |     pub fn to_mat3(self) -> Mat3 {
+    |            ^^^^^^^
+...
+279 |     pub fn from_euler(pitch: f32, yaw: f32, roll: f32) -> Quat {
+    |            ^^^^^^^^^^
+...
+287 |     pub fn to_euler(self) -> (f32, f32, f32) {
+    |            ^^^^^^^^
+
+warning: constant `SHUFFLE_X` is never used
+  --> katla_math\src\sse\quat.rs:19:7
+   |
+19 | const SHUFFLE_X: i32 = 0b00_00_00_00; // Broadcast element 0 (x)
+   |       ^^^^^^^^^
+
+warning: constant `SET_Y_MASK` is never used
+  --> katla_math\src\sse\quat.rs:25:7
+   |
+25 | const SET_Y_MASK: i32 = 0b11_10_00_00; // [w, z, new_y, x]
+   |       ^^^^^^^^^^
+
+warning: constant `SET_Z_MASK` is never used
+  --> katla_math\src\sse\quat.rs:26:7
+   |
+26 | const SET_Z_MASK: i32 = 0b11_00_01_00; // [w, new_z, y, x]
+   |       ^^^^^^^^^^
+
+warning: constant `SET_W_MASK` is never used
+  --> katla_math\src\sse\quat.rs:27:7
+   |
+27 | const SET_W_MASK: i32 = 0b00_10_01_00; // [new_w, z, y, x]
+   |       ^^^^^^^^^^
+
+warning: methods `set_x`, `set_y`, `set_z`, and `set_w` are never used
+   --> katla_math\src\sse\quat.rs:100:8
+    |
+ 54 | impl Quat {
+    | --------- methods in this implementation
+...
+100 |     fn set_x(&mut self, val: f32) {
+    |        ^^^^^
+...
+107 |     fn set_y(&mut self, val: f32) {
+    |        ^^^^^
+...
+115 |     fn set_z(&mut self, val: f32) {
+    |        ^^^^^
+...
+123 |     fn set_w(&mut self, val: f32) {
+    |        ^^^^^
+
+warning: `katla_math` (lib) generated 8 warnings
+warning: associated items `with_capacity`, `dense_capacity`, and `sparse_capacity` are never used
+   --> katla_ecs\src\sparse_set.rs:72:12
+    |
+ 59 | / impl<K, V> SparseSet<K, V>
+ 60 | | where
+ 61 | |     K: std::hash::Hash + Eq + Copy + Clone,
+    | |___________________________________________- associated items in this implementation
+...
+ 72 |       pub fn with_capacity(dense_capacity: usize, sparse_capacity: usize) -> Self {
+    |              ^^^^^^^^^^^^^
+...
+205 |       pub fn dense_capacity(&self) -> usize {
+    |              ^^^^^^^^^^^^^^
+...
+210 |       pub fn sparse_capacity(&self) -> usize {
+    |              ^^^^^^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: type `descriptor_set::DescriptorSet` is more private than the item `UiFrameResources::descriptor_sets`
+  --> katla_gfx\src\renderer.rs:47:5
+   |
+47 |     pub descriptor_sets: Vec<Option<crate::vulkan::descriptor_set::DescriptorSet>>,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ field `UiFrameResources::descriptor_sets` is reachable at visibility `pub`
+   |
+note: but type `descriptor_set::DescriptorSet` is only usable at visibility `pub(crate)`
+  --> katla_gfx\src\vulkan\descriptor_set.rs:28:1
+   |
+28 | pub(crate) struct DescriptorSet {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   = note: `#[warn(private_interfaces)]` on by default
+
+warning: type `VkImageView` is more private than the item `TransientTexture::image_view`
+   --> katla_gfx\src\render_graph\graph.rs:37:5
+    |
+ 37 |     pub image_view: VkImageView,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^ field `TransientTexture::image_view` is reachable at visibility `pub`
+    |
+note: but type `VkImageView` is only usable at visibility `pub(crate)`
+   --> katla_gfx\src\sync.rs:138:1
+    |
+138 | pub(crate) struct VkImageView(pub vk::ImageView);
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: trait `PassBuilder` is more private than the item `FrameGraphBuilder::add_pass`
+   --> katla_gfx\src\render_graph\graph.rs:670:5
+    |
+670 |     pub fn add_pass(mut self, pass: impl PassBuilder + 'static) -> Self {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ method `FrameGraphBuilder::add_pass` is reachable at visibility `pub`
+    |
+note: but trait `PassBuilder` is only usable at visibility `pub(crate)`
+   --> katla_gfx\src\render_graph\builder.rs:45:1
+    |
+ 45 | pub(crate) trait PassBuilder: Any {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    = note: `#[warn(private_bounds)]` on by default
+
+warning: type `VkImageView` is more private than the item `Texture::image_view`
+   --> katla_gfx\src\vulkan\texture.rs:507:5
+    |
+507 |     pub fn image_view(&self) -> &VkImageView {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ method `Texture::image_view` is reachable at visibility `pub`
+    |
+note: but type `VkImageView` is only usable at visibility `pub(crate)`
+   --> katla_gfx\src\sync.rs:138:1
+    |
+138 | pub(crate) struct VkImageView(pub vk::ImageView);
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: fields `compute_pipeline_layout`, `render_pipeline`, and `render_pipeline_layout` are never read
+   --> katla_gfx\src\particles\mod.rs:152:5
+    |
+144 | pub struct GlobalParticleSystem {
+    |            -------------------- fields in this struct
+...
+152 |     compute_pipeline_layout: Option<vk::PipelineLayout>,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^
+...
+155 |     render_pipeline: Option<PipelineHandle>,
+    |     ^^^^^^^^^^^^^^^
+...
+158 |     render_pipeline_layout: Option<vk::PipelineLayout>,
+    |     ^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: constant `MAX_PARTICLES` is never used
+  --> katla_gfx\src\particles\buffer.rs:21:7
+   |
+21 | const MAX_PARTICLES: u32 = 1_048_576; // 1M particles
+   |       ^^^^^^^^^^^^^
+
+warning: fields `compute_descriptor_set` and `render_descriptor_set` are never read
+   --> katla_gfx\src\particles\buffer.rs:112:5
+    |
+ 89 | pub struct GlobalParticleBuffer {
+    |            -------------------- fields in this struct
+...
+112 |     compute_descriptor_set: Option<vk::DescriptorSet>,
+    |     ^^^^^^^^^^^^^^^^^^^^^^
+...
+115 |     render_descriptor_set: Option<vk::DescriptorSet>,
+    |     ^^^^^^^^^^^^^^^^^^^^^
+
+warning: field `color` is never read
+   --> katla_gfx\src\render_graph\passes\viewport.rs:260:16
+    |
+258 | pub(crate) struct ViewportPassData {
+    |                   ---------------- field in this struct
+259 |     /// Color attachment with resolved handle.
+260 |     pub(crate) color: (
+    |                ^^^^^
+    |
+    = note: `ViewportPassData` has a derived impl for the trait `Debug`, but this is intentionally ignored during dead code analysis
+
+warning: method `get_slot_for_image_view` is never used
+   --> katla_gfx\src\vulkan\bindless_texture.rs:325:12
+    |
+ 90 | impl BindlessTextureManager {
+    | --------------------------- method in this implementation
+...
+325 |     pub fn get_slot_for_image_view(&self, image_view: vk::ImageView) -> Option<u32> {
+    |            ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: `katla_ecs` (lib) generated 1 warning
+warning: `katla_gfx` (lib) generated 9 warnings
+warning: methods `is_clicked`, `is_pressed`, and `is_active` are never used
+  --> katla_ui\src\context\interaction.rs:22:12
+   |
+20 | impl ClickResult {
+   | ---------------- methods in this implementation
+21 |     /// Whether this result represents a click.
+22 |     pub fn is_clicked(&self) -> bool {
+   |            ^^^^^^^^^^
+...
+27 |     pub fn is_pressed(&self) -> bool {
+   |            ^^^^^^^^^^
+...
+32 |     pub fn is_active(&self) -> bool {
+   |            ^^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: struct `InteractionState` is never constructed
+  --> katla_ui\src\context\interaction.rs:46:19
+   |
+46 | pub(crate) struct InteractionState {
+   |                   ^^^^^^^^^^^^^^^^
+
+warning: associated items `new` and `button_color` are never used
+  --> katla_ui\src\context\interaction.rs:55:12
+   |
+53 | impl InteractionState {
+   | --------------------- associated items in this implementation
+54 |     /// Create a new interaction state.
+55 |     pub fn new(hovered: bool, active: bool) -> Self {
+   |            ^^^
+...
+60 |     pub fn button_color(
+   |            ^^^^^^^^^^^^
+
+warning: methods `button` and `text_area` are never used
+   --> katla_ui\src\context\widgets\basic.rs:357:19
+    |
+355 | impl UiContext {
+    | -------------- methods in this implementation
+356 |     /// Draw a button (internal - use `widgets::Button` instead).
+357 |     pub(crate) fn button(&mut self, id: &str, text: &str, bounds: Rect2D) -> Response {
+    |                   ^^^^^^
+...
+681 |     pub(crate) fn text_area(&mut self, id: &str, text: &mut String, bounds: Rect2D) -> Response {
+    |                   ^^^^^^^^^
+
+warning: function `keep_on_screen` is never used
+  --> katla_ui\src\context\widgets\utility.rs:70:8
+   |
+70 | pub fn keep_on_screen(size: Vec2, tip_pos: Vec2, screen_size: Vec2) -> Vec2 {
+   |        ^^^^^^^^^^^^^^
+
+warning: function `tooltip` is never used
+  --> katla_ui\src\context\widgets\utility.rs:85:8
+   |
+85 | pub fn tooltip(ui: &mut UiContext, text: &str, tip_pos: Vec2) {
+   |        ^^^^^^^
+
+warning: struct `Image` is never constructed
+   --> katla_ui\src\context\widgets\utility.rs:108:12
+    |
+108 | pub struct Image {
+    |            ^^^^^
+
+warning: associated items `new`, `bounds`, `uv`, and `tint` are never used
+   --> katla_ui\src\context\widgets\utility.rs:117:12
+    |
+115 | impl Image {
+    | ---------- associated items in this implementation
+116 |     /// Create a new image widget.
+117 |     pub fn new(texture: TextureId) -> Self {
+    |            ^^^
+...
+127 |     pub fn bounds(mut self, bounds: Rect2D) -> Self {
+    |            ^^^^^^
+...
+133 |     pub fn uv(mut self, uv: Rect2D) -> Self {
+    |            ^^
+...
+139 |     pub fn tint(mut self, color: Color) -> Self {
+    |            ^^^^
+
+warning: `katla_ui` (lib) generated 8 warnings
+warning: unused import: `Label`
+ --> katla_app\src\ui\debug_overlay.rs:7:33
+  |
+7 |     widgets::{Button, Checkbox, Label, Slider},
+  |                                 ^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `widgets::Label`
+ --> katla_app\src\ui\editor_ui\inspector.rs:4:36
+  |
+4 |     mouse_button, widgets::Button, widgets::Label, FontSize, Response, UiContext, Widget,
+  |                                    ^^^^^^^^^^^^^^
+
+warning: use of deprecated method `winit::event_loop::EventLoop::<T>::create_window`: use `ActiveEventLoop::create_window` instead
+   --> katla_app\src\application\builder.rs:356:14
+    |
+356 |             .create_window(
+    |              ^^^^^^^^^^^^^
+    |
+    = note: `#[warn(deprecated)]` on by default
+
+warning: unused variable: `button_bounds`
+   --> katla_app\src\ui\debug_overlay.rs:191:13
+    |
+191 |         let button_bounds = Rect2D::from_origin_size(
+    |             ^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_button_bounds`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `value_width`
+  --> katla_app\src\ui\editor_ui\inspector.rs:73:13
+   |
+73 |         let value_width = self.bounds.width() - label_width - 24.0;
+   |             ^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_value_width`
+
+warning: unused variable: `row_height`
+   --> katla_app\src\ui\editor_ui\preferences.rs:437:5
+    |
+437 |     row_height: f32,
+    |     ^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_row_height`
+
+warning: type `application::ApplicationInfo` is more private than the item `Application::info`
+  --> katla_app\src\application\mod.rs:59:5
+   |
+59 |     pub(crate) info: ApplicationInfo,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ field `Application::info` is reachable at visibility `pub(crate)`
+   |
+note: but type `application::ApplicationInfo` is only usable at visibility `pub(self)`
+  --> katla_app\src\application\mod.rs:43:1
+   |
+43 | struct ApplicationInfo {
+   | ^^^^^^^^^^^^^^^^^^^^^^
+   = note: `#[warn(private_interfaces)]` on by default
+
+warning: field `sample_buffer` is never read
+   --> katla_app\src\animation\systems.rs:138:5
+    |
+137 | pub struct SkeletalAnimationSystem {
+    |            ----------------------- field in this struct
+138 |     sample_buffer: SampleBuffer,
+    |     ^^^^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: field `pending_readback` is never read
+  --> katla_app\src\application\mod.rs:90:5
+   |
+51 | pub struct Application {
+   |            ----------- field in this struct
+...
+90 |     pending_readback: Option<(usize, Vec<u8>)>,
+   |     ^^^^^^^^^^^^^^^^
+
+warning: variant `Editor` is never constructed
+  --> katla_app\src\ui\editor_ui.rs:75:5
+   |
+73 | pub enum Panel {
+   |          ----- variant in this enum
+74 |     Preferences,
+75 |     Editor,
+   |     ^^^^^^
+   |
+   = note: `Panel` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: fields `path` and `position` are never read
+  --> katla_app\src\ui\editor_ui.rs:84:24
+   |
+84 |     SpawnModelAtPath { path: PathBuf, position: Vec3 },
+   |     ----------------   ^^^^           ^^^^^^^^
+   |     |
+   |     fields in this variant
+   |
+   = note: `EditorAction` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: variant `TogglePlay` is never constructed
+  --> katla_app\src\ui\editor_ui.rs:92:5
+   |
+80 | pub enum EditorAction {
+   |          ------------ variant in this enum
+...
+92 |     TogglePlay,
+   |     ^^^^^^^^^^
+   |
+   = note: `EditorAction` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: fields `visible` and `spawn_menu_state` are never read
+   --> katla_app\src\ui\editor_ui.rs:135:9
+    |
+133 | pub struct EditorUI {
+    |            -------- fields in this struct
+134 |     /// Whether the editor is visible.
+135 |     pub visible: bool,
+    |         ^^^^^^^
+...
+139 |     spawn_menu_state: PanelState,
+    |     ^^^^^^^^^^^^^^^^
+
+warning: methods `max_scroll`, `close_context_menu`, and `commit_rename` are never used
+   --> katla_app\src\ui\editor_ui\asset_browser.rs:455:12
+    |
+218 | impl AssetBrowserState {
+    | ---------------------- methods in this implementation
+...
+455 |     pub fn max_scroll(&self, content_height: f32, visible_height: f32) -> f32 {
+    |            ^^^^^^^^^^
+...
+460 |     pub fn close_context_menu(&mut self) {
+    |            ^^^^^^^^^^^^^^^^^^
+...
+513 |     pub fn commit_rename(&mut self) -> Option<(PathBuf, String)> {
+    |            ^^^^^^^^^^^^^
+
+warning: variant `SetCameraSpeed` is never constructed
+   --> katla_app\src\ui\editor_ui\preferences.rs:124:5
+    |
+118 | pub enum PreferencesAction {
+    |          ----------------- variant in this enum
+...
+124 |     SetCameraSpeed(f32),
+    |     ^^^^^^^^^^^^^^
+    |
+    = note: `PreferencesAction` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: struct `Viewport` is never constructed
+ --> katla_app\src\ui\editor_ui\viewport.rs:6:12
+  |
+6 | pub struct Viewport<'a> {
+  |            ^^^^^^^^
+
+warning: associated function `new` is never used
+  --> katla_app\src\ui\editor_ui\viewport.rs:14:12
+   |
+13 | impl<'a> Viewport<'a> {
+   | --------------------- associated function in this implementation
+14 |     pub fn new(
+   |            ^^^
+
+warning: fields `font_atlas` and `transient_textures` are never read
+  --> katla_app\src\ui\renderer.rs:22:5
+   |
+18 | pub struct UIRenderer {
+   |            ---------- fields in this struct
+...
+22 |     font_atlas: Option<TextureHandle>,
+   |     ^^^^^^^^^^
+...
+31 |     transient_textures: HashMap<u32, (vk::ImageView, vk::Sampler)>,
+   |     ^^^^^^^^^^^^^^^^^^
+
+warning: multiple methods are never used
+   --> katla_app\src\ui\renderer.rs:62:12
+    |
+ 37 | impl UIRenderer {
+    | --------------- methods in this implementation
+...
+ 62 |     pub fn unregister_texture(&mut self, id: TextureId) -> Option<TextureHandle> {
+    |            ^^^^^^^^^^^^^^^^^^
+...
+ 69 |     pub fn set_font_atlas(&mut self, handle: TextureHandle) {
+    |            ^^^^^^^^^^^^^^
+...
+ 84 |     pub fn font_atlas_bindless_slot(&self) -> Option<u32> {
+    |            ^^^^^^^^^^^^^^^^^^^^^^^^
+...
+ 92 |     pub fn set_white_texture_bindless_slot(&mut self, slot: u32) {
+    |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+ 97 |     pub fn white_texture_bindless_slot(&self) -> Option<u32> {
+    |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+102 |     pub fn font_atlas(&self) -> Option<TextureHandle> {
+    |            ^^^^^^^^^^
+...
+125 |     pub fn resolve_texture(&self, id: TextureId) -> TextureHandle {
+    |            ^^^^^^^^^^^^^^^
+...
+300 |     pub fn clear(&mut self) {
+    |            ^^^^^
+
+warning: associated function `all_names` is never used
+   --> katla_app\src\ui\theme.rs:110:12
+    |
+108 | impl Theme {
+    | ---------- associated function in this implementation
+109 |     /// Get all available theme names (keys for preferences).
+110 |     pub fn all_names() -> &'static [&'static str] {
+    |            ^^^^^^^^^
+
+warning: variants `Image`, `Model`, and `ShaderSource` are never constructed
+  --> katla_app\src\util\background_loader.rs:47:5
+   |
+38 | pub enum LoadRequest {
+   |          ----------- variants in this enum
+...
+47 |     Image { id: LoadId, path: PathBuf },
+   |     ^^^^^
+...
+50 |     Model { id: LoadId, path: PathBuf },
+   |     ^^^^^
+...
+53 |     ShaderSource { id: LoadId, path: PathBuf },
+   |     ^^^^^^^^^^^^
+   |
+   = note: `LoadRequest` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: field `pixels` is never read
+  --> katla_app\src\util\background_loader.rs:74:9
+   |
+69 |     ImageLoaded {
+   |     ----------- field in this variant
+...
+74 |         pixels: Vec<u8>, // RGBA8
+   |         ^^^^^^
+   |
+   = note: `LoadResult` has a derived impl for the trait `Debug`, but this is intentionally ignored during dead code analysis
+
+warning: fields `vertices` and `indices` are never read
+  --> katla_app\src\util\background_loader.rs:82:9
+   |
+78 |     ModelLoaded {
+   |     ----------- fields in this variant
+...
+82 |         vertices: Vec<katla_gfx::VertexPBR>,
+   |         ^^^^^^^^
+83 |         /// Index buffer
+84 |         indices: Vec<u32>,
+   |         ^^^^^^^
+   |
+   = note: `LoadResult` has a derived impl for the trait `Debug`, but this is intentionally ignored during dead code analysis
+
+warning: fields `width`, `height`, and `pixels` are never read
+   --> katla_app\src\util\background_loader.rs:106:9
+    |
+104 | pub struct ThumbnailEntry {
+    |            -------------- fields in this struct
+105 |     /// Width in pixels.
+106 |     pub width: u32,
+    |         ^^^^^
+107 |     /// Height in pixels.
+108 |     pub height: u32,
+    |         ^^^^^^
+109 |     /// RGBA8 pixel data.
+110 |     pub pixels: Vec<u8>,
+    |         ^^^^^^
+    |
+    = note: `ThumbnailEntry` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: methods `request_image`, `request_model`, `request_shader`, `get_thumbnail`, and `pending_count` are never used
+   --> katla_app\src\util\background_loader.rs:340:12
+    |
+134 | impl BackgroundLoader {
+    | --------------------- methods in this implementation
+...
+340 |     pub fn request_image(&mut self, path: PathBuf) -> LoadId {
+    |            ^^^^^^^^^^^^^
+...
+356 |     pub fn request_model(&mut self, path: PathBuf) -> LoadId {
+    |            ^^^^^^^^^^^^^
+...
+372 |     pub fn request_shader(&mut self, path: PathBuf) -> LoadId {
+    |            ^^^^^^^^^^^^^^
+...
+428 |     pub fn get_thumbnail(&self, path: &PathBuf) -> Option<&ThumbnailEntry> {
+    |            ^^^^^^^^^^^^^
+...
+448 |     pub fn pending_count(&self) -> usize {
+    |            ^^^^^^^^^^^^^
+
+warning: method `path` is never used
+   --> katla_app\src\util\background_loader.rs:472:12
+    |
+459 | impl LoadResult {
+    | --------------- method in this implementation
+...
+472 |     pub fn path(&self) -> &PathBuf {
+    |            ^^^^
+
+warning: multiple methods are never used
+   --> katla_app\src\util\metrics_history.rs:73:12
+    |
+ 23 | impl MetricsHistory {
+    | ------------------- methods in this implementation
+...
+ 73 |     pub fn values(&self) -> (&[f32], &[f32]) {
+    |            ^^^^^^
+...
+ 84 |     pub fn len(&self) -> usize {
+    |            ^^^
+...
+ 89 |     pub fn is_empty(&self) -> bool {
+    |            ^^^^^^^^
+...
+ 94 |     pub fn min(&self) -> f32 {
+    |            ^^^
+...
+103 |     pub fn max(&self) -> f32 {
+    |            ^^^
+...
+112 |     pub fn mean(&self) -> f32 {
+    |            ^^^^
+...
+121 |     pub fn last(&self) -> Option<f32> {
+    |            ^^^^
+...
+126 |     pub fn clear(&mut self) {
+    |            ^^^^^
+
+warning: `katla_app` (lib) generated 27 warnings (run `cargo fix --lib -p katla_app` to apply 5 suggestions)
+    Finished `dev` profile [optimized + debuginfo] target(s) in 0.54s
+     Running `target\debug\katla.exe --gpu-validation --single-frame`
+[2026-03-14T20:17:35Z INFO  katla] Katla 3D Engine starting...
+[2026-03-14T20:17:35Z INFO  katla] Running in limited-frame mode (25 frames) for validation testing
+[2026-03-14T20:17:35Z INFO  katla] GPU-assisted validation enabled
+[2026-03-14T20:17:35Z INFO  katla_app::resources] Found resources at: resources
+[2026-03-14T20:17:35Z INFO  katla_app::application::builder] Loaded preferences: theme=tokyo_night, show_grid=true, show_stats=false, font_scale=1.25
+[2026-03-14T20:17:35Z INFO  katla_app::application::builder] Loaded GUI state: left_panel=150, right_panel=175, asset_browser_height=194
+[2026-03-14T20:17:35Z INFO  katla_ui::text] Growing font atlas from 256x256 to 512x256
+[2026-03-14T20:17:35Z INFO  katla_app::application::builder] Loaded default font from resources\fonts\roboto-regular.ttf
+[2026-03-14T20:17:35Z INFO  katla_app::application::builder] Loaded icon font from resources\fonts\forkawesome-webfont.ttf
+Validation Warning: [ VALIDATION-SETTINGS ] | MessageID = 0x7f1922d7
+vkCreateInstance(): Both GPU Assisted Validation and Normal Core Check Validation are enabled, this is not recommend as it  will be very slow. Once all errors in Core Check are solved, please disable, then only use GPU-AV for best performance.
+
+[2026-03-14T20:17:35Z INFO  katla_gfx::vulkan::context] Picking physical device: "Intel(R) Iris(R) Plus Graphics"
+[2026-03-14T20:17:35Z INFO  katla_gfx::vulkan::context] Num family indices: 1
+[2026-03-14T20:17:35Z INFO  katla_gfx::renderer] Bindless texture system initialized (max 4096 textures)
+[2026-03-14T20:17:35Z INFO  katla_gfx::renderer] Texture manager initialized
+[2026-03-14T20:17:35Z INFO  katla_gfx::renderer] Material compiler initialized
+[2026-03-14T20:17:35Z INFO  katla_gfx::renderer] Font atlas registered with bindless system at slot 6
+[2026-03-14T20:17:35Z INFO  katla_app::application::builder] Uploaded font atlas texture: 512x256, handle=Handle { index: 5, _marker: PhantomData<fn() -> katla_gfx::handle::TextureMarker> }, handle_index=5
+[2026-03-14T20:17:35Z INFO  katla_gfx::particles] Initializing modern particle system (max particles: 1048576)
+[2026-03-14T20:17:35Z INFO  katla_gfx::particles::buffer] Created global particle buffer: 1048576 particles (144 MB)
+[2026-03-14T20:17:35Z INFO  katla_gfx::particles::buffer] Initialized particle dead list
+[2026-03-14T20:17:35Z INFO  katla_gfx::particles] Created particle system descriptor layouts
+[2026-03-14T20:17:35Z INFO  katla_gfx::particles] Created particle system push descriptor buffers
+[2026-03-14T20:17:35Z INFO  katla_gfx::particles] Modern particle system initialized successfully
+[2026-03-14T20:17:35Z INFO  katla_app::application::builder] Ô£¿ Modern particle system initialized successfully
+[2026-03-14T20:17:35Z INFO  katla_app::application::builder]    - Global particle pool: 1,048,576 particles
+[2026-03-14T20:17:35Z INFO  katla_app::application::builder]    - Memory footprint: ~60 MB GPU
+[2026-03-14T20:17:35Z INFO  katla_app::application::builder]    - Architecture: Single buffer + atomic counters
+[2026-03-14T20:17:35Z INFO  katla_app::application::builder] Font atlas bindless slot initialized: 6
+[2026-03-14T20:17:35Z INFO  katla_gfx::particles] Destroying particle system
+[2026-03-14T20:17:36Z ERROR katla_gfx::vulkan::context] [VUID-vkDestroyBuffer-buffer-parameter] vkDestroyBuffer(): buffer Invalid VkBuffer Object 0x2af00000002af.
+    The Vulkan spec states: If buffer is not VK_NULL_HANDLE, buffer must be a valid VkBuffer handle (https://docs.vulkan.org/spec/latest/chapters/resources.html#VUID-vkDestroyBuffer-buffer-parameter)
+[2026-03-14T20:17:36Z ERROR katla_gfx::vulkan::context]  vkDestroyBuffer(): Couldn't find VkBuffer Object 0x2af00000002af. This should not happen and may indicate a bug in the application.
+[2026-03-14T20:17:36Z ERROR katla_gfx::vulkan::context]  vkDestroyBuffer(): Couldn't find VkBuffer Object 0x2af00000002af. This should not happen and may indicate a bug in the application.
+[2026-03-14T20:17:36Z ERROR katla_gfx::vulkan::context] [VUID-vkDestroyBuffer-buffer-parameter] vkDestroyBuffer(): buffer Invalid VkBuffer Object 0x2b000000002b0.
+    The Vulkan spec states: If buffer is not VK_NULL_HANDLE, buffer must be a valid VkBuffer handle (https://docs.vulkan.org/spec/latest/chapters/resources.html#VUID-vkDestroyBuffer-buffer-parameter)
+[2026-03-14T20:17:36Z ERROR katla_gfx::vulkan::context]  vkDestroyBuffer(): Couldn't find VkBuffer Object 0x2b000000002b0. This should not happen and may indicate a bug in the application.
+[2026-03-14T20:17:36Z ERROR katla_gfx::vulkan::context]  vkDestroyBuffer(): Couldn't find VkBuffer Object 0x2b000000002b0. This should not happen and may indicate a bug in the application.
+[2026-03-14T20:17:36Z ERROR katla_gfx::vulkan::context] [VUID-vkDestroyBuffer-buffer-parameter] vkDestroyBuffer(): buffer Invalid VkBuffer Object 0x2b100000002b1.
+    The Vulkan spec states: If buffer is not VK_NULL_HANDLE, buffer must be a valid VkBuffer handle (https://docs.vulkan.org/spec/latest/chapters/resources.html#VUID-vkDestroyBuffer-buffer-parameter)
+[2026-03-14T20:17:36Z ERROR katla_gfx::vulkan::context]  vkDestroyBuffer(): Couldn't find VkBuffer Object 0x2b100000002b1. This should not happen and may indicate a bug in the application.
+[2026-03-14T20:17:36Z ERROR katla_gfx::vulkan::context]  vkDestroyBuffer(): Couldn't find VkBuffer Object 0x2b100000002b1. This should not happen and may indicate a bug in the application.
+[2026-03-14T20:17:36Z ERROR katla_gfx::vulkan::context] [VUID-vkDestroyBuffer-buffer-parameter] vkDestroyBuffer(): buffer Invalid VkBuffer Object 0x2b200000002b2.
+    The Vulkan spec states: If buffer is not VK_NULL_HANDLE, buffer must be a valid VkBuffer handle (https://docs.vulkan.org/spec/latest/chapters/resources.html#VUID-vkDestroyBuffer-buffer-parameter)
+[2026-03-14T20:17:36Z ERROR katla_gfx::vulkan::context]  vkDestroyBuffer(): Couldn't find VkBuffer Object 0x2b200000002b2. This should not happen and may indicate a bug in the application.
+[2026-03-14T20:17:36Z ERROR katla_gfx::vulkan::context]  vkDestroyBuffer(): Couldn't find VkBuffer Object 0x2b200000002b2. This should not happen and may indicate a bug in the application.
+Application::init() called
+[2026-03-14T20:17:36Z INFO  katla_app::application] Loading default PBR material from: resources\shaders\model_pbr.wgsl
+[2026-03-14T20:17:36Z INFO  katla_app::application] Default HDR PBR material loaded successfully
+[2026-03-14T20:17:36Z INFO  katla_gfx::render_graph::graph] Initializing 2 transient textures (2 frames in flight)
+[2026-03-14T20:17:36Z INFO  katla_gfx::render_graph::graph] Registering transient texture 'hdr_color' (2 frames) with bindless system
+[2026-03-14T20:17:36Z INFO  katla_app::application] HDR texture registered with bindless system at index 7
+[2026-03-14T20:17:36Z INFO  katla_gfx::render_graph::graph] Registering transient texture 'ldr_color' (2 frames) with bindless system
+[2026-03-14T20:17:36Z INFO  katla_app::application] LDR (tonemapped) texture registered with bindless system at index 9
+[2026-03-14T20:17:36Z INFO  katla_app::application] Setting up default scene...
+[2026-03-14T20:17:36Z INFO  katla_app::application] Spawned plane at [0.0, -1.0, 0.0]
+[2026-03-14T20:17:36Z INFO  katla_app::application] Spawned PBR material grid (5x5) at [0.0, 2.0, -6.0]
+[2026-03-14T20:17:36Z INFO  katla_app::application] Spawned test cube at [-5.0, 0.0, -5.0] with size [1.0, 1.0, 1.0]
+[2026-03-14T20:17:36Z INFO  katla_app::application] Spawned sphere at [-7.0, 0.0, -5.0] with radius 0.7
+[2026-03-14T20:17:36Z INFO  katla_app::application] Spawned cylinder at [5.0, 0.0, -5.0]
+[2026-03-14T20:17:36Z INFO  katla_app::application] Spawned torus at [7.0, 0.5, -3.0]
+[2026-03-14T20:17:36Z INFO  katla_app::application] Spawned plane at [0.0, 2.0, -10.0]
+[2026-03-14T20:17:36Z WARN  katla_app::util::modelcache] Mesh 'fox1' has no normals, generating smooth normals from geometry
+[2026-03-14T20:17:36Z INFO  katla_app::application] Spawned animated model 'resources/models/Fox.glb' with 24 joints
+[2026-03-14T20:17:36Z INFO  katla_app::application] Spawned animated Fox with Run animation
+[2026-03-14T20:17:36Z INFO  katla_app::application] Model 'resources/models/DamagedHelmet.glb' has emission texture at bindless index 16
+Application::init() completed
+[2026-03-14T20:17:36Z INFO  katla_app::application] Spawned static model 'resources/models/DamagedHelmet.glb'
+[2026-03-14T20:17:36Z INFO  katla_app::application] Spawned DamagedHelmet model
+[2026-03-14T20:17:36Z INFO  katla_app::application] Modern particle system ready for ECS integration
+[2026-03-14T20:17:36Z INFO  katla_app::application] Default scene setup complete - 34 entities spawned with particle effects
+[2026-03-14T20:17:36Z INFO  katla_gfx::renderer] === Recreating swapchain ===
+[2026-03-14T20:17:36Z INFO  katla_gfx::renderer]   Old extent: 2256x1398
+[2026-03-14T20:17:37Z INFO  katla_gfx::renderer]   New extent: 2256x1398
+[2026-03-14T20:17:37Z INFO  katla_gfx::render_graph::graph] Initializing 2 transient textures (2 frames in flight)
+[2026-03-14T20:17:37Z INFO  katla_gfx::render_graph::graph] Registering transient texture 'hdr_color' (2 frames) with bindless system
+[2026-03-14T20:17:37Z INFO  katla_gfx::render_graph::graph] Registering transient texture 'ldr_color' (2 frames) with bindless system
+[2026-03-14T20:17:37Z INFO  katla_gfx::renderer] Recreated 2 transient textures for resize
+[2026-03-14T20:17:37Z INFO  katla_app::application] === Resize complete ===
+[2026-03-14T20:17:37Z INFO  katla_gfx::renderer] === Recreating swapchain ===
+[2026-03-14T20:17:37Z INFO  katla_gfx::renderer]   Old extent: 2256x1398
+[2026-03-14T20:17:37Z INFO  katla_gfx::renderer]   New extent: 2256x1398
+[2026-03-14T20:17:37Z INFO  katla_gfx::render_graph::graph] Initializing 2 transient textures (2 frames in flight)
+[2026-03-14T20:17:37Z INFO  katla_gfx::render_graph::graph] Registering transient texture 'hdr_color' (2 frames) with bindless system
+[2026-03-14T20:17:37Z INFO  katla_gfx::render_graph::graph] Registering transient texture 'ldr_color' (2 frames) with bindless system
+[2026-03-14T20:17:37Z INFO  katla_gfx::renderer] Recreated 2 transient textures for resize
+[2026-03-14T20:17:37Z INFO  katla_app::application] === Resize complete ===
+[2026-03-14T20:17:37Z INFO  katla_gfx::renderer] === Recreating swapchain ===
+[2026-03-14T20:17:37Z INFO  katla_gfx::renderer]   Old extent: 2256x1398
+[2026-03-14T20:17:37Z INFO  katla_gfx::renderer]   New extent: 2256x1398
+[2026-03-14T20:17:37Z INFO  katla_gfx::render_graph::graph] Initializing 2 transient textures (2 frames in flight)
+[2026-03-14T20:17:37Z INFO  katla_gfx::render_graph::graph] Registering transient texture 'hdr_color' (2 frames) with bindless system
+[2026-03-14T20:17:37Z INFO  katla_gfx::render_graph::graph] Registering transient texture 'ldr_color' (2 frames) with bindless system
+[2026-03-14T20:17:37Z INFO  katla_gfx::renderer] Recreated 2 transient textures for resize
+[2026-03-14T20:17:37Z INFO  katla_app::application] === Resize complete ===
+[2026-03-14T20:17:37Z INFO  katla_gfx::renderer] === Recreating swapchain ===
+[2026-03-14T20:17:37Z INFO  katla_gfx::renderer]   Old extent: 2256x1398
+[2026-03-14T20:17:37Z INFO  katla_gfx::renderer]   New extent: 2256x1398
+[2026-03-14T20:17:37Z INFO  katla_gfx::render_graph::graph] Initializing 2 transient textures (2 frames in flight)
+[2026-03-14T20:17:37Z INFO  katla_gfx::render_graph::graph] Registering transient texture 'hdr_color' (2 frames) with bindless system
+[2026-03-14T20:17:37Z INFO  katla_gfx::render_graph::graph] Registering transient texture 'ldr_color' (2 frames) with bindless system
+[2026-03-14T20:17:37Z INFO  katla_gfx::renderer] Recreated 2 transient textures for resize
+[2026-03-14T20:17:37Z INFO  katla_app::application] === Resize complete ===
+[2026-03-14T20:17:37Z INFO  katla_gfx::renderer] Font atlas registered with bindless system at slot 34
+[2026-03-14T20:17:37Z INFO  katla_app::application::editor] Font atlas bindless slot updated after resize: 34
+[2026-03-14T20:17:39Z INFO  katla_app::application] Rendered 100 frames, exiting
+[2026-03-14T20:17:39Z INFO  katla_app::application] Saved preferences to disk
+[2026-03-14T20:17:39Z INFO  katla_app::application] Saved GUI state to disk
+[2026-03-14T20:17:39Z INFO  katla_gfx::renderer] Clean shutdown!
+[2026-03-14T20:17:39Z INFO  katla_app::application] Application exiting - cleaning up...

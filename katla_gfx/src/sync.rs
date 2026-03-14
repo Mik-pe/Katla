@@ -29,6 +29,7 @@ pub(crate) const COLOR_SUBRESOURCE_RANGE: vk::ImageSubresourceRange = vk::ImageS
 /// Standard depth-stencil subresource range for depth buffers.
 ///
 /// Use this for depth attachment operations.
+#[allow(dead_code)]
 pub(crate) const DEPTH_SUBRESOURCE_RANGE: vk::ImageSubresourceRange = vk::ImageSubresourceRange {
     aspect_mask: vk::ImageAspectFlags::from_raw(
         vk::ImageAspectFlags::DEPTH.as_raw() | vk::ImageAspectFlags::STENCIL.as_raw(),
@@ -133,15 +134,15 @@ impl From<VkImage> for vk::Image {
     }
 }
 
-/// Wrapper for Vulkan image view handle (crate-local).
+/// Wrapper for Vulkan image view handle.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub(crate) struct VkImageView(pub vk::ImageView);
+pub struct VkImageView(pub vk::ImageView);
 
 unsafe impl Send for VkImageView {}
 unsafe impl Sync for VkImageView {}
 
 impl VkImageView {
-    pub(crate) fn new(handle: vk::ImageView) -> Self {
+    pub fn new(handle: vk::ImageView) -> Self {
         Self(handle)
     }
 

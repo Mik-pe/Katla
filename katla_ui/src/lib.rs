@@ -3,6 +3,8 @@
 //! This crate provides a simple, immediate mode UI system suitable for:
 //! - Debug overlays and development tools
 //! - In-game HUDs
+
+#![allow(dead_code)]
 //! - Settings panels
 //! - Editor interfaces
 //!

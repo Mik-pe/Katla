@@ -493,6 +493,10 @@ impl VulkanContext {
     /// Create a CLAMP_TO_EDGE sampler suitable for UI/2D rendering.
     ///
     /// Uses LINEAR filtering with no anisotropy.
+    /// Create a CLAMP_TO_EDGE sampler for UI and 2D textures.
+    ///
+    /// Uses LINEAR filtering without anisotropy or mipmaps.
+    #[allow(dead_code)]
     pub(crate) fn create_sampler_clamp_to_edge(&self) -> Result<VkSampler, vk::Result> {
         let create_info = vk::SamplerCreateInfo::default()
             .mag_filter(vk::Filter::LINEAR)

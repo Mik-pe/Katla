@@ -261,9 +261,9 @@ impl CompositePass {
 
 /// Internal data for a compositing pass after name resolution.
 #[derive(Debug)]
-pub(crate) struct CompositePassData {
+pub struct CompositePassData {
     /// Viewport textures with resolved handles and rectangles.
-    pub(crate) viewports: Vec<(GraphResourceHandle, ViewportRect)>,
+    pub viewports: Vec<(GraphResourceHandle, ViewportRect)>,
 }
 
 impl PassBuilder for CompositePass {
