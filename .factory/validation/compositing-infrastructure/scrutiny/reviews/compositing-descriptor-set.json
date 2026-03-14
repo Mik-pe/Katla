@@ -1,0 +1,61 @@
+{
+  "featureId": "compositing-descriptor-set",
+  "reviewedAt": "2026-03-14T20:30:00.000Z",
+  "commitId": "ac35e90413423e2f932cf375b9d3ac3ef39e42a4",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "Implementation is complete and well-crafted. The CompositingDescriptorSet follows Vulkan best practices, validates viewport limits correctly, and provides a clean API for descriptor set management. Code quality is high with comprehensive documentation, proper error handling, and appropriate unit tests.",
+    "issues": []
+  },
+  "sharedStateObservations": [
+    {
+      "area": "conventions",
+      "observation": "Worker correctly followed the 'No AI Slop comments' guideline from AGENTS.md. Documentation is meaningful and explains what/why, not obvious code mechanics. Example: Descriptor layout comments explain the set/binding purpose, not that 'this creates a descriptor set'.",
+      "evidence": "katla_gfx/src/render_graph/descriptor_sets/compositing.rs:1-23 - Module-level doc clearly explains the descriptor set purpose and layout without obvious comments"
+    },
+    {
+      "area": "conventions",
+      "observation": "Worker followed TDD approach as specified in gfx-worker skill. Tests were written first (test_max_viewports_constant, test_compositing_descriptor_set_new_requires_vulkan, etc.), then implementation followed to make tests pass.",
+      "evidence": "katla_gfx/src/render_graph/descriptor_sets/compositing.rs:274-328 - All tests present at bottom of file, covering validation logic and API signatures"
+    },
+    {
+      "area": "skills",
+      "observation": "Worker correctly used cargo build --bin katla to verify shader compilation (from build output showing successful compilation). This follows the skill's guidance that 'Shader compilation happens during build'.",
+      "evidence": "Transcript shows: 'cargo build --bin katla 2>&1 | head -100' followed by successful compilation with only warnings"
+    },
+    {
+      "area": "knowledge",
+      "observation": "Worker discovered that descriptor set layout creation requires vk::DescriptorSetLayoutCreateInfo with bindings array, and descriptor pool must be created before allocating descriptor sets. This is standard Vulkan pattern but not documented in .factory/library/.",
+      "evidence": "katla_gfx/src/render_graph/descriptor_sets/compositing.rs:145-167 - Shows correct pattern: layout creation first, then pool, then allocation"
+    },
+    {
+      "area": "knowledge",
+      "observation": "Worker discovered that VkDescriptorSetLayout wrapper type exists for RAII cleanup (used in struct field). This pattern isn't documented in .factory/library/ but is important for resource management.",
+      "evidence": "katla_gfx/src/render_graph/descriptor_sets/compositing.rs:99 - descriptor_layout field uses VkDescriptorSetLayout wrapper"
+    },
+    {
+      "area": "knowledge",
+      "observation": "Worker discovered that descriptor updates require vk::WriteDescriptorSet with dst_array_element for array bindings. This is the correct way to update individual texture array elements. Could be documented in .factory/library/vulkan-descriptor-patterns.md.",
+      "evidence": "katla_gfx/src/render_graph/descriptor_sets/compositing.rs:213-225 - Update loop uses dst_array_element(slot_idx as u32) to target specific array indices"
+    },
+    {
+      "area": "conventions",
+      "observation": "Worker correctly applied 'No Hybrid Implementations' rule from AGENTS.md. Created a clean new descriptor_sets module without mixing it with existing descriptor code or trying to extend BindlessTextureManager.",
+      "evidence": "New files katla_gfx/src/render_graph/descriptor_sets/mod.rs and compositing.rs are standalone, not integrated into bindless system"
+    },
+    {
+      "area": "conventions",
+      "observation": "Worker properly exported the new type through the module hierarchy (descriptor_sets/mod.rs → render_graph/mod.rs → lib.rs). This follows the 'prefer pub(crate) until public API needed' convention - CompositingDescriptorSet is pub but used internally by render graph.",
+      "evidence": "katla_gfx/src/render_graph/mod.rs:43 exports CompositingDescriptorSet, katla_gfx/src/lib.rs:218 adds it to public API"
+    },
+    {
+      "area": "services",
+      "observation": "No services were needed for this feature (correct - only Vulkan context required). services.yaml is empty, which is appropriate for local graphics work.",
+      "evidence": ".factory/services.yaml shows 'services: {}' and commands list standard cargo commands"
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "The CompositingDescriptorSet implementation is complete and well-executed. All expected behaviors from the feature specification are met: (1) CompositingDescriptorSet::new() creates descriptor sets with 0-8 textures, (2) creating with >8 textures returns RendererError::InvalidOperation with clear error message, (3) descriptor set layout matches WGSL expectations (set 2, binding 0, array of 8 textures), (4) update_textures() method enables runtime texture replacement. Code quality is excellent with comprehensive documentation, proper resource cleanup (Drop impl), and appropriate unit tests. The worker followed gfx-worker skill procedures correctly, using TDD approach and verifying compilation via cargo build. No blocking issues found. Minor shared state gaps discovered around Vulkan descriptor patterns that could benefit from documentation."
+}
