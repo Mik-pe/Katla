@@ -338,7 +338,7 @@ impl ImageBarrier {
             return (
                 PipelineStage2Flags::COLOR_ATTACHMENT_OUTPUT,
                 PipelineStage2Flags::FRAGMENT_SHADER,
-                AccessFlags2::COLOR_ATTACHMENT_WRITE,
+                AccessFlags2::COLOR_ATTACHMENT_WRITE | AccessFlags2::COLOR_ATTACHMENT_READ,
                 AccessFlags2::SHADER_READ,
             );
         }
@@ -598,7 +598,10 @@ mod tests {
         );
         assert_eq!(src_stage, PipelineStage2Flags::COLOR_ATTACHMENT_OUTPUT);
         assert_eq!(dst_stage, PipelineStage2Flags::FRAGMENT_SHADER);
-        assert_eq!(src_access, AccessFlags2::COLOR_ATTACHMENT_WRITE);
+        assert_eq!(
+            src_access,
+            AccessFlags2::COLOR_ATTACHMENT_WRITE | AccessFlags2::COLOR_ATTACHMENT_READ
+        );
         assert_eq!(dst_access, AccessFlags2::SHADER_READ);
     }
 
@@ -617,7 +620,10 @@ mod tests {
         );
         assert_eq!(src_stage, PipelineStage2Flags::COLOR_ATTACHMENT_OUTPUT);
         assert_eq!(dst_stage, PipelineStage2Flags::FRAGMENT_SHADER);
-        assert_eq!(src_access, AccessFlags2::COLOR_ATTACHMENT_WRITE);
+        assert_eq!(
+            src_access,
+            AccessFlags2::COLOR_ATTACHMENT_WRITE | AccessFlags2::COLOR_ATTACHMENT_READ
+        );
         assert_eq!(dst_access, AccessFlags2::SHADER_READ);
 
         // Step 2: SHADER_READ_ONLY -> COLOR_ATTACHMENT (for reuse)

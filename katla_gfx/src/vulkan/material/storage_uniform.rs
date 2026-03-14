@@ -293,21 +293,18 @@ impl StorageUniformLayout {
 /// and arrays of per-object uniforms accessed via instance_index.
 ///
 /// This manager holds `FRAMES_IN_FLIGHT` separate buffers to support
-/// double-buffering. Use `start_frame()` to select the active frame
-/// before any storage operations.
+/// double-buffering. All methods require an explicit `frame_index` parameter
+/// to select the target buffer.
 ///
 /// # Frame Lifecycle
 /// ```ignore
-/// storage_manager.start_frame(frame_index);  // Select active frame
-/// storage_manager.update_frame(...);           // No frame_index needed
-/// storage_manager.update_object_bindless(...); // No frame_index needed
-/// // Next frame: call start_frame again with new index
+/// let frame_idx = renderer.current_frame();
+/// storage_manager.update_frame(frame_idx, &view, &proj);
+/// storage_manager.update_object_bindless(frame_idx, index, &model, &color, ...);
 /// ```
 pub struct StorageUniformManager {
     /// Per-frame storage buffers (one for each frame in flight).
     buffers: Vec<DeviceAddressBuffer>,
-    /// Currently active frame index (selects which buffer operations use).
-    current_frame: usize,
 }
 
 impl StorageUniformManager {
@@ -335,34 +332,7 @@ impl StorageUniformManager {
             )?);
         }
 
-        Ok(Self {
-            buffers,
-            current_frame: 0,
-        })
-    }
-
-    /// Start a new frame - selects which buffer subsequent operations will use.
-    ///
-    /// Must be called once per frame before any update methods.
-    ///
-    /// # Arguments
-    /// * `frame_index` - Frame index (0 to frames_in_flight-1)
-    ///
-    /// # Panics
-    /// Panics if frame_index >= frames_in_flight
-    pub fn start_frame(&mut self, frame_index: usize) {
-        assert!(
-            frame_index < self.buffers.len(),
-            "Frame index {} out of bounds (max {})",
-            frame_index,
-            self.buffers.len()
-        );
-        self.current_frame = frame_index;
-    }
-
-    /// Get the currently active frame index.
-    pub fn current_frame(&self) -> usize {
-        self.current_frame
+        Ok(Self { buffers })
     }
 
     /// Get the number of frames in flight.
@@ -372,22 +342,21 @@ impl StorageUniformManager {
 
     /// Update frame uniforms (view, projection, and lighting).
     ///
-    /// This writes the frame data to the start of the current frame's buffer
+    /// This writes the frame data to the start of the specified frame's buffer
     /// (offset 0, 256 bytes total). Should be called once per frame.
     ///
-    /// # Note
-    /// `start_frame()` must be called before this method to select the active frame.
-    ///
     /// # Arguments
+    /// * `frame_index` - Frame index (0 to frames_in_flight-1)
     /// * `view` - View matrix (world-to-camera)
     /// * `proj` - Projection matrix (camera-to-clip)
-    pub fn update_frame(&mut self, view: &[f32; 16], proj: &[f32; 16]) {
+    pub fn update_frame(&mut self, frame_index: usize, view: &[f32; 16], proj: &[f32; 16]) {
         // Default inverse VP (identity - won't work correctly for sky)
         let default_inv_vp = [0.0f32; 16];
 
         // Use default lighting when only view/proj provided
         // Light direction points TO the light (upward for sun/sky)
         self.update_frame_with_lighting(
+            frame_index,
             view,
             proj,
             &default_inv_vp,
@@ -400,10 +369,8 @@ impl StorageUniformManager {
 
     /// Update frame uniforms with full lighting parameters.
     ///
-    /// # Note
-    /// `start_frame()` must be called before this method to select the active frame.
-    ///
     /// # Arguments
+    /// * `frame_index` - Frame index (0 to frames_in_flight-1)
     /// * `view` - View matrix (world-to-camera)
     /// * `proj` - Projection matrix (camera-to-clip) - column-major [f32; 16]
     /// * `inv_view_proj` - Inverse view-projection matrix (clip-to-world) - column-major [f32; 16]
@@ -413,6 +380,7 @@ impl StorageUniformManager {
     /// * `light_intensity` - Light intensity multiplier
     pub fn update_frame_with_lighting(
         &mut self,
+        frame_index: usize,
         view: &[f32; 16],
         proj: &[f32; 16],
         inv_view_proj: &[f32; 16],
@@ -421,7 +389,7 @@ impl StorageUniformManager {
         light_color: &[f32; 4],
         light_intensity: f32,
     ) {
-        let buffer = &mut self.buffers[self.current_frame];
+        let buffer = &mut self.buffers[frame_index];
         unsafe {
             let mapped = buffer.map();
             let frame_ptr = mapped.as_ptr() as *mut FrameUniforms;
@@ -441,10 +409,12 @@ impl StorageUniformManager {
 
     /// Update frame uniforms from a FrameUniforms struct.
     ///
-    /// # Note
-    /// `start_frame()` must be called before this method to select the active frame.
-    pub fn update_from_frame_uniforms(&mut self, frame: &crate::renderer::FrameUniforms) {
+    /// # Arguments
+    /// * `frame_index` - Frame index (0 to frames_in_flight-1)
+    /// * `frame` - Frame uniforms struct containing all frame data
+    pub fn update_from_frame_uniforms(&mut self, frame_index: usize, frame: &crate::renderer::FrameUniforms) {
         self.update_frame_with_lighting(
+            frame_index,
             &frame.view_matrix,
             &frame.proj_matrix,
             &frame.inv_view_proj_matrix,
@@ -460,27 +430,27 @@ impl StorageUniformManager {
     /// Writes per-object data (model matrix + color) to the object array.
     /// Automatically handles object index lookup and offset calculation.
     ///
-    /// # Note
-    /// `start_frame()` must be called before this method to select the active frame.
-    ///
     /// # Arguments
+    /// * `frame_index` - Frame index (0 to frames_in_flight-1)
     /// * `index` - Object index (0-255)
     /// * `model` - Model matrix (object-to-world) - column-major [f32; 16]
     /// * `color` - Color tint (RGBA)
     ///
     /// # Panics
     /// Panics if index >= 256
-    pub fn update_object(&mut self, index: usize, model: &[f32; 16], color: &[f32; 4]) {
+    pub fn update_object(
+        &mut self,
+        frame_index: usize,
+        index: usize,
+        model: &[f32; 16],
+        color: &[f32; 4],
+    ) {
         // Use default PBR material params
-        self.update_object_with_material(index, model, color, 0.0, 0.5, 1.0);
-    }
-
-    /// Update object uniforms with PBR material parameters.
-    ///
-    /// # Note
-    /// `start_frame()` must be called before this method to select the active frame.
+        self.update_object_with_material(frame_index, index, model, color, 0.0, 0.5, 1.0);
+    }    /// Update object uniforms with PBR material parameters.
     ///
     /// # Arguments
+    /// * `frame_index` - Frame index (0 to frames_in_flight-1)
     /// * `index` - Object index (0-255)
     /// * `model` - Model matrix (object-to-world) - column-major [f32; 16]
     /// * `color` - Base color tint (RGBA)
@@ -489,6 +459,7 @@ impl StorageUniformManager {
     /// * `ao` - Ambient occlusion factor (0.0 = full occlusion, 1.0 = none)
     pub fn update_object_with_material(
         &mut self,
+        frame_index: usize,
         index: usize,
         model: &[f32; 16],
         color: &[f32; 4],
@@ -497,15 +468,13 @@ impl StorageUniformManager {
         ao: f32,
     ) {
         // Default normal_scale to 1.0
-        self.update_object_with_material_full(index, model, color, metallic, roughness, ao, 1.0);
+        self.update_object_with_material_full(frame_index, index, model, color, metallic, roughness, ao, 1.0);
     }
 
     /// Update object uniforms with full PBR material parameters including normal scale.
     ///
-    /// # Note
-    /// `start_frame()` must be called before this method to select the active frame.
-    ///
     /// # Arguments
+    /// * `frame_index` - Frame index (0 to frames_in_flight-1)
     /// * `index` - Object index (0-255)
     /// * `model` - Model matrix (object-to-world) - column-major [f32; 16]
     /// * `color` - Base color tint (RGBA)
@@ -515,6 +484,7 @@ impl StorageUniformManager {
     /// * `emission_idx` - Emission texture index for bindless (0 = no emission)
     pub fn update_object_with_material_full(
         &mut self,
+        frame_index: usize,
         index: usize,
         model: &[f32; 16],
         color: &[f32; 4],
@@ -525,6 +495,7 @@ impl StorageUniformManager {
     ) {
         // Default texture indices (0 = no texture / use default)
         self.update_object_bindless(
+            frame_index,
             index,
             model,
             color,
@@ -538,10 +509,8 @@ impl StorageUniformManager {
 
     /// Update object uniforms with bindless texture indices.
     ///
-    /// # Note
-    /// `start_frame()` must be called before this method to select the active frame.
-    ///
     /// # Arguments
+    /// * `frame_index` - Frame index (0 to frames_in_flight-1)
     /// * `index` - Object index (0-255)
     /// * `model` - Model matrix in column-major format (object-to-world)
     /// * `color` - Base color tint (RGBA)
@@ -552,6 +521,7 @@ impl StorageUniformManager {
     /// * `texture_indices` - [albedo_idx, normal_idx, mr_idx, ao_idx]
     pub fn update_object_bindless(
         &mut self,
+        frame_index: usize,
         index: usize,
         model: &[f32; 16],
         color: &[f32; 4],
@@ -570,7 +540,7 @@ impl StorageUniformManager {
         let offset = StorageUniformLayout::object_offset(index);
 
         // Map and write object uniforms at calculated offset
-        let buffer = &mut self.buffers[self.current_frame];
+        let buffer = &mut self.buffers[frame_index];
         unsafe {
             let mapped = buffer.map();
             let object_ptr = (mapped.as_ptr() as usize + offset) as *mut ObjectUniforms;
@@ -590,16 +560,14 @@ impl StorageUniformManager {
     /// This is more efficient than calling `update_object_bindless` multiple times
     /// because it maps the buffer only once and writes all data in a batch.
     ///
-    /// # Note
-    /// `start_frame()` must be called before this method to select the active frame.
-    ///
     /// # Arguments
+    /// * `frame_index` - Frame index (0 to frames_in_flight-1)
     /// * `start_index` - First object index to update
     /// * `objects` - Slice of object data to write (must fit within MAX_OBJECTS)
     ///
     /// # Panics
     /// Panics if start_index + objects.len() >= MAX_OBJECTS
-    pub fn update_objects_bulk(&mut self, start_index: usize, objects: &[ObjectData]) {
+    pub fn update_objects_bulk(&mut self, frame_index: usize, start_index: usize, objects: &[ObjectData]) {
         let end_index = start_index + objects.len();
         assert!(
             end_index <= StorageUniformLayout::MAX_OBJECTS,
@@ -607,7 +575,7 @@ impl StorageUniformManager {
         );
 
         // Map buffer once and write all objects
-        let buffer = &mut self.buffers[self.current_frame];
+        let buffer = &mut self.buffers[frame_index];
         unsafe {
             let mapped = buffer.map();
             let base_ptr = mapped.as_ptr() as usize + StorageUniformLayout::OBJECT_ARRAY_OFFSET;
@@ -635,18 +603,6 @@ impl StorageUniformManager {
     #[inline]
     pub fn is_persistent(&self) -> bool {
         self.buffers.first().is_some_and(|b| b.is_persistent())
-    }
-
-    /// Get the underlying buffer handle for the current frame.
-    ///
-    /// For descriptor set creation - use this during initialization
-    /// to get each frame's buffer handle.
-    ///
-    /// # Note
-    /// `start_frame()` must be called before this method to select the active frame.
-    #[inline]
-    pub fn current_buffer(&self) -> vk::Buffer {
-        self.buffers[self.current_frame].buffer
     }
 
     /// Get buffer handle for a specific frame (for descriptor set initialization).
