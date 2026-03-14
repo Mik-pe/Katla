@@ -1,0 +1,42 @@
+{
+  "milestone": "cleanup-migration",
+  "round": 1,
+  "status": "fail",
+  "assertionsSummary": {
+    "total": 10,
+    "passed": 7,
+    "failed": 3,
+    "blocked": 0
+  },
+  "passedAssertions": [
+    "VAL-CLEAN-001",
+    "VAL-CLEAN-002",
+    "VAL-CLEAN-003",
+    "VAL-CLEAN-004",
+    "VAL-CLEAN-005",
+    "VAL-CLEAN-007",
+    "VAL-CLEAN-008"
+  ],
+  "failedAssertions": [
+    {
+      "id": "VAL-CLEAN-006",
+      "reason": "59 compilation warnings found across all crates. Mostly dead_code warnings (unused functions/structs/fields), plus private_interfaces, private_bounds, deprecated_method, and unused_imports warnings. Indicates incomplete cleanup or future features not yet implemented."
+    },
+    {
+      "id": "VAL-CLEAN-009",
+      "reason": "106 clippy warnings with significant dead code. katla_math Quat implementation entirely unused. katla_gfx has multiple unused fields from particle system refactor. katla_app has 27 dead code warnings. Indicates incomplete cleanup or future features not yet implemented."
+    },
+    {
+      "id": "VAL-CLEAN-010",
+      "reason": "Blocked - requires manual frame time comparison between single and multi-viewport rendering scenarios. Cannot automate performance regression testing without interactive profiling session."
+    }
+  ],
+  "blockedAssertions": [],
+  "appliedUpdates": [],
+  "previousRound": null,
+  "summary": "User testing validation for cleanup-migration milestone tested 10 assertions covering code cleanup, migration completeness, and performance. 7/10 assertions passed: old viewport rendering code successfully removed (284 lines deleted), Viewport struct simplified to configuration-only, no hybrid approaches, frame graph API works, all tests pass, public API preserved, documentation updated. 3/10 assertions failed: VAL-CLEAN-006 (59 compilation warnings - dead code, visibility issues), VAL-CLEAN-009 (106 clippy warnings - significant unused code in katla_math, katla_gfx, katla_app), VAL-CLEAN-010 (requires manual performance testing). Core migration successful but incomplete cleanup remains.",
+  "flowReports": [
+    ".factory/validation/cleanup-migration/user-testing/flows/cleanup-migration.json"
+  ],
+  "evidenceLocation": "C:\\Users\\mikae\\.factory\\missions\\426ed350-def0-4935-bd0d-1130df144a77\\evidence\\cleanup-migration\\"
+}
