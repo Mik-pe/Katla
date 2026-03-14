@@ -32,6 +32,7 @@
 
 mod builder;
 mod compiler;
+mod descriptor_sets;
 mod error;
 mod graph;
 mod pass;
@@ -39,6 +40,7 @@ mod passes;
 mod resource;
 
 // Public API - minimal surface
+pub use descriptor_sets::CompositingDescriptorSet;
 pub use error::RenderGraphError;
 pub use graph::{Frame, FrameGraph, FrameGraphBuilder};
 pub use passes::{

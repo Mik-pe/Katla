@@ -147,6 +147,7 @@
 pub mod error;
 pub mod handle;
 pub mod material;
+pub mod particles;
 pub mod render_pass;
 pub mod renderer;
 pub mod texture;
@@ -214,18 +215,19 @@ pub use render_pass::{
 };
 
 // UI rendering types
-pub use renderer::{ParticleSystem, UIDrawList, UiDrawCommand};
+pub use renderer::{UIDrawList, UiDrawCommand};
 
 // Renderer
 pub use renderer::{DrawList, VulkanRenderer};
 
-// Particle types (re-exported from vulkan module)
-pub use vulkan::particle_buffer::{EmitterConfig, FrameData};
+// Modern particle system
+pub use particles::{EmitterConfig, GlobalParticleSystem};
 
 // Render graph system - minimal public API
 pub use render_graph::{
-    Frame, FrameGraph, FrameGraphBuilder, FullscreenPass, GeometryPass, GraphResourceDesc,
-    GraphResourceType, LightType, RenderGraphError, ShadowPass, TonemapOperator, TonemapParams,
+    CompositingDescriptorSet, Frame, FrameGraph, FrameGraphBuilder, FullscreenPass, GeometryPass,
+    GraphResourceDesc, GraphResourceType, LightType, RenderGraphError, ShadowPass, TonemapOperator,
+    TonemapParams,
 };
 
 /// Low-level Vulkan context - an escape hatch for advanced use cases.
@@ -276,4 +278,4 @@ pub use render_graph::{
 /// [`VulkanRenderer::create_mesh()`]: renderer::VulkanRenderer::create_mesh
 /// [`VulkanRenderer::create_texture()`]: renderer::VulkanRenderer::create_texture
 /// [`VulkanRenderer::create_skeleton()`]: renderer::VulkanRenderer::create_skeleton
-pub use vulkan::context::{ValidationLevel, VulkanContext};
+pub use vulkan::context::{ValidationLevel, ValidationMode, VulkanContext};
