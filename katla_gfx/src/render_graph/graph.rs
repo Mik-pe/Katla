@@ -129,6 +129,12 @@ pub struct FrameGraph {
 
     /// Base bindless index for LDR texture (actual index = base + frame_idx).
     ldr_texture_base_index: Option<u32>,
+
+    /// Delta time for this frame (used for particle simulation).
+    delta_time: f32,
+
+    /// Global frame counter for this frame (used as random seed for particle simulation).
+    frame_count: usize,
 }
 
 impl FrameGraph {
@@ -143,6 +149,8 @@ impl FrameGraph {
             transient_resources: Vec::new(),
             transient_textures: Vec::new(),
             ldr_texture_base_index: None,
+            delta_time: 0.0,
+            frame_count: 0,
         }
     }
 
@@ -221,7 +229,8 @@ impl FrameGraph {
 
         log::debug!(
             "Frame graph execute: frame_idx={}, image_index={}",
-            frame_idx, image_index
+            frame_idx,
+            image_index
         );
 
         // Update tonemap params for fullscreen passes BEFORE creating frame.
@@ -289,6 +298,16 @@ impl FrameGraph {
         self.ldr_texture_base_index = Some(index);
     }
 
+    /// Set the delta time for this frame (used for particle simulation).
+    pub fn set_delta_time(&mut self, delta_time: f32) {
+        self.delta_time = delta_time;
+    }
+
+    /// Set the global frame counter for this frame (used for particle simulation).
+    pub fn set_frame_count(&mut self, frame_count: usize) {
+        self.frame_count = frame_count;
+    }
+
     /// Get the number of passes in the graph.
     pub fn pass_count(&self) -> usize {
         self.passes.len()
@@ -332,91 +351,94 @@ impl FrameGraph {
         );
 
         // Create one set of textures per frame
-        for frame_idx in 0..FRAMES_IN_FLIGHT {
+        for _frame_idx in 0..FRAMES_IN_FLIGHT {
             let mut frame_textures = HashMap::new();
 
             for desc in &self.transient_resources {
-            let vk_format: vk::Format = desc.format.into();
+                let vk_format: vk::Format = desc.format.into();
 
-            // Create image
-            let image_info = vk::ImageCreateInfo::default()
-                .image_type(vk::ImageType::TYPE_2D)
-                .extent(vk::Extent3D {
-                    width: desc.width,
-                    height: desc.height,
-                    depth: 1,
-                })
-                .mip_levels(1)
-                .array_layers(1)
-                .format(vk_format)
-                .tiling(vk::ImageTiling::OPTIMAL)
-                .initial_layout(vk::ImageLayout::UNDEFINED)
-                .samples(vk::SampleCountFlags::TYPE_1)
-                .usage(match desc.resource_type {
-                    super::resource::GraphResourceType::ColorAttachment { .. } => {
-                        vk::ImageUsageFlags::COLOR_ATTACHMENT
-                            | vk::ImageUsageFlags::SAMPLED
-                            | vk::ImageUsageFlags::INPUT_ATTACHMENT
-                    }
-                    super::resource::GraphResourceType::DepthAttachment { .. } => {
-                        vk::ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT
-                    }
-                    super::resource::GraphResourceType::SampledImage => {
-                        vk::ImageUsageFlags::SAMPLED | vk::ImageUsageFlags::TRANSFER_DST
-                    }
-                })
-                .sharing_mode(vk::SharingMode::EXCLUSIVE);
+                // Create image
+                let image_info = vk::ImageCreateInfo::default()
+                    .image_type(vk::ImageType::TYPE_2D)
+                    .extent(vk::Extent3D {
+                        width: desc.width,
+                        height: desc.height,
+                        depth: 1,
+                    })
+                    .mip_levels(1)
+                    .array_layers(1)
+                    .format(vk_format)
+                    .tiling(vk::ImageTiling::OPTIMAL)
+                    .initial_layout(vk::ImageLayout::UNDEFINED)
+                    .samples(vk::SampleCountFlags::TYPE_1)
+                    .usage(match desc.resource_type {
+                        super::resource::GraphResourceType::ColorAttachment { .. } => {
+                            vk::ImageUsageFlags::COLOR_ATTACHMENT
+                                | vk::ImageUsageFlags::SAMPLED
+                                | vk::ImageUsageFlags::INPUT_ATTACHMENT
+                        }
+                        super::resource::GraphResourceType::DepthAttachment { .. } => {
+                            vk::ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT
+                        }
+                        super::resource::GraphResourceType::SampledImage => {
+                            vk::ImageUsageFlags::SAMPLED | vk::ImageUsageFlags::TRANSFER_DST
+                        }
+                    })
+                    .sharing_mode(vk::SharingMode::EXCLUSIVE);
 
-            let (image, allocation) = renderer
-                .context
-                .create_image(image_info, gpu_allocator::MemoryLocation::GpuOnly);
-
-            // Create image view
-            let view_info = vk::ImageViewCreateInfo::default()
-                .image(image)
-                .view_type(vk::ImageViewType::TYPE_2D)
-                .format(vk_format)
-                .subresource_range(vk::ImageSubresourceRange {
-                    aspect_mask: if matches!(
-                        desc.resource_type,
-                        super::resource::GraphResourceType::DepthAttachment { .. }
-                    ) {
-                        vk::ImageAspectFlags::DEPTH
-                    } else {
-                        vk::ImageAspectFlags::COLOR
-                    },
-                    base_mip_level: 0,
-                    level_count: 1,
-                    base_array_layer: 0,
-                    layer_count: 1,
-                });
-
-            let image_view = unsafe {
-                renderer
+                let (image, allocation) = renderer
                     .context
-                    .device
-                    .create_image_view(&view_info, None)
-                    .map_err(|e| {
-                        RenderGraphError::VulkanError(format!("Failed to create image view: {}", e))
-                    })?
-            };
+                    .create_image(image_info, gpu_allocator::MemoryLocation::GpuOnly);
 
-            let texture = TransientTexture::new(
-                renderer.context.clone(),
-                image,
-                Some(allocation),
-                VkImageView::new(image_view),
-                vk_format,
-                vk::Extent2D {
-                    width: desc.width,
-                    height: desc.height,
-                },
-            );
+                // Create image view
+                let view_info = vk::ImageViewCreateInfo::default()
+                    .image(image)
+                    .view_type(vk::ImageViewType::TYPE_2D)
+                    .format(vk_format)
+                    .subresource_range(vk::ImageSubresourceRange {
+                        aspect_mask: if matches!(
+                            desc.resource_type,
+                            super::resource::GraphResourceType::DepthAttachment { .. }
+                        ) {
+                            vk::ImageAspectFlags::DEPTH
+                        } else {
+                            vk::ImageAspectFlags::COLOR
+                        },
+                        base_mip_level: 0,
+                        level_count: 1,
+                        base_array_layer: 0,
+                        layer_count: 1,
+                    });
 
-            frame_textures.insert(desc.name.clone(), texture);
-        }
+                let image_view = unsafe {
+                    renderer
+                        .context
+                        .device
+                        .create_image_view(&view_info, None)
+                        .map_err(|e| {
+                            RenderGraphError::VulkanError(format!(
+                                "Failed to create image view: {}",
+                                e
+                            ))
+                        })?
+                };
 
-        self.transient_textures.push(frame_textures);
+                let texture = TransientTexture::new(
+                    renderer.context.clone(),
+                    image,
+                    Some(allocation),
+                    VkImageView::new(image_view),
+                    vk_format,
+                    vk::Extent2D {
+                        width: desc.width,
+                        height: desc.height,
+                    },
+                );
+
+                frame_textures.insert(desc.name.clone(), texture);
+            }
+
+            self.transient_textures.push(frame_textures);
         }
 
         Ok(())
@@ -470,7 +492,11 @@ impl FrameGraph {
 
         // Re-register all transient textures with bindless system
         let mut result = Vec::new();
-        let names: Vec<String> = self.transient_resources.iter().map(|d| d.name.clone()).collect();
+        let names: Vec<String> = self
+            .transient_resources
+            .iter()
+            .map(|d| d.name.clone())
+            .collect();
         for name in names {
             let slot = self.register_transient_texture_bindless(renderer, &name)?;
             result.push((name, slot));
@@ -790,7 +816,7 @@ impl<'a> Frame<'a> {
         graph: &'a FrameGraph,
         renderer: &'a mut VulkanRenderer,
         image_index: u32,
-        frame_idx: usize,
+        _frame_idx: usize,
     ) -> Self {
         // Initialize all transient resources as Undefined
         let resource_states: HashMap<String, super::resource::ResourceState> = graph
@@ -848,8 +874,13 @@ impl<'a> Frame<'a> {
             .ui_draw_lists
             .push(ui_draw_list.clone());
 
-        log::trace!("submit_ui: pass='{}', index={}, commands={}, pending UI lists now={}",
-            pass, index, cmd_count, self.pending[&index].ui_draw_lists.len());
+        log::trace!(
+            "submit_ui: pass='{}', index={}, commands={}, pending UI lists now={}",
+            pass,
+            index,
+            cmd_count,
+            self.pending[&index].ui_draw_lists.len()
+        );
 
         self
     }
@@ -884,7 +915,11 @@ impl<'a> Frame<'a> {
     fn execute_passes(&mut self) -> Result<(), RenderGraphError> {
         // Use storage_manager.current_frame() consistently for all frame resource selection
         let frame_idx = self.current_frame();
-        log::debug!("=== execute_passes: frame_idx={}, {} passes to execute ===", frame_idx, self.graph.passes.len());
+        log::debug!(
+            "=== execute_passes: frame_idx={}, {} passes to execute ===",
+            frame_idx,
+            self.graph.passes.len()
+        );
 
         // Clone the command buffer to avoid borrowing issues
         let cmd = self.renderer.frame_context.command_buffers[frame_idx].clone();
@@ -899,9 +934,16 @@ impl<'a> Frame<'a> {
             let data = self.pending.remove(&index).unwrap_or_default();
 
             if pass.name == "ui" {
-                log::trace!("UI pass execution: index={}, frame_idx={}, ui_draw_lists={}, commands={}",
-                    index, self.current_frame(), data.ui_draw_lists.len(),
-                    data.ui_draw_lists.iter().map(|l| l.commands.len()).sum::<usize>());
+                log::trace!(
+                    "UI pass execution: index={}, frame_idx={}, ui_draw_lists={}, commands={}",
+                    index,
+                    self.current_frame(),
+                    data.ui_draw_lists.len(),
+                    data.ui_draw_lists
+                        .iter()
+                        .map(|l| l.commands.len())
+                        .sum::<usize>()
+                );
             }
 
             log::debug!(
@@ -978,7 +1020,10 @@ impl<'a> Frame<'a> {
             }
 
             // Check if this is a transient texture
-            let Some(transient) = self.graph.transient_texture(write_name, self.current_frame()) else {
+            let Some(transient) = self
+                .graph
+                .transient_texture(write_name, self.current_frame())
+            else {
                 continue;
             };
 
@@ -999,7 +1044,10 @@ impl<'a> Frame<'a> {
 
                 log::trace!(
                     "[Barrier] Pass '{}' write '{}': {:?} -> {:?}",
-                    pass.name, write_name, old_layout, required_layout
+                    pass.name,
+                    write_name,
+                    old_layout,
+                    required_layout
                 );
 
                 // Transition using the actual tracked old_layout
@@ -1026,7 +1074,10 @@ impl<'a> Frame<'a> {
             }
 
             // Check if this is a transient texture
-            let Some(transient) = self.graph.transient_texture(read_name, self.current_frame()) else {
+            let Some(transient) = self
+                .graph
+                .transient_texture(read_name, self.current_frame())
+            else {
                 continue;
             };
 
@@ -1047,7 +1098,10 @@ impl<'a> Frame<'a> {
 
                 log::trace!(
                     "[Barrier] Pass '{}' read '{}': {:?} -> {:?}",
-                    pass.name, read_name, old_layout, required_layout
+                    pass.name,
+                    read_name,
+                    old_layout,
+                    required_layout
                 );
 
                 // Transition using the actual tracked old_layout
@@ -1107,7 +1161,10 @@ impl<'a> Frame<'a> {
             }
 
             // Check if this is a transient texture
-            let Some(transient) = self.graph.transient_texture(write_name, self.current_frame()) else {
+            let Some(transient) = self
+                .graph
+                .transient_texture(write_name, self.current_frame())
+            else {
                 continue;
             };
 
@@ -1135,7 +1192,9 @@ impl<'a> Frame<'a> {
 
                     log::trace!(
                         "[PostBarrier] Pass '{}' -> subsequent reads '{}': {:?} -> SHADER_READ_ONLY",
-                        current_pass.name, write_name, old_layout
+                        current_pass.name,
+                        write_name,
+                        old_layout
                     );
 
                     // Use the tracked old_layout for correct synchronization
@@ -1167,7 +1226,11 @@ impl<'a> Frame<'a> {
         pass: &PassDesc,
         data: PassExecutionData,
     ) -> Result<(), RenderGraphError> {
-        log::debug!("execute_graphics_pass '{}' with frame_idx={}", pass.name, self.current_frame());
+        log::debug!(
+            "execute_graphics_pass '{}' with frame_idx={}",
+            pass.name,
+            self.current_frame()
+        );
 
         let extent = self.renderer.frame_context.swapchain.get_extent();
         let render_area = vk::Rect2D {
@@ -1213,7 +1276,10 @@ impl<'a> Frame<'a> {
                 })
         } else if let Some(color_name) = pass.writes.first() {
             // Check if this is a transient texture
-            if let Some(transient) = self.graph.transient_texture(color_name, self.current_frame()) {
+            if let Some(transient) = self
+                .graph
+                .transient_texture(color_name, self.current_frame())
+            {
                 // Check if pass specified load/store ops for this attachment
                 let (load_op, store_op, clear_value) = pass
                     .color_attachments
@@ -1341,108 +1407,10 @@ impl<'a> Frame<'a> {
     /// Collects all particle emitters from all draw lists in all pending passes
     /// and executes compute simulation dispatches upfront with proper synchronization.
     fn execute_all_particle_dispatches(&mut self) -> Result<(), RenderGraphError> {
-        use ash::vk;
-
-        // Collect all particle emitters from all passes
-        let all_emitters: Vec<_> = self
-            .pending
-            .values()
-            .flat_map(|pass_data| {
-                pass_data
-                    .draw_lists
-                    .iter()
-                    .flat_map(|draw_list| draw_list.particle_emitters.iter().copied())
-            })
-            .collect();
-
-        if all_emitters.is_empty() {
-            return Ok(()); // No particle emitters, nothing to do
-        }
-
-        // Get particle system
-        let particle_system = self.renderer.particle_system.as_ref().ok_or(
-            RenderGraphError::InvalidConfiguration("Particle system not initialized".to_string()),
-        )?;
-
-        log::debug!(
-            "Executing {} particle compute dispatches before render passes",
-            all_emitters.len()
-        );
-
-        let cmd = self.renderer.frame_context.command_buffers
-            [self.current_frame()]
-        .clone();
-
-        // Execute all compute dispatches
-        for emitter_handle in all_emitters {
-            if let Some((pipeline, pipeline_layout, descriptor_set, _config, workgroup_count)) =
-                particle_system.get_compute_dispatch(emitter_handle, &self.renderer.asset_registry)
-            {
-                let compute_pipeline = self
-                    .renderer
-                    .asset_registry
-                    .get_pipeline(pipeline)
-                    .ok_or(RenderGraphError::InvalidPipelineHandle(pipeline))?;
-
-                let vk_pipeline = compute_pipeline.vk_pipeline();
-                let vk_layout = compute_pipeline.vk_layout();
-
-                let cmd_vk = cmd.vk_command_buffer();
-                let device = &self.renderer.context.device;
-
-                // Bind compute pipeline
-                unsafe {
-                    device.cmd_bind_pipeline(cmd_vk, vk::PipelineBindPoint::COMPUTE, vk_pipeline);
-                }
-
-                // Bind descriptor sets
-                // Set 0: Particle buffer + frame data
-                unsafe {
-                    device.cmd_bind_descriptor_sets(
-                        cmd_vk,
-                        vk::PipelineBindPoint::COMPUTE,
-                        vk_layout,
-                        0,
-                        &[descriptor_set],
-                        &[],
-                    );
-                }
-
-                // Dispatch compute shader
-                log::trace!(
-                    "Dispatching particle simulation: {} workgroups",
-                    workgroup_count
-                );
-                unsafe {
-                    device.cmd_dispatch(cmd_vk, workgroup_count, 1, 1);
-                }
-            }
-        }
-
-        // Insert compute → graphics barrier for synchronization
-        // This ensures all compute shader writes are visible to subsequent vertex/fragment shaders
-        let device = &self.renderer.context.device;
-        let cmd_vk = cmd.vk_command_buffer();
-
-        let memory_barrier = vk::MemoryBarrier2::default()
-            .src_stage_mask(vk::PipelineStageFlags2::COMPUTE_SHADER)
-            .dst_stage_mask(
-                vk::PipelineStageFlags2::VERTEX_SHADER | vk::PipelineStageFlags2::FRAGMENT_SHADER,
-            )
-            .src_access_mask(vk::AccessFlags2::SHADER_WRITE)
-            .dst_access_mask(vk::AccessFlags2::SHADER_READ);
-
-        unsafe {
-            device.cmd_pipeline_barrier2(
-                cmd_vk,
-                &vk::DependencyInfo::default().memory_barriers(&[memory_barrier]),
-            );
-        }
-
-        log::debug!("Particle compute dispatches completed, synchronized with graphics pipeline");
+        // Modern particle system integration will be added here
+        // For now, particles are managed by GlobalParticleSystem independently
         Ok(())
     }
-
     /// Execute a draw list.
     fn execute_draw_list(
         &mut self,
@@ -1456,82 +1424,6 @@ impl<'a> Frame<'a> {
         for draw_call in &draw_list.draws {
             self.execute_draw_call(cmd, draw_call)?;
         }
-
-        // Execute particle rendering for each emitter
-        for emitter_handle in &draw_list.particle_emitters {
-            self.execute_particle_render(cmd, *emitter_handle)?;
-        }
-
-        Ok(())
-    }
-
-    /// Execute particle rendering (instanced billboard quads).
-    ///
-    /// Renders particles as camera-facing billboard quads with soft edges.
-    /// Uses instanced drawing for efficient rendering of many particles.
-    fn execute_particle_render(
-        &mut self,
-        cmd: &crate::vulkan::commandbuffer::CommandBuffer,
-        emitter_handle: crate::handle::EmitterHandle,
-    ) -> Result<(), RenderGraphError> {
-        use ash::vk;
-
-        // Get particle system
-        let particle_system = self.renderer.particle_system.as_ref().ok_or(
-            RenderGraphError::InvalidConfiguration("Particle system not initialized".to_string()),
-        )?;
-
-        // Get current frame descriptor set for frame uniforms
-        let frame_descriptor_set = {
-            let frame_idx = self.current_frame();
-            self.renderer.storage_descriptor_sets[frame_idx].vk_set()
-        };
-
-        // Get render data from particle system
-        let (pipeline, _pipeline_layout, frame_set, particle_set, particle_count) = particle_system
-            .get_render_data(
-                emitter_handle,
-                frame_descriptor_set,
-                &self.renderer.asset_registry,
-            )
-            .ok_or(RenderGraphError::InvalidConfiguration(
-                "Failed to get particle render data".to_string(),
-            ))?;
-
-        let graphics_pipeline = self
-            .renderer
-            .asset_registry
-            .get_pipeline(pipeline)
-            .ok_or(RenderGraphError::InvalidPipelineHandle(pipeline))?;
-
-        let vk_pipeline = graphics_pipeline.vk_pipeline();
-        let vk_layout = graphics_pipeline.vk_layout();
-
-        let cmd_vk = cmd.vk_command_buffer();
-        let device = &self.renderer.context.device;
-
-        // Bind graphics pipeline
-        unsafe {
-            device.cmd_bind_pipeline(cmd_vk, vk::PipelineBindPoint::GRAPHICS, vk_pipeline);
-        }
-
-        // Bind descriptor sets
-        // Set 0: Frame uniforms (view/proj matrices, camera position)
-        // Set 1: Particle buffer (instance data)
-        unsafe {
-            device.cmd_bind_descriptor_sets(
-                cmd_vk,
-                vk::PipelineBindPoint::GRAPHICS,
-                vk_layout,
-                0,
-                &[frame_set, particle_set],
-                &[],
-            );
-        }
-
-        // Draw instanced particles (6 vertices per particle = 2 triangles)
-        // Each particle instance generates a quad in the vertex shader
-        cmd.draw_array(6, particle_count, 0, 0);
 
         Ok(())
     }
@@ -1990,9 +1882,8 @@ impl<'a> Frame<'a> {
         draw_call: &crate::renderer::types::DrawCall,
     ) -> Result<(), RenderGraphError> {
         // Set 0: Storage uniforms (frame_data + objects array) - use per-frame descriptor set
-        let storage_ds = self.renderer.storage_descriptor_sets
-            [self.renderer.current_frame()]
-        .vk_set();
+        let storage_ds =
+            self.renderer.storage_descriptor_sets[self.renderer.current_frame()].vk_set();
         cmd.bind_descriptor_sets(pipeline_layout, 0, &[storage_ds], &[]);
 
         // Set 1: Bindless textures (all current materials use bindless)
@@ -2019,8 +1910,13 @@ impl<'a> Frame<'a> {
         pipeline_handle: crate::handle::PipelineHandle,
     ) -> Result<(), RenderGraphError> {
         let current_frame = self.current_frame();
-        log::debug!("Fullscreen pass '{}' execution: frame_idx={}, writes={:?}, reads={:?}",
-            pass.name, current_frame, pass.writes, pass.reads);
+        log::debug!(
+            "Fullscreen pass '{}' execution: frame_idx={}, writes={:?}, reads={:?}",
+            pass.name,
+            current_frame,
+            pass.writes,
+            pass.reads
+        );
 
         let extent = self.renderer.frame_context.swapchain.get_extent();
         let render_area = vk::Rect2D {
@@ -2050,8 +1946,13 @@ impl<'a> Frame<'a> {
             // Check if this is a transient texture (fullscreen pass like tonemap)
             let frame_idx = self.current_frame();
             if let Some(transient) = self.graph.transient_texture(color_name, frame_idx) {
-                log::trace!("Fullscreen pass '{}' writing to '{}' at frame_idx={}, image_view={:?}",
-                    pass.name, color_name, frame_idx, transient.image_view.vk());
+                log::trace!(
+                    "Fullscreen pass '{}' writing to '{}' at frame_idx={}, image_view={:?}",
+                    pass.name,
+                    color_name,
+                    frame_idx,
+                    transient.image_view.vk()
+                );
 
                 // Check if pass specified load/store ops for this attachment
                 let (load_op, store_op, clear_value) = pass
@@ -2147,9 +2048,8 @@ impl<'a> Frame<'a> {
         }
 
         // Bind descriptor sets (storage uniforms + bindless textures) - use per-frame descriptor set
-        let storage_ds = self.renderer.storage_descriptor_sets
-            [self.renderer.current_frame()]
-        .vk_set();
+        let storage_ds =
+            self.renderer.storage_descriptor_sets[self.renderer.current_frame()].vk_set();
         cmd.bind_descriptor_sets(layout, 0, &[storage_ds], &[]);
 
         let bindless_ds = self.renderer.bindless_manager.descriptor_set().vk();

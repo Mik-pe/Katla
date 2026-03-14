@@ -78,7 +78,8 @@ impl Queue {
         // Create fence for this operation
         let fence_info = vk::FenceCreateInfo::default();
         let fence = unsafe {
-            self.device.create_fence(&fence_info, None)
+            self.device
+                .create_fence(&fence_info, None)
                 .expect("Failed to create fence for submit_and_wait")
         };
 

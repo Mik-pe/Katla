@@ -302,17 +302,12 @@ impl DrawCall {
 pub struct DrawList {
     /// The draw calls in this list.
     pub draws: Vec<DrawCall>,
-    /// Particle emitters to simulate and render (referenced by handle)
-    pub particle_emitters: Vec<crate::handle::EmitterHandle>,
 }
 
 impl DrawList {
     /// Create a new empty draw list.
     pub fn new() -> Self {
-        Self {
-            draws: Vec::new(),
-            particle_emitters: Vec::new(),
-        }
+        Self { draws: Vec::new() }
     }
 
     /// Add a draw call to the list.
@@ -320,21 +315,14 @@ impl DrawList {
         self.draws.push(draw);
     }
 
-    /// Add a particle emitter to the list.
-    pub fn push_particle(&mut self, emitter: crate::handle::EmitterHandle) {
-        self.particle_emitters.push(emitter);
-    }
-
     /// Extend this list with all draws from another list.
     pub fn extend(&mut self, other: &mut DrawList) {
         self.draws.append(&mut other.draws);
-        self.particle_emitters.append(&mut other.particle_emitters);
     }
 
     /// Clear all draw calls from the list.
     pub fn clear(&mut self) {
         self.draws.clear();
-        self.particle_emitters.clear();
     }
 
     /// Get the number of draw calls in the list.
@@ -345,11 +333,6 @@ impl DrawList {
     /// Check if the list is empty.
     pub fn is_empty(&self) -> bool {
         self.draws.is_empty()
-    }
-
-    /// Check if there are particle emitters.
-    pub fn has_particles(&self) -> bool {
-        !self.particle_emitters.is_empty()
     }
 
     /// Get an iterator over the draw calls.

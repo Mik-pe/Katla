@@ -5,7 +5,7 @@ use ash::{
         push_descriptor::Device as PushDescriptorDevice, surface::Instance as SurfaceInstance,
         swapchain::Device as SwapchainDevice,
     },
-    vk::{self},
+    vk::{self, ValidationFeatureEnableEXT, ValidationFeaturesEXT},
 };
 use gpu_allocator::{
     AllocationSizes, AllocatorDebugSettings,
@@ -26,6 +26,35 @@ use super::SwapchainInfo;
 const LAYER_KHRONOS_VALIDATION: &str = concat!("VK_LAYER_KHRONOS_validation", "\0");
 
 use crate::sync::{VkImage, VkImageView, VkSampler};
+
+/// Validation mode controls the level of Vulkan validation enabled.
+///
+/// Each mode includes all features from previous modes plus additional checks.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ValidationMode {
+    /// No validation layers enabled.
+    #[default]
+    Disabled,
+    /// Standard validation with synchronization checks.
+    /// Catches common API usage errors and sync hazards.
+    Enabled,
+    /// GPU-assisted validation in addition to standard validation.
+    /// Uses the GPU to detect additional issues like out-of-bounds descriptor access,
+    /// uninitialized descriptors, and more. Requires additional descriptor bindings.
+    GpuAssisted,
+}
+
+impl ValidationMode {
+    /// Returns true if any validation is enabled.
+    pub fn is_enabled(&self) -> bool {
+        matches!(self, Self::Enabled | Self::GpuAssisted)
+    }
+
+    /// Returns true if GPU-assisted validation is enabled.
+    pub fn is_gpu_assisted(&self) -> bool {
+        matches!(self, Self::GpuAssisted)
+    }
+}
 
 /// Validation message severity level (internal).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -512,13 +541,13 @@ impl VulkanContext {
     }
 
     fn create_instance(
-        with_validation_layers: bool,
+        validation_mode: ValidationMode,
         app_name: &CStr,
         engine_name: &CStr,
         display: Option<&dyn HasDisplayHandle>,
         entry: &Entry,
     ) -> Instance {
-        if with_validation_layers && !check_validation_support(entry) {
+        if validation_mode.is_enabled() && !check_validation_support(entry) {
             panic!("Validation layers requested, but unavailable!");
         }
 
@@ -533,20 +562,45 @@ impl VulkanContext {
         };
 
         let mut instance_layers = vec![];
-        if with_validation_layers {
+        if validation_mode.is_enabled() {
             extension_names_raw.push(ash::ext::debug_utils::NAME.as_ptr());
             instance_layers.push(LAYER_KHRONOS_VALIDATION.as_ptr() as *const i8);
         }
+
         let app_info = vk::ApplicationInfo::default()
             .application_name(app_name)
             .application_version(0)
             .engine_name(engine_name)
             .engine_version(0)
             .api_version(vk::make_api_version(0, 1, 3, 0));
-        let create_info = vk::InstanceCreateInfo::default()
+
+        // Declare validation feature arrays outside the if block for lifetime reasons
+        let gpu_assisted_features = [
+            ValidationFeatureEnableEXT::SYNCHRONIZATION_VALIDATION,
+            ValidationFeatureEnableEXT::GPU_ASSISTED,
+            ValidationFeatureEnableEXT::GPU_ASSISTED_RESERVE_BINDING_SLOT,
+        ];
+        let standard_features = [ValidationFeatureEnableEXT::SYNCHRONIZATION_VALIDATION];
+
+        let mut validation_features = match validation_mode {
+            ValidationMode::GpuAssisted => Some(
+                ValidationFeaturesEXT::default()
+                    .enabled_validation_features(&gpu_assisted_features),
+            ),
+            ValidationMode::Enabled => Some(
+                ValidationFeaturesEXT::default().enabled_validation_features(&standard_features),
+            ),
+            ValidationMode::Disabled => None,
+        };
+
+        let mut create_info = vk::InstanceCreateInfo::default()
             .application_info(&app_info)
             .enabled_extension_names(&extension_names_raw)
             .enabled_layer_names(&instance_layers);
+
+        if let Some(ref mut features) = validation_features {
+            create_info = create_info.push_next(features);
+        }
 
         unsafe {
             entry
@@ -621,13 +675,13 @@ impl VulkanContext {
     pub fn init(
         display: &dyn HasDisplayHandle,
         window: &dyn HasWindowHandle,
-        with_validation_layers: bool,
+        validation_mode: ValidationMode,
         app_name: CString,
         engine_name: CString,
     ) -> Self {
         let entry = unsafe { Entry::load() }.unwrap();
         let instance = Self::create_instance(
-            with_validation_layers,
+            validation_mode,
             &app_name,
             &engine_name,
             Some(display),
@@ -640,7 +694,7 @@ impl VulkanContext {
         let user_data = Arc::into_raw(validation_callback.clone()) as *mut c_void;
 
         let debug_callback =
-            create_debug_messenger(&debug_utils_loader, with_validation_layers, user_data);
+            create_debug_messenger(&debug_utils_loader, validation_mode.is_enabled(), user_data);
         let surface_loader = SurfaceInstance::new(&entry, &instance);
         let surface = unsafe {
             ash_window::create_surface(
@@ -679,7 +733,7 @@ impl VulkanContext {
             &instance,
             physical_device,
             queue_create_infos,
-            with_validation_layers,
+            validation_mode.is_enabled(),
             true, // enable_swapchain = true
         );
 
@@ -751,7 +805,7 @@ impl VulkanContext {
     /// - Tests can create their own VkImage render targets
     ///
     /// # Arguments
-    /// * `with_validation_layers` - Enable validation layers for debugging
+    /// * `validation_mode` - Validation mode (Disabled, Enabled, or GpuAssisted)
     /// * `app_name` - Application name for Vulkan identification
     /// * `engine_name` - Engine name for Vulkan identification
     ///
@@ -765,23 +819,23 @@ impl VulkanContext {
     ///
     /// # Example
     /// ```no_run
-    /// use katla_gfx::VulkanContext;
+    /// use katla_gfx::{VulkanContext, ValidationMode};
     /// use std::ffi::CString;
     ///
     /// let context = VulkanContext::init_headless(
-    ///     true,  // enable validation layers
+    ///     ValidationMode::GpuAssisted,  // enable GPU-assisted validation
     ///     CString::new("My App").unwrap(),
     ///     CString::new("My Engine").unwrap(),
     /// );
     /// ```
     pub fn init_headless(
-        with_validation_layers: bool,
+        validation_mode: ValidationMode,
         app_name: CString,
         engine_name: CString,
     ) -> Self {
         let entry = unsafe { Entry::load() }.unwrap();
         let instance = Self::create_instance(
-            with_validation_layers,
+            validation_mode,
             &app_name,
             &engine_name,
             None, // No display
@@ -794,7 +848,7 @@ impl VulkanContext {
         let user_data = Arc::into_raw(validation_callback.clone()) as *mut c_void;
 
         let debug_callback =
-            create_debug_messenger(&debug_utils_loader, with_validation_layers, user_data);
+            create_debug_messenger(&debug_utils_loader, validation_mode.is_enabled(), user_data);
 
         // Pick physical device (no swapchain requirement)
         let physical_device = unsafe { pick_physical_device_headless(&instance) }
@@ -818,7 +872,7 @@ impl VulkanContext {
             &instance,
             physical_device,
             queue_create_infos,
-            with_validation_layers,
+            validation_mode.is_enabled(),
             false, // enable_swapchain = false
         );
 

@@ -17,6 +17,10 @@ struct Args {
     #[arg(short, long)]
     single_frame: bool,
 
+    /// Enable GPU-assisted validation (more thorough but slower)
+    #[arg(short = 'v', long)]
+    gpu_validation: bool,
+
     /// Check for black frames by reading back swapchain center pixel
     #[arg(long)]
     check_black_frames: bool,
@@ -31,6 +35,9 @@ fn main() {
     info!("Katla 3D Engine starting...");
     if args.single_frame {
         info!("Running in limited-frame mode (25 frames) for validation testing");
+    }
+    if args.gpu_validation {
+        info!("GPU-assisted validation enabled");
     }
     if args.check_black_frames {
         info!("Black frame detection enabled - will check center pixel color");
@@ -60,6 +67,7 @@ fn main() {
         builder
             .with_name("Katla")
             .validation_layer(true)
+            .gpu_assisted_validation(args.gpu_validation)
             .max_frames(100)
             .check_black_frames(args.check_black_frames)
             .build()
@@ -67,6 +75,7 @@ fn main() {
         builder
             .with_name("Katla")
             .validation_layer(true)
+            .gpu_assisted_validation(args.gpu_validation)
             .check_black_frames(args.check_black_frames)
             .build()
     };

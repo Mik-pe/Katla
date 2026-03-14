@@ -482,7 +482,13 @@ impl CommandBuffer {
     ) {
         use crate::barrier::ImageBarrier;
 
-        ImageBarrier::transition(&self.command_buffer, &self.device, image, old_layout, new_layout);
+        ImageBarrier::transition(
+            &self.command_buffer,
+            &self.device,
+            image,
+            old_layout,
+            new_layout,
+        );
     }
 
     /// Transition an image with a specific subresource range.
