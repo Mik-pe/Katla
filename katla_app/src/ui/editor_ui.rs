@@ -234,6 +234,11 @@ impl EditorUI {
         self.viewport_texture_ids = [Some(texture_id), None, None, None];
     }
 
+    /// Get the current viewport panel size in pixels.
+    pub fn viewport_size(&self) -> (u32, u32) {
+        self.last_viewport_size
+    }
+
     /// Get the current theme key (for preferences).
     pub fn theme_key(&self) -> &'static str {
         match self.theme.name {
