@@ -277,14 +277,6 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
     // Start with transparent black
     var result = vec4f(0.0, 0.0, 0.0, 0.0);
 
-    // TODO: Pass viewport rectangles via proper uniform buffer
-    // For now, use a simple hardcoded layout for testing
-    // This will be replaced when the compositing pass is fully implemented
-
-    // Example: 2-viewport split screen
-    // Left viewport: [0, 0, screen_width/2, screen_height]
-    // Right viewport: [screen_width/2, 0, screen_width, screen_height]
-
     if (viewport_count == 0u) {
         // No viewports, return black
         return result;
@@ -316,7 +308,10 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
         }
     } else if (viewport_count == 1u) {
         // Single viewport, fullscreen
-        let viewport_color = textureSample(viewportTextures[0u], shared_sampler, in.uv);
+        // Sample from compositing descriptor set (set 2, binding 0)
+        // Note: in.uv is in range [0, 2] due to fullscreen triangle technique
+        let local_uv = in.uv * 0.5;  // Convert to [0, 1] range
+        let viewport_color = textureSample(viewportTextures[0u], shared_sampler, local_uv);
         return viewport_color;
     }
 

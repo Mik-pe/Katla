@@ -75,6 +75,39 @@ pub struct CompositingDescriptorSet {
 }
 
 impl CompositingDescriptorSet {
+    /// Create a compositing descriptor set layout (without allocating a descriptor set).
+    ///
+    /// This creates only the descriptor set layout that can be used when compiling
+    /// pipelines. The descriptor set itself will be allocated later during frame execution.
+    ///
+    /// # Arguments
+    /// * `device` - Vulkan device
+    ///
+    /// # Returns
+    /// The descriptor set layout handle
+    ///
+    /// # Example
+    /// ```ignore
+    /// let layout = CompositingDescriptorSet::create_layout(&device)?;
+    /// // Use layout when compiling compositing material
+    /// ```
+    pub fn create_layout(device: &ash::Device) -> Result<vk::DescriptorSetLayout, RendererError> {
+        // Binding 0: texture_2d array (SAMPLED_IMAGE, count = MAX_VIEWPORTS)
+        let bindings = [vk::DescriptorSetLayoutBinding::default()
+            .binding(0)
+            .descriptor_type(vk::DescriptorType::SAMPLED_IMAGE)
+            .descriptor_count(MAX_VIEWPORTS as u32)
+            .stage_flags(vk::ShaderStageFlags::FRAGMENT)];
+
+        let layout_info = vk::DescriptorSetLayoutCreateInfo::default().bindings(&bindings);
+
+        unsafe {
+            device
+                .create_descriptor_set_layout(&layout_info, None)
+                .map_err(|e| RendererError::VulkanError(format!("Failed to create compositing descriptor set layout: {:?}", e)))
+        }
+    }
+
     /// Create a new compositing descriptor set.
     ///
     /// Creates a descriptor set layout and descriptor set with a texture array
@@ -146,16 +179,48 @@ impl CompositingDescriptorSet {
         let descriptor_set = descriptor_sets[0];
 
         // Create the descriptor set instance
-        let mut desc_set = Self {
+        let desc_set = Self {
             descriptor_pool,
             descriptor_layout: VkDescriptorSetLayout::new(descriptor_layout),
             descriptor_set,
             device: context.device.clone(),
-            texture_count: 0,
+            texture_count: textures.len(),
         };
 
-        // Write texture descriptors
-        desc_set.update_textures(textures)?;
+        // Write texture descriptors (this will fill all 8 slots)
+        // We need a mutable reference to call update_textures
+        // Since we just created desc_set, we can use unsafe mut pattern or restructure
+        // For now, let's duplicate the update logic here to avoid borrow issues
+        if textures.is_empty() {
+            return Err(RendererError::InvalidOperation(
+                "At least one viewport texture must be provided".to_string()
+            ));
+        }
+
+        // Fill all slots to avoid Vulkan validation errors
+        let mut all_image_views: Vec<vk::ImageView> = textures.to_vec();
+        let placeholder = textures[0];
+        while all_image_views.len() < MAX_VIEWPORTS {
+            all_image_views.push(placeholder);
+        }
+
+        // Update descriptor set for all slots
+        for (slot_idx, &image_view) in all_image_views.iter().enumerate() {
+            let image_info = [vk::DescriptorImageInfo::default()
+                .image_view(image_view)
+                .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)];
+
+            let write = vk::WriteDescriptorSet::default()
+                .dst_set(desc_set.descriptor_set)
+                .dst_binding(0)
+                .dst_array_element(slot_idx as u32)
+                .descriptor_type(vk::DescriptorType::SAMPLED_IMAGE)
+                .image_info(&image_info);
+
+            unsafe {
+                context.device.update_descriptor_sets(&[write], &[]);
+            }
+        }
 
         Ok(desc_set)
     }
@@ -165,6 +230,10 @@ impl CompositingDescriptorSet {
     /// Replaces the texture bindings in the descriptor set with new image views.
     /// The number of textures can be different from the initial count, but must
     /// not exceed MAX_VIEWPORTS (8).
+    ///
+    /// IMPORTANT: This function will update ALL descriptors up to MAX_VIEWPORTS.
+    /// Any slots beyond the provided textures will be filled with a placeholder
+    //1 to avoid Vulkan validation errors about uninitialized descriptors.
     ///
     /// # Arguments
     /// * `context` - Vulkan context
@@ -193,8 +262,27 @@ impl CompositingDescriptorSet {
             )));
         }
 
-        // Update descriptor set for each texture
-        for (slot_idx, &image_view) in textures.iter().enumerate() {
+        // Collect all image views to update (provided textures + placeholders)
+        let mut all_image_views: Vec<vk::ImageView> = textures.to_vec();
+        
+        // Fill remaining slots with the first texture (placeholder) to avoid
+        // Vulkan validation errors about uninitialized array elements
+        // This is necessary because WGSL binding arrays compile to SPIR-V
+        // arrays that may access any element regardless of runtime branching
+        let placeholder = if textures.is_empty() {
+            return Err(RendererError::InvalidOperation(
+                "At least one viewport texture must be provided".to_string()
+            ));
+        } else {
+            textures[0]
+        };
+        
+        while all_image_views.len() < MAX_VIEWPORTS {
+            all_image_views.push(placeholder);
+        }
+
+        // Update descriptor set for all slots (including placeholders)
+        for (slot_idx, &image_view) in all_image_views.iter().enumerate() {
             let image_info = [vk::DescriptorImageInfo::default()
                 .image_view(image_view)
                 .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)];

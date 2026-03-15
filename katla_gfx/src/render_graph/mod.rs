@@ -32,7 +32,7 @@
 
 mod builder;
 mod compiler;
-mod descriptor_sets;
+pub mod descriptor_sets;
 mod error;
 mod graph;
 mod pass;

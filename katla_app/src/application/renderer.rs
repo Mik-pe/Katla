@@ -91,7 +91,7 @@ impl Application {
         // Render using the frame graph
         let draw_list = frame.take_draw_list();
 
-        log::debug!("Submitting {} draw calls to geometry pass", draw_list.len());
+        log::debug!("About to submit {} draw calls to geometry pass", draw_list.len());
 
         // Set delta time and frame count for particle simulation
         self.frame_graph.set_delta_time(delta_time);
@@ -99,8 +99,10 @@ impl Application {
 
         self.renderer.render(&mut self.frame_graph, |frame| {
             // Submit draw list to the geometry pass
+            log::debug!("Inside render closure: submitting {} draw calls to geometry pass", draw_list.len());
             if !draw_list.is_empty() {
                 frame.submit("geometry", &draw_list);
+                log::debug!("Submitted {} draw calls to geometry pass successfully", draw_list.len());
             } else {
                 log::warn!("No draw calls to submit to geometry pass!");
             }

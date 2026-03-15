@@ -978,13 +978,13 @@ impl<'a> Frame<'a> {
     fn execute_passes(&mut self) -> Result<(), RenderGraphError> {
         // Use storage_manager.current_frame() consistently for all frame resource selection
         let frame_idx = self.current_frame();
-        log::info!(
+        log::debug!(
             "=== execute_passes: frame_idx={}, {} passes to execute ===",
             frame_idx,
             self.graph.passes.len()
         );
         for (idx, pass) in self.graph.passes.iter().enumerate() {
-            log::info!("  Pass {}: '{}' (type={:?})", idx, pass.name, pass.pass_type);
+            log::trace!("  Pass {}: '{}' (type={:?})", idx, pass.name, pass.pass_type);
         }
 
         // Clone the command buffer to avoid borrowing issues
@@ -1012,7 +1012,7 @@ impl<'a> Frame<'a> {
                 );
             }
 
-            log::debug!(
+            log::trace!(
                 "Executing pass '{}' (index {}): pipeline={:?}, draw_lists={}, writes={:?}",
                 pass.name,
                 index,
@@ -1030,13 +1030,13 @@ impl<'a> Frame<'a> {
             // This allows subsequent passes that write to backbuffer to use LOAD instead of CLEAR
             // For example: compositing pass writes to backbuffer, then UI pass should LOAD that content
             if pass.writes.contains(&BACKBUFFER_NAME.to_string()) {
-                log::info!("🔄 [BACKBUFFER] Pass '{}' will write to backbuffer, tracking state BEFORE execution", pass.name);
-                log::info!("🔄 [BACKBUFFER] Current resource_states: {:?}", self.resource_states.keys().collect::<Vec<_>>());
+                log::debug!("🔄 [BACKBUFFER] Pass '{}' will write to backbuffer, tracking state BEFORE execution", pass.name);
+                log::debug!("🔄 [BACKBUFFER] Current resource_states: {:?}", self.resource_states.keys().collect::<Vec<_>>());
                 self.resource_states.insert(
                     BACKBUFFER_NAME.to_string(),
                     super::resource::ResourceState::ColorAttachment,
                 );
-                log::info!("🔄 [BACKBUFFER] After tracking, resource_states: {:?}", self.resource_states.keys().collect::<Vec<_>>());
+                log::debug!("🔄 [BACKBUFFER] After tracking, resource_states: {:?}", self.resource_states.keys().collect::<Vec<_>>());
             }
 
             // Insert pre-pass barriers
@@ -1048,23 +1048,23 @@ impl<'a> Frame<'a> {
                     // Check if this is a compositing pass (has material AND compositing_viewports)
                     if let Some(material_handle) = pass.material {
                         if pass.compositing_viewports.is_some() && data.draw_lists.is_empty() {
-                            log::info!("🎯 [PASS] '{}' -> compositing pass", pass.name);
+                            log::debug!("🎯 [PASS] '{}' -> compositing pass", pass.name);
                             self.execute_compositing_pass(&cmd, pass, material_handle)?;
                         } else {
                             // Pass has material but is NOT compositing (e.g., UI pass)
                             // Fall through to graphics pass execution
-                            log::info!("🎯 [PASS] '{}' -> graphics pass with material (draw_lists={}, ui_draw_lists={})", pass.name, data.draw_lists.len(), data.ui_draw_lists.len());
+                            log::debug!("🎯 [PASS] '{}' -> graphics pass with material (draw_lists={}, ui_draw_lists={})", pass.name, data.draw_lists.len(), data.ui_draw_lists.len());
                             self.execute_graphics_pass(&cmd, pass, data)?;
                         }
                     }
                     // Check if this is a fullscreen pass (has pipeline, no draw lists)
                     else if pass.pipeline.is_some() && data.draw_lists.is_empty() {
-                        log::info!("🎯 [PASS] '{}' -> fullscreen pass", pass.name);
+                        log::debug!("🎯 [PASS] '{}' -> fullscreen pass", pass.name);
                         if let Some(pipeline) = pass.pipeline {
                             self.execute_fullscreen_pass(&cmd, pass, pipeline)?;
                         }
                     } else {
-                        log::info!("🎯 [PASS] '{}' -> graphics pass (draw_lists={}, ui_draw_lists={})", pass.name, data.draw_lists.len(), data.ui_draw_lists.len());
+                        log::debug!("🎯 [PASS] '{}' -> graphics pass (draw_lists={}, ui_draw_lists={})", pass.name, data.draw_lists.len(), data.ui_draw_lists.len());
                         self.execute_graphics_pass(&cmd, pass, data)?;
                     }
                 }
@@ -1093,7 +1093,7 @@ impl<'a> Frame<'a> {
             return Ok(());
         };
 
-        log::info!(
+        log::debug!(
             "[BARRIER] Pre-pass barriers for '{}': reads={:?}, writes={:?}",
             pass.name,
             pass.reads,
@@ -1172,7 +1172,7 @@ impl<'a> Frame<'a> {
                 continue;
             };
 
-            log::info!(
+            log::debug!(
                 "[BARRIER] Pass '{}' reading transient texture '{}': current_layout={:?}, format={:?}",
                 pass.name,
                 read_name,
@@ -1195,7 +1195,7 @@ impl<'a> Frame<'a> {
                 // This persists across frames via RefCell
                 let old_layout = transient.current_layout();
 
-                log::info!(
+                log::debug!(
                     "[BARRIER] Pass '{}' transitioning '{}' from {:?} to {:?}",
                     pass.name,
                     read_name,
@@ -1325,7 +1325,7 @@ impl<'a> Frame<'a> {
         pass: &PassDesc,
         data: PassExecutionData,
     ) -> Result<(), RenderGraphError> {
-        log::info!(
+        log::debug!(
             "🎨 [GRAPHICS] PASS '{}' with frame_idx={}, draw_lists={}, ui_draw_lists={}",
             pass.name,
             self.current_frame(),
@@ -1352,7 +1352,7 @@ impl<'a> Frame<'a> {
             // Check if a previous pass already wrote to the backbuffer
             let backbuffer_written = self.resource_states.contains_key(BACKBUFFER_NAME);
             let load_op = if backbuffer_written {
-                log::info!(
+                log::debug!(
                     "✅ PASS '{}': Using LOAD for backbuffer (previous pass wrote to it)",
                     pass.name
                 );
@@ -2016,7 +2016,7 @@ impl<'a> Frame<'a> {
         pipeline_handle: crate::handle::PipelineHandle,
     ) -> Result<(), RenderGraphError> {
         let current_frame = self.current_frame();
-        log::info!(
+        log::debug!(
             "[FULLSCREEN] Pass '{}' execution: frame_idx={}, writes={:?}, reads={:?}",
             pass.name,
             current_frame,
@@ -2052,7 +2052,7 @@ impl<'a> Frame<'a> {
             // Check if this is a transient texture (fullscreen pass like tonemap)
             let frame_idx = self.current_frame();
             if let Some(transient) = self.graph.transient_texture(color_name, frame_idx) {
-                log::info!(
+                log::debug!(
                     "[FULLSCREEN] Pass '{}' writing to transient texture '{}' at frame_idx={}, format={:?}, extent={}x{}",
                     pass.name,
                     color_name,
@@ -2197,7 +2197,7 @@ impl<'a> Frame<'a> {
                     "Compositing pass missing viewport data".to_string(),
                 ))?;
 
-        log::info!(
+        log::debug!(
             "[COMPOSITING] Pass '{}' execution: frame_idx={}, viewport_count={}, writes={:?}",
             pass.name,
             current_frame,
@@ -2394,7 +2394,7 @@ impl<'a> Frame<'a> {
                     ))
                 })?;
 
-            log::info!("[COMPOSITING] Looking up viewport texture: '{}' (handle={})", resource_name, handle.index());
+            log::debug!("[COMPOSITING] Looking up viewport texture: '{}' (handle={})", resource_name, handle.index());
 
             // Get the transient texture
             let transient = self
@@ -2408,7 +2408,7 @@ impl<'a> Frame<'a> {
                     ))
                 })?;
 
-            log::info!("[COMPOSITING] Found viewport texture '{}': format={:?}, extent={}x{}",
+            log::debug!("[COMPOSITING] Found viewport texture '{}': format={:?}, extent={}x{}",
                 resource_name,
                 transient.format,
                 transient.extent.width,

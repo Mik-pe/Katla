@@ -57,6 +57,9 @@ pub struct MaterialOptions {
     /// Default is B8G8R8A8Srgb (swapchain format).
     /// Use R16G16B16A16Sfloat for HDR rendering.
     pub color_format: ImageFormat,
+    /// Whether this material uses compositing (requires set 2 descriptor set layout).
+    /// Default is false.
+    pub is_compositing: bool,
 }
 
 impl Default for MaterialOptions {
@@ -67,6 +70,7 @@ impl Default for MaterialOptions {
             wireframe: false,
             vertex_type: VertexType::Pbr,
             color_format: ImageFormat::B8G8R8A8Srgb,
+            is_compositing: false,
         }
     }
 }
@@ -79,6 +83,9 @@ pub(crate) struct MaterialCompiler {
     bindless_descriptor_layout: vk::DescriptorSetLayout,
     /// Skeleton descriptor layout (Set 2 for skinned meshes)
     skeleton_descriptor_layout: vk::DescriptorSetLayout,
+    /// Compositing descriptor set layout (Set 2 for compositing pass)
+    /// Set dynamically when compiling compositing materials
+    compositing_descriptor_set_layout: Option<vk::DescriptorSetLayout>,
     /// Shared descriptor pool for skeleton descriptor sets
     skeleton_descriptor_pool: vk::DescriptorPool,
     /// Flag to prevent double-free of skeleton resources
@@ -174,6 +181,7 @@ impl MaterialCompiler {
             storage_descriptor_layout: Some(storage_descriptor_layout),
             bindless_descriptor_layout,
             skeleton_descriptor_layout,
+            compositing_descriptor_set_layout: None,
             skeleton_descriptor_pool,
             skeleton_descriptor_destroyed: false,
             ui_descriptor_layouts: Vec::new(),
@@ -364,6 +372,13 @@ impl MaterialCompiler {
             layouts.push(self.skeleton_descriptor_layout);
         }
 
+        // Add compositing descriptor set layout (set 2) for compositing materials
+        if options.is_compositing {
+            if let Some(layout) = self.compositing_descriptor_set_layout {
+                layouts.push(layout);
+            }
+        }
+
         Ok(layouts)
     }
 
@@ -422,6 +437,22 @@ impl MaterialCompiler {
         self.skeleton_descriptor_layout
     }
 
+    /// Set the compositing descriptor set layout for compiling compositing materials.
+    ///
+    /// This must be set before compiling a material with `is_compositing: true`.
+    /// The layout is created by the frame graph's compositing descriptor set.
+    pub(crate) fn set_compositing_descriptor_set_layout(
+        &mut self,
+        layout: vk::DescriptorSetLayout,
+    ) {
+        self.compositing_descriptor_set_layout = Some(layout);
+    }
+
+    /// Clear the compositing descriptor set layout after compilation.
+    pub(crate) fn clear_compositing_descriptor_set_layout(&mut self) {
+        self.compositing_descriptor_set_layout = None;
+    }
+
     fn build_pipeline(
         &self,
         options: &MaterialOptions,
@@ -447,6 +478,12 @@ impl MaterialCompiler {
                 Some(crate::texture::ImageFormat::B8G8R8A8Srgb),
                 None, // No depth buffer for UI
             );
+        } else if options.is_compositing {
+            // Compositing rendering: no depth buffer (fullscreen pass)
+            builder = builder.with_rendering_formats(
+                Some(options.color_format),
+                None, // No depth buffer for compositing
+            );
         } else {
             // Standard rendering with depth buffer
             builder = builder.with_rendering_formats(
@@ -456,7 +493,8 @@ impl MaterialCompiler {
         }
 
         // Configure render state from options
-        if !is_ui {
+        // Disable depth test for UI passes and compositing passes (no depth attachment)
+        if !is_ui && !options.is_compositing {
             builder = builder.with_depth_test(true, true, crate::pipeline::CompareOp::Greater);
         }
 
