@@ -12,12 +12,11 @@ pub struct Camera {
 
 impl Camera {
     pub fn new(world: &mut World) -> Self {
-        // Position camera to look down at the scene from an angle
-        // Position: high up and back, looking down at the origin
-        let position = Vec3::new(0.0, 10.0, 15.0);
+        // Position camera at a reasonable height and distance
+        let position = Vec3::new(0.0, 5.0, 10.0);
         let target = Vec3::new(0.0, 0.0, 0.0);
         let up = Vec3::new(0.0, 1.0, 0.0);
-        
+
         // Create a transform that looks at the target
         let transform = Transform::new_from_position(position).look_at(target, up);
         
