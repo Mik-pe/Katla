@@ -33,6 +33,17 @@ impl Application {
             self.editor_ui.set_viewport_bindless_index(actual_ldr_index);
         }
 
+        // Update camera aspect ratio based on viewport panel size
+        let (viewport_width, viewport_height) = self.editor_ui.viewport_size();
+        let viewport_aspect = if viewport_height > 0 {
+            viewport_width as f32 / viewport_height as f32
+        } else {
+            16.0 / 9.0 // Fallback to default aspect ratio
+        };
+        self.camera
+            .borrow_mut()
+            .aspect_ratio_changed(&mut self.world, viewport_aspect);
+
         // Create frame context for this frame
         let mut frame = FrameContext::new();
 
