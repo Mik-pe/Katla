@@ -312,23 +312,51 @@ impl ApplicationHandler for Application {
                                 log::error!("Failed to save frame {}: {}", prev_frame, e);
                             }
 
-                            // Check center pixel (middle of screen)
-                            let center_x = width / 2;
-                            let center_y = height / 2;
-                            let pixel_offset = (center_y * width + center_x) * 4;
+                            // Check 9 pixels in a 3x3 grid to detect if ANY pixel has color
+                            let mut all_pixels_black = true;
+                            let mut first_non_black_pixel = None;
 
-                            if pixel_offset + 3 < image_data.len() {
-                                let r = image_data[pixel_offset];
-                                let g = image_data[pixel_offset + 1];
-                                let b = image_data[pixel_offset + 2];
+                            // Sample positions: center, corners, and mid-edges
+                            let sample_positions = [
+                                (width / 2, height / 2),           // Center
+                                (width / 4, height / 4),           // Top-left
+                                (3 * width / 4, height / 4),       // Top-right
+                                (width / 4, 3 * height / 4),       // Bottom-left
+                                (3 * width / 4, 3 * height / 4),   // Bottom-right
+                                (width / 2, height / 4),           // Top-middle
+                                (width / 2, 3 * height / 4),       // Bottom-middle
+                                (width / 4, height / 2),           // Middle-left
+                                (3 * width / 4, height / 2),       // Middle-right
+                            ];
 
-                                // Check if center pixel is mostly black (all channels < 10)
-                                if r < 10 && g < 10 && b < 10 {
-                                    log::error!(
-                                        "BLACK FRAME DETECTED at frame {}! Center pixel: RGB({},{},{})",
-                                        prev_frame, r, g, b
-                                    );
+                            for (i, (x, y)) in sample_positions.iter().enumerate() {
+                                let pixel_offset = (y * width + x) * 4;
+
+                                if pixel_offset + 3 < image_data.len() {
+                                    let r = image_data[pixel_offset];
+                                    let g = image_data[pixel_offset + 1];
+                                    let b = image_data[pixel_offset + 2];
+
+                                    // Check if pixel has any color (any channel >= 10)
+                                    if r >= 10 || g >= 10 || b >= 10 {
+                                        all_pixels_black = false;
+                                        if first_non_black_pixel.is_none() {
+                                            first_non_black_pixel = Some((i, r, g, b, *x, *y));
+                                        }
+                                    }
                                 }
+                            }
+
+                            if all_pixels_black {
+                                log::error!(
+                                    "BLACK FRAME DETECTED at frame {}! All 9 sampled pixels are black",
+                                    prev_frame
+                                );
+                            } else if let Some((i, r, g, b, x, y)) = first_non_black_pixel {
+                                log::info!(
+                                    "Frame {} has color! Sample #{} at ({},{}): RGB({},{},{})",
+                                    prev_frame, i, x, y, r, g, b
+                                );
                             }
                         }
                         Ok(None) => {}

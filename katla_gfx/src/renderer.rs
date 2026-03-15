@@ -423,7 +423,7 @@ impl VulkanRenderer {
                     0
                 });
             self.ui_renderer.set_font_atlas_bindless_slot(bindless_slot);
-            log::info!(
+            log::debug!(
                 "Font atlas registered with bindless system at slot {}",
                 bindless_slot
             );
