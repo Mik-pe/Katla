@@ -13,12 +13,15 @@ pub struct Camera {
 impl Camera {
     pub fn new(world: &mut World) -> Self {
         // Position camera at a reasonable height and distance
-        let position = Vec3::new(0.0, 5.0, 10.0);
-        let target = Vec3::new(0.0, 0.0, 0.0);
-        let up = Vec3::new(0.0, 1.0, 0.0);
+        // Looking straight ahead (toward negative Z)
+        let position = Vec3::new(0.0, 2.0, 10.0);
 
-        // Create a transform that looks at the target
-        let transform = Transform::new_from_position(position).look_at(target, up);
+        // Create a transform with identity rotation (looking straight ahead)
+        let transform = Transform {
+            position,
+            rotation: katla_math::Quat::new(),
+            scale: Vec3::new(1.0, 1.0, 1.0),
+        };
         
         let entity = world.spawn((
             TransformComponent::new(transform),
