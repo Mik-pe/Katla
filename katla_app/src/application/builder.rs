@@ -121,15 +121,17 @@ impl ApplicationBuilder {
 
     /// Build the frame graph for the application.
     ///
-    /// Uses HDR intermediate rendering with tonemapping:
+    /// Uses HDR intermediate rendering with tonemapping and multi-viewport compositing:
     /// 1. Sky pass renders procedural sky to HDR texture
     /// 2. Geometry pass renders scene to HDR texture (R16G16B16A16Sfloat)
-    /// 3. Tonemap pass samples HDR and outputs LDR to backbuffer
+    /// 3. Tonemap pass samples HDR and outputs to viewport texture
+    /// 4. Compositing pass composites viewport textures to backbuffer
+    /// 5. UI pass samples from backbuffer (now gets composited result)
     fn build_frame_graph(
         renderer: &mut VulkanRenderer,
         resources: &ResourceManager,
     ) -> AppResult<katla_gfx::FrameGraph> {
-        use katla_gfx::render_graph::UIPass;
+        use katla_gfx::render_graph::{CompositePass, UIPass, ViewportRect};
         use katla_gfx::render_graph::{
             FullscreenPass, GeometryPass, GraphResourceDesc, GraphResourceType,
         };
@@ -181,6 +183,48 @@ impl ApplicationBuilder {
                 message: format!("Failed to compile UI shader: {}", e),
             })?;
 
+        // Compile compositing shader for multi-viewport rendering
+        let compositing_shader_path = resources.shader_path("composite.wgsl");
+        let compositing_material = {
+            // Set compositing descriptor set layout in material compiler
+            renderer.set_compositing_descriptor_set_layout();
+
+            // Compile compositing material with is_compositing flag
+            let result = renderer
+                .compile_material(
+                    compositing_shader_path,
+                    katla_gfx::MaterialOptions {
+                        vertex_type: katla_gfx::VertexType::Simple,
+                        alpha_blended: false,
+                        is_compositing: true,
+                        ..Default::default()
+                    },
+                )
+                .map_err(|e| crate::error::AppError::Graphics {
+                    message: format!("Failed to compile compositing shader: {}", e),
+                });
+
+            // Clear the compositing descriptor set layout after compilation
+            renderer.clear_compositing_descriptor_set_layout();
+
+            result?
+        };
+
+        // Compile geometry shader for PBR model rendering
+        let geometry_shader_path = resources.shader_path("model_pbr.wgsl");
+        let geometry_material = renderer
+            .compile_material(
+                geometry_shader_path,
+                katla_gfx::MaterialOptions {
+                    vertex_type: katla_gfx::VertexType::Pbr,
+                    alpha_blended: false,
+                    ..Default::default()
+                },
+            )
+            .map_err(|e| crate::error::AppError::Graphics {
+                message: format!("Failed to compile geometry shader: {}", e),
+            })?;
+
         let graph = renderer
             .create_frame_graph()
             // Create HDR color texture for geometry pass output
@@ -193,10 +237,10 @@ impl ApplicationBuilder {
                 width: extent.width,
                 height: extent.height,
             })
-            // Create LDR texture for tonemap pass output (to be displayed in viewport)
+            // Create viewport texture for tonemap output (LDR, sRGB for backbuffer compatibility)
             // Use B8G8R8A8Srgb to match backbuffer format (tonemap shader expects this)
             .create_resource(GraphResourceDesc {
-                name: "ldr_color".to_string(),
+                name: "viewport_0".to_string(),
                 resource_type: GraphResourceType::ColorAttachment {
                     clear_value: Some([0.0, 0.0, 0.0, 1.0]),
                 },
@@ -213,26 +257,42 @@ impl ApplicationBuilder {
             // Geometry pass: renders scene to HDR color texture
             // Loads existing contents (sky pass) and writes geometry on top
             // Note: Depth is implicit and uses the global depth buffer
-            .add_pass(GeometryPass::new("geometry").write_color_with(
-                "hdr_color",
-                TextureImageFormat::R16G16B16A16Sfloat,
-                LoadOp::Load,
-                StoreOp::Store,
-                ClearValue::OPAQUE_BLACK,
-            ))
-            // Tonemap pass: samples HDR color and outputs to LDR texture
+            .add_pass(
+                GeometryPass::new("geometry")
+                    .write_color_with(
+                        "hdr_color",
+                        TextureImageFormat::R16G16B16A16Sfloat,
+                        LoadOp::Load,
+                        StoreOp::Store,
+                        ClearValue::OPAQUE_BLACK,
+                    )
+                    .material(geometry_material),
+            )
+            // Tonemap pass: samples HDR color and outputs to viewport texture
             .add_pass(
                 FullscreenPass::new("tonemap")
                     .read("hdr_color")
-                    .write("ldr_color", TextureImageFormat::B8G8R8A8Srgb)
+                    .write("viewport_0", TextureImageFormat::B8G8R8A8Srgb)
                     .pipeline(tonemap_pipeline)
                     .tonemap(tonemap_params),
             )
+            // Compositing pass: composites viewport textures to backbuffer
+            // For now, using single fullscreen viewport (viewport_0 covers entire screen)
+            .add_pass(
+                CompositePass::new("compositing")
+                    .viewport(
+                        "viewport_0",
+                        ViewportRect::from_origin_size(0.0, 0.0, extent.width as f32, extent.height as f32),
+                    )
+                    .write_backbuffer()
+                    .material(compositing_material),
+            )
             // UI pass: draws editor UI to backbuffer
+            // Note: UI samples from viewport_0 texture (for viewport preview in editor)
             .add_pass(
                 UIPass::new("ui")
                     .write("backbuffer")
-                    .read("ldr_color")
+                    .read("viewport_0") // UI samples from viewport texture
                     .material(ui_material),
             )
             .build()
@@ -387,26 +447,6 @@ impl ApplicationBuilder {
 
         // Build the frame graph once at startup (needs mutable renderer to compile shader)
         let frame_graph = Self::build_frame_graph(&mut renderer, &resources)?;
-
-        // Initialize modern global particle system
-        // Note: Particle system is managed independently, not stored in renderer
-        let _particle_system = match katla_gfx::GlobalParticleSystem::new(
-            renderer.context(),
-            katla_gfx::particles::DEFAULT_MAX_PARTICLES,
-        ) {
-            Ok(system) => {
-                log::info!("✨ Modern particle system initialized successfully");
-                log::info!("   - Global particle pool: 1,048,576 particles");
-                log::info!("   - Memory footprint: ~60 MB GPU");
-                log::info!("   - Architecture: Single buffer + atomic counters");
-                Some(system)
-            }
-            Err(e) => {
-                log::warn!("Failed to initialize particle system: {}", e);
-                log::warn!("Particle effects will be disabled");
-                None
-            }
-        };
 
         // Initialize UI renderer with font atlas bindless slot
         let mut ui_renderer = crate::ui::UIRenderer::new();

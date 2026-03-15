@@ -28,7 +28,7 @@ use crate::{
     VulkanFrameCtx, viewport::Viewport,
 };
 use ash::vk;
-use log::{error, info};
+use log::{error, info, warn};
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 use std::{ffi::CString, rc::Rc};
 
@@ -121,6 +121,9 @@ pub struct VulkanRenderer {
     /// Skeleton buffers for GPU skeletal animation.
     /// Indexed by SkeletonHandle via ResourceStorage.
     pub(crate) skeleton_buffers: ResourceStorage<SkeletonBuffer>,
+    /// Compositing descriptor set layout for multi-viewport compositing.
+    /// Created during initialization and used when compiling compositing materials.
+    pub(crate) compositing_descriptor_set_layout: vk::DescriptorSetLayout,
     /// Frame-level uniforms set once per frame via set_frame_uniforms().
     pub(crate) frame_uniforms: FrameUniforms,
     /// Last presented swapchain image index (for debugging readback).
@@ -137,6 +140,8 @@ pub struct VulkanRenderer {
     pub(crate) material_compiler: MaterialCompiler,
     /// UI rendering subsystem - owns UI resources and font atlas.
     pub ui_renderer: ui_renderer::UIRenderer,
+    /// Global particle system for GPU-driven particle effects.
+    pub particle_system: Option<crate::particles::GlobalParticleSystem>,
 }
 
 /// Number of frames that can be processed concurrently.
@@ -238,6 +243,35 @@ impl VulkanRenderer {
         })?;
         info!("Material compiler initialized");
 
+        // Create compositing descriptor set layout for multi-viewport rendering
+        let compositing_descriptor_set_layout = {
+            use crate::render_graph::descriptor_sets::CompositingDescriptorSet;
+            CompositingDescriptorSet::create_layout(&context.device).map_err(|e| {
+                error!("Failed to create compositing descriptor set layout: {:?}", e);
+                RendererError::InitializationFailed("Failed to create compositing descriptor set layout".to_string())
+            })?
+        };
+        info!("Compositing descriptor set layout created");
+
+        // Initialize global particle system
+        let particle_system = match crate::particles::GlobalParticleSystem::new(
+            &context,
+            crate::particles::DEFAULT_MAX_PARTICLES,
+        ) {
+            Ok(system) => {
+                info!("✨ Modern particle system initialized successfully");
+                info!("   - Global particle pool: 1,048,576 particles");
+                info!("   - Memory footprint: ~60 MB GPU");
+                info!("   - Architecture: Single buffer + atomic counters");
+                Some(system)
+            }
+            Err(e) => {
+                warn!("Failed to initialize particle system: {}", e);
+                warn!("Particle effects will be disabled");
+                None
+            }
+        };
+
         Ok(Self {
             context: context.clone(),
             frame_context,
@@ -250,6 +284,7 @@ impl VulkanRenderer {
             storage_descriptor_sets,
             skeleton_descriptors: ResourceStorage::new(),
             skeleton_buffers: ResourceStorage::new(),
+            compositing_descriptor_set_layout,
             frame_uniforms: FrameUniforms::default(),
             last_presented_image_index: None,
             default_material_handle: None,
@@ -258,6 +293,7 @@ impl VulkanRenderer {
             viewport_manager,
             material_compiler,
             ui_renderer: ui_renderer::UIRenderer::new(&context),
+            particle_system,
         })
     }
 
@@ -271,6 +307,31 @@ impl VulkanRenderer {
     /// The caller must ensure proper synchronization when using the context.
     pub fn context(&self) -> &Rc<VulkanContext> {
         &self.context
+    }
+
+    /// Get the compositing descriptor set layout for compiling compositing materials.
+    ///
+    /// This layout is used when creating the pipeline layout for compositing materials.
+    /// It must be set in the material compiler before compiling the compositing shader.
+    pub fn compositing_descriptor_set_layout(&self) -> vk::DescriptorSetLayout {
+        self.compositing_descriptor_set_layout
+    }
+
+    /// Set the compositing descriptor set layout in the material compiler.
+    ///
+    /// This must be called before compiling a compositing material to ensure
+    /// the pipeline layout includes descriptor set 2.
+    pub fn set_compositing_descriptor_set_layout(&mut self) {
+        self.material_compiler
+            .set_compositing_descriptor_set_layout(self.compositing_descriptor_set_layout);
+    }
+
+    /// Clear the compositing descriptor set layout from the material compiler.
+    ///
+    /// This should be called after compiling the compositing material.
+    pub fn clear_compositing_descriptor_set_layout(&mut self) {
+        self.material_compiler
+            .clear_compositing_descriptor_set_layout();
     }
 
     // ========================================================================
@@ -841,6 +902,13 @@ impl VulkanRenderer {
 
         // Destroy material compiler (cleans up descriptor layouts)
         self.material_compiler.destroy();
+
+        // Destroy particle system BEFORE UI resources and other cleanup
+        // This ensures proper cleanup order and avoids heap corruption
+        if let Some(mut particle_system) = self.particle_system.take() {
+            info!("Destroying particle system");
+            particle_system.destroy();
+        }
 
         // Clean up UI resources
         {
@@ -2159,7 +2227,9 @@ impl Drop for OutputRenderTarget {
                 .destroy_image_view(self.color_image_view, None);
             self.context.device.destroy_image(self.color_image, None);
             if let Some(memory) = self.color_memory.take() {
-                self.context.allocator.borrow_mut().free(memory).ok();
+                if let Ok(mut allocator) = self.context.allocator.try_borrow_mut() {
+                    allocator.free(memory).ok();
+                }
             }
         }
     }

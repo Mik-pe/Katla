@@ -164,14 +164,13 @@ impl ApplicationHandler for Application {
 
                     let extent = self.renderer.swapchain_extent();
 
-                    // Update LDR bindless base index for UI viewport rendering
                     // Update bindless indices for recreated textures
                     for (name, slot) in recreated_textures {
                         if name == "hdr_color" {
                             self.frame_graph
                                 .set_tonemap_texture_index("tonemap", slot)
                                 .expect("Failed to update tonemap texture index");
-                        } else if name == "ldr_color" {
+                        } else if name == "viewport_0" {
                             self.editor_ui.set_viewport_bindless_index(slot);
                         }
                     }
@@ -421,7 +420,11 @@ impl Application {
         // Wait for device to ensure all GPU operations are complete
         self.renderer.wait_for_device();
 
-        // Destroy renderer
+        // Cleanup frame graph transient textures BEFORE destroying renderer
+        // This ensures proper cleanup order and avoids heap corruption during shutdown
+        self.frame_graph.cleanup();
+
+        // Destroy renderer (which owns the particle system)
         self.renderer.destroy();
     }
 }
@@ -474,20 +477,23 @@ impl Application {
             .set_tonemap_texture_index("tonemap", hdr_bindless_index)
             .expect("Failed to set tonemap texture index");
 
-        // Register LDR (tonemapped) texture with bindless system for viewport rendering
-        let ldr_bindless_index = self
+        // Register viewport texture with bindless system for viewport rendering
+        let viewport_bindless_index = self
             .frame_graph
-            .register_transient_texture_bindless(&mut self.renderer, "ldr_color")
-            .expect("Failed to register LDR texture with bindless system");
+            .register_transient_texture_bindless(&mut self.renderer, "viewport_0")
+            .expect("Failed to register viewport texture with bindless system");
 
         info!(
-            "LDR (tonemapped) texture registered with bindless system at index {}",
-            ldr_bindless_index
+            "Viewport texture registered with bindless system at index {}",
+            viewport_bindless_index
         );
+
+        // Set LDR texture base index for compositing shader to use
+        self.frame_graph.set_ldr_texture_base_index(viewport_bindless_index);
 
         // Set viewport bindless index in editor UI
         self.editor_ui
-            .set_viewport_bindless_index(ldr_bindless_index);
+            .set_viewport_bindless_index(viewport_bindless_index);
 
         // Set up default test scene
         self.setup_default_scene();
