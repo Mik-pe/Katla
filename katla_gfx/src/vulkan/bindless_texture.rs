@@ -295,6 +295,48 @@ impl BindlessTextureManager {
         Ok(slot)
     }
 
+    /// Update an existing texture slot with a new image view.
+    ///
+    /// This is used when a texture is recreated (e.g., after resize) and the
+    /// bindless descriptor needs to be updated with the new image view.
+    ///
+    /// # Arguments
+    /// * `slot` - The bindless slot to update
+    /// * `image_view` - The new image view
+    ///
+    /// # Returns
+    /// Ok(()) if successful, or an error if the slot is invalid.
+    pub fn update_texture(&mut self, slot: u32, image_view: vk::ImageView) -> Result<(), RendererError> {
+        if slot >= self.slots.len() as u32 {
+            return Err(RendererError::InvalidOperation(format!(
+                "Invalid bindless slot {} exceeds maximum of {}",
+                slot,
+                self.slots.len()
+            )));
+        }
+
+        // Update the slot
+        self.slots[slot as usize] = Some(image_view);
+
+        // Update descriptor set for this slot
+        let image_info = [vk::DescriptorImageInfo::default()
+            .image_view(image_view)
+            .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)];
+
+        let write = vk::WriteDescriptorSet::default()
+            .dst_set(self.descriptor_set.vk())
+            .dst_binding(0)
+            .dst_array_element(slot)
+            .descriptor_type(vk::DescriptorType::SAMPLED_IMAGE)
+            .image_info(&image_info);
+
+        unsafe {
+            self.device.update_descriptor_sets(&[write], &[]);
+        }
+
+        Ok(())
+    }
+
     /// Get the descriptor set for binding to shaders.
     ///
     /// This should be bound to set 1 after binding the pipeline.

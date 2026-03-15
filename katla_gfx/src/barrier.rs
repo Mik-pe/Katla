@@ -360,6 +360,17 @@ impl ImageBarrier {
             );
         }
 
+        // No-op transition: same layout
+        // This can happen when a resource stays in the same layout across passes
+        if old_layout == new_layout {
+            return (
+                PipelineStage2Flags::TOP_OF_PIPE,
+                PipelineStage2Flags::TOP_OF_PIPE,
+                AccessFlags2::NONE,
+                AccessFlags2::NONE,
+            );
+        }
+
         // PRESENT_SRC_KHR -> COLOR_ATTACHMENT_OPTIMAL
         // Used when transitioning swapchain image from presentation back to rendering.
         // After presentation completes, the image is in PRESENT_SRC_KHR and needs to

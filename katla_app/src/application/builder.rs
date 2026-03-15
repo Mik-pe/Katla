@@ -131,7 +131,7 @@ impl ApplicationBuilder {
         renderer: &mut VulkanRenderer,
         resources: &ResourceManager,
     ) -> AppResult<katla_gfx::FrameGraph> {
-        use katla_gfx::render_graph::{CompositePass, UIPass, ViewportRect};
+        use katla_gfx::render_graph::UIPass;
         use katla_gfx::render_graph::{
             FullscreenPass, GeometryPass, GraphResourceDesc, GraphResourceType,
         };
@@ -182,33 +182,6 @@ impl ApplicationBuilder {
             .map_err(|e| crate::error::AppError::Graphics {
                 message: format!("Failed to compile UI shader: {}", e),
             })?;
-
-        // Compile compositing shader for multi-viewport rendering
-        let compositing_shader_path = resources.shader_path("composite.wgsl");
-        let compositing_material = {
-            // Set compositing descriptor set layout in material compiler
-            renderer.set_compositing_descriptor_set_layout();
-
-            // Compile compositing material with is_compositing flag
-            let result = renderer
-                .compile_material(
-                    compositing_shader_path,
-                    katla_gfx::MaterialOptions {
-                        vertex_type: katla_gfx::VertexType::Simple,
-                        alpha_blended: false,
-                        is_compositing: true,
-                        ..Default::default()
-                    },
-                )
-                .map_err(|e| crate::error::AppError::Graphics {
-                    message: format!("Failed to compile compositing shader: {}", e),
-                });
-
-            // Clear the compositing descriptor set layout after compilation
-            renderer.clear_compositing_descriptor_set_layout();
-
-            result?
-        };
 
         // Compile geometry shader for PBR model rendering
         let geometry_shader_path = resources.shader_path("model_pbr.wgsl");
@@ -268,17 +241,30 @@ impl ApplicationBuilder {
                     )
                     .material(geometry_material),
             )
-            // Tonemap pass: samples HDR color and outputs directly to backbuffer
-            // TODO: Multi-viewport compositing disabled - need to fix fragment shader execution
+            // Tonemap pass: samples HDR color and outputs to viewport texture
+            // The viewport texture is then sampled by the UI system to display in the viewport panel
             .add_pass(
                 FullscreenPass::new("tonemap")
                     .read("hdr_color")
-                    .write_backbuffer()
+                    .write("viewport_0", TextureImageFormat::B8G8R8A8Srgb)
                     .pipeline(tonemap_pipeline)
                     .tonemap(tonemap_params),
             )
+            // Background pass: fills the backbuffer with a solid background color
+            // This provides a dark background for the editor UI panels
+            .add_pass(
+                FullscreenPass::new("background")
+                    .write_backbuffer()
+                    .pipeline(tonemap_pipeline) // Reuse tonemap pipeline (outputs solid color with no HDR input)
+                    .tonemap(katla_gfx::TonemapParams {
+                        exposure: 1.0,
+                        gamma: 1.0,
+                        mode: katla_gfx::TonemapOperator::Aces,
+                        hdr_texture_index: None, // No HDR texture, will output black
+                    }),
+            )
             // UI pass: draws editor UI to backbuffer
-            // Note: UI samples from backbuffer (tonemap output)
+            // Note: UI composites on top of the background pass
             .add_pass(
                 UIPass::new("ui")
                     .write("backbuffer")
