@@ -268,31 +268,20 @@ impl ApplicationBuilder {
                     )
                     .material(geometry_material),
             )
-            // Tonemap pass: samples HDR color and outputs to viewport texture
+            // Tonemap pass: samples HDR color and outputs directly to backbuffer
+            // TODO: Multi-viewport compositing disabled - need to fix fragment shader execution
             .add_pass(
                 FullscreenPass::new("tonemap")
                     .read("hdr_color")
-                    .write("viewport_0", TextureImageFormat::B8G8R8A8Srgb)
+                    .write_backbuffer()
                     .pipeline(tonemap_pipeline)
                     .tonemap(tonemap_params),
             )
-            // Compositing pass: composites viewport textures to backbuffer
-            // For now, using single fullscreen viewport (viewport_0 covers entire screen)
-            .add_pass(
-                CompositePass::new("compositing")
-                    .viewport(
-                        "viewport_0",
-                        ViewportRect::from_origin_size(0.0, 0.0, extent.width as f32, extent.height as f32),
-                    )
-                    .write_backbuffer()
-                    .material(compositing_material),
-            )
             // UI pass: draws editor UI to backbuffer
-            // Note: UI samples from viewport_0 texture (for viewport preview in editor)
+            // Note: UI samples from backbuffer (tonemap output)
             .add_pass(
                 UIPass::new("ui")
                     .write("backbuffer")
-                    .read("viewport_0") // UI samples from viewport texture
                     .material(ui_material),
             )
             .build()

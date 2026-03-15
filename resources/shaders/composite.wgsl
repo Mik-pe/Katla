@@ -262,6 +262,10 @@ fn pixel_in_rect(pixel_pos: vec2f, rect: ViewportRect) -> bool {
 /// proper uniform buffer management in the compositing pass implementation.
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4f {
+    // DEBUG: Return gradient based on UV to verify shader is executing
+    // This should show a color gradient if the fragment shader runs
+    return vec4f(in.uv.x * 0.5, in.uv.y * 0.5, 1.0, 1.0);
+
     // Get compositing parameters from objects[0] (fullscreen/post-processing slot)
     let params = objects[0];
 
