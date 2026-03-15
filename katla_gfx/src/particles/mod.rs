@@ -171,6 +171,9 @@ pub struct GlobalParticleSystem {
 
     /// Emitter configs buffer for push descriptor updates
     emitter_configs_buffer: Option<(vk::Buffer, gpu_allocator::vulkan::Allocation)>,
+
+    /// Flag to prevent double destruction
+    destroyed: bool,
 }
 
 impl GlobalParticleSystem {
@@ -202,6 +205,7 @@ impl GlobalParticleSystem {
             frame_count: 0,
             frame_data_buffer: None,
             emitter_configs_buffer: None,
+            destroyed: false,
         };
 
         // Initialize index lists (all particles start dead)
@@ -373,6 +377,11 @@ impl GlobalParticleSystem {
 
     /// Destroy all particle system resources.
     pub fn destroy(&mut self) {
+        if self.destroyed {
+            return;
+        }
+        self.destroyed = true;
+
         info!("Destroying particle system");
         self.buffer.destroy();
 
@@ -396,13 +405,17 @@ impl GlobalParticleSystem {
         if let Some((buffer, allocation)) = self.frame_data_buffer.take() {
             unsafe {
                 self.context.device.destroy_buffer(buffer, None);
-                self.context.allocator.borrow_mut().free(allocation).ok();
+                if let Ok(mut allocator) = self.context.allocator.try_borrow_mut() {
+                    allocator.free(allocation).ok();
+                }
             }
         }
         if let Some((buffer, allocation)) = self.emitter_configs_buffer.take() {
             unsafe {
                 self.context.device.destroy_buffer(buffer, None);
-                self.context.allocator.borrow_mut().free(allocation).ok();
+                if let Ok(mut allocator) = self.context.allocator.try_borrow_mut() {
+                    allocator.free(allocation).ok();
+                }
             }
         }
 

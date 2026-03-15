@@ -95,7 +95,12 @@ impl Drop for TransientTexture {
                 .destroy_image_view(self.image_view.vk(), None);
             self.context.device.destroy_image(self.image, None);
             if let Some(allocation) = self.allocation.take() {
-                self.context.allocator.borrow_mut().free(allocation).ok();
+                // Use try_borrow_mut to avoid panic if already borrowed
+                if let Ok(mut allocator) = self.context.allocator.try_borrow_mut() {
+                    allocator.free(allocation).ok();
+                }
+                // If we can't borrow the allocator, it's already being destroyed,
+                // and the memory will be cleaned up when the allocator is dropped
             }
         }
     }
@@ -307,6 +312,21 @@ impl FrameGraph {
     /// Set the global frame counter for this frame (used for particle simulation).
     pub fn set_frame_count(&mut self, frame_count: usize) {
         self.frame_count = frame_count;
+    }
+
+    /// Cleanup and destroy all transient textures.
+    ///
+    /// This should be called before the VulkanRenderer/VulkanContext is destroyed
+    /// to ensure proper cleanup order and avoid heap corruption during shutdown.
+    ///
+    /// Transient textures hold Rc<VulkanContext> and try to free memory in their Drop,
+    /// which can cause issues if the VulkanContext is already being destroyed.
+    pub fn cleanup(&mut self) {
+        log::info!("Cleaning up frame graph transient textures ({} frames)", self.transient_textures.len());
+        let total_textures: usize = self.transient_textures.iter().map(|m| m.len()).sum();
+        log::info!("  Total textures to clean up: {}", total_textures);
+        self.transient_textures.clear();
+        log::info!("Frame graph cleanup complete");
     }
 
     /// Get the number of passes in the graph.
@@ -691,35 +711,65 @@ impl FrameGraphBuilder {
         let mut graph = FrameGraph::new();
 
         // Import external resources
-        for (name, handle) in self.resources {
-            graph.import_resource(name, handle);
+        for (name, handle) in &self.resources {
+            graph.import_resource(name, *handle);
         }
 
         // Store transient resource descriptors
         graph.transient_resources = self.transient_resources;
 
-        // Build passes
-        for pass_builder in self.pass_builders {
-            let mut resource_map = HashMap::new();
+        // Build a global resource map that includes all transient resources
+        // This ensures consistent handle assignment across all passes
+        let mut global_resource_map = HashMap::new();
+
+        // First, add all transient resources to the global map
+        for desc in &graph.transient_resources {
+            if !global_resource_map.contains_key(&desc.name) {
+                global_resource_map.insert(
+                    desc.name.clone(),
+                    GraphResourceHandle::new(global_resource_map.len() as u32),
+                );
+            }
+        }
+
+        // Add external resources
+        for (name, handle) in &self.resources {
+            if !global_resource_map.contains_key(name) {
+                global_resource_map.insert(name.clone(), *handle);
+            }
+        }
+
+        // Now add backbuffer and any other implicit resources
+        for pass_builder in &self.pass_builders {
             for read_name in &pass_builder.reads {
-                if !resource_map.contains_key(read_name) {
-                    resource_map.insert(
+                if !global_resource_map.contains_key(read_name) {
+                    global_resource_map.insert(
                         read_name.clone(),
-                        GraphResourceHandle::new(resource_map.len() as u32),
+                        GraphResourceHandle::new(global_resource_map.len() as u32),
                     );
                 }
             }
             for write_name in &pass_builder.writes {
-                if !resource_map.contains_key(write_name) {
-                    resource_map.insert(
+                if !global_resource_map.contains_key(write_name) {
+                    global_resource_map.insert(
                         write_name.clone(),
-                        GraphResourceHandle::new(resource_map.len() as u32),
+                        GraphResourceHandle::new(global_resource_map.len() as u32),
                     );
                 }
             }
+        }
+
+        // Import all resources from global map into graph
+        for (name, handle) in &global_resource_map {
+            graph.import_resource(name.clone(), *handle);
+        }
+
+        // Build passes using the global resource map
+        for pass_builder in self.pass_builders {
 
             // Call the build function to validate resource references and get pass data
-            let pass_data = (pass_builder.build_fn)(&resource_map)?;
+            // Use the global resource map for consistent handle assignment
+            let pass_data = (pass_builder.build_fn)(&global_resource_map)?;
 
             // Create PassDesc with string-based resource references
             let mut pass = PassDesc::new(
@@ -740,7 +790,7 @@ impl FrameGraphBuilder {
                 // Convert resolved handles back to resource names for color attachments
                 for (handle, format, load_op, store_op, clear_value) in &geom_data.colors {
                     // Find the resource name for this handle
-                    for (name, candidate_handle) in &resource_map {
+                    for (name, candidate_handle) in &global_resource_map {
                         if *candidate_handle == *handle {
                             pass.color_attachments.push((
                                 name.clone(),
@@ -928,11 +978,14 @@ impl<'a> Frame<'a> {
     fn execute_passes(&mut self) -> Result<(), RenderGraphError> {
         // Use storage_manager.current_frame() consistently for all frame resource selection
         let frame_idx = self.current_frame();
-        log::debug!(
+        log::info!(
             "=== execute_passes: frame_idx={}, {} passes to execute ===",
             frame_idx,
             self.graph.passes.len()
         );
+        for (idx, pass) in self.graph.passes.iter().enumerate() {
+            log::info!("  Pass {}: '{}' (type={:?})", idx, pass.name, pass.pass_type);
+        }
 
         // Clone the command buffer to avoid borrowing issues
         let cmd = self.renderer.frame_context.command_buffers[frame_idx].clone();
@@ -973,36 +1026,48 @@ impl<'a> Frame<'a> {
                 log::trace!("Pass '{}' writes to: {:?}", pass.name, pass.writes);
             }
 
+            // CRITICAL: Track backbuffer state BEFORE pass execution
+            // This allows subsequent passes that write to backbuffer to use LOAD instead of CLEAR
+            // For example: compositing pass writes to backbuffer, then UI pass should LOAD that content
+            if pass.writes.contains(&BACKBUFFER_NAME.to_string()) {
+                log::info!("🔄 [BACKBUFFER] Pass '{}' will write to backbuffer, tracking state BEFORE execution", pass.name);
+                log::info!("🔄 [BACKBUFFER] Current resource_states: {:?}", self.resource_states.keys().collect::<Vec<_>>());
+                self.resource_states.insert(
+                    BACKBUFFER_NAME.to_string(),
+                    super::resource::ResourceState::ColorAttachment,
+                );
+                log::info!("🔄 [BACKBUFFER] After tracking, resource_states: {:?}", self.resource_states.keys().collect::<Vec<_>>());
+            }
+
             // Insert pre-pass barriers
             self.insert_barriers(&cmd, index)?;
 
             // Execute pass based on type
             match pass.pass_type {
                 super::pass::PassType::Graphics => {
-                    // Check if this is a compositing pass (has material and compositing_viewports)
+                    // Check if this is a compositing pass (has material AND compositing_viewports)
                     if let Some(material_handle) = pass.material {
                         if pass.compositing_viewports.is_some() && data.draw_lists.is_empty() {
+                            log::info!("🎯 [PASS] '{}' -> compositing pass", pass.name);
                             self.execute_compositing_pass(&cmd, pass, material_handle)?;
+                        } else {
+                            // Pass has material but is NOT compositing (e.g., UI pass)
+                            // Fall through to graphics pass execution
+                            log::info!("🎯 [PASS] '{}' -> graphics pass with material (draw_lists={}, ui_draw_lists={})", pass.name, data.draw_lists.len(), data.ui_draw_lists.len());
+                            self.execute_graphics_pass(&cmd, pass, data)?;
                         }
                     }
                     // Check if this is a fullscreen pass (has pipeline, no draw lists)
                     else if pass.pipeline.is_some() && data.draw_lists.is_empty() {
+                        log::info!("🎯 [PASS] '{}' -> fullscreen pass", pass.name);
                         if let Some(pipeline) = pass.pipeline {
                             self.execute_fullscreen_pass(&cmd, pass, pipeline)?;
                         }
                     } else {
+                        log::info!("🎯 [PASS] '{}' -> graphics pass (draw_lists={}, ui_draw_lists={})", pass.name, data.draw_lists.len(), data.ui_draw_lists.len());
                         self.execute_graphics_pass(&cmd, pass, data)?;
                     }
                 }
-            }
-
-            // Track backbuffer state if this pass wrote to it
-            if pass.writes.contains(&BACKBUFFER_NAME.to_string()) {
-                log::debug!("Pass '{}' wrote to backbuffer, tracking state", pass.name);
-                self.resource_states.insert(
-                    BACKBUFFER_NAME.to_string(),
-                    super::resource::ResourceState::ColorAttachment,
-                );
             }
 
             // Insert post-pass barriers for transient textures that will be read by subsequent passes
@@ -1027,6 +1092,13 @@ impl<'a> Frame<'a> {
         let Some(pass) = self.graph.pass(pass_index) else {
             return Ok(());
         };
+
+        log::info!(
+            "[BARRIER] Pre-pass barriers for '{}': reads={:?}, writes={:?}",
+            pass.name,
+            pass.reads,
+            pass.writes
+        );
 
         let cmd_vk = cmd.vk_command_buffer();
         let device = &self.renderer.context.device;
@@ -1100,6 +1172,14 @@ impl<'a> Frame<'a> {
                 continue;
             };
 
+            log::info!(
+                "[BARRIER] Pass '{}' reading transient texture '{}': current_layout={:?}, format={:?}",
+                pass.name,
+                read_name,
+                transient.current_layout(),
+                transient.format
+            );
+
             let current_state = self
                 .resource_states
                 .get(read_name)
@@ -1115,8 +1195,8 @@ impl<'a> Frame<'a> {
                 // This persists across frames via RefCell
                 let old_layout = transient.current_layout();
 
-                log::trace!(
-                    "[Barrier] Pass '{}' read '{}': {:?} -> {:?}",
+                log::info!(
+                    "[BARRIER] Pass '{}' transitioning '{}' from {:?} to {:?}",
                     pass.name,
                     read_name,
                     old_layout,
@@ -1245,10 +1325,12 @@ impl<'a> Frame<'a> {
         pass: &PassDesc,
         data: PassExecutionData,
     ) -> Result<(), RenderGraphError> {
-        log::debug!(
-            "execute_graphics_pass '{}' with frame_idx={}",
+        log::info!(
+            "🎨 [GRAPHICS] PASS '{}' with frame_idx={}, draw_lists={}, ui_draw_lists={}",
             pass.name,
-            self.current_frame()
+            self.current_frame(),
+            data.draw_lists.len(),
+            data.ui_draw_lists.len()
         );
 
         let extent = self.renderer.frame_context.swapchain.get_extent();
@@ -1270,14 +1352,14 @@ impl<'a> Frame<'a> {
             // Check if a previous pass already wrote to the backbuffer
             let backbuffer_written = self.resource_states.contains_key(BACKBUFFER_NAME);
             let load_op = if backbuffer_written {
-                log::debug!(
-                    "Pass '{}': Using LOAD for backbuffer (previous pass wrote to it)",
+                log::info!(
+                    "✅ PASS '{}': Using LOAD for backbuffer (previous pass wrote to it)",
                     pass.name
                 );
                 vk::AttachmentLoadOp::LOAD
             } else {
-                log::debug!(
-                    "Pass '{}': Using CLEAR for backbuffer (first write)",
+                log::warn!(
+                    "⚠️  PASS '{}': Using CLEAR for backbuffer (first write) - WILL OVERWRITE PREVIOUS CONTENT!",
                     pass.name
                 );
                 vk::AttachmentLoadOp::CLEAR
@@ -1439,10 +1521,15 @@ impl<'a> Frame<'a> {
         // NOTE: Particle compute dispatches are executed BEFORE all render passes
         // in execute_all_particle_dispatches(), so we skip them here.
 
+        log::debug!("execute_draw_list: {} draw calls to execute", draw_list.draws.len());
+
         // Execute regular draw calls
         for draw_call in &draw_list.draws {
+            log::debug!("Executing draw call: mesh={:?}, material={:?}", draw_call.mesh, draw_call.material);
             self.execute_draw_call(cmd, draw_call)?;
         }
+
+        log::debug!("execute_draw_list: completed {} draw calls", draw_list.draws.len());
 
         Ok(())
     }
@@ -1929,8 +2016,8 @@ impl<'a> Frame<'a> {
         pipeline_handle: crate::handle::PipelineHandle,
     ) -> Result<(), RenderGraphError> {
         let current_frame = self.current_frame();
-        log::debug!(
-            "Fullscreen pass '{}' execution: frame_idx={}, writes={:?}, reads={:?}",
+        log::info!(
+            "[FULLSCREEN] Pass '{}' execution: frame_idx={}, writes={:?}, reads={:?}",
             pass.name,
             current_frame,
             pass.writes,
@@ -1965,12 +2052,14 @@ impl<'a> Frame<'a> {
             // Check if this is a transient texture (fullscreen pass like tonemap)
             let frame_idx = self.current_frame();
             if let Some(transient) = self.graph.transient_texture(color_name, frame_idx) {
-                log::trace!(
-                    "Fullscreen pass '{}' writing to '{}' at frame_idx={}, image_view={:?}",
+                log::info!(
+                    "[FULLSCREEN] Pass '{}' writing to transient texture '{}' at frame_idx={}, format={:?}, extent={}x{}",
                     pass.name,
                     color_name,
                     frame_idx,
-                    transient.image_view.vk()
+                    transient.format,
+                    transient.extent.width,
+                    transient.extent.height
                 );
 
                 // Check if pass specified load/store ops for this attachment
@@ -2108,8 +2197,8 @@ impl<'a> Frame<'a> {
                     "Compositing pass missing viewport data".to_string(),
                 ))?;
 
-        log::debug!(
-            "Compositing pass '{}' execution: frame_idx={}, viewport_count={}, writes={:?}",
+        log::info!(
+            "[COMPOSITING] Pass '{}' execution: frame_idx={}, viewport_count={}, writes={:?}",
             pass.name,
             current_frame,
             viewports.len(),
@@ -2123,8 +2212,19 @@ impl<'a> Frame<'a> {
         let viewport_count = viewports.len() as u32;
         let screen_size = [extent.width as f32, extent.height as f32];
 
-        // Encode viewport count and screen size in objects[0]
-        // base_color.rgb = screen_size (width, height, viewport_count)
+        // Get viewport texture bindless index
+        // With per-frame transient textures, the actual index is base + frame_idx
+        let viewport_bindless_idx = if let Some(base_idx) = self.graph.get_ldr_texture_base_index() {
+            base_idx + current_frame as u32
+        } else {
+            log::warn!("[COMPOSITING] LDR texture not registered with bindless system, using index 0");
+            0
+        };
+
+        // Encode viewport count, screen size, and bindless index in objects[0]
+        // base_color.rg = screen_size (width, height)
+        // base_color.a = viewport bindless texture index
+        // material_params.x = viewport count
         self.renderer.storage_manager.update_object_bindless(
             current_frame,
             0,          // Slot 0 for fullscreen passes
@@ -2132,14 +2232,14 @@ impl<'a> Frame<'a> {
             &[
                 screen_size[0],        // base_color.r = screen width
                 screen_size[1],        // base_color.g = screen height
-                viewport_count as f32, // base_color.b = viewport count
-                0.0,                   // base_color.a = unused
+                0.0,                   // base_color.b = unused
+                viewport_bindless_idx as f32, // base_color.a = viewport bindless index
             ],
-            0.0,
-            0.0,
-            1.0,
-            0.0,
-            [0, 0, 0, 0],
+            viewport_count as f32, // material_params.x = viewport count
+            0.0,                  // material_params.y = unused
+            0.0,                  // material_params.z = unused
+            0.0,                  // material_params.w = unused
+            [0, 0, 0, 0],         // texture_indices = unused
         );
 
         // TODO: Pass viewport rectangles via proper uniform buffer
@@ -2294,16 +2394,26 @@ impl<'a> Frame<'a> {
                     ))
                 })?;
 
+            log::info!("[COMPOSITING] Looking up viewport texture: '{}' (handle={})", resource_name, handle.index());
+
             // Get the transient texture
             let transient = self
                 .graph
                 .transient_texture(&resource_name, frame_idx)
                 .ok_or_else(|| {
+                    log::error!("[COMPOSITING] Failed to find viewport texture '{}' for frame {}", resource_name, frame_idx);
                     RenderGraphError::ResourceNotFound(format!(
                         "Viewport texture '{}' not found for frame {}",
                         resource_name, frame_idx
                     ))
                 })?;
+
+            log::info!("[COMPOSITING] Found viewport texture '{}': format={:?}, extent={}x{}",
+                resource_name,
+                transient.format,
+                transient.extent.width,
+                transient.extent.height
+            );
 
             texture_views.push(transient.image_view.vk());
         }

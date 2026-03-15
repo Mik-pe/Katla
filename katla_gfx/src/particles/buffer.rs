@@ -111,6 +111,9 @@ pub struct GlobalParticleBuffer {
     /// Descriptor set layouts
     compute_layout: Option<vk::DescriptorSetLayout>,
     render_layout: Option<vk::DescriptorSetLayout>,
+
+    /// Flag to prevent double destruction
+    destroyed: bool,
 }
 
 impl GlobalParticleBuffer {
@@ -336,6 +339,7 @@ impl GlobalParticleBuffer {
             descriptor_pool: None,
             compute_layout: None,
             render_layout: None,
+            destroyed: false,
         })
     }
 
@@ -435,6 +439,11 @@ impl GlobalParticleBuffer {
 
     /// Destroy all resources.
     pub fn destroy(&mut self) {
+        if self.destroyed {
+            return;
+        }
+        self.destroyed = true;
+
         unsafe {
             if let Some(layout) = self.compute_layout.take() {
                 self.context
@@ -450,16 +459,24 @@ impl GlobalParticleBuffer {
                 self.context.device.destroy_descriptor_pool(pool, None);
             }
             if let Some(alloc) = self.particle_allocation.take() {
-                self.context.allocator.borrow_mut().free(alloc).ok();
+                if let Ok(mut allocator) = self.context.allocator.try_borrow_mut() {
+                    allocator.free(alloc).ok();
+                }
             }
             if let Some(alloc) = self.counters_allocation.take() {
-                self.context.allocator.borrow_mut().free(alloc).ok();
+                if let Ok(mut allocator) = self.context.allocator.try_borrow_mut() {
+                    allocator.free(alloc).ok();
+                }
             }
             if let Some(alloc) = self.emitter_allocation.take() {
-                self.context.allocator.borrow_mut().free(alloc).ok();
+                if let Ok(mut allocator) = self.context.allocator.try_borrow_mut() {
+                    allocator.free(alloc).ok();
+                }
             }
             if let Some(alloc) = self.indirect_allocation.take() {
-                self.context.allocator.borrow_mut().free(alloc).ok();
+                if let Ok(mut allocator) = self.context.allocator.try_borrow_mut() {
+                    allocator.free(alloc).ok();
+                }
             }
             self.context
                 .device
