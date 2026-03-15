@@ -145,6 +145,9 @@ pub struct FrameGraph {
 
     /// Global frame counter for this frame (used as random seed for particle simulation).
     frame_count: usize,
+
+    /// Particle rendering pipeline handle.
+    particle_pipeline: Option<crate::handle::PipelineHandle>,
 }
 
 impl FrameGraph {
@@ -161,6 +164,7 @@ impl FrameGraph {
             ldr_texture_base_index: None,
             delta_time: 0.0,
             frame_count: 0,
+            particle_pipeline: None,
         }
     }
 
@@ -316,6 +320,11 @@ impl FrameGraph {
     /// Set the global frame counter for this frame (used for particle simulation).
     pub fn set_frame_count(&mut self, frame_count: usize) {
         self.frame_count = frame_count;
+    }
+
+    /// Set the particle rendering pipeline.
+    pub fn set_particle_pipeline(&mut self, pipeline: crate::handle::PipelineHandle) {
+        self.particle_pipeline = Some(pipeline);
     }
 
     /// Cleanup and destroy all transient textures.
@@ -1032,6 +1041,29 @@ impl<'a> Frame<'a> {
         // === PHASE 1: Execute compute dispatches (BEFORE any render passes) ===
         // Vulkan doesn't allow compute dispatches inside a render pass, so we must
         // execute all particle simulation compute shaders before beginning any rendering.
+
+        // Record particle compute dispatch
+        if let Some(ref particle_system) = self.renderer.particle_system {
+            if let Some(_pipeline_handle) = particle_system.compute_pipeline_handle() {
+                log::debug!("🎯 Recording particle compute dispatch");
+
+                // Calculate particles to emit this frame
+                let emitters = particle_system.get_emitters();
+                let emit_count: u32 = emitters
+                    .iter()
+                    .map(|config| (config.emit_rate * self.graph.delta_time) as u32)
+                    .sum();
+
+                if emit_count > 0 {
+                    log::debug!("🎯 Emitting {} particles this frame", emit_count);
+
+                    // Record compute dispatch using the existing method
+                    // We need to add a method to expose the command buffer recording
+                    // For now, this is a placeholder
+                }
+            }
+        }
+
         self.execute_all_particle_dispatches()?;
 
         // === PHASE 2: Execute graphics passes ===
@@ -1112,6 +1144,38 @@ impl<'a> Frame<'a> {
             // Insert post-pass barriers for transient textures that will be read by subsequent passes
             // This ensures proper synchronization between write and read operations
             self.insert_post_pass_barriers(&cmd, index)?;
+
+            // Render particles after tonemap pass (particles render on top of tonemapped output)
+            if pass.name == "tonemap" {
+                log::info!("🎯 Tonemap pass completed, checking particles");
+
+                if let Some(ref particle_system) = self.renderer.particle_system {
+                    let alive_count = particle_system.alive_count();
+                    log::info!("🎯 Particle system has {} alive particles", alive_count);
+
+                    if alive_count > 0 {
+                        log::info!("✨ Rendering {} particles after tonemap pass", alive_count);
+
+                        // Get viewport_0 texture info
+                        if let Some(viewport_texture) = self.graph.transient_textures.get(frame_idx).and_then(|m| m.get("viewport_0")) {
+                            log::info!("🎯 Got viewport texture: {}x{}", viewport_texture.extent.width, viewport_texture.extent.height);
+
+                            // Render particles to viewport texture
+                            if let Err(e) = self.render_particles_to_texture(&cmd, viewport_texture) {
+                                log::error!("Failed to render particles: {}", e);
+                            } else {
+                                log::info!("✅ Particles rendered successfully");
+                            }
+                        } else {
+                            log::warn!("⚠️ Could not get viewport texture for particle rendering");
+                        }
+                    } else {
+                        log::warn!("⚠️ No particles to render (alive_count=0)");
+                    }
+                } else {
+                    log::warn!("⚠️ No particle system available");
+                }
+            }
         }
 
         Ok(())
@@ -1549,6 +1613,168 @@ impl<'a> Frame<'a> {
     fn execute_all_particle_dispatches(&mut self) -> Result<(), RenderGraphError> {
         // Modern particle system integration will be added here
         // For now, particles are managed by GlobalParticleSystem independently
+        Ok(())
+    }
+
+    /// Render particles to a texture using the particle system.
+    ///
+    /// This starts a new render pass targeting the specified texture.
+    fn render_particles_to_texture(
+        &mut self,
+        cmd: &crate::vulkan::commandbuffer::CommandBuffer,
+        texture: &TransientTexture,
+    ) -> Result<(), RenderGraphError> {
+        let _frame_idx = self.current_frame();
+        use ash::vk;
+
+        let particle_system = self
+            .renderer
+            .particle_system
+            .as_ref()
+            .ok_or_else(|| {
+                RenderGraphError::InvalidConfiguration("Particle system not initialized".to_string())
+            })?;
+
+        // Check if there are any particles to render
+        let alive_count = particle_system.alive_count();
+        if alive_count == 0 {
+            return Ok(()); // No particles to render
+        }
+
+        log::debug!("Rendering {} particles", alive_count);
+
+        // Create render pass begin info
+        let color_attachment = vk::RenderingAttachmentInfo::default()
+            .image_view(texture.image_view.vk())
+            .image_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
+            .load_op(vk::AttachmentLoadOp::LOAD) // Load existing tonemap output
+            .store_op(vk::AttachmentStoreOp::STORE)
+            .clear_value(vk::ClearValue {
+                color: vk::ClearColorValue { float32: [0.0; 4] },
+            });
+
+        let rendering_info = vk::RenderingInfo::default()
+            .render_area(vk::Rect2D {
+                offset: vk::Offset2D { x: 0, y: 0 },
+                extent: texture.extent,
+            })
+            .layer_count(1)
+            .color_attachments(std::slice::from_ref(&color_attachment));
+
+        unsafe {
+            self.renderer
+                .context
+                .device
+                .cmd_begin_rendering(cmd.vk_command_buffer(), &rendering_info);
+        }
+
+        // Set viewport and scissor
+        let viewport = vk::Viewport {
+            x: 0.0,
+            y: 0.0,
+            width: texture.extent.width as f32,
+            height: texture.extent.height as f32,
+            min_depth: 0.0,
+            max_depth: 1.0,
+        };
+        let scissor = vk::Rect2D {
+            offset: vk::Offset2D { x: 0, y: 0 },
+            extent: texture.extent,
+        };
+
+        unsafe {
+            self.renderer
+                .context
+                .device
+                .cmd_set_viewport(cmd.vk_command_buffer(), 0, std::slice::from_ref(&viewport));
+            self.renderer
+                .context
+                .device
+                .cmd_set_scissor(cmd.vk_command_buffer(), 0, std::slice::from_ref(&scissor));
+        }
+
+        // Render particles
+        if let Some(particle_pipeline) = self.graph.particle_pipeline {
+            log::debug!("Rendering {} particles with pipeline {:?}", alive_count, particle_pipeline);
+
+            // Get the pipeline from the registry
+            let pipeline_asset = self
+                .renderer
+                .asset_registry
+                .get_pipeline(particle_pipeline)
+                .ok_or_else(|| {
+                    RenderGraphError::InvalidConfiguration(format!(
+                        "Particle pipeline {:?} not found in registry",
+                        particle_pipeline
+                    ))
+                })?;
+
+            let vk_pipeline = pipeline_asset.vk_pipeline();
+
+            // Bind particle pipeline
+            unsafe {
+                self.renderer.context.device.cmd_bind_pipeline(
+                    cmd.vk_command_buffer(),
+                    vk::PipelineBindPoint::GRAPHICS,
+                    vk_pipeline,
+                );
+            }
+
+            // NOTE: Not binding any descriptor sets since test shader doesn't use them
+
+            // Draw particles (6 vertices per particle for quad)
+            let vertex_count = alive_count * 6;
+            unsafe {
+                self.renderer.context.device.cmd_draw(
+                    cmd.vk_command_buffer(),
+                    vertex_count,
+                    1,
+                    0,
+                    0,
+                );
+            }
+
+            log::debug!("Drew {} particles ({} vertices)", alive_count, vertex_count);
+        } else {
+            log::warn!("Particle pipeline not set, skipping particle rendering");
+        }
+
+        // End render pass
+        unsafe {
+            self.renderer
+                .context
+                .device
+                .cmd_end_rendering(cmd.vk_command_buffer());
+        }
+
+        // Transition texture back to shader read-only for UI sampling
+        let barrier = vk::ImageMemoryBarrier2::default()
+            .src_stage_mask(vk::PipelineStageFlags2::COLOR_ATTACHMENT_OUTPUT)
+            .src_access_mask(vk::AccessFlags2::COLOR_ATTACHMENT_WRITE)
+            .dst_stage_mask(vk::PipelineStageFlags2::FRAGMENT_SHADER)
+            .dst_access_mask(vk::AccessFlags2::SHADER_SAMPLED_READ)
+            .old_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
+            .new_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
+            .image(texture.image)
+            .subresource_range(vk::ImageSubresourceRange {
+                aspect_mask: vk::ImageAspectFlags::COLOR,
+                base_mip_level: 0,
+                level_count: 1,
+                base_array_layer: 0,
+                layer_count: 1,
+            });
+
+        let dependency_info = vk::DependencyInfo::default().image_memory_barriers(std::slice::from_ref(&barrier));
+
+        unsafe {
+            self.renderer.context.device.cmd_pipeline_barrier2(
+                cmd.vk_command_buffer(),
+                &dependency_info,
+            );
+        }
+
+        texture.set_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL);
+
         Ok(())
     }
     /// Execute a draw list.

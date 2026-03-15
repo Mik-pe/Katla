@@ -404,24 +404,19 @@ impl GlobalParticleBuffer {
     /// Dispatch compute shader for particle update.
     pub fn dispatch_compute(
         &self,
-        emit_count: u32,
-        delta_time: f32,
-        frame_count: u32,
+        _command_buffer: vk::CommandBuffer,
+        _pipeline: vk::Pipeline,
+        _layout: vk::PipelineLayout,
+        _emit_count: u32,
+        _delta_time: f32,
+        _frame_count: u32,
     ) -> Result<(), String> {
-        // Create frame data for push descriptor update
-        let _frame_data = FrameData {
-            delta_time,
-            total_emit_count: emit_count,
-            random_seed: frame_count,
-            _pad: 0,
-        };
-
-        // TODO: Use push descriptors to update frame_data
-        // This will be done when recording the compute pass
-
-        // TODO: Record compute dispatch
-        // This requires command buffer and pipeline binding
-
+        // TODO: Implement actual compute dispatch
+        // This requires:
+        // 1. Binding compute pipeline
+        // 2. Binding descriptor sets (particle buffers, emitter configs)
+        // 3. Updating push descriptors
+        // 4. Dispatching compute shader
         Ok(())
     }
 

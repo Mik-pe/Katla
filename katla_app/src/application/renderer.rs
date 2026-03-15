@@ -108,6 +108,25 @@ impl Application {
         self.frame_graph.set_delta_time(delta_time);
         self.frame_graph.set_frame_count(frame_count);
 
+        // Update particle system simulation
+        log::debug!("Checking particle system: {}", self.renderer.particle_system.is_some());
+        if let Some(ref mut particle_system) = self.renderer.particle_system {
+            log::debug!("Calling particle system update...");
+            match particle_system.update(delta_time) {
+                Ok(alive_count) => {
+                    log::debug!("Particle system update result: {} alive particles", alive_count);
+                    if alive_count > 0 {
+                        log::info!("✅ Particle system updated: {} alive particles", alive_count);
+                    }
+                }
+                Err(e) => {
+                    log::error!("Failed to update particle system: {}", e);
+                }
+            }
+        } else {
+            log::warn!("⚠️ No particle system in renderer!");
+        }
+
         self.renderer.render(&mut self.frame_graph, |frame| {
             // Submit draw list to the geometry pass
             log::debug!("Inside render closure: submitting {} draw calls to geometry pass", draw_list.len());

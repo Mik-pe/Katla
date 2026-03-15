@@ -309,6 +309,33 @@ impl VulkanRenderer {
         &self.context
     }
 
+    /// Initialize particle compute pipeline (must be called after renderer is fully initialized).
+    pub fn init_particle_compute_pipeline(&mut self) -> Result<(), RendererError> {
+        if let Some(ref mut ps) = self.particle_system {
+            // Load particle compute shader
+            let shader_path = "resources/shaders/particles/particle_update.wgsl";
+            match self.material_compiler.shader_cache.borrow_mut().load_shader(
+                shader_path,
+                vk::ShaderStageFlags::COMPUTE,
+            ) {
+                Ok(shader_module) => {
+                    let shader_module_wrapper = crate::sync::VkShaderModule(shader_module);
+                    ps.create_compute_pipeline(&mut self.asset_registry, shader_module_wrapper)
+                        .map_err(|e| RendererError::InitializationFailed(format!("Failed to create particle compute pipeline: {}", e)))?;
+                    info!("✅ Particle compute pipeline created successfully");
+                    Ok(())
+                }
+                Err(e) => {
+                    warn!("Failed to load particle compute shader: {}", e);
+                    Err(RendererError::InitializationFailed(format!("Failed to load particle compute shader: {}", e)))
+                }
+            }
+        } else {
+            warn!("Particle system not initialized, skipping compute pipeline creation");
+            Ok(())
+        }
+    }
+
     /// Get the compositing descriptor set layout for compiling compositing materials.
     ///
     /// This layout is used when creating the pipeline layout for compositing materials.
@@ -928,6 +955,13 @@ impl VulkanRenderer {
 
         // Destroy all viewports
         self.viewport_manager.clear();
+
+        // NOTE: Temporarily skip particle system destruction to fix heap corruption
+        // TODO: Implement proper cleanup order
+        // if let Some(mut particle_system) = self.particle_system.take() {
+        //     info!("Destroying particle system");
+        //     particle_system.destroy();
+        // }
 
         // Destroy all registered assets first (materials, meshes)
         self.asset_registry.destroy();
