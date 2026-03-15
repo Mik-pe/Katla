@@ -56,7 +56,7 @@ struct EmitterConfig {
     color_variation: f32,
 }
 
-// Global resources
+// Global resources (Set 0: static buffers)
 @group(0) @binding(0)
 var<storage, read_write> particles: array<ParticleData, MAX_PARTICLES>;
 
@@ -73,11 +73,11 @@ var<storage, read_write> alive_next: array<u32, MAX_PARTICLES>;
 var<storage, read_write> counters: ParticleCounters;
 
 // Per-frame data (Set 1: updated via push descriptors)
-@group(0) @binding(5)
+@group(1) @binding(5)
 var<uniform> frame_data: FrameData;
 
 // Per-emitter configurations (Set 1: updated via push descriptors)
-@group(0) @binding(6)
+@group(1) @binding(6)
 var<storage, read> emitters: array<EmitterConfig, MAX_EMITTERS>;
 
 // Pseudo-random number generation

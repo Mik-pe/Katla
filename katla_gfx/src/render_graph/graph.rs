@@ -1611,8 +1611,75 @@ impl<'a> Frame<'a> {
     /// Collects all particle emitters from all draw lists in all pending passes
     /// and executes compute simulation dispatches upfront with proper synchronization.
     fn execute_all_particle_dispatches(&mut self) -> Result<(), RenderGraphError> {
-        // Modern particle system integration will be added here
-        // For now, particles are managed by GlobalParticleSystem independently
+        use ash::vk;
+
+        let particle_system = if let Some(ref ps) = self.renderer.particle_system {
+            ps
+        } else {
+            return Ok(()); // No particle system, skip
+        };
+
+        // Check if compute pipeline is ready
+        let _pipeline_handle = if let Some(ph) = particle_system.compute_pipeline_handle() {
+            ph
+        } else {
+            return Ok(()); // No compute pipeline, skip
+        };
+
+        // Calculate total particles to emit this frame
+        let emitters = particle_system.get_emitters();
+        let total_emit_count: u32 = emitters
+            .iter()
+            .map(|config| (config.emit_rate * self.graph.delta_time) as u32)
+            .sum();
+
+        if total_emit_count == 0 {
+            return Ok(()); // Nothing to emit
+        }
+
+        log::debug!("🎯 Particle compute dispatch: {} emitters, {} particles to emit",
+            emitters.len(), total_emit_count);
+
+        // Calculate workgroup count (each workgroup processes PARTICLE_WORKGROUP_SIZE particles)
+        let workgroup_size = crate::particles::PARTICLE_WORKGROUP_SIZE;
+        let total_workgroups = (total_emit_count + workgroup_size - 1) / workgroup_size;
+
+        log::debug!("🎯 Dispatching {} workgroups ({} particles per workgroup)",
+            total_workgroups, workgroup_size);
+
+        // Get command buffer
+        let frame_idx = self.current_frame();
+        let cmd = self.renderer.frame_context.command_buffers[frame_idx].clone();
+
+        unsafe {
+            // Insert memory barrier to ensure previous frame's particle reads are complete
+            // before we start writing new particle data
+            let compute_barrier = vk::MemoryBarrier2::default()
+                .src_stage_mask(vk::PipelineStageFlags2::COMPUTE_SHADER)
+                .src_access_mask(vk::AccessFlags2::SHADER_READ | vk::AccessFlags2::SHADER_WRITE)
+                .dst_stage_mask(vk::PipelineStageFlags2::COMPUTE_SHADER)
+                .dst_access_mask(vk::AccessFlags2::SHADER_READ | vk::AccessFlags2::SHADER_WRITE);
+
+            let dependency_info = vk::DependencyInfo::default()
+                .memory_barriers(std::slice::from_ref(&compute_barrier));
+
+            self.renderer.context.device.cmd_pipeline_barrier2(
+                cmd.vk_command_buffer(),
+                &dependency_info,
+            );
+        }
+
+        // Record the actual compute dispatch
+        particle_system.record_compute_dispatch(
+            cmd.vk_command_buffer(),
+            &self.renderer.asset_registry,
+            total_workgroups,
+        ).map_err(|e| {
+            RenderGraphError::VulkanError(format!("Particle compute dispatch failed: {}", e))
+        })?;
+
+        log::debug!("✅ Particle compute dispatch completed");
+
         Ok(())
     }
 

@@ -102,21 +102,33 @@ impl Application {
         // Render using the frame graph
         let draw_list = frame.take_draw_list();
 
-        log::debug!("About to submit {} draw calls to geometry pass", draw_list.len());
+        log::debug!(
+            "About to submit {} draw calls to geometry pass",
+            draw_list.len()
+        );
 
         // Set delta time and frame count for particle simulation
         self.frame_graph.set_delta_time(delta_time);
         self.frame_graph.set_frame_count(frame_count);
 
         // Update particle system simulation
-        log::debug!("Checking particle system: {}", self.renderer.particle_system.is_some());
+        log::debug!(
+            "Checking particle system: {}",
+            self.renderer.particle_system.is_some()
+        );
         if let Some(ref mut particle_system) = self.renderer.particle_system {
             log::debug!("Calling particle system update...");
             match particle_system.update(delta_time) {
                 Ok(alive_count) => {
-                    log::debug!("Particle system update result: {} alive particles", alive_count);
+                    log::debug!(
+                        "Particle system update result: {} alive particles",
+                        alive_count
+                    );
                     if alive_count > 0 {
-                        log::info!("✅ Particle system updated: {} alive particles", alive_count);
+                        log::info!(
+                            "✅ Particle system updated: {} alive particles",
+                            alive_count
+                        );
                     }
                 }
                 Err(e) => {
@@ -129,10 +141,16 @@ impl Application {
 
         self.renderer.render(&mut self.frame_graph, |frame| {
             // Submit draw list to the geometry pass
-            log::debug!("Inside render closure: submitting {} draw calls to geometry pass", draw_list.len());
+            log::debug!(
+                "Inside render closure: submitting {} draw calls to geometry pass",
+                draw_list.len()
+            );
             if !draw_list.is_empty() {
                 frame.submit("geometry", &draw_list);
-                log::debug!("Submitted {} draw calls to geometry pass successfully", draw_list.len());
+                log::debug!(
+                    "Submitted {} draw calls to geometry pass successfully",
+                    draw_list.len()
+                );
             } else {
                 log::warn!("No draw calls to submit to geometry pass!");
             }
