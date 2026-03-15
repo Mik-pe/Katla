@@ -198,6 +198,36 @@ impl ApplicationBuilder {
                 message: format!("Failed to compile geometry shader: {}", e),
             })?;
 
+        // Compile particle rendering shader with alpha blending
+        let _particle_shader_path = resources.shader_path("particles/particle_render.wgsl");
+
+        // NOTE: Temporarily disable particle render pipeline to fix heap corruption
+        // TODO: Fix descriptor layout compatibility
+        /*
+        let particle_pipeline = renderer
+            .compile_material(
+                particle_shader_path,
+                katla_gfx::MaterialOptions {
+                    vertex_type: katla_gfx::VertexType::Pbr, // Particles use standard vertex layout
+                    alpha_blended: true, // Particles need alpha blending for transparency
+                    color_format: TextureImageFormat::B8G8R8A8Srgb, // LDR output for compositing
+                    ..Default::default()
+                },
+            )
+            .map_err(|e| crate::error::AppError::Graphics {
+                message: format!("Failed to compile particle shader: {}", e),
+            })?;
+
+        // Extract pipeline handle from particle material
+        let particle_pipeline_handle = renderer
+            .asset_registry
+            .get_material(particle_pipeline)
+            .and_then(|m| m.pipeline)
+            .ok_or_else(|| crate::error::AppError::Graphics {
+                message: "Particle material has no pipeline".to_string(),
+            })?;
+        */
+
         let graph = renderer
             .create_frame_graph()
             // Create HDR color texture for geometry pass output

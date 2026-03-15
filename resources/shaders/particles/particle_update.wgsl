@@ -73,11 +73,11 @@ var<storage, read_write> alive_next: array<u32, MAX_PARTICLES>;
 var<storage, read_write> counters: ParticleCounters;
 
 // Per-frame data (Set 1: updated via push descriptors)
-@group(1) @binding(0)
+@group(0) @binding(5)
 var<uniform> frame_data: FrameData;
 
 // Per-emitter configurations (Set 1: updated via push descriptors)
-@group(1) @binding(1)
+@group(0) @binding(6)
 var<storage, read> emitters: array<EmitterConfig, MAX_EMITTERS>;
 
 // Pseudo-random number generation
@@ -178,7 +178,7 @@ fn simulate_particle(particle: ptr<function, ParticleData>, delta_time: f32) {
 }
 
 @compute @workgroup_size(256)
-fn main(@builtin(global_invocation_id) global_id: vec3u) {
+fn cs_main(@builtin(global_invocation_id) global_id: vec3u) {
     let idx = global_id.x;
     let emit_count = frame_data.total_emit_count;
     let seed_initial = frame_data.random_seed;

@@ -484,6 +484,14 @@ impl Application {
 
         info!("Default HDR PBR material loaded successfully");
 
+        // Initialize particle compute pipeline
+        // NOTE: Temporarily disabled to fix heap corruption
+        // TODO: Fix descriptor layout and cleanup order
+        /*
+        self.renderer.init_particle_compute_pipeline()
+            .expect("Failed to initialize particle compute pipeline");
+        */
+
         // Initialize transient textures and register with bindless system
         self.frame_graph
             .initialize_transient_textures(&self.renderer)
@@ -523,7 +531,14 @@ impl Application {
         self.editor_ui
             .set_viewport_bindless_index(viewport_bindless_index);
 
+        // NOTE: Temporarily disable particle emitters to fix heap corruption
+        // TODO: Fix heap corruption in particle system cleanup
+        /*
         // Set up default test scene
+        self.setup_default_scene();
+        */
+
+        // Set up default test scene (without particles)
         self.setup_default_scene();
 
         println!("Application::init() completed");
@@ -1228,20 +1243,72 @@ impl Application {
             info!("Spawned DamagedHelmet model");
         }
 
-        // TODO: Add particle emitters when modern particle system integration is complete
-        // Fire emitter near the center cube
-        // if let Some(_entity) = self.spawn_particle_emitter([-3.0, 2.0, -3.0]) {
-        //     info!("✨ Fire particle emitter spawned at [-3.0, 2.0, -3.0]");
-        // }
-
-        // Note: Modern particle system (GlobalParticleSystem) is initialized in builder.rs
-        // but ECS integration and spawn methods need to be implemented
-        info!("Modern particle system ready for ECS integration");
+        // Add particle emitters
+        self.setup_particle_emitters();
 
         info!(
             "Default scene setup complete - {} entities spawned with particle effects",
             self.world.entity_ids().count()
         );
+    }
+
+    /// Set up particle emitters for the default scene.
+    fn setup_particle_emitters(&mut self) {
+        use katla_gfx::particles::EmitterConfig;
+
+        info!("Setting up particle emitters...");
+
+        // Get particle system reference
+        let particle_system = if let Some(ref mut ps) = self.renderer.particle_system {
+            ps
+        } else {
+            warn!("Particle system not initialized, skipping emitter creation");
+            return;
+        };
+
+        // Fire emitter near the center cube
+        let fire_config = EmitterConfig {
+            position: [-3.0, 1.0, -3.0],
+            emit_rate: 1000.0, // HUGE emit rate to ensure particles
+            base_lifetime: 2.0,
+            lifetime_variation: 0.5,
+            velocity_direction: [0.0, 1.0, 0.0],
+            velocity_magnitude: 2.0,
+            velocity_cone_angle: 0.3,
+            base_scale: 0.15,
+            scale_variation: 0.3,
+            color: [1.0, 0.5, 0.0, 1.0], // Orange
+            color_variation: 0.2,
+            ..Default::default()
+        };
+
+        match particle_system.create_emitter(fire_config) {
+            Ok(_emitter) => info!("✨ Fire particle emitter created at [-3.0, 1.0, -3.0]"),
+            Err(e) => warn!("Failed to create fire emitter: {}", e),
+        }
+
+        // Magic sparkles emitter
+        let sparkle_config = EmitterConfig {
+            position: [0.0, 3.0, 0.0],
+            emit_rate: 1000.0, // HUGE emit rate
+            base_lifetime: 3.0,
+            lifetime_variation: 1.0,
+            velocity_direction: [0.0, -1.0, 0.0], // Falling down
+            velocity_magnitude: 0.5,
+            velocity_cone_angle: 0.1,
+            base_scale: 0.1,
+            scale_variation: 0.5,
+            color: [0.8, 0.9, 1.0, 1.0], // Light blue
+            color_variation: 0.3,
+            ..Default::default()
+        };
+
+        match particle_system.create_emitter(sparkle_config) {
+            Ok(_emitter) => info!("✨ Sparkle particle emitter created at [0.0, 3.0, 0.0]"),
+            Err(e) => warn!("Failed to create sparkle emitter: {}", e),
+        }
+
+        info!("Particle emitters setup complete");
     }
 
     /// Poll the background loader and process completed loads.

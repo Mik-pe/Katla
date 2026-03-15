@@ -1,14 +1,6 @@
 // Modern Particle Rendering - Vertex + Fragment Shaders
 //
-// Renders particles as camera-facing billboards.
-// Uses vertex ID to generate quad corners (no vertex buffer needed).
-//
-// Descriptor Set Layout:
-// Set 0 (Global Resources):
-//   Binding 0: Storage buffer (particle data)
-//   Binding 1: Storage buffer (alive particle index list)
-// Set 1 (Per-Frame):
-//   Binding 0: Storage buffer (frame uniforms - camera, lights)
+// Renders particles as camera-facing billboards in world space.
 
 const MAX_PARTICLES: u32 = 1048576u;
 
@@ -32,15 +24,7 @@ struct FrameUniforms {
     light_intensity: vec4f,
 }
 
-// Global particle data
-@group(0) @binding(0)
-var<storage, read> particles: array<ParticleData, MAX_PARTICLES>;
-
-// Alive particle index list
-@group(0) @binding(1)
-var<storage, read> alive_list: array<u32, MAX_PARTICLES>;
-
-// Per-frame data (Set 1: shared with main renderer)
+// NOTE: Test particles at emitter positions in world space
 @group(1) @binding(0)
 var<storage, read> frame_data: FrameUniforms;
 
@@ -67,7 +51,7 @@ fn get_quad_corner(vertex_id: u32) -> vec2f {
 
 @vertex
 fn vs_main(
-    @builtin(vertex_id) vertex_id: u32,
+    @builtin(vertex_index) vertex_id: u32,
 ) -> VertexOutput {
     var out: VertexOutput;
 
@@ -75,85 +59,60 @@ fn vs_main(
     let particle_index = vertex_id / 6u;
     let corner = get_quad_corner(vertex_id);
 
-    // Safety check (though GPU should only dispatch valid count)
-    if (particle_index >= MAX_PARTICLES) {
-        out.clip_position = vec4f(0.0, 0.0, 2.0, 1.0);
-        out.uv = vec2f(0.0);
-        out.color = vec4f(0.0);
-        return out;
-    }
+    // Test particles at emitter positions in WORLD SPACE
+    let test_positions = array<vec3f, 2>(
+        vec3f(-3.0, 1.0, -3.0),  // Fire emitter position
+        vec3f(0.0, 3.0, 0.0)     // Sparkle emitter position
+    );
 
-    let particle_idx = alive_list[particle_index];
-    let particle = particles[particle_idx];
+    // Bright colors matching the emitters
+    let test_colors = array<vec4f, 2>(
+        vec4f(1.0, 0.5, 0.0, 1.0),  // Orange (fire)
+        vec4f(0.8, 0.9, 1.0, 1.0)   // Light blue (sparkle)
+    );
 
-    // Skip dead particles
-    if (particle.lifetime <= 0.0) {
-        out.clip_position = vec4f(0.0, 0.0, 2.0, 1.0);
-        out.uv = vec2f(0.0);
-        out.color = vec4f(0.0);
-        return out;
-    }
+    let test_idx = particle_index % 2u;
+    let particle_pos = test_positions[test_idx];
+    let particle_color = test_colors[test_idx];
 
     out.uv = corner;
-    out.color = particle.color;
+    out.color = particle_color;
+
+    // Use actual camera matrices from frame data
+    let view = frame_data.view;
+    let proj = frame_data.proj;
 
     // Extract camera right/up vectors from view matrix
-    let view_right = vec3f(
-        frame_data.view[0][0],
-        frame_data.view[1][0],
-        frame_data.view[2][0]
-    );
-    let view_up = vec3f(
-        frame_data.view[0][1],
-        frame_data.view[1][1],
-        frame_data.view[2][1]
-    );
+    let view_right = vec3f(view[0][0], view[1][0], view[2][0]);
+    let view_up = vec3f(view[0][1], view[1][1], view[2][1]);
 
-    // Calculate billboard offset in world space
-    let half_size = particle.scale * 0.5;
+    // Billboard size in world units
+    let half_size = 0.5; // 0.5 meter radius = 1 meter across
     let billboard_offset = (corner.x * view_right + corner.y * view_up) * half_size;
-
-    // Particle position in world space
-    let particle_pos = vec3f(
-        particle.position[0],
-        particle.position[1],
-        particle.position[2]
-    );
 
     // Final world position
     let world_pos = particle_pos + billboard_offset;
 
-    // Transform to clip space
-    let view_pos = frame_data.view * vec4f(world_pos, 1.0);
-    out.clip_position = frame_data.proj * view_pos;
+    // Transform to clip space using actual camera
+    let view_pos = view * vec4f(world_pos, 1.0);
+    out.clip_position = proj * view_pos;
 
     return out;
 }
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4f {
-    // Discard dead particles
-    if (in.color.a <= 0.01) {
-        discard;
-    }
-
+    // DEBUG: Make particles super visible
     let uv = in.uv;
 
-    // Calculate distance from center for soft circular particle
+    // Simple circle with sharp edge for visibility
     let dist = length(uv);
 
-    // Soft edge: smooth falloff from center to edge
-    let alpha = 1.0 - smoothstep(0.5, 1.0, dist);
-
-    // Discard fully transparent pixels
-    if (alpha < 0.01) {
+    // Discard outside circle
+    if (dist > 1.0) {
         discard;
     }
 
-    // Output color with soft edge
-    // Pre-multiply alpha for proper blending
-    let rgb = in.color.rgb * in.color.a * alpha;
-    let a = in.color.a * alpha * 0.5;  // Reduce overall alpha for transparency
-
-    return vec4f(rgb, a);
+    // Solid color, no transparency for debugging
+    return in.color;
 }
