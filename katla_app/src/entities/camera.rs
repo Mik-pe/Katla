@@ -22,7 +22,7 @@ impl Camera {
             rotation: katla_math::Quat::new(),
             scale: Vec3::new(1.0, 1.0, 1.0),
         };
-        
+
         let entity = world.spawn((
             TransformComponent::new(transform),
             VelocityComponent::default(),

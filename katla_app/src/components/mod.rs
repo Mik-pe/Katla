@@ -8,6 +8,7 @@ pub use crate::components::physics::*;
 pub use crate::components::scene::*;
 
 // Rendering components
+pub use crate::components::rendering::particle::ParticleEmitterComponent;
 pub use crate::components::rendering::*;
 
 // Input components

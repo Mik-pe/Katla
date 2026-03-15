@@ -310,10 +310,9 @@ impl VulkanRenderer {
     }
 
     /// Initialize particle compute pipeline (must be called after renderer is fully initialized).
-    pub fn init_particle_compute_pipeline(&mut self) -> Result<(), RendererError> {
+    pub fn init_particle_compute_pipeline(&mut self, shader_path: &std::path::Path) -> Result<(), RendererError> {
         if let Some(ref mut ps) = self.particle_system {
             // Load particle compute shader
-            let shader_path = "resources/shaders/particles/particle_update.wgsl";
             match self.material_compiler.shader_cache.borrow_mut().load_shader(
                 shader_path,
                 vk::ShaderStageFlags::COMPUTE,
@@ -956,12 +955,12 @@ impl VulkanRenderer {
         // Destroy all viewports
         self.viewport_manager.clear();
 
-        // NOTE: Temporarily skip particle system destruction to fix heap corruption
-        // TODO: Implement proper cleanup order
-        // if let Some(mut particle_system) = self.particle_system.take() {
-        //     info!("Destroying particle system");
-        //     particle_system.destroy();
-        // }
+        // Destroy particle system FIRST (before destroying other resources)
+        // This ensures proper cleanup order and avoids heap corruption
+        if let Some(mut particle_system) = self.particle_system.take() {
+            info!("Destroying particle system");
+            particle_system.destroy();
+        }
 
         // Destroy all registered assets first (materials, meshes)
         self.asset_registry.destroy();
@@ -974,13 +973,6 @@ impl VulkanRenderer {
             self.context
                 .device
                 .destroy_descriptor_set_layout(self.compositing_descriptor_set_layout, None);
-        }
-
-        // Destroy particle system BEFORE UI resources and other cleanup
-        // This ensures proper cleanup order and avoids heap corruption
-        if let Some(mut particle_system) = self.particle_system.take() {
-            info!("Destroying particle system");
-            particle_system.destroy();
         }
 
         // Clean up UI resources

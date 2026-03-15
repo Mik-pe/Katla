@@ -432,6 +432,21 @@ impl GlobalParticleBuffer {
         Ok(())
     }
 
+    /// Get the maximum particle count.
+    pub fn max_particles(&self) -> u32 {
+        self.max_particles
+    }
+
+    /// Get the particle buffer handle (internal use only).
+    pub(crate) fn particle_buffer(&self) -> vk::Buffer {
+        self.particle_buffer
+    }
+
+    /// Get the counters buffer handle (internal use only).
+    pub(crate) fn counters_buffer(&self) -> vk::Buffer {
+        self.counters_buffer
+    }
+
     /// Destroy all resources.
     pub fn destroy(&mut self) {
         if self.destroyed {

@@ -91,6 +91,8 @@ pub struct Application {
     pending_readback: Option<(usize, Vec<u8>)>,
     /// Flag to prevent double cleanup
     cleaned_up: bool,
+    /// Particle system for managing particle emitters via ECS
+    pub(crate) particle_system: crate::systems::ParticleSystem,
 }
 
 impl ApplicationHandler for Application {
@@ -274,6 +276,10 @@ impl ApplicationHandler for Application {
                 self.world.update(dt);
                 debug!("World updated");
 
+                // Update particle emitters from ECS components
+                self.particle_system
+                    .update(&mut self.world, &mut self.renderer.particle_system);
+
                 // Poll background loader for completed asset loads
                 self.poll_background_loader();
 
@@ -318,15 +324,15 @@ impl ApplicationHandler for Application {
 
                             // Sample positions: center, corners, and mid-edges
                             let sample_positions = [
-                                (width / 2, height / 2),           // Center
-                                (width / 4, height / 4),           // Top-left
-                                (3 * width / 4, height / 4),       // Top-right
-                                (width / 4, 3 * height / 4),       // Bottom-left
-                                (3 * width / 4, 3 * height / 4),   // Bottom-right
-                                (width / 2, height / 4),           // Top-middle
-                                (width / 2, 3 * height / 4),       // Bottom-middle
-                                (width / 4, height / 2),           // Middle-left
-                                (3 * width / 4, height / 2),       // Middle-right
+                                (width / 2, height / 2),         // Center
+                                (width / 4, height / 4),         // Top-left
+                                (3 * width / 4, height / 4),     // Top-right
+                                (width / 4, 3 * height / 4),     // Bottom-left
+                                (3 * width / 4, 3 * height / 4), // Bottom-right
+                                (width / 2, height / 4),         // Top-middle
+                                (width / 2, 3 * height / 4),     // Bottom-middle
+                                (width / 4, height / 2),         // Middle-left
+                                (3 * width / 4, height / 2),     // Middle-right
                             ];
 
                             for (i, (x, y)) in sample_positions.iter().enumerate() {
@@ -355,7 +361,13 @@ impl ApplicationHandler for Application {
                             } else if let Some((i, r, g, b, x, y)) = first_non_black_pixel {
                                 log::info!(
                                     "Frame {} has color! Sample #{} at ({},{}): RGB({},{},{})",
-                                    prev_frame, i, x, y, r, g, b
+                                    prev_frame,
+                                    i,
+                                    x,
+                                    y,
+                                    r,
+                                    g,
+                                    b
                                 );
                             }
                         }
@@ -485,12 +497,9 @@ impl Application {
         info!("Default HDR PBR material loaded successfully");
 
         // Initialize particle compute pipeline
-        // NOTE: Temporarily disabled to fix heap corruption
-        // TODO: Fix descriptor layout and cleanup order
-        /*
-        self.renderer.init_particle_compute_pipeline()
+        let particle_compute_shader_path = self.resources.shader_path("particles/particle_update.wgsl");
+        self.renderer.init_particle_compute_pipeline(&particle_compute_shader_path)
             .expect("Failed to initialize particle compute pipeline");
-        */
 
         // Initialize transient textures and register with bindless system
         self.frame_graph
@@ -525,7 +534,8 @@ impl Application {
         );
 
         // Set LDR texture base index for compositing shader to use
-        self.frame_graph.set_ldr_texture_base_index(viewport_bindless_index);
+        self.frame_graph
+            .set_ldr_texture_base_index(viewport_bindless_index);
 
         // Set viewport bindless index in editor UI
         self.editor_ui
@@ -658,8 +668,6 @@ impl Application {
 
         // Convert sRGB to linear for correct PBR rendering
         let linear_color = color.to_linear();
-
-        
 
         self.world.spawn((
             TransformComponent {
@@ -1254,61 +1262,24 @@ impl Application {
 
     /// Set up particle emitters for the default scene.
     fn setup_particle_emitters(&mut self) {
-        use katla_gfx::particles::EmitterConfig;
+        use crate::components::ParticleEmitterComponent;
 
-        info!("Setting up particle emitters...");
-
-        // Get particle system reference
-        let particle_system = if let Some(ref mut ps) = self.renderer.particle_system {
-            ps
-        } else {
-            warn!("Particle system not initialized, skipping emitter creation");
-            return;
-        };
+        info!("Setting up particle emitters via ECS...");
 
         // Fire emitter near the center cube
-        let fire_config = EmitterConfig {
-            position: [-3.0, 1.0, -3.0],
-            emit_rate: 1000.0, // HUGE emit rate to ensure particles
-            base_lifetime: 2.0,
-            lifetime_variation: 0.5,
-            velocity_direction: [0.0, 1.0, 0.0],
-            velocity_magnitude: 2.0,
-            velocity_cone_angle: 0.3,
-            base_scale: 0.15,
-            scale_variation: 0.3,
-            color: [1.0, 0.5, 0.0, 1.0], // Orange
-            color_variation: 0.2,
-            ..Default::default()
-        };
-
-        match particle_system.create_emitter(fire_config) {
-            Ok(_emitter) => info!("✨ Fire particle emitter created at [-3.0, 1.0, -3.0]"),
-            Err(e) => warn!("Failed to create fire emitter: {}", e),
-        }
+        let fire_emitter = ParticleEmitterComponent::fire_effect([-3.0, 1.0, -3.0]);
+        let fire_entity = self.world.spawn((fire_emitter,));
+        info!("✨ Fire particle emitter entity created: {:?}", fire_entity);
 
         // Magic sparkles emitter
-        let sparkle_config = EmitterConfig {
-            position: [0.0, 3.0, 0.0],
-            emit_rate: 1000.0, // HUGE emit rate
-            base_lifetime: 3.0,
-            lifetime_variation: 1.0,
-            velocity_direction: [0.0, -1.0, 0.0], // Falling down
-            velocity_magnitude: 0.5,
-            velocity_cone_angle: 0.1,
-            base_scale: 0.1,
-            scale_variation: 0.5,
-            color: [0.8, 0.9, 1.0, 1.0], // Light blue
-            color_variation: 0.3,
-            ..Default::default()
-        };
+        let sparkle_emitter = ParticleEmitterComponent::sparkle_effect([0.0, 3.0, 0.0]);
+        let sparkle_entity = self.world.spawn((sparkle_emitter,));
+        info!(
+            "✨ Sparkle particle emitter entity created: {:?}",
+            sparkle_entity
+        );
 
-        match particle_system.create_emitter(sparkle_config) {
-            Ok(_emitter) => info!("✨ Sparkle particle emitter created at [0.0, 3.0, 0.0]"),
-            Err(e) => warn!("Failed to create sparkle emitter: {}", e),
-        }
-
-        info!("Particle emitters setup complete");
+        info!("Particle emitters setup complete - emitters will be initialized by ParticleSystem");
     }
 
     /// Poll the background loader and process completed loads.

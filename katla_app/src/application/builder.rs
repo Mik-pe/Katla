@@ -295,11 +295,7 @@ impl ApplicationBuilder {
             )
             // UI pass: draws editor UI to backbuffer
             // Note: UI composites on top of the background pass
-            .add_pass(
-                UIPass::new("ui")
-                    .write("backbuffer")
-                    .material(ui_material),
-            )
+            .add_pass(UIPass::new("ui").write("backbuffer").material(ui_material))
             .build()
             .map_err(|e| crate::error::AppError::Graphics {
                 message: e.to_string(),
@@ -502,6 +498,7 @@ impl ApplicationBuilder {
             default_material_handle: katla_gfx::MaterialHandle::NONE,
             pending_readback: None,
             cleaned_up: false,
+            particle_system: crate::systems::ParticleSystem::new(),
         };
 
         Ok((app, event_loop))
