@@ -39,6 +39,9 @@ pub struct TransientTexture {
     pub format: vk::Format,
     /// Image extent.
     pub extent: vk::Extent2D,
+    /// Bindless texture slot (if registered with bindless system).
+    /// This is used to update the descriptor when the texture is recreated.
+    bindless_slot: Option<u32>,
     /// Current GPU layout - tracked to ensure correct barrier old_layout.
     ///
     /// This is CRITICAL for correct synchronization. Using the wrong old_layout
@@ -66,6 +69,7 @@ impl TransientTexture {
             image_view,
             format,
             extent,
+            bindless_slot: None,
             // Images are created with UNDEFINED layout
             current_layout: RefCell::new(vk::ImageLayout::UNDEFINED),
         }
@@ -499,6 +503,21 @@ impl FrameGraph {
         new_width: u32,
         new_height: u32,
     ) -> Result<Vec<(String, u32)>, RenderGraphError> {
+        // Collect existing bindless slots before destroying textures
+        let mut existing_slots: std::collections::HashMap<String, Vec<u32>> =
+            std::collections::HashMap::new();
+
+        for frame_textures in &self.transient_textures {
+            for (name, texture) in frame_textures {
+                if let Some(slot) = texture.bindless_slot {
+                    existing_slots
+                        .entry(name.clone())
+                        .or_default()
+                        .push(slot);
+                }
+            }
+        }
+
         // Clear existing transient textures (Drop handles cleanup)
         self.transient_textures.clear();
 
@@ -511,14 +530,43 @@ impl FrameGraph {
         // Recreate textures with new dimensions
         self.initialize_transient_textures(renderer)?;
 
-        // Re-register all transient textures with bindless system
+        // Update all transient textures with their existing bindless slots
         let mut result = Vec::new();
-        let names: Vec<String> = self
+        for (name, slots) in &existing_slots {
+            // Update each frame's texture with its existing slot
+            for (frame_idx, slot) in slots.iter().enumerate() {
+                if let Some(frame_textures) = self.transient_textures.get_mut(frame_idx) {
+                    if let Some(texture) = frame_textures.get_mut(name) {
+                        renderer
+                            .update_bindless_texture(*slot, texture.image_view.vk())
+                            .map_err(|e| {
+                                RenderGraphError::VulkanError(format!(
+                                    "Failed to update bindless texture '{}' frame {}: {}",
+                                    name, frame_idx, e
+                                ))
+                            })?;
+
+                        // Store the slot in the new texture
+                        texture.bindless_slot = Some(*slot);
+                    }
+                }
+            }
+
+            // Return base slot (frame 0) for caller reference
+            if let Some(&base_slot) = slots.first() {
+                result.push((name.clone(), base_slot));
+            }
+        }
+
+        // Register any new textures that didn't have existing slots
+        let new_texture_names: Vec<String> = self
             .transient_resources
             .iter()
-            .map(|d| d.name.clone())
+            .filter(|desc| !existing_slots.contains_key(&desc.name))
+            .map(|desc| desc.name.clone())
             .collect();
-        for name in names {
+
+        for name in new_texture_names {
             let slot = self.register_transient_texture_bindless(renderer, &name)?;
             result.push((name, slot));
         }
@@ -560,48 +608,39 @@ impl FrameGraph {
             ));
         }
 
-        // Get frame 0's texture to get the base slot
-        let texture = self
-            .transient_textures.first()
-            .and_then(|textures| textures.get(name))
-            .ok_or_else(|| RenderGraphError::ResourceNotFound(name.to_string()))?;
-
         log::info!(
             "Registering transient texture '{}' ({} frames) with bindless system",
             name,
             num_frames
         );
 
-        // Register frame 0's texture to get base slot
-        let base_slot = renderer
-            .register_bindless_texture(texture.image_view.vk())
-            .map_err(|e| {
-                RenderGraphError::VulkanError(format!(
-                    "Failed to register bindless texture '{}': {}",
-                    name, e
-                ))
-            })?;
+        // Register each frame's texture and store the slot in the texture
+        for frame_idx in 0..num_frames {
+            if let Some(frame_textures) = self.transient_textures.get_mut(frame_idx) {
+                if let Some(texture) = frame_textures.get_mut(name) {
+                    let slot = renderer
+                        .register_bindless_texture(texture.image_view.vk())
+                        .map_err(|e| {
+                            RenderGraphError::VulkanError(format!(
+                                "Failed to register bindless texture '{}' frame {}: {}",
+                                name, frame_idx, e
+                            ))
+                        })?;
 
-        log::debug!("  Frame 0: slot {}", base_slot);
-
-        // Register remaining frames' textures at consecutive slots
-        for frame_idx in 1..num_frames {
-            if let Some(texture) = self
-                .transient_textures
-                .get(frame_idx)
-                .and_then(|textures| textures.get(name))
-            {
-                let slot = renderer
-                    .register_bindless_texture(texture.image_view.vk())
-                    .map_err(|e| {
-                        RenderGraphError::VulkanError(format!(
-                            "Failed to register bindless texture '{}' frame {}: {}",
-                            name, frame_idx, e
-                        ))
-                    })?;
-                log::debug!("  Frame {}: slot {}", frame_idx, slot);
+                    // Store the slot in the texture for later updates
+                    texture.bindless_slot = Some(slot);
+                    log::debug!("  Frame {}: slot {}", frame_idx, slot);
+                }
             }
         }
+
+        // Get base slot from frame 0 for the return value
+        let base_slot = self
+            .transient_textures
+            .first()
+            .and_then(|textures| textures.get(name))
+            .and_then(|texture| texture.bindless_slot)
+            .ok_or_else(|| RenderGraphError::ResourceNotFound(name.to_string()))?;
 
         // Track base index for LDR texture (needed for viewport rendering)
         if name == "ldr_color" {

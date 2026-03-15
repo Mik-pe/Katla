@@ -728,6 +728,38 @@ impl VulkanRenderer {
             })
     }
 
+    /// Update an existing bindless texture slot with a new image view.
+    ///
+    /// This is used when a texture is recreated (e.g., after window resize) and the
+    /// bindless descriptor needs to be updated with the new image view.
+    ///
+    /// # Arguments
+    /// * `slot` - The bindless slot to update
+    /// * `image_view` - The new image view
+    ///
+    /// # Returns
+    /// Ok(()) if successful, or an error if the slot is invalid.
+    ///
+    /// # Example
+    /// ```ignore
+    /// // After recreating a texture, update the bindless descriptor:
+    /// renderer.update_bindless_texture(slot, new_image_view)?;
+    /// ```
+    pub fn update_bindless_texture(
+        &mut self,
+        slot: u32,
+        image_view: vk::ImageView,
+    ) -> Result<(), RendererError> {
+        self.bindless_manager
+            .update_texture(slot, image_view)
+            .map_err(|e| {
+                RendererError::InitializationFailed(format!(
+                    "Failed to update bindless texture slot {}: {}",
+                    slot, e
+                ))
+            })
+    }
+
     /// Set the HDR texture index for tonemapping.
     ///
     /// Sets object[0].texture_indices.x to the HDR texture bindless index.
@@ -902,6 +934,13 @@ impl VulkanRenderer {
 
         // Destroy material compiler (cleans up descriptor layouts)
         self.material_compiler.destroy();
+
+        // Destroy compositing descriptor set layout
+        unsafe {
+            self.context
+                .device
+                .destroy_descriptor_set_layout(self.compositing_descriptor_set_layout, None);
+        }
 
         // Destroy particle system BEFORE UI resources and other cleanup
         // This ensures proper cleanup order and avoids heap corruption
