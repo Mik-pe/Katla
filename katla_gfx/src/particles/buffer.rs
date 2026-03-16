@@ -49,6 +49,8 @@ pub struct FrameData {
     pub random_seed: u32,
     /// Total particles to simulate (newly emitted + previously alive)
     pub total_simulate_count: u32,
+    /// Burst particles to emit immediately (overrides emit_rate for this frame)
+    pub burst_count: u32,
 }
 
 /// Atomic counters for particle management (16 bytes).
@@ -507,6 +509,20 @@ impl GlobalParticleBuffer {
         }
     }
 
+    /// Get current dead particle count.
+    pub fn get_dead_count(&self) -> Result<u32, String> {
+        if let Some(mapped) = self
+            .counters_allocation
+            .as_ref()
+            .and_then(|a| a.mapped_ptr())
+        {
+            let counters = unsafe { &*(mapped.as_ptr() as *const ParticleCounters) };
+            Ok(counters.dead_count)
+        } else {
+            Ok(0)
+        }
+    }
+
     /// Dispatch compute shader for particle update.
     pub fn dispatch_compute(
         &self,
@@ -646,11 +662,11 @@ mod tests {
 
     #[test]
     fn test_counters_size() {
-        assert_eq!(std::mem::size_of::<ParticleCounters>(), 8);
+        assert_eq!(std::mem::size_of::<ParticleCounters>(), 16);
     }
 
     #[test]
     fn test_frame_data_size() {
-        assert_eq!(std::mem::size_of::<FrameData>(), 16);
+        assert_eq!(std::mem::size_of::<FrameData>(), 24);
     }
 }

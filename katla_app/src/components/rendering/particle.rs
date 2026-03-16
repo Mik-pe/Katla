@@ -16,6 +16,12 @@ pub struct ParticleEmitterComponent {
 
     /// Whether the emitter is currently active
     pub active: bool,
+
+    /// Queue of burst counts to emit (particles to emit immediately)
+    pub burst_queue: Vec<u32>,
+
+    /// Timed emission duration (remaining seconds). None = infinite
+    pub timed_emission: Option<f32>,
 }
 
 impl ParticleEmitterComponent {
@@ -25,6 +31,8 @@ impl ParticleEmitterComponent {
             config: EmitterConfig::default(),
             emitter_handle: None,
             active: true,
+            burst_queue: Vec::new(),
+            timed_emission: None,
         }
     }
 
@@ -34,6 +42,8 @@ impl ParticleEmitterComponent {
             config,
             emitter_handle: None,
             active: true,
+            burst_queue: Vec::new(),
+            timed_emission: None,
         }
     }
 
@@ -46,6 +56,8 @@ impl ParticleEmitterComponent {
             config,
             emitter_handle: None,
             active: true,
+            burst_queue: Vec::new(),
+            timed_emission: None,
         }
     }
 
@@ -68,6 +80,8 @@ impl ParticleEmitterComponent {
             },
             emitter_handle: None,
             active: true,
+            burst_queue: Vec::new(),
+            timed_emission: None,
         }
     }
 
@@ -90,6 +104,8 @@ impl ParticleEmitterComponent {
             },
             emitter_handle: None,
             active: true,
+            burst_queue: Vec::new(),
+            timed_emission: None,
         }
     }
 
@@ -170,6 +186,46 @@ impl ParticleEmitterComponent {
         }
 
         preset.save_to_file(&path)
+    }
+
+    /// Burst particles immediately.
+    ///
+    /// Queues particles to be emitted immediately this frame, overriding
+    /// the normal emit rate. Useful for explosions, impacts, and one-shot effects.
+    ///
+    /// # Arguments
+    /// * `count` - Number of particles to burst
+    ///
+    /// # Example
+    /// ```ignore
+    /// // Explosion effect
+    /// explosion_emitter.burst(1000);
+    ///
+    /// // Bullet impact
+    /// impact_emitter.burst(50);
+    /// ```
+    pub fn burst(&mut self, count: u32) {
+        self.burst_queue.push(count);
+        log::debug!("Queued burst of {} particles", count);
+    }
+
+    /// Emit particles for a limited duration.
+    ///
+    /// Sets a timer for the emitter to automatically deactivate after the
+    /// specified duration. Useful for temporary effects.
+    ///
+    /// # Arguments
+    /// * `duration` - Duration in seconds to emit particles
+    ///
+    /// # Example
+    /// ```ignore
+    /// // Spell effect that lasts 2 seconds
+    /// spell_emitter.emit_for(2.0);
+    /// ```
+    pub fn emit_for(&mut self, duration: f32) {
+        self.timed_emission = Some(duration);
+        self.active = true;
+        log::debug!("Set timed emission for {} seconds", duration);
     }
 }
 

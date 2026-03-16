@@ -40,7 +40,7 @@ mod ui;
 mod viewport;
 
 pub use composite::{CompositePass, CompositePassData, ViewportRect};
-pub use compute::{ComputePass, ComputePassData};
+pub use compute::ComputePass;
 pub use fullscreen::{FullscreenPass, TonemapOperator, TonemapParams};
 pub use geometry::GeometryPass;
 pub use shadow::{LightType, ShadowPass};

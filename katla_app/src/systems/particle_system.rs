@@ -44,10 +44,12 @@ impl ParticleSystem {
     /// # Arguments
     /// * `world` - The ECS world
     /// * `particle_system` - The global particle system (mutably borrowed)
+    /// * `delta_time` - Frame time in seconds (for timed emission)
     pub fn update(
         &mut self,
         world: &mut World,
         particle_system: &mut Option<katla_gfx::particles::GlobalParticleSystem>,
+        delta_time: f32,
     ) {
         let Some(ps) = particle_system else {
             debug!("Particle system not available, skipping emitter update");
@@ -79,6 +81,25 @@ impl ParticleSystem {
                             "Updated particle emitter at position {:?}",
                             emitter.config.position
                         );
+
+                        // Process burst queue
+                        for burst_count in emitter.burst_queue.drain(..) {
+                            if let Err(e) = ps.burst(handle, burst_count) {
+                                warn!("Failed to burst particles: {}", e);
+                            }
+                        }
+
+                        // Handle timed emission
+                        if let Some(remaining) = emitter.timed_emission {
+                            let new_remaining = remaining - delta_time;
+                            if new_remaining <= 0.0 {
+                                emitter.timed_emission = None;
+                                emitter.active = false;
+                                info!("Timed emission expired, deactivating emitter");
+                            } else {
+                                emitter.timed_emission = Some(new_remaining);
+                            }
+                        }
                     }
                 }
             } else {
