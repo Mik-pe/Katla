@@ -151,19 +151,15 @@ pub const PARTICLE_WORKGROUP_SIZE: u32 = 256;
 #[repr(C)]
 #[derive(Clone, Copy, Debug, bytemuck::Pod, bytemuck::Zeroable, Serialize, Deserialize)]
 pub struct EmitterConfig {
-    /// World position of emitter
     #[serde(default = "default_position")]
     pub position: [f32; 3],
 
-    /// Emitter shape (Point, Line, Circle, Sphere, Box)
     #[serde(default)]
     pub shape: u32,
 
-    /// Particles to emit per second
     #[serde(default = "default_emit_rate")]
     pub emit_rate: f32,
 
-    /// Base lifetime for new particles (seconds)
     #[serde(default = "default_base_lifetime")]
     pub base_lifetime: f32,
 
@@ -171,14 +167,12 @@ pub struct EmitterConfig {
     #[serde(default = "default_lifetime_variation")]
     pub lifetime_variation: f32,
 
-    /// Base velocity direction (normalized)
     #[serde(default = "default_velocity_direction")]
     pub velocity_direction: [f32; 3],
 
     #[serde(skip)]
     pub _pad0: f32,
 
-    /// Velocity magnitude
     #[serde(default = "default_velocity_magnitude")]
     pub velocity_magnitude: f32,
 
@@ -186,7 +180,6 @@ pub struct EmitterConfig {
     #[serde(default = "default_velocity_cone_angle")]
     pub velocity_cone_angle: f32,
 
-    /// Base scale for new particles
     #[serde(default = "default_base_scale")]
     pub base_scale: f32,
 
@@ -194,7 +187,6 @@ pub struct EmitterConfig {
     #[serde(default = "default_scale_variation")]
     pub scale_variation: f32,
 
-    /// Color for new particles (RGBA)
     #[serde(default = "default_color")]
     pub color: [f32; 4],
 
@@ -1160,14 +1152,18 @@ impl GlobalParticleSystem {
         Ok(())
     }
 
-    /// Create descriptor pool and allocate static descriptor set for compute (Set 0).
-    fn create_compute_descriptor_set(
+    /// Create descriptor pool and allocate static descriptor set (internal helper).
+    ///
+    /// # Arguments
+    /// * `layout` - Descriptor set layout to use
+    /// * `pool_name` - Name for logging/debugging
+    /// * `validate_alignment` - Whether to validate descriptor offset alignment
+    fn create_descriptor_set_internal(
         &mut self,
+        layout: vk::DescriptorSetLayout,
+        pool_name: &str,
+        validate_alignment: bool,
     ) -> Result<(vk::DescriptorSet, vk::DescriptorPool), String> {
-        let compute_layout = self
-            .compute_descriptor_layout
-            .ok_or("Compute descriptor layout not created")?;
-
         // Create descriptor pool
         let pool_sizes = [
             vk::DescriptorPoolSize::default()
@@ -1184,19 +1180,19 @@ impl GlobalParticleSystem {
             self.context
                 .device
                 .create_descriptor_pool(&pool_info, None)
-                .map_err(|e| format!("Failed to create descriptor pool: {:?}", e))?
+                .map_err(|e| format!("Failed to create {} descriptor pool: {:?}", pool_name, e))?
         };
 
         // Allocate descriptor set
         let set_info = vk::DescriptorSetAllocateInfo::default()
             .descriptor_pool(descriptor_pool)
-            .set_layouts(std::slice::from_ref(&compute_layout));
+            .set_layouts(std::slice::from_ref(&layout));
 
         let descriptor_sets = unsafe {
             self.context
                 .device
                 .allocate_descriptor_sets(&set_info)
-                .map_err(|e| format!("Failed to allocate descriptor sets: {:?}", e))?
+                .map_err(|e| format!("Failed to allocate {} descriptor sets: {:?}", pool_name, e))?
         };
 
         let descriptor_set = descriptor_sets[0];
@@ -1216,7 +1212,7 @@ impl GlobalParticleSystem {
             range: (self.buffer.max_particles() as u64) * std::mem::size_of::<u32>() as u64,
         }];
 
-        // Binding 2: alive_current (read_write for simulate shader)
+        // Binding 2: alive_current
         // CRITICAL: This must cover BOTH regions for double-buffering (2 frames in flight)
         // Frame 0 reads from [0, MAX_PARTICLES), Frame 1 reads from [MAX_PARTICLES, 2*MAX_PARTICLES)
         let frames_in_flight = 2u64;
@@ -1224,11 +1220,12 @@ impl GlobalParticleSystem {
             buffer: self.buffer.particle_buffer(),
             offset: (self.buffer.max_particles() as u64)
                 * (std::mem::size_of::<buffer::ParticleData>() + std::mem::size_of::<u32>()) as u64,
-            range: (self.buffer.max_particles() as u64) * frames_in_flight
+            range: (self.buffer.max_particles() as u64)
+                * frames_in_flight
                 * std::mem::size_of::<u32>() as u64,
         }];
 
-        // Binding 3: alive_next (read_write for emit/simulate shaders)
+        // Binding 3: alive_next
         let alive_next_info = [vk::DescriptorBufferInfo {
             buffer: self.buffer.particle_buffer(),
             offset: (self.buffer.max_particles() as u64)
@@ -1277,46 +1274,62 @@ impl GlobalParticleSystem {
                 .update_descriptor_sets(&descriptor_writes, &[]);
         }
 
-        // Validate descriptor set offsets for alignment
-        let device_properties = unsafe {
-            self.context
-                .instance
-                .get_physical_device_properties(self.context.physical_device)
-        };
+        // Validate descriptor set offsets for alignment (optional)
+        if validate_alignment {
+            let device_properties = unsafe {
+                self.context
+                    .instance
+                    .get_physical_device_properties(self.context.physical_device)
+            };
 
-        let min_storage_buffer_offset_alignment =
-            device_properties.limits.min_storage_buffer_offset_alignment;
+            let min_storage_buffer_offset_alignment =
+                device_properties.limits.min_storage_buffer_offset_alignment;
 
-        // Validate that all descriptor buffer offsets are properly aligned
-        let particle_data_size = (self.buffer.max_particles() as u64)
-            * (std::mem::size_of::<buffer::ParticleData>() as u64);
-        let index_entry_size = std::mem::size_of::<u32>() as u64;
+            // Validate that all descriptor buffer offsets are properly aligned
+            let particle_data_size = (self.buffer.max_particles() as u64)
+                * (std::mem::size_of::<buffer::ParticleData>() as u64);
+            let index_entry_size = std::mem::size_of::<u32>() as u64;
 
-        // Check alignment for each binding
-        let binding_offsets = [
-            (0, 0u64),               // particle data
-            (1, particle_data_size), // dead list
-            (
-                2,
-                particle_data_size + index_entry_size * self.buffer.max_particles() as u64,
-            ), // alive_current
-            (
-                3,
-                particle_data_size + 2 * index_entry_size * self.buffer.max_particles() as u64,
-            ), // alive_next
-        ];
+            // Check alignment for each binding
+            let binding_offsets = [
+                (0, 0u64),               // particle data
+                (1, particle_data_size), // dead list
+                (
+                    2,
+                    particle_data_size + index_entry_size * self.buffer.max_particles() as u64,
+                ), // alive_current
+                (
+                    3,
+                    particle_data_size + 2 * index_entry_size * self.buffer.max_particles() as u64,
+                ), // alive_next
+            ];
 
-        for (binding, offset) in binding_offsets.iter() {
-            if offset % min_storage_buffer_offset_alignment != 0 {
-                return Err(format!(
-                    "Descriptor set binding {} offset {} is not aligned to min_storage_buffer_offset_alignment ({})",
-                    binding, offset, min_storage_buffer_offset_alignment
-                ));
+            for (binding, offset) in binding_offsets.iter() {
+                if offset % min_storage_buffer_offset_alignment != 0 {
+                    return Err(format!(
+                        "Descriptor set binding {} offset {} is not aligned to min_storage_buffer_offset_alignment ({})",
+                        binding, offset, min_storage_buffer_offset_alignment
+                    ));
+                }
             }
         }
 
-        info!("Created and allocated particle compute descriptor set");
+        info!(
+            "Created and allocated particle {} descriptor set",
+            pool_name
+        );
         Ok((descriptor_set, descriptor_pool))
+    }
+
+    /// Create descriptor pool and allocate static descriptor set for compute (Set 0).
+    fn create_compute_descriptor_set(
+        &mut self,
+    ) -> Result<(vk::DescriptorSet, vk::DescriptorPool), String> {
+        let compute_layout = self
+            .compute_descriptor_layout
+            .ok_or("Compute descriptor layout not created")?;
+
+        self.create_descriptor_set_internal(compute_layout, "compute", true)
     }
 
     /// Create descriptor pool and allocate static descriptor set for render (Set 0).
@@ -1328,116 +1341,7 @@ impl GlobalParticleSystem {
             .render_descriptor_layout
             .ok_or("Render descriptor layout not created")?;
 
-        // Create descriptor pool
-        let pool_sizes = [
-            vk::DescriptorPoolSize::default()
-                .ty(vk::DescriptorType::STORAGE_BUFFER)
-                .descriptor_count(5), // 5 storage buffers in Set 0
-        ];
-
-        let pool_info = vk::DescriptorPoolCreateInfo::default()
-            .pool_sizes(&pool_sizes)
-            .max_sets(1)
-            .flags(vk::DescriptorPoolCreateFlags::FREE_DESCRIPTOR_SET);
-
-        let descriptor_pool = unsafe {
-            self.context
-                .device
-                .create_descriptor_pool(&pool_info, None)
-                .map_err(|e| format!("Failed to create render descriptor pool: {:?}", e))?
-        };
-
-        // Allocate descriptor set
-        let set_info = vk::DescriptorSetAllocateInfo::default()
-            .descriptor_pool(descriptor_pool)
-            .set_layouts(std::slice::from_ref(&render_layout));
-
-        let descriptor_sets = unsafe {
-            self.context
-                .device
-                .allocate_descriptor_sets(&set_info)
-                .map_err(|e| format!("Failed to allocate render descriptor sets: {:?}", e))?
-        };
-
-        let descriptor_set = descriptor_sets[0];
-
-        // Update descriptor set with buffer views (same as compute, different stage flags)
-        let particle_buffer_info = [vk::DescriptorBufferInfo {
-            buffer: self.buffer.particle_buffer(),
-            offset: 0,
-            range: (self.buffer.max_particles() as u64)
-                * std::mem::size_of::<buffer::ParticleData>() as u64,
-        }];
-
-        let dead_list_info = [vk::DescriptorBufferInfo {
-            buffer: self.buffer.particle_buffer(),
-            offset: (self.buffer.max_particles() as u64)
-                * std::mem::size_of::<buffer::ParticleData>() as u64,
-            range: (self.buffer.max_particles() as u64) * std::mem::size_of::<u32>() as u64,
-        }];
-
-        // Binding 2: alive_current (read for vertex shader)
-        // CRITICAL: Must cover BOTH regions for double-buffering
-        let frames_in_flight = 2u64;
-        let alive_current_info = [vk::DescriptorBufferInfo {
-            buffer: self.buffer.particle_buffer(),
-            offset: (self.buffer.max_particles() as u64)
-                * (std::mem::size_of::<buffer::ParticleData>() + std::mem::size_of::<u32>()) as u64,
-            range: (self.buffer.max_particles() as u64) * frames_in_flight
-                * std::mem::size_of::<u32>() as u64,
-        }];
-
-        // Binding 3: alive_next (unused in render, but must match layout)
-        let alive_next_info = [vk::DescriptorBufferInfo {
-            buffer: self.buffer.particle_buffer(),
-            offset: (self.buffer.max_particles() as u64)
-                * (std::mem::size_of::<buffer::ParticleData>() + 2 * std::mem::size_of::<u32>())
-                    as u64,
-            range: (self.buffer.max_particles() as u64) * std::mem::size_of::<u32>() as u64,
-        }];
-
-        let counters_info = [vk::DescriptorBufferInfo {
-            buffer: self.buffer.counters_buffer(),
-            offset: 0,
-            range: std::mem::size_of::<buffer::ParticleCounters>() as u64,
-        }];
-
-        let descriptor_writes = [
-            vk::WriteDescriptorSet::default()
-                .dst_set(descriptor_set)
-                .dst_binding(0)
-                .descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
-                .buffer_info(&particle_buffer_info),
-            vk::WriteDescriptorSet::default()
-                .dst_set(descriptor_set)
-                .dst_binding(1)
-                .descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
-                .buffer_info(&dead_list_info),
-            vk::WriteDescriptorSet::default()
-                .dst_set(descriptor_set)
-                .dst_binding(2)
-                .descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
-                .buffer_info(&alive_current_info),
-            vk::WriteDescriptorSet::default()
-                .dst_set(descriptor_set)
-                .dst_binding(3)
-                .descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
-                .buffer_info(&alive_next_info),
-            vk::WriteDescriptorSet::default()
-                .dst_set(descriptor_set)
-                .dst_binding(4)
-                .descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
-                .buffer_info(&counters_info),
-        ];
-
-        unsafe {
-            self.context
-                .device
-                .update_descriptor_sets(&descriptor_writes, &[]);
-        }
-
-        info!("Created and allocated particle render descriptor set");
-        Ok((descriptor_set, descriptor_pool))
+        self.create_descriptor_set_internal(render_layout, "render", false)
     }
 
     /// Create emit pipeline for particle emission.
@@ -1534,7 +1438,8 @@ impl GlobalParticleSystem {
                 .stage_flags(vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT),
         ];
 
-        let storage_layout_info = vk::DescriptorSetLayoutCreateInfo::default().bindings(&storage_bindings);
+        let storage_layout_info =
+            vk::DescriptorSetLayoutCreateInfo::default().bindings(&storage_bindings);
 
         let storage_layout = unsafe {
             self.context
