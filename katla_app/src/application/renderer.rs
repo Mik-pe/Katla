@@ -115,14 +115,7 @@ impl Application {
         let frame_index = self.renderer.current_frame() as u32;
         if let Some(ref mut particle_system) = self.renderer.particle_system {
             match particle_system.update(delta_time, frame_index) {
-                Ok(alive_count) => {
-                    // Calculate particles to emit this frame
-                    let emitters = particle_system.get_emitters();
-                    let emit_count: u32 = emitters
-                        .iter()
-                        .map(|config| (config.emit_rate * delta_time) as u32)
-                        .sum();
-
+                Ok((alive_count, emit_count)) => {
                     // Calculate emit workgroups (256 particles per workgroup)
                     let workgroup_size = katla_gfx::particles::PARTICLE_WORKGROUP_SIZE;
                     let emit_workgroups = if emit_count > 0 {
@@ -131,8 +124,9 @@ impl Application {
                         0 // No particles to emit
                     };
 
-                    if emit_workgroups == 0 {
-                        log::warn!("Emit workgroups is 0! Particles won't be emitted!");
+                    if emit_workgroups == 0 && emit_count > 0 {
+                        log::warn!("Frame {}: emit_count={} but emit_workgroups=0! Particles won't be emitted!",
+                            frame_count, emit_count);
                     }
 
                     // Calculate simulate workgroups (based on alive particles)
@@ -150,7 +144,7 @@ impl Application {
                     };
 
                     log::debug!(
-                        "🎯 Particle compute workgroups: emit {} particles = {} workgroups, simulate {} alive + {} emit = {} total particles = {} workgroups",
+                        "Particle compute workgroups: emit {} particles = {} workgroups, simulate {} alive + {} emit = {} total particles = {} workgroups",
                         emit_count,
                         emit_workgroups,
                         alive_count,
@@ -158,6 +152,31 @@ impl Application {
                         total_particles_to_simulate,
                         simulate_workgroups
                     );
+
+                    // DEBUG: Record particle data readback at frame 10 (in debug builds)
+                    #[cfg(debug_assertions)]
+                    {
+                        if frame_count == 10 || frame_count == 11 || frame_count == 12 || frame_count == 13 {
+                            if particle_system.has_debug_readback() {
+                                // We'll record the copy during frame graph execution
+                                // Just mark that we want to read back this frame
+                                log::info!(
+                                    "Frame {}: Triggering particle debug readback",
+                                    frame_count
+                                );
+
+                                // Store a flag to trigger readback after frame execution
+                                self.particle_readback_pending = true;
+                                // Set flag in frame graph to record copy commands during execution
+                                self.frame_graph.set_particle_debug_readback(true);
+                            } else {
+                                log::warn!(
+                                    "Frame {}: Particle debug readback not initialized",
+                                    frame_count
+                                );
+                            }
+                        }
+                    }
 
                     // Update frame graph with workgroup counts for this frame
                     self.frame_graph
@@ -195,6 +214,58 @@ impl Application {
                 frame.submit_ui("ui", ui_list);
             }
         });
+
+        // Perform particle debug readback if pending (after GPU has finished the frame)
+        #[cfg(debug_assertions)]
+        {
+            if self.particle_readback_pending {
+                self.particle_readback_pending = false;
+
+                if let Some(ref mut particle_system) = self.renderer.particle_system {
+                    match particle_system.read_debug_data() {
+                        Ok(debug_data) => {
+                            log::info!("=== PARTICLE DEBUG READBACK ===");
+                            log::info!("{}", debug_data.summary());
+
+                            // Print first 10 particles to see if they're moving
+                            debug_data.print_particles(10);
+
+                            // Print alive indices to see which particles are active
+                            debug_data.print_alive_indices(debug_data.counters.alive_count as usize);
+
+                            // Print the actual alive particles (using alive indices)
+                            log::info!("=== {} ACTUAL ALIVE PARTICLES ===", debug_data.counters.alive_count);
+                            for (i, &particle_idx) in debug_data.alive_list.iter().take(debug_data.counters.alive_count as usize).enumerate() {
+                                if particle_idx < debug_data.particles.len() as u32 {
+                                    let p = &debug_data.particles[particle_idx as usize];
+                                    log::info!("Alive[{}] -> Particle[{}]: pos=({:.2},{:.2},{:.2}) vel=({:.2},{:.2},{:.2}) lifetime={:.2}",
+                                        i, particle_idx,
+                                        p.position[0], p.position[1], p.position[2],
+                                        p.velocity[0], p.velocity[1], p.velocity[2],
+                                        p.lifetime);
+                                }
+                            }
+
+                            // Check dead list initialization
+                            log::info!("=== Checking dead list initialization ===");
+                            debug_data.print_dead_indices(10);
+
+                            // Check specifically for the test particle at index 0
+                            if !debug_data.particles.is_empty() {
+                                let test_particle = &debug_data.particles[0];
+                                log::info!("TEST PARTICLE [0]: pos=({:.2},{:.2},{:.2}) vel=({:.2},{:.2},{:.2}) lifetime={:.2}",
+                                    test_particle.position[0], test_particle.position[1], test_particle.position[2],
+                                    test_particle.velocity[0], test_particle.velocity[1], test_particle.velocity[2],
+                                    test_particle.lifetime);
+                            }
+                        }
+                        Err(e) => {
+                            log::error!("Failed to read particle debug data: {}", e);
+                        }
+                    }
+                }
+            }
+        }
     }
 
     /// Collect drawable components from the ECS world and submit to FrameContext.

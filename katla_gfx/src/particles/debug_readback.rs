@@ -1,0 +1,401 @@
+//! Debug readback functionality for particle system.
+//!
+//! This module provides CPU-side access to GPU particle data for debugging and validation.
+//! Uses staging buffers to copy data from GPU to CPU-readable memory.
+
+use std::rc::Rc;
+
+use ash::vk;
+use log::{debug, info, warn};
+
+use crate::sync::VkBuffer;
+use crate::vulkan::context::VulkanContext;
+
+use super::buffer::{GlobalParticleBuffer, ParticleCounters, ParticleData};
+
+/// Debug readback data for particle system.
+#[derive(Debug, Clone)]
+pub struct ParticleDebugData {
+    /// Particle data read back from GPU
+    pub particles: Vec<ParticleData>,
+    /// Alive particle index list
+    pub alive_list: Vec<u32>,
+    /// Dead particle index list
+    pub dead_list: Vec<u32>,
+    /// Atomic counters
+    pub counters: ParticleCounters,
+}
+
+impl ParticleDebugData {
+    /// Create empty debug data
+    pub fn new() -> Self {
+        Self {
+            particles: Vec::new(),
+            alive_list: Vec::new(),
+            dead_list: Vec::new(),
+            counters: ParticleCounters {
+                alive_count: 0,
+                dead_count: 0,
+                emit_count: 0,
+                _pad: 0,
+            },
+        }
+    }
+
+    /// Get summary statistics
+    pub fn summary(&self) -> String {
+        format!(
+            "Particles: {} alive, {} dead, {} total capacity | Lists: {} alive indices, {} dead indices",
+            self.counters.alive_count,
+            self.counters.dead_count,
+            self.particles.len(),
+            self.alive_list.len(),
+            self.dead_list.len()
+        )
+    }
+
+    /// Print first N particles for debugging
+    pub fn print_particles(&self, count: usize) {
+        let n = count.min(self.particles.len());
+        info!("=== First {} particles ===", n);
+        for (i, p) in self.particles.iter().take(n).enumerate() {
+            info!(
+                "Particle {}: pos=({:.2},{:.2},{:.2}) vel=({:.2},{:.2},{:.2}) lifetime={:.2} scale={:.2} color=({:.2},{:.2},{:.2},{:.2})",
+                i,
+                p.position[0],
+                p.position[1],
+                p.position[2],
+                p.velocity[0],
+                p.velocity[1],
+                p.velocity[2],
+                p.lifetime,
+                p.scale,
+                p.color[0],
+                p.color[1],
+                p.color[2],
+                p.color[3]
+            );
+        }
+    }
+
+    /// Print alive particle indices
+    pub fn print_alive_indices(&self, count: usize) {
+        let n = count.min(self.alive_list.len());
+        info!("=== First {} alive particle indices ===", n);
+        info!("{:?}", &self.alive_list[..n]);
+    }
+
+    /// Print first few dead list indices to verify initialization
+    pub fn print_dead_indices(&self, count: usize) {
+        let n = count.min(self.dead_list.len());
+        info!("=== First {} dead particle indices ===", n);
+        info!("{:?}", &self.dead_list[..n]);
+    }
+}
+
+impl Default for ParticleDebugData {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Staging buffer for GPU-to-CPU readback.
+struct ReadbackStagingBuffer {
+    buffer: VkBuffer,
+    allocation: gpu_allocator::vulkan::Allocation,
+}
+
+impl ReadbackStagingBuffer {
+    /// Create a new staging buffer for readback.
+    fn new(context: &Rc<VulkanContext>, size: u64, name: &str) -> Result<Self, String> {
+        let buffer_info = vk::BufferCreateInfo::default()
+            .size(size)
+            .usage(vk::BufferUsageFlags::TRANSFER_DST)
+            .sharing_mode(vk::SharingMode::EXCLUSIVE);
+
+        let buffer = unsafe {
+            context
+                .device
+                .create_buffer(&buffer_info, None)
+                .map_err(|e| format!("Failed to create readback buffer: {:?}", e))?
+        };
+
+        let requirements = unsafe { context.device.get_buffer_memory_requirements(buffer) };
+
+        let allocation = context
+            .allocator
+            .borrow_mut()
+            .allocate(&gpu_allocator::vulkan::AllocationCreateDesc {
+                name,
+                requirements,
+                location: gpu_allocator::MemoryLocation::CpuToGpu,
+                linear: true,
+                allocation_scheme: gpu_allocator::vulkan::AllocationScheme::GpuAllocatorManaged,
+            })
+            .map_err(|e| format!("Failed to allocate readback memory: {}", e))?;
+
+        unsafe {
+            context
+                .device
+                .bind_buffer_memory(buffer, allocation.memory(), allocation.offset())
+                .map_err(|e| format!("Failed to bind readback memory: {:?}", e))?
+        }
+
+        Ok(Self {
+            buffer: VkBuffer::new(buffer),
+            allocation,
+        })
+    }
+
+    /// Read data from staging buffer to CPU vector.
+    fn read<T: bytemuck::Pod>(&self, count: usize) -> Vec<T> {
+        if let Some(mapped) = self.allocation.mapped_ptr() {
+            let src = unsafe { std::slice::from_raw_parts(mapped.as_ptr() as *const T, count) };
+            src.to_vec()
+        } else {
+            warn!("Readback buffer is not mapped");
+            Vec::new()
+        }
+    }
+
+    /// Destroy the staging buffer.
+    fn destroy(self, context: &Rc<VulkanContext>) {
+        unsafe {
+            if let Ok(mut allocator) = context.allocator.try_borrow_mut() {
+                allocator.free(self.allocation).ok();
+            }
+            context.device.destroy_buffer(self.buffer.vk(), None);
+        }
+    }
+}
+
+/// Debug readback helper for particle system.
+pub struct ParticleDebugReadback {
+    particle_staging: Option<ReadbackStagingBuffer>,
+    alive_list_staging: Option<ReadbackStagingBuffer>,
+    dead_list_staging: Option<ReadbackStagingBuffer>,
+    counters_staging: Option<ReadbackStagingBuffer>,
+    context: Rc<VulkanContext>,
+}
+
+impl ParticleDebugReadback {
+    /// Create a new debug readback helper.
+    pub fn new(context: &Rc<VulkanContext>, max_particles: u32) -> Result<Self, String> {
+        info!("Creating particle debug readback helper");
+
+        // Particle data staging buffer (48 bytes per particle)
+        let particle_data_size =
+            (max_particles as u64) * std::mem::size_of::<ParticleData>() as u64;
+        let particle_staging =
+            ReadbackStagingBuffer::new(context, particle_data_size, "particle_readback_particles")?;
+
+        // Alive list staging buffer (4 bytes per index × 3 for all alive lists)
+        // Layout: alive_current[0] + alive_current[1] + alive_next
+        let alive_list_size = (max_particles as u64) * 3 * std::mem::size_of::<u32>() as u64;
+        let alive_list_staging =
+            ReadbackStagingBuffer::new(context, alive_list_size, "particle_readback_alive_list")?;
+
+        // Dead list staging buffer (4 bytes per index)
+        let dead_list_size = (max_particles as u64) * std::mem::size_of::<u32>() as u64;
+        let dead_list_staging =
+            ReadbackStagingBuffer::new(context, dead_list_size, "particle_readback_dead_list")?;
+
+        // Counters staging buffer
+        let counters_size = std::mem::size_of::<ParticleCounters>() as u64;
+        let counters_staging =
+            ReadbackStagingBuffer::new(context, counters_size, "particle_readback_counters")?;
+
+        Ok(Self {
+            particle_staging: Some(particle_staging),
+            alive_list_staging: Some(alive_list_staging),
+            dead_list_staging: Some(dead_list_staging),
+            counters_staging: Some(counters_staging),
+            context: context.clone(),
+        })
+    }
+
+    /// Record copy commands to staging buffers.
+    ///
+    /// This must be called before reading data to ensure GPU->CPU copy happens.
+    /// The command buffer must be submitted and waited on before calling read().
+    pub fn record_copy(
+        &mut self,
+        command_buffer: vk::CommandBuffer,
+        particle_buffer: &GlobalParticleBuffer,
+    ) -> Result<(), String> {
+        let device = &self.context.device;
+
+        // Copy particle data
+        if let Some(staging) = &self.particle_staging {
+            let particle_count = particle_buffer.max_particles();
+            let particle_size =
+                (particle_count as u64) * std::mem::size_of::<ParticleData>() as u64;
+
+            let copy_region = vk::BufferCopy {
+                src_offset: 0,
+                dst_offset: 0,
+                size: particle_size,
+            };
+
+            unsafe {
+                device.cmd_copy_buffer(
+                    command_buffer,
+                    particle_buffer.particle_buffer(),
+                    staging.buffer.vk(),
+                    &[copy_region],
+                );
+            }
+        }
+
+        // Copy alive list (with double-buffering)
+        // Layout: alive_current[0] + alive_current[1] + alive_next
+        if let Some(staging) = &self.alive_list_staging {
+            let max_particles = particle_buffer.max_particles() as u64;
+            let particle_data_size = max_particles * std::mem::size_of::<ParticleData>() as u64;
+            let dead_list_size = max_particles * std::mem::size_of::<u32>() as u64;
+            let alive_list_offset = particle_data_size + dead_list_size;
+            let alive_list_size = max_particles * 3 * std::mem::size_of::<u32>() as u64;
+
+            let copy_region = vk::BufferCopy {
+                src_offset: alive_list_offset,
+                dst_offset: 0,
+                size: alive_list_size,
+            };
+
+            unsafe {
+                device.cmd_copy_buffer(
+                    command_buffer,
+                    particle_buffer.particle_buffer(),
+                    staging.buffer.vk(),
+                    &[copy_region],
+                );
+            }
+        }
+
+        // Copy dead list
+        if let Some(staging) = &self.dead_list_staging {
+            let dead_count = particle_buffer.max_particles();
+            let dead_list_offset = (particle_buffer.max_particles() as u64)
+                * std::mem::size_of::<ParticleData>() as u64;
+            let dead_list_size = (dead_count as u64) * std::mem::size_of::<u32>() as u64;
+
+            let copy_region = vk::BufferCopy {
+                src_offset: dead_list_offset,
+                dst_offset: 0,
+                size: dead_list_size,
+            };
+
+            unsafe {
+                device.cmd_copy_buffer(
+                    command_buffer,
+                    particle_buffer.particle_buffer(),
+                    staging.buffer.vk(),
+                    &[copy_region],
+                );
+            }
+        }
+
+        // Copy counters
+        if let Some(staging) = &self.counters_staging {
+            let counters_buffer = particle_buffer.counters_buffer();
+            let counters_size = std::mem::size_of::<ParticleCounters>() as u64;
+
+            let copy_region = vk::BufferCopy {
+                src_offset: 0,
+                dst_offset: 0,
+                size: counters_size,
+            };
+
+            unsafe {
+                device.cmd_copy_buffer(
+                    command_buffer,
+                    counters_buffer,
+                    staging.buffer.vk(),
+                    &[copy_region],
+                );
+            }
+        }
+
+        debug!("Recorded particle debug readback copies");
+        Ok(())
+    }
+
+    /// Read data from staging buffers to CPU.
+    ///
+    /// This must be called AFTER the command buffer with record_copy() has been
+    /// submitted and fully executed (GPU fence wait).
+    pub fn read(
+        &self,
+        particle_buffer: &GlobalParticleBuffer,
+    ) -> Result<ParticleDebugData, String> {
+        let max_particles = particle_buffer.max_particles() as usize;
+
+        // Read particle data
+        let particles = if let Some(ref staging) = self.particle_staging {
+            staging.read::<ParticleData>(max_particles)
+        } else {
+            Vec::new()
+        };
+
+        // Read alive list (double-buffered: alive_current[0] + alive_current[1] + alive_next)
+        let alive_list = if let Some(ref staging) = self.alive_list_staging {
+            staging.read::<u32>(max_particles * 3)
+        } else {
+            Vec::new()
+        };
+
+        // Read dead list
+        let dead_list = if let Some(ref staging) = self.dead_list_staging {
+            staging.read::<u32>(max_particles)
+        } else {
+            Vec::new()
+        };
+
+        // Read counters
+        let counters = if let Some(ref staging) = self.counters_staging {
+            let data = staging.read::<ParticleCounters>(1);
+            data.into_iter().next().unwrap_or(ParticleCounters {
+                alive_count: 0,
+                dead_count: 0,
+                emit_count: 0,
+                _pad: 0,
+            })
+        } else {
+            ParticleCounters {
+                alive_count: 0,
+                dead_count: 0,
+                emit_count: 0,
+                _pad: 0,
+            }
+        };
+
+        Ok(ParticleDebugData {
+            particles,
+            alive_list,
+            dead_list,
+            counters,
+        })
+    }
+
+    /// Destroy all staging buffers.
+    pub fn destroy(&mut self) {
+        if let Some(staging) = self.particle_staging.take() {
+            staging.destroy(&self.context);
+        }
+        if let Some(staging) = self.alive_list_staging.take() {
+            staging.destroy(&self.context);
+        }
+        if let Some(staging) = self.dead_list_staging.take() {
+            staging.destroy(&self.context);
+        }
+        if let Some(staging) = self.counters_staging.take() {
+            staging.destroy(&self.context);
+        }
+    }
+}
+
+impl Drop for ParticleDebugReadback {
+    fn drop(&mut self) {
+        self.destroy();
+    }
+}

@@ -7,8 +7,8 @@
 // Set 0 (Global Resources):
 //   Binding 0: Storage buffer (particle data)
 //   Binding 1: Storage buffer (dead particle index list)
-//   Binding 2: Storage buffer (alive particle index list - 1)
-//   Binding 3: Storage buffer (alive particle index list - 2)
+//   Binding 2: Storage buffer (alive particle index list - read)
+//   Binding 3: Storage buffer (alive particle index list next - write)
 //   Binding 4: Storage buffer (atomic counters)
 // Set 1 (Emitter Configs):
 //   Binding 0: Uniform buffer (frame data)
@@ -78,15 +78,14 @@ var<storage, read_write> particles: array<ParticleData, MAX_PARTICLES>;
 @group(0) @binding(1)
 var<storage, read_write> dead_list: array<u32, MAX_PARTICLES>;
 
-// Double-buffered alive lists for per-frame offsets
-// With 2 frames in flight, alive_list_1 has 2 regions:
-// - Frame 0: alive_list_1[0..MAX_PARTICLES-1]
-// - Frame 1: alive_list_1[MAX_PARTICLES..2*MAX_PARTICLES-1]
+// Alive list (read) - contains currently alive particles from previous frame
+// The Vulkan binding handles per-frame double-buffering transparently
 @group(0) @binding(2)
-var<storage, read_write> alive_list_1: array<u32, MAX_PARTICLES * 2>;
+var<storage, read> alive_list: array<u32, MAX_PARTICLES>;
 
+// Alive list next (write) - newly emitted particles go here for simulate pass
 @group(0) @binding(3)
-var<storage, read> alive_list_2: array<u32, MAX_PARTICLES>;
+var<storage, read_write> alive_list_next: array<u32, MAX_PARTICLES>;
 
 @group(0) @binding(4)
 var<storage, read_write> counters: ParticleCounters;
@@ -235,7 +234,7 @@ fn cs_main(@builtin(global_invocation_id) global_id: vec3u) {
     // CRITICAL: Do NOT reset emit_count or alive_count!
     // alive_count contains the number of survivors from previous frame
     // emit_count will track our position in the emission sequence
-    // New particles will be appended to alive_list_1 after the existing survivors
+    // New particles will be appended to alive_list_next after the existing survivors
 
     // Early exit if beyond total emit count (rate-based + burst)
     if (idx >= frame_data.total_emit_count) { return; }
@@ -254,16 +253,24 @@ fn cs_main(@builtin(global_invocation_id) global_id: vec3u) {
     }
 
     // Allocate particle from dead list using atomicSub with underflow protection
-    let dead_slot = atomicSub(&counters.dead_count, 1u);
+    // atomicSub returns the ORIGINAL value before subtraction, so:
+    // - dead_count starts at MAX_PARTICLES (e.g., 1048576)
+    // - First call returns 1048576, then decrements dead_count to 1048575
+    // - Second call returns 1048575, then decrements dead_count to 1048574
+    // We need to subtract 1 to get the valid index into dead_list
+    let original_dead_count = atomicSub(&counters.dead_count, 1u);
 
-    // Check for underflow - if dead_slot wrapped or is too large, abort
-    // When atomicSub underflows, it wraps around to u32::MAX
-    if (dead_slot >= MAX_PARTICLES) {
+    // Check for underflow - if original value was 0, abort
+    // When atomicSub underflows (dead_count was already 0), it wraps around to u32::MAX
+    if (original_dead_count == 0u || original_dead_count > MAX_PARTICLES) {
         // Underflow occurred - restore counter and abort
         atomicAdd(&counters.dead_count, 1u);
         return;
     }
 
+    // Use original_dead_count - 1 as the index into dead_list
+    // This gives us the correct particle index from the dead pool
+    let dead_slot = original_dead_count - 1u;
     let particle_idx = dead_list[dead_slot];
 
     // Validate particle index - MUST restore counter if invalid!
@@ -278,14 +285,11 @@ fn cs_main(@builtin(global_invocation_id) global_id: vec3u) {
 
     particles[particle_idx] = new_particle;
 
-    // Write to alive_list_1 for simulate pass to read
+    // Write to alive_list_next for simulate pass to read
     // CRITICAL: alive_count contains survivors from previous frame
     // We append new particles after them by atomically incrementing alive_count
     let write_slot = atomicAdd(&counters.alive_count, 1u);
 
-    // Apply per-frame offset to avoid write-after-write hazards
-    // Frame 0 writes to alive_list_1[0..MAX_PARTICLES-1]
-    // Frame 1 writes to alive_list_1[MAX_PARTICLES..2*MAX_PARTICLES-1]
-    let frame_offset = frame_data.frame_index * MAX_PARTICLES;
-    alive_list_1[write_slot + frame_offset] = particle_idx;
+    // The descriptor binding handles which memory region this writes to
+    alive_list_next[write_slot] = particle_idx;
 }
