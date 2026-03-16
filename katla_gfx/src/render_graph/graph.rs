@@ -156,6 +156,9 @@ pub struct FrameGraph {
     /// Particle simulate workgroup count for this frame.
     /// Calculated each frame based on alive particle count.
     particle_simulate_workgroup_count: u32,
+
+    /// Flag to trigger particle debug readback this frame.
+    particle_debug_readback: bool,
 }
 
 impl FrameGraph {
@@ -175,6 +178,7 @@ impl FrameGraph {
             particle_pipeline: None,
             particle_emit_workgroup_count: 1,
             particle_simulate_workgroup_count: 1,
+            particle_debug_readback: false,
         }
     }
 
@@ -349,6 +353,11 @@ impl FrameGraph {
     /// This should be calculated each frame based on alive particle count.
     pub fn set_particle_simulate_workgroup_count(&mut self, count: u32) {
         self.particle_simulate_workgroup_count = count;
+    }
+
+    /// Set whether to trigger particle debug readback this frame.
+    pub fn set_particle_debug_readback(&mut self, enabled: bool) {
+        self.particle_debug_readback = enabled;
     }
 
     /// Cleanup and destroy all transient textures.
@@ -1710,6 +1719,9 @@ impl<'a> Frame<'a> {
             None
         };
 
+        // Get current frame index before mutable borrow
+        let current_frame = self.current_frame();
+
         if let Some(ref mut particle_system) = self.renderer.particle_system {
             if let Some(pipeline_handle) = particle_system.render_pipeline_handle() {
                 // Get the pipeline from the registry
@@ -1742,6 +1754,7 @@ impl<'a> Frame<'a> {
                         vk_pipeline,
                         vk_layout,
                         storage_ds,
+                        current_frame,
                     )
                     .map_err(|e| {
                         RenderGraphError::VulkanError(format!("Particle render failed: {}", e))
@@ -2511,9 +2524,12 @@ impl<'a> Frame<'a> {
             );
         }
 
+        // Get current frame index before any mutable borrows
+        let current_frame = self.current_frame();
+
         // Bind descriptor sets if particle system is active
         // Note: Particle system manages its own descriptor sets
-        if let Some(ref particle_system) = self.renderer.particle_system
+        if let Some(ref mut particle_system) = self.renderer.particle_system
             && pass.name.contains("particle")
         {
             log::debug!("Executing particle compute pass '{}'", pass.name);
@@ -2532,21 +2548,24 @@ impl<'a> Frame<'a> {
                 1
             };
 
-            log::debug!(
-                "Particle compute pass '{}': using {} workgroups (from frame graph)",
-                pass.name,
-                workgroup_count
-            );
-
             // Before recording dispatch
             if workgroup_count == 0 {
-                log::error!(
-                    "CRITICAL: Skipping compute dispatch for '{}' - workgroup_count is 0!",
+                log::warn!(
+                    "Skipping particle compute pass '{}' - workgroup_count is 0",
                     pass.name
                 );
-                log::error!("This means the swap will NOT happen and particles will be lost!");
                 return Ok(()); // Skip dispatch
             }
+
+            // Update compute descriptor bindings for this frame's double-buffered region
+            particle_system
+                .update_compute_descriptor_binding(current_frame)
+                .map_err(|e| {
+                    RenderGraphError::VulkanError(format!(
+                        "Failed to update particle compute descriptor binding: {}",
+                        e
+                    ))
+                })?;
 
             // Record the appropriate dispatch based on pass name
             if pass.name.contains("emit") {
@@ -2563,9 +2582,16 @@ impl<'a> Frame<'a> {
                         ))
                     })?;
 
-                log::debug!("Emit pass dispatched successfully");
+                // Add memory barrier after emit to ensure simulate sees the writes
+                particle_system
+                    .emit_to_simulate_barrier(cmd.vk_command_buffer())
+                    .map_err(|e| {
+                        RenderGraphError::VulkanError(format!(
+                            "Particle emit barrier failed: {}",
+                            e
+                        ))
+                    })?;
             } else if pass.name.contains("simulate") {
-                log::debug!("Recording simulate dispatch...");
                 particle_system
                     .record_simulate_dispatch(
                         cmd.vk_command_buffer(),
@@ -2579,18 +2605,36 @@ impl<'a> Frame<'a> {
                         ))
                     })?;
 
-                log::debug!("Simulate dispatch recorded successfully");
-
                 // Swap alive lists after simulate pass completes
                 // This copies alive_next (written by simulate) to alive_current (read by emit next frame)
                 log::debug!("About to call swap_alive_lists()...");
                 particle_system
-                    .swap_alive_lists(cmd.vk_command_buffer(), self.current_frame())
+                    .swap_alive_lists(cmd.vk_command_buffer(), current_frame)
                     .map_err(|e| {
                         RenderGraphError::VulkanError(format!("Particle buffer swap failed: {}", e))
                     })?;
 
                 log::debug!("swap_alive_lists() completed successfully");
+
+                // Record particle debug readback if requested this frame
+                // SAFETY: We need to access the graph's debug readback flag through the Frame's graph reference
+                // This is safe because we're in the middle of frame execution and have exclusive access
+                let graph_ptr = self.graph as *const FrameGraph as *mut FrameGraph;
+                unsafe {
+                    if (*graph_ptr).particle_debug_readback {
+                        log::info!("Recording particle debug readback after simulate pass");
+                        particle_system
+                            .record_debug_readback(cmd.vk_command_buffer())
+                            .map_err(|e| {
+                                RenderGraphError::VulkanError(format!(
+                                    "Particle debug readback failed: {}",
+                                    e
+                                ))
+                            })?;
+                        // Reset flag after recording
+                        (*graph_ptr).particle_debug_readback = false;
+                    }
+                }
             }
 
             return Ok(());

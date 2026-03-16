@@ -398,18 +398,104 @@ impl GlobalParticleBuffer {
 
     /// Initialize all index lists (dead list starts full, alive lists start empty).
     pub fn initialize_index_lists(&self) -> Result<(), String> {
-        // Fill particle data with zeros (all particles start dead)
-        let cmd = self.context.begin_single_time_commands();
+        // DEBUG: Fill particle data with a known test pattern instead of zeros
+        // This will help us verify if the particle buffer and readback are working correctly
+        let test_particles: Vec<ParticleData> = (0..self.max_particles)
+            .map(|i| ParticleData {
+                position: [9.87 + i as f32 * 0.01, 6.54, 3.21],  // Unique position per particle
+                scale: 1.5,
+                velocity: [0.1, 0.2, 0.3],
+                lifetime: 4.5,
+                color: [1.0, 0.5, 0.0, 1.0],
+            })
+            .collect();
+
+        let particle_data_bytes: Vec<u8> = test_particles
+            .iter()
+            .flat_map(|p| bytemuck::bytes_of(p).to_vec())
+            .collect();
+
+        // Create separate command buffer for test particle initialization
+        let test_cmd = self.context.begin_single_time_commands();
+
+        // Create staging buffer for test particle data
+        let staging_buffer_info = vk::BufferCreateInfo::default()
+            .size(particle_data_bytes.len() as u64)
+            .usage(vk::BufferUsageFlags::TRANSFER_SRC)
+            .sharing_mode(vk::SharingMode::EXCLUSIVE);
+
+        let staging_buffer = unsafe {
+            self.context.device.create_buffer(&staging_buffer_info, None)
+                .map_err(|e| format!("Failed to create test staging buffer: {:?}", e))?
+        };
+
+        let staging_requirements = unsafe {
+            self.context.device.get_buffer_memory_requirements(staging_buffer)
+        };
+
+        let staging_allocation = self.context.allocator.borrow_mut()
+            .allocate(&gpu_allocator::vulkan::AllocationCreateDesc {
+                name: "test_particle_staging",
+                requirements: staging_requirements,
+                location: gpu_allocator::MemoryLocation::CpuToGpu,
+                linear: true,
+                allocation_scheme: gpu_allocator::vulkan::AllocationScheme::GpuAllocatorManaged,
+            })
+            .map_err(|e| format!("Failed to allocate test staging memory: {}", e))?;
 
         unsafe {
-            self.context.device.cmd_fill_buffer(
-                cmd.vk_command_buffer(),
+            self.context.device.bind_buffer_memory(
+                staging_buffer,
+                staging_allocation.memory(),
+                staging_allocation.offset()
+            ).map_err(|e| format!("Failed to bind test staging memory: {:?}", e))?
+        }
+
+        // Copy test data to staging buffer
+        if let Some(mapped) = staging_allocation.mapped_ptr() {
+            unsafe {
+                std::ptr::copy_nonoverlapping(
+                    particle_data_bytes.as_ptr(),
+                    mapped.as_ptr() as *mut u8,
+                    particle_data_bytes.len(),
+                );
+            }
+            self.context.flush_mapped_memory(&staging_allocation, 0, particle_data_bytes.len() as u64);
+        }
+
+        // Copy from staging to particle buffer (using test_cmd)
+        let particle_data_size = (self.max_particles as u64) * std::mem::size_of::<ParticleData>() as u64;
+        let copy_region = vk::BufferCopy::default()
+            .src_offset(0)
+            .dst_offset(0)
+            .size(particle_data_size);
+
+        unsafe {
+            self.context.device.cmd_copy_buffer(
+                test_cmd.vk_command_buffer(),
+                staging_buffer,
                 self.particle_buffer,
-                0,
-                (self.max_particles as usize * std::mem::size_of::<ParticleData>()) as u64,
-                0,
+                std::slice::from_ref(&copy_region),
             );
         }
+
+        // Submit test command buffer and wait for GPU to complete
+        self.context.end_single_time_commands(test_cmd);
+
+        // Cleanup staging buffer
+        unsafe {
+            self.context.device.destroy_buffer(staging_buffer, None);
+        }
+        if let Ok(mut allocator) = self.context.allocator.try_borrow_mut() {
+            allocator.free(staging_allocation).ok();
+        }
+
+        log::info!("Initialized particle buffer with TEST DATA: position=[9.87, 6.54, 3.21]");
+        log::info!("If readback shows these values, the buffer/readback works. If zeros, the readback fails.");
+
+        // Now initialize dead list with indices 0..MAX_PARTICLES
+        // All particles start in the dead list, ready to be allocated
+        let cmd = self.context.begin_single_time_commands();
 
         // Initialize dead list with indices 0..MAX_PARTICLES
         // All particles start in the dead list, ready to be allocated
@@ -547,6 +633,97 @@ impl GlobalParticleBuffer {
 
         self.context.end_single_time_commands(cmd);
 
+        // Initialize atomic counters
+        // CRITICAL: counters must be initialized before particle system can work!
+        // - dead_count: MAX_PARTICLES (all particles start in dead pool)
+        // - alive_count: 0 (no particles alive yet)
+        // - emit_count: 0 (no particles emitted yet)
+        let cmd = self.context.begin_single_time_commands();
+        let counters_data = ParticleCounters {
+            alive_count: 0,
+            dead_count: self.max_particles,
+            emit_count: 0,
+            _pad: 0,
+        };
+        let counters_bytes: Vec<u8> = bytemuck::bytes_of(&counters_data).to_vec();
+
+        // Create staging buffer for counters initialization
+        let staging_buffer_info = vk::BufferCreateInfo::default()
+            .size(counters_bytes.len() as u64)
+            .usage(vk::BufferUsageFlags::TRANSFER_SRC)
+            .sharing_mode(vk::SharingMode::EXCLUSIVE);
+        let staging_buffer = unsafe {
+            self.context
+                .device
+                .create_buffer(&staging_buffer_info, None)
+                .map_err(|e| format!("Failed to create counters staging buffer: {:?}", e))?
+        };
+        let staging_requirements = unsafe {
+            self.context
+                .device
+                .get_buffer_memory_requirements(staging_buffer)
+        };
+        let staging_allocation = self
+            .context
+            .allocator
+            .borrow_mut()
+            .allocate(&AllocationCreateDesc {
+                name: "particle_counters_staging",
+                requirements: staging_requirements,
+                location: gpu_allocator::MemoryLocation::CpuToGpu,
+                linear: true,
+                allocation_scheme: gpu_allocator::vulkan::AllocationScheme::GpuAllocatorManaged,
+            })
+            .map_err(|e| format!("Failed to allocate counters staging memory: {}", e))?;
+
+        unsafe {
+            self.context
+                .device
+                .bind_buffer_memory(
+                    staging_buffer,
+                    staging_allocation.memory(),
+                    staging_allocation.offset(),
+                )
+                .map_err(|e| format!("Failed to bind counters staging memory: {:?}", e))?
+        }
+
+        // Copy counters data to staging buffer
+        if let Some(mapped) = staging_allocation.mapped_ptr() {
+            unsafe {
+                std::ptr::copy_nonoverlapping(
+                    counters_bytes.as_ptr(),
+                    mapped.as_ptr() as *mut u8,
+                    counters_bytes.len(),
+                );
+            }
+            self.context
+                .flush_mapped_memory(&staging_allocation, 0, counters_bytes.len() as u64);
+        }
+
+        // Copy from staging to counters buffer
+        unsafe {
+            let copy_region = vk::BufferCopy::default()
+                .src_offset(0)
+                .dst_offset(0)
+                .size(counters_bytes.len() as u64);
+            self.context.device.cmd_copy_buffer(
+                cmd.vk_command_buffer(),
+                staging_buffer,
+                self.counters_buffer,
+                std::slice::from_ref(&copy_region),
+            );
+        }
+
+        self.context.end_single_time_commands(cmd);
+
+        // Cleanup staging buffer
+        unsafe {
+            self.context.device.destroy_buffer(staging_buffer, None);
+        }
+        if let Ok(mut allocator) = self.context.allocator.try_borrow_mut() {
+            allocator.free(staging_allocation).ok();
+        }
+
         info!(
             "Initialized particle index lists: dead={}, alive_current[2]={}, alive_next={} ({} MB total)",
             self.max_particles,
@@ -605,6 +782,36 @@ impl GlobalParticleBuffer {
         }
     }
 
+    /// Directly read particle data from GPU buffer (CPU-visible memory).
+    pub fn read_particles_direct(&self, count: usize) -> Result<Vec<ParticleData>, String> {
+        if let Some(mapped) = self
+            .particle_allocation
+            .as_ref()
+            .and_then(|a| a.mapped_ptr())
+        {
+            let particles = unsafe {
+                std::slice::from_raw_parts(mapped.as_ptr() as *const ParticleData, count)
+            };
+            Ok(particles.to_vec())
+        } else {
+            Err("Particle buffer is not mapped for CPU access".to_string())
+        }
+    }
+
+    /// Read particle counters directly from GPU buffer.
+    pub fn read_counters_direct(&self) -> Result<ParticleCounters, String> {
+        if let Some(mapped) = self
+            .counters_allocation
+            .as_ref()
+            .and_then(|a| a.mapped_ptr())
+        {
+            let counters = unsafe { &*(mapped.as_ptr() as *const ParticleCounters) };
+            Ok(*counters)
+        } else {
+            Err("Counters buffer is not mapped for CPU access".to_string())
+        }
+    }
+
     /// Dispatch compute shader for particle update.
     pub fn dispatch_compute(
         &self,
@@ -651,10 +858,10 @@ impl GlobalParticleBuffer {
         self.counters_buffer
     }
 
-    /// Swap alive_list_2 to alive_list_1 after simulate pass.
+    /// Swap alive_list_next to alive_list for next frame.
     ///
-    /// This copies the content from alive_next (written by simulate shader)
-    /// to alive_current (read by emit shader next frame).
+    /// This copies the content from alive_list_next (written by simulate shader)
+    /// to alive_list[frame_idx] (read by emit/render shaders next frame).
     ///
     /// Uses vkCmdCopyBuffer for simplicity (Option A from design doc).
     /// A buffer barrier is inserted after the copy to ensure synchronization.
@@ -678,21 +885,20 @@ impl GlobalParticleBuffer {
             (self.max_particles as u64) * (std::mem::size_of::<ParticleData>() as u64);
         let dead_list_size = (self.max_particles as u64) * (std::mem::size_of::<u32>() as u64);
 
-        // CRITICAL: Use per-frame offsets for alive_current to avoid WRITE_AFTER_WRITE hazards
-        // With 2 frames in flight, we need separate alive_current regions for each frame
-        // Frame 0 uses alive_current at offset 0
-        // Frame 1 uses alive_current at offset +alive_list_size
+        // CRITICAL: Use per-frame offsets for alive_list to avoid WRITE_AFTER_WRITE hazards
+        // With 2 frames in flight, we need separate alive_list regions for each frame
+        // Memory layout: particles -> dead_list -> alive_list[0] -> alive_list[1] -> alive_list_next
         let frames_in_flight = 2;
         let alive_list_size = dead_list_size;
-        let base_alive_current_offset = particle_data_size + dead_list_size;
-        let alive_current_offset = base_alive_current_offset + (frame_idx as u64 * alive_list_size);
+        let base_alive_list_offset = particle_data_size + dead_list_size;
+        let alive_list_offset = base_alive_list_offset + (frame_idx as u64 * alive_list_size);
         let alive_next_offset =
-            base_alive_current_offset + (frames_in_flight as u64 * alive_list_size);
+            base_alive_list_offset + (frames_in_flight as u64 * alive_list_size);
 
-        // Copy alive_next to alive_current (per-frame offset)
+        // Copy alive_next to alive_list (per-frame offset)
         let copy_region = vk::BufferCopy::default()
             .src_offset(alive_next_offset)
-            .dst_offset(alive_current_offset)
+            .dst_offset(alive_list_offset)
             .size(alive_list_size);
 
         unsafe {
@@ -717,14 +923,14 @@ impl GlobalParticleBuffer {
                 .buffer(self.particle_buffer)
                 .offset(alive_next_offset)
                 .size(alive_list_size),
-            // Barrier for destination region (alive_current)
+            // Barrier for destination region (alive_list)
             vk::BufferMemoryBarrier::default()
                 .src_access_mask(vk::AccessFlags::TRANSFER_WRITE)
                 .dst_access_mask(vk::AccessFlags::SHADER_READ)
                 .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
                 .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
                 .buffer(self.particle_buffer)
-                .offset(alive_current_offset)
+                .offset(alive_list_offset)
                 .size(alive_list_size),
         ];
 

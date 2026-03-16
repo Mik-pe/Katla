@@ -76,12 +76,14 @@
 //! ```
 
 pub mod buffer;
+pub mod debug_readback;
 pub mod presets;
 pub mod stats;
 pub mod timing;
 pub mod validation;
 
-pub use buffer::{FrameData, GlobalParticleBuffer, ParticleCounters};
+pub use buffer::{FrameData, GlobalParticleBuffer, ParticleCounters, ParticleData};
+pub use debug_readback::{ParticleDebugData, ParticleDebugReadback};
 pub use presets::EmitterPreset;
 pub use stats::ParticleStats;
 pub use timing::TimestampQuery;
@@ -293,6 +295,8 @@ impl EmitterHandle {
 struct EmitterState {
     /// Burst particles to emit this frame
     burst_count: u32,
+    /// Accumulated fractional emit time for rate-based emission
+    emit_accumulator: f32,
 }
 
 /// Modern GPU-driven particle system.
@@ -384,6 +388,9 @@ pub struct GlobalParticleSystem {
     total_dispatches: u64,
     /// Maximum particles in the system
     max_particles: u32,
+
+    /// Debug readback helper (optional, created only when debugging)
+    debug_readback: Option<ParticleDebugReadback>,
 }
 
 impl GlobalParticleSystem {
@@ -434,6 +441,7 @@ impl GlobalParticleSystem {
             compute_time_history: Vec::with_capacity(60),
             total_dispatches: 0,
             max_particles,
+            debug_readback: None,
         };
 
         // Initialize index lists (all particles start dead, alive lists are empty)
@@ -510,6 +518,9 @@ impl GlobalParticleSystem {
         }
 
         self.emitters[index as usize] = config;
+        
+        // Explicitly initialize emitter state to ensure clean state
+        self.emitter_states[index as usize] = EmitterState::default();
 
         log::debug!(
             "Created particle emitter {} at position {:?}",
@@ -576,26 +587,30 @@ impl GlobalParticleSystem {
     /// # Errors
     /// Returns error if frame data upload fails, but gracefully continues
     /// with cached particle count to avoid rendering interruptions
-    pub fn update(&mut self, delta_time: f32, frame_index: u32) -> Result<u32, String> {
+    pub fn update(&mut self, delta_time: f32, frame_index: u32) -> Result<(u32, u32), String> {
         self.frame_count += 1;
 
         // Upload emitter configs to GPU buffer
         self.upload_emitter_configs()?;
 
         // Calculate total particles to emit this frame (including bursts)
+        // Use calculate_emit_count to get proper rate-based emission with accumulators
+        let total_emit_count = self.calculate_emit_count(delta_time);
+
         let total_burst_count: u32 = self
             .emitter_states
             .iter()
             .map(|state| state.burst_count)
             .sum();
 
-        let total_emit_count: u32 = self
-            .emitters
-            .iter()
-            .map(|config| (config.emit_rate * delta_time) as u32)
-            .sum();
-
         let total_this_frame = total_emit_count + total_burst_count;
+
+        log::debug!(
+            "Particle emit: rate={} burst={} total={}",
+            total_emit_count,
+            total_burst_count,
+            total_this_frame
+        );
 
         // Update frame data buffer
         self.update_frame_data(delta_time, total_emit_count, total_burst_count, frame_index)?;
@@ -611,6 +626,8 @@ impl GlobalParticleSystem {
         // Read back alive count from counters buffer (from previous frame)
         let alive_count = self.buffer.get_alive_count().unwrap_or(0);
         self.cached_alive_count = alive_count;
+
+        let emit_count = total_emit_count + total_burst_count;
 
         // Debug-only validation: Check counter consistency
         #[cfg(debug_assertions)]
@@ -635,7 +652,7 @@ impl GlobalParticleSystem {
             self.update_emission_stats(total_this_frame);
         }
 
-        Ok(alive_count)
+        Ok((alive_count, emit_count))
     }
 
     /// Upload emitter configurations to GPU buffer.
@@ -723,6 +740,7 @@ impl GlobalParticleSystem {
     /// * `pipeline` - Graphics pipeline to use for rendering
     /// * `layout` - Pipeline layout for descriptor binding
     /// * `storage_descriptor_set` - Storage descriptor set (Set 1) from renderer containing FrameUniforms
+    /// * `frame_index` - Current frame index (for double-buffering offset)
     pub fn render(
         &mut self,
         command_buffer: vk::CommandBuffer,
@@ -730,6 +748,7 @@ impl GlobalParticleSystem {
         pipeline: vk::Pipeline,
         layout: vk::PipelineLayout,
         storage_descriptor_set: vk::DescriptorSet,
+        frame_index: usize,
     ) -> Result<(), String> {
         let device = &self.context.device;
 
@@ -737,6 +756,10 @@ impl GlobalParticleSystem {
         unsafe {
             device.cmd_bind_pipeline(command_buffer, vk::PipelineBindPoint::GRAPHICS, pipeline);
         }
+
+        // Update alive_current descriptor binding offset for this frame
+        // This ensures the render shader reads from the correct double-buffered region
+        self.update_alive_descriptor_binding(frame_index)?;
 
         // Bind static descriptor set (Set 0: particle buffers)
         // CRITICAL: Use render_descriptor_set (with VERTEX/FRAGMENT stage flags)
@@ -780,6 +803,85 @@ impl GlobalParticleSystem {
         Ok(())
     }
 
+    /// Update alive_list descriptor binding offset for compute shaders.
+    ///
+    /// This must be called each frame before compute dispatch to ensure the
+    /// shaders read from the correct frame's alive_list region.
+    /// The Vulkan binding handles the per-frame offset transparently.
+    pub fn update_compute_descriptor_binding(&self, frame_index: usize) -> Result<(), String> {
+        let device = &self.context.device;
+        let descriptor_set = self
+            .compute_descriptor_set
+            .ok_or("Compute descriptor set not allocated")?;
+
+        // Calculate offset for this frame's alive_list region
+        let particle_size = std::mem::size_of::<buffer::ParticleData>() as u64;
+        let dead_list_size = (self.max_particles as u64) * std::mem::size_of::<u32>() as u64;
+        let base_alive_list_offset = particle_size + dead_list_size;
+        let alive_list_size = (self.max_particles as u64) * std::mem::size_of::<u32>() as u64;
+        let frame_offset = base_alive_list_offset + (frame_index as u64 * alive_list_size);
+
+        log::debug!("update_compute_descriptor_binding: frame_index={}, base_offset={}, frame_offset={}, alive_list_size={}",
+            frame_index, base_alive_list_offset, frame_offset, alive_list_size);
+
+        // Update binding 2 (alive_list) with frame-specific offset
+        let alive_list_info = [vk::DescriptorBufferInfo {
+            buffer: self.buffer.particle_buffer(),
+            offset: frame_offset,
+            range: alive_list_size,
+        }];
+
+        let descriptor_write = vk::WriteDescriptorSet::default()
+            .dst_set(descriptor_set)
+            .dst_binding(2)
+            .descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
+            .buffer_info(&alive_list_info);
+
+        unsafe {
+            device.update_descriptor_sets(std::slice::from_ref(&descriptor_write), &[]);
+        }
+
+        Ok(())
+    }
+
+    /// Update alive_list descriptor binding offset for render shaders.
+    ///
+    /// This must be called each frame before rendering to ensure the shader
+    /// reads from the correct frame's alive_list region.
+    /// The Vulkan binding handles the per-frame offset transparently.
+    fn update_alive_descriptor_binding(&self, frame_index: usize) -> Result<(), String> {
+        let device = &self.context.device;
+        let descriptor_set = self
+            .render_descriptor_set
+            .ok_or("Render descriptor set not allocated")?;
+
+        // Calculate offset for this frame's alive_list region
+        let particle_size = std::mem::size_of::<buffer::ParticleData>() as u64;
+        let dead_list_size = (self.max_particles as u64) * std::mem::size_of::<u32>() as u64;
+        let base_alive_list_offset = particle_size + dead_list_size;
+        let alive_list_size = (self.max_particles as u64) * std::mem::size_of::<u32>() as u64;
+        let frame_offset = base_alive_list_offset + (frame_index as u64 * alive_list_size);
+
+        // Update binding 2 (alive_list) with frame-specific offset
+        let alive_list_info = [vk::DescriptorBufferInfo {
+            buffer: self.buffer.particle_buffer(),
+            offset: frame_offset,
+            range: alive_list_size,
+        }];
+
+        let descriptor_write = vk::WriteDescriptorSet::default()
+            .dst_set(descriptor_set)
+            .dst_binding(2)
+            .descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
+            .buffer_info(&alive_list_info);
+
+        unsafe {
+            device.update_descriptor_sets(std::slice::from_ref(&descriptor_write), &[]);
+        }
+
+        Ok(())
+    }
+
     /// Get current alive particle count.
     pub fn alive_count(&self) -> u32 {
         self.cached_alive_count
@@ -788,6 +890,34 @@ impl GlobalParticleSystem {
     /// Get emitter configurations (for compute dispatch).
     pub fn get_emitters(&self) -> &[EmitterConfig] {
         &self.emitters
+    }
+
+    /// Calculate particles to emit this frame using fractional accumulation.
+    ///
+    /// This handles rate-based emission by accumulating fractional particles
+    /// across frames, ensuring we emit the correct number over time even when
+    /// emit_rate * delta_time < 1.0 per frame.
+    pub fn calculate_emit_count(&mut self, delta_time: f32) -> u32 {
+        let mut total_emit = 0u32;
+
+        for (emitter, state) in self
+            .emitters
+            .iter()
+            .zip(self.emitter_states.iter_mut())
+        {
+            if emitter.emit_rate > 0.0 {
+                // Accumulate fractional particles
+                state.emit_accumulator += emitter.emit_rate * delta_time;
+
+                // Extract whole particles to emit this frame
+                let to_emit = state.emit_accumulator as u32;
+                state.emit_accumulator -= to_emit as f32;
+
+                total_emit += to_emit;
+            }
+        }
+
+        total_emit
     }
 
     /// Get emit pipeline handle.
@@ -883,6 +1013,91 @@ impl GlobalParticleSystem {
                     .destroy_descriptor_pool(self._render_descriptor_pool, None);
             }
             self._render_descriptor_pool = vk::DescriptorPool::null();
+        }
+
+        // Destroy debug readback if present
+        if let Some(mut readback) = self.debug_readback.take() {
+            readback.destroy();
+        }
+    }
+
+    /// Initialize debug readback for particle data inspection.
+    ///
+    /// This creates staging buffers for copying particle data from GPU to CPU.
+    /// Call this once during initialization if you need to debug particle data.
+    pub fn init_debug_readback(&mut self) -> Result<(), String> {
+        if self.debug_readback.is_some() {
+            warn!("Debug readback already initialized");
+            return Ok(());
+        }
+
+        info!("Initializing particle debug readback");
+        let readback = ParticleDebugReadback::new(&self.context, self.max_particles)?;
+        self.debug_readback = Some(readback);
+        info!("Particle debug readback initialized successfully");
+        Ok(())
+    }
+
+    /// Record copy commands for debug readback.
+    ///
+    /// Call this during frame recording to copy particle data to staging buffers.
+    /// The command buffer must be submitted and waited on before calling read_debug_data().
+    ///
+    /// # Arguments
+    /// * `command_buffer` - Command buffer to record copy commands into
+    ///
+    /// # Returns
+    /// Ok(()) if copy commands were recorded successfully
+    pub fn record_debug_readback(
+        &mut self,
+        command_buffer: vk::CommandBuffer,
+    ) -> Result<(), String> {
+        if let Some(ref mut readback) = self.debug_readback {
+            readback.record_copy(command_buffer, &self.buffer)?;
+            Ok(())
+        } else {
+            Err("Debug readback not initialized. Call init_debug_readback() first.".to_string())
+        }
+    }
+
+    /// Read debug data from staging buffers.
+    ///
+    /// This must be called AFTER the command buffer with record_debug_readback()
+    /// has been submitted and fully executed (GPU fence wait).
+    ///
+    /// # Returns
+    /// Particle debug data containing particles, index lists, and counters
+    pub fn read_debug_data(&self) -> Result<ParticleDebugData, String> {
+        if let Some(ref readback) = self.debug_readback {
+            readback.read(&self.buffer)
+        } else {
+            Err("Debug readback not initialized. Call init_debug_readback() first.".to_string())
+        }
+    }
+
+    /// Check if debug readback is initialized.
+    pub fn has_debug_readback(&self) -> bool {
+        self.debug_readback.is_some()
+    }
+
+    /// Directly read particle data from GPU buffer (CPU-visible memory).
+    ///
+    /// This reads directly from the particle buffer without staging.
+    /// Only works if the particle buffer was created with CPU-visible memory.
+    pub fn read_particles_direct(&self, count: usize) -> Result<Vec<ParticleData>, String> {
+        self.buffer.read_particles_direct(count)
+    }
+
+    /// Read particle counters directly from GPU buffer.
+    pub fn read_counters_direct(&self) -> Result<ParticleCounters, String> {
+        self.buffer.read_counters_direct()
+    }
+
+    /// Destroy debug readback to free staging buffers.
+    pub fn destroy_debug_readback(&mut self) {
+        if let Some(mut readback) = self.debug_readback.take() {
+            readback.destroy();
+            info!("Particle debug readback destroyed");
         }
     }
 
@@ -1216,21 +1431,19 @@ impl GlobalParticleSystem {
             range: (self.buffer.max_particles() as u64) * std::mem::size_of::<u32>() as u64,
         }];
 
-        // Binding 2: alive_current
-        // CRITICAL: This must cover BOTH regions for double-buffering (2 frames in flight)
-        // Frame 0 reads from [0, MAX_PARTICLES), Frame 1 reads from [MAX_PARTICLES, 2*MAX_PARTICLES)
-        let frames_in_flight = 2u64;
-        let alive_current_info = [vk::DescriptorBufferInfo {
+        // Binding 2: alive_list (shader binding name)
+        // Maps to alive_current[frame 0] initially, updated per-frame for double-buffering
+        let _frames_in_flight = 2u64;
+        let alive_list_info = [vk::DescriptorBufferInfo {
             buffer: self.buffer.particle_buffer(),
             offset: (self.buffer.max_particles() as u64)
                 * (std::mem::size_of::<buffer::ParticleData>() + std::mem::size_of::<u32>()) as u64,
-            range: (self.buffer.max_particles() as u64)
-                * frames_in_flight
-                * std::mem::size_of::<u32>() as u64,
+            range: (self.buffer.max_particles() as u64) * std::mem::size_of::<u32>() as u64,
         }];
 
-        // Binding 3: alive_next
-        let alive_next_info = [vk::DescriptorBufferInfo {
+        // Binding 3: alive_list_next (shader binding name)
+        // Maps to alive_next region (single buffer, not per-frame)
+        let alive_list_next_info = [vk::DescriptorBufferInfo {
             buffer: self.buffer.particle_buffer(),
             offset: (self.buffer.max_particles() as u64)
                 * (std::mem::size_of::<buffer::ParticleData>() + 2 * std::mem::size_of::<u32>())
@@ -1259,12 +1472,12 @@ impl GlobalParticleSystem {
                 .dst_set(descriptor_set)
                 .dst_binding(2)
                 .descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
-                .buffer_info(&alive_current_info),
+                .buffer_info(&alive_list_info),
             vk::WriteDescriptorSet::default()
                 .dst_set(descriptor_set)
                 .dst_binding(3)
                 .descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
-                .buffer_info(&alive_next_info),
+                .buffer_info(&alive_list_next_info),
             vk::WriteDescriptorSet::default()
                 .dst_set(descriptor_set)
                 .dst_binding(4)
@@ -1456,7 +1669,8 @@ impl GlobalParticleSystem {
             .with_shaders(vertex_shader.vk(), fragment_shader.vk())
             .with_descriptor_layouts(vec![render_layout, storage_layout])
             // No vertex binding - particles generated from storage buffer
-            .with_depth_test(false, false, crate::pipeline::CompareOp::Always)
+            .with_depth_test(true, true, crate::pipeline::CompareOp::Greater)
+            .with_alpha_blending()
             .with_cull_mode(CullMode::None, FrontFace::CounterClockwise)
             .with_rendering_formats(
                 Some(crate::texture::ImageFormat::B8G8R8A8Srgb),
@@ -1688,7 +1902,7 @@ impl GlobalParticleSystem {
         // Add pipeline barrier after EMIT pass to ensure memory synchronization before SIMULATE pass
         // EMIT pass writes to: particle buffers, alive list, counters
         // SIMULATE pass reads from: particle buffers, alive list, counters
-        self.emit_barrier(command_buffer)?;
+        self.emit_to_simulate_barrier(command_buffer)?;
 
         Ok(())
     }
@@ -1787,7 +2001,10 @@ impl GlobalParticleSystem {
     /// - dst_stage: COMPUTE_SHADER (SIMULATE pass)
     /// - src_access: SHADER_WRITE (EMIT wrote to buffers)
     /// - dst_access: SHADER_READ | SHADER_WRITE (SIMULATE reads and writes)
-    fn emit_barrier(&self, command_buffer: vk::CommandBuffer) -> Result<(), String> {
+    pub fn emit_to_simulate_barrier(
+        &self,
+        command_buffer: vk::CommandBuffer,
+    ) -> Result<(), String> {
         let particle_buffer = self.buffer.particle_buffer();
         let counters_buffer = self.buffer.counters_buffer();
         let device = &self.context.device;

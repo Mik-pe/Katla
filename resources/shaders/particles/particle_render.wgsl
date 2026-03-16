@@ -37,9 +37,10 @@ var<storage, read> particles: array<ParticleData, MAX_PARTICLES>;
 var<storage, read> dead_list: array<u32, MAX_PARTICLES>;
 
 // Alive particle index list (Set 0, Binding 2)
-// Note: We use binding 2 to match the compute shader's alive_current binding
+// Note: This is double-buffered for 2 frames in flight
+// We read from the first half (frame 0) - the descriptor offset is updated per-frame
 @group(0) @binding(2)
-var<storage, read> alive_list: array<u32, MAX_PARTICLES * 2>;
+var<storage, read> alive_list: array<u32, MAX_PARTICLES>;
 
 // Alive list next (Set 0, Binding 3) - unused in render but must match layout
 @group(0) @binding(3)
@@ -118,7 +119,6 @@ fn vs_main(
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4f {
-    // DEBUG: Make particles super visible
     let uv = in.uv;
 
     // Simple circle with sharp edge for visibility
@@ -129,6 +129,6 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
         discard;
     }
 
-    // Solid color, no transparency for debugging
+    // Return color with proper alpha channel for transparency
     return in.color;
 }

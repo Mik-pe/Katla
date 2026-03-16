@@ -4,6 +4,7 @@ use std::{cell::RefCell, collections::HashMap, rc::Rc, time::Instant};
 use katla_ecs::{System, SystemExecutionOrder, World};
 use katla_gfx::renderer::VulkanRenderer;
 use katla_ui::{FontId, ForkAwesome};
+use log::{info, warn};
 use winit::dpi::LogicalSize;
 use winit::event_loop::{ControlFlow, EventLoop};
 use winit::keyboard::ModifiersState;
@@ -120,6 +121,17 @@ impl ApplicationBuilder {
         renderer
             .init_particle_system()
             .expect("Failed to initialize particle system");
+
+        // Initialize particle debug readback in debug builds
+        #[cfg(debug_assertions)]
+        {
+            info!("Initializing particle debug readback");
+            if let Some(ref mut particle_system) = renderer.particle_system {
+                if let Err(e) = particle_system.init_debug_readback() {
+                    warn!("Failed to initialize particle debug readback: {}", e);
+                }
+            }
+        }
 
         renderer
     }
@@ -493,6 +505,7 @@ impl ApplicationBuilder {
             pending_readback: None,
             cleaned_up: false,
             particle_system: crate::systems::ParticleSystem::new(),
+            particle_readback_pending: false,
         };
 
         Ok((app, event_loop))

@@ -9,8 +9,6 @@ opt-level = 1               # Basic optimizations
 debug = true                # Keep debug symbols
 debug-assertions = true     # Keep debug assertions
 overflow-checks = true      # Keep overflow checks
-lto = false                 # No LTO for faster builds
-codegen-units = 256         # More parallelism for faster compilation
 
 # Optimize heavy dependencies even in dev mode
 [profile.dev.package."*"]
