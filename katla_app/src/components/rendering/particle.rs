@@ -1,5 +1,5 @@
 use katla_ecs::Component;
-use katla_gfx::particles::{EmitterConfig, EmitterShape, EmitterHandle};
+use katla_gfx::particles::{EmitterConfig, EmitterHandle, EmitterShape};
 
 /// Particle emitter component for ECS entities.
 ///
@@ -48,8 +48,10 @@ impl ParticleEmitterComponent {
 
     /// Create a new particle emitter component at a specific position.
     pub fn at_position(position: [f32; 3]) -> Self {
-        let mut config = EmitterConfig::default();
-        config.position = position;
+        let config = EmitterConfig {
+            position,
+            ..Default::default()
+        };
 
         Self {
             config,
@@ -309,7 +311,12 @@ impl ParticleEmitterComponent {
     pub fn with_box_shape(&mut self, width: f32, height: f32, depth: f32) -> &mut Self {
         self.config.set_shape(EmitterShape::Box);
         self.config.shape_params = [width, height, depth, 0.0];
-        log::debug!("Set box shape with dimensions {}x{}x{}", width, height, depth);
+        log::debug!(
+            "Set box shape with dimensions {}x{}x{}",
+            width,
+            height,
+            depth
+        );
         self
     }
 }

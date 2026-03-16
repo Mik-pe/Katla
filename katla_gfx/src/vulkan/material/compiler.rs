@@ -373,10 +373,10 @@ impl MaterialCompiler {
         }
 
         // Add compositing descriptor set layout (set 2) for compositing materials
-        if options.is_compositing {
-            if let Some(layout) = self.compositing_descriptor_set_layout {
-                layouts.push(layout);
-            }
+        if options.is_compositing
+            && let Some(layout) = self.compositing_descriptor_set_layout
+        {
+            layouts.push(layout);
         }
 
         Ok(layouts)

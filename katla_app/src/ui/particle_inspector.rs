@@ -332,10 +332,7 @@ impl<'a> ParticleInspector<'a> {
         );
         ui.spacing(4.0);
 
-        ui.property_row(
-            "Memory Used:",
-            &format!("{:.2} MB", stats.memory_used_mb),
-        );
+        ui.property_row("Memory Used:", &format!("{:.2} MB", stats.memory_used_mb));
         ui.spacing(line_height);
 
         // Performance stats
@@ -347,10 +344,7 @@ impl<'a> ParticleInspector<'a> {
         );
         ui.spacing(line_height);
 
-        ui.property_row(
-            "Compute Time:",
-            &format!("{:.3} ms", stats.compute_time_ms),
-        );
+        ui.property_row("Compute Time:", &format!("{:.3} ms", stats.compute_time_ms));
         ui.spacing(4.0);
 
         ui.property_row(
@@ -383,10 +377,7 @@ impl<'a> ParticleInspector<'a> {
         ui.property_row("Frame Count:", &format!("{}", stats.frame_count));
         ui.spacing(4.0);
 
-        ui.property_row(
-            "Total Dispatches:",
-            &format!("{}", stats.total_dispatches),
-        );
+        ui.property_row("Total Dispatches:", &format!("{}", stats.total_dispatches));
         ui.spacing(line_height);
 
         // Section: Controls

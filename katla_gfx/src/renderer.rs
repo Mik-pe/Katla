@@ -2079,10 +2079,10 @@ impl VulkanRenderer {
         self.swap_data.step_frame();
 
         // 11. Read back particle timing data (after GPU work completes)
-        if let Some(ref mut ps) = self.particle_system {
-            if let Some(compute_time) = ps.get_compute_time_ms() {
-                log::debug!("Particle compute time: {:.3} ms", compute_time);
-            }
+        if let Some(ref mut ps) = self.particle_system
+            && let Some(compute_time) = ps.get_compute_time_ms()
+        {
+            log::debug!("Particle compute time: {:.3} ms", compute_time);
         }
     }
 
@@ -2431,10 +2431,10 @@ impl Drop for OutputRenderTarget {
                 .device
                 .destroy_image_view(self.color_image_view, None);
             self.context.device.destroy_image(self.color_image, None);
-            if let Some(memory) = self.color_memory.take() {
-                if let Ok(mut allocator) = self.context.allocator.try_borrow_mut() {
-                    allocator.free(memory).ok();
-                }
+            if let Some(memory) = self.color_memory.take()
+                && let Ok(mut allocator) = self.context.allocator.try_borrow_mut()
+            {
+                allocator.free(memory).ok();
             }
         }
     }

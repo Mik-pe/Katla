@@ -7,7 +7,6 @@ use crate::handle::PipelineHandle;
 use super::super::builder::{InternalPassBuilder, PassBuilder};
 use super::super::error::RenderGraphError;
 use super::super::pass::PassType;
-use ash::vk;
 use std::collections::HashMap;
 
 /// Compute pass template.
@@ -77,13 +76,13 @@ impl PassBuilder for ComputePass {
                     crate::render_graph::resource::GraphResourceHandle,
                 >| {
                     Ok(Box::new(ComputePassData {
-                        name: self.name.clone(),
-                        pipeline: self.pipeline.ok_or_else(|| {
+                        _name: self.name.clone(),
+                        _pipeline: self.pipeline.ok_or_else(|| {
                             RenderGraphError::PipelineNotSet(
                                 "Compute pass missing pipeline".to_string(),
                             )
                         })?,
-                        workgroup_count: self.workgroup_count,
+                        _workgroup_count: self.workgroup_count,
                     }))
                 },
             ),
@@ -94,45 +93,11 @@ impl PassBuilder for ComputePass {
 
 /// Compiled compute pass data.
 pub struct ComputePassData {
-    name: String,
-    pipeline: PipelineHandle,
-    workgroup_count: u32,
+    _name: String,
+    _pipeline: PipelineHandle,
+    _workgroup_count: u32,
 }
 
 impl ComputePassData {
-    /// Execute the compute pass.
-    pub fn execute(
-        &self,
-        renderer: &crate::renderer::VulkanRenderer,
-        command_buffer: vk::CommandBuffer,
-    ) -> Result<(), String> {
-        let device = &renderer.context.device;
-
-        // Get compute pipeline from registry
-        let compute_pipeline = renderer
-            .asset_registry
-            .get_pipeline(self.pipeline)
-            .ok_or("Failed to get compute pipeline from registry")?;
-
-        let vk_pipeline = compute_pipeline.vk_pipeline();
-        let vk_layout = compute_pipeline.vk_layout();
-
-        // Bind compute pipeline
-        unsafe {
-            device.cmd_bind_pipeline(command_buffer, vk::PipelineBindPoint::COMPUTE, vk_pipeline);
-        }
-
-        // Dispatch compute shader
-        unsafe {
-            device.cmd_dispatch(command_buffer, self.workgroup_count, 1, 1);
-        }
-
-        log::debug!(
-            "Executed compute pass '{}' with {} workgroups",
-            self.name,
-            self.workgroup_count
-        );
-
-        Ok(())
-    }
+    // Note: Execute method removed - unused code
 }

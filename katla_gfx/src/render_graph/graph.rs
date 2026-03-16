@@ -568,20 +568,20 @@ impl FrameGraph {
         for (name, slots) in &existing_slots {
             // Update each frame's texture with its existing slot
             for (frame_idx, slot) in slots.iter().enumerate() {
-                if let Some(frame_textures) = self.transient_textures.get_mut(frame_idx) {
-                    if let Some(texture) = frame_textures.get_mut(name) {
-                        renderer
-                            .update_bindless_texture(*slot, texture.image_view.vk())
-                            .map_err(|e| {
-                                RenderGraphError::VulkanError(format!(
-                                    "Failed to update bindless texture '{}' frame {}: {}",
-                                    name, frame_idx, e
-                                ))
-                            })?;
+                if let Some(frame_textures) = self.transient_textures.get_mut(frame_idx)
+                    && let Some(texture) = frame_textures.get_mut(name)
+                {
+                    renderer
+                        .update_bindless_texture(*slot, texture.image_view.vk())
+                        .map_err(|e| {
+                            RenderGraphError::VulkanError(format!(
+                                "Failed to update bindless texture '{}' frame {}: {}",
+                                name, frame_idx, e
+                            ))
+                        })?;
 
-                        // Store the slot in the new texture
-                        texture.bindless_slot = Some(*slot);
-                    }
+                    // Store the slot in the new texture
+                    texture.bindless_slot = Some(*slot);
                 }
             }
 
@@ -649,21 +649,21 @@ impl FrameGraph {
 
         // Register each frame's texture and store the slot in the texture
         for frame_idx in 0..num_frames {
-            if let Some(frame_textures) = self.transient_textures.get_mut(frame_idx) {
-                if let Some(texture) = frame_textures.get_mut(name) {
-                    let slot = renderer
-                        .register_bindless_texture(texture.image_view.vk())
-                        .map_err(|e| {
-                            RenderGraphError::VulkanError(format!(
-                                "Failed to register bindless texture '{}' frame {}: {}",
-                                name, frame_idx, e
-                            ))
-                        })?;
+            if let Some(frame_textures) = self.transient_textures.get_mut(frame_idx)
+                && let Some(texture) = frame_textures.get_mut(name)
+            {
+                let slot = renderer
+                    .register_bindless_texture(texture.image_view.vk())
+                    .map_err(|e| {
+                        RenderGraphError::VulkanError(format!(
+                            "Failed to register bindless texture '{}' frame {}: {}",
+                            name, frame_idx, e
+                        ))
+                    })?;
 
-                    // Store the slot in the texture for later updates
-                    texture.bindless_slot = Some(slot);
-                    log::debug!("  Frame {}: slot {}", frame_idx, slot);
-                }
+                // Store the slot in the texture for later updates
+                texture.bindless_slot = Some(slot);
+                log::debug!("  Frame {}: slot {}", frame_idx, slot);
             }
         }
 
@@ -2512,7 +2512,6 @@ impl<'a> Frame<'a> {
             })?;
 
         let vk_pipeline = compute_pipeline.vk_pipeline();
-        let vk_layout = compute_pipeline.vk_layout();
 
         // Bind compute pipeline
         unsafe {
@@ -2525,71 +2524,80 @@ impl<'a> Frame<'a> {
 
         // Bind descriptor sets if particle system is active
         // Note: Particle system manages its own descriptor sets
-        if let Some(ref particle_system) = self.renderer.particle_system {
-            if pass.name.contains("particle") {
-                log::debug!("Executing particle compute pass '{}'", pass.name);
+        if let Some(ref particle_system) = self.renderer.particle_system
+            && pass.name.contains("particle")
+        {
+            log::debug!("Executing particle compute pass '{}'", pass.name);
 
-                // Use pre-calculated workgroup count from frame graph
-                // These were calculated in renderer.rs based on current particle state
-                let workgroup_count = if pass.name.contains("emit") {
-                    self.graph.particle_emit_workgroup_count
-                } else if pass.name.contains("simulate") {
-                    self.graph.particle_simulate_workgroup_count
-                } else {
-                    log::warn!("Unknown particle compute pass '{}', using default workgroup count", pass.name);
-                    1
-                };
-
-                log::debug!(
-                    "Particle compute pass '{}': using {} workgroups (from frame graph)",
-                    pass.name,
-                    workgroup_count
+            // Use pre-calculated workgroup count from frame graph
+            // These were calculated in renderer.rs based on current particle state
+            let workgroup_count = if pass.name.contains("emit") {
+                self.graph.particle_emit_workgroup_count
+            } else if pass.name.contains("simulate") {
+                self.graph.particle_simulate_workgroup_count
+            } else {
+                log::warn!(
+                    "Unknown particle compute pass '{}', using default workgroup count",
+                    pass.name
                 );
+                1
+            };
 
-                // Before recording dispatch
-                log::info!("🎯 About to dispatch '{}' pass with {} workgroups",
-                    pass.name, workgroup_count);
+            log::debug!(
+                "Particle compute pass '{}': using {} workgroups (from frame graph)",
+                pass.name,
+                workgroup_count
+            );
 
-                if workgroup_count == 0 {
-                    log::warn!("⚠️ Skipping compute dispatch for '{}' - workgroup_count is 0!", pass.name);
-                    return Ok(()); // Skip dispatch
-                }
+            // Before recording dispatch
+            log::info!(
+                "🎯 About to dispatch '{}' pass with {} workgroups",
+                pass.name,
+                workgroup_count
+            );
 
-                // Record the appropriate dispatch based on pass name
-                if pass.name.contains("emit") {
-                    particle_system
-                        .record_emit_dispatch(
-                            cmd.vk_command_buffer(),
-                            &self.renderer.asset_registry,
-                            workgroup_count,
-                        )
-                        .map_err(|e| {
-                            RenderGraphError::VulkanError(format!(
-                                "Particle emit dispatch failed: {}",
-                                e
-                            ))
-                        })?;
-
-                    log::debug!("Emit pass dispatched successfully");
-                } else if pass.name.contains("simulate") {
-                    particle_system
-                        .record_simulate_dispatch(
-                            cmd.vk_command_buffer(),
-                            &self.renderer.asset_registry,
-                            workgroup_count,
-                        )
-                        .map_err(|e| {
-                            RenderGraphError::VulkanError(format!(
-                                "Particle simulate dispatch failed: {}",
-                                e
-                            ))
-                        })?;
-
-                    log::debug!("Simulate pass dispatched successfully");
-                }
-
-                return Ok(());
+            if workgroup_count == 0 {
+                log::warn!(
+                    "⚠️ Skipping compute dispatch for '{}' - workgroup_count is 0!",
+                    pass.name
+                );
+                return Ok(()); // Skip dispatch
             }
+
+            // Record the appropriate dispatch based on pass name
+            if pass.name.contains("emit") {
+                particle_system
+                    .record_emit_dispatch(
+                        cmd.vk_command_buffer(),
+                        &self.renderer.asset_registry,
+                        workgroup_count,
+                    )
+                    .map_err(|e| {
+                        RenderGraphError::VulkanError(format!(
+                            "Particle emit dispatch failed: {}",
+                            e
+                        ))
+                    })?;
+
+                log::debug!("Emit pass dispatched successfully");
+            } else if pass.name.contains("simulate") {
+                particle_system
+                    .record_simulate_dispatch(
+                        cmd.vk_command_buffer(),
+                        &self.renderer.asset_registry,
+                        workgroup_count,
+                    )
+                    .map_err(|e| {
+                        RenderGraphError::VulkanError(format!(
+                            "Particle simulate dispatch failed: {}",
+                            e
+                        ))
+                    })?;
+
+                log::debug!("Simulate pass dispatched successfully");
+            }
+
+            return Ok(());
         }
 
         // Generic compute dispatch for non-particle compute passes

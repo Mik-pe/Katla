@@ -85,7 +85,9 @@ pub use buffer::{FrameData, GlobalParticleBuffer, ParticleCounters};
 pub use presets::{EmitterPreset, PresetManager};
 pub use stats::ParticleStats;
 pub use timing::TimestampQuery;
-pub use validation::{validate_emitter_config, validate_all_emitters, validate_counters, ValidationError};
+pub use validation::{
+    ValidationError, validate_all_emitters, validate_counters, validate_emitter_config,
+};
 
 use std::rc::Rc;
 
@@ -101,8 +103,9 @@ use crate::vulkan::material::compute_pipeline::ComputePipelineBuilder;
 
 /// Emitter shape for particle spawn positions.
 #[repr(u32)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum EmitterShape {
+    #[default]
     Point = 0,
     Line = 1,
     Circle = 2,
@@ -126,12 +129,6 @@ impl EmitterShape {
             4 => EmitterShape::Box,
             _ => EmitterShape::Point,
         }
-    }
-}
-
-impl Default for EmitterShape {
-    fn default() -> Self {
-        EmitterShape::Point
     }
 }
 
@@ -297,16 +294,10 @@ impl EmitterHandle {
 }
 
 /// Per-emitter runtime state (not uploaded to GPU).
-#[derive(Clone)]
+#[derive(Clone, Default)]
 struct EmitterState {
     /// Burst particles to emit this frame
     burst_count: u32,
-}
-
-impl Default for EmitterState {
-    fn default() -> Self {
-        Self { burst_count: 0 }
-    }
 }
 
 /// Modern GPU-driven particle system.
@@ -407,8 +398,6 @@ impl GlobalParticleSystem {
 
         let buffer = GlobalParticleBuffer::new(context.clone(), max_particles)
             .map_err(|e| format!("Failed to create particle buffer: {}", e))?;
-
-        let max_particles = max_particles;
 
         let mut system = Self {
             buffer,
@@ -577,7 +566,9 @@ impl GlobalParticleSystem {
         self.upload_emitter_configs()?;
 
         // Calculate total particles to emit this frame (including bursts)
-        let total_burst_count: u32 = self.emitter_states.iter()
+        let total_burst_count: u32 = self
+            .emitter_states
+            .iter()
             .map(|state| state.burst_count)
             .sum();
 
@@ -618,10 +609,10 @@ impl GlobalParticleSystem {
         // Debug-only validation: Check counter consistency
         #[cfg(debug_assertions)]
         {
-            if let Ok(dead_count) = self.buffer.get_dead_count() {
-                if let Err(e) = validate_counters(alive_count, dead_count, self.max_particles) {
-                    log::warn!("Particle system validation error: {}", e);
-                }
+            if let Ok(dead_count) = self.buffer.get_dead_count()
+                && let Err(e) = validate_counters(alive_count, dead_count, self.max_particles)
+            {
+                log::warn!("Particle system validation error: {}", e);
             }
 
             // Validate all active emitters
@@ -666,13 +657,17 @@ impl GlobalParticleSystem {
     }
 
     /// Update frame data for push descriptor.
-    fn update_frame_data(&self, delta_time: f32, emit_count: u32, burst_count: u32) -> Result<(), String> {
+    fn update_frame_data(
+        &self,
+        delta_time: f32,
+        emit_count: u32,
+        burst_count: u32,
+    ) -> Result<(), String> {
         if let Some((_buffer, allocation)) = &self.frame_data_buffer {
             if let Some(mapped) = allocation.mapped_ptr() {
                 // Calculate active emitter count (emitters with emit_rate > 0 or burst_count > 0)
-                let active_emitter_count = self.emitters.iter()
-                    .filter(|e| e.emit_rate > 0.0)
-                    .count() as u32;
+                let active_emitter_count =
+                    self.emitters.iter().filter(|e| e.emit_rate > 0.0).count() as u32;
 
                 // Total particles to simulate = newly emitted + previously alive
                 let total_simulate_count = emit_count + burst_count + self.cached_alive_count;
@@ -1424,9 +1419,7 @@ impl GlobalParticleSystem {
         asset_registry: &AssetRegistry,
         emit_workgroups: u32,
     ) -> Result<(), String> {
-        let pipeline = self
-            .emit_pipeline
-            .ok_or("Emit pipeline not created")?;
+        let pipeline = self.emit_pipeline.ok_or("Emit pipeline not created")?;
 
         let compute_pipeline = asset_registry
             .get_pipeline(pipeline)
@@ -1556,12 +1549,10 @@ impl GlobalParticleSystem {
                 .offset(0)
                 .range(std::mem::size_of::<FrameData>() as u64)];
 
-            let push_descriptor_writes = [
-                vk::WriteDescriptorSet::default()
-                    .dst_binding(0) // Binding 0 in Set 1 (frame data)
-                    .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
-                    .buffer_info(&frame_buffer_info),
-            ];
+            let push_descriptor_writes = [vk::WriteDescriptorSet::default()
+                .dst_binding(0) // Binding 0 in Set 1 (frame data)
+                .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
+                .buffer_info(&frame_buffer_info)];
 
             unsafe {
                 let push_descriptor = self
@@ -1729,10 +1720,10 @@ impl GlobalParticleSystem {
             for entry in entries.filter_map(|e| e.ok()) {
                 let path = entry.path();
 
-                if path.extension().and_then(|s| s.to_str()) == Some("json") {
-                    if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
-                        presets.push(stem.to_string());
-                    }
+                if path.extension().and_then(|s| s.to_str()) == Some("json")
+                    && let Some(stem) = path.file_stem().and_then(|s| s.to_str())
+                {
+                    presets.push(stem.to_string());
                 }
             }
         }
@@ -1891,7 +1882,7 @@ impl Drop for GlobalParticleSystem {
         // Ensure resources are cleaned up if destroy() wasn't called explicitly
         if !self.destroyed {
             // Call destroy() but suppress any errors since we're in Drop
-            let _ = self.destroy();
+            self.destroy();
         }
         // Descriptor pool is already destroyed in destroy() method
     }
