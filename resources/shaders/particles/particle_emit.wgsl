@@ -7,8 +7,8 @@
 // Set 0 (Global Resources):
 //   Binding 0: Storage buffer (particle data)
 //   Binding 1: Storage buffer (dead particle index list)
-//   Binding 2: Storage buffer (alive particle index list - current)
-//   Binding 3: Storage buffer (alive particle index list - next)
+//   Binding 2: Storage buffer (alive particle index list - 1)
+//   Binding 3: Storage buffer (alive particle index list - 2)
 //   Binding 4: Storage buffer (atomic counters)
 // Set 1 (Emitter Configs):
 //   Binding 0: Uniform buffer (frame data)
@@ -34,6 +34,8 @@ struct FrameData {
     random_seed: u32,
     total_simulate_count: u32,
     burst_count: u32,
+    frame_index: u32,
+    _pad: u32,
 }
 
 // Atomic counters for particle management
@@ -76,11 +78,15 @@ var<storage, read_write> particles: array<ParticleData, MAX_PARTICLES>;
 @group(0) @binding(1)
 var<storage, read_write> dead_list: array<u32, MAX_PARTICLES>;
 
+// Double-buffered alive lists for per-frame offsets
+// With 2 frames in flight, alive_list_1 has 2 regions:
+// - Frame 0: alive_list_1[0..MAX_PARTICLES-1]
+// - Frame 1: alive_list_1[MAX_PARTICLES..2*MAX_PARTICLES-1]
 @group(0) @binding(2)
-var<storage, read> alive_current: array<u32, MAX_PARTICLES>;
+var<storage, read_write> alive_list_1: array<u32, MAX_PARTICLES * 2>;
 
 @group(0) @binding(3)
-var<storage, read_write> alive_next: array<u32, MAX_PARTICLES>;
+var<storage, read> alive_list_2: array<u32, MAX_PARTICLES>;
 
 @group(0) @binding(4)
 var<storage, read_write> counters: ParticleCounters;
@@ -147,7 +153,7 @@ fn sample_emitter_position(config: EmitterConfig, seed: ptr<function, u32>) -> v
         let radius = config.shape_params.x;
         let theta = random_float(seed) * 6.28318530718; // 2π (azimuthal)
         let phi = acos(2.0 * random_float(seed) - 1.0); // Polar angle (uniform sphere)
-        let r = radius * cbrt(random_float(seed)); // Uniform volume distribution
+        let r = radius * pow(random_float(seed), 1.0 / 3.0); // Uniform volume distribution
         let x = r * sin(phi) * cos(theta);
         let y = r * sin(phi) * sin(theta);
         let z = r * cos(phi);
@@ -226,11 +232,10 @@ fn emit_particle(particle_idx: u32, emitter_idx: u32, seed: ptr<function, u32>) 
 fn cs_main(@builtin(global_invocation_id) global_id: vec3u) {
     let idx = global_id.x;
 
-    // First thread resets emit_count to 0 for this frame
-    if (idx == 0u) {
-        atomicStore(&counters.emit_count, 0u);
-    }
-    workgroupBarrier();
+    // CRITICAL: Do NOT reset emit_count or alive_count!
+    // alive_count contains the number of survivors from previous frame
+    // emit_count will track our position in the emission sequence
+    // New particles will be appended to alive_list_1 after the existing survivors
 
     // Early exit if beyond total emit count (rate-based + burst)
     if (idx >= frame_data.total_emit_count) { return; }
@@ -248,25 +253,39 @@ fn cs_main(@builtin(global_invocation_id) global_id: vec3u) {
         return;
     }
 
-    // Allocate particle from dead list
+    // Allocate particle from dead list using atomicSub with underflow protection
     let dead_slot = atomicSub(&counters.dead_count, 1u);
 
-    if (dead_slot > 0u) {
-        let particle_idx = dead_list[dead_slot - 1u];
-
-        // Validate particle index
-        if (particle_idx >= MAX_PARTICLES) {
-            return;
-        }
-
-        var seed = frame_data.random_seed + idx * 7u;
-        var new_particle = emit_particle(particle_idx, emitter_idx, &seed);
-
-        particles[particle_idx] = new_particle;
-
-        // Add to alive list and increment emit_count
-        let alive_slot = atomicAdd(&counters.alive_count, 1u);
-        let emit_slot = atomicAdd(&counters.emit_count, 1u);
-        alive_next[alive_slot] = particle_idx;
+    // Check for underflow - if dead_slot wrapped or is too large, abort
+    // When atomicSub underflows, it wraps around to u32::MAX
+    if (dead_slot >= MAX_PARTICLES) {
+        // Underflow occurred - restore counter and abort
+        atomicAdd(&counters.dead_count, 1u);
+        return;
     }
+
+    let particle_idx = dead_list[dead_slot];
+
+    // Validate particle index - MUST restore counter if invalid!
+    if (particle_idx >= MAX_PARTICLES) {
+        // Restore dead_count since we didn't use this slot
+        atomicAdd(&counters.dead_count, 1u);
+        return;
+    }
+
+    var seed = frame_data.random_seed + idx * 7u;
+    var new_particle = emit_particle(particle_idx, emitter_idx, &seed);
+
+    particles[particle_idx] = new_particle;
+
+    // Write to alive_list_1 for simulate pass to read
+    // CRITICAL: alive_count contains survivors from previous frame
+    // We append new particles after them by atomically incrementing alive_count
+    let write_slot = atomicAdd(&counters.alive_count, 1u);
+
+    // Apply per-frame offset to avoid write-after-write hazards
+    // Frame 0 writes to alive_list_1[0..MAX_PARTICLES-1]
+    // Frame 1 writes to alive_list_1[MAX_PARTICLES..2*MAX_PARTICLES-1]
+    let frame_offset = frame_data.frame_index * MAX_PARTICLES;
+    alive_list_1[write_slot + frame_offset] = particle_idx;
 }

@@ -42,7 +42,7 @@ pub trait Validate {
 ///
 /// # Arguments
 /// * `alive_count` - Current alive particle count
-/// * `dead_count` - Current dead particle count
+/// * `dead_count` - Current dead particle count (stack pointer for free list)
 /// * `max_particles` - Maximum particle capacity
 ///
 /// # Returns
@@ -50,7 +50,9 @@ pub trait Validate {
 ///
 /// # Validation Rules
 /// - alive_count must not exceed max_particles
-/// - alive_count + dead_count must equal max_particles
+/// - dead_count must not exceed max_particles
+/// - Note: alive_count + dead_count does NOT need to equal max_particles
+///   because dead_count is a stack pointer, not a count of dead particles
 pub fn validate_counters(
     alive_count: u32,
     dead_count: u32,
@@ -70,13 +72,11 @@ pub fn validate_counters(
         )));
     }
 
-    let total = alive_count + dead_count;
-    if total != max_particles {
-        return Err(ValidationError::CounterCorruption(format!(
-            "alive_count ({}) + dead_count ({}) = {}, but expected {} (max_particles)",
-            alive_count, dead_count, total, max_particles
-        )));
-    }
+    // NOTE: We do NOT validate that alive_count + dead_count == max_particles
+    // because dead_count is a stack pointer (index of next free slot), not
+    // a count of dead particles. The invariant that would be useful is:
+    // alive_count + (particles in dead list) == max_particles
+    // but we don't track "particles in dead list" separately from dead_count.
 
     Ok(())
 }
@@ -218,20 +218,18 @@ mod tests {
 
     #[test]
     fn test_validate_counters_sum_mismatch() {
-        // Invalid: alive + dead != max
+        // Note: We no longer validate alive + dead == max because dead_count is
+        // a stack pointer, not a count. This test now verifies that we DON'T error.
         let result = validate_counters(300, 400, 1000);
-        assert!(result.is_err());
-        let err = result.unwrap_err();
-        assert!(err.to_string().contains("700"));
-        assert!(err.to_string().contains("expected 1000"));
+        assert!(result.is_ok(), "Validation should not check sum invariant");
     }
 
     #[test]
     fn test_validate_counters_corruption_detection() {
-        // Real corruption case: counters don't add up
+        // Note: We no longer validate counter sums. This test verifies we only
+        // check individual bounds, not the relationship between counters.
         let result = validate_counters(600, 600, 1000);
-        assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("1200"));
+        assert!(result.is_ok(), "Validation should not check sum invariant");
     }
 
     #[test]

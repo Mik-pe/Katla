@@ -31,6 +31,9 @@ struct FrameData {
     emitter_count: u32,
     random_seed: u32,
     total_simulate_count: u32,
+    burst_count: u32,
+    frame_index: u32,
+    _pad: u32,
 }
 
 // Atomic counters for particle management
@@ -48,11 +51,15 @@ var<storage, read_write> particles: array<ParticleData, MAX_PARTICLES>;
 @group(0) @binding(1)
 var<storage, read_write> dead_list: array<u32, MAX_PARTICLES>;
 
+// Double-buffered alive lists for ping-pong simulation
+// With 2 frames in flight, alive_list_1 has 2 regions:
+// - Frame 0: reads from alive_list_1[0..MAX_PARTICLES-1]
+// - Frame 1: reads from alive_list_1[MAX_PARTICLES..2*MAX_PARTICLES-1]
 @group(0) @binding(2)
-var<storage, read> alive_next: array<u32, MAX_PARTICLES>;
+var<storage, read> alive_list_1: array<u32, MAX_PARTICLES * 2>;
 
 @group(0) @binding(3)
-var<storage, read_write> alive_simulate_next: array<u32, MAX_PARTICLES>;
+var<storage, read_write> alive_list_2: array<u32, MAX_PARTICLES>;
 
 @group(0) @binding(4)
 var<storage, read_write> counters: ParticleCounters;
@@ -87,19 +94,22 @@ fn cs_main(@builtin(global_invocation_id) global_id: vec3u) {
     let idx = global_id.x;
 
     // First thread resets alive_count to 0 - we'll recount only surviving particles
+    // CRITICAL: This must happen BEFORE we simulate, so we can count survivors properly
     if (idx == 0u) {
         atomicStore(&counters.alive_count, 0u);
     }
     workgroupBarrier();
 
-    // Total particles to simulate = newly emitted (from emit_count) + previously alive (from cached value)
-    let newly_emitted = atomicLoad(&counters.emit_count);
-    let total_particles = newly_emitted + frame_data.total_simulate_count;
+    // Total particles to simulate = newly emitted + previously alive
+    let total_particles = frame_data.total_simulate_count;
 
     // Early exit if beyond particle count
     if (idx >= total_particles) { return; }
 
-    let particle_idx = alive_next[idx];
+    // Read particle index from alive_list_1 (emitted + previous survivors)
+    // Apply per-frame offset to match where emit shader wrote
+    let frame_offset = frame_data.frame_index * MAX_PARTICLES;
+    let particle_idx = alive_list_1[idx + frame_offset];
 
     // Validate particle index
     if (particle_idx >= MAX_PARTICLES) {
@@ -111,13 +121,25 @@ fn cs_main(@builtin(global_invocation_id) global_id: vec3u) {
     simulate_particle(&particle, frame_data.delta_time);
 
     if (particle.lifetime > 0.0) {
-        // Still alive - write back and add to alive list
+        // Still alive - write particle data back and add to alive_list_2
         particles[particle_idx] = particle;
         let next_slot = atomicAdd(&counters.alive_count, 1u);
-        alive_simulate_next[next_slot] = particle_idx;
+
+        // Bounds check before writing to alive_list_2
+        if (next_slot < MAX_PARTICLES) {
+            alive_list_2[next_slot] = particle_idx;
+        }
     } else {
         // Particle died - return to dead list
+        // CRITICAL: Do NOT increment dead_count here!
+        // dead_count is managed by the emit shader (which decrements it)
+        // When a particle dies, we add it back to the dead list for reuse
+        // The dead list position is tracked implicitly by dead_count
         let dead_slot = atomicAdd(&counters.dead_count, 1u);
-        dead_list[dead_slot] = particle_idx;
+
+        // Bounds check before writing to dead_list
+        if (dead_slot < MAX_PARTICLES) {
+            dead_list[dead_slot] = particle_idx;
+        }
     }
 }

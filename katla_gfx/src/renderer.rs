@@ -258,25 +258,6 @@ impl VulkanRenderer {
         };
         info!("Compositing descriptor set layout created");
 
-        // Initialize global particle system
-        let particle_system = match crate::particles::GlobalParticleSystem::new(
-            &context,
-            crate::particles::DEFAULT_MAX_PARTICLES,
-        ) {
-            Ok(system) => {
-                info!("✨ Modern particle system initialized successfully");
-                info!("   - Global particle pool: 1,048,576 particles");
-                info!("   - Memory footprint: ~60 MB GPU");
-                info!("   - Architecture: Single buffer + atomic counters");
-                Some(system)
-            }
-            Err(e) => {
-                warn!("Failed to initialize particle system: {}", e);
-                warn!("Particle effects will be disabled");
-                None
-            }
-        };
-
         Ok(Self {
             context: context.clone(),
             frame_context,
@@ -298,7 +279,7 @@ impl VulkanRenderer {
             viewport_manager,
             material_compiler,
             ui_renderer: ui_renderer::UIRenderer::new(&context),
-            particle_system,
+            particle_system: None,
         })
     }
 
@@ -336,7 +317,6 @@ impl VulkanRenderer {
                                 e
                             ))
                         })?;
-                    info!("✅ Particle emit pipeline created successfully");
                     Ok(())
                 }
                 Err(e) => {
@@ -375,7 +355,6 @@ impl VulkanRenderer {
                                 e
                             ))
                         })?;
-                    info!("✅ Particle simulate pipeline created successfully");
                     Ok(())
                 }
                 Err(e) => {
@@ -441,7 +420,6 @@ impl VulkanRenderer {
                 ))
             })?;
 
-            info!("✅ Particle render pipeline created successfully");
             Ok(())
         } else {
             warn!("Particle system not initialized, skipping render pipeline creation");

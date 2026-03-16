@@ -1108,11 +1108,11 @@ impl<'a> Frame<'a> {
             // For example: compositing pass writes to backbuffer, then UI pass should LOAD that content
             if pass.writes.contains(&BACKBUFFER_NAME.to_string()) {
                 log::debug!(
-                    "🔄 [BACKBUFFER] Pass '{}' will write to backbuffer, tracking state BEFORE execution",
+                    "Pass '{}' will write to backbuffer, tracking state BEFORE execution",
                     pass.name
                 );
                 log::debug!(
-                    "🔄 [BACKBUFFER] Current resource_states: {:?}",
+                    "Current resource_states: {:?}",
                     self.resource_states.keys().collect::<Vec<_>>()
                 );
                 self.resource_states.insert(
@@ -1120,7 +1120,7 @@ impl<'a> Frame<'a> {
                     super::resource::ResourceState::ColorAttachment,
                 );
                 log::debug!(
-                    "🔄 [BACKBUFFER] After tracking, resource_states: {:?}",
+                    "After tracking, resource_states: {:?}",
                     self.resource_states.keys().collect::<Vec<_>>()
                 );
             }
@@ -1134,13 +1134,13 @@ impl<'a> Frame<'a> {
                     // Check if this is a compositing pass (has material AND compositing_viewports)
                     if let Some(material_handle) = pass.material {
                         if pass.compositing_viewports.is_some() && data.draw_lists.is_empty() {
-                            log::debug!("🎯 [PASS] '{}' -> compositing pass", pass.name);
+                            log::debug!("'{}' -> compositing pass", pass.name);
                             self.execute_compositing_pass(&cmd, pass, material_handle)?;
                         } else {
                             // Pass has material but is NOT compositing (e.g., UI pass)
                             // Fall through to graphics pass execution
                             log::debug!(
-                                "🎯 [PASS] '{}' -> graphics pass with material (draw_lists={}, ui_draw_lists={})",
+                                "'{}' -> graphics pass with material (draw_lists={}, ui_draw_lists={})",
                                 pass.name,
                                 data.draw_lists.len(),
                                 data.ui_draw_lists.len()
@@ -1150,13 +1150,13 @@ impl<'a> Frame<'a> {
                     }
                     // Check if this is a fullscreen pass (has pipeline, no draw lists)
                     else if pass.pipeline.is_some() && data.draw_lists.is_empty() {
-                        log::debug!("🎯 [PASS] '{}' -> fullscreen pass", pass.name);
+                        log::debug!("'{}' -> fullscreen pass", pass.name);
                         if let Some(pipeline) = pass.pipeline {
                             self.execute_fullscreen_pass(&cmd, pass, pipeline)?;
                         }
                     } else {
                         log::debug!(
-                            "🎯 [PASS] '{}' -> graphics pass (draw_lists={}, ui_draw_lists={})",
+                            "'{}' -> graphics pass (draw_lists={}, ui_draw_lists={})",
                             pass.name,
                             data.draw_lists.len(),
                             data.ui_draw_lists.len()
@@ -1166,7 +1166,7 @@ impl<'a> Frame<'a> {
                 }
                 super::pass::PassType::Compute => {
                     // Compute pass (e.g., particle simulation)
-                    log::debug!("🎯 [PASS] '{}' -> compute pass", pass.name);
+                    log::debug!("'{}' -> compute pass", pass.name);
                     if let Some(pipeline) = pass.pipeline {
                         self.execute_compute_pass(&cmd, pass, pipeline)?;
                     } else {
@@ -1181,15 +1181,10 @@ impl<'a> Frame<'a> {
 
             // Render particles after tonemap pass (particles render on top of tonemapped output)
             if pass.name == "tonemap" {
-                log::info!("🎯 Tonemap pass completed, checking particles");
-
                 if let Some(ref particle_system) = self.renderer.particle_system {
                     let alive_count = particle_system.alive_count();
-                    log::info!("🎯 Particle system has {} alive particles", alive_count);
 
                     if alive_count > 0 {
-                        log::info!("✨ Rendering {} particles after tonemap pass", alive_count);
-
                         // Get viewport_0 texture info
                         if let Some(viewport_texture) = self
                             .graph
@@ -1197,27 +1192,14 @@ impl<'a> Frame<'a> {
                             .get(frame_idx)
                             .and_then(|m| m.get("viewport_0"))
                         {
-                            log::info!(
-                                "🎯 Got viewport texture: {}x{}",
-                                viewport_texture.extent.width,
-                                viewport_texture.extent.height
-                            );
-
                             // Render particles to viewport texture
                             if let Err(e) = self.render_particles_to_texture(&cmd, viewport_texture)
                             {
                                 log::error!("Failed to render particles: {}", e);
-                            } else {
-                                log::info!("✅ Particles rendered successfully");
                             }
-                        } else {
-                            log::warn!("⚠️ Could not get viewport texture for particle rendering");
                         }
                     } else {
-                        log::warn!("⚠️ No particles to render (alive_count=0)");
                     }
-                } else {
-                    log::warn!("⚠️ No particle system available");
                 }
             }
         }
@@ -1668,8 +1650,6 @@ impl<'a> Frame<'a> {
             return Ok(()); // No particles to render
         }
 
-        log::debug!("Rendering {} particles", alive_count);
-
         // Create render pass begin info
         let color_attachment = vk::RenderingAttachmentInfo::default()
             .image_view(texture.image_view.vk())
@@ -1723,14 +1703,15 @@ impl<'a> Frame<'a> {
         }
 
         // Render particles using the particle system
+        // Get storage descriptor set first to avoid borrow conflicts
+        let storage_descriptor_set = if self.renderer.particle_system.is_some() {
+            Some(self.renderer.storage_descriptor_sets[self.renderer.current_frame()].vk_set())
+        } else {
+            None
+        };
+
         if let Some(ref mut particle_system) = self.renderer.particle_system {
             if let Some(pipeline_handle) = particle_system.render_pipeline_handle() {
-                log::debug!(
-                    "Rendering {} particles with pipeline {:?}",
-                    alive_count,
-                    pipeline_handle
-                );
-
                 // Get the pipeline from the registry
                 let pipeline_asset = self
                     .renderer
@@ -1746,6 +1727,11 @@ impl<'a> Frame<'a> {
                 let vk_pipeline = pipeline_asset.vk_pipeline();
                 let vk_layout = pipeline_asset.vk_layout();
 
+                // Get the storage descriptor set (Set 1) from renderer for FrameUniforms
+                let storage_ds = storage_descriptor_set.ok_or_else(|| {
+                    RenderGraphError::InvalidConfiguration("Storage descriptor set not available".to_string())
+                })?;
+
                 // Call particle system render method
                 particle_system
                     .render(
@@ -1753,6 +1739,7 @@ impl<'a> Frame<'a> {
                         vk::RenderPass::null(), // Using dynamic rendering, not needed
                         vk_pipeline,
                         vk_layout,
+                        storage_ds,
                     )
                     .map_err(|e| {
                         RenderGraphError::VulkanError(format!("Particle render failed: {}", e))
@@ -2550,16 +2537,13 @@ impl<'a> Frame<'a> {
             );
 
             // Before recording dispatch
-            log::info!(
-                "🎯 About to dispatch '{}' pass with {} workgroups",
-                pass.name,
-                workgroup_count
-            );
-
             if workgroup_count == 0 {
-                log::warn!(
-                    "⚠️ Skipping compute dispatch for '{}' - workgroup_count is 0!",
+                log::error!(
+                    "CRITICAL: Skipping compute dispatch for '{}' - workgroup_count is 0!",
                     pass.name
+                );
+                log::error!(
+                    "This means the swap will NOT happen and particles will be lost!"
                 );
                 return Ok(()); // Skip dispatch
             }
@@ -2581,6 +2565,7 @@ impl<'a> Frame<'a> {
 
                 log::debug!("Emit pass dispatched successfully");
             } else if pass.name.contains("simulate") {
+                log::debug!("Recording simulate dispatch...");
                 particle_system
                     .record_simulate_dispatch(
                         cmd.vk_command_buffer(),
@@ -2594,7 +2579,18 @@ impl<'a> Frame<'a> {
                         ))
                     })?;
 
-                log::debug!("Simulate pass dispatched successfully");
+                log::debug!("Simulate dispatch recorded successfully");
+
+                // Swap alive lists after simulate pass completes
+                // This copies alive_next (written by simulate) to alive_current (read by emit next frame)
+                log::debug!("About to call swap_alive_lists()...");
+                particle_system
+                    .swap_alive_lists(cmd.vk_command_buffer(), self.current_frame())
+                    .map_err(|e| {
+                        RenderGraphError::VulkanError(format!("Particle buffer swap failed: {}", e))
+                    })?;
+
+                log::debug!("swap_alive_lists() completed successfully");
             }
 
             return Ok(());
