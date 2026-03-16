@@ -1729,7 +1729,9 @@ impl<'a> Frame<'a> {
 
                 // Get the storage descriptor set (Set 1) from renderer for FrameUniforms
                 let storage_ds = storage_descriptor_set.ok_or_else(|| {
-                    RenderGraphError::InvalidConfiguration("Storage descriptor set not available".to_string())
+                    RenderGraphError::InvalidConfiguration(
+                        "Storage descriptor set not available".to_string(),
+                    )
                 })?;
 
                 // Call particle system render method
@@ -2542,9 +2544,7 @@ impl<'a> Frame<'a> {
                     "CRITICAL: Skipping compute dispatch for '{}' - workgroup_count is 0!",
                     pass.name
                 );
-                log::error!(
-                    "This means the swap will NOT happen and particles will be lost!"
-                );
+                log::error!("This means the swap will NOT happen and particles will be lost!");
                 return Ok(()); // Skip dispatch
             }
 

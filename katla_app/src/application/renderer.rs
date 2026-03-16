@@ -116,7 +116,6 @@ impl Application {
         if let Some(ref mut particle_system) = self.renderer.particle_system {
             match particle_system.update(delta_time, frame_index) {
                 Ok(alive_count) => {
-
                     // Calculate particles to emit this frame
                     let emitters = particle_system.get_emitters();
                     let emit_count: u32 = emitters
