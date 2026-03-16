@@ -1,0 +1,16 @@
+{
+  "name": "sparkles",
+  "config": {
+    "position": [0.0, 0.0, 0.0],
+    "emit_rate": 500.0,
+    "base_lifetime": 1.0,
+    "lifetime_variation": 0.5,
+    "velocity_direction": [0.0, -1.0, 0.0],
+    "velocity_magnitude": 0.3,
+    "velocity_cone_angle": 0.1,
+    "base_scale": 0.1,
+    "scale_variation": 0.5,
+    "color": [1.0, 1.0, 1.0, 1.0],
+    "color_variation": 0.3
+  }
+}

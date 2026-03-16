@@ -32,6 +32,7 @@
 //! Names are resolved to handles at graph build time with zero runtime overhead.
 
 mod composite;
+mod compute;
 mod fullscreen;
 pub(crate) mod geometry;
 mod shadow;
@@ -39,6 +40,7 @@ mod ui;
 mod viewport;
 
 pub use composite::{CompositePass, CompositePassData, ViewportRect};
+pub use compute::{ComputePass, ComputePassData};
 pub use fullscreen::{FullscreenPass, TonemapOperator, TonemapParams};
 pub use geometry::GeometryPass;
 pub use shadow::{LightType, ShadowPass};

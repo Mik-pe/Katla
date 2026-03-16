@@ -1,0 +1,16 @@
+{
+  "name": "smoke",
+  "config": {
+    "position": [0.0, 0.0, 0.0],
+    "emit_rate": 200.0,
+    "base_lifetime": 5.0,
+    "lifetime_variation": 1.0,
+    "velocity_direction": [0.0, 1.0, 0.0],
+    "velocity_magnitude": 0.5,
+    "velocity_cone_angle": 0.5,
+    "base_scale": 0.2,
+    "scale_variation": 0.5,
+    "color": [0.5, 0.5, 0.5, 0.5],
+    "color_variation": 0.1
+  }
+}

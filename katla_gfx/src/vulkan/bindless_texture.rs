@@ -306,7 +306,11 @@ impl BindlessTextureManager {
     ///
     /// # Returns
     /// Ok(()) if successful, or an error if the slot is invalid.
-    pub fn update_texture(&mut self, slot: u32, image_view: vk::ImageView) -> Result<(), RendererError> {
+    pub fn update_texture(
+        &mut self,
+        slot: u32,
+        image_view: vk::ImageView,
+    ) -> Result<(), RendererError> {
         if slot >= self.slots.len() as u32 {
             return Err(RendererError::InvalidOperation(format!(
                 "Invalid bindless slot {} exceeds maximum of {}",

@@ -111,16 +111,16 @@ impl Application {
         self.frame_graph.set_delta_time(delta_time);
         self.frame_graph.set_frame_count(frame_count);
 
-        // Update particle system simulation
-        log::debug!(
+        // Update particle system simulation and calculate workgroup count
+        log::info!(
             "Checking particle system: {}",
             self.renderer.particle_system.is_some()
         );
         if let Some(ref mut particle_system) = self.renderer.particle_system {
-            log::debug!("Calling particle system update...");
+            log::info!("Calling particle system update...");
             match particle_system.update(delta_time) {
                 Ok(alive_count) => {
-                    log::debug!(
+                    log::info!(
                         "Particle system update result: {} alive particles",
                         alive_count
                     );
@@ -130,6 +130,51 @@ impl Application {
                             alive_count
                         );
                     }
+
+                    // Calculate particles to emit this frame
+                    let emitters = particle_system.get_emitters();
+                    log::info!("🔍 Calculating emit_count: {} emitters, delta_time={}",
+                        emitters.len(), delta_time);
+                    for (i, config) in emitters.iter().enumerate() {
+                        log::info!("  Emitter {}: emit_rate={}, particles_this_frame={}",
+                            i, config.emit_rate, (config.emit_rate * delta_time) as u32);
+                    }
+                    let emit_count: u32 = emitters
+                        .iter()
+                        .map(|config| (config.emit_rate * delta_time) as u32)
+                        .sum();
+
+                    // Calculate emit workgroups (256 particles per workgroup)
+                    let workgroup_size = katla_gfx::particles::PARTICLE_WORKGROUP_SIZE;
+                    let emit_workgroups = if emit_count > 0 {
+                        (emit_count + workgroup_size - 1) / workgroup_size
+                    } else {
+                        0 // No particles to emit
+                    };
+
+                    log::info!("🔍 Emit workgroups: emit_count={}, workgroups={}", emit_count, emit_workgroups);
+                    if emit_workgroups == 0 {
+                        log::warn!("⚠️ Emit workgroups is 0! Particles won't be emitted!");
+                    }
+
+                    // Calculate simulate workgroups (based on alive particles)
+                    let simulate_workgroups = if alive_count > 0 {
+                        (alive_count + workgroup_size - 1) / workgroup_size
+                    } else {
+                        0 // No particles to simulate
+                    };
+
+                    log::debug!(
+                        "🎯 Particle compute workgroups: emit {} particles = {} workgroups, simulate {} particles = {} workgroups",
+                        emit_count,
+                        emit_workgroups,
+                        alive_count,
+                        simulate_workgroups
+                    );
+
+                    // Update frame graph with workgroup counts for this frame
+                    self.frame_graph.set_particle_emit_workgroup_count(emit_workgroups);
+                    self.frame_graph.set_particle_simulate_workgroup_count(simulate_workgroups);
                 }
                 Err(e) => {
                     log::error!("Failed to update particle system: {}", e);

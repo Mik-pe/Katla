@@ -104,7 +104,12 @@ impl CompositingDescriptorSet {
         unsafe {
             device
                 .create_descriptor_set_layout(&layout_info, None)
-                .map_err(|e| RendererError::VulkanError(format!("Failed to create compositing descriptor set layout: {:?}", e)))
+                .map_err(|e| {
+                    RendererError::VulkanError(format!(
+                        "Failed to create compositing descriptor set layout: {:?}",
+                        e
+                    ))
+                })
         }
     }
 
@@ -193,7 +198,7 @@ impl CompositingDescriptorSet {
         // For now, let's duplicate the update logic here to avoid borrow issues
         if textures.is_empty() {
             return Err(RendererError::InvalidOperation(
-                "At least one viewport texture must be provided".to_string()
+                "At least one viewport texture must be provided".to_string(),
             ));
         }
 
@@ -264,19 +269,19 @@ impl CompositingDescriptorSet {
 
         // Collect all image views to update (provided textures + placeholders)
         let mut all_image_views: Vec<vk::ImageView> = textures.to_vec();
-        
+
         // Fill remaining slots with the first texture (placeholder) to avoid
         // Vulkan validation errors about uninitialized array elements
         // This is necessary because WGSL binding arrays compile to SPIR-V
         // arrays that may access any element regardless of runtime branching
         let placeholder = if textures.is_empty() {
             return Err(RendererError::InvalidOperation(
-                "At least one viewport texture must be provided".to_string()
+                "At least one viewport texture must be provided".to_string(),
             ));
         } else {
             textures[0]
         };
-        
+
         while all_image_views.len() < MAX_VIEWPORTS {
             all_image_views.push(placeholder);
         }

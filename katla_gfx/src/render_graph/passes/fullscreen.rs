@@ -13,8 +13,7 @@ use super::super::pass::PassType;
 use super::super::resource::GraphResourceHandle;
 
 /// Tonemapping operators for fullscreen post-processing.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-#[derive(Default)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum TonemapOperator {
     /// ACES Filmic - cinematic look with good highlight rolloff
     #[default]
@@ -26,7 +25,6 @@ pub enum TonemapOperator {
     /// Linear - no tonemapping, just gamma correction
     Linear = 3,
 }
-
 
 /// Tonemap parameters for fullscreen passes.
 #[derive(Clone, Copy, Debug)]

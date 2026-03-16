@@ -107,7 +107,7 @@ impl ApplicationBuilder {
         _resources: &ResourceManager,
     ) -> VulkanRenderer {
         let engine_name = CString::new("Katla Engine").unwrap();
-        let renderer = VulkanRenderer::init(
+        let mut renderer = VulkanRenderer::init(
             event_loop,
             window,
             info.validation_mode,
@@ -115,6 +115,11 @@ impl ApplicationBuilder {
             engine_name,
         )
         .expect("Failed to initialize Vulkan renderer");
+
+        // Initialize particle system
+        renderer
+            .init_particle_system()
+            .expect("Failed to initialize particle system");
 
         renderer
     }
@@ -133,7 +138,7 @@ impl ApplicationBuilder {
     ) -> AppResult<katla_gfx::FrameGraph> {
         use katla_gfx::render_graph::UIPass;
         use katla_gfx::render_graph::{
-            FullscreenPass, GeometryPass, GraphResourceDesc, GraphResourceType,
+            ComputePass, FullscreenPass, GeometryPass, GraphResourceDesc, GraphResourceType,
         };
         use katla_gfx::render_pass::{ClearValue, LoadOp, StoreOp};
         use katla_gfx::texture::ImageFormat as TextureImageFormat;
@@ -199,34 +204,21 @@ impl ApplicationBuilder {
             })?;
 
         // Compile particle rendering shader with alpha blending
-        let _particle_shader_path = resources.shader_path("particles/particle_render.wgsl");
+        let particle_shader_path = resources.shader_path("particles/particle_render.wgsl");
 
-        // NOTE: Temporarily disable particle render pipeline to fix heap corruption
-        // TODO: Fix descriptor layout compatibility
-        /*
-        let particle_pipeline = renderer
-            .compile_material(
-                particle_shader_path,
-                katla_gfx::MaterialOptions {
-                    vertex_type: katla_gfx::VertexType::Pbr, // Particles use standard vertex layout
-                    alpha_blended: true, // Particles need alpha blending for transparency
-                    color_format: TextureImageFormat::B8G8R8A8Srgb, // LDR output for compositing
-                    ..Default::default()
-                },
-            )
+        // Initialize particle render pipeline using the renderer's method
+        renderer
+            .init_particle_render_pipeline(&particle_shader_path)
             .map_err(|e| crate::error::AppError::Graphics {
-                message: format!("Failed to compile particle shader: {}", e),
+                message: format!("Failed to initialize particle render pipeline: {}", e),
             })?;
 
-        // Extract pipeline handle from particle material
-        let particle_pipeline_handle = renderer
-            .asset_registry
-            .get_material(particle_pipeline)
-            .and_then(|m| m.pipeline)
-            .ok_or_else(|| crate::error::AppError::Graphics {
-                message: "Particle material has no pipeline".to_string(),
-            })?;
-        */
+        // Note: Particle compute pipelines (emit and simulate) will be initialized
+        // later in Application::init() after the builder returns.
+        // The particle system handles compute passes directly during execution,
+        // not as part of the frame graph passes.
+        // Workgroup counts are calculated dynamically each frame based on
+        // emit_count and alive_count.
 
         let graph = renderer
             .create_frame_graph()
@@ -251,6 +243,8 @@ impl ApplicationBuilder {
                 width: extent.width,
                 height: extent.height,
             })
+            // Note: Particle compute passes (emit and simulate) are executed automatically
+            // by the render graph before any graphics passes. They don't need to be added here.
             // Sky pass: renders procedural sky (depth=1.0 so geometry appears in front)
             .add_pass(
                 FullscreenPass::new("sky")

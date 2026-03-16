@@ -1,0 +1,16 @@
+{
+  "name": "fire_small",
+  "config": {
+    "position": [0.0, 0.0, 0.0],
+    "emit_rate": 100.0,
+    "base_lifetime": 2.0,
+    "lifetime_variation": 0.5,
+    "velocity_direction": [0.0, 1.0, 0.0],
+    "velocity_magnitude": 2.0,
+    "velocity_cone_angle": 0.3,
+    "base_scale": 0.15,
+    "scale_variation": 0.3,
+    "color": [1.0, 0.5, 0.0, 1.0],
+    "color_variation": 0.2
+  }
+}

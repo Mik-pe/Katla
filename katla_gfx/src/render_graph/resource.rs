@@ -38,8 +38,7 @@ pub struct GraphResourceDesc {
 }
 
 /// Resource state for barrier tracking.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-#[derive(Default)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum ResourceState {
     /// Undefined (don't care about contents).
     #[default]
@@ -97,7 +96,6 @@ impl ResourceState {
         }
     }
 }
-
 
 /// Opaque handle for graph resources (internal use only).
 ///

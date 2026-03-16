@@ -174,6 +174,10 @@ pub struct EditorUI {
     /// Texture IDs for each viewport slot (set by application during setup).
     /// These can be regular texture IDs or bindless texture IDs (high bit set).
     pub viewport_texture_ids: [Option<katla_ui::TextureId>; 4],
+    /// Selected particle emitter entity for the particle inspector.
+    pub selected_particle_emitter: Option<EntityId>,
+    /// Whether the particle inspector panel is visible.
+    pub show_particle_inspector: bool,
 }
 
 impl EditorUI {
@@ -200,6 +204,8 @@ impl EditorUI {
             focused_panel: FocusedPanel::Viewport,
             viewport_grid_state: ViewportGridState::new(),
             viewport_texture_ids: [None, None, None, None],
+            selected_particle_emitter: None,
+            show_particle_inspector: false,
         }
     }
 
@@ -799,6 +805,53 @@ impl EditorUI {
             for action in actions {
                 self.apply_preferences_action(action);
             }
+        }
+
+        // === PARTICLE INSPECTOR PANEL (overlay) ===
+        if self.show_particle_inspector {
+            use crate::ui::ParticleInspector;
+
+            let panel_width = 320.0;
+            let panel_height = 600.0;
+            let panel_bounds = Rect2D::from_origin_size(
+                Vec2::new(
+                    screen_size.x() - panel_width - 20.0,
+                    screen_size.y() - panel_height - 60.0,
+                ),
+                Vec2::new(panel_width, panel_height),
+            );
+
+            let _particle_inspector = ParticleInspector::new(
+                panel_bounds,
+                &mut self.selected_particle_emitter,
+                &self.theme,
+            );
+
+            // Note: We'll render this in the application layer where we have access to World and particle system
+            // For now, just draw the panel bounds
+            ui.draw_rect(panel_bounds, self.theme.panel_bg);
+            ui.draw_rect_border(
+                panel_bounds,
+                self.theme.panel_bg,
+                self.theme.panel_border,
+                1.0,
+            );
+
+            let header_height = 24.0;
+            let header_bounds = Rect2D::from_origin_size(
+                panel_bounds.min,
+                Vec2::new(panel_bounds.width(), header_height),
+            );
+            ui.draw_rect(header_bounds, self.theme.panel_header);
+
+            let header_pos =
+                Vec2::new(panel_bounds.min.x() + 8.0, header_bounds.center().y() - 7.0);
+            ui.draw_text(
+                "Particle Inspector",
+                header_pos,
+                self.theme.text_primary,
+                ui.scaled_font_size(FontSize::Medium),
+            );
         }
 
         // === DRAG PREVIEW (rendered last to appear above all panels) ===

@@ -24,7 +24,17 @@ struct FrameUniforms {
     light_intensity: vec4f,
 }
 
-// NOTE: Test particles at emitter positions in world space
+// Particle data buffer (Set 0, Binding 0)
+@group(0) @binding(0)
+var<storage, read> particles: array<ParticleData, MAX_PARTICLES>;
+
+// Alive particle index list (Set 0, Binding 2)
+// Note: We use binding 2 to match the compute shader's alive_current binding
+@group(0) @binding(2)
+var<storage, read> alive_list: array<u32, MAX_PARTICLES>;
+
+// Frame uniforms (Set 1, Binding 0)
+// This uses the same Set 1 binding 0 as the compute shader for frame data
 @group(1) @binding(0)
 var<storage, read> frame_data: FrameUniforms;
 
@@ -56,27 +66,12 @@ fn vs_main(
     var out: VertexOutput;
 
     // Calculate particle index and corner
-    let particle_index = vertex_id / 6u;
+    let particle_index = alive_list[vertex_id / 6u];
+    let particle = particles[particle_index];
     let corner = get_quad_corner(vertex_id);
 
-    // Test particles at emitter positions in WORLD SPACE
-    let test_positions = array<vec3f, 2>(
-        vec3f(-3.0, 1.0, -3.0),  // Fire emitter position
-        vec3f(0.0, 3.0, 0.0)     // Sparkle emitter position
-    );
-
-    // Bright colors matching the emitters
-    let test_colors = array<vec4f, 2>(
-        vec4f(1.0, 0.5, 0.0, 1.0),  // Orange (fire)
-        vec4f(0.8, 0.9, 1.0, 1.0)   // Light blue (sparkle)
-    );
-
-    let test_idx = particle_index % 2u;
-    let particle_pos = test_positions[test_idx];
-    let particle_color = test_colors[test_idx];
-
     out.uv = corner;
-    out.color = particle_color;
+    out.color = particle.color;
 
     // Use actual camera matrices from frame data
     let view = frame_data.view;
@@ -86,12 +81,12 @@ fn vs_main(
     let view_right = vec3f(view[0][0], view[1][0], view[2][0]);
     let view_up = vec3f(view[0][1], view[1][1], view[2][1]);
 
-    // Billboard size in world units
-    let half_size = 0.5; // 0.5 meter radius = 1 meter across
+    // Billboard size in world units (use particle scale)
+    let half_size = particle.scale * 0.5;
     let billboard_offset = (corner.x * view_right + corner.y * view_up) * half_size;
 
     // Final world position
-    let world_pos = particle_pos + billboard_offset;
+    let world_pos = particle.position + billboard_offset;
 
     // Transform to clip space using actual camera
     let view_pos = view * vec4f(world_pos, 1.0);

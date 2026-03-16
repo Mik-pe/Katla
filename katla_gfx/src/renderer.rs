@@ -247,8 +247,13 @@ impl VulkanRenderer {
         let compositing_descriptor_set_layout = {
             use crate::render_graph::descriptor_sets::CompositingDescriptorSet;
             CompositingDescriptorSet::create_layout(&context.device).map_err(|e| {
-                error!("Failed to create compositing descriptor set layout: {:?}", e);
-                RendererError::InitializationFailed("Failed to create compositing descriptor set layout".to_string())
+                error!(
+                    "Failed to create compositing descriptor set layout: {:?}",
+                    e
+                );
+                RendererError::InitializationFailed(
+                    "Failed to create compositing descriptor set layout".to_string(),
+                )
             })?
         };
         info!("Compositing descriptor set layout created");
@@ -309,28 +314,137 @@ impl VulkanRenderer {
         &self.context
     }
 
-    /// Initialize particle compute pipeline (must be called after renderer is fully initialized).
-    pub fn init_particle_compute_pipeline(&mut self, shader_path: &std::path::Path) -> Result<(), RendererError> {
+    /// Initialize particle emit pipeline (must be called after renderer is fully initialized).
+    pub fn init_particle_emit_pipeline(
+        &mut self,
+        shader_path: &std::path::Path,
+    ) -> Result<(), RendererError> {
         if let Some(ref mut ps) = self.particle_system {
-            // Load particle compute shader
-            match self.material_compiler.shader_cache.borrow_mut().load_shader(
-                shader_path,
-                vk::ShaderStageFlags::COMPUTE,
-            ) {
+            // Load particle emit shader
+            match self
+                .material_compiler
+                .shader_cache
+                .borrow_mut()
+                .load_shader(shader_path, vk::ShaderStageFlags::COMPUTE)
+            {
                 Ok(shader_module) => {
                     let shader_module_wrapper = crate::sync::VkShaderModule(shader_module);
-                    ps.create_compute_pipeline(&mut self.asset_registry, shader_module_wrapper)
-                        .map_err(|e| RendererError::InitializationFailed(format!("Failed to create particle compute pipeline: {}", e)))?;
-                    info!("✅ Particle compute pipeline created successfully");
+                    ps.create_emit_pipeline(&mut self.asset_registry, shader_module_wrapper)
+                        .map_err(|e| {
+                            RendererError::InitializationFailed(format!(
+                                "Failed to create particle emit pipeline: {}",
+                                e
+                            ))
+                        })?;
+                    info!("✅ Particle emit pipeline created successfully");
                     Ok(())
                 }
                 Err(e) => {
-                    warn!("Failed to load particle compute shader: {}", e);
-                    Err(RendererError::InitializationFailed(format!("Failed to load particle compute shader: {}", e)))
+                    warn!("Failed to load particle emit shader: {}", e);
+                    Err(RendererError::InitializationFailed(format!(
+                        "Failed to load particle emit shader: {}",
+                        e
+                    )))
                 }
             }
         } else {
-            warn!("Particle system not initialized, skipping compute pipeline creation");
+            warn!("Particle system not initialized, skipping emit pipeline creation");
+            Ok(())
+        }
+    }
+
+    /// Initialize particle simulate pipeline (must be called after renderer is fully initialized).
+    pub fn init_particle_simulate_pipeline(
+        &mut self,
+        shader_path: &std::path::Path,
+    ) -> Result<(), RendererError> {
+        if let Some(ref mut ps) = self.particle_system {
+            // Load particle simulate shader
+            match self
+                .material_compiler
+                .shader_cache
+                .borrow_mut()
+                .load_shader(shader_path, vk::ShaderStageFlags::COMPUTE)
+            {
+                Ok(shader_module) => {
+                    let shader_module_wrapper = crate::sync::VkShaderModule(shader_module);
+                    ps.create_simulate_pipeline(&mut self.asset_registry, shader_module_wrapper)
+                        .map_err(|e| {
+                            RendererError::InitializationFailed(format!(
+                                "Failed to create particle simulate pipeline: {}",
+                                e
+                            ))
+                        })?;
+                    info!("✅ Particle simulate pipeline created successfully");
+                    Ok(())
+                }
+                Err(e) => {
+                    warn!("Failed to load particle simulate shader: {}", e);
+                    Err(RendererError::InitializationFailed(format!(
+                        "Failed to load particle simulate shader: {}",
+                        e
+                    )))
+                }
+            }
+        } else {
+            warn!("Particle system not initialized, skipping simulate pipeline creation");
+            Ok(())
+        }
+    }
+
+    /// Initialize particle render pipeline.
+    ///
+    /// Loads particle vertex and fragment shaders and creates the render pipeline.
+    pub fn init_particle_render_pipeline(
+        &mut self,
+        shader_path: &std::path::Path,
+    ) -> Result<(), RendererError> {
+        if let Some(ref mut ps) = self.particle_system {
+            // Load particle vertex shader
+            let vert_shader = self
+                .material_compiler
+                .shader_cache
+                .borrow_mut()
+                .load_shader(shader_path, vk::ShaderStageFlags::VERTEX)
+                .map_err(|e| {
+                    RendererError::InitializationFailed(format!(
+                        "Failed to load particle vertex shader: {}",
+                        e
+                    ))
+                })?;
+
+            // Load particle fragment shader
+            let frag_shader = self
+                .material_compiler
+                .shader_cache
+                .borrow_mut()
+                .load_shader(shader_path, vk::ShaderStageFlags::FRAGMENT)
+                .map_err(|e| {
+                    RendererError::InitializationFailed(format!(
+                        "Failed to load particle fragment shader: {}",
+                        e
+                    ))
+                })?;
+
+            let vert_shader_wrapper = crate::sync::VkShaderModule(vert_shader);
+            let frag_shader_wrapper = crate::sync::VkShaderModule(frag_shader);
+
+            ps.create_render_pipeline(
+                &mut self.asset_registry,
+                vert_shader_wrapper,
+                frag_shader_wrapper,
+            )
+            .map_err(|e| {
+                RendererError::InitializationFailed(format!(
+                    "Failed to create particle render pipeline: {}",
+                    e
+                ))
+            })?;
+
+            info!("✅ Particle render pipeline created successfully");
+            Ok(())
+        } else {
+            warn!("Particle system not initialized, skipping render pipeline creation");
             Ok(())
         }
     }
@@ -1815,6 +1929,25 @@ impl VulkanRenderer {
         self.swap_data.current_frame()
     }
 
+    /// Initialize the particle system.
+    ///
+    /// This must be called after renderer initialization but before frame graph creation.
+    /// Sets up the global particle buffer and prepares for particle rendering.
+    pub fn init_particle_system(&mut self) -> Result<(), RendererError> {
+        use crate::particles::GlobalParticleSystem;
+
+        info!("Initializing particle system...");
+
+        let particle_system = GlobalParticleSystem::new(&self.context, 1_048_576).map_err(|e| {
+            RendererError::InitializationFailed(format!("Failed to create particle system: {}", e))
+        })?;
+
+        self.particle_system = Some(particle_system);
+
+        info!("Particle system initialized successfully");
+        Ok(())
+    }
+
     pub fn create_frame_graph(&self) -> crate::render_graph::FrameGraphBuilder {
         crate::render_graph::FrameGraphBuilder::new()
     }
@@ -1944,6 +2077,13 @@ impl VulkanRenderer {
 
         // 10. Advance to next frame
         self.swap_data.step_frame();
+
+        // 11. Read back particle timing data (after GPU work completes)
+        if let Some(ref mut ps) = self.particle_system {
+            if let Some(compute_time) = ps.get_compute_time_ms() {
+                log::debug!("Particle compute time: {:.3} ms", compute_time);
+            }
+        }
     }
 
     /// Queue an asynchronous readback of the last presented swapchain image.

@@ -13,6 +13,7 @@ naga = {version = "*", features = ["wgsl-in", "spv-out"]}
 bytemuck = { version = "*", features = ["derive"] }
 toml = "*"
 serde = { version = "*", features = ["derive"] }
+serde_json = "*"
 notify = "*"
 log = "*"
 bitflags = "*"

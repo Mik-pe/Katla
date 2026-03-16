@@ -1,7 +1,7 @@
-// Modern GPU Particle System - Compute Shader
+// Particle Emit Compute Shader
 //
-// Single global buffer with atomic counter management.
-// Emit → Simulate → Update Index Lists in one pass.
+// Dedicated emit pass for spawning new particles from dead list.
+// Optimized for embarrassingly parallel emission with workgroup size 256.
 //
 // Descriptor Set Layout:
 // Set 0 (Global Resources):
@@ -11,7 +11,8 @@
 //   Binding 3: Storage buffer (alive particle index list - next)
 //   Binding 4: Storage buffer (atomic counters)
 // Set 1 (Emitter Configs):
-//   Binding 0: Storage buffer (emitter configurations array)
+//   Binding 0: Uniform buffer (frame data)
+//   Binding 1: Storage buffer (emitter configurations array)
 
 const MAX_PARTICLES: u32 = 1048576u; // 1M particles
 const MAX_EMITTERS: u32 = 1024u;
@@ -31,12 +32,15 @@ struct FrameData {
     total_emit_count: u32,
     emitter_count: u32,
     random_seed: u32,
+    total_simulate_count: u32,
 }
 
 // Atomic counters for particle management
 struct ParticleCounters {
     alive_count: atomic<u32>,
     dead_count: atomic<u32>,
+    emit_count: atomic<u32>,
+    _pad: u32,
 }
 
 // Per-emitter configuration
@@ -107,7 +111,7 @@ fn random_range(seed: ptr<function, u32>, min: f32, max: f32) -> f32 {
     return min + (max - min) * random_float(seed);
 }
 
-// Initialize a new particle
+// Initialize a new particle from emitter configuration
 fn emit_particle(particle_idx: u32, emitter_idx: u32, seed: ptr<function, u32>) -> ParticleData {
     let emitter = emitters[emitter_idx];
 
@@ -159,108 +163,52 @@ fn emit_particle(particle_idx: u32, emitter_idx: u32, seed: ptr<function, u32>) 
     return particle;
 }
 
-// Update particle simulation
-fn simulate_particle(particle: ptr<function, ParticleData>, delta_time: f32) {
-    (*particle).lifetime -= delta_time;
-
-    if ((*particle).lifetime > 0.0) {
-        // Update position
-        (*particle).position += (*particle).velocity * delta_time;
-
-        // Apply gravity
-        (*particle).velocity.y -= 9.8 * delta_time;
-
-        // Fade out in last second
-        if ((*particle).lifetime < 1.0) {
-            (*particle).color.a = (*particle).lifetime;
-        }
-    }
-}
-
+// Emit compute shader - spawns new particles from dead list
 @compute @workgroup_size(256)
 fn cs_main(@builtin(global_invocation_id) global_id: vec3u) {
     let idx = global_id.x;
-    let emit_count = frame_data.total_emit_count;
-    let emitter_count = frame_data.emitter_count;
-    let seed_initial = frame_data.random_seed;
-    let delta_time = frame_data.delta_time;
+
+    // First thread resets emit_count to 0 for this frame
+    if (idx == 0u) {
+        atomicStore(&counters.emit_count, 0u);
+    }
+    workgroupBarrier();
+
+    // Early exit if beyond emit count
+    if (idx >= frame_data.total_emit_count) { return; }
 
     // Early exit if no emitters active
-    if (emitter_count == 0u) {
+    if (frame_data.emitter_count == 0u) { return; }
+
+    // Calculate emitter index using round-robin distribution
+    let wg_id = idx / 256u; // Workgroup ID
+    let local_id = idx % 256u; // Thread in workgroup
+    let emitter_idx = (wg_id + local_id) % frame_data.emitter_count;
+
+    // Bounds check
+    if (emitter_idx >= MAX_EMITTERS) {
         return;
     }
 
-    // Get initial alive count before we start modifying it
-    let initial_alive_count = atomicLoad(&counters.alive_count);
+    // Allocate particle from dead list
+    let dead_slot = atomicSub(&counters.dead_count, 1u);
 
-    // Reset alive count for this frame (we'll rebuild it)
-    atomicStore(&counters.alive_count, 0u);
+    if (dead_slot > 0u) {
+        let particle_idx = dead_list[dead_slot - 1u];
 
-    // Phase 1: Emit new particles (first emit_count threads)
-    if (idx < emit_count) {
-        // Calculate emitter index using round-robin distribution
-        let wg_id = idx / 256u; // Workgroup ID
-        let local_id = idx % 256u; // Thread in workgroup
-        let emitter_idx = (wg_id + local_id) % emitter_count;
-
-        // Bounds check (debug builds)
-        #ifdef DEBUG
-            if (emitter_idx >= MAX_EMITTERS) {
-                return;
-            }
-        #endif
-
-        // Allocate particle from dead list
-        let dead_slot = atomicSub(&counters.dead_count, 1u);
-
-        if (dead_slot > 0u) {
-            let particle_idx = dead_list[dead_slot - 1u];
-
-            // Validate particle index (debug builds)
-            #ifdef DEBUG
-                if (particle_idx >= MAX_PARTICLES) {
-                    return;
-                }
-            #endif
-
-            var seed = seed_initial + idx * 7u;
-            var new_particle = emit_particle(particle_idx, emitter_idx, &seed);
-
-            particles[particle_idx] = new_particle;
-
-            // Add to alive list
-            let alive_slot = atomicAdd(&counters.alive_count, 1u);
-            alive_next[alive_slot] = particle_idx;
+        // Validate particle index
+        if (particle_idx >= MAX_PARTICLES) {
+            return;
         }
-    }
-    // Phase 2: Simulate existing alive particles
-    else {
-        let sim_idx = idx - emit_count;
 
-        if (sim_idx < initial_alive_count) {
-            let particle_idx = alive_current[sim_idx];
+        var seed = frame_data.random_seed + idx * 7u;
+        var new_particle = emit_particle(particle_idx, emitter_idx, &seed);
 
-            // Validate particle index (debug builds)
-            #ifdef DEBUG
-                if (particle_idx >= MAX_PARTICLES) {
-                    return;
-                }
-            #endif
+        particles[particle_idx] = new_particle;
 
-            var particle = particles[particle_idx];
-
-            simulate_particle(&particle, delta_time);
-
-            if (particle.lifetime > 0.0) {
-                // Still alive - write back and add to next alive list
-                particles[particle_idx] = particle;
-                let next_slot = atomicAdd(&counters.alive_count, 1u);
-                alive_next[next_slot] = particle_idx;
-            } else {
-                // Particle died - return to dead list
-                let dead_slot = atomicAdd(&counters.dead_count, 1u);
-                dead_list[dead_slot] = particle_idx;
-            }
-        }
+        // Add to alive list and increment emit_count
+        let alive_slot = atomicAdd(&counters.alive_count, 1u);
+        let emit_slot = atomicAdd(&counters.emit_count, 1u);
+        alive_next[alive_slot] = particle_idx;
     }
 }

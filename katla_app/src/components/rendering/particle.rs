@@ -117,6 +117,60 @@ impl ParticleEmitterComponent {
     pub fn set_color(&mut self, color: [f32; 4]) {
         self.config.color = color;
     }
+
+    /// Load configuration from a preset file.
+    ///
+    /// # Arguments
+    /// * `name` - Preset name (filename without .json extension)
+    ///
+    /// # Errors
+    /// Returns error if preset file not found or deserialization fails
+    pub fn load_from_preset(&mut self, name: &str) -> Result<(), String> {
+        let presets_dir = std::path::Path::new("assets/particles");
+        let path = presets_dir.join(format!("{}.json", name));
+
+        if !path.exists() {
+            return Err(format!("Preset '{}' not found at {}", name, path.display()));
+        }
+
+        // Read and parse the preset file
+        let json = std::fs::read_to_string(&path)
+            .map_err(|e| format!("Failed to read preset file {}: {}", path.display(), e))?;
+
+        let preset: katla_gfx::particles::EmitterPreset =
+            serde_json::from_str(&json).map_err(|e| {
+                format!(
+                    "Failed to deserialize preset from {}: {}",
+                    path.display(),
+                    e
+                )
+            })?;
+
+        self.config = preset.config;
+        log::info!("Loaded particle preset '{}' for emitter", name);
+        Ok(())
+    }
+
+    /// Save current configuration as a preset file.
+    ///
+    /// # Arguments
+    /// * `name` - Preset name (will be saved as name.json)
+    ///
+    /// # Errors
+    /// Returns error if file write or serialization fails
+    pub fn save_as_preset(&self, name: &str) -> Result<(), String> {
+        let preset = katla_gfx::particles::EmitterPreset::new(name.to_string(), self.config);
+        let presets_dir = std::path::Path::new("assets/particles");
+        let path = presets_dir.join(format!("{}.json", name));
+
+        // Create directory if it doesn't exist
+        if !presets_dir.exists() {
+            std::fs::create_dir_all(presets_dir)
+                .map_err(|e| format!("Failed to create presets directory: {}", e))?;
+        }
+
+        preset.save_to_file(&path)
+    }
 }
 
 impl Default for ParticleEmitterComponent {
