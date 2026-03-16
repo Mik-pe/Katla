@@ -33,6 +33,7 @@ struct FrameData {
     emitter_count: u32,
     random_seed: u32,
     total_simulate_count: u32,
+    burst_count: u32,
 }
 
 // Atomic counters for particle management
@@ -174,7 +175,7 @@ fn cs_main(@builtin(global_invocation_id) global_id: vec3u) {
     }
     workgroupBarrier();
 
-    // Early exit if beyond emit count
+    // Early exit if beyond total emit count (rate-based + burst)
     if (idx >= frame_data.total_emit_count) { return; }
 
     // Early exit if no emitters active

@@ -295,7 +295,7 @@ impl ApplicationHandler for Application {
 
                 // Update particle emitters from ECS components
                 self.particle_system
-                    .update(&mut self.world, &mut self.renderer.particle_system);
+                    .update(&mut self.world, &mut self.renderer.particle_system, dt);
 
                 // Poll background loader for completed asset loads
                 self.poll_background_loader();

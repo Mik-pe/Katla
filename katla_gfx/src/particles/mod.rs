@@ -79,11 +79,13 @@ pub mod buffer;
 pub mod presets;
 pub mod stats;
 pub mod timing;
+pub mod validation;
 
 pub use buffer::{FrameData, GlobalParticleBuffer, ParticleCounters};
 pub use presets::{EmitterPreset, PresetManager};
 pub use stats::ParticleStats;
 pub use timing::TimestampQuery;
+pub use validation::{validate_emitter_config, validate_all_emitters, validate_counters, ValidationError};
 
 use std::rc::Rc;
 
@@ -240,6 +242,19 @@ impl EmitterHandle {
     }
 }
 
+/// Per-emitter runtime state (not uploaded to GPU).
+#[derive(Clone)]
+struct EmitterState {
+    /// Burst particles to emit this frame
+    burst_count: u32,
+}
+
+impl Default for EmitterState {
+    fn default() -> Self {
+        Self { burst_count: 0 }
+    }
+}
+
 /// Modern GPU-driven particle system.
 ///
 /// Manages all particle effects using a single global buffer pool.
@@ -268,6 +283,9 @@ pub struct GlobalParticleSystem {
 
     /// Per-emitter configurations (CPU-side, uploaded to GPU each frame)
     emitters: Vec<EmitterConfig>,
+
+    /// Per-emitter runtime state (burst counts, etc.)
+    emitter_states: Vec<EmitterState>,
 
     /// Next free emitter slot
     next_emitter_slot: u32,
@@ -347,6 +365,7 @@ impl GlobalParticleSystem {
             render_descriptor_layout: None,
             compute_push_descriptor_layout: None,
             emitters: Vec::with_capacity(MAX_EMITTERS as usize),
+            emitter_states: Vec::with_capacity(MAX_EMITTERS as usize),
             next_emitter_slot: 0,
             context: context.clone(),
             frame_count: 0,
@@ -421,10 +440,14 @@ impl GlobalParticleSystem {
         let index = self.next_emitter_slot;
         self.next_emitter_slot += 1;
 
-        // Ensure vector has space
+        // Ensure vectors have space
         if self.emitters.len() <= index as usize {
             self.emitters
                 .resize(index as usize + 1, EmitterConfig::default());
+        }
+        if self.emitter_states.len() <= index as usize {
+            self.emitter_states
+                .resize(index as usize + 1, EmitterState::default());
         }
 
         self.emitters[index as usize] = config;
@@ -449,12 +472,33 @@ impl GlobalParticleSystem {
         }
     }
 
+    /// Burst particles from an emitter immediately.
+    ///
+    /// This overrides the normal emit rate for this frame and emits
+    /// the specified number of particles immediately.
+    ///
+    /// # Arguments
+    /// * `handle` - Emitter handle
+    /// * `count` - Number of particles to burst
+    pub fn burst(&mut self, handle: EmitterHandle, count: u32) -> Result<(), String> {
+        if handle.index() < self.emitter_states.len() as u32 {
+            self.emitter_states[handle.index() as usize].burst_count = count;
+            log::debug!("Burst {} particles from emitter {}", count, handle.index());
+            Ok(())
+        } else {
+            Err(format!("Invalid emitter handle: {:?}", handle))
+        }
+    }
+
     /// Destroy an emitter.
     ///
     /// Frees the config slot for reuse.
     pub fn destroy_emitter(&mut self, handle: EmitterHandle) {
         if handle.index() < self.emitters.len() as u32 {
             self.emitters[handle.index() as usize] = EmitterConfig::default();
+            if handle.index() < self.emitter_states.len() as u32 {
+                self.emitter_states[handle.index() as usize] = EmitterState::default();
+            }
             info!("Destroyed particle emitter {}", handle.index());
         }
     }
@@ -478,22 +522,35 @@ impl GlobalParticleSystem {
         // Upload emitter configs to GPU buffer
         self.upload_emitter_configs()?;
 
-        // Calculate total particles to emit this frame
+        // Calculate total particles to emit this frame (including bursts)
+        let total_burst_count: u32 = self.emitter_states.iter()
+            .map(|state| state.burst_count)
+            .sum();
+
         let total_emit_count: u32 = self
             .emitters
             .iter()
             .map(|config| (config.emit_rate * delta_time) as u32)
             .sum();
 
+        let total_this_frame = total_emit_count + total_burst_count;
+
         log::debug!(
-            "Particle update: {} emitters, {} to emit, delta_time={}",
+            "Particle update: {} emitters, {} to emit ({} rate + {} burst), delta_time={}",
             self.emitters.len(),
+            total_this_frame,
             total_emit_count,
+            total_burst_count,
             delta_time
         );
 
         // Update frame data buffer
-        self.update_frame_data(delta_time, total_emit_count)?;
+        self.update_frame_data(delta_time, total_emit_count, total_burst_count)?;
+
+        // Clear burst counts after processing
+        for state in &mut self.emitter_states {
+            state.burst_count = 0;
+        }
 
         // The actual compute dispatch happens during render graph execution
         // via record_compute_dispatch(). This just prepares the data.
@@ -504,9 +561,27 @@ impl GlobalParticleSystem {
 
         log::debug!("Alive count from GPU: {}", alive_count);
 
+        // Debug-only validation: Check counter consistency
+        #[cfg(debug_assertions)]
+        {
+            if let Ok(dead_count) = self.buffer.get_dead_count() {
+                if let Err(e) = validate_counters(alive_count, dead_count, self.max_particles) {
+                    log::warn!("Particle system validation error: {}", e);
+                }
+            }
+
+            // Validate all active emitters
+            let validation_errors = validate_all_emitters(&self.emitters);
+            if !validation_errors.is_empty() {
+                for error in &validation_errors {
+                    log::warn!("Emitter validation error: {}", error);
+                }
+            }
+        }
+
         // Update emission statistics
-        if total_emit_count > 0 {
-            self.update_emission_stats(total_emit_count);
+        if total_this_frame > 0 {
+            self.update_emission_stats(total_this_frame);
         }
 
         Ok(alive_count)
@@ -537,23 +612,24 @@ impl GlobalParticleSystem {
     }
 
     /// Update frame data for push descriptor.
-    fn update_frame_data(&self, delta_time: f32, emit_count: u32) -> Result<(), String> {
+    fn update_frame_data(&self, delta_time: f32, emit_count: u32, burst_count: u32) -> Result<(), String> {
         if let Some((_buffer, allocation)) = &self.frame_data_buffer {
             if let Some(mapped) = allocation.mapped_ptr() {
-                // Calculate active emitter count (emitters with emit_rate > 0)
+                // Calculate active emitter count (emitters with emit_rate > 0 or burst_count > 0)
                 let active_emitter_count = self.emitters.iter()
                     .filter(|e| e.emit_rate > 0.0)
                     .count() as u32;
 
                 // Total particles to simulate = newly emitted + previously alive
-                let total_simulate_count = emit_count + self.cached_alive_count;
+                let total_simulate_count = emit_count + burst_count + self.cached_alive_count;
 
                 let frame_data = FrameData {
                     delta_time,
-                    total_emit_count: emit_count,
+                    total_emit_count: emit_count + burst_count,
                     emitter_count: active_emitter_count,
                     random_seed: self.frame_count,
                     total_simulate_count,
+                    burst_count,
                 };
                 unsafe {
                     std::ptr::copy_nonoverlapping(
