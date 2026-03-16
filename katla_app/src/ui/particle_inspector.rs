@@ -4,7 +4,7 @@
 //! parameters at runtime without recompilation.
 
 use katla_ecs::{EntityId, World};
-use katla_gfx::particles::GlobalParticleSystem;
+use katla_gfx::particles::{EmitterShape, GlobalParticleSystem};
 use katla_math::{Rect2D, Vec2};
 use katla_ui::{widgets::Button, FontSize, Response, UiContext, Widget};
 
@@ -176,6 +176,52 @@ impl<'a> ParticleInspector<'a> {
     ) {
         let line_height = 20.0;
         let slider_width = self.bounds.width() - 24.0;
+
+        // Section: Shape
+        ui.draw_text(
+            "Emitter Shape",
+            ui.cursor(),
+            self.theme.text_accent,
+            ui.scaled_font_size(FontSize::Small),
+        );
+        ui.spacing(line_height);
+
+        // Shape selector
+        let shape_names = ["Point", "Line", "Circle", "Sphere", "Box"];
+        let current_shape_index = match emitter.config.get_shape() {
+            EmitterShape::Point => 0,
+            EmitterShape::Line => 1,
+            EmitterShape::Circle => 2,
+            EmitterShape::Sphere => 3,
+            EmitterShape::Box => 4,
+        };
+
+        ui.property_row("Shape:", shape_names[current_shape_index]);
+        ui.spacing(line_height);
+
+        // Shape-specific parameters
+        match emitter.config.get_shape() {
+            EmitterShape::Point => {
+                ui.property_row("Parameters:", "None (point emission)");
+            }
+            EmitterShape::Line => {
+                ui.property_row("Length:", &format!("{:.2}", emitter.config.shape_params[0]));
+                ui.property_row("Axis:", "Y (vertical)");
+            }
+            EmitterShape::Circle => {
+                ui.property_row("Radius:", &format!("{:.2}", emitter.config.shape_params[0]));
+                ui.property_row("Plane:", "XZ (horizontal)");
+            }
+            EmitterShape::Sphere => {
+                ui.property_row("Radius:", &format!("{:.2}", emitter.config.shape_params[0]));
+            }
+            EmitterShape::Box => {
+                ui.property_row("Width:", &format!("{:.2}", emitter.config.shape_params[0]));
+                ui.property_row("Height:", &format!("{:.2}", emitter.config.shape_params[1]));
+                ui.property_row("Depth:", &format!("{:.2}", emitter.config.shape_params[2]));
+            }
+        }
+        ui.spacing(line_height);
 
         // Section: Emission
         ui.draw_text(

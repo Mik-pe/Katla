@@ -1,0 +1,18 @@
+{
+  "name": "fire_sphere",
+  "config": {
+    "position": [0.0, 1.0, 0.0],
+    "shape": "Sphere",
+    "shape_params": [1.5, 0.0, 0.0, 0.0],
+    "emit_rate": 800.0,
+    "base_lifetime": 2.5,
+    "lifetime_variation": 0.6,
+    "velocity_direction": [0.0, 1.0, 0.0],
+    "velocity_magnitude": 3.0,
+    "velocity_cone_angle": 1.57,
+    "base_scale": 0.2,
+    "scale_variation": 0.4,
+    "color": [1.0, 0.6, 0.1, 1.0],
+    "color_variation": 0.3
+  }
+}

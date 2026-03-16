@@ -47,19 +47,27 @@ struct ParticleCounters {
 // Per-emitter configuration
 struct EmitterConfig {
     position: vec3f,
-    _pad0: f32,
+    shape: u32,
     emit_rate: f32,
     base_lifetime: f32,
     lifetime_variation: f32,
     velocity_direction: vec3f,
-    _pad1: f32,
+    _pad0: f32,
     velocity_magnitude: f32,
     velocity_cone_angle: f32,
     base_scale: f32,
     scale_variation: f32,
     color: vec4f,
     color_variation: f32,
+    shape_params: vec4f,
 }
+
+// Emitter shape enumeration
+const EMITTER_SHAPE_POINT: u32 = 0u;
+const EMITTER_SHAPE_LINE: u32 = 1u;
+const EMITTER_SHAPE_CIRCLE: u32 = 2u;
+const EMITTER_SHAPE_SPHERE: u32 = 3u;
+const EMITTER_SHAPE_BOX: u32 = 4u;
 
 // Global resources (Set 0: static buffers)
 @group(0) @binding(0)
@@ -112,14 +120,63 @@ fn random_range(seed: ptr<function, u32>, min: f32, max: f32) -> f32 {
     return min + (max - min) * random_float(seed);
 }
 
+// Sample a position from the emitter shape
+fn sample_emitter_position(config: EmitterConfig, seed: ptr<function, u32>) -> vec3f {
+    let shape_type = config.shape;
+
+    if (shape_type == EMITTER_SHAPE_POINT) {
+        // Point: return config position directly
+        return config.position;
+    }
+    else if (shape_type == EMITTER_SHAPE_LINE) {
+        // Line: sample along line using shape_params[0] as length
+        let length = config.shape_params.x;
+        let t = random_range(seed, -0.5, 0.5); // Sample from center
+        return config.position + vec3f(0.0, t * length, 0.0); // Default Y-axis line
+    }
+    else if (shape_type == EMITTER_SHAPE_CIRCLE) {
+        // Circle: sample in circle using shape_params[0] as radius
+        let radius = config.shape_params.x;
+        let theta = random_float(seed) * 6.28318530718; // 2π
+        let r = radius * sqrt(random_float(seed)); // Uniform distribution in circle
+        let offset = vec3f(cos(theta) * r, 0.0, sin(theta) * r); // XZ plane circle
+        return config.position + offset;
+    }
+    else if (shape_type == EMITTER_SHAPE_SPHERE) {
+        // Sphere: sample in sphere using shape_params[0] as radius
+        let radius = config.shape_params.x;
+        let theta = random_float(seed) * 6.28318530718; // 2π (azimuthal)
+        let phi = acos(2.0 * random_float(seed) - 1.0); // Polar angle (uniform sphere)
+        let r = radius * cbrt(random_float(seed)); // Uniform volume distribution
+        let x = r * sin(phi) * cos(theta);
+        let y = r * sin(phi) * sin(theta);
+        let z = r * cos(phi);
+        return config.position + vec3f(x, y, z);
+    }
+    else if (shape_type == EMITTER_SHAPE_BOX) {
+        // Box: sample in box using shape_params[0-2] as dimensions
+        let width = config.shape_params.x;
+        let height = config.shape_params.y;
+        let depth = config.shape_params.z;
+        let x = random_range(seed, -width * 0.5, width * 0.5);
+        let y = random_range(seed, -height * 0.5, height * 0.5);
+        let z = random_range(seed, -depth * 0.5, depth * 0.5);
+        return config.position + vec3f(x, y, z);
+    }
+    else {
+        // Default: point emission
+        return config.position;
+    }
+}
+
 // Initialize a new particle from emitter configuration
 fn emit_particle(particle_idx: u32, emitter_idx: u32, seed: ptr<function, u32>) -> ParticleData {
     let emitter = emitters[emitter_idx];
 
     var particle: ParticleData;
 
-    // Position: emitter position
-    particle.position = emitter.position;
+    // Position: sample from emitter shape
+    particle.position = sample_emitter_position(emitter, seed);
 
     // Lifetime with variation
     let lifetime_var = emitter.base_lifetime * emitter.lifetime_variation;
