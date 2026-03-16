@@ -82,7 +82,7 @@ pub mod timing;
 pub mod validation;
 
 pub use buffer::{FrameData, GlobalParticleBuffer, ParticleCounters};
-pub use presets::{EmitterPreset, PresetManager};
+pub use presets::EmitterPreset;
 pub use stats::ParticleStats;
 pub use timing::TimestampQuery;
 pub use validation::{
@@ -483,6 +483,10 @@ impl GlobalParticleSystem {
     ///
     /// # Errors
     /// Returns error if maximum emitter count (1024) is reached
+    ///
+    /// # Note
+    /// **For game code**: Use the ECS wrapper via `ParticleSystem::update()` in katla_app instead.
+    /// Direct calls to this method should only be used in tests and low-level graphics code.
     pub fn create_emitter(&mut self, config: EmitterConfig) -> Result<EmitterHandle, String> {
         if self.emitters.len() >= MAX_EMITTERS as usize {
             log::warn!(
