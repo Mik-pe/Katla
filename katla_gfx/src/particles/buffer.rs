@@ -420,28 +420,6 @@ impl GlobalParticleBuffer {
             .collect();
 
         let dead_list_size = dead_list_data.len() as u64;
-        // Fill particle data with zeros (all dead)
-        let cmd = self.context.begin_single_time_commands();
-
-        unsafe {
-            self.context.device.cmd_fill_buffer(
-                cmd.vk_command_buffer(),
-                self.particle_buffer,
-                0,
-                (self.max_particles as usize * std::mem::size_of::<ParticleData>()) as u64,
-                0,
-            );
-        }
-
-        // Initialize dead list with indices 0..MAX_PARTICLES
-        // All particles start in the dead list, ready to be allocated
-        let indices: Vec<u32> = (0..self.max_particles).collect();
-        let dead_list_data: Vec<u8> = indices
-            .iter()
-            .flat_map(|i| i.to_le_bytes().to_vec())
-            .collect();
-
-        let _dead_list_size = dead_list_data.len() as u64;
 
         // Create staging buffer for dead list initialization
         let staging_buffer_info = vk::BufferCreateInfo::default()
