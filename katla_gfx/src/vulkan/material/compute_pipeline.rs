@@ -153,9 +153,9 @@ impl ComputePipeline {
         unsafe {
             self.device.destroy_pipeline(self.handle, None);
             self.device.destroy_pipeline_layout(self.layout, None);
-            for layout in self.descriptor_layouts.drain(..) {
-                self.device.destroy_descriptor_set_layout(layout, None);
-            }
+            // Note: Descriptor set layouts are NOT destroyed here since they may be shared
+            // between multiple pipelines (e.g., particle emit and simulate pipelines share layouts).
+            // The caller who created the layouts is responsible for their cleanup.
         }
     }
 }

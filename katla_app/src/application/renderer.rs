@@ -112,40 +112,13 @@ impl Application {
         self.frame_graph.set_frame_count(frame_count);
 
         // Update particle system simulation and calculate workgroup count
-        log::info!(
-            "Checking particle system: {}",
-            self.renderer.particle_system.is_some()
-        );
+        let frame_index = self.renderer.current_frame() as u32;
         if let Some(ref mut particle_system) = self.renderer.particle_system {
-            log::info!("Calling particle system update...");
-            match particle_system.update(delta_time) {
+            match particle_system.update(delta_time, frame_index) {
                 Ok(alive_count) => {
-                    log::info!(
-                        "Particle system update result: {} alive particles",
-                        alive_count
-                    );
-                    if alive_count > 0 {
-                        log::info!(
-                            "✅ Particle system updated: {} alive particles",
-                            alive_count
-                        );
-                    }
 
                     // Calculate particles to emit this frame
                     let emitters = particle_system.get_emitters();
-                    log::info!(
-                        "🔍 Calculating emit_count: {} emitters, delta_time={}",
-                        emitters.len(),
-                        delta_time
-                    );
-                    for (i, config) in emitters.iter().enumerate() {
-                        log::info!(
-                            "  Emitter {}: emit_rate={}, particles_this_frame={}",
-                            i,
-                            config.emit_rate,
-                            (config.emit_rate * delta_time) as u32
-                        );
-                    }
                     let emit_count: u32 = emitters
                         .iter()
                         .map(|config| (config.emit_rate * delta_time) as u32)
@@ -159,27 +132,31 @@ impl Application {
                         0 // No particles to emit
                     };
 
-                    log::info!(
-                        "🔍 Emit workgroups: emit_count={}, workgroups={}",
-                        emit_count,
-                        emit_workgroups
-                    );
                     if emit_workgroups == 0 {
-                        log::warn!("⚠️ Emit workgroups is 0! Particles won't be emitted!");
+                        log::warn!("Emit workgroups is 0! Particles won't be emitted!");
                     }
 
                     // Calculate simulate workgroups (based on alive particles)
-                    let simulate_workgroups = if alive_count > 0 {
-                        alive_count.div_ceil(workgroup_size)
+                    // CRITICAL: Simulate pass must ALWAYS run, even with 0 particles!
+                    // - It processes newly emitted particles from the emit pass
+                    // - It updates the alive_next list
+                    // - It performs the swap to alive_current for the next frame
+                    //
+                    // The total particles to simulate = alive_count (from previous frame) + emit_count (new this frame)
+                    let total_particles_to_simulate = alive_count + emit_count;
+                    let simulate_workgroups = if total_particles_to_simulate > 0 {
+                        total_particles_to_simulate.div_ceil(workgroup_size)
                     } else {
-                        0 // No particles to simulate
+                        1 // ALWAYS run at least 1 workgroup for swap to happen
                     };
 
                     log::debug!(
-                        "🎯 Particle compute workgroups: emit {} particles = {} workgroups, simulate {} particles = {} workgroups",
+                        "🎯 Particle compute workgroups: emit {} particles = {} workgroups, simulate {} alive + {} emit = {} total particles = {} workgroups",
                         emit_count,
                         emit_workgroups,
                         alive_count,
+                        emit_count,
+                        total_particles_to_simulate,
                         simulate_workgroups
                     );
 

@@ -174,11 +174,16 @@ impl TimestampQuery {
     /// Execution time in milliseconds, or error if readback failed
     ///
     /// # Notes
-    /// Uses PARTIAL flag to avoid blocking. If timing data isn't ready yet,
-    /// returns the cached value from the previous successful read.
+    /// Does NOT use PARTIAL_BIT as it's not allowed for timestamp queries per Vulkan spec.
+    /// If timing data isn't ready yet (query not reset on GPU), returns cached value.
     pub fn get_compute_time_ms(&mut self) -> Result<f32, String> {
         if self.destroyed {
             return Err("Timestamp query destroyed".to_string());
+        }
+
+        // If no timing has been recorded yet, return 0
+        if !self.timing_available {
+            return Ok(0.0);
         }
 
         // Get timestamp period (nanoseconds per timestamp value)
@@ -190,37 +195,42 @@ impl TimestampQuery {
 
         let timestamp_period = device_properties.limits.timestamp_period;
 
-        // Read start timestamp with PARTIAL flag to avoid blocking
-        // PARTIAL flag means: return available data, don't wait if not ready
+        // Read start timestamp - don't use WAIT to avoid blocking
+        // If query hasn't been reset/executed yet, we'll get an error
         let mut start_data = [0u64; 1];
         let start_result = unsafe {
             self.context.device.get_query_pool_results(
                 self.start_pool,
                 0, // First query
                 &mut start_data,
-                vk::QueryResultFlags::TYPE_64 | vk::QueryResultFlags::PARTIAL,
+                vk::QueryResultFlags::TYPE_64,
             )
         };
 
         if let Err(e) = start_result {
-            debug!("Timing data not ready yet: {:?}", e);
-            return Ok(self.cached_time_ms); // Return previous value if not ready
+            debug!("Start timing data not ready: {:?}", e);
+            return Ok(self.cached_time_ms);
         }
 
-        // Read end timestamp with PARTIAL flag to avoid blocking
+        // Read end timestamp
         let mut end_data = [0u64; 1];
         let end_result = unsafe {
             self.context.device.get_query_pool_results(
                 self.end_pool,
                 0, // First query
                 &mut end_data,
-                vk::QueryResultFlags::TYPE_64 | vk::QueryResultFlags::PARTIAL,
+                vk::QueryResultFlags::TYPE_64,
             )
         };
 
         if let Err(e) = end_result {
-            debug!("Timing data not ready yet: {:?}", e);
-            return Ok(self.cached_time_ms); // Return previous value if not ready
+            debug!("End timing data not ready: {:?}", e);
+            return Ok(self.cached_time_ms);
+        }
+
+        // Check for zero values (query not ready or not executed)
+        if start_data[0] == 0 || end_data[0] == 0 {
+            return Ok(self.cached_time_ms);
         }
 
         let start_ns = start_data[0] as f64 * timestamp_period as f64;
@@ -230,7 +240,6 @@ impl TimestampQuery {
 
         // Cache the result
         self.cached_time_ms = elapsed_ms as f32;
-        self.timing_available = true;
 
         debug!("Compute time: {:.3} ms ({} ns)", elapsed_ms, elapsed_ns);
 

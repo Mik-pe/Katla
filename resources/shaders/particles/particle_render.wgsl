@@ -1,6 +1,10 @@
 // Modern Particle Rendering - Vertex + Fragment Shaders
 //
 // Renders particles as camera-facing billboards in world space.
+//
+// Descriptor Set Layout:
+// - Set 0: Particle system buffers (particles, alive_list)
+// - Set 1: Frame uniforms (view/proj matrices) - from renderer storage descriptor set
 
 const MAX_PARTICLES: u32 = 1048576u;
 
@@ -28,15 +32,32 @@ struct FrameUniforms {
 @group(0) @binding(0)
 var<storage, read> particles: array<ParticleData, MAX_PARTICLES>;
 
+// Dead particle list (Set 0, Binding 1) - unused in render but must match layout
+@group(0) @binding(1)
+var<storage, read> dead_list: array<u32, MAX_PARTICLES>;
+
 // Alive particle index list (Set 0, Binding 2)
 // Note: We use binding 2 to match the compute shader's alive_current binding
 @group(0) @binding(2)
-var<storage, read> alive_list: array<u32, MAX_PARTICLES>;
+var<storage, read> alive_list: array<u32, MAX_PARTICLES * 2>;
 
-// Frame uniforms (Set 1, Binding 0)
-// This uses the same Set 1 binding 0 as the compute shader for frame data
+// Alive list next (Set 0, Binding 3) - unused in render but must match layout
+@group(0) @binding(3)
+var<storage, read> alive_list_next: array<u32, MAX_PARTICLES>;
+
+// Counters (Set 0, Binding 4) - unused in render but must match layout
+struct ParticleCounters {
+    alive_count: atomic<u32>,
+    dead_count: atomic<u32>,
+    emit_count: atomic<u32>,
+    _pad: u32,
+}
+@group(0) @binding(4)
+var<storage, read> counters: ParticleCounters;
+
+// Frame uniforms (Set 1, Binding 0) - from renderer storage descriptor set
 @group(1) @binding(0)
-var<storage, read> frame_data: FrameUniforms;
+var<storage, read> frame_uniforms: FrameUniforms;
 
 struct VertexOutput {
     @builtin(position) clip_position: vec4f,
@@ -73,9 +94,9 @@ fn vs_main(
     out.uv = corner;
     out.color = particle.color;
 
-    // Use actual camera matrices from frame data
-    let view = frame_data.view;
-    let proj = frame_data.proj;
+    // Use actual camera matrices from frame uniforms (Set 1 from renderer)
+    let view = frame_uniforms.view;
+    let proj = frame_uniforms.proj;
 
     // Extract camera right/up vectors from view matrix
     let view_right = vec3f(view[0][0], view[1][0], view[2][0]);

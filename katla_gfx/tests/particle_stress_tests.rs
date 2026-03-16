@@ -264,7 +264,7 @@ fn test_frame_rate_stability() {
 
         let delta_time = 0.016; // ~60 FPS
         let alive_count = particle_system
-            .update(delta_time)
+            .update(delta_time, frame)
             .expect("Update should succeed");
 
         let elapsed = start.elapsed().as_secs_f64() * 1000.0; // Convert to ms
@@ -351,15 +351,15 @@ fn test_edge_cases() {
         .expect("High emit rate should be allowed");
 
     // Test 3: Update with zero delta time
-    let result = particle_system.update(0.0);
+    let result = particle_system.update(0.0, 0);
     assert!(result.is_ok(), "Update with zero delta time should succeed");
 
     // Test 4: Update with very small delta time
-    let result = particle_system.update(0.0001);
+    let result = particle_system.update(0.0001, 1);
     assert!(result.is_ok(), "Update with tiny delta time should succeed");
 
     // Test 5: Update with very large delta time
-    let result = particle_system.update(10.0);
+    let result = particle_system.update(10.0, 2);
     assert!(
         result.is_ok(),
         "Update with large delta time should succeed"
@@ -489,9 +489,9 @@ fn test_statistics_tracking() {
     assert!(stats.memory_used_mb > 0.0);
 
     // Update a few frames
-    for _ in 0..10 {
+    for frame in 0..10 {
         particle_system
-            .update(0.016)
+            .update(0.016, frame)
             .expect("Update should succeed");
     }
 
@@ -536,7 +536,7 @@ fn test_burst_emission() {
 
     // Update to process the burst
     particle_system
-        .update(0.016)
+        .update(0.016, 0)
         .expect("Update should succeed");
 
     // Verify particles were emitted
@@ -579,21 +579,21 @@ fn test_multiple_bursts() {
         .burst(emitter, 50)
         .expect("Burst 1 should succeed");
     particle_system
-        .update(0.016)
+        .update(0.016, 0)
         .expect("Update 1 should succeed");
 
     particle_system
         .burst(emitter, 100)
         .expect("Burst 2 should succeed");
     particle_system
-        .update(0.016)
+        .update(0.016, 1)
         .expect("Update 2 should succeed");
 
     particle_system
         .burst(emitter, 200)
         .expect("Burst 3 should succeed");
     particle_system
-        .update(0.016)
+        .update(0.016, 2)
         .expect("Update 3 should succeed");
 
     // Verify total emissions
@@ -633,7 +633,7 @@ fn test_burst_with_continuous_emission() {
 
     // Update with continuous emission only
     particle_system
-        .update(0.1)
+        .update(0.1, 0)
         .expect("Update 1 should succeed");
 
     let stats1 = particle_system.get_stats();
@@ -644,7 +644,7 @@ fn test_burst_with_continuous_emission() {
         .burst(emitter, 500)
         .expect("Burst should succeed");
     particle_system
-        .update(0.1)
+        .update(0.1, 1)
         .expect("Update 2 should succeed");
 
     let stats2 = particle_system.get_stats();

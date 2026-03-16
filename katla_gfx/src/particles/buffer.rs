@@ -36,6 +36,10 @@ pub struct ParticleData {
 }
 
 /// Per-frame data for particle simulation (updated via push descriptors).
+///
+/// std140 layout rules apply (WGSL uniform buffers).
+/// Struct is padded to 64-byte alignment to satisfy min_storage_buffer_offset_alignment.
+/// 7 fields × 4 bytes = 28 bytes → padded to 64 bytes.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Pod, Zeroable)]
 pub struct FrameData {
@@ -51,6 +55,10 @@ pub struct FrameData {
     pub total_simulate_count: u32,
     /// Burst particles to emit immediately (overrides emit_rate for this frame)
     pub burst_count: u32,
+    /// Frame index (for per-frame buffer offsets to avoid race conditions)
+    pub frame_index: u32,
+    /// Padding to match 64-byte alignment (28 → 64 bytes)
+    pub _pad: [u32; 9],
 }
 
 /// Atomic counters for particle management (16 bytes).
@@ -86,12 +94,12 @@ pub struct DrawIndirectCommand {
 /// Memory layout:
 /// - Particle data: 48 MB (1M × 48 bytes)
 /// - Dead list: 4 MB (1M × 4 bytes)
-/// - Alive list current: 4 MB
+/// - Alive list current (per-frame): 8 MB (2 × 4 MB for 2 frames in flight)
 /// - Alive list next: 4 MB
 /// - Counters: 32 bytes
 /// - Emitter configs: 80 KB (1024 × 80 bytes)
 /// - Indirect draw: 16 bytes
-///   Total: ~60 MB
+///   Total: ~64 MB
 pub struct GlobalParticleBuffer {
     context: Rc<VulkanContext>,
 
@@ -114,13 +122,6 @@ pub struct GlobalParticleBuffer {
     /// Maximum particles
     max_particles: u32,
 
-    /// Descriptor pool
-    descriptor_pool: Option<vk::DescriptorPool>,
-
-    /// Descriptor set layouts
-    compute_layout: Option<vk::DescriptorSetLayout>,
-    render_layout: Option<vk::DescriptorSetLayout>,
-
     /// Flag to prevent double destruction
     destroyed: bool,
 }
@@ -132,10 +133,14 @@ impl GlobalParticleBuffer {
 
         // Create particle storage buffer
         let particle_buffer_info = vk::BufferCreateInfo::default()
-            .size((particle_size * 3) as u64) // particles + 2 alive lists
+            .size(
+                (particle_size * 3 + max_particles as usize * std::mem::size_of::<u32>() * 2)
+                    as u64,
+            ) // particles + dead + alive_current[2] + alive_next
             .usage(
                 vk::BufferUsageFlags::STORAGE_BUFFER
                     | vk::BufferUsageFlags::TRANSFER_DST
+                    | vk::BufferUsageFlags::TRANSFER_SRC
                     | vk::BufferUsageFlags::VERTEX_BUFFER,
             )
             .sharing_mode(vk::SharingMode::EXCLUSIVE);
@@ -338,8 +343,43 @@ impl GlobalParticleBuffer {
         info!(
             "Created global particle buffer: {} particles ({} MB)",
             max_particles,
-            (particle_size * 3 + emitter_size + counters_size) / (1024 * 1024)
+            (particle_size * 3
+                + max_particles as usize * std::mem::size_of::<u32>() * 2
+                + emitter_size
+                + counters_size)
+                / (1024 * 1024)
         );
+        // Validate buffer alignments for descriptor set offsets
+        let device_properties = unsafe {
+            context
+                .instance
+                .get_physical_device_properties(context.physical_device)
+        };
+
+        let min_storage_buffer_offset_alignment =
+            device_properties.limits.min_storage_buffer_offset_alignment;
+
+        // Validate descriptor buffer offsets are properly aligned
+        let particle_data_size =
+            (max_particles as u64) * (std::mem::size_of::<ParticleData>() as u64);
+        let dead_list_size = (max_particles as u64) * (std::mem::size_of::<u32>() as u64);
+
+        // Check that all descriptor offsets meet alignment requirements
+        let offsets = [
+            ("particle data", 0u64),
+            ("dead list", particle_data_size),
+            ("alive_current", particle_data_size + dead_list_size),
+            ("alive_next", particle_data_size + 2 * dead_list_size),
+        ];
+
+        for (name, offset) in offsets.iter() {
+            if offset % min_storage_buffer_offset_alignment != 0 {
+                return Err(format!(
+                    "Buffer offset for {} ({}) is not aligned to min_storage_buffer_offset_alignment ({})",
+                    name, offset, min_storage_buffer_offset_alignment
+                ));
+            }
+        }
 
         Ok(Self {
             context,
@@ -352,16 +392,13 @@ impl GlobalParticleBuffer {
             indirect_buffer,
             indirect_allocation: Some(indirect_allocation),
             max_particles,
-            descriptor_pool: None,
-            compute_layout: None,
-            render_layout: None,
             destroyed: false,
         })
     }
 
-    /// Initialize dead list (all particles start dead).
-    pub fn initialize_dead_list(&self) -> Result<(), String> {
-        // Fill particle data with zeros (all dead)
+    /// Initialize all index lists (dead list starts full, alive lists start empty).
+    pub fn initialize_index_lists(&self) -> Result<(), String> {
+        // Fill particle data with zeros (all particles start dead)
         let cmd = self.context.begin_single_time_commands();
 
         unsafe {
@@ -383,6 +420,28 @@ impl GlobalParticleBuffer {
             .collect();
 
         let dead_list_size = dead_list_data.len() as u64;
+        // Fill particle data with zeros (all dead)
+        let cmd = self.context.begin_single_time_commands();
+
+        unsafe {
+            self.context.device.cmd_fill_buffer(
+                cmd.vk_command_buffer(),
+                self.particle_buffer,
+                0,
+                (self.max_particles as usize * std::mem::size_of::<ParticleData>()) as u64,
+                0,
+            );
+        }
+
+        // Initialize dead list with indices 0..MAX_PARTICLES
+        // All particles start in the dead list, ready to be allocated
+        let indices: Vec<u32> = (0..self.max_particles).collect();
+        let dead_list_data: Vec<u8> = indices
+            .iter()
+            .flat_map(|i| i.to_le_bytes().to_vec())
+            .collect();
+
+        let _dead_list_size = dead_list_data.len() as u64;
 
         // Create staging buffer for dead list initialization
         let staging_buffer_info = vk::BufferCreateInfo::default()
@@ -470,10 +529,52 @@ impl GlobalParticleBuffer {
             allocator.free(staging_allocation).ok();
         }
 
+        // Initialize alive lists to zero (empty on startup)
+        // Layout: particles -> dead list -> alive_current[2] -> alive_next
+        // With 2 frames in flight, we have 2 separate alive_current regions
+        let frames_in_flight = 2;
+        let particle_data_size =
+            (self.max_particles as u64) * (std::mem::size_of::<ParticleData>() as u64);
+        let dead_list_size = (self.max_particles as u64) * (std::mem::size_of::<u32>() as u64);
+        let base_alive_current_offset = particle_data_size + dead_list_size;
+        let alive_list_size = dead_list_size;
+
+        let cmd = self.context.begin_single_time_commands();
+
+        unsafe {
+            // Fill both alive_current regions (one per frame) with zeros
+            for frame_idx in 0..frames_in_flight {
+                let alive_current_offset =
+                    base_alive_current_offset + (frame_idx as u64 * alive_list_size);
+                self.context.device.cmd_fill_buffer(
+                    cmd.vk_command_buffer(),
+                    self.particle_buffer,
+                    alive_current_offset,
+                    alive_list_size,
+                    0,
+                );
+            }
+
+            // Fill alive_next with zeros
+            let alive_next_offset =
+                base_alive_current_offset + (frames_in_flight as u64 * alive_list_size);
+            self.context.device.cmd_fill_buffer(
+                cmd.vk_command_buffer(),
+                self.particle_buffer,
+                alive_next_offset,
+                alive_list_size,
+                0,
+            );
+        }
+
+        self.context.end_single_time_commands(cmd);
+
         info!(
-            "Initialized particle dead list with {} indices ({} MB)",
+            "Initialized particle index lists: dead={}, alive_current[2]={}, alive_next={} ({} MB total)",
             self.max_particles,
-            dead_list_size / (1024 * 1024)
+            0,
+            0,
+            (dead_list_size + 3 * alive_list_size) / (1024 * 1024)
         );
         Ok(())
     }
@@ -572,6 +673,99 @@ impl GlobalParticleBuffer {
         self.counters_buffer
     }
 
+    /// Swap alive_list_2 to alive_list_1 after simulate pass.
+    ///
+    /// This copies the content from alive_next (written by simulate shader)
+    /// to alive_current (read by emit shader next frame).
+    ///
+    /// Uses vkCmdCopyBuffer for simplicity (Option A from design doc).
+    /// A buffer barrier is inserted after the copy to ensure synchronization.
+    ///
+    /// # Arguments
+    /// * `command_buffer` - Command buffer to record the copy into
+    /// * `frame_idx` - Current frame index (for per-frame offsets to avoid race conditions)
+    ///
+    /// # Returns
+    /// Ok(()) if swap succeeded, Err otherwise
+    pub fn swap_alive_lists(
+        &self,
+        command_buffer: vk::CommandBuffer,
+        frame_idx: usize,
+    ) -> Result<(), String> {
+        let device = &self.context.device;
+
+        // Calculate buffer offsets
+        // Layout: particles (48 bytes each) -> dead list (4 bytes each) -> alive_current -> alive_next
+        let particle_data_size =
+            (self.max_particles as u64) * (std::mem::size_of::<ParticleData>() as u64);
+        let dead_list_size = (self.max_particles as u64) * (std::mem::size_of::<u32>() as u64);
+
+        // CRITICAL: Use per-frame offsets for alive_current to avoid WRITE_AFTER_WRITE hazards
+        // With 2 frames in flight, we need separate alive_current regions for each frame
+        // Frame 0 uses alive_current at offset 0
+        // Frame 1 uses alive_current at offset +alive_list_size
+        let frames_in_flight = 2;
+        let alive_list_size = dead_list_size;
+        let base_alive_current_offset = particle_data_size + dead_list_size;
+        let alive_current_offset = base_alive_current_offset + (frame_idx as u64 * alive_list_size);
+        let alive_next_offset =
+            base_alive_current_offset + (frames_in_flight as u64 * alive_list_size);
+
+        // Copy alive_next to alive_current (per-frame offset)
+        let copy_region = vk::BufferCopy::default()
+            .src_offset(alive_next_offset)
+            .dst_offset(alive_current_offset)
+            .size(alive_list_size);
+
+        unsafe {
+            device.cmd_copy_buffer(
+                command_buffer,
+                self.particle_buffer, // Same buffer, different regions
+                self.particle_buffer,
+                std::slice::from_ref(&copy_region),
+            );
+        }
+
+        // Insert buffer barrier to ensure copy completes before next access
+        // This prevents the emit shader from reading while copy is in progress
+        // CRITICAL: Barrier must cover both source and destination regions
+        let barriers = [
+            // Barrier for source region (alive_next)
+            vk::BufferMemoryBarrier::default()
+                .src_access_mask(vk::AccessFlags::TRANSFER_READ)
+                .dst_access_mask(vk::AccessFlags::SHADER_WRITE)
+                .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+                .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+                .buffer(self.particle_buffer)
+                .offset(alive_next_offset)
+                .size(alive_list_size),
+            // Barrier for destination region (alive_current)
+            vk::BufferMemoryBarrier::default()
+                .src_access_mask(vk::AccessFlags::TRANSFER_WRITE)
+                .dst_access_mask(vk::AccessFlags::SHADER_READ)
+                .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+                .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+                .buffer(self.particle_buffer)
+                .offset(alive_current_offset)
+                .size(alive_list_size),
+        ];
+
+        unsafe {
+            // Use legacy barrier for compatibility
+            device.cmd_pipeline_barrier(
+                command_buffer,
+                vk::PipelineStageFlags::TRANSFER,
+                vk::PipelineStageFlags::COMPUTE_SHADER,
+                vk::DependencyFlags::empty(),
+                &[],
+                &barriers,
+                &[],
+            );
+        }
+
+        Ok(())
+    }
+
     /// Destroy all resources.
     pub fn destroy(&mut self) {
         if self.destroyed {
@@ -600,23 +794,6 @@ impl GlobalParticleBuffer {
                 && let Ok(mut allocator) = self.context.allocator.try_borrow_mut()
             {
                 allocator.free(alloc).ok();
-            }
-
-            // Destroy descriptor layouts
-            if let Some(layout) = self.compute_layout.take() {
-                self.context
-                    .device
-                    .destroy_descriptor_set_layout(layout, None);
-            }
-            if let Some(layout) = self.render_layout.take() {
-                self.context
-                    .device
-                    .destroy_descriptor_set_layout(layout, None);
-            }
-
-            // Destroy descriptor pool
-            if let Some(pool) = self.descriptor_pool.take() {
-                self.context.device.destroy_descriptor_pool(pool, None);
             }
 
             // Destroy buffers (only if not null)
@@ -670,6 +847,6 @@ mod tests {
 
     #[test]
     fn test_frame_data_size() {
-        assert_eq!(std::mem::size_of::<FrameData>(), 24);
+        assert_eq!(std::mem::size_of::<FrameData>(), 64);
     }
 }

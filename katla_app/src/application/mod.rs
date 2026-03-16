@@ -1325,16 +1325,11 @@ impl Application {
 
         // Fire emitter near the center cube
         let fire_emitter = ParticleEmitterComponent::fire_effect([-3.0, 1.0, -3.0]);
-        let fire_entity = self.world.spawn((fire_emitter,));
-        info!("✨ Fire particle emitter entity created: {:?}", fire_entity);
+        self.world.spawn((fire_emitter,));
 
         // Magic sparkles emitter
         let sparkle_emitter = ParticleEmitterComponent::sparkle_effect([0.0, 3.0, 0.0]);
-        let sparkle_entity = self.world.spawn((sparkle_emitter,));
-        info!(
-            "✨ Sparkle particle emitter entity created: {:?}",
-            sparkle_entity
-        );
+        self.world.spawn((sparkle_emitter,));
 
         info!("Particle emitters setup complete - emitters will be initialized by ParticleSystem");
     }
