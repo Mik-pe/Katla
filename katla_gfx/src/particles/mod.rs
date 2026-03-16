@@ -1443,11 +1443,12 @@ impl GlobalParticleSystem {
 
         // Binding 3: alive_list_next (shader binding name)
         // Maps to alive_next region (single buffer, not per-frame)
+        // Layout: particles -> dead -> alive_current[0] -> alive_current[1] -> alive_next
+        let frames_in_flight = 2u64;
         let alive_list_next_info = [vk::DescriptorBufferInfo {
             buffer: self.buffer.particle_buffer(),
             offset: (self.buffer.max_particles() as u64)
-                * (std::mem::size_of::<buffer::ParticleData>() + 2 * std::mem::size_of::<u32>())
-                    as u64,
+                * (std::mem::size_of::<buffer::ParticleData>() as u64 + (frames_in_flight + 1) * std::mem::size_of::<u32>() as u64),
             range: (self.buffer.max_particles() as u64) * std::mem::size_of::<u32>() as u64,
         }];
 
@@ -1508,17 +1509,18 @@ impl GlobalParticleSystem {
             let index_entry_size = std::mem::size_of::<u32>() as u64;
 
             // Check alignment for each binding
+            let frames_in_flight = 2u64;
             let binding_offsets = [
                 (0, 0u64),               // particle data
                 (1, particle_data_size), // dead list
                 (
                     2,
                     particle_data_size + index_entry_size * self.buffer.max_particles() as u64,
-                ), // alive_current
+                ), // alive_current[0]
                 (
                     3,
-                    particle_data_size + 2 * index_entry_size * self.buffer.max_particles() as u64,
-                ), // alive_next
+                    particle_data_size + (frames_in_flight as u64 + 1) * index_entry_size * self.buffer.max_particles() as u64,
+                ), // alive_next (after alive_current[0] and alive_current[1])
             ];
 
             for (binding, offset) in binding_offsets.iter() {

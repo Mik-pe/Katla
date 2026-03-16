@@ -218,12 +218,56 @@ impl ParticleDebugReadback {
     ///
     /// This must be called before reading data to ensure GPU->CPU copy happens.
     /// The command buffer must be submitted and waited on before calling read().
+    ///
+    /// IMPORTANT: This function assumes it's being called after compute shader
+    /// work that writes to these buffers. A barrier is inserted to ensure
+    /// compute shader writes complete before the transfer reads begin.
     pub fn record_copy(
         &mut self,
         command_buffer: vk::CommandBuffer,
         particle_buffer: &GlobalParticleBuffer,
     ) -> Result<(), String> {
         let device = &self.context.device;
+
+        // Insert barrier to ensure compute shader writes complete before transfer reads
+        // This prevents READ_AFTER_WRITE hazards
+        let max_particles = particle_buffer.max_particles() as u64;
+        let particle_data_size = max_particles * std::mem::size_of::<ParticleData>() as u64;
+        let dead_list_size = max_particles * std::mem::size_of::<u32>() as u64;
+        let alive_list_size = dead_list_size * 3; // alive_current[0] + alive_current[1] + alive_next
+
+        let barriers = [
+            // Barrier for particle buffer (particles + dead + alive regions)
+            vk::BufferMemoryBarrier::default()
+                .src_access_mask(vk::AccessFlags::SHADER_WRITE | vk::AccessFlags::SHADER_READ)
+                .dst_access_mask(vk::AccessFlags::TRANSFER_READ)
+                .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+                .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+                .buffer(particle_buffer.particle_buffer())
+                .offset(0)
+                .size(particle_data_size + dead_list_size + alive_list_size),
+            // Barrier for counters buffer
+            vk::BufferMemoryBarrier::default()
+                .src_access_mask(vk::AccessFlags::SHADER_WRITE | vk::AccessFlags::SHADER_READ)
+                .dst_access_mask(vk::AccessFlags::TRANSFER_READ)
+                .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+                .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+                .buffer(particle_buffer.counters_buffer())
+                .offset(0)
+                .size(std::mem::size_of::<ParticleCounters>() as u64),
+        ];
+
+        unsafe {
+            device.cmd_pipeline_barrier(
+                command_buffer,
+                vk::PipelineStageFlags::COMPUTE_SHADER,
+                vk::PipelineStageFlags::TRANSFER,
+                vk::DependencyFlags::empty(),
+                &[],
+                &barriers,
+                &[],
+            );
+        }
 
         // Copy particle data
         if let Some(staging) = &self.particle_staging {

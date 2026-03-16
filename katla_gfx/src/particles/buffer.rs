@@ -132,9 +132,10 @@ impl GlobalParticleBuffer {
         let particle_size = (max_particles as usize) * std::mem::size_of::<ParticleData>();
 
         // Create particle storage buffer
+        // Layout: particles (48 bytes each) + dead (4 bytes each) + alive_current[2] (2 × 4 bytes each) + alive_next (4 bytes each)
         let particle_buffer_info = vk::BufferCreateInfo::default()
             .size(
-                (particle_size * 3 + max_particles as usize * std::mem::size_of::<u32>() * 2)
+                (particle_size + max_particles as usize * std::mem::size_of::<u32>() * 4)
                     as u64,
             ) // particles + dead + alive_current[2] + alive_next
             .usage(
@@ -181,11 +182,11 @@ impl GlobalParticleBuffer {
                 .map_err(|e| format!("Failed to bind particle memory: {:?}", e))?
         }
 
-        // Create counters buffer (CPU-visible for initialization)
+        // Create counters buffer (CPU-visible for initialization, with transfer support for readback)
         let counters_size = std::mem::size_of::<ParticleCounters>();
         let counters_buffer_info = vk::BufferCreateInfo::default()
             .size(counters_size as u64)
-            .usage(vk::BufferUsageFlags::STORAGE_BUFFER | vk::BufferUsageFlags::UNIFORM_BUFFER)
+            .usage(vk::BufferUsageFlags::STORAGE_BUFFER | vk::BufferUsageFlags::UNIFORM_BUFFER | vk::BufferUsageFlags::TRANSFER_SRC | vk::BufferUsageFlags::TRANSFER_DST)
             .sharing_mode(vk::SharingMode::EXCLUSIVE);
 
         let counters_buffer = unsafe {
@@ -343,8 +344,8 @@ impl GlobalParticleBuffer {
         info!(
             "Created global particle buffer: {} particles ({} MB)",
             max_particles,
-            (particle_size * 3
-                + max_particles as usize * std::mem::size_of::<u32>() * 2
+            (particle_size
+                + max_particles as usize * std::mem::size_of::<u32>() * 4
                 + emitter_size
                 + counters_size)
                 / (1024 * 1024)
@@ -398,6 +399,10 @@ impl GlobalParticleBuffer {
 
     /// Initialize all index lists (dead list starts full, alive lists start empty).
     pub fn initialize_index_lists(&self) -> Result<(), String> {
+        // Create a single command buffer for all initialization to avoid WRITE_AFTER_WRITE hazards
+        // This ensures all copies to different regions of the particle buffer are properly synchronized
+        let cmd = self.context.begin_single_time_commands();
+
         // DEBUG: Fill particle data with a known test pattern instead of zeros
         // This will help us verify if the particle buffer and readback are working correctly
         let test_particles: Vec<ParticleData> = (0..self.max_particles)
@@ -414,9 +419,6 @@ impl GlobalParticleBuffer {
             .iter()
             .flat_map(|p| bytemuck::bytes_of(p).to_vec())
             .collect();
-
-        // Create separate command buffer for test particle initialization
-        let test_cmd = self.context.begin_single_time_commands();
 
         // Create staging buffer for test particle data
         let staging_buffer_info = vk::BufferCreateInfo::default()
@@ -463,7 +465,7 @@ impl GlobalParticleBuffer {
             self.context.flush_mapped_memory(&staging_allocation, 0, particle_data_bytes.len() as u64);
         }
 
-        // Copy from staging to particle buffer (using test_cmd)
+        // Copy from staging to particle buffer (using cmd)
         let particle_data_size = (self.max_particles as u64) * std::mem::size_of::<ParticleData>() as u64;
         let copy_region = vk::BufferCopy::default()
             .src_offset(0)
@@ -472,15 +474,15 @@ impl GlobalParticleBuffer {
 
         unsafe {
             self.context.device.cmd_copy_buffer(
-                test_cmd.vk_command_buffer(),
+                cmd.vk_command_buffer(),
                 staging_buffer,
                 self.particle_buffer,
                 std::slice::from_ref(&copy_region),
             );
         }
 
-        // Submit test command buffer and wait for GPU to complete
-        self.context.end_single_time_commands(test_cmd);
+        // Submit command buffer and wait for GPU to complete
+        self.context.end_single_time_commands(cmd);
 
         // Cleanup staging buffer
         unsafe {
