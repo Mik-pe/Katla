@@ -12,8 +12,6 @@
 //! 3. Run 4-viewport grid for 100 frames
 //! 4. Compare frame times and verify within 10% threshold
 
-
-
 /// Frame time statistics collected during benchmark run.
 #[derive(Debug, Clone)]
 pub struct FrameTimeStats {
@@ -50,10 +48,8 @@ impl FrameTimeStats {
         let max = frame_times.iter().fold(f64::NEG_INFINITY, |a, &b| a.max(b));
 
         // Calculate standard deviation
-        let variance = frame_times
-            .iter()
-            .map(|&x| (x - mean).powi(2))
-            .sum::<f64>() / frame_times.len() as f64;
+        let variance =
+            frame_times.iter().map(|&x| (x - mean).powi(2)).sum::<f64>() / frame_times.len() as f64;
         let std_dev = variance.sqrt();
 
         // Calculate 99th percentile
@@ -138,13 +134,34 @@ impl BenchmarkSummary {
         report.push_str("═══════════════════════════════════════════════════════════════\n");
         report.push_str("BASELINE (Single Viewport)\n");
         report.push_str("═══════════════════════════════════════════════════════════════\n");
-        report.push_str(&format!("  Mean Frame Time:  {:.2} ms\n", self.baseline.stats.mean_ms));
-        report.push_str(&format!("  Min Frame Time:   {:.2} ms\n", self.baseline.stats.min_ms));
-        report.push_str(&format!("  Max Frame Time:   {:.2} ms\n", self.baseline.stats.max_ms));
-        report.push_str(&format!("  Std Dev:          {:.2} ms\n", self.baseline.stats.std_dev_ms));
-        report.push_str(&format!("  99th Percentile:  {:.2} ms\n", self.baseline.stats.p99_ms));
-        report.push_str(&format!("  FPS:              {:.1}\n", 1000.0 / self.baseline.stats.mean_ms));
-        report.push_str(&format!("  Frames Measured:  {}\n\n", self.baseline.stats.frame_count));
+        report.push_str(&format!(
+            "  Mean Frame Time:  {:.2} ms\n",
+            self.baseline.stats.mean_ms
+        ));
+        report.push_str(&format!(
+            "  Min Frame Time:   {:.2} ms\n",
+            self.baseline.stats.min_ms
+        ));
+        report.push_str(&format!(
+            "  Max Frame Time:   {:.2} ms\n",
+            self.baseline.stats.max_ms
+        ));
+        report.push_str(&format!(
+            "  Std Dev:          {:.2} ms\n",
+            self.baseline.stats.std_dev_ms
+        ));
+        report.push_str(&format!(
+            "  99th Percentile:  {:.2} ms\n",
+            self.baseline.stats.p99_ms
+        ));
+        report.push_str(&format!(
+            "  FPS:              {:.1}\n",
+            1000.0 / self.baseline.stats.mean_ms
+        ));
+        report.push_str(&format!(
+            "  Frames Measured:  {}\n\n",
+            self.baseline.stats.frame_count
+        ));
 
         // Multi-viewport results
         report.push_str("═══════════════════════════════════════════════════════════════\n");
@@ -160,15 +177,38 @@ impl BenchmarkSummary {
             };
 
             report.push_str(&format!("{} Viewports\n", result.viewport_count));
-            report.push_str(&format!("  Mean Frame Time:  {:.2} ms ({:+.1}% vs baseline)\n",
-                result.stats.mean_ms, percent_diff));
-            report.push_str(&format!("  Min Frame Time:   {:.2} ms\n", result.stats.min_ms));
-            report.push_str(&format!("  Max Frame Time:   {:.2} ms\n", result.stats.max_ms));
-            report.push_str(&format!("  Std Dev:          {:.2} ms\n", result.stats.std_dev_ms));
-            report.push_str(&format!("  99th Percentile:  {:.2} ms\n", result.stats.p99_ms));
-            report.push_str(&format!("  FPS:              {:.1}\n", 1000.0 / result.stats.mean_ms));
-            report.push_str(&format!("  Frames Measured:  {}\n", result.stats.frame_count));
-            report.push_str(&format!("  Status:           {} (threshold: 10%)\n\n", status));
+            report.push_str(&format!(
+                "  Mean Frame Time:  {:.2} ms ({:+.1}% vs baseline)\n",
+                result.stats.mean_ms, percent_diff
+            ));
+            report.push_str(&format!(
+                "  Min Frame Time:   {:.2} ms\n",
+                result.stats.min_ms
+            ));
+            report.push_str(&format!(
+                "  Max Frame Time:   {:.2} ms\n",
+                result.stats.max_ms
+            ));
+            report.push_str(&format!(
+                "  Std Dev:          {:.2} ms\n",
+                result.stats.std_dev_ms
+            ));
+            report.push_str(&format!(
+                "  99th Percentile:  {:.2} ms\n",
+                result.stats.p99_ms
+            ));
+            report.push_str(&format!(
+                "  FPS:              {:.1}\n",
+                1000.0 / result.stats.mean_ms
+            ));
+            report.push_str(&format!(
+                "  Frames Measured:  {}\n",
+                result.stats.frame_count
+            ));
+            report.push_str(&format!(
+                "  Status:           {} (threshold: 10%)\n\n",
+                status
+            ));
         }
 
         // Overall summary
@@ -241,11 +281,11 @@ impl MockFrameTimeGenerator {
         // - Frame graph handles barriers efficiently
         // - No texture copying, all GPU-resident
         let overhead_multiplier = match viewport_count {
-            1 => 0.0,      // Single viewport, no overhead
-            2 => 0.03,     // +3% for 2 viewports (minimal compositing)
-            4 => 0.06,     // +6% for 4 viewports (more geometry, but still efficient)
-            8 => 0.09,     // +9% for 8 viewports (max configuration within threshold)
-            _ => 0.12,     // +12% for extreme configurations
+            1 => 0.0,  // Single viewport, no overhead
+            2 => 0.03, // +3% for 2 viewports (minimal compositing)
+            4 => 0.06, // +6% for 4 viewports (more geometry, but still efficient)
+            8 => 0.09, // +9% for 8 viewports (max configuration within threshold)
+            _ => 0.12, // +12% for extreme configurations
         };
 
         frame_time *= 1.0 + overhead_multiplier;
@@ -259,7 +299,11 @@ impl MockFrameTimeGenerator {
     }
 
     /// Generate frame times for a benchmark run.
-    pub fn generate_benchmark_run(&mut self, viewport_count: usize, config: &BenchmarkConfig) -> Vec<f64> {
+    pub fn generate_benchmark_run(
+        &mut self,
+        viewport_count: usize,
+        config: &BenchmarkConfig,
+    ) -> Vec<f64> {
         let mut frame_times = Vec::with_capacity(config.measure_frames);
 
         // Warmup frames (discarded)
@@ -313,9 +357,19 @@ pub fn run_performance_benchmark(config: BenchmarkConfig) -> BenchmarkSummary {
         let percent_diff = baseline_stats.percent_diff(&stats);
         let within_threshold = percent_diff <= 10.0;
 
-        println!("  Mean: {:.2} ms ({:+.1}% vs baseline)", stats.mean_ms, percent_diff);
+        println!(
+            "  Mean: {:.2} ms ({:+.1}% vs baseline)",
+            stats.mean_ms, percent_diff
+        );
         println!("  FPS: {:.1}", 1000.0 / stats.mean_ms);
-        println!("  Status: {}", if within_threshold { "✓ PASS" } else { "✗ FAIL" });
+        println!(
+            "  Status: {}",
+            if within_threshold {
+                "✓ PASS"
+            } else {
+                "✗ FAIL"
+            }
+        );
         println!();
 
         multi_viewport_results.push(BenchmarkResult {
@@ -327,9 +381,7 @@ pub fn run_performance_benchmark(config: BenchmarkConfig) -> BenchmarkSummary {
     }
 
     // Check if all configurations are within threshold
-    let all_within_threshold = multi_viewport_results
-        .iter()
-        .all(|r| r.within_threshold);
+    let all_within_threshold = multi_viewport_results.iter().all(|r| r.within_threshold);
 
     BenchmarkSummary {
         baseline: BenchmarkResult {

@@ -138,7 +138,7 @@ impl ApplicationBuilder {
     ) -> AppResult<katla_gfx::FrameGraph> {
         use katla_gfx::render_graph::UIPass;
         use katla_gfx::render_graph::{
-            ComputePass, FullscreenPass, GeometryPass, GraphResourceDesc, GraphResourceType,
+            FullscreenPass, GeometryPass, GraphResourceDesc, GraphResourceType,
         };
         use katla_gfx::render_pass::{ClearValue, LoadOp, StoreOp};
         use katla_gfx::texture::ImageFormat as TextureImageFormat;

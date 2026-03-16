@@ -287,7 +287,12 @@ mod tests {
         };
         let result = validate_emitter_config(&config);
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("velocity_magnitude"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("velocity_magnitude")
+        );
     }
 
     #[test]
@@ -309,7 +314,12 @@ mod tests {
         };
         let result = validate_emitter_config(&config);
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("lifetime_variation"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("lifetime_variation")
+        );
     }
 
     #[test]
@@ -342,7 +352,12 @@ mod tests {
         };
         let result = validate_emitter_config(&config);
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("velocity_cone_angle"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("velocity_cone_angle")
+        );
     }
 
     #[test]

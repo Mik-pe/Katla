@@ -227,8 +227,11 @@ impl GlobalParticleBuffer {
                 emit_count: 0,
                 _pad: 0,
             };
-            log::debug!("Initialized counters: alive={}, dead={}",
-                counters.alive_count, counters.dead_count);
+            log::debug!(
+                "Initialized counters: alive={}, dead={}",
+                counters.alive_count,
+                counters.dead_count
+            );
             unsafe {
                 std::ptr::copy_nonoverlapping(
                     &counters as *const ParticleCounters as *const u8,
@@ -578,25 +581,25 @@ impl GlobalParticleBuffer {
 
         unsafe {
             // Free allocations first
-            if let Some(alloc) = self.particle_allocation.take() {
-                if let Ok(mut allocator) = self.context.allocator.try_borrow_mut() {
-                    allocator.free(alloc).ok();
-                }
+            if let Some(alloc) = self.particle_allocation.take()
+                && let Ok(mut allocator) = self.context.allocator.try_borrow_mut()
+            {
+                allocator.free(alloc).ok();
             }
-            if let Some(alloc) = self.counters_allocation.take() {
-                if let Ok(mut allocator) = self.context.allocator.try_borrow_mut() {
-                    allocator.free(alloc).ok();
-                }
+            if let Some(alloc) = self.counters_allocation.take()
+                && let Ok(mut allocator) = self.context.allocator.try_borrow_mut()
+            {
+                allocator.free(alloc).ok();
             }
-            if let Some(alloc) = self.emitter_allocation.take() {
-                if let Ok(mut allocator) = self.context.allocator.try_borrow_mut() {
-                    allocator.free(alloc).ok();
-                }
+            if let Some(alloc) = self.emitter_allocation.take()
+                && let Ok(mut allocator) = self.context.allocator.try_borrow_mut()
+            {
+                allocator.free(alloc).ok();
             }
-            if let Some(alloc) = self.indirect_allocation.take() {
-                if let Ok(mut allocator) = self.context.allocator.try_borrow_mut() {
-                    allocator.free(alloc).ok();
-                }
+            if let Some(alloc) = self.indirect_allocation.take()
+                && let Ok(mut allocator) = self.context.allocator.try_borrow_mut()
+            {
+                allocator.free(alloc).ok();
             }
 
             // Destroy descriptor layouts

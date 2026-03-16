@@ -24,8 +24,8 @@ fn test_1m_particle_capacity() {
     let context = Rc::new(create_headless_context(false));
     let max_particles = 1_048_576; // 1M particles
 
-    let mut particle_system =
-        GlobalParticleSystem::new(&context, max_particles).expect("Failed to create particle system");
+    let mut particle_system = GlobalParticleSystem::new(&context, max_particles)
+        .expect("Failed to create particle system");
 
     // Verify system was created
     assert_eq!(particle_system.max_particles(), max_particles);
@@ -69,8 +69,8 @@ fn test_1024_emitters() {
     let context = Rc::new(create_headless_context(false));
     let max_particles = 100_000; // Smaller capacity for this test
 
-    let mut particle_system =
-        GlobalParticleSystem::new(&context, max_particles).expect("Failed to create particle system");
+    let mut particle_system = GlobalParticleSystem::new(&context, max_particles)
+        .expect("Failed to create particle system");
 
     let mut emitter_handles = Vec::new();
 
@@ -162,8 +162,8 @@ fn test_memory_leak() {
     let context = Rc::new(create_headless_context(false));
     let max_particles = 100_000;
 
-    let mut particle_system =
-        GlobalParticleSystem::new(&context, max_particles).expect("Failed to create particle system");
+    let mut particle_system = GlobalParticleSystem::new(&context, max_particles)
+        .expect("Failed to create particle system");
 
     // Get baseline memory usage
     let baseline_stats = particle_system.get_stats();
@@ -237,8 +237,8 @@ fn test_frame_rate_stability() {
     let context = Rc::new(create_headless_context(false));
     let max_particles = 100_000;
 
-    let mut particle_system =
-        GlobalParticleSystem::new(&context, max_particles).expect("Failed to create particle system");
+    let mut particle_system = GlobalParticleSystem::new(&context, max_particles)
+        .expect("Failed to create particle system");
 
     // Create several emitters
     let mut handles = Vec::new();
@@ -282,7 +282,10 @@ fn test_frame_rate_stability() {
         if frame % 25 == 0 {
             let stats = particle_system.get_stats();
             assert_eq!(stats.frame_count as u32, frame + 1, "Frame count mismatch");
-            assert!(stats.memory_used_mb > 0.0, "Memory usage should be positive");
+            assert!(
+                stats.memory_used_mb > 0.0,
+                "Memory usage should be positive"
+            );
         }
     }
 
@@ -305,7 +308,10 @@ fn test_frame_rate_stability() {
 
     // Verify final stats
     let final_stats = particle_system.get_stats();
-    assert_eq!(final_stats.frame_count, num_frames as u64, "Frame count mismatch");
+    assert_eq!(
+        final_stats.frame_count, num_frames as u64,
+        "Frame count mismatch"
+    );
     // Note: total_dispatches is only incremented during actual compute dispatch
     // which happens during render graph execution, not in unit tests
     assert!(final_stats.total_dispatches >= 0);
@@ -322,8 +328,8 @@ fn test_edge_cases() {
     let context = Rc::new(create_headless_context(false));
     let max_particles = 10_000;
 
-    let mut particle_system =
-        GlobalParticleSystem::new(&context, max_particles).expect("Failed to create particle system");
+    let mut particle_system = GlobalParticleSystem::new(&context, max_particles)
+        .expect("Failed to create particle system");
 
     // Test 1: Zero emit rate
     let config = EmitterConfig {
@@ -354,7 +360,10 @@ fn test_edge_cases() {
 
     // Test 5: Update with very large delta time
     let result = particle_system.update(10.0);
-    assert!(result.is_ok(), "Update with large delta time should succeed");
+    assert!(
+        result.is_ok(),
+        "Update with large delta time should succeed"
+    );
 
     println!("Edge cases test passed - All edge cases handled correctly");
 }
@@ -365,8 +374,8 @@ fn test_emitter_config_validation() {
     let context = Rc::new(create_headless_context(false));
     let max_particles = 10_000;
 
-    let mut particle_system =
-        GlobalParticleSystem::new(&context, max_particles).expect("Failed to create particle system");
+    let mut particle_system = GlobalParticleSystem::new(&context, max_particles)
+        .expect("Failed to create particle system");
 
     // Test various emitter configurations
     let configs = vec![
@@ -419,8 +428,8 @@ fn test_memory_usage_calculation() {
     let particle_counts = vec![1_000, 10_000, 100_000, 1_000_000];
 
     for max_particles in particle_counts {
-        let particle_system =
-            GlobalParticleSystem::new(&context, max_particles).expect("Failed to create particle system");
+        let particle_system = GlobalParticleSystem::new(&context, max_particles)
+            .expect("Failed to create particle system");
 
         let stats = particle_system.get_stats();
 
@@ -459,8 +468,8 @@ fn test_statistics_tracking() {
     let context = Rc::new(create_headless_context(false));
     let max_particles = 10_000;
 
-    let mut particle_system =
-        GlobalParticleSystem::new(&context, max_particles).expect("Failed to create particle system");
+    let mut particle_system = GlobalParticleSystem::new(&context, max_particles)
+        .expect("Failed to create particle system");
 
     // Create an emitter
     let config = EmitterConfig {
@@ -481,7 +490,9 @@ fn test_statistics_tracking() {
 
     // Update a few frames
     for _ in 0..10 {
-        particle_system.update(0.016).expect("Update should succeed");
+        particle_system
+            .update(0.016)
+            .expect("Update should succeed");
     }
 
     // Check stats after updates
@@ -503,8 +514,8 @@ fn test_burst_emission() {
     let context = Rc::new(create_headless_context(false));
     let max_particles = 10_000;
 
-    let mut particle_system =
-        GlobalParticleSystem::new(&context, max_particles).expect("Failed to create particle system");
+    let mut particle_system = GlobalParticleSystem::new(&context, max_particles)
+        .expect("Failed to create particle system");
 
     // Create an emitter with zero emit rate (only bursts)
     let config = EmitterConfig {
@@ -524,13 +535,21 @@ fn test_burst_emission() {
         .expect("Burst should succeed");
 
     // Update to process the burst
-    particle_system.update(0.016).expect("Update should succeed");
+    particle_system
+        .update(0.016)
+        .expect("Update should succeed");
 
     // Verify particles were emitted
     let stats = particle_system.get_stats();
-    assert!(stats.total_emitted >= 100, "Should have emitted at least 100 particles");
+    assert!(
+        stats.total_emitted >= 100,
+        "Should have emitted at least 100 particles"
+    );
 
-    println!("Burst emission test passed - {} particles emitted", stats.total_emitted);
+    println!(
+        "Burst emission test passed - {} particles emitted",
+        stats.total_emitted
+    );
 }
 
 /// Test multiple bursts in sequence.
@@ -541,8 +560,8 @@ fn test_multiple_bursts() {
     let context = Rc::new(create_headless_context(false));
     let max_particles = 10_000;
 
-    let mut particle_system =
-        GlobalParticleSystem::new(&context, max_particles).expect("Failed to create particle system");
+    let mut particle_system = GlobalParticleSystem::new(&context, max_particles)
+        .expect("Failed to create particle system");
 
     // Create an emitter
     let config = EmitterConfig {
@@ -556,20 +575,38 @@ fn test_multiple_bursts() {
         .expect("Failed to create emitter");
 
     // Burst multiple times
-    particle_system.burst(emitter, 50).expect("Burst 1 should succeed");
-    particle_system.update(0.016).expect("Update 1 should succeed");
+    particle_system
+        .burst(emitter, 50)
+        .expect("Burst 1 should succeed");
+    particle_system
+        .update(0.016)
+        .expect("Update 1 should succeed");
 
-    particle_system.burst(emitter, 100).expect("Burst 2 should succeed");
-    particle_system.update(0.016).expect("Update 2 should succeed");
+    particle_system
+        .burst(emitter, 100)
+        .expect("Burst 2 should succeed");
+    particle_system
+        .update(0.016)
+        .expect("Update 2 should succeed");
 
-    particle_system.burst(emitter, 200).expect("Burst 3 should succeed");
-    particle_system.update(0.016).expect("Update 3 should succeed");
+    particle_system
+        .burst(emitter, 200)
+        .expect("Burst 3 should succeed");
+    particle_system
+        .update(0.016)
+        .expect("Update 3 should succeed");
 
     // Verify total emissions
     let stats = particle_system.get_stats();
-    assert!(stats.total_emitted >= 350, "Should have emitted at least 350 particles");
+    assert!(
+        stats.total_emitted >= 350,
+        "Should have emitted at least 350 particles"
+    );
 
-    println!("Multiple bursts test passed - {} particles emitted", stats.total_emitted);
+    println!(
+        "Multiple bursts test passed - {} particles emitted",
+        stats.total_emitted
+    );
 }
 
 /// Test burst with continuous emission.
@@ -580,8 +617,8 @@ fn test_burst_with_continuous_emission() {
     let context = Rc::new(create_headless_context(false));
     let max_particles = 10_000;
 
-    let mut particle_system =
-        GlobalParticleSystem::new(&context, max_particles).expect("Failed to create particle system");
+    let mut particle_system = GlobalParticleSystem::new(&context, max_particles)
+        .expect("Failed to create particle system");
 
     // Create an emitter with continuous emission
     let config = EmitterConfig {
@@ -595,25 +632,38 @@ fn test_burst_with_continuous_emission() {
         .expect("Failed to create emitter");
 
     // Update with continuous emission only
-    particle_system.update(0.1).expect("Update 1 should succeed");
+    particle_system
+        .update(0.1)
+        .expect("Update 1 should succeed");
 
     let stats1 = particle_system.get_stats();
     let continuous_only = stats1.total_emitted;
 
     // Burst additional particles
-    particle_system.burst(emitter, 500).expect("Burst should succeed");
-    particle_system.update(0.1).expect("Update 2 should succeed");
+    particle_system
+        .burst(emitter, 500)
+        .expect("Burst should succeed");
+    particle_system
+        .update(0.1)
+        .expect("Update 2 should succeed");
 
     let stats2 = particle_system.get_stats();
     let with_burst = stats2.total_emitted - continuous_only;
 
     // Burst should add approximately 500 particles (plus ~10 from continuous)
-    assert!(with_burst >= 500, "Burst should add at least 500 particles, got {}", with_burst);
-    assert!(with_burst <= 520, "Burst should not add too many particles, got {}", with_burst);
+    assert!(
+        with_burst >= 500,
+        "Burst should add at least 500 particles, got {}",
+        with_burst
+    );
+    assert!(
+        with_burst <= 520,
+        "Burst should not add too many particles, got {}",
+        with_burst
+    );
 
     println!(
         "Burst with continuous emission test passed - Continuous: {}, Burst: {}",
         continuous_only, with_burst
     );
 }
-

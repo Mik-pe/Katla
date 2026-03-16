@@ -294,8 +294,11 @@ impl ApplicationHandler for Application {
                 debug!("World updated");
 
                 // Update particle emitters from ECS components
-                self.particle_system
-                    .update(&mut self.world, &mut self.renderer.particle_system, dt);
+                self.particle_system.update(
+                    &mut self.world,
+                    &mut self.renderer.particle_system,
+                    dt,
+                );
 
                 // Poll background loader for completed asset loads
                 self.poll_background_loader();
@@ -514,15 +517,15 @@ impl Application {
         info!("Default HDR PBR material loaded successfully");
 
         // Initialize particle emit pipeline
-        let particle_emit_shader_path =
-            self.resources.shader_path("particles/particle_emit.wgsl");
+        let particle_emit_shader_path = self.resources.shader_path("particles/particle_emit.wgsl");
         self.renderer
             .init_particle_emit_pipeline(&particle_emit_shader_path)
             .expect("Failed to initialize particle emit pipeline");
 
         // Initialize particle simulate pipeline
-        let particle_simulate_shader_path =
-            self.resources.shader_path("particles/particle_simulate.wgsl");
+        let particle_simulate_shader_path = self
+            .resources
+            .shader_path("particles/particle_simulate.wgsl");
         self.renderer
             .init_particle_simulate_pipeline(&particle_simulate_shader_path)
             .expect("Failed to initialize particle simulate pipeline");
@@ -530,36 +533,26 @@ impl Application {
         // Add particle compute passes to frame graph
         // These must be added after particle pipelines are initialized
         if let Some(ref particle_system) = self.renderer.particle_system {
-            let emit_pipeline = particle_system.emit_pipeline_handle().expect(
-                "Particle emit pipeline not initialized",
-            );
-            let simulate_pipeline = particle_system.simulate_pipeline_handle().expect(
-                "Particle simulate pipeline not initialized",
-            );
+            let emit_pipeline = particle_system
+                .emit_pipeline_handle()
+                .expect("Particle emit pipeline not initialized");
+            let simulate_pipeline = particle_system
+                .simulate_pipeline_handle()
+                .expect("Particle simulate pipeline not initialized");
 
             use katla_gfx::render_graph::PassDesc;
             use katla_gfx::render_graph::PassType;
 
             // Add particle emit pass
             self.frame_graph.add_pass(
-                PassDesc::new(
-                    "particle_emit",
-                    PassType::Compute,
-                    vec![],
-                    vec![],
-                )
-                .with_pipeline(emit_pipeline),
+                PassDesc::new("particle_emit", PassType::Compute, vec![], vec![])
+                    .with_pipeline(emit_pipeline),
             );
 
             // Add particle simulate pass
             self.frame_graph.add_pass(
-                PassDesc::new(
-                    "particle_simulate",
-                    PassType::Compute,
-                    vec![],
-                    vec![],
-                )
-                .with_pipeline(simulate_pipeline),
+                PassDesc::new("particle_simulate", PassType::Compute, vec![], vec![])
+                    .with_pipeline(simulate_pipeline),
             );
 
             info!("Added particle compute passes to frame graph");
