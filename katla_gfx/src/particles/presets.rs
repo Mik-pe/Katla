@@ -88,8 +88,6 @@ impl EmitterPreset {
     }
 }
 
-
-
 #[cfg(test)]
 mod tests {
     use super::*;

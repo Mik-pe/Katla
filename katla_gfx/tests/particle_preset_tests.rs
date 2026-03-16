@@ -28,7 +28,10 @@ fn test_load_nonexistent_preset() {
     let result = EmitterPreset::load_from_file(&nonexistent_path);
 
     // Verify it returns an error
-    assert!(result.is_err(), "Should return error for nonexistent preset");
+    assert!(
+        result.is_err(),
+        "Should return error for nonexistent preset"
+    );
 
     let error_msg = result.unwrap_err();
     assert!(
@@ -61,8 +64,11 @@ fn test_load_invalid_json_preset() {
 
     // Create a file with invalid JSON
     let mut file = File::create(&invalid_json_path).expect("Failed to create test file");
-    writeln!(file, "{{ \"name\": \"test\", \"config\": invalid_json_here }}")
-        .expect("Failed to write invalid JSON");
+    writeln!(
+        file,
+        "{{ \"name\": \"test\", \"config\": invalid_json_here }}"
+    )
+    .expect("Failed to write invalid JSON");
 
     // Try to load the invalid preset
     let result = EmitterPreset::load_from_file(&invalid_json_path);
@@ -149,43 +155,35 @@ fn test_save_and_load_preset() {
         "Name should match"
     );
     assert_eq!(
-        loaded_preset.config.position,
-        original_preset.config.position,
+        loaded_preset.config.position, original_preset.config.position,
         "Position should match"
     );
     assert_eq!(
-        loaded_preset.config.velocity_magnitude,
-        original_preset.config.velocity_magnitude,
+        loaded_preset.config.velocity_magnitude, original_preset.config.velocity_magnitude,
         "Velocity magnitude should match"
     );
     assert_eq!(
-        loaded_preset.config.emit_rate,
-        original_preset.config.emit_rate,
+        loaded_preset.config.emit_rate, original_preset.config.emit_rate,
         "Emit rate should match"
     );
     assert_eq!(
-        loaded_preset.config.base_lifetime,
-        original_preset.config.base_lifetime,
+        loaded_preset.config.base_lifetime, original_preset.config.base_lifetime,
         "Base lifetime should match"
     );
     assert_eq!(
-        loaded_preset.config.color,
-        original_preset.config.color,
+        loaded_preset.config.color, original_preset.config.color,
         "Color should match"
     );
     assert_eq!(
-        loaded_preset.config.color_variation,
-        original_preset.config.color_variation,
+        loaded_preset.config.color_variation, original_preset.config.color_variation,
         "Color variation should match"
     );
     assert_eq!(
-        loaded_preset.config.shape,
-        original_preset.config.shape,
+        loaded_preset.config.shape, original_preset.config.shape,
         "Emitter shape should match"
     );
     assert_eq!(
-        loaded_preset.config.shape_params,
-        original_preset.config.shape_params,
+        loaded_preset.config.shape_params, original_preset.config.shape_params,
         "Shape params should match"
     );
 
@@ -230,5 +228,3 @@ fn test_load_incomplete_json_preset() {
     println!("✓ test_load_incomplete_json_preset passed");
     println!("  Error message: {}", error_msg);
 }
-
-
