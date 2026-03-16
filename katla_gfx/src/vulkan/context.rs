@@ -423,31 +423,29 @@ impl VulkanContext {
         offset: vk::DeviceSize,
         size: vk::DeviceSize,
     ) {
+        // Convert allocation-relative offset to memory-relative offset
+        let base_memory_offset = allocation.offset() + offset;
+
         // Align offset down to non_coherent_atom_size
-        let base_offset = allocation.offset() + offset;
-        let aligned_offset = base_offset & !(self.non_coherent_atom_size - 1);
+        let aligned_memory_offset = base_memory_offset & !(self.non_coherent_atom_size - 1);
 
-        // Align size up to cover the requested range
-        let end = base_offset + size;
-        let allocation_end = allocation.offset() + allocation.size();
-        let clamped_end = end.min(allocation_end);
+        // Calculate end of region to flush
+        let end = base_memory_offset + size;
 
-        // Calculate aligned size, ensuring it doesn't exceed the allocation bounds
-        let aligned_size = if clamped_end <= aligned_offset {
-            // End is before or at aligned offset, nothing to flush
-            return;
+        // Calculate aligned size that covers the requested range
+        let aligned_size = if size == vk::WHOLE_SIZE {
+            vk::WHOLE_SIZE
         } else {
-            let size_needed = clamped_end - aligned_offset;
+            let size_needed = end - aligned_memory_offset;
             // Round up to alignment
-            ((size_needed + self.non_coherent_atom_size - 1) & !(self.non_coherent_atom_size - 1))
-                .min(allocation_end - aligned_offset)
+            (size_needed + self.non_coherent_atom_size - 1) & !(self.non_coherent_atom_size - 1)
         };
 
         unsafe {
             let memory = allocation.memory();
             let flush_range = vk::MappedMemoryRange::default()
                 .memory(memory)
-                .offset(aligned_offset)
+                .offset(aligned_memory_offset)
                 .size(aligned_size);
 
             self.device
