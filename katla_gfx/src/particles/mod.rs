@@ -99,6 +99,42 @@ use crate::sync::VkShaderModule;
 use crate::vulkan::context::VulkanContext;
 use crate::vulkan::material::compute_pipeline::ComputePipelineBuilder;
 
+/// Emitter shape for particle spawn positions.
+#[repr(u32)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum EmitterShape {
+    Point = 0,
+    Line = 1,
+    Circle = 2,
+    Sphere = 3,
+    Box = 4,
+}
+
+impl EmitterShape {
+    /// Convert to u32 for GPU
+    pub fn as_u32(self) -> u32 {
+        self as u32
+    }
+
+    /// Convert from u32 from GPU
+    pub fn from_u32(val: u32) -> Self {
+        match val {
+            0 => EmitterShape::Point,
+            1 => EmitterShape::Line,
+            2 => EmitterShape::Circle,
+            3 => EmitterShape::Sphere,
+            4 => EmitterShape::Box,
+            _ => EmitterShape::Point,
+        }
+    }
+}
+
+impl Default for EmitterShape {
+    fn default() -> Self {
+        EmitterShape::Point
+    }
+}
+
 /// Default maximum particles across all emitters
 pub const DEFAULT_MAX_PARTICLES: u32 = 1_048_576; // 1M particles (48MB)
 
@@ -119,8 +155,9 @@ pub struct EmitterConfig {
     #[serde(default = "default_position")]
     pub position: [f32; 3],
 
-    #[serde(skip)]
-    pub _pad0: f32,
+    /// Emitter shape (Point, Line, Circle, Sphere, Box)
+    #[serde(default)]
+    pub shape: u32,
 
     /// Particles to emit per second
     #[serde(default = "default_emit_rate")]
@@ -139,7 +176,7 @@ pub struct EmitterConfig {
     pub velocity_direction: [f32; 3],
 
     #[serde(skip)]
-    pub _pad1: f32,
+    pub _pad0: f32,
 
     /// Velocity magnitude
     #[serde(default = "default_velocity_magnitude")]
@@ -164,6 +201,22 @@ pub struct EmitterConfig {
     /// Color variation (±percentage per channel)
     #[serde(default = "default_color_variation")]
     pub color_variation: f32,
+
+    /// Shape parameters (length/radius for Line/Circle/Sphere, dimensions for Box)
+    #[serde(default)]
+    pub shape_params: [f32; 4],
+}
+
+impl EmitterConfig {
+    /// Get the emitter shape as an enum
+    pub fn get_shape(&self) -> EmitterShape {
+        EmitterShape::from_u32(self.shape)
+    }
+
+    /// Set the emitter shape from an enum
+    pub fn set_shape(&mut self, shape: EmitterShape) {
+        self.shape = shape.as_u32();
+    }
 }
 
 // Serde default functions
@@ -205,18 +258,19 @@ impl Default for EmitterConfig {
     fn default() -> Self {
         Self {
             position: [0.0; 3],
-            _pad0: 0.0,
+            shape: EmitterShape::Point.as_u32(),
             emit_rate: 50.0,
             base_lifetime: 5.0,
             lifetime_variation: 0.2,
             velocity_direction: [0.0, 1.0, 0.0],
-            _pad1: 0.0,
+            _pad0: 0.0,
             velocity_magnitude: 1.0,
             velocity_cone_angle: 0.5,
             base_scale: 0.1,
             scale_variation: 0.5,
             color: [1.0, 1.0, 1.0, 1.0],
             color_variation: 0.1,
+            shape_params: [0.0; 4],
         }
     }
 }
@@ -1850,7 +1904,7 @@ mod tests {
     #[test]
     fn test_emitter_config_size() {
         // Ensure config fits in uniform buffer and is properly aligned
-        assert_eq!(std::mem::size_of::<EmitterConfig>(), 80);
+        assert_eq!(std::mem::size_of::<EmitterConfig>(), 96);
     }
 
     #[test]
@@ -1858,5 +1912,101 @@ mod tests {
         let handle = EmitterHandle::new(42);
         assert_eq!(handle.index(), 42);
         assert_ne!(handle, EmitterHandle::NONE);
+    }
+
+    #[test]
+    fn test_emitter_shape_default() {
+        let config = EmitterConfig::default();
+        assert_eq!(config.get_shape(), EmitterShape::Point);
+        assert_eq!(config.shape_params, [0.0; 4]);
+    }
+
+    #[test]
+    fn test_emitter_shape_point() {
+        let mut config = EmitterConfig::default();
+        config.set_shape(EmitterShape::Point);
+        assert_eq!(config.get_shape(), EmitterShape::Point);
+    }
+
+    #[test]
+    fn test_emitter_shape_line() {
+        let mut config = EmitterConfig::default();
+        config.set_shape(EmitterShape::Line);
+        config.shape_params = [10.0, 0.0, 0.0, 0.0];
+        assert_eq!(config.get_shape(), EmitterShape::Line);
+        assert_eq!(config.shape_params[0], 10.0);
+    }
+
+    #[test]
+    fn test_emitter_shape_circle() {
+        let mut config = EmitterConfig::default();
+        config.set_shape(EmitterShape::Circle);
+        config.shape_params = [5.0, 0.0, 0.0, 0.0];
+        assert_eq!(config.get_shape(), EmitterShape::Circle);
+        assert_eq!(config.shape_params[0], 5.0);
+    }
+
+    #[test]
+    fn test_emitter_shape_sphere() {
+        let mut config = EmitterConfig::default();
+        config.set_shape(EmitterShape::Sphere);
+        config.shape_params = [3.0, 0.0, 0.0, 0.0];
+        assert_eq!(config.get_shape(), EmitterShape::Sphere);
+        assert_eq!(config.shape_params[0], 3.0);
+    }
+
+    #[test]
+    fn test_emitter_shape_box() {
+        let mut config = EmitterConfig::default();
+        config.set_shape(EmitterShape::Box);
+        config.shape_params = [4.0, 3.0, 2.0, 0.0];
+        assert_eq!(config.get_shape(), EmitterShape::Box);
+        assert_eq!(config.shape_params[0], 4.0);
+        assert_eq!(config.shape_params[1], 3.0);
+        assert_eq!(config.shape_params[2], 2.0);
+    }
+
+    #[test]
+    fn test_emitter_shape_serialization() {
+        let config = EmitterConfig {
+            position: [1.0, 2.0, 3.0],
+            shape: EmitterShape::Sphere.as_u32(),
+            emit_rate: 100.0,
+            base_lifetime: 2.0,
+            lifetime_variation: 0.5,
+            velocity_direction: [0.0, 1.0, 0.0],
+            velocity_magnitude: 5.0,
+            velocity_cone_angle: 0.3,
+            base_scale: 0.2,
+            scale_variation: 0.3,
+            color: [1.0, 0.5, 0.0, 1.0],
+            color_variation: 0.2,
+            shape_params: [2.5, 0.0, 0.0, 0.0],
+            _pad0: 0.0,
+        };
+
+        let json = serde_json::to_string(&config).unwrap();
+        let deserialized: EmitterConfig = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(deserialized.get_shape(), EmitterShape::Sphere);
+        assert_eq!(deserialized.shape_params[0], 2.5);
+        assert_eq!(deserialized.position, [1.0, 2.0, 3.0]);
+    }
+
+    #[test]
+    fn test_all_emitter_shapes() {
+        let shapes = [
+            EmitterShape::Point,
+            EmitterShape::Line,
+            EmitterShape::Circle,
+            EmitterShape::Sphere,
+            EmitterShape::Box,
+        ];
+
+        for shape in shapes {
+            let mut config = EmitterConfig::default();
+            config.set_shape(shape);
+            assert_eq!(config.get_shape(), shape);
+        }
     }
 }

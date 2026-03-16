@@ -2,6 +2,8 @@
   "name": "sparkles",
   "config": {
     "position": [0.0, 0.0, 0.0],
+    "shape": "Point",
+    "shape_params": [0.0, 0.0, 0.0, 0.0],
     "emit_rate": 500.0,
     "base_lifetime": 1.0,
     "lifetime_variation": 0.5,

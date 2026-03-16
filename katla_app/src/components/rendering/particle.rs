@@ -1,6 +1,5 @@
 use katla_ecs::Component;
-use katla_gfx::particles::EmitterConfig;
-use katla_gfx::particles::EmitterHandle;
+use katla_gfx::particles::{EmitterConfig, EmitterShape, EmitterHandle};
 
 /// Particle emitter component for ECS entities.
 ///
@@ -226,6 +225,92 @@ impl ParticleEmitterComponent {
         self.timed_emission = Some(duration);
         self.active = true;
         log::debug!("Set timed emission for {} seconds", duration);
+    }
+
+    /// Set point emitter shape (default).
+    ///
+    /// All particles spawn from a single point at the emitter position.
+    pub fn with_point_shape(&mut self) -> &mut Self {
+        self.config.set_shape(EmitterShape::Point);
+        self.config.shape_params = [0.0; 4];
+        self
+    }
+
+    /// Set line emitter shape.
+    ///
+    /// Particles spawn along a line. Useful for rain, beams, etc.
+    ///
+    /// # Arguments
+    /// * `length` - Length of the line in world units
+    /// * `axis` - Axis direction (0=X, 1=Y, 2=Z)
+    ///
+    /// # Example
+    /// ```ignore
+    /// rain_emitter.with_line_shape(10.0, 1); // 10-unit vertical line (Y-axis)
+    /// ```
+    pub fn with_line_shape(&mut self, length: f32, axis: u32) -> &mut Self {
+        self.config.set_shape(EmitterShape::Line);
+        self.config.shape_params = [length, 0.0, 0.0, 0.0];
+        // Note: Shader currently only supports Y-axis lines
+        // For other axes, you'd need to modify the shader sampling logic
+        log::debug!("Set line shape with length {} on axis {}", length, axis);
+        self
+    }
+
+    /// Set circle emitter shape.
+    ///
+    /// Particles spawn in a circle on the XZ plane. Useful for area effects.
+    ///
+    /// # Arguments
+    /// * `radius` - Radius of the circle in world units
+    ///
+    /// # Example
+    /// ```ignore
+    /// aura_emitter.with_circle_shape(2.0); // 2-unit radius circle
+    /// ```
+    pub fn with_circle_shape(&mut self, radius: f32) -> &mut Self {
+        self.config.set_shape(EmitterShape::Circle);
+        self.config.shape_params = [radius, 0.0, 0.0, 0.0];
+        log::debug!("Set circle shape with radius {}", radius);
+        self
+    }
+
+    /// Set sphere emitter shape.
+    ///
+    /// Particles spawn within a sphere volume. Useful for explosions.
+    ///
+    /// # Arguments
+    /// * `radius` - Radius of the sphere in world units
+    ///
+    /// # Example
+    /// ```ignore
+    /// explosion_emitter.with_sphere_shape(5.0); // 5-unit radius sphere
+    /// ```
+    pub fn with_sphere_shape(&mut self, radius: f32) -> &mut Self {
+        self.config.set_shape(EmitterShape::Sphere);
+        self.config.shape_params = [radius, 0.0, 0.0, 0.0];
+        log::debug!("Set sphere shape with radius {}", radius);
+        self
+    }
+
+    /// Set box emitter shape.
+    ///
+    /// Particles spawn within a box volume. Useful for volumes and areas.
+    ///
+    /// # Arguments
+    /// * `width` - Width of the box (X-axis) in world units
+    /// * `height` - Height of the box (Y-axis) in world units
+    /// * `depth` - Depth of the box (Z-axis) in world units
+    ///
+    /// # Example
+    /// ```ignore
+    /// volume_emitter.with_box_shape(4.0, 3.0, 2.0); // 4x3x2 box
+    /// ```
+    pub fn with_box_shape(&mut self, width: f32, height: f32, depth: f32) -> &mut Self {
+        self.config.set_shape(EmitterShape::Box);
+        self.config.shape_params = [width, height, depth, 0.0];
+        log::debug!("Set box shape with dimensions {}x{}x{}", width, height, depth);
+        self
     }
 }
 
