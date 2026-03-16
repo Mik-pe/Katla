@@ -148,6 +148,14 @@ pub struct FrameGraph {
 
     /// Particle rendering pipeline handle.
     particle_pipeline: Option<crate::handle::PipelineHandle>,
+
+    /// Particle emit workgroup count for this frame.
+    /// Calculated each frame based on particles to emit.
+    particle_emit_workgroup_count: u32,
+
+    /// Particle simulate workgroup count for this frame.
+    /// Calculated each frame based on alive particle count.
+    particle_simulate_workgroup_count: u32,
 }
 
 impl FrameGraph {
@@ -165,11 +173,13 @@ impl FrameGraph {
             delta_time: 0.0,
             frame_count: 0,
             particle_pipeline: None,
+            particle_emit_workgroup_count: 1,
+            particle_simulate_workgroup_count: 1,
         }
     }
 
     /// Add a pass to the graph.
-    pub(crate) fn add_pass(&mut self, pass: PassDesc) {
+    pub fn add_pass(&mut self, pass: PassDesc) {
         let index = self.passes.len();
         self.pass_names.insert(pass.name.clone(), index);
         self.passes.push(pass);
@@ -327,6 +337,20 @@ impl FrameGraph {
         self.particle_pipeline = Some(pipeline);
     }
 
+    /// Set the particle emit workgroup count for this frame.
+    ///
+    /// This should be calculated each frame based on particles to emit.
+    pub fn set_particle_emit_workgroup_count(&mut self, count: u32) {
+        self.particle_emit_workgroup_count = count;
+    }
+
+    /// Set the particle simulate workgroup count for this frame.
+    ///
+    /// This should be calculated each frame based on alive particle count.
+    pub fn set_particle_simulate_workgroup_count(&mut self, count: u32) {
+        self.particle_simulate_workgroup_count = count;
+    }
+
     /// Cleanup and destroy all transient textures.
     ///
     /// This should be called before the VulkanRenderer/VulkanContext is destroyed
@@ -335,7 +359,10 @@ impl FrameGraph {
     /// Transient textures hold Rc<VulkanContext> and try to free memory in their Drop,
     /// which can cause issues if the VulkanContext is already being destroyed.
     pub fn cleanup(&mut self) {
-        log::info!("Cleaning up frame graph transient textures ({} frames)", self.transient_textures.len());
+        log::info!(
+            "Cleaning up frame graph transient textures ({} frames)",
+            self.transient_textures.len()
+        );
         let total_textures: usize = self.transient_textures.iter().map(|m| m.len()).sum();
         log::info!("  Total textures to clean up: {}", total_textures);
         self.transient_textures.clear();
@@ -519,10 +546,7 @@ impl FrameGraph {
         for frame_textures in &self.transient_textures {
             for (name, texture) in frame_textures {
                 if let Some(slot) = texture.bindless_slot {
-                    existing_slots
-                        .entry(name.clone())
-                        .or_default()
-                        .push(slot);
+                    existing_slots.entry(name.clone()).or_default().push(slot);
                 }
             }
         }
@@ -814,7 +838,6 @@ impl FrameGraphBuilder {
 
         // Build passes using the global resource map
         for pass_builder in self.pass_builders {
-
             // Call the build function to validate resource references and get pass data
             // Use the global resource map for consistent handle assignment
             let pass_data = (pass_builder.build_fn)(&global_resource_map)?;
@@ -1032,7 +1055,12 @@ impl<'a> Frame<'a> {
             self.graph.passes.len()
         );
         for (idx, pass) in self.graph.passes.iter().enumerate() {
-            log::trace!("  Pass {}: '{}' (type={:?})", idx, pass.name, pass.pass_type);
+            log::trace!(
+                "  Pass {}: '{}' (type={:?})",
+                idx,
+                pass.name,
+                pass.pass_type
+            );
         }
 
         // Clone the command buffer to avoid borrowing issues
@@ -1041,30 +1069,8 @@ impl<'a> Frame<'a> {
         // === PHASE 1: Execute compute dispatches (BEFORE any render passes) ===
         // Vulkan doesn't allow compute dispatches inside a render pass, so we must
         // execute all particle simulation compute shaders before beginning any rendering.
-
-        // Record particle compute dispatch
-        if let Some(ref particle_system) = self.renderer.particle_system {
-            if let Some(_pipeline_handle) = particle_system.compute_pipeline_handle() {
-                log::debug!("🎯 Recording particle compute dispatch");
-
-                // Calculate particles to emit this frame
-                let emitters = particle_system.get_emitters();
-                let emit_count: u32 = emitters
-                    .iter()
-                    .map(|config| (config.emit_rate * self.graph.delta_time) as u32)
-                    .sum();
-
-                if emit_count > 0 {
-                    log::debug!("🎯 Emitting {} particles this frame", emit_count);
-
-                    // Record compute dispatch using the existing method
-                    // We need to add a method to expose the command buffer recording
-                    // For now, this is a placeholder
-                }
-            }
-        }
-
-        self.execute_all_particle_dispatches()?;
+        // NOTE: Particle compute is now handled by the render graph via ComputePass.
+        // The particle_compute pass executes before all graphics passes automatically.
 
         // === PHASE 2: Execute graphics passes ===
         for (index, pass) in self.graph.passes.iter().enumerate() {
@@ -1101,13 +1107,22 @@ impl<'a> Frame<'a> {
             // This allows subsequent passes that write to backbuffer to use LOAD instead of CLEAR
             // For example: compositing pass writes to backbuffer, then UI pass should LOAD that content
             if pass.writes.contains(&BACKBUFFER_NAME.to_string()) {
-                log::debug!("🔄 [BACKBUFFER] Pass '{}' will write to backbuffer, tracking state BEFORE execution", pass.name);
-                log::debug!("🔄 [BACKBUFFER] Current resource_states: {:?}", self.resource_states.keys().collect::<Vec<_>>());
+                log::debug!(
+                    "🔄 [BACKBUFFER] Pass '{}' will write to backbuffer, tracking state BEFORE execution",
+                    pass.name
+                );
+                log::debug!(
+                    "🔄 [BACKBUFFER] Current resource_states: {:?}",
+                    self.resource_states.keys().collect::<Vec<_>>()
+                );
                 self.resource_states.insert(
                     BACKBUFFER_NAME.to_string(),
                     super::resource::ResourceState::ColorAttachment,
                 );
-                log::debug!("🔄 [BACKBUFFER] After tracking, resource_states: {:?}", self.resource_states.keys().collect::<Vec<_>>());
+                log::debug!(
+                    "🔄 [BACKBUFFER] After tracking, resource_states: {:?}",
+                    self.resource_states.keys().collect::<Vec<_>>()
+                );
             }
 
             // Insert pre-pass barriers
@@ -1124,7 +1139,12 @@ impl<'a> Frame<'a> {
                         } else {
                             // Pass has material but is NOT compositing (e.g., UI pass)
                             // Fall through to graphics pass execution
-                            log::debug!("🎯 [PASS] '{}' -> graphics pass with material (draw_lists={}, ui_draw_lists={})", pass.name, data.draw_lists.len(), data.ui_draw_lists.len());
+                            log::debug!(
+                                "🎯 [PASS] '{}' -> graphics pass with material (draw_lists={}, ui_draw_lists={})",
+                                pass.name,
+                                data.draw_lists.len(),
+                                data.ui_draw_lists.len()
+                            );
                             self.execute_graphics_pass(&cmd, pass, data)?;
                         }
                     }
@@ -1135,8 +1155,22 @@ impl<'a> Frame<'a> {
                             self.execute_fullscreen_pass(&cmd, pass, pipeline)?;
                         }
                     } else {
-                        log::debug!("🎯 [PASS] '{}' -> graphics pass (draw_lists={}, ui_draw_lists={})", pass.name, data.draw_lists.len(), data.ui_draw_lists.len());
+                        log::debug!(
+                            "🎯 [PASS] '{}' -> graphics pass (draw_lists={}, ui_draw_lists={})",
+                            pass.name,
+                            data.draw_lists.len(),
+                            data.ui_draw_lists.len()
+                        );
                         self.execute_graphics_pass(&cmd, pass, data)?;
+                    }
+                }
+                super::pass::PassType::Compute => {
+                    // Compute pass (e.g., particle simulation)
+                    log::debug!("🎯 [PASS] '{}' -> compute pass", pass.name);
+                    if let Some(pipeline) = pass.pipeline {
+                        self.execute_compute_pass(&cmd, pass, pipeline)?;
+                    } else {
+                        log::warn!("Compute pass '{}' has no pipeline", pass.name);
                     }
                 }
             }
@@ -1157,11 +1191,21 @@ impl<'a> Frame<'a> {
                         log::info!("✨ Rendering {} particles after tonemap pass", alive_count);
 
                         // Get viewport_0 texture info
-                        if let Some(viewport_texture) = self.graph.transient_textures.get(frame_idx).and_then(|m| m.get("viewport_0")) {
-                            log::info!("🎯 Got viewport texture: {}x{}", viewport_texture.extent.width, viewport_texture.extent.height);
+                        if let Some(viewport_texture) = self
+                            .graph
+                            .transient_textures
+                            .get(frame_idx)
+                            .and_then(|m| m.get("viewport_0"))
+                        {
+                            log::info!(
+                                "🎯 Got viewport texture: {}x{}",
+                                viewport_texture.extent.width,
+                                viewport_texture.extent.height
+                            );
 
                             // Render particles to viewport texture
-                            if let Err(e) = self.render_particles_to_texture(&cmd, viewport_texture) {
+                            if let Err(e) = self.render_particles_to_texture(&cmd, viewport_texture)
+                            {
                                 log::error!("Failed to render particles: {}", e);
                             } else {
                                 log::info!("✅ Particles rendered successfully");
@@ -1603,86 +1647,6 @@ impl<'a> Frame<'a> {
         Ok(())
     }
 
-    /// Execute all particle compute dispatches from all passes.
-    ///
-    /// This MUST be called BEFORE beginning any render pass, as Vulkan doesn't
-    /// allow compute dispatches inside a render pass (after vkCmdBeginRendering).
-    ///
-    /// Collects all particle emitters from all draw lists in all pending passes
-    /// and executes compute simulation dispatches upfront with proper synchronization.
-    fn execute_all_particle_dispatches(&mut self) -> Result<(), RenderGraphError> {
-        use ash::vk;
-
-        let particle_system = if let Some(ref ps) = self.renderer.particle_system {
-            ps
-        } else {
-            return Ok(()); // No particle system, skip
-        };
-
-        // Check if compute pipeline is ready
-        let _pipeline_handle = if let Some(ph) = particle_system.compute_pipeline_handle() {
-            ph
-        } else {
-            return Ok(()); // No compute pipeline, skip
-        };
-
-        // Calculate total particles to emit this frame
-        let emitters = particle_system.get_emitters();
-        let total_emit_count: u32 = emitters
-            .iter()
-            .map(|config| (config.emit_rate * self.graph.delta_time) as u32)
-            .sum();
-
-        if total_emit_count == 0 {
-            return Ok(()); // Nothing to emit
-        }
-
-        log::debug!("🎯 Particle compute dispatch: {} emitters, {} particles to emit",
-            emitters.len(), total_emit_count);
-
-        // Calculate workgroup count (each workgroup processes PARTICLE_WORKGROUP_SIZE particles)
-        let workgroup_size = crate::particles::PARTICLE_WORKGROUP_SIZE;
-        let total_workgroups = (total_emit_count + workgroup_size - 1) / workgroup_size;
-
-        log::debug!("🎯 Dispatching {} workgroups ({} particles per workgroup)",
-            total_workgroups, workgroup_size);
-
-        // Get command buffer
-        let frame_idx = self.current_frame();
-        let cmd = self.renderer.frame_context.command_buffers[frame_idx].clone();
-
-        unsafe {
-            // Insert memory barrier to ensure previous frame's particle reads are complete
-            // before we start writing new particle data
-            let compute_barrier = vk::MemoryBarrier2::default()
-                .src_stage_mask(vk::PipelineStageFlags2::COMPUTE_SHADER)
-                .src_access_mask(vk::AccessFlags2::SHADER_READ | vk::AccessFlags2::SHADER_WRITE)
-                .dst_stage_mask(vk::PipelineStageFlags2::COMPUTE_SHADER)
-                .dst_access_mask(vk::AccessFlags2::SHADER_READ | vk::AccessFlags2::SHADER_WRITE);
-
-            let dependency_info = vk::DependencyInfo::default()
-                .memory_barriers(std::slice::from_ref(&compute_barrier));
-
-            self.renderer.context.device.cmd_pipeline_barrier2(
-                cmd.vk_command_buffer(),
-                &dependency_info,
-            );
-        }
-
-        // Record the actual compute dispatch
-        particle_system.record_compute_dispatch(
-            cmd.vk_command_buffer(),
-            &self.renderer.asset_registry,
-            total_workgroups,
-        ).map_err(|e| {
-            RenderGraphError::VulkanError(format!("Particle compute dispatch failed: {}", e))
-        })?;
-
-        log::debug!("✅ Particle compute dispatch completed");
-
-        Ok(())
-    }
-
     /// Render particles to a texture using the particle system.
     ///
     /// This starts a new render pass targeting the specified texture.
@@ -1694,13 +1658,9 @@ impl<'a> Frame<'a> {
         let _frame_idx = self.current_frame();
         use ash::vk;
 
-        let particle_system = self
-            .renderer
-            .particle_system
-            .as_ref()
-            .ok_or_else(|| {
-                RenderGraphError::InvalidConfiguration("Particle system not initialized".to_string())
-            })?;
+        let particle_system = self.renderer.particle_system.as_ref().ok_or_else(|| {
+            RenderGraphError::InvalidConfiguration("Particle system not initialized".to_string())
+        })?;
 
         // Check if there are any particles to render
         let alive_count = particle_system.alive_count();
@@ -1750,60 +1710,60 @@ impl<'a> Frame<'a> {
         };
 
         unsafe {
-            self.renderer
-                .context
-                .device
-                .cmd_set_viewport(cmd.vk_command_buffer(), 0, std::slice::from_ref(&viewport));
-            self.renderer
-                .context
-                .device
-                .cmd_set_scissor(cmd.vk_command_buffer(), 0, std::slice::from_ref(&scissor));
+            self.renderer.context.device.cmd_set_viewport(
+                cmd.vk_command_buffer(),
+                0,
+                std::slice::from_ref(&viewport),
+            );
+            self.renderer.context.device.cmd_set_scissor(
+                cmd.vk_command_buffer(),
+                0,
+                std::slice::from_ref(&scissor),
+            );
         }
 
-        // Render particles
-        if let Some(particle_pipeline) = self.graph.particle_pipeline {
-            log::debug!("Rendering {} particles with pipeline {:?}", alive_count, particle_pipeline);
-
-            // Get the pipeline from the registry
-            let pipeline_asset = self
-                .renderer
-                .asset_registry
-                .get_pipeline(particle_pipeline)
-                .ok_or_else(|| {
-                    RenderGraphError::InvalidConfiguration(format!(
-                        "Particle pipeline {:?} not found in registry",
-                        particle_pipeline
-                    ))
-                })?;
-
-            let vk_pipeline = pipeline_asset.vk_pipeline();
-
-            // Bind particle pipeline
-            unsafe {
-                self.renderer.context.device.cmd_bind_pipeline(
-                    cmd.vk_command_buffer(),
-                    vk::PipelineBindPoint::GRAPHICS,
-                    vk_pipeline,
+        // Render particles using the particle system
+        if let Some(ref mut particle_system) = self.renderer.particle_system {
+            if let Some(pipeline_handle) = particle_system.render_pipeline_handle() {
+                log::debug!(
+                    "Rendering {} particles with pipeline {:?}",
+                    alive_count,
+                    pipeline_handle
                 );
+
+                // Get the pipeline from the registry
+                let pipeline_asset = self
+                    .renderer
+                    .asset_registry
+                    .get_pipeline(pipeline_handle)
+                    .ok_or_else(|| {
+                        RenderGraphError::InvalidConfiguration(format!(
+                            "Particle pipeline {:?} not found in registry",
+                            pipeline_handle
+                        ))
+                    })?;
+
+                let vk_pipeline = pipeline_asset.vk_pipeline();
+                let vk_layout = pipeline_asset.vk_layout();
+
+                // Call particle system render method
+                particle_system
+                    .render(
+                        cmd.vk_command_buffer(),
+                        vk::RenderPass::null(), // Using dynamic rendering, not needed
+                        vk_pipeline,
+                        vk_layout,
+                    )
+                    .map_err(|e| {
+                        RenderGraphError::VulkanError(format!("Particle render failed: {}", e))
+                    })?;
+
+                log::debug!("Drew {} particles successfully", alive_count);
+            } else {
+                log::warn!("Particle render pipeline not created, skipping particle rendering");
             }
-
-            // NOTE: Not binding any descriptor sets since test shader doesn't use them
-
-            // Draw particles (6 vertices per particle for quad)
-            let vertex_count = alive_count * 6;
-            unsafe {
-                self.renderer.context.device.cmd_draw(
-                    cmd.vk_command_buffer(),
-                    vertex_count,
-                    1,
-                    0,
-                    0,
-                );
-            }
-
-            log::debug!("Drew {} particles ({} vertices)", alive_count, vertex_count);
         } else {
-            log::warn!("Particle pipeline not set, skipping particle rendering");
+            log::warn!("Particle system not available, skipping particle rendering");
         }
 
         // End render pass
@@ -1831,13 +1791,14 @@ impl<'a> Frame<'a> {
                 layer_count: 1,
             });
 
-        let dependency_info = vk::DependencyInfo::default().image_memory_barriers(std::slice::from_ref(&barrier));
+        let dependency_info =
+            vk::DependencyInfo::default().image_memory_barriers(std::slice::from_ref(&barrier));
 
         unsafe {
-            self.renderer.context.device.cmd_pipeline_barrier2(
-                cmd.vk_command_buffer(),
-                &dependency_info,
-            );
+            self.renderer
+                .context
+                .device
+                .cmd_pipeline_barrier2(cmd.vk_command_buffer(), &dependency_info);
         }
 
         texture.set_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL);
@@ -1850,18 +1811,25 @@ impl<'a> Frame<'a> {
         cmd: &crate::vulkan::commandbuffer::CommandBuffer,
         draw_list: &DrawList,
     ) -> Result<(), RenderGraphError> {
-        // NOTE: Particle compute dispatches are executed BEFORE all render passes
-        // in execute_all_particle_dispatches(), so we skip them here.
-
-        log::debug!("execute_draw_list: {} draw calls to execute", draw_list.draws.len());
+        log::debug!(
+            "execute_draw_list: {} draw calls to execute",
+            draw_list.draws.len()
+        );
 
         // Execute regular draw calls
         for draw_call in &draw_list.draws {
-            log::debug!("Executing draw call: mesh={:?}, material={:?}", draw_call.mesh, draw_call.material);
+            log::debug!(
+                "Executing draw call: mesh={:?}, material={:?}",
+                draw_call.mesh,
+                draw_call.material
+            );
             self.execute_draw_call(cmd, draw_call)?;
         }
 
-        log::debug!("execute_draw_list: completed {} draw calls", draw_list.draws.len());
+        log::debug!(
+            "execute_draw_list: completed {} draw calls",
+            draw_list.draws.len()
+        );
 
         Ok(())
     }
@@ -2505,6 +2473,135 @@ impl<'a> Frame<'a> {
         Ok(())
     }
 
+    /// Execute a compute pass (GPU compute work).
+    ///
+    /// Compute passes perform general-purpose GPU computation without rendering to attachments.
+    /// Used for particle simulation, physics, and other compute-intensive tasks.
+    ///
+    /// # Compute-Specific Behavior
+    ///
+    /// 1. **Bind compute pipeline**: Set pipeline for compute work
+    /// 2. **Bind descriptor sets**: Set 0 (static buffers) + Set 1 (push descriptors if needed)
+    /// 3. **Dispatch compute shader**: Execute with specified workgroup count
+    fn execute_compute_pass(
+        &mut self,
+        cmd: &crate::vulkan::commandbuffer::CommandBuffer,
+        pass: &PassDesc,
+        pipeline_handle: crate::handle::PipelineHandle,
+    ) -> Result<(), RenderGraphError> {
+        let current_frame = self.current_frame();
+        log::debug!(
+            "[COMPUTE] Pass '{}' execution: frame_idx={}, pipeline={:?}",
+            pass.name,
+            current_frame,
+            pipeline_handle
+        );
+
+        let device = &self.renderer.context.device;
+
+        // Get compute pipeline from registry
+        let compute_pipeline = self
+            .renderer
+            .asset_registry
+            .get_pipeline(pipeline_handle)
+            .ok_or_else(|| {
+                RenderGraphError::PipelineNotSet(format!(
+                    "Pipeline {:?} not found",
+                    pipeline_handle
+                ))
+            })?;
+
+        let vk_pipeline = compute_pipeline.vk_pipeline();
+        let vk_layout = compute_pipeline.vk_layout();
+
+        // Bind compute pipeline
+        unsafe {
+            device.cmd_bind_pipeline(
+                cmd.vk_command_buffer(),
+                vk::PipelineBindPoint::COMPUTE,
+                vk_pipeline,
+            );
+        }
+
+        // Bind descriptor sets if particle system is active
+        // Note: Particle system manages its own descriptor sets
+        if let Some(ref particle_system) = self.renderer.particle_system {
+            if pass.name.contains("particle") {
+                log::debug!("Executing particle compute pass '{}'", pass.name);
+
+                // Use pre-calculated workgroup count from frame graph
+                // These were calculated in renderer.rs based on current particle state
+                let workgroup_count = if pass.name.contains("emit") {
+                    self.graph.particle_emit_workgroup_count
+                } else if pass.name.contains("simulate") {
+                    self.graph.particle_simulate_workgroup_count
+                } else {
+                    log::warn!("Unknown particle compute pass '{}', using default workgroup count", pass.name);
+                    1
+                };
+
+                log::debug!(
+                    "Particle compute pass '{}': using {} workgroups (from frame graph)",
+                    pass.name,
+                    workgroup_count
+                );
+
+                // Before recording dispatch
+                log::info!("🎯 About to dispatch '{}' pass with {} workgroups",
+                    pass.name, workgroup_count);
+
+                if workgroup_count == 0 {
+                    log::warn!("⚠️ Skipping compute dispatch for '{}' - workgroup_count is 0!", pass.name);
+                    return Ok(()); // Skip dispatch
+                }
+
+                // Record the appropriate dispatch based on pass name
+                if pass.name.contains("emit") {
+                    particle_system
+                        .record_emit_dispatch(
+                            cmd.vk_command_buffer(),
+                            &self.renderer.asset_registry,
+                            workgroup_count,
+                        )
+                        .map_err(|e| {
+                            RenderGraphError::VulkanError(format!(
+                                "Particle emit dispatch failed: {}",
+                                e
+                            ))
+                        })?;
+
+                    log::debug!("Emit pass dispatched successfully");
+                } else if pass.name.contains("simulate") {
+                    particle_system
+                        .record_simulate_dispatch(
+                            cmd.vk_command_buffer(),
+                            &self.renderer.asset_registry,
+                            workgroup_count,
+                        )
+                        .map_err(|e| {
+                            RenderGraphError::VulkanError(format!(
+                                "Particle simulate dispatch failed: {}",
+                                e
+                            ))
+                        })?;
+
+                    log::debug!("Simulate pass dispatched successfully");
+                }
+
+                return Ok(());
+            }
+        }
+
+        // Generic compute dispatch for non-particle compute passes
+        // TODO: Calculate workgroup count based on work size
+        unsafe {
+            device.cmd_dispatch(cmd.vk_command_buffer(), 64, 1, 1);
+        }
+
+        log::debug!("Compute pass '{}' executed successfully", pass.name);
+        Ok(())
+    }
+
     /// Execute a compositing pass (multi-viewport fullscreen pass).
     ///
     /// Compositing passes sample from multiple viewport textures and composite them
@@ -2546,10 +2643,13 @@ impl<'a> Frame<'a> {
 
         // Get viewport texture bindless index
         // With per-frame transient textures, the actual index is base + frame_idx
-        let viewport_bindless_idx = if let Some(base_idx) = self.graph.get_ldr_texture_base_index() {
+        let viewport_bindless_idx = if let Some(base_idx) = self.graph.get_ldr_texture_base_index()
+        {
             base_idx + current_frame as u32
         } else {
-            log::warn!("[COMPOSITING] LDR texture not registered with bindless system, using index 0");
+            log::warn!(
+                "[COMPOSITING] LDR texture not registered with bindless system, using index 0"
+            );
             0
         };
 
@@ -2562,16 +2662,16 @@ impl<'a> Frame<'a> {
             0,          // Slot 0 for fullscreen passes
             &[0.0; 16], // Identity matrix (unused)
             &[
-                screen_size[0],        // base_color.r = screen width
-                screen_size[1],        // base_color.g = screen height
-                0.0,                   // base_color.b = unused
+                screen_size[0],               // base_color.r = screen width
+                screen_size[1],               // base_color.g = screen height
+                0.0,                          // base_color.b = unused
                 viewport_bindless_idx as f32, // base_color.a = viewport bindless index
             ],
             viewport_count as f32, // material_params.x = viewport count
-            0.0,                  // material_params.y = unused
-            0.0,                  // material_params.z = unused
-            0.0,                  // material_params.w = unused
-            [0, 0, 0, 0],         // texture_indices = unused
+            0.0,                   // material_params.y = unused
+            0.0,                   // material_params.z = unused
+            0.0,                   // material_params.w = unused
+            [0, 0, 0, 0],          // texture_indices = unused
         );
 
         // TODO: Pass viewport rectangles via proper uniform buffer
@@ -2726,21 +2826,30 @@ impl<'a> Frame<'a> {
                     ))
                 })?;
 
-            log::debug!("[COMPOSITING] Looking up viewport texture: '{}' (handle={})", resource_name, handle.index());
+            log::debug!(
+                "[COMPOSITING] Looking up viewport texture: '{}' (handle={})",
+                resource_name,
+                handle.index()
+            );
 
             // Get the transient texture
             let transient = self
                 .graph
                 .transient_texture(&resource_name, frame_idx)
                 .ok_or_else(|| {
-                    log::error!("[COMPOSITING] Failed to find viewport texture '{}' for frame {}", resource_name, frame_idx);
+                    log::error!(
+                        "[COMPOSITING] Failed to find viewport texture '{}' for frame {}",
+                        resource_name,
+                        frame_idx
+                    );
                     RenderGraphError::ResourceNotFound(format!(
                         "Viewport texture '{}' not found for frame {}",
                         resource_name, frame_idx
                     ))
                 })?;
 
-            log::debug!("[COMPOSITING] Found viewport texture '{}': format={:?}, extent={}x{}",
+            log::debug!(
+                "[COMPOSITING] Found viewport texture '{}': format={:?}, extent={}x{}",
                 resource_name,
                 transient.format,
                 transient.extent.width,

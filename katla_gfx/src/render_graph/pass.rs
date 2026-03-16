@@ -6,17 +6,17 @@ use crate::render_pass::{ClearValue, LoadOp, StoreOp};
 use crate::texture::ImageFormat;
 
 /// Type of render pass.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-#[derive(Default)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum PassType {
     /// Graphics pass (rendering to attachments).
     #[default]
     Graphics,
+    /// Compute pass (GPU compute work).
+    Compute,
 }
 
-
 /// Internal pass descriptor.
-pub(crate) struct PassDesc {
+pub struct PassDesc {
     /// Human-readable name for debugging.
     pub name: String,
     /// Names of resources this pass reads from.
@@ -63,6 +63,12 @@ impl PassDesc {
             uses_depth: true, // Default to true for graphics passes
             compositing_viewports: None,
         }
+    }
+
+    /// Set the pipeline for this pass.
+    pub fn with_pipeline(mut self, pipeline: crate::handle::PipelineHandle) -> Self {
+        self.pipeline = Some(pipeline);
+        self
     }
 }
 

@@ -45,7 +45,33 @@ pub fn generate_ui_draw_list(app: &mut Application, dt: f32) -> Option<UIDrawLis
     // Store viewport texture ID before rendering (to avoid borrow issues)
     let viewport_texture_id = app.editor_ui.viewport_texture_ids[0];
 
+    // Render particle inspector BEFORE main editor UI to avoid borrow conflicts
+    if use_editor && app.editor_ui.show_particle_inspector {
+        if let Some(particle_system) = &mut app.renderer.particle_system {
+            use crate::ui::ParticleInspector;
+            use katla_math::Rect2D;
+
+            let panel_width = 320.0;
+            let panel_height = 600.0;
+            let panel_bounds = Rect2D::from_origin_size(
+                katla_math::Vec2::new(
+                    screen_size.x() - panel_width - 20.0,
+                    screen_size.y() - panel_height - 60.0,
+                ),
+                katla_math::Vec2::new(panel_width, panel_height),
+            );
+
+            ParticleInspector::new(
+                panel_bounds,
+                &mut app.editor_ui.selected_particle_emitter,
+                &app.editor_ui.theme,
+            )
+            .render(&mut app.ui_context, &mut app.world, particle_system);
+        }
+    }
+
     let draw_list = if use_editor {
+        // Render the main editor UI
         app.editor_ui.render(
             &mut app.ui_context,
             &app.preferences,

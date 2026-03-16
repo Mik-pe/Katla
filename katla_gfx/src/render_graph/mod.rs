@@ -43,9 +43,10 @@ mod resource;
 pub use descriptor_sets::CompositingDescriptorSet;
 pub use error::RenderGraphError;
 pub use graph::{Frame, FrameGraph, FrameGraphBuilder};
+pub use pass::{PassDesc, PassType};
 pub use passes::{
-    CompositePass, FullscreenPass, GeometryPass, LightType, ShadowPass, TonemapOperator,
-    TonemapParams, UIPass, ViewportPass, ViewportRect,
+    CompositePass, ComputePass, FullscreenPass, GeometryPass, LightType, ShadowPass,
+    TonemapOperator, TonemapParams, UIPass, ViewportPass, ViewportRect,
 };
 pub use resource::{GraphResourceDesc, GraphResourceHandle, GraphResourceType, ResourceState};
 

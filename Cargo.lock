@@ -1264,6 +1264,7 @@ dependencies = [
  "log",
  "notify 7.0.0",
  "png",
+ "serde_json",
  "winit",
 ]
 
@@ -1299,6 +1300,7 @@ dependencies = [
  "notify 8.2.0",
  "raw-window-handle",
  "serde",
+ "serde_json",
  "toml",
 ]
 

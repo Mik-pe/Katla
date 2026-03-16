@@ -215,6 +215,23 @@ impl ApplicationHandler for Application {
                     let key_combo = KeyCombo::with_modifiers(keycode, self.current_modifiers);
                     let binding = InputBinding::Keyboard(key_combo);
 
+                    // Toggle particle inspector with Ctrl+P
+                    if event.state == ElementState::Pressed
+                        && keycode == KeyCode::KeyP
+                        && self.current_modifiers.control_key()
+                    {
+                        self.editor_ui.show_particle_inspector =
+                            !self.editor_ui.show_particle_inspector;
+                        info!(
+                            "Particle inspector: {}",
+                            if self.editor_ui.show_particle_inspector {
+                                "visible"
+                            } else {
+                                "hidden"
+                            }
+                        );
+                    }
+
                     if let Some(action) = self.input_mapper.get_action(&binding) {
                         // Only send keyboard input to game when viewport is focused
                         if self.editor_ui.focused_panel == crate::ui::FocusedPanel::Viewport {
@@ -496,10 +513,57 @@ impl Application {
 
         info!("Default HDR PBR material loaded successfully");
 
-        // Initialize particle compute pipeline
-        let particle_compute_shader_path = self.resources.shader_path("particles/particle_update.wgsl");
-        self.renderer.init_particle_compute_pipeline(&particle_compute_shader_path)
-            .expect("Failed to initialize particle compute pipeline");
+        // Initialize particle emit pipeline
+        let particle_emit_shader_path =
+            self.resources.shader_path("particles/particle_emit.wgsl");
+        self.renderer
+            .init_particle_emit_pipeline(&particle_emit_shader_path)
+            .expect("Failed to initialize particle emit pipeline");
+
+        // Initialize particle simulate pipeline
+        let particle_simulate_shader_path =
+            self.resources.shader_path("particles/particle_simulate.wgsl");
+        self.renderer
+            .init_particle_simulate_pipeline(&particle_simulate_shader_path)
+            .expect("Failed to initialize particle simulate pipeline");
+
+        // Add particle compute passes to frame graph
+        // These must be added after particle pipelines are initialized
+        if let Some(ref particle_system) = self.renderer.particle_system {
+            let emit_pipeline = particle_system.emit_pipeline_handle().expect(
+                "Particle emit pipeline not initialized",
+            );
+            let simulate_pipeline = particle_system.simulate_pipeline_handle().expect(
+                "Particle simulate pipeline not initialized",
+            );
+
+            use katla_gfx::render_graph::PassDesc;
+            use katla_gfx::render_graph::PassType;
+
+            // Add particle emit pass
+            self.frame_graph.add_pass(
+                PassDesc::new(
+                    "particle_emit",
+                    PassType::Compute,
+                    vec![],
+                    vec![],
+                )
+                .with_pipeline(emit_pipeline),
+            );
+
+            // Add particle simulate pass
+            self.frame_graph.add_pass(
+                PassDesc::new(
+                    "particle_simulate",
+                    PassType::Compute,
+                    vec![],
+                    vec![],
+                )
+                .with_pipeline(simulate_pipeline),
+            );
+
+            info!("Added particle compute passes to frame graph");
+        }
 
         // Initialize transient textures and register with bindless system
         self.frame_graph

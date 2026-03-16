@@ -4,6 +4,7 @@
 
 mod debug_overlay;
 mod editor_ui;
+mod particle_inspector;
 pub mod renderer;
 pub mod theme;
 
@@ -11,5 +12,6 @@ pub use debug_overlay::DebugOverlay;
 pub use editor_ui::{
     EditorAction, EditorUI, EntityInfo, FocusedPanel, SpawnableModel, ThumbnailState,
 };
+pub use particle_inspector::ParticleInspector;
 pub use renderer::UIRenderer;
 pub use theme::Theme;

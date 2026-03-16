@@ -76,13 +76,20 @@
 //! ```
 
 pub mod buffer;
+pub mod presets;
+pub mod stats;
+pub mod timing;
 
 pub use buffer::{FrameData, GlobalParticleBuffer, ParticleCounters};
+pub use presets::{EmitterPreset, PresetManager};
+pub use stats::ParticleStats;
+pub use timing::TimestampQuery;
 
 use std::rc::Rc;
 
 use ash::vk;
 use log::{info, warn};
+use serde::{Deserialize, Serialize};
 
 use crate::handle::PipelineHandle;
 use crate::renderer::registry::AssetRegistry;
@@ -104,42 +111,92 @@ pub const PARTICLE_WORKGROUP_SIZE: u32 = 256;
 /// This is uploaded to a storage buffer that the compute shader
 /// accesses when spawning particles.
 #[repr(C)]
-#[derive(Clone, Copy, Debug, bytemuck::Pod, bytemuck::Zeroable)]
+#[derive(Clone, Copy, Debug, bytemuck::Pod, bytemuck::Zeroable, Serialize, Deserialize)]
 pub struct EmitterConfig {
     /// World position of emitter
+    #[serde(default = "default_position")]
     pub position: [f32; 3],
+
+    #[serde(skip)]
     pub _pad0: f32,
 
     /// Particles to emit per second
+    #[serde(default = "default_emit_rate")]
     pub emit_rate: f32,
 
     /// Base lifetime for new particles (seconds)
+    #[serde(default = "default_base_lifetime")]
     pub base_lifetime: f32,
 
     /// Random variation in lifetime (±percentage)
+    #[serde(default = "default_lifetime_variation")]
     pub lifetime_variation: f32,
 
     /// Base velocity direction (normalized)
+    #[serde(default = "default_velocity_direction")]
     pub velocity_direction: [f32; 3],
+
+    #[serde(skip)]
     pub _pad1: f32,
 
     /// Velocity magnitude
+    #[serde(default = "default_velocity_magnitude")]
     pub velocity_magnitude: f32,
 
     /// Velocity spread cone angle (0 = straight, PI/2 = hemisphere)
+    #[serde(default = "default_velocity_cone_angle")]
     pub velocity_cone_angle: f32,
 
     /// Base scale for new particles
+    #[serde(default = "default_base_scale")]
     pub base_scale: f32,
 
     /// Scale variation (±percentage)
+    #[serde(default = "default_scale_variation")]
     pub scale_variation: f32,
 
     /// Color for new particles (RGBA)
+    #[serde(default = "default_color")]
     pub color: [f32; 4],
 
     /// Color variation (±percentage per channel)
+    #[serde(default = "default_color_variation")]
     pub color_variation: f32,
+}
+
+// Serde default functions
+fn default_position() -> [f32; 3] {
+    [0.0; 3]
+}
+fn default_emit_rate() -> f32 {
+    50.0
+}
+fn default_base_lifetime() -> f32 {
+    5.0
+}
+fn default_lifetime_variation() -> f32 {
+    0.2
+}
+fn default_velocity_direction() -> [f32; 3] {
+    [0.0, 1.0, 0.0]
+}
+fn default_velocity_magnitude() -> f32 {
+    1.0
+}
+fn default_velocity_cone_angle() -> f32 {
+    0.5
+}
+fn default_base_scale() -> f32 {
+    0.1
+}
+fn default_scale_variation() -> f32 {
+    0.5
+}
+fn default_color() -> [f32; 4] {
+    [1.0, 1.0, 1.0, 1.0]
+}
+fn default_color_variation() -> f32 {
+    0.1
 }
 
 impl Default for EmitterConfig {
@@ -191,8 +248,14 @@ pub struct GlobalParticleSystem {
     /// Global particle buffer (particles + index lists + counters)
     buffer: GlobalParticleBuffer,
 
+    /// Compute pipeline for particle emission
+    emit_pipeline: Option<PipelineHandle>,
+
     /// Compute pipeline for particle simulation
-    compute_pipeline: Option<PipelineHandle>,
+    simulate_pipeline: Option<PipelineHandle>,
+
+    /// Render pipeline for particle rendering
+    render_pipeline: Option<PipelineHandle>,
 
     /// Descriptor set layout for compute (Set 0: static buffers)
     compute_descriptor_layout: Option<vk::DescriptorSetLayout>,
@@ -234,6 +297,25 @@ pub struct GlobalParticleSystem {
     /// NOTE: This pool's lifetime is tied to the particle system itself
     /// and will be destroyed when the particle system is dropped
     _compute_descriptor_pool: vk::DescriptorPool,
+
+    /// GPU timing queries for compute shader
+    timing_queries: Option<TimestampQuery>,
+
+    // Statistics tracking
+    /// Total particles emitted since system start
+    total_emitted: u64,
+    /// Total particles that died since system start
+    total_died: u64,
+    /// Peak compute shader execution time (milliseconds)
+    peak_compute_time: f32,
+    /// Average compute shader execution time (milliseconds)
+    avg_compute_time: f32,
+    /// History of compute times for rolling average (last 60 frames)
+    compute_time_history: Vec<f32>,
+    /// Total compute dispatches executed
+    total_dispatches: u64,
+    /// Maximum particles in the system
+    max_particles: u32,
 }
 
 impl GlobalParticleSystem {
@@ -254,9 +336,13 @@ impl GlobalParticleSystem {
         let buffer = GlobalParticleBuffer::new(context.clone(), max_particles)
             .map_err(|e| format!("Failed to create particle buffer: {}", e))?;
 
+        let max_particles = max_particles;
+
         let mut system = Self {
             buffer,
-            compute_pipeline: None,
+            emit_pipeline: None,
+            simulate_pipeline: None,
+            render_pipeline: None,
             compute_descriptor_layout: None,
             render_descriptor_layout: None,
             compute_push_descriptor_layout: None,
@@ -269,7 +355,15 @@ impl GlobalParticleSystem {
             cached_alive_count: 0,
             destroyed: false,
             compute_descriptor_set: None,
-            _compute_descriptor_pool: vk::DescriptorPool::null(), // Temporary, will be set
+            _compute_descriptor_pool: vk::DescriptorPool::null(),
+            timing_queries: None,
+            total_emitted: 0,
+            total_died: 0,
+            peak_compute_time: 0.0,
+            avg_compute_time: 0.0,
+            compute_time_history: Vec::with_capacity(60),
+            total_dispatches: 0,
+            max_particles,
         };
 
         // Initialize index lists (all particles start dead)
@@ -285,6 +379,18 @@ impl GlobalParticleSystem {
 
         // Create push descriptor buffers
         system.create_push_descriptor_buffers(context)?;
+
+        // Create timing queries
+        match TimestampQuery::new(context) {
+            Ok(timing) => {
+                system.timing_queries = Some(timing);
+                info!("Created GPU timing queries for particle compute shader");
+            }
+            Err(e) => {
+                warn!("Failed to create timing queries: {}. Timing disabled.", e);
+                system.timing_queries = None;
+            }
+        }
 
         info!("Modern particle system initialized successfully");
         Ok(system)
@@ -305,7 +411,10 @@ impl GlobalParticleSystem {
     /// Returns error if maximum emitter count (1024) is reached
     pub fn create_emitter(&mut self, config: EmitterConfig) -> Result<EmitterHandle, String> {
         if self.emitters.len() >= MAX_EMITTERS as usize {
-            log::warn!("Cannot create emitter: maximum emitter count ({}) reached", MAX_EMITTERS);
+            log::warn!(
+                "Cannot create emitter: maximum emitter count ({}) reached",
+                MAX_EMITTERS
+            );
             return Err(format!("Maximum emitter count ({}) reached", MAX_EMITTERS));
         }
 
@@ -322,7 +431,8 @@ impl GlobalParticleSystem {
 
         log::debug!(
             "Created particle emitter {} at position {:?}",
-            index, config.position
+            index,
+            config.position
         );
 
         Ok(EmitterHandle::new(index))
@@ -375,20 +485,29 @@ impl GlobalParticleSystem {
             .map(|config| (config.emit_rate * delta_time) as u32)
             .sum();
 
-        log::debug!("Particle update: {} emitters, {} to emit, delta_time={}", 
-            self.emitters.len(), total_emit_count, delta_time);
+        log::debug!(
+            "Particle update: {} emitters, {} to emit, delta_time={}",
+            self.emitters.len(),
+            total_emit_count,
+            delta_time
+        );
 
         // Update frame data buffer
         self.update_frame_data(delta_time, total_emit_count)?;
 
-        // For now, just return a fake particle count to show the system is working
-        // The actual compute dispatch needs command buffer access which happens during render
+        // The actual compute dispatch happens during render graph execution
+        // via record_compute_dispatch(). This just prepares the data.
 
-        // Cache the alive count for rendering
-        let alive_count = total_emit_count.min(1000); // Cap at 1000 for safety
+        // Read back alive count from counters buffer (from previous frame)
+        let alive_count = self.buffer.get_alive_count().unwrap_or(0);
         self.cached_alive_count = alive_count;
 
-        log::debug!("Cached alive count: {}", alive_count);
+        log::debug!("Alive count from GPU: {}", alive_count);
+
+        // Update emission statistics
+        if total_emit_count > 0 {
+            self.update_emission_stats(total_emit_count);
+        }
 
         Ok(alive_count)
     }
@@ -421,11 +540,20 @@ impl GlobalParticleSystem {
     fn update_frame_data(&self, delta_time: f32, emit_count: u32) -> Result<(), String> {
         if let Some((_buffer, allocation)) = &self.frame_data_buffer {
             if let Some(mapped) = allocation.mapped_ptr() {
+                // Calculate active emitter count (emitters with emit_rate > 0)
+                let active_emitter_count = self.emitters.iter()
+                    .filter(|e| e.emit_rate > 0.0)
+                    .count() as u32;
+
+                // Total particles to simulate = newly emitted + previously alive
+                let total_simulate_count = emit_count + self.cached_alive_count;
+
                 let frame_data = FrameData {
                     delta_time,
                     total_emit_count: emit_count,
+                    emitter_count: active_emitter_count,
                     random_seed: self.frame_count,
-                    _pad: 0,
+                    total_simulate_count,
                 };
                 unsafe {
                     std::ptr::copy_nonoverlapping(
@@ -452,18 +580,89 @@ impl GlobalParticleSystem {
 
     /// Render particles.
     ///
-    /// Uses indirect drawing - GPU determines draw count from alive list.
+    /// Uses direct drawing with vertex count based on alive particles.
+    /// Each particle renders as 6 vertices (2 triangles for a quad).
     ///
     /// # Arguments
     /// * `command_buffer` - Command buffer to record draw calls into
     /// * `render_pass` - Current render pass
+    /// * `pipeline` - Graphics pipeline to use for rendering
+    /// * `layout` - Pipeline layout for descriptor binding
     pub fn render(
         &mut self,
         command_buffer: vk::CommandBuffer,
-        render_pass: vk::RenderPass,
+        _render_pass: vk::RenderPass,
+        pipeline: vk::Pipeline,
+        layout: vk::PipelineLayout,
     ) -> Result<(), String> {
-        self.buffer
-            .dispatch_draw_indirect(command_buffer, render_pass)
+        let device = &self.context.device;
+
+        // Bind graphics pipeline
+        unsafe {
+            device.cmd_bind_pipeline(command_buffer, vk::PipelineBindPoint::GRAPHICS, pipeline);
+        }
+
+        // Bind static descriptor set (Set 0: particle buffers)
+        if let Some(descriptor_set) = self.compute_descriptor_set {
+            unsafe {
+                device.cmd_bind_descriptor_sets(
+                    command_buffer,
+                    vk::PipelineBindPoint::GRAPHICS,
+                    layout,
+                    0, // Set 0
+                    std::slice::from_ref(&descriptor_set),
+                    &[],
+                );
+            }
+        } else {
+            return Err("Particle descriptor set not allocated".to_string());
+        }
+
+        // Update push descriptors (Set 1: frame data)
+        // Note: We can use push descriptors for graphics too!
+        if let Some((frame_buffer, _)) = &self.frame_data_buffer {
+            let frame_buffer_info = [vk::DescriptorBufferInfo::default()
+                .buffer(*frame_buffer)
+                .offset(0)
+                .range(std::mem::size_of::<FrameData>() as u64)];
+
+            let push_descriptor_writes = [vk::WriteDescriptorSet::default()
+                .dst_binding(0) // Binding 0 in Set 1 (frame data)
+                .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
+                .buffer_info(&frame_buffer_info)];
+
+            unsafe {
+                // Use push descriptors for graphics
+                let push_descriptor = self
+                    .context
+                    .push_descriptor_khr
+                    .as_ref()
+                    .ok_or("Push descriptor extension not available")?;
+
+                push_descriptor.cmd_push_descriptor_set(
+                    command_buffer,
+                    vk::PipelineBindPoint::GRAPHICS,
+                    layout,
+                    1, // Set 1
+                    &push_descriptor_writes,
+                );
+            }
+        }
+
+        // Draw particles (6 vertices per particle)
+        let vertex_count = self.cached_alive_count * 6;
+        if vertex_count > 0 {
+            unsafe {
+                device.cmd_draw(command_buffer, vertex_count, 1, 0, 0);
+            }
+            log::debug!(
+                "Drew {} vertices ({} particles)",
+                vertex_count,
+                self.cached_alive_count
+            );
+        }
+
+        Ok(())
     }
 
     /// Get current alive particle count.
@@ -476,9 +675,14 @@ impl GlobalParticleSystem {
         &self.emitters
     }
 
-    /// Get compute pipeline handle.
-    pub fn compute_pipeline_handle(&self) -> Option<PipelineHandle> {
-        self.compute_pipeline
+    /// Get emit pipeline handle.
+    pub fn emit_pipeline_handle(&self) -> Option<PipelineHandle> {
+        self.emit_pipeline
+    }
+
+    /// Get simulate pipeline handle.
+    pub fn simulate_pipeline_handle(&self) -> Option<PipelineHandle> {
+        self.simulate_pipeline
     }
 
     /// Destroy all particle system resources.
@@ -493,22 +697,27 @@ impl GlobalParticleSystem {
         // Destroy push descriptor buffers first
         if let Some((buffer, allocation)) = self.frame_data_buffer.take() {
             unsafe {
-                self.context.device.destroy_buffer(buffer, None);
                 if let Ok(mut allocator) = self.context.allocator.try_borrow_mut() {
                     allocator.free(allocation).ok();
                 }
+                self.context.device.destroy_buffer(buffer, None);
             }
         }
         if let Some((buffer, allocation)) = self.emitter_configs_buffer.take() {
             unsafe {
-                self.context.device.destroy_buffer(buffer, None);
                 if let Ok(mut allocator) = self.context.allocator.try_borrow_mut() {
                     allocator.free(allocation).ok();
                 }
+                self.context.device.destroy_buffer(buffer, None);
             }
         }
 
         self.buffer.destroy();
+
+        // Destroy timing queries
+        if let Some(mut timing) = self.timing_queries.take() {
+            timing.destroy();
+        }
 
         // Destroy descriptor layouts
         if let Some(layout) = self.compute_descriptor_layout.take() {
@@ -536,8 +745,16 @@ impl GlobalParticleSystem {
         self.emitters.clear();
         self.next_emitter_slot = 0;
 
-        // NOTE: Descriptor pool destruction is handled by Drop impl
-        // to ensure proper cleanup order
+        // Destroy descriptor pool to prevent double-free in Drop
+        if self._compute_descriptor_pool != vk::DescriptorPool::null() {
+            unsafe {
+                self.context
+                    .device
+                    .destroy_descriptor_pool(self._compute_descriptor_pool, None);
+            }
+            self._compute_descriptor_pool = vk::DescriptorPool::null();
+            log::debug!("Destroyed particle compute descriptor pool");
+        }
     }
 
     /// Create descriptor set layouts for particle system.
@@ -587,12 +804,12 @@ impl GlobalParticleSystem {
         // NOTE: This uses PUSH_DESCRIPTOR bit to indicate these will be pushed via cmd_push_descriptor_set
         let compute_push_bindings = [
             vk::DescriptorSetLayoutBinding::default()
-                .binding(5)
+                .binding(0)
                 .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
                 .descriptor_count(1)
                 .stage_flags(vk::ShaderStageFlags::COMPUTE),
             vk::DescriptorSetLayoutBinding::default()
-                .binding(6)
+                .binding(1)
                 .descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
                 .descriptor_count(1)
                 .stage_flags(vk::ShaderStageFlags::COMPUTE),
@@ -738,7 +955,9 @@ impl GlobalParticleSystem {
     }
 
     /// Create descriptor pool and allocate static descriptor set for compute (Set 0).
-    fn create_compute_descriptor_set(&mut self) -> Result<(vk::DescriptorSet, vk::DescriptorPool), String> {
+    fn create_compute_descriptor_set(
+        &mut self,
+    ) -> Result<(vk::DescriptorSet, vk::DescriptorPool), String> {
         let compute_layout = self
             .compute_descriptor_layout
             .ok_or("Compute descriptor layout not created")?;
@@ -780,24 +999,29 @@ impl GlobalParticleSystem {
         let particle_buffer_info = [vk::DescriptorBufferInfo {
             buffer: self.buffer.particle_buffer(),
             offset: 0,
-            range: (self.buffer.max_particles() as u64) * std::mem::size_of::<buffer::ParticleData>() as u64,
+            range: (self.buffer.max_particles() as u64)
+                * std::mem::size_of::<buffer::ParticleData>() as u64,
         }];
 
         let dead_list_info = [vk::DescriptorBufferInfo {
             buffer: self.buffer.particle_buffer(),
-            offset: (self.buffer.max_particles() as u64) * std::mem::size_of::<buffer::ParticleData>() as u64,
+            offset: (self.buffer.max_particles() as u64)
+                * std::mem::size_of::<buffer::ParticleData>() as u64,
             range: (self.buffer.max_particles() as u64) * std::mem::size_of::<u32>() as u64,
         }];
 
         let alive_current_info = [vk::DescriptorBufferInfo {
             buffer: self.buffer.particle_buffer(),
-            offset: (self.buffer.max_particles() as u64) * (std::mem::size_of::<buffer::ParticleData>() + std::mem::size_of::<u32>()) as u64,
+            offset: (self.buffer.max_particles() as u64)
+                * (std::mem::size_of::<buffer::ParticleData>() + std::mem::size_of::<u32>()) as u64,
             range: (self.buffer.max_particles() as u64) * std::mem::size_of::<u32>() as u64,
         }];
 
         let alive_next_info = [vk::DescriptorBufferInfo {
             buffer: self.buffer.particle_buffer(),
-            offset: (self.buffer.max_particles() as u64) * (std::mem::size_of::<buffer::ParticleData>() + 2 * std::mem::size_of::<u32>()) as u64,
+            offset: (self.buffer.max_particles() as u64)
+                * (std::mem::size_of::<buffer::ParticleData>() + 2 * std::mem::size_of::<u32>())
+                    as u64,
             range: (self.buffer.max_particles() as u64) * std::mem::size_of::<u32>() as u64,
         }];
 
@@ -845,8 +1069,8 @@ impl GlobalParticleSystem {
         Ok((descriptor_set, descriptor_pool))
     }
 
-    /// Create compute pipeline for particle simulation.
-    pub fn create_compute_pipeline(
+    /// Create emit pipeline for particle emission.
+    pub fn create_emit_pipeline(
         &mut self,
         asset_registry: &mut AssetRegistry,
         shader_module: VkShaderModule,
@@ -859,23 +1083,382 @@ impl GlobalParticleSystem {
             .compute_push_descriptor_layout
             .ok_or("Compute push descriptor layout not created")?;
 
-        let compute_pipeline = ComputePipelineBuilder::new(self.context.clone())
+        let emit_pipeline = ComputePipelineBuilder::new(self.context.clone())
             .with_shader(shader_module)
             .with_descriptor_layouts(vec![
                 crate::sync::VkDescriptorSetLayout(compute_layout),
                 crate::sync::VkDescriptorSetLayout(compute_push_layout),
             ])
             .build()
-            .map_err(|e| format!("Failed to build compute pipeline: {}", e))?;
+            .map_err(|e| format!("Failed to build emit pipeline: {}", e))?;
 
-        let pipeline_handle = asset_registry.register_compute_pipeline(compute_pipeline);
-        self.compute_pipeline = Some(pipeline_handle);
+        let pipeline_handle = asset_registry.register_compute_pipeline(emit_pipeline);
+        self.emit_pipeline = Some(pipeline_handle);
 
-        info!("Created particle compute pipeline");
+        info!("Created particle emit pipeline");
         Ok(())
     }
 
-    /// Record compute dispatch commands.
+    /// Create simulate pipeline for particle simulation.
+    pub fn create_simulate_pipeline(
+        &mut self,
+        asset_registry: &mut AssetRegistry,
+        shader_module: VkShaderModule,
+    ) -> Result<(), String> {
+        let compute_layout = self
+            .compute_descriptor_layout
+            .ok_or("Compute descriptor layout not created")?;
+
+        let compute_push_layout = self
+            .compute_push_descriptor_layout
+            .ok_or("Compute push descriptor layout not created")?;
+
+        let simulate_pipeline = ComputePipelineBuilder::new(self.context.clone())
+            .with_shader(shader_module)
+            .with_descriptor_layouts(vec![
+                crate::sync::VkDescriptorSetLayout(compute_layout),
+                crate::sync::VkDescriptorSetLayout(compute_push_layout),
+            ])
+            .build()
+            .map_err(|e| format!("Failed to build simulate pipeline: {}", e))?;
+
+        let pipeline_handle = asset_registry.register_compute_pipeline(simulate_pipeline);
+        self.simulate_pipeline = Some(pipeline_handle);
+
+        info!("Created particle simulate pipeline");
+        Ok(())
+    }
+
+    /// Create render pipeline for particle rendering.
+    pub fn create_render_pipeline(
+        &mut self,
+        asset_registry: &mut AssetRegistry,
+        vertex_shader: VkShaderModule,
+        fragment_shader: VkShaderModule,
+    ) -> Result<(), String> {
+        use crate::pipeline::{CullMode, FrontFace};
+        use crate::vulkan::material::builder::PipelineBuilder;
+
+        let render_layout = self
+            .render_descriptor_layout
+            .ok_or("Render descriptor layout not created")?;
+
+        let bindless_layout = self
+            .compute_push_descriptor_layout
+            .ok_or("Compute push descriptor layout not created")?;
+
+        let pipeline = PipelineBuilder::new(self.context.clone())
+            .with_shaders(vertex_shader.vk(), fragment_shader.vk())
+            .with_descriptor_layouts(vec![render_layout, bindless_layout])
+            // No vertex binding - particles generated from storage buffer
+            .with_depth_test(false, false, crate::pipeline::CompareOp::Always)
+            .with_cull_mode(CullMode::None, FrontFace::CounterClockwise)
+            .with_rendering_formats(
+                Some(crate::texture::ImageFormat::B8G8R8A8Srgb),
+                Some(crate::texture::ImageFormat::D32SfloatS8Uint),
+            );
+
+        let pipeline = pipeline
+            .build_dynamic()
+            .map_err(|e| format!("Failed to build render pipeline: {}", e))?;
+
+        let pipeline_handle = asset_registry.register_pipeline(pipeline);
+        self.render_pipeline = Some(pipeline_handle);
+
+        info!("Created particle render pipeline");
+        Ok(())
+    }
+
+    /// Get render pipeline handle.
+    pub fn render_pipeline_handle(&self) -> Option<PipelineHandle> {
+        self.render_pipeline
+    }
+
+    /// Record compute dispatch with timing queries.
+    ///
+    /// Wraps the compute dispatch with timestamp queries to measure GPU execution time.
+    /// This should be used instead of `record_compute_dispatch` when timing is needed.
+    pub fn record_compute_with_timing(
+        &mut self,
+        command_buffer: vk::CommandBuffer,
+        asset_registry: &AssetRegistry,
+        total_workgroups: u32,
+    ) -> Result<(), String> {
+        if let Some(timing) = &self.timing_queries {
+            // Reset query pools for new measurements
+            timing.reset(command_buffer);
+
+            // Write start timestamp
+            timing.write_start(command_buffer);
+        }
+
+        // Execute compute dispatch
+        self.record_compute_dispatch(command_buffer, asset_registry, total_workgroups)?;
+
+        if let Some(timing) = &self.timing_queries {
+            // Write end timestamp
+            timing.write_end(command_buffer);
+        }
+
+        // Increment dispatch counter
+        self.increment_dispatch_count();
+
+        Ok(())
+    }
+
+    /// Get compute shader execution time in milliseconds.
+    ///
+    /// Returns the timing data from the last compute dispatch.
+    /// Returns None if timing is not available or readback failed.
+    pub fn get_compute_time_ms(&mut self) -> Option<f32> {
+        if let Some(timing) = &mut self.timing_queries {
+            match timing.get_compute_time_ms() {
+                Ok(time) => {
+                    // Update statistics with the new timing data
+                    self.update_compute_stats(time);
+                    Some(time)
+                }
+                Err(e) => {
+                    warn!("Failed to read compute timing: {}", e);
+                    None
+                }
+            }
+        } else {
+            None
+        }
+    }
+
+    /// Get cached compute time without readback.
+    ///
+    /// Returns the last successfully measured compute time.
+    /// Returns 0.0 if no timing data is available.
+    pub fn cached_compute_time_ms(&self) -> f32 {
+        self.timing_queries
+            .as_ref()
+            .map(|t| t.cached_time_ms())
+            .unwrap_or(0.0)
+    }
+
+    /// Record compute dispatch with graceful timing fallback.
+    ///
+    /// This method attempts to use timing queries, but falls back to non-timing
+    /// dispatch if timing queries fail or are not available. This prevents
+    /// GPU crashes due to timing query issues.
+    ///
+    /// # Arguments
+    /// * `command_buffer` - Command buffer to record into
+    /// * `asset_registry` - Asset registry for pipeline access
+    /// * `total_workgroups` - Number of workgroups to dispatch
+    ///
+    /// # Returns
+    /// Ok(()) if dispatch succeeded (with or without timing)
+    /// Err(String) if dispatch itself failed
+    pub fn record_compute_with_timing_fallback(
+        &mut self,
+        command_buffer: vk::CommandBuffer,
+        asset_registry: &AssetRegistry,
+        total_workgroups: u32,
+    ) -> Result<(), String> {
+        // Try timing queries if available
+        if self.timing_queries.is_some() {
+            // Attempt to reset timing queries
+            if let Some(timing) = &self.timing_queries {
+                timing.reset(command_buffer);
+                timing.write_start(command_buffer);
+            }
+
+            // Execute compute dispatch
+            let dispatch_result =
+                self.record_compute_dispatch(command_buffer, asset_registry, total_workgroups);
+
+            // Write end timestamp if timing was started
+            if let Some(timing) = &self.timing_queries {
+                timing.write_end(command_buffer);
+            }
+
+            // Increment dispatch counter
+            self.increment_dispatch_count();
+
+            // Return dispatch result (timing failures don't affect this)
+            dispatch_result
+        } else {
+            // No timing queries available, use standard dispatch
+            self.record_compute_dispatch(command_buffer, asset_registry, total_workgroups)
+        }
+    }
+
+    /// Record emit pass dispatch.
+    pub fn record_emit_dispatch(
+        &self,
+        command_buffer: vk::CommandBuffer,
+        asset_registry: &AssetRegistry,
+        emit_workgroups: u32,
+    ) -> Result<(), String> {
+        let pipeline = self
+            .emit_pipeline
+            .ok_or("Emit pipeline not created")?;
+
+        let compute_pipeline = asset_registry
+            .get_pipeline(pipeline)
+            .ok_or("Failed to get emit pipeline from registry")?;
+
+        let vk_pipeline = compute_pipeline.vk_pipeline();
+        let vk_layout = compute_pipeline.vk_layout();
+
+        let device = &self.context.device;
+
+        // Bind emit pipeline
+        unsafe {
+            device.cmd_bind_pipeline(command_buffer, vk::PipelineBindPoint::COMPUTE, vk_pipeline);
+        }
+
+        // Bind static descriptor set (Set 0: particle buffers)
+        if let Some(descriptor_set) = self.compute_descriptor_set {
+            unsafe {
+                device.cmd_bind_descriptor_sets(
+                    command_buffer,
+                    vk::PipelineBindPoint::COMPUTE,
+                    vk_layout,
+                    0, // Set 0
+                    std::slice::from_ref(&descriptor_set),
+                    &[],
+                );
+            }
+        } else {
+            return Err("Compute descriptor set not allocated".to_string());
+        }
+
+        // Update push descriptors (Set 1: frame data + emitter configs)
+        if let Some((frame_buffer, _)) = &self.frame_data_buffer
+            && let Some((emitter_buffer, _)) = &self.emitter_configs_buffer
+        {
+            let frame_buffer_info = [vk::DescriptorBufferInfo::default()
+                .buffer(*frame_buffer)
+                .offset(0)
+                .range(std::mem::size_of::<FrameData>() as u64)];
+
+            let emitter_buffer_info = [vk::DescriptorBufferInfo::default()
+                .buffer(*emitter_buffer)
+                .offset(0)
+                .range((self.emitters.len() * std::mem::size_of::<EmitterConfig>()) as u64)];
+
+            let push_descriptor_writes = [
+                vk::WriteDescriptorSet::default()
+                    .dst_binding(0) // Binding 0 in Set 1 (frame data)
+                    .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
+                    .buffer_info(&frame_buffer_info),
+                vk::WriteDescriptorSet::default()
+                    .dst_binding(1) // Binding 1 in Set 1 (emitter configs)
+                    .descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
+                    .buffer_info(&emitter_buffer_info),
+            ];
+
+            unsafe {
+                let push_descriptor = self
+                    .context
+                    .push_descriptor_khr
+                    .as_ref()
+                    .ok_or("Push descriptor extension not available")?;
+
+                push_descriptor.cmd_push_descriptor_set(
+                    command_buffer,
+                    vk::PipelineBindPoint::COMPUTE,
+                    vk_layout,
+                    1, // Set 1
+                    &push_descriptor_writes,
+                );
+            }
+        }
+
+        // Dispatch emit shader
+        unsafe {
+            device.cmd_dispatch(command_buffer, emit_workgroups, 1, 1);
+        }
+
+        Ok(())
+    }
+
+    /// Record simulate pass dispatch.
+    pub fn record_simulate_dispatch(
+        &self,
+        command_buffer: vk::CommandBuffer,
+        asset_registry: &AssetRegistry,
+        simulate_workgroups: u32,
+    ) -> Result<(), String> {
+        let pipeline = self
+            .simulate_pipeline
+            .ok_or("Simulate pipeline not created")?;
+
+        let compute_pipeline = asset_registry
+            .get_pipeline(pipeline)
+            .ok_or("Failed to get simulate pipeline from registry")?;
+
+        let vk_pipeline = compute_pipeline.vk_pipeline();
+        let vk_layout = compute_pipeline.vk_layout();
+
+        let device = &self.context.device;
+
+        // Bind simulate pipeline
+        unsafe {
+            device.cmd_bind_pipeline(command_buffer, vk::PipelineBindPoint::COMPUTE, vk_pipeline);
+        }
+
+        // Bind static descriptor set (Set 0: particle buffers)
+        if let Some(descriptor_set) = self.compute_descriptor_set {
+            unsafe {
+                device.cmd_bind_descriptor_sets(
+                    command_buffer,
+                    vk::PipelineBindPoint::COMPUTE,
+                    vk_layout,
+                    0, // Set 0
+                    std::slice::from_ref(&descriptor_set),
+                    &[],
+                );
+            }
+        } else {
+            return Err("Compute descriptor set not allocated".to_string());
+        }
+
+        // Update push descriptors (Set 1: frame data only - no emitter configs needed)
+        if let Some((frame_buffer, _)) = &self.frame_data_buffer {
+            let frame_buffer_info = [vk::DescriptorBufferInfo::default()
+                .buffer(*frame_buffer)
+                .offset(0)
+                .range(std::mem::size_of::<FrameData>() as u64)];
+
+            let push_descriptor_writes = [
+                vk::WriteDescriptorSet::default()
+                    .dst_binding(0) // Binding 0 in Set 1 (frame data)
+                    .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
+                    .buffer_info(&frame_buffer_info),
+            ];
+
+            unsafe {
+                let push_descriptor = self
+                    .context
+                    .push_descriptor_khr
+                    .as_ref()
+                    .ok_or("Push descriptor extension not available")?;
+
+                push_descriptor.cmd_push_descriptor_set(
+                    command_buffer,
+                    vk::PipelineBindPoint::COMPUTE,
+                    vk_layout,
+                    1, // Set 1
+                    &push_descriptor_writes,
+                );
+            }
+        }
+
+        // Dispatch simulate shader
+        unsafe {
+            device.cmd_dispatch(command_buffer, simulate_workgroups, 1, 1);
+        }
+
+        Ok(())
+    }
+
+    /// Record compute dispatch commands (legacy method for compatibility).
     pub fn record_compute_dispatch(
         &self,
         command_buffer: vk::CommandBuffer,
@@ -883,8 +1466,8 @@ impl GlobalParticleSystem {
         total_workgroups: u32,
     ) -> Result<(), String> {
         let pipeline = self
-            .compute_pipeline
-            .ok_or("Compute pipeline not created")?;
+            .simulate_pipeline
+            .ok_or("Simulate pipeline not created")?;
 
         let compute_pipeline = asset_registry
             .get_pipeline(pipeline)
@@ -918,45 +1501,46 @@ impl GlobalParticleSystem {
 
         // Update push descriptors (Set 1: frame data + emitter configs)
         if let Some((frame_buffer, _)) = &self.frame_data_buffer
-            && let Some((emitter_buffer, _)) = &self.emitter_configs_buffer {
-                let frame_buffer_info = [vk::DescriptorBufferInfo::default()
-                    .buffer(*frame_buffer)
-                    .offset(0)
-                    .range(std::mem::size_of::<FrameData>() as u64)];
+            && let Some((emitter_buffer, _)) = &self.emitter_configs_buffer
+        {
+            let frame_buffer_info = [vk::DescriptorBufferInfo::default()
+                .buffer(*frame_buffer)
+                .offset(0)
+                .range(std::mem::size_of::<FrameData>() as u64)];
 
-                let emitter_buffer_info = [vk::DescriptorBufferInfo::default()
-                    .buffer(*emitter_buffer)
-                    .offset(0)
-                    .range((self.emitters.len() * std::mem::size_of::<EmitterConfig>()) as u64)];
+            let emitter_buffer_info = [vk::DescriptorBufferInfo::default()
+                .buffer(*emitter_buffer)
+                .offset(0)
+                .range((self.emitters.len() * std::mem::size_of::<EmitterConfig>()) as u64)];
 
-                let push_descriptor_writes = [
-                    vk::WriteDescriptorSet::default()
-                        .dst_binding(5) // Binding 5 in Set 1 (frame data)
-                        .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
-                        .buffer_info(&frame_buffer_info),
-                    vk::WriteDescriptorSet::default()
-                        .dst_binding(6) // Binding 6 in Set 1 (emitter configs)
-                        .descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
-                        .buffer_info(&emitter_buffer_info),
-                ];
+            let push_descriptor_writes = [
+                vk::WriteDescriptorSet::default()
+                    .dst_binding(0) // Binding 0 in Set 1 (frame data)
+                    .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
+                    .buffer_info(&frame_buffer_info),
+                vk::WriteDescriptorSet::default()
+                    .dst_binding(1) // Binding 1 in Set 1 (emitter configs)
+                    .descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
+                    .buffer_info(&emitter_buffer_info),
+            ];
 
-                unsafe {
-                    // Use push descriptors (no allocation, writes directly to command buffer)
-                    let push_descriptor = self
-                        .context
-                        .push_descriptor_khr
-                        .as_ref()
-                        .ok_or("Push descriptor extension not available")?;
+            unsafe {
+                // Use push descriptors (no allocation, writes directly to command buffer)
+                let push_descriptor = self
+                    .context
+                    .push_descriptor_khr
+                    .as_ref()
+                    .ok_or("Push descriptor extension not available")?;
 
-                    push_descriptor.cmd_push_descriptor_set(
-                        command_buffer,
-                        vk::PipelineBindPoint::COMPUTE,
-                        vk_layout,
-                        1, // Set 1
-                        &push_descriptor_writes,
-                    );
-                }
+                push_descriptor.cmd_push_descriptor_set(
+                    command_buffer,
+                    vk::PipelineBindPoint::COMPUTE,
+                    vk_layout,
+                    1, // Set 1
+                    &push_descriptor_writes,
+                );
             }
+        }
 
         // Dispatch compute shader
         unsafe {
@@ -965,19 +1549,221 @@ impl GlobalParticleSystem {
 
         Ok(())
     }
+
+    /// Save an emitter configuration as a preset.
+    ///
+    /// # Arguments
+    /// * `name` - Preset name (will be saved as name.json)
+    /// * `config` - Emitter configuration to save
+    ///
+    /// # Errors
+    /// Returns error if file write or serialization fails
+    pub fn save_preset(&self, name: &str, config: &EmitterConfig) -> Result<(), String> {
+        let presets_dir = std::path::Path::new("assets/particles");
+        let preset = EmitterPreset::new(name.to_string(), *config);
+        let path = presets_dir.join(format!("{}.json", name));
+
+        preset.save_to_file(&path)
+    }
+
+    /// Load an emitter configuration from a preset.
+    ///
+    /// # Arguments
+    /// * `name` - Preset name (filename without .json extension)
+    ///
+    /// # Errors
+    /// Returns error if preset file not found or deserialization fails
+    pub fn load_preset(&self, name: &str) -> Result<EmitterConfig, String> {
+        let presets_dir = std::path::Path::new("assets/particles");
+        let path = presets_dir.join(format!("{}.json", name));
+
+        if !path.exists() {
+            return Err(format!("Preset '{}' not found at {}", name, path.display()));
+        }
+
+        let preset = EmitterPreset::load_from_file(&path)?;
+        Ok(preset.config)
+    }
+
+    /// Get list of available preset names.
+    ///
+    /// Scans the assets/particles/ directory for .json files.
+    ///
+    /// # Returns
+    /// Vector of preset names (filenames without .json extension)
+    pub fn get_available_presets(&self) -> Vec<String> {
+        let presets_dir = std::path::Path::new("assets/particles");
+        let mut presets = Vec::new();
+
+        if let Ok(entries) = std::fs::read_dir(presets_dir) {
+            for entry in entries.filter_map(|e| e.ok()) {
+                let path = entry.path();
+
+                if path.extension().and_then(|s| s.to_str()) == Some("json") {
+                    if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
+                        presets.push(stem.to_string());
+                    }
+                }
+            }
+        }
+
+        presets.sort();
+        presets
+    }
+
+    /// Load all presets from the assets/particles/ directory.
+    ///
+    /// This is a convenience method that loads all available presets.
+    /// Presets can then be accessed by name via `load_preset`.
+    ///
+    /// # Errors
+    /// Returns error if presets directory doesn't exist or isn't readable
+    pub fn load_all_presets(&self) -> Result<(), String> {
+        let presets_dir = std::path::Path::new("assets/particles");
+
+        if !presets_dir.exists() {
+            std::fs::create_dir_all(presets_dir).map_err(|e| {
+                format!(
+                    "Failed to create presets directory {}: {}",
+                    presets_dir.display(),
+                    e
+                )
+            })?;
+        }
+
+        let presets = self.get_available_presets();
+        log::info!(
+            "Found {} particle presets in {}",
+            presets.len(),
+            presets_dir.display()
+        );
+
+        Ok(())
+    }
+
+    /// Get comprehensive particle system statistics.
+    ///
+    /// Returns a snapshot of current system state including particle counts,
+    /// performance metrics, and memory usage.
+    pub fn get_stats(&self) -> ParticleStats {
+        ParticleStats {
+            max_alive_count: self.max_particles,
+            current_alive_count: self.alive_count(),
+            dead_count: self.max_particles - self.alive_count(),
+            total_emitted: self.total_emitted,
+            total_died: self.total_died,
+            compute_time_ms: self.cached_compute_time_ms(),
+            avg_compute_time_ms: self.avg_compute_time,
+            peak_compute_time_ms: self.peak_compute_time,
+            emitter_counts: self.calculate_emitter_counts(),
+            memory_used_mb: self.calculate_memory_usage(),
+            buffer_utilization: if self.max_particles > 0 {
+                self.alive_count() as f32 / self.max_particles as f32
+            } else {
+                0.0
+            },
+            frame_count: self.frame_count as u64,
+            total_dispatches: self.total_dispatches,
+        }
+    }
+
+    /// Calculate particle counts per emitter.
+    ///
+    /// Note: This is a simplified implementation that returns zeros for all emitters.
+    /// A full implementation would require GPU readback of per-emitter counters.
+    fn calculate_emitter_counts(&self) -> Vec<u32> {
+        // Simplified implementation - returns zeros for all active emitters
+        // A full implementation would require GPU readback or atomic counters per emitter
+        self.emitters
+            .iter()
+            .filter(|e| e.emit_rate > 0.0)
+            .map(|_| 0)
+            .collect()
+    }
+
+    /// Calculate total GPU memory usage in megabytes.
+    fn calculate_memory_usage(&self) -> f32 {
+        // Particle data: 48 bytes per particle
+        let particle_data_mb = (self.max_particles as f32) * 48.0 / (1024.0 * 1024.0);
+
+        // Index lists: dead + alive_current + alive_next (4 bytes per particle per list)
+        let index_lists_mb = (self.max_particles as f32) * 12.0 / (1024.0 * 1024.0);
+
+        // Counters: 32 bytes
+        let counters_mb = 32.0 / (1024.0 * 1024.0);
+
+        // Emitter configs: 80 bytes per emitter
+        let configs_mb = (self.emitters.len() as f32) * 80.0 / (1024.0 * 1024.0);
+
+        particle_data_mb + index_lists_mb + counters_mb + configs_mb
+    }
+
+    /// Update compute statistics with new timing data.
+    ///
+    /// Call this after each compute dispatch to update rolling averages and peak values.
+    ///
+    /// # Arguments
+    /// * `compute_time_ms` - Compute shader execution time in milliseconds
+    pub fn update_compute_stats(&mut self, compute_time_ms: f32) {
+        // Update history for rolling average
+        self.compute_time_history.push(compute_time_ms);
+        if self.compute_time_history.len() > 60 {
+            self.compute_time_history.remove(0);
+        }
+
+        // Calculate rolling average
+        if !self.compute_time_history.is_empty() {
+            self.avg_compute_time = self.compute_time_history.iter().sum::<f32>()
+                / self.compute_time_history.len() as f32;
+        }
+
+        // Update peak
+        if compute_time_ms > self.peak_compute_time {
+            self.peak_compute_time = compute_time_ms;
+        }
+    }
+
+    /// Update emission statistics.
+    ///
+    /// Call this after emitting particles to track lifetime statistics.
+    ///
+    /// # Arguments
+    /// * `emitted_count` - Number of particles emitted this frame
+    pub fn update_emission_stats(&mut self, emitted_count: u32) {
+        self.total_emitted += emitted_count as u64;
+    }
+
+    /// Update death statistics.
+    ///
+    /// Call this after particle simulation to track particles that died this frame.
+    ///
+    /// # Arguments
+    /// * `died_count` - Number of particles that died this frame
+    pub fn update_death_stats(&mut self, died_count: u32) {
+        self.total_died += died_count as u64;
+    }
+
+    /// Increment dispatch counter.
+    ///
+    /// Call this after each compute dispatch to track total dispatches.
+    pub fn increment_dispatch_count(&mut self) {
+        self.total_dispatches += 1;
+    }
+
+    /// Get maximum particle capacity.
+    pub fn max_particles(&self) -> u32 {
+        self.max_particles
+    }
 }
 
 impl Drop for GlobalParticleSystem {
     fn drop(&mut self) {
-        // Destroy descriptor pool if not already destroyed
-        if self._compute_descriptor_pool != vk::DescriptorPool::null() {
-            unsafe {
-                self.context
-                    .device
-                    .destroy_descriptor_pool(self._compute_descriptor_pool, None);
-            }
-            log::debug!("Destroyed particle compute descriptor pool via Drop");
+        // Ensure resources are cleaned up if destroy() wasn't called explicitly
+        if !self.destroyed {
+            // Call destroy() but suppress any errors since we're in Drop
+            let _ = self.destroy();
         }
+        // Descriptor pool is already destroyed in destroy() method
     }
 }
 
