@@ -1294,6 +1294,7 @@ dependencies = [
  "ash-window",
  "bitflags 2.11.0",
  "bytemuck",
+ "env_logger",
  "gpu-allocator",
  "log",
  "naga",

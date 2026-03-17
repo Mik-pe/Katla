@@ -2559,18 +2559,19 @@ impl<'a> Frame<'a> {
                 return Ok(()); // Skip dispatch
             }
 
-            // Update compute descriptor bindings for this frame's double-buffered region
-            particle_system
-                .update_compute_descriptor_binding(current_frame)
-                .map_err(|e| {
-                    RenderGraphError::VulkanError(format!(
-                        "Failed to update particle compute descriptor binding: {}",
-                        e
-                    ))
-                })?;
-
             // Record the appropriate dispatch based on pass name
             if pass.name.contains("emit") {
+                // Update compute descriptor bindings for EMIT pass
+                // CRITICAL: Emit needs binding 3 to point to alive_current[frame_index]
+                // so that newly emitted particles are written where simulate will read them
+                particle_system
+                    .update_compute_descriptor_binding_for_emit(current_frame)
+                    .map_err(|e| {
+                        RenderGraphError::VulkanError(format!(
+                            "Failed to update particle compute descriptor binding for emit: {}",
+                            e
+                        ))
+                    })?;
                 particle_system
                     .record_emit_dispatch(
                         cmd.vk_command_buffer(),
@@ -2594,6 +2595,17 @@ impl<'a> Frame<'a> {
                         ))
                     })?;
             } else if pass.name.contains("simulate") {
+                // Update compute descriptor bindings for SIMULATE pass
+                // CRITICAL: Simulate needs binding 3 to point to alive_next buffer
+                // so that survivors are written to the correct location for swapping
+                particle_system
+                    .update_compute_descriptor_binding_for_simulate(current_frame)
+                    .map_err(|e| {
+                        RenderGraphError::VulkanError(format!(
+                            "Failed to update particle compute descriptor binding for simulate: {}",
+                            e
+                        ))
+                    })?;
                 particle_system
                     .record_simulate_dispatch(
                         cmd.vk_command_buffer(),

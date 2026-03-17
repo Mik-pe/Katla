@@ -38,16 +38,18 @@ pub fn execute_gpu_compute(
     // Create command buffer for compute operations
     let command_buffer = context.begin_single_time_commands();
 
-    // CRITICAL: Update compute descriptor binding to use correct frame's alive_list
+    // CRITICAL: Update compute descriptor bindings for each dispatch
     // The validation runs frames 0-9, so we need to use frame_index % 2 for double-buffering
     let frame_index_for_descriptor = (alive_count % 2) as usize;  // Use alternating frames
-    log::info!("Updating compute descriptor binding with frame_index={}", frame_index_for_descriptor);
-    if let Err(e) = particle_system.update_compute_descriptor_binding(frame_index_for_descriptor) {
-        log::warn!("Failed to update compute descriptor binding: {}", e);
-    }
 
     // Record emit dispatch if we have particles to emit
     if emit_workgroups > 0 {
+        // Update descriptor binding for emit dispatch
+        log::info!("Updating compute descriptor binding for emit with frame_index={}", frame_index_for_descriptor);
+        if let Err(e) = particle_system.update_compute_descriptor_binding_for_emit(frame_index_for_descriptor) {
+            log::warn!("Failed to update compute descriptor binding for emit: {}", e);
+        }
+
         log::debug!("Recording emit dispatch: {} workgroups ({} particles)", emit_workgroups, emit_count);
         match particle_system.record_emit_dispatch(
             command_buffer.vk_command_buffer(),
@@ -66,6 +68,12 @@ pub fn execute_gpu_compute(
 
     // Record simulate dispatch if we have alive particles
     if simulate_workgroups > 0 {
+        // Update descriptor binding for simulate dispatch
+        log::info!("Updating compute descriptor binding for simulate with frame_index={}", frame_index_for_descriptor);
+        if let Err(e) = particle_system.update_compute_descriptor_binding_for_simulate(frame_index_for_descriptor) {
+            log::warn!("Failed to update compute descriptor binding for simulate: {}", e);
+        }
+
         log::debug!("Recording simulate dispatch: {} workgroups ({} particles)", simulate_workgroups, alive_count);
         match particle_system.record_simulate_dispatch(
             command_buffer.vk_command_buffer(),
