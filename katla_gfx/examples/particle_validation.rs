@@ -34,6 +34,303 @@ const NUM_FRAMES: u32 = 10;
 /// Delta time per frame (60 FPS)
 const DELTA_TIME: f32 = 1.0 / 60.0;
 
+/// Track particle diagnostics per frame
+struct FrameDiagnostics {
+    frame: u32,
+    alive_count: u32,
+    emit_count: u32,
+    delta_time: f32,
+    cumulative_time: f32,
+}
+
+impl FrameDiagnostics {
+    fn new(frame: u32, alive_count: u32, emit_count: u32, delta_time: f32, cumulative_time: f32) -> Self {
+        Self {
+            frame,
+            alive_count,
+            emit_count,
+            delta_time,
+            cumulative_time,
+        }
+    }
+
+    fn log(&self) {
+        log::info!(
+            "FRAME {}: alive={} emit={} dt={:.5}s cumulative={:.2}s",
+            self.frame,
+            self.alive_count,
+            self.emit_count,
+            self.delta_time,
+            self.cumulative_time
+        );
+    }
+}
+
+/// Track alive_list content across frames for corruption detection.
+///
+/// This struct stores the alive_list indices for each frame and provides
+/// validation functions to detect corruption patterns.
+struct FrameAliveListTracker {
+    /// Store alive_list indices for each frame
+    frame_data: Vec<FrameAliveData>,
+    /// Maximum particles in the system
+    max_particles: u32,
+}
+
+/// Per-frame alive_list data
+#[derive(Clone, Debug)]
+struct FrameAliveData {
+    /// Frame number
+    frame: u32,
+    /// Alive particle indices from this frame
+    alive_indices: Vec<u32>,
+    /// Alive count (should match alive_indices.len())
+    alive_count: u32,
+    /// Emit count for this frame
+    emit_count: u32,
+    /// Cumulative time at this frame
+    cumulative_time: f32,
+}
+
+impl FrameAliveListTracker {
+    /// Create a new tracker with given capacity.
+    fn new(max_particles: u32, expected_frames: u32) -> Self {
+        Self {
+            frame_data: Vec::with_capacity(expected_frames as usize),
+            max_particles,
+        }
+    }
+
+    /// Record alive_list data for a frame.
+    fn record_frame(&mut self, frame: u32, alive_list: &[u32], alive_count: u32, emit_count: u32, cumulative_time: f32) {
+        // Only store the actual alive particles (first alive_count entries)
+        let actual_alive: Vec<u32> = alive_list.iter()
+            .take(alive_count as usize)
+            .copied()
+            .collect();
+
+        self.frame_data.push(FrameAliveData {
+            frame,
+            alive_indices: actual_alive,
+            alive_count,
+            emit_count,
+            cumulative_time,
+        });
+    }
+
+    /// Validate frame-to-frame transitions for corruption patterns.
+    fn validate_transitions(&self) -> Result<(), Vec<String>> {
+        let mut errors = Vec::new();
+
+        if self.frame_data.len() < 2 {
+            return Ok(()); // Need at least 2 frames to compare
+        }
+
+        log::info!("=== FRAME-TO-FRAME ALIVE_LIST TRANSITION VALIDATION ===");
+
+        for i in 0..self.frame_data.len() - 1 {
+            let current = &self.frame_data[i];
+            let next = &self.frame_data[i + 1];
+
+            log::info!("--- Frame {} → {} ---", current.frame, next.frame);
+
+            // Create sets for comparison
+            let current_set: std::collections::HashSet<u32> = current.alive_indices.iter().cloned().collect();
+            let next_set: std::collections::HashSet<u32> = next.alive_indices.iter().cloned().collect();
+
+            // Calculate transitions
+            let stayed_alive: Vec<u32> = current.alive_indices.iter()
+                .filter(|idx| next_set.contains(idx))
+                .cloned()
+                .collect();
+
+            let new_particles: Vec<u32> = next.alive_indices.iter()
+                .filter(|idx| !current_set.contains(idx))
+                .cloned()
+                .collect();
+
+            let died_particles: Vec<u32> = current.alive_indices.iter()
+                .filter(|idx| !next_set.contains(idx))
+                .cloned()
+                .collect();
+
+            let expected_new = next.emit_count;
+            let expected_stayed = current.alive_count.saturating_sub(
+                (current.alive_count as f32 * current.cumulative_time / 2.0).ceil() as u32 // Rough estimate
+            );
+
+            log::info!("  Current frame: {} alive particles", current.alive_count);
+            log::info!("  Next frame: {} alive particles", next.alive_count);
+            log::info!("  Stayed alive: {} particles (expected ~{})", stayed_alive.len(), expected_stayed);
+            log::info!("  New particles: {} (expected {} from emit)", new_particles.len(), expected_new);
+            log::info!("  Died particles: {}", died_particles.len());
+
+            // Validate consistency
+            let actual_growth = next.alive_count as i32 - current.alive_count as i32;
+            let expected_growth = next.emit_count as i32 - died_particles.len() as i32;
+
+            if (actual_growth - expected_growth).abs() > 5 {
+                errors.push(format!(
+                    "Frame {} → {}: Alive count growth mismatch. actual={}->{} (delta={}), expected delta ~{} (emit={} - died={})",
+                    current.frame, next.frame,
+                    current.alive_count, next.alive_count, actual_growth,
+                    expected_growth, next.emit_count, died_particles.len()
+                ));
+            }
+
+            // Check for suspicious patterns
+            if stayed_alive.len() < current.alive_count as usize / 2 {
+                errors.push(format!(
+                    "Frame {} → {}: More than half of particles died unexpectedly! {}/{} stayed alive",
+                    current.frame, next.frame, stayed_alive.len(), current.alive_count
+                ));
+            }
+
+            if new_particles.len() > next.emit_count as usize + 5 {
+                errors.push(format!(
+                    "Frame {} → {}: More new particles than emitted! new={}, emit={}",
+                    current.frame, next.frame, new_particles.len(), next.emit_count
+                ));
+            }
+        }
+
+        log::info!("=== TRANSITION VALIDATION COMPLETE ===");
+
+        if errors.is_empty() {
+            Ok(())
+        } else {
+            Err(errors)
+        }
+    }
+
+    /// Check for corruption within each frame's alive_list.
+    fn validate_per_frame(&self) -> Result<(), Vec<String>> {
+        let mut errors = Vec::new();
+
+        log::info!("=== PER-FRAME ALIVE_LIST CORRUPTION CHECK ===");
+
+        for frame_data in &self.frame_data {
+            log::info!("Frame {} ({} alive particles):", frame_data.frame, frame_data.alive_count);
+
+            // Check for duplicates
+            let mut seen = std::collections::HashSet::new();
+            let mut duplicates = Vec::new();
+            let mut dup_counts: std::collections::HashMap<u32, usize> = std::collections::HashMap::new();
+
+            for &idx in &frame_data.alive_indices {
+                if !seen.insert(idx) {
+                    duplicates.push(idx);
+                }
+                *dup_counts.entry(idx).or_insert(0) += 1;
+            }
+
+            if !duplicates.is_empty() {
+                // Find most common duplicate
+                let mut most_common_dup = (0, 0);
+                for (idx, count) in &dup_counts {
+                    if *count > most_common_dup.1 {
+                        most_common_dup = (*idx, *count);
+                    }
+                }
+
+                // Count how many unique indices are duplicates
+                let unique_dups: std::collections::HashSet<u32> = duplicates.iter().cloned().collect();
+
+                errors.push(format!(
+                    "Frame {}: Found {} duplicate occurrences ({} unique indices with duplicates). Most common: index {} appears {} times",
+                    frame_data.frame,
+                    duplicates.len(),
+                    unique_dups.len(),
+                    most_common_dup.0,
+                    most_common_dup.1
+                ));
+                log::warn!("  ERROR: {} duplicate occurrences found ({} unique indices)", duplicates.len(), unique_dups.len());
+                log::warn!("    Most duplicated index: {} appears {} times", most_common_dup.0, most_common_dup.1);
+
+                // Show first 20 alive_list entries to understand the pattern
+                log::warn!("    First 20 alive_list entries: {:?}", &frame_data.alive_indices[..20.min(frame_data.alive_indices.len())]);
+            }
+
+            // Check for out-of-bounds indices
+            let out_of_bounds: Vec<u32> = frame_data.alive_indices.iter()
+                .filter(|&&idx| idx >= self.max_particles)
+                .cloned()
+                .collect();
+
+            if !out_of_bounds.is_empty() {
+                errors.push(format!(
+                    "Frame {}: Found {} out-of-bounds indices in alive_list (max={}): {:?}",
+                    frame_data.frame,
+                    out_of_bounds.len(),
+                    self.max_particles,
+                    out_of_bounds.iter().take(10).cloned().collect::<Vec<_>>()
+                ));
+                log::warn!("  ERROR: {} out-of-bounds indices found", out_of_bounds.len());
+            }
+
+            // Check for index jump corruption (sudden large changes)
+            if frame_data.alive_indices.len() > 10 {
+                let mut large_jumps = 0;
+                for i in 1..frame_data.alive_indices.len() {
+                    let prev = frame_data.alive_indices[i - 1];
+                    let curr = frame_data.alive_indices[i];
+                    let diff = if curr > prev { curr - prev } else { prev - curr };
+
+                    // Large jump (>1000) is suspicious for consecutive particles
+                    if diff > 1000 {
+                        large_jumps += 1;
+                    }
+                }
+
+                if large_jumps > frame_data.alive_indices.len() / 4 {
+                    errors.push(format!(
+                        "Frame {}: Excessive large jumps in alive_list ({} jumps out of {} entries)",
+                        frame_data.frame, large_jumps, frame_data.alive_indices.len()
+                    ));
+                    log::warn!("  ERROR: {} large jumps detected", large_jumps);
+                }
+            }
+
+            if duplicates.is_empty() && out_of_bounds.is_empty() {
+                log::info!("  ✓ No corruption detected");
+            }
+        }
+
+        log::info!("=== PER-FRAME VALIDATION COMPLETE ===");
+
+        if errors.is_empty() {
+            Ok(())
+        } else {
+            Err(errors)
+        }
+    }
+
+    /// Print detailed frame summary.
+    fn print_summary(&self) {
+        log::info!("=== ALIVE_LIST TRACKING SUMMARY ===");
+        log::info!("Tracked {} frames", self.frame_data.len());
+
+        for frame_data in &self.frame_data {
+            log::info!(
+                "Frame {}: {} alive particles (emit={}, cumulative_time={:.3}s)",
+                frame_data.frame,
+                frame_data.alive_count,
+                frame_data.emit_count,
+                frame_data.cumulative_time
+            );
+        }
+
+        // Calculate statistics
+        let total_alive: u64 = self.frame_data.iter().map(|d| d.alive_count as u64).sum();
+        let avg_alive = total_alive / self.frame_data.len() as u64;
+
+        log::info!("Statistics:");
+        log::info!("  Total alive particles across all frames: {}", total_alive);
+        log::info!("  Average alive particles per frame: {}", avg_alive);
+        log::info!("  Max particles in system: {}", self.max_particles);
+    }
+}
+
 fn main() -> ExitCode {
     // Initialize logging
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
@@ -111,21 +408,54 @@ fn main() -> ExitCode {
 
     // Run GPU compute simulation for several frames
     log::info!("Running GPU compute simulation for {} frames...", NUM_FRAMES);
+    log::info!("=== FRAME-BY-FRAME DIAGNOSTICS ===");
+    log::info!("Delta time per frame: {:.5}s (60 FPS)", DELTA_TIME);
+    log::info!("Expected cumulative times:");
+    for f in [0, 1, 2, 5, 9].iter() {
+        log::info!("  Frame {}: cumulative_time = {:.5}s", f, (*f as f32 + 1.0) * DELTA_TIME);
+    }
+
+    let mut cumulative_time = 0.0;
+    let mut prev_alive_count = 0u32;
+
+    // Create tracker for alive_list validation across frames
+    let mut alive_tracker = FrameAliveListTracker::new(MAX_PARTICLES, NUM_FRAMES);
 
     for frame in 0..NUM_FRAMES {
+        cumulative_time += DELTA_TIME;
         let is_last_frame = frame == NUM_FRAMES - 1;
 
         // Prepare frame data (uploads emitter configs, frame data)
         match particle_system.update(DELTA_TIME, frame) {
             Ok((alive_count, emit_count)) => {
-                if frame % 2 == 0 || is_last_frame {
-                    log::debug!(
-                        "Frame {}: {} alive particles, {} to emit",
-                        frame,
-                        alive_count,
-                        emit_count
-                    );
+                let died_this_frame = if alive_count < prev_alive_count {
+                    prev_alive_count - alive_count
+                } else {
+                    0
+                };
+
+                // Log every frame with full diagnostics
+                let diag = FrameDiagnostics::new(frame, alive_count, emit_count, DELTA_TIME, cumulative_time);
+                diag.log();
+
+                if died_this_frame > 0 {
+                    log::info!("  → {} particles died this frame", died_this_frame);
                 }
+
+                // Expected behavior at this frame
+                let expected_alive = estimate_expected_alive(frame);
+                let diff = if alive_count as i32 > expected_alive {
+                    alive_count as i32 - expected_alive
+                } else {
+                    expected_alive - alive_count as i32
+                };
+
+                if frame % 3 == 0 || is_last_frame {
+                    log::info!("  Expected alive: ~{}, Actual: {}, Diff: {}",
+                               expected_alive, alive_count, diff);
+                }
+
+                prev_alive_count = alive_count;
 
                 // Execute actual GPU compute dispatch
                 if let Err(e) = execute_gpu_compute(
@@ -134,16 +464,68 @@ fn main() -> ExitCode {
                     &asset_registry,
                     alive_count,
                     emit_count,
-                    is_last_frame,
                 ) {
                     log::error!("Failed to execute GPU compute at frame {}: {}", frame, e);
                     return ExitCode::from(1);
+                }
+
+                // Read back alive_list data for this frame (after GPU compute)
+                if let Ok(debug_data) = particle_system.read_debug_data() {
+                    alive_tracker.record_frame(
+                        frame,
+                        &debug_data.alive_list,
+                        debug_data.counters.alive_count,
+                        emit_count,
+                        cumulative_time
+                    );
+
+                    // Log alive_list sample for this frame
+                    if frame % 3 == 0 || is_last_frame {
+                        log::info!("  Alive list sample (first 10 indices):");
+                        for (i, &idx) in debug_data.alive_list.iter().take(10).enumerate() {
+                            log::info!("    alive_list[{}] = {}", i, idx);
+                        }
+                    }
                 }
             }
             Err(e) => {
                 log::error!("Failed to update particle system at frame {}: {}", frame, e);
                 return ExitCode::from(1);
             }
+        }
+    }
+
+    log::info!("=== FRAME-BY-FRAME DIAGNOSTICS END ===");
+
+    // Run alive_list validation across all frames
+    log::info!("Running alive_list corruption detection across all frames...");
+    alive_tracker.print_summary();
+
+    // Validate per-frame corruption (duplicates, out-of-bounds, etc.)
+    match alive_tracker.validate_per_frame() {
+        Ok(_) => {
+            log::info!("✓ Per-frame alive_list validation passed");
+        }
+        Err(errors) => {
+            log::error!("✗ Per-frame alive_list validation failed:");
+            for error in &errors {
+                log::error!("  {}", error);
+            }
+            return ExitCode::from(1);
+        }
+    }
+
+    // Validate frame-to-frame transitions
+    match alive_tracker.validate_transitions() {
+        Ok(_) => {
+            log::info!("✓ Frame-to-frame transition validation passed");
+        }
+        Err(errors) => {
+            log::error!("✗ Frame-to-frame transition validation failed:");
+            for error in &errors {
+                log::error!("  {}", error);
+            }
+            return ExitCode::from(1);
         }
     }
 
@@ -194,6 +576,42 @@ fn main() -> ExitCode {
 
     log::info!("=== All Validations Passed ===");
     ExitCode::SUCCESS
+}
+
+/// Estimate expected alive particles at a given frame.
+///
+/// This is a rough estimate based on emitter configurations:
+/// - Emitter 1: 100/sec, lifetime 2.0s
+/// - Emitter 2: 200/sec, lifetime 3.0s
+/// - Emitter 3: 100 burst, lifetime 1.5s
+fn estimate_expected_alive(frame: u32) -> i32 {
+    let time = (frame + 1) as f32 * DELTA_TIME;
+
+    // Emitter 1: 100/sec * min(time, 2.0) * survival_ratio
+    let e1_emitted = (100.0 * time.min(2.0)).ceil() as i32;
+    let e1_alive = if time > 2.0 {
+        0 // All particles from emitter 1 have died by 2.0s
+    } else {
+        // Approximate: particles emitted in last 2.0s are still alive
+        ((100.0 * time.min(2.0)) * (1.0 - (time / 2.0) * 0.5)).ceil() as i32
+    };
+
+    // Emitter 2: 200/sec * min(time, 3.0)
+    let e2_emitted = (200.0 * time.min(3.0)).ceil() as i32;
+    let e2_alive = if time > 3.0 {
+        0
+    } else {
+        ((200.0 * time.min(3.0)) * (1.0 - (time / 3.0) * 0.3)).ceil() as i32
+    };
+
+    // Emitter 3: 100 burst at frame 0, lifetime 1.5s
+    let e3_alive = if time < 1.5 {
+        100 // All burst particles still alive
+    } else {
+        0 // All burst particles have died
+    };
+
+    e1_alive + e2_alive + e3_alive
 }
 
 /// Create test emitters with known properties for validation.
@@ -275,9 +693,27 @@ fn create_test_emitters(
 /// - Particle colors are in [0, 1] range
 /// - Particle scales are positive
 /// - Particles were actually simulated on GPU (positions changed from initial values)
+///
+/// Additionally provides diagnostic information about:
+/// - Actual particle lifetimes from readback
+/// - Particle lifetime distribution
+/// - Which particles are dying and why
 fn validate_particle_data(
     particle_system: &GlobalParticleSystem,
 ) -> Result<(), String> {
+    log::info!("=== LIFETIME DIAGNOSTICS BEGIN ===");
+    log::info!("Expected lifetimes from emitter config:");
+    log::info!("  Emitter 1: base_lifetime = 2.0s (100 particles/sec)");
+    log::info!("  Emitter 2: base_lifetime = 3.0s (200 particles/sec)");
+    log::info!("  Emitter 3: base_lifetime = 1.5s (100 burst particles)");
+    log::info!("After {} frames at {:.5}s per frame, cumulative time = {:.2}s",
+               NUM_FRAMES, DELTA_TIME, NUM_FRAMES as f32 * DELTA_TIME);
+    log::info!("Expected alive count:");
+    log::info!("  Emitter 1: ~17 emitted * (1.0 - 0.5/2.0) = ~17 alive (lost ~0-1 to random variation)");
+    log::info!("  Emitter 2: ~33 emitted * (1.0 - 0.5/3.0) = ~33 alive (lost ~0-1 to random variation)");
+    log::info!("  Emitter 3: 100 emitted * (1.0 - 0.5/1.5) = ~67-100 alive (many should have died)");
+    log::info!("  Total expected: ~117-150 alive particles");
+
     // Read particle data using debug readback (staging buffer copy)
     let debug_data = match particle_system.read_debug_data() {
         Ok(data) => data,
@@ -350,6 +786,133 @@ fn validate_particle_data(
         .take(alive_count)
         .map(|&idx| idx as usize)
         .collect();
+
+    // LIFETIME DIAGNOSTICS: Analyze particle lifetimes in detail
+    log::info!("=== DETAILED LIFETIME ANALYSIS ===");
+
+    // Collect all alive particle lifetimes
+    let mut alive_lifetimes: Vec<f32> = Vec::new();
+    let mut dead_lifetimes: Vec<f32> = Vec::new();
+
+    // Process alive particles
+    for &idx in &alive_indices {
+        if idx < particles.len() {
+            let p = &particles[idx];
+            alive_lifetimes.push(p.lifetime);
+        }
+    }
+
+    // Process dead particles (scan all particles, check if not in alive list and has been simulated)
+    let alive_set: std::collections::HashSet<usize> = alive_indices.iter().cloned().collect();
+    for idx in 0..particles.len() {
+        if !alive_set.contains(&idx) {
+            let p = &particles[idx];
+            // Check if this particle was ever emitted/simulated (not at initial position)
+            let test_position = [9.87, 6.54, 3.21];
+            let is_at_initial = (p.position[0] - test_position[0]).abs() < 0.01
+                && (p.position[1] - test_position[1]).abs() < 0.01
+                && (p.position[2] - test_position[2]).abs() < 0.01;
+
+            if !is_at_initial {
+                // This particle was emitted but is now dead
+                dead_lifetimes.push(p.lifetime);
+            }
+        }
+    }
+
+    // Sort lifetimes for percentile analysis
+    alive_lifetimes.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    dead_lifetimes.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+
+    log::info!("Alive particle lifetime statistics ({} particles):", alive_lifetimes.len());
+    if !alive_lifetimes.is_empty() {
+        log::info!("  Min: {:.5}s", alive_lifetimes[0]);
+        log::info!("  Max: {:.5}s", alive_lifetimes[alive_lifetimes.len() - 1]);
+        log::info!("  Mean: {:.5}s", alive_lifetimes.iter().sum::<f32>() / alive_lifetimes.len() as f32);
+
+        // Percentiles
+        let p25_idx = alive_lifetimes.len() * 25 / 100;
+        let p50_idx = alive_lifetimes.len() * 50 / 100;
+        let p75_idx = alive_lifetimes.len() * 75 / 100;
+        log::info!("  25th percentile: {:.5}s", alive_lifetimes[p25_idx]);
+        log::info!("  50th percentile (median): {:.5}s", alive_lifetimes[p50_idx]);
+        log::info!("  75th percentile: {:.5}s", alive_lifetimes[p75_idx]);
+
+        // Lifetime distribution histogram
+        log::info!("  Lifetime distribution:");
+        let mut buckets = [0usize; 10];
+        for &lt in &alive_lifetimes {
+            let bucket_idx = if lt >= 3.0 {
+                9
+            } else {
+                (lt / 0.3).floor() as usize
+            };
+            if bucket_idx < 10 {
+                buckets[bucket_idx] += 1;
+            }
+        }
+        for (i, count) in buckets.iter().enumerate() {
+            let range_start = i as f32 * 0.3;
+            let range_end = (i + 1) as f32 * 0.3;
+            log::info!("    [{:.2}s, {:.2}s): {} particles", range_start, range_end, count);
+        }
+
+        // Show first 20 alive particle lifetimes individually
+        log::info!("  First 20 alive particle lifetimes:");
+        for (i, lt) in alive_lifetimes.iter().take(20).enumerate() {
+            log::info!("    Alive[{}]: lifetime = {:.5}s", i, lt);
+        }
+    }
+
+    log::info!("Dead particle lifetime statistics ({} particles):", dead_lifetimes.len());
+    if !dead_lifetimes.is_empty() {
+        log::info!("  Min: {:.5}s", dead_lifetimes[0]);
+        log::info!("  Max: {:.5}s", dead_lifetimes[dead_lifetimes.len() - 1]);
+
+        // Show first 20 dead particle lifetimes
+        log::info!("  First 20 dead particle lifetimes:");
+        for (i, lt) in dead_lifetimes.iter().take(20).enumerate() {
+            log::info!("    Dead[{}]: lifetime = {:.5}s", i, lt);
+        }
+    }
+
+    // CRITICAL: Check if lifetimes match expectations
+    log::info!("=== LIFETIME VALIDATION ===");
+    let cumulative_time = NUM_FRAMES as f32 * DELTA_TIME;
+    log::info!("Cumulative simulation time: {:.5}s ({} frames * {:.5}s/frame)",
+               cumulative_time, NUM_FRAMES, DELTA_TIME);
+
+    // Expected remaining lifetime for each emitter type
+    // Emitter 1: 2.0s base, should have ~2.0 - 0.1667 = 1.8333s remaining
+    // Emitter 2: 3.0s base, should have ~3.0 - 0.1667 = 2.8333s remaining
+    // Emitter 3: 1.5s base, burst at frame 0, should have ~1.5 - 0.1667 = 1.3333s remaining (some may have died)
+
+    // Check if lifetimes are way too low (indicates 3x bug or similar)
+    if !alive_lifetimes.is_empty() {
+        let avg_lifetime = alive_lifetimes.iter().sum::<f32>() / alive_lifetimes.len() as f32;
+        let expected_min_avg = 1.3; // Minimum expected average (dominated by burst emitter)
+        let expected_max_avg = 2.9; // Maximum expected average (dominated by long-lived emitters)
+
+        log::info!("Average alive particle lifetime: {:.5}s", avg_lifetime);
+        log::info!("Expected range: [{:.5}s, {:.5}s]", expected_min_avg, expected_max_avg);
+
+        if avg_lifetime < expected_min_avg * 0.5 {
+            log::error!("CRITICAL: Average lifetime is WAY too low!");
+            log::error!("Expected at least {:.5}s, got {:.5}s", expected_min_avg * 0.5, avg_lifetime);
+            log::error!("This indicates particles are dying ~3x faster than they should!");
+            log::error!("Possible causes:");
+            log::error!("  1. Delta time is 3x larger than expected");
+            log::error!("  2. Lifetime subtraction is wrong (e.g., subtracting 3*dt instead of dt)");
+            log::error!("  3. Kill condition is wrong (e.g., lifetime < 0.5 instead of lifetime <= 0)");
+        } else if avg_lifetime < expected_min_avg {
+            log::warn!("WARNING: Average lifetime is lower than expected");
+            log::warn!("Expected at least {:.5}s, got {:.5}s", expected_min_avg, avg_lifetime);
+        } else {
+            log::info!("✓ Average lifetime is within expected range");
+        }
+    }
+
+    log::info!("=== LIFETIME DIAGNOSTICS END ===");
 
     // Verify indices are within bounds
     let mut out_of_bounds_count = 0;

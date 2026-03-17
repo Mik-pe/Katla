@@ -15,7 +15,6 @@ pub fn execute_gpu_compute(
     asset_registry: &AssetRegistry,
     alive_count: u32,
     emit_count: u32,
-    is_last_frame: bool,
 ) -> Result<(), String> {
     // Calculate workgroup counts based on particle counts
     let emit_workgroups = if emit_count > 0 {
@@ -90,16 +89,14 @@ pub fn execute_gpu_compute(
         }
     }
 
-    // On the last frame, record debug readback before ending command buffer
-    if is_last_frame {
-        log::debug!("Recording debug readback for validation");
-        match particle_system.record_debug_readback(command_buffer.vk_command_buffer()) {
-            Ok(_) => {
-                log::debug!("Debug readback recorded successfully");
-            }
-            Err(e) => {
-                log::warn!("Failed to record debug readback: {}", e);
-            }
+    // Record debug readback for every frame to track alive_list evolution
+    log::debug!("Recording debug readback for frame tracking");
+    match particle_system.record_debug_readback(command_buffer.vk_command_buffer()) {
+        Ok(_) => {
+            log::debug!("Debug readback recorded successfully");
+        }
+        Err(e) => {
+            log::warn!("Failed to record debug readback: {}", e);
         }
     }
 
