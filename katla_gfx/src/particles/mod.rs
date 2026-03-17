@@ -143,8 +143,11 @@ pub const DEFAULT_MAX_PARTICLES: u32 = 1_048_576; // 1M particles (48MB)
 /// Maximum emitters in system
 pub const MAX_EMITTERS: u32 = 1024;
 
-/// Workgroup size for particle compute shader
-pub const PARTICLE_WORKGROUP_SIZE: u32 = 256;
+/// Workgroup size for particle emit compute shader (must match @workgroup_size in particle_emit.wgsl)
+pub const PARTICLE_EMIT_WORKGROUP_SIZE: u32 = 256;
+
+/// Workgroup size for particle simulate compute shader (must match @workgroup_size in particle_simulate.wgsl)
+pub const PARTICLE_SIMULATE_WORKGROUP_SIZE: u32 = 64;
 
 /// Per-emitter configuration for GPU.
 ///
@@ -518,7 +521,7 @@ impl GlobalParticleSystem {
         }
 
         self.emitters[index as usize] = config;
-        
+
         // Explicitly initialize emitter state to ensure clean state
         self.emitter_states[index as usize] = EmitterState::default();
 
@@ -821,8 +824,13 @@ impl GlobalParticleSystem {
         let alive_list_size = (self.max_particles as u64) * std::mem::size_of::<u32>() as u64;
         let frame_offset = base_alive_list_offset + (frame_index as u64 * alive_list_size);
 
-        log::debug!("update_compute_descriptor_binding: frame_index={}, base_offset={}, frame_offset={}, alive_list_size={}",
-            frame_index, base_alive_list_offset, frame_offset, alive_list_size);
+        log::debug!(
+            "update_compute_descriptor_binding: frame_index={}, base_offset={}, frame_offset={}, alive_list_size={}",
+            frame_index,
+            base_alive_list_offset,
+            frame_offset,
+            alive_list_size
+        );
 
         // Update binding 2 (alive_list) with frame-specific offset
         let alive_list_info = [vk::DescriptorBufferInfo {
@@ -900,11 +908,7 @@ impl GlobalParticleSystem {
     pub fn calculate_emit_count(&mut self, delta_time: f32) -> u32 {
         let mut total_emit = 0u32;
 
-        for (emitter, state) in self
-            .emitters
-            .iter()
-            .zip(self.emitter_states.iter_mut())
-        {
+        for (emitter, state) in self.emitters.iter().zip(self.emitter_states.iter_mut()) {
             if emitter.emit_rate > 0.0 {
                 // Accumulate fractional particles
                 state.emit_accumulator += emitter.emit_rate * delta_time;
@@ -1448,7 +1452,8 @@ impl GlobalParticleSystem {
         let alive_list_next_info = [vk::DescriptorBufferInfo {
             buffer: self.buffer.particle_buffer(),
             offset: (self.buffer.max_particles() as u64)
-                * (std::mem::size_of::<buffer::ParticleData>() as u64 + (frames_in_flight + 1) * std::mem::size_of::<u32>() as u64),
+                * (std::mem::size_of::<buffer::ParticleData>() as u64
+                    + (frames_in_flight + 1) * std::mem::size_of::<u32>() as u64),
             range: (self.buffer.max_particles() as u64) * std::mem::size_of::<u32>() as u64,
         }];
 
@@ -1519,7 +1524,10 @@ impl GlobalParticleSystem {
                 ), // alive_current[0]
                 (
                     3,
-                    particle_data_size + (frames_in_flight as u64 + 1) * index_entry_size * self.buffer.max_particles() as u64,
+                    particle_data_size
+                        + (frames_in_flight + 1)
+                            * index_entry_size
+                            * self.buffer.max_particles() as u64,
                 ), // alive_next (after alive_current[0] and alive_current[1])
             ];
 
@@ -1628,7 +1636,7 @@ impl GlobalParticleSystem {
     /// Note: Particle rendering uses 2 descriptor sets:
     /// - Set 0: Particle buffers (particles, alive_list, etc.)
     /// - Set 1: Standard renderer storage uniforms (view/proj matrices)
-    /// The render graph will bind Set 1 automatically during particle rendering.
+    ///   The render graph will bind Set 1 automatically during particle rendering.
     pub fn create_render_pipeline(
         &mut self,
         asset_registry: &mut AssetRegistry,
