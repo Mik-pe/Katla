@@ -1356,6 +1356,7 @@ fn create_device(
         descriptor_indexing: vk::TRUE,
         shader_sampled_image_array_non_uniform_indexing: vk::TRUE,
         descriptor_binding_sampled_image_update_after_bind: vk::TRUE,
+        descriptor_binding_storage_buffer_update_after_bind: vk::TRUE, // Enable for particle system
         descriptor_binding_partially_bound: vk::TRUE,
         descriptor_binding_variable_descriptor_count: vk::TRUE,
         runtime_descriptor_array: vk::TRUE,
