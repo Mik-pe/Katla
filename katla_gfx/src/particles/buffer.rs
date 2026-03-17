@@ -929,7 +929,8 @@ impl GlobalParticleBuffer {
 
         // Calculate buffer offsets with proper 64-byte alignment
         // Layout: particles (48 bytes each, padded to 64-byte boundary) -> dead list (4 bytes each, padded to 64-byte boundary) -> alive_current -> alive_next
-        let particle_data_size = (self.max_particles as u64) * (std::mem::size_of::<ParticleData>() as u64);
+        let particle_data_size =
+            (self.max_particles as u64) * (std::mem::size_of::<ParticleData>() as u64);
         let particle_data_size_aligned = (particle_data_size + 63) & !63;
         let dead_list_size = (self.max_particles as u64) * (std::mem::size_of::<u32>() as u64);
         let dead_list_size_aligned = (dead_list_size + 63) & !63;
@@ -945,7 +946,8 @@ impl GlobalParticleBuffer {
         let base_alive_list_offset = dead_list_end;
 
         let alive_list_offset = base_alive_list_offset + (frame_idx as u64 * alive_list_size);
-        let alive_next_offset = base_alive_list_offset + (frames_in_flight as u64 * alive_list_size);
+        let alive_next_offset =
+            base_alive_list_offset + (frames_in_flight as u64 * alive_list_size);
 
         // Copy alive_next to alive_list (per-frame offset)
         let copy_region = vk::BufferCopy::default()

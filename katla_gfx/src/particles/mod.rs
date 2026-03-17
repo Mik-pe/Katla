@@ -1570,10 +1570,10 @@ impl GlobalParticleSystem {
 
             // Check alignment for each binding
             let binding_offsets = [
-                (0, 0u64),                       // particle data
-                (1, particles_end),              // dead list
-                (2, dead_list_end),              // alive_current[0]
-                (3, alive_current_1_end),        // alive_next
+                (0, 0u64),                // particle data
+                (1, particles_end),       // dead list
+                (2, dead_list_end),       // alive_current[0]
+                (3, alive_current_1_end), // alive_next
             ];
 
             for (binding, offset) in binding_offsets.iter() {
