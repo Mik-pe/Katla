@@ -176,6 +176,7 @@ impl BindlessTextureManager {
             .dst_binding(1)
             .dst_array_element(0)
             .descriptor_type(vk::DescriptorType::SAMPLER)
+            .descriptor_count(1)
             .image_info(&sampler_info);
 
         unsafe {
@@ -245,6 +246,7 @@ impl BindlessTextureManager {
                 .dst_binding(0)
                 .dst_array_element(slot_idx as u32)
                 .descriptor_type(vk::DescriptorType::SAMPLED_IMAGE)
+                .descriptor_count(1)
                 .image_info(&image_info);
 
             unsafe {
@@ -286,6 +288,7 @@ impl BindlessTextureManager {
             .dst_binding(0)
             .dst_array_element(slot)
             .descriptor_type(vk::DescriptorType::SAMPLED_IMAGE)
+            .descriptor_count(1)
             .image_info(&image_info);
 
         unsafe {
@@ -332,6 +335,7 @@ impl BindlessTextureManager {
             .dst_binding(0)
             .dst_array_element(slot)
             .descriptor_type(vk::DescriptorType::SAMPLED_IMAGE)
+            .descriptor_count(1)
             .image_info(&image_info);
 
         unsafe {

@@ -170,6 +170,7 @@ impl StorageDescriptorSet {
             .dst_binding(0)
             .dst_array_element(0)
             .descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
+            .descriptor_count(1)
             .buffer_info(&frame_buffer_info);
 
         // Binding 1: objects array (offset 256, remaining buffer)
@@ -183,6 +184,7 @@ impl StorageDescriptorSet {
             .dst_binding(1)
             .dst_array_element(0)
             .descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
+            .descriptor_count(1)
             .buffer_info(&objects_buffer_info);
 
         unsafe {

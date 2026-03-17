@@ -289,6 +289,29 @@ impl ParticleDebugReadback {
                     &[copy_region],
                 );
             }
+
+            // Barrier: ensure particle data copy completes before next transfer read from particle_buffer
+            // This prevents WRITE_AFTER_WRITE hazards when copying different regions of the same buffer
+            let barrier = vk::BufferMemoryBarrier::default()
+                .src_access_mask(vk::AccessFlags::TRANSFER_WRITE)
+                .dst_access_mask(vk::AccessFlags::TRANSFER_READ)
+                .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+                .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+                .buffer(staging.buffer.vk())
+                .offset(0)
+                .size(particle_size);
+
+            unsafe {
+                device.cmd_pipeline_barrier(
+                    command_buffer,
+                    vk::PipelineStageFlags::TRANSFER,
+                    vk::PipelineStageFlags::TRANSFER,
+                    vk::DependencyFlags::empty(),
+                    &[],
+                    &[barrier],
+                    &[],
+                );
+            }
         }
 
         // Copy alive list (with double-buffering)
@@ -314,6 +337,28 @@ impl ParticleDebugReadback {
                     &[copy_region],
                 );
             }
+
+            // Barrier: ensure alive list copy completes before next transfer read from particle_buffer
+            let barrier = vk::BufferMemoryBarrier::default()
+                .src_access_mask(vk::AccessFlags::TRANSFER_WRITE)
+                .dst_access_mask(vk::AccessFlags::TRANSFER_READ)
+                .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+                .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+                .buffer(staging.buffer.vk())
+                .offset(0)
+                .size(alive_list_size);
+
+            unsafe {
+                device.cmd_pipeline_barrier(
+                    command_buffer,
+                    vk::PipelineStageFlags::TRANSFER,
+                    vk::PipelineStageFlags::TRANSFER,
+                    vk::DependencyFlags::empty(),
+                    &[],
+                    &[barrier],
+                    &[],
+                );
+            }
         }
 
         // Copy dead list
@@ -335,6 +380,28 @@ impl ParticleDebugReadback {
                     particle_buffer.particle_buffer(),
                     staging.buffer.vk(),
                     &[copy_region],
+                );
+            }
+
+            // Barrier: ensure dead list copy completes before next transfer read from particle_buffer
+            let barrier = vk::BufferMemoryBarrier::default()
+                .src_access_mask(vk::AccessFlags::TRANSFER_WRITE)
+                .dst_access_mask(vk::AccessFlags::TRANSFER_READ)
+                .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+                .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+                .buffer(staging.buffer.vk())
+                .offset(0)
+                .size(dead_list_size);
+
+            unsafe {
+                device.cmd_pipeline_barrier(
+                    command_buffer,
+                    vk::PipelineStageFlags::TRANSFER,
+                    vk::PipelineStageFlags::TRANSFER,
+                    vk::DependencyFlags::empty(),
+                    &[],
+                    &[barrier],
+                    &[],
                 );
             }
         }

@@ -283,6 +283,7 @@ impl Texture {
                     .dst_set((*descriptor_set).into())
                     .dst_binding(*binding)
                     .descriptor_type(vk::DescriptorType::SAMPLED_IMAGE)
+                    .descriptor_count(1)
                     .image_info(&image_infos);
                 let writes = [write];
                 self.context.device.update_descriptor_sets(&writes, &[]);

@@ -85,6 +85,7 @@ impl SkeletonDescriptorSet {
             .dst_binding(0)
             .dst_array_element(0)
             .descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
+            .descriptor_count(1)
             .buffer_info(&buffer_infos)];
 
         unsafe { device.update_descriptor_sets(&writes, &[]) };
