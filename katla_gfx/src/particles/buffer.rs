@@ -145,11 +145,23 @@ impl GlobalParticleBuffer {
         }
 
         let particle_size = (max_particles as usize) * std::mem::size_of::<ParticleData>();
+        // Round up particle region to 64-byte alignment for min_storage_buffer_offset_alignment
+        let particle_size_aligned = ((particle_size as u64 + 63) & !63) as usize;
 
-        // Create particle storage buffer
-        // Layout: particles (48 bytes each) + dead (4 bytes each) + alive_current[2] (2 × 4 bytes each) + alive_next (4 bytes each)
+        // Create particle storage buffer with proper alignment
+        // Layout: particles (48 bytes each, padded) + dead (4 bytes each, padded) + alive_current[0] + alive_current[1] + alive_next
+        let dead_list_size = (max_particles as usize) * std::mem::size_of::<u32>();
+        let dead_list_size_aligned = ((dead_list_size as u64 + 63) & !63) as usize;
+
+        // alive lists don't need padding between them since they're identical size and accessed via offsets
+        // But the first alive list must start at an aligned offset (after dead_list padding)
+        let alive_list_size = (max_particles as usize) * std::mem::size_of::<u32>();
+        let alive_lists_total = alive_list_size * 3; // alive_current[0] + alive_current[1] + alive_next
+
+        let total_buffer_size = particle_size_aligned + dead_list_size_aligned + alive_lists_total;
+
         let particle_buffer_info = vk::BufferCreateInfo::default()
-            .size((particle_size + max_particles as usize * std::mem::size_of::<u32>() * 4) as u64) // particles + dead + alive_current[2] + alive_next
+            .size(total_buffer_size as u64)
             .usage(
                 vk::BufferUsageFlags::STORAGE_BUFFER
                     | vk::BufferUsageFlags::TRANSFER_DST
@@ -915,21 +927,25 @@ impl GlobalParticleBuffer {
     ) -> Result<(), String> {
         let device = &self.context.device;
 
-        // Calculate buffer offsets
-        // Layout: particles (48 bytes each) -> dead list (4 bytes each) -> alive_current -> alive_next
-        let particle_data_size =
-            (self.max_particles as u64) * (std::mem::size_of::<ParticleData>() as u64);
+        // Calculate buffer offsets with proper 64-byte alignment
+        // Layout: particles (48 bytes each, padded to 64-byte boundary) -> dead list (4 bytes each, padded to 64-byte boundary) -> alive_current -> alive_next
+        let particle_data_size = (self.max_particles as u64) * (std::mem::size_of::<ParticleData>() as u64);
+        let particle_data_size_aligned = (particle_data_size + 63) & !63;
         let dead_list_size = (self.max_particles as u64) * (std::mem::size_of::<u32>() as u64);
+        let dead_list_size_aligned = (dead_list_size + 63) & !63;
 
         // CRITICAL: Use per-frame offsets for alive_list to avoid WRITE_AFTER_WRITE hazards
         // With 2 frames in flight, we need separate alive_list regions for each frame
         // Memory layout: particles -> dead_list -> alive_list[0] -> alive_list[1] -> alive_list_next
         let frames_in_flight = 2;
-        let alive_list_size = dead_list_size;
-        let base_alive_list_offset = particle_data_size + dead_list_size;
+        let alive_list_size = (self.max_particles as u64) * (std::mem::size_of::<u32>() as u64);
+
+        let particles_end = particle_data_size_aligned;
+        let dead_list_end = particles_end + dead_list_size_aligned;
+        let base_alive_list_offset = dead_list_end;
+
         let alive_list_offset = base_alive_list_offset + (frame_idx as u64 * alive_list_size);
-        let alive_next_offset =
-            base_alive_list_offset + (frames_in_flight as u64 * alive_list_size);
+        let alive_next_offset = base_alive_list_offset + (frames_in_flight as u64 * alive_list_size);
 
         // Copy alive_next to alive_list (per-frame offset)
         let copy_region = vk::BufferCopy::default()

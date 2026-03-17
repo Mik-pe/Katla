@@ -2191,6 +2191,7 @@ impl<'a> Frame<'a> {
                 .dst_binding(1)
                 .dst_array_element(0)
                 .descriptor_type(vk::DescriptorType::SAMPLER)
+                .descriptor_count(1)
                 .image_info(std::slice::from_ref(&image_info)),
             // Binding 3: screen size uniform
             vk::WriteDescriptorSet::default()
@@ -2198,6 +2199,7 @@ impl<'a> Frame<'a> {
                 .dst_binding(3)
                 .dst_array_element(0)
                 .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
+                .descriptor_count(1)
                 .buffer_info(std::slice::from_ref(&buffer_info)),
         ];
 

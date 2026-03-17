@@ -220,6 +220,7 @@ impl CompositingDescriptorSet {
                 .dst_binding(0)
                 .dst_array_element(slot_idx as u32)
                 .descriptor_type(vk::DescriptorType::SAMPLED_IMAGE)
+                .descriptor_count(1)
                 .image_info(&image_info);
 
             unsafe {
@@ -297,6 +298,7 @@ impl CompositingDescriptorSet {
                 .dst_binding(0)
                 .dst_array_element(slot_idx as u32)
                 .descriptor_type(vk::DescriptorType::SAMPLED_IMAGE)
+                .descriptor_count(1)
                 .image_info(&image_info);
 
             unsafe {
