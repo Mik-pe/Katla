@@ -17,3 +17,6 @@ serde_json = "*"
 notify = "*"
 log = "*"
 bitflags = "*"
+
+[dev-dependencies]
+env_logger = "*"

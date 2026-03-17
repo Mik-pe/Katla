@@ -6,7 +6,7 @@
 use std::rc::Rc;
 
 use ash::vk;
-use log::{debug, info, warn};
+use log::{info, warn};
 
 use crate::sync::VkBuffer;
 use crate::vulkan::context::VulkanContext;
@@ -78,11 +78,104 @@ impl ParticleDebugData {
         }
     }
 
-    /// Print alive particle indices
+    /// Print alive particle indices with detailed diagnostics
     pub fn print_alive_indices(&self, count: usize) {
         let n = count.min(self.alive_list.len());
         info!("=== First {} alive particle indices ===", n);
-        info!("{:?}", &self.alive_list[..n]);
+
+        // Check for bounds violations
+        let max_particles = self.particles.len();
+        let mut out_of_bounds = 0;
+        let mut duplicates = std::collections::HashSet::new();
+        let mut duplicate_count = 0;
+
+        for (i, &idx) in self.alive_list.iter().take(n).enumerate() {
+            let is_ob = idx as usize >= max_particles;
+            if is_ob {
+                out_of_bounds += 1;
+            }
+
+            if duplicates.contains(&idx) {
+                duplicate_count += 1;
+            } else {
+                duplicates.insert(idx);
+            }
+
+            let marker = if is_ob { "[OUT OF BOUNDS]" } else { "" };
+            info!("  alive_list[{}] = {} {}", i, idx, marker);
+        }
+
+        if out_of_bounds > 0 {
+            warn!("WARNING: {} alive particle indices are out of bounds (max={})",
+                  out_of_bounds, max_particles);
+        }
+
+        if duplicate_count > 0 {
+            warn!("WARNING: {} duplicate indices found in first {} alive list entries",
+                  duplicate_count, n);
+        }
+    }
+
+    /// Print particles at specific indices from alive_list
+    pub fn print_alive_particles(&self, count: usize) {
+        let n = count.min(self.alive_list.len());
+        info!("=== First {} alive particles (by index) ===", n);
+
+        let mut unique_positions = std::collections::HashSet::new();
+        let mut position_counts: std::collections::HashMap<(i32, i32, i32), usize> = std::collections::HashMap::new();
+
+        for (i, &idx) in self.alive_list.iter().take(n).enumerate() {
+            let idx = idx as usize;
+            if idx >= self.particles.len() {
+                warn!("  [{}] Index {} out of bounds (max={})", i, idx, self.particles.len());
+                continue;
+            }
+
+            let p = &self.particles[idx];
+
+            // Quantize position for grouping (round to 2 decimal places)
+            let pos_key = (
+                (p.position[0] * 100.0) as i32,
+                (p.position[1] * 100.0) as i32,
+                (p.position[2] * 100.0) as i32,
+            );
+            *position_counts.entry(pos_key).or_insert(0) += 1;
+
+            info!(
+                "  [{}] Particle idx={}: pos=({:.2},{:.2},{:.2}) vel=({:.2},{:.2},{:.2}) lifetime={:.2} scale={:.2} color=({:.2},{:.2},{:.2},{:.2})",
+                i,
+                idx,
+                p.position[0],
+                p.position[1],
+                p.position[2],
+                p.velocity[0],
+                p.velocity[1],
+                p.velocity[2],
+                p.lifetime,
+                p.scale,
+                p.color[0],
+                p.color[1],
+                p.color[2],
+                p.color[3]
+            );
+
+            unique_positions.insert(pos_key);
+        }
+
+        info!("Position distribution among first {} alive particles:", n);
+        for (pos, count) in position_counts.iter() {
+            info!("  ({:.2}, {:.2}, {:.2}): {} particles",
+                  pos.0 as f32 / 100.0,
+                  pos.1 as f32 / 100.0,
+                  pos.2 as f32 / 100.0,
+                  count);
+        }
+
+        info!("Unique positions: {} / {} particles", unique_positions.len(), n);
+        if unique_positions.len() <= 3 {
+            warn!("WARNING: Only {} unique positions among {} alive particles - possible index corruption!",
+                  unique_positions.len(), n);
+        }
     }
 
     /// Print first few dead list indices to verify initialization
@@ -189,9 +282,9 @@ impl ParticleDebugReadback {
         let particle_staging =
             ReadbackStagingBuffer::new(context, particle_data_size, "particle_readback_particles")?;
 
-        // Alive list staging buffer (4 bytes per index × 3 for all alive lists)
-        // Layout: alive_current[0] + alive_current[1] + alive_next
-        let alive_list_size = (max_particles as u64) * 3 * std::mem::size_of::<u32>() as u64;
+        // Alive list staging buffer (4 bytes per index)
+        // Only need to read alive_next (where simulate writes), not all three buffers
+        let alive_list_size = (max_particles as u64) * std::mem::size_of::<u32>() as u64;
         let alive_list_staging =
             ReadbackStagingBuffer::new(context, alive_list_size, "particle_readback_alive_list")?;
 
@@ -233,8 +326,23 @@ impl ParticleDebugReadback {
         // This prevents READ_AFTER_WRITE hazards
         let max_particles = particle_buffer.max_particles() as u64;
         let particle_data_size = max_particles * std::mem::size_of::<ParticleData>() as u64;
+        let particle_data_size_aligned = (particle_data_size + 63) & !63;  // Pad to 64-byte boundary
         let dead_list_size = max_particles * std::mem::size_of::<u32>() as u64;
-        let alive_list_size = dead_list_size * 3; // alive_current[0] + alive_current[1] + alive_next
+        let dead_list_size_aligned = (dead_list_size + 63) & !63;  // Pad to 64-byte boundary
+        let alive_list_size = dead_list_size; // Only one alive list (alive_next)
+
+        info!("record_copy: particle_data_size={}, particle_data_size_aligned={}, dead_list_size={}, dead_list_size_aligned={}, alive_list_size={}",
+                   particle_data_size, particle_data_size_aligned, dead_list_size, dead_list_size_aligned, alive_list_size);
+
+        // Calculate the offset to alive_next specifically
+        // Layout: particles (padded) | dead_list (padded) | alive_current[0] | alive_current[1] | alive_next
+        let particles_end = particle_data_size_aligned;
+        let dead_list_end = particles_end + dead_list_size_aligned;
+        let base_alive_list_offset = dead_list_end;
+        let alive_next_offset = base_alive_list_offset + (2 * alive_list_size);
+
+        info!("record_copy: particles_end={}, dead_list_end={}, base_alive_list_offset={}, alive_next_offset={}",
+                   particles_end, dead_list_end, base_alive_list_offset, alive_next_offset);
 
         let barriers = [
             // Barrier for particle buffer (particles + dead + alive regions)
@@ -245,7 +353,7 @@ impl ParticleDebugReadback {
                 .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
                 .buffer(particle_buffer.particle_buffer())
                 .offset(0)
-                .size(particle_data_size + dead_list_size + alive_list_size),
+                .size(particle_data_size + dead_list_size + (3 * alive_list_size)),
             // Barrier for counters buffer
             vk::BufferMemoryBarrier::default()
                 .src_access_mask(vk::AccessFlags::SHADER_WRITE | vk::AccessFlags::SHADER_READ)
@@ -316,18 +424,26 @@ impl ParticleDebugReadback {
 
         // Copy alive list (with double-buffering)
         // Layout: alive_current[0] + alive_current[1] + alive_next
+        // CRITICAL: Read from alive_next (where simulate shader writes), not alive_current[0]
         if let Some(staging) = &self.alive_list_staging {
             let max_particles = particle_buffer.max_particles() as u64;
             let particle_data_size = max_particles * std::mem::size_of::<ParticleData>() as u64;
             let dead_list_size = max_particles * std::mem::size_of::<u32>() as u64;
-            let alive_list_offset = particle_data_size + dead_list_size;
-            let alive_list_size = max_particles * 3 * std::mem::size_of::<u32>() as u64;
+            let base_alive_list_offset = particle_data_size + dead_list_size;
+
+            // We need to read from alive_next (3rd region), not alive_current[0]
+            // Layout: alive_current[0] | alive_current[1] | alive_next
+            let alive_list_size = max_particles * std::mem::size_of::<u32>() as u64;
+            let alive_next_offset = base_alive_list_offset + (2 * alive_list_size);
 
             let copy_region = vk::BufferCopy {
-                src_offset: alive_list_offset,
+                src_offset: alive_next_offset,  // Read from alive_next, not alive_current[0]
                 dst_offset: 0,
-                size: alive_list_size,
+                size: alive_list_size,  // Only copy one alive list, not all three
             };
+
+            info!("record_copy: copying alive_list from offset={}, size={}",
+                       alive_next_offset, alive_list_size);
 
             unsafe {
                 device.cmd_copy_buffer(
@@ -427,7 +543,7 @@ impl ParticleDebugReadback {
             }
         }
 
-        debug!("Recorded particle debug readback copies");
+        info!("Recorded particle debug readback copies");
         Ok(())
     }
 
@@ -448,9 +564,9 @@ impl ParticleDebugReadback {
             Vec::new()
         };
 
-        // Read alive list (double-buffered: alive_current[0] + alive_current[1] + alive_next)
+        // Read alive list (only alive_next, where simulate shader writes)
         let alive_list = if let Some(ref staging) = self.alive_list_staging {
-            staging.read::<u32>(max_particles * 3)
+            staging.read::<u32>(max_particles)
         } else {
             Vec::new()
         };

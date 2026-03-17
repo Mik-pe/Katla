@@ -169,8 +169,11 @@ pub(crate) mod vulkan;
 pub(crate) mod barrier;
 pub(crate) mod buffer;
 pub(crate) mod mesh;
-pub(crate) mod sync;
+pub mod sync;
 pub(crate) mod viewport;
+
+// Re-export ShaderCache for examples and tests
+pub use vulkan::material::shadermodule::ShaderCache;
 
 // Internal re-exports for crate-wide access
 pub(crate) use vulkan::bindless_texture::BindlessTextureManager;
