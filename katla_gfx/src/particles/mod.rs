@@ -908,8 +908,8 @@ impl GlobalParticleSystem {
     /// Binding 2 (alive_list/read): points to alive_current[frame_index] (unused in emit, but set for consistency)
     /// Binding 3 (alive_list_next/write): points to alive_current[frame_index] (newly emitted particles written here)
     ///
-    /// CRITICAL: The emit shader writes to the SAME buffer that simulate will read from!
-    /// This is different from simulate, which writes to the separate alive_next buffer.
+    /// CRITICAL: The emit shader writes to alive_next, which simulate will then read from!
+    /// Emit does NOT write to alive_current[frame_index] - that would cause frame 0's output to be lost.
     pub fn update_compute_descriptor_binding_for_emit(&self, frame_index: usize) -> Result<(), String> {
         let device = &self.context.device;
         let descriptor_set = self
@@ -933,30 +933,34 @@ impl GlobalParticleSystem {
         let base_alive_list_offset = dead_list_end;
         let frame_offset = base_alive_list_offset + (frame_index as u64 * alive_list_region_size);
 
+        // Calculate alive_next offset (always at fixed location after alive_current[0] and alive_current[1])
+        let frames_in_flight = 2;
+        let alive_next_offset = base_alive_list_offset + (frames_in_flight as u64 * alive_list_region_size);
+
         info!(
-            "update_compute_descriptor_binding_for_emit: frame_index={}, binding2_offset={}, binding3_offset(alive_current)={}",
+            "update_compute_descriptor_binding_for_emit: frame_index={}, binding2_offset={}, binding3_offset(alive_next)={}",
             frame_index,
             frame_offset,
-            frame_offset
+            alive_next_offset
         );
 
         // CRITICAL: For EMIT pass:
         // Binding 2 (alive_list/read): points to alive_current[frame_index] (unused in emit shader)
-        // Binding 3 (alive_list_next/write): ALSO points to alive_current[frame_index]!
-        // This is because the emit shader needs to WRITE to the buffer that simulate will READ from.
-        // Both bindings 2 and 3 point to the same location for the emit pass!
+        // Binding 3 (alive_list_next/write): points to alive_next (fixed location)!
+        // Emit writes new particles to alive_next, then simulate reads from there and writes survivors back.
+        // After simulate, swap copies alive_next -> alive_current[frame_index] for next frame's emit.
 
-        // Update binding 2 (alive_list/read) with frame-specific offset
+        // Update binding 2 (alive_list/read) with frame-specific offset (not used by emit, but must be valid)
         let alive_list_info = [vk::DescriptorBufferInfo {
             buffer: self.buffer.particle_buffer(),
             offset: frame_offset,
             range: alive_list_region_size,
         }];
 
-        // Update binding 3 (alive_list_next/write) to SAME offset for emit output
+        // Update binding 3 (alive_list_next/write) to FIXED offset (alive_next)
         let emit_output_info = [vk::DescriptorBufferInfo {
             buffer: self.buffer.particle_buffer(),
-            offset: frame_offset,  // Same as binding 2 - emit writes here, simulate reads from here
+            offset: alive_next_offset,  // Emit writes to alive_next, simulate reads from there
             range: alive_list_region_size,
         }];
 
@@ -975,8 +979,8 @@ impl GlobalParticleSystem {
                 .buffer_info(&emit_output_info),
         ];
 
-        info!("Updating EMIT compute descriptors: binding 2 offset={}, binding 3 offset={} (both point to alive_current[{}])",
-              frame_offset, frame_offset, frame_index);
+        info!("Updating EMIT compute descriptors: binding 2 offset={} (alive_current[{}], unused), binding 3 offset={} (alive_next, emit output)",
+              frame_offset, frame_index, alive_next_offset);
 
         unsafe {
             device.update_descriptor_sets(&descriptor_writes, &[]);
