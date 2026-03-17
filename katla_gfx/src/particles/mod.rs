@@ -1158,8 +1158,24 @@ impl GlobalParticleSystem {
                 .stage_flags(vk::ShaderStageFlags::COMPUTE),
         ];
 
-        let compute_layout_info =
-            vk::DescriptorSetLayoutCreateInfo::default().bindings(&compute_bindings);
+        // Enable UPDATE_AFTER_BIND for all bindings to allow per-frame descriptor updates
+        // without causing validation errors when command buffers are still pending
+        let compute_binding_flags = [
+            vk::DescriptorBindingFlags::UPDATE_AFTER_BIND, // Binding 0: particles
+            vk::DescriptorBindingFlags::UPDATE_AFTER_BIND, // Binding 1: dead_list
+            vk::DescriptorBindingFlags::UPDATE_AFTER_BIND, // Binding 2: alive_list (critical!)
+            vk::DescriptorBindingFlags::UPDATE_AFTER_BIND, // Binding 3: alive_next
+            vk::DescriptorBindingFlags::UPDATE_AFTER_BIND, // Binding 4: counters
+        ];
+
+        let mut compute_binding_flags_info =
+            vk::DescriptorSetLayoutBindingFlagsCreateInfo::default()
+                .binding_flags(&compute_binding_flags);
+
+        let compute_layout_info = vk::DescriptorSetLayoutCreateInfo::default()
+            .bindings(&compute_bindings)
+            .flags(vk::DescriptorSetLayoutCreateFlags::UPDATE_AFTER_BIND_POOL)
+            .push_next(&mut compute_binding_flags_info);
 
         let compute_layout = unsafe {
             context
@@ -1230,8 +1246,23 @@ impl GlobalParticleSystem {
                 .stage_flags(vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT),
         ];
 
-        let render_layout_info =
-            vk::DescriptorSetLayoutCreateInfo::default().bindings(&render_bindings);
+        // Enable UPDATE_AFTER_BIND for all bindings to allow per-frame descriptor updates
+        let render_binding_flags = [
+            vk::DescriptorBindingFlags::UPDATE_AFTER_BIND, // Binding 0
+            vk::DescriptorBindingFlags::UPDATE_AFTER_BIND, // Binding 1
+            vk::DescriptorBindingFlags::UPDATE_AFTER_BIND, // Binding 2
+            vk::DescriptorBindingFlags::UPDATE_AFTER_BIND, // Binding 3
+            vk::DescriptorBindingFlags::UPDATE_AFTER_BIND, // Binding 4
+        ];
+
+        let mut render_binding_flags_info =
+            vk::DescriptorSetLayoutBindingFlagsCreateInfo::default()
+                .binding_flags(&render_binding_flags);
+
+        let render_layout_info = vk::DescriptorSetLayoutCreateInfo::default()
+            .bindings(&render_bindings)
+            .flags(vk::DescriptorSetLayoutCreateFlags::UPDATE_AFTER_BIND_POOL)
+            .push_next(&mut render_binding_flags_info);
 
         let render_layout = unsafe {
             context
@@ -1419,7 +1450,10 @@ impl GlobalParticleSystem {
         let pool_info = vk::DescriptorPoolCreateInfo::default()
             .pool_sizes(&pool_sizes)
             .max_sets(1)
-            .flags(vk::DescriptorPoolCreateFlags::FREE_DESCRIPTOR_SET);
+            .flags(
+                vk::DescriptorPoolCreateFlags::FREE_DESCRIPTOR_SET
+                    | vk::DescriptorPoolCreateFlags::UPDATE_AFTER_BIND,
+            );
 
         let descriptor_pool = unsafe {
             self.context
