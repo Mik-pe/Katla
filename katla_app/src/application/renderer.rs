@@ -156,16 +156,14 @@ impl Application {
                     // DEBUG: Record particle data readback at frame 10 (in debug builds)
                     #[cfg(debug_assertions)]
                     {
-                        if frame_count == 10
-                            || frame_count == 11
-                            || frame_count == 12
-                            || frame_count == 13
-                        {
+                        // Only trigger debug readback once to avoid WRITE_AFTER_WRITE hazards
+                        // when writing to the same staging buffers multiple consecutive frames
+                        if frame_count == 10 && !self.particle_readback_done {
                             if particle_system.has_debug_readback() {
                                 // We'll record the copy during frame graph execution
                                 // Just mark that we want to read back this frame
                                 log::info!(
-                                    "Frame {}: Triggering particle debug readback",
+                                    "Frame {}: Triggering particle debug readback (once only)",
                                     frame_count
                                 );
 
@@ -237,6 +235,10 @@ impl Application {
                             // Check dead list initialization
                             log::info!("=== Checking dead list initialization ===");
                             debug_data.print_dead_indices(10);
+
+                            // Mark readback as done so we don't trigger it again
+                            self.particle_readback_done = true;
+                            log::info!("Particle debug readback complete (will not trigger again)");
 
                             // Check specifically for the test particle at index 0
                             if !debug_data.particles.is_empty() {

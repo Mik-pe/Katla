@@ -506,6 +506,7 @@ impl ApplicationBuilder {
             cleaned_up: false,
             particle_system: crate::systems::ParticleSystem::new(),
             particle_readback_pending: false,
+            particle_readback_done: false,
         };
 
         Ok((app, event_loop))
