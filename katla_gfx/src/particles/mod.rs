@@ -834,30 +834,55 @@ impl GlobalParticleSystem {
         let base_alive_list_offset = dead_list_end;
         let frame_offset = base_alive_list_offset + (frame_index as u64 * alive_list_region_size);
 
-        log::debug!(
-            "update_compute_descriptor_binding: frame_index={}, base_offset={}, frame_offset={}, alive_list_size={}",
+        info!(
+            "update_compute_descriptor_binding: frame_index={}, base_offset={}, frame_offset={}, alive_list_size={}, alive_next_offset={}",
             frame_index,
             base_alive_list_offset,
             frame_offset,
-            alive_list_region_size
+            alive_list_region_size,
+            base_alive_list_offset + (2 * alive_list_region_size)
         );
 
-        // Update binding 2 (alive_list) with frame-specific offset
+        // CRITICAL: Update BOTH binding 2 (alive_list/read) AND binding 3 (alive_next/write)
+        // Binding 2: where simulate reads from (alive_current[frame_index])
+        // Binding 3: where simulate writes to (alive_next - always at fixed offset)
+        let frames_in_flight = 2;
+        let alive_next_offset = base_alive_list_offset + (frames_in_flight as u64 * alive_list_region_size);
+
+        // Update binding 2 (alive_list/read) with frame-specific offset
         let alive_list_info = [vk::DescriptorBufferInfo {
             buffer: self.buffer.particle_buffer(),
             offset: frame_offset,
             range: alive_list_region_size,  // Use actual size, not WHOLE_SIZE
         }];
 
-        let descriptor_write = vk::WriteDescriptorSet::default()
-            .dst_set(descriptor_set)
-            .dst_binding(2)
-            .descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
-            .descriptor_count(1)
-            .buffer_info(&alive_list_info);
+        // Update binding 3 (alive_next/write) with fixed offset
+        let alive_next_info = [vk::DescriptorBufferInfo {
+            buffer: self.buffer.particle_buffer(),
+            offset: alive_next_offset,
+            range: alive_list_region_size,
+        }];
+
+        let descriptor_writes = [
+            vk::WriteDescriptorSet::default()
+                .dst_set(descriptor_set)
+                .dst_binding(2)
+                .descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
+                .descriptor_count(1)
+                .buffer_info(&alive_list_info),
+            vk::WriteDescriptorSet::default()
+                .dst_set(descriptor_set)
+                .dst_binding(3)
+                .descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
+                .descriptor_count(1)
+                .buffer_info(&alive_next_info),
+        ];
+
+        info!("Updating compute descriptors: binding 2 offset={}, binding 3 offset={}",
+              frame_offset, alive_next_offset);
 
         unsafe {
-            device.update_descriptor_sets(std::slice::from_ref(&descriptor_write), &[]);
+            device.update_descriptor_sets(&descriptor_writes, &[]);
         }
 
         Ok(())
