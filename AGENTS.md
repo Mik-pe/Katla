@@ -37,6 +37,7 @@ cargo fmt                      # Format
 # Run
 cargo run                     # Run the application
 cargo run -- -s               # Run in limited-frame mode (25 frames) for validation
+cargo run -p katla_gfx --example particle_validation  # Headless GPU particle system validation with exit codes (0=success, 1=failure)
 ```
 
 ## Command Line Arguments
