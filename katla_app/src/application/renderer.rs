@@ -117,9 +117,8 @@ impl Application {
             match particle_system.update(delta_time, frame_index) {
                 Ok((alive_count, emit_count)) => {
                     // Calculate emit workgroups (256 particles per workgroup)
-                    let workgroup_size = katla_gfx::particles::PARTICLE_WORKGROUP_SIZE;
                     let emit_workgroups = if emit_count > 0 {
-                        emit_count.div_ceil(workgroup_size)
+                        emit_count.div_ceil(katla_gfx::particles::PARTICLE_EMIT_WORKGROUP_SIZE)
                     } else {
                         0 // No particles to emit
                     };
@@ -138,7 +137,8 @@ impl Application {
                     // The total particles to simulate = alive_count (from previous frame) + emit_count (new this frame)
                     let total_particles_to_simulate = alive_count + emit_count;
                     let simulate_workgroups = if total_particles_to_simulate > 0 {
-                        total_particles_to_simulate.div_ceil(workgroup_size)
+                        total_particles_to_simulate
+                            .div_ceil(katla_gfx::particles::PARTICLE_SIMULATE_WORKGROUP_SIZE)
                     } else {
                         1 // ALWAYS run at least 1 workgroup for swap to happen
                     };
@@ -156,7 +156,11 @@ impl Application {
                     // DEBUG: Record particle data readback at frame 10 (in debug builds)
                     #[cfg(debug_assertions)]
                     {
-                        if frame_count == 10 || frame_count == 11 || frame_count == 12 || frame_count == 13 {
+                        if frame_count == 10
+                            || frame_count == 11
+                            || frame_count == 12
+                            || frame_count == 13
+                        {
                             if particle_system.has_debug_readback() {
                                 // We'll record the copy during frame graph execution
                                 // Just mark that we want to read back this frame
@@ -231,11 +235,20 @@ impl Application {
                             debug_data.print_particles(10);
 
                             // Print alive indices to see which particles are active
-                            debug_data.print_alive_indices(debug_data.counters.alive_count as usize);
+                            debug_data
+                                .print_alive_indices(debug_data.counters.alive_count as usize);
 
                             // Print the actual alive particles (using alive indices)
-                            log::info!("=== {} ACTUAL ALIVE PARTICLES ===", debug_data.counters.alive_count);
-                            for (i, &particle_idx) in debug_data.alive_list.iter().take(debug_data.counters.alive_count as usize).enumerate() {
+                            log::info!(
+                                "=== {} ACTUAL ALIVE PARTICLES ===",
+                                debug_data.counters.alive_count
+                            );
+                            for (i, &particle_idx) in debug_data
+                                .alive_list
+                                .iter()
+                                .take(debug_data.counters.alive_count as usize)
+                                .enumerate()
+                            {
                                 if particle_idx < debug_data.particles.len() as u32 {
                                     let p = &debug_data.particles[particle_idx as usize];
                                     log::info!("Alive[{}] -> Particle[{}]: pos=({:.2},{:.2},{:.2}) vel=({:.2},{:.2},{:.2}) lifetime={:.2}",

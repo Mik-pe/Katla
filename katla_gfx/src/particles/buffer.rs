@@ -127,17 +127,29 @@ pub struct GlobalParticleBuffer {
 }
 
 impl GlobalParticleBuffer {
+    /// Maximum particles supported by shaders (must match MAX_PARTICLES in WGSL)
+    const SHADER_MAX_PARTICLES: u32 = 1_048_576;
+
     /// Create a new global particle buffer.
     pub fn new(context: Rc<VulkanContext>, max_particles: u32) -> Result<Self, String> {
+        // Validate max_particles parameter to prevent allocation failures and shader overflow
+        if max_particles == 0 {
+            return Err("max_particles must be greater than 0".to_string());
+        }
+        if max_particles > Self::SHADER_MAX_PARTICLES {
+            return Err(format!(
+                "max_particles ({}) exceeds shader limit ({}), please update shaders if more particles are needed",
+                max_particles,
+                Self::SHADER_MAX_PARTICLES
+            ));
+        }
+
         let particle_size = (max_particles as usize) * std::mem::size_of::<ParticleData>();
 
         // Create particle storage buffer
         // Layout: particles (48 bytes each) + dead (4 bytes each) + alive_current[2] (2 × 4 bytes each) + alive_next (4 bytes each)
         let particle_buffer_info = vk::BufferCreateInfo::default()
-            .size(
-                (particle_size + max_particles as usize * std::mem::size_of::<u32>() * 4)
-                    as u64,
-            ) // particles + dead + alive_current[2] + alive_next
+            .size((particle_size + max_particles as usize * std::mem::size_of::<u32>() * 4) as u64) // particles + dead + alive_current[2] + alive_next
             .usage(
                 vk::BufferUsageFlags::STORAGE_BUFFER
                     | vk::BufferUsageFlags::TRANSFER_DST
@@ -186,7 +198,12 @@ impl GlobalParticleBuffer {
         let counters_size = std::mem::size_of::<ParticleCounters>();
         let counters_buffer_info = vk::BufferCreateInfo::default()
             .size(counters_size as u64)
-            .usage(vk::BufferUsageFlags::STORAGE_BUFFER | vk::BufferUsageFlags::UNIFORM_BUFFER | vk::BufferUsageFlags::TRANSFER_SRC | vk::BufferUsageFlags::TRANSFER_DST)
+            .usage(
+                vk::BufferUsageFlags::STORAGE_BUFFER
+                    | vk::BufferUsageFlags::UNIFORM_BUFFER
+                    | vk::BufferUsageFlags::TRANSFER_SRC
+                    | vk::BufferUsageFlags::TRANSFER_DST,
+            )
             .sharing_mode(vk::SharingMode::EXCLUSIVE);
 
         let counters_buffer = unsafe {
@@ -407,7 +424,7 @@ impl GlobalParticleBuffer {
         // This will help us verify if the particle buffer and readback are working correctly
         let test_particles: Vec<ParticleData> = (0..self.max_particles)
             .map(|i| ParticleData {
-                position: [9.87 + i as f32 * 0.01, 6.54, 3.21],  // Unique position per particle
+                position: [9.87 + i as f32 * 0.01, 6.54, 3.21], // Unique position per particle
                 scale: 1.5,
                 velocity: [0.1, 0.2, 0.3],
                 lifetime: 4.5,
@@ -427,15 +444,22 @@ impl GlobalParticleBuffer {
             .sharing_mode(vk::SharingMode::EXCLUSIVE);
 
         let staging_buffer = unsafe {
-            self.context.device.create_buffer(&staging_buffer_info, None)
+            self.context
+                .device
+                .create_buffer(&staging_buffer_info, None)
                 .map_err(|e| format!("Failed to create test staging buffer: {:?}", e))?
         };
 
         let staging_requirements = unsafe {
-            self.context.device.get_buffer_memory_requirements(staging_buffer)
+            self.context
+                .device
+                .get_buffer_memory_requirements(staging_buffer)
         };
 
-        let staging_allocation = self.context.allocator.borrow_mut()
+        let staging_allocation = self
+            .context
+            .allocator
+            .borrow_mut()
             .allocate(&gpu_allocator::vulkan::AllocationCreateDesc {
                 name: "test_particle_staging",
                 requirements: staging_requirements,
@@ -446,11 +470,14 @@ impl GlobalParticleBuffer {
             .map_err(|e| format!("Failed to allocate test staging memory: {}", e))?;
 
         unsafe {
-            self.context.device.bind_buffer_memory(
-                staging_buffer,
-                staging_allocation.memory(),
-                staging_allocation.offset()
-            ).map_err(|e| format!("Failed to bind test staging memory: {:?}", e))?
+            self.context
+                .device
+                .bind_buffer_memory(
+                    staging_buffer,
+                    staging_allocation.memory(),
+                    staging_allocation.offset(),
+                )
+                .map_err(|e| format!("Failed to bind test staging memory: {:?}", e))?
         }
 
         // Copy test data to staging buffer
@@ -462,11 +489,16 @@ impl GlobalParticleBuffer {
                     particle_data_bytes.len(),
                 );
             }
-            self.context.flush_mapped_memory(&staging_allocation, 0, particle_data_bytes.len() as u64);
+            self.context.flush_mapped_memory(
+                &staging_allocation,
+                0,
+                particle_data_bytes.len() as u64,
+            );
         }
 
         // Copy from staging to particle buffer (using cmd)
-        let particle_data_size = (self.max_particles as u64) * std::mem::size_of::<ParticleData>() as u64;
+        let particle_data_size =
+            (self.max_particles as u64) * std::mem::size_of::<ParticleData>() as u64;
         let copy_region = vk::BufferCopy::default()
             .src_offset(0)
             .dst_offset(0)
@@ -493,7 +525,9 @@ impl GlobalParticleBuffer {
         }
 
         log::info!("Initialized particle buffer with TEST DATA: position=[9.87, 6.54, 3.21]");
-        log::info!("If readback shows these values, the buffer/readback works. If zeros, the readback fails.");
+        log::info!(
+            "If readback shows these values, the buffer/readback works. If zeros, the readback fails."
+        );
 
         // Now initialize dead list with indices 0..MAX_PARTICLES
         // All particles start in the dead list, ready to be allocated
