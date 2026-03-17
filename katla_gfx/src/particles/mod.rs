@@ -1499,17 +1499,24 @@ impl GlobalParticleSystem {
         let alive_current_0_end = dead_list_end + alive_list_region_size;
         let alive_current_1_end = alive_current_0_end + alive_list_region_size;
 
-        let particle_buffer_info = [vk::DescriptorBufferInfo {
-            buffer: self.buffer.particle_buffer(),
-            offset: 0,
-            range: particles_region_size,  // Use actual particle region size, not aligned
-        }];
+        let particle_buffer_handle = self.buffer.particle_buffer();
+        let counters_buffer_handle = self.buffer.counters_buffer();
+        let frame_buffer_handle = self.frame_data_buffer.as_ref().map(|(b, _)| *b);
 
         log::info!(
-            "Creating particle buffer descriptor: buffer={:?}, offset=0, range={} bytes",
-            self.buffer.particle_buffer(),
-            particles_region_size
+            "Buffer handles - particle: {:?}, counters: {:?}, frame_data: {:?}",
+            particle_buffer_handle,
+            counters_buffer_handle,
+            frame_buffer_handle
         );
+
+        let particle_buffer_info = [vk::DescriptorBufferInfo {
+            buffer: particle_buffer_handle,
+            offset: 0,
+            range: particles_region_size,  // Use actual particle region size
+        }];
+
+        log::info!("Creating descriptor with particle buffer range: {} bytes", particles_region_size);
 
         let dead_list_info = [vk::DescriptorBufferInfo {
             buffer: self.buffer.particle_buffer(),
