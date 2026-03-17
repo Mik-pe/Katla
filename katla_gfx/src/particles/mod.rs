@@ -846,7 +846,7 @@ impl GlobalParticleSystem {
         let alive_list_info = [vk::DescriptorBufferInfo {
             buffer: self.buffer.particle_buffer(),
             offset: frame_offset,
-            range: alive_list_region_size,
+            range: alive_list_region_size,  // Use actual size, not WHOLE_SIZE
         }];
 
         let descriptor_write = vk::WriteDescriptorSet::default()
@@ -895,7 +895,7 @@ impl GlobalParticleSystem {
         let alive_list_info = [vk::DescriptorBufferInfo {
             buffer: self.buffer.particle_buffer(),
             offset: frame_offset,
-            range: alive_list_region_size,
+            range: alive_list_region_size,  // Use actual size, not WHOLE_SIZE
         }];
 
         let descriptor_write = vk::WriteDescriptorSet::default()
@@ -1502,21 +1502,19 @@ impl GlobalParticleSystem {
         let particle_buffer_info = [vk::DescriptorBufferInfo {
             buffer: self.buffer.particle_buffer(),
             offset: 0,
-            range: particles_region_size_aligned,
+            range: particles_region_size,  // Use actual particle region size, not aligned
         }];
 
-        // DEBUG: Log the range to verify it's correct
         log::info!(
-            "Creating particle buffer descriptor: buffer={:?}, offset=0, range={} bytes ({} MB)",
+            "Creating particle buffer descriptor: buffer={:?}, offset=0, range={} bytes",
             self.buffer.particle_buffer(),
-            particles_region_size_aligned,
-            particles_region_size_aligned / (1024 * 1024),
+            particles_region_size
         );
 
         let dead_list_info = [vk::DescriptorBufferInfo {
             buffer: self.buffer.particle_buffer(),
             offset: particles_end,
-            range: dead_list_region_size_aligned,
+            range: dead_list_region_size,  // Use actual dead list size, not aligned
         }];
 
         // Binding 2: alive_list (shader binding name)
@@ -1524,7 +1522,7 @@ impl GlobalParticleSystem {
         let alive_list_info = [vk::DescriptorBufferInfo {
             buffer: self.buffer.particle_buffer(),
             offset: dead_list_end,
-            range: alive_list_region_size,
+            range: alive_list_region_size,  // Use actual alive list size
         }];
 
         // Binding 3: alive_list_next (shader binding name)
@@ -1533,7 +1531,7 @@ impl GlobalParticleSystem {
         let alive_list_next_info = [vk::DescriptorBufferInfo {
             buffer: self.buffer.particle_buffer(),
             offset: alive_current_1_end,
-            range: alive_list_region_size,
+            range: alive_list_region_size,  // Use actual alive list size
         }];
 
         let counters_info = [vk::DescriptorBufferInfo {
