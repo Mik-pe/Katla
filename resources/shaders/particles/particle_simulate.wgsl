@@ -70,6 +70,7 @@ var<uniform> frame_data: FrameData;
 
 // Simulate particle physics and lifetime
 fn simulate_particle(particle: ptr<function, ParticleData>, delta_time: f32) {
+    let old_lifetime = (*particle).lifetime;
     (*particle).lifetime -= delta_time;
 
     if ((*particle).lifetime > 0.0) {

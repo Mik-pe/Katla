@@ -709,6 +709,18 @@ impl GlobalParticleSystem {
                     frame_index,
                     _pad: [0u32; 9],
                 };
+
+                // DIAGNOSTIC: Log frame data being sent to GPU
+                log::debug!(
+                    "FrameData upload: delta_time={:.6}s, emit_count={}, burst_count={}, alive_count={}, simulate_count={}, frame_index={}",
+                    frame_data.delta_time,
+                    frame_data.total_emit_count,
+                    frame_data.burst_count,
+                    self.cached_alive_count,
+                    frame_data.total_simulate_count,
+                    frame_data.frame_index
+                );
+
                 unsafe {
                     std::ptr::copy_nonoverlapping(
                         &frame_data as *const FrameData as *const u8,
