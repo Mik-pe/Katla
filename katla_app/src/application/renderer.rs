@@ -234,10 +234,6 @@ impl Application {
                             // Print first 10 particles to see if they're moving
                             debug_data.print_particles(10);
 
-                            // Print alive indices to see which particles are active
-                            debug_data
-                                .print_alive_indices(debug_data.counters.alive_count as usize);
-
                             // Print the actual alive particles (using alive indices)
                             log::info!(
                                 "=== {} ACTUAL ALIVE PARTICLES ===",
