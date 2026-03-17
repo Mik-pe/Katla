@@ -1502,13 +1502,21 @@ impl GlobalParticleSystem {
         let particle_buffer_info = [vk::DescriptorBufferInfo {
             buffer: self.buffer.particle_buffer(),
             offset: 0,
-            range: particles_region_size,
+            range: particles_region_size_aligned,
         }];
+
+        // DEBUG: Log the range to verify it's correct
+        log::info!(
+            "Creating particle buffer descriptor: buffer={:?}, offset=0, range={} bytes ({} MB)",
+            self.buffer.particle_buffer(),
+            particles_region_size_aligned,
+            particles_region_size_aligned / (1024 * 1024),
+        );
 
         let dead_list_info = [vk::DescriptorBufferInfo {
             buffer: self.buffer.particle_buffer(),
             offset: particles_end,
-            range: dead_list_region_size,
+            range: dead_list_region_size_aligned,
         }];
 
         // Binding 2: alive_list (shader binding name)
@@ -1566,6 +1574,9 @@ impl GlobalParticleSystem {
                 .descriptor_count(1)
                 .buffer_info(&counters_info),
         ];
+
+        log::info!("Updating descriptor set {:?}: binding 0 range={} bytes", descriptor_set, particle_buffer_info[0].range);
+        log::info!("Updating descriptor set {:?}: binding 1 range={} bytes", descriptor_set, dead_list_info[0].range);
 
         unsafe {
             self.context
@@ -1927,6 +1938,12 @@ impl GlobalParticleSystem {
 
         // Bind static descriptor set (Set 0: particle buffers)
         if let Some(descriptor_set) = self.compute_descriptor_set {
+            log::info!(
+                "Emit dispatch: binding descriptor set {:?} to Set 0, particle_buffer={:?}, Set 0 address={:?}",
+                descriptor_set,
+                self.buffer.particle_buffer(),
+                self.compute_descriptor_set
+            );
             unsafe {
                 device.cmd_bind_descriptor_sets(
                     command_buffer,
