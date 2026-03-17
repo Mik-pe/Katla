@@ -95,6 +95,8 @@ pub struct Application {
     pub(crate) particle_system: crate::systems::ParticleSystem,
     /// Flag to trigger particle debug readback at frame 10
     pub(crate) particle_readback_pending: bool,
+    /// Flag to ensure particle debug readback only happens once
+    pub(crate) particle_readback_done: bool,
 }
 
 impl ApplicationHandler for Application {
