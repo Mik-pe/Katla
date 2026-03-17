@@ -234,27 +234,6 @@ impl Application {
                             // Print first 10 particles to see if they're moving
                             debug_data.print_particles(10);
 
-                            // Print the actual alive particles (using alive indices)
-                            log::info!(
-                                "=== {} ACTUAL ALIVE PARTICLES ===",
-                                debug_data.counters.alive_count
-                            );
-                            for (i, &particle_idx) in debug_data
-                                .alive_list
-                                .iter()
-                                .take(debug_data.counters.alive_count as usize)
-                                .enumerate()
-                            {
-                                if particle_idx < debug_data.particles.len() as u32 {
-                                    let p = &debug_data.particles[particle_idx as usize];
-                                    log::info!("Alive[{}] -> Particle[{}]: pos=({:.2},{:.2},{:.2}) vel=({:.2},{:.2},{:.2}) lifetime={:.2}",
-                                        i, particle_idx,
-                                        p.position[0], p.position[1], p.position[2],
-                                        p.velocity[0], p.velocity[1], p.velocity[2],
-                                        p.lifetime);
-                                }
-                            }
-
                             // Check dead list initialization
                             log::info!("=== Checking dead list initialization ===");
                             debug_data.print_dead_indices(10);
