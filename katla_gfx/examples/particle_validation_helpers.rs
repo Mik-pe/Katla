@@ -13,6 +13,7 @@ pub fn execute_gpu_compute(
     context: &VulkanContext,
     particle_system: &mut GlobalParticleSystem,
     asset_registry: &AssetRegistry,
+    frame: u32,
     alive_count: u32,
     emit_count: u32,
 ) -> Result<(), String> {
@@ -39,14 +40,18 @@ pub fn execute_gpu_compute(
 
     // CRITICAL: Update compute descriptor bindings for each dispatch
     // The validation runs frames 0-9, so we need to use frame_index % 2 for double-buffering
-    let frame_index_for_descriptor = (alive_count % 2) as usize;  // Use alternating frames
+    let frame_index_for_descriptor = (frame as usize) % 2;  // Use actual frame index for proper alternation
+
+    log::info!("Frame {}: Using frame_index={} for descriptor bindings (double-buffered)", frame, frame_index_for_descriptor);
 
     // Record emit dispatch if we have particles to emit
     if emit_workgroups > 0 {
         // Update descriptor binding for emit dispatch
-        log::info!("Updating compute descriptor binding for emit with frame_index={}", frame_index_for_descriptor);
+        log::info!("Frame {}: Updating compute descriptor binding for EMIT with frame_index={}", frame, frame_index_for_descriptor);
         if let Err(e) = particle_system.update_compute_descriptor_binding_for_emit(frame_index_for_descriptor) {
-            log::warn!("Failed to update compute descriptor binding for emit: {}", e);
+            log::warn!("Frame {}: Failed to update compute descriptor binding for emit: {}", frame, e);
+        } else {
+            log::debug!("Frame {}: Emit descriptor binding updated successfully", frame);
         }
 
         log::debug!("Recording emit dispatch: {} workgroups ({} particles)", emit_workgroups, emit_count);
@@ -68,9 +73,11 @@ pub fn execute_gpu_compute(
     // Record simulate dispatch if we have alive particles
     if simulate_workgroups > 0 {
         // Update descriptor binding for simulate dispatch
-        log::info!("Updating compute descriptor binding for simulate with frame_index={}", frame_index_for_descriptor);
+        log::info!("Frame {}: Updating compute descriptor binding for SIMULATE with frame_index={}", frame, frame_index_for_descriptor);
         if let Err(e) = particle_system.update_compute_descriptor_binding_for_simulate(frame_index_for_descriptor) {
-            log::warn!("Failed to update compute descriptor binding for simulate: {}", e);
+            log::warn!("Frame {}: Failed to update compute descriptor binding for simulate: {}", frame, e);
+        } else {
+            log::debug!("Frame {}: Simulate descriptor binding updated successfully", frame);
         }
 
         log::debug!("Recording simulate dispatch: {} workgroups ({} particles)", simulate_workgroups, alive_count);
@@ -85,6 +92,19 @@ pub fn execute_gpu_compute(
             Err(e) => {
                 log::warn!("Failed to record simulate dispatch (pipelines may not be loaded): {}", e);
                 // Continue anyway - we'll validate CPU-side structures
+            }
+        }
+
+        // CRITICAL: Swap alive lists after simulate completes
+        // This copies alive_next (written by simulate) to alive_current[frame_index]
+        // so that emit can read from it in the next frame
+        log::info!("Frame {}: Swapping alive lists (alive_next -> alive_current[{}])", frame, frame_index_for_descriptor);
+        match particle_system.swap_alive_lists(command_buffer.vk_command_buffer(), frame_index_for_descriptor) {
+            Ok(_) => {
+                log::debug!("Frame {}: Alive lists swapped successfully", frame);
+            }
+            Err(e) => {
+                log::warn!("Frame {}: Failed to swap alive lists: {}", frame, e);
             }
         }
     }

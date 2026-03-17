@@ -462,6 +462,7 @@ fn main() -> ExitCode {
                     &context,
                     &mut particle_system,
                     &asset_registry,
+                    frame,
                     alive_count,
                     emit_count,
                 ) {
