@@ -949,6 +949,29 @@ impl GlobalParticleBuffer {
         let alive_next_offset =
             base_alive_list_offset + (frames_in_flight as u64 * alive_list_size);
 
+        // CRITICAL: Insert barrier BEFORE copy to ensure SIMULATE pass writes to alive_next are visible to TRANSFER read
+        // This prevents READ_AFTER_WRITE hazards when copying from alive_next
+        let pre_copy_barrier = vk::BufferMemoryBarrier::default()
+            .src_access_mask(vk::AccessFlags::SHADER_WRITE)
+            .dst_access_mask(vk::AccessFlags::TRANSFER_READ)
+            .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+            .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+            .buffer(self.particle_buffer)
+            .offset(alive_next_offset)
+            .size(alive_list_size);
+
+        unsafe {
+            device.cmd_pipeline_barrier(
+                command_buffer,
+                vk::PipelineStageFlags::COMPUTE_SHADER,
+                vk::PipelineStageFlags::TRANSFER,
+                vk::DependencyFlags::empty(),
+                &[],
+                &[pre_copy_barrier],
+                &[],
+            );
+        }
+
         // Copy alive_next to alive_list (per-frame offset)
         let copy_region = vk::BufferCopy::default()
             .src_offset(alive_next_offset)
@@ -970,7 +993,7 @@ impl GlobalParticleBuffer {
         let barriers = [
             // Barrier for source region (alive_next)
             vk::BufferMemoryBarrier::default()
-                .src_access_mask(vk::AccessFlags::TRANSFER_READ)
+                .src_access_mask(vk::AccessFlags::TRANSFER_WRITE)
                 .dst_access_mask(vk::AccessFlags::SHADER_WRITE)
                 .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
                 .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
