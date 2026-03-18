@@ -11,7 +11,7 @@ use super::super::UiContext;
 
 impl UiContext {
     /// Get the menu item height for layout.
-    pub fn menu_item_height(&self) -> f32 {
+    pub(crate) fn menu_item_height(&self) -> f32 {
         self.style.menu_item_height
     }
 

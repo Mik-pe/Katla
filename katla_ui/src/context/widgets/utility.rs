@@ -51,8 +51,7 @@ impl UiContext {
             .add_textured_rect(bounds, uv_rect, color, texture);
     }
 
-    /// Draw an image with a border (useful for viewport frames).
-    pub fn image_bordered(
+    pub(crate) fn image_bordered(
         &mut self,
         texture: TextureId,
         bounds: Rect2D,

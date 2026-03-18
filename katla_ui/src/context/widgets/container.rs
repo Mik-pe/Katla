@@ -11,11 +11,7 @@ use crate::text::FontId;
 use super::super::{UiContext, WindowState};
 
 impl UiContext {
-    /// Begin a window container.
-    ///
-    /// Returns a WindowState for window information.
-    /// Call `end_window()` after adding contents.
-    pub fn begin_window(&mut self, id: &str, bounds: Rect2D) -> WindowState {
+    pub(crate) fn begin_window(&mut self, id: &str, bounds: Rect2D) -> WindowState {
         self.begin_window_with_title(id, None, bounds)
     }
 
@@ -87,10 +83,13 @@ impl UiContext {
         self.pop_clip();
     }
 
-    /// Begin a collapsible header/panel.
-    ///
-    /// Returns true if the header is expanded.
-    pub fn begin_header(&mut self, id: &str, label: &str, open: &mut bool, bounds: Rect2D) -> bool {
+    pub(crate) fn begin_header(
+        &mut self,
+        id: &str,
+        label: &str,
+        open: &mut bool,
+        bounds: Rect2D,
+    ) -> bool {
         let widget_id = self.generate_id(id);
 
         // Click to toggle
@@ -136,10 +135,7 @@ impl UiContext {
         *open
     }
 
-    /// Begin a child region with clipping.
-    ///
-    /// Returns the content area bounds.
-    pub fn begin_child(&mut self, _id: &str, bounds: Rect2D) -> Rect2D {
+    pub(crate) fn begin_child(&mut self, _id: &str, bounds: Rect2D) -> Rect2D {
         // Draw background
         self.draw_rect(bounds, self.style.window_bg);
 
@@ -150,8 +146,7 @@ impl UiContext {
         bounds.contract(self.style.window_padding)
     }
 
-    /// End a child region.
-    pub fn end_child(&mut self) {
+    pub(crate) fn end_child(&mut self) {
         self.pop_clip();
     }
 }

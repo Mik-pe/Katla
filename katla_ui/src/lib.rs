@@ -56,15 +56,14 @@ mod widget;
 pub mod widgets;
 
 pub use context::{
-    z_index, CloseBehavior, GraphOptions, LayoutDirection, LayoutState, Popup, PopupPosition,
-    PopupStyle, ScrollArea, ScrollAreaState, UiContext, WindowState, ZGuard,
+    z_index, CloseBehavior, GraphOptions, Popup, PopupPosition, PopupStyle, ScrollArea,
+    ScrollAreaState, UiContext, WindowState,
 };
 pub use draw_list::DrawList;
 pub use icons::ForkAwesome;
 pub use input::{mouse_button, KeyCode, MouseCursor, UiInputState};
 pub use response::Response;
-pub use sense::Sense;
-pub use style::{FontSize, UiStyle, UiTheme};
-pub use text::{CachedGlyph, FontError, FontId, FontSystem};
+pub use style::{FontSize, UiStyle};
+pub use text::FontId;
 pub use types::{ClipRect, DrawCmd, TextureId, Vertex};
 pub use widget::Widget;
