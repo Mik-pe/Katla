@@ -87,16 +87,9 @@ impl<'a> Widget for ViewportGrid<'a> {
                 // Get the texture handle for this slot
                 let texture = self.texture_ids[slot_index].unwrap_or(TextureId::NONE);
 
-                ui.draw_image(
-                    viewport_bounds,
-                    Vec2::new(0.0, 0.0),
-                    Vec2::new(1.0, 1.0),
-                    Color::WHITE,
-                    texture,
-                );
+                ui.image(texture, viewport_bounds, None, Some(Color::WHITE));
 
                 // Draw border (highlight if hovered/active)
-                let border_width = 2.0;
                 let is_active = self.state.active_viewport == Some(slot_index);
                 let is_hovered = hovered_slot == Some(slot_index);
                 let border_color = if is_active {
@@ -107,44 +100,7 @@ impl<'a> Widget for ViewportGrid<'a> {
                     self.theme.viewport_border
                 };
 
-                // Top border
-                ui.draw_rect(
-                    Rect2D::from_origin_size(
-                        viewport_bounds.min,
-                        Vec2::new(viewport_bounds.width(), border_width),
-                    ),
-                    border_color,
-                );
-                // Bottom border
-                ui.draw_rect(
-                    Rect2D::from_origin_size(
-                        Vec2::new(
-                            viewport_bounds.min.x(),
-                            viewport_bounds.max.y() - border_width,
-                        ),
-                        Vec2::new(viewport_bounds.width(), border_width),
-                    ),
-                    border_color,
-                );
-                // Left border
-                ui.draw_rect(
-                    Rect2D::from_origin_size(
-                        viewport_bounds.min,
-                        Vec2::new(border_width, viewport_bounds.height()),
-                    ),
-                    border_color,
-                );
-                // Right border
-                ui.draw_rect(
-                    Rect2D::from_origin_size(
-                        Vec2::new(
-                            viewport_bounds.max.x() - border_width,
-                            viewport_bounds.min.y(),
-                        ),
-                        Vec2::new(border_width, viewport_bounds.height()),
-                    ),
-                    border_color,
-                );
+                ui.draw_selection_border(viewport_bounds, border_color, 2.0);
 
                 // Draw label for this viewport
                 let label = match self.state.layout {

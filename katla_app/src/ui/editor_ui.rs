@@ -20,6 +20,7 @@ mod viewport_grid;
 use katla_ecs::EntityId;
 use katla_gfx::TextureHandle;
 use katla_math::{Color, Rect2D, Vec2, Vec3};
+use katla_ui::widgets::PanelState;
 use katla_ui::{mouse_button, DrawList, FontSize, UiContext};
 use std::path::PathBuf;
 
@@ -40,7 +41,6 @@ use super::theme::Theme;
 use asset_browser::{build_asset_browser, AssetAction, AssetBrowserState, AssetType};
 
 pub use asset_browser::ThumbnailState;
-pub use katla_ui::widgets::PanelState;
 
 /// Model types that can be spawned.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

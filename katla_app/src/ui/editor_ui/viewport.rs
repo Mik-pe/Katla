@@ -32,45 +32,9 @@ impl<'a> Widget for Viewport<'a> {
             *self.focused_panel = FocusedPanel::Viewport;
         }
 
-        ui.draw_image(
-            self.bounds,
-            Vec2::new(0.0, 0.0),
-            Vec2::new(1.0, 1.0),
-            Color::WHITE,
-            self.texture_id,
-        );
+        ui.image(self.texture_id, self.bounds, None, Some(Color::WHITE));
 
-        let border_width = 2.0;
-        let border_color = self.theme.viewport_border;
-
-        ui.draw_rect(
-            Rect2D::from_origin_size(
-                self.bounds.min,
-                Vec2::new(self.bounds.width(), border_width),
-            ),
-            border_color,
-        );
-        ui.draw_rect(
-            Rect2D::from_origin_size(
-                Vec2::new(self.bounds.min.x(), self.bounds.max.y() - border_width),
-                Vec2::new(self.bounds.width(), border_width),
-            ),
-            border_color,
-        );
-        ui.draw_rect(
-            Rect2D::from_origin_size(
-                self.bounds.min,
-                Vec2::new(border_width, self.bounds.height()),
-            ),
-            border_color,
-        );
-        ui.draw_rect(
-            Rect2D::from_origin_size(
-                Vec2::new(self.bounds.max.x() - border_width, self.bounds.min.y()),
-                Vec2::new(border_width, self.bounds.height()),
-            ),
-            border_color,
-        );
+        ui.draw_selection_border(self.bounds, self.theme.viewport_border, 2.0);
 
         let vp_label = "3D View";
         let label_pos = Vec2::new(self.bounds.min.x() + 8.0, self.bounds.min.y() + 8.0);
