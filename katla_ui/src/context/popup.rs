@@ -49,7 +49,7 @@ impl UiContext {
     }
 
     /// Close the current popup/dropdown/context menu.
-    pub fn close_current_popup(&mut self) {
+    pub(crate) fn close_current_popup(&mut self) {
         self.popup_id = None;
         self.popup_position = None;
         self.popup_bounds = None;
@@ -57,7 +57,7 @@ impl UiContext {
     }
 
     /// Track popup item bounds for auto-sizing.
-    pub fn track_popup_item(&mut self, item_bounds: Rect2D) {
+    pub(crate) fn track_popup_item(&mut self, item_bounds: Rect2D) {
         use katla_math::Vec2;
 
         self.popup_content_bounds = Some(match self.popup_content_bounds {

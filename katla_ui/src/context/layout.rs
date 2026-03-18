@@ -62,7 +62,7 @@ impl UiContext {
     }
 
     /// Move cursor to next line.
-    pub fn newline(&mut self) {
+    pub(crate) fn newline(&mut self) {
         self.cursor = Vec2::new(
             0.0,
             self.cursor.y() + self.row_height + self.style.item_spacing,
@@ -71,7 +71,7 @@ impl UiContext {
     }
 
     /// Get bounds for the next item in a horizontal layout.
-    pub fn next_item(&mut self, size: Vec2) -> Rect2D {
+    pub(crate) fn next_item(&mut self, size: Vec2) -> Rect2D {
         let bounds = Rect2D::from_origin_size(self.cursor, size);
         self.cursor = Vec2::new(
             self.cursor.x() + size.x() + self.style.item_spacing,
@@ -82,7 +82,7 @@ impl UiContext {
     }
 
     /// Begin a horizontal layout row.
-    pub fn layout_row(&mut self, height: f32) {
+    pub(crate) fn layout_row(&mut self, height: f32) {
         self.row_height = height;
     }
 
@@ -235,7 +235,7 @@ impl UiContext {
     ///     }
     /// });
     /// ```
-    pub fn columns<F>(&mut self, count: usize, mut f: F)
+    pub(crate) fn columns<F>(&mut self, count: usize, mut f: F)
     where
         F: FnMut(&mut Self, usize),
     {
@@ -256,7 +256,7 @@ impl UiContext {
     ///
     /// Returns bounds with automatic position based on layout direction.
     /// Falls back to current cursor if no layout is active.
-    pub fn layout_item(&mut self, size: Vec2) -> Rect2D {
+    pub(crate) fn layout_item(&mut self, size: Vec2) -> Rect2D {
         if let Some(layout) = self.layout_stack.last_mut() {
             let bounds = Rect2D::from_origin_size(layout.cursor, size);
 
@@ -287,12 +287,12 @@ impl UiContext {
     }
 
     /// Check if we're inside a layout container.
-    pub fn in_layout(&self) -> bool {
+    pub(crate) fn in_layout(&self) -> bool {
         !self.layout_stack.is_empty()
     }
 
     /// Get the current layout direction (if any).
-    pub fn layout_direction(&self) -> Option<LayoutDirection> {
+    pub(crate) fn layout_direction(&self) -> Option<LayoutDirection> {
         self.layout_stack.last().map(|l| l.direction)
     }
 
@@ -311,7 +311,7 @@ impl UiContext {
     /// ui.same_line();
     /// ui.text_input("name", &mut name, bounds2);
     /// ```
-    pub fn same_line(&mut self) {
+    pub(crate) fn same_line(&mut self) {
         if self.row_height > 0.0 {
             // Move cursor back up to the current row
             self.cursor = Vec2::new(
@@ -357,7 +357,7 @@ impl UiContext {
     /// ui.indent(20.0);
     /// ui.label("Nested content", bounds);
     /// ```
-    pub fn indent(&mut self, amount: f32) {
+    pub(crate) fn indent(&mut self, amount: f32) {
         if let Some(layout) = self.layout_stack.last_mut() {
             layout.cursor = Vec2::new(layout.cursor.x() + amount, layout.cursor.y());
         } else {
@@ -368,7 +368,7 @@ impl UiContext {
     /// Unindent the cursor by a given amount (horizontal offset).
     ///
     /// Moves the cursor left by the specified amount.
-    pub fn unindent(&mut self, amount: f32) {
+    pub(crate) fn unindent(&mut self, amount: f32) {
         if let Some(layout) = self.layout_stack.last_mut() {
             layout.cursor = Vec2::new(layout.cursor.x() - amount, layout.cursor.y());
         } else {
@@ -388,7 +388,7 @@ impl UiContext {
     ///     ui.label("Nested item 2", bounds2);
     /// }); // cursor automatically restored
     /// ```
-    pub fn with_indent<F, R>(&mut self, amount: f32, f: F) -> R
+    pub(crate) fn with_indent<F, R>(&mut self, amount: f32, f: F) -> R
     where
         F: FnOnce(&mut Self) -> R,
     {
@@ -611,7 +611,7 @@ impl UiContext {
     /// }
     /// ui.end_grid();
     /// ```
-    pub fn auto_grid(
+    pub(crate) fn auto_grid(
         &mut self,
         item_width: f32,
         item_height: f32,

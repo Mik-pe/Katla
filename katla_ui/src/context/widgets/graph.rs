@@ -8,10 +8,6 @@ use katla_math::{Rect2D, Vec2};
 use super::super::{GraphOptions, UiContext};
 
 impl UiContext {
-    /// Draw a real-time line graph.
-    ///
-    /// Values should be ordered oldest to newest (left to right).
-    /// The graph will auto-scale if min/max not provided in options.
     pub fn graph(
         &mut self,
         id: &str,

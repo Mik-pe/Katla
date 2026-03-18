@@ -562,8 +562,7 @@ impl UiContext {
         response
     }
 
-    /// Draw a separator line.
-    pub fn separator(&mut self, bounds: Rect2D) {
+    pub(crate) fn separator(&mut self, bounds: Rect2D) {
         let y = bounds.center().y();
         self.draw_line(
             Vec2::new(bounds.min.x(), y),

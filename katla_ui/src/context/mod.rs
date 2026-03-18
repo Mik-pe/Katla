@@ -17,7 +17,7 @@ use crate::input::UiInputState;
 use crate::style::UiStyle;
 use crate::text::{FontId, FontSystem};
 
-pub use layout::{LayoutDirection, LayoutState};
+pub use layout::LayoutState;
 pub use popup::{CloseBehavior, Popup, PopupPosition, PopupStyle};
 pub use widgets::{ScrollArea, ScrollAreaState};
 
@@ -190,7 +190,7 @@ impl UiContext {
     }
 
     /// Get the current font scale multiplier.
-    pub fn font_scale(&self) -> f32 {
+    pub(crate) fn font_scale(&self) -> f32 {
         self.font_scale
     }
 
@@ -273,7 +273,7 @@ impl UiContext {
 
     /// Scale a logical pixel value to physical pixels.
     #[inline]
-    pub fn scale(&self, logical: f32) -> f32 {
+    pub(crate) fn scale(&self, logical: f32) -> f32 {
         logical * self.scale_factor
     }
 
@@ -326,7 +326,7 @@ impl UiContext {
     /// Combines parent ID, label, and a sequential counter to ensure uniqueness.
     /// The counter is reset each frame in `begin()`, so consistent call order
     /// produces consistent IDs across frames.
-    pub fn generate_id(&mut self, label: &str) -> WidgetId {
+    pub(crate) fn generate_id(&mut self, label: &str) -> WidgetId {
         let base = self.id_stack.last().copied().unwrap_or(0);
         let counter = self.id_counter;
         self.id_counter += 1;
@@ -346,7 +346,7 @@ impl UiContext {
     ///
     /// Use this for things like popups that need the same ID regardless of
     /// when they're called in the frame.
-    pub fn make_stable_id(&self, label: &str) -> WidgetId {
+    pub(crate) fn make_stable_id(&self, label: &str) -> WidgetId {
         let base = self.id_stack.last().copied().unwrap_or(0);
 
         let mut hash = base;
@@ -357,13 +357,13 @@ impl UiContext {
     }
 
     /// Push an ID onto the stack for nested widgets.
-    pub fn push_id(&mut self, id: &str) {
+    pub(crate) fn push_id(&mut self, id: &str) {
         let id = self.generate_id(id);
         self.id_stack.push(id);
     }
 
     /// Pop an ID from the stack.
-    pub fn pop_id(&mut self) {
+    pub(crate) fn pop_id(&mut self) {
         self.id_stack.pop();
     }
 

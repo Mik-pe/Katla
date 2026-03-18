@@ -157,64 +157,28 @@ impl UiContext {
         self.popup(Popup::new(id).at_cursor(), open, content);
     }
 
-    /// Context menu with explicit position.
-    ///
-    /// Like `context_menu` but opens at a specific position instead of mouse position.
-    pub fn context_menu_at<F>(&mut self, id: &str, pos: Vec2, open: &mut bool, content: F)
+    pub(crate) fn context_menu_at<F>(&mut self, id: &str, pos: Vec2, open: &mut bool, content: F)
     where
         F: FnOnce(&mut Self, &mut bool),
     {
         self.popup(Popup::new(id).at_position(pos), open, content);
     }
 
-    /// Dropdown below a trigger button.
-    ///
-    /// # Example
-    /// ```ignore
-    /// let mut dropdown_open = false;
-    /// let trigger_bounds = Rect2D::from_origin_size(pos, Vec2::new(100.0, 24.0));
-    ///
-    /// // Draw trigger button
-    /// if ui.button_at("Select...", trigger_bounds).clicked {
-    ///     dropdown_open = !dropdown_open;
-    /// }
-    ///
-    /// ui.dropdown("menu", trigger_bounds, &mut dropdown_open, |ui, open| {
-    ///     if ui.menu_item_clicked("Option A") {
-    ///         *open = false;
-    ///     }
-    /// });
-    /// ```
-    pub fn dropdown<F>(&mut self, id: &str, trigger: Rect2D, open: &mut bool, content: F)
+    pub(crate) fn dropdown<F>(&mut self, id: &str, trigger: Rect2D, open: &mut bool, content: F)
     where
         F: FnOnce(&mut Self, &mut bool),
     {
         self.popup(Popup::new(id).below_button(trigger), open, content);
     }
 
-    /// Modal dialog (centered, blocks background).
-    ///
-    /// # Example
-    /// ```ignore
-    /// let mut dialog_open = false;
-    ///
-    /// if ui.button("Delete").clicked {
-    ///     dialog_open = true;
-    /// }
-    ///
-    /// ui.modal("confirm", 300.0, 150.0, &mut dialog_open, |ui, open| {
-    ///     ui.label("Are you sure?");
-    ///     if ui.button("OK").clicked {
-    ///         // Do the action
-    ///         *open = false;
-    ///     }
-    ///     if ui.button("Cancel").clicked {
-    ///         *open = false;
-    ///     }
-    /// });
-    /// ```
-    pub fn modal<F>(&mut self, id: &str, width: f32, height: f32, open: &mut bool, content: F)
-    where
+    pub fn modal<F>(
+        &mut self,
+        id: &str,
+        width: f32,
+        height: f32,
+        open: &mut bool,
+        content: F,
+    ) where
         F: FnOnce(&mut Self, &mut bool),
     {
         self.popup(

@@ -8,28 +8,14 @@ use crate::text::FontId;
 use super::super::{z_index, UiContext};
 
 impl UiContext {
-    /// Combo box with selection preview.
-    ///
-    /// The `preview` text is shown in the closed combo box.
-    /// When open, the closure is called to render the selectable items.
-    ///
-    /// # Example
-    /// ```ignore
-    /// let mut combo_open = false;
-    /// let mut selected = 0;
-    /// let options = ["Option A", "Option B", "Option C"];
-    ///
-    /// ui.combo("my_combo", options[selected], bounds, &mut combo_open, |ui, open| {
-    ///     for (i, opt) in options.iter().enumerate() {
-    ///         if ui.menu_item_clicked(opt) {
-    ///             selected = i;
-    ///             *open = false;
-    ///         }
-    ///     }
-    /// });
-    /// ```
-    pub fn combo<F>(&mut self, id: &str, preview: &str, bounds: Rect2D, open: &mut bool, content: F)
-    where
+    pub(crate) fn combo<F>(
+        &mut self,
+        id: &str,
+        preview: &str,
+        bounds: Rect2D,
+        open: &mut bool,
+        content: F,
+    ) where
         F: FnOnce(&mut Self, &mut bool),
     {
         // Use stable ID for combo - consistent across frames

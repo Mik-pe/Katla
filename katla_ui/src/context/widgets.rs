@@ -72,8 +72,7 @@ impl UiContext {
         self.input.is_hovered(bounds) && self.active_id.is_none()
     }
 
-    /// Update hover state for a widget.
-    pub fn update_hover(&mut self, id: super::WidgetId, bounds: Rect2D) -> bool {
+    pub(crate) fn update_hover(&mut self, id: super::WidgetId, bounds: Rect2D) -> bool {
         let hovered = self.is_hovered(bounds);
         if hovered {
             self.hovered_id = Some(id);
@@ -107,18 +106,7 @@ impl UiContext {
     // Convenience Widget Methods (Auto-Layout)
     // -------------------------------------------------------------------------
 
-    /// Add a button at the current cursor position.
-    ///
-    /// This is a convenience method that creates a button with automatic
-    /// positioning. After adding, the cursor advances vertically.
-    ///
-    /// # Example
-    /// ```ignore
-    /// if ui.button_auto("Save Changes").clicked {
-    ///     save_changes();
-    /// }
-    /// ```
-    pub fn button_auto(&mut self, text: &str) -> crate::Response {
+    pub(crate) fn button_auto(&mut self, text: &str) -> crate::Response {
         use crate::widgets::Button;
         let bounds = Rect2D::from_origin_size(
             self.cursor(),
