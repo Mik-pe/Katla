@@ -234,7 +234,7 @@ impl UiContext {
         self.popup_opened_this_frame = false;
         self.popup_consume_click = false;
 
-        // NOTE: Don't clear active_id here! Widgets need to check it in button_behavior.
+        // NOTE: Don't clear active_id here! Widgets need to check it in click_behavior.
         // We'll clear it in end() if it wasn't consumed by a click.
 
         // Set initial clip to full screen

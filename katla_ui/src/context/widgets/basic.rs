@@ -24,8 +24,6 @@ mod tests {
     use crate::input::mouse_button;
 
     /// Test that normal button uses button_normal color.
-    ///
-    /// Verifies VAL-OPACITY-003: Button visual appearance - normal state
     #[test]
     fn test_button_normal_state_color() {
         let mut ctx = UiContext::new();
@@ -55,8 +53,6 @@ mod tests {
     }
 
     /// Test that hovered button uses button_hovered color.
-    ///
-    /// Verifies VAL-OPACITY-003: Button visual appearance - hovered state
     #[test]
     fn test_button_hovered_state_color() {
         let mut ctx = UiContext::new();
@@ -81,8 +77,6 @@ mod tests {
     }
 
     /// Test that active (pressed) button uses button_active color.
-    ///
-    /// Verifies VAL-OPACITY-003: Button visual appearance - active state
     #[test]
     fn test_button_active_state_color() {
         let mut ctx = UiContext::new();
@@ -127,8 +121,6 @@ mod tests {
     }
 
     /// Test that click triggers on release while hovering.
-    ///
-    /// Verifies FLOW-003: Button interaction state change - click behavior
     #[test]
     fn test_button_click_on_release_while_hovering() {
         let mut ctx = UiContext::new();
@@ -178,8 +170,6 @@ mod tests {
     }
 
     /// Test that click does NOT trigger if mouse moves away before release.
-    ///
-    /// Verifies FLOW-003: Button interaction - click requires hover on release
     #[test]
     fn test_button_no_click_if_not_hovering_on_release() {
         let mut ctx = UiContext::new();
@@ -225,8 +215,6 @@ mod tests {
     }
 
     /// Test button state transitions: normal -> hovered -> active -> clicked.
-    ///
-    /// Verifies VAL-OPACITY-003: Button visual state transitions
     #[test]
     fn test_button_state_transitions() {
         let mut ctx = UiContext::new();
@@ -416,18 +404,9 @@ impl UiContext {
         let widget_id = self.generate_id(id);
 
         let hovered = self.update_hover(widget_id, bounds) && enabled;
-        let active = self.active_id == Some(widget_id) && enabled;
-
-        // Handle click
-        let clicked = if hovered && self.input.mouse_pressed[mouse_button::LEFT] {
-            self.active_id = Some(widget_id);
-            false
-        } else if active && self.input.mouse_released[mouse_button::LEFT] {
-            self.active_id = None;
-            hovered
-        } else {
-            false
-        };
+        let click_result = self.click_behavior(widget_id, hovered);
+        let clicked = click_result.is_clicked() && enabled;
+        let active = click_result.is_active() && enabled;
 
         // Determine colors based on state
         let bg_color = if !enabled {
@@ -476,17 +455,9 @@ impl UiContext {
         let widget_id = self.generate_id(id);
 
         let hovered = self.update_hover(widget_id, bounds);
-        let active = self.active_id == Some(widget_id);
-
-        let clicked = if hovered && self.input.mouse_pressed[mouse_button::LEFT] {
-            self.active_id = Some(widget_id);
-            false
-        } else if active && self.input.mouse_released[mouse_button::LEFT] {
-            self.active_id = None;
-            hovered
-        } else {
-            false
-        };
+        let click_result = self.click_behavior(widget_id, hovered);
+        let clicked = click_result.is_clicked();
+        let active = click_result.is_active();
 
         if clicked {
             *checked = !*checked;

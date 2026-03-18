@@ -777,7 +777,9 @@ impl<'a> crate::Widget for RadioButton<'a> {
         );
 
         // Handle clicks
-        let clicked = ui.button_behavior(id, self.bounds);
+        let clicked = ui
+            .click_behavior(id, ui.is_hovered(self.bounds))
+            .is_clicked();
 
         let mut response = Response::new(self.bounds);
         response.clicked = clicked;
@@ -977,7 +979,9 @@ where
         );
 
         // Handle click
-        let clicked = ui.button_behavior(id, self.bounds);
+        let clicked = ui
+            .click_behavior(id, ui.is_hovered(self.bounds))
+            .is_clicked();
 
         let mut response = Response::new(self.bounds);
         response.hovered = hovered;
@@ -990,126 +994,6 @@ where
         // Render content if expanded
         if *self.expanded {
             (self.content)(ui);
-        }
-
-        response
-    }
-}
-
-// =============================================================================
-// Dropdown/Select Widget
-// =============================================================================
-
-/// A dropdown/select menu widget.
-///
-/// # Example
-///
-/// ```ignore
-/// use katla_ui::widgets::Dropdown;
-///
-/// let mut selected = 1;
-/// let options = ["Option A", "Option B", "Option C"];
-/// if ui.add(Dropdown::new(&mut selected, "Select...", &options)).changed {
-///     println!("Selected: {}", options[selected]);
-/// }
-/// ```
-pub struct Dropdown<'a, 'b> {
-    selected: &'a mut usize,
-    placeholder: &'b str,
-    options: &'b [&'b str],
-    bounds: Rect2D,
-}
-
-impl<'a, 'b> Dropdown<'a, 'b> {
-    /// Create a new dropdown.
-    ///
-    /// # Arguments
-    /// * `selected` - Mutable reference to selected index
-    /// * `placeholder` - Text to show when nothing is selected
-    /// * `options` - Slice of option strings
-    pub fn new(selected: &'a mut usize, placeholder: &'b str, options: &'b [&'b str]) -> Self {
-        Self {
-            selected,
-            placeholder,
-            options,
-            bounds: Rect2D::from_size(Vec2::new(150.0, 24.0)),
-        }
-    }
-
-    /// Set the dropdown bounds.
-    pub fn bounds(mut self, bounds: Rect2D) -> Self {
-        self.bounds = bounds;
-        self
-    }
-}
-
-impl<'a, 'b> crate::Widget for Dropdown<'a, 'b> {
-    fn ui(self, ui: &mut UiContext) -> Response {
-        // This is a simplified implementation - in a real UI you'd want a popup
-        // For now, we'll just show the current selection with click-to-cycle behavior
-
-        let id = ui.generate_id(self.placeholder);
-        let hovered = ui.is_hovered(self.bounds);
-        let has_selection = *self.selected < self.options.len();
-
-        // Background
-        ui.draw_rect(
-            self.bounds,
-            if hovered {
-                ui.style.input_bg
-            } else {
-                ui.style.window_bg
-            },
-        );
-
-        // Border
-        ui.draw_rect_border(self.bounds, Color::TRANSPARENT, ui.style.input_border, 1.0);
-
-        // Text (placeholder or selected option)
-        let text = if has_selection {
-            self.options[*self.selected]
-        } else {
-            self.placeholder
-        };
-        let text_pos = Vec2::new(
-            self.bounds.min.x() + 4.0,
-            self.bounds.center().y() - ui.style.font_size * 0.5,
-        );
-        let text_color = if has_selection {
-            ui.style.input_text
-        } else {
-            ui.style.text_disabled
-        };
-        ui.draw_text(text, text_pos, text_color, ui.style.font_size);
-
-        // Dropdown arrow
-        let arrow = '▼';
-        let arrow_size = ui.measure_text(
-            &arrow.to_string(),
-            ui.scaled_font_size(crate::FontSize::XSmall),
-        );
-        let arrow_pos = Vec2::new(
-            self.bounds.max.x() - arrow_size.x() - 8.0,
-            self.bounds.center().y() - arrow_size.y() * 0.5,
-        );
-        ui.draw_text(
-            &arrow.to_string(),
-            arrow_pos,
-            ui.style.text_disabled,
-            ui.scaled_font_size(crate::FontSize::XSmall),
-        );
-
-        // Handle click - cycle through options
-        let clicked = ui.button_behavior(id, self.bounds);
-
-        let mut response = Response::new(self.bounds);
-        response.hovered = hovered;
-        response.clicked = clicked;
-        response.changed = false;
-
-        if clicked && !self.options.is_empty() {
-            *self.selected = (*self.selected + 1) % self.options.len();
-            response.changed = true;
         }
 
         response

@@ -332,7 +332,7 @@ impl ForkAwesome {
     /// Square icon ()
     pub const SQUARE: char = '\u{F0C8}';
     /// Square Outline icon ()
-    pub const SQUARE_OUTLINE: char = '\u{F0C8}';
+    pub const SQUARE_OUTLINE: char = '\u{F096}';
 
     /// Returns a list of commonly used icons for precaching.
     ///
