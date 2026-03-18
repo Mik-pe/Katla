@@ -52,10 +52,10 @@ pub fn execute_gpu_compute(
     if emit_workgroups > 0 {
         // Update descriptor binding for emit dispatch
         if let Err(e) =
-            particle_system.update_compute_descriptor_binding_for_emit(frame_index_for_descriptor)
+            particle_system.update_compute_descriptor_binding(frame_index_for_descriptor)
         {
             log::warn!(
-                "Frame {}: Failed to update compute descriptor binding for emit: {}",
+                "Frame {}: Failed to update compute descriptor binding: {}",
                 frame,
                 e
             );
@@ -87,11 +87,11 @@ pub fn execute_gpu_compute(
     // Record simulate dispatch if we have alive particles
     if simulate_workgroups > 0 {
         // Update descriptor binding for simulate dispatch
-        if let Err(e) = particle_system
-            .update_compute_descriptor_binding_for_simulate(frame_index_for_descriptor)
+        if let Err(e) =
+            particle_system.update_compute_descriptor_binding(frame_index_for_descriptor)
         {
             log::warn!(
-                "Frame {}: Failed to update compute descriptor binding for simulate: {}",
+                "Frame {}: Failed to update compute descriptor binding: {}",
                 frame,
                 e
             );

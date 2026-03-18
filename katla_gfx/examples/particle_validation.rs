@@ -340,6 +340,14 @@ fn main() -> ExitCode {
     let mut worst_mismatch_pct: f32 = 0.0;
     let mut worst_mismatch_frame: u32 = 0;
 
+    // Track per-particle positions across frames for stale-buffer detection
+    let mut prev_positions: std::collections::HashMap<u32, [f32; 3]> =
+        std::collections::HashMap::new();
+    let mut position_anomaly_count: u32 = 0;
+    let mut position_anomaly_frames: u32 = 0;
+    let mut max_position_jump: f32 = 0.0;
+    let mut max_jump_frame: u32 = 0;
+
     for frame in 0..NUM_FRAMES {
         cumulative_time += DELTA_TIME;
         let is_last_frame = frame == NUM_FRAMES - 1;
@@ -461,6 +469,60 @@ fn main() -> ExitCode {
                         worst_mismatch_pct = pct;
                         worst_mismatch_frame = frame;
                     }
+
+                    // Position consistency check: detect stale-buffer reads.
+                    // A surviving particle should move smoothly frame-to-frame.
+                    // A large position jump indicates the particle index was reused
+                    // or the alive_list contained stale data from a wrong buffer.
+                    let alive_count = debug_data.counters.alive_count as usize;
+                    let mut frame_anomalies = 0u32;
+                    let mut new_positions = std::collections::HashMap::new();
+                    for i in 0..alive_count {
+                        let pidx = debug_data.alive_list[i];
+                        if (pidx as usize) < debug_data.particles.len() {
+                            let pos = debug_data.particles[pidx as usize].position;
+                            new_positions.insert(pidx, pos);
+
+                            if let Some(&prev_pos) = prev_positions.get(&pidx) {
+                                let dx = pos[0] - prev_pos[0];
+                                let dy = pos[1] - prev_pos[1];
+                                let dz = pos[2] - prev_pos[2];
+                                let dist_sq = dx * dx + dy * dy + dz * dz;
+
+                                // Max expected displacement per frame:
+                                // velocity ~1.5 m/s * dt=0.0167s ≈ 0.025m, plus gravity
+                                // Use 2.0 as a generous threshold (should be < 0.1 for normal sim)
+                                if dist_sq > 4.0 {
+                                    frame_anomalies += 1;
+                                    let dist = dist_sq.sqrt();
+                                    if dist > max_position_jump {
+                                        max_position_jump = dist;
+                                        max_jump_frame = frame;
+                                    }
+                                    if frame_anomalies <= 3 {
+                                        log::warn!(
+                                            "Position anomaly frame {}: particle[{}] jumped {:.2}m \
+                                             ({:.1},{:.1},{:.1}) -> ({:.1},{:.1},{:.1})",
+                                            frame,
+                                            pidx,
+                                            dist,
+                                            prev_pos[0],
+                                            prev_pos[1],
+                                            prev_pos[2],
+                                            pos[0],
+                                            pos[1],
+                                            pos[2],
+                                        );
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    if frame_anomalies > 0 {
+                        position_anomaly_count += frame_anomalies;
+                        position_anomaly_frames += 1;
+                    }
+                    prev_positions = new_positions;
                 }
             }
             Err(e) => {
@@ -484,6 +546,24 @@ fn main() -> ExitCode {
              Particles are being assigned to wrong emitters.",
             worst_mismatch_pct,
             worst_mismatch_frame
+        );
+        return ExitCode::from(1);
+    }
+
+    // Report position consistency results
+    log::info!(
+        "Position consistency: {} anomalies in {} frames, max_jump={:.2}m at frame {}",
+        position_anomaly_count,
+        position_anomaly_frames,
+        max_position_jump,
+        max_jump_frame,
+    );
+    if position_anomaly_count > 0 {
+        log::error!(
+            "STALE BUFFER DETECTED: {} particles had position jumps > 2.0m across {} frames. \
+             Double-buffering swap may be targeting the wrong frame index.",
+            position_anomaly_count,
+            position_anomaly_frames,
         );
         return ExitCode::from(1);
     }
@@ -879,6 +959,16 @@ fn validate_particle_data(particle_system: &GlobalParticleSystem) -> Result<(), 
         min_pos[2],
         max_pos[2]
     );
+
+    // Validate that all configured emitters are producing particles.
+    // Test emitters are at x=-50 and x=+50, so both sides must have coverage.
+    if max_pos[0] < -49.0 || min_pos[0] > 49.0 {
+        return Err(format!(
+            "Position range X=[{:.2}, {:.2}] does not cover both emitter locations (x=-50 and x=+50). \
+             Emitters may not all be producing particles.",
+            min_pos[0], max_pos[0]
+        ));
+    }
 
     // Validation fails if critical errors found
     if nan_count > 0 || inf_count > 0 {

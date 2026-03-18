@@ -2565,10 +2565,10 @@ impl<'a> Frame<'a> {
                 // CRITICAL: Emit needs binding 3 to point to alive_current[frame_index]
                 // so that newly emitted particles are written where simulate will read them
                 particle_system
-                    .update_compute_descriptor_binding_for_emit(current_frame)
+                    .update_compute_descriptor_binding(current_frame)
                     .map_err(|e| {
                         RenderGraphError::VulkanError(format!(
-                            "Failed to update particle compute descriptor binding for emit: {}",
+                            "Failed to update particle compute descriptor binding: {}",
                             e
                         ))
                     })?;
@@ -2599,10 +2599,10 @@ impl<'a> Frame<'a> {
                 // CRITICAL: Simulate needs binding 3 to point to alive_next buffer
                 // so that survivors are written to the correct location for swapping
                 particle_system
-                    .update_compute_descriptor_binding_for_simulate(current_frame)
+                    .update_compute_descriptor_binding(current_frame)
                     .map_err(|e| {
                         RenderGraphError::VulkanError(format!(
-                            "Failed to update particle compute descriptor binding for simulate: {}",
+                            "Failed to update particle compute descriptor binding: {}",
                             e
                         ))
                     })?;
@@ -2620,16 +2620,16 @@ impl<'a> Frame<'a> {
                     })?;
 
                 // Swap alive lists after simulate pass completes
-                // This copies alive_next (written by simulate) to alive_current (read by emit next frame)
-                // The alive_count counter is preserved from the simulate pass (no reset, no GPU update)
-                log::debug!("About to call swap_alive_lists()...");
+                // This copies alive_next (written by simulate) to alive_current[next_frame]
+                // so that the NEXT frame's emit/simulate reads the correct survivor list.
+                // CRITICAL: must swap to (current_frame + 1) % frames_in_flight, NOT current_frame,
+                // because emit/simulate for THIS frame already read from alive_current[current_frame].
+                let next_frame = (current_frame + 1) % 2;
                 particle_system
-                    .swap_alive_lists(cmd.vk_command_buffer(), current_frame)
+                    .swap_alive_lists(cmd.vk_command_buffer(), next_frame)
                     .map_err(|e| {
                         RenderGraphError::VulkanError(format!("Particle buffer swap failed: {}", e))
                     })?;
-
-                log::debug!("swap_alive_lists() completed successfully");
 
                 // Record particle debug readback if requested this frame
                 // SAFETY: We need to access the graph's debug readback flag through the Frame's graph reference

@@ -47,20 +47,30 @@ struct ParticleCounters {
 }
 
 // Per-emitter configuration
+// Layout must match EmitterConfig in mod.rs exactly.
+// WGSL vec3f has 16-byte alignment; Rust [f32; 3] has 4-byte alignment.
+// Explicit _pad_* fields bridge the gap.
+// Offsets: position(0) _pad_position(12) shape(16) emit_rate(20)
+//          base_lifetime(24) lifetime_variation(28) velocity_direction(32)
+//          _pad_velocity(44) velocity_magnitude(48) velocity_cone_angle(52)
+//          base_scale(56) scale_variation(60) color(64) color_variation(80)
+//          _pad_color(84) shape_params(96) = 112 bytes
 struct EmitterConfig {
     position: vec3f,
+    _pad_position: f32,
     shape: u32,
     emit_rate: f32,
     base_lifetime: f32,
     lifetime_variation: f32,
     velocity_direction: vec3f,
-    _pad0: f32,
+    _pad_velocity: f32,
     velocity_magnitude: f32,
     velocity_cone_angle: f32,
     base_scale: f32,
     scale_variation: f32,
     color: vec4f,
     color_variation: f32,
+    _pad_color: vec4f,
     shape_params: vec4f,
 }
 
