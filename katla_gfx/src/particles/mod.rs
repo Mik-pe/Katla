@@ -890,10 +890,8 @@ impl GlobalParticleSystem {
             );
         }
 
-        // Draw particles using indirect draw (GPU-driven vertex count from simulate shader)
-        // The indirect draw buffer contains VkDrawIndirectCommand written by the simulate shader.
-        // vertex_count is set to alive_count * 6 (6 vertices per particle quad).
-        // We still use cached_alive_count for the early-exit optimization.
+        // Draw particles using GPU-driven indirect draw.
+        // The simulate shader writes VkDrawIndirectCommand with vertex_count = alive_count * 6.
         if self.cached_alive_count > 0 {
             unsafe {
                 device.cmd_draw_indirect(
@@ -1909,16 +1907,10 @@ impl GlobalParticleSystem {
         self.render_pipeline
     }
 
-    /// Get the raw particle buffer handle.
-    ///
-    /// Used by validation code to set up pipeline barriers.
     pub fn particle_buffer(&self) -> vk::Buffer {
         self.buffer.particle_buffer()
     }
 
-    /// Get the indirect draw buffer handle.
-    ///
-    /// Used by vkCmdDrawIndirect in the render pass.
     pub fn indirect_draw_buffer(&self) -> vk::Buffer {
         self.buffer.indirect_draw_buffer()
     }
@@ -2264,9 +2256,8 @@ impl GlobalParticleSystem {
 
     /// Pipeline barrier after SIMULATE pass → before RENDER pass.
     ///
-    /// Ensures memory synchronization between compute and graphics:
-    /// - SIMULATE writes to particle buffers, alive list, and indirect draw command
-    /// - RENDER reads these buffers for vertex attributes and indirect drawing
+    /// Ensures particle buffers, alive list, and indirect draw command are visible
+    /// to the render pass (vertex shader + indirect draw).
     fn simulate_barrier(&self, command_buffer: vk::CommandBuffer) -> Result<(), String> {
         let particle_buffer = self.buffer.particle_buffer();
         let indirect_draw_buffer = self.buffer.indirect_draw_buffer();
@@ -2274,13 +2265,8 @@ impl GlobalParticleSystem {
 
         let particle_buffer_size = self.buffer.layout().total_size;
 
-        // Create buffer memory barrier for particle buffer (including alive list)
-        // This barrier ensures that:
-        // 1. Particle data written by compute is visible to vertex shader
-        // 2. Alive list written by compute is visible to vertex shader for indirect drawing
-        //
-        // NOTE: We use SHADER_READ instead of VERTEX_ATTRIBUTE_READ because the particle
-        // render shader accesses particle data via storage buffer binding, not vertex attributes.
+        // NOTE: SHADER_READ not VERTEX_ATTRIBUTE_READ — the render shader accesses
+        // particle data via storage buffer binding, not vertex attributes.
         // VERTEX_ATTRIBUTE_READ is only valid for VERTEX_INPUT stage, not VERTEX_SHADER.
         let particle_barrier = BufferMemoryBarrier2 {
             src_stage_mask: PipelineStage2Flags::COMPUTE_SHADER,
