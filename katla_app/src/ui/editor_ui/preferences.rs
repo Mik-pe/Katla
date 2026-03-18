@@ -155,8 +155,7 @@ impl<'a> PreferencesPanel<'a> {
 
 impl<'a> Widget for PreferencesPanel<'a> {
     fn ui(self, ui: &mut UiContext) -> Response {
-        let theme = self.theme.clone();
-        let style = DraggablePanelStyle::from(&theme);
+        let style = DraggablePanelStyle::from(self.theme);
         let panel_width = 450.0;
         let panel_height = 500.0;
         let title_bar_height = DraggablePanel::title_bar_height();
@@ -183,7 +182,7 @@ impl<'a> Widget for PreferencesPanel<'a> {
             ),
             Vec2::new(panel_width, tab_bar_height),
         );
-        ui.draw_rect(tab_bar_bounds, theme.background_dark);
+        ui.draw_rect(tab_bar_bounds, self.theme.background_dark);
 
         let tab_width = panel_width / PreferencesTab::all().len() as f32;
         for (i, tab) in PreferencesTab::all().iter().enumerate() {
@@ -197,9 +196,9 @@ impl<'a> Widget for PreferencesPanel<'a> {
             let is_selected = *tab == self.state.current_tab;
 
             let tab_color = if is_selected {
-                theme.panel_bg
+                self.theme.panel_bg
             } else {
-                theme.background_dark
+                self.theme.background_dark
             };
             ui.draw_rect(tab_bounds, tab_color);
 
@@ -207,7 +206,7 @@ impl<'a> Widget for PreferencesPanel<'a> {
                 ui.draw_line(
                     Vec2::new(tab_bounds.min.x(), tab_bounds.max.y()),
                     Vec2::new(tab_bounds.max.x(), tab_bounds.max.y()),
-                    theme.selection,
+                    self.theme.selection,
                     2.0,
                 );
             }
@@ -233,9 +232,9 @@ impl<'a> Widget for PreferencesPanel<'a> {
             let top_y = tab_bounds.center().y() - text_size.y() * 0.5;
 
             let icon_color = if is_selected {
-                theme.text_primary
+                self.theme.text_primary
             } else {
-                theme.text_muted
+                self.theme.text_muted
             };
             ui.draw_icon_aligned(
                 icon,
@@ -246,9 +245,9 @@ impl<'a> Widget for PreferencesPanel<'a> {
             );
 
             let text_color = if is_selected {
-                theme.text_primary
+                self.theme.text_primary
             } else {
-                theme.text_muted
+                self.theme.text_muted
             };
             ui.draw_text(
                 text,
@@ -267,6 +266,7 @@ impl<'a> Widget for PreferencesPanel<'a> {
 
         let current_tab = self.state.current_tab;
         let editor_settings = self.editor_settings.clone();
+        let theme = self.theme;
         let theme_key = self.theme_key;
         let show_grid = self.preferences.show_grid;
         let show_stats = self.preferences.show_stats;
@@ -289,7 +289,7 @@ impl<'a> Widget for PreferencesPanel<'a> {
                 let final_y = match current_tab {
                     PreferencesTab::Appearance => build_appearance_tab(
                         ui,
-                        &theme,
+                        theme,
                         cursor,
                         content_width,
                         row_height,
@@ -302,7 +302,7 @@ impl<'a> Widget for PreferencesPanel<'a> {
                     ),
                     PreferencesTab::Editor => build_editor_tab(
                         ui,
-                        &theme,
+                        theme,
                         cursor,
                         content_width,
                         row_height,
@@ -310,9 +310,9 @@ impl<'a> Widget for PreferencesPanel<'a> {
                         pending_actions,
                     ),
                     PreferencesTab::Keybindings => {
-                        build_keybindings_tab(ui, &theme, cursor, content_width, row_height)
+                        build_keybindings_tab(ui, theme, cursor, content_width, row_height)
                     }
-                    PreferencesTab::About => build_about_tab(ui, &theme, cursor, content_width),
+                    PreferencesTab::About => build_about_tab(ui, theme, cursor, content_width),
                 };
 
                 final_y - content_start_y + scroll_offset + 16.0

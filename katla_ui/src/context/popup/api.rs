@@ -171,14 +171,8 @@ impl UiContext {
         self.popup(Popup::new(id).below_button(trigger), open, content);
     }
 
-    pub fn modal<F>(
-        &mut self,
-        id: &str,
-        width: f32,
-        height: f32,
-        open: &mut bool,
-        content: F,
-    ) where
+    pub fn modal<F>(&mut self, id: &str, width: f32, height: f32, open: &mut bool, content: F)
+    where
         F: FnOnce(&mut Self, &mut bool),
     {
         self.popup(

@@ -69,21 +69,24 @@ impl<'a> Hierarchy<'a> {
 
 impl<'a> Widget for Hierarchy<'a> {
     fn ui(self, ui: &mut UiContext) -> Response {
-        let theme = self.theme.clone();
-
         if ui.is_hovered(self.bounds) && ui.mouse_clicked(mouse_button::LEFT) {
             *self.focused_panel = FocusedPanel::Hierarchy;
         }
 
-        ui.draw_rect(self.bounds, theme.panel_bg);
-        ui.draw_rect_border(self.bounds, theme.panel_bg, theme.panel_border, 1.0);
+        ui.draw_rect(self.bounds, self.theme.panel_bg);
+        ui.draw_rect_border(
+            self.bounds,
+            self.theme.panel_bg,
+            self.theme.panel_border,
+            1.0,
+        );
 
         let header_height = 24.0;
         let header_bounds = Rect2D::from_origin_size(
             self.bounds.min,
             Vec2::new(self.bounds.width(), header_height),
         );
-        ui.draw_rect(header_bounds, theme.panel_header);
+        ui.draw_rect(header_bounds, self.theme.panel_header);
 
         let visible_count = self
             .entities
@@ -96,7 +99,7 @@ impl<'a> Widget for Hierarchy<'a> {
         ui.draw_text(
             &header_text,
             header_pos,
-            theme.text_primary,
+            self.theme.text_primary,
             ui.scaled_font_size(FontSize::Medium),
         );
 
@@ -142,9 +145,9 @@ impl<'a> Widget for Hierarchy<'a> {
                     let is_hovered = ui.is_hovered(item_bounds);
 
                     let bg_color = if is_selected {
-                        theme.selection
+                        self.theme.selection
                     } else if is_hovered {
-                        theme.selection_hover
+                        self.theme.selection_hover
                     } else {
                         Color::TRANSPARENT
                     };
@@ -158,7 +161,7 @@ impl<'a> Widget for Hierarchy<'a> {
                         ui.draw_line(
                             Vec2::new(line_x, cursor.y()),
                             Vec2::new(line_x, cursor.y() + item_height),
-                            theme.separator,
+                            self.theme.separator,
                             1.0,
                         );
                     }
@@ -177,9 +180,9 @@ impl<'a> Widget for Hierarchy<'a> {
                         let triangle_hovered = ui.is_hovered(triangle_bounds);
 
                         let triangle_color = if triangle_hovered {
-                            theme.text_primary
+                            self.theme.text_primary
                         } else {
-                            theme.text_secondary
+                            self.theme.text_secondary
                         };
 
                         let triangle_pos = Vec2::new(item_x + 3.0, cursor.y() + 3.0);
@@ -200,7 +203,7 @@ impl<'a> Widget for Hierarchy<'a> {
                         let dot_pos = Vec2::new(item_x + 6.0, cursor.y() + 8.0);
                         ui.draw_rect(
                             Rect2D::from_origin_size(dot_pos, Vec2::new(4.0, 4.0)),
-                            theme.text_muted,
+                            self.theme.text_muted,
                         );
                         item_x + 18.0
                     };
@@ -215,10 +218,10 @@ impl<'a> Widget for Hierarchy<'a> {
                         _ => ForkAwesome::CUBE,
                     };
                     let entity_icon_color = match entity.entity_type.as_str() {
-                        "Mesh" => theme.entity_mesh,
-                        "Particle Emitter" => theme.entity_particle,
-                        "Directional Light" | "Point Light" => theme.entity_light,
-                        _ => theme.text_secondary,
+                        "Mesh" => self.theme.entity_mesh,
+                        "Particle Emitter" => self.theme.entity_particle,
+                        "Directional Light" | "Point Light" => self.theme.entity_light,
+                        _ => self.theme.text_secondary,
                     };
 
                     ui.draw_icon_aligned(
@@ -234,15 +237,15 @@ impl<'a> Widget for Hierarchy<'a> {
                     ui.draw_text(
                         name_text,
                         name_pos,
-                        theme.text_secondary,
+                        self.theme.text_secondary,
                         ui.scaled_font_size(FontSize::Medium),
                     );
 
                     let badge_color = match entity.entity_type.as_str() {
-                        "Mesh" => theme.entity_mesh,
-                        "Particle Emitter" => theme.entity_particle,
-                        "Directional Light" | "Point Light" => theme.entity_light,
-                        _ => theme.entity_empty,
+                        "Mesh" => self.theme.entity_mesh,
+                        "Particle Emitter" => self.theme.entity_particle,
+                        "Directional Light" | "Point Light" => self.theme.entity_light,
+                        _ => self.theme.entity_empty,
                     };
                     let badge_text = &entity.entity_type;
                     let badge_size =
@@ -309,7 +312,7 @@ impl<'a> Widget for Hierarchy<'a> {
             ui.draw_text(
                 empty_text,
                 empty_pos,
-                theme.text_muted,
+                self.theme.text_muted,
                 ui.scaled_font_size(FontSize::Medium),
             );
         }

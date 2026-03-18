@@ -15,7 +15,7 @@ use katla_gfx::TextureHandle;
 use katla_math::{Color, Rect2D, Vec2};
 use katla_ui::widgets::ImageButton;
 use katla_ui::{
-    mouse_button, ForkAwesome, KeyCode, Popup, ScrollArea, ScrollAreaState, TextureId, UiContext,
+    mouse_button, ForkAwesome, KeyCode, ScrollArea, ScrollAreaState, TextureId, UiContext,
 };
 
 use super::FocusedPanel;
@@ -936,12 +936,11 @@ pub fn build_asset_browser(
 
     // Check focus AFTER click handling (use focused_panel directly, not cached is_focused)
     if state.search_focused && *focused_panel == FocusedPanel::AssetBrowser {
-        // Capture keyboard so game doesn't get input
-        ui.input.want_capture_keyboard = true;
+        ui.capture_keyboard();
 
         // Handle text input
         let prev_filter = state.search_filter.clone();
-        for &c in &ui.input.characters {
+        for &c in ui.typed_characters() {
             if c == '\x08' {
                 state.search_filter.pop();
             } else if c >= ' ' && state.search_filter.len() < 32 {
@@ -1223,9 +1222,7 @@ pub fn build_asset_browser(
                 }
 
                 // Finalize selection on mouse release
-                if state.selection_rect_start.is_some()
-                    && ui.input.mouse_released[katla_ui::input::mouse_button::LEFT]
-                {
+                if state.selection_rect_start.is_some() && ui.mouse_released(mouse_button::LEFT) {
                     if state.is_marquee_selecting {
                         if let (Some(start), Some(current)) =
                             (state.selection_rect_start, state.selection_rect_current)
@@ -1326,7 +1323,7 @@ pub fn build_asset_browser(
             }
 
             // Handle drag end - check what we're dropping on
-            if state.drag_asset.is_some() && ui.input.mouse_released[mouse_button::LEFT] {
+            if state.drag_asset.is_some() && ui.mouse_released(mouse_button::LEFT) {
                 let drag_idx = state.drag_asset.unwrap();
                 let mouse_pos = ui.mouse_pos();
                 let mouse_in_browser = bounds.contains(mouse_pos);
@@ -1471,7 +1468,7 @@ pub fn build_asset_browser(
                 });
 
                 // Handle text input
-                for &c in &ui.input.characters {
+                for &c in ui.typed_characters() {
                     if c == '\x08' {
                         state.rename_buffer.pop();
                     } else if c >= ' ' && state.rename_buffer.len() < 64 {
@@ -1484,7 +1481,7 @@ pub fn build_asset_browser(
 
                 // Capture keyboard so game doesn't get input (only when panel is focused)
                 if is_focused {
-                    ui.input.want_capture_keyboard = true;
+                    ui.capture_keyboard();
                 }
 
                 // Track commit/cancel actions
@@ -1527,7 +1524,7 @@ pub fn build_asset_browser(
             // Process click actions after iteration (to avoid borrow conflicts)
             if let Some(index) = clicked_index {
                 // Use input system's double-click detection + same-item check
-                let is_double = ui.input.mouse_double_clicked(mouse_button::LEFT)
+                let is_double = ui.mouse_double_clicked(mouse_button::LEFT)
                     && state.last_click_index == Some(index);
                 state.last_click_index = Some(index);
 
@@ -1673,8 +1670,8 @@ pub fn build_asset_browser(
 
     // Render context menu popup
     let mut clicked_action: Option<&str> = None;
-    ui.popup(
-        Popup::new("asset_context").at_cursor(),
+    ui.context_menu(
+        "asset_context",
         &mut state.context_menu_open,
         |ui, open| match asset_type {
             Some(AssetType::Folder) => {
