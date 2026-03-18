@@ -14,8 +14,6 @@ use log::info;
 
 use crate::vulkan::context::VulkanContext;
 
-use super::EmitterConfig;
-
 /// Particle data structure (48 bytes, tightly packed).
 ///
 /// Layout must match WGSL struct exactly.
@@ -157,10 +155,6 @@ pub struct GlobalParticleBuffer {
     /// Atomic counters
     counters_buffer: vk::Buffer,
     counters_allocation: Option<Allocation>,
-
-    /// Emitter configuration buffer
-    emitter_buffer: vk::Buffer,
-    emitter_allocation: Option<Allocation>,
 
     /// Maximum particles
     max_particles: u32,
@@ -313,55 +307,11 @@ impl GlobalParticleBuffer {
             );
         }
 
-        // Create emitter config buffer (CPU-visible)
-        let emitter_size = (1024usize) * std::mem::size_of::<EmitterConfig>();
-        let emitter_buffer_info = vk::BufferCreateInfo::default()
-            .size(emitter_size as u64)
-            .usage(vk::BufferUsageFlags::STORAGE_BUFFER)
-            .sharing_mode(vk::SharingMode::EXCLUSIVE);
-
-        let emitter_buffer = unsafe {
-            context
-                .device
-                .create_buffer(&emitter_buffer_info, None)
-                .map_err(|e| format!("Failed to create emitter buffer: {:?}", e))?
-        };
-
-        let emitter_requirements = unsafe {
-            context
-                .device
-                .get_buffer_memory_requirements(emitter_buffer)
-        };
-
-        let emitter_allocation = context
-            .allocator
-            .borrow_mut()
-            .allocate(&AllocationCreateDesc {
-                name: "emitter_configs",
-                requirements: emitter_requirements,
-                location: gpu_allocator::MemoryLocation::CpuToGpu,
-                linear: true,
-                allocation_scheme: gpu_allocator::vulkan::AllocationScheme::GpuAllocatorManaged,
-            })
-            .map_err(|e| format!("Failed to allocate emitter memory: {}", e))?;
-
-        unsafe {
-            context
-                .device
-                .bind_buffer_memory(
-                    emitter_buffer,
-                    emitter_allocation.memory(),
-                    emitter_allocation.offset(),
-                )
-                .map_err(|e| format!("Failed to bind emitter memory: {:?}", e))?
-        }
-
         info!(
             "Created global particle buffer: {} particles ({} MB)",
             max_particles,
             (layout.particles_size_aligned as usize
                 + max_particles as usize * std::mem::size_of::<u32>() * 4
-                + emitter_size
                 + counters_size)
                 / (1024 * 1024)
         );
@@ -398,8 +348,6 @@ impl GlobalParticleBuffer {
             particle_allocation: Some(particle_allocation),
             counters_buffer,
             counters_allocation: Some(counters_allocation),
-            emitter_buffer,
-            emitter_allocation: Some(emitter_allocation),
             max_particles,
             layout,
             destroyed: false,
@@ -640,26 +588,6 @@ impl GlobalParticleBuffer {
         Ok(())
     }
 
-    /// Upload emitter configurations to GPU.
-    pub fn upload_emitter_configs(&self, configs: &[EmitterConfig]) -> Result<(), String> {
-        if let Some(mapped) = self
-            .emitter_allocation
-            .as_ref()
-            .and_then(|a| a.mapped_ptr())
-        {
-            let dst = mapped.as_ptr() as *mut EmitterConfig;
-            unsafe {
-                std::ptr::copy_nonoverlapping(configs.as_ptr(), dst, configs.len());
-            }
-            self.context.flush_mapped_memory(
-                self.emitter_allocation.as_ref().unwrap(),
-                0,
-                std::mem::size_of_val(configs) as u64,
-            );
-        }
-        Ok(())
-    }
-
     /// Get current alive particle count.
     ///
     /// Invalidates mapped memory before reading to ensure GPU writes are visible.
@@ -690,36 +618,6 @@ impl GlobalParticleBuffer {
             Ok(counters.dead_count)
         } else {
             Ok(0)
-        }
-    }
-
-    /// Directly read particle data from GPU buffer (CPU-visible memory).
-    pub fn read_particles_direct(&self, count: usize) -> Result<Vec<ParticleData>, String> {
-        if let Some(mapped) = self
-            .particle_allocation
-            .as_ref()
-            .and_then(|a| a.mapped_ptr())
-        {
-            let particles = unsafe {
-                std::slice::from_raw_parts(mapped.as_ptr() as *const ParticleData, count)
-            };
-            Ok(particles.to_vec())
-        } else {
-            Err("Particle buffer is not mapped for CPU access".to_string())
-        }
-    }
-
-    /// Read particle counters directly from GPU buffer.
-    pub fn read_counters_direct(&self) -> Result<ParticleCounters, String> {
-        if let Some(mapped) = self
-            .counters_allocation
-            .as_ref()
-            .and_then(|a| a.mapped_ptr())
-        {
-            let counters = unsafe { &*(mapped.as_ptr() as *const ParticleCounters) };
-            Ok(*counters)
-        } else {
-            Err("Counters buffer is not mapped for CPU access".to_string())
         }
     }
 
@@ -878,11 +776,6 @@ impl GlobalParticleBuffer {
             {
                 allocator.free(alloc).ok();
             }
-            if let Some(alloc) = self.emitter_allocation.take()
-                && let Ok(mut allocator) = self.context.allocator.try_borrow_mut()
-            {
-                allocator.free(alloc).ok();
-            }
             // Destroy buffers (only if not null)
             if self.particle_buffer != vk::Buffer::null() {
                 self.context
@@ -895,12 +788,6 @@ impl GlobalParticleBuffer {
                     .device
                     .destroy_buffer(self.counters_buffer, None);
                 self.counters_buffer = vk::Buffer::null();
-            }
-            if self.emitter_buffer != vk::Buffer::null() {
-                self.context
-                    .device
-                    .destroy_buffer(self.emitter_buffer, None);
-                self.emitter_buffer = vk::Buffer::null();
             }
         }
     }

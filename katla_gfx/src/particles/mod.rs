@@ -153,11 +153,40 @@ pub const PARTICLE_SIMULATE_WORKGROUP_SIZE: u32 = 64;
 ///
 /// This is uploaded to a storage buffer that the compute shader
 /// accesses when spawning particles.
+///
+/// # Layout
+///
+/// Must match WGSL `EmitterConfig` exactly. WGSL `vec3f` has 16-byte alignment
+/// while Rust `[f32; 3]` has 4-byte alignment in `repr(C)`, so explicit padding
+/// fields are required to bridge the gap.
+///
+/// Layout (offsets):
+/// -  0: position [f32; 3]          (12 bytes)
+/// - 12: _pad_position f32           (4 bytes, WGSL vec3f alignment padding)
+/// - 16: shape u32                   (4 bytes)
+/// - 20: emit_rate f32               (4 bytes)
+/// - 24: base_lifetime f32           (4 bytes)
+/// - 28: lifetime_variation f32      (4 bytes)
+/// - 32: velocity_direction [f32; 3] (12 bytes)
+/// - 44: _pad_velocity f32           (4 bytes, WGSL vec3f alignment padding)
+/// - 48: velocity_magnitude f32      (4 bytes)
+/// - 52: velocity_cone_angle f32     (4 bytes)
+/// - 56: base_scale f32              (4 bytes)
+/// - 60: scale_variation f32         (4 bytes)
+/// - 64: color [f32; 4]             (16 bytes)
+/// - 80: color_variation f32         (4 bytes)
+/// - 84: implicit padding            (12 bytes, WGSL vec4f alignment)
+/// - 96: _pad_color Align16Vec4      (16 bytes)
+/// - 112: shape_params [f32; 4]      (16 bytes)
+/// Total: 128 bytes
 #[repr(C)]
-#[derive(Clone, Copy, Debug, bytemuck::Pod, bytemuck::Zeroable, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 pub struct EmitterConfig {
     #[serde(default = "default_position")]
     pub position: [f32; 3],
+
+    #[serde(skip)]
+    pub _pad_position: f32,
 
     #[serde(default)]
     pub shape: u32,
@@ -172,15 +201,11 @@ pub struct EmitterConfig {
     #[serde(default = "default_lifetime_variation")]
     pub lifetime_variation: f32,
 
-    /// Pad to align velocity_direction to offset 32 (WGSL vec3 alignment = 16 bytes)
-    #[serde(skip)]
-    pub _pad0: f32,
-
     #[serde(default = "default_velocity_direction")]
     pub velocity_direction: [f32; 3],
 
     #[serde(skip)]
-    pub _pad1: f32,
+    pub _pad_velocity: f32,
 
     #[serde(default = "default_velocity_magnitude")]
     pub velocity_magnitude: f32,
@@ -203,14 +228,28 @@ pub struct EmitterConfig {
     #[serde(default = "default_color_variation")]
     pub color_variation: f32,
 
-    /// Pad to align shape_params to offset 96 (WGSL vec4 alignment = 16 bytes)
     #[serde(skip)]
-    pub _pad3: [f32; 3],
+    pub _pad_color: Align16Vec4,
 
     /// Shape parameters (length/radius for Line/Circle/Sphere, dimensions for Box)
     #[serde(default)]
     pub shape_params: [f32; 4],
 }
+
+/// 16-byte aligned `[f32; 4]` to match WGSL `vec4f` alignment.
+#[repr(C, align(16))]
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Align16Vec4(pub [f32; 4]);
+
+// Safety: Align16Vec4 is repr(C) with align(16), contains only f32 (Pod).
+unsafe impl bytemuck::Pod for Align16Vec4 {}
+unsafe impl bytemuck::Zeroable for Align16Vec4 {}
+
+// Safety: EmitterConfig is repr(C), all fields are Pod or padding from Align16Vec4 alignment.
+// The 12 bytes of padding between color_variation and _pad_color are never read uninitialized
+// because the struct is always created via Default or explicit field init.
+unsafe impl bytemuck::Pod for EmitterConfig {}
+unsafe impl bytemuck::Zeroable for EmitterConfig {}
 
 impl EmitterConfig {
     /// Get the emitter shape as an enum
@@ -263,20 +302,20 @@ impl Default for EmitterConfig {
     fn default() -> Self {
         Self {
             position: [0.0; 3],
+            _pad_position: 0.0,
             shape: EmitterShape::Point.as_u32(),
             emit_rate: 50.0,
             base_lifetime: 5.0,
             lifetime_variation: 0.2,
-            _pad0: 0.0,
             velocity_direction: [0.0, 1.0, 0.0],
-            _pad1: 0.0,
+            _pad_velocity: 0.0,
             velocity_magnitude: 1.0,
             velocity_cone_angle: 0.5,
             base_scale: 0.1,
             scale_variation: 0.5,
             color: [1.0, 1.0, 1.0, 1.0],
             color_variation: 0.1,
-            _pad3: [0.0; 3],
+            _pad_color: Align16Vec4([0.0; 4]),
             shape_params: [0.0; 4],
         }
     }
@@ -862,18 +901,14 @@ impl GlobalParticleSystem {
         Ok(())
     }
 
-    /// Update alive_list descriptor binding offset for compute shaders - SIMULATE pass.
+    /// Update alive_list descriptor binding offsets for compute shaders.
     ///
-    /// This must be called before the simulate compute dispatch to ensure the
+    /// This must be called before each compute dispatch to ensure the
     /// shader reads from and writes to the correct buffer regions.
     ///
-    /// PROPER DOUBLE-BUFFERING:
-    /// Binding 2 (alive_list/read): points to alive_current[frame_index] (read newly emitted particles)
-    /// Binding 3 (alive_list_next/write): points to alive_next (write survivors here)
-    pub fn update_compute_descriptor_binding_for_simulate(
-        &self,
-        frame_index: usize,
-    ) -> Result<(), String> {
+    /// # Arguments
+    /// * `frame_index` - Current frame index (0 or 1)
+    pub fn update_compute_descriptor_binding(&self, frame_index: usize) -> Result<(), String> {
         let device = &self.context.device;
         let descriptor_set = self
             .compute_descriptor_set
@@ -885,117 +920,14 @@ impl GlobalParticleSystem {
         let alive_next_offset = layout.alive_next_offset;
         let alive_list_region_size = layout.alive_list_size;
 
-        log::debug!(
-            "update_compute_descriptor_binding_for_simulate: frame_index={}, binding2_offset(alive_current[{}])={}, binding3_offset(alive_next)={}",
-            frame_index,
-            frame_index,
-            frame_offset,
-            alive_next_offset
-        );
-
-        // CRITICAL: For SIMULATE pass with proper double-buffering:
-        // Binding 2 (alive_list/read): points to alive_current[frame_index] (read survivors + newly emitted particles)
-        // Binding 3 (alive_list_next/write): points to alive_next (write survivors here)
-        //
-        // Emit appended new particles after survivors in alive_current[frame_index].
-        // Simulate reads ALL particles from there and writes survivors to alive_next.
-        // After simulate completes, we'll copy alive_next -> alive_current[frame_index] for next frame.
-
-        // Update binding 2 (alive_list/read) to point to alive_current[frame_index]
+        // Binding 2 (alive_list/read): points to alive_current[frame_index]
+        // Binding 3 (alive_list_next/write): points to alive_next
         let alive_list_info = [vk::DescriptorBufferInfo {
             buffer: self.buffer.particle_buffer(),
-            offset: frame_offset, // Read from alive_current[frame_index] (newly emitted particles)
+            offset: frame_offset,
             range: alive_list_region_size,
         }];
 
-        // Update binding 3 (alive_list_next/write) to point to alive_next
-        let alive_next_info = [vk::DescriptorBufferInfo {
-            buffer: self.buffer.particle_buffer(),
-            offset: alive_next_offset, // Write survivors to alive_next
-            range: alive_list_region_size,
-        }];
-
-        let descriptor_writes = [
-            vk::WriteDescriptorSet::default()
-                .dst_set(descriptor_set)
-                .dst_binding(2)
-                .descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
-                .descriptor_count(1)
-                .buffer_info(&alive_list_info),
-            vk::WriteDescriptorSet::default()
-                .dst_set(descriptor_set)
-                .dst_binding(3)
-                .descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
-                .descriptor_count(1)
-                .buffer_info(&alive_next_info),
-        ];
-
-        log::debug!(
-            "Updating SIMULATE compute descriptors: binding 2 offset={} (alive_current[{}], read), binding 3 offset={} (alive_next, write)",
-            frame_offset,
-            frame_index,
-            alive_next_offset
-        );
-
-        unsafe {
-            device.update_descriptor_sets(&descriptor_writes, &[]);
-        }
-
-        Ok(())
-    }
-
-    /// Update alive_list descriptor binding offset for compute shaders - EMIT pass.
-    ///
-    /// This must be called before the emit compute dispatch to ensure the
-    /// shader writes to the correct buffer region.
-    ///
-    /// PROPER DOUBLE-BUFFERING:
-    /// Binding 2 (alive_list/read): points to alive_current[frame_index] (emit writes here!)
-    /// Binding 3 (alive_list_next/write): points to alive_next (unused in emit)
-    ///
-    /// Emit writes new particles to alive_current[frame_index] (temporary buffer).
-    /// Simulate will read from there and write survivors to alive_next.
-    pub fn update_compute_descriptor_binding_for_emit(
-        &self,
-        frame_index: usize,
-    ) -> Result<(), String> {
-        let device = &self.context.device;
-        let descriptor_set = self
-            .compute_descriptor_set
-            .ok_or("Compute descriptor set not allocated")?;
-
-        let layout = self.buffer.layout();
-
-        let frame_offset = layout.alive_current_frame_offset[frame_index];
-        let alive_next_offset = layout.alive_next_offset;
-        let alive_list_region_size = layout.alive_list_size;
-
-        log::debug!(
-            "update_compute_descriptor_binding_for_emit: frame_index={}, binding2_offset(alive_current[{}])={}, binding3_offset(alive_next)={}",
-            frame_index,
-            frame_index,
-            frame_offset,
-            alive_next_offset
-        );
-
-        // CRITICAL: For EMIT pass with proper double-buffering:
-        // Binding 2 (alive_list/read): points to alive_current[frame_index] (emit appends here!)
-        // Binding 3 (alive_list_next/write): points to alive_next (unused in emit, but must be valid)
-        //
-        // alive_current[frame_index] contains survivors from previous frame (copied by swap).
-        // Emit appends new particles after these survivors.
-        // Simulate will read ALL particles from alive_current[frame_index] and write survivors to alive_next.
-        // After simulate completes, we'll copy alive_next -> alive_current[frame_index] for next frame.
-
-        // Update binding 2 (alive_list/read) to point to alive_current[frame_index]
-        // Emit shader writes to alive_list, which points to alive_current[frame_index]
-        let alive_list_info = [vk::DescriptorBufferInfo {
-            buffer: self.buffer.particle_buffer(),
-            offset: frame_offset, // Emit writes to alive_current[frame_index]
-            range: alive_list_region_size,
-        }];
-
-        // Update binding 3 (alive_list_next/write) to point to alive_next (unused in emit)
         let alive_next_info = [vk::DescriptorBufferInfo {
             buffer: self.buffer.particle_buffer(),
             offset: alive_next_offset,
@@ -1016,13 +948,6 @@ impl GlobalParticleSystem {
                 .descriptor_count(1)
                 .buffer_info(&alive_next_info),
         ];
-
-        log::debug!(
-            "Updating EMIT compute descriptors: binding 2 offset={} (alive_current[{}], emit output), binding 3 offset={} (alive_next, unused in emit)",
-            frame_offset,
-            frame_index,
-            alive_next_offset
-        );
 
         unsafe {
             device.update_descriptor_sets(&descriptor_writes, &[]);
@@ -1069,11 +994,19 @@ impl GlobalParticleSystem {
     }
 
     /// Get current alive particle count.
+    ///
+    /// Returns the cached value last set by `update()` or `set_alive_count()`.
+    /// For reliable GPU-read counts, use debug readback + `set_alive_count()`.
     pub fn alive_count(&self) -> u32 {
         self.cached_alive_count
     }
 
     /// Set cached alive count from external readback (e.g., debug readback).
+    ///
+    /// The debug readback copies counters via `vkCmdCopyBuffer` which is
+    /// more reliable than reading from HOST_COHERENT memory directly.
+    /// Use this after submitting the command buffer with
+    /// `record_debug_readback()` and waiting on the GPU fence.
     ///
     /// This is needed because on some GPUs/drivers, reading the alive_count
     /// directly from the counters buffer (via get_alive_count) returns stale
@@ -1271,19 +1204,6 @@ impl GlobalParticleSystem {
     /// Check if debug readback is initialized.
     pub fn has_debug_readback(&self) -> bool {
         self.debug_readback.is_some()
-    }
-
-    /// Directly read particle data from GPU buffer (CPU-visible memory).
-    ///
-    /// This reads directly from the particle buffer without staging.
-    /// Only works if the particle buffer was created with CPU-visible memory.
-    pub fn read_particles_direct(&self, count: usize) -> Result<Vec<ParticleData>, String> {
-        self.buffer.read_particles_direct(count)
-    }
-
-    /// Read particle counters directly from GPU buffer.
-    pub fn read_counters_direct(&self) -> Result<ParticleCounters, String> {
-        self.buffer.read_counters_direct()
     }
 
     /// Destroy debug readback to free staging buffers.
@@ -1954,116 +1874,6 @@ impl GlobalParticleSystem {
     /// Record compute dispatch with timing queries.
     ///
     /// Wraps the compute dispatch with timestamp queries to measure GPU execution time.
-    /// This should be used instead of `record_compute_dispatch` when timing is needed.
-    pub fn record_compute_with_timing(
-        &mut self,
-        command_buffer: vk::CommandBuffer,
-        asset_registry: &AssetRegistry,
-        total_workgroups: u32,
-    ) -> Result<(), String> {
-        if let Some(timing) = &self.timing_queries {
-            // Reset query pools for new measurements
-            timing.reset(command_buffer);
-
-            // Write start timestamp
-            timing.write_start(command_buffer);
-        }
-
-        // Execute compute dispatch
-        self.record_compute_dispatch(command_buffer, asset_registry, total_workgroups)?;
-
-        if let Some(timing) = &self.timing_queries {
-            // Write end timestamp
-            timing.write_end(command_buffer);
-        }
-
-        // Increment dispatch counter
-        self.increment_dispatch_count();
-
-        Ok(())
-    }
-
-    /// Get compute shader execution time in milliseconds.
-    ///
-    /// Returns the timing data from the last compute dispatch.
-    /// Returns None if timing is not available or readback failed.
-    pub fn get_compute_time_ms(&mut self) -> Option<f32> {
-        if let Some(timing) = &mut self.timing_queries {
-            match timing.get_compute_time_ms() {
-                Ok(time) => {
-                    // Update statistics with the new timing data
-                    self.update_compute_stats(time);
-                    Some(time)
-                }
-                Err(e) => {
-                    warn!("Failed to read compute timing: {}", e);
-                    None
-                }
-            }
-        } else {
-            None
-        }
-    }
-
-    /// Get cached compute time without readback.
-    ///
-    /// Returns the last successfully measured compute time.
-    /// Returns 0.0 if no timing data is available.
-    pub fn cached_compute_time_ms(&self) -> f32 {
-        self.timing_queries
-            .as_ref()
-            .map(|t| t.cached_time_ms())
-            .unwrap_or(0.0)
-    }
-
-    /// Record compute dispatch with graceful timing fallback.
-    ///
-    /// This method attempts to use timing queries, but falls back to non-timing
-    /// dispatch if timing queries fail or are not available. This prevents
-    /// GPU crashes due to timing query issues.
-    ///
-    /// # Arguments
-    /// * `command_buffer` - Command buffer to record into
-    /// * `asset_registry` - Asset registry for pipeline access
-    /// * `total_workgroups` - Number of workgroups to dispatch
-    ///
-    /// # Returns
-    /// Ok(()) if dispatch succeeded (with or without timing)
-    /// Err(String) if dispatch itself failed
-    pub fn record_compute_with_timing_fallback(
-        &mut self,
-        command_buffer: vk::CommandBuffer,
-        asset_registry: &AssetRegistry,
-        total_workgroups: u32,
-    ) -> Result<(), String> {
-        // Try timing queries if available
-        if self.timing_queries.is_some() {
-            // Attempt to reset timing queries
-            if let Some(timing) = &self.timing_queries {
-                timing.reset(command_buffer);
-                timing.write_start(command_buffer);
-            }
-
-            // Execute compute dispatch
-            let dispatch_result =
-                self.record_compute_dispatch(command_buffer, asset_registry, total_workgroups);
-
-            // Write end timestamp if timing was started
-            if let Some(timing) = &self.timing_queries {
-                timing.write_end(command_buffer);
-            }
-
-            // Increment dispatch counter
-            self.increment_dispatch_count();
-
-            // Return dispatch result (timing failures don't affect this)
-            dispatch_result
-        } else {
-            // No timing queries available, use standard dispatch
-            self.record_compute_dispatch(command_buffer, asset_registry, total_workgroups)
-        }
-    }
-
     /// Record emit pass dispatch.
     pub fn record_emit_dispatch(
         &self,
@@ -2429,100 +2239,6 @@ impl GlobalParticleSystem {
         self.buffer.swap_alive_lists(command_buffer, frame_idx)
     }
 
-    /// Record compute dispatch commands (legacy method for compatibility).
-    pub fn record_compute_dispatch(
-        &self,
-        command_buffer: vk::CommandBuffer,
-        asset_registry: &AssetRegistry,
-        total_workgroups: u32,
-    ) -> Result<(), String> {
-        let pipeline = self
-            .simulate_pipeline
-            .ok_or("Simulate pipeline not created")?;
-
-        let compute_pipeline = asset_registry
-            .get_pipeline(pipeline)
-            .ok_or("Failed to get compute pipeline from registry")?;
-
-        let vk_pipeline = compute_pipeline.vk_pipeline();
-        let vk_layout = compute_pipeline.vk_layout();
-
-        let device = &self.context.device;
-
-        // Bind compute pipeline
-        unsafe {
-            device.cmd_bind_pipeline(command_buffer, vk::PipelineBindPoint::COMPUTE, vk_pipeline);
-        }
-
-        // Bind static descriptor set (Set 0: particle buffers)
-        if let Some(descriptor_set) = self.compute_descriptor_set {
-            unsafe {
-                device.cmd_bind_descriptor_sets(
-                    command_buffer,
-                    vk::PipelineBindPoint::COMPUTE,
-                    vk_layout,
-                    0, // Set 0
-                    std::slice::from_ref(&descriptor_set),
-                    &[],
-                );
-            }
-        } else {
-            return Err("Compute descriptor set not allocated".to_string());
-        }
-
-        // Update push descriptors (Set 1: frame data + emitter configs)
-        if let Some((frame_buffer, _)) = &self.frame_data_buffer
-            && let Some((emitter_buffer, _)) = &self.emitter_configs_buffer
-        {
-            let frame_buffer_info = [vk::DescriptorBufferInfo::default()
-                .buffer(*frame_buffer)
-                .offset(0)
-                .range(std::mem::size_of::<FrameData>() as u64)];
-
-            let emitter_buffer_info = [vk::DescriptorBufferInfo::default()
-                .buffer(*emitter_buffer)
-                .offset(0)
-                .range((MAX_EMITTERS as usize * std::mem::size_of::<EmitterConfig>()) as u64)];
-
-            let push_descriptor_writes = [
-                vk::WriteDescriptorSet::default()
-                    .dst_binding(0) // Binding 0 in Set 1 (frame data)
-                    .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
-                    .descriptor_count(1)
-                    .buffer_info(&frame_buffer_info),
-                vk::WriteDescriptorSet::default()
-                    .dst_binding(1) // Binding 1 in Set 1 (emitter configs)
-                    .descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
-                    .descriptor_count(1)
-                    .buffer_info(&emitter_buffer_info),
-            ];
-
-            unsafe {
-                // Use push descriptors (no allocation, writes directly to command buffer)
-                let push_descriptor = self
-                    .context
-                    .push_descriptor_khr
-                    .as_ref()
-                    .ok_or("Push descriptor extension not available")?;
-
-                push_descriptor.cmd_push_descriptor_set(
-                    command_buffer,
-                    vk::PipelineBindPoint::COMPUTE,
-                    vk_layout,
-                    1, // Set 1
-                    &push_descriptor_writes,
-                );
-            }
-        }
-
-        // Dispatch compute shader
-        unsafe {
-            device.cmd_dispatch(command_buffer, total_workgroups, 1, 1);
-        }
-
-        Ok(())
-    }
-
     /// Save an emitter configuration as a preset.
     ///
     /// # Arguments
@@ -2612,6 +2328,38 @@ impl GlobalParticleSystem {
         );
 
         Ok(())
+    }
+
+    /// Get compute shader execution time in milliseconds.
+    ///
+    /// Returns the timing data from the last compute dispatch.
+    /// Returns None if timing is not available or readback failed.
+    pub fn get_compute_time_ms(&mut self) -> Option<f32> {
+        if let Some(timing) = &mut self.timing_queries {
+            match timing.get_compute_time_ms() {
+                Ok(time) => {
+                    self.update_compute_stats(time);
+                    Some(time)
+                }
+                Err(e) => {
+                    warn!("Failed to read compute timing: {}", e);
+                    None
+                }
+            }
+        } else {
+            None
+        }
+    }
+
+    /// Get cached compute time without readback.
+    ///
+    /// Returns the last successfully measured compute time.
+    /// Returns 0.0 if no timing data is available.
+    pub fn cached_compute_time_ms(&self) -> f32 {
+        self.timing_queries
+            .as_ref()
+            .map(|t| t.cached_time_ms())
+            .unwrap_or(0.0)
     }
 
     /// Get comprehensive particle system statistics.
@@ -2746,12 +2494,12 @@ mod tests {
 
     #[test]
     fn test_emitter_config_size() {
-        // Must match WGSL struct layout (vec3 align = 16, vec4 align = 16):
-        // position(12) + shape(4) + emit_rate(4) + base_lifetime(4) + lifetime_variation(4) +
-        // _pad0(4) + velocity_direction(12) + _pad1(4) + velocity_magnitude(4) +
+        // Must match WGSL struct layout (vec3f align = 16, vec4f align = 16):
+        // position(12) + _pad_position(4) + shape(4) + emit_rate(4) + base_lifetime(4) + lifetime_variation(4) +
+        // velocity_direction(12) + _pad_velocity(4) + velocity_magnitude(4) +
         // velocity_cone_angle(4) + base_scale(4) + scale_variation(4) +
-        // color(16) + color_variation(4) + _pad3(12) + shape_params(16) = 112
-        assert_eq!(std::mem::size_of::<EmitterConfig>(), 112);
+        // color(16) + color_variation(4) + _pad_color(12) + shape_params(16) = 112 bytes
+        assert_eq!(std::mem::size_of::<EmitterConfig>(), 128);
     }
 
     #[test]
@@ -2817,20 +2565,20 @@ mod tests {
     fn test_emitter_shape_serialization() {
         let config = EmitterConfig {
             position: [1.0, 2.0, 3.0],
+            _pad_position: 0.0,
             shape: EmitterShape::Sphere.as_u32(),
             emit_rate: 100.0,
             base_lifetime: 2.0,
             lifetime_variation: 0.5,
-            _pad0: 0.0,
             velocity_direction: [0.0, 1.0, 0.0],
-            _pad1: 0.0,
+            _pad_velocity: 0.0,
             velocity_magnitude: 5.0,
             velocity_cone_angle: 0.3,
             base_scale: 0.2,
             scale_variation: 0.3,
             color: [1.0, 0.5, 0.0, 1.0],
             color_variation: 0.2,
-            _pad3: [0.0; 3],
+            _pad_color: Align16Vec4([0.0; 4]),
             shape_params: [2.5, 0.0, 0.0, 0.0],
         };
 
@@ -2840,6 +2588,25 @@ mod tests {
         assert_eq!(deserialized.get_shape(), EmitterShape::Sphere);
         assert_eq!(deserialized.shape_params[0], 2.5);
         assert_eq!(deserialized.position, [1.0, 2.0, 3.0]);
+    }
+
+    #[test]
+    fn test_emitter_config_field_offsets() {
+        // Verify field offsets match WGSL vec3f/vec4f alignment rules
+        assert_eq!(std::mem::offset_of!(EmitterConfig, position), 0);
+        assert_eq!(std::mem::offset_of!(EmitterConfig, shape), 16);
+        assert_eq!(std::mem::offset_of!(EmitterConfig, emit_rate), 20);
+        assert_eq!(std::mem::offset_of!(EmitterConfig, base_lifetime), 24);
+        assert_eq!(std::mem::offset_of!(EmitterConfig, lifetime_variation), 28);
+        assert_eq!(std::mem::offset_of!(EmitterConfig, velocity_direction), 32);
+        assert_eq!(std::mem::offset_of!(EmitterConfig, velocity_magnitude), 48);
+        assert_eq!(std::mem::offset_of!(EmitterConfig, velocity_cone_angle), 52);
+        assert_eq!(std::mem::offset_of!(EmitterConfig, base_scale), 56);
+        assert_eq!(std::mem::offset_of!(EmitterConfig, scale_variation), 60);
+        assert_eq!(std::mem::offset_of!(EmitterConfig, color), 64);
+        assert_eq!(std::mem::offset_of!(EmitterConfig, color_variation), 80);
+        assert_eq!(std::mem::offset_of!(EmitterConfig, _pad_color), 96);
+        assert_eq!(std::mem::offset_of!(EmitterConfig, shape_params), 112);
     }
 
     #[test]

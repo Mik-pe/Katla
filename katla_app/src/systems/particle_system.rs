@@ -106,9 +106,11 @@ impl ParticleSystem {
             }
         }
 
-        // Clean up emitters for entities that no longer exist
-        // (This is handled automatically when components are removed,
-        // but we could track it here if needed)
+        // Clean up emitters for entities that no longer exist.
+        // TODO: The ECS does not emit removal events, so we cannot detect
+        // destroyed entities automatically. Emitters are only cleaned up
+        // when ParticleEmitterComponent.active is set to false above.
+        // A future improvement would add entity removal hooks to the ECS.
     }
 }
 
