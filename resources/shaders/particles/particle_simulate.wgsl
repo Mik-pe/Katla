@@ -10,6 +10,7 @@
 //   Binding 2: Storage buffer (alive particle index list - read)
 //   Binding 3: Storage buffer (alive particle index list next - write)
 //   Binding 4: Storage buffer (atomic counters)
+//   Binding 5: Storage buffer (indirect draw command - written by simulate, read by render)
 // Set 1 (Frame Data):
 //   Binding 0: Uniform buffer (frame data only - no emitter configs needed)
 
@@ -41,7 +42,7 @@ struct ParticleCounters {
     alive_count: atomic<u32>,
     dead_count: atomic<u32>,
     emit_count: atomic<u32>,
-    _pad: u32,
+    workgroups_finished: atomic<u32>,
 }
 
 // Global resources (Set 0: static buffers)
@@ -62,6 +63,17 @@ var<storage, read_write> alive_list_next: array<u32, MAX_PARTICLES>;
 
 @group(0) @binding(4)
 var<storage, read_write> counters: ParticleCounters;
+
+// Indirect draw command (written by simulate, read by render via vkCmdDrawIndirect)
+struct DrawIndirectCommand {
+    vertex_count: u32,
+    instance_count: u32,
+    first_vertex: u32,
+    first_instance: u32,
+}
+
+@group(0) @binding(5)
+var<storage, read_write> draw_command: DrawIndirectCommand;
 
 // Per-frame data (Set 1: updated via push descriptors)
 // Note: Simulate pass only needs frame data, not emitter configs
@@ -90,6 +102,7 @@ fn simulate_particle(particle: ptr<function, ParticleData>, delta_time: f32) {
 @compute @workgroup_size(64)
 fn cs_main(@builtin(global_invocation_id) global_id: vec3u) {
     let idx = global_id.x;
+    let local_id = idx % 64u;
 
     // DOUBLE-BUFFERING FLOW:
     // 1. Emit wrote new particles to alive_list (= alive_current[frame]) after existing survivors
@@ -103,39 +116,54 @@ fn cs_main(@builtin(global_invocation_id) global_id: vec3u) {
     // Total particles to simulate (old survivors + newly emitted, all in alive_list)
     let total_particles = frame_data.total_simulate_count;
 
-    // Early exit if beyond particle count
-    if (idx >= total_particles) {
-        return;
-    }
+    if (idx < total_particles) {
+        // Read particle index from alive_list (old survivors + newly emitted)
+        let particle_idx = alive_list[idx];
 
-    // Read particle index from alive_list (old survivors + newly emitted)
-    let particle_idx = alive_list[idx];
+        // Validate particle index
+        if (particle_idx < MAX_PARTICLES) {
+            var particle = particles[particle_idx];
 
-    // Validate particle index
-    if (particle_idx >= MAX_PARTICLES) {
-        return;
-    }
+            simulate_particle(&particle, frame_data.delta_time);
 
-    var particle = particles[particle_idx];
+            if (particle.lifetime > 0.0) {
+                // Still alive - write particle data back and add to alive_list_next
+                particles[particle_idx] = particle;
 
-    simulate_particle(&particle, frame_data.delta_time);
+                // Atomically add this survivor to the count
+                let survivor_slot = atomicAdd(&counters.alive_count, 1u);
 
-    if (particle.lifetime > 0.0) {
-        // Still alive - write particle data back and add to alive_list_next
-        particles[particle_idx] = particle;
-
-        // Atomically add this survivor to the count
-        let survivor_slot = atomicAdd(&counters.alive_count, 1u);
-
-        // Bounds check before writing to alive_list_next
-        if (survivor_slot < MAX_PARTICLES) {
-            alive_list_next[survivor_slot] = particle_idx;
+                // Bounds check before writing to alive_list_next
+                if (survivor_slot < MAX_PARTICLES) {
+                    alive_list_next[survivor_slot] = particle_idx;
+                }
+            } else {
+                // Particle died - return index to dead list for reuse by emit shader
+                let dead_slot = atomicAdd(&counters.dead_count, 1u);
+                if (dead_slot < MAX_PARTICLES) {
+                    dead_list[dead_slot] = particle_idx;
+                }
+            }
         }
-    } else {
-        // Particle died - return index to dead list for reuse by emit shader
-        let dead_slot = atomicAdd(&counters.dead_count, 1u);
-        if (dead_slot < MAX_PARTICLES) {
-            dead_list[dead_slot] = particle_idx;
+    }
+
+    // Workgroup completion: the last workgroup to finish writes the indirect draw command.
+    // ALL invocations participate in the barrier (including those that had no particle to process).
+    // workgroupBarrier() ensures all invocations in this workgroup have completed their atomicAdds.
+    // atomicAdd on workgroups_finished provides ordering between workgroups.
+    workgroupBarrier();
+    storageBarrier();
+
+    if (local_id == 0u) {
+        let finished = atomicAdd(&counters.workgroups_finished, 1u);
+        let total_wg = (frame_data.total_simulate_count + 63u) / 64u;
+        if (finished == total_wg - 1u) {
+            // Last workgroup to finish — write the draw command
+            let total_alive = atomicLoad(&counters.alive_count);
+            draw_command.vertex_count = total_alive * 6u;
+            draw_command.instance_count = 1u;
+            draw_command.first_vertex = 0u;
+            draw_command.first_instance = 0u;
         }
     }
 }

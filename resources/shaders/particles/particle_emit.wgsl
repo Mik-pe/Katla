@@ -43,7 +43,7 @@ struct ParticleCounters {
     alive_count: atomic<u32>,
     dead_count: atomic<u32>,
     emit_count: atomic<u32>,
-    _pad: u32,
+    workgroups_finished: atomic<u32>,
 }
 
 // Per-emitter configuration

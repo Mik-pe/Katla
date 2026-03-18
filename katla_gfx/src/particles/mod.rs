@@ -890,11 +890,19 @@ impl GlobalParticleSystem {
             );
         }
 
-        // Draw particles (6 vertices per particle)
-        let vertex_count = self.cached_alive_count * 6;
-        if vertex_count > 0 {
+        // Draw particles using indirect draw (GPU-driven vertex count from simulate shader)
+        // The indirect draw buffer contains VkDrawIndirectCommand written by the simulate shader.
+        // vertex_count is set to alive_count * 6 (6 vertices per particle quad).
+        // We still use cached_alive_count for the early-exit optimization.
+        if self.cached_alive_count > 0 {
             unsafe {
-                device.cmd_draw(command_buffer, vertex_count, 1, 0, 0);
+                device.cmd_draw_indirect(
+                    command_buffer,
+                    self.buffer.indirect_draw_buffer(),
+                    0,  // offset into indirect buffer
+                    1,  // draw count (one VkDrawIndirectCommand)
+                    16, // stride between commands (sizeof(VkDrawIndirectCommand))
+                );
             }
         }
 
@@ -1216,7 +1224,7 @@ impl GlobalParticleSystem {
 
     /// Create descriptor set layouts for particle system.
     fn create_descriptor_layouts(&mut self, context: &Rc<VulkanContext>) -> Result<(), String> {
-        // Compute layout (Set 0: static buffers only - particles, dead list, alive lists, counters)
+        // Compute layout (Set 0: static buffers only - particles, dead list, alive lists, counters, indirect draw)
         let compute_bindings = [
             vk::DescriptorSetLayoutBinding::default()
                 .binding(0)
@@ -1243,6 +1251,11 @@ impl GlobalParticleSystem {
                 .descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
                 .descriptor_count(1)
                 .stage_flags(vk::ShaderStageFlags::COMPUTE),
+            vk::DescriptorSetLayoutBinding::default()
+                .binding(5)
+                .descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
+                .descriptor_count(1)
+                .stage_flags(vk::ShaderStageFlags::COMPUTE),
         ];
 
         // Enable UPDATE_AFTER_BIND for all bindings to allow per-frame descriptor updates
@@ -1253,6 +1266,7 @@ impl GlobalParticleSystem {
             vk::DescriptorBindingFlags::UPDATE_AFTER_BIND, // Binding 2: alive_list (critical!)
             vk::DescriptorBindingFlags::UPDATE_AFTER_BIND, // Binding 3: alive_next
             vk::DescriptorBindingFlags::UPDATE_AFTER_BIND, // Binding 4: counters
+            vk::DescriptorBindingFlags::UPDATE_AFTER_BIND, // Binding 5: indirect draw command
         ];
 
         let mut compute_binding_flags_info =
@@ -1526,13 +1540,13 @@ impl GlobalParticleSystem {
         layout: vk::DescriptorSetLayout,
         pool_name: &str,
         validate_alignment: bool,
+        include_indirect_binding: bool,
     ) -> Result<(vk::DescriptorSet, vk::DescriptorPool), String> {
         // Create descriptor pool
-        let pool_sizes = [
-            vk::DescriptorPoolSize::default()
-                .ty(vk::DescriptorType::STORAGE_BUFFER)
-                .descriptor_count(5), // 5 storage buffers in Set 0
-        ];
+        let descriptor_count = if include_indirect_binding { 6 } else { 5 };
+        let pool_sizes = [vk::DescriptorPoolSize::default()
+            .ty(vk::DescriptorType::STORAGE_BUFFER)
+            .descriptor_count(descriptor_count)];
 
         let pool_info = vk::DescriptorPoolCreateInfo::default()
             .pool_sizes(&pool_sizes)
@@ -1623,7 +1637,20 @@ impl GlobalParticleSystem {
             range: std::mem::size_of::<buffer::ParticleCounters>() as u64,
         }];
 
-        let descriptor_writes = [
+        // Binding 5: indirect draw command buffer (16 bytes)
+        // Written by simulate shader, read by vkCmdDrawIndirect.
+        // Only included for compute descriptor set.
+        let indirect_draw_info = if include_indirect_binding {
+            Some([vk::DescriptorBufferInfo {
+                buffer: self.buffer.indirect_draw_buffer(),
+                offset: 0,
+                range: 16,
+            }])
+        } else {
+            None
+        };
+
+        let mut descriptor_writes = vec![
             vk::WriteDescriptorSet::default()
                 .dst_set(descriptor_set)
                 .dst_binding(0)
@@ -1655,6 +1682,17 @@ impl GlobalParticleSystem {
                 .descriptor_count(1)
                 .buffer_info(&counters_info),
         ];
+
+        if include_indirect_binding && let Some(info) = &indirect_draw_info {
+            descriptor_writes.push(
+                vk::WriteDescriptorSet::default()
+                    .dst_set(descriptor_set)
+                    .dst_binding(5)
+                    .descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
+                    .descriptor_count(1)
+                    .buffer_info(info),
+            );
+        }
 
         log::info!(
             "Updating descriptor set {:?}: binding 0 range={} bytes",
@@ -1717,7 +1755,7 @@ impl GlobalParticleSystem {
             .compute_descriptor_layout
             .ok_or("Compute descriptor layout not created")?;
 
-        self.create_descriptor_set_internal(compute_layout, "compute", true)
+        self.create_descriptor_set_internal(compute_layout, "compute", true, true)
     }
 
     /// Create descriptor pool and allocate static descriptor set for render (Set 0).
@@ -1729,7 +1767,7 @@ impl GlobalParticleSystem {
             .render_descriptor_layout
             .ok_or("Render descriptor layout not created")?;
 
-        self.create_descriptor_set_internal(render_layout, "render", false)
+        self.create_descriptor_set_internal(render_layout, "render", false, false)
     }
 
     /// Create emit pipeline for particle emission.
@@ -1869,6 +1907,20 @@ impl GlobalParticleSystem {
     /// Get render pipeline handle.
     pub fn render_pipeline_handle(&self) -> Option<PipelineHandle> {
         self.render_pipeline
+    }
+
+    /// Get the raw particle buffer handle.
+    ///
+    /// Used by validation code to set up pipeline barriers.
+    pub fn particle_buffer(&self) -> vk::Buffer {
+        self.buffer.particle_buffer()
+    }
+
+    /// Get the indirect draw buffer handle.
+    ///
+    /// Used by vkCmdDrawIndirect in the render pass.
+    pub fn indirect_draw_buffer(&self) -> vk::Buffer {
+        self.buffer.indirect_draw_buffer()
     }
 
     /// Record compute dispatch with timing queries.
@@ -2036,6 +2088,42 @@ impl GlobalParticleSystem {
     ) -> Result<(), String> {
         let device = &self.context.device;
 
+        // Reset workgroups_finished to 0 before simulate dispatch.
+        // This atomic counter is used to coordinate which workgroup writes the indirect draw command.
+        let counters_buffer = self.buffer.counters_buffer();
+        let workgroups_finished_offset = 12; // offset 12 in ParticleCounters (alive=0, dead=4, emit=8, wg_finished=12)
+        let zero_bytes = 0u32.to_le_bytes();
+        unsafe {
+            device.cmd_update_buffer(
+                command_buffer,
+                counters_buffer,
+                workgroups_finished_offset,
+                &zero_bytes,
+            );
+        }
+
+        // Barrier to ensure workgroups_finished reset is visible to compute shader.
+        let reset_barrier = vk::BufferMemoryBarrier::default()
+            .src_access_mask(vk::AccessFlags::TRANSFER_WRITE)
+            .dst_access_mask(vk::AccessFlags::SHADER_READ | vk::AccessFlags::SHADER_WRITE)
+            .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+            .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+            .buffer(counters_buffer)
+            .offset(workgroups_finished_offset)
+            .size(4);
+
+        unsafe {
+            device.cmd_pipeline_barrier(
+                command_buffer,
+                vk::PipelineStageFlags::TRANSFER,
+                vk::PipelineStageFlags::COMPUTE_SHADER,
+                vk::DependencyFlags::empty(),
+                &[],
+                std::slice::from_ref(&reset_barrier),
+                &[],
+            );
+        }
+
         let pipeline = self
             .simulate_pipeline
             .ok_or("Simulate pipeline not created")?;
@@ -2177,16 +2265,11 @@ impl GlobalParticleSystem {
     /// Pipeline barrier after SIMULATE pass → before RENDER pass.
     ///
     /// Ensures memory synchronization between compute and graphics:
-    /// - SIMULATE writes to particle buffers and alive list
-    /// - RENDER reads these buffers for vertex attributes and drawing
-    ///
-    /// Barrier details:
-    /// - src_stage: COMPUTE_SHADER (SIMULATE pass)
-    /// - dst_stage: VERTEX_SHADER (RENDER pass)
-    /// - src_access: SHADER_WRITE (SIMULATE wrote to buffers)
-    /// - dst_access: SHADER_READ (RENDER reads via storage buffer)
+    /// - SIMULATE writes to particle buffers, alive list, and indirect draw command
+    /// - RENDER reads these buffers for vertex attributes and indirect drawing
     fn simulate_barrier(&self, command_buffer: vk::CommandBuffer) -> Result<(), String> {
         let particle_buffer = self.buffer.particle_buffer();
+        let indirect_draw_buffer = self.buffer.indirect_draw_buffer();
         let device = &self.context.device;
 
         let particle_buffer_size = self.buffer.layout().total_size;
@@ -2211,8 +2294,24 @@ impl GlobalParticleSystem {
             size: particle_buffer_size,
         };
 
+        // Barrier for indirect draw buffer: COMPUTE_SHADER → DRAW_INDIRECT.
+        // The simulate shader writes the VkDrawIndirectCommand, the render pass reads it.
+        let indirect_draw_barrier = BufferMemoryBarrier2 {
+            src_stage_mask: PipelineStage2Flags::COMPUTE_SHADER,
+            dst_stage_mask: PipelineStage2Flags::DRAW_INDIRECT,
+            src_access_mask: AccessFlags2::SHADER_WRITE,
+            dst_access_mask: AccessFlags2::INDIRECT_COMMAND_READ,
+            src_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
+            dst_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
+            buffer: VkBuffer::new(indirect_draw_buffer),
+            offset: 0,
+            size: 16,
+        };
+
         // Build and execute dependency info
-        let dep_info = DependencyInfo::new().add_buffer_barrier2(particle_barrier);
+        let dep_info = DependencyInfo::new()
+            .add_buffer_barrier2(particle_barrier)
+            .add_buffer_barrier2(indirect_draw_barrier);
 
         dep_info.build(|dep_info| unsafe {
             device.cmd_pipeline_barrier2(command_buffer, dep_info);

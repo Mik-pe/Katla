@@ -51,7 +51,7 @@ struct ParticleCounters {
     alive_count: atomic<u32>,
     dead_count: atomic<u32>,
     emit_count: atomic<u32>,
-    _pad: u32,
+    workgroups_finished: u32,
 }
 @group(0) @binding(4)
 var<storage, read> counters: ParticleCounters;

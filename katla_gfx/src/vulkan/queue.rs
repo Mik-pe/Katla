@@ -33,22 +33,37 @@ impl Queue {
         signal_semaphores: &[Semaphore],
         signal_fence: Fence,
     ) {
+        let stage_masks: Vec<_> = (0..wait_semaphores.len())
+            .map(|_| vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT)
+            .collect();
+        self.submit_with_stages(
+            command_buffers,
+            wait_semaphores,
+            signal_semaphores,
+            signal_fence,
+            &stage_masks,
+        )
+    }
+
+    /// Submit command buffers with per-semaphore wait stage masks.
+    ///
+    /// Each semaphore in `wait_semaphores` is paired with a stage mask from `wait_stage_masks`.
+    /// This allows different semaphores to block at different pipeline stages.
+    pub fn submit_with_stages(
+        &self,
+        command_buffers: &[&CommandBuffer],
+        wait_semaphores: &[Semaphore],
+        signal_semaphores: &[Semaphore],
+        signal_fence: Fence,
+        wait_stage_masks: &[vk::PipelineStageFlags],
+    ) {
         let vk_cmd_buffers: Vec<_> = command_buffers
             .iter()
             .map(|cb| cb.vk_command_buffer())
             .collect();
 
-        let mut wait_dst_stage_mask = Vec::with_capacity(wait_semaphores.len());
-        for _ in wait_semaphores {
-            // Use COLOR_ATTACHMENT_OUTPUT instead of ALL_COMMANDS for swapchain image waits.
-            // This is more precise - we only need to block at the point where we start
-            // writing to the color attachment, not all GPU operations.
-            // Using ALL_COMMANDS can cause unnecessary serialization and timing issues under high load.
-            wait_dst_stage_mask.push(vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT);
-        }
-
         let submit_info = vk::SubmitInfo::default()
-            .wait_dst_stage_mask(&wait_dst_stage_mask)
+            .wait_dst_stage_mask(wait_stage_masks)
             .wait_semaphores(wait_semaphores)
             .signal_semaphores(signal_semaphores)
             .command_buffers(&vk_cmd_buffers);

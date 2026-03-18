@@ -68,8 +68,9 @@ pub struct ParticleCounters {
     pub dead_count: u32,
     /// Number of newly emitted particles this frame (set by emit, read by simulate)
     pub emit_count: u32,
-    /// Padding
-    pub _pad: u32,
+    /// Number of workgroups that completed simulate processing.
+    /// Used by the last workgroup to write the indirect draw command.
+    pub workgroups_finished: u32,
 }
 
 /// Pre-computed buffer layout offsets for the global particle buffer.
@@ -155,6 +156,10 @@ pub struct GlobalParticleBuffer {
     /// Atomic counters
     counters_buffer: vk::Buffer,
     counters_allocation: Option<Allocation>,
+
+    /// Indirect draw command buffer (written by simulate shader, read by vkCmdDrawIndirect)
+    indirect_draw_buffer: vk::Buffer,
+    indirect_draw_allocation: Option<Allocation>,
 
     /// Maximum particles
     max_particles: u32,
@@ -286,7 +291,7 @@ impl GlobalParticleBuffer {
                 alive_count: 0,
                 dead_count: max_particles,
                 emit_count: 0,
-                _pad: 0,
+                workgroups_finished: 0,
             };
             log::debug!(
                 "Initialized counters: alive={}, dead={}",
@@ -305,6 +310,50 @@ impl GlobalParticleBuffer {
                 0,
                 std::mem::size_of::<ParticleCounters>() as u64,
             );
+        }
+
+        // Create indirect draw command buffer (16 bytes = one VkDrawIndirectCommand).
+        // Written by simulate compute shader as STORAGE_BUFFER, read by render as INDIRECT_BUFFER.
+        let indirect_draw_size: u64 = 16;
+        let indirect_draw_buffer_info = vk::BufferCreateInfo::default()
+            .size(indirect_draw_size)
+            .usage(vk::BufferUsageFlags::STORAGE_BUFFER | vk::BufferUsageFlags::INDIRECT_BUFFER)
+            .sharing_mode(vk::SharingMode::EXCLUSIVE);
+
+        let indirect_draw_buffer = unsafe {
+            context
+                .device
+                .create_buffer(&indirect_draw_buffer_info, None)
+                .map_err(|e| format!("Failed to create indirect draw buffer: {:?}", e))?
+        };
+
+        let indirect_draw_requirements = unsafe {
+            context
+                .device
+                .get_buffer_memory_requirements(indirect_draw_buffer)
+        };
+
+        let indirect_draw_allocation = context
+            .allocator
+            .borrow_mut()
+            .allocate(&AllocationCreateDesc {
+                name: "particle_indirect_draw",
+                requirements: indirect_draw_requirements,
+                location: gpu_allocator::MemoryLocation::GpuOnly,
+                linear: true,
+                allocation_scheme: gpu_allocator::vulkan::AllocationScheme::GpuAllocatorManaged,
+            })
+            .map_err(|e| format!("Failed to allocate indirect draw memory: {}", e))?;
+
+        unsafe {
+            context
+                .device
+                .bind_buffer_memory(
+                    indirect_draw_buffer,
+                    indirect_draw_allocation.memory(),
+                    indirect_draw_allocation.offset(),
+                )
+                .map_err(|e| format!("Failed to bind indirect draw memory: {:?}", e))?
         }
 
         info!(
@@ -348,6 +397,8 @@ impl GlobalParticleBuffer {
             particle_allocation: Some(particle_allocation),
             counters_buffer,
             counters_allocation: Some(counters_allocation),
+            indirect_draw_buffer,
+            indirect_draw_allocation: Some(indirect_draw_allocation),
             max_particles,
             layout,
             destroyed: false,
@@ -497,7 +548,7 @@ impl GlobalParticleBuffer {
             alive_count: 0,
             dead_count: self.max_particles,
             emit_count: 0,
-            _pad: 0,
+            workgroups_finished: 0,
         };
         let counters_bytes: Vec<u8> = bytemuck::bytes_of(&counters_data).to_vec();
 
@@ -647,6 +698,17 @@ impl GlobalParticleBuffer {
         self.counters_allocation.as_ref()
     }
 
+    /// Get the indirect draw buffer handle (for vkCmdDrawIndirect).
+    pub(crate) fn indirect_draw_buffer(&self) -> vk::Buffer {
+        self.indirect_draw_buffer
+    }
+
+    /// Get the indirect draw allocation (internal use only).
+    #[allow(dead_code)]
+    pub(crate) fn indirect_draw_allocation(&self) -> Option<&gpu_allocator::vulkan::Allocation> {
+        self.indirect_draw_allocation.as_ref()
+    }
+
     /// Swap alive_list_next to alive_list for next frame.
     ///
     /// This copies the content from alive_list_next (written by simulate shader)
@@ -776,6 +838,11 @@ impl GlobalParticleBuffer {
             {
                 allocator.free(alloc).ok();
             }
+            if let Some(alloc) = self.indirect_draw_allocation.take()
+                && let Ok(mut allocator) = self.context.allocator.try_borrow_mut()
+            {
+                allocator.free(alloc).ok();
+            }
             // Destroy buffers (only if not null)
             if self.particle_buffer != vk::Buffer::null() {
                 self.context
@@ -788,6 +855,12 @@ impl GlobalParticleBuffer {
                     .device
                     .destroy_buffer(self.counters_buffer, None);
                 self.counters_buffer = vk::Buffer::null();
+            }
+            if self.indirect_draw_buffer != vk::Buffer::null() {
+                self.context
+                    .device
+                    .destroy_buffer(self.indirect_draw_buffer, None);
+                self.indirect_draw_buffer = vk::Buffer::null();
             }
         }
     }
