@@ -263,7 +263,7 @@ fn test_frame_rate_stability() {
         let start = std::time::Instant::now();
 
         let delta_time = 0.016; // ~60 FPS
-        let alive_count = particle_system
+        let (alive_count, _emit_count) = particle_system
             .update(delta_time, frame)
             .expect("Update should succeed");
 

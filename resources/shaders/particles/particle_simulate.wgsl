@@ -85,28 +85,30 @@ fn simulate_particle(particle: ptr<function, ParticleData>, delta_time: f32) {
     }
 }
 
-// Simulate compute shader - updates particle physics and handles death
+// Simulate particle physics and handle death
 // Workgroup size of 64 optimized for high-divergence workloads
 @compute @workgroup_size(64)
 fn cs_main(@builtin(global_invocation_id) global_id: vec3u) {
     let idx = global_id.x;
 
-    // First thread resets alive_count to 0 - we'll recount only surviving particles
-    // This happens AFTER emit pass has already used the previous alive_count
-    if (idx == 0u) {
-        atomicStore(&counters.alive_count, 0u);
-    }
+    // DOUBLE-BUFFERING FLOW:
+    // 1. Emit wrote new particles to alive_list (= alive_current[frame]) after existing survivors
+    // 2. Simulate reads ALL particles from alive_list and writes survivors to alive_list_next
+    // 3. After simulate, swap copies alive_list_next -> alive_current[next_frame]
+    //
+    // alive_count was reset to 0 by vkCmdFillBuffer before this dispatch.
+    // alive_list contains: [old survivors(0..alive_count-1)] + [newly emitted(alive_count..total_simulate_count-1)]
+    // Simulate writes survivors to alive_list_next starting at slot 0.
 
-    workgroupBarrier();
-
-    // Total particles to simulate = newly emitted + previously alive
+    // Total particles to simulate (old survivors + newly emitted, all in alive_list)
     let total_particles = frame_data.total_simulate_count;
 
     // Early exit if beyond particle count
-    if (idx >= total_particles) { return; }
+    if (idx >= total_particles) {
+        return;
+    }
 
-    // Read particle index from alive_list (emitted + previous survivors)
-    // The descriptor binding handles which memory region to read from
+    // Read particle index from alive_list (old survivors + newly emitted)
     let particle_idx = alive_list[idx];
 
     // Validate particle index
@@ -121,16 +123,19 @@ fn cs_main(@builtin(global_invocation_id) global_id: vec3u) {
     if (particle.lifetime > 0.0) {
         // Still alive - write particle data back and add to alive_list_next
         particles[particle_idx] = particle;
-        let next_slot = atomicAdd(&counters.alive_count, 1u);
+
+        // Atomically add this survivor to the count
+        let survivor_slot = atomicAdd(&counters.alive_count, 1u);
 
         // Bounds check before writing to alive_list_next
-        if (next_slot < MAX_PARTICLES) {
-            alive_list_next[next_slot] = particle_idx;
+        if (survivor_slot < MAX_PARTICLES) {
+            alive_list_next[survivor_slot] = particle_idx;
         }
     } else {
-        // Particle died - do nothing
-        // The particle index remains in the conceptual "dead pool"
-        // and will be reused by the emit shader when it decrements dead_count
-        // We do NOT write back to the dead list as it's a static list of all indices
+        // Particle died - return index to dead list for reuse by emit shader
+        let dead_slot = atomicAdd(&counters.dead_count, 1u);
+        if (dead_slot < MAX_PARTICLES) {
+            dead_list[dead_slot] = particle_idx;
+        }
     }
 }

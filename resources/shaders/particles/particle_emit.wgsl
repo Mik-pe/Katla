@@ -78,10 +78,10 @@ var<storage, read_write> particles: array<ParticleData, MAX_PARTICLES>;
 @group(0) @binding(1)
 var<storage, read_write> dead_list: array<u32, MAX_PARTICLES>;
 
-// Alive list (read) - contains currently alive particles from previous frame
+// Alive list (read_write) - contains survivors from previous frame, emit appends new particles here
 // The Vulkan binding handles per-frame double-buffering transparently
 @group(0) @binding(2)
-var<storage, read> alive_list: array<u32, MAX_PARTICLES>;
+var<storage, read_write> alive_list: array<u32, MAX_PARTICLES>;
 
 // Alive list next (write) - newly emitted particles go here for simulate pass
 @group(0) @binding(3)
@@ -193,7 +193,13 @@ fn emit_particle(particle_idx: u32, emitter_idx: u32, seed: ptr<function, u32>) 
     let phi = random_float(seed) * cone_angle;
 
     let forward = normalize(emitter.velocity_direction);
-    let up = vec3f(0.0, 1.0, 0.0);
+
+    // Choose a reference vector that is not parallel to forward
+    // to avoid degenerate cross product (which would produce NaN).
+    // When forward is Y-dominant, use Z as up; otherwise use Y as up.
+    let abs_forward = abs(forward);
+    let up = select(vec3f(0.0, 1.0, 0.0), vec3f(0.0, 0.0, 1.0), abs_forward.y > abs_forward.z);
+
     let right = normalize(cross(forward, up));
     let local_up = cross(right, forward);
 
@@ -231,10 +237,9 @@ fn emit_particle(particle_idx: u32, emitter_idx: u32, seed: ptr<function, u32>) 
 fn cs_main(@builtin(global_invocation_id) global_id: vec3u) {
     let idx = global_id.x;
 
-    // CRITICAL: Do NOT reset emit_count or alive_count!
-    // alive_count contains the number of survivors from previous frame
-    // emit_count will track our position in the emission sequence
-    // New particles will be appended to alive_list_next after the existing survivors
+    // Emit appends new particles to alive_current[frame_index] (binding 2 = alive_list).
+    // The CPU pre-sets emit_count to cached_alive_count so that emit writes after existing survivors.
+    // Simulate then reads ALL particles from alive_current[frame_index] and writes survivors to alive_next.
 
     // Early exit if beyond total emit count (rate-based + burst)
     if (idx >= frame_data.total_emit_count) { return; }
@@ -285,11 +290,11 @@ fn cs_main(@builtin(global_invocation_id) global_id: vec3u) {
 
     particles[particle_idx] = new_particle;
 
-    // Write to alive_list_next for simulate pass to read
-    // CRITICAL: alive_count contains survivors from previous frame
-    // We append new particles after them by atomically incrementing alive_count
-    let write_slot = atomicAdd(&counters.alive_count, 1u);
+    let write_slot = atomicAdd(&counters.emit_count, 1u);
 
-    // The descriptor binding handles which memory region this writes to
-    alive_list_next[write_slot] = particle_idx;
+    // Write to alive_list (binding 2) which points to alive_current[frame].
+    // The CPU sets emit_count = cached_alive_count before this dispatch,
+    // so emit appends after existing survivors in alive_current[frame].
+    // Simulate will then read ALL particles from alive_current[frame].
+    alive_list[write_slot] = particle_idx;
 }

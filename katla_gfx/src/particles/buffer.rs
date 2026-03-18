@@ -389,10 +389,11 @@ impl GlobalParticleBuffer {
         let min_storage_buffer_offset_alignment =
             device_properties.limits.min_storage_buffer_offset_alignment;
 
-        // Validate descriptor buffer offsets are properly aligned
+        // Validate descriptor buffer offsets are properly aligned (must use same aligned sizes as buffer creation)
         let particle_data_size =
-            (max_particles as u64) * (std::mem::size_of::<ParticleData>() as u64);
-        let dead_list_size = (max_particles as u64) * (std::mem::size_of::<u32>() as u64);
+            ((max_particles as u64) * (std::mem::size_of::<ParticleData>() as u64) + 63) & !63;
+        let dead_list_size =
+            ((max_particles as u64) * (std::mem::size_of::<u32>() as u64) + 63) & !63;
 
         // Check that all descriptor offsets meet alignment requirements
         let offsets = [
@@ -803,17 +804,22 @@ impl GlobalParticleBuffer {
     }
 
     /// Get current alive particle count.
+    ///
+    /// Invalidates mapped memory before reading to ensure GPU writes are visible.
+    /// Must be called after the GPU command buffer that wrote to counters has completed.
     pub fn get_alive_count(&self) -> Result<u32, String> {
-        if let Some(mapped) = self
-            .counters_allocation
-            .as_ref()
-            .and_then(|a| a.mapped_ptr())
-        {
-            let counters = unsafe { &*(mapped.as_ptr() as *const ParticleCounters) };
-            Ok(counters.alive_count)
-        } else {
-            Ok(0)
+        if let Some(counters_allocation) = &self.counters_allocation {
+            self.context.invalidate_mapped_memory(
+                counters_allocation,
+                0,
+                std::mem::size_of::<ParticleCounters>() as u64,
+            );
+            if let Some(mapped) = counters_allocation.mapped_ptr() {
+                let counters = unsafe { &*(mapped.as_ptr() as *const ParticleCounters) };
+                return Ok(counters.alive_count);
+            }
         }
+        Ok(0)
     }
 
     /// Get current dead particle count.
@@ -904,6 +910,12 @@ impl GlobalParticleBuffer {
     /// Get the counters buffer handle (internal use only).
     pub(crate) fn counters_buffer(&self) -> vk::Buffer {
         self.counters_buffer
+    }
+
+    /// Get the counters allocation (internal use only).
+    #[allow(dead_code)]
+    pub(crate) fn counters_allocation(&self) -> Option<&gpu_allocator::vulkan::Allocation> {
+        self.counters_allocation.as_ref()
     }
 
     /// Swap alive_list_next to alive_list for next frame.
@@ -1003,7 +1015,7 @@ impl GlobalParticleBuffer {
             // Barrier for destination region (alive_list)
             vk::BufferMemoryBarrier::default()
                 .src_access_mask(vk::AccessFlags::TRANSFER_WRITE)
-                .dst_access_mask(vk::AccessFlags::SHADER_READ)
+                .dst_access_mask(vk::AccessFlags::SHADER_WRITE | vk::AccessFlags::SHADER_READ)
                 .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
                 .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
                 .buffer(self.particle_buffer)
@@ -1015,14 +1027,21 @@ impl GlobalParticleBuffer {
             // Use legacy barrier for compatibility
             device.cmd_pipeline_barrier(
                 command_buffer,
-                vk::PipelineStageFlags::TRANSFER,
-                vk::PipelineStageFlags::COMPUTE_SHADER,
+                vk::PipelineStageFlags::COMPUTE_SHADER | vk::PipelineStageFlags::TRANSFER,
+                vk::PipelineStageFlags::COMPUTE_SHADER | vk::PipelineStageFlags::TRANSFER,
                 vk::DependencyFlags::empty(),
                 &[],
                 &barriers,
                 &[],
             );
         }
+
+        // CRITICAL FIX: We NO LONGER update alive_count here!
+        // The simulate shader has already set it correctly with the survivor count.
+        // Since we removed the reset from simulate, the count now persists through swap.
+        // The swap just copies the alive_list data, the counter is already correct.
+
+        log::debug!("Swap: alive_count preserved from simulate pass (no GPU update needed)");
 
         Ok(())
     }
@@ -1109,5 +1128,16 @@ mod tests {
     #[test]
     fn test_frame_data_size() {
         assert_eq!(std::mem::size_of::<FrameData>(), 64);
+    }
+
+    #[test]
+    fn test_frame_data_offsets() {
+        assert_eq!(std::mem::offset_of!(FrameData, delta_time), 0);
+        assert_eq!(std::mem::offset_of!(FrameData, total_emit_count), 4);
+        assert_eq!(std::mem::offset_of!(FrameData, emitter_count), 8);
+        assert_eq!(std::mem::offset_of!(FrameData, random_seed), 12);
+        assert_eq!(std::mem::offset_of!(FrameData, total_simulate_count), 16);
+        assert_eq!(std::mem::offset_of!(FrameData, burst_count), 20);
+        assert_eq!(std::mem::offset_of!(FrameData, frame_index), 24);
     }
 }

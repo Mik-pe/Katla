@@ -172,11 +172,15 @@ pub struct EmitterConfig {
     #[serde(default = "default_lifetime_variation")]
     pub lifetime_variation: f32,
 
+    /// Pad to align velocity_direction to offset 32 (WGSL vec3 alignment = 16 bytes)
+    #[serde(skip)]
+    pub _pad0: f32,
+
     #[serde(default = "default_velocity_direction")]
     pub velocity_direction: [f32; 3],
 
     #[serde(skip)]
-    pub _pad0: f32,
+    pub _pad1: f32,
 
     #[serde(default = "default_velocity_magnitude")]
     pub velocity_magnitude: f32,
@@ -198,6 +202,10 @@ pub struct EmitterConfig {
     /// Color variation (±percentage per channel)
     #[serde(default = "default_color_variation")]
     pub color_variation: f32,
+
+    /// Pad to align shape_params to offset 96 (WGSL vec4 alignment = 16 bytes)
+    #[serde(skip)]
+    pub _pad3: [f32; 3],
 
     /// Shape parameters (length/radius for Line/Circle/Sphere, dimensions for Box)
     #[serde(default)]
@@ -259,14 +267,16 @@ impl Default for EmitterConfig {
             emit_rate: 50.0,
             base_lifetime: 5.0,
             lifetime_variation: 0.2,
-            velocity_direction: [0.0, 1.0, 0.0],
             _pad0: 0.0,
+            velocity_direction: [0.0, 1.0, 0.0],
+            _pad1: 0.0,
             velocity_magnitude: 1.0,
             velocity_cone_angle: 0.5,
             base_scale: 0.1,
             scale_variation: 0.5,
             color: [1.0, 1.0, 1.0, 1.0],
             color_variation: 0.1,
+            _pad3: [0.0; 3],
             shape_params: [0.0; 4],
         }
     }
@@ -693,11 +703,24 @@ impl GlobalParticleSystem {
         if let Some((_buffer, allocation)) = &self.frame_data_buffer {
             if let Some(mapped) = allocation.mapped_ptr() {
                 // Calculate active emitter count (emitters with emit_rate > 0 or burst_count > 0)
-                let active_emitter_count =
-                    self.emitters.iter().filter(|e| e.emit_rate > 0.0).count() as u32;
+                let active_emitter_count = self
+                    .emitters
+                    .iter()
+                    .zip(self.emitter_states.iter())
+                    .filter(|(e, s)| e.emit_rate > 0.0 || s.burst_count > 0)
+                    .count() as u32;
 
-                // Total particles to simulate = newly emitted + previously alive
-                let total_simulate_count = emit_count + burst_count + self.cached_alive_count;
+                // PROPER DOUBLE-BUFFERING ARCHITECTURE:
+                // 1. Swap (from previous frame) copied alive_next → alive_current[frame_index]
+                // 2. Emit appends new particles to alive_current[frame_index] (after survivors)
+                // 3. Simulate reads ALL particles from alive_current[frame_index] and writes survivors to alive_next
+                // 4. After simulate, swap copies alive_next → alive_current[frame_index] for next frame
+                //
+                // This prevents duplicates and ensures all particles are simulated.
+                //
+                // total_simulate_count = previous survivors + newly emitted particles
+                // All alive particles must be simulated each frame
+                let total_simulate_count = self.cached_alive_count + emit_count + burst_count;
 
                 let frame_data = FrameData {
                     delta_time,
@@ -709,6 +732,17 @@ impl GlobalParticleSystem {
                     frame_index,
                     _pad: [0u32; 9],
                 };
+
+                log::debug!(
+                    "FrameData {}: dt={:.6} emit={} burst={} cached_alive={} sim={} emitters={}",
+                    frame_index,
+                    frame_data.delta_time,
+                    frame_data.total_emit_count,
+                    frame_data.burst_count,
+                    self.cached_alive_count,
+                    frame_data.total_simulate_count,
+                    frame_data.emitter_count
+                );
 
                 // DIAGNOSTIC: Log frame data being sent to GPU
                 log::debug!(
@@ -823,9 +857,13 @@ impl GlobalParticleSystem {
     /// This must be called before the simulate compute dispatch to ensure the
     /// shader reads from and writes to the correct buffer regions.
     ///
-    /// Binding 2 (alive_list/read): points to alive_current[frame_index] (contains newly emitted particles)
-    /// Binding 3 (alive_list_next/write): points to alive_next (survivors written here)
-    pub fn update_compute_descriptor_binding_for_simulate(&self, frame_index: usize) -> Result<(), String> {
+    /// PROPER DOUBLE-BUFFERING:
+    /// Binding 2 (alive_list/read): points to alive_current[frame_index] (read newly emitted particles)
+    /// Binding 3 (alive_list_next/write): points to alive_next (write survivors here)
+    pub fn update_compute_descriptor_binding_for_simulate(
+        &self,
+        frame_index: usize,
+    ) -> Result<(), String> {
         let device = &self.context.device;
         let descriptor_set = self
             .compute_descriptor_set
@@ -846,32 +884,42 @@ impl GlobalParticleSystem {
         let particles_end = particles_region_size_aligned;
         let dead_list_end = particles_end + dead_list_region_size_aligned;
         let base_alive_list_offset = dead_list_end;
+
+        // Calculate frame-specific offset for reading newly emitted particles from emit pass
         let frame_offset = base_alive_list_offset + (frame_index as u64 * alive_list_region_size);
 
-        info!(
-            "update_compute_descriptor_binding_for_simulate: frame_index={}, binding2_offset={}, binding3_offset(alive_next)={}",
+        // Calculate alive_next offset (always at fixed location after alive_current[0] and alive_current[1])
+        let frames_in_flight = 2;
+        let alive_next_offset =
+            base_alive_list_offset + (frames_in_flight as u64 * alive_list_region_size);
+
+        log::debug!(
+            "update_compute_descriptor_binding_for_simulate: frame_index={}, binding2_offset(alive_current[{}])={}, binding3_offset(alive_next)={}",
+            frame_index,
             frame_index,
             frame_offset,
-            base_alive_list_offset + (2 * alive_list_region_size)
+            alive_next_offset
         );
 
-        // CRITICAL: For SIMULATE pass:
-        // Binding 2: where simulate reads from (alive_current[frame_index])
-        // Binding 3: where simulate writes survivors to (alive_next - always at fixed offset)
-        let frames_in_flight = 2;
-        let alive_next_offset = base_alive_list_offset + (frames_in_flight as u64 * alive_list_region_size);
+        // CRITICAL: For SIMULATE pass with proper double-buffering:
+        // Binding 2 (alive_list/read): points to alive_current[frame_index] (read survivors + newly emitted particles)
+        // Binding 3 (alive_list_next/write): points to alive_next (write survivors here)
+        //
+        // Emit appended new particles after survivors in alive_current[frame_index].
+        // Simulate reads ALL particles from there and writes survivors to alive_next.
+        // After simulate completes, we'll copy alive_next -> alive_current[frame_index] for next frame.
 
-        // Update binding 2 (alive_list/read) with frame-specific offset
+        // Update binding 2 (alive_list/read) to point to alive_current[frame_index]
         let alive_list_info = [vk::DescriptorBufferInfo {
             buffer: self.buffer.particle_buffer(),
-            offset: frame_offset,
-            range: alive_list_region_size,  // Use actual size, not WHOLE_SIZE
+            offset: frame_offset, // Read from alive_current[frame_index] (newly emitted particles)
+            range: alive_list_region_size,
         }];
 
-        // Update binding 3 (alive_list_next/write) with fixed offset for simulate output
+        // Update binding 3 (alive_list_next/write) to point to alive_next
         let alive_next_info = [vk::DescriptorBufferInfo {
             buffer: self.buffer.particle_buffer(),
-            offset: alive_next_offset,
+            offset: alive_next_offset, // Write survivors to alive_next
             range: alive_list_region_size,
         }];
 
@@ -890,8 +938,12 @@ impl GlobalParticleSystem {
                 .buffer_info(&alive_next_info),
         ];
 
-        info!("Updating SIMULATE compute descriptors: binding 2 offset={}, binding 3 offset={}",
-              frame_offset, alive_next_offset);
+        log::debug!(
+            "Updating SIMULATE compute descriptors: binding 2 offset={} (alive_current[{}], read), binding 3 offset={} (alive_next, write)",
+            frame_offset,
+            frame_index,
+            alive_next_offset
+        );
 
         unsafe {
             device.update_descriptor_sets(&descriptor_writes, &[]);
@@ -905,12 +957,16 @@ impl GlobalParticleSystem {
     /// This must be called before the emit compute dispatch to ensure the
     /// shader writes to the correct buffer region.
     ///
-    /// Binding 2 (alive_list/read): points to alive_current[frame_index] (unused in emit, but set for consistency)
-    /// Binding 3 (alive_list_next/write): points to alive_current[frame_index] (newly emitted particles written here)
+    /// PROPER DOUBLE-BUFFERING:
+    /// Binding 2 (alive_list/read): points to alive_current[frame_index] (emit writes here!)
+    /// Binding 3 (alive_list_next/write): points to alive_next (unused in emit)
     ///
-    /// CRITICAL: The emit shader writes to alive_next, which simulate will then read from!
-    /// Emit does NOT write to alive_current[frame_index] - that would cause frame 0's output to be lost.
-    pub fn update_compute_descriptor_binding_for_emit(&self, frame_index: usize) -> Result<(), String> {
+    /// Emit writes new particles to alive_current[frame_index] (temporary buffer).
+    /// Simulate will read from there and write survivors to alive_next.
+    pub fn update_compute_descriptor_binding_for_emit(
+        &self,
+        frame_index: usize,
+    ) -> Result<(), String> {
         let device = &self.context.device;
         let descriptor_set = self
             .compute_descriptor_set
@@ -935,32 +991,38 @@ impl GlobalParticleSystem {
 
         // Calculate alive_next offset (always at fixed location after alive_current[0] and alive_current[1])
         let frames_in_flight = 2;
-        let alive_next_offset = base_alive_list_offset + (frames_in_flight as u64 * alive_list_region_size);
+        let alive_next_offset =
+            base_alive_list_offset + (frames_in_flight as u64 * alive_list_region_size);
 
-        info!(
-            "update_compute_descriptor_binding_for_emit: frame_index={}, binding2_offset={}, binding3_offset(alive_next)={}",
+        log::debug!(
+            "update_compute_descriptor_binding_for_emit: frame_index={}, binding2_offset(alive_current[{}])={}, binding3_offset(alive_next)={}",
+            frame_index,
             frame_index,
             frame_offset,
             alive_next_offset
         );
 
-        // CRITICAL: For EMIT pass:
-        // Binding 2 (alive_list/read): points to alive_current[frame_index] (unused in emit shader)
-        // Binding 3 (alive_list_next/write): points to alive_next (fixed location)!
-        // Emit writes new particles to alive_next, then simulate reads from there and writes survivors back.
-        // After simulate, swap copies alive_next -> alive_current[frame_index] for next frame's emit.
+        // CRITICAL: For EMIT pass with proper double-buffering:
+        // Binding 2 (alive_list/read): points to alive_current[frame_index] (emit appends here!)
+        // Binding 3 (alive_list_next/write): points to alive_next (unused in emit, but must be valid)
+        //
+        // alive_current[frame_index] contains survivors from previous frame (copied by swap).
+        // Emit appends new particles after these survivors.
+        // Simulate will read ALL particles from alive_current[frame_index] and write survivors to alive_next.
+        // After simulate completes, we'll copy alive_next -> alive_current[frame_index] for next frame.
 
-        // Update binding 2 (alive_list/read) with frame-specific offset (not used by emit, but must be valid)
+        // Update binding 2 (alive_list/read) to point to alive_current[frame_index]
+        // Emit shader writes to alive_list, which points to alive_current[frame_index]
         let alive_list_info = [vk::DescriptorBufferInfo {
             buffer: self.buffer.particle_buffer(),
-            offset: frame_offset,
+            offset: frame_offset, // Emit writes to alive_current[frame_index]
             range: alive_list_region_size,
         }];
 
-        // Update binding 3 (alive_list_next/write) to FIXED offset (alive_next)
-        let emit_output_info = [vk::DescriptorBufferInfo {
+        // Update binding 3 (alive_list_next/write) to point to alive_next (unused in emit)
+        let alive_next_info = [vk::DescriptorBufferInfo {
             buffer: self.buffer.particle_buffer(),
-            offset: alive_next_offset,  // Emit writes to alive_next, simulate reads from there
+            offset: alive_next_offset,
             range: alive_list_region_size,
         }];
 
@@ -976,11 +1038,15 @@ impl GlobalParticleSystem {
                 .dst_binding(3)
                 .descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
                 .descriptor_count(1)
-                .buffer_info(&emit_output_info),
+                .buffer_info(&alive_next_info),
         ];
 
-        info!("Updating EMIT compute descriptors: binding 2 offset={} (alive_current[{}], unused), binding 3 offset={} (alive_next, emit output)",
-              frame_offset, frame_index, alive_next_offset);
+        log::debug!(
+            "Updating EMIT compute descriptors: binding 2 offset={} (alive_current[{}], emit output), binding 3 offset={} (alive_next, unused in emit)",
+            frame_offset,
+            frame_index,
+            alive_next_offset
+        );
 
         unsafe {
             device.update_descriptor_sets(&descriptor_writes, &[]);
@@ -1021,7 +1087,7 @@ impl GlobalParticleSystem {
         let alive_list_info = [vk::DescriptorBufferInfo {
             buffer: self.buffer.particle_buffer(),
             offset: frame_offset,
-            range: alive_list_region_size,  // Use actual size, not WHOLE_SIZE
+            range: alive_list_region_size, // Use actual size, not WHOLE_SIZE
         }];
 
         let descriptor_write = vk::WriteDescriptorSet::default()
@@ -1041,6 +1107,16 @@ impl GlobalParticleSystem {
     /// Get current alive particle count.
     pub fn alive_count(&self) -> u32 {
         self.cached_alive_count
+    }
+
+    /// Set cached alive count from external readback (e.g., debug readback).
+    ///
+    /// This is needed because on some GPUs/drivers, reading the alive_count
+    /// directly from the counters buffer (via get_alive_count) returns stale
+    /// data due to GPU write visibility issues with atomics on HOST_COHERENT memory.
+    /// The debug readback copies counters via vkCmdCopyBuffer which is more reliable.
+    pub fn set_alive_count(&mut self, count: u32) {
+        self.cached_alive_count = count;
     }
 
     /// Get emitter configurations (for compute dispatch).
@@ -1639,15 +1715,18 @@ impl GlobalParticleSystem {
         let particle_buffer_info = [vk::DescriptorBufferInfo {
             buffer: particle_buffer_handle,
             offset: 0,
-            range: particles_region_size,  // Use actual particle region size
+            range: particles_region_size, // Use actual particle region size
         }];
 
-        log::info!("Creating descriptor with particle buffer range: {} bytes", particles_region_size);
+        log::info!(
+            "Creating descriptor with particle buffer range: {} bytes",
+            particles_region_size
+        );
 
         let dead_list_info = [vk::DescriptorBufferInfo {
             buffer: self.buffer.particle_buffer(),
             offset: particles_end,
-            range: dead_list_region_size,  // Use actual dead list size, not aligned
+            range: dead_list_region_size, // Use actual dead list size, not aligned
         }];
 
         // Binding 2: alive_list (shader binding name)
@@ -1655,7 +1734,7 @@ impl GlobalParticleSystem {
         let alive_list_info = [vk::DescriptorBufferInfo {
             buffer: self.buffer.particle_buffer(),
             offset: dead_list_end,
-            range: alive_list_region_size,  // Use actual alive list size
+            range: alive_list_region_size, // Use actual alive list size
         }];
 
         // Binding 3: alive_list_next (shader binding name)
@@ -1664,7 +1743,7 @@ impl GlobalParticleSystem {
         let alive_list_next_info = [vk::DescriptorBufferInfo {
             buffer: self.buffer.particle_buffer(),
             offset: alive_current_1_end,
-            range: alive_list_region_size,  // Use actual alive list size
+            range: alive_list_region_size, // Use actual alive list size
         }];
 
         let counters_info = [vk::DescriptorBufferInfo {
@@ -1706,8 +1785,16 @@ impl GlobalParticleSystem {
                 .buffer_info(&counters_info),
         ];
 
-        log::info!("Updating descriptor set {:?}: binding 0 range={} bytes", descriptor_set, particle_buffer_info[0].range);
-        log::info!("Updating descriptor set {:?}: binding 1 range={} bytes", descriptor_set, dead_list_info[0].range);
+        log::info!(
+            "Updating descriptor set {:?}: binding 0 range={} bytes",
+            descriptor_set,
+            particle_buffer_info[0].range
+        );
+        log::info!(
+            "Updating descriptor set {:?}: binding 1 range={} bytes",
+            descriptor_set,
+            dead_list_info[0].range
+        );
 
         unsafe {
             self.context
@@ -2062,6 +2149,59 @@ impl GlobalParticleSystem {
 
         let device = &self.context.device;
 
+        // Reset emit_count to cached_alive_count so emit appends after existing survivors.
+        // alive_current[frame] contains survivors at slots 0..cached_alive_count-1.
+        // Emit will write new particles starting at cached_alive_count.
+        //
+        // Use vkCmdUpdateBuffer to set emit_count on the GPU during command buffer execution.
+        let counters_buffer = self.buffer.counters_buffer();
+        let emit_count_offset = 8; // emit_count is at offset 8 in ParticleCounters (alive=0, dead=4, emit=8)
+        let alive_count_value = self.cached_alive_count;
+        let data_bytes = alive_count_value.to_le_bytes();
+        unsafe {
+            device.cmd_update_buffer(
+                command_buffer,
+                counters_buffer,
+                emit_count_offset,
+                &data_bytes,
+            );
+        }
+
+        // Reset alive_count to 0 using vkCmdUpdateBuffer.
+        // (Using vkCmdUpdateBuffer instead of vkCmdFillBuffer for broader driver compatibility,
+        //  as some Intel drivers have issues with vkCmdFillBuffer + atomicAdd patterns.)
+        let zero_bytes = 0u32.to_le_bytes();
+        unsafe {
+            device.cmd_update_buffer(
+                command_buffer,
+                counters_buffer,
+                0, // alive_count is at offset 0
+                &zero_bytes,
+            );
+        }
+
+        // Barrier to ensure emit_count and alive_count initialization is visible to compute shader.
+        let fill_barrier = vk::BufferMemoryBarrier::default()
+            .src_access_mask(vk::AccessFlags::TRANSFER_WRITE)
+            .dst_access_mask(vk::AccessFlags::SHADER_READ | vk::AccessFlags::SHADER_WRITE)
+            .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+            .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+            .buffer(counters_buffer)
+            .offset(0)
+            .size(std::mem::size_of::<ParticleCounters>() as u64);
+
+        unsafe {
+            device.cmd_pipeline_barrier(
+                command_buffer,
+                vk::PipelineStageFlags::TRANSFER,
+                vk::PipelineStageFlags::COMPUTE_SHADER,
+                vk::DependencyFlags::empty(),
+                &[],
+                std::slice::from_ref(&fill_barrier),
+                &[],
+            );
+        }
+
         // Bind emit pipeline
         unsafe {
             device.cmd_bind_pipeline(command_buffer, vk::PipelineBindPoint::COMPUTE, vk_pipeline);
@@ -2069,11 +2209,9 @@ impl GlobalParticleSystem {
 
         // Bind static descriptor set (Set 0: particle buffers)
         if let Some(descriptor_set) = self.compute_descriptor_set {
-            log::info!(
-                "Emit dispatch: binding descriptor set {:?} to Set 0, particle_buffer={:?}, Set 0 address={:?}",
+            log::debug!(
+                "Emit dispatch: binding descriptor set {:?} to Set 0",
                 descriptor_set,
-                self.buffer.particle_buffer(),
-                self.compute_descriptor_set
             );
             unsafe {
                 device.cmd_bind_descriptor_sets(
@@ -2153,6 +2291,8 @@ impl GlobalParticleSystem {
         asset_registry: &AssetRegistry,
         simulate_workgroups: u32,
     ) -> Result<(), String> {
+        let device = &self.context.device;
+
         let pipeline = self
             .simulate_pipeline
             .ok_or("Simulate pipeline not created")?;
@@ -2163,8 +2303,6 @@ impl GlobalParticleSystem {
 
         let vk_pipeline = compute_pipeline.vk_pipeline();
         let vk_layout = compute_pipeline.vk_layout();
-
-        let device = &self.context.device;
 
         // Bind simulate pipeline
         unsafe {
@@ -2683,8 +2821,12 @@ mod tests {
 
     #[test]
     fn test_emitter_config_size() {
-        // Ensure config fits in uniform buffer and is properly aligned
-        assert_eq!(std::mem::size_of::<EmitterConfig>(), 96);
+        // Must match WGSL struct layout (vec3 align = 16, vec4 align = 16):
+        // position(12) + shape(4) + emit_rate(4) + base_lifetime(4) + lifetime_variation(4) +
+        // _pad0(4) + velocity_direction(12) + _pad1(4) + velocity_magnitude(4) +
+        // velocity_cone_angle(4) + base_scale(4) + scale_variation(4) +
+        // color(16) + color_variation(4) + _pad3(12) + shape_params(16) = 112
+        assert_eq!(std::mem::size_of::<EmitterConfig>(), 112);
     }
 
     #[test]
@@ -2754,15 +2896,17 @@ mod tests {
             emit_rate: 100.0,
             base_lifetime: 2.0,
             lifetime_variation: 0.5,
+            _pad0: 0.0,
             velocity_direction: [0.0, 1.0, 0.0],
+            _pad1: 0.0,
             velocity_magnitude: 5.0,
             velocity_cone_angle: 0.3,
             base_scale: 0.2,
             scale_variation: 0.3,
             color: [1.0, 0.5, 0.0, 1.0],
             color_variation: 0.2,
+            _pad3: [0.0; 3],
             shape_params: [2.5, 0.0, 0.0, 0.0],
-            _pad0: 0.0,
         };
 
         let json = serde_json::to_string(&config).unwrap();

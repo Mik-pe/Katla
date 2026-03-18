@@ -106,13 +106,17 @@ impl ParticleDebugData {
         }
 
         if out_of_bounds > 0 {
-            warn!("WARNING: {} alive particle indices are out of bounds (max={})",
-                  out_of_bounds, max_particles);
+            warn!(
+                "WARNING: {} alive particle indices are out of bounds (max={})",
+                out_of_bounds, max_particles
+            );
         }
 
         if duplicate_count > 0 {
-            warn!("WARNING: {} duplicate indices found in first {} alive list entries",
-                  duplicate_count, n);
+            warn!(
+                "WARNING: {} duplicate indices found in first {} alive list entries",
+                duplicate_count, n
+            );
         }
     }
 
@@ -122,12 +126,18 @@ impl ParticleDebugData {
         info!("=== First {} alive particles (by index) ===", n);
 
         let mut unique_positions = std::collections::HashSet::new();
-        let mut position_counts: std::collections::HashMap<(i32, i32, i32), usize> = std::collections::HashMap::new();
+        let mut position_counts: std::collections::HashMap<(i32, i32, i32), usize> =
+            std::collections::HashMap::new();
 
         for (i, &idx) in self.alive_list.iter().take(n).enumerate() {
             let idx = idx as usize;
             if idx >= self.particles.len() {
-                warn!("  [{}] Index {} out of bounds (max={})", i, idx, self.particles.len());
+                warn!(
+                    "  [{}] Index {} out of bounds (max={})",
+                    i,
+                    idx,
+                    self.particles.len()
+                );
                 continue;
             }
 
@@ -164,17 +174,29 @@ impl ParticleDebugData {
 
         info!("Position distribution among first {} alive particles:", n);
         for (pos, count) in position_counts.iter() {
-            info!("  ({:.2}, {:.2}, {:.2}): {} particles",
-                  pos.0 as f32 / 100.0,
-                  pos.1 as f32 / 100.0,
-                  pos.2 as f32 / 100.0,
-                  count);
+            info!(
+                "  ({:.2}, {:.2}, {:.2}): {} particles",
+                pos.0 as f32 / 100.0,
+                pos.1 as f32 / 100.0,
+                pos.2 as f32 / 100.0,
+                count
+            );
         }
 
-        info!("Unique positions: {} / {} particles", unique_positions.len(), n);
+        info!(
+            "Unique positions: {} / {} alive particles",
+            unique_positions.len(),
+            n
+        );
         if unique_positions.len() <= 3 {
-            warn!("WARNING: Only {} unique positions among {} alive particles - possible index corruption!",
-                  unique_positions.len(), n);
+            warn!(
+                "WARNING: Only {} unique positions among {} alive particles - possible index corruption!",
+                unique_positions.len(),
+                n
+            );
+            warn!(
+                "This check only validates alive particles from alive_list, not dead particle slots."
+            );
         }
     }
 
@@ -326,23 +348,10 @@ impl ParticleDebugReadback {
         // This prevents READ_AFTER_WRITE hazards
         let max_particles = particle_buffer.max_particles() as u64;
         let particle_data_size = max_particles * std::mem::size_of::<ParticleData>() as u64;
-        let particle_data_size_aligned = (particle_data_size + 63) & !63;  // Pad to 64-byte boundary
         let dead_list_size = max_particles * std::mem::size_of::<u32>() as u64;
-        let dead_list_size_aligned = (dead_list_size + 63) & !63;  // Pad to 64-byte boundary
         let alive_list_size = dead_list_size; // Only one alive list (alive_next)
 
-        info!("record_copy: particle_data_size={}, particle_data_size_aligned={}, dead_list_size={}, dead_list_size_aligned={}, alive_list_size={}",
-                   particle_data_size, particle_data_size_aligned, dead_list_size, dead_list_size_aligned, alive_list_size);
-
-        // Calculate the offset to alive_next specifically
         // Layout: particles (padded) | dead_list (padded) | alive_current[0] | alive_current[1] | alive_next
-        let particles_end = particle_data_size_aligned;
-        let dead_list_end = particles_end + dead_list_size_aligned;
-        let base_alive_list_offset = dead_list_end;
-        let alive_next_offset = base_alive_list_offset + (2 * alive_list_size);
-
-        info!("record_copy: particles_end={}, dead_list_end={}, base_alive_list_offset={}, alive_next_offset={}",
-                   particles_end, dead_list_end, base_alive_list_offset, alive_next_offset);
 
         let barriers = [
             // Barrier for particle buffer (particles + dead + alive regions)
@@ -428,8 +437,10 @@ impl ParticleDebugReadback {
         if let Some(staging) = &self.alive_list_staging {
             let max_particles = particle_buffer.max_particles() as u64;
             let particle_data_size = max_particles * std::mem::size_of::<ParticleData>() as u64;
+            let particle_data_size_aligned = (particle_data_size + 63) & !63;
             let dead_list_size = max_particles * std::mem::size_of::<u32>() as u64;
-            let base_alive_list_offset = particle_data_size + dead_list_size;
+            let dead_list_size_aligned = (dead_list_size + 63) & !63;
+            let base_alive_list_offset = particle_data_size_aligned + dead_list_size_aligned;
 
             // We need to read from alive_next (3rd region), not alive_current[0]
             // Layout: alive_current[0] | alive_current[1] | alive_next
@@ -437,13 +448,16 @@ impl ParticleDebugReadback {
             let alive_next_offset = base_alive_list_offset + (2 * alive_list_size);
 
             let copy_region = vk::BufferCopy {
-                src_offset: alive_next_offset,  // Read from alive_next, not alive_current[0]
+                src_offset: alive_next_offset, // Read from alive_next, not alive_current[0]
                 dst_offset: 0,
-                size: alive_list_size,  // Only copy one alive list, not all three
+                size: alive_list_size, // Only copy one alive list, not all three
             };
 
-            info!("record_copy: copying alive_list from offset={}, size={}",
-                       alive_next_offset, alive_list_size);
+            log::debug!(
+                "record_copy: copying alive_list from offset={}, size={}",
+                alive_next_offset,
+                alive_list_size
+            );
 
             unsafe {
                 device.cmd_copy_buffer(
@@ -543,7 +557,7 @@ impl ParticleDebugReadback {
             }
         }
 
-        info!("Recorded particle debug readback copies");
+        log::debug!("Recorded particle debug readback copies");
         Ok(())
     }
 
@@ -556,6 +570,30 @@ impl ParticleDebugReadback {
         particle_buffer: &GlobalParticleBuffer,
     ) -> Result<ParticleDebugData, String> {
         let max_particles = particle_buffer.max_particles() as usize;
+
+        // Invalidate mapped memory for all staging buffers to ensure GPU writes (cmd_copy_buffer)
+        // are visible to CPU reads. Without this, the CPU may read stale cached data.
+        let particle_data_size =
+            (max_particles as u64) * std::mem::size_of::<ParticleData>() as u64;
+        let index_list_size = (max_particles as u64) * std::mem::size_of::<u32>() as u64;
+        let counters_size = std::mem::size_of::<ParticleCounters>() as u64;
+
+        if let Some(ref staging) = self.particle_staging {
+            self.context
+                .invalidate_mapped_memory(&staging.allocation, 0, particle_data_size);
+        }
+        if let Some(ref staging) = self.alive_list_staging {
+            self.context
+                .invalidate_mapped_memory(&staging.allocation, 0, index_list_size);
+        }
+        if let Some(ref staging) = self.dead_list_staging {
+            self.context
+                .invalidate_mapped_memory(&staging.allocation, 0, index_list_size);
+        }
+        if let Some(ref staging) = self.counters_staging {
+            self.context
+                .invalidate_mapped_memory(&staging.allocation, 0, counters_size);
+        }
 
         // Read particle data
         let particles = if let Some(ref staging) = self.particle_staging {

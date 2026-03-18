@@ -454,6 +454,43 @@ impl VulkanContext {
         }
     }
 
+    /// Invalidate mapped memory ranges to make GPU writes visible to CPU reads.
+    ///
+    /// Must be called after a GPU write (e.g., compute shader atomic operations,
+    /// vkCmdFillBuffer, vkCmdCopyBuffer) before reading the mapped memory on CPU.
+    ///
+    /// The offset and size are automatically aligned to `non_coherent_atom_size` as required
+    /// by the Vulkan specification.
+    pub fn invalidate_mapped_memory(
+        &self,
+        allocation: &Allocation,
+        offset: vk::DeviceSize,
+        size: vk::DeviceSize,
+    ) {
+        let base_memory_offset = allocation.offset() + offset;
+        let aligned_memory_offset = base_memory_offset & !(self.non_coherent_atom_size - 1);
+
+        let aligned_size = if size == vk::WHOLE_SIZE {
+            vk::WHOLE_SIZE
+        } else {
+            let end = base_memory_offset + size;
+            let size_needed = end - aligned_memory_offset;
+            (size_needed + self.non_coherent_atom_size - 1) & !(self.non_coherent_atom_size - 1)
+        };
+
+        unsafe {
+            let memory = allocation.memory();
+            let range = vk::MappedMemoryRange::default()
+                .memory(memory)
+                .offset(aligned_memory_offset)
+                .size(aligned_size);
+
+            self.device
+                .invalidate_mapped_memory_ranges(&[range])
+                .expect("Failed to invalidate mapped memory");
+        }
+    }
+
     pub fn create_image(
         &self,
         image_create_info: vk::ImageCreateInfo,
