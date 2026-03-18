@@ -57,16 +57,11 @@ impl<'a> Widget for StatusBar<'a> {
             1.0,
         );
 
-        // Use begin_row() for horizontal layout
         ui.begin_row();
+        ui.set_cursor(Vec2::new(8.0, bar_bounds.min.y() + 4.0));
 
-        let start_x = 8.0;
-        let start_y = bar_bounds.min.y() + 4.0;
-        ui.set_cursor(Vec2::new(start_x, start_y));
-
+        // FPS: left-aligned in a fixed-width slot to prevent layout jitter
         let font_size = ui.scaled_font_size(FontSize::Small);
-
-        // FPS
         let fps_text = format!("FPS: {:.0}", self.fps);
         let fps_color = if self.fps >= 55.0 {
             self.theme.success
@@ -75,20 +70,20 @@ impl<'a> Widget for StatusBar<'a> {
         } else {
             self.theme.error
         };
-        ui.text_label_colored(&fps_text, fps_color);
+        let fps_slot_width = ui.measure_text("FPS: 1000", font_size).x();
+        ui.draw_text(&fps_text, ui.cursor(), fps_color, font_size);
+        ui.spacer(fps_slot_width);
+
         ui.separator_text();
 
-        // Frame count
         let frame_text = format!("Frame: {}", self.frame_count);
         ui.text_label(&frame_text);
         ui.separator_text();
 
-        // Entities
         let entity_text = format!("Entities: {}", self.entity_count);
         ui.text_label(&entity_text);
         ui.separator_text();
 
-        // Selection
         let selection_text = if self.selected_count > 0 {
             format!("Selected: {} / {}", self.selected_count, self.total_assets)
         } else {
@@ -104,6 +99,8 @@ impl<'a> Widget for StatusBar<'a> {
         ui.end_row();
 
         // Right-aligned items (mode and theme)
+        let start_y = bar_bounds.min.y() + 4.0;
+
         let mode_text = if self.is_playing {
             "PLAYING"
         } else {
