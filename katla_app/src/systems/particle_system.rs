@@ -23,17 +23,12 @@ use crate::components::ParticleEmitterComponent;
 /// // Run each frame to sync emitters
 /// particle_system.update(&mut world, &mut renderer.particle_system);
 /// ```
-pub struct ParticleSystem {
-    /// Track which entities have initialized their emitters
-    initialized_emitters: Vec<u32>,
-}
+pub struct ParticleSystem {}
 
 impl ParticleSystem {
     /// Create a new particle system.
     pub fn new() -> Self {
-        Self {
-            initialized_emitters: Vec::new(),
-        }
+        Self {}
     }
 
     /// Update particle emitters from ECS components.
@@ -127,12 +122,6 @@ impl Default for ParticleSystem {
 mod tests {
     use super::*;
     use katla_gfx::particles::EmitterConfig;
-
-    #[test]
-    fn test_particle_system_creation() {
-        let system = ParticleSystem::new();
-        assert!(system.initialized_emitters.is_empty());
-    }
 
     #[test]
     fn test_emitter_config_defaults() {

@@ -343,15 +343,10 @@ impl ParticleDebugReadback {
         particle_buffer: &GlobalParticleBuffer,
     ) -> Result<(), String> {
         let device = &self.context.device;
+        let layout = particle_buffer.layout();
 
         // Insert barrier to ensure compute shader writes complete before transfer reads
         // This prevents READ_AFTER_WRITE hazards
-        let max_particles = particle_buffer.max_particles() as u64;
-        let particle_data_size = max_particles * std::mem::size_of::<ParticleData>() as u64;
-        let dead_list_size = max_particles * std::mem::size_of::<u32>() as u64;
-        let alive_list_size = dead_list_size; // Only one alive list (alive_next)
-
-        // Layout: particles (padded) | dead_list (padded) | alive_current[0] | alive_current[1] | alive_next
 
         let barriers = [
             // Barrier for particle buffer (particles + dead + alive regions)
@@ -362,7 +357,7 @@ impl ParticleDebugReadback {
                 .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
                 .buffer(particle_buffer.particle_buffer())
                 .offset(0)
-                .size(particle_data_size + dead_list_size + (3 * alive_list_size)),
+                .size(layout.total_size),
             // Barrier for counters buffer
             vk::BufferMemoryBarrier::default()
                 .src_access_mask(vk::AccessFlags::SHADER_WRITE | vk::AccessFlags::SHADER_READ)
@@ -388,9 +383,7 @@ impl ParticleDebugReadback {
 
         // Copy particle data
         if let Some(staging) = &self.particle_staging {
-            let particle_count = particle_buffer.max_particles();
-            let particle_size =
-                (particle_count as u64) * std::mem::size_of::<ParticleData>() as u64;
+            let particle_size = layout.max_particles * std::mem::size_of::<ParticleData>() as u64;
 
             let copy_region = vk::BufferCopy {
                 src_offset: 0,
@@ -435,17 +428,8 @@ impl ParticleDebugReadback {
         // Layout: alive_current[0] + alive_current[1] + alive_next
         // CRITICAL: Read from alive_next (where simulate shader writes), not alive_current[0]
         if let Some(staging) = &self.alive_list_staging {
-            let max_particles = particle_buffer.max_particles() as u64;
-            let particle_data_size = max_particles * std::mem::size_of::<ParticleData>() as u64;
-            let particle_data_size_aligned = (particle_data_size + 63) & !63;
-            let dead_list_size = max_particles * std::mem::size_of::<u32>() as u64;
-            let dead_list_size_aligned = (dead_list_size + 63) & !63;
-            let base_alive_list_offset = particle_data_size_aligned + dead_list_size_aligned;
-
-            // We need to read from alive_next (3rd region), not alive_current[0]
-            // Layout: alive_current[0] | alive_current[1] | alive_next
-            let alive_list_size = max_particles * std::mem::size_of::<u32>() as u64;
-            let alive_next_offset = base_alive_list_offset + (2 * alive_list_size);
+            let alive_next_offset = layout.alive_next_offset;
+            let alive_list_size = layout.alive_list_size;
 
             let copy_region = vk::BufferCopy {
                 src_offset: alive_next_offset, // Read from alive_next, not alive_current[0]
@@ -493,10 +477,8 @@ impl ParticleDebugReadback {
 
         // Copy dead list
         if let Some(staging) = &self.dead_list_staging {
-            let dead_count = particle_buffer.max_particles();
-            let dead_list_offset = (particle_buffer.max_particles() as u64)
-                * std::mem::size_of::<ParticleData>() as u64;
-            let dead_list_size = (dead_count as u64) * std::mem::size_of::<u32>() as u64;
+            let dead_list_offset = layout.dead_list_offset;
+            let dead_list_size = layout.alive_list_size;
 
             let copy_region = vk::BufferCopy {
                 src_offset: dead_list_offset,
@@ -569,13 +551,13 @@ impl ParticleDebugReadback {
         &self,
         particle_buffer: &GlobalParticleBuffer,
     ) -> Result<ParticleDebugData, String> {
+        let layout = particle_buffer.layout();
         let max_particles = particle_buffer.max_particles() as usize;
 
         // Invalidate mapped memory for all staging buffers to ensure GPU writes (cmd_copy_buffer)
         // are visible to CPU reads. Without this, the CPU may read stale cached data.
-        let particle_data_size =
-            (max_particles as u64) * std::mem::size_of::<ParticleData>() as u64;
-        let index_list_size = (max_particles as u64) * std::mem::size_of::<u32>() as u64;
+        let particle_data_size = layout.max_particles * std::mem::size_of::<ParticleData>() as u64;
+        let index_list_size = layout.alive_list_size;
         let counters_size = std::mem::size_of::<ParticleCounters>() as u64;
 
         if let Some(ref staging) = self.particle_staging {
