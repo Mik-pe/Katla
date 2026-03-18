@@ -12,6 +12,9 @@ pub use debug_overlay::DebugOverlay;
 pub use editor_ui::{
     EditorAction, EditorUI, EntityInfo, FocusedPanel, SpawnableModel, ThumbnailState,
 };
-pub use particle_inspector::ParticleInspector;
+pub use particle_inspector::{
+    EmitterConfigView, ParticleInspector, ParticleInspectorAction, ParticleInspectorData,
+    ParticleInspectorState,
+};
 pub use renderer::UIRenderer;
 pub use theme::Theme;

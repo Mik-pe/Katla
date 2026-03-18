@@ -10,6 +10,7 @@
 mod asset_browser;
 mod hierarchy;
 mod inspector;
+
 mod preferences;
 mod status_bar;
 mod toolbar;
@@ -30,6 +31,7 @@ use crate::{
             EditorSettings, PreferencesAction, PreferencesPanel, PreferencesPanelState,
         },
         editor_ui::toolbar::{Toolbar, ToolbarState},
+        ParticleInspector, ParticleInspectorAction, ParticleInspectorData, ParticleInspectorState,
     },
     Preferences,
 };
@@ -38,7 +40,7 @@ use super::theme::Theme;
 use asset_browser::{build_asset_browser, AssetAction, AssetBrowserState, AssetType};
 
 pub use asset_browser::ThumbnailState;
-pub use preferences::PanelState;
+pub use katla_ui::widgets::PanelState;
 
 /// Model types that can be spawned.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -72,6 +74,7 @@ pub struct EntityInfo {
 #[derive(Debug, Clone)]
 pub enum Panel {
     Preferences,
+    ParticleInspector,
     Editor,
 }
 
@@ -100,6 +103,10 @@ pub enum EditorAction {
     SetFontScale(f32),
     /// Open panel
     OpenPanel(Panel),
+    /// Toggle the selected particle emitter active/inactive.
+    ToggleParticleEmitter,
+    /// Reset the global particle system (clear all particles).
+    ResetParticleSystem,
 }
 
 /// Which panel is currently focused (receives input).
@@ -176,8 +183,10 @@ pub struct EditorUI {
     pub viewport_texture_ids: [Option<katla_ui::TextureId>; 4],
     /// Selected particle emitter entity for the particle inspector.
     pub selected_particle_emitter: Option<EntityId>,
-    /// Whether the particle inspector panel is visible.
-    pub show_particle_inspector: bool,
+    /// Draggable panel state for the particle inspector.
+    pub particle_inspector_state: ParticleInspectorState,
+    /// Pre-collected data for the particle inspector (refreshed each frame).
+    pub particle_inspector_data: ParticleInspectorData,
 }
 
 impl EditorUI {
@@ -205,7 +214,8 @@ impl EditorUI {
             viewport_grid_state: ViewportGridState::new(),
             viewport_texture_ids: [None, None, None, None],
             selected_particle_emitter: None,
-            show_particle_inspector: false,
+            particle_inspector_state: ParticleInspectorState::default(),
+            particle_inspector_data: ParticleInspectorData::default(),
         }
     }
 
@@ -273,7 +283,10 @@ impl EditorUI {
     pub fn open_panel(&mut self, panel: Panel) {
         match panel {
             Panel::Preferences => {
-                self.preferences_panel_state.visibility.open();
+                self.preferences_panel_state.panel.open();
+            }
+            Panel::ParticleInspector => {
+                self.particle_inspector_state.panel.open();
             }
             Panel::Editor => {}
         }
@@ -304,8 +317,26 @@ impl EditorUI {
                 self.editor_settings.grid_size = value;
             }
             PreferencesAction::Close => {
-                self.preferences_panel_state.visibility.close();
-                self.preferences_panel_state.position = None;
+                self.preferences_panel_state.panel.close();
+            }
+        }
+    }
+
+    /// Apply a particle inspector action, updating state or forwarding to EditorAction.
+    pub fn apply_particle_inspector_action(&mut self, action: ParticleInspectorAction) {
+        match action {
+            ParticleInspectorAction::SelectEmitter(entity_id) => {
+                self.selected_particle_emitter = Some(entity_id);
+            }
+            ParticleInspectorAction::ToggleEmitter => {
+                self.pending_actions
+                    .push(EditorAction::ToggleParticleEmitter);
+            }
+            ParticleInspectorAction::ResetSystem => {
+                self.pending_actions.push(EditorAction::ResetParticleSystem);
+            }
+            ParticleInspectorAction::Close => {
+                self.particle_inspector_state.panel.close();
             }
         }
     }
@@ -789,7 +820,7 @@ impl EditorUI {
         ));
 
         // === PREFERENCES PANEL (overlay) ===
-        if self.preferences_panel_state.visibility.is_visible() {
+        if self.preferences_panel_state.panel.is_visible() {
             let theme_key = self.theme_key();
             let mut actions = Vec::new();
             ui.add(PreferencesPanel::new(
@@ -808,50 +839,19 @@ impl EditorUI {
         }
 
         // === PARTICLE INSPECTOR PANEL (overlay) ===
-        if self.show_particle_inspector {
-            use crate::ui::ParticleInspector;
-
-            let panel_width = 320.0;
-            let panel_height = 600.0;
-            let panel_bounds = Rect2D::from_origin_size(
-                Vec2::new(
-                    screen_size.x() - panel_width - 20.0,
-                    screen_size.y() - panel_height - 60.0,
-                ),
-                Vec2::new(panel_width, panel_height),
-            );
-
-            let _particle_inspector = ParticleInspector::new(
-                panel_bounds,
+        if self.particle_inspector_state.panel.is_visible() {
+            let mut actions = Vec::new();
+            ui.add(ParticleInspector::new(
+                &mut self.particle_inspector_state,
                 &mut self.selected_particle_emitter,
                 &self.theme,
-            );
+                &self.particle_inspector_data,
+                &mut actions,
+            ));
 
-            // Note: We'll render this in the application layer where we have access to World and particle system
-            // For now, just draw the panel bounds
-            ui.draw_rect(panel_bounds, self.theme.panel_bg);
-            ui.draw_rect_border(
-                panel_bounds,
-                self.theme.panel_bg,
-                self.theme.panel_border,
-                1.0,
-            );
-
-            let header_height = 24.0;
-            let header_bounds = Rect2D::from_origin_size(
-                panel_bounds.min,
-                Vec2::new(panel_bounds.width(), header_height),
-            );
-            ui.draw_rect(header_bounds, self.theme.panel_header);
-
-            let header_pos =
-                Vec2::new(panel_bounds.min.x() + 8.0, header_bounds.center().y() - 7.0);
-            ui.draw_text(
-                "Particle Inspector",
-                header_pos,
-                self.theme.text_primary,
-                ui.scaled_font_size(FontSize::Medium),
-            );
+            for action in actions {
+                self.apply_particle_inspector_action(action);
+            }
         }
 
         // === DRAG PREVIEW (rendered last to appear above all panels) ===
@@ -964,6 +964,7 @@ mod tests {
     use super::*;
     use crate::ui::editor_ui::hierarchy::Hierarchy;
     use crate::ui::editor_ui::preferences::PreferencesTab;
+    use katla_ui::widgets::DraggablePanelState;
 
     /// Test that preferences panel stays open on the first frame after being opened.
     ///
@@ -979,11 +980,11 @@ mod tests {
 
         // Simulate opening preferences from menu - this is what happens when
         // user clicks "Preferences..." menu item
-        editor.preferences_panel_state.visibility.open();
+        editor.preferences_panel_state.panel.open();
 
         // Verify panel is in JustOpened state
         assert_eq!(
-            editor.preferences_panel_state.visibility,
+            editor.preferences_panel_state.panel.visibility,
             PanelState::JustOpened
         );
 
@@ -995,23 +996,26 @@ mod tests {
 
         // Simulate the click-outside logic (now internal to PreferencesPanel)
         // Without JustOpened protection, panel would close
-        if !editor.preferences_panel_state.dragging
-            && !editor.preferences_panel_state.visibility.is_just_opened()
+        if !editor.preferences_panel_state.panel.dragging
+            && !editor
+                .preferences_panel_state
+                .panel
+                .visibility
+                .is_just_opened()
             && mouse_clicked
             && !mouse_in_panel
         {
-            editor.preferences_panel_state.visibility.close();
-            editor.preferences_panel_state.position = None;
+            editor.preferences_panel_state.panel.close();
         }
-        editor.preferences_panel_state.visibility.mark_shown();
+        editor.preferences_panel_state.panel.mark_shown();
 
         // AFTER FIX: Panel should stay open because JustOpened protected it
         assert!(
-            editor.preferences_panel_state.visibility.is_visible(),
+            editor.preferences_panel_state.panel.visibility.is_visible(),
             "preferences should stay open on first frame (JustOpened protection)"
         );
         assert_eq!(
-            editor.preferences_panel_state.visibility,
+            editor.preferences_panel_state.panel.visibility,
             PanelState::Visible,
             "state should transition to Visible after first frame"
         );
@@ -1025,10 +1029,10 @@ mod tests {
         let mut editor = EditorUI::new();
 
         // Open preferences and transition to Visible (simulating first frame already passed)
-        editor.preferences_panel_state.visibility.open();
-        editor.preferences_panel_state.visibility.mark_shown();
+        editor.preferences_panel_state.panel.open();
+        editor.preferences_panel_state.panel.mark_shown();
         assert_eq!(
-            editor.preferences_panel_state.visibility,
+            editor.preferences_panel_state.panel.visibility,
             PanelState::Visible
         );
 
@@ -1037,19 +1041,22 @@ mod tests {
         let mouse_in_panel = false;
 
         // Simulate the click-outside logic
-        if !editor.preferences_panel_state.dragging
-            && !editor.preferences_panel_state.visibility.is_just_opened()
+        if !editor.preferences_panel_state.panel.dragging
+            && !editor
+                .preferences_panel_state
+                .panel
+                .visibility
+                .is_just_opened()
             && mouse_clicked
             && !mouse_in_panel
         {
-            editor.preferences_panel_state.visibility.close();
-            editor.preferences_panel_state.position = None;
+            editor.preferences_panel_state.panel.close();
         }
-        editor.preferences_panel_state.visibility.mark_shown();
+        editor.preferences_panel_state.panel.mark_shown();
 
         // Panel should close normally
         assert_eq!(
-            editor.preferences_panel_state.visibility,
+            editor.preferences_panel_state.panel.visibility,
             PanelState::Hidden,
             "preferences should close when clicking outside after first frame"
         );
@@ -1061,26 +1068,29 @@ mod tests {
         let mut editor = EditorUI::new();
 
         // Open and transition to Visible
-        editor.preferences_panel_state.visibility.open();
-        editor.preferences_panel_state.visibility.mark_shown();
+        editor.preferences_panel_state.panel.open();
+        editor.preferences_panel_state.panel.mark_shown();
 
         // Click inside the panel
         let mouse_clicked = true;
         let mouse_in_panel = true;
 
         // Simulate the click-outside logic
-        if !editor.preferences_panel_state.dragging
-            && !editor.preferences_panel_state.visibility.is_just_opened()
+        if !editor.preferences_panel_state.panel.dragging
+            && !editor
+                .preferences_panel_state
+                .panel
+                .visibility
+                .is_just_opened()
             && mouse_clicked
             && !mouse_in_panel
         {
-            editor.preferences_panel_state.visibility.close();
-            editor.preferences_panel_state.position = None;
+            editor.preferences_panel_state.panel.close();
         }
-        editor.preferences_panel_state.visibility.mark_shown();
+        editor.preferences_panel_state.panel.mark_shown();
 
         assert!(
-            editor.preferences_panel_state.visibility.is_visible(),
+            editor.preferences_panel_state.panel.visibility.is_visible(),
             "preferences should stay open when clicking inside panel"
         );
     }
@@ -1091,27 +1101,30 @@ mod tests {
         let mut editor = EditorUI::new();
 
         // Open and transition to Visible
-        editor.preferences_panel_state.visibility.open();
-        editor.preferences_panel_state.visibility.mark_shown();
-        editor.preferences_panel_state.dragging = true;
+        editor.preferences_panel_state.panel.open();
+        editor.preferences_panel_state.panel.mark_shown();
+        editor.preferences_panel_state.panel.dragging = true;
 
         // Click outside while dragging
         let mouse_clicked = true;
         let mouse_in_panel = false;
 
         // Simulate the click-outside logic
-        if !editor.preferences_panel_state.dragging
-            && !editor.preferences_panel_state.visibility.is_just_opened()
+        if !editor.preferences_panel_state.panel.dragging
+            && !editor
+                .preferences_panel_state
+                .panel
+                .visibility
+                .is_just_opened()
             && mouse_clicked
             && !mouse_in_panel
         {
-            editor.preferences_panel_state.visibility.close();
-            editor.preferences_panel_state.position = None;
+            editor.preferences_panel_state.panel.close();
         }
-        editor.preferences_panel_state.visibility.mark_shown();
+        editor.preferences_panel_state.panel.mark_shown();
 
         assert!(
-            editor.preferences_panel_state.visibility.is_visible(),
+            editor.preferences_panel_state.panel.visibility.is_visible(),
             "preferences should stay open while dragging panel"
         );
     }
@@ -1122,26 +1135,29 @@ mod tests {
         let mut editor = EditorUI::new();
 
         // Open and transition to Visible
-        editor.preferences_panel_state.visibility.open();
-        editor.preferences_panel_state.visibility.mark_shown();
+        editor.preferences_panel_state.panel.open();
+        editor.preferences_panel_state.panel.mark_shown();
 
         // No click happened
         let mouse_clicked = false;
         let mouse_in_panel = false;
 
         // Simulate the click-outside logic
-        if !editor.preferences_panel_state.dragging
-            && !editor.preferences_panel_state.visibility.is_just_opened()
+        if !editor.preferences_panel_state.panel.dragging
+            && !editor
+                .preferences_panel_state
+                .panel
+                .visibility
+                .is_just_opened()
             && mouse_clicked
             && !mouse_in_panel
         {
-            editor.preferences_panel_state.visibility.close();
-            editor.preferences_panel_state.position = None;
+            editor.preferences_panel_state.panel.close();
         }
-        editor.preferences_panel_state.visibility.mark_shown();
+        editor.preferences_panel_state.panel.mark_shown();
 
         assert!(
-            editor.preferences_panel_state.visibility.is_visible(),
+            editor.preferences_panel_state.panel.visibility.is_visible(),
             "preferences should stay open when no click occurred"
         );
     }
@@ -1156,10 +1172,12 @@ mod tests {
         ui.begin(Vec2::new(800.0, 600.0), 1.0);
 
         let mut state = PreferencesPanelState {
-            visibility: PanelState::Visible,
-            position: Some(Vec2::new(100.0, 100.0)),
-            dragging: false,
-            drag_offset: Vec2::new(0.0, 0.0),
+            panel: DraggablePanelState {
+                visibility: PanelState::Visible,
+                position: Some(Vec2::new(100.0, 100.0)),
+                dragging: false,
+                drag_offset: Vec2::new(0.0, 0.0),
+            },
             current_tab: PreferencesTab::Appearance,
             scroll_state: Default::default(),
         };
@@ -1214,7 +1232,7 @@ mod tests {
 
         // The panel should remain open after tab click
         assert!(
-            state.visibility.is_visible(),
+            state.visibility().is_visible(),
             "preferences panel should stay open after clicking tab"
         );
 

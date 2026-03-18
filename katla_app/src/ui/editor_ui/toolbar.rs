@@ -165,6 +165,13 @@ impl<'a> Widget for Toolbar<'a> {
                     self.state.pending_actions.push(EditorAction::ToggleStats);
                     *open = false;
                 }
+                ui.menu_separator();
+                if ui.menu_item_clicked("Particle Inspector") {
+                    self.state
+                        .pending_actions
+                        .push(EditorAction::OpenPanel(Panel::ParticleInspector));
+                    *open = false;
+                }
             },
         );
         ui.spacing(menu_item_width);

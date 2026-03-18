@@ -2,45 +2,25 @@
 //!
 //! Contains the preferences/settings panel for configuring editor options.
 
-use katla_math::{Color, Rect2D, Vec2};
+use katla_math::{Rect2D, Vec2};
 use katla_ui::{
-    input::mouse_button, widgets::Button, FontId, FontSize, ForkAwesome, Response, ScrollArea,
-    ScrollAreaState, UiContext, Widget,
+    widgets::{Button, DraggablePanel, DraggablePanelState, DraggablePanelStyle, PanelState},
+    FontId, FontSize, ForkAwesome, Response, ScrollArea, ScrollAreaState, UiContext, Widget,
 };
 
 use crate::Preferences;
 
 use super::Theme;
 
-/// Visibility state for any UI panel.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum PanelState {
-    #[default]
-    Hidden,
-    JustOpened,
-    Visible,
-}
-
-impl PanelState {
-    pub fn is_visible(&self) -> bool {
-        *self != PanelState::Hidden
-    }
-
-    pub fn is_just_opened(&self) -> bool {
-        *self == PanelState::JustOpened
-    }
-
-    pub fn open(&mut self) {
-        *self = PanelState::JustOpened;
-    }
-
-    pub fn close(&mut self) {
-        *self = PanelState::Hidden;
-    }
-
-    pub fn mark_shown(&mut self) {
-        if *self == PanelState::JustOpened {
-            *self = PanelState::Visible;
+impl From<&Theme> for DraggablePanelStyle {
+    fn from(theme: &Theme) -> Self {
+        Self {
+            panel_bg: theme.panel_bg,
+            panel_border: theme.panel_border,
+            panel_header: theme.panel_header,
+            background_light: theme.background_light,
+            text_primary: theme.text_primary,
+            text_muted: theme.text_muted,
         }
     }
 }
@@ -105,12 +85,27 @@ impl Default for EditorSettings {
 /// Internal state for the preferences panel widget.
 #[derive(Debug, Clone, Default)]
 pub struct PreferencesPanelState {
-    pub visibility: PanelState,
-    pub position: Option<Vec2>,
-    pub dragging: bool,
-    pub drag_offset: Vec2,
+    pub panel: DraggablePanelState,
     pub current_tab: PreferencesTab,
     pub scroll_state: ScrollAreaState,
+}
+
+impl PreferencesPanelState {
+    pub fn visibility(&self) -> &PanelState {
+        &self.panel.visibility
+    }
+
+    pub fn visibility_mut(&mut self) -> &mut PanelState {
+        &mut self.panel.visibility
+    }
+
+    pub fn position(&self) -> Option<Vec2> {
+        self.panel.position
+    }
+
+    pub fn dragging(&self) -> bool {
+        self.panel.dragging
+    }
 }
 
 /// Actions emitted by the preferences panel.
@@ -161,115 +156,26 @@ impl<'a> PreferencesPanel<'a> {
 impl<'a> Widget for PreferencesPanel<'a> {
     fn ui(self, ui: &mut UiContext) -> Response {
         let theme = self.theme.clone();
+        let style = DraggablePanelStyle::from(&theme);
         let panel_width = 450.0;
         let panel_height = 500.0;
-        let title_bar_height = 32.0;
+        let title_bar_height = DraggablePanel::title_bar_height();
         let tab_bar_height = 36.0;
 
-        let default_pos = Vec2::new(
-            self.screen_size.x() * 0.5 - panel_width * 0.5,
-            self.screen_size.y() * 0.5 - panel_height * 0.5,
-        );
-        let panel_pos = self.state.position.unwrap_or(default_pos);
-
-        let title_bounds =
-            Rect2D::from_origin_size(panel_pos, Vec2::new(panel_width, title_bar_height));
-
-        let close_btn_area = Rect2D::from_origin_size(
-            Vec2::new(panel_pos.x() + panel_width - 30.0, panel_pos.y()),
-            Vec2::new(30.0, title_bar_height),
-        );
-        let can_drag = ui.is_hovered(title_bounds) && !ui.is_hovered(close_btn_area);
-
-        if ui.mouse_clicked(mouse_button::LEFT) && can_drag {
-            self.state.dragging = true;
-            let mouse_pos = ui.mouse_pos();
-            self.state.drag_offset =
-                Vec2::new(mouse_pos.x() - panel_pos.x(), mouse_pos.y() - panel_pos.y());
-        }
-
-        if self.state.dragging {
-            if ui.mouse_down(mouse_button::LEFT) {
-                let mouse_pos = ui.mouse_pos();
-                let new_pos = Vec2::new(
-                    mouse_pos.x() - self.state.drag_offset.x(),
-                    mouse_pos.y() - self.state.drag_offset.y(),
-                );
-                let clamped_x = new_pos
-                    .x()
-                    .clamp(0.0, (self.screen_size.x() - panel_width).max(0.0))
-                    .round();
-                let clamped_y = new_pos
-                    .y()
-                    .clamp(0.0, (self.screen_size.y() - panel_height).max(0.0))
-                    .round();
-                self.state.position = Some(Vec2::new(clamped_x, clamped_y));
-            } else {
-                self.state.dragging = false;
-            }
-        }
-
-        let panel_pos = self.state.position.unwrap_or(default_pos);
-        let panel_bounds =
-            Rect2D::from_origin_size(panel_pos, Vec2::new(panel_width, panel_height));
-
-        let shadow_offset = Vec2::new(6.0, 6.0);
-        let shadow_bounds = Rect2D::new(
-            panel_bounds.min + shadow_offset,
-            panel_bounds.max + shadow_offset,
-        );
-        ui.draw_rect(shadow_bounds, Color::new(0.0, 0.0, 0.0, 0.6));
-
-        ui.draw_rect(panel_bounds, theme.panel_bg);
-        ui.draw_rect_border(panel_bounds, theme.panel_bg, theme.panel_border, 1.0);
-
-        let title_bounds =
-            Rect2D::from_origin_size(panel_bounds.min, Vec2::new(panel_width, title_bar_height));
-        let title_color = if self.state.dragging || can_drag {
-            theme.background_light
-        } else {
-            theme.panel_header
-        };
-        ui.draw_rect(title_bounds, title_color);
-
-        let handle_x = panel_bounds.min.x() + panel_width * 0.5 - 20.0;
-        let handle_y = panel_bounds.min.y() + 6.0;
-        for i in 0..3 {
-            let line_y = handle_y + i as f32 * 3.0;
-            ui.draw_line(
-                Vec2::new(handle_x, line_y),
-                Vec2::new(handle_x + 40.0, line_y),
-                theme.text_muted,
-                1.0,
-            );
-        }
-
-        let title_pos = Vec2::new(
-            panel_bounds.min.x() + ui.scaled_font_size(FontSize::Medium),
-            panel_bounds.min.y() + ui.scaled_font_size(FontSize::Large),
-        );
-        ui.draw_text(
+        let frame = DraggablePanel::begin(
+            ui,
+            "prefs",
             "Settings",
-            title_pos,
-            theme.text_primary,
-            ui.scaled_font_size(FontSize::Large),
+            panel_width,
+            panel_height,
+            self.screen_size,
+            &mut self.state.panel,
+            &style,
         );
 
-        let close_size = 24.0;
-        let close_bounds = Rect2D::from_origin_size(
-            Vec2::new(
-                panel_bounds.max.x() - close_size - 6.0,
-                panel_bounds.min.y() + 4.0,
-            ),
-            Vec2::new(close_size, close_size),
-        );
-        if ui
-            .add(Button::new("×").bounds(close_bounds).id("close_prefs"))
-            .clicked
-        {
-            self.pending_actions.push(PreferencesAction::Close);
-        }
+        let panel_bounds = frame.panel_bounds;
 
+        // Tab bar
         let tab_bar_bounds = Rect2D::from_origin_size(
             Vec2::new(
                 panel_bounds.min.x(),
@@ -413,17 +319,7 @@ impl<'a> Widget for PreferencesPanel<'a> {
             },
         );
 
-        let mouse_in_panel = panel_bounds.contains(ui.mouse_pos());
-        let mouse_clicked = ui.mouse_clicked(mouse_button::LEFT);
-        if !self.state.dragging
-            && !self.state.visibility.is_just_opened()
-            && mouse_clicked
-            && !mouse_in_panel
-        {
-            self.pending_actions.push(PreferencesAction::Close);
-        }
-
-        self.state.visibility.mark_shown();
+        DraggablePanel::end(&mut self.state.panel, &frame);
 
         Response::default()
     }

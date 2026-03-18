@@ -1,102 +1,118 @@
 //! Particle inspector widget for runtime particle emitter editing.
-//!
-//! This module provides a UI panel for inspecting and tweaking particle emitter
-//! parameters at runtime without recompilation.
 
-use katla_ecs::{EntityId, World};
-use katla_gfx::particles::{EmitterShape, GlobalParticleSystem};
+use katla_ecs::EntityId;
+use katla_gfx::particles::ParticleStats;
 use katla_math::{Rect2D, Vec2};
-use katla_ui::{widgets::Button, FontSize, Response, UiContext, Widget};
+use katla_ui::{
+    widgets::{Button, DraggablePanel, DraggablePanelState, DraggablePanelStyle},
+    FontSize, Response, UiContext, Widget,
+};
 
-use crate::components::ParticleEmitterComponent;
+use crate::ui::Theme;
+
+/// State for the particle inspector floating panel.
+#[derive(Debug, Clone, Default)]
+pub struct ParticleInspectorState {
+    pub panel: DraggablePanelState,
+}
+
+/// Pre-collected data for the particle inspector, gathered from World + GlobalParticleSystem.
+#[derive(Debug, Clone, Default)]
+pub struct ParticleInspectorData {
+    pub emitter_entities: Vec<EntityId>,
+    pub selected_emitter_config: Option<EmitterConfigView>,
+    pub stats: Option<ParticleStats>,
+}
+
+/// Read-only view of emitter config for display in the inspector.
+#[derive(Debug, Clone)]
+pub struct EmitterConfigView {
+    pub active: bool,
+    pub shape_name: &'static str,
+    pub shape_params: [f32; 3],
+    pub emit_rate: f32,
+    pub base_lifetime: f32,
+    pub lifetime_variation: f32,
+    pub velocity_magnitude: f32,
+    pub velocity_cone_angle: f32,
+    pub base_scale: f32,
+    pub scale_variation: f32,
+    pub color: [f32; 4],
+    pub color_variation: f32,
+}
+
+/// Actions emitted by the particle inspector.
+#[derive(Debug, Clone)]
+pub enum ParticleInspectorAction {
+    SelectEmitter(EntityId),
+    ToggleEmitter,
+    ResetSystem,
+    Close,
+}
 
 /// Particle inspector panel for runtime emitter editing.
 pub struct ParticleInspector<'a> {
-    /// Panel bounds
-    pub bounds: Rect2D,
-    /// Currently selected emitter entity
+    pub state: &'a mut ParticleInspectorState,
     pub selected_emitter: &'a mut Option<EntityId>,
-    /// Theme colors
-    pub theme: &'a super::Theme,
+    pub theme: &'a Theme,
+    pub data: &'a ParticleInspectorData,
+    pub pending_actions: &'a mut Vec<ParticleInspectorAction>,
 }
 
 impl<'a> ParticleInspector<'a> {
-    /// Create a new particle inspector panel.
     pub fn new(
-        bounds: Rect2D,
+        state: &'a mut ParticleInspectorState,
         selected_emitter: &'a mut Option<EntityId>,
-        theme: &'a super::Theme,
+        theme: &'a Theme,
+        data: &'a ParticleInspectorData,
+        pending_actions: &'a mut Vec<ParticleInspectorAction>,
     ) -> Self {
         Self {
-            bounds,
+            state,
             selected_emitter,
             theme,
+            data,
+            pending_actions,
         }
     }
+}
 
-    /// Set the selected emitter entity.
-    pub fn set_selected_emitter(&mut self, entity: EntityId) {
-        *self.selected_emitter = Some(entity);
-    }
+impl<'a> Widget for ParticleInspector<'a> {
+    fn ui(mut self, ui: &mut UiContext) -> Response {
+        let panel_width = 320.0;
+        let panel_height = 600.0;
+        let screen_size = ui.screen_size();
+        let style = DraggablePanelStyle {
+            panel_bg: self.theme.panel_bg,
+            panel_border: self.theme.panel_border,
+            panel_header: self.theme.panel_header,
+            background_light: self.theme.background_light,
+            text_primary: self.theme.text_primary,
+            text_muted: self.theme.text_muted,
+        };
 
-    /// Get the selected emitter entity.
-    pub fn get_selected_emitter(&self) -> Option<EntityId> {
-        *self.selected_emitter
-    }
-
-    /// Clear the selected emitter.
-    pub fn clear_selection(&mut self) {
-        *self.selected_emitter = None;
-    }
-
-    /// Render the inspector panel.
-    pub fn render(
-        &mut self,
-        ui: &mut UiContext,
-        world: &mut World,
-        particle_system: &mut GlobalParticleSystem,
-    ) {
-        // Draw panel background
-        ui.draw_rect(self.bounds, self.theme.panel_bg);
-        ui.draw_rect_border(
-            self.bounds,
-            self.theme.panel_bg,
-            self.theme.panel_border,
-            1.0,
-        );
-
-        let header_height = 24.0;
-        let header_bounds = Rect2D::from_origin_size(
-            self.bounds.min,
-            Vec2::new(self.bounds.width(), header_height),
-        );
-        ui.draw_rect(header_bounds, self.theme.panel_header);
-
-        let header_pos = Vec2::new(self.bounds.min.x() + 8.0, header_bounds.center().y() - 7.0);
-        ui.draw_text(
+        let frame = DraggablePanel::begin(
+            ui,
+            "particle_inspector",
             "Particle Inspector",
-            header_pos,
-            self.theme.text_primary,
-            ui.scaled_font_size(FontSize::Medium),
+            panel_width,
+            panel_height,
+            screen_size,
+            &mut self.state.panel,
+            &style,
         );
 
-        // Collect all entities with particle emitters
-        let mut emitter_entities: Vec<EntityId> = Vec::new();
-        for (entity_id, _emitter) in world.query::<&ParticleEmitterComponent>() {
-            emitter_entities.push(entity_id);
-        }
+        let title_bar_height = DraggablePanel::title_bar_height();
+        let panel_min = frame.panel_bounds.min;
+        let content_x = panel_min.x() + 8.0;
+        let content_start_y = panel_min.y() + title_bar_height + 8.0;
+        let content_width = frame.panel_bounds.width() - 16.0;
 
-        // Begin column layout for content
         ui.begin_column();
-        ui.set_cursor(Vec2::new(
-            self.bounds.min.x() + 8.0,
-            self.bounds.min.y() + header_height + 8.0,
-        ));
+        ui.set_cursor(Vec2::new(content_x, content_start_y));
 
         let line_height = 20.0;
-        let content_width = self.bounds.width() - 16.0;
 
-        // Emitter selector
         ui.draw_text(
             "Emitter:",
             ui.cursor(),
@@ -105,7 +121,7 @@ impl<'a> ParticleInspector<'a> {
         );
         ui.spacing(line_height);
 
-        if emitter_entities.is_empty() {
+        if self.data.emitter_entities.is_empty() {
             ui.draw_text(
                 "No particle emitters in scene",
                 ui.cursor(),
@@ -113,8 +129,7 @@ impl<'a> ParticleInspector<'a> {
                 ui.scaled_font_size(FontSize::Small),
             );
         } else {
-            // List all emitters
-            for (idx, entity_id) in emitter_entities.iter().enumerate() {
+            for (idx, entity_id) in self.data.emitter_entities.iter().enumerate() {
                 let is_selected = self.selected_emitter == &Some(*entity_id);
                 let entity_name = format!("Emitter {}", idx);
 
@@ -135,7 +150,8 @@ impl<'a> ParticleInspector<'a> {
                     )
                     .clicked
                 {
-                    *self.selected_emitter = Some(*entity_id);
+                    self.pending_actions
+                        .push(ParticleInspectorAction::SelectEmitter(*entity_id));
                 }
 
                 ui.spacing(4.0);
@@ -143,41 +159,43 @@ impl<'a> ParticleInspector<'a> {
         }
 
         ui.spacing(line_height);
-
-        // Separator
         ui.separator_line();
         ui.spacing(line_height);
 
-        // Show selected emitter details
-        if let Some(selected_id) = *self.selected_emitter {
-            if let Some(emitter) = world.get_component_mut::<ParticleEmitterComponent>(selected_id)
-            {
-                self.render_emitter_config(ui, emitter, particle_system);
-            } else {
-                ui.draw_text(
-                    "Selected emitter not found",
-                    ui.cursor(),
-                    self.theme.text_muted,
-                    ui.scaled_font_size(FontSize::Small),
-                );
-                *self.selected_emitter = None;
-            }
+        if let Some(ref config) = self.data.selected_emitter_config {
+            self.render_emitter_config(ui, config, content_width);
+        } else if self.selected_emitter.is_some() {
+            ui.draw_text(
+                "Selected emitter not found",
+                ui.cursor(),
+                self.theme.text_muted,
+                ui.scaled_font_size(FontSize::Small),
+            );
         }
 
         ui.end_column();
-    }
 
-    /// Render emitter configuration controls.
+        DraggablePanel::end(&mut self.state.panel, &frame);
+
+        // Return actions to caller
+        if frame.close_clicked || frame.clicked_outside {
+            self.pending_actions.push(ParticleInspectorAction::Close);
+        }
+
+        Response::default()
+    }
+}
+
+impl<'a> ParticleInspector<'a> {
     fn render_emitter_config(
         &mut self,
         ui: &mut UiContext,
-        emitter: &mut ParticleEmitterComponent,
-        particle_system: &mut GlobalParticleSystem,
+        config: &EmitterConfigView,
+        content_width: f32,
     ) {
         let line_height = 20.0;
-        let slider_width = self.bounds.width() - 24.0;
+        let slider_width = content_width - 8.0;
 
-        // Section: Shape
         ui.draw_text(
             "Emitter Shape",
             ui.cursor(),
@@ -186,44 +204,33 @@ impl<'a> ParticleInspector<'a> {
         );
         ui.spacing(line_height);
 
-        // Shape selector
-        let shape_names = ["Point", "Line", "Circle", "Sphere", "Box"];
-        let current_shape_index = match emitter.config.get_shape() {
-            EmitterShape::Point => 0,
-            EmitterShape::Line => 1,
-            EmitterShape::Circle => 2,
-            EmitterShape::Sphere => 3,
-            EmitterShape::Box => 4,
-        };
-
-        ui.property_row("Shape:", shape_names[current_shape_index]);
+        ui.property_row("Shape:", config.shape_name);
         ui.spacing(line_height);
 
-        // Shape-specific parameters
-        match emitter.config.get_shape() {
-            EmitterShape::Point => {
+        match config.shape_name {
+            "Point" => {
                 ui.property_row("Parameters:", "None (point emission)");
             }
-            EmitterShape::Line => {
-                ui.property_row("Length:", &format!("{:.2}", emitter.config.shape_params[0]));
+            "Line" => {
+                ui.property_row("Length:", &format!("{:.2}", config.shape_params[0]));
                 ui.property_row("Axis:", "Y (vertical)");
             }
-            EmitterShape::Circle => {
-                ui.property_row("Radius:", &format!("{:.2}", emitter.config.shape_params[0]));
+            "Circle" => {
+                ui.property_row("Radius:", &format!("{:.2}", config.shape_params[0]));
                 ui.property_row("Plane:", "XZ (horizontal)");
             }
-            EmitterShape::Sphere => {
-                ui.property_row("Radius:", &format!("{:.2}", emitter.config.shape_params[0]));
+            "Sphere" => {
+                ui.property_row("Radius:", &format!("{:.2}", config.shape_params[0]));
             }
-            EmitterShape::Box => {
-                ui.property_row("Width:", &format!("{:.2}", emitter.config.shape_params[0]));
-                ui.property_row("Height:", &format!("{:.2}", emitter.config.shape_params[1]));
-                ui.property_row("Depth:", &format!("{:.2}", emitter.config.shape_params[2]));
+            "Box" => {
+                ui.property_row("Width:", &format!("{:.2}", config.shape_params[0]));
+                ui.property_row("Height:", &format!("{:.2}", config.shape_params[1]));
+                ui.property_row("Depth:", &format!("{:.2}", config.shape_params[2]));
             }
+            _ => {}
         }
         ui.spacing(line_height);
 
-        // Section: Emission
         ui.draw_text(
             "Emission",
             ui.cursor(),
@@ -232,19 +239,14 @@ impl<'a> ParticleInspector<'a> {
         );
         ui.spacing(line_height);
 
-        // Display current values
-        ui.property_row("Emit Rate:", &format!("{:.1}/s", emitter.config.emit_rate));
-        ui.property_row(
-            "Base Lifetime:",
-            &format!("{:.2}s", emitter.config.base_lifetime),
-        );
+        ui.property_row("Emit Rate:", &format!("{:.1}/s", config.emit_rate));
+        ui.property_row("Base Lifetime:", &format!("{:.2}s", config.base_lifetime));
         ui.property_row(
             "Lifetime Var:",
-            &format!("{:.2}", emitter.config.lifetime_variation),
+            &format!("{:.2}", config.lifetime_variation),
         );
         ui.spacing(line_height);
 
-        // Section: Velocity
         ui.draw_text(
             "Velocity",
             ui.cursor(),
@@ -255,15 +257,14 @@ impl<'a> ParticleInspector<'a> {
 
         ui.property_row(
             "Magnitude:",
-            &format!("{:.2} m/s", emitter.config.velocity_magnitude),
+            &format!("{:.2} m/s", config.velocity_magnitude),
         );
         ui.property_row(
             "Cone Angle:",
-            &format!("{:.2} rad", emitter.config.velocity_cone_angle),
+            &format!("{:.2} rad", config.velocity_cone_angle),
         );
         ui.spacing(line_height);
 
-        // Section: Scale
         ui.draw_text(
             "Scale",
             ui.cursor(),
@@ -272,14 +273,10 @@ impl<'a> ParticleInspector<'a> {
         );
         ui.spacing(line_height);
 
-        ui.property_row("Base Scale:", &format!("{:.2}", emitter.config.base_scale));
-        ui.property_row(
-            "Scale Var:",
-            &format!("{:.2}", emitter.config.scale_variation),
-        );
+        ui.property_row("Base Scale:", &format!("{:.2}", config.base_scale));
+        ui.property_row("Scale Var:", &format!("{:.2}", config.scale_variation));
         ui.spacing(line_height);
 
-        // Section: Color
         ui.draw_text(
             "Color",
             ui.cursor(),
@@ -292,95 +289,77 @@ impl<'a> ParticleInspector<'a> {
             "Color:",
             &format!(
                 "R:{:.2} G:{:.2} B:{:.2} A:{:.2}",
-                emitter.config.color[0],
-                emitter.config.color[1],
-                emitter.config.color[2],
-                emitter.config.color[3]
+                config.color[0], config.color[1], config.color[2], config.color[3]
             ),
         );
-        ui.property_row(
-            "Color Var:",
-            &format!("{:.2}", emitter.config.color_variation),
-        );
+        ui.property_row("Color Var:", &format!("{:.2}", config.color_variation));
         ui.spacing(line_height);
 
-        // Section: Stats
-        ui.draw_text(
-            "Statistics",
-            ui.cursor(),
-            self.theme.text_accent,
-            ui.scaled_font_size(FontSize::Small),
-        );
-        ui.spacing(line_height);
+        // Stats section
+        if let Some(ref stats) = self.data.stats {
+            ui.draw_text(
+                "Statistics",
+                ui.cursor(),
+                self.theme.text_accent,
+                ui.scaled_font_size(FontSize::Small),
+            );
+            ui.spacing(line_height);
 
-        // Get comprehensive statistics
-        let stats = particle_system.get_stats();
+            ui.property_row(
+                "Alive Particles:",
+                &format!("{} / {}", stats.current_alive_count, stats.max_alive_count),
+            );
+            ui.spacing(4.0);
+            ui.property_row("Dead Particles:", &format!("{}", stats.dead_count));
+            ui.spacing(4.0);
+            ui.property_row(
+                "Buffer Utilization:",
+                &format!("{:.1}%", stats.buffer_utilization * 100.0),
+            );
+            ui.spacing(4.0);
+            ui.property_row("Memory Used:", &format!("{:.2} MB", stats.memory_used_mb));
+            ui.spacing(line_height);
 
-        // Particle counts
-        ui.property_row(
-            "Alive Particles:",
-            &format!("{} / {}", stats.current_alive_count, stats.max_alive_count),
-        );
-        ui.spacing(4.0);
+            ui.draw_text(
+                "Performance",
+                ui.cursor(),
+                self.theme.text_accent,
+                ui.scaled_font_size(FontSize::Small),
+            );
+            ui.spacing(line_height);
 
-        ui.property_row("Dead Particles:", &format!("{}", stats.dead_count));
-        ui.spacing(4.0);
+            ui.property_row("Compute Time:", &format!("{:.3} ms", stats.compute_time_ms));
+            ui.spacing(4.0);
+            ui.property_row(
+                "Avg Compute:",
+                &format!("{:.3} ms", stats.avg_compute_time_ms),
+            );
+            ui.spacing(4.0);
+            ui.property_row(
+                "Peak Compute:",
+                &format!("{:.3} ms", stats.peak_compute_time_ms),
+            );
+            ui.spacing(line_height);
 
-        ui.property_row(
-            "Buffer Utilization:",
-            &format!("{:.1}%", stats.buffer_utilization * 100.0),
-        );
-        ui.spacing(4.0);
+            ui.draw_text(
+                "Lifetime",
+                ui.cursor(),
+                self.theme.text_accent,
+                ui.scaled_font_size(FontSize::Small),
+            );
+            ui.spacing(line_height);
 
-        ui.property_row("Memory Used:", &format!("{:.2} MB", stats.memory_used_mb));
-        ui.spacing(line_height);
+            ui.property_row("Total Emitted:", &format!("{}", stats.total_emitted));
+            ui.spacing(4.0);
+            ui.property_row("Total Died:", &format!("{}", stats.total_died));
+            ui.spacing(4.0);
+            ui.property_row("Frame Count:", &format!("{}", stats.frame_count));
+            ui.spacing(4.0);
+            ui.property_row("Total Dispatches:", &format!("{}", stats.total_dispatches));
+            ui.spacing(line_height);
+        }
 
-        // Performance stats
-        ui.draw_text(
-            "Performance",
-            ui.cursor(),
-            self.theme.text_accent,
-            ui.scaled_font_size(FontSize::Small),
-        );
-        ui.spacing(line_height);
-
-        ui.property_row("Compute Time:", &format!("{:.3} ms", stats.compute_time_ms));
-        ui.spacing(4.0);
-
-        ui.property_row(
-            "Avg Compute:",
-            &format!("{:.3} ms", stats.avg_compute_time_ms),
-        );
-        ui.spacing(4.0);
-
-        ui.property_row(
-            "Peak Compute:",
-            &format!("{:.3} ms", stats.peak_compute_time_ms),
-        );
-        ui.spacing(line_height);
-
-        // Lifetime stats
-        ui.draw_text(
-            "Lifetime",
-            ui.cursor(),
-            self.theme.text_accent,
-            ui.scaled_font_size(FontSize::Small),
-        );
-        ui.spacing(line_height);
-
-        ui.property_row("Total Emitted:", &format!("{}", stats.total_emitted));
-        ui.spacing(4.0);
-
-        ui.property_row("Total Died:", &format!("{}", stats.total_died));
-        ui.spacing(4.0);
-
-        ui.property_row("Frame Count:", &format!("{}", stats.frame_count));
-        ui.spacing(4.0);
-
-        ui.property_row("Total Dispatches:", &format!("{}", stats.total_dispatches));
-        ui.spacing(line_height);
-
-        // Section: Controls
+        // Controls section
         ui.draw_text(
             "Controls",
             ui.cursor(),
@@ -389,15 +368,13 @@ impl<'a> ParticleInspector<'a> {
         );
         ui.spacing(line_height);
 
-        // Toggle button
-        let toggle_text = if emitter.active { "Disable" } else { "Enable" };
+        let toggle_text = if config.active { "Disable" } else { "Enable" };
         let toggle_bounds = Rect2D::from_origin_size(ui.cursor(), Vec2::new(slider_width, 24.0));
-
         if ui
             .add(
                 Button::new(toggle_text)
                     .bounds(toggle_bounds)
-                    .fill_color(if emitter.active {
+                    .fill_color(if config.active {
                         self.theme.button_bg
                     } else {
                         self.theme.highlight
@@ -405,31 +382,18 @@ impl<'a> ParticleInspector<'a> {
             )
             .clicked
         {
-            emitter.active = !emitter.active;
+            self.pending_actions
+                .push(ParticleInspectorAction::ToggleEmitter);
         }
         ui.spacing(4.0);
 
-        // Reset button
         let reset_bounds = Rect2D::from_origin_size(ui.cursor(), Vec2::new(slider_width, 24.0));
         if ui
             .add(Button::new("Reset System").bounds(reset_bounds))
             .clicked
         {
-            // Reset particle system by reinitializing
-            log::info!("Resetting particle system from inspector");
+            self.pending_actions
+                .push(ParticleInspectorAction::ResetSystem);
         }
-
-        // Apply any pending updates to the particle system
-        if let Some(handle) = emitter.emitter_handle {
-            particle_system.update_emitter(handle, emitter.config);
-        }
-    }
-}
-
-impl<'a> Widget for ParticleInspector<'a> {
-    fn ui(self, _ui: &mut UiContext) -> Response {
-        // Note: The actual rendering is done via render() method
-        // This is a placeholder for Widget trait compliance
-        Response::default()
     }
 }
