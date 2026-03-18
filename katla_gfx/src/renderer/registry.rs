@@ -22,7 +22,7 @@ pub enum AnyPipeline {
 
 impl AnyPipeline {
     /// Get the Vulkan pipeline handle.
-    pub(crate) fn vk_pipeline(&self) -> vk::Pipeline {
+    pub fn vk_pipeline(&self) -> vk::Pipeline {
         match self {
             AnyPipeline::Graphics(p) => p.vk_pipeline(),
             AnyPipeline::Compute(p) => p.pipeline().vk(),
@@ -30,7 +30,7 @@ impl AnyPipeline {
     }
 
     /// Get the Vulkan pipeline layout handle.
-    pub(crate) fn vk_layout(&self) -> vk::PipelineLayout {
+    pub fn vk_layout(&self) -> vk::PipelineLayout {
         match self {
             AnyPipeline::Graphics(p) => p.vk_layout(),
             AnyPipeline::Compute(p) => p.pipeline_layout().vk(),
@@ -203,8 +203,8 @@ impl AssetRegistry {
         Some((pipeline.vk_pipeline(), pipeline.vk_layout()))
     }
 
-    /// Get a pipeline by handle (for render graph access).
-    pub(crate) fn get_pipeline(&self, handle: PipelineHandle) -> Option<&AnyPipeline> {
+    /// Get a pipeline by handle.
+    pub fn get_pipeline(&self, handle: PipelineHandle) -> Option<&AnyPipeline> {
         self.pipelines.get(handle.index())
     }
 

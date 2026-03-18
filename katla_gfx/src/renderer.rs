@@ -142,6 +142,9 @@ pub struct VulkanRenderer {
     pub ui_renderer: ui_renderer::UIRenderer,
     /// Global particle system for GPU-driven particle effects.
     pub particle_system: Option<crate::particles::GlobalParticleSystem>,
+    /// Tracks whether the first frame has been rendered.
+    /// Used to skip the inter-frame semaphore wait on the very first frame.
+    first_frame_rendered: bool,
 }
 
 /// Number of frames that can be processed concurrently.
@@ -280,6 +283,7 @@ impl VulkanRenderer {
             material_compiler,
             ui_renderer: ui_renderer::UIRenderer::new(&context),
             particle_system: None,
+            first_frame_rendered: false,
         })
     }
 
@@ -1101,6 +1105,7 @@ impl VulkanRenderer {
         frame_graph: &mut crate::render_graph::FrameGraph,
     ) -> Vec<(String, u32)> {
         self.wait_for_device();
+        self.first_frame_rendered = false;
 
         let old_extent = self.frame_context.swapchain.get_extent();
         info!("=== Recreating swapchain ===");
@@ -2027,21 +2032,45 @@ impl VulkanRenderer {
 
         // 9. Submit command buffer with synchronization
         let render_finished_semaphore = self.swap_data.render_finished_semaphore(image_index);
-        let wait_semaphores = [self.swap_data.image_available_semaphore()];
-        let signal_semaphores = [render_finished_semaphore];
+        let frame_complete_semaphore = self.swap_data.frame_complete_semaphore();
+        let signal_semaphores = [render_finished_semaphore, frame_complete_semaphore];
         let swapchains = [self.frame_context.swapchain.swapchain];
         let image_indices = [image_index];
 
-        self.context.gfx_queue.submit(
-            &[&self.frame_context.command_buffers[frame_idx]],
-            &wait_semaphores,
-            &signal_semaphores,
-            self.swap_data.in_flight_fence(),
-        );
+        // On the first frame there's no previous frame to wait on.
+        // After that, wait on the previous frame's completion semaphore at ALL_COMMANDS
+        // to cover TRANSFER/CLEAR from vkCmdUpdateBuffer and TRANSFER_READ from vkCmdCopyBuffer.
+        if self.first_frame_rendered {
+            let wait_semaphores = [
+                self.swap_data.image_available_semaphore(),
+                self.swap_data.previous_frame_complete_semaphore(),
+            ];
+            let wait_stage_masks = [
+                vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
+                vk::PipelineStageFlags::ALL_COMMANDS,
+            ];
+            self.context.gfx_queue.submit_with_stages(
+                &[&self.frame_context.command_buffers[frame_idx]],
+                &wait_semaphores,
+                &signal_semaphores,
+                self.swap_data.in_flight_fence(),
+                &wait_stage_masks,
+            );
+        } else {
+            self.first_frame_rendered = true;
+            let wait_semaphores = [self.swap_data.image_available_semaphore()];
+            self.context.gfx_queue.submit(
+                &[&self.frame_context.command_buffers[frame_idx]],
+                &wait_semaphores,
+                &signal_semaphores,
+                self.swap_data.in_flight_fence(),
+            );
+        }
 
         // 10. Present to swapchain
+        let present_wait_semaphores = [render_finished_semaphore];
         let present_info = vk::PresentInfoKHR::default()
-            .wait_semaphores(&signal_semaphores)
+            .wait_semaphores(&present_wait_semaphores)
             .swapchains(&swapchains)
             .image_indices(&image_indices);
 

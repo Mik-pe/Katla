@@ -24,16 +24,24 @@ use katla_gfx::renderer::registry::AssetRegistry;
 use std::ffi::CString;
 use std::process::ExitCode;
 
-use particle_validation_helpers::{execute_gpu_compute, find_shader_directory};
+use particle_validation_helpers::{
+    RenderValidationResources, execute_gpu_compute, find_shader_directory,
+};
 
-/// Maximum particles for validation test
-const MAX_PARTICLES: u32 = 10_000;
+/// Default maximum particles for validation test
+const DEFAULT_MAX_PARTICLES: u32 = 10_000;
 
-/// Number of frames to simulate (enough for multiple lifetimes at 60 FPS)
-const NUM_FRAMES: u32 = 60;
+/// Number of frames to simulate (enough to fill capacity + several recycling lifetimes)
+const NUM_FRAMES: u32 = 180;
 
 /// Delta time per frame (60 FPS)
 const DELTA_TIME: f32 = 1.0 / 60.0;
+
+/// Number of emitters for stress testing
+const NUM_EMITTERS: u32 = 5;
+
+/// Particle lifetime (seconds)
+const LIFETIME: f32 = 2.0;
 
 /// Track particle diagnostics per frame
 struct FrameDiagnostics {
@@ -256,8 +264,13 @@ fn main() -> ExitCode {
     // Initialize logging
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
 
+    let max_particles: u32 = std::env::args()
+        .nth(1)
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(DEFAULT_MAX_PARTICLES);
+
     log::info!("=== Particle System Validation Example ===");
-    log::info!("Max particles: {}", MAX_PARTICLES);
+    log::info!("Max particles: {}", max_particles);
     log::info!("Frames to simulate: {}", NUM_FRAMES);
 
     // Create headless Vulkan context with validation enabled
@@ -286,7 +299,7 @@ fn main() -> ExitCode {
 
     // Create particle system
     log::info!("Creating particle system...");
-    let mut particle_system = match GlobalParticleSystem::new(&context, MAX_PARTICLES) {
+    let mut particle_system = match GlobalParticleSystem::new(&context, max_particles) {
         Ok(system) => {
             log::info!("Particle system created successfully");
             log::info!("Memory usage: {:.2} MB", system.get_stats().memory_used_mb);
@@ -319,9 +332,25 @@ fn main() -> ExitCode {
     }
     log::info!("Particle compute pipelines created successfully");
 
+    // Create render validation resources (offscreen images, dummy FrameUniforms, descriptor set)
+    log::info!("Creating render validation resources...");
+    let mut render_resources = match RenderValidationResources::new(&context) {
+        Ok(res) => {
+            log::info!("Render validation resources created successfully");
+            Some(res)
+        }
+        Err(e) => {
+            log::warn!(
+                "Failed to create render validation resources: {}. Render path will be skipped.",
+                e
+            );
+            None
+        }
+    };
+
     // Create test emitters with known properties
     log::info!("Creating test emitters...");
-    let test_emitters = create_test_emitters(&mut particle_system);
+    let test_emitters = create_test_emitters(&mut particle_system, max_particles);
     log::info!("Created {} test emitters", test_emitters.len());
 
     // Run GPU compute simulation for several frames
@@ -334,7 +363,7 @@ fn main() -> ExitCode {
     let mut prev_alive_count = 0u32;
 
     // Create tracker for alive_list validation across frames
-    let mut alive_tracker = FrameAliveListTracker::new(MAX_PARTICLES, NUM_FRAMES);
+    let mut alive_tracker = FrameAliveListTracker::new(max_particles, NUM_FRAMES);
 
     // Track worst color mismatch across all frames for final reporting
     let mut worst_mismatch_pct: f32 = 0.0;
@@ -376,7 +405,7 @@ fn main() -> ExitCode {
                 }
 
                 // Expected behavior at this frame
-                let expected_alive = estimate_expected_alive(frame);
+                let expected_alive = estimate_expected_alive(frame, max_particles);
                 let diff = if alive_count as i32 > expected_alive {
                     alive_count as i32 - expected_alive
                 } else {
@@ -404,6 +433,7 @@ fn main() -> ExitCode {
                     frame,
                     alive_count,
                     emit_count,
+                    render_resources.as_ref(),
                 ) {
                     log::error!("Failed to execute GPU compute at frame {}: {}", frame, e);
                     return ExitCode::from(1);
@@ -646,7 +676,7 @@ fn main() -> ExitCode {
 
     // Print summary statistics
     log::info!("=== Validation Summary ===");
-    log::info!("Max particles: {}", MAX_PARTICLES);
+    log::info!("Max particles: {}", max_particles);
     log::info!("Total frames simulated: {}", NUM_FRAMES);
     log::info!("Memory usage: {:.2} MB", stats.memory_used_mb);
     log::info!("Total emitted: {}", stats.total_emitted);
@@ -657,6 +687,11 @@ fn main() -> ExitCode {
     // Note: Vulkan validation errors are printed to stderr by the validation layers
     // We rely on the user to check stderr for validation messages
 
+    // Clean up render validation resources
+    if let Some(ref mut res) = render_resources {
+        res.destroy(&context);
+    }
+
     log::info!("=== All Validations Passed ===");
     ExitCode::SUCCESS
 }
@@ -664,20 +699,22 @@ fn main() -> ExitCode {
 /// Estimate expected alive particles at a given frame.
 ///
 /// Based on emitter configurations:
-/// - Emitter 1 (Red): 100/sec, lifetime 2.0s at x=-50
-/// - Emitter 2 (Blue): 100/sec, lifetime 2.0s at x=+50
-fn estimate_expected_alive(frame: u32) -> i32 {
+/// - NUM_EMITTERS emitters, each at emit_rate/sec (scaled to 80% capacity), lifetime LIFETIME
+/// - Capped at max_particles (dead pool exhaustion)
+fn estimate_expected_alive(frame: u32, max_particles: u32) -> i32 {
     let time = (frame + 1) as f32 * DELTA_TIME;
 
-    // Both emitters: 100/sec, lifetime 2.0s
-    let alive_per_emitter = if time > 2.0 {
-        0
+    let emit_rate = (0.8 * max_particles as f32) / (NUM_EMITTERS as f32 * LIFETIME);
+
+    let alive_per_emitter = if time >= LIFETIME {
+        emit_rate * LIFETIME
     } else {
-        let ramp_up = time.min(2.0);
-        ((100.0 * ramp_up) * (1.0 - (ramp_up / 2.0))).ceil() as i32
+        let ramp = time;
+        emit_rate * ramp * (1.0 - ramp / LIFETIME)
     };
 
-    (alive_per_emitter * 2).max(0)
+    let total = (alive_per_emitter * NUM_EMITTERS as f32).min(max_particles as f32);
+    total as i32
 }
 
 /// Create test emitters with known properties for validation.
@@ -688,42 +725,48 @@ fn estimate_expected_alive(frame: u32) -> i32 {
 /// particle at x=+50 or a blue particle at x=-50 is a definitive bug.
 fn create_test_emitters(
     particle_system: &mut GlobalParticleSystem,
+    max_particles: u32,
 ) -> Vec<katla_gfx::particles::EmitterHandle> {
     let mut emitters = Vec::new();
 
-    // Emitter 1 (Red): far left at x=-50, continuous emission
-    let config1 = EmitterConfig {
-        position: [-50.0, 0.0, 0.0],
-        emit_rate: 100.0,
-        base_lifetime: 2.0,
-        velocity_direction: [0.0, 1.0, 0.0],
-        velocity_magnitude: 1.0,
-        color: [1.0, 0.0, 0.0, 1.0], // Pure Red
-        ..Default::default()
-    };
+    // Scale emit rate so steady state is ~80% of capacity.
+    // steady_state = num_emitters * emit_rate * lifetime = 0.8 * max_particles
+    // emit_rate = 0.8 * max_particles / (num_emitters * lifetime)
+    let emit_rate = (0.8 * max_particles as f32) / (NUM_EMITTERS as f32 * LIFETIME);
 
-    match particle_system.create_emitter(config1) {
-        Ok(handle) => emitters.push(handle),
-        Err(e) => {
-            log::error!("Failed to create emitter 1: {}", e);
-        }
-    }
+    log::info!(
+        "Emit config: {} emitters, {:.0}/sec each, lifetime={:.1}s, target steady state ~{:.0}",
+        NUM_EMITTERS,
+        emit_rate,
+        LIFETIME,
+        NUM_EMITTERS as f32 * emit_rate * LIFETIME,
+    );
 
-    // Emitter 2 (Blue): far right at x=+50, continuous emission
-    let config2 = EmitterConfig {
-        position: [50.0, 0.0, 0.0],
-        emit_rate: 100.0,
-        base_lifetime: 2.0,
-        velocity_direction: [0.0, 1.0, 0.0],
-        velocity_magnitude: 1.0,
-        color: [0.0, 0.0, 1.0, 1.0], // Pure Blue
-        ..Default::default()
-    };
+    // 5 emitters spread across X axis with distinct primary colors.
+    let emitter_defs: [([f32; 3], [f32; 4]); NUM_EMITTERS as usize] = [
+        ([-40.0, 0.0, 0.0], [1.0, 0.0, 0.0, 1.0]), // Red
+        ([-20.0, 0.0, 0.0], [0.0, 1.0, 0.0, 1.0]), // Green
+        ([0.0, 0.0, 0.0], [1.0, 1.0, 0.0, 1.0]),   // Yellow
+        ([20.0, 0.0, 0.0], [0.0, 1.0, 1.0, 1.0]),  // Cyan
+        ([40.0, 0.0, 0.0], [1.0, 0.0, 1.0, 1.0]),  // Magenta
+    ];
 
-    match particle_system.create_emitter(config2) {
-        Ok(handle) => emitters.push(handle),
-        Err(e) => {
-            log::error!("Failed to create emitter 2: {}", e);
+    for (i, (pos, color)) in emitter_defs.iter().enumerate() {
+        let config = EmitterConfig {
+            position: *pos,
+            emit_rate,
+            base_lifetime: LIFETIME,
+            velocity_direction: [0.0, 1.0, 0.0],
+            velocity_magnitude: 1.0,
+            color: *color,
+            ..Default::default()
+        };
+
+        match particle_system.create_emitter(config) {
+            Ok(handle) => emitters.push(handle),
+            Err(e) => {
+                log::error!("Failed to create emitter {}: {}", i, e);
+            }
         }
     }
 
@@ -961,10 +1004,10 @@ fn validate_particle_data(particle_system: &GlobalParticleSystem) -> Result<(), 
     );
 
     // Validate that all configured emitters are producing particles.
-    // Test emitters are at x=-50 and x=+50, so both sides must have coverage.
-    if max_pos[0] < -49.0 || min_pos[0] > 49.0 {
+    // Test emitters span x=-40 to x=+40, so both extremes must have coverage.
+    if max_pos[0] < -39.0 || min_pos[0] > 39.0 {
         return Err(format!(
-            "Position range X=[{:.2}, {:.2}] does not cover both emitter locations (x=-50 and x=+50). \
+            "Position range X=[{:.2}, {:.2}] does not cover both emitter extremes (x=-40 and x=+40). \
              Emitters may not all be producing particles.",
             min_pos[0], max_pos[0]
         ));
@@ -1011,18 +1054,36 @@ struct ExpectedEmitter {
     color_variation: f32,
 }
 
-fn get_expected_emitters() -> [ExpectedEmitter; 2] {
+fn get_expected_emitters() -> [ExpectedEmitter; NUM_EMITTERS as usize] {
     [
         ExpectedEmitter {
-            name: "Emitter 1 (Red)",
-            position: [-50.0, 0.0, 0.0],
+            name: "Emitter 0 (Red)",
+            position: [-40.0, 0.0, 0.0],
             color: [1.0, 0.0, 0.0],
             color_variation: 0.1,
         },
         ExpectedEmitter {
-            name: "Emitter 2 (Blue)",
-            position: [50.0, 0.0, 0.0],
-            color: [0.0, 0.0, 1.0],
+            name: "Emitter 1 (Green)",
+            position: [-20.0, 0.0, 0.0],
+            color: [0.0, 1.0, 0.0],
+            color_variation: 0.1,
+        },
+        ExpectedEmitter {
+            name: "Emitter 2 (Yellow)",
+            position: [0.0, 0.0, 0.0],
+            color: [1.0, 1.0, 0.0],
+            color_variation: 0.1,
+        },
+        ExpectedEmitter {
+            name: "Emitter 3 (Cyan)",
+            position: [20.0, 0.0, 0.0],
+            color: [0.0, 1.0, 1.0],
+            color_variation: 0.1,
+        },
+        ExpectedEmitter {
+            name: "Emitter 4 (Magenta)",
+            position: [40.0, 0.0, 0.0],
+            color: [1.0, 0.0, 1.0],
             color_variation: 0.1,
         },
     ]
@@ -1047,8 +1108,8 @@ fn check_emitter_colors_from_debug_data(
 
     let mut total_checked = 0usize;
     let mut mismatch_count = 0usize;
-    let mut per_emitter_checked = [0usize; 2];
-    let mut per_emitter_mismatch = [0usize; 2];
+    let mut per_emitter_checked = [0usize; NUM_EMITTERS as usize];
+    let mut per_emitter_mismatch = [0usize; NUM_EMITTERS as usize];
 
     let mut mismatch_samples: Vec<String> = Vec::new();
     let max_samples = 20;

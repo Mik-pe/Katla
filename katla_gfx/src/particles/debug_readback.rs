@@ -37,7 +37,7 @@ impl ParticleDebugData {
                 alive_count: 0,
                 dead_count: 0,
                 emit_count: 0,
-                _pad: 0,
+                workgroups_finished: 0,
             },
         }
     }
@@ -605,14 +605,14 @@ impl ParticleDebugReadback {
                 alive_count: 0,
                 dead_count: 0,
                 emit_count: 0,
-                _pad: 0,
+                workgroups_finished: 0,
             })
         } else {
             ParticleCounters {
                 alive_count: 0,
                 dead_count: 0,
                 emit_count: 0,
-                _pad: 0,
+                workgroups_finished: 0,
             }
         };
 

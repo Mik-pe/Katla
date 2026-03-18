@@ -7,6 +7,10 @@ pub struct SwapData {
     /// Per-swapchain-image semaphores to avoid reuse issues
     image_available_semaphores: Vec<vk::Semaphore>,
     render_finished_semaphores: Vec<vk::Semaphore>,
+    /// Per-frame semaphores signaled when a frame's GPU work is complete.
+    /// Waited on by the next frame to ensure proper synchronization across
+    /// all pipeline stages (COMPUTE, TRANSFER, CLEAR, etc.).
+    frame_complete_semaphores: Vec<vk::Semaphore>,
 }
 
 impl SwapData {
@@ -18,19 +22,25 @@ impl SwapData {
         let num_swapchain_images = swapchain_images.len();
 
         // Create the semaphores for acquire (we don't know which image we'll get yet)
-        let create_info = vk::SemaphoreCreateInfo::default();
+        let semaphore_info = vk::SemaphoreCreateInfo::default();
         let image_available_semaphores: Vec<_> = (0..frames_in_flight)
-            .map(|_| unsafe { device.create_semaphore(&create_info, None) }.unwrap())
+            .map(|_| unsafe { device.create_semaphore(&semaphore_info, None) }.unwrap())
             .collect();
         // Create per-swapchain-image semaphores for finished rendering
         // This prevents semaphore reuse issues when swapchain has more images than FRAMES_IN_FLIGHT
         let render_finished_semaphores: Vec<_> = (0..num_swapchain_images)
-            .map(|_| unsafe { device.create_semaphore(&create_info, None) }.unwrap())
+            .map(|_| unsafe { device.create_semaphore(&semaphore_info, None) }.unwrap())
             .collect();
 
-        let create_info = vk::FenceCreateInfo::default().flags(vk::FenceCreateFlags::SIGNALED);
+        // Per-frame semaphores for inter-frame GPU synchronization.
+        // These cover ALL pipeline stages including TRANSFER/CLEAR used by vkCmdUpdateBuffer.
+        let frame_complete_semaphores: Vec<_> = (0..frames_in_flight)
+            .map(|_| unsafe { device.create_semaphore(&semaphore_info, None) }.unwrap())
+            .collect();
+
+        let fence_info = vk::FenceCreateInfo::default().flags(vk::FenceCreateFlags::SIGNALED);
         let in_flight_fences: Vec<_> = (0..frames_in_flight)
-            .map(|_| unsafe { device.create_fence(&create_info, None) }.unwrap())
+            .map(|_| unsafe { device.create_fence(&fence_info, None) }.unwrap())
             .collect();
 
         let frame = 0;
@@ -40,6 +50,7 @@ impl SwapData {
             in_flight_fences,
             image_available_semaphores,
             render_finished_semaphores,
+            frame_complete_semaphores,
         }
     }
 
@@ -78,12 +89,27 @@ impl SwapData {
         self.in_flight_fences[self.frame]
     }
 
+    /// Get the frame complete semaphore for the current frame.
+    /// This should be signaled when the frame's GPU work is done.
+    pub fn frame_complete_semaphore(&self) -> vk::Semaphore {
+        self.frame_complete_semaphores[self.frame]
+    }
+
+    /// Get the frame complete semaphore for the previous frame.
+    /// This should be waited on at the start of a new frame to ensure
+    /// the previous frame's GPU work (including TRANSFER/CLEAR) is complete.
+    pub fn previous_frame_complete_semaphore(&self) -> vk::Semaphore {
+        self.frame_complete_semaphores
+            [(self.frame + self.frames_in_flight - 1) % self.frames_in_flight]
+    }
+
     pub fn destroy(&mut self, device: &Device) {
         unsafe {
             for &semaphore in self
                 .image_available_semaphores
                 .iter()
                 .chain(self.render_finished_semaphores.iter())
+                .chain(self.frame_complete_semaphores.iter())
             {
                 device.destroy_semaphore(semaphore, None);
             }
