@@ -628,7 +628,7 @@ impl GlobalParticleSystem {
                     total_simulate_count,
                     burst_count,
                     frame_index,
-                    _pad: [0u32; 9],
+                    _pad: 0,
                 };
 
                 log::debug!(
@@ -1782,8 +1782,9 @@ impl GlobalParticleSystem {
         // Bind static descriptor set (Set 0: particle buffers)
         if let Some(descriptor_set) = self.compute_descriptor_set {
             log::debug!(
-                "Emit dispatch: binding descriptor set {:?} to Set 0",
+                "Emit dispatch: Set 0 descriptor={:?}, particle_buffer={:?}",
                 descriptor_set,
+                self.buffer.particle_buffer(),
             );
             unsafe {
                 device.cmd_bind_descriptor_sets(
@@ -1803,24 +1804,28 @@ impl GlobalParticleSystem {
         if let Some((frame_buffer, _)) = &self.frame_data_buffer
             && let Some((emitter_buffer, _)) = &self.emitter_configs_buffer
         {
+            let frame_data_size = std::mem::size_of::<FrameData>() as u64;
+            let emitter_size =
+                (MAX_EMITTERS as usize * std::mem::size_of::<EmitterConfig>()) as u64;
+
             let frame_buffer_info = [vk::DescriptorBufferInfo::default()
                 .buffer(*frame_buffer)
                 .offset(0)
-                .range(std::mem::size_of::<FrameData>() as u64)];
+                .range(frame_data_size)];
 
             let emitter_buffer_info = [vk::DescriptorBufferInfo::default()
                 .buffer(*emitter_buffer)
                 .offset(0)
-                .range((MAX_EMITTERS as usize * std::mem::size_of::<EmitterConfig>()) as u64)];
+                .range(emitter_size)];
 
             let push_descriptor_writes = [
                 vk::WriteDescriptorSet::default()
-                    .dst_binding(0) // Binding 0 in Set 1 (frame data)
+                    .dst_binding(0)
                     .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
                     .descriptor_count(1)
                     .buffer_info(&frame_buffer_info),
                 vk::WriteDescriptorSet::default()
-                    .dst_binding(1) // Binding 1 in Set 1 (emitter configs)
+                    .dst_binding(1)
                     .descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
                     .descriptor_count(1)
                     .buffer_info(&emitter_buffer_info),
@@ -2347,11 +2352,6 @@ mod tests {
 
     #[test]
     fn test_emitter_config_size() {
-        // Must match WGSL struct layout (vec3f align = 16, vec4f align = 16):
-        // position(12) + _pad_position(4) + shape(4) + emit_rate(4) + base_lifetime(4) + lifetime_variation(4) +
-        // velocity_direction(12) + _pad_velocity(4) + velocity_magnitude(4) +
-        // velocity_cone_angle(4) + base_scale(4) + scale_variation(4) +
-        // color(16) + color_variation(4) + _pad_color(12) + shape_params(16) = 112 bytes
         assert_eq!(std::mem::size_of::<EmitterConfig>(), 128);
     }
 

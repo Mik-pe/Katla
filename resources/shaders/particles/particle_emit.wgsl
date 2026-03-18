@@ -54,7 +54,7 @@ struct ParticleCounters {
 //          base_lifetime(24) lifetime_variation(28) velocity_direction(32)
 //          _pad_velocity(44) velocity_magnitude(48) velocity_cone_angle(52)
 //          base_scale(56) scale_variation(60) color(64) color_variation(80)
-//          _pad_color(84) shape_params(96) = 112 bytes
+//          _pad_color(96) shape_params(112) = 128 bytes
 struct EmitterConfig {
     position: vec3f,
     _pad_position: f32,

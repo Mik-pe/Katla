@@ -29,28 +29,18 @@ pub struct ParticleData {
 
 /// Per-frame data for particle simulation (updated via push descriptors).
 ///
-/// std140 layout rules apply (WGSL uniform buffers).
-/// Struct is padded to 64-byte alignment to satisfy min_storage_buffer_offset_alignment.
-/// 7 fields × 4 bytes = 28 bytes → padded to 64 bytes.
+/// Must match WGSL `FrameData` exactly (32 bytes).
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Pod, Zeroable)]
 pub struct FrameData {
-    /// Delta time for this frame (seconds)
     pub delta_time: f32,
-    /// Total particles to emit this frame
     pub total_emit_count: u32,
-    /// Number of active emitters this frame
     pub emitter_count: u32,
-    /// Random seed for particle initialization
     pub random_seed: u32,
-    /// Total particles to simulate (newly emitted + previously alive)
     pub total_simulate_count: u32,
-    /// Burst particles to emit immediately (overrides emit_rate for this frame)
     pub burst_count: u32,
-    /// Frame index (for per-frame buffer offsets to avoid race conditions)
     pub frame_index: u32,
-    /// Padding to match 64-byte alignment (28 → 64 bytes)
-    pub _pad: [u32; 9],
+    pub _pad: u32,
 }
 
 /// Atomic counters for particle management (16 bytes).
@@ -138,9 +128,9 @@ impl ParticleBufferLayout {
 /// - Dead list: 4 MB (1M × 4 bytes)
 /// - Alive list current (per-frame): 8 MB (2 × 4 MB for 2 frames in flight)
 /// - Alive list next: 4 MB
-/// - Counters: 32 bytes
-/// - Emitter configs: 80 KB (1024 × 80 bytes)
-///   Total: ~60 MB
+///   Total: ~64 MB
+///
+/// Counters, indirect draw, and emitter configs use separate buffers.
 pub struct GlobalParticleBuffer {
     context: Rc<VulkanContext>,
 
@@ -867,7 +857,7 @@ mod tests {
 
     #[test]
     fn test_frame_data_size() {
-        assert_eq!(std::mem::size_of::<FrameData>(), 64);
+        assert_eq!(std::mem::size_of::<FrameData>(), 32);
     }
 
     #[test]
@@ -879,5 +869,6 @@ mod tests {
         assert_eq!(std::mem::offset_of!(FrameData, total_simulate_count), 16);
         assert_eq!(std::mem::offset_of!(FrameData, burst_count), 20);
         assert_eq!(std::mem::offset_of!(FrameData, frame_index), 24);
+        assert_eq!(std::mem::offset_of!(FrameData, _pad), 28);
     }
 }
