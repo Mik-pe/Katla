@@ -220,7 +220,6 @@ mod tests {
 
     #[test]
     fn test_vertex_position_only_uv_coordinates() {
-        // VAL-ATLAS-002: Vertex::position_only() sets UV to (0,0) for white texture sampling
         let v = Vertex::position_only(Vec2::new(50.0, 75.0), [255, 255, 255, 255]);
 
         // UV should be (0, 0) to sample the default white texture
@@ -231,7 +230,6 @@ mod tests {
 
     #[test]
     fn test_vertex_color_application() {
-        // VAL-ATLAS-002: Vertex colors are correctly applied
         let test_cases = [
             ([255, 0, 0, 255], "Red"),
             ([0, 255, 0, 128], "Green with 50% alpha"),

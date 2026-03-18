@@ -444,7 +444,6 @@ mod tests {
 
     #[test]
     fn test_add_rect_uses_texture_id_none() {
-        // VAL-ATLAS-002: add_rect uses TextureId::NONE for solid color rendering
         let mut list = DrawList::new();
         let bounds = Rect2D::from_origin_size(Vec2::new(0.0, 0.0), Vec2::new(100.0, 50.0));
 
@@ -465,7 +464,6 @@ mod tests {
 
     #[test]
     fn test_add_rect_vertex_colors() {
-        // VAL-ATLAS-002: Vertex colors are correctly applied in add_rect
         let mut list = DrawList::new();
         let bounds = Rect2D::from_origin_size(Vec2::new(0.0, 0.0), Vec2::new(100.0, 50.0));
 
@@ -494,7 +492,6 @@ mod tests {
 
     #[test]
     fn test_add_rect_vertex_uv_coordinates() {
-        // VAL-ATLAS-002: add_rect creates vertices with UV=(0,0) for solid color rendering
         let mut list = DrawList::new();
         let bounds = Rect2D::from_origin_size(Vec2::new(0.0, 0.0), Vec2::new(100.0, 50.0));
 

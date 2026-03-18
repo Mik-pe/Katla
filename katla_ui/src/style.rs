@@ -123,7 +123,7 @@ pub struct UiStyle {
     pub text_color: Color,
     /// Disabled text color.
     pub text_disabled: Color,
-    /// Default font size (deprecated - use FontSize enum).
+    /// Default font size in pixels.
     pub font_size: f32,
 
     /// Background color for checkboxes.

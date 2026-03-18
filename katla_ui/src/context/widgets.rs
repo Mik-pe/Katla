@@ -2,7 +2,7 @@
 //!
 //! This module provides:
 //! - **Interaction helpers**: `click_behavior()`, `is_hovered()`, `update_hover()`
-//! - **Convenience methods**: `button_auto()`, `label_auto()` for auto-layout
+//! - **Convenience methods**: `button_auto()` for auto-layout
 //! - **Internal implementations**: Organized into submodules by widget category
 //!
 //! # Architecture
@@ -19,7 +19,7 @@
 //!    - Called by builder widgets via the `Widget` trait
 //!
 //! 3. **Convenience Methods** (here)
-//!    - Auto-layout helpers: `UiContext::button_auto()`, `UiContext::label_auto()`
+//!    - Auto-layout helpers: `UiContext::button_auto()`
 //!    - Simplified common patterns
 //!
 //! # Example Flow
@@ -61,12 +61,9 @@ impl UiContext {
     /// This allows clicking outside popups to work correctly while still
     /// blocking hover for widgets covered by the popup.
     pub fn is_hovered(&self, bounds: Rect2D) -> bool {
-        // Block hover if a popup consumed the click this frame (prevents click-through)
         if self.popup_consume_click {
             return false;
         }
-        // If a popup is open and cursor is inside popup bounds,
-        // block hover for widgets at lower Z levels
         if let Some(popup_bounds) = self.popup_bounds {
             if popup_bounds.contains(self.input.mouse_pos) && self.z_index < super::z_index::POPUP {
                 return false;
@@ -87,18 +84,7 @@ impl UiContext {
 
     /// Handle standard click behavior for interactive widgets.
     ///
-    /// This consolidates the press -> release -> click pattern used by most widgets.
     /// Returns a `ClickResult` indicating the interaction state.
-    ///
-    /// # Arguments
-    /// * `id` - Widget ID
-    /// * `hovered` - Whether the widget is currently hovered
-    ///
-    /// # Returns
-    /// * `ClickResult::Pressed` - Mouse pressed on widget (sets active_id)
-    /// * `ClickResult::Clicked` - Mouse released while hovering (clears active_id)
-    /// * `ClickResult::Released` - Mouse released elsewhere (clears active_id)
-    /// * `ClickResult::None` - No interaction
     pub(crate) fn click_behavior(&mut self, id: super::WidgetId, hovered: bool) -> ClickResult {
         let active = self.active_id == Some(id);
 
@@ -115,14 +101,6 @@ impl UiContext {
         } else {
             ClickResult::None
         }
-    }
-
-    /// Legacy button behavior method (returns bool for backwards compatibility).
-    ///
-    /// Prefer using `click_behavior()` for new code.
-    pub fn button_behavior(&mut self, id: super::WidgetId, bounds: Rect2D) -> bool {
-        let hovered = self.update_hover(id, bounds);
-        self.click_behavior(id, hovered).as_clicked_bool()
     }
 
     // -------------------------------------------------------------------------
@@ -172,32 +150,6 @@ impl UiContext {
         self.cursor = katla_math::Vec2::new(
             self.cursor.x(),
             self.cursor.y() + self.style.button_height_medium + self.style.item_spacing,
-        );
-        response
-    }
-
-    /// Add a label at the current cursor position.
-    ///
-    /// The label is automatically sized to fit its text.
-    ///
-    /// # Example
-    /// ```ignore
-    /// ui.label_auto("Hello, World!");
-    /// ```
-    pub fn label_auto(&mut self, text: &str) -> crate::Response {
-        let text_size = self.measure_text(text, self.style.font_size);
-        let bounds = Rect2D::from_origin_size(self.cursor(), text_size);
-        self.draw_text(
-            text,
-            self.cursor(),
-            self.style.text_color,
-            self.style.font_size,
-        );
-        let response = crate::Response::new(bounds);
-        // Advance cursor
-        self.cursor = katla_math::Vec2::new(
-            self.cursor.x(),
-            self.cursor.y() + text_size.y() + self.style.item_spacing,
         );
         response
     }

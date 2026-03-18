@@ -94,7 +94,10 @@ impl UiContext {
         let widget_id = self.generate_id(id);
 
         // Click to toggle
-        if self.button_behavior(widget_id, bounds) {
+        if self
+            .click_behavior(widget_id, self.is_hovered(bounds))
+            .is_clicked()
+        {
             *open = !*open;
         }
 

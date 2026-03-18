@@ -71,8 +71,10 @@ impl UiContext {
             self.style.text_color,
             self.style.font_size,
         );
-        let spacing = 20.0;
-        self.cursor = Vec2::new(self.cursor.x(), self.cursor.y() + text_size.y() + spacing);
+        self.cursor = Vec2::new(
+            self.cursor.x(),
+            self.cursor.y() + text_size.y() + self.style.item_spacing,
+        );
     }
 
     /// Display a text label at the cursor position with custom color.
@@ -87,20 +89,10 @@ impl UiContext {
     pub fn text_label_colored(&mut self, text: &str, color: katla_math::Color) {
         let text_size = self.measure_text(text, self.style.font_size);
         self.draw_text(text, self.cursor(), color, self.style.font_size);
-        let spacing = 20.0;
-        self.cursor = Vec2::new(self.cursor.x(), self.cursor.y() + text_size.y() + spacing);
-    }
-
-    /// Display a text label at the cursor position with custom color (alias).
-    ///
-    /// This is a shorter alias for text_label_colored.
-    ///
-    /// # Example
-    /// ```ignore
-    /// ui.label_c("Warning:", Color::YELLOW);
-    /// ```
-    pub fn label_c(&mut self, text: &str, color: katla_math::Color) {
-        self.text_label_colored(text, color);
+        self.cursor = Vec2::new(
+            self.cursor.x(),
+            self.cursor.y() + text_size.y() + self.style.item_spacing,
+        );
     }
 
     /// Display a section header with text.
