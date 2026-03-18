@@ -1,8 +1,4 @@
-//! GPU timing queries for particle system compute shader.
-//!
-//! This module implements Vulkan timestamp queries to measure compute shader
-//! execution time. It uses query pools to record timestamps before and after
-//! compute dispatch operations.
+//! GPU timing queries for particle system compute shader execution.
 
 use std::rc::Rc;
 
@@ -11,10 +7,7 @@ use log::debug;
 
 use crate::vulkan::context::VulkanContext;
 
-/// GPU timing queries for compute shader execution.
-///
-/// Records timestamps before and after compute operations to measure
-/// GPU execution time in milliseconds.
+/// GPU timestamp query pools for measuring compute shader execution time.
 pub struct TimestampQuery {
     /// Query pool for start timestamp
     start_pool: vk::QueryPool,

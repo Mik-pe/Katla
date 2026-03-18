@@ -1,9 +1,4 @@
-//! Global particle buffer with index list management.
-//!
-//! Implements single-buffer particle storage with:
-//! - Particle data storage
-//! - Alive/dead index lists
-//! - Atomic counters for GPU-driven lifecycle
+//! Global particle buffer with index list management and atomic counters.
 
 use std::rc::Rc;
 
@@ -539,10 +534,6 @@ impl GlobalParticleBuffer {
         self.context.end_single_time_commands(cmd);
 
         // Initialize atomic counters
-        // CRITICAL: counters must be initialized before particle system can work!
-        // - dead_count: MAX_PARTICLES (all particles start in dead pool)
-        // - alive_count: 0 (no particles alive yet)
-        // - emit_count: 0 (no particles emitted yet)
         let cmd = self.context.begin_single_time_commands();
         let counters_data = ParticleCounters {
             alive_count: 0,
@@ -692,21 +683,9 @@ impl GlobalParticleBuffer {
         self.counters_buffer
     }
 
-    /// Get the counters allocation (internal use only).
-    #[allow(dead_code)]
-    pub(crate) fn counters_allocation(&self) -> Option<&gpu_allocator::vulkan::Allocation> {
-        self.counters_allocation.as_ref()
-    }
-
     /// Get the indirect draw buffer handle (for vkCmdDrawIndirect).
     pub(crate) fn indirect_draw_buffer(&self) -> vk::Buffer {
         self.indirect_draw_buffer
-    }
-
-    /// Get the indirect draw allocation (internal use only).
-    #[allow(dead_code)]
-    pub(crate) fn indirect_draw_allocation(&self) -> Option<&gpu_allocator::vulkan::Allocation> {
-        self.indirect_draw_allocation.as_ref()
     }
 
     /// Swap alive_list_next to alive_list for next frame.

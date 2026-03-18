@@ -1,6 +1,4 @@
-//! Helper functions for particle validation example.
-//!
-//! This module contains GPU compute execution helpers for the particle validation example.
+//! Helper functions for particle validation — GPU compute execution and render path exercise.
 
 use ash::vk;
 use gpu_allocator::vulkan::{AllocationCreateDesc, AllocationScheme};
@@ -35,17 +33,11 @@ pub struct RenderValidationResources {
 }
 
 impl RenderValidationResources {
-    /// Create all GPU resources needed for render pass validation.
-    ///
-    /// Creates:
-    /// - A 1x1 offscreen color image (B8G8R8A8_SRGB)
-    /// - A 1x1 offscreen depth image (D32_SFLOAT_S8_UINT)
-    /// - A dummy FrameUniforms buffer (256 bytes) with identity view/proj
-    /// - A descriptor set matching the render pipeline's Set 1 layout (2 STORAGE_BUFFER bindings)
+    /// Create all GPU resources needed for render pass validation (1x1 offscreen images, dummy FrameUniforms).
     pub fn new(context: &VulkanContext) -> Result<Self, String> {
         let device = &context.device;
 
-        // --- Create 1x1 color image (B8G8R8A8_SRGB) ---
+        // 1x1 color attachment (B8G8R8A8_SRGB)
         let color_image_info = vk::ImageCreateInfo::default()
             .image_type(vk::ImageType::TYPE_2D)
             .format(vk::Format::B8G8R8A8_SRGB)
@@ -109,7 +101,7 @@ impl RenderValidationResources {
                 .map_err(|e| format!("Failed to create color image view: {:?}", e))?
         };
 
-        // --- Create 1x1 depth image (D32_SFLOAT_S8_UINT) ---
+        // 1x1 depth attachment (D32_SFLOAT_S8_UINT)
         let depth_image_info = vk::ImageCreateInfo::default()
             .image_type(vk::ImageType::TYPE_2D)
             .format(vk::Format::D32_SFLOAT_S8_UINT)
@@ -174,9 +166,7 @@ impl RenderValidationResources {
                 .map_err(|e| format!("Failed to create depth image view: {:?}", e))?
         };
 
-        // --- Create dummy FrameUniforms buffer (256 bytes) ---
-        // FrameUniforms layout: view(64) + proj(64) + inv_view_proj(64) + camera_pos(16)
-        //                       + light_dir(16) + light_color(16) + light_intensity(16) = 256 bytes
+        // Dummy FrameUniforms buffer (256 bytes)
         const FRAME_UNIFORMS_SIZE: u64 = 256;
         let buffer_info = vk::BufferCreateInfo::default()
             .size(FRAME_UNIFORMS_SIZE)
@@ -213,35 +203,23 @@ impl RenderValidationResources {
                 .map_err(|e| format!("Failed to bind frame uniforms buffer: {:?}", e))?;
         }
 
-        // Fill with identity view/proj matrices and zeros for the rest
+        // Fill with identity view/proj matrices
         unsafe {
             let ptr = frame_uniforms_allocation.mapped_ptr().unwrap().as_ptr() as *mut f32;
 
             // Identity view matrix (column-major)
             let identity: [f32; 16] = [
-                1.0, 0.0, 0.0, 0.0, // column 0
-                0.0, 1.0, 0.0, 0.0, // column 1
-                0.0, 0.0, 1.0, 0.0, // column 2
-                0.0, 0.0, 0.0, 1.0, // column 3
+                1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
             ];
 
             // View matrix (offset 0)
             std::ptr::copy_nonoverlapping(identity.as_ptr(), ptr, 16);
-            // Proj matrix (offset 64 bytes = 16 floats)
+            // Proj matrix (offset 64 bytes)
             std::ptr::copy_nonoverlapping(identity.as_ptr(), ptr.add(16), 16);
-            // Inv view-proj matrix (offset 128 bytes = 32 floats)
+            // Inv view-proj matrix (offset 128 bytes)
             std::ptr::copy_nonoverlapping(identity.as_ptr(), ptr.add(32), 16);
-            // Rest is zero (camera_position, light_direction, light_color, light_intensity)
-            // Already zero from allocation
 
-            // Flush the mapped memory to make it visible to GPU
-            let range = vk::MappedMemoryRange::default()
-                .memory(frame_uniforms_allocation.memory())
-                .offset(frame_uniforms_allocation.offset())
-                .size(FRAME_UNIFORMS_SIZE);
-            device
-                .invalidate_mapped_memory_ranges(&[range])
-                .map_err(|e| format!("Failed to invalidate mapped memory: {:?}", e))?;
+            context.flush_mapped_memory(&frame_uniforms_allocation, 0, FRAME_UNIFORMS_SIZE);
         }
 
         // --- Create descriptor set layout for Set 1 (2 STORAGE_BUFFER bindings) ---

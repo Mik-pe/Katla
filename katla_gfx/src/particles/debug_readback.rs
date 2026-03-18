@@ -1,7 +1,4 @@
-//! Debug readback functionality for particle system.
-//!
-//! This module provides CPU-side access to GPU particle data for debugging and validation.
-//! Uses staging buffers to copy data from GPU to CPU-readable memory.
+//! Debug readback for particle system — CPU-side access to GPU particle data via staging buffers.
 
 use std::rc::Rc;
 
