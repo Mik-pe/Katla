@@ -350,6 +350,9 @@ pub struct GlobalParticleSystem {
     /// Next free emitter slot
     next_emitter_slot: u32,
 
+    /// Recycled emitter slots available for reuse
+    free_emitter_slots: Vec<u32>,
+
     /// Vulkan context for resource creation
     context: Rc<VulkanContext>,
 
@@ -436,6 +439,7 @@ impl GlobalParticleSystem {
             emitters: Vec::with_capacity(MAX_EMITTERS as usize),
             emitter_states: Vec::with_capacity(MAX_EMITTERS as usize),
             next_emitter_slot: 0,
+            free_emitter_slots: Vec::new(),
             context: context.clone(),
             frame_count: 0,
             frame_data_buffer: None,
@@ -517,8 +521,13 @@ impl GlobalParticleSystem {
             return Err(format!("Maximum emitter count ({}) reached", MAX_EMITTERS));
         }
 
-        let index = self.next_emitter_slot;
-        self.next_emitter_slot += 1;
+        let index = self
+            .free_emitter_slots
+            .pop()
+            .unwrap_or(self.next_emitter_slot);
+        if index >= self.next_emitter_slot {
+            self.next_emitter_slot = index + 1;
+        }
 
         // Ensure vectors have space
         if self.emitters.len() <= index as usize {
@@ -582,6 +591,7 @@ impl GlobalParticleSystem {
             if handle.index() < self.emitter_states.len() as u32 {
                 self.emitter_states[handle.index() as usize] = EmitterState::default();
             }
+            self.free_emitter_slots.push(handle.index());
             info!("Destroyed particle emitter {}", handle.index());
         }
     }
@@ -869,29 +879,11 @@ impl GlobalParticleSystem {
             .compute_descriptor_set
             .ok_or("Compute descriptor set not allocated")?;
 
-        // Calculate offset for this frame's alive_list region with proper alignment
-        let particle_data_size = std::mem::size_of::<buffer::ParticleData>() as u64;
-        let u32_size = std::mem::size_of::<u32>() as u64;
-        let max_particles = self.max_particles as u64;
+        let layout = self.buffer.layout();
 
-        // Use the same alignment calculation as descriptor set creation
-        let particles_region_size = max_particles * particle_data_size;
-        let particles_region_size_aligned = (particles_region_size + 63) & !63;
-        let dead_list_region_size = max_particles * u32_size;
-        let dead_list_region_size_aligned = (dead_list_region_size + 63) & !63;
-        let alive_list_region_size = max_particles * u32_size;
-
-        let particles_end = particles_region_size_aligned;
-        let dead_list_end = particles_end + dead_list_region_size_aligned;
-        let base_alive_list_offset = dead_list_end;
-
-        // Calculate frame-specific offset for reading newly emitted particles from emit pass
-        let frame_offset = base_alive_list_offset + (frame_index as u64 * alive_list_region_size);
-
-        // Calculate alive_next offset (always at fixed location after alive_current[0] and alive_current[1])
-        let frames_in_flight = 2;
-        let alive_next_offset =
-            base_alive_list_offset + (frames_in_flight as u64 * alive_list_region_size);
+        let frame_offset = layout.alive_current_frame_offset[frame_index];
+        let alive_next_offset = layout.alive_next_offset;
+        let alive_list_region_size = layout.alive_list_size;
 
         log::debug!(
             "update_compute_descriptor_binding_for_simulate: frame_index={}, binding2_offset(alive_current[{}])={}, binding3_offset(alive_next)={}",
@@ -972,27 +964,11 @@ impl GlobalParticleSystem {
             .compute_descriptor_set
             .ok_or("Compute descriptor set not allocated")?;
 
-        // Calculate offset for this frame's alive_list region with proper alignment
-        let particle_data_size = std::mem::size_of::<buffer::ParticleData>() as u64;
-        let u32_size = std::mem::size_of::<u32>() as u64;
-        let max_particles = self.max_particles as u64;
+        let layout = self.buffer.layout();
 
-        // Use the same alignment calculation as descriptor set creation
-        let particles_region_size = max_particles * particle_data_size;
-        let particles_region_size_aligned = (particles_region_size + 63) & !63;
-        let dead_list_region_size = max_particles * u32_size;
-        let dead_list_region_size_aligned = (dead_list_region_size + 63) & !63;
-        let alive_list_region_size = max_particles * u32_size;
-
-        let particles_end = particles_region_size_aligned;
-        let dead_list_end = particles_end + dead_list_region_size_aligned;
-        let base_alive_list_offset = dead_list_end;
-        let frame_offset = base_alive_list_offset + (frame_index as u64 * alive_list_region_size);
-
-        // Calculate alive_next offset (always at fixed location after alive_current[0] and alive_current[1])
-        let frames_in_flight = 2;
-        let alive_next_offset =
-            base_alive_list_offset + (frames_in_flight as u64 * alive_list_region_size);
+        let frame_offset = layout.alive_current_frame_offset[frame_index];
+        let alive_next_offset = layout.alive_next_offset;
+        let alive_list_region_size = layout.alive_list_size;
 
         log::debug!(
             "update_compute_descriptor_binding_for_emit: frame_index={}, binding2_offset(alive_current[{}])={}, binding3_offset(alive_next)={}",
@@ -1066,22 +1042,10 @@ impl GlobalParticleSystem {
             .render_descriptor_set
             .ok_or("Render descriptor set not allocated")?;
 
-        // Calculate offset for this frame's alive_list region with proper alignment
-        let particle_data_size = std::mem::size_of::<buffer::ParticleData>() as u64;
-        let u32_size = std::mem::size_of::<u32>() as u64;
-        let max_particles = self.max_particles as u64;
+        let layout = self.buffer.layout();
 
-        // Use the same alignment calculation as descriptor set creation
-        let particles_region_size = max_particles * particle_data_size;
-        let particles_region_size_aligned = (particles_region_size + 63) & !63;
-        let dead_list_region_size = max_particles * u32_size;
-        let dead_list_region_size_aligned = (dead_list_region_size + 63) & !63;
-        let alive_list_region_size = max_particles * u32_size;
-
-        let particles_end = particles_region_size_aligned;
-        let dead_list_end = particles_end + dead_list_region_size_aligned;
-        let base_alive_list_offset = dead_list_end;
-        let frame_offset = base_alive_list_offset + (frame_index as u64 * alive_list_region_size);
+        let frame_offset = layout.alive_current_frame_offset[frame_index];
+        let alive_list_region_size = layout.alive_list_size;
 
         // Update binding 2 (alive_list) with frame-specific offset
         let alive_list_info = [vk::DescriptorBufferInfo {
@@ -1224,6 +1188,7 @@ impl GlobalParticleSystem {
 
         self.emitters.clear();
         self.next_emitter_slot = 0;
+        self.free_emitter_slots.clear();
 
         // Destroy descriptor pools
         if self._compute_descriptor_pool != vk::DescriptorPool::null() {
@@ -1679,27 +1644,13 @@ impl GlobalParticleSystem {
         let descriptor_set = descriptor_sets[0];
 
         // Update descriptor set with buffer views
-        // Calculate offsets with proper alignment to min_storage_buffer_offset_alignment (64 bytes)
-        // Note: ParticleData is 48 bytes, so we need to ensure each region ends at a 64-byte boundary
-        let particle_data_size = std::mem::size_of::<buffer::ParticleData>() as u64;
-        let u32_size = std::mem::size_of::<u32>() as u64;
-        let max_particles = self.buffer.max_particles() as u64;
+        let buf_layout = self.buffer.layout();
 
-        // Calculate each region's size and ensure 64-byte alignment
-        let particles_region_size = max_particles * particle_data_size;
-        let particles_region_size_aligned = (particles_region_size + 63) & !63;
-
-        let dead_list_region_size = max_particles * u32_size;
-        let dead_list_region_size_aligned = (dead_list_region_size + 63) & !63;
-
-        let alive_list_region_size = max_particles * u32_size;
-        // alive_list regions don't need padding between them since they're identical size
-
-        // Calculate offsets for each region
-        let particles_end = particles_region_size_aligned;
-        let dead_list_end = particles_end + dead_list_region_size_aligned;
-        let alive_current_0_end = dead_list_end + alive_list_region_size;
-        let alive_current_1_end = alive_current_0_end + alive_list_region_size;
+        // Calculate each region's size (use unaligned sizes for descriptor ranges)
+        let particles_region_size =
+            buf_layout.max_particles * std::mem::size_of::<buffer::ParticleData>() as u64;
+        let dead_list_region_size = buf_layout.max_particles * std::mem::size_of::<u32>() as u64;
+        let alive_list_region_size = buf_layout.alive_list_size;
 
         let particle_buffer_handle = self.buffer.particle_buffer();
         let counters_buffer_handle = self.buffer.counters_buffer();
@@ -1725,7 +1676,7 @@ impl GlobalParticleSystem {
 
         let dead_list_info = [vk::DescriptorBufferInfo {
             buffer: self.buffer.particle_buffer(),
-            offset: particles_end,
+            offset: buf_layout.dead_list_offset,
             range: dead_list_region_size, // Use actual dead list size, not aligned
         }];
 
@@ -1733,7 +1684,7 @@ impl GlobalParticleSystem {
         // Maps to alive_current[frame 0] initially, updated per-frame for double-buffering
         let alive_list_info = [vk::DescriptorBufferInfo {
             buffer: self.buffer.particle_buffer(),
-            offset: dead_list_end,
+            offset: buf_layout.alive_current_offset,
             range: alive_list_region_size, // Use actual alive list size
         }];
 
@@ -1742,7 +1693,7 @@ impl GlobalParticleSystem {
         // Layout: particles -> dead -> alive_current[0] -> alive_current[1] -> alive_next
         let alive_list_next_info = [vk::DescriptorBufferInfo {
             buffer: self.buffer.particle_buffer(),
-            offset: alive_current_1_end,
+            offset: buf_layout.alive_next_offset,
             range: alive_list_region_size, // Use actual alive list size
         }];
 
@@ -1814,29 +1765,11 @@ impl GlobalParticleSystem {
                 device_properties.limits.min_storage_buffer_offset_alignment;
 
             // Validate that all descriptor buffer offsets are properly aligned
-            // Use the same calculation as in descriptor set creation
-            let particle_data_size = std::mem::size_of::<buffer::ParticleData>() as u64;
-            let u32_size = std::mem::size_of::<u32>() as u64;
-            let max_particles = self.buffer.max_particles() as u64;
-
-            // Calculate aligned sizes (same as in descriptor creation)
-            let particles_region_size = max_particles * particle_data_size;
-            let particles_region_size_aligned = (particles_region_size + 63) & !63;
-            let dead_list_region_size = max_particles * u32_size;
-            let dead_list_region_size_aligned = (dead_list_region_size + 63) & !63;
-            let alive_list_region_size = max_particles * u32_size;
-
-            let particles_end = particles_region_size_aligned;
-            let dead_list_end = particles_end + dead_list_region_size_aligned;
-            let alive_current_0_end = dead_list_end + alive_list_region_size;
-            let alive_current_1_end = alive_current_0_end + alive_list_region_size;
-
-            // Check alignment for each binding
             let binding_offsets = [
-                (0, 0u64),                // particle data
-                (1, particles_end),       // dead list
-                (2, dead_list_end),       // alive_current[0]
-                (3, alive_current_1_end), // alive_next
+                (0, 0u64),                            // particle data
+                (1, buf_layout.dead_list_offset),     // dead list
+                (2, buf_layout.alive_current_offset), // alive_current[0]
+                (3, buf_layout.alive_next_offset),    // alive_next
             ];
 
             for (binding, offset) in binding_offsets.iter() {
@@ -2387,12 +2320,7 @@ impl GlobalParticleSystem {
         let counters_buffer = self.buffer.counters_buffer();
         let device = &self.context.device;
 
-        // Calculate buffer sizes - cover entire particle buffer
-        let particle_data_size = (self.buffer.max_particles() as u64)
-            * (std::mem::size_of::<buffer::ParticleData>() as u64);
-        let index_list_size =
-            (self.buffer.max_particles() as u64) * (std::mem::size_of::<u32>() as u64);
-        let total_buffer_size = particle_data_size + (3 * index_list_size); // particles + dead + alive_current + alive_next
+        let total_buffer_size = self.buffer.layout().total_size;
 
         let counters_size = std::mem::size_of::<buffer::ParticleCounters>() as u64;
 
@@ -2451,10 +2379,7 @@ impl GlobalParticleSystem {
         let particle_buffer = self.buffer.particle_buffer();
         let device = &self.context.device;
 
-        // Calculate buffer size for the entire particle buffer
-        let particle_buffer_size = (self.buffer.max_particles() as u64)
-            * (std::mem::size_of::<buffer::ParticleData>() as u64
-                + 3 * std::mem::size_of::<u32>() as u64); // particles + dead + alive_current + alive_next
+        let particle_buffer_size = self.buffer.layout().total_size;
 
         // Create buffer memory barrier for particle buffer (including alive list)
         // This barrier ensures that:
