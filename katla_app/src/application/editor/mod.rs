@@ -45,74 +45,51 @@ pub fn generate_ui_draw_list(app: &mut Application, dt: f32) -> Option<UIDrawLis
     // Store viewport texture ID before rendering (to avoid borrow issues)
     let viewport_texture_id = app.editor_ui.viewport_texture_ids[0];
 
-    // Render particle inspector BEFORE main editor UI to avoid borrow conflicts
-    if use_editor && app.editor_ui.show_particle_inspector {
-        if let Some(particle_system) = &mut app.renderer.particle_system {
-            use crate::ui::ParticleInspector;
-            use katla_math::Rect2D;
-
-            let panel_width = 320.0;
-            let panel_height = 600.0;
-            let panel_bounds = Rect2D::from_origin_size(
-                katla_math::Vec2::new(
-                    screen_size.x() - panel_width - 20.0,
-                    screen_size.y() - panel_height - 60.0,
-                ),
-                katla_math::Vec2::new(panel_width, panel_height),
-            );
-
-            ParticleInspector::new(
-                panel_bounds,
-                &mut app.editor_ui.selected_particle_emitter,
-                &app.editor_ui.theme,
-            )
-            .render(&mut app.ui_context, &mut app.world, particle_system);
-        }
-    }
-
     let draw_list = if use_editor {
-        // Render the main editor UI
-        app.editor_ui.render(
-            &mut app.ui_context,
-            &app.preferences,
-            screen_size,
-            scale_factor,
-            &entity_info,
-            fps,
-            app.frame_count,
-            &mut app.background_loader,
-            &app.thumbnail_texture_handles,
-        )
+        // Collect particle inspector data before rendering
+        collect_particle_inspector_data(app);
+
+        app.editor_ui
+            .render(
+                &mut app.ui_context,
+                &app.preferences,
+                screen_size,
+                scale_factor,
+                &entity_info,
+                fps,
+                app.frame_count,
+                &mut app.background_loader,
+                &app.thumbnail_texture_handles,
+            )
+            .clone()
     } else {
-        app.debug_overlay.render(
-            &mut app.ui_context,
-            screen_size,
-            scale_factor,
-            fps,
-            app.frame_count,
-            entity_count,
-        )
+        app.debug_overlay
+            .render(
+                &mut app.ui_context,
+                screen_size,
+                scale_factor,
+                fps,
+                app.frame_count,
+                entity_count,
+            )
+            .clone()
     };
 
-    // Convert to GPU format if not empty
+    // Convert draw list to GPU format
+    let ui_renderer = &mut app.ui_renderer;
+
+    // Register the viewport texture if it exists
+    if let Some(texture_id) = viewport_texture_id {
+        let texture_handle = katla_gfx::TextureHandle::new(texture_id.0 as u32);
+        ui_renderer.register_texture(texture_id, texture_handle);
+    }
+
     if !draw_list.is_empty() {
-        // Use the persistent UI renderer from the application
-        let ui_renderer = &mut app.ui_renderer;
-
-        // Register the viewport texture if it exists
-        if let Some(texture_id) = viewport_texture_id {
-            // Get the actual TextureHandle from the stored index
-            // The texture was registered in Application::init with the texture manager
-            let texture_handle = katla_gfx::TextureHandle::new(texture_id.0 as u32);
-            ui_renderer.register_texture(texture_id, texture_handle);
-        }
-
-        let result = ui_renderer.convert_draw_list(
-            draw_list,
+        Some(ui_renderer.convert_draw_list(
+            &draw_list,
             [screen_size.x(), screen_size.y()],
             scale_factor,
-        );
-        Some(result)
+        ))
     } else {
         None
     }
@@ -204,6 +181,29 @@ pub fn process_editor_actions(app: &mut Application) {
             EditorAction::OpenPanel(panel) => {
                 app.editor_ui.open_panel(panel);
             }
+            EditorAction::ToggleParticleEmitter => {
+                if let Some(entity_id) = app.editor_ui.selected_particle_emitter {
+                    if let Some(emitter) = app
+                        .world
+                        .get_component_mut::<crate::components::ParticleEmitterComponent>(entity_id)
+                    {
+                        emitter.active = !emitter.active;
+                        info!(
+                            "Particle emitter {:?} {}",
+                            entity_id,
+                            if emitter.active {
+                                "enabled"
+                            } else {
+                                "disabled"
+                            }
+                        );
+                    }
+                }
+            }
+            EditorAction::ResetParticleSystem => {
+                // TODO: implement global particle system reset
+                info!("Particle system reset requested - not yet implemented");
+            }
         }
     }
 
@@ -252,6 +252,66 @@ pub fn process_editor_actions(app: &mut Application) {
 
     // Clear input state for next frame
     app.ui_context.input.clear_frame_state();
+}
+
+/// Collect particle inspector data from the world and particle system.
+///
+/// This queries the ECS for all particle emitter entities, builds a read-only
+/// view of the selected emitter's config, and gathers system-wide stats.
+fn collect_particle_inspector_data(app: &mut Application) {
+    use crate::components::ParticleEmitterComponent;
+    use crate::ui::{EmitterConfigView, ParticleInspectorData};
+    use katla_gfx::particles::EmitterShape;
+
+    let mut emitter_entities = Vec::new();
+    let mut selected_config = None;
+
+    // Collect all entities with ParticleEmitterComponent
+    for (entity_id, emitter) in app.world.query::<&ParticleEmitterComponent>() {
+        emitter_entities.push(entity_id);
+
+        // Build config view for the selected emitter
+        if app.editor_ui.selected_particle_emitter == Some(entity_id) {
+            let shape_name = match EmitterShape::from_u32(emitter.config.shape) {
+                EmitterShape::Point => "Point",
+                EmitterShape::Line => "Line",
+                EmitterShape::Circle => "Circle",
+                EmitterShape::Sphere => "Sphere",
+                EmitterShape::Box => "Box",
+            };
+            selected_config = Some(EmitterConfigView {
+                active: emitter.active,
+                shape_name,
+                shape_params: [
+                    emitter.config.shape_params[0],
+                    emitter.config.shape_params[1],
+                    emitter.config.shape_params[2],
+                ],
+                emit_rate: emitter.config.emit_rate,
+                base_lifetime: emitter.config.base_lifetime,
+                lifetime_variation: emitter.config.lifetime_variation,
+                velocity_magnitude: emitter.config.velocity_magnitude,
+                velocity_cone_angle: emitter.config.velocity_cone_angle,
+                base_scale: emitter.config.base_scale,
+                scale_variation: emitter.config.scale_variation,
+                color: emitter.config.color,
+                color_variation: emitter.config.color_variation,
+            });
+        }
+    }
+
+    // Get system-wide stats
+    let stats = app
+        .renderer
+        .particle_system
+        .as_ref()
+        .map(|ps| ps.get_stats());
+
+    app.editor_ui.particle_inspector_data = ParticleInspectorData {
+        emitter_entities,
+        selected_emitter_config: selected_config,
+        stats,
+    };
 }
 
 /// Collect entity information for the editor UI in tree order.

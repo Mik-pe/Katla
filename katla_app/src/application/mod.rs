@@ -224,11 +224,15 @@ impl ApplicationHandler for Application {
                         && keycode == KeyCode::KeyP
                         && self.current_modifiers.control_key()
                     {
-                        self.editor_ui.show_particle_inspector =
-                            !self.editor_ui.show_particle_inspector;
+                        let state = &mut self.editor_ui.particle_inspector_state;
+                        if state.panel.is_visible() {
+                            state.panel.close();
+                        } else {
+                            state.panel.open();
+                        }
                         info!(
                             "Particle inspector: {}",
-                            if self.editor_ui.show_particle_inspector {
+                            if state.panel.is_visible() {
                                 "visible"
                             } else {
                                 "hidden"

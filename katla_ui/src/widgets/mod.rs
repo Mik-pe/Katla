@@ -1115,3 +1115,8 @@ impl<'a, 'b> crate::Widget for Dropdown<'a, 'b> {
         response
     }
 }
+
+mod draggable_panel;
+pub use draggable_panel::{
+    DraggablePanel, DraggablePanelFrame, DraggablePanelState, DraggablePanelStyle, PanelState,
+};
