@@ -2621,6 +2621,7 @@ impl<'a> Frame<'a> {
 
                 // Swap alive lists after simulate pass completes
                 // This copies alive_next (written by simulate) to alive_current (read by emit next frame)
+                // The alive_count counter is preserved from the simulate pass (no reset, no GPU update)
                 log::debug!("About to call swap_alive_lists()...");
                 particle_system
                     .swap_alive_lists(cmd.vk_command_buffer(), current_frame)
