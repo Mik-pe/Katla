@@ -1,79 +1,5 @@
-//! Modern GPU-driven particle system using single global buffer.
-//!
-//! This module implements a 2025-vulkan particle system with:
-//! - Single global buffer for all emitters
-//! - GPU-driven lifecycle via atomic counters
-//! - Index list management for efficient particle tracking
-//! - Hybrid descriptor approach (static + push descriptors)
-//! - Indirect drawing for optimal GPU utilization
-//!
-//! # Architecture
-//!
-//! ## Data Structures
-//!
-//! - `GlobalParticleSystem`: Main particle system manager
-//! - `GlobalParticleBuffer`: Single buffer for all particles + index lists
-//! - `EmitterConfig`: Per-emitter configuration for particle behavior
-//!
-//! ## Pipeline Flow
-//!
-//! 1. **Compute Pass**: Emit new particles → Simulate alive particles → Update index lists
-//! 2. **Render Pass**: Indirect draw using alive list (only alive particles rendered)
-//!
-//! # Memory Layout
-//!
-//! The particle system uses a single ~60MB GPU buffer for 1M particles:
-//! - Particle data: 48 MB (1M × 48 bytes per particle)
-//! - Dead list: 4 MB (1M × 4 bytes indices)
-//! - Alive list current: 4 MB
-//! - Alive list next: 4 MB
-//! - Counters: 32 bytes (atomic counters)
-//! - Emitter configs: 80 KB (1024 × 80 bytes per emitter)
-//!
-//! # Example
-//!
-//! ```ignore
-//! // Create particle system (typically done during engine initialization)
-//! let mut particle_system = GlobalParticleSystem::new(&context, 1_048_576)?;
-//!
-//! // Create an emitter (e.g., fire effect at specific position)
-//! let fire_emitter = particle_system.create_emitter(EmitterConfig {
-//!     position: [0.0, 1.0, 0.0],
-//!     emit_rate: 1000.0,
-//!     base_lifetime: 2.0,
-//!     velocity_direction: [0.0, 1.0, 0.0],
-//!     velocity_magnitude: 2.0,
-//!     color: [1.0, 0.5, 0.0, 1.0], // Orange
-//!     ..Default::default()
-//! })?;
-//!
-//! // Each frame: update simulation
-//! let alive_count = particle_system.update(delta_time)?;
-//!
-//! // Render particles (after tonemap pass)
-//! particle_system.render(command_buffer, render_pass)?;
-//! ```
-//!
-//! # Performance Characteristics
-//!
-//! - **Memory**: Fixed 60MB GPU allocation for 1M particles
-//! - **CPU**: Minimal overhead (only config updates, no per-particle work)
-//! - **GPU**: Single compute dispatch for emission + simulation
-//! - **Draw**: Indirect draw renders only alive particles (no vertex processing overhead)
-//!
-//! # Integration with ECS
-//!
-//! The particle system integrates with the ECS via `ParticleSystem` wrapper in `katla_app`:
-//!
-//! ```ignore
-//! // In your ECS system
-//! self.particle_system.update(&mut world, &mut renderer.particle_system);
-//!
-//! // Particle emitters are regular ECS components
-//! world.add_entity(entity)
-//!     .with(ParticleEmitterComponent::fire_effect([0.0, 1.0, 0.0]))?
-//!     .build()?;
-//! ```
+//! GPU-driven particle system using a single global buffer with atomic counters,
+//! index list management, and indirect drawing.
 
 pub mod buffer;
 pub mod debug_readback;
@@ -149,36 +75,11 @@ pub const PARTICLE_EMIT_WORKGROUP_SIZE: u32 = 256;
 /// Workgroup size for particle simulate compute shader (must match @workgroup_size in particle_simulate.wgsl)
 pub const PARTICLE_SIMULATE_WORKGROUP_SIZE: u32 = 64;
 
-/// Per-emitter configuration for GPU.
-///
-/// This is uploaded to a storage buffer that the compute shader
-/// accesses when spawning particles.
-///
-/// # Layout
+/// Per-emitter configuration uploaded to a GPU storage buffer.
 ///
 /// Must match WGSL `EmitterConfig` exactly. WGSL `vec3f` has 16-byte alignment
 /// while Rust `[f32; 3]` has 4-byte alignment in `repr(C)`, so explicit padding
-/// fields are required to bridge the gap.
-///
-/// Layout (offsets):
-/// -  0: position [f32; 3]          (12 bytes)
-/// - 12: _pad_position f32           (4 bytes, WGSL vec3f alignment padding)
-/// - 16: shape u32                   (4 bytes)
-/// - 20: emit_rate f32               (4 bytes)
-/// - 24: base_lifetime f32           (4 bytes)
-/// - 28: lifetime_variation f32      (4 bytes)
-/// - 32: velocity_direction [f32; 3] (12 bytes)
-/// - 44: _pad_velocity f32           (4 bytes, WGSL vec3f alignment padding)
-/// - 48: velocity_magnitude f32      (4 bytes)
-/// - 52: velocity_cone_angle f32     (4 bytes)
-/// - 56: base_scale f32              (4 bytes)
-/// - 60: scale_variation f32         (4 bytes)
-/// - 64: color [f32; 4]             (16 bytes)
-/// - 80: color_variation f32         (4 bytes)
-/// - 84: implicit padding            (12 bytes, WGSL vec4f alignment)
-/// - 96: _pad_color Align16Vec4      (16 bytes)
-/// - 112: shape_params [f32; 4]      (16 bytes)
-/// Total: 128 bytes
+/// fields bridge the gap.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 pub struct EmitterConfig {
@@ -450,13 +351,6 @@ pub struct GlobalParticleSystem {
 
 impl GlobalParticleSystem {
     /// Create a new global particle system.
-    ///
-    /// # Arguments
-    /// * `renderer` - Vulkan renderer (borrowed for initialization only)
-    /// * `max_particles` - Maximum particles across all emitters (default: 1M)
-    ///
-    /// # Returns
-    /// Initialized particle system ready for emitter creation
     pub fn new(context: &Rc<VulkanContext>, max_particles: u32) -> Result<Self, String> {
         info!(
             "Initializing modern particle system (max particles: {})",
@@ -534,23 +428,7 @@ impl GlobalParticleSystem {
         Ok(system)
     }
 
-    /// Create a new particle emitter.
-    ///
-    /// This is lightweight - just allocates a config slot.
-    /// No GPU resources are created per-emitter.
-    ///
-    /// # Arguments
-    /// * `config` - Emitter configuration (position, emit rate, color, etc.)
-    ///
-    /// # Returns
-    /// Handle to the emitter for use with update/destroy
-    ///
-    /// # Errors
-    /// Returns error if maximum emitter count (1024) is reached
-    ///
-    /// # Note
-    /// **For game code**: Use the ECS wrapper via `ParticleSystem::update()` in katla_app instead.
-    /// Direct calls to this method should only be used in tests and low-level graphics code.
+    /// Create a new particle emitter. Lightweight — just allocates a config slot.
     pub fn create_emitter(&mut self, config: EmitterConfig) -> Result<EmitterHandle, String> {
         if self.emitters.len() >= MAX_EMITTERS as usize {
             log::warn!(
@@ -603,14 +481,7 @@ impl GlobalParticleSystem {
         }
     }
 
-    /// Burst particles from an emitter immediately.
-    ///
-    /// This overrides the normal emit rate for this frame and emits
-    /// the specified number of particles immediately.
-    ///
-    /// # Arguments
-    /// * `handle` - Emitter handle
-    /// * `count` - Number of particles to burst
+    /// Burst particles from an emitter immediately (overrides emit rate for this frame).
     pub fn burst(&mut self, handle: EmitterHandle, count: u32) -> Result<(), String> {
         if handle.index() < self.emitter_states.len() as u32 {
             self.emitter_states[handle.index() as usize].burst_count = count;
@@ -635,20 +506,7 @@ impl GlobalParticleSystem {
         }
     }
 
-    /// Update particle simulation and emit new particles.
-    ///
-    /// Call this once per frame before rendering.
-    ///
-    /// # Arguments
-    /// * `delta_time` - Frame time in seconds
-    /// * `frame_index` - Current frame index (for per-frame buffer offsets)
-    ///
-    /// # Returns
-    /// Number of active particles this frame
-    ///
-    /// # Errors
-    /// Returns error if frame data upload fails, but gracefully continues
-    /// with cached particle count to avoid rendering interruptions
+    /// Update particle simulation and emit new particles. Call once per frame before rendering.
     pub fn update(&mut self, delta_time: f32, frame_index: u32) -> Result<(u32, u32), String> {
         self.frame_count += 1;
 
@@ -759,16 +617,7 @@ impl GlobalParticleSystem {
                     .filter(|(e, s)| e.emit_rate > 0.0 || s.burst_count > 0)
                     .count() as u32;
 
-                // PROPER DOUBLE-BUFFERING ARCHITECTURE:
-                // 1. Swap (from previous frame) copied alive_next → alive_current[frame_index]
-                // 2. Emit appends new particles to alive_current[frame_index] (after survivors)
-                // 3. Simulate reads ALL particles from alive_current[frame_index] and writes survivors to alive_next
-                // 4. After simulate, swap copies alive_next → alive_current[frame_index] for next frame
-                //
-                // This prevents duplicates and ensures all particles are simulated.
-                //
                 // total_simulate_count = previous survivors + newly emitted particles
-                // All alive particles must be simulated each frame
                 let total_simulate_count = self.cached_alive_count + emit_count + burst_count;
 
                 let frame_data = FrameData {
@@ -791,17 +640,6 @@ impl GlobalParticleSystem {
                     self.cached_alive_count,
                     frame_data.total_simulate_count,
                     frame_data.emitter_count
-                );
-
-                // DIAGNOSTIC: Log frame data being sent to GPU
-                log::debug!(
-                    "FrameData upload: delta_time={:.6}s, emit_count={}, burst_count={}, alive_count={}, simulate_count={}, frame_index={}",
-                    frame_data.delta_time,
-                    frame_data.total_emit_count,
-                    frame_data.burst_count,
-                    self.cached_alive_count,
-                    frame_data.total_simulate_count,
-                    frame_data.frame_index
                 );
 
                 unsafe {
@@ -827,18 +665,7 @@ impl GlobalParticleSystem {
         Ok(())
     }
 
-    /// Render particles.
-    ///
-    /// Uses direct drawing with vertex count based on alive particles.
-    /// Each particle renders as 6 vertices (2 triangles for a quad).
-    ///
-    /// # Arguments
-    /// * `command_buffer` - Command buffer to record draw calls into
-    /// * `render_pass` - Current render pass
-    /// * `pipeline` - Graphics pipeline to use for rendering
-    /// * `layout` - Pipeline layout for descriptor binding
-    /// * `storage_descriptor_set` - Storage descriptor set (Set 1) from renderer containing FrameUniforms
-    /// * `frame_index` - Current frame index (for double-buffering offset)
+    /// Render particles using GPU-driven indirect draw.
     pub fn render(
         &mut self,
         command_buffer: vk::CommandBuffer,
@@ -907,13 +734,7 @@ impl GlobalParticleSystem {
         Ok(())
     }
 
-    /// Update alive_list descriptor binding offsets for compute shaders.
-    ///
-    /// This must be called before each compute dispatch to ensure the
-    /// shader reads from and writes to the correct buffer regions.
-    ///
-    /// # Arguments
-    /// * `frame_index` - Current frame index (0 or 1)
+    /// Update alive_list descriptor binding offsets for compute shaders (call before each dispatch).
     pub fn update_compute_descriptor_binding(&self, frame_index: usize) -> Result<(), String> {
         let device = &self.context.device;
         let descriptor_set = self
@@ -962,11 +783,7 @@ impl GlobalParticleSystem {
         Ok(())
     }
 
-    /// Update alive_list descriptor binding offset for render shaders.
-    ///
-    /// This must be called each frame before rendering to ensure the shader
-    /// reads from the correct frame's alive_list region.
-    /// The Vulkan binding handles the per-frame offset transparently.
+    /// Update alive_list descriptor binding offset for render shaders (call each frame before rendering).
     fn update_alive_descriptor_binding(&self, frame_index: usize) -> Result<(), String> {
         let device = &self.context.device;
         let descriptor_set = self
@@ -1007,17 +824,7 @@ impl GlobalParticleSystem {
         self.cached_alive_count
     }
 
-    /// Set cached alive count from external readback (e.g., debug readback).
-    ///
-    /// The debug readback copies counters via `vkCmdCopyBuffer` which is
-    /// more reliable than reading from HOST_COHERENT memory directly.
-    /// Use this after submitting the command buffer with
-    /// `record_debug_readback()` and waiting on the GPU fence.
-    ///
-    /// This is needed because on some GPUs/drivers, reading the alive_count
-    /// directly from the counters buffer (via get_alive_count) returns stale
-    /// data due to GPU write visibility issues with atomics on HOST_COHERENT memory.
-    /// The debug readback copies counters via vkCmdCopyBuffer which is more reliable.
+    /// Set cached alive count from external readback (e.g., debug readback via `vkCmdCopyBuffer`).
     pub fn set_alive_count(&mut self, count: u32) {
         self.cached_alive_count = count;
     }
@@ -1027,11 +834,7 @@ impl GlobalParticleSystem {
         &self.emitters
     }
 
-    /// Calculate particles to emit this frame using fractional accumulation.
-    ///
-    /// This handles rate-based emission by accumulating fractional particles
-    /// across frames, ensuring we emit the correct number over time even when
-    /// emit_rate * delta_time < 1.0 per frame.
+    /// Calculate particles to emit this frame using fractional accumulation across frames.
     pub fn calculate_emit_count(&mut self, delta_time: f32) -> u32 {
         let mut total_emit = 0u32;
 
@@ -1153,10 +956,7 @@ impl GlobalParticleSystem {
         }
     }
 
-    /// Initialize debug readback for particle data inspection.
-    ///
-    /// This creates staging buffers for copying particle data from GPU to CPU.
-    /// Call this once during initialization if you need to debug particle data.
+    /// Initialize debug readback for particle data inspection (staging buffer GPU→CPU copies).
     pub fn init_debug_readback(&mut self) -> Result<(), String> {
         if self.debug_readback.is_some() {
             warn!("Debug readback already initialized");
@@ -1170,16 +970,7 @@ impl GlobalParticleSystem {
         Ok(())
     }
 
-    /// Record copy commands for debug readback.
-    ///
-    /// Call this during frame recording to copy particle data to staging buffers.
-    /// The command buffer must be submitted and waited on before calling read_debug_data().
-    ///
-    /// # Arguments
-    /// * `command_buffer` - Command buffer to record copy commands into
-    ///
-    /// # Returns
-    /// Ok(()) if copy commands were recorded successfully
+    /// Record copy commands for debug readback. Submit and wait on GPU fence before calling `read_debug_data()`.
     pub fn record_debug_readback(
         &mut self,
         command_buffer: vk::CommandBuffer,
@@ -1192,13 +983,7 @@ impl GlobalParticleSystem {
         }
     }
 
-    /// Read debug data from staging buffers.
-    ///
-    /// This must be called AFTER the command buffer with record_debug_readback()
-    /// has been submitted and fully executed (GPU fence wait).
-    ///
-    /// # Returns
-    /// Particle debug data containing particles, index lists, and counters
+    /// Read debug data from staging buffers. Must be called after GPU fence wait.
     pub fn read_debug_data(&self) -> Result<ParticleDebugData, String> {
         if let Some(ref readback) = self.debug_readback {
             readback.read(&self.buffer)
@@ -2537,23 +2322,6 @@ impl GlobalParticleSystem {
     /// * `emitted_count` - Number of particles emitted this frame
     pub fn update_emission_stats(&mut self, emitted_count: u32) {
         self.total_emitted += emitted_count as u64;
-    }
-
-    /// Update death statistics.
-    ///
-    /// Call this after particle simulation to track particles that died this frame.
-    ///
-    /// # Arguments
-    /// * `died_count` - Number of particles that died this frame
-    pub fn update_death_stats(&mut self, died_count: u32) {
-        self.total_died += died_count as u64;
-    }
-
-    /// Increment dispatch counter.
-    ///
-    /// Call this after each compute dispatch to track total dispatches.
-    pub fn increment_dispatch_count(&mut self) {
-        self.total_dispatches += 1;
     }
 
     /// Get maximum particle capacity.

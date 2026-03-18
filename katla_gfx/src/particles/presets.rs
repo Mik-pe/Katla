@@ -1,7 +1,4 @@
-//! Particle effect presets system.
-//!
-//! This module provides functionality for saving and loading particle emitter
-//! configurations as JSON files, allowing easy reuse and sharing of effects.
+//! Particle effect presets — save and load emitter configurations as JSON.
 
 use serde::{Deserialize, Serialize};
 use std::fs;

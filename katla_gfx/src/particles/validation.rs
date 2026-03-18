@@ -1,9 +1,4 @@
-//! CPU-side validation for particle system safety.
-//!
-//! Provides validation methods to detect:
-//! - Counter corruption (alive/dead count inconsistencies)
-//! - Invalid emitter configurations
-//! - System state validation
+//! CPU-side validation for particle system safety (counter corruption, config validity).
 
 use crate::particles::EmitterConfig;
 

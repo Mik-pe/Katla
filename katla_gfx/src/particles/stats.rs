@@ -1,14 +1,8 @@
-//! Statistics tracking for the particle system.
-//!
-//! This module provides comprehensive statistics collection and reporting
-//! for particle system performance and behavior monitoring.
+//! Statistics tracking for particle system performance and behavior monitoring.
 
 use serde::{Deserialize, Serialize};
 
-/// Comprehensive particle system statistics.
-///
-/// Tracks particle counts, performance metrics, memory usage, and
-/// lifetime statistics for debugging and monitoring.
+/// Particle system statistics snapshot.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ParticleStats {
     // Particle counts
