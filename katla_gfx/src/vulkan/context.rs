@@ -269,6 +269,7 @@ pub struct VulkanContext {
     debug_utils_loader: DebugInstance,
     debug_callback: Option<vk::DebugUtilsMessengerEXT>,
     validation_callback: Arc<Mutex<ValidationCallbackStorage>>,
+    gpu_assisted_validation: bool,
     /// Whether VK_KHR_push_descriptor is enabled for per-draw texture binding in UI.
     pub push_descriptor_enabled: bool,
     /// Cached KHR push descriptor function pointer for efficient access.
@@ -831,6 +832,7 @@ impl VulkanContext {
             debug_utils_loader,
             debug_callback,
             validation_callback,
+            gpu_assisted_validation: validation_mode.is_gpu_assisted(),
             push_descriptor_enabled: true,
             push_descriptor_khr,
             non_coherent_atom_size,
@@ -969,6 +971,7 @@ impl VulkanContext {
             debug_utils_loader,
             debug_callback,
             validation_callback,
+            gpu_assisted_validation: validation_mode.is_gpu_assisted(),
             push_descriptor_enabled: true,
             push_descriptor_khr,
             non_coherent_atom_size,
@@ -1011,7 +1014,23 @@ impl VulkanContext {
     /// - Info messages → `info!`
     /// - Verbose messages → `debug!`
     pub fn setup_validation_logging(&self) {
-        self.set_validation_callback_detailed(Box::new(|msg| {
+        let is_gpu_av = self.gpu_assisted_validation;
+
+        self.set_validation_callback_detailed(Box::new(move |msg| {
+            // GPU-AV false positive on Intel: when multiple passes with different pipelines
+            // share a command buffer, GPU-AV can report wrong descriptor bound ranges for
+            // storage buffer access. The reported range matches a push descriptor buffer size
+            // rather than the actual descriptor range. Core validation catches real OOB errors.
+            // This is confirmed absent in single-pass GPU-AV (e.g. particle_validation example).
+            // Ref: https://github.com/KhronosGroup/Vulkan-ValidationLayers/issues/7737
+            if is_gpu_av {
+                if let Some(ref vuid) = msg.vuid {
+                    if vuid.contains("storageBuffers-06936") {
+                        return false;
+                    }
+                }
+            }
+
             let prefix = if let Some(ref vuid) = msg.vuid {
                 format!("[{}]", vuid)
             } else {
@@ -1032,7 +1051,7 @@ impl VulkanContext {
                     log::debug!("{} {}", prefix, msg.message);
                 }
             }
-            false // Don't break on any message
+            false
         }));
     }
 }
