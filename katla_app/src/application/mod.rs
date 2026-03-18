@@ -401,8 +401,18 @@ impl ApplicationHandler for Application {
                     }
                 }
 
-                // Note: Transient textures are now single-buffered
-                // Bindless indices are set once during initialization
+                // Note: Transient textures are double-buffered (one per FRAMES_IN_FLIGHT).
+                // The viewport bindless index must be updated BEFORE generating the UI
+                // draw list so the UI samples from the correct per-frame texture.
+                // Doing it after would cause an off-by-one mismatch: the UI would
+                // sample from the previous frame's stale texture.
+                {
+                    let frame_idx = self.renderer.current_frame();
+                    if let Some(base_ldr_index) = self.frame_graph.get_ldr_texture_base_index() {
+                        let actual_ldr_index = base_ldr_index + frame_idx as u32;
+                        self.editor_ui.set_viewport_bindless_index(actual_ldr_index);
+                    }
+                }
 
                 // Generate UI draw list BEFORE frame graph execution
                 debug!("Generating UI draw list...");

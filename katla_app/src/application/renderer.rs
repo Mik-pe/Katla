@@ -17,21 +17,9 @@ impl Application {
         delta_time: f32,
         frame_count: usize,
     ) {
-        // Get frame-in-flight index for per-frame resource selection
-        let frame_idx = self.renderer.current_frame();
-
-        // Update viewport bindless index for this frame's LDR texture
-        // With per-frame transient textures, the correct slot is base_slot + frame_idx
-        if let Some(base_ldr_index) = self.frame_graph.get_ldr_texture_base_index() {
-            let actual_ldr_index = base_ldr_index + frame_idx as u32;
-            log::trace!(
-                "Viewport bindless index: base={}, frame_idx={}, actual={}",
-                base_ldr_index,
-                frame_idx,
-                actual_ldr_index
-            );
-            self.editor_ui.set_viewport_bindless_index(actual_ldr_index);
-        }
+        // Note: viewport bindless index is updated BEFORE generate_ui_draw_list()
+        // in the RedrawRequested handler to ensure the UI samples from the
+        // correct per-frame transient texture.
 
         // Update camera aspect ratio based on viewport panel size
         let (viewport_width, viewport_height) = self.editor_ui.viewport_size();

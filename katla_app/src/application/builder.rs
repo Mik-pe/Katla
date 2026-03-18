@@ -301,7 +301,15 @@ impl ApplicationBuilder {
             )
             // UI pass: draws editor UI to backbuffer
             // Note: UI composites on top of the background pass
-            .add_pass(UIPass::new("ui").write("backbuffer").material(ui_material))
+            // Declares viewport_0 as a read dependency so the render graph inserts
+            // a layout transition (COLOR_ATTACHMENT -> SHADER_READ_ONLY) before
+            // the UI shader samples from it via the bindless system.
+            .add_pass(
+                UIPass::new("ui")
+                    .write("backbuffer")
+                    .read("viewport_0")
+                    .material(ui_material),
+            )
             .build()
             .map_err(|e| crate::error::AppError::Graphics {
                 message: e.to_string(),
