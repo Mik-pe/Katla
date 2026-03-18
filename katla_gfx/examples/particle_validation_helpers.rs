@@ -508,8 +508,6 @@ pub fn execute_gpu_compute(
     }
 
     // Record render dispatch to exercise the full GPU pipeline
-    // This triggers vkCmdDraw which will access particle buffers from the vertex shader,
-    // allowing Vulkan validation layers to catch out-of-bounds storage access errors.
     if let Some(render_res) = render_resources
         && let Err(e) = record_render_dispatch(
             context,
@@ -532,11 +530,8 @@ pub fn execute_gpu_compute(
     Ok(())
 }
 
-/// Record a render (draw) dispatch to exercise the particle vertex shader.
-///
-/// Uses dynamic rendering with 1x1 color + depth attachments.
-/// The vertex shader reads from the particle buffer, which triggers
-/// Vulkan validation layer errors if the buffer bindings are wrong.
+/// Record a render dispatch using dynamic rendering with 1x1 color + depth attachments.
+
 fn record_render_dispatch(
     context: &VulkanContext,
     particle_system: &mut GlobalParticleSystem,
