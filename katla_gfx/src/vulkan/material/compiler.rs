@@ -86,6 +86,12 @@ pub(crate) struct MaterialCompiler {
     /// Compositing descriptor set layout (Set 2 for compositing pass)
     /// Set dynamically when compiling compositing materials
     compositing_descriptor_set_layout: Option<vk::DescriptorSetLayout>,
+    /// Light culling descriptor set layout (Set 3 for PBR materials with dynamic lights)
+    light_culling_descriptor_layout: Option<vk::DescriptorSetLayout>,
+    /// Empty placeholder descriptor set layout (Set 2 for PBR materials without skeleton)
+    empty_descriptor_layout: vk::DescriptorSetLayout,
+    /// Flag to prevent double-free of empty descriptor layout
+    empty_descriptor_layout_destroyed: bool,
     /// Shared descriptor pool for skeleton descriptor sets
     skeleton_descriptor_pool: vk::DescriptorPool,
     /// Flag to prevent double-free of skeleton resources
@@ -175,6 +181,21 @@ impl MaterialCompiler {
             ))
         })?;
 
+        // Empty placeholder descriptor set layout (Set 2 for PBR materials without skeleton)
+        // Ensures light culling always occupies Set 3 in the pipeline layout
+        let empty_layout_info = vk::DescriptorSetLayoutCreateInfo::default();
+        let empty_descriptor_layout = unsafe {
+            context
+                .device
+                .create_descriptor_set_layout(&empty_layout_info, None)
+        }
+        .map_err(|e| {
+            MaterialError::ShaderCompilation(format!(
+                "Failed to create empty descriptor layout: {:?}",
+                e
+            ))
+        })?;
+
         Ok(Self {
             shader_cache: Rc::new(RefCell::new(ShaderCache::new(context.device.clone()))),
             context,
@@ -182,6 +203,9 @@ impl MaterialCompiler {
             bindless_descriptor_layout,
             skeleton_descriptor_layout,
             compositing_descriptor_set_layout: None,
+            light_culling_descriptor_layout: None,
+            empty_descriptor_layout,
+            empty_descriptor_layout_destroyed: false,
             skeleton_descriptor_pool,
             skeleton_descriptor_destroyed: false,
             ui_descriptor_layouts: Vec::new(),
@@ -367,9 +391,22 @@ impl MaterialCompiler {
             self.bindless_descriptor_layout,
         ];
 
-        // Add skeleton layout for skinned materials
+        // Add skeleton layout for skinned materials (Set 2)
+        // For PBR materials without skeleton, we still need a placeholder at Set 2
+        // so that light culling consistently occupies Set 3 in the pipeline layout.
         if matches!(options.vertex_type, VertexType::Skinned) {
             layouts.push(self.skeleton_descriptor_layout);
+        } else if matches!(options.vertex_type, VertexType::Pbr) {
+            // Placeholder empty layout at Set 2 to keep light culling at Set 3
+            layouts.push(self.empty_descriptor_layout);
+        }
+
+        // Add light culling descriptor set layout (Set 3) for PBR materials
+        // Both PBR and Skinned materials support Forward+ dynamic lighting
+        if matches!(options.vertex_type, VertexType::Pbr | VertexType::Skinned)
+            && let Some(layout) = self.light_culling_descriptor_layout
+        {
+            layouts.push(layout);
         }
 
         // Add compositing descriptor set layout (set 2) for compositing materials
@@ -451,6 +488,14 @@ impl MaterialCompiler {
     /// Clear the compositing descriptor set layout after compilation.
     pub(crate) fn clear_compositing_descriptor_set_layout(&mut self) {
         self.compositing_descriptor_set_layout = None;
+    }
+
+    /// Set the light culling descriptor set layout for compiling PBR materials.
+    ///
+    /// This must be set before compiling PBR materials. The layout comes from
+    /// the LightCullingBuffers and is used as Set 3 in the PBR pipeline.
+    pub(crate) fn set_light_culling_descriptor_layout(&mut self, layout: vk::DescriptorSetLayout) {
+        self.light_culling_descriptor_layout = Some(layout);
     }
 
     fn build_pipeline(
@@ -544,6 +589,16 @@ impl MaterialCompiler {
                     .destroy_descriptor_pool(self.skeleton_descriptor_pool, None);
             }
             self.skeleton_descriptor_destroyed = true;
+        }
+
+        // Destroy empty placeholder descriptor set layout
+        if !self.empty_descriptor_layout_destroyed {
+            unsafe {
+                self.context
+                    .device
+                    .destroy_descriptor_set_layout(self.empty_descriptor_layout, None);
+            }
+            self.empty_descriptor_layout_destroyed = true;
         }
 
         // Destroy UI descriptor set layouts (created per UI material)

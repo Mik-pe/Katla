@@ -66,6 +66,13 @@ impl Application {
         // before writing to per-frame storage buffers.
         self.renderer.wait_for_frame();
 
+        // Compute tile grid dimensions for Forward+ light culling
+        // Must match the render target (swapchain) size, NOT the editor viewport panel size,
+        // because clip_position in the fragment shader covers the full render target.
+        let extent = self.renderer.swapchain_extent();
+        let tiles_x = extent.width.div_ceil(16);
+        let tiles_y = extent.height.div_ceil(16);
+
         let frame_uniforms = FrameUniforms {
             view_matrix: view_mat.to_array(),
             proj_matrix: proj_mat.to_array(),
@@ -76,14 +83,20 @@ impl Application {
             light_color: [1.0, 0.98, 0.95, 0.0],
             light_intensity: 1.0,
         };
-        frame.set_frame_uniforms(frame_uniforms);
+        frame.set_frame_uniforms(frame_uniforms.clone());
 
         // Collect draw calls from ECS world using FrameContext
         self.collect_draws_with_context(&mut frame);
 
+        // Collect point lights from ECS world and upload to GPU for Forward+ culling
+        self.collect_and_upload_lights();
+
         // Apply frame uniforms to renderer
         self.renderer
             .set_frame_uniforms(frame.frame_uniforms().clone());
+
+        // Set tile grid dimensions for Forward+ light culling
+        self.renderer.set_light_culling_tiles(tiles_x, tiles_y);
 
         // Execute draw calls (writes per-object data to storage buffer)
         if let Err(e) = self.renderer.execute_draw_calls(frame.draw_list()) {
@@ -248,6 +261,34 @@ impl Application {
                 }
             }
         }
+    }
+
+    /// Collect point lights from the ECS world and upload to the GPU
+    /// for Forward+ tile-based light culling.
+    fn collect_and_upload_lights(&mut self) {
+        use crate::components::{PointLight, TransformComponent};
+        use katla_gfx::lighting::PointLightGPU;
+
+        let mut lights = Vec::new();
+        for (_entity, point_light, transform) in
+            self.world.query::<(&PointLight, &TransformComponent)>()
+        {
+            let pos = transform.transform.position;
+            lights.push(PointLightGPU {
+                position: [pos.x(), pos.y(), pos.z()],
+                range: point_light.range,
+                color: point_light.color,
+                intensity: point_light.intensity,
+            });
+        }
+
+        if !lights.is_empty() {
+            log::debug!(
+                "Uploading {} point lights to GPU for Forward+ culling",
+                lights.len()
+            );
+        }
+        self.renderer.upload_lights(&lights);
     }
 
     /// Collect drawable components from the ECS world and submit to FrameContext.

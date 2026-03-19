@@ -2289,6 +2289,7 @@ impl<'a> Frame<'a> {
     /// - Set 0: Storage uniforms (frame_data + objects array) - always bound
     /// - Set 1: Bindless textures - always bound for current materials
     /// - Set 2: Skeleton joint matrices - bound only for skinned mesh draws
+    /// - Set 3: Light culling data - bound when light culling is active
     fn bind_descriptor_sets(
         &mut self,
         cmd: &crate::vulkan::commandbuffer::CommandBuffer,
@@ -2311,6 +2312,13 @@ impl<'a> Frame<'a> {
                 .get_skeleton_descriptor(draw_call.skeleton)
                 .ok_or(RenderGraphError::InvalidSkeletonHandle(draw_call.skeleton))?;
             cmd.bind_descriptor_sets(pipeline_layout, 2, &[skeleton_ds.vk_set()], &[]);
+        }
+
+        // Set 3: Forward+ light culling data (push descriptors when active)
+        if let Some(lc) = self.renderer.light_culling_buffers()
+            && let Err(e) = lc.push_fragment_descriptors(cmd.vk_command_buffer(), pipeline_layout)
+        {
+            log::warn!("Failed to push light culling fragment descriptors: {}", e);
         }
 
         Ok(())

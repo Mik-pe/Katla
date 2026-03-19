@@ -434,6 +434,23 @@ impl StorageUniformManager {
         );
     }
 
+    /// Write Forward+ tile grid dimensions into the light_intensity vec4.
+    ///
+    /// The GPU shader reads `frame_data.light_intensity.yz` as tiles_x/tiles_y.
+    /// This must be called after `update_from_frame_uniforms` each frame.
+    pub fn set_light_culling_tiles(&mut self, frame_index: usize, tiles_x: u32, tiles_y: u32) {
+        let buffer = &mut self.buffers[frame_index];
+        unsafe {
+            let mapped = buffer.map();
+            // light_intensity is at offset: 3*64 + 3*16 = 192 + 48 = 240 bytes
+            // light_intensity is [f32; 4] starting at byte 240
+            let intensity_ptr = mapped.as_ptr().add(240) as *mut f32;
+            *intensity_ptr.add(1) = tiles_x as f32;
+            *intensity_ptr.add(2) = tiles_y as f32;
+        }
+        buffer.flush(240, 16);
+    }
+
     /// Update object uniforms at specific index.
     ///
     /// Writes per-object data (model matrix + color) to the object array.
