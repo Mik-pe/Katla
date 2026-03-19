@@ -201,7 +201,7 @@ pub use handle::{
 };
 
 // Material system
-pub use material::{Material, MaterialDomain, RenderState, ShaderSource};
+pub use material::MaterialDomain;
 
 // Material creation API (used by application layer)
 pub use vulkan::material::compiler::{MaterialBuilder, MaterialOptions, VertexType};

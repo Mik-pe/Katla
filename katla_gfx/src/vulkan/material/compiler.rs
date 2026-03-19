@@ -210,7 +210,7 @@ impl MaterialCompiler {
                 fully_compiled: false,
                 shader_path: Some(shader_path.to_path_buf()),
                 vertex_binding,
-                material_data: crate::renderer::registry::MaterialData::default(),
+                textures: crate::renderer::registry::MaterialTextures::default(),
                 material_descriptor_set: None,
                 material_descriptor_layout: None,
             };
@@ -245,7 +245,7 @@ impl MaterialCompiler {
             fully_compiled: true,
             shader_path: None,
             vertex_binding,
-            material_data: crate::renderer::registry::MaterialData::default(),
+            textures: crate::renderer::registry::MaterialTextures::default(),
             material_descriptor_set: None,
             material_descriptor_layout: None,
         };

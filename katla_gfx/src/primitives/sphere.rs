@@ -283,7 +283,12 @@ pub fn generate_icosphere(radius: f32, subdivisions: u32) -> (Vec<VertexPBR>, Ve
         let u = normal[2].atan2(normal[0]) / (2.0 * std::f32::consts::PI) + 0.5;
         let v = normal[1].acos() / std::f32::consts::PI;
 
-        vertices.push(VertexPBR::new(position, normal, [tangent[0], tangent[1], tangent[2], handedness], [u, v]));
+        vertices.push(VertexPBR::new(
+            position,
+            normal,
+            [tangent[0], tangent[1], tangent[2], handedness],
+            [u, v],
+        ));
     }
 
     // Build index buffer
