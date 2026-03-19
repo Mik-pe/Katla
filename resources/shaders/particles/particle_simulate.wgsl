@@ -138,10 +138,17 @@ fn cs_main(@builtin(global_invocation_id) global_id: vec3u) {
                     alive_list_next[survivor_slot] = particle_idx;
                 }
             } else {
-                // Particle died - return index to dead list for reuse by emit shader
+                // Particle died - return index to dead list for reuse by emit shader.
+                // Clamp dead_count to MAX_PARTICLES to prevent the counter from drifting
+                // beyond the valid range, which would permanently block emission.
                 let dead_slot = atomicAdd(&counters.dead_count, 1u);
                 if (dead_slot < MAX_PARTICLES) {
                     dead_list[dead_slot] = particle_idx;
+                } else {
+                    // Counter overshot — restore it so emit doesn't see a corrupted value.
+                    // This particle index is lost but that's safe: at MAX_PARTICLES dead,
+                    // there are no alive particles that could die.
+                    atomicSub(&counters.dead_count, 1u);
                 }
             }
         }
