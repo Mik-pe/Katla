@@ -14,15 +14,17 @@
 //! # Architecture
 //! ```text
 //! ┌─────────────────────────────────────────────────────────────┐
-//! │ Storage Uniform Buffer (~24KB, persistent mapping)          │
-//! ├─ [Frame Uniforms: 192 bytes]                               │
+//! │ Storage Uniform Buffer (~29KB, persistent mapping)          │
+//! ├─ [Frame Uniforms: 272 bytes]                               │
 //! │  ├─ view: mat4x4 (64 bytes)                                │
 //! │  ├─ proj: mat4x4 (64 bytes)                                │
+//! │  ├─ inv_view_proj: mat4x4 (64 bytes)                       │
 //! │  ├─ camera_position: vec4 (16 bytes)                       │
 //! │  ├─ light_direction: vec4 (16 bytes)                       │
 //! │  ├─ light_color: vec4 (16 bytes)                           │
-//! │  └─ light_intensity: vec4 (16 bytes)                       │
-//! ├─ [Object Array: 96 bytes × 256 = 24,576 bytes]             │
+//! │  ├─ light_intensity: vec4 (16 bytes)                       │
+//! │  └─ tiles: vec4<u32> (16 bytes)                            │
+//! ├─ [Object Array: 112 bytes × 256 = 28,672 bytes]            │
 //! │    ├─ Object[0]: model (64) + color (16) + material (16)   │
 //! │    ├─ Object[1]: model (64) + color (16) + material (16)   │
 //! │    ├─ ...                                                   │
@@ -112,8 +114,8 @@ impl StorageDescriptorSet {
         buffer_size: vk::DeviceSize,
     ) -> Result<Self, RendererError> {
         // Create descriptor set layout
-        // Binding 0: frame_data (storage buffer, first 256 bytes)
-        // Binding 1: objects array (storage buffer, starting at offset 256)
+        // Binding 0: frame_data (storage buffer, first OBJECT_ARRAY_OFFSET bytes)
+        // Binding 1: objects array (storage buffer, starting at offset OBJECT_ARRAY_OFFSET)
         let bindings = [
             vk::DescriptorSetLayoutBinding::default()
                 .binding(0)
@@ -159,11 +161,11 @@ impl StorageDescriptorSet {
         let descriptor_set = descriptor_sets[0];
 
         // Write buffer descriptors
-        // Binding 0: frame_data (offset 0, size 256)
+        // Binding 0: frame_data (offset 0, size OBJECT_ARRAY_OFFSET)
         let frame_buffer_info = [vk::DescriptorBufferInfo::default()
             .buffer(storage_buffer)
             .offset(0)
-            .range(256)];
+            .range(StorageUniformLayout::OBJECT_ARRAY_OFFSET as u64)];
 
         let frame_write = vk::WriteDescriptorSet::default()
             .dst_set(descriptor_set)
@@ -173,11 +175,11 @@ impl StorageDescriptorSet {
             .descriptor_count(1)
             .buffer_info(&frame_buffer_info);
 
-        // Binding 1: objects array (offset 256, remaining buffer)
+        // Binding 1: objects array (offset OBJECT_ARRAY_OFFSET, remaining buffer)
         let objects_buffer_info = [vk::DescriptorBufferInfo::default()
             .buffer(storage_buffer)
-            .offset(256)
-            .range(buffer_size - 256)];
+            .offset(StorageUniformLayout::OBJECT_ARRAY_OFFSET as u64)
+            .range(buffer_size - StorageUniformLayout::OBJECT_ARRAY_OFFSET as u64)];
 
         let objects_write = vk::WriteDescriptorSet::default()
             .dst_set(descriptor_set)
@@ -212,7 +214,7 @@ impl StorageDescriptorSet {
 /// Frame-level uniforms (view and projection matrices + lighting).
 ///
 /// Shared across all objects in the buffer.
-/// Total: 320 bytes (3 × mat4x4 + 4 × vec4).
+/// Total: 272 bytes (3 × mat4x4 + 4 × vec4 + 1 × vec4<u32>).
 #[derive(Debug, Clone, Copy)]
 #[allow(dead_code)] // NB: Dead code since we only use this for sizes
 pub struct FrameUniforms {
@@ -237,6 +239,9 @@ pub struct FrameUniforms {
 
     /// Light intensity.
     pub light_intensity: [f32; 4], // single f32 + padding
+
+    /// Forward+ tile grid dimensions: [tiles_x, tiles_y, 0, 0].
+    pub tiles: [u32; 4],
 }
 
 /// Per-object uniforms (model matrix, color, PBR params, and bindless texture indices).
@@ -267,8 +272,8 @@ pub struct ObjectUniforms {
 pub struct StorageUniformLayout;
 
 impl StorageUniformLayout {
-    /// Object array starts after frame uniforms (offset 256).
-    pub const OBJECT_ARRAY_OFFSET: usize = 256;
+    /// Object array starts after frame uniforms (offset 272).
+    pub const OBJECT_ARRAY_OFFSET: usize = 272;
 
     /// Size per object (1 × mat4x4 + 3 × vec4 = 112 bytes).
     pub const OBJECT_STRIDE: usize = std::mem::size_of::<ObjectUniforms>();
@@ -277,7 +282,7 @@ impl StorageUniformLayout {
     pub const MAX_OBJECTS: usize = 256;
 
     /// Total buffer size for max objects.
-    /// 256 + (112 * 256) = 256 + 28672 = 28928 bytes (~28 KB)
+    /// 272 + (112 * 256) = 272 + 28672 = 28944 bytes (~28 KB)
     pub const MAX_BUFFER_SIZE: usize =
         Self::OBJECT_ARRAY_OFFSET + (Self::OBJECT_STRIDE * Self::MAX_OBJECTS);
 }
@@ -347,7 +352,7 @@ impl StorageUniformManager {
     /// Update frame uniforms (view, projection, and lighting).
     ///
     /// This writes the frame data to the start of the specified frame's buffer
-    /// (offset 0, 256 bytes total). Should be called once per frame.
+    /// (offset 0, 272 bytes total). Should be called once per frame.
     ///
     /// # Arguments
     /// * `frame_index` - Frame index (0 to frames_in_flight-1)
@@ -368,6 +373,7 @@ impl StorageUniformManager {
             &[0.3, 1.0, 0.2, 0.0], // light_direction (upward toward sun)
             &[1.0, 0.98, 0.95, 0.0], // light_color (slightly warm white)
             3.0,                   // light_intensity (HDR - brighter for PBR)
+            [0, 0, 0, 0],          // tiles (no light culling by default)
         );
     }
 
@@ -382,6 +388,7 @@ impl StorageUniformManager {
     /// * `light_direction` - Normalized direction TO the light
     /// * `light_color` - Light color (RGB)
     /// * `light_intensity` - Light intensity multiplier
+    /// * `tiles` - Forward+ tile grid dimensions [tiles_x, tiles_y, 0, 0]
     #[allow(clippy::too_many_arguments)]
     pub fn update_frame_with_lighting(
         &mut self,
@@ -393,6 +400,7 @@ impl StorageUniformManager {
         light_direction: &[f32; 4],
         light_color: &[f32; 4],
         light_intensity: f32,
+        tiles: [u32; 4],
     ) {
         let buffer = &mut self.buffers[frame_index];
         unsafe {
@@ -406,6 +414,7 @@ impl StorageUniformManager {
                 light_direction: *light_direction,
                 light_color: *light_color,
                 light_intensity: [light_intensity, 0.0, 0.0, 0.0],
+                tiles,
             };
         }
         // Flush frame uniforms to make CPU writes visible to GPU
@@ -431,24 +440,8 @@ impl StorageUniformManager {
             &frame.light_direction,
             &frame.light_color,
             frame.light_intensity,
+            frame.tiles,
         );
-    }
-
-    /// Write Forward+ tile grid dimensions into the light_intensity vec4.
-    ///
-    /// The GPU shader reads `frame_data.light_intensity.yz` as tiles_x/tiles_y.
-    /// This must be called after `update_from_frame_uniforms` each frame.
-    pub fn set_light_culling_tiles(&mut self, frame_index: usize, tiles_x: u32, tiles_y: u32) {
-        let buffer = &mut self.buffers[frame_index];
-        unsafe {
-            let mapped = buffer.map();
-            // light_intensity is at offset: 3*64 + 3*16 = 192 + 48 = 240 bytes
-            // light_intensity is [f32; 4] starting at byte 240
-            let intensity_ptr = mapped.as_ptr().add(240) as *mut f32;
-            *intensity_ptr.add(1) = tiles_x as f32;
-            *intensity_ptr.add(2) = tiles_y as f32;
-        }
-        buffer.flush(240, 16);
     }
 
     /// Update object uniforms at specific index.
@@ -672,8 +665,8 @@ mod tests {
 
     #[test]
     fn test_frame_uniforms_size() {
-        // 3 mat4x4 (192 bytes) + 4 vec4 (64 bytes) = 256 bytes
-        assert_eq!(std::mem::size_of::<FrameUniforms>(), 256);
+        // 3 mat4x4 (192 bytes) + 4 vec4 (64 bytes) + 1 vec4<u32> (16 bytes) = 272 bytes
+        assert_eq!(std::mem::size_of::<FrameUniforms>(), 272);
     }
 
     #[test]
@@ -684,20 +677,20 @@ mod tests {
 
     #[test]
     fn test_layout_constants() {
-        assert_eq!(StorageUniformLayout::OBJECT_ARRAY_OFFSET, 256);
+        assert_eq!(StorageUniformLayout::OBJECT_ARRAY_OFFSET, 272);
         assert_eq!(StorageUniformLayout::OBJECT_STRIDE, 112);
         assert_eq!(StorageUniformLayout::MAX_OBJECTS, 256);
-        // 256 + (112 * 256) = 256 + 28672 = 28928
-        assert_eq!(StorageUniformLayout::MAX_BUFFER_SIZE, 28928);
+        // 272 + (112 * 256) = 272 + 28672 = 28944
+        assert_eq!(StorageUniformLayout::MAX_BUFFER_SIZE, 28944);
     }
 
     #[test]
     fn test_object_offset_calculation() {
-        // Object 0: offset 256
-        assert_eq!(StorageUniformLayout::object_offset(0), 256);
-        // Object 1: offset 256 + 112 = 368
-        assert_eq!(StorageUniformLayout::object_offset(1), 368);
-        // Object 255: offset 256 + (112 * 255) = 256 + 28560 = 28816
-        assert_eq!(StorageUniformLayout::object_offset(255), 28816);
+        // Object 0: offset 272
+        assert_eq!(StorageUniformLayout::object_offset(0), 272);
+        // Object 1: offset 272 + 112 = 384
+        assert_eq!(StorageUniformLayout::object_offset(1), 384);
+        // Object 255: offset 272 + (112 * 255) = 272 + 28560 = 28832
+        assert_eq!(StorageUniformLayout::object_offset(255), 28832);
     }
 }

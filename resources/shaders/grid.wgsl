@@ -18,6 +18,7 @@ struct FrameUniforms {
     light_direction: vec4f,
     light_color: vec4f,
     light_intensity: vec4f,
+    tiles: vec4<u32>,
 }
 
 // Per-object uniforms (not used by grid, but required for descriptor compatibility)

@@ -28,6 +28,8 @@ pub struct FrameUniforms {
     pub light_color: [f32; 4],
     /// Light intensity.
     pub light_intensity: f32,
+    /// Forward+ tile grid dimensions: [tiles_x, tiles_y, 0, 0].
+    pub tiles: [u32; 4],
 }
 
 impl Default for FrameUniforms {
@@ -40,6 +42,7 @@ impl Default for FrameUniforms {
             light_direction: [0.3, 1.0, 0.2, 0.0], // Upward toward sun
             light_color: [1.0, 0.98, 0.95, 0.0],   // Slightly warm white
             light_intensity: 3.0,                  // HDR intensity for PBR
+            tiles: [0, 0, 0, 0],
         }
     }
 }
@@ -611,6 +614,7 @@ mod tests {
     fn test_frame_uniforms_default() {
         let frame = FrameUniforms::default();
         assert_eq!(frame.light_intensity, 3.0); // HDR intensity for PBR
+        assert_eq!(frame.tiles, [0, 0, 0, 0]);
     }
 
     #[test]
