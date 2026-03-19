@@ -54,32 +54,20 @@ pub struct MeshAsset {
     pub index_buffer: Option<IndexBuffer>,
 }
 
-/// Material data for per-material descriptor set (Set 1).
+/// Bindless texture indices for a material.
+///
+/// Stores the indices into the bindless texture array for each PBR texture slot.
+/// Layout: [albedo, normal, metallic_roughness, ao].
 #[derive(Clone, Copy, Debug)]
-pub struct MaterialData {
-    /// Base color (RGBA)
-    pub color: [f32; 4],
-    /// Metallic factor (0.0 = dielectric, 1.0 = metal)
-    pub metallic: f32,
-    /// Roughness factor (0.0 = smooth, 1.0 = rough)
-    pub roughness: f32,
-    /// Ambient occlusion factor (0.0 = full occlusion, 1.0 = none)
-    pub ao: f32,
+pub struct MaterialTextures {
     /// Texture indices for bindless: [albedo, normal, metallic_roughness, ao]
     pub texture_indices: [u32; 4],
-    /// Emission texture index (0 = no emission)
-    pub emission_index: u32,
 }
 
-impl Default for MaterialData {
+impl Default for MaterialTextures {
     fn default() -> Self {
         Self {
-            color: [1.0, 1.0, 1.0, 1.0],
-            metallic: 0.0,
-            roughness: 0.5,
-            ao: 1.0,
             texture_indices: [0, 0, 0, 0],
-            emission_index: 0,
         }
     }
 }
@@ -97,8 +85,8 @@ pub struct MaterialAsset {
     pub shader_path: Option<std::path::PathBuf>,
     /// Vertex binding description.
     pub vertex_binding: VertexBinding,
-    /// Per-material data (color, metallic, roughness, etc.)
-    pub material_data: MaterialData,
+    /// Bindless texture indices for this material.
+    pub textures: MaterialTextures,
     /// Descriptor set containing material uniforms (Set 1).
     pub material_descriptor_set: Option<vk::DescriptorSet>,
     /// Descriptor set layout for material uniforms (Set 1).

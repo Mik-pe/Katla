@@ -319,7 +319,8 @@ impl<'a> DrawBuilder<'a> {
             let mut draw_call = DrawCall::new(self.mesh, self.material)
                 .with_transform(transform)
                 .with_color(color)
-                .with_material_params([metallic, roughness, ao, emission])
+                .with_pbr(metallic, roughness, ao)
+                .with_emission(emission)
                 .with_instance_index(self.instance_index);
 
             // Add skeleton if present

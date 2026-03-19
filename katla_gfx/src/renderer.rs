@@ -19,7 +19,6 @@ pub use registry::AssetRegistry;
 pub use types::{DrawCall, DrawList, FrameUniforms, InstanceData, UIDrawList, UiDrawCommand};
 
 use crate::handle::ResourceStorage;
-use crate::material::Material;
 use crate::texture::{TextureDescriptor, TextureManager};
 use crate::vulkan::context::VulkanContext;
 use crate::{
@@ -680,13 +679,13 @@ impl VulkanRenderer {
             let metallic = draw_call.metallic;
             let roughness = draw_call.roughness;
             let ao = draw_call.ao;
-            let emission_idx = draw_call.material_params[3]; // emission index stored in w component
+            let emission_idx = draw_call.emission;
 
             // Get texture indices from material
             let texture_indices = self
                 .asset_registry
                 .get_material(draw_call.material)
-                .map(|m| m.material_data.texture_indices)
+                .map(|m| m.textures.texture_indices)
                 .unwrap_or([0, 0, 0, 0]);
 
             // Write to storage buffer at instance_index
@@ -1350,71 +1349,6 @@ impl VulkanRenderer {
         )
     }
 
-    /// Register a Material with the renderer.
-    ///
-    /// This method registers a material instance for use in rendering.
-    /// Materials can be created from templates or directly from pipelines.
-    ///
-    /// # Arguments
-    /// * `material` - The material to register
-    ///
-    /// # Returns
-    /// A `MaterialHandle` that references the registered material.
-    ///
-    /// # Example
-    /// ```ignore
-    /// let material = Material::new(template_handle)
-    ///     .with_texture(0, albedo_texture);
-    ///
-    /// let handle = renderer.register_material(&material);
-    /// ```
-    pub fn register_material(&mut self, material: &Material) -> MaterialHandle {
-        use crate::renderer::registry::MaterialAsset;
-
-        let pipeline = material.pipeline();
-        let vertex_binding = material
-            .vertex_binding()
-            .expect("Material must have vertex binding")
-            .clone();
-        let _is_bindless = material.is_bindless();
-
-        // Convert texture handles to bindless indices
-        let texture_handles = material.texture_slots();
-        let texture_indices = [
-            self.texture_manager
-                .get_bindless_index(texture_handles[0])
-                .unwrap_or(0),
-            self.texture_manager
-                .get_bindless_index(texture_handles[1])
-                .unwrap_or(0),
-            self.texture_manager
-                .get_bindless_index(texture_handles[2])
-                .unwrap_or(0),
-            self.texture_manager
-                .get_bindless_index(texture_handles[3])
-                .unwrap_or(0),
-        ];
-
-        let material_asset = MaterialAsset {
-            pipeline: Some(pipeline),
-            fully_compiled: true,
-            shader_path: None,
-            vertex_binding,
-            material_data: crate::renderer::registry::MaterialData {
-                color: [1.0, 1.0, 1.0, 1.0],
-                metallic: 0.0,
-                roughness: 0.5,
-                ao: 1.0,
-                texture_indices,
-                emission_index: 0,
-            },
-            material_descriptor_set: None,
-            material_descriptor_layout: None,
-        };
-
-        self.asset_registry.register_material(material_asset)
-    }
-
     /// Set texture indices for a material.
     ///
     /// Updates the material's texture indices for bindless sampling.
@@ -1425,7 +1359,7 @@ impl VulkanRenderer {
     /// * `indices` - [albedo, normal, metallic_roughness, ao] texture indices
     pub fn set_material_texture_indices(&mut self, material: MaterialHandle, indices: [u32; 4]) {
         if let Some(mat) = self.asset_registry.get_material_mut(material) {
-            mat.material_data.texture_indices = indices;
+            mat.textures.texture_indices = indices;
         }
     }
 
