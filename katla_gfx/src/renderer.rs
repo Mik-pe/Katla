@@ -12,7 +12,9 @@ pub mod types;
 pub mod ui_renderer;
 pub mod viewport_manager;
 
-pub use crate::handle::{Handle, MaterialHandle, MeshHandle, SkeletonHandle, TextureHandle};
+pub use crate::handle::{
+    Handle, MaterialHandle, MeshHandle, PipelineHandle, SkeletonHandle, TextureHandle,
+};
 use crate::viewport::{ViewportBuilder, ViewportHandle};
 pub use crate::vulkan::context::ValidationMode;
 pub use registry::AssetRegistry;
@@ -141,6 +143,10 @@ pub struct VulkanRenderer {
     pub ui_renderer: ui_renderer::UIRenderer,
     /// Global particle system for GPU-driven particle effects.
     pub particle_system: Option<crate::particles::GlobalParticleSystem>,
+    /// Light culling buffers for Forward+ dynamic lighting.
+    pub light_culling: Option<crate::lighting::LightCullingBuffers>,
+    /// Light culling compute pipeline (stored directly, not in registry).
+    light_culling_pipeline: Option<crate::vulkan::material::compute_pipeline::ComputePipeline>,
     /// Tracks whether the first frame has been rendered.
     /// Used to skip the inter-frame semaphore wait on the very first frame.
     first_frame_rendered: bool,
@@ -282,6 +288,8 @@ impl VulkanRenderer {
             material_compiler,
             ui_renderer: ui_renderer::UIRenderer::new(&context),
             particle_system: None,
+            light_culling: None,
+            light_culling_pipeline: None,
             first_frame_rendered: false,
         })
     }
@@ -455,6 +463,254 @@ impl VulkanRenderer {
             .clear_compositing_descriptor_set_layout();
     }
 
+    /// Initialize the Forward+ light culling system.
+    ///
+    /// Creates GPU buffers for light data and tile culling results, compiles
+    /// the light culling compute shader, and sets the light culling descriptor
+    /// layout in the material compiler for PBR pipeline compilation.
+    ///
+    /// Must be called before compiling any PBR materials.
+    pub fn init_light_culling(
+        &mut self,
+        screen_width: u32,
+        screen_height: u32,
+        shader_path: &std::path::Path,
+    ) -> Result<(), RendererError> {
+        // Create GPU buffers
+        let light_culling_buffers = crate::lighting::LightCullingBuffers::new(
+            self.context.clone(),
+            screen_width,
+            screen_height,
+        )
+        .map_err(|e| RendererError::InitializationFailed(format!("Light culling init: {}", e)))?;
+
+        // Set the light culling descriptor layout in the material compiler
+        // so PBR materials include Set 3 in their pipeline layout
+        if let Some(layout) = light_culling_buffers.fragment_descriptor_layout() {
+            self.material_compiler
+                .set_light_culling_descriptor_layout(layout);
+        }
+
+        // Compile the light culling compute shader
+        let compute_shader = self
+            .material_compiler
+            .shader_cache
+            .borrow_mut()
+            .load_shader(shader_path, vk::ShaderStageFlags::COMPUTE)
+            .map_err(|e| {
+                RendererError::InitializationFailed(format!(
+                    "Failed to load light culling compute shader: {}",
+                    e
+                ))
+            })?;
+
+        let compute_shader_wrapper = crate::sync::VkShaderModule(compute_shader);
+
+        // Create compute pipeline with single layout (Set 0)
+        let compute_layout = light_culling_buffers
+            .compute_descriptor_layout()
+            .ok_or_else(|| {
+                RendererError::InitializationFailed(
+                    "Light culling compute descriptor layout not created".to_string(),
+                )
+            })?;
+
+        let pipeline = crate::vulkan::material::compute_pipeline::ComputePipelineBuilder::new(
+            self.context.clone(),
+        )
+        .with_shader(compute_shader_wrapper)
+        .add_descriptor_layout(crate::sync::VkDescriptorSetLayout(compute_layout))
+        .build()
+        .map_err(|e| {
+            RendererError::InitializationFailed(format!(
+                "Failed to create light culling compute pipeline: {:?}",
+                e
+            ))
+        })?;
+
+        self.light_culling = Some(light_culling_buffers);
+        self.light_culling_pipeline = Some(pipeline);
+
+        info!(
+            "Forward+ light culling initialized: {}x{}, {}x{} tiles",
+            screen_width,
+            screen_height,
+            screen_width.div_ceil(16),
+            screen_height.div_ceil(16),
+        );
+
+        Ok(())
+    }
+
+    /// Upload point light data for the current frame.
+    ///
+    /// Call this once per frame before rendering to update the GPU light buffer.
+    pub fn upload_lights(&mut self, lights: &[crate::lighting::PointLightGPU]) {
+        if let Some(ref mut lc) = self.light_culling {
+            lc.upload_lights(lights);
+        }
+    }
+
+    /// Clear tile headers and dispatch the light culling compute shader.
+    ///
+    /// Call after uploading lights and before the geometry pass.
+    /// The view and proj matrices are needed for projecting light positions to screen space.
+    pub fn dispatch_light_culling(
+        &mut self,
+        cmd: vk::CommandBuffer,
+        view_matrix: &[f32; 16],
+        proj_matrix: &[f32; 16],
+    ) {
+        let lc = match self.light_culling.as_mut() {
+            Some(lc) => lc,
+            None => return,
+        };
+
+        let light_count = lc.light_count();
+        if light_count == 0 {
+            return;
+        }
+
+        // Write frame data to uniform buffer for push descriptor
+        let frame_data = crate::lighting::LightCullFrameData {
+            view_matrix: *view_matrix,
+            proj_matrix: *proj_matrix,
+            light_count,
+            tiles_x: lc.tiles_x(),
+            tiles_y: lc.tiles_y(),
+            screen_width: lc.screen_width(),
+            screen_height: lc.screen_height(),
+            _pad0: 0,
+            _pad1: 0,
+        };
+        lc.write_frame_data(&frame_data);
+
+        // Bind compute pipeline
+        let compute_pipeline = match self.light_culling_pipeline.as_ref() {
+            Some(p) => p,
+            None => return,
+        };
+
+        unsafe {
+            // Clear tile headers on the GPU (avoids CPU-GPU sync issues)
+            lc.record_clear_tile_headers(cmd);
+
+            // Memory barrier: fill -> compute shader read/write
+            let barrier = vk::MemoryBarrier::default()
+                .src_access_mask(vk::AccessFlags::TRANSFER_WRITE)
+                .dst_access_mask(vk::AccessFlags::SHADER_READ | vk::AccessFlags::SHADER_WRITE);
+            self.context.device.cmd_pipeline_barrier(
+                cmd,
+                vk::PipelineStageFlags::TRANSFER,
+                vk::PipelineStageFlags::COMPUTE_SHADER,
+                vk::DependencyFlags::empty(),
+                &[barrier],
+                &[],
+                &[],
+            );
+
+            self.context.device.cmd_bind_pipeline(
+                cmd,
+                vk::PipelineBindPoint::COMPUTE,
+                compute_pipeline.pipeline().vk(),
+            );
+
+            // Push compute descriptors (Set 0: light/tile/frame buffers)
+            if let Err(e) =
+                lc.push_compute_descriptors(cmd, compute_pipeline.pipeline_layout().vk())
+            {
+                warn!("Failed to push light culling compute descriptors: {}", e);
+                return;
+            }
+
+            // Dispatch: one workgroup per tile
+            self.context
+                .device
+                .cmd_dispatch(cmd, lc.tiles_x(), lc.tiles_y(), 1);
+        }
+
+        // Memory barrier to ensure compute writes are visible to fragment shader
+        unsafe {
+            let barrier = vk::MemoryBarrier::default()
+                .src_access_mask(vk::AccessFlags::SHADER_WRITE)
+                .dst_access_mask(vk::AccessFlags::SHADER_READ);
+
+            self.context.device.cmd_pipeline_barrier(
+                cmd,
+                vk::PipelineStageFlags::COMPUTE_SHADER,
+                vk::PipelineStageFlags::FRAGMENT_SHADER,
+                vk::DependencyFlags::empty(),
+                &[barrier],
+                &[],
+                &[],
+            );
+        }
+    }
+
+    /// Whether the light culling system is active.
+    pub fn has_light_culling(&self) -> bool {
+        self.light_culling.is_some()
+    }
+
+    /// Get the light culling buffers for push descriptor binding during geometry pass.
+    pub fn light_culling_buffers(&self) -> Option<&crate::lighting::LightCullingBuffers> {
+        self.light_culling.as_ref()
+    }
+
+    /// Recreate light culling buffers for a new screen size.
+    ///
+    /// The compute pipeline is reused since it reads tile dimensions from
+    /// the uniform buffer at dispatch time. Only the GPU buffers are recreated.
+    /// Call this after swapchain recreation to keep tile dimensions in sync.
+    pub fn resize_light_culling(&mut self, screen_width: u32, screen_height: u32) {
+        if self.light_culling.is_none() {
+            return;
+        }
+
+        // Preserve the compute pipeline (it's dimension-independent)
+        let pipeline = self.light_culling_pipeline.take();
+        let old_layout = self
+            .light_culling
+            .as_ref()
+            .and_then(|lc| lc.fragment_descriptor_layout());
+
+        // Drop old buffers
+        self.light_culling = None;
+
+        // Create new buffers with updated dimensions
+        match crate::lighting::LightCullingBuffers::new(
+            self.context.clone(),
+            screen_width,
+            screen_height,
+        ) {
+            Ok(new_buffers) => {
+                // Update the fragment descriptor layout in the material compiler
+                // so newly compiled materials use the correct layout
+                if let Some(layout) = new_buffers.fragment_descriptor_layout() {
+                    self.material_compiler
+                        .set_light_culling_descriptor_layout(layout);
+                }
+
+                self.light_culling = Some(new_buffers);
+                self.light_culling_pipeline = pipeline;
+
+                info!(
+                    "Light culling buffers resized to {}x{} ({}x{} tiles)",
+                    screen_width,
+                    screen_height,
+                    screen_width.div_ceil(16),
+                    screen_height.div_ceil(16),
+                );
+            }
+            Err(e) => {
+                error!("Failed to recreate light culling buffers: {}", e);
+                self.light_culling_pipeline = pipeline;
+            }
+        }
+
+        let _ = old_layout;
+    }
+
     // ========================================================================
     // Texture Creation API
     // ========================================================================
@@ -623,6 +879,15 @@ impl VulkanRenderer {
 
         // Store for reference
         self.frame_uniforms = uniforms;
+    }
+
+    /// Set Forward+ tile grid dimensions for light culling.
+    ///
+    /// Must be called after `set_frame_uniforms()` each frame.
+    pub fn set_light_culling_tiles(&mut self, tiles_x: u32, tiles_y: u32) {
+        let frame_idx = self.swap_data.current_frame();
+        self.storage_manager
+            .set_light_culling_tiles(frame_idx, tiles_x, tiles_y);
     }
 
     /// Execute draw calls from FrameContext and prepare them for rendering.
@@ -1103,6 +1368,12 @@ impl VulkanRenderer {
         }
 
         // Storage uniform resources will be dropped automatically
+        // Drop light culling pipeline and buffers (before pre_destroy).
+        // Drop order: pipeline first (doesn't own descriptor layouts),
+        // then buffers (owns descriptor layouts and GPU buffers).
+        self.light_culling_pipeline = None;
+        self.light_culling = None;
+
         self.context.pre_destroy();
         self.swap_data.destroy(&self.context.device);
         self.frame_context.destroy();
@@ -1130,6 +1401,9 @@ impl VulkanRenderer {
 
         let new_extent = self.frame_context.swapchain.get_extent();
         info!("  New extent: {}x{}", new_extent.width, new_extent.height);
+
+        // Recreate light culling buffers for new dimensions
+        self.resize_light_culling(new_extent.width, new_extent.height);
 
         // Recreate transient textures with new dimensions
         match frame_graph.recreate_transient_textures(self, new_extent.width, new_extent.height) {
@@ -1957,7 +2231,15 @@ impl VulkanRenderer {
             vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
         );
 
-        // 6. Execute frame graph (records commands into the command buffer)
+        // 6. Dispatch light culling compute shader (before any render passes)
+        // This must happen while we're still outside a render pass.
+        if self.light_culling.is_some() {
+            let view: [f32; 16] = self.frame_uniforms.view_matrix;
+            let proj: [f32; 16] = self.frame_uniforms.proj_matrix;
+            self.dispatch_light_culling(cmd, &view, &proj);
+        }
+
+        // 7. Execute frame graph (records commands into the command buffer)
         frame_graph
             .execute(self, image_index, f)
             .expect("Frame graph execution failed");

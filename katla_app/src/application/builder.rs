@@ -200,6 +200,15 @@ impl ApplicationBuilder {
                 message: format!("Failed to compile UI shader: {}", e),
             })?;
 
+        // Initialize Forward+ light culling system BEFORE compiling PBR materials,
+        // since PBR pipelines need Set 3 for light culling data.
+        let light_cull_shader_path = resources.shader_path("lighting/light_cull.wgsl");
+        renderer
+            .init_light_culling(extent.width, extent.height, &light_cull_shader_path)
+            .map_err(|e| crate::error::AppError::Graphics {
+                message: format!("Failed to initialize light culling: {}", e),
+            })?;
+
         // Compile geometry shader for PBR model rendering
         let geometry_shader_path = resources.shader_path("model_pbr.wgsl");
         let geometry_material = renderer
@@ -214,6 +223,8 @@ impl ApplicationBuilder {
             .map_err(|e| crate::error::AppError::Graphics {
                 message: format!("Failed to compile geometry shader: {}", e),
             })?;
+
+        log::info!("PBR geometry shader compiled successfully");
 
         // Compile particle rendering shader with alpha blending
         let particle_shader_path = resources.shader_path("particles/particle_render.wgsl");

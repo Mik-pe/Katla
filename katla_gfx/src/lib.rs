@@ -146,6 +146,7 @@
 // Public modules
 pub mod error;
 pub mod handle;
+pub mod lighting;
 pub mod material;
 pub mod particles;
 pub mod render_pass;
@@ -225,6 +226,9 @@ pub use renderer::{DrawList, VulkanRenderer};
 
 // Modern particle system
 pub use particles::{EmitterConfig, GlobalParticleSystem};
+
+// Forward+ lighting system
+pub use lighting::{LightCullFrameData, LightCullingBuffers, PointLightGPU};
 
 // Render graph system - minimal public API
 pub use render_graph::{

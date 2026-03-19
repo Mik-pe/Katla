@@ -1,12 +1,17 @@
-// Skinned PBR shader with BINDLESS TEXTURES and GPU skeletal animation.
+// Skinned PBR shader with BINDLESS TEXTURES, GPU skeletal animation, and Forward+ dynamic lighting.
 //
 // Uses storage buffers for uniform data with instance_index for per-object selection.
-// Three descriptor sets: uniforms (set 0), bindless textures (set 1), skeleton (set 2).
+// Four descriptor sets: uniforms (set 0), bindless textures (set 1), skeleton (set 2), lights (set 3).
 //
 // Bindless architecture:
 // - Set 1, Binding 0: texture_2d array (4096 textures)
 // - Set 1, Binding 1: shared sampler
 // - Texture indices come from per-object ObjectUniforms
+//
+// Forward+ lighting:
+// - Set 3, Binding 0: point_lights (storage buffer, read)
+// - Set 3, Binding 1: tile_light_indices (storage buffer, read)
+// - Set 3, Binding 2: tile_light_counts (storage buffer, read)
 //
 // Implements:
 // - GPU skeletal animation with up to 4 joint influences per vertex
@@ -15,8 +20,13 @@
 // - Fresnel-Schlick approximation
 // - GGX distribution for specular
 // - Geometry/visibility function (Smith)
-// - Directional lighting with camera position
+// - Directional lighting (sun) from frame_data
+// - Dynamic point lights via Forward+ tile culling
 // - HDR linear output (NO tonemapping - handled by post-process pass)
+
+const TILE_SIZE: u32 = 16u;
+const MAX_LIGHTS_PER_TILE: u32 = 128u;
+const MAX_POINT_LIGHTS: u32 = 256u;
 
 // Frame-level uniforms (shared across all objects)
 struct FrameUniforms {
@@ -35,6 +45,14 @@ struct ObjectUniforms {
     base_color: vec4f,
     material_params: vec4f,     // x=metallic, y=roughness, z=ao, w=emission_idx
     texture_indices: vec4<u32>, // x=albedo, y=normal, z=mr, w=ao (bindless indices)
+}
+
+// Point light data (must match PointLightGPU in Rust)
+struct PointLightGPU {
+    position: vec3f,
+    range: f32,
+    color: vec3f,
+    intensity: f32,
 }
 
 // Set 0: Uniforms (storage buffers)
@@ -57,6 +75,16 @@ var shared_sampler: sampler;
 // Each mesh with skeletal animation gets its own joint matrix buffer
 @group(2) @binding(0)
 var<storage, read> joint_matrices: array<mat4x4f>;
+
+// Set 3: Forward+ light culling data
+@group(3) @binding(0)
+var<storage, read> point_lights: array<PointLightGPU, MAX_POINT_LIGHTS>;
+
+@group(3) @binding(1)
+var<storage, read> tile_light_indices: array<u32>;
+
+@group(3) @binding(2)
+var<storage, read> tile_light_counts: array<u32>;
 
 // Maximum joints per skeleton (match with CPU-side constant)
 const MAX_JOINTS: u32 = 256u;
@@ -255,28 +283,77 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
     // Dielectrics have F0 around 0.04, metals use albedo color
     let F0 = mix(vec3f(0.04), albedo, metallic);
 
-    // Cook-Torrance BRDF
     let roughness_sq = roughness * roughness;
-    let D = distribution_ggx(final_normal, H, roughness_sq);
-    let G = geometry_smith(final_normal, V, L, roughness_sq);
-    let F = fresnel_schlick(max(dot(H, V), 0.0), F0);
 
-    let numerator = D * G * F;
-    let NdotL = max(dot(final_normal, L), 0.0);
-    let denominator = 4.0 * max(dot(final_normal, V), 0.0) * NdotL + 0.0001;
-    let specular = numerator / denominator;
+    // === Directional light (sun) ===
+    let L_sun = normalize(frame_data.light_direction.xyz);
+    let H_sun = normalize(V + L_sun);
+    let D_sun = distribution_ggx(final_normal, H_sun, roughness_sq);
+    let G_sun = geometry_smith(final_normal, V, L_sun, roughness_sq);
+    let F_sun = fresnel_schlick(max(dot(H_sun, V), 0.0), F0);
+    let numerator_sun = D_sun * G_sun * F_sun;
+    let NdotL_sun = max(dot(final_normal, L_sun), 0.0);
+    let denominator_sun = 4.0 * max(dot(final_normal, V), 0.0) * NdotL_sun + 0.0001;
+    let specular_sun = numerator_sun / denominator_sun;
+    let radiance_sun = frame_data.light_color.rgb * frame_data.light_intensity.x;
 
-    // Energy conservation: kS + kD = 1
-    // For metals, there is no diffuse reflection
-    let kS = F;
+    // === PBR lighting accumulation ===
+    let kS = F_sun;
     let kD = (1.0 - kS) * (1.0 - metallic);
-
-    // Diffuse (Lambertian)
     let diffuse = kD * albedo / PI;
 
-    // Combine diffuse and specular
-    let radiance = frame_data.light_color.rgb * frame_data.light_intensity.x;
-    let Lo = (diffuse + specular) * radiance * NdotL;
+    let Lo_sun = (diffuse + specular_sun) * radiance_sun * NdotL_sun;
+
+    // === Point lights (Forward+ tile culling) ===
+    var Lo_point = vec3f(0.0);
+
+    let tiles_x = u32(frame_data.light_intensity.y);
+    let tiles_y = u32(frame_data.light_intensity.z);
+    // Clamp to avoid negative values at screen edges (clip_position can be < 0.5 at first pixel)
+    let pixel_x = max(u32(in.clip_position.x), 0u);
+    let pixel_y = max(u32(in.clip_position.y), 0u);
+    let tile = vec2<u32>(
+        pixel_x / TILE_SIZE,
+        pixel_y / TILE_SIZE
+    );
+    let tile_idx = tile.y * tiles_x + tile.x;
+
+    if (tile.x < tiles_x && tile.y < tiles_y && tile_idx < arrayLength(&tile_light_counts)) {
+        let light_count = tile_light_counts[tile_idx];
+
+        let base_offset = tile_idx * MAX_LIGHTS_PER_TILE;
+        for (var i = 0u; i < light_count; i++) {
+            let light_idx = tile_light_indices[base_offset + i];
+            if (light_idx >= MAX_POINT_LIGHTS) {
+                break;
+            }
+
+            let light = point_lights[light_idx];
+            let to_light = light.position - in.world_pos;
+            let dist = length(to_light);
+            let L_pt = to_light / max(dist, 0.001);
+
+            if (dist > light.range) {
+                continue;
+            }
+            let attenuation = 1.0 - (dist / light.range);
+            let atten = attenuation * attenuation;
+
+            let H_pt = normalize(V + L_pt);
+            let D_pt = distribution_ggx(final_normal, H_pt, roughness_sq);
+            let G_pt = geometry_smith(final_normal, V, L_pt, roughness_sq);
+            let F_pt = fresnel_schlick(max(dot(H_pt, V), 0.0), F0);
+            let numerator_pt = D_pt * G_pt * F_pt;
+            let NdotL_pt = max(dot(final_normal, L_pt), 0.0);
+            let denominator_pt = 4.0 * max(dot(final_normal, V), 0.0) * NdotL_pt + 0.0001;
+            let specular_pt = numerator_pt / denominator_pt;
+
+            let radiance_pt = light.color * light.intensity * atten;
+            Lo_point += (diffuse + specular_pt) * radiance_pt * NdotL_pt;
+        }
+    }
+
+    let Lo = Lo_sun + Lo_point;
 
     // Ambient (simple constant ambient term with AO)
     let ambient = vec3f(0.03) * albedo * ao;

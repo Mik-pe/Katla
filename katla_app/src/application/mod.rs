@@ -1412,6 +1412,9 @@ impl Application {
         // Add particle emitters
         self.setup_particle_emitters();
 
+        // Add point lights for Forward+ dynamic lighting
+        self.setup_point_lights();
+
         info!(
             "Default scene setup complete - {} entities spawned with particle effects",
             self.world.entity_ids().count()
@@ -1433,6 +1436,114 @@ impl Application {
         self.world.spawn((sparkle_emitter,));
 
         info!("Particle emitters setup complete - emitters will be initialized by ParticleSystem");
+    }
+
+    /// Set up point lights for Forward+ dynamic lighting demonstration.
+    fn setup_point_lights(&mut self) {
+        use crate::components::{DrawableComponent, PointLight, TransformComponent};
+
+        info!("Setting up point lights...");
+
+        let mesh_handle = self.renderer.create_sphere_mesh(0.2, 16, 12);
+        let material_handle = self.default_material();
+
+        // Warm light near the coral cube
+        let warm_light = self.world.spawn((
+            PointLight::new([1.0, 0.6, 0.2], 50.0, 15.0),
+            TransformComponent {
+                transform: katla_math::Transform::from_position(katla_math::Vec3::new(
+                    -5.0, 3.0, -3.0,
+                )),
+            },
+            DrawableComponent::with_handles_and_color(
+                mesh_handle,
+                material_handle,
+                katla_math::Color::rgb(1.0, 0.6, 0.2),
+            ),
+        ));
+
+        // Cool blue light near the sphere
+        let cool_light = self.world.spawn((
+            PointLight::new([0.3, 0.5, 1.0], 40.0, 12.0),
+            TransformComponent {
+                transform: katla_math::Transform::from_position(katla_math::Vec3::new(
+                    -7.0, 2.0, -4.0,
+                )),
+            },
+            DrawableComponent::with_handles_and_color(
+                mesh_handle,
+                material_handle,
+                katla_math::Color::rgb(0.3, 0.5, 1.0),
+            ),
+        ));
+
+        // Magenta light near the cylinder
+        let magenta_light = self.world.spawn((
+            PointLight::new([1.0, 0.2, 0.8], 45.0, 12.0),
+            TransformComponent {
+                transform: katla_math::Transform::from_position(katla_math::Vec3::new(
+                    5.0, 2.5, -3.0,
+                )),
+            },
+            DrawableComponent::with_handles_and_color(
+                mesh_handle,
+                material_handle,
+                katla_math::Color::rgb(1.0, 0.2, 0.8),
+            ),
+        ));
+
+        // Green light near the torus
+        let green_light = self.world.spawn((
+            PointLight::new([0.3, 1.0, 0.4], 35.0, 10.0),
+            TransformComponent {
+                transform: katla_math::Transform::from_position(katla_math::Vec3::new(
+                    7.0, 1.5, -1.0,
+                )),
+            },
+            DrawableComponent::with_handles_and_color(
+                mesh_handle,
+                material_handle,
+                katla_math::Color::rgb(0.3, 1.0, 0.4),
+            ),
+        ));
+
+        // White overhead light for general illumination
+        let overhead_light = self.world.spawn((
+            PointLight::new([0.9, 0.85, 0.8], 30.0, 20.0),
+            TransformComponent {
+                transform: katla_math::Transform::from_position(katla_math::Vec3::new(
+                    0.0, 6.0, -3.0,
+                )),
+            },
+            DrawableComponent::with_handles_and_color(
+                mesh_handle,
+                material_handle,
+                katla_math::Color::rgb(0.9, 0.85, 0.8),
+            ),
+        ));
+
+        // Name them for the editor hierarchy
+        use crate::components::NameComponent;
+        if let Some(name) = self.world.get_component_mut::<NameComponent>(warm_light) {
+            name.name = "Warm Point Light".to_string();
+        }
+        if let Some(name) = self.world.get_component_mut::<NameComponent>(cool_light) {
+            name.name = "Cool Point Light".to_string();
+        }
+        if let Some(name) = self.world.get_component_mut::<NameComponent>(magenta_light) {
+            name.name = "Magenta Point Light".to_string();
+        }
+        if let Some(name) = self.world.get_component_mut::<NameComponent>(green_light) {
+            name.name = "Green Point Light".to_string();
+        }
+        if let Some(name) = self
+            .world
+            .get_component_mut::<NameComponent>(overhead_light)
+        {
+            name.name = "Overhead Point Light".to_string();
+        }
+
+        info!("5 point lights created for Forward+ dynamic lighting");
     }
 
     /// Poll the background loader and process completed loads.
