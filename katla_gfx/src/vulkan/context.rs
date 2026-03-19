@@ -282,7 +282,10 @@ pub struct VulkanFrameCtx {
     pub(crate) swapchain_image_views: Vec<VkImageView>,
     pub swapchain: super::Swapchain,
     pub(crate) swapchain_images: Vec<VkImage>,
-    pub depth_render_texture: RenderTexture,
+    /// Per-frame depth render textures (one per FRAMES_IN_FLIGHT).
+    /// Each in-flight frame uses its own depth buffer to prevent data races
+    /// when multiple frames execute concurrently on the GPU (e.g., MAILBOX present mode).
+    pub depth_render_textures: Vec<RenderTexture>,
     pub command_buffers: Vec<super::CommandBuffer>,
 }
 
@@ -1148,8 +1151,12 @@ impl VulkanFrameCtx {
             .iter()
             .map(|img| VkImage::new(*img))
             .collect();
-        let depth_render_texture =
-            create_depth_render_texture(context.clone(), swapchain.get_extent());
+
+        // Create per-frame depth textures (one per frames in flight)
+        const FRAMES_IN_FLIGHT: usize = 2;
+        let depth_render_textures: Vec<RenderTexture> = (0..FRAMES_IN_FLIGHT)
+            .map(|_| create_depth_render_texture(context.clone(), swapchain.get_extent()))
+            .collect();
 
         let command_buffers = context
             .gfx_cmdpool
@@ -1160,7 +1167,7 @@ impl VulkanFrameCtx {
             swapchain,
             swapchain_image_views,
             swapchain_images: swapchain_images_wrapped,
-            depth_render_texture,
+            depth_render_textures,
             command_buffers,
         }
     }
@@ -1211,8 +1218,10 @@ impl VulkanFrameCtx {
                 ))
             })
             .collect();
-        self.depth_render_texture =
-            create_depth_render_texture(self.context.clone(), self.swapchain.get_extent());
+        const FRAMES_IN_FLIGHT: usize = 2;
+        self.depth_render_textures = (0..FRAMES_IN_FLIGHT)
+            .map(|_| create_depth_render_texture(self.context.clone(), self.swapchain.get_extent()))
+            .collect();
     }
 
     pub fn destroy(&mut self) {

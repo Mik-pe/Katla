@@ -585,16 +585,32 @@ impl VulkanRenderer {
         self.ui_renderer.font_atlas()
     }
 
+    /// Wait for the current frame's previous GPU submission to complete.
+    ///
+    /// This must be called before any CPU writes to per-frame resources
+    /// (storage buffers, uniforms, etc.) to prevent data races where the CPU
+    /// overwrites data that the GPU is still reading from a prior submission.
+    ///
+    /// The recommended frame order is:
+    /// 1. `wait_for_frame()` - ensures GPU is done with this frame slot
+    /// 2. `set_frame_uniforms()` - writes frame data to storage buffer
+    /// 3. `execute_draw_calls()` - writes per-object data to storage buffer
+    /// 4. `render()` - submits GPU work
+    pub fn wait_for_frame(&mut self) {
+        self.swap_data.wait_for_fence(&self.context.device);
+    }
+
     /// Set frame-level uniforms for the current frame.
     ///
     /// This should be called once per frame before `render_frame()` or `execute_draw_calls()`.
     /// The uniforms are used by all draw calls in the frame.
     ///
-    /// **Important:** This must be called before `execute_draw_calls()` as it selects
-    /// the appropriate per-frame storage buffer. The recommended order is:
-    /// 1. `set_frame_uniforms()` - selects frame buffer and writes frame data
-    /// 2. `execute_draw_calls()` - writes per-object data to the same buffer
-    /// 3. `render()` - renders using the prepared data
+    /// **Important:** `wait_for_frame()` must be called before this method to ensure
+    /// the GPU is done reading from the frame's storage buffer. The recommended order is:
+    /// 1. `wait_for_frame()` - ensures GPU is done with this frame slot
+    /// 2. `set_frame_uniforms()` - writes frame data to storage buffer
+    /// 3. `execute_draw_calls()` - writes per-object data to the same buffer
+    /// 4. `render()` - renders using the prepared data
     ///
     /// # Arguments
     /// * `uniforms` - Frame uniforms containing view/proj matrices, camera position, and lighting
@@ -1957,14 +1973,14 @@ impl VulkanRenderer {
     where
         F: FnOnce(&mut crate::render_graph::Frame),
     {
-        // 1. Wait for previous frame to complete (also resets the fence)
-        // NOTE: This wait is for the in-flight frames, NOT for readback operations
-        self.swap_data.wait_for_fence(&self.context.device);
+        // NOTE: wait_for_fence() is NOT called here — it must be called before
+        // set_frame_uniforms() and execute_draw_calls() to prevent CPU-GPU data races
+        // on per-frame storage buffers. Call wait_for_frame() at the start of each frame.
 
-        // 2. Get frame index (start_frame() was already called in set_frame_uniforms())
+        // 1. Get frame index (start_frame() was already called in set_frame_uniforms())
         let frame_idx = self.current_frame();
 
-        // 3. Acquire next swapchain image
+        // 2. Acquire next swapchain image
         let (image_index, _is_suboptimal) = unsafe {
             self.frame_context
                 .swapchain
@@ -1981,10 +1997,10 @@ impl VulkanRenderer {
         // Store image index for readback debugging
         self.last_presented_image_index = Some(image_index);
 
-        // 4. Get command buffer for this frame
+        // 3. Get command buffer for this frame
         let cmd = self.frame_context.command_buffers[frame_idx].vk_command_buffer();
 
-        // 5. Begin command buffer
+        // 4. Begin command buffer
         let begin_info = vk::CommandBufferBeginInfo::default()
             .flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT);
         unsafe {

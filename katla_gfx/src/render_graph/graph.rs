@@ -1576,13 +1576,17 @@ impl<'a> Frame<'a> {
         };
 
         // Depth attachment (only for passes that use depth testing)
+        // Use per-frame depth buffer to prevent data races when multiple frames
+        // execute concurrently on the GPU (e.g., MAILBOX present mode).
         let depth_attachment = if pass.uses_depth {
+            let frame_idx = self.current_frame();
             let depth_view = self
                 .renderer
                 .frame_context
-                .depth_render_texture
-                .image_view
-                .vk();
+                .depth_render_textures
+                .get(frame_idx)
+                .map(|t| t.image_view.vk())
+                .expect("depth_render_textures must have an entry for current frame");
             Some(
                 vk::RenderingAttachmentInfo::default()
                     .image_view(depth_view)
