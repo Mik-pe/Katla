@@ -4,6 +4,9 @@ pub use crate::systems::camera::*;
 // Culling systems
 pub use crate::systems::culling_system::*;
 
+// Lighting systems
+pub use crate::systems::lighting::*;
+
 // Physics systems
 pub use crate::systems::physics::*;
 
@@ -22,6 +25,7 @@ pub use crate::systems::particle_system::*;
 pub mod animation;
 pub mod camera;
 pub mod culling_system;
+pub mod lighting;
 pub mod particle_system;
 pub mod physics;
 pub mod rendering;
