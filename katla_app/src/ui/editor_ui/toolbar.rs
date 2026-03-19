@@ -73,7 +73,6 @@ impl<'a> Widget for Toolbar<'a> {
             Vec2::new(self.screen_size.x(), self.height),
         );
 
-        // Darker toolbar background
         ui.draw_rect(toolbar_bounds, theme.background_dark);
         ui.draw_line(
             Vec2::new(0.0, self.height),
@@ -82,7 +81,6 @@ impl<'a> Widget for Toolbar<'a> {
             1.0,
         );
 
-        // Make menu bar items not have background by default (only on hover/active)
         let original_button_normal = ui.style.button_normal;
         ui.style.button_normal = Color::TRANSPARENT;
 
@@ -90,11 +88,9 @@ impl<'a> Widget for Toolbar<'a> {
         let menu_item_width = 50.0;
         let button_height = self.height;
 
-        // Use begin_row() for horizontal layout
         ui.begin_row();
         ui.set_cursor(Vec2::new(0.0, 0.0));
 
-        // === FILE MENU ===
         let file_bounds =
             Rect2D::from_origin_size(ui.cursor(), Vec2::new(menu_item_width, button_height));
         ui.menu_bar_dropdown(
@@ -120,7 +116,6 @@ impl<'a> Widget for Toolbar<'a> {
         );
         ui.spacing(menu_item_width);
 
-        // === EDIT MENU ===
         let edit_bounds =
             Rect2D::from_origin_size(ui.cursor(), Vec2::new(menu_item_width, button_height));
         ui.menu_bar_dropdown(
@@ -146,7 +141,6 @@ impl<'a> Widget for Toolbar<'a> {
         );
         ui.spacing(menu_item_width);
 
-        // === VIEW MENU ===
         let view_bounds =
             Rect2D::from_origin_size(ui.cursor(), Vec2::new(menu_item_width, button_height));
         let show_grid = self.preferences.show_grid;
@@ -176,7 +170,6 @@ impl<'a> Widget for Toolbar<'a> {
         );
         ui.spacing(menu_item_width);
 
-        // === CREATE MENU ===
         let create_bounds = Rect2D::from_origin_size(ui.cursor(), Vec2::new(60.0, button_height));
         ui.menu_bar_dropdown(
             "create_menu",
@@ -196,7 +189,6 @@ impl<'a> Widget for Toolbar<'a> {
         );
         ui.spacing(60.0 + padding);
 
-        // === HELP MENU ===
         let help_bounds =
             Rect2D::from_origin_size(ui.cursor(), Vec2::new(menu_item_width, button_height));
         ui.menu_bar_dropdown(
@@ -213,7 +205,6 @@ impl<'a> Widget for Toolbar<'a> {
 
         ui.end_row();
 
-        // Separator line after menus
         let current_x = ui.cursor().x();
         ui.draw_line(
             Vec2::new(current_x + padding, padding),
@@ -222,7 +213,6 @@ impl<'a> Widget for Toolbar<'a> {
             1.0,
         );
 
-        // Title in center (only show if there's enough space)
         let title = "Katla Engine";
         let title_size = ui.measure_text(title, ui.scaled_font_size(FontSize::Medium));
         let title_pos = Vec2::new(
@@ -236,7 +226,6 @@ impl<'a> Widget for Toolbar<'a> {
             ui.scaled_font_size(FontSize::Medium),
         );
 
-        // Restore original button style
         ui.style.button_normal = original_button_normal;
         Response::default()
     }

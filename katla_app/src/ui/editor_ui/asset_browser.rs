@@ -87,7 +87,7 @@ impl AssetType {
             Self::Material => ForkAwesome::PAINT_BRUSH,
             Self::Shader => ForkAwesome::FILE_CODE,
             Self::Image => ForkAwesome::IMAGE,
-            Self::Font => ForkAwesome::FILE_TEXT, // No font icon, use file text
+            Self::Font => ForkAwesome::FILE_TEXT,
             Self::Folder => ForkAwesome::FOLDER,
             Self::Unknown => ForkAwesome::FILE,
         }
@@ -290,12 +290,10 @@ impl AssetBrowserState {
                     .map(|n| n.to_string_lossy().to_string())
                     .unwrap_or_default();
 
-                // Skip hidden files
                 if name.starts_with('.') {
                     continue;
                 }
 
-                // Apply search filter
                 if !self.search_filter.is_empty()
                     && !name
                         .to_lowercase()
@@ -306,13 +304,9 @@ impl AssetBrowserState {
 
                 let asset_type = AssetType::from_path(&path);
 
-                // Determine thumbnail state:
-                // 1. Check if we already have this asset in current view (old_thumbnails)
-                // 2. Check if we have a cached GPU texture for this path (thumbnail_texture_handles)
                 let thumbnail_state = if let Some(old_state) = old_thumbnails.get(&path) {
                     old_state.clone()
                 } else if let Some(&texture_handle) = thumbnail_texture_handles.get(&path) {
-                    // Already uploaded to GPU on a previous visit
                     ThumbnailState::Loaded { texture_handle }
                 } else {
                     ThumbnailState::Pending
@@ -617,8 +611,7 @@ impl AssetBrowserState {
 
     /// Scroll to ensure selected item is visible.
     fn scroll_to_selected(&mut self) {
-        // Approximate calculation - actual values depend on draw-time grid
-        let item_size = 64.0; // TODO: Use ui.style.thumbnail_size when accessible
+        let item_size = 64.0;
         let row_height = item_size + 24.0;
         let col_count = 8;
 
@@ -748,7 +741,6 @@ pub fn build_asset_browser(
         return;
     }
 
-    // === TOOLBAR: Breadcrumbs + Search + Refresh ===
     let toolbar_top = bounds.min.y() + header_height;
     let toolbar_bounds = Rect2D::from_origin_size(
         Vec2::new(bounds.min.x(), toolbar_top),
@@ -818,7 +810,6 @@ pub fn build_asset_browser(
         state.navigate_to_segment(idx, thumbnail_texture_handles);
     }
 
-    // === Navigation Buttons (right side of toolbar) ===
     let nav_btn_size = ui.style.button_height_small;
     let mut nav_x = bounds.max.x() - nav_btn_size - 4.0;
 
@@ -881,77 +872,15 @@ pub fn build_asset_browser(
         Vec2::new(search_width, search_height),
     );
 
-    // Search input background
-    ui.draw_rect(search_bounds, theme.background);
-    ui.draw_rect_border(search_bounds, theme.background, theme.border, 1.0);
-
-    // Search icon
-    ui.draw_icon_aligned(
-        ForkAwesome::SEARCH,
-        Vec2::new(
-            search_bounds.min.x() + 4.0,
-            search_bounds.center().y() - 7.0,
-        ),
-        ui.style.icon_size_small,
-        theme.text_muted,
-        katla_ui::FontId::DEFAULT,
+    let search_response = ui.add(
+        katla_ui::widgets::TextInput::new(&mut state.search_filter)
+            .bounds(search_bounds)
+            .placeholder("Filter..."),
     );
 
-    // Search text
-    let search_text_x = search_bounds.min.x() + 18.0;
-    if state.search_filter.is_empty() {
-        ui.draw_text(
-            "Filter...",
-            Vec2::new(
-                search_text_x,
-                search_bounds.center().y() - ui.scaled_font_size(katla_ui::FontSize::XSmall) * 0.5,
-            ),
-            theme.text_muted,
-            ui.scaled_font_size(katla_ui::FontSize::XSmall),
-        );
-    } else {
-        ui.draw_text(
-            &state.search_filter,
-            Vec2::new(
-                search_text_x,
-                search_bounds.center().y() - ui.scaled_font_size(katla_ui::FontSize::XSmall) * 0.5,
-            ),
-            theme.text_primary,
-            ui.scaled_font_size(katla_ui::FontSize::XSmall),
-        );
-    }
-
-    // Handle search focus and input
-    if ui.is_hovered(search_bounds) {
-        // Show text cursor when hovering over search field
-        ui.set_mouse_cursor(katla_ui::input::MouseCursor::Text);
-
-        if ui.mouse_clicked(mouse_button::LEFT) {
-            state.search_focused = true;
-            state.rename_mode = false; // Close rename if open
-        }
-    } else if ui.mouse_clicked(mouse_button::LEFT) {
-        state.search_focused = false;
-    }
-
-    // Check focus AFTER click handling (use focused_panel directly, not cached is_focused)
-    if state.search_focused && *focused_panel == FocusedPanel::AssetBrowser {
-        ui.capture_keyboard();
-
-        // Handle text input
-        let prev_filter = state.search_filter.clone();
-        for &c in ui.typed_characters() {
-            if c == '\x08' {
-                state.search_filter.pop();
-            } else if c >= ' ' && state.search_filter.len() < 32 {
-                state.search_filter.push(c);
-            }
-        }
-
-        // Rescan if filter changed
-        if prev_filter != state.search_filter {
-            state.refresh(thumbnail_texture_handles);
-        }
+    state.search_focused = search_response.active;
+    if search_response.changed {
+        state.refresh(thumbnail_texture_handles);
     }
 
     // Toolbar bottom border
@@ -962,11 +891,9 @@ pub fn build_asset_browser(
         1.0,
     );
 
-    // === CONTENT AREA with ScrollArea ===
     let content_top = toolbar_top + toolbar_height;
     let content_bounds = Rect2D::new(Vec2::new(bounds.min.x(), content_top), bounds.max);
 
-    // Begin scroll area (handles clipping and scrolling)
     state.scroll_state = ui.scroll_area(
         ScrollArea::new("asset_scroll").max_height(content_bounds.height()),
         state.scroll_state,
@@ -974,15 +901,12 @@ pub fn build_asset_browser(
         |ui| {
             let scroll_offset = ui.scroll_offset();
 
-            // Grid layout parameters
             let item_size = ui.style.thumbnail_size;
             let item_padding = 8.0;
             let col_count =
                 ((bounds.width() - item_padding) / (item_size + item_padding)).max(1.0) as usize;
-            let row_height = item_size + 24.0; // Item + label
+            let row_height = item_size + 24.0;
 
-            // Draw assets in grid
-            // Track actions to perform after iteration (to avoid borrow conflicts)
             let mut clicked_index: Option<usize> = None;
             let mut right_clicked_index: Option<usize> = None;
             let mut drag_start_index: Option<usize> = None;
@@ -997,7 +921,6 @@ pub fn build_asset_browser(
                     bounds.min.x() + item_padding + col as f32 * (item_size + item_padding);
                 let item_y = content_top + row as f32 * row_height - scroll_offset;
 
-                // Skip items that are outside the visible area
                 if item_y + row_height < content_top || item_y > bounds.max.y() {
                     continue;
                 }
@@ -1006,7 +929,6 @@ pub fn build_asset_browser(
                 let item_bounds =
                     Rect2D::from_origin_size(item_pos, Vec2::new(item_size, item_size));
 
-                // Background on hover/select (check both single and multi-select)
                 let is_selected =
                     state.selected_index == Some(i) || state.selected_indices.contains(&i);
                 let is_hovered = ui.is_hovered(item_bounds);
@@ -1017,10 +939,13 @@ pub fn build_asset_browser(
                     ui.draw_rect(item_bounds, theme.selection_hover);
                 }
 
-                // Draw thumbnail or icon centered in item
+                let icon_pos = Vec2::new(
+                    item_bounds.center().x() - ui.style.icon_size_large * 0.5,
+                    item_bounds.center().y() - ui.style.icon_size_large * 0.5,
+                );
+
                 match &asset.thumbnail_state {
                     ThumbnailState::Loaded { texture_handle } => {
-                        // Inset thumbnail by 3 pixels to show selection/hover background
                         let inset = 3.0;
                         let thumb_bounds = Rect2D::from_origin_size(
                             Vec2::new(item_bounds.min.x() + inset, item_bounds.min.y() + inset),
@@ -1029,24 +954,15 @@ pub fn build_asset_browser(
                                 item_bounds.height() - inset * 2.0,
                             ),
                         );
-                        // Use OPAQUE_IMAGE to force alpha = 1.0 (thumbnails should not blend)
                         ui.image(
                             TextureId::from_handle_index(texture_handle.index()),
                             thumb_bounds,
-                            None,               // Use default UVs (0-1)
-                            Some(Color::WHITE), // Force opaque output
+                            None,
+                            Some(Color::WHITE),
                         );
                     }
                     ThumbnailState::Loading => {
-                        // Show animated spinner while loading
                         let icon_size = ui.style.icon_size_large;
-                        let icon_pos = Vec2::new(
-                            item_bounds.center().x() - icon_size * 0.5,
-                            item_bounds.center().y() - icon_size * 0.5,
-                        );
-
-                        // Use a rotating spinner icon
-                        // Rotation based on time (we can approximate with frame count)
                         let rotation = (std::time::SystemTime::now()
                             .duration_since(std::time::UNIX_EPOCH)
                             .unwrap_or_default()
@@ -1054,48 +970,39 @@ pub fn build_asset_browser(
                             % 1000) as f32
                             / 1000.0
                             * std::f32::consts::TAU;
-
-                        // Draw spinner with rotation effect (we'll simulate rotation by changing icons)
                         let spinner_chars = ['|', '/', '—', '\\'];
                         let spinner_idx = ((rotation / std::f32::consts::FRAC_PI_2) as usize) % 4;
-                        let spinner_char = spinner_chars[spinner_idx];
-
-                        ui.draw_icon(spinner_char, icon_pos, icon_size, theme.text_secondary);
+                        ui.draw_icon(
+                            spinner_chars[spinner_idx],
+                            icon_pos,
+                            icon_size,
+                            theme.text_secondary,
+                        );
                     }
                     ThumbnailState::Failed => {
-                        // Show error icon
-                        let icon = ForkAwesome::TIMES_CIRCLE;
-                        let icon_color = theme.error;
-                        let icon_size = ui.style.icon_size_large;
-                        let icon_pos = Vec2::new(
-                            item_bounds.center().x() - icon_size * 0.5,
-                            item_bounds.center().y() - icon_size * 0.5,
+                        ui.draw_icon(
+                            ForkAwesome::TIMES_CIRCLE,
+                            icon_pos,
+                            ui.style.icon_size_large,
+                            theme.error,
                         );
-                        ui.draw_icon(icon, icon_pos, icon_size, icon_color);
                     }
                     ThumbnailState::Pending => {
-                        // Show regular icon
-                        let icon = asset.asset_type.icon();
-                        let icon_color = asset.asset_type.color(theme);
-                        let icon_size = ui.style.icon_size_large;
-                        let icon_pos = Vec2::new(
-                            item_bounds.center().x() - icon_size * 0.5,
-                            item_bounds.center().y() - icon_size * 0.5,
+                        ui.draw_icon(
+                            asset.asset_type.icon(),
+                            icon_pos,
+                            ui.style.icon_size_large,
+                            asset.asset_type.color(theme),
                         );
-                        ui.draw_icon(icon, icon_pos, icon_size, icon_color);
                     }
                 }
 
-                // Draw selection border if selected (just the border, don't fill - icon already drawn)
                 if is_selected {
                     ui.draw_selection_border(item_bounds, theme.highlight, 2.0);
                 }
 
-                // Draw name below icon (truncated)
                 let label_y = item_y + item_size + 2.0;
                 let max_label_width = item_size + item_padding;
-
-                // Truncate name if too long
                 let display_name = truncate_text(asset.name.as_str(), max_label_width, ui);
 
                 let label_size = ui.measure_text(
@@ -1110,7 +1017,6 @@ pub fn build_asset_browser(
                     ui.scaled_font_size(katla_ui::FontSize::XSmall),
                 );
 
-                // Handle click - skip if mouse is over a popup (context menu)
                 if is_hovered && !ui.has_open_popup() && ui.mouse_clicked(mouse_button::LEFT) {
                     clicked_index = Some(i);
                     if asset.asset_type == AssetType::Folder {
@@ -1118,17 +1024,14 @@ pub fn build_asset_browser(
                     } else if asset.asset_type == AssetType::Model {
                         should_preview_model = Some(asset.path.clone());
                     }
-                    // Track potential drag start
                     drag_start_index = Some(i);
                 }
 
-                // Handle right-click for context menu (skip if popup already open)
                 if is_hovered && !ui.has_open_popup() && ui.mouse_clicked(mouse_button::RIGHT) {
                     right_clicked_index = Some(i);
                     state.selected_index = Some(i);
                 }
 
-                // Show tooltip on hover (skip if context menu open or dragging)
                 if is_hovered && !state.context_menu_open && !state.is_dragging {
                     let tooltip_text = format!(
                         "{}\nType: {}\nPath: {}",
@@ -1150,13 +1053,11 @@ pub fn build_asset_browser(
                 }
             }
 
-            // === MARQUEE SELECTION ===
-            // Handle rectangle selection in content area
+            // Marquee selection
             {
                 let mouse_in_content = content_bounds.contains(ui.mouse_pos());
                 let mouse_down = ui.mouse_down(mouse_button::LEFT);
 
-                // Start marquee on click in content area (but not on an asset or popup)
                 if mouse_in_content
                     && !ui.has_open_popup()
                     && ui.mouse_clicked(mouse_button::LEFT)
@@ -1164,10 +1065,9 @@ pub fn build_asset_browser(
                 {
                     state.selection_rect_start = Some(ui.mouse_pos());
                     state.selection_rect_current = Some(ui.mouse_pos());
-                    state.is_marquee_selecting = false; // Will become true on drag
+                    state.is_marquee_selecting = false;
                 }
 
-                // Update marquee rectangle while dragging
                 if let Some(start) = state.selection_rect_start {
                     if mouse_down {
                         state.selection_rect_current = Some(ui.mouse_pos());
@@ -1179,14 +1079,12 @@ pub fn build_asset_browser(
                     }
                 }
 
-                // Draw selection rectangle and preview highlight
                 if state.is_marquee_selecting {
                     if let (Some(start), Some(current)) =
                         (state.selection_rect_start, state.selection_rect_current)
                     {
                         let sel_rect = rect_from_points(start, current);
 
-                        // Preview highlight for items that will be selected
                         for (i, _asset) in state.assets.iter().enumerate() {
                             let col = i % col_count;
                             let row = i / col_count;
@@ -1199,18 +1097,15 @@ pub fn build_asset_browser(
                                 Vec2::new(item_size, item_size),
                             );
 
-                            // Check if item intersects with selection rectangle
                             if item_bounds.min.x() <= sel_rect.max.x()
                                 && item_bounds.max.x() >= sel_rect.min.x()
                                 && item_bounds.min.y() <= sel_rect.max.y()
                                 && item_bounds.max.y() >= sel_rect.min.y()
                             {
-                                // Draw preview highlight
                                 ui.draw_rect(item_bounds, Color::new(0.3, 0.5, 0.8, 0.4));
                             }
                         }
 
-                        // Draw the selection rectangle on top
                         ui.draw_rect(sel_rect, Color::new(0.3, 0.5, 0.8, 0.3));
                         ui.draw_rect_border(
                             sel_rect,
@@ -1221,7 +1116,6 @@ pub fn build_asset_browser(
                     }
                 }
 
-                // Finalize selection on mouse release
                 if state.selection_rect_start.is_some() && ui.mouse_released(mouse_button::LEFT) {
                     if state.is_marquee_selecting {
                         if let (Some(start), Some(current)) =
@@ -1229,11 +1123,9 @@ pub fn build_asset_browser(
                         {
                             let sel_rect = rect_from_points(start, current);
 
-                            // Clear previous selection
                             state.selected_indices.clear();
                             state.selected_index = None;
 
-                            // Select all assets that intersect with the rectangle
                             for (i, _asset) in state.assets.iter().enumerate() {
                                 let col = i % col_count;
                                 let row = i / col_count;
@@ -1246,7 +1138,6 @@ pub fn build_asset_browser(
                                     Vec2::new(item_size, item_size),
                                 );
 
-                                // Check if item intersects with selection rectangle (AABB intersection)
                                 if item_bounds.min.x() <= sel_rect.max.x()
                                     && item_bounds.max.x() >= sel_rect.min.x()
                                     && item_bounds.min.y() <= sel_rect.max.y()
@@ -1254,111 +1145,88 @@ pub fn build_asset_browser(
                                 {
                                     state.selected_indices.insert(i);
                                     if state.selected_index.is_none() {
-                                        state.selected_index = Some(i); // Set primary selection
+                                        state.selected_index = Some(i);
                                     }
                                 }
                             }
                         }
                     } else {
-                        // Simple click in empty space (not marquee) - clear selection
                         state.selected_index = None;
                         state.selected_indices.clear();
                     }
-                    // Reset marquee state
                     state.selection_rect_start = None;
                     state.selection_rect_current = None;
                     state.is_marquee_selecting = false;
                 }
             }
 
-            // === THUMBNAIL REQUESTING ===
-            // Request thumbnails for visible images that haven't been requested yet
             {
-                // Collect paths that need thumbnails (to avoid borrow conflicts)
                 let mut thumbs_to_request: Vec<(usize, PathBuf)> = Vec::new();
 
                 for (i, asset) in state.assets.iter().enumerate() {
-                    // Only request thumbnails for images
                     if asset.asset_type != AssetType::Image {
                         continue;
                     }
 
-                    // Check if visible in viewport
-                    let _col = i % col_count;
                     let row = i / col_count;
                     let item_y = content_top + row as f32 * row_height - scroll_offset;
 
-                    // Skip if outside visible area
                     if item_y + row_height < content_top || item_y > bounds.max.y() {
                         continue;
                     }
 
-                    // Check if thumbnail needs to be requested
                     if matches!(asset.thumbnail_state, ThumbnailState::Pending) {
-                        // Check if already cached in loader
                         if loader.has_thumbnail(&asset.path) {
-                            // Already cached, will be handled in poll()
                         } else if !loader.is_loading(&asset.path) {
                             thumbs_to_request.push((i, asset.path.clone()));
                         }
                     }
                 }
 
-                // Request thumbnails (limited batch per frame to avoid overload)
                 for (idx, path) in thumbs_to_request.into_iter().take(4) {
                     loader.request_thumbnail(path, item_size as u32);
                     state.assets[idx].thumbnail_state = ThumbnailState::Loading;
                 }
             }
 
-            // Start drag if tracked
             if let Some(idx) = drag_start_index {
                 state.start_drag(idx, ui.mouse_pos());
             }
 
-            // === DRAG AND DROP HANDLING ===
-            // Update drag state while mouse is held
             if state.drag_asset.is_some() && ui.mouse_down(mouse_button::LEFT) {
                 state.update_drag(ui.mouse_pos());
             }
 
-            // Handle drag end - check what we're dropping on
             if state.drag_asset.is_some() && ui.mouse_released(mouse_button::LEFT) {
                 let drag_idx = state.drag_asset.unwrap();
                 let mouse_pos = ui.mouse_pos();
                 let mouse_in_browser = bounds.contains(mouse_pos);
 
                 if state.is_dragging {
-                    // Collect all assets to drag (single or multi-select)
                     let mut assets_to_drag: Vec<(usize, PathBuf, AssetType)> = Vec::new();
 
                     if !state.selected_indices.is_empty()
                         && state.selected_indices.contains(&drag_idx)
                     {
-                        // Drag all selected items
                         for &idx in &state.selected_indices {
                             if let Some(asset) = state.assets.get(idx) {
                                 assets_to_drag.push((idx, asset.path.clone(), asset.asset_type));
                             }
                         }
                     } else {
-                        // Drag only the clicked item
                         if let Some(asset) = state.assets.get(drag_idx) {
                             assets_to_drag.push((drag_idx, asset.path.clone(), asset.asset_type));
                         }
                     }
 
-                    // Check if dropped on a folder
                     let mut dropped_on_folder: Option<PathBuf> = None;
 
                     if mouse_in_browser {
                         for (i, asset) in state.assets.iter().enumerate() {
-                            // Skip if this asset is being dragged
                             if assets_to_drag.iter().any(|(idx, _, _)| *idx == i) {
                                 continue;
                             }
 
-                            // Calculate item bounds
                             let col = i % col_count;
                             let row = i / col_count;
                             let item_x = bounds.min.x()
@@ -1380,7 +1248,6 @@ pub fn build_asset_browser(
                     }
 
                     if let Some(folder_path) = dropped_on_folder {
-                        // Drop on folder - move all dragged assets
                         for (_, asset_path, _) in &assets_to_drag {
                             state.pending_actions.push(AssetAction::MoveToFolder {
                                 asset_path: asset_path.clone(),
@@ -1388,7 +1255,6 @@ pub fn build_asset_browser(
                             });
                         }
                     } else if !mouse_in_browser {
-                        // Drop outside browser - spawn all models in viewport
                         for (_, asset_path, asset_type) in &assets_to_drag {
                             if matches!(asset_type, AssetType::Model | AssetType::Image) {
                                 state.pending_actions.push(AssetAction::DragToViewport {
@@ -1403,15 +1269,10 @@ pub fn build_asset_browser(
                 state.end_drag();
             }
 
-            // Cancel drag on escape
             if state.drag_asset.is_some() && ui.key_pressed(KeyCode::Escape) {
                 state.cancel_drag();
             }
 
-            // Note: Drag preview is now rendered at the EditorUI level for visibility across panels
-
-            // === RENAME MODE HANDLING ===
-            // Collect rename data first to avoid borrow conflicts
             let rename_data = if state.rename_mode {
                 if let Some(rename_idx) = state.rename_asset {
                     state
@@ -1426,7 +1287,6 @@ pub fn build_asset_browser(
             };
 
             if let Some((rename_idx, original_name, original_path)) = rename_data {
-                // Draw rename input overlay
                 let col = rename_idx % col_count;
                 let row = rename_idx / col_count;
                 let item_x =
@@ -1439,73 +1299,20 @@ pub fn build_asset_browser(
                 );
 
                 ui.with_z_index(katla_ui::z_index::POPUP, |ui| {
-                    ui.draw_rect(input_bounds, theme.background);
-                    ui.draw_rect_border(input_bounds, theme.background, theme.highlight, 1.0);
-
-                    // Draw rename text with cursor
-                    let text = &state.rename_buffer;
-                    ui.draw_text(
-                        text,
-                        Vec2::new(input_bounds.min.x() + 4.0, input_bounds.min.y() + 3.0),
-                        theme.text_primary,
-                        ui.scaled_font_size(katla_ui::FontSize::XSmall),
+                    let rename_response = ui.add(
+                        katla_ui::widgets::TextInput::new(&mut state.rename_buffer)
+                            .bounds(input_bounds),
                     );
 
-                    // Cursor (blink effect could be added)
-                    let text_width = ui
-                        .measure_text(text, ui.scaled_font_size(katla_ui::FontSize::XSmall))
-                        .x();
-                    ui.draw_rect(
-                        Rect2D::from_origin_size(
-                            Vec2::new(
-                                input_bounds.min.x() + 4.0 + text_width,
-                                input_bounds.min.y() + 2.0,
-                            ),
-                            Vec2::new(1.0, 14.0),
-                        ),
-                        theme.text_primary,
-                    );
-                });
-
-                // Handle text input
-                for &c in ui.typed_characters() {
-                    if c == '\x08' {
-                        state.rename_buffer.pop();
-                    } else if c >= ' ' && state.rename_buffer.len() < 64 {
-                        // Filter out invalid filename characters
-                        if !matches!(c, '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|') {
-                            state.rename_buffer.push(c);
-                        }
+                    if is_focused {
+                        ui.capture_keyboard();
                     }
-                }
 
-                // Capture keyboard so game doesn't get input (only when panel is focused)
-                if is_focused {
-                    ui.capture_keyboard();
-                }
-
-                // Track commit/cancel actions
-                let mut should_commit = false;
-                let mut should_cancel = false;
-
-                // Commit on Enter
-                if is_focused && ui.key_pressed(KeyCode::Enter) {
-                    should_commit = true;
-                }
-
-                // Cancel on Escape
-                if is_focused && ui.key_pressed(KeyCode::Escape) {
-                    should_cancel = true;
-                }
-
-                // Commit on click outside
-                if ui.mouse_clicked(mouse_button::LEFT) && !ui.is_hovered(input_bounds) {
-                    should_commit = true;
-                }
-
-                // Process actions (only when focused)
-                if is_focused {
-                    if should_commit {
+                    if rename_response.active && is_focused && ui.key_pressed(KeyCode::Escape) {
+                        state.cancel_rename();
+                    } else if (is_focused && ui.key_pressed(KeyCode::Enter))
+                        || (ui.mouse_clicked(mouse_button::LEFT) && !ui.is_hovered(input_bounds))
+                    {
                         let new_name = state.rename_buffer.clone();
                         if new_name != original_name && !new_name.is_empty() {
                             let new_path = original_path.parent().unwrap().join(&new_name);
@@ -1515,35 +1322,27 @@ pub fn build_asset_browser(
                             });
                         }
                         state.cancel_rename();
-                    } else if should_cancel {
-                        state.cancel_rename();
                     }
-                }
+                });
             }
 
-            // Process click actions after iteration (to avoid borrow conflicts)
             if let Some(index) = clicked_index {
-                // Use input system's double-click detection + same-item check
                 let is_double = ui.mouse_double_clicked(mouse_button::LEFT)
                     && state.last_click_index == Some(index);
                 state.last_click_index = Some(index);
 
-                // Check for modifier keys (Ctrl for toggle, Shift for range)
                 let ctrl_held = ui.key_down(KeyCode::Control);
                 let shift_held = ui.key_down(KeyCode::Shift);
 
                 if ctrl_held {
-                    // Ctrl+Click: Toggle selection
                     if state.selected_indices.contains(&index)
                         || state.selected_index == Some(index)
                     {
-                        // Deselect this item
                         state.selected_indices.remove(&index);
                         if state.selected_index == Some(index) {
                             state.selected_index = state.selected_indices.iter().next().copied();
                         }
                     } else {
-                        // Add to selection - first move existing single selection to multi-select
                         if let Some(prev) = state.selected_index {
                             if !state.selected_indices.contains(&prev) {
                                 state.selected_indices.insert(prev);
@@ -1553,7 +1352,6 @@ pub fn build_asset_browser(
                         state.selected_index = Some(index);
                     }
                 } else if shift_held && state.selected_index.is_some() {
-                    // Shift+Click: Range selection from last selected to this
                     let start = state.selected_index.unwrap();
                     let end = index;
                     state.selected_indices.clear();
@@ -1563,12 +1361,10 @@ pub fn build_asset_browser(
                         }
                     }
                 } else {
-                    // Normal click: Single selection
                     state.selected_index = Some(index);
                     state.selected_indices.clear();
                 }
 
-                // Only navigate on double-click if no modifier keys were held
                 if is_double && !ctrl_held && !shift_held {
                     if let Some(path) = should_navigate {
                         if path.ends_with("..") {
@@ -1577,7 +1373,6 @@ pub fn build_asset_browser(
                             state.navigate_to(&path, thumbnail_texture_handles);
                         }
                     } else if let Some(path) = should_preview_model {
-                        // Double-click on model - open preview panel
                         state
                             .pending_actions
                             .push(AssetAction::ModelPreviewRequested(path));
@@ -1585,13 +1380,11 @@ pub fn build_asset_browser(
                 }
             }
 
-            // Process right-click to open context menu
             if let Some(index) = right_clicked_index {
                 state.context_menu_asset = Some(index);
                 state.context_menu_open = true;
             }
 
-            // Empty state
             if state.assets.is_empty() {
                 let empty_text = if state.search_filter.is_empty() {
                     "No assets found"
@@ -1625,10 +1418,7 @@ pub fn build_asset_browser(
         ((bounds.width() - item_padding) / (item_size + item_padding)).max(1.0) as usize;
     let row_height = item_size + 24.0;
 
-    // === CONTEXT MENU ===
-    // Handle empty space context menu (for creating folders, etc.)
     if !ui.has_open_popup() && ui.is_hovered(content_bounds) {
-        // Check if right-click was on empty space (not on any asset)
         let mut clicked_on_asset = false;
         for (i, _asset) in state.assets.iter().enumerate() {
             let col = i % col_count;
@@ -1651,7 +1441,6 @@ pub fn build_asset_browser(
         }
     }
 
-    // Get context data for the popup
     let (asset_type, asset_name, asset_path, asset_idx) =
         if let Some(asset_idx) = state.context_menu_asset {
             if let Some(asset) = state.assets.get(asset_idx) {
@@ -1668,72 +1457,19 @@ pub fn build_asset_browser(
             (None, String::new(), state.current_path.clone(), 0)
         };
 
-    // Render context menu popup
+    let open_icon = if asset_type == Some(AssetType::Folder) {
+        ForkAwesome::FOLDER_OPEN
+    } else {
+        ForkAwesome::FILE
+    };
+
     let mut clicked_action: Option<&str> = None;
     ui.context_menu(
         "asset_context",
         &mut state.context_menu_open,
         |ui, open| match asset_type {
-            Some(AssetType::Folder) => {
-                if ui.menu_item_clicked_with_icon_and_shortcut(
-                    "Open",
-                    ForkAwesome::FOLDER_OPEN,
-                    true,
-                    "Enter",
-                ) {
-                    clicked_action = Some("Open");
-                    *open = false;
-                    return;
-                }
-                if ui.menu_item_clicked_with_icon_and_shortcut(
-                    "Rename",
-                    ForkAwesome::PENCIL,
-                    true,
-                    "F2",
-                ) {
-                    clicked_action = Some("Rename");
-                    *open = false;
-                    return;
-                }
-                ui.menu_separator();
-                if ui.menu_item_clicked_with_icon_and_shortcut(
-                    "Copy Path",
-                    ForkAwesome::COPY,
-                    true,
-                    "",
-                ) {
-                    clicked_action = Some("Copy Path");
-                    *open = false;
-                    return;
-                }
-                if ui.menu_item_clicked_with_icon_and_shortcut(
-                    "Show in Explorer",
-                    ForkAwesome::EXTERNAL_LINK,
-                    true,
-                    "",
-                ) {
-                    clicked_action = Some("Show in Explorer");
-                    *open = false;
-                    return;
-                }
-                ui.menu_separator();
-                if ui.menu_item_clicked_with_icon_and_shortcut(
-                    "Delete",
-                    ForkAwesome::TRASH,
-                    true,
-                    "Del",
-                ) {
-                    clicked_action = Some("Delete");
-                    *open = false;
-                }
-            }
             Some(_) => {
-                if ui.menu_item_clicked_with_icon_and_shortcut(
-                    "Open",
-                    ForkAwesome::FILE,
-                    true,
-                    "Enter",
-                ) {
+                if ui.menu_item_clicked_with_icon_and_shortcut("Open", open_icon, true, "Enter") {
                     clicked_action = Some("Open");
                     *open = false;
                     return;
@@ -1816,12 +1552,10 @@ pub fn build_asset_browser(
         },
     );
 
-    // Clear context menu asset when menu closes
     if !state.context_menu_open {
         state.context_menu_asset = None;
     }
 
-    // Process action
     if let Some(action) = clicked_action {
         match action {
             "Open" => {
@@ -1874,7 +1608,6 @@ pub fn build_asset_browser(
         }
     }
 
-    // === CONFIRMATION DIALOG ===
     ui.modal(
         "confirm_dialog",
         320.0,
@@ -1885,7 +1618,6 @@ pub fn build_asset_browser(
             let dialog_pos = dialog_bounds.min;
             let dialog_width = dialog_bounds.width();
 
-            // Title bar
             let title_bounds = Rect2D::from_origin_size(dialog_pos, Vec2::new(dialog_width, 28.0));
             ui.draw_rect(title_bounds, theme.panel_header);
             ui.draw_text(
@@ -1895,7 +1627,6 @@ pub fn build_asset_browser(
                 ui.scaled_font_size(katla_ui::FontSize::Small),
             );
 
-            // Message
             ui.draw_text(
                 &state.confirm_dialog_message,
                 Vec2::new(dialog_pos.x() + 10.0, dialog_pos.y() + 40.0),
@@ -1903,12 +1634,10 @@ pub fn build_asset_browser(
                 ui.scaled_font_size(katla_ui::FontSize::Small),
             );
 
-            // Buttons
             let btn_width = 80.0;
             let btn_height = 28.0;
             let btn_y = dialog_pos.y() + 120.0 - btn_height - 12.0;
 
-            // No button
             let no_btn_bounds = Rect2D::from_origin_size(
                 Vec2::new(
                     dialog_pos.x() + dialog_width - btn_width * 2.0 - 20.0,
@@ -1931,7 +1660,6 @@ pub fn build_asset_browser(
                 *open = false;
             }
 
-            // Yes button (dangerous action - always red)
             let yes_btn_bounds = Rect2D::from_origin_size(
                 Vec2::new(dialog_pos.x() + dialog_width - btn_width - 10.0, btn_y),
                 Vec2::new(btn_width, btn_height),
@@ -1955,7 +1683,6 @@ pub fn build_asset_browser(
         },
     );
 
-    // === KEYBOARD NAVIGATION ===
     if !state.search_focused && !state.context_menu_open && !state.rename_mode {
         use katla_ui::input::KeyCode;
 
@@ -1984,25 +1711,20 @@ pub fn build_asset_browser(
 
 /// Truncate text to fit within a maximum width, adding ellipsis if needed.
 fn truncate_text(text: &str, max_width: f32, ui: &UiContext) -> String {
-    let full_width = ui
-        .measure_text(text, ui.scaled_font_size(katla_ui::FontSize::XSmall))
-        .x();
+    let font_size = ui.scaled_font_size(katla_ui::FontSize::XSmall);
+    let full_width = ui.measure_text(text, font_size).x();
 
     if full_width <= max_width {
         return text.to_string();
     }
 
-    // Binary search for the right length
-    let mut len = text.len();
-    while len > 0 {
-        let truncated = format!("{}...", &text[..len]);
-        let width = ui
-            .measure_text(&truncated, ui.scaled_font_size(katla_ui::FontSize::XSmall))
-            .x();
-        if width <= max_width {
+    let mut chars: Vec<char> = text.chars().collect();
+    while !chars.is_empty() {
+        chars.pop();
+        let truncated = format!("{}...", chars.iter().collect::<String>());
+        if ui.measure_text(&truncated, font_size).x() <= max_width {
             return truncated;
         }
-        len -= 1;
     }
 
     "...".to_string()

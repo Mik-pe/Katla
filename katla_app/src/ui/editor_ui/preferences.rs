@@ -174,7 +174,6 @@ impl<'a> Widget for PreferencesPanel<'a> {
 
         let panel_bounds = frame.panel_bounds;
 
-        // Tab bar
         let tab_bar_bounds = Rect2D::from_origin_size(
             Vec2::new(
                 panel_bounds.min.x(),
@@ -362,48 +361,21 @@ fn build_appearance_tab(
         ("solarized_dark", "Solarized Dark"),
     ];
 
-    // Use grid layout for theme buttons with proper row wrapping
     ui.begin_grid(2, col_width, row_height, spacing);
     for (key, display_name) in theme_names.iter() {
-        // Use grid_item for proper positioning and row wrapping
         let btn_bounds = ui.grid_item(Vec2::new(col_width, row_height));
-
         let is_selected = *key == current_theme_key;
 
-        if ui
-            .add(
-                Button::new("")
-                    .bounds(btn_bounds)
-                    .id(&format!("theme_{}", key)),
-            )
-            .clicked
-        {
+        if themed_select_button(
+            ui,
+            &format!("theme_{}", key),
+            display_name,
+            btn_bounds,
+            is_selected,
+            theme,
+        ) {
             pending_actions.push(PreferencesAction::SetTheme(key.to_string()));
         }
-
-        let btn_color = if is_selected {
-            theme.selection
-        } else {
-            theme.button_bg
-        };
-        ui.draw_rect(btn_bounds, btn_color);
-
-        let text_color = if is_selected {
-            theme.button_text
-        } else {
-            theme.text_primary
-        };
-        let text_size = ui.measure_text(display_name, ui.scaled_font_size(FontSize::Small));
-        let text_pos = Vec2::new(
-            btn_bounds.center().x() - text_size.x() * 0.5,
-            btn_bounds.center().y() - text_size.y() * 0.5,
-        );
-        ui.draw_text(
-            display_name,
-            text_pos,
-            text_color,
-            ui.scaled_font_size(FontSize::Small),
-        );
     }
     ui.end_grid();
 
@@ -466,43 +438,18 @@ fn build_appearance_tab(
     ui.begin_grid(4, scale_btn_width, row_height, spacing);
     for (scale, label) in font_scales.iter() {
         let btn_bounds = ui.grid_item(Vec2::new(scale_btn_width, row_height));
-
         let is_selected = (font_scale - scale).abs() < 0.01;
 
-        if ui
-            .add(
-                Button::new("")
-                    .bounds(btn_bounds)
-                    .id(&format!("font_scale_{}", scale)),
-            )
-            .clicked
-        {
+        if themed_select_button(
+            ui,
+            &format!("font_scale_{}", scale),
+            label,
+            btn_bounds,
+            is_selected,
+            theme,
+        ) {
             pending_actions.push(PreferencesAction::SetFontScale(*scale));
         }
-
-        let btn_color = if is_selected {
-            theme.selection
-        } else {
-            theme.button_bg
-        };
-        ui.draw_rect(btn_bounds, btn_color);
-
-        let text_color = if is_selected {
-            theme.button_text
-        } else {
-            theme.text_primary
-        };
-        let text_size = ui.measure_text(label, ui.scaled_font_size(FontSize::Small));
-        let text_pos = Vec2::new(
-            btn_bounds.center().x() - text_size.x() * 0.5,
-            btn_bounds.center().y() - text_size.y() * 0.5,
-        );
-        ui.draw_text(
-            label,
-            text_pos,
-            text_color,
-            ui.scaled_font_size(FontSize::Small),
-        );
     }
     ui.end_grid();
 
@@ -550,19 +497,15 @@ fn build_editor_tab(
     ui.spacing(20.0);
 
     let slider_bounds = Rect2D::from_origin_size(ui.cursor(), Vec2::new(content_width, 20.0));
-    ui.draw_rect(slider_bounds, theme.button_bg);
-
-    let fill_percent =
-        (editor_settings.camera_speed - ui.scaled_font_size(FontSize::XSmall)) / 190.0;
-    let fill_width = content_width * fill_percent;
-    let fill_bounds = Rect2D::from_origin_size(ui.cursor(), Vec2::new(fill_width, 20.0));
-    ui.draw_rect(fill_bounds, theme.selection);
-
-    ui.add(
-        Button::new("")
+    let mut camera_speed = editor_settings.camera_speed;
+    let slider_response = ui.add(
+        katla_ui::widgets::Slider::new(&mut camera_speed, 5.0..=200.0)
             .bounds(slider_bounds)
             .id("camera_speed_slider"),
     );
+    if slider_response.changed {
+        pending_actions.push(PreferencesAction::SetCameraSpeed(camera_speed));
+    }
 
     ui.spacing(40.0);
 
@@ -572,46 +515,25 @@ fn build_editor_tab(
     );
     ui.spacing(24.0);
 
-    let sizes = [0.5, 1.0, 2.0, 5.0, ui.scaled_font_size(FontSize::XSmall)];
+    let sizes = [0.5, 1.0, 2.0, 5.0, 10.0];
     let btn_width = (content_width - 4.0 * 8.0) / 5.0;
     let spacing = 8.0;
 
     ui.begin_grid(5, btn_width, row_height, spacing);
     for &size in sizes.iter() {
-        let btn_bounds = Rect2D::from_origin_size(ui.cursor(), Vec2::new(btn_width, row_height));
+        let btn_bounds = ui.grid_item(Vec2::new(btn_width, row_height));
         let is_selected = (editor_settings.grid_size - size).abs() < 0.01;
-        if ui
-            .add(
-                Button::new("")
-                    .bounds(btn_bounds)
-                    .id(&format!("grid_size_{}", size)),
-            )
-            .clicked
-        {
+        let text = format!("{:.1}", size);
+        if themed_select_button(
+            ui,
+            &format!("grid_size_{}", size),
+            &text,
+            btn_bounds,
+            is_selected,
+            theme,
+        ) {
             pending_actions.push(PreferencesAction::SetGridSize(size));
         }
-        let btn_color = if is_selected {
-            theme.selection
-        } else {
-            theme.button_bg
-        };
-        ui.draw_rect(btn_bounds, btn_color);
-        let text_color = if is_selected {
-            theme.button_text
-        } else {
-            theme.text_primary
-        };
-        let text = format!("{:.1}", size);
-        let text_size = ui.measure_text(&text, ui.scaled_font_size(FontSize::Small));
-        ui.draw_text(
-            &text,
-            Vec2::new(
-                btn_bounds.center().x() - text_size.x() * 0.5,
-                btn_bounds.center().y() - text_size.y() * 0.5,
-            ),
-            text_color,
-            ui.scaled_font_size(FontSize::Small),
-        );
     }
     ui.end_grid();
 
@@ -671,7 +593,7 @@ fn build_keybindings_tab(
     }
 
     ui.spacing(16.0);
-    ui.label_auto_colored("(Custom keybindings coming soon)", theme.text_muted);
+    ui.label_auto_colored("Custom keybindings coming soon", theme.text_muted);
 
     ui.cursor().y()
 }
@@ -746,4 +668,41 @@ fn build_about_tab(ui: &mut UiContext, theme: &Theme, cursor: Vec2, content_widt
     }
 
     ui.cursor().y()
+}
+
+fn themed_select_button(
+    ui: &mut UiContext,
+    id: &str,
+    label: &str,
+    bounds: Rect2D,
+    is_selected: bool,
+    theme: &Theme,
+) -> bool {
+    let clicked = ui.add(Button::new("").bounds(bounds).id(id)).clicked;
+
+    let btn_color = if is_selected {
+        theme.selection
+    } else {
+        theme.button_bg
+    };
+    ui.draw_rect(bounds, btn_color);
+
+    let text_color = if is_selected {
+        theme.button_text
+    } else {
+        theme.text_primary
+    };
+    let text_size = ui.measure_text(label, ui.scaled_font_size(FontSize::Small));
+    let text_pos = Vec2::new(
+        bounds.center().x() - text_size.x() * 0.5,
+        bounds.center().y() - text_size.y() * 0.5,
+    );
+    ui.draw_text(
+        label,
+        text_pos,
+        text_color,
+        ui.scaled_font_size(FontSize::Small),
+    );
+
+    clicked
 }

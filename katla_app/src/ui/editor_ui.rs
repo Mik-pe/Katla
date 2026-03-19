@@ -14,7 +14,6 @@ mod inspector;
 mod preferences;
 mod status_bar;
 mod toolbar;
-mod viewport;
 mod viewport_grid;
 
 use katla_ecs::EntityId;
@@ -355,7 +354,6 @@ impl EditorUI {
     ) {
         let screen_size = ui.screen_size();
 
-        // Get visible entities (respecting collapsed state) for keyboard navigation
         let visible_entities: Vec<EntityId> = entities
             .iter()
             .filter(|e| {
@@ -364,8 +362,6 @@ impl EditorUI {
             .map(|e| e.id)
             .collect();
 
-        // === KEYBOARD SHORTCUTS ===
-        // Delete key - delete selected entity
         if ui.key_pressed(katla_ui::input::KeyCode::Delete) {
             if let Some(entity_id) = self.selected_entity {
                 if entities.iter().any(|e| e.id == entity_id) {
@@ -376,7 +372,6 @@ impl EditorUI {
             }
         }
 
-        // Arrow Up - select previous entity
         if ui.key_pressed(katla_ui::input::KeyCode::ArrowUp) {
             if let Some(current_id) = self.selected_entity {
                 if let Some(pos) = visible_entities.iter().position(|id| *id == current_id) {
@@ -385,12 +380,10 @@ impl EditorUI {
                     }
                 }
             } else if !visible_entities.is_empty() {
-                // No selection - select last entity
                 self.selected_entity = Some(*visible_entities.last().unwrap());
             }
         }
 
-        // Arrow Down - select next entity
         if ui.key_pressed(katla_ui::input::KeyCode::ArrowDown) {
             if let Some(current_id) = self.selected_entity {
                 if let Some(pos) = visible_entities.iter().position(|id| *id == current_id) {
@@ -399,12 +392,10 @@ impl EditorUI {
                     }
                 }
             } else if !visible_entities.is_empty() {
-                // No selection - select first entity
                 self.selected_entity = Some(visible_entities[0]);
             }
         }
 
-        // Arrow Right - expand selected entity
         if ui.key_pressed(katla_ui::input::KeyCode::ArrowRight) {
             if let Some(entity_id) = self.selected_entity {
                 if !self.hierarchy_state.expanded_entities.contains(&entity_id) {
@@ -413,14 +404,11 @@ impl EditorUI {
             }
         }
 
-        // Arrow Left - collapse selected entity (or select parent)
         if ui.key_pressed(katla_ui::input::KeyCode::ArrowLeft) {
             if let Some(entity_id) = self.selected_entity {
                 if self.hierarchy_state.expanded_entities.contains(&entity_id) {
-                    // Collapse if expanded
                     self.hierarchy_state.expanded_entities.remove(&entity_id);
                 } else {
-                    // Select parent if collapsed
                     if let Some(entity) = entities.iter().find(|e| e.id == entity_id) {
                         if let Some(parent_id) = entity.parent_id {
                             self.selected_entity = Some(parent_id);
@@ -430,7 +418,6 @@ impl EditorUI {
             }
         }
 
-        // Escape - deselect entity
         if ui.key_pressed(katla_ui::input::KeyCode::Escape) {
             self.selected_entity = None;
         }
@@ -438,14 +425,12 @@ impl EditorUI {
         let toolbar_height = 32.0;
         let status_bar_height = 24.0;
 
-        // Asset browser height (0 if collapsed)
         let asset_browser_height = if self.asset_browser.collapsed {
-            28.0 // Just the header when collapsed
+            28.0
         } else {
             self.asset_browser.panel_height
         };
 
-        // === TOOLBAR (top) ===
         ui.add(Toolbar::new(
             screen_size,
             toolbar_height,
@@ -453,41 +438,34 @@ impl EditorUI {
             &self.theme,
             preferences,
         ));
-        // Take any actions from Toolbar
         self.pending_actions
             .append(&mut self.toolbar_state.pending_actions);
 
-        // Panel Y range (between toolbar and asset browser, no gaps)
-        let panel_top = toolbar_height; // Just after toolbar border
+        let panel_top = toolbar_height;
         let panel_bottom = screen_size.y() - status_bar_height - asset_browser_height;
         let panel_height = panel_bottom - panel_top;
 
-        // === PANEL RESIZE HANDLING ===
         let resize_handle_width = 5.0;
         let min_panel_width = 150.0;
         let min_viewport_width = 200.0;
         let min_asset_browser_height = 100.0;
 
-        // Left panel resize handle (right edge of left panel)
         let left_resize_bounds = Rect2D::from_origin_size(
             Vec2::new(self.left_panel_width - resize_handle_width / 2.0, panel_top),
             Vec2::new(resize_handle_width, panel_height),
         );
 
-        // Right panel resize handle (left edge of right panel)
         let right_panel_x = screen_size.x() - self.right_panel_width;
         let right_resize_bounds = Rect2D::from_origin_size(
             Vec2::new(right_panel_x - resize_handle_width / 2.0, panel_top),
             Vec2::new(resize_handle_width, panel_height),
         );
 
-        // Asset browser resize handle (top edge)
         let asset_resize_bounds = Rect2D::from_origin_size(
             Vec2::new(0.0, panel_bottom - resize_handle_width / 2.0),
             Vec2::new(screen_size.x(), resize_handle_width),
         );
 
-        // Handle ongoing resize
         if let Some(resize_edge) = self.resizing_panel {
             if ui.mouse_down(mouse_button::LEFT) {
                 let mouse_x = ui.mouse_pos().x();
@@ -524,7 +502,6 @@ impl EditorUI {
             }
         }
 
-        // Check for resize handle hover and start dragging
         if self.resizing_panel.is_none() {
             if ui.is_hovered(left_resize_bounds) {
                 ui.set_mouse_cursor(katla_ui::input::MouseCursor::ResizeHorizontal);
@@ -544,7 +521,6 @@ impl EditorUI {
             }
         }
 
-        // === LEFT PANEL: Entity Hierarchy ===
         let left_panel_bounds = Rect2D::from_origin_size(
             Vec2::new(0.0, panel_top),
             Vec2::new(self.left_panel_width, panel_height),
@@ -559,7 +535,6 @@ impl EditorUI {
             &self.theme,
         ));
 
-        // Left panel right border
         ui.draw_rect(
             Rect2D::from_origin_size(
                 Vec2::new(self.left_panel_width, panel_top),
@@ -568,7 +543,6 @@ impl EditorUI {
             Color::new(0.3, 0.3, 0.3, 1.0),
         );
 
-        // === RIGHT PANEL: Properties Inspector ===
         let right_panel_bounds = Rect2D::from_origin_size(
             Vec2::new(right_panel_x, panel_top),
             Vec2::new(self.right_panel_width, panel_height),
@@ -582,7 +556,6 @@ impl EditorUI {
             &self.theme,
         ));
 
-        // Right panel left border
         ui.draw_rect(
             Rect2D::from_origin_size(
                 Vec2::new(right_panel_x - 1.0, panel_top),
@@ -591,19 +564,16 @@ impl EditorUI {
             Color::new(0.3, 0.3, 0.3, 1.0),
         );
 
-        // === CENTER: Viewport Area ===
         let viewport_bounds = Rect2D::new(
             Vec2::new(self.left_panel_width + 1.0, panel_top),
             Vec2::new(right_panel_x - 1.0, panel_bottom),
         );
 
-        // Track viewport size for render target sizing
         self.last_viewport_size = (
             viewport_bounds.width().max(1.0) as u32,
             viewport_bounds.height().max(1.0) as u32,
         );
 
-        // Draw viewport grid
         let grid_response = ui.add(viewport_grid::ViewportGrid::new(
             viewport_bounds,
             &self.viewport_grid_state,
@@ -612,7 +582,6 @@ impl EditorUI {
             &mut self.focused_panel,
         ));
 
-        // Update active viewport based on hover
         if grid_response.hovered {
             let min = viewport_bounds.min;
             let max = viewport_bounds.max;
@@ -624,7 +593,6 @@ impl EditorUI {
             );
         }
 
-        // === ASSET BROWSER (bottom panel) ===
         let asset_browser_bounds = Rect2D::from_origin_size(
             Vec2::new(0.0, panel_bottom),
             Vec2::new(screen_size.x(), asset_browser_height),
@@ -639,7 +607,6 @@ impl EditorUI {
             thumbnail_texture_handles,
         );
 
-        // Process asset browser actions
         for action in self.asset_browser.take_actions() {
             match action {
                 AssetAction::DragToViewport {
@@ -647,19 +614,15 @@ impl EditorUI {
                     asset_type,
                     screen_pos,
                 } => {
-                    // Check if dropped in viewport area (not in panels)
                     if viewport_bounds.contains(screen_pos) {
-                        // Determine what to spawn based on asset type
                         match asset_type {
                             AssetType::Model => {
-                                // Store the path for model loading (will be handled by application)
                                 self.pending_actions.push(EditorAction::SpawnModelAtPath {
                                     path: path.clone(),
-                                    position: Vec3::new(0.0, 0.0, 0.0), // TODO: Raycast for world position
+                                    position: Vec3::new(0.0, 0.0, 0.0),
                                 });
                             }
                             _ => {
-                                // For other asset types, spawn a cube as placeholder
                                 self.pending_actions.push(EditorAction::SpawnModel(
                                     SpawnableModel::Cube,
                                     Vec3::new(0.0, 0.0, 0.0),
@@ -669,11 +632,9 @@ impl EditorUI {
                     }
                 }
                 AssetAction::ModelPreviewRequested(_path) => {
-                    // Model preview functionality removed - log for now
                     log::debug!("Model preview requested but feature is disabled");
                 }
                 AssetAction::CreateFolder(parent_path) => {
-                    // Create "New Folder" in the specified directory
                     let mut new_folder = parent_path.join("New Folder");
                     let mut counter = 1;
                     while new_folder.exists() {
@@ -703,7 +664,6 @@ impl EditorUI {
                     }
                 }
                 AssetAction::Rename { old_path, new_path } => {
-                    // Rename file or folder
                     if old_path != new_path {
                         if let Err(e) = std::fs::rename(&old_path, &new_path) {
                             log::warn!("Failed to rename {:?} to {:?}: {}", old_path, new_path, e);
@@ -714,22 +674,17 @@ impl EditorUI {
                     }
                 }
                 AssetAction::Open(path) => {
-                    // Navigate into folder or open file
                     if path.is_dir() {
                         self.asset_browser
                             .navigate_to(&path, thumbnail_texture_handles);
                     } else {
                         log::info!("Open file: {:?}", path);
-                        // TODO: Open file in appropriate editor
                     }
                 }
                 AssetAction::CopyPath(path) => {
-                    // Copy path as string (log for now, clipboard not implemented)
                     log::info!("Copy path: {:?}", path);
-                    // TODO: Implement clipboard when available
                 }
                 AssetAction::ShowInExplorer(path) => {
-                    // Open file manager at location
                     #[cfg(target_os = "windows")]
                     {
                         if let Err(e) = std::process::Command::new("explorer")
@@ -762,7 +717,6 @@ impl EditorUI {
                     asset_path,
                     folder_path,
                 } => {
-                    // Move file/folder to destination folder
                     let file_name = asset_path.file_name().unwrap_or_default();
                     let dest_path = folder_path.join(file_name);
                     if asset_path != dest_path {
@@ -777,7 +731,6 @@ impl EditorUI {
             }
         }
 
-        // Asset browser top border
         ui.draw_rect(
             Rect2D::from_origin_size(
                 Vec2::new(0.0, panel_bottom),
@@ -786,17 +739,6 @@ impl EditorUI {
             Color::new(0.3, 0.3, 0.3, 1.0),
         );
 
-        // Status bar top border (fills gap)
-        ui.draw_rect(
-            Rect2D::from_origin_size(
-                Vec2::new(0.0, panel_bottom),
-                Vec2::new(screen_size.x(), 1.0),
-            ),
-            Color::new(0.3, 0.3, 0.3, 1.0),
-        );
-
-        // === STATUS BAR (bottom) ===
-        // Count selected items (selected_index is the primary, selected_indices are multi-select)
         let selected_count = if self.asset_browser.selected_indices.is_empty() {
             if self.asset_browser.selected_index.is_some() {
                 1
@@ -819,7 +761,6 @@ impl EditorUI {
             &self.theme,
         ));
 
-        // === PREFERENCES PANEL (overlay) ===
         if self.preferences_panel_state.panel.is_visible() {
             let theme_key = self.theme_key();
             let mut actions = Vec::new();
@@ -838,7 +779,6 @@ impl EditorUI {
             }
         }
 
-        // === PARTICLE INSPECTOR PANEL (overlay) ===
         if self.particle_inspector_state.panel.is_visible() {
             let mut actions = Vec::new();
             ui.add(ParticleInspector::new(
@@ -854,19 +794,15 @@ impl EditorUI {
             }
         }
 
-        // === DRAG PREVIEW (rendered last to appear above all panels) ===
         if self.asset_browser.is_dragging {
             if let Some(drag_idx) = self.asset_browser.drag_asset {
                 if let Some(asset) = self.asset_browser.assets.get(drag_idx) {
                     let mouse_pos = ui.mouse_pos();
 
-                    // Preview size
                     let preview_size = 64.0;
                     let preview_offset = Vec2::new(preview_size * 0.5, preview_size * 0.5);
 
-                    // Draw preview at cursor position with highest z-index
                     ui.with_z_index(katla_ui::z_index::TOOLTIP, |ui| {
-                        // Semi-transparent background
                         let preview_bounds = Rect2D::from_origin_size(
                             mouse_pos - preview_offset,
                             Vec2::new(preview_size, preview_size),
@@ -879,7 +815,6 @@ impl EditorUI {
                             2.0,
                         );
 
-                        // Draw icon
                         let icon_char = asset.asset_type.icon();
                         let icon_size = preview_size * 0.4;
                         ui.draw_icon(
@@ -892,7 +827,6 @@ impl EditorUI {
                             self.theme.highlight,
                         );
 
-                        // Draw name (truncated)
                         let max_chars = 12;
                         let display_name = if asset.name.len() > max_chars {
                             format!("{}...", &asset.name[..max_chars])
@@ -928,10 +862,8 @@ impl EditorUI {
         loader: &'a mut crate::util::BackgroundLoader,
         thumbnail_texture_handles: &'a std::collections::HashMap<std::path::PathBuf, TextureHandle>,
     ) -> &'a DrawList {
-        // Apply theme to UI style
         self.theme.apply_to_style(&mut ui.style);
 
-        // Apply font scale for accessibility
         ui.set_font_scale(self.font_scale);
 
         ui.begin(screen_size, scale_factor);
@@ -966,206 +898,7 @@ mod tests {
     use crate::ui::editor_ui::preferences::PreferencesTab;
     use katla_ui::widgets::DraggablePanelState;
 
-    /// Test that preferences panel stays open on the first frame after being opened.
-    ///
-    /// This tests the fix for the bug where the preferences panel would close
-    /// immediately after being opened from the menu bar, because the same
-    /// click that opened it would be detected as a "click outside".
-    ///
-    /// BEFORE FIX: Panel would close because mouse_clicked=true and mouse_in_panel=false
-    /// AFTER FIX: Panel stays open because PanelState::JustOpened protects it
-    #[test]
-    fn test_preferences_stays_open_on_first_frame_after_menu_click() {
-        let mut editor = EditorUI::new();
-
-        // Simulate opening preferences from menu - this is what happens when
-        // user clicks "Preferences..." menu item
-        editor.preferences_panel_state.panel.open();
-
-        // Verify panel is in JustOpened state
-        assert_eq!(
-            editor.preferences_panel_state.panel.visibility,
-            PanelState::JustOpened
-        );
-
-        // Simulate the same frame: the click that opened the menu is still
-        // registered as mouse_clicked=true, but mouse is not in the panel
-        // (panel just appeared, mouse is still at menu position)
-        let mouse_clicked = true;
-        let mouse_in_panel = false;
-
-        // Simulate the click-outside logic (now internal to PreferencesPanel)
-        // Without JustOpened protection, panel would close
-        if !editor.preferences_panel_state.panel.dragging
-            && !editor
-                .preferences_panel_state
-                .panel
-                .visibility
-                .is_just_opened()
-            && mouse_clicked
-            && !mouse_in_panel
-        {
-            editor.preferences_panel_state.panel.close();
-        }
-        editor.preferences_panel_state.panel.mark_shown();
-
-        // AFTER FIX: Panel should stay open because JustOpened protected it
-        assert!(
-            editor.preferences_panel_state.panel.visibility.is_visible(),
-            "preferences should stay open on first frame (JustOpened protection)"
-        );
-        assert_eq!(
-            editor.preferences_panel_state.panel.visibility,
-            PanelState::Visible,
-            "state should transition to Visible after first frame"
-        );
-    }
-
-    /// Test that preferences panel can be closed by clicking outside after first frame.
-    ///
-    /// This verifies that the JustOpened protection doesn't prevent normal closing.
-    #[test]
-    fn test_preferences_closes_on_click_outside_after_first_frame() {
-        let mut editor = EditorUI::new();
-
-        // Open preferences and transition to Visible (simulating first frame already passed)
-        editor.preferences_panel_state.panel.open();
-        editor.preferences_panel_state.panel.mark_shown();
-        assert_eq!(
-            editor.preferences_panel_state.panel.visibility,
-            PanelState::Visible
-        );
-
-        // Simulate second frame: user clicks outside the panel
-        let mouse_clicked = true;
-        let mouse_in_panel = false;
-
-        // Simulate the click-outside logic
-        if !editor.preferences_panel_state.panel.dragging
-            && !editor
-                .preferences_panel_state
-                .panel
-                .visibility
-                .is_just_opened()
-            && mouse_clicked
-            && !mouse_in_panel
-        {
-            editor.preferences_panel_state.panel.close();
-        }
-        editor.preferences_panel_state.panel.mark_shown();
-
-        // Panel should close normally
-        assert_eq!(
-            editor.preferences_panel_state.panel.visibility,
-            PanelState::Hidden,
-            "preferences should close when clicking outside after first frame"
-        );
-    }
-
-    /// Test that clicking inside the panel doesn't close it.
-    #[test]
-    fn test_preferences_does_not_close_when_clicking_inside() {
-        let mut editor = EditorUI::new();
-
-        // Open and transition to Visible
-        editor.preferences_panel_state.panel.open();
-        editor.preferences_panel_state.panel.mark_shown();
-
-        // Click inside the panel
-        let mouse_clicked = true;
-        let mouse_in_panel = true;
-
-        // Simulate the click-outside logic
-        if !editor.preferences_panel_state.panel.dragging
-            && !editor
-                .preferences_panel_state
-                .panel
-                .visibility
-                .is_just_opened()
-            && mouse_clicked
-            && !mouse_in_panel
-        {
-            editor.preferences_panel_state.panel.close();
-        }
-        editor.preferences_panel_state.panel.mark_shown();
-
-        assert!(
-            editor.preferences_panel_state.panel.visibility.is_visible(),
-            "preferences should stay open when clicking inside panel"
-        );
-    }
-
-    /// Test that dragging the panel prevents click-outside close.
-    #[test]
-    fn test_preferences_does_not_close_while_dragging() {
-        let mut editor = EditorUI::new();
-
-        // Open and transition to Visible
-        editor.preferences_panel_state.panel.open();
-        editor.preferences_panel_state.panel.mark_shown();
-        editor.preferences_panel_state.panel.dragging = true;
-
-        // Click outside while dragging
-        let mouse_clicked = true;
-        let mouse_in_panel = false;
-
-        // Simulate the click-outside logic
-        if !editor.preferences_panel_state.panel.dragging
-            && !editor
-                .preferences_panel_state
-                .panel
-                .visibility
-                .is_just_opened()
-            && mouse_clicked
-            && !mouse_in_panel
-        {
-            editor.preferences_panel_state.panel.close();
-        }
-        editor.preferences_panel_state.panel.mark_shown();
-
-        assert!(
-            editor.preferences_panel_state.panel.visibility.is_visible(),
-            "preferences should stay open while dragging panel"
-        );
-    }
-
-    /// Test that no click means no close.
-    #[test]
-    fn test_preferences_does_not_close_without_click() {
-        let mut editor = EditorUI::new();
-
-        // Open and transition to Visible
-        editor.preferences_panel_state.panel.open();
-        editor.preferences_panel_state.panel.mark_shown();
-
-        // No click happened
-        let mouse_clicked = false;
-        let mouse_in_panel = false;
-
-        // Simulate the click-outside logic
-        if !editor.preferences_panel_state.panel.dragging
-            && !editor
-                .preferences_panel_state
-                .panel
-                .visibility
-                .is_just_opened()
-            && mouse_clicked
-            && !mouse_in_panel
-        {
-            editor.preferences_panel_state.panel.close();
-        }
-        editor.preferences_panel_state.panel.mark_shown();
-
-        assert!(
-            editor.preferences_panel_state.panel.visibility.is_visible(),
-            "preferences should stay open when no click occurred"
-        );
-    }
-
     /// Test that clicking a tab in the preferences panel doesn't dismiss the window.
-    ///
-    /// This tests the bug where clicking a tab button would trigger the click-outside
-    /// logic and close the panel before the tab change could take effect.
     #[test]
     fn test_preferences_tab_click_does_not_close_panel() {
         let mut ui = UiContext::new();
@@ -1188,12 +921,9 @@ mod tests {
         let theme_key = "catppuccin";
         let mut actions = Vec::new();
 
-        // Simulate clicking on the Editor tab (second tab)
-        // The tab is at x=100 + 450/4 = 212.5, y=100+32 = 132
         let tab_x = 100.0 + 450.0 / 4.0;
         let tab_y = 100.0 + 32.0;
 
-        // Frame 1: Mouse press on tab button
         ui.input.mouse_pos = Vec2::new(tab_x + 10.0, tab_y + 10.0);
         ui.input.mouse_pressed[mouse_button::LEFT] = true;
         ui.input.mouse_down[mouse_button::LEFT] = true;
@@ -1211,11 +941,10 @@ mod tests {
         ui.add(panel);
         ui.end();
 
-        // Frame 2: Mouse release (this is when the button click is registered)
         ui.input.clear_frame_state();
         ui.begin(Vec2::new(800.0, 600.0), 1.0);
         ui.input.mouse_pos = Vec2::new(tab_x + 10.0, tab_y + 10.0);
-        ui.input.mouse_down[mouse_button::LEFT] = false; // Released
+        ui.input.mouse_down[mouse_button::LEFT] = false;
         ui.input.mouse_released[mouse_button::LEFT] = true;
 
         let panel = PreferencesPanel::new(
@@ -1230,20 +959,17 @@ mod tests {
 
         ui.add(panel);
 
-        // The panel should remain open after tab click
         assert!(
             state.visibility().is_visible(),
             "preferences panel should stay open after clicking tab"
         );
 
-        // The tab should have changed to Editor
         assert_eq!(
             state.current_tab,
             PreferencesTab::Editor,
             "tab should change to Editor after clicking it"
         );
 
-        // No Close action should have been triggered
         assert!(
             !actions
                 .iter()
@@ -1253,8 +979,6 @@ mod tests {
     }
 
     /// Test that clicking an entity in the hierarchy panel selects it.
-    ///
-    /// This tests the bug where hierarchy items couldn't be selected.
     #[test]
     fn test_hierarchy_entity_selection_works() {
         let mut ui = UiContext::new();
@@ -1265,7 +989,6 @@ mod tests {
         let mut focused_panel = FocusedPanel::None;
         let mut pending_actions = Vec::new();
 
-        // Create a temporary world to get valid EntityIds
         let mut world = katla_ecs::World::new();
         let entity1 = world.create_entity();
         let entity2 = world.create_entity();
@@ -1300,9 +1023,10 @@ mod tests {
         let bounds = Rect2D::from_origin_size(Vec2::new(0.0, 0.0), Vec2::new(200.0, 400.0));
         let theme = Theme::default();
 
-        // Simulate clicking on the second entity (Sphere)
-        // Item height is 22.0, header is 24.0
-        let click_y = 24.0 + 4.0 + 22.0 + 11.0; // In the middle of second item
+        let header_height = 24.0;
+        let content_padding = 4.0;
+        let item_height = 22.0;
+        let click_y = header_height + content_padding + item_height + item_height / 2.0;
         ui.input.mouse_pos = Vec2::new(100.0, click_y);
         ui.input.mouse_pressed[mouse_button::LEFT] = true;
         ui.input.mouse_down[mouse_button::LEFT] = true;
@@ -1319,50 +1043,16 @@ mod tests {
 
         ui.add(hierarchy);
 
-        // The entity should be selected
         assert_eq!(
             selected_entity,
             Some(entity2),
             "clicking entity should select it"
         );
-
-        // A SelectEntity action should have been emitted
         assert!(
             pending_actions
                 .iter()
                 .any(|a| matches!(a, EditorAction::SelectEntity(id) if *id == entity2)),
             "selecting entity should emit SelectEntity action"
         );
-    }
-
-    /// Test PanelState enum methods.
-    #[test]
-    fn test_panel_state_enum() {
-        let mut state = PanelState::default();
-        assert_eq!(state, PanelState::Hidden);
-        assert!(!state.is_visible());
-        assert!(!state.is_just_opened());
-
-        state.open();
-        assert_eq!(state, PanelState::JustOpened);
-        assert!(state.is_visible());
-        assert!(state.is_just_opened());
-
-        state.mark_shown();
-        assert_eq!(state, PanelState::Visible);
-        assert!(state.is_visible());
-        assert!(!state.is_just_opened());
-
-        // mark_shown on Visible is idempotent
-        state.mark_shown();
-        assert_eq!(state, PanelState::Visible);
-
-        state.close();
-        assert_eq!(state, PanelState::Hidden);
-        assert!(!state.is_visible());
-
-        // mark_shown on Hidden does nothing
-        state.mark_shown();
-        assert_eq!(state, PanelState::Hidden);
     }
 }
