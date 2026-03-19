@@ -1460,7 +1460,7 @@ impl Application {
 
         // Warm light near the coral cube
         let warm_light = self.world.spawn((
-            PointLight::new([1.0, 0.6, 0.2], 50.0, 15.0),
+            PointLight::new([1.0, 0.6, 0.2], 15.0, 12.0),
             TransformComponent {
                 transform: katla_math::Transform::from_position(katla_math::Vec3::new(
                     -5.0, 3.0, -3.0,
@@ -1471,7 +1471,7 @@ impl Application {
 
         // Cool blue light near the sphere
         let cool_light = self.world.spawn((
-            PointLight::new([0.3, 0.5, 1.0], 40.0, 12.0),
+            PointLight::new([0.3, 0.5, 1.0], 12.0, 10.0),
             TransformComponent {
                 transform: katla_math::Transform::from_position(katla_math::Vec3::new(
                     -7.0, 2.0, -4.0,
@@ -1482,7 +1482,7 @@ impl Application {
 
         // Magenta light near the cylinder
         let magenta_light = self.world.spawn((
-            PointLight::new([1.0, 0.2, 0.8], 45.0, 12.0),
+            PointLight::new([1.0, 0.2, 0.8], 14.0, 10.0),
             TransformComponent {
                 transform: katla_math::Transform::from_position(katla_math::Vec3::new(
                     5.0, 2.5, -3.0,
@@ -1493,7 +1493,7 @@ impl Application {
 
         // Green light near the torus
         let green_light = self.world.spawn((
-            PointLight::new([0.3, 1.0, 0.4], 35.0, 10.0),
+            PointLight::new([0.3, 1.0, 0.4], 10.0, 8.0),
             TransformComponent {
                 transform: katla_math::Transform::from_position(katla_math::Vec3::new(
                     7.0, 1.5, -1.0,
@@ -1504,7 +1504,7 @@ impl Application {
 
         // White overhead light for general illumination
         let overhead_light = self.world.spawn((
-            PointLight::new([0.9, 0.85, 0.8], 30.0, 20.0),
+            PointLight::new([0.9, 0.85, 0.8], 8.0, 15.0),
             TransformComponent {
                 transform: katla_math::Transform::from_position(katla_math::Vec3::new(
                     0.0, 6.0, -3.0,
