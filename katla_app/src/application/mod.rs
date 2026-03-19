@@ -1452,8 +1452,8 @@ impl Application {
                 mesh_handle,
                 material_handle,
                 Some(color),
-                0.0,  // fully dielectric
-                1.0,  // fully rough (matte light bulb look)
+                0.0, // fully dielectric
+                1.0, // fully rough (matte light bulb look)
                 1.0,
             )
         };

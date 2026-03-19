@@ -48,8 +48,9 @@ impl System for LightOrbitSystem {
         let step = std::f32::consts::TAU / light_count as f32;
 
         // Second pass: update positions
-        for (i, (_entity, _point_light, transform)) in
-            world.query::<(&PointLight, &mut TransformComponent)>().enumerate()
+        for (i, (_entity, _point_light, transform)) in world
+            .query::<(&PointLight, &mut TransformComponent)>()
+            .enumerate()
         {
             transform.transform.position = self.lemniscate(t + i as f32 * step);
         }

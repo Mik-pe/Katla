@@ -4,8 +4,8 @@ use log::info;
 
 use katla_app::animation::{AnimationUpdateSystem, SkeletalAnimationSystem};
 use katla_app::systems::{
-    FlyCameraLookSystem, LightOrbitSystem, LightingSystem, PhysicsSystem,
-    TransformHierarchySystem, VelocitySystem,
+    FlyCameraLookSystem, LightOrbitSystem, LightingSystem, PhysicsSystem, TransformHierarchySystem,
+    VelocitySystem,
 };
 use katla_ecs::SystemExecutionOrder;
 
@@ -60,7 +60,10 @@ fn main() {
             SystemExecutionOrder::NORMAL,
         )
         .with_system(Box::new(LightingSystem), SystemExecutionOrder::NORMAL)
-        .with_system(Box::new(LightOrbitSystem::new()), SystemExecutionOrder::NORMAL)
+        .with_system(
+            Box::new(LightOrbitSystem::new()),
+            SystemExecutionOrder::NORMAL,
+        )
         .with_system(Box::new(FlyCameraLookSystem), SystemExecutionOrder::NORMAL)
         .with_system(Box::new(PhysicsSystem), SystemExecutionOrder::NORMAL)
         .with_system(Box::new(VelocitySystem), SystemExecutionOrder::LATE);

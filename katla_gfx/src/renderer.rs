@@ -947,11 +947,12 @@ impl VulkanRenderer {
             let emission_idx = draw_call.emission;
 
             // Get texture indices from material
+            // Default: [albedo=0, normal=1, metallic_roughness=2, ao=3]
             let texture_indices = self
                 .asset_registry
                 .get_material(draw_call.material)
                 .map(|m| m.textures.texture_indices)
-                .unwrap_or([0, 0, 0, 0]);
+                .unwrap_or([0, 1, 2, 3]);
 
             // Write to storage buffer at instance_index
             self.storage_manager.update_object_bindless(
