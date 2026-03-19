@@ -35,7 +35,8 @@ impl Swapchain {
 
         let present_mode = swapchain_info.choose_present_mode();
 
-        let mut image_count = surface_caps.min_image_count + 1;
+        let frames_in_flight: u32 = 2;
+        let mut image_count = surface_caps.min_image_count.max(frames_in_flight);
 
         if surface_caps.max_image_count > 0 && image_count > surface_caps.max_image_count {
             image_count = surface_caps.max_image_count;

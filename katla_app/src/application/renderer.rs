@@ -62,6 +62,10 @@ impl Application {
         let inv_view_proj = (proj_mat.clone() * view_mat.clone()).inverse();
 
         // Set frame uniforms (uses katla_gfx public type directly)
+        // Wait for the current frame's previous GPU submission to complete
+        // before writing to per-frame storage buffers.
+        self.renderer.wait_for_frame();
+
         let frame_uniforms = FrameUniforms {
             view_matrix: view_mat.to_array(),
             proj_matrix: proj_mat.to_array(),
