@@ -414,6 +414,9 @@ impl Theme {
         style.input_bg = self.panel_bg;
         style.input_border = self.border;
         style.input_text = self.text_primary;
+        style.input_cursor = self.text_primary;
+        style.input_border_focused = self.highlight;
+        style.text_hint = self.text_muted;
     }
 }
 

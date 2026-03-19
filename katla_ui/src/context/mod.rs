@@ -114,6 +114,10 @@ pub struct UiContext {
     popup_opened_this_frame: bool,
     /// Whether a popup consumed the click this frame (prevents click-through).
     popup_consume_click: bool,
+    /// Current time in seconds (for cursor blink animation).
+    pub(crate) time: f64,
+    /// Time of last keyboard input (for cursor blink grace period).
+    pub(crate) last_input_time: f64,
     /// Current Z-index for rendering (higher = on top).
     z_index: u32,
     /// Z-index stack for nested containers.
@@ -171,6 +175,8 @@ impl UiContext {
             scroll_area_content_bounds: None,
             scroll_area_state: None,
             scroll_area_show_scrollbar: false,
+            time: 0.0,
+            last_input_time: 0.0,
         }
     }
 
@@ -180,6 +186,11 @@ impl UiContext {
             style,
             ..Self::new()
         }
+    }
+
+    /// Set the current time in seconds (for animations like cursor blink).
+    pub fn set_time(&mut self, time: f64) {
+        self.time = time;
     }
 
     /// Set the font scale multiplier for accessibility.

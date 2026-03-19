@@ -291,19 +291,40 @@ impl DrawList {
             return;
         }
 
-        // For screen coordinates (Y-down), use (dy, -dx) for counter-clockwise winding
         let nx = dy / len * thickness * 0.5;
         let ny = -dx / len * thickness * 0.5;
 
-        self.add_convex_poly(
-            &[
-                Vec2::new(start.x() + nx, start.y() + ny),
-                Vec2::new(end.x() + nx, end.y() + ny),
-                Vec2::new(end.x() - nx, end.y() - ny),
-                Vec2::new(start.x() - nx, start.y() - ny),
-            ],
-            color,
-        );
+        self.set_texture(TextureId::NONE);
+
+        let vertex_offset = self.vertices.len() as u32;
+        let color_arr = color.to_bytes();
+
+        // Two triangles with same winding as add_rect
+        self.vertices.push(Vertex::position_only(
+            Vec2::new(start.x() + nx, start.y() + ny),
+            color_arr,
+        ));
+        self.vertices.push(Vertex::position_only(
+            Vec2::new(start.x() - nx, start.y() - ny),
+            color_arr,
+        ));
+        self.vertices.push(Vertex::position_only(
+            Vec2::new(end.x() + nx, end.y() + ny),
+            color_arr,
+        ));
+        self.vertices.push(Vertex::position_only(
+            Vec2::new(end.x() - nx, end.y() - ny),
+            color_arr,
+        ));
+
+        self.indices.extend_from_slice(&[
+            vertex_offset,
+            vertex_offset + 1,
+            vertex_offset + 2,
+            vertex_offset + 1,
+            vertex_offset + 3,
+            vertex_offset + 2,
+        ]);
     }
 
     /// Add a circle outline.
@@ -539,6 +560,54 @@ mod tests {
         // Line is rendered as a quad (4 vertices, 6 indices)
         assert_eq!(list.vertex_count(), 4);
         assert_eq!(list.index_count(), 6);
+    }
+
+    #[test]
+    fn test_add_line_vertical() {
+        let mut list = DrawList::new();
+
+        list.add_line(
+            Vec2::new(50.0, 10.0),
+            Vec2::new(50.0, 30.0),
+            Color::WHITE,
+            2.0,
+        );
+        list.finalize();
+
+        assert_eq!(list.vertex_count(), 4);
+        assert_eq!(list.index_count(), 6);
+
+        // Vertical line should produce a 2px wide, 20px tall quad centered at x=50
+        let xs: Vec<f32> = list.vertices.iter().map(|v| v.pos.x()).collect();
+        let ys: Vec<f32> = list.vertices.iter().map(|v| v.pos.y()).collect();
+        assert_eq!(
+            xs.iter()
+                .cloned()
+                .min_by(|a, b| a.partial_cmp(b).unwrap())
+                .unwrap(),
+            49.0
+        );
+        assert_eq!(
+            xs.iter()
+                .cloned()
+                .max_by(|a, b| a.partial_cmp(b).unwrap())
+                .unwrap(),
+            51.0
+        );
+        assert_eq!(
+            ys.iter()
+                .cloned()
+                .min_by(|a, b| a.partial_cmp(b).unwrap())
+                .unwrap(),
+            10.0
+        );
+        assert_eq!(
+            ys.iter()
+                .cloned()
+                .max_by(|a, b| a.partial_cmp(b).unwrap())
+                .unwrap(),
+            30.0
+        );
     }
 
     #[test]

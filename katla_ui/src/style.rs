@@ -114,6 +114,8 @@ pub struct UiStyle {
     pub input_text: Color,
     /// Cursor color for text input.
     pub input_cursor: Color,
+    /// Border color for focused input fields.
+    pub input_border_focused: Color,
     /// Selection background color.
     pub input_selection: Color,
     /// Rounding radius for input corners.
@@ -123,6 +125,8 @@ pub struct UiStyle {
     pub text_color: Color,
     /// Disabled text color.
     pub text_disabled: Color,
+    /// Hint text color (for placeholders).
+    pub text_hint: Color,
     /// Default font size in pixels.
     pub font_size: f32,
 
@@ -280,11 +284,13 @@ impl UiStyle {
             input_border: Color::from_rgb_hex(0x404040),
             input_text: Color::from_rgb_hex(0xeeeeee),
             input_cursor: Color::from_rgb_hex(0xffffff),
+            input_border_focused: Color::from_rgb_hex(0x4a9eff),
             input_selection: Color::new(0.3, 0.5, 0.8, 0.5),
             input_rounding: 2.0,
 
             text_color: Color::from_rgb_hex(0xeeeeee),
             text_disabled: Color::from_rgb_hex(0x808080),
+            text_hint: Color::from_rgb_hex(0x808080),
             font_size: FontSize::Medium.to_pixels(),
 
             checkbox_bg: Color::from_rgb_hex(0x282828),
@@ -336,7 +342,7 @@ impl UiStyle {
             slider_track_height: 4.0,
             slider_grab_size: 12.0,
             checkbox_size: 20.0,
-            text_input_cursor_width: 1.0,
+            text_input_cursor_width: 2.0,
             text_input_padding: 4.0,
             panel_padding: 8.0,
             title_bar_height: 25.0,
@@ -386,11 +392,13 @@ impl UiStyle {
             input_border: Color::from_rgb_hex(0xc0c0c0),
             input_text: Color::from_rgb_hex(0x222222),
             input_cursor: Color::from_rgb_hex(0x222222),
+            input_border_focused: Color::from_rgb_hex(0x4a9eff),
             input_selection: Color::new(0.3, 0.5, 0.8, 0.3),
             input_rounding: 2.0,
 
             text_color: Color::from_rgb_hex(0x222222),
             text_disabled: Color::from_rgb_hex(0x808080),
+            text_hint: Color::from_rgb_hex(0x808080),
             font_size: FontSize::Medium.to_pixels(),
 
             checkbox_bg: Color::from_rgb_hex(0xffffff),
@@ -442,7 +450,7 @@ impl UiStyle {
             slider_track_height: 4.0,
             slider_grab_size: 12.0,
             checkbox_size: 20.0,
-            text_input_cursor_width: 1.0,
+            text_input_cursor_width: 2.0,
             text_input_padding: 4.0,
             panel_padding: 8.0,
             title_bar_height: 25.0,
@@ -522,11 +530,13 @@ impl UiStyle {
             input_border: Color::from_rgb_hex(0x555555),
             input_text: Color::from_rgb_hex(0xeeeeee),
             input_cursor: Color::from_rgb_hex(0xffffff),
+            input_border_focused: Color::from_rgb_hex(0x4a9eff),
             input_selection: Color::new(0.4, 0.6, 0.9, 0.4),
             input_rounding: 0.0,
 
             text_color: Color::from_rgb_hex(0xeeeeee),
             text_disabled: Color::from_rgb_hex(0x777777),
+            text_hint: Color::from_rgb_hex(0x777777),
             font_size: FontSize::Small.to_pixels(),
 
             checkbox_bg: Color::from_rgb_hex(0x3a3a3a),
@@ -578,7 +588,7 @@ impl UiStyle {
             slider_track_height: 4.0,
             slider_grab_size: 12.0,
             checkbox_size: 18.0,
-            text_input_cursor_width: 1.0,
+            text_input_cursor_width: 2.0,
             text_input_padding: 4.0,
             panel_padding: 6.0,
             title_bar_height: 22.0,
