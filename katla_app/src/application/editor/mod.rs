@@ -38,6 +38,10 @@ pub fn generate_ui_draw_list(app: &mut Application, dt: f32) -> Option<UIDrawLis
     // Collect entity info for editor UI
     let entity_info = collect_entity_info(app);
 
+    // Set current time for UI animations (cursor blink etc.)
+    app.ui_context
+        .set_time(app.start_time.elapsed().as_secs_f64());
+
     // Render UI (editor or debug overlay based on mode)
     let scale_factor = app.scale_factor;
     let use_editor = app.use_editor_ui;

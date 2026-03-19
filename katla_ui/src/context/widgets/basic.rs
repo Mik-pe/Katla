@@ -573,41 +573,60 @@ impl UiContext {
     }
 
     /// Draw a text input field (internal - use `widgets::TextInput` instead).
-    pub(crate) fn text_input(&mut self, id: &str, text: &mut String, bounds: Rect2D) -> Response {
+    pub(crate) fn text_input(
+        &mut self,
+        id: &str,
+        text: &mut String,
+        bounds: Rect2D,
+        placeholder: Option<&str>,
+        show_clear: bool,
+    ) -> Response {
         let widget_id = self.generate_id(id);
         let hovered = self.update_hover(widget_id, bounds);
 
-        // Focus on click
-        if hovered && self.input.mouse_pressed[mouse_button::LEFT] {
+        // Clear button bounds (right side)
+        let clear_size = bounds.height();
+        let clear_bounds = Rect2D::from_origin_size(
+            Vec2::new(bounds.max.x() - clear_size, bounds.min.y()),
+            Vec2::new(clear_size, clear_size),
+        );
+        let clear_hovered = show_clear && !text.is_empty() && self.input.is_hovered(clear_bounds);
+        let clear_clicked = clear_hovered && self.input.mouse_pressed[mouse_button::LEFT];
+
+        // Focus on click (but not on clear button)
+        if hovered && !clear_hovered && self.input.mouse_pressed[mouse_button::LEFT] {
             self.focused_id = Some(widget_id);
         }
 
         let focused = self.focused_id == Some(widget_id);
         let mut changed = false;
 
+        // Handle clear button
+        if clear_clicked {
+            text.clear();
+            changed = true;
+            self.focused_id = Some(widget_id);
+        }
+
         // Handle keyboard input when focused
         if focused {
             self.input.want_capture_keyboard = true;
 
-            // Process character input
             for &c in &self.input.characters {
                 if c == '\x08' {
-                    // Backspace
                     if !text.is_empty() {
                         text.pop();
                         changed = true;
                     }
                 } else if c >= ' ' && text.len() < self.style.text_input_max_length {
-                    // Printable character
                     text.push(c);
                     changed = true;
                 }
+                if changed {
+                    self.last_input_time = self.time;
+                }
             }
 
-            // Handle special keys
-            if self.input.key_pressed(KeyCode::Enter) {
-                // Could trigger a callback here
-            }
             if self.input.key_pressed(KeyCode::Escape) {
                 self.focused_id = None;
             }
@@ -615,11 +634,25 @@ impl UiContext {
 
         // Draw background
         self.draw_rect(bounds, self.style.input_bg);
-        self.draw_rect_border(bounds, Color::TRANSPARENT, self.style.input_border, 1.0);
 
-        // Draw text with clipping (top-left positioning, centered vertically)
+        // Focused highlight border
+        let border_color = if focused {
+            self.style.input_border_focused
+        } else {
+            self.style.input_border
+        };
+        self.draw_rect_border(bounds, Color::TRANSPARENT, border_color, 1.0);
+
+        // Text area (shrink right if clear button is shown and text is non-empty)
         let padding = 4.0;
-        let text_bounds = bounds.contract(padding);
+        let text_area_width = if show_clear && !text.is_empty() {
+            bounds.width() - clear_size - padding
+        } else {
+            bounds.width() - padding
+        };
+        let text_bounds =
+            Rect2D::from_origin_size(bounds.min, Vec2::new(text_area_width, bounds.height()))
+                .contract(padding);
         self.push_clip(text_bounds);
 
         let text_size = self.measure_text(text, self.style.font_size);
@@ -627,20 +660,60 @@ impl UiContext {
             bounds.min.x() + padding,
             bounds.center().y() - text_size.y() * 0.5,
         );
-        self.draw_text(text, text_pos, self.style.input_text, self.style.font_size);
 
-        // Draw cursor when focused
-        if focused {
-            let cursor_x = text_pos.x() + self.measure_text(text, self.style.font_size).x();
-            self.draw_line(
-                Vec2::new(cursor_x, text_pos.y()),
-                Vec2::new(cursor_x, text_pos.y() + self.style.font_size),
-                self.style.input_cursor,
-                1.0,
-            );
+        // Draw placeholder or text
+        if text.is_empty() && !focused {
+            if let Some(placeholder_text) = placeholder {
+                self.draw_text(
+                    placeholder_text,
+                    text_pos,
+                    self.style.text_hint,
+                    self.style.font_size,
+                );
+            }
+        } else {
+            self.draw_text(text, text_pos, self.style.input_text, self.style.font_size);
         }
 
         self.pop_clip();
+
+        // Draw cursor when focused (with blink and grace period after typing)
+        if focused {
+            let grace_period = 0.8;
+            let time_since_input = self.time - self.last_input_time;
+            let blink_on = self.time == 0.0
+                || time_since_input < grace_period
+                || ((self.time * 2.0 * std::f64::consts::PI).sin() > 0.0);
+            if blink_on {
+                let cursor_x = text_pos.x() + self.measure_text(text, self.style.font_size).x();
+                self.draw_line(
+                    Vec2::new(cursor_x, text_pos.y()),
+                    Vec2::new(cursor_x, text_pos.y() + text_size.y()),
+                    self.style.input_cursor,
+                    self.style.text_input_cursor_width,
+                );
+            }
+        }
+
+        // Draw clear button
+        if show_clear && !text.is_empty() {
+            let icon_color = if clear_hovered {
+                self.style.text_color
+            } else {
+                self.style.text_disabled
+            };
+            self.draw_icon_centered(
+                crate::icons::ForkAwesome::TIMES,
+                clear_bounds,
+                clear_size * 0.6,
+                icon_color,
+            );
+        }
+
+        // Set text cursor when hovered
+        if hovered {
+            self.input.set_cursor(crate::input::MouseCursor::Text);
+        }
 
         let mut response = Response::interactive(false, hovered, focused, bounds, &self.input);
         response.changed = changed;

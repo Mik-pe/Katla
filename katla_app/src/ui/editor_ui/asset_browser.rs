@@ -875,7 +875,8 @@ pub fn build_asset_browser(
     let search_response = ui.add(
         katla_ui::widgets::TextInput::new(&mut state.search_filter)
             .bounds(search_bounds)
-            .placeholder("Filter..."),
+            .placeholder("Filter...")
+            .show_clear(true),
     );
 
     state.search_focused = search_response.active;

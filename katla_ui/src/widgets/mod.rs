@@ -365,6 +365,7 @@ impl<'a> crate::Widget for Slider<'a> {
 pub struct TextInput<'a> {
     text: &'a mut String,
     placeholder: Option<&'a str>,
+    show_clear: bool,
     bounds: Rect2D,
     id: Option<&'a str>,
 }
@@ -375,14 +376,21 @@ impl<'a> TextInput<'a> {
         Self {
             text,
             placeholder: None,
+            show_clear: false,
             bounds: Rect2D::from_size(Vec2::new(200.0, 24.0)),
             id: None,
         }
     }
 
-    /// Set placeholder text (shown when empty).
+    /// Set placeholder text (shown when empty and not focused).
     pub fn placeholder(mut self, placeholder: &'a str) -> Self {
         self.placeholder = Some(placeholder);
+        self
+    }
+
+    /// Show a clear button (X) on the right side when text is non-empty.
+    pub fn show_clear(mut self, show: bool) -> Self {
+        self.show_clear = show;
         self
     }
 
@@ -402,26 +410,13 @@ impl<'a> TextInput<'a> {
 impl<'a> crate::Widget for TextInput<'a> {
     fn ui(self, ui: &mut UiContext) -> Response {
         let id = self.id.unwrap_or("text_input");
-        let response = ui.text_input(id, self.text, self.bounds);
-
-        // Draw placeholder if empty
-        if self.text.is_empty() {
-            if let Some(placeholder) = self.placeholder {
-                let padding = 4.0;
-                let text_pos = Vec2::new(
-                    self.bounds.min.x() + padding,
-                    self.bounds.center().y() - ui.style.font_size * 0.5,
-                );
-                ui.draw_text(
-                    placeholder,
-                    text_pos,
-                    ui.style.text_color * 0.5,
-                    ui.style.font_size,
-                );
-            }
-        }
-
-        response
+        ui.text_input(
+            id,
+            self.text,
+            self.bounds,
+            self.placeholder,
+            self.show_clear,
+        )
     }
 }
 
