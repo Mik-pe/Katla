@@ -631,7 +631,7 @@ impl StorageUniformManager {
                     model: obj.model_matrix,
                     base_color: obj.color,
                     material_params: [obj.metallic, obj.roughness, obj.ao, 0.0],
-                    texture_indices: [0, 0, 0, 0], // Default texture indices
+                    texture_indices: [0, 1, 2, 3], // albedo, normal, mr, ao
                 };
             }
         }

@@ -218,23 +218,16 @@ impl BindlessTextureManager {
         let mut views = Vec::with_capacity(DEFAULT_TEXTURE_COUNT as usize);
         let mut textures = Vec::with_capacity(DEFAULT_TEXTURE_COUNT as usize);
 
-        // Default pixel data for each texture type
-        let default_pixels: [[u8; 4]; DEFAULT_TEXTURE_COUNT as usize] = [
-            [255, 255, 255, 255], // Slot 0: White (default albedo)
-            [128, 128, 255, 255], // Slot 1: Flat normal (+Z direction)
-            [255, 128, 0, 255],   // Slot 2: Default MR (G=roughness=0.5, B=metallic=0)
-            [255, 255, 255, 255], // Slot 3: White (no occlusion)
-            [0, 0, 0, 255],       // Slot 4: Black (no emission)
+        let default_entries: [([u8; 4], crate::ImageFormat); DEFAULT_TEXTURE_COUNT as usize] = [
+            ([255, 255, 255, 255], crate::ImageFormat::R8G8B8A8Srgb), // Slot 0: White albedo (SRGB)
+            ([128, 128, 255, 255], crate::ImageFormat::R8G8B8A8Unorm), // Slot 1: Flat normal (linear)
+            ([255, 128, 0, 255], crate::ImageFormat::R8G8B8A8Unorm),   // Slot 2: MR (linear)
+            ([255, 255, 255, 255], crate::ImageFormat::R8G8B8A8Unorm), // Slot 3: AO (linear)
+            ([0, 0, 0, 255], crate::ImageFormat::R8G8B8A8Unorm),       // Slot 4: Emission (linear)
         ];
 
-        for (slot_idx, pixels) in default_pixels.iter().enumerate() {
-            let texture = Texture::create_image(
-                context.clone(),
-                1,
-                1,
-                crate::ImageFormat::R8G8B8A8Srgb,
-                pixels,
-            );
+        for (slot_idx, (pixels, format)) in default_entries.iter().enumerate() {
+            let texture = Texture::create_image(context.clone(), 1, 1, *format, pixels);
 
             // Update descriptor set for this slot
             let image_info = [vk::DescriptorImageInfo::default()

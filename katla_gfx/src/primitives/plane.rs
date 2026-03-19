@@ -21,8 +21,12 @@ pub fn generate_plane(width: f32, height: f32) -> (Vec<VertexPBR>, Vec<u32>) {
     let hh = height * 0.5;
 
     // 4 corners of the plane
-    // Tangent along +X, bitangent along +Z (handedness = -1 so that
-    // cross(N, T) * (-1) = (0,0,1) which matches the V direction in UV space).
+    // Tangent along +X, bitangent along +Z (handedness = +1 so that
+    // cross(N, T) = (0, 0, -1) and B = (0, 0, -1)... wait.
+    //
+    // Actually: B = cross(N, T) * handedness.
+    // cross((0,1,0), (1,0,0)) = (0, 0, -1).
+    // For handedness = -1: B = (0, 0, 1) which matches V direction (+Z).
     let vertices = vec![
         // Bottom-left
         VertexPBR::new(

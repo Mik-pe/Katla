@@ -67,7 +67,7 @@ pub struct MaterialTextures {
 impl Default for MaterialTextures {
     fn default() -> Self {
         Self {
-            texture_indices: [0, 0, 0, 0],
+            texture_indices: [0, 1, 2, 3], // albedo, normal, metallic_roughness, ao
         }
     }
 }
