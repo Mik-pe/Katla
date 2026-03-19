@@ -60,7 +60,6 @@ impl<'a> Widget for StatusBar<'a> {
         ui.begin_row();
         ui.set_cursor(Vec2::new(8.0, bar_bounds.min.y() + 4.0));
 
-        // FPS: left-aligned in a fixed-width slot to prevent layout jitter
         let font_size = ui.scaled_font_size(FontSize::Small);
         let fps_text = format!("FPS: {:.0}", self.fps);
         let fps_color = if self.fps >= 55.0 {
@@ -98,7 +97,6 @@ impl<'a> Widget for StatusBar<'a> {
 
         ui.end_row();
 
-        // Right-aligned items (mode and theme)
         let start_y = bar_bounds.min.y() + 4.0;
 
         let mode_text = if self.is_playing {

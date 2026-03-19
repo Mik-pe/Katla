@@ -70,7 +70,6 @@ impl<'a> Widget for Inspector<'a> {
         let label_width = 60.0;
         let _value_width = self.bounds.width() - label_width - 24.0;
 
-        // Use begin_column() for vertical layout
         ui.begin_column();
         ui.set_cursor(Vec2::new(
             self.bounds.min.x() + 8.0,
@@ -78,7 +77,6 @@ impl<'a> Widget for Inspector<'a> {
         ));
 
         if let Some(entity) = selected {
-            // Entity name
             ui.draw_text(
                 &entity.name,
                 ui.cursor(),
@@ -87,7 +85,6 @@ impl<'a> Widget for Inspector<'a> {
             );
             ui.spacing(line_height + 8.0);
 
-            // Transform section
             ui.draw_text(
                 "Transform",
                 ui.cursor(),
@@ -125,10 +122,8 @@ impl<'a> Widget for Inspector<'a> {
             );
             ui.spacing(line_height + 8.0);
 
-            // Separator
             ui.separator_line();
 
-            // Type section
             ui.draw_text(
                 "Type",
                 ui.cursor(),
@@ -138,7 +133,6 @@ impl<'a> Widget for Inspector<'a> {
             ui.spacing(line_height);
             ui.label(&entity.entity_type);
 
-            // Components section
             ui.draw_text(
                 "Components",
                 ui.cursor(),
@@ -152,7 +146,6 @@ impl<'a> Widget for Inspector<'a> {
 
             ui.spacing(8.0);
 
-            // Delete button
             let delete_bounds = Rect2D::from_origin_size(
                 Vec2::new(self.bounds.min.x() + 8.0, ui.cursor().y()),
                 Vec2::new(self.bounds.width() - 16.0, 28.0),
@@ -170,7 +163,6 @@ impl<'a> Widget for Inspector<'a> {
                 *self.selected_entity = None;
             }
         } else {
-            // No entity selected
             let no_selection = "No entity selected";
             let no_sel_size = ui.measure_text(no_selection, ui.scaled_font_size(FontSize::Medium));
             let no_sel_pos = Vec2::new(
