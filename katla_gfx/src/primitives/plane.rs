@@ -21,33 +21,35 @@ pub fn generate_plane(width: f32, height: f32) -> (Vec<VertexPBR>, Vec<u32>) {
     let hh = height * 0.5;
 
     // 4 corners of the plane
+    // Tangent along +X, bitangent along +Z (handedness = -1 so that
+    // cross(N, T) * (-1) = (0,0,1) which matches the V direction in UV space).
     let vertices = vec![
         // Bottom-left
         VertexPBR::new(
             [-hw, 0.0, -hh],
             [0.0, 1.0, 0.0],
-            [1.0, 0.0, 0.0, 1.0],
+            [1.0, 0.0, 0.0, -1.0],
             [0.0, 0.0],
         ),
         // Bottom-right
         VertexPBR::new(
             [hw, 0.0, -hh],
             [0.0, 1.0, 0.0],
-            [1.0, 0.0, 0.0, 1.0],
+            [1.0, 0.0, 0.0, -1.0],
             [1.0, 0.0],
         ),
         // Top-right
         VertexPBR::new(
             [hw, 0.0, hh],
             [0.0, 1.0, 0.0],
-            [1.0, 0.0, 0.0, 1.0],
+            [1.0, 0.0, 0.0, -1.0],
             [1.0, 1.0],
         ),
         // Top-left
         VertexPBR::new(
             [-hw, 0.0, hh],
             [0.0, 1.0, 0.0],
-            [1.0, 0.0, 0.0, 1.0],
+            [1.0, 0.0, 0.0, -1.0],
             [0.0, 1.0],
         ),
     ];
