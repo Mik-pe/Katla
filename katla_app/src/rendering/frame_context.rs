@@ -67,11 +67,12 @@ impl Default for FrameContext {
 impl FrameContext {
     /// Create a new empty frame context.
     ///
-    /// Instance counter starts at 0 and is reset when `take_draw_list()` is called.
+    /// Instance counter starts at 1 (slot 0 is reserved for fullscreen passes)
+    /// and is reset when `take_draw_list()` is called.
     /// Frame uniforms are initialized to defaults (identity matrices, origin camera).
     pub fn new() -> Self {
         Self {
-            next_instance_index: 0,
+            next_instance_index: 1, // Slot 0 reserved for fullscreen/post-processing passes
             draw_list: DrawList::new(),
             frame_uniforms: FrameUniforms::default(),
             max_instances: 256, // Match StorageUniformLayout::MAX_OBJECTS
@@ -198,7 +199,7 @@ impl FrameContext {
     /// This should be called once per frame to submit all draws to the renderer.
     /// After calling this, the frame context is reset and ready for the next frame.
     pub fn take_draw_list(&mut self) -> DrawList {
-        self.next_instance_index = 0;
+        self.next_instance_index = 1; // Slot 0 reserved for fullscreen passes
         self.frame_uniforms = FrameUniforms::default(); // Reset to defaults
         std::mem::take(&mut self.draw_list)
     }
