@@ -165,9 +165,8 @@ fn fresnel_schlick(cos_theta: f32, F0: vec3f) -> vec3f {
 }
 
 // GGX/Trowbridge-Reitz normal distribution function
-fn distribution_ggx(N: vec3f, H: vec3f, roughness: f32) -> f32 {
-    let a = roughness * roughness;
-    let a2 = a * a;
+fn distribution_ggx(N: vec3f, H: vec3f, roughness_sq: f32) -> f32 {
+    let a2 = roughness_sq;
     let NdotH = max(dot(N, H), 0.0);
     let NdotH2 = NdotH * NdotH;
 
@@ -179,8 +178,8 @@ fn distribution_ggx(N: vec3f, H: vec3f, roughness: f32) -> f32 {
 }
 
 // Schlick-GGX geometry function
-fn geometry_schlick_ggx(NdotV: f32, roughness: f32) -> f32 {
-    let r = roughness + 1.0;
+fn geometry_schlick_ggx(NdotV: f32, roughness_sq: f32) -> f32 {
+    let r = roughness_sq + 1.0;
     let k = (r * r) / 8.0;
 
     let num = NdotV;
@@ -190,11 +189,11 @@ fn geometry_schlick_ggx(NdotV: f32, roughness: f32) -> f32 {
 }
 
 // Smith's geometry function
-fn geometry_smith(N: vec3f, V: vec3f, L: vec3f, roughness: f32) -> f32 {
+fn geometry_smith(N: vec3f, V: vec3f, L: vec3f, roughness_sq: f32) -> f32 {
     let NdotV = max(dot(N, V), 0.0);
     let NdotL = max(dot(N, L), 0.0);
-    let ggx1 = geometry_schlick_ggx(NdotV, roughness);
-    let ggx2 = geometry_schlick_ggx(NdotL, roughness);
+    let ggx1 = geometry_schlick_ggx(NdotV, roughness_sq);
+    let ggx2 = geometry_schlick_ggx(NdotL, roughness_sq);
 
     return ggx1 * ggx2;
 }
@@ -257,8 +256,9 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
     let F0 = mix(vec3f(0.04), albedo, metallic);
 
     // Cook-Torrance BRDF
-    let D = distribution_ggx(final_normal, H, roughness);
-    let G = geometry_smith(final_normal, V, L, roughness);
+    let roughness_sq = roughness * roughness;
+    let D = distribution_ggx(final_normal, H, roughness_sq);
+    let G = geometry_smith(final_normal, V, L, roughness_sq);
     let F = fresnel_schlick(max(dot(H, V), 0.0), F0);
 
     let numerator = D * G * F;
