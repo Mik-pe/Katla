@@ -1447,6 +1447,17 @@ impl Application {
         let mesh_handle = self.renderer.create_sphere_mesh(0.2, 16, 12);
         let material_handle = self.default_material();
 
+        let make_indicator = |color: katla_math::Color| {
+            DrawableComponent::with_handles_and_material(
+                mesh_handle,
+                material_handle,
+                Some(color),
+                0.0,  // fully dielectric
+                1.0,  // fully rough (matte light bulb look)
+                1.0,
+            )
+        };
+
         // Warm light near the coral cube
         let warm_light = self.world.spawn((
             PointLight::new([1.0, 0.6, 0.2], 50.0, 15.0),
@@ -1455,11 +1466,7 @@ impl Application {
                     -5.0, 3.0, -3.0,
                 )),
             },
-            DrawableComponent::with_handles_and_color(
-                mesh_handle,
-                material_handle,
-                katla_math::Color::rgb(1.0, 0.6, 0.2),
-            ),
+            make_indicator(katla_math::Color::rgb(1.0, 0.6, 0.2)),
         ));
 
         // Cool blue light near the sphere
@@ -1470,11 +1477,7 @@ impl Application {
                     -7.0, 2.0, -4.0,
                 )),
             },
-            DrawableComponent::with_handles_and_color(
-                mesh_handle,
-                material_handle,
-                katla_math::Color::rgb(0.3, 0.5, 1.0),
-            ),
+            make_indicator(katla_math::Color::rgb(0.3, 0.5, 1.0)),
         ));
 
         // Magenta light near the cylinder
@@ -1485,11 +1488,7 @@ impl Application {
                     5.0, 2.5, -3.0,
                 )),
             },
-            DrawableComponent::with_handles_and_color(
-                mesh_handle,
-                material_handle,
-                katla_math::Color::rgb(1.0, 0.2, 0.8),
-            ),
+            make_indicator(katla_math::Color::rgb(1.0, 0.2, 0.8)),
         ));
 
         // Green light near the torus
@@ -1500,11 +1499,7 @@ impl Application {
                     7.0, 1.5, -1.0,
                 )),
             },
-            DrawableComponent::with_handles_and_color(
-                mesh_handle,
-                material_handle,
-                katla_math::Color::rgb(0.3, 1.0, 0.4),
-            ),
+            make_indicator(katla_math::Color::rgb(0.3, 1.0, 0.4)),
         ));
 
         // White overhead light for general illumination
@@ -1515,11 +1510,7 @@ impl Application {
                     0.0, 6.0, -3.0,
                 )),
             },
-            DrawableComponent::with_handles_and_color(
-                mesh_handle,
-                material_handle,
-                katla_math::Color::rgb(0.9, 0.85, 0.8),
-            ),
+            make_indicator(katla_math::Color::rgb(0.9, 0.85, 0.8)),
         ));
 
         // Name them for the editor hierarchy
