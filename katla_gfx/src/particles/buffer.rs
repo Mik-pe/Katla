@@ -640,14 +640,22 @@ impl GlobalParticleBuffer {
     }
 
     /// Get current dead particle count.
+    ///
+    /// Invalidates mapped memory before reading to ensure GPU writes are visible.
+    /// Must be called after the GPU command buffer that wrote to counters has completed.
     pub fn get_dead_count(&self) -> Result<u32, String> {
-        if let Some(mapped) = self
-            .counters_allocation
-            .as_ref()
-            .and_then(|a| a.mapped_ptr())
-        {
-            let counters = unsafe { &*(mapped.as_ptr() as *const ParticleCounters) };
-            Ok(counters.dead_count)
+        if let Some(counters_allocation) = &self.counters_allocation {
+            self.context.invalidate_mapped_memory(
+                counters_allocation,
+                0,
+                std::mem::size_of::<ParticleCounters>() as u64,
+            );
+            if let Some(mapped) = counters_allocation.mapped_ptr() {
+                let counters = unsafe { &*(mapped.as_ptr() as *const ParticleCounters) };
+                Ok(counters.dead_count)
+            } else {
+                Ok(0)
+            }
         } else {
             Ok(0)
         }
