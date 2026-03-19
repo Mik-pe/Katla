@@ -102,6 +102,7 @@ impl FrameContext {
             light_direction: [0.3, 1.0, 0.2, 0.0], // Upward toward sun
             light_color: [1.0, 0.98, 0.95, 0.0],   // Slightly warm white
             light_intensity: 1.0,                  // Base intensity for PBR
+            tiles: [0, 0, 0, 0],
         };
     }
 

@@ -36,6 +36,7 @@ struct FrameUniforms {
     light_direction: vec4f,
     light_color: vec4f,
     light_intensity: vec4f,
+    tiles: vec4<u32>,
 }
 
 // Per-object uniforms (updated for bindless)
@@ -259,9 +260,8 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
     var Lo_point = vec3f(0.0);
 
     // Determine which tile this fragment is in
-    // tiles_x and tiles_y are packed into frame_data.light_intensity.y and .z
-    let tiles_x = u32(frame_data.light_intensity.y);
-    let tiles_y = u32(frame_data.light_intensity.z);
+    let tiles_x = frame_data.tiles.x;
+    let tiles_y = frame_data.tiles.y;
     // Clamp to avoid negative values at screen edges (clip_position can be < 0.5 at first pixel)
     let pixel_x = max(u32(in.clip_position.x), 0u);
     let pixel_y = max(u32(in.clip_position.y), 0u);

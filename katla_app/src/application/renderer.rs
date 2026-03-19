@@ -82,6 +82,7 @@ impl Application {
             light_direction: [0.3, 1.0, 0.2, 0.0],
             light_color: [1.0, 0.98, 0.95, 0.0],
             light_intensity: 1.0,
+            tiles: [tiles_x, tiles_y, 0, 0],
         };
         frame.set_frame_uniforms(frame_uniforms.clone());
 
@@ -94,9 +95,6 @@ impl Application {
         // Apply frame uniforms to renderer
         self.renderer
             .set_frame_uniforms(frame.frame_uniforms().clone());
-
-        // Set tile grid dimensions for Forward+ light culling
-        self.renderer.set_light_culling_tiles(tiles_x, tiles_y);
 
         // Execute draw calls (writes per-object data to storage buffer)
         if let Err(e) = self.renderer.execute_draw_calls(frame.draw_list()) {

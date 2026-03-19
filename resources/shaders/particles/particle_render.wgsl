@@ -26,6 +26,7 @@ struct FrameUniforms {
     light_direction: vec4f,
     light_color: vec4f,
     light_intensity: vec4f,
+    tiles: vec4<u32>,
 }
 
 // Particle data buffer (Set 0, Binding 0)

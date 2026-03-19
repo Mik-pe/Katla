@@ -881,15 +881,6 @@ impl VulkanRenderer {
         self.frame_uniforms = uniforms;
     }
 
-    /// Set Forward+ tile grid dimensions for light culling.
-    ///
-    /// Must be called after `set_frame_uniforms()` each frame.
-    pub fn set_light_culling_tiles(&mut self, tiles_x: u32, tiles_y: u32) {
-        let frame_idx = self.swap_data.current_frame();
-        self.storage_manager
-            .set_light_culling_tiles(frame_idx, tiles_x, tiles_y);
-    }
-
     /// Execute draw calls from FrameContext and prepare them for rendering.
     ///
     /// This method writes all per-object data from draw calls to the storage buffer.
