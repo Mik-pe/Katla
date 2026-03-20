@@ -139,7 +139,7 @@ impl DebugOverlay {
             Vec2::new(window_width, window_height),
         );
 
-        let window = ui.begin_window_with_title("debug_window", Some("Debug Stats"), window_bounds);
+        let window = ui.begin_window("debug_window", Some("Debug Stats"), window_bounds);
 
         // Use vertical layout for stats window
         ui.begin_column();
@@ -276,7 +276,7 @@ impl DebugOverlay {
             Vec2::new(panel_width, panel_height),
         );
 
-        let window = ui.begin_window_with_title("settings_panel", Some("Settings"), panel_bounds);
+        let window = ui.begin_window("settings_panel", Some("Settings"), panel_bounds);
 
         // Use begin_column() for vertical layout
         ui.begin_column();

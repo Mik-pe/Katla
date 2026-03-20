@@ -11,16 +11,12 @@ use crate::text::FontId;
 use super::super::{UiContext, WindowState};
 
 impl UiContext {
-    pub(crate) fn begin_window(&mut self, id: &str, bounds: Rect2D) -> WindowState {
-        self.begin_window_with_title(id, None, bounds)
-    }
-
     /// Begin a window container with an optional title bar.
     ///
     /// If title is provided, draws a title bar at the top.
     /// Returns a WindowState for window information.
     /// Call `end_window()` after adding contents.
-    pub fn begin_window_with_title(
+    pub fn begin_window(
         &mut self,
         id: &str,
         title: Option<&str>,

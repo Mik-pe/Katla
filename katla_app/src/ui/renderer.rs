@@ -172,25 +172,25 @@ impl UIRenderer {
         let mut texture_to_index: HashMap<TextureId, u32> = HashMap::new();
 
         // First pass: build texture mapping
-        for cmd in &draw_list.commands {
+        for cmd in draw_list.commands() {
             texture_to_index
                 .entry(cmd.texture)
                 .or_insert_with(|| self.texture_id_to_bindless_index(cmd.texture));
         }
 
         // Create a mapping from vertex index to texture index
-        let mut vertex_texture_indices: Vec<u32> = vec![0; draw_list.vertices.len()];
+        let mut vertex_texture_indices: Vec<u32> = vec![0; draw_list.vertices().len()];
 
         // Assign texture indices to vertices based on which commands use them
-        for cmd in &draw_list.commands {
+        for cmd in draw_list.commands() {
             let bindless_index = texture_to_index.get(&cmd.texture).copied().unwrap_or(0);
             let index_start = cmd.index_offset as usize;
             let index_end = index_start + cmd.index_count as usize;
 
             // Mark all vertices referenced by this command with its texture index
             for i in index_start..index_end {
-                if i < draw_list.indices.len() {
-                    let vertex_idx = draw_list.indices[i] as usize;
+                if i < draw_list.indices().len() {
+                    let vertex_idx = draw_list.indices()[i] as usize;
                     if vertex_idx < vertex_texture_indices.len() {
                         vertex_texture_indices[vertex_idx] = bindless_index;
                     }
@@ -200,7 +200,7 @@ impl UIRenderer {
 
         // Now convert vertices with their texture indices
         let vertices: Vec<VertexUI> = draw_list
-            .vertices
+            .vertices()
             .iter()
             .enumerate()
             .map(|(i, v)| {
@@ -215,11 +215,11 @@ impl UIRenderer {
             .collect();
 
         // Copy indices directly
-        let indices = draw_list.indices.clone();
+        let indices = draw_list.indices().to_vec();
 
         // Convert commands, resolving texture IDs to bindless indices (for validation)
         let commands: Vec<UiDrawCommand> = draw_list
-            .commands
+            .commands()
             .iter()
             .map(|cmd| {
                 let bindless_index = texture_to_index.get(&cmd.texture).copied().unwrap_or(0);

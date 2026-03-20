@@ -5,7 +5,8 @@ use katla_math::{Color, Rect2D, Vec2};
 use crate::icons::ForkAwesome;
 use crate::text::FontId;
 
-use super::super::{z_index, UiContext};
+use super::super::UiContext;
+use super::Popup;
 
 impl UiContext {
     pub(crate) fn combo<F>(
@@ -18,20 +19,16 @@ impl UiContext {
     ) where
         F: FnOnce(&mut Self, &mut bool),
     {
-        // Use stable ID for combo - consistent across frames
         let combo_id = self.make_stable_id(id);
 
         // Draw combo box trigger
         let hovered = self.update_hover(combo_id, bounds);
-
-        // Toggle on click using consolidated helper
         let clicked = self.click_behavior(combo_id, hovered).as_clicked_bool();
 
         if clicked {
             *open = !*open;
         }
 
-        // Determine combo colors
         let bg_color = if *open {
             self.style.combo_bg
         } else if self.active_id == Some(combo_id) || hovered {
@@ -57,72 +54,26 @@ impl UiContext {
         );
 
         // Draw dropdown icon
-        let icon = ForkAwesome::CARET_DOWN;
         let icon_size = self.style.font_size;
         let icon_pos = Vec2::new(
             bounds.max.x() - icon_size - self.style.menu_padding,
             bounds.center().y() - icon_size * 0.5,
         );
         self.draw_icon_aligned(
-            icon,
+            ForkAwesome::CARET_DOWN,
             icon_pos,
             icon_size,
             self.style.combo_text,
             FontId::DEFAULT,
         );
 
-        // If open, render popup content
+        // If open, render popup content using the popup API
         if *open {
-            // Mark popup as open for input blocking
-            let was_just_opened = self.popup_id != Some(combo_id);
-            self.popup_id = Some(combo_id);
-            if was_just_opened {
-                self.popup_opened_this_frame = true;
-            }
-
-            // Switch to popup Z-index
-            self.push_z_index(z_index::POPUP);
-
-            let popup_bounds = Rect2D::from_origin_size(
-                Vec2::new(bounds.min.x(), bounds.max.y()),
-                Vec2::new(
-                    bounds.width().max(self.style.menu_min_width),
-                    400.0, // Generous height for menu items
-                ),
+            self.popup(
+                Popup::new(id).below_button(bounds).menu(),
+                open,
+                content,
             );
-
-            // Draw popup background with shadow
-            let shadow_offset = Vec2::new(4.0, 4.0);
-            let shadow_bounds = Rect2D::new(
-                popup_bounds.min + shadow_offset,
-                popup_bounds.max + shadow_offset,
-            );
-            self.draw_rect(shadow_bounds, self.style.popup_shadow);
-            self.draw_rect(popup_bounds, self.style.popup_bg);
-            self.draw_rect_border(
-                popup_bounds,
-                Color::TRANSPARENT,
-                self.style.popup_border,
-                1.0,
-            );
-
-            self.popup_bounds = Some(popup_bounds);
-            self.push_clip_absolute(popup_bounds);
-            self.push_id(id);
-
-            // Run content closure
-            content(self, open);
-
-            // If closure closed the popup, clear state
-            if !*open {
-                self.popup_id = None;
-                self.popup_bounds = None;
-            }
-
-            // Clean up
-            self.pop_clip();
-            self.pop_id();
-            self.pop_z_index();
         }
     }
 }

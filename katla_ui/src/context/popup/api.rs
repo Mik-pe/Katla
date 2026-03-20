@@ -217,9 +217,9 @@ impl UiContext {
         // Draw trigger button and handle interaction
         let hovered = self.update_hover(dropdown_id, bounds);
 
-        // Toggle on click
-        // Note: On release, we use self.input.is_hovered() directly instead of self.is_hovered()
-        // because self.is_hovered() returns false when active_id is set (which it is during press).
+        // Toggle on click using raw input hover check on release.
+        // Must use self.input.is_hovered() directly because self.is_hovered()
+        // returns false when active_id is set (which it is during press-release).
         let clicked = if hovered && self.input.mouse_pressed[crate::input::mouse_button::LEFT] {
             self.active_id = Some(dropdown_id);
             false
@@ -227,7 +227,6 @@ impl UiContext {
             && self.input.mouse_released[crate::input::mouse_button::LEFT]
         {
             self.active_id = None;
-            // Check if mouse is still over button using raw input check (bypasses active_id block)
             self.input.is_hovered(bounds)
         } else {
             false

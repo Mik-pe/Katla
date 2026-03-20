@@ -3,7 +3,6 @@
 //! These methods provide ergonomic wrappers around low-level UI primitives,
 //! reducing boilerplate and ensuring consistent styling across the application.
 
-use crate::widgets::Label;
 use crate::{FontSize, UiContext};
 use katla_math::Vec2;
 
@@ -41,7 +40,7 @@ impl UiContext {
 
     /// Display a text label at the current cursor position.
     ///
-    /// Convenience wrapper for creating and adding a Label widget.
+    /// Draws text with the default text color and advances the cursor automatically.
     ///
     /// # Example
     /// ```ignore
@@ -49,29 +48,14 @@ impl UiContext {
     /// ui.label(&format!("Value: {}", x));
     /// ```
     pub fn label(&mut self, text: &str) {
-        self.add(Label::new(text).at_cursor(self));
-        self.spacing(20.0);
+        self.text_label_colored(text, self.style.text_color);
     }
 
-    /// Display a text label at the cursor position with auto-coloring.
+    /// Display a text label at the cursor position with the default text color.
     ///
-    /// Convenience wrapper that draws text and advances the cursor automatically.
-    /// Uses the default text color.
-    ///
-    /// # Example
-    /// ```ignore
-    /// ui.text_label("Hello, World!");
-    /// ui.text_label(&format!("Value: {}", x));
-    /// ```
+    /// Alias for `label()`.
     pub fn text_label(&mut self, text: &str) {
-        let text_size = self.measure_text(text, self.style.font_size);
-        self.draw_text(
-            text,
-            self.cursor(),
-            self.style.text_color,
-            self.style.font_size,
-        );
-        self.advance_cursor(text_size);
+        self.label(text);
     }
 
     /// Display a text label at the cursor position with custom color.

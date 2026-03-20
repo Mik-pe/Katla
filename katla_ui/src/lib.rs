@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 //! Katla UI - Immediate mode UI system for the Katla engine.
 //!
 //! This crate provides a simple, immediate mode UI system suitable for:
@@ -48,7 +46,6 @@ mod draw_list;
 mod icons;
 pub mod input;
 pub mod response;
-mod sense;
 mod style;
 mod text;
 mod types;
