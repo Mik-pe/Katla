@@ -89,5 +89,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
         discard;
     }
 
-    return in.color;
+    let edge_falloff = 1.0 - smoothstep(0.3, 1.0, dist);
+
+    return vec4f(in.color.rgb, in.color.a * edge_falloff);
 }

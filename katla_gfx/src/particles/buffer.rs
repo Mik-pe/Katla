@@ -9,9 +9,11 @@ use log::info;
 
 use crate::vulkan::context::VulkanContext;
 
-/// Particle data structure (48 bytes, tightly packed).
+/// Particle data structure (64 bytes).
 ///
-/// Layout must match WGSL struct exactly.
+/// Layout must match WGSL struct exactly. WGSL pads struct size to a multiple
+/// of the largest member alignment (vec3f = 16 bytes), so 12 bytes of padding
+/// are added after emitter_index.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Pod, Zeroable)]
 pub struct ParticleData {
@@ -25,6 +27,10 @@ pub struct ParticleData {
     pub lifetime: f32,
     /// RGBA color (0-1 range)
     pub color: [f32; 4],
+    /// Index of the emitter that spawned this particle
+    pub emitter_index: u32,
+    /// Padding to match WGSL struct alignment (vec3f align = 16, struct size must be multiple of 16)
+    pub _pad: [f32; 3],
 }
 
 /// Per-frame data for particle simulation (updated via push descriptors).
@@ -803,6 +809,7 @@ impl GlobalParticleBuffer {
         }
         self.destroyed = true;
 
+        log::info!("  buffer destroy: freeing particle allocation");
         unsafe {
             // Free allocations first
             if let Some(alloc) = self.particle_allocation.take()
@@ -810,29 +817,34 @@ impl GlobalParticleBuffer {
             {
                 allocator.free(alloc).ok();
             }
+            log::info!("  buffer destroy: freeing counters allocation");
             if let Some(alloc) = self.counters_allocation.take()
                 && let Ok(mut allocator) = self.context.allocator.try_borrow_mut()
             {
                 allocator.free(alloc).ok();
             }
+            log::info!("  buffer destroy: freeing indirect draw allocation");
             if let Some(alloc) = self.indirect_draw_allocation.take()
                 && let Ok(mut allocator) = self.context.allocator.try_borrow_mut()
             {
                 allocator.free(alloc).ok();
             }
             // Destroy buffers (only if not null)
+            log::info!("  buffer destroy: destroying particle buffer");
             if self.particle_buffer != vk::Buffer::null() {
                 self.context
                     .device
                     .destroy_buffer(self.particle_buffer, None);
                 self.particle_buffer = vk::Buffer::null();
             }
+            log::info!("  buffer destroy: destroying counters buffer");
             if self.counters_buffer != vk::Buffer::null() {
                 self.context
                     .device
                     .destroy_buffer(self.counters_buffer, None);
                 self.counters_buffer = vk::Buffer::null();
             }
+            log::info!("  buffer destroy: destroying indirect draw buffer");
             if self.indirect_draw_buffer != vk::Buffer::null() {
                 self.context
                     .device
@@ -840,6 +852,7 @@ impl GlobalParticleBuffer {
                 self.indirect_draw_buffer = vk::Buffer::null();
             }
         }
+        log::info!("  buffer destroy: done");
     }
 }
 
@@ -855,7 +868,7 @@ mod tests {
 
     #[test]
     fn test_particle_data_size() {
-        assert_eq!(std::mem::size_of::<ParticleData>(), 48);
+        assert_eq!(std::mem::size_of::<ParticleData>(), 64);
     }
 
     #[test]

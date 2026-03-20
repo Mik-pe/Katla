@@ -210,6 +210,7 @@ impl ApplicationBuilder {
             })?;
 
         // Compile geometry shader for PBR model rendering
+        log::info!("About to compile PBR geometry shader...");
         let geometry_shader_path = resources.shader_path("model_pbr.wgsl");
         let geometry_material = renderer
             .compile_material(

@@ -40,6 +40,9 @@ pub struct EmitterConfigView {
     pub scale_variation: f32,
     pub color: [f32; 4],
     pub color_variation: f32,
+    pub gravity: f32,
+    pub turbulence_strength: f32,
+    pub turbulence_frequency: f32,
 }
 
 /// Actions emitted by the particle inspector.
@@ -330,6 +333,16 @@ fn render_emitter_config(
         y += lh;
     }
     row!("Color Var:", &format!("{:.2}", config.color_variation));
+
+    heading!("Forces");
+    row!("Gravity:", &format!("{:.1} m/s^2", config.gravity));
+    row!(
+        "Turbulence:",
+        &format!(
+            "str={:.1} freq={:.1}",
+            config.turbulence_strength, config.turbulence_frequency
+        )
+    );
 
     if let Some(ref stats) = stats {
         heading!("Statistics");

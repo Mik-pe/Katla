@@ -15,7 +15,7 @@
 //! ```text
 //! ┌─────────────────────────────────────────────────────────────┐
 //! │ Storage Uniform Buffer (~29KB, persistent mapping)          │
-//! ├─ [Frame Uniforms: 272 bytes]                               │
+//! ├─ [Frame Uniforms: 320 bytes (incl. 48-byte padding)]       │
 //! │  ├─ view: mat4x4 (64 bytes)                                │
 //! │  ├─ proj: mat4x4 (64 bytes)                                │
 //! │  ├─ inv_view_proj: mat4x4 (64 bytes)                       │
@@ -214,7 +214,9 @@ impl StorageDescriptorSet {
 /// Frame-level uniforms (view and projection matrices + lighting).
 ///
 /// Shared across all objects in the buffer.
-/// Total: 272 bytes (3 × mat4x4 + 4 × vec4 + 1 × vec4<u32>).
+/// Total: 320 bytes (3 × mat4x4 + 4 × vec4 + 1 × vec4<u32> + 48 bytes padding).
+/// Padded to 320 to ensure OBJECT_ARRAY_OFFSET is a multiple of 64
+/// (minStorageBufferOffsetAlignment).
 #[derive(Debug, Clone, Copy)]
 #[allow(dead_code)] // NB: Dead code since we only use this for sizes
 pub struct FrameUniforms {
@@ -242,6 +244,9 @@ pub struct FrameUniforms {
 
     /// Forward+ tile grid dimensions: [tiles_x, tiles_y, 0, 0].
     pub tiles: [u32; 4],
+
+    /// Padding to align OBJECT_ARRAY_OFFSET to 64 bytes (minStorageBufferOffsetAlignment).
+    _padding: [u8; 48],
 }
 
 /// Per-object uniforms (model matrix, color, PBR params, and bindless texture indices).
@@ -272,8 +277,8 @@ pub struct ObjectUniforms {
 pub struct StorageUniformLayout;
 
 impl StorageUniformLayout {
-    /// Object array starts after frame uniforms (offset 272).
-    pub const OBJECT_ARRAY_OFFSET: usize = 272;
+    /// Object array starts after frame uniforms (offset 320, padded for 64-byte alignment).
+    pub const OBJECT_ARRAY_OFFSET: usize = std::mem::size_of::<FrameUniforms>(); // 320
 
     /// Size per object (1 × mat4x4 + 3 × vec4 = 112 bytes).
     pub const OBJECT_STRIDE: usize = std::mem::size_of::<ObjectUniforms>();
@@ -282,7 +287,7 @@ impl StorageUniformLayout {
     pub const MAX_OBJECTS: usize = 256;
 
     /// Total buffer size for max objects.
-    /// 272 + (112 * 256) = 272 + 28672 = 28944 bytes (~28 KB)
+    /// 320 + (112 * 256) = 320 + 28672 = 28992 bytes (~28 KB)
     pub const MAX_BUFFER_SIZE: usize =
         Self::OBJECT_ARRAY_OFFSET + (Self::OBJECT_STRIDE * Self::MAX_OBJECTS);
 }
@@ -352,7 +357,7 @@ impl StorageUniformManager {
     /// Update frame uniforms (view, projection, and lighting).
     ///
     /// This writes the frame data to the start of the specified frame's buffer
-    /// (offset 0, 272 bytes total). Should be called once per frame.
+    /// (offset 0, 320 bytes total). Should be called once per frame.
     ///
     /// # Arguments
     /// * `frame_index` - Frame index (0 to frames_in_flight-1)
@@ -415,6 +420,7 @@ impl StorageUniformManager {
                 light_color: *light_color,
                 light_intensity: [light_intensity, 0.0, 0.0, 0.0],
                 tiles,
+                _padding: [0u8; 48],
             };
         }
         // Flush frame uniforms to make CPU writes visible to GPU
@@ -665,8 +671,8 @@ mod tests {
 
     #[test]
     fn test_frame_uniforms_size() {
-        // 3 mat4x4 (192 bytes) + 4 vec4 (64 bytes) + 1 vec4<u32> (16 bytes) = 272 bytes
-        assert_eq!(std::mem::size_of::<FrameUniforms>(), 272);
+        // 3 mat4x4 (192 bytes) + 4 vec4 (64 bytes) + 1 vec4<u32> (16 bytes) + 48 padding = 320 bytes
+        assert_eq!(std::mem::size_of::<FrameUniforms>(), 320);
     }
 
     #[test]
@@ -677,20 +683,20 @@ mod tests {
 
     #[test]
     fn test_layout_constants() {
-        assert_eq!(StorageUniformLayout::OBJECT_ARRAY_OFFSET, 272);
+        assert_eq!(StorageUniformLayout::OBJECT_ARRAY_OFFSET, 320);
         assert_eq!(StorageUniformLayout::OBJECT_STRIDE, 112);
         assert_eq!(StorageUniformLayout::MAX_OBJECTS, 256);
-        // 272 + (112 * 256) = 272 + 28672 = 28944
-        assert_eq!(StorageUniformLayout::MAX_BUFFER_SIZE, 28944);
+        // 320 + (112 * 256) = 320 + 28672 = 28992
+        assert_eq!(StorageUniformLayout::MAX_BUFFER_SIZE, 28992);
     }
 
     #[test]
     fn test_object_offset_calculation() {
-        // Object 0: offset 272
-        assert_eq!(StorageUniformLayout::object_offset(0), 272);
-        // Object 1: offset 272 + 112 = 384
-        assert_eq!(StorageUniformLayout::object_offset(1), 384);
-        // Object 255: offset 272 + (112 * 255) = 272 + 28560 = 28832
-        assert_eq!(StorageUniformLayout::object_offset(255), 28832);
+        // Object 0: offset 320
+        assert_eq!(StorageUniformLayout::object_offset(0), 320);
+        // Object 1: offset 320 + 112 = 432
+        assert_eq!(StorageUniformLayout::object_offset(1), 432);
+        // Object 255: offset 320 + (112 * 255) = 320 + 28560 = 28880
+        assert_eq!(StorageUniformLayout::object_offset(255), 28880);
     }
 }

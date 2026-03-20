@@ -67,16 +67,17 @@ impl ParticleEmitterComponent {
         Self {
             config: EmitterConfig {
                 position,
-                emit_rate: 1000.0,
-                base_lifetime: 2.0,
-                lifetime_variation: 0.5,
+                emit_rate: 1500.0,
+                base_lifetime: 2.5,
+                lifetime_variation: 0.3,
                 velocity_direction: [0.0, 1.0, 0.0],
-                velocity_magnitude: 2.0,
-                velocity_cone_angle: 0.3,
-                base_scale: 0.15,
-                scale_variation: 0.3,
+                velocity_magnitude: 8.0,
+                velocity_cone_angle: 0.05,
+                base_scale: 0.08,
+                scale_variation: 0.2,
                 color: [1.0, 0.5, 0.0, 1.0], // Orange
-                color_variation: 0.2,
+                color_variation: 0.1,
+                gravity: 0.0,
                 ..Default::default()
             },
             emitter_handle: None,
@@ -84,6 +85,37 @@ impl ParticleEmitterComponent {
             burst_queue: Vec::new(),
             timed_emission: None,
         }
+    }
+
+    /// Create an ethereal/spiritual particle effect with wavy turbulence.
+    ///
+    /// Particles spawn from a circle plane and rise with sinusoidal wave motion.
+    pub fn ethereal_effect(position: [f32; 3]) -> Self {
+        let mut component = Self {
+            config: EmitterConfig {
+                position,
+                emit_rate: 800.0,
+                base_lifetime: 4.0,
+                lifetime_variation: 0.5,
+                velocity_direction: [0.0, 1.0, 0.0],
+                velocity_magnitude: 1.5,
+                velocity_cone_angle: 0.1,
+                base_scale: 0.12,
+                scale_variation: 0.4,
+                color: [0.6, 0.8, 1.0, 0.8], // Pale blue-white
+                color_variation: 0.2,
+                gravity: -0.5,
+                turbulence_strength: 4.0,
+                turbulence_frequency: 3.0,
+                ..Default::default()
+            },
+            emitter_handle: None,
+            active: true,
+            burst_queue: Vec::new(),
+            timed_emission: None,
+        };
+        component.with_circle_shape(2.0);
+        component
     }
 
     /// Create a sparkle/magic effect emitter.

@@ -3,12 +3,15 @@
 const MAX_PARTICLES: u32 = 1048576u; // 1M particles
 
 // Particle data structure (must match ParticleData in buffer.rs)
+// WGSL struct size is padded to multiple of 16 (vec3f alignment).
 struct ParticleData {
     position: vec3f,
     scale: f32,
     velocity: vec3f,
     lifetime: f32,
     color: vec4f,
+    emitter_index: u32,
+    _pad: array<f32, 3>,
 }
 
 // Per-frame data (updated via push descriptors)
@@ -52,6 +55,10 @@ struct EmitterConfig {
     color_variation: f32,
     _pad_color: vec4f,
     shape_params: vec4f,
+    gravity: f32,
+    turbulence_strength: f32,
+    turbulence_frequency: f32,
+    _pad_forces: f32,
 }
 
 const MAX_EMITTERS: u32 = 1024u;

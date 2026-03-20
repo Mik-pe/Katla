@@ -69,11 +69,7 @@ impl UiContext {
 
         // If open, render popup content using the popup API
         if *open {
-            self.popup(
-                Popup::new(id).below_button(bounds).menu(),
-                open,
-                content,
-            );
+            self.popup(Popup::new(id).below_button(bounds).menu(), open, content);
         }
     }
 }

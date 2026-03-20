@@ -292,7 +292,7 @@ impl ApplicationHandler for Application {
                 debug!("DPI scale factor changed to {}", self.scale_factor);
             }
             WindowEvent::RedrawRequested => {
-                debug!("RedrawRequested received");
+                debug!("RedrawRequested (frame {})", self.frame_count);
                 self.timer.add_timestamp();
                 let dt = self.timer.get_delta() as f32;
 
@@ -1430,6 +1430,10 @@ impl Application {
         // Fire emitter near the center cube
         let fire_emitter = ParticleEmitterComponent::fire_effect([-3.0, 1.0, -3.0]);
         self.world.spawn((fire_emitter,));
+
+        // Ethereal/spiritual rising particles
+        let ethereal_emitter = ParticleEmitterComponent::ethereal_effect([3.0, 0.5, 0.0]);
+        self.world.spawn((ethereal_emitter,));
 
         // Magic sparkles emitter
         let sparkle_emitter = ParticleEmitterComponent::sparkle_effect([0.0, 3.0, 0.0]);

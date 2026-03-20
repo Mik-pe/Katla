@@ -300,6 +300,9 @@ fn collect_particle_inspector_data(app: &mut Application) {
                 scale_variation: emitter.config.scale_variation,
                 color: emitter.config.color,
                 color_variation: emitter.config.color_variation,
+                gravity: emitter.config.gravity,
+                turbulence_strength: emitter.config.turbulence_strength,
+                turbulence_frequency: emitter.config.turbulence_frequency,
             });
         }
     }

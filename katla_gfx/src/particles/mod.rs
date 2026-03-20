@@ -135,6 +135,18 @@ pub struct EmitterConfig {
     /// Shape parameters (length/radius for Line/Circle/Sphere, dimensions for Box)
     #[serde(default)]
     pub shape_params: [f32; 4],
+
+    /// Gravity acceleration applied each frame (negative = downward, 0 = none, positive = upward)
+    #[serde(default)]
+    pub gravity: f32,
+
+    /// Turbulence strength (amplitude of sinusoidal force applied perpendicular to velocity)
+    #[serde(default)]
+    pub turbulence_strength: f32,
+
+    /// Turbulence frequency (how fast the sine wave oscillates)
+    #[serde(default = "default_turbulence_frequency")]
+    pub turbulence_frequency: f32,
 }
 
 /// 16-byte aligned `[f32; 4]` to match WGSL `vec4f` alignment.
@@ -198,6 +210,9 @@ fn default_color() -> [f32; 4] {
 fn default_color_variation() -> f32 {
     0.1
 }
+fn default_turbulence_frequency() -> f32 {
+    3.0
+}
 
 impl Default for EmitterConfig {
     fn default() -> Self {
@@ -218,6 +233,9 @@ impl Default for EmitterConfig {
             color_variation: 0.1,
             _pad_color: Align16Vec4([0.0; 4]),
             shape_params: [0.0; 4],
+            gravity: -9.8,
+            turbulence_strength: 0.0,
+            turbulence_frequency: 3.0,
         }
     }
 }
@@ -874,6 +892,7 @@ impl GlobalParticleSystem {
         info!("Destroying particle system");
 
         // Destroy push descriptor buffers first
+        info!("  destroying push descriptor buffers");
         if let Some((buffer, allocation)) = self.frame_data_buffer.take() {
             unsafe {
                 if let Ok(mut allocator) = self.context.allocator.try_borrow_mut() {
@@ -891,14 +910,17 @@ impl GlobalParticleSystem {
             }
         }
 
+        info!("  destroying global particle buffer");
         self.buffer.destroy();
 
         // Destroy timing queries
+        info!("  destroying timing queries");
         if let Some(mut timing) = self.timing_queries.take() {
             timing.destroy();
         }
 
         // Destroy descriptor set layouts (we own these, pipelines just reference them)
+        info!("  destroying descriptor set layouts");
         if let Some(layout) = self.compute_descriptor_layout.take() {
             unsafe {
                 self.context
@@ -933,6 +955,7 @@ impl GlobalParticleSystem {
         self.free_emitter_slots.clear();
 
         // Destroy descriptor pools
+        info!("  destroying descriptor pools");
         if self._compute_descriptor_pool != vk::DescriptorPool::null() {
             unsafe {
                 self.context
@@ -951,9 +974,11 @@ impl GlobalParticleSystem {
         }
 
         // Destroy debug readback if present
+        info!("  destroying debug readback");
         if let Some(mut readback) = self.debug_readback.take() {
             readback.destroy();
         }
+        info!("  particle system destroy done");
     }
 
     /// Initialize debug readback for particle data inspection (staging buffer GPU→CPU copies).
@@ -1660,12 +1685,11 @@ impl GlobalParticleSystem {
         let pipeline = PipelineBuilder::new(self.context.clone())
             .with_shaders(vertex_shader.vk(), fragment_shader.vk())
             .with_descriptor_layouts(vec![render_layout, storage_layout])
-            // No vertex binding - particles generated from storage buffer
             .with_depth_test(true, true, crate::pipeline::CompareOp::Greater)
             .with_alpha_blending()
             .with_cull_mode(CullMode::None, FrontFace::CounterClockwise)
             .with_rendering_formats(
-                Some(crate::texture::ImageFormat::B8G8R8A8Srgb),
+                Some(crate::texture::ImageFormat::R16G16B16A16Sfloat),
                 Some(crate::texture::ImageFormat::D32SfloatS8Uint),
             );
 
@@ -1938,18 +1962,43 @@ impl GlobalParticleSystem {
             return Err("Compute descriptor set not allocated".to_string());
         }
 
-        // Update push descriptors (Set 1: frame data only - no emitter configs needed)
+        // Update push descriptors (Set 1: frame data + emitter configs)
         if let Some((frame_buffer, _)) = &self.frame_data_buffer {
+            let frame_data_size = std::mem::size_of::<FrameData>() as u64;
+            let emitter_size =
+                (MAX_EMITTERS as usize * std::mem::size_of::<EmitterConfig>()) as u64;
+
             let frame_buffer_info = [vk::DescriptorBufferInfo::default()
                 .buffer(*frame_buffer)
                 .offset(0)
-                .range(std::mem::size_of::<FrameData>() as u64)];
+                .range(frame_data_size)];
 
-            let push_descriptor_writes = [vk::WriteDescriptorSet::default()
-                .dst_binding(0) // Binding 0 in Set 1 (frame data)
-                .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
-                .descriptor_count(1)
-                .buffer_info(&frame_buffer_info)];
+            let emitter_buffer_info = if let Some((emitter_buf, _)) = &self.emitter_configs_buffer {
+                Some([vk::DescriptorBufferInfo::default()
+                    .buffer(*emitter_buf)
+                    .offset(0)
+                    .range(emitter_size)])
+            } else {
+                None
+            };
+
+            let mut push_descriptor_writes = vec![
+                vk::WriteDescriptorSet::default()
+                    .dst_binding(0) // Binding 0 in Set 1 (frame data)
+                    .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
+                    .descriptor_count(1)
+                    .buffer_info(&frame_buffer_info),
+            ];
+
+            if let Some(info) = &emitter_buffer_info {
+                push_descriptor_writes.push(
+                    vk::WriteDescriptorSet::default()
+                        .dst_binding(1) // Binding 1 in Set 1 (emitter configs)
+                        .descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
+                        .descriptor_count(1)
+                        .buffer_info(info),
+                );
+            }
 
             unsafe {
                 let push_descriptor = self
@@ -2352,7 +2401,7 @@ mod tests {
 
     #[test]
     fn test_emitter_config_size() {
-        assert_eq!(std::mem::size_of::<EmitterConfig>(), 128);
+        assert_eq!(std::mem::size_of::<EmitterConfig>(), 144);
     }
 
     #[test]
@@ -2433,6 +2482,9 @@ mod tests {
             color_variation: 0.2,
             _pad_color: Align16Vec4([0.0; 4]),
             shape_params: [2.5, 0.0, 0.0, 0.0],
+            gravity: -9.8,
+            turbulence_strength: 0.0,
+            turbulence_frequency: 3.0,
         };
 
         let json = serde_json::to_string(&config).unwrap();

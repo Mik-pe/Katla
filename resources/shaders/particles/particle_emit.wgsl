@@ -134,9 +134,9 @@ fn emit_particle(particle_idx: u32, emitter_idx: u32, seed: ptr<function, u32>) 
     let local_up = cross(right, forward);
 
     let dir_in_cone = normalize(
-        forward +
+        forward * cos(phi) +
         right * sin(theta) * sin(phi) +
-        local_up * cos(phi)
+        local_up * cos(theta) * sin(phi)
     );
 
     let speed_var = emitter.velocity_magnitude * 0.5;
@@ -156,6 +156,8 @@ fn emit_particle(particle_idx: u32, emitter_idx: u32, seed: ptr<function, u32>) 
         random_range(seed, emitter.color.a - color_var, emitter.color.a + color_var)
     );
     particle.color = clamp(particle.color, vec4f(0.0), vec4f(1.0));
+
+    particle.emitter_index = emitter_idx;
 
     return particle;
 }

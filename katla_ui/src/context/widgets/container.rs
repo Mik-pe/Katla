@@ -16,12 +16,7 @@ impl UiContext {
     /// If title is provided, draws a title bar at the top.
     /// Returns a WindowState for window information.
     /// Call `end_window()` after adding contents.
-    pub fn begin_window(
-        &mut self,
-        id: &str,
-        title: Option<&str>,
-        bounds: Rect2D,
-    ) -> WindowState {
+    pub fn begin_window(&mut self, id: &str, title: Option<&str>, bounds: Rect2D) -> WindowState {
         let window_id = self.generate_id(id);
 
         // Title bar height

@@ -49,13 +49,37 @@ var<storage, read_write> draw_command: DrawIndirectCommand;
 @group(1) @binding(0)
 var<uniform> frame_data: FrameData;
 
+// Per-emitter configurations (Set 1: updated via push descriptors)
+@group(1) @binding(1)
+var<storage, read> emitters: array<EmitterConfig, MAX_EMITTERS>;
+
 fn simulate_particle(particle: ptr<function, ParticleData>, delta_time: f32) {
     (*particle).lifetime -= delta_time;
 
     if ((*particle).lifetime > 0.0) {
+        let emitter = emitters[(*particle).emitter_index];
+
         (*particle).position += (*particle).velocity * delta_time;
-        (*particle).velocity.y -= 9.8 * delta_time;
-        (*particle).color.a = 1.0;
+        (*particle).velocity.y += emitter.gravity * delta_time;
+
+        let age = emitter.base_lifetime - (*particle).lifetime;
+        let life_ratio = (*particle).lifetime / emitter.base_lifetime;
+
+        if (emitter.turbulence_strength > 0.0) {
+            let freq = emitter.turbulence_frequency;
+            let phase = age * freq;
+
+            let wave_x = sin(phase + (*particle).position.y * 0.5) * cos(phase * 0.7);
+            let wave_z = cos(phase * 1.3 + (*particle).position.x * 0.5) * sin(phase * 0.5);
+
+            (*particle).velocity.x += wave_x * emitter.turbulence_strength * delta_time;
+            (*particle).velocity.z += wave_z * emitter.turbulence_strength * delta_time;
+        }
+
+        let fade_in = clamp(age / 0.2, 0.0, 1.0);
+        let fade_out = clamp(life_ratio / 0.3, 0.0, 1.0);
+
+        (*particle).color.a = fade_in * fade_out;
     }
 }
 
