@@ -242,17 +242,21 @@ impl MaterialCompiler {
         }
 
         // 2. Load shaders (WGSL file contains both vert and frag)
+        log::info!("  compile: loading vertex shader");
         let mut cache = self.shader_cache.borrow_mut();
         let vert_module = cache
             .load_shader(shader_path, vk::ShaderStageFlags::VERTEX)
             .map_err(|e| MaterialError::ShaderCompilation(format!("Vertex shader: {:?}", e)))?;
+        log::info!("  compile: loading fragment shader");
         let frag_module = cache
             .load_shader(shader_path, vk::ShaderStageFlags::FRAGMENT)
             .map_err(|e| MaterialError::ShaderCompilation(format!("Fragment shader: {:?}", e)))?;
         drop(cache);
+        log::info!("  compile: shaders loaded, building descriptor layouts");
 
         // 3. Build descriptor layouts
         let layouts = self.build_descriptor_layouts(&options)?;
+        log::info!("  compile: descriptor layouts built, building pipeline");
 
         // 4. Build pipeline
         let pipeline = self.build_pipeline(
@@ -262,6 +266,7 @@ impl MaterialCompiler {
             &layouts,
             &vertex_binding,
         )?;
+        log::info!("  compile: pipeline built");
 
         // 5. Register and return handle
         let material_asset = crate::renderer::registry::MaterialAsset {

@@ -1188,26 +1188,25 @@ impl<'a> Frame<'a> {
             // This ensures proper synchronization between write and read operations
             self.insert_post_pass_barriers(&cmd, index)?;
 
-            // Render particles after tonemap pass (particles render on top of tonemapped output)
-            if pass.name == "tonemap" {
+            // Render particles after geometry pass (before tonemap, so they get tonemapped
+            // and depth-tested against the scene geometry)
+            if pass.name == "geometry" {
                 if let Some(ref particle_system) = self.renderer.particle_system {
                     let alive_count = particle_system.alive_count();
 
                     if alive_count > 0 {
-                        // Get viewport_0 texture info
-                        if let Some(viewport_texture) = self
+                        if let Some(hdr_texture) = self
                             .graph
                             .transient_textures
                             .get(frame_idx)
-                            .and_then(|m| m.get("viewport_0"))
+                            .and_then(|m| m.get("hdr_color"))
                         {
-                            // Render particles to viewport texture
-                            if let Err(e) = self.render_particles_to_texture(&cmd, viewport_texture)
+                            if let Err(e) =
+                                self.render_particles_to_texture(&cmd, hdr_texture)
                             {
                                 log::error!("Failed to render particles: {}", e);
                             }
                         }
-                    } else {
                     }
                 }
             }
@@ -1667,10 +1666,31 @@ impl<'a> Frame<'a> {
         let color_attachment = vk::RenderingAttachmentInfo::default()
             .image_view(texture.image_view.vk())
             .image_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
-            .load_op(vk::AttachmentLoadOp::LOAD) // Load existing tonemap output
+            .load_op(vk::AttachmentLoadOp::LOAD) // Load existing HDR output (sky + geometry)
             .store_op(vk::AttachmentStoreOp::STORE)
             .clear_value(vk::ClearValue {
                 color: vk::ClearColorValue { float32: [0.0; 4] },
+            });
+
+        // Depth attachment for depth testing against scene geometry
+        let frame_idx = self.current_frame();
+        let depth_view = self
+            .renderer
+            .frame_context
+            .depth_render_textures
+            .get(frame_idx)
+            .map(|t| t.image_view.vk())
+            .expect("depth_render_textures must have an entry for current frame");
+        let depth_attachment = vk::RenderingAttachmentInfo::default()
+            .image_view(depth_view)
+            .image_layout(vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL)
+            .load_op(vk::AttachmentLoadOp::LOAD) // Keep geometry depth
+            .store_op(vk::AttachmentStoreOp::STORE)
+            .clear_value(vk::ClearValue {
+                depth_stencil: vk::ClearDepthStencilValue {
+                    depth: 0.0,
+                    stencil: 0,
+                },
             });
 
         let rendering_info = vk::RenderingInfo::default()
@@ -1679,7 +1699,8 @@ impl<'a> Frame<'a> {
                 extent: texture.extent,
             })
             .layer_count(1)
-            .color_attachments(std::slice::from_ref(&color_attachment));
+            .color_attachments(std::slice::from_ref(&color_attachment))
+            .depth_attachment(&depth_attachment);
 
         unsafe {
             self.renderer
@@ -2479,9 +2500,17 @@ impl<'a> Frame<'a> {
         let bindless_ds = self.renderer.bindless_manager.descriptor_set().vk();
         cmd.bind_descriptor_sets(layout, 1, &[bindless_ds], &[]);
 
-        // Draw fullscreen triangle (3 vertices, no index buffer)
-        // Vertex shader generates fullscreen triangle from vertex ID
-        cmd.draw_array(3, 1, 0, 0);
+        // Skip fullscreen draw for tonemap passes with no HDR input (e.g., background clear pass).
+        // The render pass clear color already provides the desired output.
+        // Non-tonemap fullscreen passes (e.g., sky) always draw.
+        let skip_draw = pass
+            .tonemap_params
+            .as_ref()
+            .is_some_and(|p| p.hdr_texture_index.is_none());
+
+        if !skip_draw {
+            cmd.draw_array(3, 1, 0, 0);
+        }
 
         // End rendering
         cmd.end_rendering();
