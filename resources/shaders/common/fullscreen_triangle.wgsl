@@ -6,7 +6,7 @@ struct FullscreenVertexOutput {
 }
 
 @vertex
-fn fullscreen_vs(@builtin(vertex_index) vertex_index: u32) -> FullscreenVertexOutput {
+fn vs_main(@builtin(vertex_index) vertex_index: u32) -> FullscreenVertexOutput {
     var out: FullscreenVertexOutput;
 
     let uv = vec2f(
