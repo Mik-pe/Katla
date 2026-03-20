@@ -1,32 +1,9 @@
 // Simple bindless shader with albedo texture only.
 //
 // Uses storage buffers for uniform data with instance_index for per-object selection.
-// Two descriptor sets: uniforms (set 0) and bindless textures (set 1).
-//
-// Bindless architecture:
-// - Set 1, Binding 0: texture_2d array (4096 textures)
-// - Set 1, Binding 1: shared sampler
-// - Texture index comes from per-object ObjectUniforms.texture_indices.x
 
-// Frame-level uniforms (shared across all objects)
-struct FrameUniforms {
-    view: mat4x4f,
-    proj: mat4x4f,
-    inv_view_proj: mat4x4f,
-    camera_position: vec4f,
-    light_direction: vec4f,
-    light_color: vec4f,
-    light_intensity: vec4f,
-    tiles: vec4<u32>,
-}
-
-// Per-object uniforms (updated for bindless)
-struct ObjectUniforms {
-    model: mat4x4f,
-    base_color: vec4f,
-    material_params: vec4f,     // x=metallic, y=roughness, z=ao, w=unused
-    texture_indices: vec4<u32>, // x=albedo, y=normal, z=mr, w=ao (bindless indices)
-}
+#include <frame_uniforms.wgsl>
+#include <bindless.wgsl>
 
 // Set 0: Uniforms (storage buffers)
 @group(0) @binding(0)
@@ -34,13 +11,6 @@ var<storage, read> frame_data: FrameUniforms;
 
 @group(0) @binding(1)
 var<storage, read> objects: array<ObjectUniforms>;
-
-// Set 1: Bindless textures
-@group(1) @binding(0)
-var bindless_textures: binding_array<texture_2d<f32>, 4096>;
-
-@group(1) @binding(1)
-var shared_sampler: sampler;
 
 struct VertexInput {
     @location(0) position: vec3f,
@@ -72,7 +42,6 @@ fn vs_main(
 
     out.tex_coords = in.vert_texcoord0;
 
-    // Calculate world-space normal using the upper-left 3x3 of model matrix
     let normal_matrix = mat3x3f(
         obj.model[0].xyz,
         obj.model[1].xyz,
@@ -89,23 +58,18 @@ fn vs_main(
 fn fs_main(in: VertexOutput) -> @location(0) vec4f {
     let obj = objects[in.instance_idx];
 
-    // Get albedo texture index
     let albedo_idx = obj.texture_indices.x;
 
-    // Sample albedo from bindless texture array
     let albedo_sample = textureSample(bindless_textures[albedo_idx], shared_sampler, in.tex_coords);
     let albedo = albedo_sample.rgb * obj.base_color.rgb;
     let alpha = albedo_sample.a * obj.base_color.a;
 
-    // Simple directional lighting
     let N = normalize(in.world_normal);
     let L = normalize(frame_data.light_direction.xyz);
     let NdotL = max(dot(N, L), 0.0);
 
-    // Diffuse only
     let diffuse = albedo * NdotL;
 
-    // Simple ambient
     let ambient = albedo * 0.1;
 
     let color = ambient + diffuse * frame_data.light_intensity.x;
